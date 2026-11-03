@@ -1,8 +1,9 @@
 //! Vanilla Chicken entity with variant + sound-variant parity, wing-flap
 //! slow-fall, and periodic egg-laying behavior.
 
+use crate::world::ServerLevelAccessor;
 use std::str::FromStr;
-use std::sync::{Arc, Weak};
+use std::sync::Weak;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -24,7 +25,6 @@ use steel_registry::{
     REGISTRY, RegistryExt, RegistryReference, TaggedRegistryExt, sound_events, vanilla_game_events,
 };
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier};
 
@@ -623,20 +623,20 @@ impl Mob for ChickenEntity {
 
     fn finalize_spawn(
         &self,
-        world: &Arc<World>,
+        level: &mut dyn ServerLevelAccessor,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
-        let biome = world.biome_at(self.block_position());
+        let biome = level.biome(self.block_position());
         // Mirrors the cow/pig convention.
         let (variant, sound_variant) = {
-            let mut random = LegacyRandom::from_seed(rand::random());
+            let random = level.random();
             let variant = biome.and_then(|biome| {
                 REGISTRY
                     .chicken_variants
-                    .select_spawn_variant(biome, &mut random)
+                    .select_spawn_variant(biome, random)
             });
-            let sound_variant = REGISTRY.chicken_sound_variants.pick_random(&mut random);
+            let sound_variant = REGISTRY.chicken_sound_variants.pick_random(random);
             (variant, sound_variant)
         };
 
@@ -648,7 +648,7 @@ impl Mob for ChickenEntity {
             self.set_sound_variant(sound_variant);
         }
 
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(level, spawn_reason, group_data)
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

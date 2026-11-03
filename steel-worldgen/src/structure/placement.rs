@@ -3,6 +3,7 @@
 
 use glam::IVec3;
 use rayon::prelude::*;
+use steel_math::jvm_trig;
 use steel_utils::BlockPos;
 use steel_utils::ChunkPos;
 use steel_utils::Identifier;
@@ -163,8 +164,8 @@ where
     for i in 0..count {
         let dist = (4.0 + 6.0 * f64::from(circle)) * distance_f
             + (rng.next_f64() - 0.5) * distance_f * 2.5;
-        let initial_x = java_round(angle.cos() * dist);
-        let initial_z = java_round(angle.sin() * dist);
+        let initial_x = java_round(jvm_trig::cos(angle) * dist);
+        let initial_z = java_round(jvm_trig::sin(angle) * dist);
 
         // Vanilla forks the RNG for async biome search; preserve the exact fork order,
         // then parallelize only the snap work over those precomputed forked states.

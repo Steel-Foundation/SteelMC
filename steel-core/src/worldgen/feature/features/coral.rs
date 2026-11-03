@@ -1,22 +1,25 @@
-use steel_registry::vanilla_block_tags::BlockTag;
-
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 
 impl FeatureDecorationRunner {
+    /// `feature` is the nested placed feature that places one decorated coral
+    /// block and fails where coral cannot go; every segment grows through it.
     pub(in crate::worldgen::feature) fn place_coral_claw_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
+        feature: &PlacedFeatureRef,
         origin: BlockPos,
+        biome_zoom_seed: i64,
     ) -> bool {
-        let Some(coral) = Self::random_block_from_tag(registry, random, &BlockTag::CORAL_BLOCKS)
-        else {
-            return false;
-        };
-
-        let state = coral.default_state();
-        if !Self::place_coral_block(region, registry, random, origin, state) {
+        if !Self::place_placed_feature_ref(
+            region,
+            registry,
+            random,
+            origin,
+            feature,
+            biome_zoom_seed,
+        ) {
             return false;
         }
 
@@ -50,7 +53,14 @@ impl FeatureDecorationRunner {
             }
 
             for _ in 0..sideway_length {
-                if !Self::place_coral_block(region, registry, random, pos, state) {
+                if !Self::place_placed_feature_ref(
+                    region,
+                    registry,
+                    random,
+                    pos,
+                    feature,
+                    biome_zoom_seed,
+                ) {
                     break;
                 }
                 pos = pos.relative(segment_direction);
@@ -60,7 +70,14 @@ impl FeatureDecorationRunner {
 
             for _ in 0..inway_length {
                 pos = pos.relative(claw_direction);
-                if !Self::place_coral_block(region, registry, random, pos, state) {
+                if !Self::place_placed_feature_ref(
+                    region,
+                    registry,
+                    random,
+                    pos,
+                    feature,
+                    biome_zoom_seed,
+                ) {
                     break;
                 }
 
@@ -73,57 +90,27 @@ impl FeatureDecorationRunner {
         true
     }
 
-    pub(in crate::worldgen::feature) fn place_coral_mushroom_feature(
-        region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
-        random: &mut WorldgenRandom,
-        origin: BlockPos,
-    ) -> bool {
-        let Some(coral) = Self::random_block_from_tag(registry, random, &BlockTag::CORAL_BLOCKS)
-        else {
-            return false;
-        };
-
-        let state = coral.default_state();
-        let height = random.next_i32_bounded(3) + 3;
-        let width = random.next_i32_bounded(3) + 3;
-        let length = random.next_i32_bounded(3) + 3;
-        let sink_value = random.next_i32_bounded(3) + 1;
-
-        for x in 0..=width {
-            for y in 0..=height {
-                for z in 0..=length {
-                    let pos = origin.offset(x, y - sink_value, z);
-                    if (y != 0 && y != height || x != 0 && x != width && z != 0 && z != length)
-                        && ((x != 0 && x != width) || (z != 0 && z != length))
-                        && (x == 0 || x == width || y == 0 || y == height || z == 0 || z == length)
-                        && random.next_f32() >= 0.1
-                    {
-                        let _ = Self::place_coral_block(region, registry, random, pos, state);
-                    }
-                }
-            }
-        }
-
-        true
-    }
-
+    /// `feature` is the nested placed feature that places one decorated coral
+    /// block and fails where coral cannot go; trunk and branches grow through it.
     pub(in crate::worldgen::feature) fn place_coral_tree_feature(
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
+        feature: &PlacedFeatureRef,
         origin: BlockPos,
+        biome_zoom_seed: i64,
     ) -> bool {
-        let Some(coral) = Self::random_block_from_tag(registry, random, &BlockTag::CORAL_BLOCKS)
-        else {
-            return false;
-        };
-
-        let state = coral.default_state();
         let mut pos = origin;
         let trunk_height = random.next_i32_bounded(3) + 1;
         for _ in 0..trunk_height {
-            if !Self::place_coral_block(region, registry, random, pos, state) {
+            if !Self::place_placed_feature_ref(
+                region,
+                registry,
+                random,
+                pos,
+                feature,
+                biome_zoom_seed,
+            ) {
                 return true;
             }
             pos = pos.above();
@@ -139,7 +126,14 @@ impl FeatureDecorationRunner {
             let mut segment_length = 0;
 
             for j in 0..branch_height {
-                if !Self::place_coral_block(region, registry, random, pos, state) {
+                if !Self::place_placed_feature_ref(
+                    region,
+                    registry,
+                    random,
+                    pos,
+                    feature,
+                    biome_zoom_seed,
+                ) {
                     break;
                 }
                 segment_length += 1;
@@ -152,91 +146,5 @@ impl FeatureDecorationRunner {
         }
 
         true
-    }
-
-    fn place_coral_block(
-        region: &mut WorldGenRegion<'_>,
-        registry: &Registry,
-        random: &mut WorldgenRandom,
-        pos: BlockPos,
-        state: BlockStateId,
-    ) -> bool {
-        let above = pos.above();
-        let target_state = region.block_state(pos);
-        if target_state.get_block() != &vanilla_blocks::WATER
-            && !registry
-                .blocks
-                .is_in_tag(target_state.get_block(), &BlockTag::CORALS)
-        {
-            return false;
-        }
-
-        if region.block_state(above).get_block() != &vanilla_blocks::WATER {
-            return false;
-        }
-
-        let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_ALL);
-        if random.next_f32() < 0.25 {
-            if let Some(coral) = Self::random_block_from_tag(registry, random, &BlockTag::CORALS) {
-                let _ = region.set_block_state(
-                    above,
-                    coral.default_state(),
-                    UpdateFlags::UPDATE_CLIENTS,
-                );
-            }
-        } else if random.next_f32() < 0.05 {
-            let pickles = random.next_i32_bounded(4) as u8 + 1;
-            let sea_pickle = vanilla_blocks::SEA_PICKLE
-                .default_state()
-                .set_value(&BlockStateProperties::PICKLES, pickles);
-            let _ = region.set_block_state(above, sea_pickle, UpdateFlags::UPDATE_CLIENTS);
-        }
-
-        for direction in Self::VANILLA_HORIZONTAL_DIRECTIONS {
-            if random.next_f32() >= 0.2 {
-                continue;
-            }
-
-            let relative_pos = pos.relative(direction);
-            if region.block_state(relative_pos).get_block() != &vanilla_blocks::WATER {
-                continue;
-            }
-
-            if let Some(coral) =
-                Self::random_block_from_tag(registry, random, &BlockTag::WALL_CORALS)
-            {
-                let mut coral_fan_state = coral.default_state();
-                if coral_fan_state
-                    .try_get_value(&BlockStateProperties::HORIZONTAL_FACING)
-                    .is_some()
-                {
-                    coral_fan_state = coral_fan_state
-                        .set_value(&BlockStateProperties::HORIZONTAL_FACING, direction);
-                }
-                let _ = region.set_block_state(
-                    relative_pos,
-                    coral_fan_state,
-                    UpdateFlags::UPDATE_CLIENTS,
-                );
-            }
-        }
-
-        true
-    }
-
-    pub(super) fn random_block_from_tag(
-        registry: &Registry,
-        random: &mut WorldgenRandom,
-        tag: &Identifier,
-    ) -> Option<BlockRef> {
-        let blocks = registry.blocks.get_tag(tag)?;
-        if blocks.is_empty() {
-            return None;
-        }
-
-        let Ok(block_count) = i32::try_from(blocks.len()) else {
-            panic!("block tag {tag} has too many entries to choose randomly");
-        };
-        Some(blocks[random.next_i32_bounded(block_count) as usize])
     }
 }

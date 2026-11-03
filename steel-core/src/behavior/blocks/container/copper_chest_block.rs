@@ -16,6 +16,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, ChestType};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
+use super::ChestBlock;
 use crate::behavior::BlockPlaceContext;
 use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::world::ScheduledTickAccess;
@@ -93,49 +94,22 @@ impl BlockBehavior for WeatheringCopperChestBlock {
 }
 
 fn update_shape(
-    mut state: BlockStateId,
+    state: BlockStateId,
     direction: Direction,
     neighbor_state: BlockStateId,
 ) -> BlockStateId {
-    let neighbor_type = neighbor_state
-        .get_block()
-        .has_tag(&BlockTag::COPPER_CHESTS)
-        .then(|| neighbor_state.try_get_value(&BlockStateProperties::CHEST_TYPE))
-        .flatten();
-    if let Some(neighbor_type) = &neighbor_type
-        && direction.is_horizontal()
-    {
-        if state.get_value(&BlockStateProperties::CHEST_TYPE) == ChestType::Single
-            && *neighbor_type != ChestType::Single
-            && state.get_value(&BlockStateProperties::FACING)
-                == neighbor_state.get_value(&BlockStateProperties::FACING)
-            && connected_direction(neighbor_state) == direction.opposite()
-        {
-            let opposite_type = match neighbor_type {
-                ChestType::Left => ChestType::Right,
-                ChestType::Right => ChestType::Left,
-                ChestType::Single => ChestType::Single,
-            };
-            state = state.set_value(&BlockStateProperties::CHEST_TYPE, opposite_type);
-        }
-    } else if connected_direction(state) == direction {
-        state = state.set_value(&BlockStateProperties::CHEST_TYPE, ChestType::Single);
-    }
-
-    if neighbor_type.is_some()
+    let can_connect = |neighbor: BlockStateId| {
+        neighbor.get_block().has_tag(&BlockTag::COPPER_CHESTS)
+            && neighbor
+                .try_get_value(&BlockStateProperties::CHEST_TYPE)
+                .is_some()
+    };
+    let state = ChestBlock::chest_update_shape(state, direction, neighbor_state, can_connect);
+    if can_connect(neighbor_state)
         && state.get_value(&BlockStateProperties::CHEST_TYPE) != ChestType::Single
-        && connected_direction(state) == direction
+        && ChestBlock::connected_direction(state) == direction
     {
         return neighbor_state.with_properties_of(state);
     }
     state
-}
-
-fn connected_direction(state: BlockStateId) -> Direction {
-    let facing = state.get_value(&BlockStateProperties::FACING);
-    if state.get_value(&BlockStateProperties::CHEST_TYPE) == ChestType::Left {
-        facing.rotate_y_clockwise()
-    } else {
-        facing.rotate_y_counter_clockwise()
-    }
 }

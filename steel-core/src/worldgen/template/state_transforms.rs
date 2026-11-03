@@ -1,6 +1,6 @@
 use super::{
     BlockPos, BlockPropertyDirection, BlockRef, BlockStateId, Direction, Registry, Rotation,
-    StructureMirror, StructureTemplate,
+    StructureMirror, StructureTemplate, vanilla_blocks,
 };
 
 impl StructureTemplate {
@@ -17,6 +17,10 @@ impl StructureTemplate {
         let Some(block) = registry.blocks.by_state_id(state) else {
             return state;
         };
+        let (mirror, rotation) = Self::vanilla_transform_overrides(block, mirror, rotation);
+        if mirror == StructureMirror::None && rotation == Rotation::None {
+            return state;
+        }
         let mut properties = registry
             .blocks
             .properties(state)
@@ -39,6 +43,27 @@ impl StructureTemplate {
             );
         };
         rotated
+    }
+
+    /// The property-based transform below stands in for vanilla's per-class
+    /// `rotate`/`mirror` overrides. These classes have transformable properties
+    /// but no override, so vanilla leaves them unchanged: `ChorusPlantBlock` and
+    /// `FireBlock` neither rotate nor mirror, `AnvilBlock` only rotates.
+    fn vanilla_transform_overrides(
+        block: BlockRef,
+        mirror: StructureMirror,
+        rotation: Rotation,
+    ) -> (StructureMirror, Rotation) {
+        if block == &vanilla_blocks::CHORUS_PLANT || block == &vanilla_blocks::FIRE {
+            return (StructureMirror::None, Rotation::None);
+        }
+        if block == &vanilla_blocks::ANVIL
+            || block == &vanilla_blocks::CHIPPED_ANVIL
+            || block == &vanilla_blocks::DAMAGED_ANVIL
+        {
+            return (StructureMirror::None, rotation);
+        }
+        (mirror, rotation)
     }
 
     pub(super) fn block_for_state(registry: &Registry, state: BlockStateId) -> BlockRef {

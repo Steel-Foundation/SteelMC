@@ -42,13 +42,6 @@ impl FeatureDecorationRunner {
         origin: BlockPos,
         biome_zoom_seed: i64,
     ) -> bool {
-        if !region.can_write_to_chunk(
-            SectionPos::block_to_section_coord(origin.x()),
-            SectionPos::block_to_section_coord(origin.z()),
-        ) {
-            return false;
-        }
-
         let placer = Self::configured_feature_placer(kind);
         let mut context = ConfiguredFeaturePlaceContext {
             region,
@@ -81,7 +74,6 @@ impl FeatureDecorationRunner {
             ConfiguredFeatureKind::BonusChest => place_bonus_chest,
             ConfiguredFeatureKind::ChorusPlant => place_chorus_plant,
             ConfiguredFeatureKind::CoralClaw { .. } => place_coral_claw,
-            ConfiguredFeatureKind::CoralMushroom => place_coral_mushroom,
             ConfiguredFeatureKind::CoralTree { .. } => place_coral_tree,
             ConfiguredFeatureKind::DeltaFeature(_) => place_delta_feature,
             ConfiguredFeatureKind::DesertWell => place_desert_well,
@@ -423,6 +415,7 @@ fn place_template(
         projection: None,
         processor_random: StructureProcessorRandom::Placement,
         liquid_settings: LiquidSettingsData::ApplyWaterlogging,
+        finalize_entities: false,
     };
 
     template.place_in_world(
@@ -678,29 +671,16 @@ fn place_coral_claw(
     context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
     kind: &ConfiguredFeatureKind,
 ) -> bool {
-    let ConfiguredFeatureKind::CoralClaw { .. } = kind else {
+    let ConfiguredFeatureKind::CoralClaw { feature } = kind else {
         panic!("coral_claw placer received wrong configured feature kind");
     };
     FeatureDecorationRunner::place_coral_claw_feature(
         context.region,
         context.registry,
         context.random,
+        feature,
         context.origin,
-    )
-}
-
-fn place_coral_mushroom(
-    context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
-    kind: &ConfiguredFeatureKind,
-) -> bool {
-    let ConfiguredFeatureKind::CoralMushroom = kind else {
-        panic!("coral_mushroom placer received wrong configured feature kind");
-    };
-    FeatureDecorationRunner::place_coral_mushroom_feature(
-        context.region,
-        context.registry,
-        context.random,
-        context.origin,
+        context.biome_zoom_seed,
     )
 }
 
@@ -708,14 +688,16 @@ fn place_coral_tree(
     context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
     kind: &ConfiguredFeatureKind,
 ) -> bool {
-    let ConfiguredFeatureKind::CoralTree { .. } = kind else {
+    let ConfiguredFeatureKind::CoralTree { feature } = kind else {
         panic!("coral_tree placer received wrong configured feature kind");
     };
     FeatureDecorationRunner::place_coral_tree_feature(
         context.region,
         context.registry,
         context.random,
+        feature,
         context.origin,
+        context.biome_zoom_seed,
     )
 }
 

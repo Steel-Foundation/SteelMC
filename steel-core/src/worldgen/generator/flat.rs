@@ -171,10 +171,6 @@ impl StructureGenerationContext for FlatGenerationContext<'_> {
         self.base_height_flat(ocean_floor)
     }
 
-    fn base_height_full(&mut self, _x: i32, _z: i32, ocean_floor: bool) -> i32 {
-        self.base_height_flat(ocean_floor)
-    }
-
     fn biome_at(&mut self, _block_x: i32, _block_y: i32, _block_z: i32) -> BiomeRef {
         self.biome
     }

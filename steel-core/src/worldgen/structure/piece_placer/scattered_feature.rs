@@ -46,7 +46,7 @@ impl<'a, 'world> ScatteredFeaturePlacer<'a, 'world> {
         height_position: &mut Option<i32>,
         offset: i32,
     ) -> bool {
-        if height_position.is_some() {
+        if height_position.is_some_and(|height| height >= 0) {
             return true;
         }
 

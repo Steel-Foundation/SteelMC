@@ -150,7 +150,7 @@ struct DesertPyramidPlacer<'a, 'world> {
 
 impl DesertPyramidPlacer<'_, '_> {
     fn update_height_position_to_lowest_ground_height(&mut self, offset: i32) -> bool {
-        if self.data.height_position.is_some() {
+        if self.data.height_position.is_some_and(|height| height >= 0) {
             return true;
         }
 

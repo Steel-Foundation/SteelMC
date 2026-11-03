@@ -159,6 +159,7 @@ impl FeatureDecorationRunner {
         let mut random = WorldgenRandom::from_seed(0);
         let decoration_seed = random.set_decoration_seed(seed, origin.x(), origin.z());
         let step_count = DECORATION_STEP_COUNT.max(self.sorter.step_count());
+        feature_trace::begin();
 
         for step in 0..step_count {
             Self::place_structures_for_step(
@@ -314,7 +315,7 @@ impl FeatureDecorationRunner {
                 let Some(reference_pos) = start.placement_reference_pos() else {
                     continue;
                 };
-                for piece in &mut start.pieces {
+                for (piece_ordinal, piece) in start.pieces.iter_mut().enumerate() {
                     if piece.bounding_box.intersects(writable_box) {
                         StructurePiecePlacer::place_piece(
                             region,
@@ -324,6 +325,12 @@ impl FeatureDecorationRunner {
                             writable_box,
                             random,
                             biome_zoom_seed,
+                        );
+                        feature_trace::record_piece(
+                            region,
+                            &structure.key,
+                            piece_ordinal,
+                            &piece.piece_type,
                         );
                     }
                 }
@@ -336,6 +343,7 @@ impl FeatureDecorationRunner {
                 start.bounding_box =
                     StructureStart::compute_bounding_box(&start.pieces, start.bb_inflate);
             }
+            feature_trace::record(region, "structure", &structure.key);
         }
     }
 
@@ -399,6 +407,251 @@ impl FeatureDecorationRunner {
                 feature,
                 biome_zoom_seed,
             );
+            feature_trace::record(region, "placed_feature", &feature.key);
         }
+    }
+}
+
+/// Release builds carry no trace; see the test module below.
+#[cfg(not(test))]
+mod feature_trace {
+    use steel_utils::Identifier;
+
+    use crate::worldgen::region::WorldGenRegion;
+
+    pub(super) const fn begin() {}
+
+    pub(super) const fn record(_region: &WorldGenRegion<'_>, _kind: &str, _key: &Identifier) {}
+
+    pub(super) const fn record_piece(
+        _region: &WorldGenRegion<'_>,
+        _structure: &Identifier,
+        _piece_ordinal: usize,
+        _piece_type: &Identifier,
+    ) {
+    }
+}
+
+/// Test-only mirror of the extractor's per-feature hash trace: with
+/// `STEEL_FEATURE_TRACE_CHUNKS=x,z;x,z` set, prints the center chunk's block hash
+/// after every structure and placed feature of its own decoration pass.
+#[cfg(test)]
+mod feature_trace {
+    use std::cell::{Cell, RefCell};
+    use std::env;
+    use std::fs;
+    use std::sync::LazyLock;
+
+    use rustc_hash::{FxHashMap, FxHashSet};
+    use steel_utils::{BlockPos, BlockStateId, Identifier, SectionPos};
+
+    use crate::chunk::heightmap::HeightmapType;
+    use crate::chunk::status::ChunkStatus;
+    use crate::worldgen::chunk_stage_hashes::{compute_block_hash, describe_state};
+    use crate::worldgen::region::{WorldGenChunkRef, WorldGenRegion};
+
+    static TRACE_CHUNKS: LazyLock<FxHashSet<(i32, i32)>> = LazyLock::new(|| {
+        env::var("STEEL_FEATURE_TRACE_CHUNKS")
+            .ok()
+            .map_or_else(FxHashSet::default, |value| {
+                value
+                    .split(';')
+                    .filter_map(|pair| {
+                        let (x, z) = pair.split_once(',')?;
+                        Some((x.trim().parse().ok()?, z.trim().parse().ok()?))
+                    })
+                    .collect()
+            })
+    });
+
+    /// `STEEL_FEATURE_TRACE_WATCH=x,y,z;x,y,z` additionally reports every change of
+    /// those blocks, whichever chunk's pass made it.
+    static WATCH_POSITIONS: LazyLock<Vec<BlockPos>> = LazyLock::new(|| {
+        env::var("STEEL_FEATURE_TRACE_WATCH")
+            .ok()
+            .map_or_else(Vec::new, |value| {
+                value
+                    .split(';')
+                    .filter_map(|triple| {
+                        let mut parts = triple.split(',').map(|part| part.trim().parse::<i32>());
+                        Some(BlockPos::new(
+                            parts.next()?.ok()?,
+                            parts.next()?.ok()?,
+                            parts.next()?.ok()?,
+                        ))
+                    })
+                    .collect()
+            })
+    });
+
+    /// `STEEL_FEATURE_TRACE_WATCH_HEIGHT=x,z;x,z` reports every change of the
+    /// `WORLD_SURFACE_WG` height of those columns as the region sees it.
+    static WATCH_COLUMNS: LazyLock<Vec<(i32, i32)>> = LazyLock::new(|| {
+        env::var("STEEL_FEATURE_TRACE_WATCH_HEIGHT")
+            .ok()
+            .map_or_else(Vec::new, |value| {
+                value
+                    .split(';')
+                    .filter_map(|pair| {
+                        let (x, z) = pair.split_once(',')?;
+                        Some((x.trim().parse().ok()?, z.trim().parse().ok()?))
+                    })
+                    .collect()
+            })
+    });
+
+    thread_local! {
+        static INDEX: Cell<usize> = const { Cell::new(0) };
+        static LAST_WATCHED: RefCell<FxHashMap<BlockPos, BlockStateId>> =
+            RefCell::new(FxHashMap::default());
+        static LAST_HEIGHTS: RefCell<FxHashMap<(i32, i32), i32>> =
+            RefCell::new(FxHashMap::default());
+    }
+
+    fn report_watched_heights(
+        region: &WorldGenRegion<'_>,
+        pos: (i32, i32),
+        index: usize,
+        kind: &str,
+        key: &Identifier,
+    ) {
+        for &(x, z) in WATCH_COLUMNS.iter() {
+            let chunk_x = SectionPos::block_to_section_coord(x);
+            let chunk_z = SectionPos::block_to_section_coord(z);
+            if region
+                .try_chunk(chunk_x, chunk_z, ChunkStatus::StructureStarts)
+                .is_none()
+            {
+                continue;
+            }
+            let height = region.height_at(HeightmapType::WorldSurfaceWg, x, z);
+            let changed = LAST_HEIGHTS.with(|last| {
+                let mut last = last.borrow_mut();
+                last.insert((x, z), height) != Some(height)
+            });
+            if changed {
+                eprintln!(
+                    "FEATURE_WATCH_HEIGHT ({x},{z}) pass=({},{}) index={index} {kind} {key}: WORLD_SURFACE_WG now {height}",
+                    pos.0, pos.1
+                );
+            }
+        }
+    }
+
+    fn report_watched(
+        region: &WorldGenRegion<'_>,
+        pos: (i32, i32),
+        index: usize,
+        kind: &str,
+        key: &Identifier,
+    ) {
+        for &watched in WATCH_POSITIONS.iter() {
+            let chunk_x = SectionPos::block_to_section_coord(watched.x());
+            let chunk_z = SectionPos::block_to_section_coord(watched.z());
+            if region
+                .try_chunk(chunk_x, chunk_z, ChunkStatus::StructureStarts)
+                .is_none()
+            {
+                continue;
+            }
+            let state = region.block_state(watched);
+            let changed = LAST_WATCHED.with(|last| {
+                let mut last = last.borrow_mut();
+                let previous = last.insert(watched, state);
+                previous != Some(state)
+            });
+            if changed {
+                eprintln!(
+                    "FEATURE_WATCH ({},{},{}) pass=({},{}) index={index} {kind} {key}: now {}",
+                    watched.x(),
+                    watched.y(),
+                    watched.z(),
+                    pos.0,
+                    pos.1,
+                    describe_state(i32::from(state.0))
+                );
+            }
+        }
+    }
+
+    pub(super) fn begin() {
+        INDEX.with(|index| index.set(0));
+    }
+
+    /// Hash after one structure piece of the center chunk's pass (a sub-row of the
+    /// following structure row; the running index is not advanced).
+    pub(super) fn record_piece(
+        region: &WorldGenRegion<'_>,
+        structure: &Identifier,
+        piece_ordinal: usize,
+        piece_type: &Identifier,
+    ) {
+        let center = region.center();
+        let pos = (center.0.x, center.0.y);
+        if !TRACE_CHUNKS.contains(&pos) {
+            return;
+        }
+        let Some(chunk) = region.try_chunk(pos.0, pos.1, ChunkStatus::StructureStarts) else {
+            return;
+        };
+        let index = INDEX.with(Cell::get);
+        let digest = compute_block_hash(chunk.sections());
+        eprintln!(
+            "FEATURE_TRACE_PIECE {},{},{index},{structure},{piece_ordinal},{piece_type},{digest:x}",
+            pos.0, pos.1
+        );
+        dump_chunk(
+            &chunk,
+            &format!("piece_{}_{}_{index}_{piece_ordinal}", pos.0, pos.1),
+        );
+    }
+
+    /// With `STEEL_FEATURE_TRACE_DUMP_DIR` set, writes the chunk's block ids
+    /// (section, y, z, x order, big-endian i32) to `<dir>/<name>.bin`.
+    fn dump_chunk(chunk: &WorldGenChunkRef<'_>, name: &str) {
+        let Ok(dir) = env::var("STEEL_FEATURE_TRACE_DUMP_DIR") else {
+            return;
+        };
+        let mut ids = Vec::with_capacity(16 * 16 * 384 * 4);
+        for section in &chunk.sections().sections {
+            let section = section.read();
+            for y in 0..16 {
+                for z in 0..16 {
+                    for x in 0..16 {
+                        ids.extend_from_slice(
+                            &i32::from(section.states().get(x, y, z).0).to_be_bytes(),
+                        );
+                    }
+                }
+            }
+        }
+        let path = format!("{dir}/{name}.bin");
+        if let Err(error) = fs::write(&path, ids) {
+            eprintln!("FEATURE_TRACE dump failed for {path}: {error}");
+        }
+    }
+
+    pub(super) fn record(region: &WorldGenRegion<'_>, kind: &str, key: &Identifier) {
+        let center = region.center();
+        let pos = (center.0.x, center.0.y);
+        let index = INDEX.with(|index| {
+            let value = index.get();
+            index.set(value + 1);
+            value
+        });
+        report_watched(region, pos, index, kind, key);
+        report_watched_heights(region, pos, index, kind, key);
+        if !TRACE_CHUNKS.contains(&pos) {
+            return;
+        }
+        let Some(chunk) = region.try_chunk(pos.0, pos.1, ChunkStatus::StructureStarts) else {
+            return;
+        };
+        let digest = compute_block_hash(chunk.sections());
+        eprintln!(
+            "FEATURE_TRACE {},{},{index},{kind} {key},{digest:x}",
+            pos.0, pos.1
+        );
+        dump_chunk(&chunk, &format!("feature_{}_{}_{index}", pos.0, pos.1));
     }
 }

@@ -9,9 +9,7 @@ use std::sync::LazyLock;
 
 use smallvec::SmallVec;
 use steel_registry::{
-    REGISTRY,
-    blocks::{BlockRef, block_state_ext::BlockStateExt},
-    vanilla_block_tags::BlockTag,
+    REGISTRY, blocks::block_state_ext::BlockStateExt, vanilla_block_tags::BlockTag,
 };
 use steel_utils::BlockStateId;
 
@@ -107,11 +105,6 @@ impl HeightmapType {
         heightmap_opacity_mask(state, self.mask()) != 0
     }
 
-    /// Checks if a block is in the leaves tag.
-    fn is_leaves(block: BlockRef) -> bool {
-        block.has_tag(&BlockTag::LEAVES)
-    }
-
     const fn mask(self) -> u8 {
         match self {
             Self::WorldSurface => Self::WORLD_SURFACE_MASK,
@@ -156,16 +149,15 @@ fn build_state_opacity_masks() -> Box<[u8]> {
         if !block.config.is_air {
             mask |= HeightmapType::WORLD_SURFACE_MASK | HeightmapType::WORLD_SURFACE_WG_MASK;
 
-            let blocks_motion = BlockStateExt::blocks_motion(&state);
-            if blocks_motion {
+            let has_fluid = state.has_fluid();
+            if block.has_tag(&BlockTag::BLOCKS_MOTION_IN_HEIGHTMAP) {
                 mask |= HeightmapType::OCEAN_FLOOR_MASK | HeightmapType::OCEAN_FLOOR_WG_MASK;
             }
-
-            if blocks_motion || state.has_fluid() {
+            if block.has_tag(&BlockTag::BLOCKS_MOTION_IN_HEIGHTMAP) || has_fluid {
                 mask |= HeightmapType::MOTION_BLOCKING_MASK;
-                if !HeightmapType::is_leaves(block) {
-                    mask |= HeightmapType::MOTION_BLOCKING_NO_LEAVES_MASK;
-                }
+            }
+            if block.has_tag(&BlockTag::BLOCKS_MOTION_IN_HEIGHTMAP_NO_LEAVES) || has_fluid {
+                mask |= HeightmapType::MOTION_BLOCKING_NO_LEAVES_MASK;
             }
         }
         masks.push(mask);

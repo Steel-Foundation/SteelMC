@@ -3,7 +3,6 @@ use crate::density::traits::{ColumnCache, NoiseSettings};
 use crate::noise::AquiferResult;
 use crate::noise::LazyAquifer;
 use crate::structure::StructurePiece;
-use crate::utils::column_base_height;
 use crate::utils::column_interpolated_density;
 use crate::utils::find_solid_block_below_air;
 use crate::utils::iterate_noise_column_with_aquifer;
@@ -146,10 +145,44 @@ pub trait StructureGenerationContext {
     fn templates(&self) -> &FxHashMap<Identifier, TemplateData>;
     /// Base height at a column.
     fn base_height(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32;
-    /// Full-column base height scan.
-    fn base_height_full(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32;
     /// Biome at a block position.
     fn biome_at(&mut self, block_x: i32, block_y: i32, block_z: i32) -> BiomeRef;
+    /// Vanilla `GenerationContext.couldStructureExistInColumn`: whether any quart in
+    /// `[min_block_y, max_block_y]` of the column holds an allowed biome.
+    ///
+    /// Samples bottom-up and stops at the first match like vanilla, so the R-tree
+    /// warm start seen by later lookups in this chunk matches vanilla's.
+    fn could_structure_exist_in_column(
+        &mut self,
+        block_x: i32,
+        block_z: i32,
+        min_block_y: i32,
+        max_block_y: i32,
+        allowed_biomes: &[Identifier],
+    ) -> bool {
+        ((min_block_y >> 2)..=(max_block_y >> 2)).any(|quart_y| {
+            let biome = self.biome_at(block_x, quart_y << 2, block_z);
+            allowed_biomes.contains(&biome.key)
+        })
+    }
+    /// Vanilla `GenerationContext.couldValidBiomeExistInTerrainColumn`.
+    fn could_valid_biome_exist_in_terrain_column(
+        &mut self,
+        block_x: i32,
+        block_z: i32,
+        allowed_biomes: &[Identifier],
+    ) -> bool {
+        let (min_y, max_y) = (self.min_y() - 1, self.max_y() - 1);
+        self.could_structure_exist_in_column(block_x, block_z, min_y, max_y, allowed_biomes)
+    }
+    /// Vanilla `GenerationContext.couldValidBiomeExistOnTopOfChunkCenter`.
+    fn could_valid_biome_exist_on_top_of_chunk_center(
+        &mut self,
+        allowed_biomes: &[Identifier],
+    ) -> bool {
+        let (x, z) = (self.center_block_x(), self.center_block_z());
+        self.could_valid_biome_exist_in_terrain_column(x, z, allowed_biomes)
+    }
     /// Classify a block in the generator's base terrain.
     fn column_state(&mut self, x: i32, y: i32, z: i32) -> ColumnBlock;
     /// Highest solid base-terrain block directly below air in `[min_solid_y, start_y)`.
@@ -238,16 +271,9 @@ where
     ///
     /// `ocean_floor=false` → opaque is Solid+Fluid; `true` → opaque is Solid only.
     ///
-    /// In dimensions with a constant `preliminary_surface_level` (End), use
-    /// [`base_height_full`](Self::base_height_full) instead.
+    /// Scans the whole column from the world top like vanilla's `iterateNoiseColumn`;
+    /// terrain can rise well above any cheaper surface estimate.
     pub fn base_height(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
-        self.ensure_height_cache_grid();
-        let aq = self.aquifer.ensure(self.height_cache);
-        column_base_height::<N>(self.height_cache, self.noises, aq, x, z, ocean_floor)
-    }
-
-    /// Full-column scan from chunk top. Matches vanilla's `iterateNoiseColumn`.
-    pub fn base_height_full(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
         self.ensure_height_cache_grid();
         let aq = self.aquifer.ensure(self.height_cache);
         iterate_noise_column_with_aquifer::<N>(
@@ -373,10 +399,6 @@ impl<N: DimensionNoises> StructureGenerationContext for GenerationContext<'_, '_
 
     fn base_height(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
         GenerationContext::base_height(self, x, z, ocean_floor)
-    }
-
-    fn base_height_full(&mut self, x: i32, z: i32, ocean_floor: bool) -> i32 {
-        GenerationContext::base_height_full(self, x, z, ocean_floor)
     }
 
     fn biome_at(&mut self, block_x: i32, block_y: i32, block_z: i32) -> BiomeRef {

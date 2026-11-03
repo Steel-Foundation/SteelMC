@@ -16,7 +16,8 @@ pub(crate) const SWAMP_HUT_DEPTH: i32 = 9;
 /// Runtime state for vanilla `SwampHutPiece`.
 #[derive(Debug, Clone, Default)]
 pub struct SwampHutPieceData {
-    /// Vanilla `ScatteredFeaturePiece.heightPosition`; `None` means not height-adjusted yet.
+    /// Vanilla `ScatteredFeaturePiece.heightPosition`. Vanilla only caches a value `>= 0`,
+    /// so `None` or a negative height is recomputed in every chunk.
     pub height_position: Option<i32>,
     /// Whether the structure witch has already been spawned.
     pub spawned_witch: bool,
@@ -69,6 +70,9 @@ impl Structure for SwampHutStructure {
         structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
+        if !ctx.could_valid_biome_exist_on_top_of_chunk_center(&structure.allowed_biomes) {
+            return None;
+        }
         let center_y = ctx.base_height(ctx.center_block_x(), ctx.center_block_z(), false) - 1;
         let biome = ctx.biome_at(ctx.center_block_x(), center_y, ctx.center_block_z());
         if !structure.allowed_biomes.contains(&biome.key) {

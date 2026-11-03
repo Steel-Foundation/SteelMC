@@ -14,6 +14,9 @@ use steel_utils::random::{Random, RandomSource, legacy_random::LegacyRandom};
 use steel_utils::{BlockPos, BlockStateId, Direction};
 use steel_worldgen::noise::NormalNoise;
 
+/// How a provider scale multiplies a block coordinate. Vanilla passes the
+/// main `scale` as a double parameter (double multiply), but multiplies the
+/// dual-noise `slow_scale` field directly (float multiply).
 pub(crate) trait NoiseScale: Copy {
     fn scale_coord(self, coord: i32) -> f64;
 }
@@ -235,7 +238,7 @@ impl BlockStateProviderEvaluator {
         pos: BlockPos,
     ) -> BlockStateId {
         let noise = Self::normal_noise(&provider.noise, provider.seed);
-        let noise_value = Self::noise_value(&noise, pos, provider.scale);
+        let noise_value = Self::noise_value(&noise, pos, f64::from(provider.scale));
         Self::noise_state_by_value(registry, &provider.states, noise_value)
     }
 
@@ -246,7 +249,7 @@ impl BlockStateProviderEvaluator {
         pos: BlockPos,
     ) -> BlockStateId {
         let noise = Self::normal_noise(&provider.noise, provider.seed);
-        let noise_value = Self::noise_value(&noise, pos, provider.scale);
+        let noise_value = Self::noise_value(&noise, pos, f64::from(provider.scale));
         if noise_value < f64::from(provider.threshold) {
             Self::random_block_state_from_data_list(registry, random, &provider.low_states)
         } else if random.next_f32() < provider.high_chance {
@@ -290,7 +293,7 @@ impl BlockStateProviderEvaluator {
         }
 
         let noise = Self::normal_noise(&provider.noise, provider.seed);
-        let noise_value = Self::noise_value(&noise, pos, provider.scale);
+        let noise_value = Self::noise_value(&noise, pos, f64::from(provider.scale));
         Self::noise_state_by_resolved_value(&possible_states, noise_value)
     }
 

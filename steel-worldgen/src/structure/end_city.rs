@@ -526,6 +526,10 @@ impl Structure for EndCityStructure {
         structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
+        let (bx, bz) = (ctx.chunk_min_x() + 7, ctx.chunk_min_z() + 7);
+        if !ctx.could_valid_biome_exist_in_terrain_column(bx, bz, &structure.allowed_biomes) {
+            return None;
+        }
         let rotation = Rotation::get_random(rng);
         let off_xz = match rotation {
             Rotation::None => IVec3::new(5, 0, 5),
@@ -533,13 +537,10 @@ impl Structure for EndCityStructure {
             Rotation::Clockwise180 => IVec3::new(-5, 0, -5),
             Rotation::CounterClockwise90 => IVec3::new(5, 0, -5),
         };
-        let (bx, bz) = (ctx.chunk_min_x() + 7, ctx.chunk_min_z() + 7);
-        // End uses `base_height_full`: `preliminary_surface_level = 0` makes the
-        // capped variant miss islands at Y≥50.
-        let h0 = ctx.base_height_full(bx, bz, false) - 1;
-        let h1 = ctx.base_height_full(bx, bz + off_xz.z, false) - 1;
-        let h2 = ctx.base_height_full(bx + off_xz.x, bz, false) - 1;
-        let h3 = ctx.base_height_full(bx + off_xz.x, bz + off_xz.z, false) - 1;
+        let h0 = ctx.base_height(bx, bz, false) - 1;
+        let h1 = ctx.base_height(bx, bz + off_xz.z, false) - 1;
+        let h2 = ctx.base_height(bx + off_xz.x, bz, false) - 1;
+        let h3 = ctx.base_height(bx + off_xz.x, bz + off_xz.z, false) - 1;
         let lowest = h0.min(h1).min(h2).min(h3);
         if lowest < 60 {
             return None;

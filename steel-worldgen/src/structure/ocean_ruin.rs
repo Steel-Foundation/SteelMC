@@ -154,6 +154,9 @@ impl Structure for OceanRuinStructure {
         structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
+        if !ctx.could_valid_biome_exist_on_top_of_chunk_center(&structure.allowed_biomes) {
+            return None;
+        }
         let ocean_floor_y = ctx.base_height(ctx.center_block_x(), ctx.center_block_z(), true) - 1;
         let biome = ctx.biome_at(ctx.center_block_x(), ocean_floor_y, ctx.center_block_z());
         if !structure.allowed_biomes.contains(&biome.key) {

@@ -106,10 +106,12 @@ impl StructureTemplate {
                 rottable_blocks,
                 integrity,
             } => {
+                // Vanilla tests the state as processed so far, so a jigsaw block already
+                // replaced by its rottable final state can rot like any other block.
                 if rottable_blocks.as_ref().is_some_and(|tag| {
                     !registry
                         .blocks
-                        .is_in_tag(Self::block_for_state(registry, original.state), tag)
+                        .is_in_tag(Self::block_for_state(registry, current.state), tag)
                 }) {
                     return Some(current);
                 }
@@ -686,7 +688,7 @@ impl StructureTemplate {
             registry,
             &rule.input_predicate,
             input_state,
-            template_pos,
+            world_pos,
             random,
         ) && Self::rule_test_matches(
             registry,

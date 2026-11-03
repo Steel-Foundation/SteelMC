@@ -1078,7 +1078,9 @@ pub(crate) fn fuzzed_biome_at_block<F: FnMut(IVec3) -> u16>(
         rval = lcg_next(rval, biome_zoom_seed);
         let fz = get_fiddle(rval);
 
-        let dist = (dx + fx).powi(2) + (dy + fy).powi(2) + (dz + fz).powi(2);
+        // Summed in vanilla's z, y, x order: floating-point addition is not
+        // associative, and a different order can flip near-tie candidates.
+        let dist = (dz + fz).powi(2) + (dy + fy).powi(2) + (dx + fx).powi(2);
         if min_dist > dist {
             min_i = i;
             min_dist = dist;
@@ -1110,8 +1112,10 @@ pub(crate) fn fuzzed_biome_at_block<F: FnMut(IVec3) -> u16>(
 /// Within a column, `parent_x`, `parent_z`, `fract_x`, `fract_z` are constant.
 /// The 8 Voronoi candidate fiddle values (computed via 8 serial LCG calls each)
 /// only change when `parent_y` changes (every 4 blocks). This cache precomputes
-/// the fiddle values and X/Z distance components per `parent_y` group, reducing
-/// per-block work to 8 additions + 8 multiplies + 8 comparisons.
+/// the fiddle values and the squared X/Z distance components per `parent_y`
+/// group, reducing per-block work to 8 multiplies, 16 additions and 8 comparisons.
+/// The two squared components stay separate so the per-block sum keeps vanilla's
+/// `z² + y² + x²` association; floating-point addition is not associative.
 struct FuzzedBiomeColumn<'a> {
     biome_data: &'a [u16],
     section_count: usize,
@@ -1125,8 +1129,8 @@ struct FuzzedBiomeColumn<'a> {
     chunk_quart_z: i32,
     neighbor_biomes: &'a dyn Fn(IVec3) -> u16,
     cached_parent_y: i32,
-    /// Per-candidate cached values: (`fy`, `xz_partial_distance`).
-    candidates: [(f64, f64); 8],
+    /// Per-candidate cached values: (`fy`, `(dz + fz)²`, `(dx + fx)²`).
+    candidates: [(f64, f64, f64); 8],
     /// Precomputed `lcg_next(seed, parent_x)` and `lcg_next(seed, parent_x + 1)`.
     rval_after_cx: [i64; 2],
 }
@@ -1164,7 +1168,7 @@ impl<'a> FuzzedBiomeColumn<'a> {
             chunk_quart_z,
             neighbor_biomes,
             cached_parent_y: i32::MIN,
-            candidates: [(0.0, 0.0); 8],
+            candidates: [(0.0, 0.0, 0.0); 8],
             rval_after_cx: [
                 lcg_next(biome_zoom_seed, i64::from(parent_x)),
                 lcg_next(biome_zoom_seed, i64::from(parent_x + 1)),
@@ -1204,8 +1208,9 @@ impl<'a> FuzzedBiomeColumn<'a> {
                 rval = lcg_next(rval, self.biome_zoom_seed);
                 let fz = get_fiddle(rval);
 
-                let xz_partial = (dx + fx) * (dx + fx) + (dz + fz) * (dz + fz);
-                self.candidates[cx_idx * 4 + base_idx + cz_off] = (fy, xz_partial);
+                let z_sq = (dz + fz) * (dz + fz);
+                let x_sq = (dx + fx) * (dx + fx);
+                self.candidates[cx_idx * 4 + base_idx + cz_off] = (fy, z_sq, x_sq);
             }
         }
     }
@@ -1247,9 +1252,9 @@ impl<'a> FuzzedBiomeColumn<'a> {
 
         let mut min_i = 0usize;
         let mut min_dist = f64::INFINITY;
-        for (i, &(fy, xz_partial)) in self.candidates.iter().enumerate() {
+        for (i, &(fy, z_sq, x_sq)) in self.candidates.iter().enumerate() {
             let dy = if (i & 2) == 0 { fract_y } else { fract_y - 1.0 };
-            let dist = xz_partial + (dy + fy) * (dy + fy);
+            let dist = z_sq + (dy + fy) * (dy + fy) + x_sq;
             if min_dist > dist {
                 min_i = i;
                 min_dist = dist;

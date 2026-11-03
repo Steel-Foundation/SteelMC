@@ -236,20 +236,22 @@ impl SoulFireBlock {
 }
 
 impl BlockBehavior for SoulFireBlock {
-    /// Removes soul fire when its supporting block no longer allows it to survive
+    /// Rechecks support on every neighbour update, not only from below, so
+    /// unsupported soul fire beside a newly placed block disappears.
     fn update_shape(
         &self,
         state: BlockStateId,
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
-        direction: Direction,
+        _direction: Direction,
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if direction == Direction::Down && !self.can_survive(state, world, pos) {
-            return vanilla_blocks::AIR.default_state();
+        if self.can_survive(state, world, pos) {
+            self.block.default_state()
+        } else {
+            vanilla_blocks::AIR.default_state()
         }
-        state
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -347,18 +349,18 @@ mod tests {
     }
 
     #[test]
-    fn update_shape_removes_unsupported_soul_fire() {
+    fn update_shape_removes_unsupported_soul_fire_from_any_side() {
         init_vanilla_registry();
         let behavior = SoulFireBlock::new(&vanilla_blocks::SOUL_FIRE);
         let state = vanilla_blocks::SOUL_FIRE.default_state();
-        let level = TestLevel::default();
+        let level = level_with_support(vanilla_blocks::BASALT.default_state());
         let result = behavior.update_shape(
             state,
             &level,
             POS,
-            Direction::Down,
-            POS.below(),
-            vanilla_blocks::AIR.default_state(),
+            Direction::North,
+            POS.north(),
+            vanilla_blocks::BONE_BLOCK.default_state(),
         );
         assert_eq!(result.get_block(), &vanilla_blocks::AIR);
     }

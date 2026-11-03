@@ -193,12 +193,12 @@ impl BlockBehavior for PitcherCropBlock {
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: steel_utils::Direction,
-        neighbor_pos: BlockPos,
+        _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
         if state.get_value(AGE) >= 3 {
             self.base
-                .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
+                .update_shape_with_survival(self, state, world, pos, direction, neighbor_state)
         } else if self.can_survive(state, world, pos) {
             state
         } else {

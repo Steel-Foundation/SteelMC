@@ -56,12 +56,12 @@ impl BlockBehavior for SmallDripleafBlock {
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
-        neighbor_pos: BlockPos,
+        _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
         schedule_water_tick_if_waterlogged(state, world, pos);
         self.base
-            .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
+            .update_shape_with_survival(self, state, world, pos, direction, neighbor_state)
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {

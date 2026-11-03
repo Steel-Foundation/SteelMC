@@ -4,6 +4,7 @@ use super::super::runner::FeatureDecorationRunner;
 use smallvec::SmallVec;
 use std::f32::consts::PI;
 use std::time::Instant;
+use steel_math::jvm_trig;
 use steel_math::trig;
 use steel_utils::PackedSectionBlockPos;
 use steel_worldgen::state_resolver::WorldgenStateResolver;
@@ -23,8 +24,8 @@ impl FeatureDecorationRunner {
         let spread_xz = config.size as f32 / 8.0;
         let spread_xz_ceil = spread_xz.ceil() as i32;
         let max_radius = f32::midpoint(config.size as f32 / 16.0 * 2.0, 1.0).ceil() as i32;
-        let sin = f64::from(direction).sin();
-        let cos = f64::from(direction).cos();
+        let sin = jvm_trig::sin(f64::from(direction));
+        let cos = jvm_trig::cos(f64::from(direction));
         let x0 = f64::from(origin.x()) + sin * f64::from(spread_xz);
         let x1 = f64::from(origin.x()) - sin * f64::from(spread_xz);
         let z0 = f64::from(origin.z()) + cos * f64::from(spread_xz);

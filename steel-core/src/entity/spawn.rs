@@ -1,3 +1,4 @@
+use crate::world::LiveSpawnLevel;
 use std::{io::Cursor, sync::Arc};
 
 use glam::DVec3;
@@ -231,7 +232,7 @@ pub(crate) fn spawn_entity(
     {
         mob.set_y_head_rot(rotation.0);
         mob.set_y_body_rot(rotation.0);
-        let _ = mob.finalize_spawn(world, request.reason, None);
+        let _ = mob.finalize_spawn(&mut LiveSpawnLevel::new(world), request.reason, None);
     }
 
     if let Some(item_stack) = request.item_stack {

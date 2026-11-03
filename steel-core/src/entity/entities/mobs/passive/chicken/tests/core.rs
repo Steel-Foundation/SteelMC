@@ -1,4 +1,6 @@
 use super::*;
+use crate::world::LiveSpawnLevel;
+use std::sync::Arc;
 use steel_registry::init_vanilla_registry;
 
 #[test]
@@ -139,7 +141,12 @@ fn chicken_finalize_spawn_assigns_registered_variant_and_sound_variant() {
         Arc::downgrade(world),
     );
 
-    let _ = Mob::finalize_spawn(&chicken, world, EntitySpawnReason::Natural, None);
+    let _ = Mob::finalize_spawn(
+        &chicken,
+        &mut LiveSpawnLevel::new(world),
+        EntitySpawnReason::Natural,
+        None,
+    );
 
     assert!(
         REGISTRY

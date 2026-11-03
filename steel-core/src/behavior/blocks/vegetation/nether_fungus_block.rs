@@ -6,14 +6,15 @@ use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::feature::{ConfiguredFeature, ConfiguredFeatureKind};
 use steel_utils::random::worldgen_random::WorldgenRandom;
-use steel_utils::{BlockPos, BlockStateId, Identifier};
+use steel_utils::{BlockPos, BlockStateId, Direction, Identifier};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 use crate::worldgen::feature::FeatureDecorationRunner;
 
+use super::vegetation_block::survival_update_shape;
 use super::{BlockRef, default_surviving_state, survives_on_tag};
 
 const BONEMEAL_SUCCESS_CHANCE: f32 = 0.4;
@@ -51,6 +52,18 @@ impl NetherFungusBlock {
 impl BlockBehavior for NetherFungusBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         survives_on_tag(world, pos, &self.support_blocks)
+    }
+
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        survival_update_shape(self, state, world, pos)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

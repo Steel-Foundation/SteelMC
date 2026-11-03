@@ -128,6 +128,7 @@ mod portals;
 mod properties;
 mod raycast;
 mod redstone;
+mod server_level_accessor;
 mod signal_getter;
 mod sleep;
 mod sleep_status;
@@ -160,6 +161,7 @@ pub(crate) use explosion::{ExplosionBlockReader, ImmutableExplosionBlockCalculat
 pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
 pub use player_index::{PlayerAreaMap, PlayerMap};
 pub use raycast::{ClipBlockShape, ClipFluid, ClipHitResult, RaytraceAction};
+pub use server_level_accessor::{LiveSpawnLevel, ServerLevelAccessor};
 #[cfg(test)]
 pub(crate) use signal_getter::get_best_neighbor_signal;
 pub use signal_getter::{SignalGetter, SignalQueryContext};

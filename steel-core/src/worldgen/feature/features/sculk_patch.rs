@@ -281,7 +281,7 @@ impl FeatureDecorationRunner {
             SculkBehaviorKind::Default => match facings {
                 None => Self::sculk_vein_spread_all(region, state, pos, post_process, true) > 0,
                 Some(faces) if !faces.is_empty() => {
-                    if !state.is_air() && !get_fluid_state_from_block(state).is_water() {
+                    if !state.is_air() && !Self::sculk_is_water_source_fluid(state) {
                         return false;
                     }
                     Self::sculk_vein_regrow(region, pos, state, faces)
@@ -593,8 +593,9 @@ impl FeatureDecorationRunner {
             }
         }
 
-        let fluid_state = get_fluid_state_from_block(existing_state);
-        if !fluid_state.is_empty() && !fluid_state.is_water() {
+        if !get_fluid_state_from_block(existing_state).is_empty()
+            && !Self::sculk_is_water_source_fluid(existing_state)
+        {
             return false;
         }
 
@@ -684,7 +685,8 @@ impl FeatureDecorationRunner {
             new_state = new_state.set_value(&BlockStateProperties::WATERLOGGED, true);
         }
 
-        region.set_block_state(pos, new_state, UpdateFlags::UPDATE_ALL)
+        let _ = region.set_block_state(pos, new_state, UpdateFlags::UPDATE_ALL);
+        true
     }
 
     fn sculk_on_discharged(
@@ -843,12 +845,18 @@ impl FeatureDecorationRunner {
         })
     }
 
+    /// Vanilla's `getFluidState().is(Fluids.WATER)`: the still water fluid
+    /// only, so flowing water does not count.
+    fn sculk_is_water_source_fluid(state: BlockStateId) -> bool {
+        get_fluid_state_from_block(state).fluid_id == &vanilla_fluids::WATER
+    }
+
     fn sculk_can_place_growth(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
         let above = pos.above();
         let state_above = region.block_state(above);
         if !state_above.is_air()
             && (state_above.get_block() != &vanilla_blocks::WATER
-                || !get_fluid_state_from_block(state_above).is_water())
+                || !Self::sculk_is_water_source_fluid(state_above))
         {
             return false;
         }
@@ -1046,5 +1054,23 @@ impl FeatureDecorationRunner {
         state
             .try_get_value(multiface_face_property(direction))
             .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use steel_registry::init_vanilla_registry;
+
+    #[test]
+    fn flowing_water_is_not_the_vanilla_water_fluid() {
+        init_vanilla_registry();
+
+        let source = vanilla_blocks::WATER.default_state();
+        let flowing = source.set_value(&BlockStateProperties::LEVEL, 8);
+        assert!(FeatureDecorationRunner::sculk_is_water_source_fluid(source));
+        assert!(!FeatureDecorationRunner::sculk_is_water_source_fluid(
+            flowing
+        ));
     }
 }

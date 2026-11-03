@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_math::DEGREE_360;
+use steel_math::jvm_trig;
 use steel_registry::vanilla_entities;
 
 use super::super::prelude::*;
@@ -59,8 +60,8 @@ impl FeatureDecorationRunner {
             .map(|(index, size)| {
                 let angle = 2.0 * (-PI + END_SPIKE_ANGLE_STEP * index as f64);
                 EndSpike {
-                    center_x: fast_floor(END_SPIKE_DISTANCE * angle.cos()),
-                    center_z: fast_floor(END_SPIKE_DISTANCE * angle.sin()),
+                    center_x: fast_floor(END_SPIKE_DISTANCE * jvm_trig::cos(angle)),
+                    center_z: fast_floor(END_SPIKE_DISTANCE * jvm_trig::sin(angle)),
                     radius: 2 + size / 3,
                     height: 76 + size * 3,
                     guarded: *size == 1 || *size == 2,

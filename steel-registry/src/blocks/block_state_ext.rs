@@ -235,16 +235,21 @@ impl BlockStateExt for BlockStateId {
         if block.config.force_solid_off {
             return false;
         }
+        // Vanilla builds no shape cache for dynamic shapes, so they are never solid.
+        if block.config.dynamic_shape {
+            return false;
+        }
 
         // Vanilla's calculateSolid: check collision shape bounding box.
-        // A block is solid if its average dimension size >= 35/48 (~0.7292)
-        // or its Y size >= 1.0. This catches partial blocks like cactus
+        // A block is solid if its average dimension size >= 35/48 or its Y size
+        // >= 1.0. The threshold must be vanilla's exact double: thin full-width
+        // shapes like a top trapdoor average exactly 35/48.
         let shape = self.get_static_collision_shape();
         if shape.is_empty() {
             return false;
         }
         let bounds = blocks::shapes::bounding_box(shape);
-        bounds.size() >= 0.729_166_7 || bounds.height() >= 1.0
+        bounds.size() >= 0.729_166_666_666_666_6 || bounds.height() >= 1.0
     }
 
     fn blocks_motion(&self) -> bool {
@@ -293,6 +298,35 @@ mod tests {
             glass.get_static_collision_shape()
         ));
         assert!(!glass.is_solid_render());
+    }
+
+    #[test]
+    fn dynamic_shape_blocks_without_force_flag_are_not_solid() {
+        init_vanilla_registry();
+
+        // Scaffolding collides as a full-height shape, which would pass the
+        // size check without vanilla's missing shape cache.
+        let scaffolding = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::SCAFFOLDING);
+        let bounds = blocks::shapes::bounding_box(scaffolding.get_static_collision_shape());
+        assert!(bounds.height() >= 1.0);
+        assert!(!scaffolding.is_solid());
+    }
+
+    #[test]
+    fn closed_top_trapdoor_is_solid_at_the_exact_size_threshold() {
+        init_vanilla_registry();
+
+        // Its 16x3x16 collision box averages exactly 35/48.
+        let trapdoor = REGISTRY
+            .blocks
+            .state_id_from_block_defaulted_properties(
+                &vanilla_blocks::WAXED_OXIDIZED_COPPER_TRAPDOOR,
+                [("half", "top"), ("open", "false")],
+            )
+            .expect("trapdoor has half and open properties");
+        assert!(trapdoor.is_solid());
     }
 
     #[test]

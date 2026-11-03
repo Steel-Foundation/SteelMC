@@ -1,4 +1,5 @@
 use super::*;
+use crate::world::LiveSpawnLevel;
 use std::sync::Arc;
 use steel_registry::init_vanilla_registry;
 
@@ -221,7 +222,12 @@ fn cow_finalize_spawn_assigns_registered_variant_and_sound_variant() {
             .is_some()
     );
 
-    let _ = Mob::finalize_spawn(&cow, world, EntitySpawnReason::Natural, None);
+    let _ = Mob::finalize_spawn(
+        &cow,
+        &mut LiveSpawnLevel::new(world),
+        EntitySpawnReason::Natural,
+        None,
+    );
 
     assert!(
         REGISTRY

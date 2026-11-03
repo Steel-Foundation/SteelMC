@@ -2,8 +2,9 @@
 //!
 //! This is the first concrete pathfinder mob foundation.
 
+use crate::world::ServerLevelAccessor;
 use std::str::FromStr;
-use std::sync::{Arc, Weak};
+use std::sync::Weak;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -24,7 +25,6 @@ use steel_registry::{
     vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier};
 
@@ -473,19 +473,16 @@ impl Mob for PigEntity {
 
     fn finalize_spawn(
         &self,
-        world: &Arc<World>,
+        level: &mut dyn ServerLevelAccessor,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
-        let biome = world.biome_at(self.block_position());
+        let biome = level.biome(self.block_position());
         let (variant, sound_variant) = {
-            let mut random = LegacyRandom::from_seed(rand::random());
-            let variant = biome.and_then(|biome| {
-                REGISTRY
-                    .pig_variants
-                    .select_spawn_variant(biome, &mut random)
-            });
-            let sound_variant = REGISTRY.pig_sound_variants.pick_random(&mut random);
+            let random = level.random();
+            let variant =
+                biome.and_then(|biome| REGISTRY.pig_variants.select_spawn_variant(biome, random));
+            let sound_variant = REGISTRY.pig_sound_variants.pick_random(random);
             (variant, sound_variant)
         };
 
@@ -497,7 +494,7 @@ impl Mob for PigEntity {
             self.set_sound_variant(sound_variant);
         }
 
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(level, spawn_reason, group_data)
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

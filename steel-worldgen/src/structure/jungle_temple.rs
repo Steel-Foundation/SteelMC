@@ -16,7 +16,8 @@ pub(crate) const JUNGLE_TEMPLE_DEPTH: i32 = 15;
 /// Runtime state for vanilla `JungleTemplePiece`.
 #[derive(Debug, Clone, Default)]
 pub struct JungleTemplePieceData {
-    /// Vanilla `ScatteredFeaturePiece.heightPosition`; `None` means not height-adjusted yet.
+    /// Vanilla `ScatteredFeaturePiece.heightPosition`. Vanilla only caches a value `>= 0`,
+    /// so `None` or a negative height is recomputed in every chunk.
     pub height_position: Option<i32>,
     /// Whether the main chest has already been placed.
     pub placed_main_chest: bool,
@@ -75,6 +76,9 @@ impl Structure for JungleTempleStructure {
         structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
+        if !ctx.could_valid_biome_exist_on_top_of_chunk_center(&structure.allowed_biomes) {
+            return None;
+        }
         let x0 = ctx.chunk_min_x();
         let z0 = ctx.chunk_min_z();
         let h0 = ctx.base_height(x0, z0, false) - 1;

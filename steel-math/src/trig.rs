@@ -10,16 +10,20 @@
 //! private static final float[] SIN = new float[65536];
 //! static {
 //!     for (int i = 0; i < 65536; i++)
-//!         SIN[i] = (float) Math.sin(i * (Math.PI * 2.0 / 65536.0));
+//!         SIN[i] = (float) Math.sin(i / 10430.378350470453);
 //! }
 //! public static float sin(double i)  { return SIN[(int)((long)(i * 10430.378350470453) & 65535L)]; }
 //! public static float cos(double i)  { return SIN[(int)((long)(i * 10430.378350470453 + 16384.0) & 65535L)]; }
 //! ```
 //! Note that the multiplier `10430.378350470453` is exactly
 //! `65536 / (2π)` rounded to a double, and the table is indexed by the
-//! low 16 bits of the scaled angle.
+//! low 16 bits of the scaled angle. The table is filled with the JVM's own
+//! `Math.sin` ([`crate::jvm_trig::sin`]) so every entry matches vanilla bit for
+//! bit regardless of the host C library.
 
 use std::sync::LazyLock;
+
+use crate::jvm_trig;
 
 /// `65536 / (2π)` — Mojang's stored constant.
 const INDEX_SCALE: f64 = 10_430.378_350_470_453;
@@ -34,7 +38,7 @@ static SIN_TABLE: LazyLock<Box<[f32; TABLE_LEN]>> = LazyLock::new(|| {
         .try_into()
         .expect("65536-element vec");
     for (i, slot) in table.iter_mut().enumerate() {
-        *slot = (i as f64 / INDEX_SCALE).sin() as f32;
+        *slot = jvm_trig::sin(i as f64 / INDEX_SCALE) as f32;
     }
     table
 });

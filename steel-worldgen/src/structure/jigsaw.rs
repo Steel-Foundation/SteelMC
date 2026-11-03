@@ -129,7 +129,6 @@ const fn java_center(min: i32, max: i32) -> i32 {
     min.wrapping_add(max) / 2
 }
 
-static SYNTHETIC_BOTTOM_JIGSAW: Identifier = Identifier::new_static("minecraft", "bottom");
 static SYNTHETIC_EMPTY_POOL: Identifier = Identifier::new_static("minecraft", "empty");
 
 type PoolTemplateCache<'a> = FxHashMap<Identifier, Vec<&'a PoolElement>>;
@@ -318,7 +317,7 @@ fn transform_template_jigsaws(
             TransformedJigsaw {
                 pos,
                 orientation: jigsaw.orientation.rotate(rotation),
-                name: &jigsaw.name,
+                name: Some(&jigsaw.name),
                 target: &jigsaw.target,
                 pool: &jigsaw.pool,
                 joint: jigsaw.joint,
@@ -419,7 +418,7 @@ fn feature_synthetic_jigsaw() -> TransformedJigsaw<'static> {
     TransformedJigsaw {
         pos: IVec3::ZERO,
         orientation: JigsawOrientation::DownSouth,
-        name: &SYNTHETIC_BOTTOM_JIGSAW,
+        name: None,
         target: &SYNTHETIC_EMPTY_POOL,
         pool: &SYNTHETIC_EMPTY_POOL,
         joint: JointType::Rollable,
@@ -482,7 +481,7 @@ impl ActiveSourceJigsaw<'_> {
         {
             return false;
         }
-        self.block.target == target.name
+        target.name.is_none_or(|name| self.block.target == name)
     }
 }
 
@@ -491,7 +490,8 @@ impl ActiveSourceJigsaw<'_> {
 struct TransformedJigsaw<'a> {
     pos: IVec3,
     orientation: JigsawOrientation,
-    name: &'a Identifier,
+    /// `None` for a feature element's synthetic jigsaw, which any target name attaches to.
+    name: Option<&'a Identifier>,
     target: &'a Identifier,
     pool: &'a Identifier,
     joint: JointType,
@@ -742,7 +742,7 @@ fn start_assembly(
     let anchor_offset = if let Some(ref jigsaw_name) = config.start_jigsaw_name {
         shuffled_element_jigsaws(center_element, templates, center_rotation, rng)
             .into_iter()
-            .find_map(|block| (block.name == jigsaw_name).then_some(block.pos))?
+            .find_map(|block| (block.name == Some(jigsaw_name)).then_some(block.pos))?
     } else {
         IVec3::ZERO
     };
@@ -956,8 +956,16 @@ impl Structure for JigsawStructure {
         let mut assembly_rng = LegacyRandom::from_seed(0);
         assembly_rng.set_large_feature_seed(ctx.seed(), ctx.chunk_x(), ctx.chunk_z());
 
+        // `start_assembly` only queries a height when projecting the start to the
+        // heightmap, at the column vanilla's `couldStructureExistInColumn` checks first.
+        // That check is the only biome lookup either side does there, so running it
+        // afterwards gives the same lookup sequence.
+        let mut projected_column = None;
         let started = {
-            let mut get_height = |x: i32, z: i32| ctx.terrain_surface_height(x, z, false);
+            let mut get_height = |x: i32, z: i32| {
+                projected_column.get_or_insert((x, z));
+                ctx.terrain_surface_height(x, z, false)
+            };
             start_assembly(
                 config,
                 &mut assembly_rng,
@@ -969,8 +977,15 @@ impl Structure for JigsawStructure {
                 &mut get_height,
                 ctx.min_y(),
                 ctx.max_y(),
-            )?
+            )
         };
+        if let Some((x, z)) = projected_column {
+            let (min_y, max_y) = (ctx.min_y(), ctx.max_y() - 1);
+            if !ctx.could_structure_exist_in_column(x, z, min_y, max_y, &structure.allowed_biomes) {
+                return None;
+            }
+        }
+        let started = started?;
 
         if started.pieces.is_empty() {
             return None;
@@ -1470,7 +1485,38 @@ mod tests {
     }
 
     #[test]
-    fn start_jigsaw_name_can_anchor_feature_pool_element() {
+    fn unnamed_feature_jigsaw_attaches_to_any_source_target() {
+        let down = Identifier::vanilla_static("down");
+        let bottom = Identifier::vanilla_static("bottom");
+        let empty = Identifier::vanilla_static("empty");
+        let source = ActiveSourceJigsaw {
+            block: TransformedJigsaw {
+                pos: IVec3::ZERO,
+                orientation: JigsawOrientation::UpNorth,
+                name: Some(&bottom),
+                target: &down,
+                pool: &empty,
+                joint: JointType::Rollable,
+                placement_priority: 0,
+            },
+            pos: IVec3::ZERO,
+        };
+
+        assert!(source.can_attach_to(&feature_synthetic_jigsaw()));
+        let named_bottom = TransformedJigsaw {
+            name: Some(&bottom),
+            ..feature_synthetic_jigsaw()
+        };
+        assert!(!source.can_attach_to(&named_bottom));
+        let named_down = TransformedJigsaw {
+            name: Some(&down),
+            ..feature_synthetic_jigsaw()
+        };
+        assert!(source.can_attach_to(&named_down));
+    }
+
+    #[test]
+    fn start_jigsaw_name_never_anchors_feature_pool_element() {
         let pool_key = Identifier::vanilla_static("test/feature_start");
         let mut pools = FxHashMap::default();
         pools.insert(
@@ -1515,9 +1561,11 @@ mod tests {
             &mut get_height,
             -64,
             320,
-        )
-        .expect("feature pool element exposes vanilla's synthetic bottom jigsaw");
+        );
 
-        assert_eq!(assembly.pieces.len(), 1);
+        assert!(
+            assembly.is_none(),
+            "a feature element's synthetic jigsaw has no name, so no start jigsaw name matches it"
+        );
     }
 }

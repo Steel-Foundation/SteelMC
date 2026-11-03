@@ -487,8 +487,8 @@ impl SurfaceSystem {
             if state == self.default_block {
                 break;
             }
-            if state.get_block().config.liquid {
-                return height; // Water found — no extension
+            if state.get_block() == &vanilla_blocks::WATER {
+                return height;
             }
         }
 
@@ -510,7 +510,7 @@ impl SurfaceSystem {
 
     /// Frozen ocean iceberg extension — adds packed ice and snow blocks.
     ///
-    /// Collects the same writes as vanilla's `SurfaceSystem.frozenOceanExtension()`.
+    /// Collects the same writes as vanilla's `MaterialSystem.frozenOceanExtension()`.
     /// Called after surface rules for frozen ocean / deep frozen ocean biomes.
     #[expect(
         clippy::too_many_arguments,
@@ -560,16 +560,11 @@ impl SurfaceSystem {
             top -= 2.0;
         }
 
-        let extension_bottom;
-        if top > 2.0 {
-            extension_bottom = f64::from(self.sea_level) - top - 7.0;
-            top += f64::from(self.sea_level);
-        } else {
-            top = 0.0;
-            extension_bottom = 0.0;
+        if top <= 2.0 {
+            return;
         }
-
-        let extension_top = top;
+        let extension_bottom = f64::from(self.sea_level) - top - 7.0;
+        let extension_top = top + f64::from(self.sea_level);
         let mut random = self.noise_random.at(block_x, 0, block_z);
         let max_snow_depth = 2 + random.next_i32_bounded(4);
         let min_snow_height = self.sea_level + 18 + random.next_i32_bounded(10);
@@ -579,7 +574,7 @@ impl SurfaceSystem {
         let packed_ice = vanilla_blocks::PACKED_ICE.default_state();
         let air = vanilla_blocks::AIR.default_state();
 
-        let start_y = i32::max(height, top as i32 + 1);
+        let start_y = i32::max(height, extension_top as i32 + 1);
         for y in (min_surface_level..=start_y).rev() {
             let rel_y = (y - min_y) as usize;
             let state = column.get(rel_y).copied().unwrap_or(air);
@@ -591,7 +586,6 @@ impl SurfaceSystem {
                 || (is_water
                     && y > extension_bottom as i32
                     && y < self.sea_level
-                    && extension_bottom != 0.0
                     && random.next_f64() > 0.15)
             {
                 if snow_depth <= max_snow_depth && y > min_snow_height {

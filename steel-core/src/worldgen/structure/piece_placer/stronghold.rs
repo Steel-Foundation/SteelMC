@@ -125,6 +125,10 @@ fn smooth_stone_slab() -> BlockStateId {
     vanilla_blocks::SMOOTH_STONE_SLAB.default_state()
 }
 
+fn stone_brick_slab() -> BlockStateId {
+    vanilla_blocks::STONE_BRICK_SLAB.default_state()
+}
+
 fn double_smooth_stone_slab() -> BlockStateId {
     vanilla_blocks::SMOOTH_STONE_SLAB
         .default_state()
@@ -386,7 +390,7 @@ fn place_chest_corridor(
     generate_small_door(placer, StrongholdSmallDoorType::Opening, 1, 1, 6);
     let stone_bricks = stone_bricks();
     placer.generate_box(3, 1, 2, 3, 1, 4, stone_bricks, stone_bricks, false);
-    let slab = smooth_stone_slab();
+    let slab = stone_brick_slab();
     placer.place_block(slab, 3, 1, 1);
     placer.place_block(slab, 3, 1, 5);
     placer.place_block(slab, 3, 2, 2);

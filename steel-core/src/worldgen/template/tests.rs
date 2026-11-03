@@ -29,6 +29,7 @@ fn palette_blocks_skips_all_out_of_bounds_for_current_chunk_processors() {
         projection: None,
         processor_random: StructureProcessorRandom::Positional,
         liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+        finalize_entities: false,
     };
     let mut processed = 0;
 
@@ -62,6 +63,7 @@ fn palette_blocks_keeps_out_of_bounds_for_capped_processors() {
         projection: None,
         processor_random: StructureProcessorRandom::Positional,
         liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+        finalize_entities: false,
     };
     let mut processed = 0;
     let mut processed_pos = None;
@@ -182,14 +184,13 @@ fn template_block_entity_resolution_uses_final_block_state() {
         &brushable_type.key,
         &vanilla_block_entity_types::BRUSHABLE_BLOCK.key
     );
-    assert!(!StructureTemplate::should_reseed_template_loot(
-        Some(brushable_type),
-        &brushable_nbt
-    ));
+    assert!(!StructureTemplate::should_reseed_template_loot(Some(
+        brushable_type
+    )));
 
+    // A container without a loot table still consumes a seed, like vanilla.
     let mut chest_nbt = NbtCompound::new();
     chest_nbt.insert("id", "minecraft:chest");
-    chest_nbt.insert("LootTable", "minecraft:chests/village/village_weaponsmith");
     let chest_type = StructureTemplate::block_entity_type_for_nbt_or_state(
         &registry,
         registry.blocks.get_default_state_id(&vanilla_blocks::CHEST),
@@ -197,10 +198,9 @@ fn template_block_entity_resolution_uses_final_block_state() {
     )
     .expect("chest nbt should resolve block entity type");
 
-    assert!(StructureTemplate::should_reseed_template_loot(
-        Some(chest_type),
-        &chest_nbt
-    ));
+    assert!(StructureTemplate::should_reseed_template_loot(Some(
+        chest_type
+    )));
 
     assert!(
         StructureTemplate::block_entity_type_for_nbt_or_state(
@@ -551,6 +551,7 @@ fn data_markers_read_shipwreck_structure_blocks() {
         projection: None,
         processor_random: StructureProcessorRandom::Positional,
         liquid_settings: LiquidSettingsData::ApplyWaterlogging,
+        finalize_entities: false,
     };
     let mut random = WorldgenRandom::from_seed(0);
 
@@ -582,6 +583,7 @@ fn data_markers_read_igloo_chest_structure_block() {
         projection: None,
         processor_random: StructureProcessorRandom::Positional,
         liquid_settings: LiquidSettingsData::IgnoreWaterlogging,
+        finalize_entities: false,
     };
     let mut random = WorldgenRandom::from_seed(0);
 
@@ -592,4 +594,37 @@ fn data_markers_read_igloo_chest_structure_block() {
         .collect::<Vec<_>>();
 
     assert_eq!(markers, ["chest"]);
+}
+
+#[test]
+fn anvils_rotate_but_ignore_mirroring() {
+    let registry = test_registry();
+    let anvil = registry.blocks.set_property(
+        registry
+            .blocks
+            .get_default_state_id(&vanilla_blocks::DAMAGED_ANVIL),
+        &BlockStateProperties::HORIZONTAL_FACING,
+        Direction::North,
+    );
+    let facing = |state| {
+        registry
+            .blocks
+            .try_get_property(state, &BlockStateProperties::HORIZONTAL_FACING)
+    };
+
+    let mirrored = StructureTemplate::transform_state(
+        &registry,
+        anvil,
+        StructureMirror::LeftRight,
+        Rotation::None,
+    );
+    assert_eq!(facing(mirrored), Some(Direction::North));
+
+    let rotated = StructureTemplate::transform_state(
+        &registry,
+        anvil,
+        StructureMirror::LeftRight,
+        Rotation::Clockwise90,
+    );
+    assert_eq!(facing(rotated), Some(Direction::East));
 }

@@ -120,6 +120,9 @@ pub(crate) struct StructurePlaceSettings<'a> {
     pub(crate) projection: Option<Projection>,
     pub(crate) processor_random: StructureProcessorRandom,
     pub(crate) liquid_settings: LiquidSettingsData,
+    /// Vanilla `finalizeEntities`: runs `Mob::finalize_spawn` on placed template mobs with
+    /// the region random. Only jigsaw single-pool elements set it.
+    pub(crate) finalize_entities: bool,
 }
 
 mod loading;

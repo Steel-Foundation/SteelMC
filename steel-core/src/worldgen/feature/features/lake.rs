@@ -79,7 +79,9 @@ impl FeatureDecorationRunner {
                     }
 
                     let state = region.block_state(origin.offset(x, y, z));
-                    if y >= 4 && !get_fluid_state_from_block(state).is_empty() {
+                    // Vanilla tests `BlockState.liquid()`: only liquid blocks, not
+                    // waterlogged ones, abort the lake.
+                    if y >= 4 && state.get_block().config.liquid {
                         return false;
                     }
 

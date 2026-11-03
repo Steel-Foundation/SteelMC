@@ -9,6 +9,10 @@ pub mod carver;
 mod chunk_stage_hashes;
 pub(crate) mod feature;
 pub mod generator;
+#[cfg(test)]
+mod large_scale_feature_hashes;
+#[cfg(test)]
+mod large_scale_hashes;
 pub mod region;
 pub(crate) mod stages;
 pub(crate) mod structure;

@@ -1,5 +1,6 @@
 //! Vanilla Mooshroom (`MushroomCow`) entity with variant, shearing, and stew-feeding parity.
 
+use crate::world::ServerLevelAccessor;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -646,12 +647,12 @@ impl Mob for MushroomCowEntity {
 
     fn finalize_spawn(
         &self,
-        world: &Arc<World>,
+        level: &mut dyn ServerLevelAccessor,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
         self.set_variant(MooshroomVariant::Red);
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(level, spawn_reason, group_data)
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

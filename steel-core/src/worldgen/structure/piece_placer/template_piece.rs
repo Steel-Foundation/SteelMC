@@ -65,6 +65,7 @@ impl StructurePiecePlacer {
             projection: None,
             processor_random: StructureProcessorRandom::Positional,
             liquid_settings: data.liquid_settings,
+            finalize_entities: false,
         };
         let template_box = template.bounding_box_with_transform(
             position,

@@ -1,5 +1,6 @@
 //! Entity summoning command.
 
+use crate::world::LiveSpawnLevel;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -80,7 +81,11 @@ pub(super) fn create_entity(
     };
 
     if let Some(mob) = entity.as_mob() {
-        let _ = mob.finalize_spawn(world, EntitySpawnReason::Command, None);
+        let _ = mob.finalize_spawn(
+            &mut LiveSpawnLevel::new(world),
+            EntitySpawnReason::Command,
+            None,
+        );
     }
 
     match world.try_add_entity(Arc::clone(&entity)) {

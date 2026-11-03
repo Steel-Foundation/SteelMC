@@ -1,6 +1,8 @@
 //! Shared vanilla `AgeableMob` state and hooks.
 
+use crate::world::ServerLevelAccessor;
 use std::sync::Arc;
+use steel_utils::random::Random as _;
 
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
@@ -234,7 +236,7 @@ pub trait AgeableMob: Mob {
     /// Runs vanilla `AgeableMob.finalizeSpawn`, then delegates to `Mob.finalizeSpawn`.
     fn finalize_spawn_ageable_mob(
         &self,
-        world: &Arc<World>,
+        level: &mut dyn ServerLevelAccessor,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -242,12 +244,12 @@ pub trait AgeableMob: Mob {
             Some(SpawnGroupData::AgeableMob(group_data)) => group_data,
             None => AgeableMobGroupData::with_should_spawn_baby(true),
         };
-        if group_data.finalize_ageable_spawn(rand::random::<f32>) {
+        if group_data.finalize_ageable_spawn(|| level.random().next_f32()) {
             self.set_age(self.get_baby_start_age());
         }
 
         self.finalize_spawn_mob_base(
-            world,
+            level,
             spawn_reason,
             Some(SpawnGroupData::AgeableMob(group_data)),
         )

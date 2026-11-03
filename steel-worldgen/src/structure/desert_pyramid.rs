@@ -16,7 +16,8 @@ pub(crate) const DESERT_PYRAMID_DEPTH: i32 = 21;
 /// Runtime state for vanilla `DesertPyramidPiece`.
 #[derive(Debug, Clone)]
 pub struct DesertPyramidPieceData {
-    /// Vanilla `ScatteredFeaturePiece.heightPosition`; `None` means not height-adjusted yet.
+    /// Vanilla `ScatteredFeaturePiece.heightPosition`. Vanilla only caches a value `>= 0`,
+    /// so `None` or a negative height is recomputed in every chunk.
     pub height_position: Option<i32>,
     /// Chest placement flags ordered by `Direction.get2DDataValue`.
     pub has_placed_chest: [bool; 4],
@@ -82,6 +83,9 @@ impl Structure for DesertPyramidStructure {
         structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
+        if !ctx.could_valid_biome_exist_on_top_of_chunk_center(&structure.allowed_biomes) {
+            return None;
+        }
         let (x0, z0) = (ctx.chunk_min_x(), ctx.chunk_min_z());
         let h0 = ctx.base_height(x0, z0, false) - 1;
         let h1 = ctx.base_height(x0, z0 + DESERT_PYRAMID_DEPTH, false) - 1;

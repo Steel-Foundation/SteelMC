@@ -3,10 +3,12 @@
 mod pathfinder;
 
 use crate::entity::leash::{LeashData, Leashable};
+use crate::world::ServerLevelAccessor;
 pub use pathfinder::PathfinderMob;
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
 use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target};
+use steel_utils::random::Random as _;
 
 use std::sync::Arc;
 
@@ -496,16 +498,16 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn finalize_spawn(
         &self,
-        world: &Arc<World>,
+        level: &mut dyn ServerLevelAccessor,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
-        self.finalize_spawn_mob_base(world, spawn_reason, group_data)
+        self.finalize_spawn_mob_base(level, spawn_reason, group_data)
     }
 
     fn finalize_spawn_mob_base(
         &self,
-        _world: &Arc<World>,
+        level: &mut dyn ServerLevelAccessor,
         _spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -513,9 +515,10 @@ pub trait Mob: LivingEntity + Leashable {
             .attributes()
             .lock()
             .has_modifier(vanilla_attributes::FOLLOW_RANGE, &RANDOM_SPAWN_BONUS_ID);
-        let random_spawn_bonus = needs_random_spawn_bonus
-            .then(|| RANDOM_SPAWN_BONUS_SCALE * (rand::random::<f64>() - rand::random::<f64>()));
-        let left_handed = rand::random::<f32>() < LEFT_HANDED_SPAWN_CHANCE;
+        let random = level.random();
+        let random_spawn_bonus =
+            needs_random_spawn_bonus.then(|| random.triangle(0.0, RANDOM_SPAWN_BONUS_SCALE));
+        let left_handed = random.next_f32() < LEFT_HANDED_SPAWN_CHANCE;
 
         if let Some(amount) = random_spawn_bonus {
             self.attributes().lock().add_modifier(

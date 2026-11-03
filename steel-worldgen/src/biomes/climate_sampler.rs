@@ -9,6 +9,7 @@
 
 use std::f32::consts::TAU;
 
+use steel_math::jvm_trig;
 use steel_utils::BlockPos;
 use steel_utils::climate::{Parameter, ParameterPoint, TargetPoint, quantize_coord};
 use steel_utils::random::{Random, xoroshiro::Xoroshiro};
@@ -125,8 +126,10 @@ impl OverworldClimateSampler {
         let origin = result.pos;
 
         while radius <= max_radius {
-            let x = origin.x() + (angle.sin() * radius) as i32;
-            let z = origin.z() + (angle.cos() * radius) as i32;
+            // Vanilla: `(int)(Math.sin(angle) * radius)` with float angle and radius, i.e.
+            // a double sine times the widened radius, then truncation.
+            let x = origin.x() + (jvm_trig::sin(f64::from(angle)) * f64::from(radius)) as i32;
+            let z = origin.z() + (jvm_trig::cos(f64::from(angle)) * f64::from(radius)) as i32;
             let candidate = self.spawn_position_and_fitness(spawn_targets, x, z);
             if candidate.fitness < result.fitness {
                 result = candidate;

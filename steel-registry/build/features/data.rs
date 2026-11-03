@@ -82,7 +82,6 @@ pub enum ConfiguredFeatureKind {
     BonusChest,
     ChorusPlant,
     CoralClaw { feature: PlacedFeatureRef },
-    CoralMushroom,
     CoralTree { feature: PlacedFeatureRef },
     DeltaFeature(DeltaFeatureConfiguration),
     DesertWell,
@@ -185,7 +184,6 @@ fn deserialize_configured_feature_kind(
         "minecraft:coral_claw" => ConfiguredFeatureKind::CoralClaw {
             feature: parse!(CoralFeatureConfigJson)?.feature,
         },
-        "minecraft:coral_mushroom" => ConfiguredFeatureKind::CoralMushroom,
         "minecraft:coral_tree" => ConfiguredFeatureKind::CoralTree {
             feature: parse!(CoralFeatureConfigJson)?.feature,
         },

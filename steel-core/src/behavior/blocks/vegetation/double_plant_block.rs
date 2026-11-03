@@ -68,14 +68,13 @@ impl DoublePlantBlock {
             return vanilla_blocks::AIR.default_state();
         }
 
-        if half == DoubleBlockHalf::Lower
-            && direction == Direction::Down
-            && !survival_behavior.can_survive(state, world, pos)
-        {
-            return vanilla_blocks::AIR.default_state();
+        // Every other neighbour update falls through to `VegetationBlock`, which
+        // breaks the plant whenever it can no longer survive, whatever the direction.
+        if survival_behavior.can_survive(state, world, pos) {
+            state
+        } else {
+            vanilla_blocks::AIR.default_state()
         }
-
-        state
     }
     pub(super) fn place_at(
         world: &Arc<World>,

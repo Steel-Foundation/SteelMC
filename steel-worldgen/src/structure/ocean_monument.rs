@@ -173,22 +173,28 @@ impl Structure for OceanMonumentStructure {
         let z_range = ((check_z - BIOME_RANGE_CHECK) >> 2)..=((check_z + BIOME_RANGE_CHECK) >> 2);
         let y_range = ((check_y - BIOME_RANGE_CHECK) >> 2)..=((check_y + BIOME_RANGE_CHECK) >> 2);
 
+        // Vanilla's `getBiomesWithin` samples the whole box before any biome is
+        // tested; stopping early would leave a different R-tree warm start.
+        let mut all_surrounding = true;
         for qz in z_range {
             for qx in x_range.clone() {
                 for qy in y_range.clone() {
                     let biome = ctx.biome_at(qx << 2, qy << 2, qz << 2);
-                    if !SURROUNDING_BIOMES
+                    all_surrounding &= SURROUNDING_BIOMES
                         .iter()
-                        .any(|&b| biome.key == Identifier::vanilla_static(b))
-                    {
-                        return None;
-                    }
+                        .any(|&b| biome.key == Identifier::vanilla_static(b));
                 }
             }
         }
+        if !all_surrounding {
+            return None;
+        }
 
-        let surface_y = ctx.surface_y();
-        let biome = ctx.biome_at(ctx.center_block_x(), surface_y, ctx.center_block_z());
+        if !ctx.could_valid_biome_exist_on_top_of_chunk_center(&structure.allowed_biomes) {
+            return None;
+        }
+        let ocean_floor_y = ctx.base_height(ctx.center_block_x(), ctx.center_block_z(), true) - 1;
+        let biome = ctx.biome_at(ctx.center_block_x(), ocean_floor_y, ctx.center_block_z());
         if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
@@ -198,7 +204,7 @@ impl Structure for OceanMonumentStructure {
         let orientation = random_horizontal_direction(rng);
         let piece = monument_building_piece(west, north, orientation, rng);
         Some(GenerationStub {
-            position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
+            position: (ctx.center_block_x(), ocean_floor_y, ctx.center_block_z()),
             pieces: vec![piece],
         })
     }

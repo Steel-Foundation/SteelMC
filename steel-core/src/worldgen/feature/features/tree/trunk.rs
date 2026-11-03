@@ -6,6 +6,7 @@
 use std::f32::consts::TAU;
 use std::f64::consts::PI;
 
+use steel_math::jvm_trig;
 use steel_math::trig;
 
 use super::super::super::prelude::*;
@@ -941,8 +942,8 @@ impl FeatureDecorationRunner {
                     let radius = f64::from(tree_shape)
                         * (f64::from(random.next_f32()) + FANCY_BRANCH_LENGTH_MAGIC);
                     let angle = f64::from(random.next_f32() * 2.0_f32) * PI;
-                    let x = radius * angle.sin() + 0.5;
-                    let z = radius * angle.cos() + 0.5;
+                    let x = radius * jvm_trig::sin(angle) + 0.5;
+                    let z = radius * jvm_trig::cos(angle) + 0.5;
                     let check_start = origin.offset(fast_floor(x), relative_y - 1, fast_floor(z));
                     let check_end = check_start.above_n(5);
                     if Self::make_fancy_tree_limb(

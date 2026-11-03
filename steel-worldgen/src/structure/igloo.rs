@@ -78,6 +78,9 @@ impl Structure for IglooStructure {
         structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
+        if !ctx.could_valid_biome_exist_on_top_of_chunk_center(&structure.allowed_biomes) {
+            return None;
+        }
         let surface_y = ctx.surface_y();
         let biome = ctx.biome_at(ctx.center_block_x(), surface_y, ctx.center_block_z());
         if !structure.allowed_biomes.contains(&biome.key) {

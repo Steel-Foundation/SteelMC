@@ -3,6 +3,8 @@
 #![feature(portable_simd)]
 /// Shared angle constants.
 pub mod angle;
+/// Bit-exact port of the JVM's x86-64 `Math.sin`/`Math.cos` intrinsics.
+pub mod jvm_trig;
 /// Math utilities used by vanilla world generation noise.
 mod noise_math;
 pub mod trig;

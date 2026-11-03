@@ -14,7 +14,7 @@ use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use simdnbt::owned::NbtCompound;
 use small_map::FxSmallMap;
 use steel_registry::{
-    REGISTRY, block_entity_type::BlockEntityTypeRef, blocks::BlockRef,
+    REGISTRY, biome::BiomeRef, block_entity_type::BlockEntityTypeRef, blocks::BlockRef,
     blocks::block_state_ext::BlockStateExt as _, blocks::properties::Direction,
     blocks::shapes::SupportType, fluid::FluidRef, vanilla_blocks,
 };
@@ -39,9 +39,12 @@ use crate::chunk::{
 };
 use crate::entity::SharedEntity;
 use crate::world::tick_scheduler::TickPriority;
-use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
+use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, ServerLevelAccessor, World};
 use crate::worldgen::feature::instrumentation::OreFeatureStats;
 use crate::worldgen::generator::context::WorldGenContext;
+use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
+use steel_registry::RegistryExt as _;
+use steel_worldgen::biomes::obfuscate_biome_seed;
 
 /// Chunk-cache backed worldgen view for the current generation step.
 ///
@@ -1486,6 +1489,20 @@ impl ScheduledTickAccess for WorldGenRegion<'_> {
 
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
         WorldGenRegion::schedule_fluid_tick_default(self, pos, fluid, delay)
+    }
+}
+
+impl ServerLevelAccessor for WorldGenRegion<'_> {
+    fn random(&mut self) -> &mut RandomSource {
+        &mut self.random
+    }
+
+    fn biome(&self, pos: BlockPos) -> Option<BiomeRef> {
+        let biome_zoom_seed = obfuscate_biome_seed(self.weak_world().upgrade()?.seed());
+        let biome_id = fuzzed_biome_at_block(biome_zoom_seed, pos, |quart| {
+            self.noise_biome_id(quart.x, quart.y, quart.z)
+        });
+        REGISTRY.biomes.by_id(usize::from(biome_id))
     }
 }
 

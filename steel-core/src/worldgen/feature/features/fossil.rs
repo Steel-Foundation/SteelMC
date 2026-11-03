@@ -85,6 +85,7 @@ impl FeatureDecorationRunner {
             projection: None,
             processor_random: StructureProcessorRandom::Placement,
             liquid_settings: LiquidSettingsData::ApplyWaterlogging,
+            finalize_entities: false,
         };
         fossil_template.place_in_world(
             region,
@@ -108,6 +109,7 @@ impl FeatureDecorationRunner {
             projection: None,
             processor_random: StructureProcessorRandom::Placement,
             liquid_settings: LiquidSettingsData::ApplyWaterlogging,
+            finalize_entities: false,
         };
         overlay_template.place_in_world(
             region,

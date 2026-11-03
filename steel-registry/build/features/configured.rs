@@ -76,7 +76,6 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
             let feature = generate_placed_feature_ref(feature);
             quote! { ConfiguredFeatureKind::CoralClaw { feature: #feature } }
         }
-        ConfiguredFeatureKind::CoralMushroom => quote! { ConfiguredFeatureKind::CoralMushroom },
         ConfiguredFeatureKind::CoralTree { feature } => {
             let feature = generate_placed_feature_ref(feature);
             quote! { ConfiguredFeatureKind::CoralTree { feature: #feature } }

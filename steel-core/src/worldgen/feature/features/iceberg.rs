@@ -6,6 +6,8 @@
 use std::cmp::Ordering;
 use std::f64::consts::PI;
 
+use steel_math::jvm_trig;
+
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 
@@ -394,12 +396,14 @@ impl FeatureDecorationRunner {
         c: i32,
         angle: f64,
     ) -> f64 {
-        ((f64::from(x_offset - origin.x()) * angle.cos()
-            - f64::from(z_offset - origin.z()) * angle.sin())
+        // `Math.cos`/`Math.sin`: the JVM intrinsic, not the C library, or the ellipse
+        // boundary lands one ulp off and the iceberg scrambles.
+        ((f64::from(x_offset - origin.x()) * jvm_trig::cos(angle)
+            - f64::from(z_offset - origin.z()) * jvm_trig::sin(angle))
             / f64::from(a))
         .powi(2)
-            + ((f64::from(x_offset - origin.x()) * angle.sin()
-                + f64::from(z_offset - origin.z()) * angle.cos())
+            + ((f64::from(x_offset - origin.x()) * jvm_trig::sin(angle)
+                + f64::from(z_offset - origin.z()) * jvm_trig::cos(angle))
                 / f64::from(c))
             .powi(2)
             - 1.0

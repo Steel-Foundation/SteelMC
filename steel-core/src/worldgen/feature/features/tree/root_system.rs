@@ -41,7 +41,7 @@ impl FeatureDecorationRunner {
     ) -> bool {
         for y in 0..config.root_column_max_height {
             *tree_pos = tree_pos.above();
-            if region.height_at(HeightmapType::WorldSurfaceWg, tree_pos.x(), tree_pos.z())
+            if region.height_at(HeightmapType::WorldSurface, tree_pos.x(), tree_pos.z())
                 < tree_pos.y()
             {
                 return false;
@@ -222,10 +222,9 @@ impl FeatureDecorationRunner {
             );
             let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
             if behavior.can_survive(state, region, pos) && {
-                let above_pos = pos.above();
                 region
-                    .block_state(above_pos)
-                    .is_face_sturdy_at(above_pos, Direction::Down)
+                    .block_state(pos.above())
+                    .is_face_sturdy_at(pos, Direction::Down)
             } {
                 let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS);
             }

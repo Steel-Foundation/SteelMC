@@ -1,5 +1,6 @@
 //! Vanilla Sheep entity with wool color, shearing, and breeding parity.
-use std::sync::{Arc, Weak};
+use crate::world::ServerLevelAccessor;
+use std::sync::Weak;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -19,7 +20,6 @@ use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_loot_tables;
 use steel_registry::{DyeColor, REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey};
 
@@ -481,19 +481,20 @@ impl Mob for SheepEntity {
 
     fn finalize_spawn(
         &self,
-        world: &Arc<World>,
+        level: &mut dyn ServerLevelAccessor,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
-        let mut random = LegacyRandom::from_seed(rand::random());
-        let color = match world.biome_at(self.block_position()) {
-            Some(biome) => SheepEntity::random_sheep_color(biome, &mut random),
-            None => TEMPERATE_SPAWN_CONFIGURATION.get(&mut random),
+        let biome = level.biome(self.block_position());
+        let random = level.random();
+        let color = match biome {
+            Some(biome) => SheepEntity::random_sheep_color(biome, random),
+            None => TEMPERATE_SPAWN_CONFIGURATION.get(random),
         };
 
         self.set_color(color);
 
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(level, spawn_reason, group_data)
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

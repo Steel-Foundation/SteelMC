@@ -40,7 +40,13 @@ impl StructurePiecePlacer {
             portal_box,
             random,
         );
-        Self::add_ruined_portal_netherrack_drip_columns(region, properties, portal_box, random);
+        Self::add_ruined_portal_netherrack_drip_columns(
+            region,
+            vertical_placement,
+            properties,
+            portal_box,
+            random,
+        );
 
         if !properties.vines && !properties.overgrown {
             return;
@@ -110,6 +116,7 @@ impl StructurePiecePlacer {
 
     fn add_ruined_portal_netherrack_drip_columns(
         region: &mut WorldGenRegion<'_>,
+        vertical_placement: RuinedPortalPlacementData,
         properties: RuinedPortalProperties,
         portal_box: BoundingBox,
         random: &mut WorldgenRandom,
@@ -120,6 +127,7 @@ impl StructurePiecePlacer {
                 if region.block_state(pos).get_block() == &vanilla_blocks::NETHERRACK {
                     Self::add_ruined_portal_netherrack_drip_column(
                         region,
+                        vertical_placement,
                         properties,
                         pos.below(),
                         random,
@@ -131,17 +139,30 @@ impl StructurePiecePlacer {
 
     fn add_ruined_portal_netherrack_drip_column(
         region: &mut WorldGenRegion<'_>,
+        vertical_placement: RuinedPortalPlacementData,
         properties: RuinedPortalProperties,
         pos: BlockPos,
         random: &mut WorldgenRandom,
     ) {
         let mut current = pos;
-        Self::place_ruined_portal_netherrack_or_magma(region, properties, current, random);
+        Self::place_ruined_portal_netherrack_or_magma(
+            region,
+            vertical_placement,
+            properties,
+            current,
+            random,
+        );
         let mut remaining_cap = 8;
         while remaining_cap > 0 && random.next_f32() < 0.5 {
             current = current.below();
             remaining_cap -= 1;
-            Self::place_ruined_portal_netherrack_or_magma(region, properties, current, random);
+            Self::place_ruined_portal_netherrack_or_magma(
+                region,
+                vertical_placement,
+                properties,
+                current,
+                random,
+            );
         }
     }
 
@@ -192,12 +213,19 @@ impl StructurePiecePlacer {
                     continue;
                 }
 
-                Self::place_ruined_portal_netherrack_or_magma(region, properties, pos, random);
+                Self::place_ruined_portal_netherrack_or_magma(
+                    region,
+                    vertical_placement,
+                    properties,
+                    pos,
+                    random,
+                );
                 if properties.overgrown {
                     Self::maybe_add_ruined_portal_leaves(region, pos, random);
                 }
                 Self::add_ruined_portal_netherrack_drip_column(
                     region,
+                    vertical_placement,
                     properties,
                     pos.below(),
                     random,
@@ -231,10 +259,18 @@ impl StructurePiecePlacer {
 
     fn place_ruined_portal_netherrack_or_magma(
         region: &mut WorldGenRegion<'_>,
+        vertical_placement: RuinedPortalPlacementData,
         properties: RuinedPortalProperties,
         pos: BlockPos,
         random: &mut WorldgenRandom,
     ) {
+        if !Self::can_replace_with_ruined_portal_netherrack_or_magma(
+            region,
+            vertical_placement,
+            pos,
+        ) {
+            return;
+        }
         let state = if !properties.cold && random.next_f32() < 0.07 {
             vanilla_blocks::MAGMA_BLOCK.default_state()
         } else {

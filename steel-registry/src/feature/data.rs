@@ -62,7 +62,6 @@ pub enum ConfiguredFeatureKind {
     CoralClaw {
         feature: PlacedFeatureRef,
     },
-    CoralMushroom,
     CoralTree {
         feature: PlacedFeatureRef,
     },

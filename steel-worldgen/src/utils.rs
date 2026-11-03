@@ -2,7 +2,7 @@ use crate::density::traits::ColumnCache;
 use crate::density::traits::NoiseSettings;
 use crate::{
     density::DimensionNoises,
-    noise::{Aquifer, AquiferResult, preliminary_surface_level},
+    noise::{Aquifer, AquiferResult},
 };
 
 #[inline]
@@ -42,24 +42,6 @@ fn interpolate_cell_value(
     value
 }
 
-/// `getBaseHeight(WORLD_SURFACE_WG)`-compatible height scan. Uses
-/// `preliminary_surface_level + 16` as an upper bound to avoid scanning empty
-/// upper atmosphere, and the cell-based iterator so 8-corner density
-/// evaluations are shared across Y values in each cell.
-///
-/// Exposed for `GenerationContext`.
-pub(crate) fn column_base_height<N: DimensionNoises>(
-    cache: &mut N::ColumnCache,
-    noises: &N,
-    aquifer: &mut Aquifer<N>,
-    x: i32,
-    z: i32,
-    ocean_floor: bool,
-) -> i32 {
-    let estimate = preliminary_surface_level::<N>(noises, cache, x, z);
-    let max_y = (estimate + 16).min(N::Settings::MIN_Y + N::Settings::HEIGHT - 1);
-    iterate_noise_column_capped::<N>(cache, noises, aquifer, x, z, max_y, ocean_floor)
-}
 /// Single-point `getInterpolatedDensity`. Exposed for `GenerationContext`.
 pub(crate) fn column_interpolated_density<N: DimensionNoises>(
     cache: &mut N::ColumnCache,
@@ -240,9 +222,7 @@ pub(crate) fn iterate_noise_column_with_aquifer<N: DimensionNoises>(
 }
 
 /// Same as `iterate_noise_column_with_aquifer` but only scans Y values up to
-/// `max_y_inclusive`. Used by `base_height` with an estimate from
-/// `preliminary_surface_level + 16` to skip empty upper atmosphere — reducing
-/// cell-corner density evaluations from O(height) to `O(estimate_depth)`.
+/// `max_y_inclusive`.
 #[expect(
     clippy::too_many_lines,
     reason = "inlines 8-corner density buffers + interpolation to match vanilla's iterateNoiseColumn fast path"

@@ -1,5 +1,6 @@
 use super::*;
 use crate::entity::leash::{LeashAttachment, Leashable};
+use std::sync::Arc;
 
 #[test]
 fn pig_saves_vanilla_mob_age_and_variant_data() {

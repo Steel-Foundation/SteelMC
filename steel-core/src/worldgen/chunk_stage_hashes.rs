@@ -101,8 +101,14 @@ const STAGES: &[&str] = &["minecraft:terrain", "minecraft:features", "minecraft:
 /// `-DMC_DEBUG_DISABLE_STRUCTURES=true`.
 const GENERATE_STRUCTURES: bool = true;
 
-/// Max block-level diffs to show per chunk before truncating.
-const MAX_DIFFS_PER_CHUNK: usize = 30;
+/// Max block-level diffs to show per chunk before truncating; `STEEL_HASH_MAX_DIFFS`
+/// raises it for a focused investigation.
+fn max_diffs_per_chunk() -> usize {
+    env::var("STEEL_HASH_MAX_DIFFS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(30)
+}
 
 /// Set specific chunk coordinates to test only those chunks.
 /// When non-empty, only these chunks are generated and checked (ignores the JSON list).
@@ -201,7 +207,12 @@ fn debug_stage_filter() -> Option<String> {
         .filter(|stage| !stage.is_empty())
 }
 
-fn empty_proto_chunk(pos: (i32, i32), section_count: usize, min_y: i32, height: i32) -> Chunk {
+pub(super) fn empty_proto_chunk(
+    pos: (i32, i32),
+    section_count: usize,
+    min_y: i32,
+    height: i32,
+) -> Chunk {
     let sections: Box<[ChunkSection]> = (0..section_count)
         .map(|_| ChunkSection::new_empty())
         .collect::<Vec<_>>()
@@ -215,14 +226,14 @@ fn empty_proto_chunk(pos: (i32, i32), section_count: usize, min_y: i32, height: 
     )
 }
 
-fn chunk_or_panic(chunks: &FxHashMap<(i32, i32), Chunk>, pos: (i32, i32)) -> &Chunk {
+pub(super) fn chunk_or_panic(chunks: &FxHashMap<(i32, i32), Chunk>, pos: (i32, i32)) -> &Chunk {
     match chunks.get(&pos) {
         Some(chunk) => chunk,
         None => panic!("Missing test chunk ({}, {})", pos.0, pos.1),
     }
 }
 
-fn create_test_world(
+pub(super) fn create_test_world(
     dim_key: &str,
     dim_type: DimensionTypeRef,
     seed: u64,
@@ -299,7 +310,7 @@ fn build_feature_holders(
     holders
 }
 
-fn compute_block_hash(sections: &Sections) -> String {
+pub(super) fn compute_block_hash(sections: &Sections) -> md5::Digest {
     let mut ctx = md5::Context::new();
 
     for section_holder in &sections.sections {
@@ -338,11 +349,11 @@ fn compute_block_hash(sections: &Sections) -> String {
         }
     }
 
-    format!("{:x}", ctx.finalize())
+    ctx.finalize()
 }
 
 /// Per-chunk reference block data from the extractor binary.
-struct ChunkBlockData {
+pub(super) struct ChunkBlockData {
     /// Sections, each None (all air) or Some(4096 state IDs in YZX order).
     sections: Vec<Option<Vec<i32>>>,
 }
@@ -367,7 +378,12 @@ fn load_reference_blocks(
         "{}/test_assets/chunk_stage_{dim_short}_{short_name}_blocks.bin.gz",
         env!("CARGO_MANIFEST_DIR"),
     );
-    let compressed = fs::read(&path).ok()?;
+    read_reference_blocks(&path)
+}
+
+/// Reads a reference block dump in the format documented on [`load_reference_blocks`].
+pub(super) fn read_reference_blocks(path: &str) -> Option<FxHashMap<(i32, i32), ChunkBlockData>> {
+    let compressed = fs::read(path).ok()?;
 
     let decoder = GzDecoder::new(Cursor::new(compressed));
     let mut buf = Vec::new();
@@ -517,7 +533,7 @@ fn load_reference_lights(dim_short: &str) -> Option<FxHashMap<(i32, i32), Refere
 }
 
 /// Format a state ID as "id (`block_name`[props])" for human-readable output.
-fn describe_state(state_id: i32) -> String {
+pub(super) fn describe_state(state_id: i32) -> String {
     use steel_registry::REGISTRY;
     use steel_utils::types::BlockStateId;
 
@@ -534,7 +550,7 @@ fn describe_state(state_id: i32) -> String {
     }
 }
 
-struct BlockDiff {
+pub(super) struct BlockDiff {
     x: usize,
     y: i32,
     z: usize,
@@ -543,7 +559,11 @@ struct BlockDiff {
 }
 
 /// Compare a chunk's sections against reference data, returning block-level diffs.
-fn diff_chunk(sections: &Sections, reference: &ChunkBlockData, min_y: i32) -> Vec<BlockDiff> {
+pub(super) fn diff_chunk(
+    sections: &Sections,
+    reference: &ChunkBlockData,
+    min_y: i32,
+) -> Vec<BlockDiff> {
     let mut diffs = Vec::new();
 
     for (si, section_holder) in sections.sections.iter().enumerate() {
@@ -620,7 +640,12 @@ fn diff_chunk(sections: &Sections, reference: &ChunkBlockData, min_y: i32) -> Ve
 }
 
 /// Format block diffs into a human-readable report for a single chunk.
-fn format_chunk_diffs(diffs: &[BlockDiff], chunk_x: i32, chunk_z: i32, min_y: i32) -> String {
+pub(super) fn format_chunk_diffs(
+    diffs: &[BlockDiff],
+    chunk_x: i32,
+    chunk_z: i32,
+    min_y: i32,
+) -> String {
     let mut msg = format!(
         "  Chunk ({chunk_x:3},{chunk_z:3}): {} block differences\n",
         diffs.len()
@@ -648,7 +673,7 @@ fn format_chunk_diffs(diffs: &[BlockDiff], chunk_x: i32, chunk_z: i32, min_y: i3
         );
 
         for d in section_diffs {
-            if shown >= MAX_DIFFS_PER_CHUNK {
+            if shown >= max_diffs_per_chunk() {
                 let remaining = diffs.len() - shown;
                 let _ = writeln!(msg, "      ... and {remaining} more");
                 return msg;
@@ -732,7 +757,7 @@ const fn light_value(bytes: &[u8], index: usize) -> u8 {
 
 fn push_light_diff(diffs: &mut LightDiffs, line: String) {
     diffs.total += 1;
-    if diffs.lines.len() < MAX_DIFFS_PER_CHUNK {
+    if diffs.lines.len() < max_diffs_per_chunk() {
         diffs.lines.push(line);
     }
 }
@@ -1542,7 +1567,7 @@ fn chunk_stage_hashes_inner() {
                     let Some(chunk) = holder.try_chunk(ChunkStatus::Terrain) else {
                         panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
                     };
-                    compute_block_hash(&chunk.sections)
+                    format!("{:x}", compute_block_hash(&chunk.sections))
                 } else if stage == LIGHT_STAGE {
                     let Some(holders) = &feature_holders else {
                         panic!("light stage missing chunk holders");
@@ -1557,7 +1582,7 @@ fn chunk_stage_hashes_inner() {
                 } else {
                     let chunk = chunk_or_panic(&chunks, (chunk_x, chunk_z));
 
-                    compute_block_hash(&chunk.sections)
+                    format!("{:x}", compute_block_hash(&chunk.sections))
                 };
 
                 let ok = actual_hash == expected_hash;

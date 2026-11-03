@@ -139,6 +139,7 @@ impl StructurePiecePlacer {
             projection: Some(projection),
             processor_random: StructureProcessorRandom::Positional,
             liquid_settings,
+            finalize_entities: true,
         };
 
         template.place_in_world(

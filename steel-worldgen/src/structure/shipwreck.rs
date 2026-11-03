@@ -97,15 +97,22 @@ impl Structure for ShipwreckStructure {
         structure: &StructureData,
         rng: &mut LegacyRandom,
     ) -> Option<GenerationStub> {
-        let surface_y = ctx.surface_y();
-        let biome = ctx.biome_at(ctx.center_block_x(), surface_y, ctx.center_block_z());
+        let StructureConfigData::Shipwreck { is_beached } = &structure.config else {
+            return None;
+        };
+        if !ctx.could_valid_biome_exist_on_top_of_chunk_center(&structure.allowed_biomes) {
+            return None;
+        }
+        let start_y = if *is_beached {
+            ctx.surface_y()
+        } else {
+            ctx.base_height(ctx.center_block_x(), ctx.center_block_z(), true) - 1
+        };
+        let biome = ctx.biome_at(ctx.center_block_x(), start_y, ctx.center_block_z());
         if !structure.allowed_biomes.contains(&biome.key) {
             return None;
         }
 
-        let StructureConfigData::Shipwreck { is_beached } = &structure.config else {
-            return None;
-        };
         let templates_arr = if *is_beached { BEACHED } else { OCEAN };
 
         let rotation = Rotation::get_random(rng);
@@ -115,7 +122,7 @@ impl Structure for ShipwreckStructure {
         let position = IVec3::new(ctx.chunk_min_x(), 90, ctx.chunk_min_z());
 
         Some(GenerationStub {
-            position: (ctx.center_block_x(), surface_y, ctx.center_block_z()),
+            position: (ctx.center_block_x(), start_y, ctx.center_block_z()),
             pieces: vec![make_shipwreck_piece(
                 template_id,
                 position,

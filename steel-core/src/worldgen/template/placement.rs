@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::EntitySpawnReason;
 use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270, wrap_degrees};
 
 impl StructureTemplate {
@@ -257,7 +258,7 @@ impl StructureTemplate {
             if let Some(mut nbt) = processed.nbt {
                 let block_entity_type =
                     Self::block_entity_type_for_nbt_or_state(registry, final_state, &nbt);
-                if Self::should_reseed_template_loot(block_entity_type, &nbt) {
+                if Self::should_reseed_template_loot(block_entity_type) {
                     nbt.insert("LootTableSeed", NbtTag::Long(random.next_i64()));
                 }
                 Self::place_block_entity(
@@ -381,8 +382,15 @@ impl StructureTemplate {
                 },
                 &nbt,
             ) else {
+                // Vanilla still finalizes types Steel cannot create yet, so their
+                // region-random draws are missing until those mobs exist.
                 continue;
             };
+            if settings.finalize_entities
+                && let Some(mob) = runtime_entity.as_mob()
+            {
+                let _ = mob.finalize_spawn(region, EntitySpawnReason::Structure, None);
+            }
             let _ = region.add_fresh_entity(runtime_entity);
         }
     }
@@ -724,12 +732,12 @@ impl StructureTemplate {
         None
     }
 
+    /// Vanilla draws a `LootTableSeed` for every randomizable container it places,
+    /// whether or not the NBT names a loot table, so the shared random stays in step.
     pub(super) fn should_reseed_template_loot(
         block_entity_type: Option<BlockEntityTypeRef>,
-        nbt: &NbtCompound,
     ) -> bool {
-        nbt.contains("LootTable")
-            && block_entity_type.is_some_and(Self::is_randomizable_container_block_entity)
+        block_entity_type.is_some_and(Self::is_randomizable_container_block_entity)
     }
 
     pub(super) fn is_randomizable_container_block_entity(
@@ -744,5 +752,6 @@ impl StructureTemplate {
             || key == &vanilla_block_entity_types::HOPPER.key
             || key == &vanilla_block_entity_types::SHULKER_BOX.key
             || key == &vanilla_block_entity_types::CRAFTER.key
+            || key == &vanilla_block_entity_types::DECORATED_POT.key
     }
 }
