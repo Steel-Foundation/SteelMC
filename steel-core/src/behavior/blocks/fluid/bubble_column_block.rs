@@ -41,7 +41,7 @@ impl BubbleColumnBlock {
 
     pub(super) fn update_column(
         bubble_column: BlockRef,
-        level: &dyn LevelAccessor,
+        level: &(impl LevelAccessor + ?Sized),
         occupy_at: BlockPos,
         below_state: BlockStateId,
     ) {
@@ -56,7 +56,7 @@ impl BubbleColumnBlock {
 
     fn update_column_with_state(
         bubble_column: BlockRef,
-        level: &dyn LevelAccessor,
+        level: &(impl LevelAccessor + ?Sized),
         occupy_at: BlockPos,
         occupy_state: BlockStateId,
         below_state: BlockStateId,
@@ -133,7 +133,7 @@ impl BubbleColumnBlock {
         state: BlockStateId,
         level: &dyn LevelReader,
         pos: BlockPos,
-        entity: &dyn Entity,
+        entity: &(impl Entity + ?Sized),
         is_precise: bool,
     ) {
         if !is_precise {
