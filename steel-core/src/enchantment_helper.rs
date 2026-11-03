@@ -211,7 +211,7 @@ pub(crate) fn do_post_attack_effects_from_item(
 
 pub(crate) fn do_post_attack_effects_with_item_source(
     world: &World,
-    victim: &dyn Entity,
+    victim: &(impl Entity + ?Sized),
     source: &ItemStack,
     context: &EnchantmentPostAttackContext<'_>,
 ) {

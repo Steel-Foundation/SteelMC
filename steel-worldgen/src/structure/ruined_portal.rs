@@ -123,8 +123,8 @@ pub fn find_generation_point(
     chunk_z: i32,
     setups: &[RuinedPortalSetupData],
     min_y: i32,
-    templates: &mut dyn FnMut(&Identifier) -> Option<[i32; 3]>,
-    terrain: &mut dyn FnMut(TerrainQuery) -> TerrainResult,
+    templates: &mut (impl FnMut(&Identifier) -> Option<[i32; 3]> + ?Sized),
+    terrain: &mut (impl FnMut(TerrainQuery) -> TerrainResult + ?Sized),
 ) -> Option<PortalResult> {
     if setups.is_empty() {
         return None;
