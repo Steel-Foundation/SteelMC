@@ -281,7 +281,7 @@ impl Server {
         player.reset(Arc::clone(&state.world), ResetReason::InitialJoin);
         Self::apply_domain_player_state(&player, &state);
         let residence_token = player.domain_residence_token();
-        let restores = self.prepare_domain_restores(&player, &state);
+        let restores = self.prepare_domain_restores(&player, &state, true);
         if !Self::install_domain_restores(&player, residence_token, &restores) {
             tracing::error!(
                 player = %player.gameprofile.name(),

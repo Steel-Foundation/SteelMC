@@ -241,7 +241,7 @@ pub enum StatePropertyValueMatcher {
 }
 
 impl StatePropertyValueMatcher {
-    fn matches(&self, property: &dyn Property, actual: &str) -> bool {
+    fn matches(&self, property: &(impl Property + ?Sized), actual: &str) -> bool {
         match self {
             Self::Exact(expected) => {
                 property.compare_value_names(actual, expected) == Some(Ordering::Equal)
