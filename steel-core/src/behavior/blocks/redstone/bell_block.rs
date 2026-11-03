@@ -56,7 +56,11 @@ impl BellBlock {
         }
     }
 
-    fn has_support(world: &dyn LevelReader, pos: BlockPos, direction: Direction) -> bool {
+    fn has_support(
+        world: &(impl LevelReader + ?Sized),
+        pos: BlockPos,
+        direction: Direction,
+    ) -> bool {
         let support_pos = pos.relative(direction);
         let support = world.get_block_state(support_pos);
 
