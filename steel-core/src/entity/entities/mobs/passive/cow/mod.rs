@@ -76,7 +76,9 @@ unsafe impl DowncastType for CowEntity {
 
 impl CowEntity {
     /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
-    pub(crate) const SPAWN_RULE: SpawnRule = <Self as Animal>::check_animal_spawn_rules;
+    pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, random| {
+        <Self as Animal>::check_animal_spawn_rules(entity_type, level, spawn_reason, pos, random)
+    };
 
     /// Creates a new cow at runtime.
     #[must_use]

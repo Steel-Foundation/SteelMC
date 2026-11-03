@@ -193,7 +193,7 @@ pub trait Animal: AgeableMob {
     }
 
     /// Returns whether light at `pos` is bright enough for an animal to naturally spawn.
-    fn is_bright_enough_to_spawn(level: &dyn LevelReader, pos: BlockPos) -> bool
+    fn is_bright_enough_to_spawn(level: &(impl LevelReader + ?Sized), pos: BlockPos) -> bool
     where
         Self: Sized,
     {
@@ -205,7 +205,7 @@ pub trait Animal: AgeableMob {
     /// the spawn reason ignores light requirements.
     fn check_animal_spawn_rules(
         _entity_type: EntityTypeRef,
-        level: &dyn LevelReader,
+        level: &(impl LevelReader + ?Sized),
         spawn_reason: EntitySpawnReason,
         pos: BlockPos,
         _random: &mut dyn Rng,

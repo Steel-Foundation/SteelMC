@@ -55,12 +55,12 @@ impl ScaffoldingBlock {
         Self { block }
     }
 
-    fn is_bottom(&self, world: &dyn LevelReader, pos: BlockPos, distance: u8) -> bool {
+    fn is_bottom(&self, world: &(impl LevelReader + ?Sized), pos: BlockPos, distance: u8) -> bool {
         distance > 0 && world.get_block_state(pos.below()).get_block() != self.block
     }
 
     /// Calculates the stability distance from the scaffolding block to its support.
-    pub(crate) fn get_distance(world: &dyn LevelReader, pos: BlockPos) -> u8 {
+    pub(crate) fn get_distance(world: &(impl LevelReader + ?Sized), pos: BlockPos) -> u8 {
         let below_pos = pos.below();
         let below_state = world.get_block_state(below_pos);
         let mut distance = Self::STABILITY_MAX_DISTANCE;
