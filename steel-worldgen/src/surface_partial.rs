@@ -1,11 +1,5 @@
-//! Partial evaluation of a surface rule below the preliminary surface.
-//!
-//! Below a column's preliminary surface level, most of a vanilla surface rule
-//! is decided by the block's Y and its biome's `biome_is` memberships alone.
-//! The transpiler emits the rule tree as [`PartialSurfaceRule`], keeping only
-//! conditions decidable from those inputs; everything else is
-//! [`PartialSurfaceCondition::Opaque`]. Resolving it per biome class and Y
-//! tells the caller whether the full rule is needed for a block at all.
+//! resolve surface rules below the preliminary surface from y and biome sets
+//! anything undecidable stays opaque and falls back to the full rule
 
 /// A surface rule tree reduced to what is decidable below the preliminary surface.
 #[derive(Debug)]
@@ -55,12 +49,8 @@ pub enum PartialSurfaceOutcome {
 }
 
 impl PartialSurfaceRule {
-    /// Resolves the rule for a block below the preliminary surface at `block_y`
-    /// whose biome belongs to exactly the `biome_is` sets in `biome_set_mask`.
-    ///
-    /// Mirrors the generated rule's control flow: a sequence returns its first
-    /// placing child, and an undecidable condition only matters when its body
-    /// could place something.
+    /// resolve below the preliminary surface using y and biome memberships
+    /// first placing child wins; unknown conditions matter only if their body can place
     #[must_use]
     pub fn resolve(&self, block_y: i32, biome_set_mask: u64) -> PartialSurfaceOutcome {
         match self {

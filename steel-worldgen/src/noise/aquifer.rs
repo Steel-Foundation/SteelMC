@@ -505,20 +505,16 @@ impl<N: DimensionNoises> Aquifer<N> {
         ((y * self.grid_size_z + z) * self.grid_size_x + x) as usize
     }
 
-    /// Refill the 12-cell column cache for the current `(world_x, world_z, y_anchor)`.
-    ///
-    /// Iterates the same `(x1, y1, z1)` order as the inline scan so cells are
-    /// stored at consistent indices, preserving tie-breaking when the per-Y
-    /// `new_dist` values are compared in `compute_substance`.
-    /// The status of the 12 cached neighborhood cells if they all agree.
+    /// shared status if every cached neighbor agrees
     fn uniform_cell_status(&mut self, noises: &N) -> Option<FluidStatus> {
         let first = self.get_aquifer_status(self.col_cache.cell_idx[0] as usize, noises);
-        for i in 1..12 {
+        for i in 1..self.col_cache.cell_idx.len() {
             let index = self.col_cache.cell_idx[i] as usize;
             if self.get_aquifer_status(index, noises) != first {
                 return None;
             }
         }
+
         Some(first)
     }
 
@@ -537,6 +533,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         below.fluid_type == self.lava_id && (world_y - 1) < below.fluid_level
     }
 
+    /// refill in x/y/z order to keep nearest-cell ties unchanged
     fn refill_col_cache(&mut self, world_x: i32, world_y: i32, world_z: i32) -> i32 {
         let x_anchor = grid_x(world_x + SAMPLE_OFFSET_X);
         let y_anchor = grid_y(world_y + SAMPLE_OFFSET_Y);
@@ -649,11 +646,8 @@ impl<N: DimensionNoises> Aquifer<N> {
             self.col_cache.uniform_status = self.uniform_cell_status(noises);
         }
 
-        // When all 12 candidate cells share one status, the 4 nearest do too,
-        // and every remaining branch collapses to that status with no fluid
-        // update: equal statuses give zero barrier pressure (the barrier noise
-        // is never sampled) and no flow between cells. Water over global lava
-        // is the one branch that differs, so it takes the full path.
+        // equal statuses mean zero pressure and no fluid update
+        // water over global lava still needs the full path
         if let Some(status) = self.col_cache.uniform_status {
             let fluid_at = status.at(world_y);
             if !self.is_water_over_global_lava(fluid_at, world_y) {
@@ -668,9 +662,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         self.compute_substance_sampled(noises, world_x, world_y, world_z, density)
     }
 
-    /// Nearest-cell selection and barrier evaluation for a block whose column
-    /// cache is current. Matches the remainder of vanilla's
-    /// `NoiseBasedAquifer.computeSubstance`.
+    /// nearest cells and barriers; the column cache must be current
     #[expect(
         clippy::too_many_lines,
         reason = "splitting would hurt readability of the aquifer sampling logic"
@@ -837,10 +829,8 @@ impl<N: DimensionNoises> Aquifer<N> {
         }
     }
 
-    /// Lowest world Y from which [`Self::compute_substance`] returns `Air` for
-    /// every non-positive density without sampling the aquifer. Callers may
-    /// skip such blocks entirely: the only state that call would touch is the
-    /// fluid-update flag, which every call reassigns before it is read.
+    /// first y where every non-positive density gives air without sampling
+    /// safe to skip: only the fluid-update flag changes, and each call resets it
     #[must_use]
     pub fn unsampled_air_min_y(&self) -> i32 {
         // The global fluid picker places fluid only below its level: lava below

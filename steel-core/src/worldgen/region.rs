@@ -165,11 +165,13 @@ impl WorldGenAccessMode {
     }
 }
 
-/// A chunk already reached by [`WorldGenRegion::any_height_at_least`].
+// keep four probed chunks inline bigger scans spill to the heap
+const INLINE_PROBED_HEIGHT_CHUNKS: usize = 4;
+
+/// a chunk already reached by the height scan
 struct ProbedHeightChunk {
     chunk: (i32, i32),
-    /// Copied cached columns; `None` keeps per-column lookups (e.g. a
-    /// read-only full chunk, whose heightmap is never cached).
+    /// no cached columns means regular lookups including readonly full chunks
     columns: Option<[i32; 256]>,
 }
 
@@ -746,15 +748,8 @@ impl<'a> WorldGenRegion<'a> {
         })
     }
 
-    /// Whether any column in the inclusive block rectangle has a height of at
-    /// least `min_height`.
-    ///
-    /// Equivalent to probing [`Self::height_at`] for every column in x-then-z
-    /// order and stopping at the first match, which is how vanilla
-    /// `OreFeature.place` gates its placement. The first probe landing in each
-    /// chunk still goes through `height_at`, so chunks are touched and their
-    /// heightmap caches filled in the same order; later probes read a copy of
-    /// that chunk's cached columns instead of repeating the lookup.
+    /// any column in this inclusive rectangle reaching `min_height`
+    /// scans x then z the first lookup per chunk keeps normal access and cache order
     #[must_use]
     pub fn any_height_at_least(
         &self,
@@ -763,7 +758,8 @@ impl<'a> WorldGenRegion<'a> {
         (max_x, max_z): (i32, i32),
         min_height: i32,
     ) -> bool {
-        let mut probed: SmallVec<[ProbedHeightChunk; 4]> = SmallVec::new();
+        let mut probed: SmallVec<[ProbedHeightChunk; INLINE_PROBED_HEIGHT_CHUNKS]> =
+            SmallVec::new();
 
         for x in min_x..=max_x {
             for z in min_z..=max_z {
@@ -795,8 +791,7 @@ impl<'a> WorldGenRegion<'a> {
         false
     }
 
-    /// Copy of the region-cached heightmap columns for a writable proto chunk,
-    /// if `height_at` has cached them.
+    /// copy the proto chunk columns if `height_at` already cached them
     fn cached_proto_columns(
         &self,
         heightmap_type: HeightmapType,
@@ -812,6 +807,7 @@ impl<'a> WorldGenRegion<'a> {
         if !writable {
             return None;
         }
+
         let heightmaps = self.worldgen_heightmaps.borrow();
         heightmaps.get(cache_index)?.get(heightmap_type).copied()
     }

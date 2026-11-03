@@ -20,6 +20,7 @@ use crate::noise::{Beardifier, CornerColumnStore};
 
 /// Maximum number of interpolation channels supported.
 const MAX_INTERP: usize = 16;
+const INTERPOLATION_LANES: usize = 4;
 
 /// Maximum slice length (`z_corners` * `corners_y`) across all dimensions.
 /// Overworld: (16/4+1) * (384/8+1) = 5 * 49 = 245. Rounded up for headroom.
@@ -320,12 +321,12 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         let y_count = cell_height as usize;
         debug_assert!(y_count <= MAX_CELL_HEIGHT);
         let inverse_height = f32x4::splat(1.0 / cell_height as f32);
-        let channel_batches = interp_count.div_ceil(4);
+        let channel_batches = interp_count.div_ceil(INTERPOLATION_LANES);
         let all_batches = (1_usize << channel_batches) - 1;
         let proving_batches = air_channels.map_or(0, |channels| {
-            channels
-                .iter()
-                .fold(0, |mask, &channel| mask | (1 << (channel / 4)))
+            channels.iter().fold(0, |mask, &channel| {
+                mask | (1 << (channel / INTERPOLATION_LANES))
+            })
         });
 
         // Reuse Z partials across X without changing vanilla's Z/X/Y arithmetic.
@@ -372,7 +373,9 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                         let i0 = (z0_base + corner_y) * MAX_INTERP;
                         let i1 = (z1_base + corner_y) * MAX_INTERP;
                         let row = (z_in_cell * corners_y + corner_y) * channel_batches;
-                        for (batch, channel) in (0..interp_count).step_by(4).enumerate() {
+                        for (batch, channel) in
+                            (0..interp_count).step_by(INTERPOLATION_LANES).enumerate()
+                        {
                             let corner = |slice: &[f32], base| {
                                 // SAFETY: construction bounds the corner count by
                                 // MAX_SLICE_LEN and interp_count by MAX_INTERP.
@@ -380,9 +383,12 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                 // MAX_INTERP is a multiple of four, so the padded
                                 // final batch also stays inside its corner.
                                 f32x4::from_slice(unsafe {
-                                    slice.get_unchecked(base + channel..base + channel + 4)
+                                    slice.get_unchecked(
+                                        base + channel..base + channel + INTERPOLATION_LANES,
+                                    )
                                 })
                             };
+
                             let left0 = corner(s0, i0);
                             let left1 = corner(s0, i1);
                             let right0 = corner(s1, i0);
@@ -409,8 +415,10 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                 (z_in_cell as usize * corners_y + cell_y_idx) * channel_batches;
                             let mut values_by_y = [[0.0_f32; MAX_INTERP]; MAX_CELL_HEIGHT];
 
-                            if N::interpolated_count() <= 4 {
-                                for (batch, channel) in (0..interp_count).step_by(4).enumerate() {
+                            if N::interpolated_count() <= INTERPOLATION_LANES {
+                                for (batch, channel) in
+                                    (0..interp_count).step_by(INTERPOLATION_LANES).enumerate()
+                                {
                                     let [v00, v10] = z_partials[row + batch];
                                     let [v01, v11] = z_partials[row + channel_batches + batch];
                                     let v0 = v00 + factor_x_v * (v10 - v00);
@@ -419,7 +427,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                     let mut value = v0 + step * f32x4::splat(0.0);
 
                                     for values in values_by_y.iter_mut().take(y_count) {
-                                        values[channel..channel + 4]
+                                        values[channel..channel + INTERPOLATION_LANES]
                                             .copy_from_slice(&value.to_array());
                                         value += step;
                                     }
@@ -438,8 +446,9 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                             } else {
                                 let fill_batches =
                                     |batches: usize, values_by_y: &mut [[f32; MAX_INTERP]]| {
-                                        for (batch, channel) in
-                                            (0..interp_count).step_by(4).enumerate()
+                                        for (batch, channel) in (0..interp_count)
+                                            .step_by(INTERPOLATION_LANES)
+                                            .enumerate()
                                         {
                                             if batches & (1 << batch) == 0 {
                                                 continue;
@@ -454,7 +463,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                             let mut value = v0 + step * f32x4::splat(0.0);
 
                                             for values in values_by_y.iter_mut().take(y_count) {
-                                                values[channel..channel + 4]
+                                                values[channel..channel + INTERPOLATION_LANES]
                                                     .copy_from_slice(&value.to_array());
                                                 value += step;
                                             }

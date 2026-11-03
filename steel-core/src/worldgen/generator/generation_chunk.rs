@@ -122,7 +122,7 @@ impl GenerationChunk<'_, TerrainPhase> {
             .write_block_batch_for_generation(ChunkStatus::Biomes, blocks);
     }
 
-    /// Writes a noise-fill column before its heightmaps are installed separately.
+    /// write a noise column heightmaps are installed separately
     #[inline]
     pub fn write_noise_column(self, x: usize, z: usize, blocks: &[(usize, BlockStateId)]) {
         self.chunk

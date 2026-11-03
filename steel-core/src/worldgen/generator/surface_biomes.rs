@@ -1,4 +1,4 @@
-//! Fuzzed biome lookups for the surface stage.
+//! fuzzed biome lookup for the surface stage
 
 use glam::IVec3;
 use rustc_hash::FxHashMap;
@@ -10,20 +10,16 @@ use steel_worldgen::surface_partial::PartialSurfaceOutcome;
 
 use super::vanilla::{get_fiddle, lcg_next};
 
-/// Partition of biome ids into classes.
+/// partition of biome ids into classes
 pub(super) struct SurfaceBiomeClasses {
     class_of: Box<[u16]>,
-    /// Rule outcome below the preliminary surface, `[class][y - min_y]`;
-    /// empty when the rule does not use the preliminary surface.
     below_preliminary: Box<[PartialSurfaceOutcome]>,
     min_y: i32,
     height: i32,
 }
 
 impl SurfaceBiomeClasses {
-    /// Classes for `N`'s surface rule: equal `biome_is` memberships, base
-    /// temperature and temperature modifier. `None` when the rule reads no
-    /// biome or tests more sets than the membership mask holds.
+    /// group by rule membership and temperature none if unused or too many sets
     pub(super) fn new<N: DimensionNoises>() -> Option<Self> {
         let sets = N::surface_rule_biome_sets();
         if !N::surface_rule_uses_biome() || sets.len() > u64::BITS as usize {
@@ -41,11 +37,13 @@ impl SurfaceBiomeClasses {
                     .enumerate()
                     .filter(|(_, set)| set.contains(&(id as u16)))
                     .fold(0u64, |mask, (bit, _)| mask | 1 << bit);
+
                 let key = (
                     mask,
                     biome.temperature.to_bits(),
                     matches!(biome.temperature_modifier, TemperatureModifier::Frozen),
                 );
+
                 let next = classes.len() as u16;
                 *classes.entry(key).or_insert_with(|| {
                     class_masks.push(mask);
@@ -65,6 +63,7 @@ impl SurfaceBiomeClasses {
         } else {
             Box::default()
         };
+
         Some(Self {
             class_of,
             below_preliminary,
@@ -97,7 +96,10 @@ pub(super) struct SurfaceQuartBiomes<'a> {
     ring: Box<[u16]>,
 }
 
-const RING_SIDE: i32 = 6;
+const QUARTS_PER_SECTION_SIDE: i32 = 4;
+const QUARTS_PER_SECTION_PLANE: i32 = QUARTS_PER_SECTION_SIDE * QUARTS_PER_SECTION_SIDE;
+const QUARTS_PER_SECTION: i32 = QUARTS_PER_SECTION_PLANE * QUARTS_PER_SECTION_SIDE;
+const RING_SIDE: i32 = QUARTS_PER_SECTION_SIDE + 2;
 const UNREAD: u16 = u16::MAX;
 
 impl<'a> SurfaceQuartBiomes<'a> {
@@ -109,7 +111,8 @@ impl<'a> SurfaceQuartBiomes<'a> {
         chunk_quart_z: i32,
         neighbor_biomes: &'a dyn Fn(IVec3) -> u16,
     ) -> Self {
-        let total_quarts_y = (section_count * 4) as i32;
+        let total_quarts_y = (section_count * QUARTS_PER_SECTION_SIDE as usize) as i32;
+
         Self {
             biome_data,
             chunk_quart_x,
@@ -130,20 +133,28 @@ impl<'a> SurfaceQuartBiomes<'a> {
         let local_qx = quart.x - self.chunk_quart_x;
         let local_qz = quart.z - self.chunk_quart_z;
 
-        if (0..4).contains(&local_qx) && (0..4).contains(&local_qz) {
-            let (section_idx, local_qy) = (qy / 4, qy % 4);
-            return self.biome_data
-                [(section_idx * 64 + local_qy * 16 + local_qz * 4 + local_qx) as usize];
+        if (0..QUARTS_PER_SECTION_SIDE).contains(&local_qx)
+            && (0..QUARTS_PER_SECTION_SIDE).contains(&local_qz)
+        {
+            let (section_idx, local_qy) =
+                (qy / QUARTS_PER_SECTION_SIDE, qy % QUARTS_PER_SECTION_SIDE);
+
+            return self.biome_data[(section_idx * QUARTS_PER_SECTION
+                + local_qy * QUARTS_PER_SECTION_PLANE
+                + local_qz * QUARTS_PER_SECTION_SIDE
+                + local_qx) as usize];
         }
 
         let (rx, rz) = (local_qx + 1, local_qz + 1);
         if !(0..RING_SIDE).contains(&rx) || !(0..RING_SIDE).contains(&rz) {
             return (self.neighbor_biomes)(quart);
         }
+
         let slot = &mut self.ring[((qy * RING_SIDE + rz) * RING_SIDE + rx) as usize];
         if *slot == UNREAD {
             *slot = (self.neighbor_biomes)(quart);
         }
+
         *slot
     }
 }
@@ -161,7 +172,7 @@ impl BiomeCandidate {
     }
 }
 
-/// Column-local cache for fuzzed biome lookups (vanilla `BiomeManager.getBiome()`).
+/// cache fuzzed biome lookups for one column
 pub(super) struct FuzzedBiomeColumn<'a, 'b> {
     quarts: &'a mut SurfaceQuartBiomes<'b>,
     classes: Option<&'a SurfaceBiomeClasses>,
@@ -208,8 +219,7 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
         }
     }
 
-    /// Compute candidates for a given `cy`, writing to either the low (bit1=0)
-    /// or high (bit1=1) slots.
+    /// fill the low or high y slots for this candidate group
     #[inline]
     fn compute_cy_group(&mut self, cy: i32, high: bool) {
         let base_idx = if high { 2 } else { 0 };
@@ -220,6 +230,7 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
             } else {
                 self.fract_x - 1.0
             };
+
             let rval_cy = lcg_next(self.rval_after_cx[cx_idx], i64::from(cy));
             for cz_off in 0..2usize {
                 let cz = self.parent_z + cz_off as i32;
@@ -248,10 +259,10 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
         }
     }
 
-    /// Recompute the 8 candidate fiddle values and X/Z distance for a new `parent_y`.
+    /// refresh candidates for this parent y
     fn recompute_candidates(&mut self, parent_y: i32) {
         if self.cached_parent_y != i32::MIN && parent_y == self.cached_parent_y - 1 {
-            // Reuse: old low-cy group → new high-cy group
+            // moving down: old low y becomes new high y
             self.candidates[2] = self.candidates[0];
             self.candidates[3] = self.candidates[1];
             self.candidates[6] = self.candidates[4];
@@ -261,10 +272,11 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
             self.compute_cy_group(parent_y, false);
             self.compute_cy_group(parent_y + 1, true);
         }
+
         self.cached_parent_y = parent_y;
     }
 
-    /// Exact fuzzed biome for a given `block_y` (vanilla `BiomeManager.getBiome`).
+    /// exact fuzzed biome at this y
     #[inline]
     pub(super) fn get(&mut self, block_y: i32) -> u16 {
         let abs_y = block_y - 2;
@@ -301,9 +313,7 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
         }
     }
 
-    /// What the surface rule does to a default block at `block_y`, known to be
-    /// below the column's preliminary surface, when decidable from Y and the
-    /// biome class of a uniform candidate group alone.
+    /// resolve below the preliminary surface using y and a shared biome class
     pub(super) fn below_preliminary_outcome(&mut self, block_y: i32) -> PartialSurfaceOutcome {
         let Some(classes) = self.classes else {
             return PartialSurfaceOutcome::Evaluate;
@@ -323,6 +333,7 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
             self.class_parent_y = parent_y;
             self.uniform_biome = self.uniform_candidate_biome(classes, parent_y);
         }
+
         self.uniform_biome
     }
 
@@ -335,7 +346,8 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
             .quarts
             .biome_at(IVec3::new(self.parent_x, parent_y, self.parent_z));
         let class = classes.class(first)?;
-        for i in 1..8 {
+
+        for i in 1..self.candidates.len() {
             let biome = self.quarts.biome_at(IVec3::new(
                 self.parent_x + i32::from(i & 4 != 0),
                 parent_y + i32::from(i & 2 != 0),
@@ -345,6 +357,7 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
                 return None;
             }
         }
+
         Some(first)
     }
 }

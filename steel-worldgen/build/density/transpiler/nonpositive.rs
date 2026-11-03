@@ -1,10 +1,6 @@
-//! Sign analysis of the interpolated final-density combine.
-//!
-//! Finds interpolated channels whose non-positivity proves the combined final
-//! density is not positive. The caller checks actual block values: Vanilla's
-//! repeated f32 additions can overshoot non-positive cell endpoints. The rules
-//! below only propagate signs through operations that provably keep them,
-//! mirroring the expressions emitted for `combine_interpolated`.
+//! find channels that prove final density is not positive
+//! check interpolated block values: repeated f32 additions can overshoot cell endpoints
+//! only propagate signs through operations that preserve them in the generated code
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
@@ -55,9 +51,8 @@ impl Condition {
     }
 }
 
-/// Channel indices (starting at `first_channel`) that, when `<= 0` at a block,
-/// prove `final_density > 0` is false there.
-/// `None` when the tree admits no such proof.
+/// channels whose non-positive block values prove final density is not positive
+/// indices start at `first_channel`; none if no proof is available
 ///
 /// # Panics
 /// Panics if the walk's channel numbering disagrees with
@@ -112,10 +107,8 @@ fn walk(
         DensityFunction::Mapped(m) => {
             let input = walk(&m.input, registry, next_channel);
             match m.op {
-                // `c / 2 - c³ / 24` with `c` in `[-1, 0]`: `c³ >= c`, so the
-                // result is at most `c * (1/2 - 1/24) <= 0`. Half/quarter
-                // negative scale `v <= 0` by a positive constant; cube keeps
-                // the sign.
+                // squeeze on [-1, 0]: c³ >= c, so c/2 - c³/24 <= 0
+                // positive scaling and cubing also keep the sign
                 MappedType::Squeeze
                 | MappedType::HalfNegative
                 | MappedType::QuarterNegative
@@ -135,10 +128,8 @@ fn walk(
                         channels: a.channels.union(&b.channels).copied().collect(),
                     })
                 }
-                // The codegen returns `a` when `a <= lower_bound(b)` or
-                // `a < b`, otherwise `b`. A proven right side stays proven:
-                // `a` is only chosen when below it. A proven left side can
-                // yield a NaN `b`, which is still not positive.
+                // codegen picks a if a <= lower_bound(b) or a < b, else b
+                // a proven right side stays proven; a proven left may yield NaN
                 TwoArgType::Min => {
                     let from_b = b.filter(|b| b.strength == Strength::NonPositive);
                     let from_a = a

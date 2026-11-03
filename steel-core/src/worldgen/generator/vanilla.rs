@@ -66,8 +66,7 @@ pub trait VanillaPostNoiseStateType: DimensionNoises + 'static {
     /// Recovers the concrete Aquifer at a later generation stage.
     fn post_noise_aquifer(state: &mut Self::State) -> &mut Aquifer<Self>;
 
-    /// gets the dense material ore y prefix starting at `Settings::MIN_Y` so like its height is [`DimensionNoises::material_ore_vein_value_height`];
-    /// higher positions cannot be accepted by any material ore rule
+    /// dense ore values from `Settings::MIN_Y`, up to `material_ore_vein_value_height`
     fn material_ore_vein_values(state: &mut Self::State) -> Arc<[f32]>;
 }
 
@@ -146,8 +145,7 @@ pub struct VanillaGenerator<N: DimensionNoises> {
     splitter: RandomSplitter,
     /// Preliminary surface levels shared by every aquifer this generator builds.
     preliminary_surface: Arc<PreliminarySurfaceStore>,
-    /// Noise cell-corner columns on chunk boundaries, handed to the neighbors
-    /// that share them.
+    /// boundary corner columns shared with neighbors
     corner_columns: CornerColumnStore,
     /// Ore vein generator for replacing stone with ore blocks.
     ore_veinifier: Option<OreVeinifier>,

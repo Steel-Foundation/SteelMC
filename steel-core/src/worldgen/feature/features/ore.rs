@@ -45,6 +45,7 @@ impl FeatureDecorationRunner {
         ) {
             return false;
         }
+
         Self::do_place_ore(
             region, registry, random, config, x0, x1, z0, z1, y0, y1, x_start, y_start, z_start,
             size_xz, size_y,

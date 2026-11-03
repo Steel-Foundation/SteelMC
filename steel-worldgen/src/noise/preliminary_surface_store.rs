@@ -1,19 +1,13 @@
-//! Cross-chunk memo of `preliminary_surface_level` per quart column.
+//! share preliminary surface levels across chunks
 //!
-//! Vanilla memoizes the level per `NoiseBasedAquifer` in a `Long2IntMap`, so
-//! every chunk re-evaluates the flat router for its own ~121-column scan and
-//! the columns `computeFluid` samples, most of which its neighbors already
-//! evaluated. The level is only ever evaluated at quart-aligned coordinates,
-//! where the column cache's grid and raw paths agree, so it is a pure function
-//! of the quart column and one generator-wide memo gives identical results.
+//! quart-aligned lookups agree on cached and raw paths, so neighbors can reuse them
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::density::DimensionNoises;
 use crate::noise::aquifer::preliminary_surface_level;
 
-/// Slot-index bits per axis: 512×512 quart columns, i.e. any 128×128-chunk
-/// area maps without collisions.
+/// 512 quarts per axis, enough for a 128-chunk span without slot collisions
 const AXIS_BITS: u32 = 9;
 const AXIS_MASK: i32 = (1 << AXIS_BITS) - 1;
 
@@ -22,17 +16,14 @@ const COORD_BITS: u32 = 24;
 const LEVEL_BITS: u32 = 15;
 const COORD_MASK: u64 = (1 << COORD_BITS) - 1;
 const LEVEL_MASK: u64 = (1 << LEVEL_BITS) - 1;
-const VALID: u64 = 1 << 63;
+const VALID: u64 = 1 << (u64::BITS - 1);
 const COORD_MIN: i32 = -(1 << (COORD_BITS - 1));
 const COORD_MAX: i32 = (1 << (COORD_BITS - 1)) - 1;
 const LEVEL_MIN: i32 = -(1 << (LEVEL_BITS - 1));
 const LEVEL_MAX: i32 = (1 << (LEVEL_BITS - 1)) - 1;
 
-/// Generator-wide, lock-free memo of preliminary surface levels.
-///
-/// Each slot is one atomic word holding the column and its level, so a read
-/// either sees a complete entry or misses. Racing writers store the same
-/// value, and an evicted or unpackable column is simply recomputed.
+/// shared surface levels, one atomic word per entry
+/// reads see a complete entry or miss; collisions just mean recomputing
 pub struct PreliminarySurfaceStore {
     slots: Box<[AtomicU64]>,
 }
@@ -63,6 +54,7 @@ impl PreliminarySurfaceStore {
         let Some(tag) = Self::tag(quart_x, quart_z) else {
             return preliminary_surface_level(noises, cache, x, z);
         };
+
         let slot =
             &self.slots[(((quart_x & AXIS_MASK) << AXIS_BITS) | (quart_z & AXIS_MASK)) as usize];
 
@@ -75,6 +67,7 @@ impl PreliminarySurfaceStore {
         if let Some(level_bits) = pack_level(level) {
             slot.store(tag | level_bits, Ordering::Relaxed);
         }
+
         level
     }
 
@@ -86,6 +79,7 @@ impl PreliminarySurfaceStore {
         {
             return None;
         }
+
         Some(
             VALID
                 | ((quart_x as u64 & COORD_MASK) << (COORD_BITS + LEVEL_BITS))
@@ -94,7 +88,7 @@ impl PreliminarySurfaceStore {
     }
 }
 
-/// Low 15 bits of `level`, or `None` if it does not fit.
+/// pack the level if it fits
 #[inline]
 fn pack_level(level: i32) -> Option<u64> {
     (LEVEL_MIN..=LEVEL_MAX)
@@ -102,10 +96,10 @@ fn pack_level(level: i32) -> Option<u64> {
         .then_some(level as u64 & LEVEL_MASK)
 }
 
-/// Sign-extends the packed 15-bit level.
+/// unpack the level, keeping its sign
 #[inline]
 const fn unpack_level(packed: u64) -> i32 {
-    (((packed & LEVEL_MASK) as i32) << (32 - LEVEL_BITS)) >> (32 - LEVEL_BITS)
+    (((packed & LEVEL_MASK) as i32) << (i32::BITS - LEVEL_BITS)) >> (i32::BITS - LEVEL_BITS)
 }
 
 #[cfg(test)]
@@ -137,8 +131,7 @@ mod tests {
             }
         }
 
-        // Two passes: the first misses and stores, the second reads back —
-        // except where a colliding column evicted the entry in between.
+        // second pass hits unless another column took the slot
         for _ in 0..2 {
             for &(x, z) in &columns {
                 let expected = preliminary_surface_level(&noises, &mut cache, x, z);
