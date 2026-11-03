@@ -15,7 +15,7 @@ use crate::physics::{CollisionWorld as _, WorldCollisionProvider};
 use crate::world::World;
 
 use candidates::CandidateSequence;
-use chunk_load::{ChunkLoad, ChunkLoadState, PollBudget, ScanEnd, Visit};
+use chunk_load::{ChunkLoad, ChunkLoadState, PollBudget};
 use fallback::{FallbackPass, FallbackPoll};
 
 mod candidates;
@@ -36,14 +36,12 @@ pub(crate) enum PlayerSpawnSearchPoll {
     Cancelled,
 }
 
-/// Batches candidates by chunk in candidate order.
+/// Evaluates candidates in vanilla's order, each once at its turn.
 pub(crate) struct PlayerSpawnSearch {
     spawn_suggestion: BlockPos,
     sequence: CandidateSequence,
     next_candidate_index: i32,
     pending: Option<PendingSpawnCandidate>,
-    /// Cached results, indexed by candidate order.
-    results: Vec<CandidateResult>,
     loading: Option<ChunkLoad>,
     /// Tries safe standing spots before the vanilla height fixup.
     fallback: Option<FallbackPass>,
@@ -70,13 +68,6 @@ enum SpawnCandidateKind {
     Fixup,
 }
 
-#[derive(Clone, Copy)]
-enum CandidateResult {
-    Unchecked,
-    Invalid,
-    Valid(BlockPos),
-}
-
 impl PlayerSpawnSearch {
     pub(crate) fn new(
         world: &Arc<World>,
@@ -87,15 +78,11 @@ impl PlayerSpawnSearch {
             Some(radius) => CandidateSequence::new(spawn_suggestion, radius)?,
             None => CandidateSequence::empty(spawn_suggestion),
         };
-        let slots = usize::try_from(sequence.count())
-            .map_err(|e| format!("invalid spawn candidate count: {e}"))?;
-
         Ok(Self {
             spawn_suggestion,
             sequence,
             next_candidate_index: 0,
             pending: None,
-            results: vec![CandidateResult::Unchecked; slots],
             loading: None,
             fallback: None,
             prefetch: None,
@@ -106,7 +93,9 @@ impl PlayerSpawnSearch {
     /// vanilla height fixup.
     #[must_use]
     pub(crate) fn with_safe_fallback(mut self) -> Self {
-        self.fallback = Some(FallbackPass::new(self.results.len()));
+        self.fallback = Some(FallbackPass::new(
+            usize::try_from(self.sequence.count()).unwrap_or_default(),
+        ));
         self
     }
 
@@ -184,34 +173,29 @@ impl PlayerSpawnSearch {
                 return self.poll_fixup(world, pending, &mut budget);
             }
 
-            // A result cached by an earlier batch is evaluated again at its turn, as in vanilla.
-            if self.loading.is_none()
-                && !matches!(self.result(pending.index), CandidateResult::Unchecked)
-            {
-                if budget.exhausted() {
-                    return PlayerSpawnSearchPoll::Pending;
+            // A loaded chunk is read at once; any other chunk is loaded first, as in vanilla, and
+            // its request is held until the candidate has been evaluated.
+            let _load = if self.loading.is_some() || !world.has_full_chunk(pending.chunk) {
+                match self.poll_candidate_chunk(world, pending, &budget) {
+                    Ok(load) => Some(load),
+                    Err(poll) => return poll,
                 }
-                self.recheck_cached_result(world, pending);
-                budget.record_evaluation();
+            } else {
+                None
+            };
+            if budget.exhausted() {
+                return PlayerSpawnSearchPoll::Pending;
             }
-            // A batch that ran out of budget is still open and continues before the next candidate.
-            if (self.loading.is_some()
-                || matches!(self.result(pending.index), CandidateResult::Unchecked))
-                && let Some(poll) = self.poll_chunk_batch(world, pending, &mut budget)
-            {
-                return poll;
+            let spot = Self::evaluate_candidate(world, pending.index, &self.sequence);
+            budget.record_evaluation();
+            // A chunk that unloaded during the evaluation reads as invalid, so the candidate is
+            // evaluated again once its chunk is loaded.
+            if !world.has_full_chunk(pending.chunk) {
+                continue;
             }
             self.pending = None;
-            match self.result(pending.index) {
-                CandidateResult::Valid(pos) => {
-                    return PlayerSpawnSearchPoll::Ready(block_bottom_center(pos));
-                }
-                CandidateResult::Invalid => {}
-                CandidateResult::Unchecked => tracing::error!(
-                    "Spawn search finished chunk {:?} without evaluating candidate {}",
-                    pending.chunk,
-                    pending.index
-                ),
+            if let Some(pos) = spot {
+                return PlayerSpawnSearchPoll::Ready(block_bottom_center(pos));
             }
         }
     }
@@ -278,70 +262,34 @@ impl PlayerSpawnSearch {
         }
     }
 
-    /// Evaluates a cached result again, since blocks or entities may have changed while the search
-    /// waited. If its chunk has unloaded, the result is dropped and the batch reads it again.
-    fn recheck_cached_result(&mut self, world: &Arc<World>, pending: PendingSpawnCandidate) {
-        let (x, z) = self.sequence.column(pending.index);
-        let Some(slot) = self.results.get_mut(pending.index as usize) else {
-            return;
-        };
-        let result = Self::evaluate_candidate(world, x, z);
-        // A chunk that unloaded during the evaluation reads as invalid, so the result only counts
-        // if the chunk is still loaded.
-        *slot = if world.has_full_chunk(pending.chunk) {
-            result
-        } else {
-            CandidateResult::Unchecked
-        };
-    }
-
-    fn result(&self, index: i32) -> CandidateResult {
-        self.results
-            .get(index as usize)
-            .copied()
-            .unwrap_or(CandidateResult::Invalid)
-    }
-
-    /// Evaluates candidates in one chunk and caches their results by sequence index.
-    fn poll_chunk_batch(
+    /// Waits for the candidate's chunk, keeping the load open while the budget is spent.
+    fn poll_candidate_chunk(
         &mut self,
         world: &Arc<World>,
         pending: PendingSpawnCandidate,
-        budget: &mut PollBudget,
-    ) -> Option<PlayerSpawnSearchPoll> {
-        let mut load = match self.poll_loading(world, pending.chunk, pending.index) {
+        budget: &PollBudget,
+    ) -> Result<ChunkLoad, PlayerSpawnSearchPoll> {
+        let load = match self.poll_loading(world, pending.chunk, pending.index) {
             LoadPoll::Ready(load) => load,
-            LoadPoll::Waiting => return Some(PlayerSpawnSearchPoll::Pending),
-            LoadPoll::Cancelled => return Some(PlayerSpawnSearchPoll::Cancelled),
+            LoadPoll::Waiting => return Err(PlayerSpawnSearchPoll::Pending),
+            LoadPoll::Cancelled => return Err(PlayerSpawnSearchPoll::Cancelled),
         };
-        let results = &mut self.results;
-        let end = load.scan(&self.sequence, budget, |index, x, z| {
-            let Some(slot) = results.get_mut(index as usize) else {
-                return Visit::Skip;
-            };
-            if !matches!(slot, CandidateResult::Unchecked) {
-                return Visit::Skip;
-            }
-            let result = Self::evaluate_candidate(world, x, z);
-            *slot = result;
-            if matches!(result, CandidateResult::Valid(_)) && index == pending.index {
-                Visit::Stop(())
-            } else {
-                Visit::Evaluated
-            }
-        });
-        if matches!(end, ScanEnd::OutOfBudget) {
+        if budget.exhausted() {
             self.loading = Some(load);
-            return Some(PlayerSpawnSearchPoll::Pending);
+            return Err(PlayerSpawnSearchPoll::Pending);
         }
-        None
+        Ok(load)
     }
 
-    fn evaluate_candidate(world: &Arc<World>, x: i32, z: i32) -> CandidateResult {
-        match world.level_respawn_pos(x, z) {
-            Some(pos) if world.no_collision_no_liquid(pos) => CandidateResult::Valid(pos),
-            _ => CandidateResult::Invalid,
-        }
+    fn evaluate_candidate(
+        world: &Arc<World>,
+        index: i32,
+        sequence: &CandidateSequence,
+    ) -> Option<BlockPos> {
+        let (x, z) = sequence.column(index);
+        world
+            .level_respawn_pos(x, z)
+            .filter(|&pos| world.no_collision_no_liquid(pos))
     }
 
     const fn next_candidate(&mut self) -> PendingSpawnCandidate {

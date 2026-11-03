@@ -83,8 +83,8 @@ fn ordered_search(world: &Arc<World>) -> PlayerSpawnSearch {
     search
 }
 
-/// A candidate well after the first that shares the first candidate's chunk, so the first chunk's
-/// batch evaluates it long before its turn.
+/// A candidate well after the first that shares the first candidate's chunk, so its chunk is loaded
+/// long before the search reaches it.
 fn later_candidate_in_first_chunk(sequence: &CandidateSequence) -> i32 {
     let first_chunk = sequence.chunk(0);
     let Some(later) = (50..sequence.count()).find(|&index| sequence.chunk(index) == first_chunk)
@@ -182,7 +182,7 @@ fn prefetch_follows_the_radius_the_search_uses() {
 }
 
 #[test]
-fn a_cached_spot_is_checked_again_when_the_search_reaches_it() {
+fn ground_removed_before_the_search_reaches_a_spot_is_noticed() {
     with_search_world("stale_spot", &vanilla_dimension_types::OVERWORLD, |world| {
         let _hold = insert_held_chunks(world);
         let sequence = ordered_search(world).sequence;
@@ -194,12 +194,12 @@ fn a_cached_spot_is_checked_again_when_the_search_reaches_it() {
         set_block(world, ground, vanilla_blocks::STONE.default_state());
         for remove_ground in [false, true] {
             let mut search = ordered_search(world);
-            // The first poll waits for the first chunk; the second evaluates the whole chunk, so
-            // `later` is cached as valid, and then waits for the chunk of the next candidate.
-            assert!(matches!(search.poll(world), PlayerSpawnSearchPoll::Pending));
-            world.chunk_map.advance_scheduling();
-            assert!(matches!(search.poll(world), PlayerSpawnSearchPoll::Pending));
-            assert!(matches!(search.result(later), CandidateResult::Valid(_)));
+            // A zero budget evaluates one candidate and yields before the search reaches `later`.
+            assert!(matches!(
+                search.poll_with_time_budget(world, Duration::ZERO),
+                PlayerSpawnSearchPoll::Pending
+            ));
+            assert!(search.next_candidate_index <= later);
 
             if remove_ground {
                 set_block(world, ground, vanilla_blocks::AIR.default_state());
@@ -221,7 +221,7 @@ fn a_cached_spot_is_checked_again_when_the_search_reaches_it() {
 }
 
 #[test]
-fn a_cached_invalid_result_is_checked_again_when_the_search_reaches_it() {
+fn ground_placed_before_the_search_reaches_a_spot_is_noticed() {
     with_search_world(
         "stale_invalid",
         &vanilla_dimension_types::OVERWORLD,
@@ -230,11 +230,13 @@ fn a_cached_invalid_result_is_checked_again_when_the_search_reaches_it() {
             let mut search = ordered_search(world);
             let later = later_candidate_in_first_chunk(&search.sequence);
             let (x, z) = search.sequence.column(later);
-            // The first chunk's batch caches `later` as invalid, since nothing stands there yet.
-            assert!(matches!(search.poll(world), PlayerSpawnSearchPoll::Pending));
-            world.chunk_map.advance_scheduling();
-            assert!(matches!(search.poll(world), PlayerSpawnSearchPoll::Pending));
-            assert!(matches!(search.result(later), CandidateResult::Invalid));
+            // A zero budget evaluates one candidate and yields before the search reaches `later`,
+            // where nothing stands yet.
+            assert!(matches!(
+                search.poll_with_time_budget(world, Duration::ZERO),
+                PlayerSpawnSearchPoll::Pending
+            ));
+            assert!(search.next_candidate_index <= later);
 
             // Ground placed before the search reaches `later` makes it the only valid candidate.
             set_block(
@@ -248,40 +250,16 @@ fn a_cached_invalid_result_is_checked_again_when_the_search_reaches_it() {
 }
 
 #[test]
-fn a_cached_result_whose_chunk_has_unloaded_is_read_again() {
+fn a_zero_budget_evaluates_one_candidate_per_poll() {
     with_search_world(
-        "unloaded_spot",
-        &vanilla_dimension_types::OVERWORLD,
-        |world| {
-            let mut search = new_search(world);
-            let pending = search.next_candidate();
-            assert!(!world.has_full_chunk(pending.chunk));
-            let (x, z) = search.sequence.column(pending.index);
-            search.results[pending.index as usize] =
-                CandidateResult::Valid(BlockPos::new(x, 65, z));
-
-            // An unloaded chunk reads as invalid, so the result must be dropped, not marked invalid.
-            search.recheck_cached_result(world, pending);
-            assert!(matches!(
-                search.result(pending.index),
-                CandidateResult::Unchecked
-            ));
-        },
-    );
-}
-
-#[test]
-fn rechecking_cached_results_stays_within_the_poll_budget() {
-    with_search_world(
-        "recheck_budget",
+        "one_per_poll",
         &vanilla_dimension_types::OVERWORLD,
         |world| {
             let _hold = insert_held_chunks(world);
             let mut search = new_search(world);
-            search.results.fill(CandidateResult::Invalid);
 
-            // A zero budget allows one evaluation per poll, so only the first cached result is
-            // checked again before the poll yields.
+            // Every chunk is loaded, so the poll evaluates the first candidate, takes the second
+            // and yields before evaluating it.
             assert!(matches!(
                 search.poll_with_time_budget(world, Duration::ZERO),
                 PlayerSpawnSearchPoll::Pending
