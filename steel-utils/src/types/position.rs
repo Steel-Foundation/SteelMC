@@ -446,6 +446,15 @@ impl BlockPos {
         DVec3::new(x, y, z).distance_squared(position) < distance * distance
     }
 
+    /// Returns whether the squared integer distance to `other` is below `distance` squared.
+    #[must_use]
+    pub fn closer_than(&self, other: BlockPos, distance: f64) -> bool {
+        let dx = f64::from(self.0.x - other.0.x);
+        let dy = f64::from(self.0.y - other.0.y);
+        let dz = f64::from(self.0.z - other.0.z);
+        dx * dx + dy * dy + dz * dz < distance * distance
+    }
+
     /// Creates a `BlockPos` containing the given floating-point coordinates.
     #[must_use]
     pub const fn containing(x: f64, y: f64, z: f64) -> Self {
