@@ -140,7 +140,7 @@ mod tests {
         assert_eq!(
             behavior.get_analog_output_signal(
                 state,
-                world.as_ref(),
+                world.world.as_ref(),
                 BlockPos::ZERO,
                 Direction::North,
             ),

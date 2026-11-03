@@ -44,7 +44,7 @@ impl PortalKind {
     /// Returns the number of ticks an entity must stand in this portal before
     /// it triggers, accounting for whether the entity is invulnerable.
     #[must_use]
-    pub fn transition_time(self, world: &World, entity: &dyn Entity) -> i32 {
+    pub fn transition_time(self, world: &World, entity: &(impl Entity + ?Sized)) -> i32 {
         let player_invulnerable = entity
             .as_player()
             .map(|player| player.abilities.lock().invulnerable);

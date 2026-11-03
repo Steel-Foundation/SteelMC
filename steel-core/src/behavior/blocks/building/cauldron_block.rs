@@ -188,7 +188,12 @@ mod tests {
         let empty_behavior = BLOCK_BEHAVIORS.get_behavior(empty.get_block());
         assert!(empty_behavior.has_analog_output_signal(empty));
         assert_eq!(
-            empty_behavior.get_analog_output_signal(empty, world.as_ref(), pos, Direction::North),
+            empty_behavior.get_analog_output_signal(
+                empty,
+                world.world.as_ref(),
+                pos,
+                Direction::North,
+            ),
             0,
         );
 
@@ -198,7 +203,12 @@ mod tests {
                 .set_value(LEVEL_CAULDRON, level_value);
             let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
             assert_eq!(
-                behavior.get_analog_output_signal(state, world.as_ref(), pos, Direction::North),
+                behavior.get_analog_output_signal(
+                    state,
+                    world.world.as_ref(),
+                    pos,
+                    Direction::North
+                ),
                 i32::from(level_value),
             );
         }
