@@ -682,6 +682,7 @@ impl ChunkStorage {
             &block_entities,
             &pending_block_entities,
             &entities,
+            chunk.inhabited_time(),
             block_ticks,
             fluid_ticks,
             heightmaps,
@@ -737,6 +738,7 @@ impl ChunkStorage {
         block_entities: &[SharedBlockEntity],
         pending_block_entities: &[BlockPos],
         entities: &[SharedEntity],
+        inhabited_time: i64,
         block_ticks: Vec<PersistentTick>,
         fluid_ticks: Vec<PersistentTick>,
         heightmaps: Vec<PersistentHeightmap>,
@@ -794,6 +796,7 @@ impl ChunkStorage {
             last_modified: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs() as u32),
+            inhabited_time,
             block_states: builder.block_states,
             biomes: builder.biomes,
             sections: persistent_sections,

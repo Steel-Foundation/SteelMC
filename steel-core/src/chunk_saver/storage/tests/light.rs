@@ -93,6 +93,7 @@ fn persistent_chunk_loads_chunk_owned_light_into_full_chunk() {
         &[],
         &[],
         &[],
+        0,
         Vec::new(),
         Vec::new(),
         Vec::new(),

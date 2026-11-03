@@ -2,7 +2,7 @@
 use std::fmt::{self, Formatter};
 use std::sync::{
     Arc, OnceLock, Weak,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicI64, Ordering},
 };
 
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
@@ -80,6 +80,8 @@ pub struct Chunk {
     /// Whether the chunk has been modified since last save.
     /// Newly generated chunks start dirty.
     pub dirty: AtomicBool,
+    /// Total game ticks this chunk spent as a natural-spawn candidate.
+    inhabited_time: AtomicI64,
     /// Heightmaps retained across every generation phase.
     pub(crate) heightmaps: SyncRwLock<ChunkHeightmaps>,
     /// The minimum Y coordinate of the world this chunk belongs to.
@@ -129,6 +131,7 @@ impl Chunk {
             sections,
             pos,
             dirty: AtomicBool::new(true), // New chunks are always dirty
+            inhabited_time: AtomicI64::new(0),
             heightmaps: SyncRwLock::new(ChunkHeightmaps::empty()),
             min_y,
             height,
@@ -173,6 +176,7 @@ impl Chunk {
         postprocessing: Vec<Vec<u16>>,
         block_ticks: BlockTickList,
         fluid_ticks: FluidTickList,
+        inhabited_time: i64,
         level: Weak<World>,
         mut light: ChunkLightData,
     ) -> Self {
@@ -184,6 +188,7 @@ impl Chunk {
             sections,
             pos,
             dirty: AtomicBool::new(false),
+            inhabited_time: AtomicI64::new(inhabited_time),
             heightmaps: SyncRwLock::new(heightmaps),
             min_y,
             height,
@@ -260,6 +265,19 @@ impl Chunk {
     /// Clears the dirty flag.
     pub fn clear_dirty(&self) {
         self.dirty.store(false, Ordering::Release);
+    }
+
+    /// Returns the total game ticks this chunk spent as a natural-spawn candidate.
+    #[must_use]
+    pub fn inhabited_time(&self) -> i64 {
+        self.inhabited_time.load(Ordering::Acquire)
+    }
+
+    /// Adds one tick of inhabited time.
+    ///
+    /// Vanilla does not mark chunks unsaved for inhabited-time changes alone.
+    pub fn increment_inhabited_time(&self) {
+        self.inhabited_time.fetch_add(1, Ordering::AcqRel);
     }
 
     /// Reads a block using coordinates relative to the chunk's minimum Y.
