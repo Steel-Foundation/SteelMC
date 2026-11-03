@@ -28,6 +28,6 @@ pub(super) const fn finite_rotation(
     )
 }
 
-pub(super) fn wrap_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {
+pub fn wrap_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {
     (wrap_degrees(yaw), wrap_degrees(pitch))
 }
