@@ -4,7 +4,7 @@ use super::{
     generate_box, generate_configured_feature_entry_ref, generate_configured_feature_kind,
     generate_direction, generate_fluid_ref_list, generate_height_provider, generate_identifier,
     generate_int_provider, generate_offset, generate_option, generate_placed_feature_entry_ref,
-    generate_vec, quote,
+    generate_vec, generate_vertical_anchor, quote,
 };
 
 pub(super) fn generate_block_predicate(predicate: &BlockPredicate) -> TokenStream {
@@ -58,6 +58,31 @@ pub(super) fn generate_block_predicate(predicate: &BlockPredicate) -> TokenStrea
         BlockPredicate::InsideWorldBounds { offset } => {
             let offset = generate_offset(offset);
             quote! { BlockPredicate::InsideWorldBounds { offset: #offset } }
+        }
+        BlockPredicate::HeightRange {
+            min_inclusive,
+            max_inclusive,
+        } => {
+            let min_inclusive = generate_vertical_anchor(*min_inclusive);
+            let max_inclusive = generate_vertical_anchor(*max_inclusive);
+            quote! {
+                BlockPredicate::HeightRange {
+                    min_inclusive: #min_inclusive,
+                    max_inclusive: #max_inclusive,
+                }
+            }
+        }
+        BlockPredicate::VolumeMatch { min, max, matches } => {
+            let min = generate_offset(min);
+            let max = generate_offset(max);
+            let matches = generate_box(matches.as_ref(), generate_block_predicate);
+            quote! {
+                BlockPredicate::VolumeMatch {
+                    min: #min,
+                    max: #max,
+                    matches: #matches,
+                }
+            }
         }
     }
 }
@@ -159,6 +184,12 @@ pub(super) fn generate_placement_modifier(modifier: &PlacementModifier) -> Token
             quote! { PlacementModifier::Heightmap { heightmap: #heightmap } }
         }
         PlacementModifier::InSquare => quote! { PlacementModifier::InSquare },
+        PlacementModifier::Offset { x, y, z } => {
+            let x = generate_int_provider(x);
+            let y = generate_int_provider(y);
+            let z = generate_int_provider(z);
+            quote! { PlacementModifier::Offset { x: #x, y: #y, z: #z } }
+        }
         PlacementModifier::NoiseBasedCount {
             noise_to_count_ratio,
             noise_factor,
@@ -191,6 +222,30 @@ pub(super) fn generate_placement_modifier(modifier: &PlacementModifier) -> Token
                 PlacementModifier::RandomOffset {
                     xz_spread: #xz_spread,
                     y_spread: #y_spread,
+                }
+            }
+        }
+        PlacementModifier::RandomlySelected { placements } => {
+            let placements = generate_vec(placements, generate_placement_modifier);
+            quote! { PlacementModifier::RandomlySelected { placements: #placements } }
+        }
+        PlacementModifier::RandomChance { chance } => {
+            quote! { PlacementModifier::RandomChance { chance: #chance } }
+        }
+        PlacementModifier::Cuboid {
+            xz_size,
+            y_size,
+            include_edges,
+            include_interior,
+        } => {
+            let xz_size = generate_int_provider(xz_size);
+            let y_size = generate_int_provider(y_size);
+            quote! {
+                PlacementModifier::Cuboid {
+                    xz_size: #xz_size,
+                    y_size: #y_size,
+                    include_edges: #include_edges,
+                    include_interior: #include_interior,
                 }
             }
         }

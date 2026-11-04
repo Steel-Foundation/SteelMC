@@ -59,31 +59,13 @@ impl ChunkStatusTasks {
         stages::biomes::generate(context, step, cache, holder);
     }
 
-    pub fn generate_noise(
+    pub fn build_terrain(
         context: Arc<WorldGenContext>,
         step: &ChunkStep,
         cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
         holder: Arc<ChunkHolder>,
     ) {
-        stages::noise::generate(context, step, cache, holder);
-    }
-
-    pub fn generate_surface(
-        context: Arc<WorldGenContext>,
-        step: &ChunkStep,
-        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        holder: Arc<ChunkHolder>,
-    ) {
-        stages::surface::generate(context, step, cache, holder);
-    }
-
-    pub fn generate_carvers(
-        context: Arc<WorldGenContext>,
-        step: &ChunkStep,
-        cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        holder: Arc<ChunkHolder>,
-    ) {
-        stages::carvers::generate(context, step, cache, holder);
+        stages::terrain::generate(context, step, cache, holder);
     }
 
     pub fn generate_features(

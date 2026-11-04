@@ -379,14 +379,12 @@ impl World {
         true
     }
 
-    /// Mirrors vanilla `TheEndGatewayBlockEntity.isChunkEmpty`.
     pub(crate) fn is_end_gateway_chunk_empty(&self, chunk_pos: ChunkPos) -> Option<bool> {
         self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
             chunk.highest_filled_section_index().is_none()
         })
     }
 
-    /// Mirrors vanilla `TheEndGatewayBlockEntity.findValidSpawnInChunk`.
     pub(crate) fn find_end_gateway_valid_spawn_in_chunk(
         &self,
         chunk_pos: ChunkPos,
@@ -437,7 +435,6 @@ impl World {
             .flatten()
     }
 
-    /// Mirrors vanilla `TheEndGatewayBlockEntity.findTallestBlock`.
     pub(crate) fn find_end_gateway_tallest_block(
         &self,
         around: BlockPos,

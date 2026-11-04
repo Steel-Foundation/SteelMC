@@ -2,6 +2,7 @@
 
 mod file_storage;
 mod known_players;
+mod memory_storage;
 mod permissions;
 mod stats;
 
@@ -31,12 +32,13 @@ use crate::permission::PermissionSubjectState;
 use crate::player::KnownPlayers;
 use crate::player::Player;
 use crate::player::player_data_storage::file_storage::FilePlayerDataStorage;
+use crate::player::player_data_storage::memory_storage::MemoryPlayerDataStorage;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::{BlockPos, Identifier};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 9;
+const PLAYER_STORAGE_VERSION: u16 = 10;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -54,6 +56,7 @@ pub struct PlayerDataStorage {
 
 enum PlayerDataStorageBackend {
     File(FilePlayerDataStorage),
+    Memory(MemoryPlayerDataStorage),
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -83,6 +86,7 @@ struct PlayerDataFile {
     experience_level: i32,
     experience_progress: f32,
     experience_total: i32,
+    enchantment_seed: i32,
     score: i32,
     seen_credits: bool,
     root_vehicle: Option<RootVehicleFile>,
@@ -136,16 +140,37 @@ struct GlobalPlayerDataFile {
 }
 
 impl PlayerDataStorage {
-    /// Creates player data storage from config.
-    pub async fn new(save_root: PathBuf, selection: StorageSelection) -> io::Result<Self> {
-        if selection.kind != Identifier::from_steel("file") {
-            return Err(io::Error::new(
+    /// Creates the player data storage a config selection asks for.
+    ///
+    /// `save_root` is only used by backends that persist.
+    pub async fn from_selection(
+        save_root: PathBuf,
+        selection: &StorageSelection,
+    ) -> io::Result<Self> {
+        if selection.kind == Identifier::from_steel("disk") {
+            Self::on_disk(save_root).await
+        } else if selection.kind == Identifier::from_steel("ram") {
+            Ok(Self::in_memory())
+        } else {
+            Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("unknown player storage {}", selection.kind),
-            ));
+            ))
         }
+    }
+
+    /// Creates player data storage backed by files under `save_root`.
+    pub async fn on_disk(save_root: PathBuf) -> io::Result<Self> {
         let backend = PlayerDataStorageBackend::File(FilePlayerDataStorage::new(save_root).await?);
         Ok(Self { backend })
+    }
+
+    /// Creates player data storage that keeps everything in RAM.
+    #[must_use]
+    pub fn in_memory() -> Self {
+        Self {
+            backend: PlayerDataStorageBackend::Memory(MemoryPlayerDataStorage::default()),
+        }
     }
 
     /// Saves a player's current domain data and global last-active-domain.
@@ -153,7 +178,7 @@ impl PlayerDataStorage {
         let domain = player.get_world().domain().to_owned();
         self.save_domain(&domain, player).await?;
         self.save_global(
-            player.gameprofile.id,
+            player.gameprofile.id(),
             &GlobalPlayerData {
                 last_active_domain: domain,
             },
@@ -165,6 +190,10 @@ impl PlayerDataStorage {
     pub async fn save_domain(&self, domain: &str, player: &Player) -> io::Result<()> {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.save_domain(domain, player).await,
+            PlayerDataStorageBackend::Memory(storage) => {
+                storage.save_domain(domain, player);
+                Ok(())
+            }
         }
     }
 
@@ -179,6 +208,10 @@ impl PlayerDataStorage {
             PlayerDataStorageBackend::File(storage) => {
                 storage.save_domain_data(domain, uuid, data).await
             }
+            PlayerDataStorageBackend::Memory(storage) => {
+                storage.save_domain_data(domain, uuid, data);
+                Ok(())
+            }
         }
     }
 
@@ -190,6 +223,7 @@ impl PlayerDataStorage {
     ) -> io::Result<Option<PersistentPlayerData>> {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.load_domain(domain, uuid).await,
+            PlayerDataStorageBackend::Memory(storage) => Ok(storage.load_domain(domain, uuid)),
         }
     }
 
@@ -197,6 +231,7 @@ impl PlayerDataStorage {
     pub async fn load_global(&self, uuid: Uuid) -> io::Result<Option<GlobalPlayerData>> {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.load_global(uuid).await,
+            PlayerDataStorageBackend::Memory(storage) => Ok(storage.load_global(uuid)),
         }
     }
 
@@ -204,6 +239,7 @@ impl PlayerDataStorage {
     pub async fn load_permission_subjects(&self) -> io::Result<PermissionSubjectIndex> {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.load_permission_subjects().await,
+            PlayerDataStorageBackend::Memory(storage) => Ok(storage.load_permission_subjects()),
         }
     }
 
@@ -211,6 +247,7 @@ impl PlayerDataStorage {
     pub async fn load_known_players(&self) -> io::Result<KnownPlayers> {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.load_known_players().await,
+            PlayerDataStorageBackend::Memory(storage) => Ok(storage.load_known_players()),
         }
     }
 
@@ -226,6 +263,9 @@ impl PlayerDataStorage {
                     .save_known_players_if_current(players, is_current)
                     .await
             }
+            PlayerDataStorageBackend::Memory(storage) => {
+                Ok(storage.save_known_players_if_current(players, is_current))
+            }
         }
     }
 
@@ -233,6 +273,10 @@ impl PlayerDataStorage {
     pub async fn save_global(&self, uuid: Uuid, data: &GlobalPlayerData) -> io::Result<()> {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.save_global(uuid, data).await,
+            PlayerDataStorageBackend::Memory(storage) => {
+                storage.save_global(uuid, data);
+                Ok(())
+            }
         }
     }
 
@@ -244,6 +288,10 @@ impl PlayerDataStorage {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => {
                 storage.save_permission_subjects(subjects).await
+            }
+            PlayerDataStorageBackend::Memory(storage) => {
+                storage.save_permission_subjects(subjects);
+                Ok(())
             }
         }
     }
@@ -293,6 +341,7 @@ impl PlayerDataFile {
             experience_level: data.experience_level,
             experience_progress: data.experience_progress,
             experience_total: data.experience_total,
+            enchantment_seed: data.enchantment_seed,
             score: data.score,
             seen_credits: data.seen_credits,
             root_vehicle: data
@@ -378,6 +427,7 @@ impl PlayerDataFile {
             experience_level: self.experience_level,
             experience_progress: self.experience_progress,
             experience_total: self.experience_total,
+            enchantment_seed: self.enchantment_seed,
             score: self.score,
             seen_credits: self.seen_credits,
             root_vehicle: self.root_vehicle.map(|root_vehicle| PersistentRootVehicle {
@@ -407,6 +457,7 @@ impl PlayerDataFile {
                 items
             },
             stats: Vec::new(),
+            advancements: Vec::new(),
         })
     }
 }

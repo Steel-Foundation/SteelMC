@@ -100,7 +100,6 @@ fn push_hash_entry<T: HashComponent + ?Sized>(entries: &mut Vec<HashEntry>, key:
 mod tests {
     use std::io::Cursor;
 
-    use rustc_hash::FxHashMap;
     use simdnbt::borrow::read_tag;
     use simdnbt::{FromNbtTag as _, ToNbtTag as _};
     use steel_utils::Identifier;
@@ -112,7 +111,7 @@ mod tests {
     use crate::RegistryHolder;
     use crate::data_components::vanilla_components::TRIM;
     use crate::init_vanilla_registry;
-    use crate::trim_material::{MaterialAssetGroup, MaterialAssetInfo, TrimMaterialValue};
+    use crate::trim_material::TrimMaterialValue;
     use crate::trim_pattern::TrimPatternValue;
     use crate::{REGISTRY, vanilla_trim_materials, vanilla_trim_patterns};
 
@@ -163,10 +162,7 @@ mod tests {
         init_vanilla_registry();
         let trim = ArmorTrim::new(
             RegistryHolder::direct(TrimMaterialValue::new(
-                MaterialAssetGroup::new(
-                    MaterialAssetInfo::new("custom").expect("test suffix should be valid"),
-                    FxHashMap::default(),
-                ),
+                Identifier::vanilla_static("trim/custom"),
                 TextComponent::plain("Custom material"),
             )),
             RegistryHolder::direct(TrimPatternValue::new(

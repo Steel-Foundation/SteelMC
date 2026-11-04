@@ -102,7 +102,12 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        if !Self::test_block_predicate(level, registry, &config.can_place_on, origin.below()) {
+        if !BlockStateProviderEvaluator::test_block_predicate(
+            level,
+            registry,
+            &config.can_place_on,
+            origin.below(),
+        ) {
             return false;
         }
 
@@ -148,7 +153,7 @@ impl FeatureDecorationRunner {
                 let east = max_x || z_edge && dx == radius - 1;
                 let north = min_z || x_edge && dz == 1 - radius;
                 let south = max_z || x_edge && dz == radius - 1;
-                let mut state = Self::sample_block_state_provider(
+                let mut state = BlockStateProviderEvaluator::sample_block_state_provider(
                     level,
                     registry,
                     random,
@@ -195,7 +200,7 @@ impl FeatureDecorationRunner {
                     }
 
                     let pos = origin.offset(dx, dy, dz);
-                    let mut state = Self::sample_block_state_provider(
+                    let mut state = BlockStateProviderEvaluator::sample_block_state_provider(
                         level,
                         registry,
                         random,
@@ -232,7 +237,7 @@ impl FeatureDecorationRunner {
     ) {
         for dy in 0..tree_height {
             let pos = origin.above_n(dy);
-            let state = Self::sample_block_state_provider(
+            let state = BlockStateProviderEvaluator::sample_block_state_provider(
                 level,
                 registry,
                 random,

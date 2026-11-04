@@ -12,24 +12,26 @@ pub(super) use steel_registry::feature::{
     AttachedToLeavesDecorator, AttachedToLogsDecorator, BambooConfiguration,
     BasaltColumnsConfiguration, BendingTrunkPlacer, BlobFoliagePlacer, BlockBlobConfiguration,
     BlockColumnConfiguration, BlockHolderSet, BlockPileConfiguration, BlockPredicate,
-    BlockStateData, BlockStateProvider, CherryFoliagePlacer, CherryTrunkPlacer,
+    BlockStateData, BlockStateProviderKind, CherryFoliagePlacer, CherryTrunkPlacer,
     ConfiguredFeatureKind, ConfiguredFeatureRef, DeltaFeatureConfiguration, DiskConfiguration,
-    DripstoneClusterConfiguration, DualNoiseProvider, EndGatewayConfiguration, EndSpike,
-    EndSpikeConfiguration, FallenTreeConfiguration, FeatureHeightmap, FeatureNoiseParameters,
-    FeatureSize, FluidStateData, FoliagePlacer, FossilConfiguration, GeodeBlockSettings,
-    GeodeConfiguration, HugeFungusConfiguration, HugeMushroomConfiguration, LakeConfiguration,
-    LargeDripstoneConfiguration, MangroveRootPlacement, MangroveRootPlacer,
-    MultifaceGrowthConfiguration, NetherForestVegetationConfiguration,
-    NetherrackReplaceBlobsConfiguration, NoiseProvider, NoiseThresholdProvider, OreConfiguration,
+    DripstoneClusterConfiguration, EndGatewayConfiguration, EndSpike, EndSpikeConfiguration,
+    FallenTreeConfiguration, FeatureHeightmap, FeatureSize, FluidStateData, FoliagePlacer,
+    FossilConfiguration, GeodeBlockSettings, GeodeConfiguration, HugeFungusConfiguration,
+    HugeMushroomConfiguration, LakeConfiguration, LargeDripstoneConfiguration,
+    MangroveRootPlacement, MangroveRootPlacer, MultifaceGrowthConfiguration,
+    NetherForestVegetationConfiguration, NetherrackReplaceBlobsConfiguration, OreConfiguration,
     PlaceOnGroundDecorator, PlacedFeatureData, PlacedFeatureEntryRef, PlacedFeatureRef,
-    PlacementModifier, PointedDripstoneConfiguration, RandomSpreadFoliagePlacer, RootPlacer,
-    RootSystemConfiguration, RuleTest, SculkPatchConfiguration, SeaPickleConfiguration,
-    SeagrassConfiguration, SimpleBlockConfiguration, SpeleothemClusterConfiguration,
-    SpeleothemConfiguration, SpikeConfiguration, SpringConfiguration, TreeConfiguration,
+    PlacementModifier, PointedDripstoneConfiguration, PoplarFoliagePlacer, PoplarTrunkPlacer,
+    ProjectedRandomPatchySquareConfiguration, RandomNeighborSpreadConfiguration,
+    RandomSpreadFoliagePlacer, RootPlacer, RootSystemConfiguration, SculkPatchConfiguration,
+    SeaPickleConfiguration, SeagrassConfiguration, SimpleBlockConfiguration,
+    SingleBlockPillarConfiguration, SpeleothemClusterConfiguration, SpeleothemConfiguration,
+    SpikeConfiguration, SpringConfiguration, SteppedColumnClusterConfiguration, TreeConfiguration,
     TreeDecorator, TrunkPlacer, TwistingVinesConfiguration, UnderwaterMagmaConfiguration,
     UpwardsBranchingTrunkPlacer, VegetationPatchConfiguration, VerticalSurface,
 };
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
+pub(super) use steel_registry::structure_processor::StructureRuleTestData;
 pub(super) use steel_registry::{
     REGISTRY, Registry, RegistryEntry as _, RegistryExt as _, TaggedRegistryExt as _,
     vanilla_blocks, vanilla_fluids,
@@ -52,3 +54,5 @@ pub(super) use crate::worldgen::generator::vanilla::fuzzed_biome_at_block;
 pub(super) use crate::worldgen::region::{WorldGenBulkSectionAccess, WorldGenRegion};
 
 pub(super) const DECORATION_STEP_COUNT: usize = 11;
+
+pub(super) use crate::block_state_provider::BlockStateProviderEvaluator;

@@ -23,7 +23,7 @@ use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, SignalQueryContext, World};
 
-/// Vanilla `DaylightDetectorBlock` behavior.
+/// Daylight detector block behavior.
 #[block_behavior]
 pub struct DaylightDetectorBlock {
     block: BlockRef,
@@ -59,7 +59,7 @@ impl DaylightDetectorBlock {
         let mut sun_angle = sun_angle_degrees * DEG_TO_RAD;
         let offset = if sun_angle < PI { 0.0 } else { TAU };
         sun_angle += (offset - sun_angle) * 0.2;
-        java_round(f32::from(sky_brightness) * trig::cos(f64::from(sun_angle)))
+        java_round(f32::from(sky_brightness) * trig::cos(sun_angle))
             .clamp(MIN_REDSTONE_SIGNAL, MAX_REDSTONE_SIGNAL) as u8
     }
 
@@ -162,11 +162,12 @@ mod tests {
     #[test]
     fn daylight_detector_selects_vanilla_server_ticker_in_skylight_dimensions() {
         init_vanilla_registry();
-        let world = fresh_test_world("daylight_detector_block_entity");
+        let world_fixture = fresh_test_world("daylight_detector_block_entity");
+        let world = &world_fixture.world;
         let state = vanilla_blocks::DAYLIGHT_DETECTOR.default_state();
         let behavior = DaylightDetectorBlock::new(&vanilla_blocks::DAYLIGHT_DETECTOR);
         let entity = behavior
-            .new_block_entity(Arc::downgrade(&world), BlockPos::ZERO, state)
+            .new_block_entity(Arc::downgrade(world), BlockPos::ZERO, state)
             .into_created()
             .expect("daylight detector should create block entity");
         assert_eq!(
@@ -177,7 +178,7 @@ mod tests {
         assert!(
             behavior
                 .get_block_entity_ticker(
-                    &world,
+                    world,
                     state,
                     &vanilla_block_entity_types::DAYLIGHT_DETECTOR,
                 )
@@ -185,7 +186,7 @@ mod tests {
         );
         assert!(
             behavior
-                .get_block_entity_ticker(&world, state, &vanilla_block_entity_types::CHEST)
+                .get_block_entity_ticker(world, state, &vanilla_block_entity_types::CHEST)
                 .is_none()
         );
     }
@@ -219,7 +220,8 @@ mod tests {
     #[test]
     fn vanilla_trig_table_controls_overworld_rounding_boundary() {
         init_vanilla_registry();
-        let world = fresh_test_world("daylight_detector_trig_boundary");
+        let world_fixture = fresh_test_world("daylight_detector_trig_boundary");
+        let world = &world_fixture.world;
         assert_eq!(
             world
                 .level_data

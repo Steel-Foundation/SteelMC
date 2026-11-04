@@ -9,29 +9,92 @@ use steel_registry::blocks::{
     block_state_ext::BlockStateExt,
     properties::{BlockStateProperties, Direction},
 };
+use steel_registry::fluid::{FluidState, is_water_fluid};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
-use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
+use steel_registry::{
+    sound_events, vanilla_blocks, vanilla_damage_types, vanilla_game_events, vanilla_items,
+};
 use steel_utils::{
     BlockPos, BlockStateId,
     types::{InteractionHand, UpdateFlags},
 };
 
+use crate::entity::damage::DamageSource;
 use crate::entity::dismount_helper;
+use crate::fluid::get_fluid_state;
 use crate::{
     behavior::blocks::redstone::MAX_REDSTONE_SIGNAL,
     behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess},
     entity::Entity,
     level_data::RespawnData,
     player::{Player, PlayerRespawnConfig},
-    world::{LevelReader, World, game_event::GameEventContext},
+    world::{
+        DefaultExplosionDamageCalculator, Explosion, ExplosionBlockReader,
+        ExplosionDamageCalculator, ExplosionInteraction, ExplosionOptions,
+        ImmutableExplosionBlockCalculator, LevelReader, World, game_event::GameEventContext,
+    },
 };
 
+const EXPLOSION_RADIUS: f32 = 5.0;
+
+/// Gives the removed anchor's position water's resistance when the anchor was in water,
+/// shielding blocks behind it from the blast.
+struct RespawnAnchorExplosionDamageCalculator {
+    anchor_pos: BlockPos,
+    in_water: bool,
+}
+
+impl RespawnAnchorExplosionDamageCalculator {
+    fn resistance_override(&self, pos: BlockPos) -> Option<f32> {
+        (self.in_water && pos == self.anchor_pos)
+            .then_some(vanilla_blocks::WATER.config.explosion_resistance)
+    }
+}
+
+impl ExplosionDamageCalculator for RespawnAnchorExplosionDamageCalculator {
+    fn block_explosion_resistance(
+        &self,
+        explosion: &dyn Explosion,
+        world: &World,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid: FluidState,
+    ) -> Option<f32> {
+        self.resistance_override(pos).or_else(|| {
+            DefaultExplosionDamageCalculator
+                .block_explosion_resistance(explosion, world, pos, state, fluid)
+        })
+    }
+}
+
+impl ImmutableExplosionBlockCalculator for RespawnAnchorExplosionDamageCalculator {
+    fn bounded_block_read_radius(&self) -> Option<u32> {
+        Some(0)
+    }
+
+    fn can_cache_explosion_resistance(&self) -> bool {
+        true
+    }
+
+    fn always_allows_block_explosion(&self) -> bool {
+        true
+    }
+
+    fn explosion_resistance(
+        &self,
+        reader: &dyn ExplosionBlockReader,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid: FluidState,
+    ) -> Option<f32> {
+        self.resistance_override(pos).or_else(|| {
+            DefaultExplosionDamageCalculator.explosion_resistance(reader, pos, state, fluid)
+        })
+    }
+}
+
 /// Vanilla respawn anchor
-///
-/// TODO: Implement vanilla invalid-dimension explosion once Steel has a strict
-/// `World::explode` foundation, including block removal, water-sensitive
-/// explosion resistance, and bad-respawn-point explosion damage source.
 #[block_behavior]
 pub struct RespawnAnchorBlock {
     block: BlockRef,
@@ -160,6 +223,48 @@ impl RespawnAnchorBlock {
             .is(&vanilla_items::GLOWSTONE)
     }
 
+    fn is_water_that_would_flow(world: &Arc<World>, pos: BlockPos) -> bool {
+        let fluid = get_fluid_state(world, pos);
+        if !is_water_fluid(fluid.fluid_id) {
+            return false;
+        }
+        if fluid.is_source() {
+            return true;
+        }
+        if fluid.amount < 2 {
+            return false;
+        }
+        !is_water_fluid(get_fluid_state(world, pos.below()).fluid_id)
+    }
+
+    /// Checked after the anchor is removed, matching vanilla's order.
+    fn is_in_water(world: &Arc<World>, pos: BlockPos) -> bool {
+        Direction::HORIZONTAL
+            .into_iter()
+            .any(|direction| Self::is_water_that_would_flow(world, direction.relative(pos)))
+            || is_water_fluid(get_fluid_state(world, pos.above()).fluid_id)
+    }
+
+    fn explode(world: &Arc<World>, pos: BlockPos) {
+        world.remove_block(pos, false);
+        let calculator = RespawnAnchorExplosionDamageCalculator {
+            anchor_pos: pos,
+            in_water: Self::is_in_water(world, pos),
+        };
+        let (x, y, z) = pos.get_center();
+        let center = DVec3::new(x, y, z);
+        let mut options =
+            ExplosionOptions::new(center, EXPLOSION_RADIUS, ExplosionInteraction::Block);
+        options.damage_source = Some(
+            DamageSource::environment(&vanilla_damage_types::BAD_RESPAWN_POINT)
+                .with_source_position(center),
+        );
+        options.damage_calculator = Some(&calculator);
+        options.immutable_block_calculator = Some(&calculator);
+        options.fire = true;
+        world.explode(options);
+    }
+
     fn charge(source: Option<&dyn Entity>, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
         let charges = state.get_value(CHARGES);
         let charged_state = state.set_value(CHARGES, charges + 1);
@@ -229,8 +334,7 @@ impl BlockBehavior for RespawnAnchorBlock {
         }
 
         if !Self::can_set_spawn(world, pos) {
-            // TODO: Once `World::explode` exist remove the anchor and use the
-            // watersensitive bad respawn point explosion behavior
+            Self::explode(world, pos);
             return InteractionResult::SuccessServer;
         }
 
@@ -265,7 +369,7 @@ impl BlockBehavior for RespawnAnchorBlock {
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
-        _world: &dyn LevelReader,
+        _world: &World,
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
@@ -276,9 +380,86 @@ impl BlockBehavior for RespawnAnchorBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
     use steel_registry::blocks::block_state_ext::BlockStateExt;
     use steel_registry::{init_vanilla_registry, vanilla_blocks};
-    use steel_utils::BlockPos;
+    use steel_utils::{BlockPos, ChunkPos};
+
+    const ANCHOR_POS: BlockPos = BlockPos::new(8, 64, 8);
+    const SET_FLAGS: UpdateFlags = UpdateFlags::UPDATE_NONE
+        .union(UpdateFlags::UPDATE_KNOWN_SHAPE)
+        .union(UpdateFlags::UPDATE_SKIP_ON_PLACE);
+
+    fn anchor_world(key: &'static str) -> TestWorld {
+        init_vanilla_registry();
+        init_behaviors();
+        let fixture = fresh_test_world(key);
+        insert_ready_full_chunk(&fixture.world, ChunkPos::from_block_pos(ANCHOR_POS));
+        fixture
+    }
+
+    fn water(level: u8) -> BlockStateId {
+        vanilla_blocks::WATER
+            .default_state()
+            .set_value(&BlockStateProperties::LEVEL, level)
+    }
+
+    #[test]
+    fn in_water_follows_vanilla_flow_rules() {
+        let fixture = anchor_world("respawn_anchor_in_water");
+        let world = &fixture.world;
+        let side = ANCHOR_POS.north();
+        let air = vanilla_blocks::AIR.default_state();
+        let place = |pos, state| assert!(world.set_block(pos, state, SET_FLAGS));
+
+        assert!(!RespawnAnchorBlock::is_in_water(world, ANCHOR_POS));
+
+        // Flowing water with amount 1 cannot reach the anchor.
+        place(side, water(7));
+        assert!(!RespawnAnchorBlock::is_in_water(world, ANCHOR_POS));
+
+        // Flowing water that would drain downward instead does not count either.
+        place(side, water(6));
+        place(side.below(), water(0));
+        assert!(!RespawnAnchorBlock::is_in_water(world, ANCHOR_POS));
+        place(side.below(), air);
+        assert!(RespawnAnchorBlock::is_in_water(world, ANCHOR_POS));
+
+        // Any water above counts, regardless of amount.
+        place(side, air);
+        place(ANCHOR_POS.above(), water(7));
+        assert!(RespawnAnchorBlock::is_in_water(world, ANCHOR_POS));
+    }
+
+    #[test]
+    fn water_shields_blocks_from_anchor_explosion() {
+        for (in_water, key) in [
+            (true, "respawn_anchor_explosion_in_water"),
+            (false, "respawn_anchor_explosion_dry"),
+        ] {
+            let fixture = anchor_world(key);
+            let world = &fixture.world;
+            let glass_pos = ANCHOR_POS.north();
+            let place = |pos, state| assert!(world.set_block(pos, state, SET_FLAGS));
+            place(ANCHOR_POS, vanilla_blocks::RESPAWN_ANCHOR.default_state());
+            place(glass_pos, vanilla_blocks::GLASS.default_state());
+            if in_water {
+                place(ANCHOR_POS.above(), water(0));
+            }
+
+            RespawnAnchorBlock::explode(world, ANCHOR_POS);
+
+            assert_ne!(
+                world.get_block_state(ANCHOR_POS).get_block(),
+                &vanilla_blocks::RESPAWN_ANCHOR
+            );
+            assert_eq!(
+                world.get_block_state(glass_pos).get_block() == &vanilla_blocks::GLASS,
+                in_water,
+            );
+        }
+    }
 
     #[test]
     fn standup_candidates_match_vanilla_order() {

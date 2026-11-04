@@ -166,7 +166,7 @@ mod tests {
         let unknown = Identifier::new_static("steel", "not_registered");
         let recipes = Recipes::new(vec![unknown.clone()]);
         assert_eq!(
-            parse(recipes.clone().to_nbt_tag())
+            parse(recipes.to_nbt_tag())
                 .expect("resource keys are registry-independent")
                 .keys(),
             &[unknown]

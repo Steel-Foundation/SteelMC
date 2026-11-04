@@ -221,9 +221,10 @@ mod tests {
     fn server_queue_defers_then_dispatches_the_current_block_event() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("server_block_event_queue");
+        let world_fixture = fresh_test_world("server_block_event_queue");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(1, 64, 1);
-        let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        let holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         assert!(world.set_block(
             pos,
             vanilla_blocks::END_GATEWAY.default_state(),

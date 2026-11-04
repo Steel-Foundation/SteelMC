@@ -11,24 +11,17 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, EntityBase, EntityPose, PartEntity, PartEntityBase};
 use crate::world::World;
 
-/// One of the Ender Dragon's eight hitboxes.
+/// One of the Ender Dragon's eight hitboxes (vanilla `EnderDragonPart`). Per-part damage
+/// scaling lives in [`EnderDragonEntity::hurt_part`](super::EnderDragonEntity::hurt_part).
 ///
-/// Mirrors vanilla `EnderDragonPart`. Splitting the dragon this way is what lets a
-/// hit on the head count for full damage while a hit on the tail is scaled down;
-/// the scaling itself lives on the dragon, in
-/// [`EnderDragonEntity::hurt_part`](super::EnderDragonEntity::hurt_part).
-///
-/// A part is never sent to a client and never persisted: the client synthesizes all
-/// eight from the dragon's network ID, and parts are held only in the world's parts
-/// map rather than the entity manager that drives saving. So vanilla's empty
-/// `readAdditionalSaveData` / `addAdditionalSaveData` / `defineSynchedData` and its
-/// throwing `getAddEntityPacket` all need no counterpart here.
+/// Never sent to clients (they synthesize parts from the dragon's network ID) nor saved
+/// (parts live only in the world's parts map), so vanilla's empty save/synched-data
+/// overrides and throwing `getAddEntityPacket` have no counterpart.
 pub struct EnderDragonPart {
     base: EntityBase,
     part_base: PartEntityBase,
-    /// Vanilla constructs the part with `super(parentMob.getType(), …)`, so a part
-    /// reports the dragon's own entity type. Fire immunity and the damage-cooldown
-    /// rules resolve through it.
+    /// The dragon's own type, as vanilla passes `parentMob.getType()`; fire immunity and
+    /// damage cooldowns resolve through it.
     entity_type: EntityTypeRef,
 }
 
@@ -38,10 +31,8 @@ unsafe impl DowncastType for EnderDragonPart {
 }
 
 impl EnderDragonPart {
-    /// Creates a part with its own hitbox.
-    ///
-    /// Mirrors `new EnderDragonPart(parent, name, width, height)`. `id` comes from
-    /// the block the dragon reserved, so that it lands on `parent_id + index + 1`.
+    /// Creates a part with its own hitbox. `id` comes from the block the dragon reserved,
+    /// landing on `parent_id + index + 1`.
     #[must_use]
     pub fn new(
         entity_type: EntityTypeRef,
@@ -52,9 +43,8 @@ impl EnderDragonPart {
         position: DVec3,
         world: Weak<World>,
     ) -> Self {
-        // Vanilla's constructor calls `refreshDimensions()`; Rust cannot dispatch to
-        // an override before `self` exists, so the size is passed straight to the
-        // base. `dimensions_for_pose` below keeps the two in agreement afterwards.
+        // Vanilla calls `refreshDimensions()` here; Rust cannot dispatch to an override
+        // before `self` exists, so the size goes straight to the base.
         let size = EntityDimensions::with_default_eye_height(width, height);
         Self {
             base: EntityBase::new(id, position, size, world),
@@ -73,17 +63,12 @@ impl Entity for EnderDragonPart {
         self.entity_type
     }
 
-    /// Mirrors vanilla `EnderDragonPart.getDimensions`, which ignores the pose and
-    /// returns the part's own size.
-    ///
-    /// Without this the shared default would report the dragon's 16x8 type
-    /// dimensions, and every part's bounding box would snap to it the first time
-    /// anything refreshed dimensions.
+    /// Ignores the pose, like vanilla. The default would report the dragon's 16x8 type
+    /// size and snap every part's box to it on the next dimension refresh.
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
         self.part_base.size()
     }
 
-    /// Mirrors vanilla `EnderDragonPart.hurtServer`, which is `final`.
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         if self.is_invulnerable_to_base(source) {
             return false;
@@ -98,16 +83,13 @@ impl Entity for EnderDragonPart {
         dragon.hurt_part(world, self, source, amount)
     }
 
-    /// Mirrors vanilla `EnderDragonPart.isPickable`.
-    ///
-    /// The shared default is false for anything that is not a living entity, which
-    /// would make `can_be_hit_by_projectile` reject every part and let arrows pass
-    /// straight through the dragon.
+    /// The non-living default is false, which would let projectiles pass straight
+    /// through the dragon.
     fn is_pickable(&self) -> bool {
         true
     }
 
-    /// Mirrors vanilla `EnderDragonPart.is`, which also matches the parent.
+    /// Also matches the parent, as vanilla `EnderDragonPart.is` does.
     fn is_same_entity(&self, other: &dyn Entity) -> bool {
         self.id() == other.id()
             || self

@@ -127,7 +127,7 @@ fn item_stack_argument_parses_color_map_and_amplifier_components() {
     init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
-        "resource stone[dye='red',dyed_color=[1f,0.5f,0f],map_color=4603950,map_id=7,ominous_bottle_amplifier=4,base_color='blue',wolf/collar='green']",
+        "resource stone[dye='red',dyed_color=[1f,0.5f,0f],map_id=7,ominous_bottle_amplifier=4,base_color='blue',wolf/collar='green']",
         TestSource::new(),
     );
     let Ok(chain) = dispatcher.context_chain(parse) else {
@@ -143,12 +143,6 @@ fn item_stack_argument_parses_color_map_and_amplifier_components() {
             .get(vanilla_components::DYED_COLOR)
             .map(|color| color.rgb()),
         Some(0xffff_7f00_u32 as i32)
-    );
-    assert_eq!(
-        stack
-            .get(vanilla_components::MAP_COLOR)
-            .map(|color| color.rgb()),
-        Some(4_603_950)
     );
     assert_eq!(
         stack.get(vanilla_components::MAP_ID).map(|map| map.id()),

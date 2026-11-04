@@ -130,7 +130,7 @@ impl BiomeSourceKind {
         origin_x: i32,
         origin_z: i32,
         search_radius: i32,
-        allowed: &dyn Fn(BiomeRef) -> bool,
+        allowed: &(impl Fn(BiomeRef) -> bool + ?Sized),
         rng: &mut LegacyRandom,
     ) -> Option<(i32, i32)> {
         let mut sampler = self.chunk_sampler();
@@ -366,8 +366,6 @@ impl NetherChunkBiomeSampler<'_> {
 ///    - `≥ -0.0625` → `end_midlands`
 ///    - `< -0.21875` → `small_end_islands`
 ///    - otherwise → `end_barrens`
-///
-/// Matches vanilla's `TheEndBiomeSource`.
 pub struct EndBiomeSource {
     seed: u64,
     end_islands: EndIslands,

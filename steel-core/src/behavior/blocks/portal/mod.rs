@@ -4,8 +4,8 @@ mod fire;
 mod nether_portal_block;
 mod respawn_anchor_block;
 
-pub use end_portal_block::{EndGatewayBlock, EndPortalBlock};
-pub use end_portal_frame_block::EndPortalFrameBlock;
-pub use fire::{FireBlock, SoulFireBlock};
-pub use nether_portal_block::NetherPortalBlock;
-pub use respawn_anchor_block::RespawnAnchorBlock;
+pub use end_portal_block::*;
+pub use end_portal_frame_block::*;
+pub use fire::*;
+pub use nether_portal_block::*;
+pub use respawn_anchor_block::*;

@@ -1,6 +1,7 @@
 use crate::entity::DEFAULT_MAX_AIR_SUPPLY;
 use crate::permission::PermissionSet;
 use crate::player::KnownPlayer;
+use crate::player::advancement::progress::AdvancementProgress;
 use crate::player::player_data::PersistentStat;
 use crate::player::player_data_storage::file_storage::FilePlayerDataStorage;
 use crate::player::player_data_storage::known_players::{
@@ -17,7 +18,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_custom_stats, vanilla_items};
+use steel_registry::{
+    REGISTRY, init_vanilla_registry, vanilla_blocks, vanilla_custom_stats, vanilla_items,
+};
 use tokio::fs;
 
 fn temp_storage_root(name: &str) -> PathBuf {
@@ -63,6 +66,7 @@ fn sample_player_file(data_version: i32) -> PlayerDataFile {
         experience_level: 7,
         experience_progress: 0.5,
         experience_total: 32,
+        enchantment_seed: 1234,
         score: 9,
         seen_credits: true,
         root_vehicle: None,
@@ -450,6 +454,7 @@ fn player_file_roundtrip_preserves_domain_world_data() {
     assert_eq!(decoded.experience_level, 7);
     assert_eq!(decoded.experience_progress.to_bits(), 0.5_f32.to_bits());
     assert_eq!(decoded.experience_total, 32);
+    assert_eq!(decoded.enchantment_seed, 1234);
     assert_eq!(decoded.score, 9);
     assert!(decoded.seen_credits);
 }
@@ -697,4 +702,184 @@ fn duplicate_stat_fails_conversion() {
 
     PlayerStatsFile::from_persistent_stats(&stats)
         .expect_err("conversion should have failed with duplicate stat");
+}
+
+#[tokio::test]
+async fn in_memory_player_data_round_trips_per_domain() {
+    let storage = PlayerDataStorage::in_memory();
+    let uuid = Uuid::from_u128(7);
+    let data = sample_player_file(PLAYER_DATA_VERSION)
+        .into_persistent()
+        .expect("player file should convert");
+
+    storage
+        .save_domain_data("lobby", uuid, &data)
+        .await
+        .expect("player data should be stored");
+
+    let loaded = storage
+        .load_domain("lobby", uuid)
+        .await
+        .expect("player data should load")
+        .expect("player data should be present");
+    assert_eq!(loaded.pos, data.pos);
+    assert_eq!(loaded.game_mode, data.game_mode);
+
+    assert!(
+        storage
+            .load_domain("other", uuid)
+            .await
+            .expect("player data should load")
+            .is_none(),
+        "domains must not share player data"
+    );
+    assert!(
+        storage
+            .load_domain("lobby", Uuid::from_u128(8))
+            .await
+            .expect("player data should load")
+            .is_none(),
+        "an unsaved player must have no data"
+    );
+
+    storage
+        .save_global(
+            uuid,
+            &GlobalPlayerData {
+                last_active_domain: "lobby".to_owned(),
+            },
+        )
+        .await
+        .expect("global data should be stored");
+    assert_eq!(
+        storage
+            .load_global(uuid)
+            .await
+            .expect("global data should load")
+            .map(|data| data.last_active_domain),
+        Some("lobby".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn disk_player_data_advancements_round_trip() {
+    init_vanilla_registry();
+
+    let root = temp_storage_root("advancements");
+    let storage = match FilePlayerDataStorage::new(root.clone()).await {
+        Ok(storage) => storage,
+        Err(error) => panic!("test storage should initialize: {error}"),
+    };
+    let uuid = Uuid::from_u128(7);
+
+    let advancement = REGISTRY
+        .advancements
+        .advancements()
+        .iter()
+        .copied()
+        .find(|advancement| !advancement.requirements().names().is_empty())
+        .expect("vanilla registry should contain an advancement with criteria");
+    let criterion = advancement
+        .requirements()
+        .names()
+        .into_iter()
+        .next()
+        .expect("advancement should have a criterion");
+    let mut progress = AdvancementProgress::default();
+    progress.update(advancement.requirements());
+    progress.grant_progress(&criterion);
+
+    let mut data = sample_player_file(PLAYER_DATA_VERSION)
+        .into_persistent()
+        .expect("player file should convert");
+    data.advancements = vec![(advancement.key().clone(), progress)];
+
+    storage
+        .save_domain_data("lobby", uuid, &data)
+        .await
+        .expect("player data should be stored");
+    let loaded = storage
+        .load_domain("lobby", uuid)
+        .await
+        .expect("player data should load")
+        .expect("player data should be present");
+
+    assert_eq!(loaded.advancements.len(), 1);
+    let (advancement_id, progress) = &loaded.advancements[0];
+    assert_eq!(advancement_id, advancement.key());
+    assert!(progress.has_progress());
+
+    fs::remove_dir_all(root)
+        .await
+        .expect("temporary storage should be removable");
+}
+
+#[tokio::test]
+async fn in_memory_known_player_cache_rejects_stale_writes() {
+    let storage = PlayerDataStorage::in_memory();
+    let uuid = Uuid::from_u128(42);
+    let players =
+        KnownPlayers::from_entries([KnownPlayer::with_expiration(uuid, "Steve", 1_234_567)]);
+
+    let stale = storage
+        .save_known_players_if_current(&players, || false)
+        .await;
+    assert!(matches!(stale, Ok(false)));
+    assert_eq!(
+        storage
+            .load_known_players()
+            .await
+            .expect("known players should load")
+            .by_uuid(uuid)
+            .map(KnownPlayer::last_known_name),
+        None
+    );
+
+    let saved = storage
+        .save_known_players_if_current(&players, || true)
+        .await;
+    assert!(matches!(saved, Ok(true)));
+    assert_eq!(
+        storage
+            .load_known_players()
+            .await
+            .expect("known players should load")
+            .by_uuid(uuid)
+            .map(KnownPlayer::last_known_name),
+        Some("Steve")
+    );
+}
+
+#[tokio::test]
+async fn in_memory_permission_subjects_round_trip() {
+    let storage = PlayerDataStorage::in_memory();
+    let uuid = Uuid::from_u128(3);
+    let mut subjects = PermissionSubjectIndex::new();
+    subjects.set(
+        uuid,
+        PermissionSubjectState::new(vec!["builder".to_owned()], PermissionSet::new()),
+    );
+
+    assert!(
+        storage
+            .load_permission_subjects()
+            .await
+            .expect("permission subjects should load")
+            .entries()
+            .next()
+            .is_none(),
+        "a fresh storage must hold no permission subjects"
+    );
+
+    storage
+        .save_permission_subjects(&subjects)
+        .await
+        .expect("permission subjects should be stored");
+    assert_eq!(
+        storage
+            .load_permission_subjects()
+            .await
+            .expect("permission subjects should load"),
+        subjects
+    );
 }

@@ -1,17 +1,11 @@
-//! The Ender Dragon.
+//! The Ender Dragon (vanilla `EnderDragon`).
 //!
-//! Mirrors vanilla `net.minecraft.world.entity.boss.enderdragon.EnderDragon`.
+//! A `Mob` with no goals or path navigation: it steers itself from a phase state
+//! machine over a 24-node graph, so its `ai_step` replaces the shared one outright.
 //!
-//! The dragon is a `Mob` that uses none of the mob AI machinery: no goal selectors,
-//! no path navigation. It steers itself from a phase state machine over a fixed
-//! 24-node graph, so its `ai_step` replaces the shared one outright rather than
-//! delegating to it, exactly as vanilla's does.
-//!
-//! Client-only vanilla members are deliberately absent: `onFlap`, `doClientTick`,
-//! `onSyncedDataUpdated`, `recreateFromPacket`, and the `growlTime` counter, whose
-//! only use sits inside the `isClientSide` branch of `aiStep`. A vanilla client runs
-//! its own copy of the phase machine off the synced phase id, so keeping that id
-//! correct is what makes the visuals right.
+//! Client-only members (`onFlap`, `doClientTick`, `onSyncedDataUpdated`,
+//! `recreateFromPacket`, `growlTime`) are omitted; the client runs its own phase
+//! machine off the synced phase id, so that id is what drives the visuals.
 
 mod flight_graph;
 mod flight_history;
@@ -55,21 +49,19 @@ use crate::entity::ai::path::Path;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::{EndCrystalEntity, ExperienceOrbEntity};
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityEventSource as _, EntityPose, EntitySyncedData,
-    LivingEntity, LivingEntityBase, Mob, MobBase, MobEffectInstance, PartEntity, RemovalReason,
-    SharedEntity, entity_selector, part_entity_id, sync_dirty_mob_effects,
+    Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySyncedData, LivingEntity,
+    LivingEntityBase, Mob, MobBase, MobEffectInstance, PartEntity, RemovalReason, SharedEntity,
+    entity_selector, part_entity_id, sync_dirty_mob_effects,
 };
 use crate::physics::{MoveResult, MoverType};
 use crate::world::World;
 
-/// The number of sub-entity hitboxes.
 const SUB_ENTITY_COUNT: usize = 8;
-/// Indices into `sub_entities`, in the vanilla construction order
-/// head, neck, body, tail x3, wing x2.
+/// Indices into `sub_entities`, in vanilla construction order: head, neck, body,
+/// tail x3, wing x2.
 const HEAD: usize = 0;
 const NECK: usize = 1;
 const BODY: usize = 2;
-/// The first of the three tail segments, which are positioned in a loop.
 const TAIL_START: usize = 3;
 const TAIL_COUNT: usize = 3;
 const WING1: usize = 6;
@@ -91,49 +83,36 @@ const MAX_TURN_DEGREES: f32 = 50.0;
 const STEERING_EPSILON: f64 = 1.0e-5;
 /// Movement scale while clipping terrain.
 const IN_WALL_MOVE_SCALE: f64 = 0.8;
-/// Vertical velocity retained each tick.
 const VERTICAL_DRAG: f64 = 0.91;
 
-/// Damage a wing sweep deals on top of its knockback.
+/// Wing damage, dealt on top of the knockback.
 const WING_DAMAGE: f32 = 5.0;
-/// Damage the head and neck deal on contact.
+/// Head and neck contact damage.
 const BITE_DAMAGE: f32 = 10.0;
-/// Lower bound on the squared horizontal distance used to scale knockback, which
-/// keeps an entity standing exactly under the body from being flung.
+/// Floor on the squared knockback distance, so an entity right under the body is
+/// not flung.
 const MINIMUM_KNOCKBACK_DISTANCE_SQR: f64 = 0.1;
-/// Horizontal knockback strength, applied over the *squared* distance.
 const KNOCKBACK_STRENGTH: f64 = 4.0;
-/// Vertical lift added to every wing shove.
 const KNOCKBACK_LIFT: f64 = 0.2;
-/// A target hit within this many ticks is only shoved, not bitten again.
+/// A target hurt within this many ticks is only shoved, not hit again.
 const REPEAT_ATTACK_GRACE_TICKS: i32 = 2;
 
-/// Ticks the death animation runs before the dragon is removed.
 const DRAGON_DEATH_DURATION: i32 = 200;
-/// Experience trickles out once the death animation passes this tick.
+/// After this death tick, experience trickles out every `DEATH_XP_TRICKLE_INTERVAL`.
 const DEATH_XP_TRICKLE_START: i32 = 150;
-/// ...and lands every this many ticks after that.
 const DEATH_XP_TRICKLE_INTERVAL: i32 = 5;
-/// Share of the prize each trickle awards.
 const DEATH_XP_TRICKLE_SHARE: f32 = 0.08;
-/// Share of the prize paid out when the animation ends.
+/// Share of the prize paid out when the death animation ends.
 const DEATH_XP_FINAL_SHARE: f32 = 0.2;
-/// Experience a dragon is worth.
-///
 /// Vanilla awards 12000 instead on a fight's first kill.
 // TODO: Read the fight's `hasPreviouslyKilledDragon` once `EnderDragonFight` exists.
 const DEATH_EXPERIENCE: i32 = 500;
-/// How far the dying dragon drifts upward each tick.
-///
-/// Declared `f32` because vanilla widens a float literal here, giving
-/// `0.100000001...` rather than the `f64` `0.1`.
+/// `f32` because vanilla widens a float literal here (`0.100000001...`, not `0.1`).
 const DEATH_DRIFT_PER_TICK: f32 = 0.1;
 
-/// How far the dragon looks for a crystal to heal from.
 const CRYSTAL_SEARCH_RADIUS: f64 = 32.0;
 /// The crystal heals the dragon on ticks divisible by this.
 const CRYSTAL_HEAL_INTERVAL: i32 = 10;
-/// Health restored per healing tick.
 const CRYSTAL_HEAL_AMOUNT: f32 = 1.0;
 /// One tick in this many rescans for a nearer crystal.
 const CRYSTAL_RESCAN_CHANCE: i32 = 10;
@@ -142,12 +121,8 @@ const DRAGON_PHASE_KEY: &str = "DragonPhase";
 const DRAGON_DEATH_TIME_KEY: &str = "DragonDeathTime";
 const SITTING_DAMAGE_RECEIVED_KEY: &str = "sitting_damage_received";
 
-/// Where the exit portal sits for an arena centered on `origin`.
-///
-/// Mirrors vanilla `EndPodiumFeature.getLocation`. That method offsets a constant
-/// `END_PODIUM_LOCATION`, which is `BlockPos.ZERO`, so this is an identity today; it
-/// exists so the call sites read like vanilla and so the constant has one home when
-/// the podium feature itself lands.
+/// Where the exit portal sits for an arena centered on `origin` (vanilla
+/// `EndPodiumFeature.getLocation`; an identity since `END_PODIUM_LOCATION` is zero).
 // TODO: Move this onto `EndPodiumFeature` once runtime feature placement exists.
 #[must_use]
 pub const fn end_podium_location(origin: BlockPos) -> BlockPos {
@@ -159,13 +134,8 @@ fn share_of(total: i32, share: f32) -> i32 {
     (total as f32 * share).floor() as i32
 }
 
-/// Wraps an angle the way vanilla `EnderDragon.rotWrap` does.
-///
-/// Vanilla's is `(float)Mth.wrapDegrees(double)`, so it wraps in `f64` and narrows
-/// afterwards. Steel's [`wrap_degrees`] is `f32`-only, which moves the narrowing one
-/// step earlier. Unlike the trig tables that decide the flight graph's `floor`, this
-/// cannot change an observable: the inputs are yaw differences, and both widths wrap
-/// them to the same value.
+/// Vanilla `rotWrap`, which wraps in `f64` before narrowing. Narrowing first is safe
+/// here: the inputs are yaw differences, which both widths wrap to the same value.
 fn rot_wrap(degrees: f64) -> f32 {
     wrap_degrees(degrees as f32)
 }
@@ -178,39 +148,24 @@ pub struct EnderDragonEntity {
     living_base: LivingEntityBase,
     mob_base: MobBase,
     entity_data: SyncMutex<EnderDragonEntityData>,
-    /// Vanilla `subEntities`, in vanilla order: head, neck, body, tail x3, wing x2.
     sub_entities: Vec<Arc<dyn PartEntity>>,
-    /// Vanilla `dragonDeathTime`.
     dragon_death_time: SyncMutex<i32>,
-    /// Vanilla `sittingDamageReceived`.
     sitting_damage_received: SyncMutex<f32>,
-    /// Vanilla `flightHistory`.
     flight_history: SyncMutex<DragonFlightHistory>,
-    /// Vanilla `phaseManager`.
     phase_manager: EnderDragonPhaseManager,
-    /// Vanilla `flapTime` and `oFlapTime`.
-    ///
-    /// Cosmetic in itself, but `is_flapping` reads it and that drives the FLAP game
-    /// event from inside the shared move path.
+    /// Not just cosmetic: `is_flapping` reads it to emit the FLAP game event.
     flap_time: SyncMutex<f32>,
     o_flap_time: SyncMutex<f32>,
     /// Vanilla `yRotA`, the accumulated turn rate.
     y_rot_a: SyncMutex<f32>,
-    /// Vanilla `inWall`, set by the wall scan once that lands.
     in_wall: SyncMutex<bool>,
-    /// Vanilla `fightOrigin`, the arena center this dragon belongs to.
-    ///
-    /// Set by the fight rather than persisted: vanilla saves only the phase, the
-    /// death timer and the sitting damage.
+    /// Set by the fight, not persisted (vanilla saves only phase, death time and
+    /// sitting damage).
     fight_origin: SyncMutex<BlockPos>,
-    /// Vanilla `nodes` and `nodeAdjacency`, built on first use because the layout
-    /// samples the terrain.
+    /// Vanilla `nodes`/`nodeAdjacency`, built on first use because it samples terrain.
     flight_graph: SyncMutex<Option<DragonFlightGraph>>,
-    /// Vanilla `nearestCrystal`, held as an entity id rather than a reference.
-    ///
-    /// Storing the crystal itself would mean an `Arc` cycle through the world and
-    /// would keep a destroyed crystal alive; vanilla instead nulls the field once the
-    /// crystal reports removed, which an id lookup reproduces for free.
+    /// Held by id so a destroyed crystal stops resolving (vanilla nulls it on
+    /// `isRemoved`) without an `Arc` cycle keeping it alive.
     nearest_crystal: SyncMutex<Option<i32>>,
 }
 
@@ -220,14 +175,12 @@ unsafe impl DowncastType for EnderDragonEntity {
 }
 
 impl EnderDragonEntity {
-    /// Creates a new dragon.
-    ///
-    /// `id` must come from an [`crate::entity::EntityIdBlock`] wide enough for the
-    /// eight parts, which the entity registry guarantees for this type.
+    /// Creates a dragon; `id` must start an [`crate::entity::EntityIdBlock`] wide
+    /// enough for the eight parts, which the entity registry guarantees.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
-            EntityBase::new(id, position, entity_type.dimensions, world.clone()),
+            EntityBase::new(id, position, entity_type.dimensions, Weak::clone(&world)),
             entity_type,
             world,
         )
@@ -236,7 +189,7 @@ impl EnderDragonEntity {
     /// Loads a saved dragon.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        let world = load.world.clone();
+        let world = Weak::clone(&load.world);
         Self::new_with_base(
             EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
@@ -248,12 +201,10 @@ impl EnderDragonEntity {
         let living_base = LivingEntityBase::new(entity_type);
         let mob_base = MobBase::new();
         let mut entity_data = EnderDragonEntityData::new();
-        // Seeds health from the MAX_HEALTH attribute; without this the dragon would
-        // spawn on the synced default of 1.0 rather than 200.
+        // Seeds health from MAX_HEALTH; otherwise it would start at the synced 1.0.
         living_base.initialize_synced_data(&mut entity_data);
 
-        // Vanilla sets `noPhysics` in the constructor, so the dragon passes through
-        // terrain and does its own wall handling in `check_walls`.
+        // The dragon passes through terrain and handles walls in `check_walls`.
         base.set_no_physics(true);
 
         Self {
@@ -277,7 +228,6 @@ impl EnderDragonEntity {
         }
     }
 
-    /// Builds the eight hitboxes, in vanilla's order and at vanilla's sizes.
     fn create_sub_entities(
         entity_type: EntityTypeRef,
         parent: &EntityBase,
@@ -305,20 +255,20 @@ impl EnderDragonEntity {
                     width,
                     height,
                     parent.position(),
-                    world.clone(),
+                    Weak::clone(world),
                 ));
                 part
             })
             .collect()
     }
 
-    /// Returns the dragon's hitboxes. Mirrors vanilla `getSubEntities`.
+    /// Returns the dragon's hitboxes.
     #[must_use]
     pub fn sub_entities(&self) -> &[Arc<dyn PartEntity>] {
         &self.sub_entities
     }
 
-    /// Returns the head, which vanilla treats as the only full-damage hitbox.
+    /// Returns the head, the only full-damage hitbox.
     #[must_use]
     pub fn head(&self) -> &Arc<dyn PartEntity> {
         &self.sub_entities[HEAD]
@@ -330,16 +280,12 @@ impl EnderDragonEntity {
         *self.dragon_death_time.lock()
     }
 
-    /// Returns the dragon's phase machine. Mirrors vanilla `getPhaseManager`.
+    /// Returns the dragon's phase machine.
     #[must_use]
     pub const fn phase_manager(&self) -> &EnderDragonPhaseManager {
         &self.phase_manager
     }
 
-    /// Publishes the active phase to watching clients.
-    ///
-    /// A vanilla client runs its own copy of the phase machine off this value, so it
-    /// is what makes the dragon animate correctly rather than any server-side work.
     pub(super) fn set_synced_phase(&self, phase: EnderDragonPhase) {
         self.entity_data
             .lock()
@@ -354,10 +300,8 @@ impl EnderDragonEntity {
         *self.entity_data.lock().ender_dragon().phase.get()
     }
 
-    /// How many end crystals are still feeding the dragon.
-    ///
-    /// `None` means there is no fight at all, which vanilla treats differently from a
-    /// fight with zero crystals left in one of its three call sites.
+    /// End crystals still alive; `None` means no fight, which one vanilla call site
+    /// treats differently from zero crystals.
     // TODO: Read this from `EnderDragonFight` once that exists.
     #[expect(
         clippy::unused_self,
@@ -368,29 +312,26 @@ impl EnderDragonEntity {
         None
     }
 
-    /// the arena center this dragon belongs to. Vanilla `getFightOrigin`.
+    /// Returns the arena center this dragon belongs to.
     #[must_use]
     pub fn fight_origin(&self) -> BlockPos {
         *self.fight_origin.lock()
     }
 
-    /// Sets the arena center. Vanilla `setFightOrigin`.
+    /// Sets the arena center.
     pub fn set_fight_origin(&self, origin: BlockPos) {
         *self.fight_origin.lock() = origin;
     }
 
-    /// Returns the flight-graph node nearest the dragon.
-    ///
-    /// Mirrors vanilla `findClosestNode()`, whose no-argument overload also builds the
-    /// graph on first use. The build samples the terrain, so it needs the world, and it
-    /// yields `None` while the arena's chunks are still cold.
+    /// Returns the flight-graph node nearest the dragon, building the graph on first
+    /// use; `None` while the arena's chunks are still cold.
     pub fn find_closest_node(&self, world: &World) -> Option<usize> {
         let position = self.position();
         let crystals = self.alive_crystals();
         self.with_flight_graph(world, |graph| graph.closest_node(position, crystals))
     }
 
-    /// Paths between two flight-graph nodes. Mirrors vanilla `findPath`.
+    /// Paths between two flight-graph nodes.
     pub fn find_path(
         &self,
         world: &World,
@@ -404,48 +345,35 @@ impl EnderDragonEntity {
         })?
     }
 
-    /// Runs `action` against the flight graph, building it if this is the first use.
+    /// Runs `action` under the graph lock (so it must touch only the graph), building
+    /// the graph on first use.
     ///
-    /// `action` runs under the graph lock, so it must stay confined to the graph. The
-    /// two callers above satisfy that: a search reads node positions and nothing else.
-    ///
-    /// # Lock order
-    ///
-    /// A phase may hold its own state lock across a call here, so the order is
-    /// phase state -> flight graph -> chunk map, and nothing may take them the other
-    /// way round. The build's world reads sit at the deepest point of that chain, but
-    /// they never run under a phase lock in practice: `pick_new_path` warms the graph
-    /// through `find_closest_node` before it locks its own state.
+    /// Lock order is phase state -> flight graph -> chunk map. In practice the build's
+    /// world reads never run under a phase lock: `pick_new_path` warms the graph first.
     fn with_flight_graph<R>(
         &self,
         world: &World,
         action: impl FnOnce(&DragonFlightGraph) -> R,
     ) -> Option<R> {
         let mut graph = self.flight_graph.lock();
-        // Deliberately not `get_or_insert_with`: a build off cold chunks must not be
-        // cached, because nothing would ever rebuild it. Leaving the slot empty makes
-        // the next tick try again.
+        // Not `get_or_insert_with`: a failed build off cold chunks stays uncached so
+        // the next tick retries.
         if graph.is_none() {
             *graph = DragonFlightGraph::try_build(world);
         }
         graph.as_ref().map(action)
     }
 
-    /// Runs vanilla `EnderDragon.aiStep`.
-    ///
-    /// A full replacement for the shared living step, as vanilla's is: the dragon
-    /// steers from its phase rather than from movement input, and it shoves entities
-    /// with its wings instead of the usual entity pushing.
-    fn dragon_ai_step(&self, world: &Arc<World>) -> Option<MoveResult> {
+    /// Vanilla `aiStep`: steers from the phase rather than movement input, and shoves
+    /// with the wings instead of the usual entity pushing.
+    fn dragon_ai_step(&self, world: &Arc<World>, entity: &SharedEntity) -> Option<MoveResult> {
         self.process_flapping_movement();
 
-        // Above the `isDeadOrDying` split, as vanilla does, so the beat keeps tracking
-        // while the dragon dies. Below it the two would freeze a stroke apart, and
-        // `process_flapping_movement` still reads them on every dying tick.
+        // Latched above the dying split, as in vanilla: `process_flapping_movement`
+        // still reads the beat while dying, so it must not freeze a stroke apart.
         *self.o_flap_time.lock() = *self.flap_time.lock();
 
-        // Everything below is inside vanilla's `else`; a dying dragon is moved by
-        // `tick_death` instead.
+        // A dying dragon is moved by `tick_death` instead.
         if self.is_dead_or_dying() {
             return None;
         }
@@ -465,18 +393,14 @@ impl EnderDragonEntity {
         }
 
         let phase = self.tick_phase(world);
-        let result = self.steer_towards_phase_target(phase);
+        let result = self.steer_towards_phase_target(entity, phase);
 
         self.apply_effects_from_blocks();
         self.set_y_body_rot(self.yaw());
-        self.tick_parts(world);
+        self.tick_parts(world, entity);
         result
     }
 
-    /// Heals the dragon from a nearby end crystal. Mirrors vanilla `checkCrystals`.
-    ///
-    /// The crystal is tracked by id, so a destroyed one simply stops resolving, which
-    /// is what vanilla's `isRemoved` check does with a reference.
     fn check_crystals(&self, world: &World) {
         let tracked = *self.nearest_crystal.lock();
         if let Some(id) = tracked {
@@ -493,8 +417,7 @@ impl EnderDragonEntity {
             return;
         }
 
-        // Steel has no per-type entity index, so vanilla's `getEntitiesOfClass` becomes
-        // an area query filtered by downcast.
+        // No per-type entity index, so `getEntitiesOfClass` is an area query + downcast.
         let search_area = self.bounding_box().inflate(CRYSTAL_SEARCH_RADIUS);
         let position = self.position();
 
@@ -509,26 +432,21 @@ impl EnderDragonEntity {
             .map(|crystal| crystal.id());
     }
 
-    /// Places the eight hitboxes and runs the contact sweeps they drive.
-    ///
-    /// Vanilla's order is load-bearing and is reproduced exactly. The head and neck
-    /// damage sweep sits *between* positioning the body and positioning the head, so
-    /// it reads the head box from the previous tick; and `knock_back` centers on the
-    /// body box, which by then holds this tick's position.
+    /// Places the hitboxes and runs the contact sweeps. Vanilla's order is load-bearing:
+    /// the sweeps run after the body moves but before the head does, so the bite reads
+    /// last tick's head box while `knock_back` centers on this tick's body box.
     #[expect(
         clippy::similar_names,
         reason = "the sample bindings are named for the vanilla latency indices they read"
     )]
-    fn tick_parts(&self, world: &Arc<World>) {
+    fn tick_parts(&self, world: &Arc<World>, entity: &SharedEntity) {
         let old_positions: Vec<DVec3> = self
             .sub_entities
             .iter()
             .map(|part| part.position())
             .collect();
 
-        // One pass over the history covers every sample this tick needs: the body's own
-        // two, the head's lag reference, and one per tail segment. Vanilla re-reads the
-        // ring per use, but nothing here writes to it, so the values are identical.
+        // Vanilla re-reads the ring per use; nothing here writes it, so one read suffices.
         let (sample_0, sample_5, sample_10, tail_samples) = {
             let history = self.flight_history.lock();
             (
@@ -539,14 +457,12 @@ impl EnderDragonEntity {
             )
         };
 
-        // Vanilla reads this afresh inside every `tickPart`. Holding one value is only
-        // sound because nothing between the first and last call moves the dragon: the
-        // sweeps below push and hurt *other* entities and never reposition `self`.
+        // Vanilla re-reads this per `tickPart`; one read is sound because the sweeps
+        // below only move *other* entities.
         let position = self.position();
 
-        // Every expression below is `f32` up to the point vanilla widens it, because
-        // the trig lookup indexes off the narrowed value. Doing the arithmetic in `f64`
-        // and narrowing afterwards would land on a different table entry.
+        // Kept in `f32` until vanilla widens: the trig table indexes off the narrowed
+        // value, and `f64` arithmetic would land on a different entry.
         let tilt = ((sample_5.y - sample_10.y) as f32 * 10.0).to_radians();
         let cc_tilt = trig::cos(f64::from(tilt));
         let ss_tilt = trig::sin(f64::from(tilt));
@@ -571,8 +487,8 @@ impl EnderDragonEntity {
         );
 
         if self.hurt_time() == 0 {
-            self.sweep_wings(world);
-            self.sweep_bite(world);
+            self.sweep_wings(world, entity);
+            self.sweep_bite(world, entity);
         }
 
         let head_yaw = yaw_radians - *self.y_rot_a.lock() * 0.01;
@@ -601,25 +517,19 @@ impl EnderDragonEntity {
             ss_tilt,
         );
 
-        // Non-short-circuiting `|`: every box must be scanned for its block-breaking
-        // side effect, not just until one reports a wall.
+        // Non-short-circuiting `|`: every box must be scanned for its block breaking.
         *self.in_wall.lock() = Self::check_walls(world, self.part_box(HEAD))
             | Self::check_walls(world, self.part_box(NECK))
             | Self::check_walls(world, self.part_box(BODY));
         // TODO: Report to `EnderDragonFight::update_dragon` once the fight exists.
 
-        // Vanilla writes the pre-tick position into both `xo/yo/zo` and
-        // `xOld/yOld/zOld`, which is manual interpolation bookkeeping for entities that
-        // are never ticked themselves. Steel has a single `old_position`, so one write
-        // covers both.
+        // Covers both vanilla `xo/yo/zo` and `xOld/yOld/zOld`.
         for (part, old_position) in self.sub_entities.iter().zip(old_positions) {
             part.set_old_position(old_position);
         }
     }
 
-    /// Places the three tail segments, which trail the body through flight history.
-    ///
-    /// `trailing` holds one sample per segment, already read by [`Self::tick_parts`].
+    /// Places the tail segments, which trail the body through flight history.
     #[expect(
         clippy::too_many_arguments,
         reason = "vanilla's inlined tail block, threaded rather than re-derived per segment"
@@ -635,7 +545,7 @@ impl EnderDragonEntity {
         ss_tilt: f32,
     ) {
         for (index, trailing) in trailing_samples.iter().enumerate() {
-            // The yaw difference is taken in `f32` before it widens, as vanilla's is.
+            // The yaw difference is taken in `f32` before widening, as in vanilla.
             let rotation = self.yaw().to_radians()
                 + rot_wrap(f64::from(trailing.y_rot - sample_5.y_rot)).to_radians();
             let ss = trig::sin(f64::from(rotation));
@@ -654,22 +564,14 @@ impl EnderDragonEntity {
         }
     }
 
-    /// Moves one hitbox to an offset from the dragon. Mirrors vanilla `tickPart`.
-    ///
-    /// `position` is the dragon's, read once per tick by [`Self::tick_parts`].
     fn tick_part(&self, index: usize, position: DVec3, offset: DVec3) {
         self.sub_entities[index].set_part_position(position + offset);
     }
 
-    /// Returns a hitbox's current bounding box.
     fn part_box(&self, index: usize) -> WorldAabb {
         self.sub_entities[index].bounding_box()
     }
 
-    /// Mirrors vanilla `getHeadYOffset`.
-    ///
-    /// A perched dragon lowers its head to a fixed offset; a flying one lets the head
-    /// lag behind the body's recent climb.
     fn head_y_offset(&self, sample_5: DragonFlightSample, sample_0: DragonFlightSample) -> f32 {
         if self.is_sitting() {
             return -1.0;
@@ -677,38 +579,29 @@ impl EnderDragonEntity {
         (sample_5.y - sample_0.y) as f32
     }
 
-    /// Mirrors vanilla's `level.getEntities(this, box, NO_CREATIVE_OR_SPECTATOR)`.
-    ///
-    /// Excluding the dragon also excludes its own parts, which is the reason
-    /// [`World::get_entities_in_aabb_excluding`] takes an entity rather than an id.
+    /// Excluding the dragon (not just its id) also excludes its parts.
     fn entities_touching(&self, world: &World, box_: WorldAabb) -> Vec<SharedEntity> {
         world.get_entities_in_aabb_excluding(&box_, self, entity_selector::no_creative_or_spectator)
     }
 
-    /// Shoves and cuts everything under either wing. Mirrors vanilla `knockBack`.
-    fn sweep_wings(&self, world: &Arc<World>) {
+    fn sweep_wings(&self, world: &Arc<World>, entity: &SharedEntity) {
         for wing in [WING1, WING2] {
             let sweep = self
                 .part_box(wing)
                 .inflate_xyz(4.0, 2.0, 4.0)
                 .translate(DVec3::new(0.0, -2.0, 0.0));
-            self.knock_back(world, &self.entities_touching(world, sweep));
+            self.knock_back(world, entity, &self.entities_touching(world, sweep));
         }
     }
 
-    /// Bites everything against the head and neck. Mirrors vanilla `hurt(level, list)`.
-    fn sweep_bite(&self, world: &Arc<World>) {
+    fn sweep_bite(&self, world: &Arc<World>, entity: &SharedEntity) {
         for part in [HEAD, NECK] {
             let sweep = self.part_box(part).inflate(1.0);
-            self.hurt_entities(world, &self.entities_touching(world, sweep));
+            self.hurt_entities(world, entity, &self.entities_touching(world, sweep));
         }
     }
 
-    /// Mirrors vanilla `knockBack`.
-    ///
-    /// The shove lands on every living entity, but the damage additionally needs the
-    /// dragon to be airborne and the target not to have been hit moments ago.
-    fn knock_back(&self, world: &Arc<World>, entities: &[SharedEntity]) {
+    fn knock_back(&self, world: &Arc<World>, attacker: &SharedEntity, entities: &[SharedEntity]) {
         let body = self.part_box(BODY);
         let center_x = f64::midpoint(body.min_x(), body.max_x());
         let center_z = f64::midpoint(body.min_z(), body.max_z());
@@ -722,8 +615,7 @@ impl EnderDragonEntity {
             let position = entity.position();
             let xd = position.x - center_x;
             let zd = position.z - center_z;
-            // Vanilla divides by the *squared* distance rather than normalizing, so the
-            // shove weakens sharply with range instead of staying constant.
+            // Divided by the *squared* distance, not normalized, as in vanilla.
             let distance_sqr = (xd * xd + zd * zd).max(MINIMUM_KNOCKBACK_DISTANCE_SQR);
             entity.push_impulse(DVec3::new(
                 xd / distance_sqr * KNOCKBACK_STRENGTH,
@@ -737,34 +629,35 @@ impl EnderDragonEntity {
             {
                 continue;
             }
-            self.attack(world, entity, WING_DAMAGE);
+            self.attack(world, attacker, entity, WING_DAMAGE);
         }
     }
 
-    /// Mirrors vanilla `EnderDragon.hurt(ServerLevel, List<Entity>)`.
-    ///
-    /// Renamed for the same reason as [`Self::hurt_part`]: Rust has no overloading and
-    /// the vanilla name collides with `Entity::hurt`.
-    fn hurt_entities(&self, world: &Arc<World>, entities: &[SharedEntity]) {
+    /// Vanilla `hurt(ServerLevel, List<Entity>)`, renamed off the `Entity::hurt` overload.
+    fn hurt_entities(
+        &self,
+        world: &Arc<World>,
+        attacker: &SharedEntity,
+        entities: &[SharedEntity],
+    ) {
         for entity in entities {
             if entity.as_living_entity().is_some() {
-                self.attack(world, entity, BITE_DAMAGE);
+                self.attack(world, attacker, entity, BITE_DAMAGE);
             }
         }
     }
 
-    /// Applies one contact hit, including the post-attack enchantment effects.
-    fn attack(&self, world: &Arc<World>, target: &SharedEntity, damage: f32) {
-        let source = self.mob_attack_damage_source();
+    fn attack(
+        &self,
+        world: &Arc<World>,
+        attacker: &SharedEntity,
+        target: &SharedEntity,
+        damage: f32,
+    ) {
+        let source = self.mob_attack_damage_source(attacker);
         target.hurt(world, &source, damage);
 
-        let attacker = self.as_entity_event_source();
-        let context = EnchantmentPostAttackContext::new(
-            target.as_ref(),
-            Some(attacker),
-            Some(attacker),
-            &source,
-        );
+        let context = EnchantmentPostAttackContext::new(target, &source);
         enchantment_helper::do_post_attack_effects_with_item_source(
             world,
             target.as_ref(),
@@ -773,10 +666,6 @@ impl EnderDragonEntity {
         );
     }
 
-    /// Drops a share of the death prize, if the world allows mob drops at all.
-    ///
-    /// Vanilla spells the gamerule check out at both award sites; the two are the same
-    /// test over the same tick, so it lives here instead.
     fn award_death_experience(&self, world: &Arc<World>, share: f32) {
         if !world.get_game_rule(&MOB_DROPS) {
             return;
@@ -784,29 +673,21 @@ impl EnderDragonEntity {
         ExperienceOrbEntity::award(world, self.position(), share_of(DEATH_EXPERIENCE, share));
     }
 
-    /// Builds vanilla's `damageSources().mobAttack(this)`.
-    ///
-    /// Deliberately not `Mob::mob_attack_damage_source`, which derives the damage type
-    /// from a held weapon; vanilla's dragon always attacks as a bare mob.
-    fn mob_attack_damage_source(&self) -> DamageSource {
+    /// Not `Mob::mob_attack_damage_source`, which derives the type from a held weapon;
+    /// vanilla's dragon always uses plain `mobAttack(this)`.
+    fn mob_attack_damage_source(&self, attacker: &SharedEntity) -> DamageSource {
         DamageSource::environment(&vanilla_damage_types::MOB_ATTACK)
-            .with_causing_entity(self.id())
-            .with_direct_entity(self.id())
+            .with_causing_entity(Arc::clone(attacker))
+            .with_direct_entity(Arc::clone(attacker))
             .with_source_position(self.position())
     }
 
-    /// Carves through, or bumps into, everything inside one hitbox.
-    ///
-    /// Mirrors vanilla `checkWalls`. Returns whether the dragon hit something it could
-    /// not break, which is what stalls it; blocks that *were* broken are reported to
-    /// clients as particles instead.
+    /// Breaks blocks inside one hitbox; returns whether it hit one it could not break.
     fn check_walls(world: &Arc<World>, box_: WorldAabb) -> bool {
         let min = BlockPos::containing(box_.min_x(), box_.min_y(), box_.min_z());
         let max = BlockPos::containing(box_.max_x(), box_.max_y(), box_.max_z());
 
-        // Vanilla re-reads the game rule for every block. That takes a level-data read
-        // lock, and the body box alone spans dozens of blocks each tick, so the
-        // loop-invariant read is hoisted; the result is identical either way.
+        // Hoisted out of vanilla's per-block read: it takes a level-data lock.
         let griefing = world.get_game_rule(&MOB_GRIEFING);
         let mut hit_wall = false;
         let mut destroyed = false;
@@ -825,9 +706,8 @@ impl EnderDragonEntity {
                         destroyed |= world.remove_block(pos, false);
                     } else {
                         hit_wall = true;
-                        // Without griefing the particle event below is already dead and
-                        // the rest of the box can only set `hit_wall` again. Vanilla
-                        // scans on, but draws no RNG and changes no state doing it.
+                        // Without griefing nothing else can change; vanilla scans on
+                        // but draws no RNG and changes no state.
                         if !griefing {
                             return true;
                         }
@@ -854,31 +734,19 @@ impl EnderDragonEntity {
         hit_wall
     }
 
-    /// Whether the dragon is perched.
-    ///
-    /// Vanilla spells out `phaseManager.getCurrentPhase().isSitting()` at each of its
-    /// five use sites; Rust can name it once.
     fn is_sitting(&self) -> bool {
         self.phase_manager.current().is_sitting()
     }
 
-    /// Returns the dragon's yaw.
     fn yaw(&self) -> f32 {
         self.rotation().0
     }
 
-    /// Sets the dragon's yaw, leaving its pitch alone.
-    ///
-    /// Stands in for vanilla `setYRot`; Steel's setter takes both components, and the
-    /// dragon only ever steers in yaw.
     fn set_yaw(&self, yaw: f32) {
         self.set_rotation((yaw, self.rotation().1));
     }
 
-    /// Advances the wing beat. Mirrors the `flapTime` increment in `aiStep`.
-    ///
-    /// The previous beat is latched by [`Self::dragon_ai_step`] instead, because vanilla
-    /// does that above the dying split while this increment sits below it.
+    /// Advances the wing beat; `o_flap_time` is latched in [`Self::dragon_ai_step`].
     fn tick_flap_time(&self) {
         let velocity = self.velocity();
         let horizontal = velocity.x.hypot(velocity.z) as f32;
@@ -894,11 +762,8 @@ impl EnderDragonEntity {
         };
     }
 
-    /// Ticks the active phase, re-ticking once if it switched.
-    ///
-    /// Vanilla chases exactly one switch, and the steering that follows uses the new
-    /// phase, so a phase that hands off gets to set its successor's fly target in the
-    /// same tick.
+    /// Ticks the active phase, and the new one once more if it switched, so a successor
+    /// sets its fly target in the same tick.
     fn tick_phase(&self, world: &Arc<World>) -> EnderDragonPhase {
         let before = self.phase_manager.current_phase();
         self.phase_manager
@@ -914,14 +779,14 @@ impl EnderDragonEntity {
         self.phase_manager.current_phase()
     }
 
-    /// Flies the dragon toward the active phase's target.
-    ///
-    /// Ported expression by expression from vanilla. Three orderings matter and are
-    /// easy to "tidy" into something that still looks right: the squared distance is
-    /// taken from the pre-clamp height delta; the heading vector reads the vertical
-    /// velocity *after* the climb has been added; and the forward thrust is applied
-    /// along `-Z` rather than through a movement input.
-    fn steer_towards_phase_target(&self, phase: EnderDragonPhase) -> Option<MoveResult> {
+    /// Flies toward the active phase's target. Orderings that look tidyable but are not:
+    /// the distance uses the pre-clamp `dy`, the heading reads velocity after the climb,
+    /// and thrust goes along `-Z` rather than through movement input.
+    fn steer_towards_phase_target(
+        &self,
+        entity: &SharedEntity,
+        phase: EnderDragonPhase,
+    ) -> Option<MoveResult> {
         let instance = self.phase_manager.instance(phase);
         let target = instance.fly_target_location()?;
 
@@ -951,9 +816,8 @@ impl EnderDragonEntity {
         let alignment = (((heading.dot(aim) as f32) + 0.5) / 1.5).max(0.0);
 
         if dx.abs() > STEERING_EPSILON || dz.abs() > STEERING_EPSILON {
-            // TODO: Vanilla uses `Mth.atan2`, a table approximation that `steel-math`
-            // does not port yet; `f64::atan2` is exact and so turns fractionally
-            // differently.
+            // TODO: Use a port of vanilla's table-based `Mth.atan2`; `f64::atan2`
+            // turns fractionally differently.
             let desired = wrap_degrees(180.0 - (dx.atan2(dz) as f32).to_degrees() - self.yaw())
                 .clamp(-MAX_TURN_DEGREES, MAX_TURN_DEGREES);
             let mut y_rot_a = self.y_rot_a.lock();
@@ -976,7 +840,7 @@ impl EnderDragonEntity {
         } else {
             velocity
         };
-        let result = self.move_entity(MoverType::SelfMovement, movement);
+        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, movement);
 
         let moved = self.velocity();
         let slide = 0.8 + 0.15 * (moved.normalize_or_zero().dot(heading) + 1.0) / 2.0;
@@ -984,16 +848,9 @@ impl EnderDragonEntity {
         result
     }
 
-    /// Applies damage routed through one of the dragon's hitboxes.
-    ///
-    /// Mirrors vanilla `EnderDragon.hurt(ServerLevel, EnderDragonPart, DamageSource,
-    /// float)`, which Rust cannot name as an overload of `Entity::hurt`.
-    ///
-    /// Everything but the head takes a quarter of the damage plus a flat point, which
-    /// is what makes aiming for the head worthwhile.
-    ///
-    /// Note the dragon reports a hit as handled even when it ignores the damage, so
-    /// an arrow from a dispenser still lands and simply does nothing.
+    /// Applies damage through a hitbox (vanilla's per-part `hurt` overload). Non-head
+    /// parts take a quarter plus up to one point. Ignored sources still report handled,
+    /// so e.g. a dispenser arrow lands and does nothing.
     pub fn hurt_part(
         &self,
         world: &World,
@@ -1015,7 +872,7 @@ impl EnderDragonEntity {
             return false;
         }
 
-        if !Self::is_damageable_by(world, source) {
+        if !Self::is_damageable_by(source) {
             return true;
         }
 
@@ -1027,25 +884,13 @@ impl EnderDragonEntity {
         true
     }
 
-    /// Whether a damage source is allowed to hurt the dragon at all.
-    ///
-    /// Vanilla admits only players and the explosion-shaped damage types, which is
-    /// what stops the dragon being whittled down by fire, drowning or a stray mob.
-    fn is_damageable_by(world: &World, source: &DamageSource) -> bool {
-        if source.is(&vanilla_damage_type_tags::DamageTypeTag::ALWAYS_HURTS_ENDER_DRAGONS) {
-            return true;
-        }
-
-        source
-            .causing_entity_id
-            .and_then(|id| world.get_entity_by_id(id))
-            .is_some_and(|entity| entity.as_player().is_some())
+    fn is_damageable_by(source: &DamageSource) -> bool {
+        source.is(&vanilla_damage_type_tags::DamageTypeTag::ALWAYS_HURTS_ENDER_DRAGONS)
+            || source
+                .causing_entity()
+                .is_some_and(|entity| entity.as_player().is_some())
     }
 
-    /// Tracks damage taken while perched, and takes off once enough has landed.
-    ///
-    /// Mirrors the accumulator in vanilla's per-part `hurt`: a quarter of max health
-    /// is what dislodges a sitting dragon.
     fn accumulate_sitting_damage(&self, taken: f32) {
         let mut received = self.sitting_damage_received.lock();
         *received += taken;
@@ -1059,9 +904,7 @@ impl EnderDragonEntity {
             .set_phase(self, EnderDragonPhase::Takeoff);
     }
 
-    /// Applies the damage the shared living path would have applied.
-    ///
-    /// Mirrors vanilla `EnderDragon.reallyHurt`, which calls `super.hurtServer`.
+    /// Vanilla `reallyHurt`, i.e. `super.hurtServer`.
     fn really_hurt(&self, world: &World, source: &DamageSource, damage: f32) {
         self.default_hurt_server(world, source, damage);
     }
@@ -1091,11 +934,8 @@ impl Entity for EnderDragonEntity {
         &self.sub_entities
     }
 
-    /// Mirrors vanilla `EnderDragon.kill`, which removes the dragon outright.
-    ///
-    /// The shared `kill` damages a living entity instead, and the dragon turns damage
-    /// into the 200-tick death flight, so without this override `/kill` would take ten
-    /// seconds to take effect.
+    /// Removes outright, as vanilla does; the shared damage-based `kill` would start
+    /// the 200-tick death flight instead.
     fn kill(&self, _world: &World) {
         // TODO: Report to `EnderDragonFight::update_dragon` and `set_dragon_killed`
         // once the fight exists.
@@ -1103,7 +943,7 @@ impl Entity for EnderDragonEntity {
         self.game_event(&vanilla_game_events::ENTITY_DIE);
     }
 
-    /// Mirrors vanilla `EnderDragon.sanitizeScale`, which pins the dragon to 1.0.
+    /// Ignores pose and scale (vanilla `sanitizeScale` pins it to 1.0).
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
         self.entity_type.dimensions
     }
@@ -1116,26 +956,19 @@ impl Entity for EnderDragonEntity {
         self.update_dirty_mob_effect_entity_data();
     }
 
-    /// Mirrors vanilla `EnderDragon.isFlapping`.
-    ///
-    /// Detects the point in the beat where the wings sweep down, which is what makes
-    /// the shared move path emit the flap game event.
     fn is_flapping(&self) -> bool {
-        // The beat crosses the threshold shallowly, so `Mth.cos`'s table and `f32::cos`
-        // disagree on which tick the sweep lands.
+        // Table `trig::cos`, not `f32::cos`: the beat crosses -0.3 shallowly, so the
+        // two disagree on which tick the sweep lands.
         let flap = trig::cos(f64::from(*self.flap_time.lock() * TAU));
         let previous = trig::cos(f64::from(*self.o_flap_time.lock() * TAU));
         previous <= -0.3 && flap >= -0.3
     }
 
-    /// Mirrors vanilla `EnderDragon.isPickable`.
-    ///
-    /// The dragon body itself is not a target; its eight parts are.
+    /// Only the parts are pickable, not the body.
     fn is_pickable(&self) -> bool {
         false
     }
 
-    /// Mirrors vanilla `EnderDragon.checkDespawn`, which is empty.
     fn check_despawn(&self) {}
 
     fn sound_source(&self) -> SoundSource {
@@ -1186,8 +1019,7 @@ impl LivingEntity for EnderDragonEntity {
             .set(clamped);
     }
 
-    /// Mirrors vanilla `EnderDragon.hurtServer`, which routes everything through the
-    /// body hitbox so that a direct hit is scaled like any other non-head part.
+    /// Routes through the body hitbox, so a direct hit scales like a non-head part.
     fn hurt_server(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         let Some(body) = self.sub_entities.get(BODY) else {
             return false;
@@ -1198,10 +1030,6 @@ impl LivingEntity for EnderDragonEntity {
         self.hurt_part(world, body, source, amount)
     }
 
-    /// Mirrors vanilla `EnderDragon.knockback`, which a perched dragon shrugs off.
-    ///
-    /// Vanilla's override also takes the damage source and amount; Steel's signature
-    /// carries neither, and the dragon's body uses neither.
     fn knockback(&self, power: f64, xd: f64, zd: f64) {
         if self.is_sitting() {
             return;
@@ -1209,15 +1037,9 @@ impl LivingEntity for EnderDragonEntity {
         self.default_knockback(power, xd, zd);
     }
 
-    /// Mirrors vanilla `EnderDragon.handleKillingBlow`.
-    ///
-    /// Rather than dying, an airborne dragon claws back to a single point of health and
-    /// enters its death flight. Because [`LivingEntity::is_dead_or_dying`] is
-    /// health-based, restoring that point is exactly what keeps [`Self::tick_death`]
-    /// from starting and lets the phase machine keep steering.
-    ///
-    /// The default is deliberately not called. Vanilla's body is `dead = true`, which
-    /// Steel's `die` has already claimed atomically before this hook runs.
+    /// An airborne dragon returns to 1 health and enters the Dying phase; the restored
+    /// point keeps `is_dead_or_dying` false so the phase machine keeps steering. The
+    /// default (vanilla `dead = true`) is skipped: Steel's `die` already set it.
     fn handle_killing_blow(&self) {
         if self.is_sitting() {
             return;
@@ -1227,12 +1049,9 @@ impl LivingEntity for EnderDragonEntity {
         self.phase_manager.set_phase(self, EnderDragonPhase::Dying);
     }
 
-    /// Mirrors vanilla `EnderDragon.tickDeath`.
-    ///
-    /// A full replacement for the shared death tick, which counts a different field to
-    /// a different limit. Vanilla's explosion particles between ticks 180 and 200 go
-    /// through `Level.addParticle`, a no-op on the server, so they are absent here.
-    fn tick_death(&self) {
+    /// Replaces the shared death tick. Vanilla's tick 180-200 explosion particles use
+    /// `Level.addParticle`, a server no-op, so they are absent.
+    fn tick_death(&self, entity: &SharedEntity) {
         // TODO: Report to `EnderDragonFight::update_dragon` once the fight exists.
         let death_time = {
             let mut death_time = self.dragon_death_time.lock();
@@ -1253,10 +1072,9 @@ impl LivingEntity for EnderDragonEntity {
         }
 
         let drift = DVec3::new(0.0, f64::from(DEATH_DRIFT_PER_TICK), 0.0);
-        let _ = self.move_entity(MoverType::SelfMovement, drift);
+        let _ = Arc::clone(entity).move_entity(MoverType::SelfMovement, drift);
         for part in &self.sub_entities {
-            // The old position is recorded *before* the move here, the opposite way
-            // round from `tick_parts`, which snapshots first and writes back after.
+            // Unlike `tick_parts`, the old position is written before the move.
             part.set_old_position_to_current();
             part.set_part_position(part.position() + drift);
         }
@@ -1272,22 +1090,17 @@ impl LivingEntity for EnderDragonEntity {
         self.game_event(&vanilla_game_events::ENTITY_DIE);
     }
 
-    /// Mirrors vanilla `EnderDragon.aiStep`, which does not call `super`.
-    fn ai_step(&self) -> Option<MoveResult> {
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
         let world = self.level()?;
-        self.dragon_ai_step(&world)
+        self.dragon_ai_step(&world, entity)
     }
 
-    /// Flushes the line-of-sight cache the shared AI path would have cleared.
-    ///
-    /// The dragon replaces `ai_step` wholesale, so it never reaches
-    /// `mob_server_ai_step`, and without this every targeting check would answer from
-    /// a cache populated once and never invalidated.
-    fn server_ai_step(&self) {
+    /// Clears the line-of-sight cache, since the replaced `ai_step` never reaches
+    /// `mob_server_ai_step` to do it.
+    fn server_ai_step(&self, _entity: &SharedEntity) {
         self.tick_sensing();
     }
 
-    /// Mirrors vanilla `EnderDragon.getSoundVolume`.
     fn sound_volume(&self) -> f32 {
         5.0
     }
@@ -1296,12 +1109,11 @@ impl LivingEntity for EnderDragonEntity {
         Some(&sound_events::ENTITY_ENDER_DRAGON_HURT)
     }
 
-    /// Mirrors vanilla `EnderDragon.sanitizeScale`, which always returns 1.0.
+    /// Vanilla `sanitizeScale`.
     fn get_scale(&self) -> f32 {
         1.0
     }
 
-    /// Mirrors vanilla `EnderDragon.addEffect`, which refuses every effect.
     fn add_mob_effect(&self, _effect: MobEffectInstance) -> bool {
         false
     }
@@ -1320,18 +1132,13 @@ impl Mob for EnderDragonEntity {
         self.entity_data.lock().mob.mob_flags.set(flags);
     }
 
-    /// The dragon steers itself, so it never ticks a path navigation.
-    ///
-    /// The shared default would tick the `PathNavigation` that `MobBase::new` creates
-    /// for every mob. The dragon keeps that unused navigation, exactly as it inherits
-    /// an unused goal selector from vanilla's `Mob`.
+    /// The dragon steers itself; the `PathNavigation` from `MobBase::new` stays unused.
     fn tick_path_navigation(&self) {}
 
     fn ambient_sound(&self) -> Option<SoundEventRef> {
         Some(&sound_events::ENTITY_ENDER_DRAGON_AMBIENT)
     }
 
-    /// Mirrors vanilla `EnderDragon.canAttack`.
     fn can_attack(&self, target: &dyn LivingEntity) -> bool {
         target.can_be_seen_as_enemy()
     }

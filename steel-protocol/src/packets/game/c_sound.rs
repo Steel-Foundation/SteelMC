@@ -2,6 +2,8 @@ use glam::{DVec3, IVec3};
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_SOUND;
 use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
+use steel_utils::codec::VarInt;
+use steel_utils::serial::WriteTo as WriteToTrait;
 
 /// Sound source categories (matches vanilla `SoundSource` enum order).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,6 +23,20 @@ pub enum SoundSource {
 }
 
 impl SoundSource {
+    pub const VALUES: [SoundSource; 11] = [
+        SoundSource::Master,
+        SoundSource::Music,
+        SoundSource::Records,
+        SoundSource::Weather,
+        SoundSource::Blocks,
+        SoundSource::Hostile,
+        SoundSource::Neutral,
+        SoundSource::Players,
+        SoundSource::Ambient,
+        SoundSource::Voice,
+        SoundSource::Ui,
+    ];
+
     /// Returns the vanilla command literal for this category.
     #[must_use]
     pub const fn name(self) -> &'static str {
@@ -46,6 +62,12 @@ impl SoundSource {
     }
 }
 
+impl WriteToTrait for SoundSource {
+    fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        VarInt(*self as i32).write(writer)
+    }
+}
+
 /// Sent to play a sound effect at a specific position.
 ///
 /// The position is encoded at 8x precision (divide by 8 to get actual block coordinates).
@@ -55,9 +77,8 @@ impl SoundSource {
 pub struct CSound {
     /// The holder-encoded sound event.
     pub sound: SoundEventHolder,
-    /// The sound source category (`VarInt`).
-    #[write(as = VarInt)]
-    pub source: i32,
+    /// The sound source category.
+    pub source: SoundSource,
     /// X position multiplied by 8 (fixed-point).
     pub pos: IVec3,
     /// Volume (1.0 = normal).
@@ -109,7 +130,7 @@ impl CSound {
     ) -> Self {
         Self {
             sound,
-            source: source.as_varint(),
+            source,
             pos: IVec3::new(
                 (pos.x * 8.0) as i32,
                 (pos.y * 8.0) as i32,
@@ -150,7 +171,6 @@ impl CSound {
 
 #[cfg(test)]
 mod tests {
-
     use steel_registry::init_vanilla_registry;
     use steel_registry::{RegistryEntry, sound_events};
     use steel_utils::BlockPos;

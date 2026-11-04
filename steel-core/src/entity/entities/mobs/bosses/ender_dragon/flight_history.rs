@@ -1,10 +1,10 @@
 //! Recent flight samples used to lag the dragon's neck, head and tail behind its body.
 
-/// Number of samples retained. Mirrors vanilla `DragonFlightHistory.LENGTH`.
+/// Number of samples retained.
 pub const LENGTH: usize = 64;
 const MASK: i32 = 63;
 
-/// One tick of flight history. Mirrors vanilla `DragonFlightHistory.Sample`.
+/// One tick of flight history.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DragonFlightSample {
     /// The dragon's height on that tick.
@@ -13,11 +13,8 @@ pub struct DragonFlightSample {
     pub y_rot: f32,
 }
 
-/// A fixed ring of the dragon's recent height and yaw.
-///
-/// Mirrors vanilla `DragonFlightHistory`. The render-only members are dropped:
-/// `copyFrom` serves the client's entity-replacement path, and the partial-ticks
-/// `get` overload interpolates between samples for rendering.
+/// A fixed ring of the dragon's recent height and yaw (vanilla `DragonFlightHistory`,
+/// minus the client-only `copyFrom` and partial-tick `get`).
 #[derive(Debug, Clone)]
 pub struct DragonFlightHistory {
     samples: [DragonFlightSample; LENGTH],
@@ -35,10 +32,8 @@ impl DragonFlightHistory {
         }
     }
 
-    /// Records this tick's height and yaw.
-    ///
-    /// The first sample fills the whole ring, so the tail and head offsets do not
-    /// read zeroed history on the tick the dragon spawns.
+    /// Records this tick's height and yaw. The first sample fills the whole ring, so the
+    /// tail and head offsets never read zeroed history on the spawn tick.
     pub fn record(&mut self, y: f64, y_rot: f32) {
         let sample = DragonFlightSample { y, y_rot };
         if self.head < 0 {
@@ -52,11 +47,8 @@ impl DragonFlightHistory {
         self.samples[self.head as usize] = sample;
     }
 
-    /// Returns the sample recorded `delay` ticks ago.
-    ///
-    /// The index is masked rather than reduced, matching vanilla's
-    /// `samples[head - delay & 63]`: for a negative operand Java's `&` wraps around
-    /// the ring, where a remainder would not.
+    /// Returns the sample recorded `delay` ticks ago. Masked like vanilla's
+    /// `head - delay & 63`, which wraps a negative index where a remainder would not.
     #[must_use]
     pub const fn get(&self, delay: i32) -> DragonFlightSample {
         self.samples[((self.head - delay) & MASK) as usize]
@@ -79,8 +71,6 @@ mod tests {
 
         history.record(64.0, 90.0);
 
-        // Otherwise the tail, which reads up to 16 ticks back, would trail through
-        // zeroed history for the dragon's first second alive.
         for delay in 0..LENGTH as i32 {
             assert_eq!(history.get(delay).y, 64.0);
         }
@@ -101,13 +91,11 @@ mod tests {
     #[test]
     fn the_ring_wraps_by_mask_not_remainder() {
         let mut history = DragonFlightHistory::new();
-        // Two full laps, so `head` is small while the reads run past zero.
         for tick in 0..(LENGTH * 2) {
             history.record(tick as f64, 0.0);
         }
 
-        // `head` is now 63; reading 63 back must reach the oldest retained sample
-        // rather than panicking on a negative index.
+        // After two full laps `head` is 63, so reading 63 back reaches the oldest sample.
         assert_eq!(history.get(0).y, (LENGTH * 2 - 1) as f64);
         assert_eq!(history.get(63).y, (LENGTH * 2 - 64) as f64);
     }

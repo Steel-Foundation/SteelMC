@@ -102,7 +102,12 @@ impl FeatureDecorationRunner {
         }
 
         for _ in 0..max_steps {
-            if Self::test_block_predicate(region, registry, target_condition, position) {
+            if BlockStateProviderEvaluator::test_block_predicate(
+                region,
+                registry,
+                target_condition,
+                position,
+            ) {
                 return Some(position);
             }
 
@@ -121,7 +126,12 @@ impl FeatureDecorationRunner {
             }
         }
 
-        if Self::test_block_predicate(region, registry, target_condition, position) {
+        if BlockStateProviderEvaluator::test_block_predicate(
+            region,
+            registry,
+            target_condition,
+            position,
+        ) {
             Some(position)
         } else {
             None

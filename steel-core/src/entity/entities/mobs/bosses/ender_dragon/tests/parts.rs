@@ -10,9 +10,9 @@ use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::entity::SharedEntity;
 
-/// A world with a 3x3 block of chunks and the block/behavior registries live, which
-/// the wall scans need in order to actually break anything.
-fn walls_test_world(key: &'static str) -> Arc<World> {
+/// A 3x3-chunk world with the block and behavior registries live, which the wall
+/// scans need to break anything.
+fn walls_test_world(key: &'static str) -> TestWorld {
     init_behaviors();
     init_block_entities();
     chunked_test_world(key, 1)
@@ -53,7 +53,7 @@ fn health(entity: &SharedEntity) -> f32 {
 fn parts_sit_at_their_vanilla_offsets() {
     let dragon = test_dragon();
 
-    dragon.tick_parts(test_world());
+    dragon.tick_parts(test_world(), &shared(&dragon));
 
     // Hand-evaluated from vanilla's `aiStep` at yaw 0 with a flat flight history, so
     // both the trig table and every offset constant have to agree. The dragon is
@@ -80,12 +80,9 @@ fn parts_sit_at_their_vanilla_offsets() {
 
 #[test]
 fn a_flying_dragon_lifts_its_head() {
-    let dragon = test_dragon();
-    dragon
-        .phase_manager()
-        .set_phase(&dragon, EnderDragonPhase::HoldingPattern);
+    let dragon = in_phase(test_dragon(), EnderDragonPhase::HoldingPattern);
 
-    dragon.tick_parts(test_world());
+    dragon.tick_parts(test_world(), &shared(&dragon));
 
     // Off the ground the head tracks the body's recent climb instead of the fixed
     // perched offset, which on a flat history is no drop at all.
@@ -98,52 +95,54 @@ fn a_flying_dragon_lifts_its_head() {
 
 #[test]
 fn griefing_carves_a_path_through_terrain() {
-    let world = walls_test_world("dragon_griefing");
-    place(&world, &vanilla_blocks::STONE);
+    let world_fixture = walls_test_world("dragon_griefing");
+    let world = &world_fixture.world;
+    place(world, &vanilla_blocks::STONE);
 
-    let hit_wall = scan(&world);
+    let hit_wall = scan(world);
 
-    assert!(!scanned_block_survived(&world), "the stone survived");
+    assert!(!scanned_block_survived(world), "the stone survived");
     // A block it can break is not a wall, so the dragon keeps its speed.
     assert!(!hit_wall);
 }
 
 #[test]
 fn without_the_gamerule_the_dragon_bumps_into_terrain() {
-    let world = walls_test_world("dragon_no_griefing");
+    let world_fixture = walls_test_world("dragon_no_griefing");
+    let world = &world_fixture.world;
     world.set_game_rule(&MOB_GRIEFING, false);
-    place(&world, &vanilla_blocks::STONE);
+    place(world, &vanilla_blocks::STONE);
 
-    let hit_wall = scan(&world);
+    let hit_wall = scan(world);
 
-    assert!(scanned_block_survived(&world), "the stone was broken");
+    assert!(scanned_block_survived(world), "the stone was broken");
     assert!(hit_wall);
 }
 
 #[test]
 fn dragon_immune_blocks_survive_even_with_griefing_on() {
-    let world = walls_test_world("dragon_immune_blocks");
-    place(&world, &vanilla_blocks::BEDROCK);
+    let world_fixture = walls_test_world("dragon_immune_blocks");
+    let world = &world_fixture.world;
+    place(world, &vanilla_blocks::BEDROCK);
 
-    let hit_wall = scan(&world);
+    let hit_wall = scan(world);
 
     // This is what keeps the dragon from chewing through the exit portal frame.
-    assert!(scanned_block_survived(&world), "bedrock was broken");
+    assert!(scanned_block_survived(world), "bedrock was broken");
     assert!(hit_wall);
 }
 
 #[test]
 fn dragon_transparent_blocks_are_passed_straight_through() {
-    let world = walls_test_world("dragon_transparent_blocks");
+    let world_fixture = walls_test_world("dragon_transparent_blocks");
+    let world = &world_fixture.world;
     // Light rather than fire, which cannot survive an unsupported placement long
     // enough to be scanned.
-    place(&world, &vanilla_blocks::LIGHT);
+    place(world, &vanilla_blocks::LIGHT);
 
-    let hit_wall = scan(&world);
+    let hit_wall = scan(world);
 
-    // A `dragon_transparent` block is neither broken nor treated as a wall; the scan
-    // skips it outright.
-    assert!(scanned_block_survived(&world), "the light block was broken");
+    assert!(scanned_block_survived(world), "the light block was broken");
     assert!(!hit_wall);
 }
 
@@ -172,34 +171,26 @@ fn add_target(world: &Arc<World>, position: DVec3) -> SharedEntity {
 
 /// Adds a dragon at the origin, in a phase that is not sitting.
 fn add_flying_dragon(world: &Arc<World>) -> Arc<EnderDragonEntity> {
-    init_entities();
-    let ids = ENTITIES.reserve_id(&vanilla_entities::ENDER_DRAGON);
-    let dragon = Arc::new(EnderDragonEntity::new(
-        &vanilla_entities::ENDER_DRAGON,
-        ids.first(),
-        DVec3::ZERO,
-        Arc::downgrade(world),
-    ));
-    dragon
-        .phase_manager()
-        .set_phase(&dragon, EnderDragonPhase::HoldingPattern);
-    dragon
+    in_phase(
+        dragon_at(world, DVec3::ZERO),
+        EnderDragonPhase::HoldingPattern,
+    )
 }
 
 #[test]
 fn a_wing_sweep_shoves_and_cuts() {
-    let world = walls_test_world("dragon_wing_sweep");
-    let dragon = add_flying_dragon(&world);
+    let world_fixture = walls_test_world("dragon_wing_sweep");
+    let world = &world_fixture.world;
+    let dragon = add_flying_dragon(world);
     // Under the right wing, which settles at (4.5, 2, 0) and sweeps a box inflated by
     // (4, 2, 4) and dropped two blocks.
-    let pig = add_target(&world, DVec3::new(4.5, 0.0, 0.0));
+    let pig = add_target(world, DVec3::new(4.5, 0.0, 0.0));
     let health_before = health(&pig);
     let velocity_before = pig.velocity();
 
-    dragon.tick_parts(&world);
+    dragon.tick_parts(world, &shared(&dragon));
 
-    // Measured as a delta so the assertion still holds if the target ever carries
-    // velocity of its own into the sweep.
+    // A delta, in case the target ever carries velocity of its own.
     let shove = pig.velocity() - velocity_before;
     assert!(shove.x > 0.0, "the pig was not shoved away from the body");
     assert!(
@@ -211,16 +202,17 @@ fn a_wing_sweep_shoves_and_cuts() {
 
 #[test]
 fn a_perched_dragon_shoves_without_cutting() {
-    let world = walls_test_world("dragon_wing_shove_only");
-    let dragon = add_flying_dragon(&world);
+    let world_fixture = walls_test_world("dragon_wing_shove_only");
+    let world = &world_fixture.world;
+    let dragon = add_flying_dragon(world);
     // Hovering counts as sitting, which is what suppresses the damage.
     dragon
         .phase_manager()
         .set_phase(&dragon, EnderDragonPhase::Hovering);
-    let pig = add_target(&world, DVec3::new(4.5, 0.0, 0.0));
+    let pig = add_target(world, DVec3::new(4.5, 0.0, 0.0));
     let health_before = health(&pig);
 
-    dragon.tick_parts(&world);
+    dragon.tick_parts(world, &shared(&dragon));
 
     assert!(pig.velocity().x > 0.0, "the pig was not shoved outwards");
     assert_eq!(health(&pig), health_before);
@@ -228,21 +220,21 @@ fn a_perched_dragon_shoves_without_cutting() {
 
 #[test]
 fn the_head_bites_for_double_a_wing() {
-    let world = walls_test_world("dragon_head_bite");
-    let dragon = add_flying_dragon(&world);
-    // The head settles at (0, 0, -6.5) once positioned. The bite sweep runs *before*
-    // the head is repositioned, so it only reaches this pig on the second tick, which
-    // is exactly the one-tick lag vanilla has.
-    let pig = add_target(&world, DVec3::new(0.0, 0.0, -7.0));
+    let world_fixture = walls_test_world("dragon_head_bite");
+    let world = &world_fixture.world;
+    let dragon = add_flying_dragon(world);
+    // The head settles at (0, 0, -6.5), but the bite sweep runs *before* repositioning,
+    // so it reaches this pig only on the second tick, as in vanilla.
+    let pig = add_target(world, DVec3::new(0.0, 0.0, -7.0));
     let health_before = health(&pig);
 
-    dragon.tick_parts(&world);
+    dragon.tick_parts(world, &shared(&dragon));
     assert_eq!(
         health(&pig),
         health_before,
         "the head reached the pig before it had been positioned"
     );
 
-    dragon.tick_parts(&world);
+    dragon.tick_parts(world, &shared(&dragon));
     assert_eq!(health(&pig), health_before - 10.0);
 }

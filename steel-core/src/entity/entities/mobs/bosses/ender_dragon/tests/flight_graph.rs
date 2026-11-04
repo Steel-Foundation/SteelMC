@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use crate::entity::ai::node::Node;
 use crate::entity::entities::mobs::bosses::ender_dragon::flight_graph::{
-    NODE_COUNT, OUTER_RING_NODES,
+    INNER_RING_START, NODE_COUNT, OUTER_RING_NODES,
 };
 
 /// A fight with at least one crystal alive, which opens the whole graph.
@@ -12,26 +12,22 @@ const WITH_CRYSTALS: Option<i32> = Some(1);
 /// No fight at all, which confines the dragon to the two inner rings.
 const NO_FIGHT: Option<i32> = None;
 
-/// First index of the radius-20 ring. Private to the graph, so restated here.
-const INNER_RING_START: usize = 20;
-
 /// A world with chunks out past the radius-60 outer ring, built once and shared.
 fn graph_test_world() -> &'static Arc<World> {
-    static WORLD: OnceLock<Arc<World>> = OnceLock::new();
-    WORLD.get_or_init(|| chunked_test_world("dragon_flight_graph", 4))
+    static WORLD: OnceLock<TestWorld> = OnceLock::new();
+    &WORLD
+        .get_or_init(|| chunked_test_world("dragon_flight_graph", 4))
+        .world
 }
 
 fn test_graph() -> DragonFlightGraph {
-    // The chunks are empty, so every heightmap lookup sits on the world floor and each
-    // node clamps to the shared minimum height. That is what makes the ring geometry
-    // below deterministic; the chunks only need to exist so the build does not refuse.
+    // Empty chunks clamp every node to the minimum height, keeping the geometry
+    // deterministic; they only need to exist so the build does not refuse.
     DragonFlightGraph::try_build(graph_test_world()).expect("the arena chunks are loaded")
 }
 
 #[test]
 fn a_cold_arena_refuses_to_build_a_graph() {
-    // The caller caches the graph for the dragon's whole life, so a build off the world
-    // floor would pin all 24 nodes to the minimum height permanently.
     assert!(DragonFlightGraph::try_build(test_world()).is_none());
 }
 
@@ -40,10 +36,8 @@ fn node_zero_sits_on_the_positive_x_axis() {
     let graph = test_graph();
     let node = graph.node(0);
 
-    // Node 0's angle is exactly -2π, so `60 * cos` lands on an integer and the result
-    // of `floor` is decided by the trig implementation alone. `f32::cos` would be
-    // liable to return 0.99999994 here and yield 59; vanilla's lookup table returns a
-    // true 1.0. This is the case that catches a port using the wrong `cos`.
+    // Node 0's angle is exactly -2π, so `floor(60 * cos)` hinges on the trig:
+    // `f32::cos` may return 0.99999994 (giving 59) where vanilla's table gives 1.0.
     assert_eq!((node.x, node.z), (60, 0));
 }
 
@@ -51,8 +45,6 @@ fn node_zero_sits_on_the_positive_x_axis() {
 fn every_node_position_is_distinct() {
     let graph = test_graph();
 
-    // The A* compares nodes by index where vanilla compares them by identity, and the
-    // two only agree while no two nodes share a position.
     for a in 0..NODE_COUNT {
         for b in (a + 1)..NODE_COUNT {
             let (first, second) = (graph.node(a), graph.node(b));
@@ -144,7 +136,6 @@ fn a_final_node_is_appended_after_the_graph_nodes() {
         .find_path(0, 5, Some(final_node), WITH_CRYSTALS)
         .expect("node 0 can reach node 5");
 
-    // This is how the landing and strafing phases aim at a point off the graph.
     let last = path.end_node().expect("a path always has a final node");
     assert_eq!((last.x, last.y, last.z), (123, 45, -67));
     assert!(path.node_count() > 1);

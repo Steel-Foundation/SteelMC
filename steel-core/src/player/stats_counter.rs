@@ -316,6 +316,7 @@ mod tests {
 
     #[test]
     fn reset_stats() {
+        init_vanilla_registry();
         let mut stats_counter = StatsCounter::new();
 
         let jump_stat = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::JUMP);

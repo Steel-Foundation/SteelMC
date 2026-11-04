@@ -297,9 +297,10 @@ mod tests {
     fn grows_upward_from_chorus_support() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("chorus_flower_growth");
+        let world_fixture = fresh_test_world("chorus_flower_growth");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         assert!(world.set_block(
             pos.below(),
@@ -309,7 +310,7 @@ mod tests {
         let state = vanilla_blocks::CHORUS_FLOWER.default_state();
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
 
-        behavior().random_tick_with_rng(state, &world, pos, &mut StdRng::seed_from_u64(0));
+        behavior().random_tick_with_rng(state, world, pos, &mut StdRng::seed_from_u64(0));
 
         let stem = world.get_block_state(pos);
         assert_eq!(stem.get_block(), &vanilla_blocks::CHORUS_PLANT);
@@ -323,9 +324,10 @@ mod tests {
     fn mature_flower_dies_when_it_cannot_grow() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("chorus_flower_death");
+        let world_fixture = fresh_test_world("chorus_flower_death");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         assert!(world.set_block(
             pos.below(),
@@ -337,7 +339,7 @@ mod tests {
             .set_value(AGE, DEAD_AGE - 1);
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
 
-        behavior().random_tick_with_rng(state, &world, pos, &mut StdRng::seed_from_u64(0));
+        behavior().random_tick_with_rng(state, world, pos, &mut StdRng::seed_from_u64(0));
 
         assert_eq!(world.get_block_state(pos).get_value(AGE), DEAD_AGE);
     }
@@ -346,9 +348,10 @@ mod tests {
     fn creates_branches_when_upward_growth_is_obstructed() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("chorus_flower_branching");
+        let world_fixture = fresh_test_world("chorus_flower_branching");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         assert!(world.set_block(
             pos.below(),
@@ -363,7 +366,7 @@ mod tests {
         let state = vanilla_blocks::CHORUS_FLOWER.default_state();
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
 
-        behavior().random_tick_with_rng(state, &world, pos, &mut MaxRng);
+        behavior().random_tick_with_rng(state, world, pos, &mut MaxRng);
 
         assert_eq!(
             world.get_block_state(pos).get_block(),
@@ -379,9 +382,10 @@ mod tests {
     fn unsupported_flower_breaks_on_scheduled_tick() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("chorus_flower_survival");
+        let world_fixture = fresh_test_world("chorus_flower_survival");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         assert!(world.set_block(
             pos.below(),
@@ -391,7 +395,7 @@ mod tests {
         let state = vanilla_blocks::CHORUS_FLOWER.default_state();
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
 
-        behavior().tick(state, &world, pos);
+        behavior().tick(state, world, pos);
 
         assert!(world.get_block_state(pos).is_air());
     }

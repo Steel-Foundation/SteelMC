@@ -50,6 +50,7 @@ use crate::chicken_sound_variant::ChickenSoundVariant;
 use crate::chicken_variant::ChickenVariant;
 use crate::cow_sound_variant::CowSoundVariant;
 use crate::cow_variant::CowVariant;
+use crate::dye_color::DyeColor;
 use crate::frog_variant::FrogVariant;
 use crate::item_stack::ItemStack;
 use crate::painting_variant::PaintingVariant;
@@ -421,6 +422,9 @@ pub enum EntityData {
 
     // Player
     HumanoidArm(HumanoidArm),
+
+    // Dye color
+    DyeColor(DyeColor),
 }
 
 /// Network-ready data value with index and serializer info.

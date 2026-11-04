@@ -24,7 +24,7 @@ use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, SignalQueryContext, World};
 
-/// Vanilla `JukeboxBlock` behavior.
+/// Jukebox block behavior.
 #[block_behavior]
 pub struct JukeboxBlock {
     block: BlockRef,
@@ -184,7 +184,7 @@ impl BlockBehavior for JukeboxBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        world: &dyn LevelReader,
+        world: &World,
         pos: BlockPos,
         _direction: Direction,
     ) -> i32 {

@@ -19,6 +19,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 # Data structures
+bitflags.workspace = true
 glam.workspace = true
 rustc-hash.workspace = true
 smallvec.workspace = true
@@ -46,6 +47,8 @@ serde_json.workspace = true
 # Proc macros
 proc-macro2.workspace = true
 quote.workspace = true
+prettyplease = { workspace = true, optional = true }
+syn = { workspace = true, features = ["full"], optional = true }
 
 # Data structures
 rustc-hash.workspace = true
@@ -58,7 +61,7 @@ simdnbt.workspace = true
 flate2.workspace = true
 
 [features]
-fmt = []
+fmt = ["dep:prettyplease", "dep:syn"]
 minecraft-src = []
 
 [lints]

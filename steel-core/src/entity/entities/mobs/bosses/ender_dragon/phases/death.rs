@@ -4,7 +4,7 @@ use glam::DVec3;
 use steel_utils::BlockPos;
 use steel_utils::locks::SyncMutex;
 
-use super::navigation::{MAX_TARGET_DISTANCE_SQR, MIN_TARGET_DISTANCE_SQR};
+use super::navigation::is_off_course;
 use super::{DragonPhaseInstance, EnderDragonPhase};
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::Entity as _;
@@ -15,12 +15,9 @@ use crate::world::World;
 /// How fast the dragon makes its final flight, well above any other phase.
 const DEATH_FLY_SPEED: f32 = 3.0;
 
-/// Flying to the podium to die. Mirrors vanilla `DragonDeathPhase`.
-///
-/// The phase does not kill the dragon; it *keeps it alive*. Health is re-asserted at
-/// 1.0 every tick while the podium is still out of reach, and dropped to 0.0 on
-/// arrival, and since `is_dead_or_dying` is health-based, that drop is what finally
-/// lets `tick_death` start counting.
+/// Flying to the podium to die. The phase *keeps the dragon alive*: health is held at
+/// 1.0 each tick until arrival, then dropped to 0.0, which is what lets `tick_death`
+/// (health-based via `is_dead_or_dying`) start counting.
 pub struct DragonDeathPhase {
     /// Latched on the first tick after `begin`, because resolving it needs the world.
     target_location: SyncMutex<Option<DVec3>>,
@@ -34,15 +31,11 @@ impl DragonDeathPhase {
         }
     }
 
-    /// Resolves the point above the exit portal that the dragon dies on.
-    ///
-    /// `None` while the podium's chunk is not loaded. The result is latched for the
-    /// whole death flight, and [`World::heightmap_pos`] would answer with the world
-    /// floor rather than failing, which in the End would send the dragon down to y 0 to
-    /// die instead of onto the portal.
+    /// Resolves the point above the exit portal the dragon dies on, or `None` while the
+    /// podium's chunk is unloaded. [`World::heightmap_pos`] would return the world floor
+    /// instead, and the latched target would send the dragon down to y 0.
     fn podium_target(dragon: &EnderDragonEntity, world: &World) -> Option<DVec3> {
-        // `MotionBlocking` is the odd one out: every other dragon phase resolves ground
-        // level with `MotionBlockingNoLeaves`. Vanilla really does differ here.
+        // `MotionBlocking`, unlike every other phase's `MotionBlockingNoLeaves`, as in vanilla.
         let podium = end_podium_location(dragon.fight_origin());
         let y = world.height_at(HeightmapType::MotionBlocking, podium.x(), podium.z())?;
         let (x, y, z) = BlockPos::new(podium.x(), y, podium.z()).get_bottom_center();
@@ -62,8 +55,7 @@ impl DragonPhaseInstance for DragonDeathPhase {
     }
 
     fn do_server_tick(&self, dragon: &EnderDragonEntity, world: &Arc<World>) {
-        // Not `get_or_insert_with`: a target resolved off a cold chunk must not be
-        // latched, so leave the slot empty and resolve again next tick.
+        // Not `get_or_insert_with`: an unresolved target must not be latched.
         let target = {
             let mut latched = self.target_location.lock();
             if latched.is_none() {
@@ -75,18 +67,13 @@ impl DragonPhaseInstance for DragonDeathPhase {
             }
         };
 
-        let distance = target.distance_squared(dragon.position());
-        let arrived = distance < MIN_TARGET_DISTANCE_SQR
-            || distance > MAX_TARGET_DISTANCE_SQR
-            || dragon.horizontal_collision()
-            || dragon.vertical_collision();
+        let arrived = is_off_course(dragon, target.distance_squared(dragon.position()));
 
         dragon.set_health(if arrived { 0.0 } else { 1.0 });
     }
 
     fn begin(&self, _dragon: &EnderDragonEntity) {
-        // Vanilla also resets a `time` counter here, but it is read only by the client
-        // tick that paints explosion particles, so it is write-only server-side.
+        // Vanilla also resets `time` here, which only the client's particle tick reads.
         *self.target_location.lock() = None;
     }
 

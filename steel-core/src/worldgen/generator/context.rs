@@ -36,9 +36,6 @@ pub enum ChunkGeneratorType {
 }
 
 /// Context for world generation.
-///
-/// Similar to vanilla's `WorldGenContext`, this provides access to the level/dimension
-/// and generation infrastructure.
 pub struct WorldGenContext {
     /// The chunk generator to use.
     pub generator: Arc<ChunkGeneratorType>,
@@ -100,7 +97,7 @@ impl WorldGenContext {
     /// This is useful for passing to chunks without creating a strong reference cycle.
     #[must_use]
     pub fn weak_world(&self) -> Weak<World> {
-        self.world.clone()
+        Weak::clone(&self.world)
     }
 
     /// Returns the minimum Y coordinate of the world.

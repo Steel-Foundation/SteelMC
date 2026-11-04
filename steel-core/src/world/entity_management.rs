@@ -8,6 +8,8 @@ use super::{
     mem, vanilla_entities,
 };
 
+use crate::entity::EntityCollisionCandidates;
+
 pub(super) struct NavigatingMobTracker {
     ids: SyncMutex<FxHashSet<i32>>,
 }
@@ -99,11 +101,7 @@ impl World {
         }
     }
 
-    /// Publishes a multipart entity's sub-entities to the world.
-    ///
-    /// Mirrors the `EnderDragon` branch of vanilla `ServerLevel.onTrackingStart`,
-    /// generalized over [`Entity::parts`]. This is also where each part learns its
-    /// owner, which vanilla passes as `this` from the parent's constructor.
+    /// Publishes `entity`'s parts and binds them to it, as in vanilla `ServerLevel.onTrackingStart`.
     fn register_entity_parts(&self, entity: &SharedEntity) {
         let parts = entity.parts();
         if parts.is_empty() {
@@ -117,9 +115,7 @@ impl World {
         }
     }
 
-    /// Removes a multipart entity's sub-entities from the world.
-    ///
-    /// Mirrors the `EnderDragon` branch of vanilla `ServerLevel.onTrackingEnd`.
+    /// Removes `entity`'s parts, as in vanilla `ServerLevel.onTrackingEnd`.
     fn unregister_entity_parts(&self, entity: &SharedEntity) {
         let parts = entity.parts();
         if parts.is_empty() {
@@ -146,7 +142,7 @@ impl World {
     ) -> Result<(), AddEntityError> {
         let lifecycle = self
             .entity_manager
-            .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)?;
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)?;
         self.attach_managed_entity_callback(&entity);
         self.apply_entity_lifecycle_changes(lifecycle);
         Ok(())
@@ -284,6 +280,52 @@ impl World {
         Ok(())
     }
 
+    /// Adds a fresh vehicle/passenger tree only after every member has passed
+    /// chunk and identity validation.
+    pub(crate) fn try_add_fresh_entity_with_passengers(
+        self: &Arc<Self>,
+        root: SharedEntity,
+    ) -> Result<(), AddEntityError> {
+        let mut entities = Vec::new();
+        let mut seen_ids = FxHashSet::default();
+        Self::collect_fresh_entity_tree(&root, &mut seen_ids, &mut entities)?;
+
+        let mut dirty_chunks = FxHashSet::default();
+        for entity in &entities {
+            let chunk = ChunkPos::from_entity_pos(entity.position());
+            if !self.entity_manager.is_chunk_loaded(chunk) {
+                return Err(AddEntityError::ChunkNotLoaded {
+                    entity_id: entity.id(),
+                    chunk,
+                });
+            }
+            dirty_chunks.insert(chunk);
+        }
+
+        self.register_loaded_entity_tree(&entities)?;
+        for chunk in dirty_chunks {
+            self.mark_chunk_dirty(chunk);
+        }
+        Ok(())
+    }
+
+    fn collect_fresh_entity_tree(
+        entity: &SharedEntity,
+        seen_ids: &mut FxHashSet<i32>,
+        entities: &mut Vec<SharedEntity>,
+    ) -> Result<(), AddEntityError> {
+        if !seen_ids.insert(entity.id()) {
+            return Err(AddEntityError::DuplicateId {
+                entity_id: entity.id(),
+            });
+        }
+        entities.push(Arc::clone(entity));
+        for passenger in entity.passengers() {
+            Self::collect_fresh_entity_tree(&passenger, seen_ids, entities)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn on_entity_chunk_loaded(self: &Arc<Self>, pos: ChunkPos) {
         // Runtime entity membership follows retained chunk holders, so it
         // starts at Empty rather than waiting for full LevelChunk readiness.
@@ -364,7 +406,7 @@ impl World {
             velocity,
             Arc::downgrade(self),
         ));
-        if let Err(error) = self.try_add_entity(entity.clone()) {
+        if let Err(error) = self.try_add_entity(Arc::<ItemEntity>::clone(&entity)) {
             log::warn!("Failed to spawn item entity: {error}");
             return None;
         }
@@ -538,11 +580,8 @@ impl World {
         self.entity_manager.get_by_uuid(uuid)
     }
 
-    /// Gets an entity or multipart sub-entity by its network ID.
-    ///
-    /// Mirrors vanilla `ServerLevel.getEntityOrPart`: the real entity index wins and
-    /// the parts map is only consulted as a fallback. Use this wherever a client
-    /// supplies the ID, since a client can target a part it synthesized itself.
+    /// Gets an entity, falling back to a multipart part (vanilla `ServerLevel.getEntityOrPart`).
+    /// Use this for client-supplied IDs, since clients target the parts they synthesize.
     #[must_use]
     pub fn get_accessible_entity_or_part_by_id(&self, id: i32) -> Option<SharedEntity> {
         if let Some(entity) = self.entity_manager.get_accessible_by_id(id) {
@@ -578,12 +617,8 @@ impl World {
         entities
     }
 
-    /// Gets entities intersecting `aabb` and matching `predicate`, excluding `except`.
-    ///
-    /// Mirrors vanilla `Level.getEntities(Entity, AABB, Predicate)`, including its
-    /// exclusion rule: a multipart sub-entity is skipped both when it *is* `except`
-    /// and when its parent is. `EnderDragon.knockBack` relies on that to avoid
-    /// shoving its own parts.
+    /// Gets entities in `aabb` matching `predicate`, excluding `except` and its parts
+    /// (vanilla `Level.getEntities(Entity, AABB, Predicate)`).
     #[must_use]
     pub fn get_entities_in_aabb_excluding(
         &self,
@@ -601,19 +636,9 @@ impl World {
         entities
     }
 
-    /// Visits the multipart sub-entities intersecting `aabb` and matching `predicate`.
-    ///
-    /// Mirrors the `dragonParts()` loop in vanilla
-    /// `Level.getEntities(Entity, AABB, Predicate)`, which intersection-tests each
-    /// part rather than trusting the parent's box, and skips a part both when it *is*
-    /// `except_id` and when its parent is.
-    ///
-    /// Vanilla's two bounded overloads disagree here: the predicate one above tests
-    /// each part's own box, while the `EntityTypeTest` one expands a matched parent
-    /// into its parts with no box test at all, so it can return a part that lies
-    /// outside the query. Steel has a single bounded query and follows the
-    /// intersection-testing rule for all of them, since a lookup returning entities
-    /// outside its own bounding box is the more surprising of the two behaviors.
+    /// Visits the parts intersecting `aabb` and matching `predicate`, skipping `except_id`
+    /// and its parts. Each part's own box is tested, as in vanilla's predicate overload;
+    /// its `EntityTypeTest` overload skips that test and can return parts outside the query.
     fn visit_parts_in_aabb(
         &self,
         aabb: &WorldAabb,
@@ -621,10 +646,8 @@ impl World {
         predicate: &mut impl FnMut(&dyn Entity) -> bool,
         mut visit: impl FnMut(&Arc<dyn PartEntity>) -> ControlFlow<()>,
     ) {
-        // Snapshot before filtering: `predicate` and `visit` come from the caller and
-        // may query the world again, and `parking_lot` mutexes are not reentrant, so
-        // running them under the lock risks deadlocking the world tick. The empty
-        // early-out keeps this allocation-free until a multipart entity exists.
+        // Snapshot first: `predicate` and `visit` may query the world again, and the
+        // lock is not reentrant.
         let parts = {
             let entity_parts = self.entity_parts.lock();
             if entity_parts.is_empty() {
@@ -710,6 +733,30 @@ impl World {
         boxes
     }
 
+    /// Gets entity shapes for movement collision through the selected conservative broad phase.
+    #[must_use]
+    pub(crate) fn get_movement_collision_boxes_in_aabb_matching(
+        &self,
+        aabb: &WorldAabb,
+        candidates: EntityCollisionCandidates,
+        predicate: impl FnMut(&dyn Entity) -> bool,
+    ) -> Vec<WorldAabb> {
+        self.entity_manager
+            .get_movement_collision_boxes_in_aabb_matching(aabb, candidates, predicate)
+    }
+
+    /// Returns whether the selected movement-collision broad phase has a matching entity.
+    #[must_use]
+    pub(crate) fn has_movement_collision_in_aabb_matching(
+        &self,
+        aabb: &WorldAabb,
+        candidates: EntityCollisionCandidates,
+        predicate: impl FnMut(&dyn Entity) -> bool,
+    ) -> bool {
+        self.entity_manager
+            .has_movement_collision_in_aabb_matching(aabb, candidates, predicate)
+    }
+
     /// Gets the nearest entity intersecting the given bounding box and matching `predicate`.
     ///
     /// Only returns entities in loaded chunks.
@@ -756,7 +803,7 @@ impl World {
                         .as_ref()
                         .is_none_or(|(_, current)| distance_sqr < *current)
                 {
-                    nearest = Some((player.clone(), distance_sqr));
+                    nearest = Some((Arc::clone(player), distance_sqr));
                 }
             }
             true

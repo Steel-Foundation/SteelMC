@@ -1,12 +1,8 @@
-//! The Ender Dragon's phase state machine.
+//! The Ender Dragon's phase state machine. Instead of vanilla's reflective, lazily cached
+//! instances, [`EnderDragonPhaseManager`] owns all eleven as fields.
 //!
-//! Mirrors vanilla's `phases` package. Vanilla builds phase instances reflectively
-//! from a `Class` and caches them lazily; Rust cannot, so [`EnderDragonPhaseManager`]
-//! owns all eleven as fields and hands out `&dyn DragonPhaseInstance`.
-//!
-//! `doClientTick` is not ported. A vanilla client runs its own copy of this machine
-//! driven by the synced phase id, which makes keeping that id correct the important
-//! client-facing invariant rather than any server-side animation work.
+//! `doClientTick` is not ported: the client runs its own copy of this machine from the
+//! synced phase id, so keeping that id correct is what matters client-side.
 
 mod death;
 mod holding_pattern;
@@ -27,18 +23,15 @@ use crate::entity::damage::DamageSource;
 use crate::world::World;
 use std::sync::Arc;
 
-/// Which behaviour the dragon is currently running.
+/// Which behavior the dragon is currently running.
 ///
-/// The discriminants are the vanilla registration order and are what `DATA_PHASE`
-/// carries on the wire, so reordering them is a protocol break. They are written
-/// explicitly rather than left implicit for exactly that reason.
-///
-/// Third-party phases would be added as a `Custom(u16)` variant plus a lookup on the
-/// manager; nothing outside this module matches on the enum, so that stays additive.
+/// The explicit discriminants are vanilla's registration order and the `DATA_PHASE` wire
+/// value, so reordering them is a protocol break. Third-party phases would be an additive
+/// `Custom(u16)` variant plus a manager lookup; nothing outside this module matches on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(i32)]
 pub enum EnderDragonPhase {
-    /// Circling the arena, the dragon's default flying behaviour.
+    /// Circling the arena, the dragon's default flying behavior.
     HoldingPattern = 0,
     /// Closing on a player to breathe a fireball at them.
     StrafePlayer = 1,
@@ -78,16 +71,14 @@ impl EnderDragonPhase {
         Self::Hovering,
     ];
 
-    /// Returns the id sent in `DATA_PHASE`. Mirrors vanilla `getId`.
+    /// Returns the id sent in `DATA_PHASE`.
     #[must_use]
     pub const fn id(self) -> i32 {
         self as i32
     }
 
-    /// Returns the phase for a wire id.
-    ///
-    /// Mirrors vanilla `getById`, which falls back to the holding pattern rather
-    /// than failing on an out-of-range id.
+    /// Returns the phase for a wire id, falling back to the holding pattern when out of
+    /// range (as vanilla `getById` does).
     #[must_use]
     pub fn by_id(id: i32) -> Self {
         usize::try_from(id)
@@ -97,64 +88,54 @@ impl EnderDragonPhase {
     }
 }
 
-/// One behaviour the dragon can run.
+/// One behavior the dragon can run: vanilla's `DragonPhaseInstance` with the
+/// `AbstractDragonPhaseInstance` defaults.
 ///
-/// Merges vanilla's `DragonPhaseInstance` interface with the defaults its
-/// `AbstractDragonPhaseInstance` supplies, which Rust expresses as trait defaults.
-///
-/// Every method takes `&self`: a phase may switch the dragon out of itself from
-/// inside its own tick, which re-enters the manager and calls [`Self::end`] on the
-/// phase still executing. Phase-local state therefore lives behind its own lock, and
-/// **no phase may hold that lock across a `set_phase` call**.
+/// Every method takes `&self` because a phase may switch phase from its own tick,
+/// re-entering the manager and calling [`Self::end`] on itself. Phase-local state lives
+/// behind its own lock, and **no phase may hold that lock across a `set_phase` call**.
 pub trait DragonPhaseInstance: Send + Sync {
-    /// Which phase this is. Mirrors vanilla `getPhase`.
+    /// Which phase this is.
     fn phase(&self) -> EnderDragonPhase;
 
-    /// Whether the dragon is perched. Mirrors vanilla `isSitting`.
-    ///
-    /// Drives the faster wing beat and the lowered head, not just the landing logic.
+    /// Whether the dragon is perched; also drives the faster wing beat and lowered head.
     fn is_sitting(&self) -> bool {
         false
     }
 
-    /// Runs one server tick of this phase. Mirrors vanilla `doServerTick`.
+    /// Runs one server tick of this phase.
     fn do_server_tick(&self, _dragon: &EnderDragonEntity, _world: &Arc<World>) {}
 
-    /// Called when the dragon enters this phase. Mirrors vanilla `begin`.
+    /// Called when the dragon enters this phase.
     fn begin(&self, _dragon: &EnderDragonEntity) {}
 
-    /// Called when the dragon leaves this phase. Mirrors vanilla `end`.
+    /// Called when the dragon leaves this phase.
     fn end(&self, _dragon: &EnderDragonEntity) {}
 
-    /// Mirrors vanilla `getFlySpeed`.
+    /// How fast the dragon flies in this phase.
     fn fly_speed(&self) -> f32 {
         0.6
     }
 
-    /// Mirrors vanilla `getTurnSpeed`.
+    /// How fast the dragon turns toward its fly target.
     fn turn_speed(&self, dragon: &EnderDragonEntity) -> f32 {
         let velocity = dragon.velocity();
         let rot_speed = velocity.x.hypot(velocity.z) as f32 + 1.0;
         0.7 / rot_speed.min(40.0) / rot_speed
     }
 
-    /// Where the dragon is steering, or `None` to stop steering.
-    ///
-    /// Mirrors vanilla `getFlyTargetLocation`. A phase that has not been implemented
-    /// yet returns `None` here, which leaves the dragon coasting rather than failing.
+    /// Where the dragon is steering, or `None` to coast.
     fn fly_target_location(&self) -> Option<DVec3> {
         None
     }
 
-    /// Lets a phase scale or veto incoming damage. Mirrors vanilla `onHurt`.
+    /// Lets a phase scale or veto incoming damage.
     fn on_hurt(&self, _source: &DamageSource, damage: f32) -> f32 {
         damage
     }
 }
 
 /// Owns the dragon's phases and which one is active.
-///
-/// Mirrors vanilla `EnderDragonPhaseManager`.
 pub struct EnderDragonPhaseManager {
     holding_pattern: DragonHoldingPatternPhase,
     strafe_player: PlaceholderPhase,
@@ -167,20 +148,15 @@ pub struct EnderDragonPhaseManager {
     charging_player: PlaceholderPhase,
     dying: DragonDeathPhase,
     hovering: DragonHoverPhase,
-    /// The active phase.
-    ///
-    /// Only the id is shared state; the instances are immutable fields. Holding this
-    /// across a phase call would deadlock, since a phase can re-enter `set_phase`.
+    /// The active phase's id. Atomic rather than locked because a phase re-enters
+    /// `set_phase` mid-call; the instances themselves are immutable.
     current: AtomicI32,
 }
 
 impl EnderDragonPhaseManager {
-    /// Creates a manager starting in the hovering phase.
-    ///
-    /// Vanilla's constructor calls `setPhase(HOVERING)`, which would need the dragon
-    /// this manager is being built for. The initial phase is set directly instead:
-    /// `DragonHoverPhase::begin` only clears an already-empty target, and the synced
-    /// data already defaults to this phase's id.
+    /// Creates a manager starting in the hovering phase, set directly rather than via
+    /// vanilla's `setPhase(HOVERING)` (which needs the dragon): its `begin` only clears an
+    /// already-empty target, and the synced data already defaults to this id.
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -199,19 +175,19 @@ impl EnderDragonPhaseManager {
         }
     }
 
-    /// Returns the active phase. Mirrors vanilla `getCurrentPhase().getPhase()`.
+    /// Returns the active phase.
     #[must_use]
     pub fn current_phase(&self) -> EnderDragonPhase {
         EnderDragonPhase::by_id(self.current.load(Ordering::Relaxed))
     }
 
-    /// Returns the active phase's behaviour. Mirrors vanilla `getCurrentPhase`.
+    /// Returns the active phase's behavior.
     #[must_use]
     pub fn current(&self) -> &dyn DragonPhaseInstance {
         self.instance(self.current_phase())
     }
 
-    /// Returns a specific phase's behaviour. Mirrors vanilla `getPhase`.
+    /// Returns a specific phase's behavior.
     #[must_use]
     pub fn instance(&self, phase: EnderDragonPhase) -> &dyn DragonPhaseInstance {
         match phase {
@@ -229,12 +205,9 @@ impl EnderDragonPhaseManager {
         }
     }
 
-    /// Switches the dragon to `target`. Mirrors vanilla `setPhase`.
-    ///
-    /// The active id is swapped *before* `end`/`begin` run, so a phase that switches
-    /// from inside its own tick never observes the manager mid-transition. Nothing in
-    /// vanilla's `end` or `begin` reads the current phase, so the reordering is not
-    /// observable.
+    /// Switches the dragon to `target`. The id is swapped *before* `end`/`begin` run, so a
+    /// phase switching from its own tick never sees a mid-transition manager; vanilla's
+    /// `end`/`begin` never read the current phase, so the reordering is unobservable.
     pub fn set_phase(&self, dragon: &EnderDragonEntity, target: EnderDragonPhase) {
         let previous = EnderDragonPhase::by_id(self.current.swap(target.id(), Ordering::Relaxed));
         if previous == target {
@@ -254,11 +227,8 @@ impl Default for EnderDragonPhaseManager {
     }
 }
 
-/// A phase that has not been ported yet.
-///
-/// Returning no fly target leaves the dragon coasting instead of steering, so
-/// entering one of these degrades to a stationary dragon rather than a panic or a
-/// missing match arm. Each is replaced by its real behaviour as it lands.
+/// A phase not ported yet. With no fly target the dragon coasts, so entering one degrades
+/// to a stationary dragon rather than a panic.
 struct PlaceholderPhase {
     phase: EnderDragonPhase,
 }

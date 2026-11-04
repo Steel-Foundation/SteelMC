@@ -3,9 +3,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_utils::locks::SyncMutex;
 
-use super::navigation::{
-    MAX_TARGET_DISTANCE_SQR, MIN_TARGET_DISTANCE_SQR, navigate_to_next_path_node,
-};
+use super::navigation::{is_off_course, navigate_to_next_path_node};
 use super::{DragonPhaseInstance, EnderDragonPhase};
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::Entity as _;
@@ -23,16 +21,12 @@ const UNLIMITED_RANGE: f64 = -1.0;
 const STRAFE_DISTANCE_SCALE: f64 = 512.0;
 /// One in this many target picks reverses the circling direction and jumps half a ring.
 const REVERSE_DIRECTION_CHANCE: i32 = 8;
-/// [`flight_graph::OUTER_RING_NODES`], typed for the target-index arithmetic.
 const OUTER_RING_NODES: i32 = flight_graph::OUTER_RING_NODES as i32;
 /// Mask confining a no-fight target to the eight middle-ring nodes.
 const MIDDLE_RING_MASK: i32 = 7;
 
-/// Circling the arena. Mirrors vanilla `DragonHoldingPatternPhase`.
-///
-/// This is the dragon's default flying behaviour: it walks the flight graph one node
-/// at a time and, whenever a path runs out, rolls for whether to keep circling or hand
-/// off to the landing cycle or a strafing run.
+/// Circling the arena: walks the flight graph a node at a time and, whenever a path runs
+/// out, rolls for circling on or handing off to the landing cycle or a strafing run.
 pub struct DragonHoldingPatternPhase {
     state: SyncMutex<HoldingPatternState>,
 }
@@ -65,17 +59,14 @@ impl DragonHoldingPatternPhase {
         self.state.lock().current_path.as_ref().map(Path::is_done)
     }
 
-    /// Mirrors vanilla `findNewTarget`.
     fn find_new_target(&self, dragon: &EnderDragonEntity, world: &Arc<World>) {
-        // Sampled once because `try_hand_off` only switches phase; it cannot touch the
-        // path, which is why it takes no `self`.
+        // Sampled once: `try_hand_off` only switches phase and cannot touch the path.
         let path_is_done = self.path_is_done();
 
         if path_is_done == Some(true) && Self::try_hand_off(dragon, world) {
             return;
         }
 
-        // Vanilla's `currentPath == null || currentPath.isDone()`.
         if path_is_done.is_none_or(|done| done) {
             self.pick_new_path(dragon, world);
         }
@@ -90,10 +81,8 @@ impl DragonHoldingPatternPhase {
         state.target_location = Some(target);
     }
 
-    /// Rolls for leaving the circle, and returns whether the dragon switched phase.
-    ///
-    /// Vanilla runs this only once a path has been walked to its end, so the dragon
-    /// commits to a full hop between nodes before it can peel off.
+    /// Rolls for leaving the circle; returns whether the dragon switched phase. Runs only
+    /// once a path is walked out, so the dragon finishes a hop before peeling off.
     fn try_hand_off(dragon: &EnderDragonEntity, world: &Arc<World>) -> bool {
         let crystals = dragon.alive_crystals().unwrap_or(0);
         let egg = world.heightmap_pos(
@@ -133,22 +122,17 @@ impl DragonHoldingPatternPhase {
         false
     }
 
-    /// Mirrors vanilla `strafePlayer`.
     fn strafe_player(dragon: &EnderDragonEntity) {
-        // TODO: Hand the player over as the strafe target once `DragonStrafePlayerPhase`
-        // is ported. Until then that phase reports no fly target, so the dragon holds
-        // position rather than making the run.
+        // TODO: Pass the player as the strafe target once `DragonStrafePlayerPhase` is
+        // ported; until then that phase has no fly target and the dragon holds position.
         dragon
             .phase_manager()
             .set_phase(dragon, EnderDragonPhase::StrafePlayer);
     }
 
-    /// Picks the next graph node to circle towards and paths to it.
-    ///
-    /// Does nothing while the flight graph cannot be built, which happens when the
-    /// arena's chunks are not loaded yet. The dragon keeps whatever path it already had
-    /// and this runs again next tick, rather than circling a graph pinned to the world
-    /// floor. Note this call also warms the graph before the state lock below is taken.
+    /// Picks the next graph node to circle toward and paths to it. Does nothing (keeping
+    /// the old path, retrying next tick) while the arena's chunks are unloaded. Also
+    /// warms the flight graph before the state lock is taken.
     fn pick_new_path(&self, dragon: &EnderDragonEntity, world: &Arc<World>) {
         let Some(current_node) = dragon.find_closest_node(world) else {
             return;
@@ -166,9 +150,8 @@ impl DragonHoldingPatternPhase {
             // Vanilla's test is `aliveCrystals() >= 0`, which is always true, so the
             // crystal count never matters here, only whether a fight exists at all.
             Some(alive) if alive >= 0 => target_node.rem_euclid(OUTER_RING_NODES),
-            // Confines a fightless dragon to the eight middle-ring nodes. The mask runs
-            // on a possibly negative operand, which is deliberate: Rust's `&` gives the
-            // same two's-complement result Java's does.
+            // `&` on a possibly negative operand gives the same two's-complement result
+            // as Java's.
             _ => ((target_node - OUTER_RING_NODES) & MIDDLE_RING_MASK) + OUTER_RING_NODES,
         };
 
@@ -197,23 +180,16 @@ impl DragonPhaseInstance for DragonHoldingPatternPhase {
             .target_location
             .map_or(0.0, |target| target.distance_squared(dragon.position()));
 
-        // A missing target reads as distance zero, which is what makes `begin` force a
-        // pick on the very next tick. The two collision flags are permanently false
-        // under `no_physics` (in vanilla as well), so they are carried for shape
-        // rather than effect.
-        if distance < MIN_TARGET_DISTANCE_SQR
-            || distance > MAX_TARGET_DISTANCE_SQR
-            || dragon.horizontal_collision()
-            || dragon.vertical_collision()
-        {
+        // A missing target reads as distance zero, so `begin` forces a pick next tick.
+        // The collision flags are always false under `no_physics`, as in vanilla.
+        if is_off_course(dragon, distance) {
             self.find_new_target(dragon, world);
         }
     }
 
     fn begin(&self, _dragon: &EnderDragonEntity) {
-        // Vanilla clears only the path and the target. `clockwise` deliberately
-        // survives, so a dragon that leaves for the landing cycle and comes back keeps
-        // circling the same way round.
+        // `clockwise` survives, as in vanilla, so a dragon back from the landing cycle
+        // keeps circling the same way.
         let mut state = self.state.lock();
         state.current_path = None;
         state.target_location = None;
@@ -229,28 +205,21 @@ mod tests {
     use std::sync::Weak;
 
     use super::*;
-    use crate::entity::entities::mobs::bosses::ender_dragon::tests::build_dragon;
+    use crate::entity::entities::mobs::bosses::ender_dragon::tests::{build_dragon, in_phase};
     use crate::test_support::test_world;
 
     /// Enough rolls that a 1-in-3 branch is overwhelmingly likely to have been taken.
     const ROLLS: usize = 200;
 
-    /// A world-less dragon already circling, which is the state `try_hand_off` runs in.
-    fn holding_dragon() -> EnderDragonEntity {
-        let dragon = build_dragon(DVec3::ZERO, Weak::new());
-        dragon
-            .phase_manager()
-            .set_phase(&dragon, EnderDragonPhase::HoldingPattern);
-        dragon
+    fn holding_dragon() -> Arc<EnderDragonEntity> {
+        in_phase(
+            build_dragon(DVec3::ZERO, Weak::new()),
+            EnderDragonPhase::HoldingPattern,
+        )
     }
 
-    /// `try_hand_off` is the branchiest code in the phase and is unreachable in play
-    /// today, because only `EnderDragonFight` puts a dragon into the holding pattern and
-    /// that fight is not ported. Driving it directly is the only coverage available.
-    ///
-    /// The roll is random, so the assertion is on the invariant rather than an outcome:
-    /// a hand-off always lands on `LandingApproach`, and staying put always leaves the
-    /// phase alone.
+    // Driven directly because it is unreachable in play until `EnderDragonFight` is
+    // ported. The roll is random, so this asserts the invariant, not an outcome.
     #[test]
     fn a_hand_off_either_lands_or_leaves_the_phase_untouched() {
         let world = test_world();
@@ -285,8 +254,6 @@ mod tests {
         );
     }
 
-    /// With nobody in the world, `nearest_player` finds no one and the strafe branch is
-    /// unreachable, so the only two outcomes are landing or staying put.
     #[test]
     fn an_empty_world_never_strafes() {
         let world = test_world();

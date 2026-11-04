@@ -1,5 +1,6 @@
 use crate::shared_structs::{
-    BiomeCondition, BiomeConditionTarget, SpawnConditionEntry, TextComponentJson,
+    BiomeCondition, BiomeConditionTarget, ItemStackTemplateJson, SpawnConditionEntry,
+    TextComponentJson,
 };
 use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
@@ -7,7 +8,9 @@ use proc_macro2::{Ident, Span};
 use quote::quote;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use std::fs;
+use std::path::Path;
 use steel_utils::Identifier;
 
 pub fn read_json_asset<T: serde::de::DeserializeOwned>(path: &str) -> T {
@@ -119,17 +122,19 @@ pub fn generate_text_component(component: &TextComponentJson) -> TokenStream {
             ),
             format: text_components::format::Format {
                 color: Some(#color),
-                font: None,
-                bold: None,
-                italic: None,
-                underlined: None,
-                strikethrough: None,
-                obfuscated: None,
-                shadow_color: None,
+                ..Default::default()
             },
             children: vec![],
             interactions: text_components::interactivity::Interactivity::new(),
         }
+    }
+}
+
+pub fn generate_item_stack_template(template: &ItemStackTemplateJson) -> TokenStream {
+    let name = Ident::new(&template.id.path.to_shouty_snake_case(), Span::call_site());
+    let count = template.count;
+    quote! {
+        ItemStackTemplate::with_count(&*vanilla_items::#name,#count)
     }
 }
 
@@ -170,7 +175,7 @@ fn generate_rgb_text_color(color: &str) -> TokenStream {
     quote! { text_components::format::Color::Rgb(#red, #green, #blue) }
 }
 
-pub fn read_variants_from_dir<T: serde::de::DeserializeOwned>(subdir: &str) -> Vec<(String, T)> {
+pub fn read_variants_from_dir<T: DeserializeOwned>(subdir: &str) -> Vec<(String, T)> {
     let dir = format!("../steel-utils/build_assets/builtin_datapacks/minecraft/{subdir}");
     println!("cargo:rerun-if-changed={dir}/");
     let mut out = Vec::new();
@@ -207,6 +212,61 @@ pub fn read_variants_from_dir<T: serde::de::DeserializeOwned>(subdir: &str) -> V
         out.len()
     );
     out
+}
+
+pub(crate) trait ResourceData<T> {
+    fn new_data(key: String, value: T) -> Self;
+
+    fn name() -> &'static str;
+}
+pub fn read_resources<G: DeserializeOwned, T: ResourceData<G>>(dir: &Path) -> Vec<T> {
+    let mut resources = Vec::new();
+    read_resources_from_dir(dir, dir, &mut resources);
+    resources
+}
+
+pub fn read_resources_from_dir<G: DeserializeOwned, T: ResourceData<G>>(
+    root: &Path,
+    dir: &Path,
+    advancements: &mut Vec<T>,
+) {
+    let entries = fs::read_dir(dir).unwrap_or_else(|error| {
+        panic!(
+            "Cannot read {} directory {}: {error}",
+            T::name(),
+            dir.display()
+        )
+    });
+    for entry in entries {
+        let entry = entry.unwrap_or_else(|error| {
+            panic!(
+                "Cannot read an entry in {} directory {}: {error}",
+                T::name(),
+                dir.display()
+            )
+        });
+        let path = entry.path();
+        if path.is_dir() {
+            read_resources_from_dir(root, &path, advancements);
+            continue;
+        }
+        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+            continue;
+        }
+        let key = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .with_extension("")
+            .to_string_lossy()
+            .replace(std::path::MAIN_SEPARATOR, "/");
+        let source = fs::read_to_string(&path).unwrap_or_else(|error| {
+            panic!("Cannot read {} {}: {error}", T::name(), path.display())
+        });
+        let value: G = serde_json::from_str(&source)
+            .unwrap_or_else(|e| panic!("Cannot parse {} {}: {e}", T::name(), path.display()));
+
+        advancements.push(T::new_data(key, value));
+    }
 }
 
 #[derive(Deserialize)]

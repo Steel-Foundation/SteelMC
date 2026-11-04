@@ -74,7 +74,6 @@ impl EquipmentSlot {
         }
     }
 
-    /// Returns vanilla `EquipmentSlot.canIncreaseExperience`.
     #[must_use]
     pub const fn can_increase_experience(self) -> bool {
         !matches!(self.slot_type(), EquipmentSlotType::Saddle)

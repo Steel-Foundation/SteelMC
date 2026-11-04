@@ -1,5 +1,5 @@
 use super::{
-    FromStr, Ident, Identifier, Span, ToShoutySnakeCase, TokenStream, Value,
+    FromStr, Ident, Identifier, Span, ToShoutySnakeCase, TokenStream, Value, dye_color_token,
     generate_sound_event_ref, identifier_token, quote, split_identifier,
 };
 
@@ -170,6 +170,143 @@ pub(super) fn swing_animation_component_token(value: &Value) -> Option<TokenStre
     })
 }
 
+pub(super) fn cooking_fuel_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("cooking_fuel component must be an object"));
+    let burn_time = object
+        .get("burn_time")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("cooking_fuel.burn_time must be an identifier string"));
+    let speed_multiplier = object
+        .get("speed_multiplier")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("cooking_fuel.speed_multiplier must be an identifier string"));
+    let burn_time = identifier_token(burn_time);
+    let speed_multiplier = identifier_token(speed_multiplier);
+    quote! {
+        vanilla_components::CookingFuel::new(#burn_time, #speed_multiplier)
+    }
+}
+
+pub(super) fn mob_visibility_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("mob_visibility component must be an object"));
+    let targeting_entity_types = object
+        .get("targeting_entity_types")
+        .unwrap_or_else(|| panic!("mob_visibility.targeting_entity_types must be present"));
+    let targeting_entity_types = holder_set_token(targeting_entity_types, "mob_visibility", |s| {
+        entity_type_ref_token(s)
+            .unwrap_or_else(|| panic!("invalid mob_visibility entity type {s:?}"))
+    });
+    let visibility = object
+        .get("visibility")
+        .and_then(Value::as_f64)
+        .unwrap_or_else(|| panic!("mob_visibility.visibility must be a number"))
+        as f32;
+    quote! {
+        vanilla_components::MobVisibility::new(#targeting_entity_types, #visibility)
+    }
+}
+
+pub(super) fn brewing_fuel_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("brewing_fuel component must be an object"));
+    let uses = object
+        .get("uses")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("brewing_fuel.uses must be an identifier string"));
+    let speed_multiplier = object
+        .get("speed_multiplier")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("brewing_fuel.speed_multiplier must be an identifier string"));
+    let uses = identifier_token(uses);
+    let speed_multiplier = identifier_token(speed_multiplier);
+    quote! {
+        vanilla_components::BrewingFuel::new(#uses, #speed_multiplier)
+    }
+}
+
+pub(super) fn compostable_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("compostable component must be an object"));
+    let layers = object
+        .get("layers")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("compostable.layers must be an identifier string"));
+    let layers = identifier_token(layers);
+    quote! { vanilla_components::Compostable::new(#layers) }
+}
+
+pub(super) fn villager_food_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("villager_food component must be an object"));
+    let nutrition = object
+        .get("nutrition")
+        .and_then(Value::as_i64)
+        .unwrap_or_else(|| panic!("villager_food.nutrition must be an integer"));
+    let nutrition = i32::try_from(nutrition)
+        .unwrap_or_else(|_| panic!("villager_food.nutrition out of i32 range: {nutrition}"));
+    quote! { vanilla_components::VillagerFood::new(#nutrition) }
+}
+
+fn sign_text_lines(value: &Value, field: &str) -> Vec<TokenStream> {
+    let lines = value
+        .as_array()
+        .unwrap_or_else(|| panic!("sign_text.{field} must be an array"));
+    assert!(
+        lines.len() == 4,
+        "sign_text.{field} must have exactly 4 lines, got {}",
+        lines.len()
+    );
+    lines
+        .iter()
+        .map(|line| {
+            let text = line
+                .as_str()
+                .unwrap_or_else(|| panic!("sign_text.{field} entries must be plain strings"));
+            quote! { TextComponent::plain(#text) }
+        })
+        .collect()
+}
+
+pub(super) fn sign_text_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("sign_text component must be an object"));
+    let messages = object.get("messages").map_or_else(
+        || panic!("sign_text.messages must be present"),
+        |value| sign_text_lines(value, "messages"),
+    );
+    let filtered_messages = object.get("filtered_messages").map_or_else(
+        || quote! { None },
+        |value| {
+            let lines = sign_text_lines(value, "filtered_messages");
+            quote! { Some([#(#lines),*]) }
+        },
+    );
+    let color = object.get("color").map_or_else(
+        || quote! { vanilla_components::DyeColor::Black },
+        dye_color_token,
+    );
+    let has_glowing_text = object
+        .get("has_glowing_text")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    quote! {
+        vanilla_components::SignText::new(
+            [#(#messages),*],
+            #filtered_messages,
+            #color,
+            #has_glowing_text,
+        )
+    }
+}
+
 pub(super) fn damage_type_ref_token(value: &str) -> TokenStream {
     let id = Identifier::from_str(value)
         .unwrap_or_else(|error| panic!("invalid damage_type component id {value:?}: {error}"));
@@ -194,6 +331,47 @@ pub(super) fn banner_pattern_ref_token(value: &str) -> TokenStream {
 
     let ident = Ident::new(&id.path.to_shouty_snake_case(), Span::call_site());
     quote! { &crate::vanilla_banner_patterns::#ident }
+}
+
+/// Resolves a `minecraft:block_transformer` item component value (a plain
+/// identifier referencing the `Registries.BLOCK_TRANSFORMER` entry built in
+/// `build/block_transformers.rs`) to that entry's generated static.
+pub(super) fn block_transformer_ref_token(value: &Value) -> TokenStream {
+    let key = value
+        .as_str()
+        .unwrap_or_else(|| panic!("block_transformer component must be an identifier: {value}"));
+    let id = Identifier::from_str(key)
+        .unwrap_or_else(|error| panic!("invalid block_transformer component id {key:?}: {error}"));
+    assert_eq!(
+        id.namespace.as_ref(),
+        "minecraft",
+        "vanilla item block_transformer references must use the minecraft namespace: {id}"
+    );
+
+    let ident = Ident::new(&id.path.to_shouty_snake_case(), Span::call_site());
+    quote! {
+        vanilla_components::BlockTransformerComponent::new(
+            &*crate::vanilla_block_transformers::#ident,
+        )
+    }
+}
+
+pub(super) fn pottery_pattern_component_token(value: &Value) -> TokenStream {
+    let pattern = value
+        .as_str()
+        .unwrap_or_else(|| panic!("provides_pottery_pattern component must be an identifier"));
+    let (namespace, path) = pattern.split_once(':').unwrap_or(("minecraft", pattern));
+    assert_eq!(
+        namespace, "minecraft",
+        "vanilla provides_pottery_pattern must reference a vanilla pattern: {pattern}"
+    );
+    let pattern = Ident::new(&path.to_shouty_snake_case(), Span::call_site());
+
+    quote! {
+        vanilla_components::ProvidesPotteryPattern {
+            pattern: &crate::vanilla_decorated_pot_patterns::#pattern,
+        }
+    }
 }
 
 pub(super) fn item_ref_token(value: &str, component: &str) -> TokenStream {

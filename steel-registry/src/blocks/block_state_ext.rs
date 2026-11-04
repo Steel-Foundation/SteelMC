@@ -35,7 +35,7 @@ pub trait BlockStateExt {
     #[must_use]
     fn set_value<P: Property>(&self, property: &P, value: P::Value) -> BlockStateId;
     fn copy_value<P: Property, O: BlockStateExt>(&self, property: &P, other: &O) -> BlockStateId;
-    fn get_property_str(&self, name: &str) -> Option<String>;
+    fn get_property_str(&self, name: &str) -> Option<&'static str>;
     fn with_properties_of(&self, source: BlockStateId) -> BlockStateId;
     fn get_static_collision_shape(&self) -> blocks::shapes::VoxelShape;
     fn get_collision_shape_at(&self, pos: BlockPos) -> OffsetVoxelShape;
@@ -54,7 +54,6 @@ pub trait BlockStateExt {
     fn get_light_dampening(&self) -> u8;
     /// Returns true if vanilla uses face shapes for light occlusion on this state.
     fn use_shape_for_light_occlusion(&self) -> bool;
-    /// Mirrors vanilla `BlockState.getOffset(BlockPos)`.
     fn get_offset(&self, pos: BlockPos) -> DVec3;
     /// Checks if this block face is sturdy enough to support other blocks.
     /// Uses `SupportType::Full` by default.
@@ -80,7 +79,6 @@ pub trait BlockStateExt {
     /// This matches vanilla's cached `BlockState.isSolidRender()`, based on the
     /// occlusion shape rather than collision shape.
     fn is_solid_render(&self) -> bool;
-    /// Returns vanilla `BlockState.isSuffocating`.
     fn is_suffocating(&self) -> bool;
     /// Returns the extracted static `BlockState.isRedstoneConductor` value.
     /// Dynamic behavior queries must also receive the live level and position.
@@ -96,11 +94,11 @@ impl BlockStateExt for BlockStateId {
             .by_state_id(*self)
             .expect("Expected a valid state id")
     }
+
     fn with_properties_of(&self, source: BlockStateId) -> BlockStateId {
-        REGISTRY
-            .blocks
-            .copy_matching_properties(source, self.get_block())
+        REGISTRY.blocks.with_properties_of(*self, source)
     }
+
     fn is_air(&self) -> bool {
         self.get_ticking_metadata().is_air()
     }
@@ -146,13 +144,8 @@ impl BlockStateExt for BlockStateId {
         self.set_value(property, other.get_value(property))
     }
 
-    fn get_property_str(&self, name: &str) -> Option<String> {
-        REGISTRY
-            .blocks
-            .get_properties(*self)
-            .into_iter()
-            .find(|(n, _)| *n == name)
-            .map(|(_, v)| v.to_string())
+    fn get_property_str(&self, name: &str) -> Option<&'static str> {
+        REGISTRY.blocks.get_property_str(*self, name)
     }
 
     fn get_static_collision_shape(&self) -> blocks::shapes::VoxelShape {
@@ -451,11 +444,14 @@ mod tests {
     }
 
     #[test]
-    fn with_properties_of_keeps_target_defaults_for_non_matching_properties() {
+    fn with_properties_of_keeps_target_values_for_non_matching_properties() {
         init_vanilla_registry();
 
         let source = vanilla_blocks::STONE.default_state();
-        let target = vanilla_blocks::CANDLE.default_state();
+        let target = vanilla_blocks::CANDLE
+            .default_state()
+            .set_value(&BlockStateProperties::CANDLES, 3)
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
 
         assert_eq!(target.with_properties_of(source), target);
     }

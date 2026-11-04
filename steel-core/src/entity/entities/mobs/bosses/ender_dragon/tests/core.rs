@@ -54,8 +54,6 @@ fn parts_carry_their_own_vanilla_hitboxes() {
 fn parts_are_pickable_but_the_dragon_body_is_not() {
     let dragon = test_dragon();
 
-    // Vanilla splits these deliberately: arrows must hit the parts, not the
-    // 16x8 box the dragon itself reports.
     assert!(!dragon.is_pickable());
     for part in dragon.sub_entities() {
         assert!(part.is_pickable());
@@ -66,8 +64,6 @@ fn parts_are_pickable_but_the_dragon_body_is_not() {
 fn parts_report_the_dragons_entity_type() {
     let dragon = test_dragon();
 
-    // Vanilla constructs each part with `super(parentMob.getType(), …)`, which is
-    // what makes fire immunity and the damage rules resolve through the dragon.
     for part in dragon.sub_entities() {
         assert_eq!(part.entity_type().key, vanilla_entities::ENDER_DRAGON.key);
     }
@@ -94,8 +90,7 @@ fn parts_are_named_in_vanilla_order() {
 fn the_dragon_passes_through_terrain() {
     let dragon = test_dragon();
 
-    // Vanilla sets `noPhysics` in the constructor and handles walls itself, so the
-    // shared collision path must not be moving it.
+    // Vanilla sets `noPhysics` and handles walls itself.
     assert!(dragon.no_physics());
 }
 
@@ -104,8 +99,7 @@ fn the_registry_reserves_the_whole_block_and_builds_a_working_dragon() {
     init_vanilla_registry();
     init_entities();
 
-    // This is the path `/summon` takes. It has to reserve nine IDs, not one, or the
-    // parts would alias the next entity spawned.
+    // The `/summon` path; reserving one ID would let the parts alias the next entity.
     let ids = ENTITIES.reserve_id(&vanilla_entities::ENDER_DRAGON);
     assert_eq!(ids.len(), 9);
 
@@ -126,8 +120,6 @@ fn the_registry_reserves_the_whole_block_and_builds_a_working_dragon() {
 
 #[test]
 fn phase_ids_match_the_wire_order() {
-    // These are what `DATA_PHASE` carries, and a vanilla client drives its own copy
-    // of the phase machine from them, so a reorder is a protocol break.
     let expected = [
         (EnderDragonPhase::HoldingPattern, 0),
         (EnderDragonPhase::StrafePlayer, 1),
@@ -150,7 +142,6 @@ fn phase_ids_match_the_wire_order() {
 
 #[test]
 fn an_unknown_phase_id_falls_back_to_the_holding_pattern() {
-    // Vanilla's `getById` never fails; it returns the holding pattern.
     assert_eq!(
         EnderDragonPhase::by_id(-1),
         EnderDragonPhase::HoldingPattern
@@ -169,8 +160,8 @@ fn a_dragon_starts_hovering() {
         dragon.phase_manager().current_phase(),
         EnderDragonPhase::Hovering
     );
-    // The generated synced-data default has to agree, or the client would animate a
-    // different phase than the server is running until the first change.
+    // The synced-data default must agree, or the client animates another phase until
+    // the first change.
     assert_eq!(
         EnderDragonEntityData::new().phase.get(),
         &EnderDragonPhase::Hovering.id()
@@ -181,7 +172,6 @@ fn a_dragon_starts_hovering() {
 fn hovering_counts_as_sitting() {
     let dragon = test_dragon();
 
-    // Not just bookkeeping: this selects the perched wing beat and the lowered head.
     assert!(dragon.phase_manager().current().is_sitting());
 }
 
@@ -219,10 +209,8 @@ fn a_phase_can_switch_the_dragon_out_of_itself_without_deadlocking() {
     let dragon = test_dragon();
     let manager = dragon.phase_manager();
 
-    // This is the shape that deadlocks if the manager holds a lock across a phase
-    // call: the switch re-enters the manager and runs `end` on the phase that is
-    // still executing. `parking_lot` mutexes are not reentrant, so this would hang
-    // the world tick rather than fail a test.
+    // `parking_lot` mutexes are not reentrant, so a deadlock here would hang the test
+    // rather than fail it.
     manager.set_phase(&dragon, EnderDragonPhase::HoldingPattern);
     manager.set_phase(&dragon, EnderDragonPhase::Dying);
     manager.set_phase(&dragon, EnderDragonPhase::Hovering);
@@ -234,8 +222,7 @@ fn a_phase_can_switch_the_dragon_out_of_itself_without_deadlocking() {
 fn unported_phases_leave_the_dragon_coasting_rather_than_failing() {
     let dragon = test_dragon();
 
-    // Landing is a placeholder this pass. Reporting no fly target is what makes an
-    // unimplemented phase degrade to a stationary dragon instead of a panic.
+    // Landing is still a placeholder.
     dragon
         .phase_manager()
         .set_phase(&dragon, EnderDragonPhase::Landing);
@@ -251,18 +238,11 @@ fn unported_phases_leave_the_dragon_coasting_rather_than_failing() {
 
 #[test]
 fn a_dying_dragon_ignores_further_damage() {
-    let dragon = test_dragon();
-    dragon
-        .phase_manager()
-        .set_phase(&dragon, EnderDragonPhase::Dying);
+    let dragon = in_phase(test_dragon(), EnderDragonPhase::Dying);
 
-    // Vanilla refuses damage outright while dying, so the death animation always
-    // plays out rather than being cut short by whatever killed it.
+    // Vanilla refuses all damage while dying, so the death animation always plays out.
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
-    let head = dragon.sub_entities()[0].as_ref();
-    let head = head
-        .downcast_ref::<EnderDragonPart>()
-        .expect("the first sub-entity is the head");
+    let head = head(&dragon);
 
     assert!(!dragon.hurt_part(test_world(), head, &source, 10.0));
     assert_eq!(dragon.get_health(), 200.0);
@@ -270,21 +250,19 @@ fn a_dying_dragon_ignores_further_damage() {
 
 #[test]
 fn only_players_and_explosions_can_hurt_the_dragon() {
-    let dragon = test_dragon();
-    let head = dragon.sub_entities()[0].as_ref();
-    let head = head
-        .downcast_ref::<EnderDragonPart>()
-        .expect("the first sub-entity is the head");
+    let world_fixture = chunked_test_world("dragon_damage_gate", 0);
+    let world = &world_fixture.world;
+    let dragon = dragon_in_chunk(world);
+    let head = head(&dragon);
 
-    // Environmental damage reports as handled but must not land, which is what stops
-    // the dragon being worn down by fire or drowning.
+    // Environmental damage reports as handled but must not land.
     let ignored = DamageSource::environment(&vanilla_damage_types::GENERIC);
-    assert!(dragon.hurt_part(test_world(), head, &ignored, 10.0));
+    assert!(dragon.hurt_part(world, head, &ignored, 10.0));
     assert_eq!(dragon.get_health(), 200.0);
 
     // Explosions carry the tag that always hurts dragons.
     let explosion = DamageSource::environment(&vanilla_damage_types::EXPLOSION);
-    assert!(dragon.hurt_part(test_world(), head, &explosion, 10.0));
+    assert!(dragon.hurt_part(world, head, &explosion, 10.0));
     assert!(dragon.get_health() < 200.0);
 }
 
@@ -294,13 +272,13 @@ fn the_holding_pattern_starts_steering_on_its_first_tick() {
     let manager = dragon.phase_manager();
     manager.set_phase(&dragon, EnderDragonPhase::HoldingPattern);
 
-    // The graph is built from the arena's heightmap, so the chunks have to be there;
-    // on a cold world the phase deliberately declines to steer at all.
-    let world = chunked_test_world("dragon_holding_pattern_first_tick", 4);
+    // The graph needs the arena's chunks; the cold case is the next test.
+    let world_fixture = chunked_test_world("dragon_holding_pattern_first_tick", 4);
+    let world = &world_fixture.world;
 
-    // `begin` clears the path, and the roll to leave the circle only happens once a
-    // path has been walked to its end, so the first tick always walks the graph.
-    manager.current().do_server_tick(&dragon, &world);
+    // `begin` clears the path, so the first tick walks the graph instead of rolling to
+    // leave the circle.
+    manager.current().do_server_tick(&dragon, world);
 
     assert_eq!(manager.current_phase(), EnderDragonPhase::HoldingPattern);
     let target = manager
@@ -320,7 +298,7 @@ fn the_holding_pattern_declines_to_steer_over_a_cold_arena() {
     let manager = dragon.phase_manager();
     manager.set_phase(&dragon, EnderDragonPhase::HoldingPattern);
 
-    // `test_world()` has no chunks, so the graph cannot be built and the phase waits.
+    // `test_world()` has no chunks, so the graph cannot be built.
     manager.current().do_server_tick(&dragon, test_world());
 
     assert_eq!(manager.current_phase(), EnderDragonPhase::HoldingPattern);
@@ -331,8 +309,8 @@ fn the_holding_pattern_declines_to_steer_over_a_cold_arena() {
 fn a_perched_dragon_shrugs_off_knockback() {
     let dragon = test_dragon();
 
-    // Hovering counts as sitting, and vanilla's override drops the knockback entirely
-    // rather than scaling it, so a perched dragon cannot be shoved off the podium.
+    // Hovering counts as sitting, and vanilla drops a sitting dragon's knockback
+    // entirely rather than scaling it.
     dragon.knockback(1.0, 1.0, 0.0);
     assert_eq!(dragon.velocity(), DVec3::ZERO);
 
@@ -345,12 +323,13 @@ fn a_perched_dragon_shrugs_off_knockback() {
 
 #[test]
 fn a_dying_dragon_keeps_its_wing_beat_in_lockstep() {
-    let world = chunked_test_world("dragon_dying_wing_beat", 0);
-    let dragon = dragon_at(&world, DVec3::new(0.5, 80.0, 0.5));
+    let world_fixture = chunked_test_world("dragon_dying_wing_beat", 0);
+    let world = &world_fixture.world;
+    let dragon = dragon_in_chunk(world);
 
     // Beat the wings a while so the two times sit apart.
     for _ in 0..20 {
-        dragon.dragon_ai_step(&world);
+        dragon.dragon_ai_step(world, &shared(&dragon));
     }
     assert_ne!(
         *dragon.flap_time.lock(),
@@ -364,7 +343,7 @@ fn a_dying_dragon_keeps_its_wing_beat_in_lockstep() {
     // Frozen a stroke apart, `is_flapping` would answer the same constant every dying
     // tick, which is a FLAP event on all 200 of them if that pair straddles -0.3.
     for _ in 0..DRAGON_DEATH_DURATION {
-        dragon.dragon_ai_step(&world);
+        dragon.dragon_ai_step(world, &shared(&dragon));
         assert_eq!(*dragon.flap_time.lock(), *dragon.o_flap_time.lock());
         assert!(!dragon.is_flapping(), "a dying dragon never re-flaps");
     }

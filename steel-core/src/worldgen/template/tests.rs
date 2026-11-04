@@ -162,7 +162,7 @@ fn village_template_loads_entity_payloads() {
 }
 
 #[test]
-fn brushable_append_loot_infers_block_entity_without_container_reseed() {
+fn template_block_entity_resolution_uses_final_block_state() {
     let registry = test_registry();
     let suspicious_sand = registry
         .blocks
@@ -201,6 +201,15 @@ fn brushable_append_loot_infers_block_entity_without_container_reseed() {
         Some(chest_type),
         &chest_nbt
     ));
+
+    assert!(
+        StructureTemplate::block_entity_type_for_nbt_or_state(
+            &registry,
+            registry.blocks.get_default_state_id(&vanilla_blocks::LAVA),
+            &chest_nbt,
+        )
+        .is_none()
+    );
 }
 
 #[test]

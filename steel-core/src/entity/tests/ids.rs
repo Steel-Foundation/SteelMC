@@ -46,9 +46,6 @@ fn concurrent_reservations_never_overlap() {
             .collect::<Vec<_>>()
     });
 
-    // A multipart entity hands its parts `first() + 1 ..= first() + n`, so an
-    // interleaved allocation from another world thread would hand out an ID a part
-    // already owns.
     let mut seen = FxHashSet::default();
     for block in &blocks {
         for offset in 0..BLOCK_SIZE {

@@ -27,6 +27,8 @@ pub mod java;
 pub mod locks;
 /// Utilities for Steel logging.
 pub mod logger;
+/// Vanilla `Mth` helpers.
+pub mod mth;
 /// Vanilla-compatible NBT helpers.
 pub mod nbt;
 pub mod random;
@@ -65,6 +67,12 @@ pub mod version;
 
 /// The Minecraft version this server supports.
 pub const MC_VERSION: &str = version::MINECRAFT_VERSION;
+
+/// Fixed game ticks per second for duration conversions and the default tick rate.
+pub const TICKS_PER_SECOND: i32 = 20;
+
+/// Number of Y values processed by the density SIMD batch.
+pub const SIMD_BATCH: usize = 8;
 
 pub use color::{ArgbColor, RgbColor};
 pub use direction::Direction;

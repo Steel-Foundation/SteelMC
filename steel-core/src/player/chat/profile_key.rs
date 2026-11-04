@@ -430,7 +430,7 @@ mod tests {
             Err(ValidationError::InvalidSignature)
         ));
 
-        let mut changed_key = data.clone();
+        let mut changed_key = data;
         changed_key.key = generate_key_pair()
             .expect("replacement player key should generate")
             .1;

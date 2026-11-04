@@ -113,7 +113,7 @@ impl EntitySelector {
                         .is_some_and(|world| world.domain() == source.world().domain()),
                     PlayerSelection::OnlineProfile => true,
                 })
-                .filter(|player| player_name_matches(&player.gameprofile.name, name))
+                .filter(|player| player_name_matches(player.gameprofile.name(), name))
                 .collect::<Vec<_>>(),
             SelectorKind::EntityUuid(uuid) => server
                 .get_players()
@@ -176,7 +176,7 @@ impl EntitySelector {
                 .get_players()
                 .into_iter()
                 .filter(|player| player.get_world().domain() == source.world().domain())
-                .filter(|player| player_name_matches(&player.gameprofile.name, name))
+                .filter(|player| player_name_matches(player.gameprofile.name(), name))
                 .map(|player| player as SharedEntity)
                 .collect::<Vec<_>>(),
             SelectorKind::EntityUuid(uuid) => find_entity_by_uuid(source, uuid)
@@ -523,8 +523,7 @@ fn source_scoreboard(source: &CommandSource) -> Result<&Scoreboard, CommandSynta
 }
 
 fn world_candidates(world: &World, aabb: Option<WorldAabb>) -> Vec<SharedEntity> {
-    // Mirrors vanilla `EntitySelector`: the bounded lookup goes through the
-    // part-aware `Level.getEntities`, while the unbounded one does not.
+    // As in vanilla `EntitySelector`, only the bounded lookup includes multipart parts.
     aabb.map_or_else(
         || world.entity_manager().get_accessible_entities(),
         |aabb| world.get_entities_in_aabb(&aabb),

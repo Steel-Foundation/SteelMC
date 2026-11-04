@@ -219,22 +219,33 @@ impl Drop for ChunkSaveDependency {
     }
 }
 
+/// Reservation of a holder's save-preparation phase.
+///
+/// [`Self::finish`] discards the snapshot if revival won. Its strong reference prevents a second
+/// preparation: `ChunkMap::process_unloads` requires a holder's strong count to be 1.
 pub(crate) struct ChunkSavePreparationGuard {
     holder: Arc<ChunkHolder>,
+    /// Whether the lifecycle was already handed back, so `Drop` does not repeat it.
+    released: bool,
+}
+
+impl ChunkSavePreparationGuard {
+    /// Ends the phase, returning `value` only if no revival reclaimed the holder meanwhile.
+    #[must_use = "a snapshot prepared while losing a revival race must be discarded"]
+    pub(crate) fn finish<T>(mut self, value: T) -> Option<T> {
+        self.released = true;
+        self.holder.end_save_preparation().then_some(value)
+    }
 }
 
 impl Drop for ChunkSavePreparationGuard {
     fn drop(&mut self) {
-        let result = self.holder.save_lifecycle.compare_exchange(
-            SAVE_LIFECYCLE_PREPARING,
-            SAVE_LIFECYCLE_UNLOADING,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        );
-        assert!(
-            result.is_ok(),
-            "chunk save preparation ended outside the preparing lifecycle"
-        );
+        if self.released {
+            return;
+        }
+
+        // The preparation bailed before a snapshot existed, so nothing escaped.
+        let _ = self.holder.end_save_preparation();
     }
 }
 
@@ -711,19 +722,35 @@ impl ChunkHolder {
             .ok()
             .map(|_| ChunkSavePreparationGuard {
                 holder: Arc::clone(self),
+                released: false,
             })
     }
 
-    /// Attempts to reactivate an unloading holder without waiting for save preparation.
-    pub(crate) fn try_revive_from_unloading(&self) -> bool {
+    /// Leaves the preparing lifecycle, reporting whether the phase still owned the holder.
+    fn end_save_preparation(&self) -> bool {
         self.save_lifecycle
             .compare_exchange(
+                SAVE_LIFECYCLE_PREPARING,
                 SAVE_LIFECYCLE_UNLOADING,
-                SAVE_LIFECYCLE_ACTIVE,
                 Ordering::AcqRel,
                 Ordering::Acquire,
             )
             .is_ok()
+    }
+
+    /// Reactivates an unloading holder even while a save snapshot is in flight.
+    /// A single `try_update` handles preparation finishing concurrently, which could make
+    /// separate CAS attempts for `PREPARING` and `UNLOADING` both fail.
+    pub(crate) fn revive_from_unloading(&self) {
+        let previous =
+            self.save_lifecycle
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |lifecycle| {
+                    (lifecycle != SAVE_LIFECYCLE_ACTIVE).then_some(SAVE_LIFECYCLE_ACTIVE)
+                });
+        debug_assert!(
+            previous.is_ok(),
+            "an already active chunk holder was revived from unloading"
+        );
     }
 
     /// Applies a step to the chunk.
@@ -827,7 +854,7 @@ impl ChunkHolder {
             // just wait for it. Parent cancellation is handled by the owning
             // task's run loop dropping this future; a failed dependency returns
             // `None` from `await_claimed_chunk_status`.
-            let self_clone = self.clone();
+            let self_clone = Arc::clone(self);
             return Some(Box::pin(async move {
                 self_clone
                     .await_claimed_chunk_status(target_status)
@@ -836,10 +863,10 @@ impl ChunkHolder {
             }));
         };
 
-        let cache = cache.clone();
-        let context = chunk_map.world_gen_context.clone();
-        let self_clone = self.clone();
-        let storage = chunk_map.storage.clone();
+        let cache = Arc::clone(cache);
+        let context = Arc::clone(&chunk_map.world_gen_context);
+        let self_clone = Arc::clone(self);
+        let storage = Arc::clone(&chunk_map.storage);
         let save_dependency = self.add_save_dependency();
 
         let future = chunk_map.task_tracker.spawn(async move {
@@ -961,7 +988,7 @@ impl ChunkHolder {
             return None;
         }
 
-        let holder_for_notify = holder.clone();
+        let holder_for_notify = Arc::clone(&holder);
         let world = context.world();
         Self::run_step_task(thread_pool, step, context, cache, holder).await;
         holder_for_notify.finish_generation_status(target_status);
@@ -1069,7 +1096,7 @@ impl ChunkHolder {
         let has_parent = holder
             .published_status()
             .is_some_and(|status| parent_status <= status);
-        let holder_for_notify = holder.clone();
+        let holder_for_notify = Arc::clone(&holder);
 
         assert!(has_parent, "Parent chunk missing");
 
@@ -1544,7 +1571,8 @@ mod tests {
     #[test]
     fn full_registration_transfers_prepublication_block_and_fluid_ticks() {
         init_chunk_test_registry();
-        let world = fresh_test_world("prepublication_tick_transfer");
+        let world_fixture = fresh_test_world("prepublication_tick_transfer");
+        let world = &world_fixture.world;
         let chunk_pos = ChunkPos::new(0, 0);
         let min_y = world.get_min_y();
         let height = world.get_height();
@@ -1557,7 +1585,7 @@ mod tests {
             chunk_pos,
             min_y,
             height,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
         );
         let block_pos = BlockPos::new(1, min_y + 1, 1);
         let fluid_pos = BlockPos::new(2, min_y + 1, 2);
@@ -1710,27 +1738,44 @@ mod tests {
     }
 
     #[test]
-    fn save_preparation_defers_revival_only_until_the_snapshot_is_built() {
+    fn revival_wins_over_an_in_flight_save_preparation() {
         let holder = test_holder();
         holder.begin_unloading();
         let preparation = holder
             .try_begin_save_preparation()
             .expect("an unloading holder should begin save preparation");
 
-        assert!(!holder.try_revive_from_unloading());
+        holder.revive_from_unloading();
 
-        drop(preparation);
-
-        assert!(holder.try_revive_from_unloading());
+        assert!(
+            preparation.finish(()).is_none(),
+            "a preparation that lost the revival race must discard its snapshot"
+        );
         assert!(holder.try_begin_save_preparation().is_none());
     }
 
     #[test]
-    fn revival_winning_the_lifecycle_race_cancels_save_preparation() {
+    fn an_uncontested_save_preparation_keeps_its_snapshot() {
+        let holder = test_holder();
+        holder.begin_unloading();
+        let preparation = holder
+            .try_begin_save_preparation()
+            .expect("an unloading holder should begin save preparation");
+
+        assert_eq!(preparation.finish(7), Some(7));
+        assert!(
+            holder.try_begin_save_preparation().is_some(),
+            "finishing an uncontested phase must return the holder to the unloading lifecycle"
+        );
+    }
+
+    #[test]
+    fn a_revived_holder_refuses_a_new_save_preparation() {
         let holder = test_holder();
         holder.begin_unloading();
 
-        assert!(holder.try_revive_from_unloading());
+        holder.revive_from_unloading();
+
         assert!(holder.try_begin_save_preparation().is_none());
     }
 }

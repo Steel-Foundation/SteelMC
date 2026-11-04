@@ -13,7 +13,6 @@ use crate::{
     world::World,
 };
 
-/// Vanilla `ServerLevel.END_SPAWN_POINT`.
 pub(crate) const END_SPAWN_POINT: BlockPos = BlockPos::new(100, 50, 0);
 
 const END_PLATFORM_PREWARM_CHUNK_RADIUS: u8 = 1;
@@ -51,7 +50,7 @@ pub(crate) fn calculate_entry_transition(
     }
 
     Some(TeleportTransition {
-        target_world: target_world.clone(),
+        target_world: Arc::clone(target_world),
         position: end_entry_position(entity.as_player().is_some()),
         rotation: (Direction::West.to_yaw(), 0.0),
         velocity: DVec3::ZERO,
@@ -71,7 +70,7 @@ pub(crate) fn calculate_entity_return_transition(
 ) -> TeleportTransition {
     let spawn_pos = target_world.adjust_spawn_location(respawn_data.pos());
     TeleportTransition {
-        target_world: target_world.clone(),
+        target_world: Arc::clone(target_world),
         position: block_bottom_center(spawn_pos),
         rotation: (respawn_data.yaw, respawn_data.pitch),
         velocity: DVec3::ZERO,
@@ -96,7 +95,7 @@ pub(crate) fn calculate_player_return_transition(
     rotation: (f32, f32),
 ) -> TeleportTransition {
     TeleportTransition {
-        target_world: target_world.clone(),
+        target_world: Arc::clone(target_world),
         position,
         rotation,
         velocity: DVec3::ZERO,

@@ -7,13 +7,11 @@ use crate::entity::Entity as _;
 use crate::entity::entities::mobs::bosses::ender_dragon::EnderDragonEntity;
 use crate::world::World;
 
-/// Holds position. Mirrors vanilla `DragonHoverPhase`.
-///
-/// This is the dragon's starting phase, and the one it sits in when nothing else has
-/// claimed it, so a dragon summoned outside a fight simply hangs in the air.
+/// Holds position. The starting phase, so a dragon summoned outside a fight just hangs
+/// in the air.
 pub struct DragonHoverPhase {
-    /// Where to hold. Latched on the first tick after `begin`, so the dragon holds
-    /// wherever it happened to be when it entered the phase.
+    /// Latched on the first tick after `begin`, so the dragon holds wherever it entered
+    /// the phase.
     target_location: SyncMutex<Option<DVec3>>,
 }
 
@@ -37,10 +35,7 @@ impl DragonPhaseInstance for DragonHoverPhase {
         EnderDragonPhase::Hovering
     }
 
-    /// Vanilla reports hovering as sitting.
-    ///
-    /// This is not just bookkeeping: it selects the perched wing-beat rate and the
-    /// lowered head offset, so a hovering dragon animates like a perched one.
+    /// Vanilla reports hovering as sitting, so a hovering dragon animates like a perched one.
     fn is_sitting(&self) -> bool {
         true
     }

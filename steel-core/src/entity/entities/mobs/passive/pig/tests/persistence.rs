@@ -268,7 +268,7 @@ fn pig_saves_and_loads_saddle_equipment() {
     pig.living_base()
         .equipment()
         .lock()
-        .set(EquipmentSlot::Saddle, saddle.clone());
+        .set(EquipmentSlot::Saddle, saddle);
     assert!(pig.is_saddled());
 
     let mut nbt = NbtCompound::new();

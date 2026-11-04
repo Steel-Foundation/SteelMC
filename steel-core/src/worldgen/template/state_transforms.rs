@@ -19,8 +19,7 @@ impl StructureTemplate {
         };
         let mut properties = registry
             .blocks
-            .get_properties(state)
-            .into_iter()
+            .properties(state)
             .map(|(name, value)| (name.to_owned(), value.to_owned()))
             .collect::<Vec<_>>();
 

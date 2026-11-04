@@ -1,13 +1,9 @@
 //! Block entity registry for creating block entity instances.
 
-use std::io::Cursor;
 use std::ops::Deref;
 use std::sync::{Arc, OnceLock, Weak};
 
-use simdnbt::borrow::NbtCompound as BorrowedRootNbtCompound;
-use simdnbt::borrow::{
-    BaseNbtCompound as BorrowedNbtCompound, read_compound as read_borrowed_compound,
-};
+use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::vanilla_block_entity_types;
@@ -78,13 +74,13 @@ impl BlockEntityRegistry {
         self.entries.get(id)?.factory.map(|f| f(level, pos, state))
     }
 
-    /// Creates a block entity, falling back to an NBT-preserving raw entity.
+    /// Creates a block entity, falling back to an NBT-preserving unimplemented entity.
     ///
     /// Use this for disk/worldgen paths where an unimplemented block entity type must still
     /// survive save/load. Gameplay paths that require concrete behavior should call
     /// [`Self::create`] and handle `None`.
     #[must_use]
-    pub fn create_or_raw(
+    pub fn create_or_unimplemented(
         &self,
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
@@ -95,13 +91,18 @@ impl BlockEntityRegistry {
         if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
             factory(level, pos, state)
         } else {
-            Arc::new(RawBlockEntity::new(block_entity_type, level, pos, state))
+            Arc::new(UnimplementedBlockEntity::new(
+                block_entity_type,
+                level,
+                pos,
+                state,
+            ))
         }
     }
 
-    /// Creates a block entity and loads borrowed NBT, falling back to raw preservation.
+    /// Creates and loads a block entity, falling back to an unimplemented entity.
     #[must_use]
-    pub fn create_and_load_or_raw(
+    pub fn create_and_load_or_unimplemented(
         &self,
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
@@ -109,26 +110,14 @@ impl BlockEntityRegistry {
         state: BlockStateId,
         nbt: &BorrowedNbtCompound<'_>,
     ) -> SharedBlockEntity {
-        let id = block_entity_type.id();
-        if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
-            let entity = factory(level, pos, state);
-            entity.load_additional(nbt);
-            entity
-        } else {
-            let nbt_view: BorrowedRootNbtCompound<'_, '_> = nbt.into();
-            Arc::new(RawBlockEntity::with_data(
-                block_entity_type,
-                level,
-                pos,
-                state,
-                nbt_view.to_owned(),
-            ))
-        }
+        let entity = self.create_or_unimplemented(block_entity_type, level, pos, state);
+        entity.load_with_components(nbt);
+        entity
     }
 
-    /// Creates a block entity and loads owned NBT, falling back to raw preservation.
+    /// Creates and loads owned block entity NBT, falling back to an unimplemented entity.
     #[must_use]
-    pub fn create_and_load_owned_or_raw(
+    pub fn create_and_load_owned_or_unimplemented(
         &self,
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
@@ -136,29 +125,14 @@ impl BlockEntityRegistry {
         state: BlockStateId,
         nbt: NbtCompound,
     ) -> SharedBlockEntity {
-        let id = block_entity_type.id();
-        if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
-            let entity = factory(level, pos, state);
-            let mut nbt_bytes = Vec::new();
-            nbt.write(&mut nbt_bytes);
-            if let Ok(borrowed) = read_borrowed_compound(&mut Cursor::new(&nbt_bytes)) {
-                entity.load_additional(&borrowed);
-            } else {
-                log::warn!(
-                    "failed to reborrow owned NBT for block entity {}",
-                    block_entity_type.key()
-                );
-            }
-            entity
-        } else {
-            Arc::new(RawBlockEntity::with_data(
-                block_entity_type,
-                level,
-                pos,
-                state,
-                nbt,
-            ))
+        let entity = self.create_or_unimplemented(block_entity_type, level, pos, state);
+        if let Err(error) = entity.load_with_owned_components(&nbt) {
+            log::warn!(
+                "failed to reborrow owned NBT for block entity {}: {error}",
+                block_entity_type.key()
+            );
         }
+        entity
     }
 
     /// Returns whether a factory is registered for the given type.
@@ -223,6 +197,14 @@ pub fn init_block_entities() {
         // Register barrel block entity factory
         registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
             Arc::new(BarrelBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(&vanilla_block_entity_types::BEACON, |level, pos, state| {
+            Arc::new(BeaconBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(&vanilla_block_entity_types::CONDUIT, |level, pos, state| {
+            Arc::new(ConduitBlockEntity::new(level, pos, state))
         });
 
         registry.register(&vanilla_block_entity_types::FURNACE, |level, pos, state| {
@@ -300,11 +282,32 @@ pub fn init_block_entities() {
             |level, pos, state| Arc::new(EnderChestBlockEntity::new(level, pos, state)),
         );
 
+        // Register enchanting table block entity factory
+        registry.register(
+            &vanilla_block_entity_types::ENCHANTING_TABLE,
+            |level, pos, state| Arc::new(EnchantingTableBlockEntity::new(level, pos, state)),
+        );
+
         // Register potent sulfur block entity factory
         registry.register(
             &vanilla_block_entity_types::POTENT_SULFUR,
             |level, pos, state| Arc::new(PotentSulfurBlockEntity::new(level, pos, state)),
         );
+
+        registry.register(
+            &vanilla_block_entity_types::SHULKER_BOX,
+            |level, pos, state| Arc::new(ShulkerBoxBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(
+            &vanilla_block_entity_types::MOB_SPAWNER,
+            |level, pos, state| Arc::new(SpawnerBlockEntity::new(level, pos, state)),
+        );
+
+        // Register skull block entity factory
+        registry.register(&vanilla_block_entity_types::SKULL, |level, pos, state| {
+            Arc::new(SkullBlockEntity::new(level, pos, state))
+        });
 
         registry
     });
