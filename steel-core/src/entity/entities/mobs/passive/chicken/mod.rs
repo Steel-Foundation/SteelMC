@@ -38,7 +38,8 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SharedEntity, SpawnGroupData, entity_loot_ref, position_rider_default,
+    PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule, entity_loot_ref, living_loot_equipment,
+    position_rider_default, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -119,7 +120,7 @@ impl ChickenState {
 }
 
 /// Vanilla chicken entity.
-#[entity_behavior(class = "Chicken")]
+#[entity_behavior(class = "Chicken", spawn_rule)]
 pub struct ChickenEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -137,6 +138,11 @@ unsafe impl DowncastType for ChickenEntity {
 }
 
 impl ChickenEntity {
+    /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
+    pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, random| {
+        <Self as Animal>::check_animal_spawn_rules(entity_type, level, spawn_reason, pos, random)
+    };
+
     /// Creates a new chicken at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
@@ -260,22 +266,10 @@ impl ChickenEntity {
     }
 
     fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
+        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
+            self.entity_data
+                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
         }
-
-        let display = self.living_base.mob_effect_display_state();
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
-        self.entity_data
-            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
     /// Returns whether an item stack matches the vanilla chicken food tag.
@@ -382,10 +376,11 @@ impl ChickenEntity {
     fn drop_gift_loot_table(&self, loot_table: LootTableRef) -> bool {
         let position = self.position();
         let mut rng = rand::rng();
+        let equipment = living_loot_equipment(self);
         // Vanilla `LootContextParamSets.GIFT` carries only ORIGIN and THIS_ENTITY.
         let mut context = LootContext::new(&mut rng)
             .with_origin(position.x, position.y, position.z)
-            .with_this_entity(entity_loot_ref(self));
+            .with_this_entity(entity_loot_ref(self, Some(&equipment)));
 
         let items = loot_table.get_random_items(&mut context);
         let dropped_any = !items.is_empty();

@@ -370,7 +370,7 @@ fn compute_block_hash(sections: &Sections) -> String {
         'scan: for y in 0..16 {
             for z in 0..16 {
                 for x in 0..16 {
-                    if !section.states.get(x, y, z).is_air() {
+                    if !section.states().get(x, y, z).is_air() {
                         all_air = false;
                         break 'scan;
                     }
@@ -383,7 +383,7 @@ fn compute_block_hash(sections: &Sections) -> String {
             for y in 0..16 {
                 for z in 0..16 {
                     for x in 0..16 {
-                        let state = section.states.get(x, y, z);
+                        let state = section.states().get(x, y, z);
                         let state_id = u32::from(state.0);
                         ctx.consume([(state_id >> 24) as u8]);
                         ctx.consume([(state_id >> 16) as u8]);
@@ -582,11 +582,11 @@ fn describe_state(state_id: i32) -> String {
     let Some(block) = REGISTRY.blocks.by_state_id(bsid) else {
         return format!("{state_id} (unknown)");
     };
-    let props = REGISTRY.blocks.get_properties(bsid);
-    if props.is_empty() {
+    let props = REGISTRY.blocks.properties(bsid);
+    if props.len() == 0 {
         format!("{state_id} ({})", block.key)
     } else {
-        let prop_str: Vec<_> = props.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        let prop_str: Vec<_> = props.map(|(k, v)| format!("{k}={v}")).collect();
         format!("{state_id} ({}[{}])", block.key, prop_str.join(","))
     }
 }
@@ -610,7 +610,7 @@ fn diff_chunk(sections: &Sections, reference: &ChunkBlockData, min_y: i32) -> Ve
 
         match ref_section {
             Some(Some(ref_ids)) => {
-                if section.states.has_only_air() {
+                if section.states().has_only_air() {
                     // Steel says all air, vanilla has data
                     for (idx, &vanilla_id) in ref_ids.iter().enumerate() {
                         if vanilla_id != 0 {
@@ -633,7 +633,7 @@ fn diff_chunk(sections: &Sections, reference: &ChunkBlockData, min_y: i32) -> Ve
                                 let idx = y_local * 256 + z * 16 + x;
                                 let vanilla_id = ref_ids[idx];
                                 let steel_id =
-                                    u32::from(section.states.get(x, y_local, z).0) as i32;
+                                    u32::from(section.states().get(x, y_local, z).0) as i32;
                                 if vanilla_id != steel_id {
                                     diffs.push(BlockDiff {
                                         x,
@@ -650,12 +650,12 @@ fn diff_chunk(sections: &Sections, reference: &ChunkBlockData, min_y: i32) -> Ve
             }
             Some(None) | None => {
                 // Vanilla says all air (or section missing). Check if Steel also has air.
-                if !section.states.has_only_air() {
+                if !section.states().has_only_air() {
                     for y_local in 0..16usize {
                         for z in 0..16usize {
                             for x in 0..16usize {
                                 let steel_id =
-                                    u32::from(section.states.get(x, y_local, z).0) as i32;
+                                    u32::from(section.states().get(x, y_local, z).0) as i32;
                                 if steel_id != 0 {
                                     diffs.push(BlockDiff {
                                         x,

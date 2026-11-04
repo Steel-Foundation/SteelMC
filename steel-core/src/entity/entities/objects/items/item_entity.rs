@@ -12,6 +12,7 @@ use steel_math::DEGREE_360;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ItemEntityData;
+use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_registry::{vanilla_custom_stats, vanilla_damage_types};
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
@@ -21,12 +22,13 @@ use uuid::Uuid;
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData, RemovalReason,
+    DEFAULT_AIR_DRAG, Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMovementEmission,
+    EntitySyncedData, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{Explosion, World};
 
 use simdnbt::ToNbtTag;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -57,7 +59,6 @@ const DEFAULT_HEALTH: i32 = 5;
 const DEFAULT_GRAVITY: f64 = 0.04;
 
 /// Air/vertical drag multiplier per tick.
-const AIR_DRAG: f64 = 0.98;
 const FLUID_VERTICAL_NUDGE: f64 = 5.0e-4;
 const ITEM_FLUID_HEIGHT_THRESHOLD: f64 = 0.1;
 const ITEM_WATER_DRAG: f64 = 0.99;
@@ -533,6 +534,14 @@ impl Entity for ItemEntity {
         self.entity_type
     }
 
+    fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
+        !explosion.should_affect_blocklike_entities()
+    }
+
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::None
+    }
+
     fn tick(self: Arc<Self>) {
         // Check if item is empty
         if self.get_item().is_empty() {
@@ -589,15 +598,15 @@ impl Entity for ItemEntity {
                         && let Some(block_pos) = self.block_pos_below_that_affects_movement()
                     {
                         let block_state = world.get_block_state(block_pos);
-                        f64::from(block_state.get_block().config.friction) * AIR_DRAG
+                        f64::from(block_state.get_block().config.friction) * DEFAULT_AIR_DRAG
                     } else {
-                        AIR_DRAG
+                        DEFAULT_AIR_DRAG
                     };
 
                     let mut velocity = self.velocity();
                     velocity.x *= friction;
                     velocity.z *= friction;
-                    velocity.y *= AIR_DRAG;
+                    velocity.y *= DEFAULT_AIR_DRAG;
 
                     // Bounce when landing on ground (vanilla: ItemEntity.tick lines 145-149)
                     if result.on_ground && velocity.y < 0.0 {
@@ -627,6 +636,12 @@ impl Entity for ItemEntity {
             && let Some(world) = self.level()
         {
             self.merge_with_neighbors(&world);
+        }
+
+        // Vanilla item ticks refresh fluid interaction after movement and sync
+        // the result, which also emits water-entry splashes.
+        if self.update_fluid_interaction() {
+            self.mark_velocity_sync();
         }
 
         // Check if velocity changed significantly -> set needsSync (vanilla: ItemEntity.tick lines 160-164)
@@ -693,8 +708,15 @@ impl Entity for ItemEntity {
         self.try_pickup(player);
     }
 
-    fn hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
+    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         // TODO: Check isInvulnerableToBase once the shared non-living entity hook is ported.
+        if !world.get_game_rule(&MOB_GRIEFING)
+            && source
+                .causing_entity()
+                .is_some_and(|entity| entity.as_mob().is_some())
+        {
+            return false;
+        }
         if !self.get_item().can_be_hurt_by(source.damage_type) {
             return false;
         }
@@ -771,17 +793,19 @@ impl Entity for ItemEntity {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
 
     use steel_registry::{
-        init_vanilla_registry, item_stack::ItemStack, vanilla_damage_types, vanilla_entities,
-        vanilla_items,
+        init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_damage_types,
+        vanilla_entities, vanilla_items,
     };
+    use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 
+    use crate::behavior::init_behaviors;
     use crate::entity::{Entity, damage::DamageSource};
-    use crate::test_support::test_world;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
     use crate::world::World;
 
     use super::ItemEntity;
@@ -837,6 +861,33 @@ mod tests {
         assert_eq!(velocity.y.to_bits(), 0.2_f64.to_bits());
         assert!(velocity.z >= -0.1);
         assert!(velocity.z < 0.1);
+    }
+
+    #[test]
+    fn item_tick_refreshes_fluid_after_movement() {
+        init_vanilla_registry();
+        init_behaviors();
+        let fixture = fresh_test_world("item_post_move_fluid_update");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        assert!(world.set_block(
+            BlockPos::new(8, 64, 8),
+            vanilla_blocks::WATER.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let item = Arc::new(ItemEntity::with_item(
+            &vanilla_entities::ITEM,
+            1,
+            DVec3::new(8.5, 65.1, 8.5),
+            ItemStack::new(&vanilla_items::STONE),
+            Arc::downgrade(world),
+        ));
+        item.set_velocity(DVec3::new(0.0, -0.2, 0.0));
+
+        Arc::clone(&item).tick();
+
+        assert!(item.fluid_contact().water_height() > 0.0);
+        assert!(item.needs_velocity_sync());
     }
 
     #[test]

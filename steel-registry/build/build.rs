@@ -24,7 +24,7 @@
     reason = "registry build scripts transform extracted vanilla data and favor direct generation code over pedantic reshaping"
 )]
 
-use std::{env, fs, path::Path, process::Command};
+use std::{env, fs, path::Path};
 
 /// Structure-processor codec types, shared by `structure::processors` and
 /// `features` (inline `TemplateFeature` processors). Deserialize derives
@@ -83,6 +83,7 @@ mod recipes;
 mod sound_events;
 mod sound_types;
 mod structure;
+mod suspicious_stew_effects;
 mod timelines;
 mod trim_materials;
 mod trim_patterns;
@@ -95,12 +96,12 @@ mod zombie_nautilus_variants;
 
 mod enchantments;
 
+mod advancements;
 mod generator_functions;
 mod shared_structs;
 mod tags;
 
-const FMT: bool = cfg!(feature = "fmt");
-
+const ADVANCEMENTS: &str = "advancements";
 const ATTRIBUTES: &str = "attributes";
 const BLOCKS: &str = "blocks";
 const BLOCK_TAGS: &str = "block_tags";
@@ -178,6 +179,7 @@ const BLOCK_STATE_PROVIDERS: &str = "block_state_providers";
 const CONFIGURED_FEATURES: &str = "configured_features";
 const PLACED_FEATURES: &str = "placed_features";
 const CUSTOM_STATS: &str = "custom_stats";
+const SUSPICIOUS_STEW_EFFECTS: &str = "suspicious_stew_effects";
 
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
@@ -273,6 +275,8 @@ pub fn main() {
         (features::build_configured(), CONFIGURED_FEATURES),
         (features::build_placed(), PLACED_FEATURES),
         (custom_stats::build(), CUSTOM_STATS),
+        (suspicious_stew_effects::build(), SUSPICIOUS_STEW_EFFECTS),
+        (advancements::build(), ADVANCEMENTS),
     ];
 
     // Track which files we're generating this run
@@ -281,6 +285,13 @@ pub fn main() {
     for (content, file_name) in vanilla_builds {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
         let content = content.to_string();
+        #[cfg(feature = "fmt")]
+        let content = {
+            let syntax = syn::parse_file(&content).unwrap_or_else(|error| {
+                panic!("Failed to parse generated file {}: {error}", path.display())
+            });
+            prettyplease::unparse(&syntax)
+        };
         generated_files.push(path.clone());
 
         // Only write if content changed
@@ -299,13 +310,6 @@ pub fn main() {
             if !generated_files.contains(&path) {
                 let _ = fs::remove_file(&path);
             }
-        }
-    }
-
-    if FMT && let Ok(entries) = fs::read_dir(&out_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let _ = Command::new("rustfmt").arg(path).output();
         }
     }
 }

@@ -19,6 +19,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::mob_effect_instance::INFINITE_EFFECT_DURATION;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
 use steel_registry::vanilla_mob_effects;
@@ -29,15 +30,17 @@ use uuid::Uuid;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
+use crate::entity::synced_data::EntitySyncedData;
 use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
 use crate::world::World;
 
 /// Duration in ticks of the death animation before entity removal.
 pub const DEATH_DURATION: i32 = 20;
+/// Duration in ticks of the vanilla hurt animation.
+pub const HURT_DURATION_TICKS: i32 = 10;
 /// Vanilla default `SwingAnimation` duration in ticks.
 pub const DEFAULT_SWING_DURATION: i32 = 6;
-const INFINITE_EFFECT_DURATION: i32 = -1;
 const MIN_EFFECT_AMPLIFIER: i32 = 0;
 const MAX_EFFECT_AMPLIFIER: i32 = 255;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
@@ -144,6 +147,22 @@ impl MobEffectInstance {
     #[must_use]
     pub const fn is_infinite_duration(&self) -> bool {
         self.duration == INFINITE_EFFECT_DURATION
+    }
+
+    /// Checks whether the duration is at most `ticks` infinite effects never qualify
+    #[must_use]
+    pub const fn ends_within(&self, ticks: i32) -> bool {
+        !self.is_infinite_duration() && self.duration <= ticks
+    }
+
+    /// Maps the duration leaving zero and infinite durations unchanged
+    #[must_use]
+    fn map_duration(&self, mapper: impl FnOnce(i32) -> i32) -> i32 {
+        if self.is_infinite_duration() || self.duration == 0 {
+            self.duration
+        } else {
+            mapper(self.duration)
+        }
     }
 
     /// Serializes this effect with vanilla's `MobEffectInstance.CODEC` shape.
@@ -275,9 +294,7 @@ impl MobEffectInstance {
             hidden_effect.tick_down_duration();
         }
 
-        if !self.is_infinite_duration() && self.duration != 0 {
-            self.duration -= 1;
-        }
+        self.duration = self.map_duration(|duration| duration - 1);
     }
 
     fn downgrade_to_hidden_effect(&mut self) -> bool {
@@ -614,6 +631,8 @@ struct LivingEntityState {
     effects_dirty: bool,
     death_processed: bool,
     invulnerable_time: i32,
+    hurt_time: i32,
+    hurt_duration: i32,
     last_hurt: f32,
     last_hurt_by_player: Option<Uuid>,
     last_hurt_by_player_entity: Option<WeakEntity>,
@@ -649,6 +668,8 @@ impl LivingEntityState {
             effects_dirty: false,
             death_processed: false,
             invulnerable_time: 0,
+            hurt_time: 0,
+            hurt_duration: 0,
             last_hurt: 0.0,
             last_hurt_by_player: None,
             last_hurt_by_player_entity: None,
@@ -782,10 +803,7 @@ impl LivingEntityBase {
 
     /// Collects equipment changes against Vanilla's previous-tick snapshots.
     pub fn collect_equipment_changes(&self) -> Vec<(EquipmentSlot, ItemStack, ItemStack)> {
-        let current_items: [ItemStack; EquipmentSlot::ALL.len()] = {
-            let equipment = self.equipment.lock();
-            array::from_fn(|index| equipment.get_ref(EquipmentSlot::ALL[index]).clone())
-        };
+        let current_items = self.equipment.lock().snapshot();
         let mut last_items = self.last_equipment_items.lock();
         let mut changes = Vec::new();
 
@@ -1499,12 +1517,49 @@ impl LivingEntityBase {
             .floor() as i32
     }
 
+    /// Returns the remaining hurt-cooldown ticks.
+    pub fn invulnerable_time(&self) -> i32 {
+        self.state.lock().invulnerable_time
+    }
+
+    /// Sets the remaining hurt-cooldown ticks.
+    pub fn set_invulnerable_time(&self, invulnerable_time: i32) {
+        self.state.lock().invulnerable_time = invulnerable_time;
+    }
+
     /// Decrements remaining invulnerability ticks by one if any are active.
     pub fn decrement_invulnerable_time(&self) {
         let mut state = self.state.lock();
         if state.invulnerable_time > 0 {
             state.invulnerable_time -= 1;
         }
+    }
+
+    /// Starts the vanilla hurt animation.
+    pub fn begin_hurt_animation(&self) {
+        let mut state = self.state.lock();
+        state.hurt_duration = HURT_DURATION_TICKS;
+        state.hurt_time = state.hurt_duration;
+    }
+
+    /// Decrements the vanilla hurt animation timer.
+    pub fn decrement_hurt_time(&self) {
+        let mut state = self.state.lock();
+        if state.hurt_time > 0 {
+            state.hurt_time -= 1;
+        }
+    }
+
+    /// Returns the current hurt time
+    #[must_use]
+    pub fn hurt_time(&self) -> i32 {
+        self.state.lock().hurt_time
+    }
+
+    /// Returns the current hurt duration
+    #[must_use]
+    pub fn hurt_duration(&self) -> i32 {
+        self.state.lock().hurt_duration
     }
 
     /// Applies vanilla hurt cooldown bookkeeping.
@@ -1542,6 +1597,11 @@ impl LivingEntityBase {
         state.last_hurt_by_player = Some(player_uuid);
         state.last_hurt_by_player_entity = None;
         state.last_hurt_by_player_memory_time = time_to_remember;
+    }
+
+    /// Sets the remaining memory time without touching the remembered player.
+    pub fn set_last_hurt_by_player_memory_time(&self, time_to_remember: i32) {
+        self.state.lock().last_hurt_by_player_memory_time = time_to_remember;
     }
 
     /// Remembers the live player independently of which world it occupies.
@@ -1657,6 +1717,17 @@ impl LivingEntityBase {
         }
     }
 
+    /// Returns whether death side effects have already run.
+    ///
+    /// Close to vanilla `LivingEntity.dead`, which guards `die`, but not identical:
+    /// Steel also gates [`Self::apply_damage_cooldown`] on it, and players set it
+    /// through their own death path. Treat it as "this entity has already died",
+    /// not as a faithful mirror of the vanilla field.
+    #[must_use]
+    pub fn is_death_processed(&self) -> bool {
+        self.state.lock().death_processed
+    }
+
     /// Marks death side effects as processed.
     ///
     /// Returns `false` if they were already processed.
@@ -1715,3 +1786,32 @@ fn living_is_dead(entity: &SharedEntity) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+/// Pushes newly dirty mob-effect state into a living entity's synced data.
+///
+/// Every mob does this before its data is sent, so it lives here rather than being
+/// restated per species. Returns the resolved display state when something was dirty,
+/// so a caller that syncs further flags from it need not repeat the dirty check, and
+/// `None` when there was nothing to publish.
+pub fn sync_dirty_mob_effects<T>(
+    living_base: &LivingEntityBase,
+    entity_data: &SyncMutex<T>,
+) -> Option<MobEffectDisplayState>
+where
+    T: VanillaLivingEntityData + Send + Sync,
+    SyncMutex<T>: EntitySyncedData,
+{
+    if !living_base.take_effects_dirty() {
+        return None;
+    }
+
+    let display = living_base.mob_effect_display_state();
+    {
+        let mut entity_data = entity_data.lock();
+        let living = entity_data.living_entity_mut();
+        living.effect_particles.set(display.particles.clone());
+        living.effect_ambience.set(display.ambient);
+    }
+    entity_data.set_base_invisible_flag(display.invisible);
+    Some(display)
+}

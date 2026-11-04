@@ -59,7 +59,7 @@ impl DaylightDetectorBlock {
         let mut sun_angle = sun_angle_degrees * DEG_TO_RAD;
         let offset = if sun_angle < PI { 0.0 } else { TAU };
         sun_angle += (offset - sun_angle) * 0.2;
-        java_round(f32::from(sky_brightness) * trig::cos(f64::from(sun_angle)))
+        java_round(f32::from(sky_brightness) * trig::cos(sun_angle))
             .clamp(MIN_REDSTONE_SIGNAL, MAX_REDSTONE_SIGNAL) as u8
     }
 

@@ -199,7 +199,7 @@ impl<'a> SurfaceConditionNoiseCache<'a> {
     pub fn get(
         &self,
         noise_index: usize,
-        system: &dyn SurfaceNoiseProvider,
+        system: &(impl SurfaceNoiseProvider + ?Sized),
         x: i32,
         z: i32,
     ) -> f64 {

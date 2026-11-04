@@ -117,6 +117,7 @@ mod domain_entity_directory;
 mod entity_management;
 mod environment;
 mod events;
+pub mod explosion;
 /// Vanilla game-event contexts, listeners, and dispatch storage.
 pub mod game_event;
 mod level_effects;
@@ -142,7 +143,7 @@ pub use crate::config::WorldStorageConfig;
 use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
 use block_event::BlockEventQueue;
-pub(crate) use block_region::{BlockRegionBounds, MAX_BLOCK_REGION_WORKSET_SLOTS};
+pub(crate) use block_region::{BlockRegionBounds, BlockRegionRead, MAX_BLOCK_REGION_WORKSET_SLOTS};
 use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
 pub(crate) use border::{MAX_CENTER_COORDINATE, MAX_SIZE};
@@ -151,6 +152,11 @@ pub(crate) use domain_entity_directory::DomainEntityDirectory;
 use entity_management::NavigatingMobTracker;
 #[cfg(test)]
 use entity_management::nearest_player_distance_in_range;
+pub use explosion::{
+    BlockInteraction, DefaultExplosionDamageCalculator, EntityBasedExplosionDamageCalculator,
+    Explosion, ExplosionDamageCalculator, ExplosionInteraction, ExplosionOptions, ExplosionOutcome,
+};
+pub(crate) use explosion::{ExplosionBlockReader, ImmutableExplosionBlockCalculator};
 pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
 pub use player_index::{PlayerAreaMap, PlayerMap};
 pub use raycast::{ClipBlockShape, ClipFluid, ClipHitResult, RaytraceAction};
@@ -704,6 +710,10 @@ impl LevelReader for World {
             .is_face_sturdy(state, self, pos, direction, support_type)
     }
 
+    fn sky_darkening(&self) -> u8 {
+        World::sky_darkening(self)
+    }
+
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
         let sky_light = if self.dimension_type.has_skylight {
             self.light_value_at(LightLayer::Sky, pos)
@@ -758,6 +768,10 @@ impl LevelReader for Arc<World> {
     ) -> bool {
         self.as_ref()
             .is_face_sturdy_for(state, pos, direction, support_type)
+    }
+
+    fn sky_darkening(&self) -> u8 {
+        self.as_ref().sky_darkening()
     }
 
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {

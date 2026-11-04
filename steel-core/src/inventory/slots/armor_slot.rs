@@ -61,17 +61,6 @@ impl Slot for ArmorSlot {
         self.base.set_item(guard, stack);
     }
 
-    fn set_by_player(
-        &self,
-        guard: &mut ContainerLockGuard,
-        stack: ItemStack,
-        previous: &ItemStack,
-    ) {
-        // TODO: Call player.onEquipItem(equipmentSlot, previous, stack) here
-        let _ = previous;
-        self.set_item(guard, stack);
-    }
-
     fn may_place(&self, stack: &ItemStack) -> bool {
         stack.is_equippable_in_slot(self.slot)
     }

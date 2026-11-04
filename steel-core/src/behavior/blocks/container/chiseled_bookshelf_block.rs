@@ -26,8 +26,8 @@ use crate::behavior::{
 use crate::block_entity::BLOCK_ENTITIES;
 use crate::block_entity::entities::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEntity};
 use crate::player::Player;
+use crate::world::World;
 use crate::world::game_event::GameEventContext;
-use crate::world::{LevelReader, World};
 
 /// Direct-interaction behavior for Vanilla's chiseled bookshelf.
 ///
@@ -267,7 +267,7 @@ impl BlockBehavior for ChiseledBookShelfBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        world: &dyn LevelReader,
+        world: &World,
         pos: BlockPos,
         _direction: Direction,
     ) -> i32 {

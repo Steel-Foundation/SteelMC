@@ -5,7 +5,7 @@
 use std::io::{self, Cursor};
 
 use glam::IVec3;
-use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270};
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270, trig};
 
 use crate::{axis::Axis, codec::VarInt, serial::ReadFrom, types::BlockPos};
 
@@ -257,10 +257,10 @@ impl Direction {
         let pitch_rad = pitch.to_radians();
         let yaw_rad = (-yaw).to_radians();
 
-        let pitch_sin = pitch_rad.sin();
-        let pitch_cos = pitch_rad.cos();
-        let yaw_sin = yaw_rad.sin();
-        let yaw_cos = yaw_rad.cos();
+        let pitch_sin = trig::sin(pitch_rad);
+        let pitch_cos = trig::cos(pitch_rad);
+        let yaw_sin = trig::sin(yaw_rad);
+        let yaw_cos = trig::cos(yaw_rad);
 
         // Determine which direction on each axis the player is looking
         let x_pos = yaw_sin > 0.0;
@@ -345,8 +345,8 @@ impl Direction {
     #[must_use]
     pub fn is_facing_yaw(self, yaw: f32) -> bool {
         let radians = yaw.to_radians();
-        let dx = -radians.sin();
-        let dz = radians.cos();
+        let dx = -trig::sin(radians);
+        let dz = trig::cos(radians);
 
         let (nx, nz) = self.offset_xz();
 

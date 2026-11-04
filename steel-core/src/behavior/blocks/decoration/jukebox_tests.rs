@@ -14,14 +14,14 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events::{SOUND_PLAY_JUKEBOX_SONG, SOUND_STOP_JUKEBOX_SONG};
 use steel_registry::packets::play::{C_LEVEL_EVENT, C_LEVEL_PARTICLES};
 use steel_registry::{
-    RegistryEntry as _, vanilla_block_entity_types, vanilla_blocks, vanilla_entities,
-    vanilla_game_events, vanilla_items, vanilla_jukebox_songs,
+    RegistryEntry as _, vanilla_block_entity_types, vanilla_blocks, vanilla_game_events,
+    vanilla_items, vanilla_jukebox_songs,
 };
 use steel_utils::codec::VarInt;
 use steel_utils::locks::SyncMutex;
 use steel_utils::serial::ReadFrom as _;
 use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
-use steel_utils::{BlockPos, ChunkPos, Direction, Downcast as _, SectionPos, WorldAabb};
+use steel_utils::{BlockPos, ChunkPos, Direction, Downcast as _, SectionPos, TICKS_PER_SECOND};
 use text_components::TextComponent;
 
 use super::JukeboxBlock;
@@ -39,7 +39,8 @@ use crate::entity::{Entity as _, SharedEntity, next_entity_id};
 use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerConnection, ResetReason};
 use crate::test_support::{
-    TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
+    self, DROPPED_ITEM_SEARCH_SIZE, TestPlayerBuilder, TestWorld, fresh_test_world,
+    insert_ready_full_chunk,
 };
 use crate::world::game_event::{GameEventContext, GameEventListener, SharedGameEventListener};
 use crate::world::{SignalGetter as _, World};
@@ -50,12 +51,10 @@ const JUKEBOX_EJECTION_HORIZONTAL_RADIUS: f64 = 0.35;
 const ITEM_EJECTION_HORIZONTAL_SPEED_LIMIT: f64 = 0.1;
 const ITEM_EJECTION_UPWARD_SPEED: f64 = 0.2;
 const DEFAULT_ITEM_PICKUP_DELAY_TICKS: i32 = 10;
-const TICKS_PER_SECOND: f32 = 20.0;
 const PLAY_EVENT_INTERVAL_TICKS: i64 = 20;
 const SONG_END_PADDING_TICKS: i64 = 20;
 const SAVED_PLAYBACK_TICKS: i32 = 37;
 const GAME_EVENT_LISTENER_RADIUS: i32 = 16;
-const DROPPED_ITEM_SEARCH_SIZE: f64 = 3.0;
 
 struct RecordingConnection {
     packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
@@ -206,15 +205,9 @@ fn assert_within_radius(value: f64, center: f64, radius: f64) {
 }
 
 fn dropped_items(world: &World, pos: BlockPos) -> Vec<SharedEntity> {
-    let search_center = block_bottom_center(pos) + DVec3::Y * (DROPPED_ITEM_SEARCH_SIZE / 2.0);
-    world.get_entities_in_aabb_matching(
-        &WorldAabb::of_size(
-            search_center,
-            DROPPED_ITEM_SEARCH_SIZE,
-            DROPPED_ITEM_SEARCH_SIZE,
-            DROPPED_ITEM_SEARCH_SIZE,
-        ),
-        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    test_support::dropped_items(
+        world,
+        block_bottom_center(pos) + DVec3::Y * (DROPPED_ITEM_SEARCH_SIZE / 2.0),
     )
 }
 
@@ -579,8 +572,8 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
         2,
     );
 
-    let finish_ticks =
-        (song.value().length_in_seconds * TICKS_PER_SECOND).ceil() as i64 + SONG_END_PADDING_TICKS;
+    let finish_ticks = (song.value().length_in_seconds * TICKS_PER_SECOND as f32).ceil() as i64
+        + SONG_END_PADDING_TICKS;
     tick_block_entities(world, finish_ticks - (PLAY_EVENT_INTERVAL_TICKS + 1));
     assert!(jukebox.is_record_playing());
     tick_block_entities(world, 1);

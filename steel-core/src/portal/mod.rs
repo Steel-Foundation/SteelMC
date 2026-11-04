@@ -4,12 +4,16 @@
 //! loaded runtime worlds and reserves "dimension type" for the vanilla registry
 //! entry that defines world rules.
 
+use crate::chunk::chunk_request::ChunkRequestHandle;
 use crate::entity::{Entity, PendingWorldChangeToken};
 use crate::world::World;
 use glam::DVec3;
 use smallvec::SmallVec;
 use std::sync::Arc;
-use steel_math::DEGREE_90;
+use steel_math::{
+    DEGREE_90,
+    vector::{x_rot, y_rot},
+};
 use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::game_rules::GameRuleRef;
 use steel_registry::vanilla_game_rules::{
@@ -41,7 +45,7 @@ impl PortalKind {
     /// Returns the number of ticks an entity must stand in this portal before
     /// it triggers, accounting for whether the entity is invulnerable.
     #[must_use]
-    pub fn transition_time(self, world: &World, entity: &dyn Entity) -> i32 {
+    pub fn transition_time(self, world: &World, entity: &(impl Entity + ?Sized)) -> i32 {
         let player_invulnerable = entity
             .as_player()
             .map(|player| player.abilities.lock().invulnerable);
@@ -394,8 +398,8 @@ fn resolve_velocity(
     let current_velocity = if relatives.rotates_delta() {
         let diff_yaw = current_rotation.0 - resolved_rotation.0;
         let diff_pitch = current_rotation.1 - resolved_rotation.1;
-        rotate_y(
-            rotate_x(current_velocity, diff_pitch.to_radians()),
+        y_rot(
+            x_rot(current_velocity, diff_pitch.to_radians()),
             diff_yaw.to_radians(),
         )
     } else {
@@ -421,16 +425,40 @@ fn resolve_velocity(
     )
 }
 
-fn rotate_x(vec: DVec3, radians: f32) -> DVec3 {
-    let cos = f64::from(radians.cos());
-    let sin = f64::from(radians.sin());
-    DVec3::new(vec.x, vec.y * cos + vec.z * sin, vec.z * cos - vec.y * sin)
+/// A position and `(yaw, pitch)` rotation a player is placed at when entering a world.
+#[derive(Clone, Copy)]
+pub struct PreparedSpawn {
+    /// Where the player is placed.
+    pub position: DVec3,
+    /// The player's `(yaw, pitch)` in degrees.
+    pub rotation: (f32, f32),
 }
 
-fn rotate_y(vec: DVec3, radians: f32) -> DVec3 {
-    let cos = f64::from(radians.cos());
-    let sin = f64::from(radians.sin());
-    DVec3::new(vec.x * cos + vec.z * sin, vec.y, vec.z * cos - vec.x * sin)
+/// Where and how a world selection places the player in the target world.
+#[derive(Clone, Copy)]
+pub enum WorldEntry {
+    /// The usual entry: a domain switch restores the saved location if there is one; otherwise
+    /// the spawn search places the player.
+    Usual,
+    /// The usual entry, then faces this `(yaw, pitch)`.
+    Rotation((f32, f32)),
+    /// Places the player exactly there, with no spawn search and no saved location. It lands like
+    /// `/teleport`, except that its velocity is always cleared, even on axes given as relative.
+    Exact(PreparedSpawn),
+}
+
+/// A player's selection of a loaded world, queued until the next tick's world changes.
+pub struct WorldSelection {
+    /// The target world to teleport into.
+    pub target_world: Arc<World>,
+    /// Runtime token proving this request still owns the player's relocation.
+    pub pending_token: PendingWorldChangeToken,
+    /// Chunks around the target's spawn, requested when the selection was queued so they
+    /// start loading in the same tick. `None` for an exact placement, which searches nothing, and
+    /// for a spawn search wider than one chunk.
+    pub prefetch: Option<ChunkRequestHandle>,
+    /// How the player enters the target world.
+    pub entry: WorldEntry,
 }
 
 /// A queued request to move an entity between loaded worlds.
@@ -442,12 +470,7 @@ pub enum WorldChangeRequest {
     /// Pre-computed transition (players after chunk pre-warming).
     Computed(TeleportTransition),
     /// Token-owned player selection of a loaded world's spawn.
-    WorldSpawn {
-        /// The target world to teleport into.
-        target_world: Arc<World>,
-        /// Runtime token proving this request still owns the player's relocation.
-        pending_token: PendingWorldChangeToken,
-    },
+    WorldSpawn(WorldSelection),
     /// Portal position — server computes portal-specific destination after chunk pre-warming.
     Portal {
         /// The portal behavior that produced this request.
