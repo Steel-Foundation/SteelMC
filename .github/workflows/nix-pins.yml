@@ -1,0 +1,131 @@
+name: Nix pins
+
+# Fails a PR whose Cargo.toml or rust-toolchain.toml change leaves the flake stale:
+# - nix/minecraft-assets.json must match what ./update-minecraft-assets.sh generates
+#   for the Cargo.toml version.
+# - flake.lock must evaluate; a newer nightly needs `nix flake update` so
+#   rust-overlay knows about it.
+# Runs with a read-only token (safe for forks). The report goes to the job summary
+# and is posted as a PR comment by nix-pins-comment.yml.
+
+on:
+  pull_request:
+    paths:
+      - Cargo.toml
+      - rust-toolchain.toml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-pins-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  REPORT: report/comment.md
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+
+      - name: Start report
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p report
+          echo "$PR_NUMBER" > report/pr_number.txt
+          printf '## Nix pin check\n\n' > "$REPORT"
+
+      - name: Check Minecraft asset pin
+        run: |
+          if ! ./update-minecraft-assets.sh; then
+            touch report/failed
+            # Tell a Mojang outage apart from a real script/pin failure. piston-meta
+            # serves the manifests, piston-data the server jar.
+            for url in https://piston-meta.mojang.com/mc/game/version_manifest_v2.json \
+                       https://piston-data.mojang.com/; do
+              # curl prints 000 for connection failures/timeouts.
+              code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$url") || true
+              if [ "$code" = 000 ] || [ "$code" -ge 500 ]; then
+                {
+                  echo "### Mojang servers unreachable"
+                  echo
+                  echo "\`$url\` returned \`$code\`. This is not a problem with your PR; a maintainer can re-run the check later."
+                  echo
+                } >> "$REPORT"
+                echo "::error::Mojang unreachable ($url -> $code); re-run the job later."
+                exit 1
+              fi
+            done
+            {
+              echo "### \`update-minecraft-assets.sh\` failed"
+              echo
+              echo "Mojang is reachable, so the script itself failed. See the \"Nix pins\" job log."
+              echo
+            } >> "$REPORT"
+            echo "::error::update-minecraft-assets.sh failed while Mojang is reachable; see the log above."
+            exit 1
+          fi
+          if git diff --quiet -- nix/minecraft-assets.json; then
+            exit 0
+          fi
+          git diff -- nix/minecraft-assets.json
+          touch report/failed
+          {
+            echo "### \`nix/minecraft-assets.json\` is stale"
+            echo
+            echo "Run \`./update-minecraft-assets.sh\` and commit the result, or replace the file with:"
+            echo
+            echo '````json'
+            cat nix/minecraft-assets.json
+            echo '````'
+            echo
+          } >> "$REPORT"
+          echo "::error file=nix/minecraft-assets.json::Stale pin; run ./update-minecraft-assets.sh (see job summary)."
+          exit 1
+
+      # Evaluation only: catches a nightly missing from flake.lock and missing cargo
+      # outputHashes without a full Steel build.
+      - name: Evaluate flake
+        if: success() || failure()
+        run: |
+          if nix flake check --no-build 2> flake-check.log; then
+            exit 0
+          fi
+          cat flake-check.log
+          touch report/failed
+          {
+            echo "### Flake does not evaluate"
+            echo
+            echo "If \`rust-toolchain.toml\` moved to a newer nightly, run \`nix flake update\` and commit \`flake.lock\`."
+            echo
+            echo "<details><summary>nix flake check output</summary>"
+            echo
+            echo '````text'
+            grep -v '^warning:' flake-check.log | tail -n 30
+            echo '````'
+            echo
+            echo "</details>"
+            echo
+          } >> "$REPORT"
+          echo "::error file=flake.lock::Flake does not evaluate; run nix flake update if the nightly changed (see job summary)."
+          exit 1
+
+      - name: Publish report
+        if: success() || failure()
+        run: |
+          if [ ! -e report/failed ]; then
+            echo "Nix pins are up to date." >> "$REPORT"
+          fi
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nix-pins-report
+          path: report/
