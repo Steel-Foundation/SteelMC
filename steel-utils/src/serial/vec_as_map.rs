@@ -45,7 +45,6 @@ where
             A: MapAccess<'de>,
         {
             let mut items = Vec::new();
-            // `next_entry` yields pairs in the order they appear in the JSON map.
             while let Some((k, v)) = access.next_entry()? {
                 items.push((k, v));
             }

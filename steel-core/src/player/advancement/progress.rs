@@ -40,10 +40,14 @@ impl AdvancementProgressMap {
         advancement: AdvancementRef,
         mut progress: AdvancementProgress,
     ) {
-        let idx = self.order.len();
         progress.update(advancement.requirements());
-        self.order.push((advancement, progress));
-        self.map.insert(advancement, idx);
+        if let Some(&idx) = self.map.get(&advancement) {
+            self.order[idx].1 = progress;
+        } else {
+            let idx = self.order.len();
+            self.order.push((advancement, progress));
+            self.map.insert(advancement, idx);
+        }
     }
 
     /// clear all the progress made
