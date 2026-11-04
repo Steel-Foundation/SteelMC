@@ -1,11 +1,7 @@
 //! Conduit block entity implementation.
 //!
-//! Every 40 game ticks the conduit re-checks its water cage and prismarine frame. An active
-//! conduit grants Conduit Power to nearby players in water or rain, and a full frame hunts the
-//! nearest wet enemies with magic damage.
-//!
-//! Vanilla's `effectBlocks` list, `tickCount` and `activeRotation` only feed client-side
-//! particles and rendering, so the server keeps just the frame size it needs per scan.
+//! Vanilla's client-only `effectBlocks` list, `tickCount` and `activeRotation` are not kept;
+//! the server only needs the frame size from each scan.
 
 use std::sync::{Arc, Weak};
 
@@ -20,7 +16,7 @@ use steel_registry::{
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::{
-    BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb,
+    BlockLocalAabb, BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey,
 };
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
@@ -39,6 +35,35 @@ const MIN_ACTIVE_SIZE: usize = 16;
 const MIN_KILL_SIZE: usize = 42;
 const KILL_RANGE: f64 = 8.0;
 const ATTACK_DAMAGE: f32 = 4.0;
+
+/// The frame positions around the conduit, in vanilla's x, y, z scan order.
+const FRAME_OFFSETS: [(i32, i32, i32); MIN_KILL_SIZE] = frame_offsets();
+
+const fn frame_offsets() -> [(i32, i32, i32); MIN_KILL_SIZE] {
+    let mut offsets = [(0, 0, 0); MIN_KILL_SIZE];
+    let mut count = 0;
+    let mut ox = -2;
+    while ox <= 2 {
+        let mut oy = -2;
+        while oy <= 2 {
+            let mut oz = -2;
+            while oz <= 2 {
+                if ConduitBlockEntity::is_frame_offset(ox, oy, oz) {
+                    offsets[count] = (ox, oy, oz);
+                    count += 1;
+                }
+                oz += 1;
+            }
+            oy += 1;
+        }
+        ox += 1;
+    }
+    assert!(
+        count == MIN_KILL_SIZE,
+        "a full conduit frame is the hunting size"
+    );
+    offsets
+}
 
 struct ConduitState {
     is_active: bool,
@@ -97,24 +122,16 @@ impl ConduitBlockEntity {
             }
         }
 
-        let mut effect_blocks = 0;
-        for ox in -2..=2 {
-            for oy in -2..=2 {
-                for oz in -2..=2 {
-                    if !Self::is_frame_offset(ox, oy, oz) {
-                        continue;
-                    }
-                    let state = world.get_block_state(pos.offset(ox, oy, oz));
-                    if REGISTRY.blocks.is_in_tag(
-                        state.get_block(),
-                        &vanilla_block_tags::BlockTag::CONDUIT_EFFECT_BLOCK,
-                    ) {
-                        effect_blocks += 1;
-                    }
-                }
-            }
-        }
-        effect_blocks
+        FRAME_OFFSETS
+            .iter()
+            .filter(|&&(ox, oy, oz)| {
+                let state = world.get_block_state(pos.offset(ox, oy, oz));
+                REGISTRY.blocks.is_in_tag(
+                    state.get_block(),
+                    &vanilla_block_tags::BlockTag::CONDUIT_EFFECT_BLOCK,
+                )
+            })
+            .count()
     }
 
     /// Whether an offset lies on the frame: outside the water cage, on one of the three
@@ -130,8 +147,8 @@ impl ConduitBlockEntity {
 
     fn apply_effects(world: &Arc<World>, pos: BlockPos, active_size: usize) {
         let effect_range = f64::from((active_size / 7 * 16) as i32);
-        let block_min = DVec3::new(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
-        let aabb = WorldAabb::from_min_max(block_min, block_min + DVec3::ONE)
+        let aabb = BlockLocalAabb::FULL_BLOCK
+            .at_block(pos)
             .inflate(effect_range)
             .expand_towards(DVec3::new(0.0, f64::from(world.get_height()), 0.0));
 
@@ -218,8 +235,7 @@ impl ConduitBlockEntity {
     }
 
     fn select_new_target(world: &Arc<World>, pos: BlockPos) -> Option<EntityReference> {
-        let block_min = DVec3::new(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
-        let aabb = WorldAabb::from_min_max(block_min, block_min + DVec3::ONE).inflate(KILL_RANGE);
+        let aabb = BlockLocalAabb::FULL_BLOCK.at_block(pos).inflate(KILL_RANGE);
         let candidates = world.get_entities_in_aabb_matching(&aabb, |entity| {
             entity.as_living_entity().is_some() && entity.is_enemy() && entity.is_in_water_or_rain()
         });
@@ -313,19 +329,5 @@ impl BlockEntity for ConduitBlockEntity {
                 None,
             );
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_complete_frame_is_exactly_the_hunting_size() {
-        let frame_size = (-2..=2)
-            .flat_map(|ox| (-2..=2).flat_map(move |oy| (-2..=2).map(move |oz| (ox, oy, oz))))
-            .filter(|&(ox, oy, oz)| ConduitBlockEntity::is_frame_offset(ox, oy, oz))
-            .count();
-        assert_eq!(frame_size, MIN_KILL_SIZE);
     }
 }

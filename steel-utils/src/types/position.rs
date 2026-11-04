@@ -777,4 +777,12 @@ mod tests {
         assert!(pos.closer_to_center_than(DVec3::new(0.5, 0.5, 0.5), 1.0));
         assert!(!pos.closer_to_center_than(DVec3::new(1.5, 0.5, 0.5), 1.0));
     }
+
+    #[test]
+    fn closer_than_compares_integer_offsets_strictly() {
+        let pos = BlockPos::new(0, 64, 0);
+        assert!(pos.closer_than(BlockPos::new(3, 64, 3), 5.0));
+        assert!(!pos.closer_than(BlockPos::new(3, 64, 4), 5.0));
+        assert!(pos.closer_than(BlockPos::new(-3, 60, 0), 5.1));
+    }
 }
