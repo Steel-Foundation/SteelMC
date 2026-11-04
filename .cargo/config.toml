@@ -12,6 +12,9 @@ rustflags = ["-Clink-arg=-fuse-ld=lld", "-Zthreads=0"]
 rustflags = ["-Clink-arg=-fuse-ld=lld", "-Zthreads=0"]
 
 [alias]
+flint = ["test", "-p", "steel-flint", "--profile", "flint", "test_run_flint_selected", "--", "--ignored"]
+flint-dev = ["test", "-p", "steel-flint", "test_run_flint_selected", "--", "--ignored"]
+flint-release = ["test", "-p", "steel-flint", "--profile", "cicd", "test_run_flint_selected", "--", "--ignored"]
 build-native = [
   "build",
   "--config",

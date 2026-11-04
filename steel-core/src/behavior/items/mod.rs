@@ -36,6 +36,7 @@ mod solid_bucket_item;
 mod spawn_egg;
 mod spyglass;
 mod standing_and_wall_block_item;
+mod throw_projectile;
 mod throwable_potion;
 mod tipped_arrow;
 
@@ -47,7 +48,6 @@ pub use air::AirItem;
 pub use block_item::{BlockItem, DoubleHighBlockItem};
 pub use bonemeal::BoneMealItem;
 pub use bottle::BottleItem;
-pub(crate) use bottle::water_potion_stack;
 pub use brush::BrushItem;
 pub use bucket::BucketItem;
 pub use compass::CompassItem;

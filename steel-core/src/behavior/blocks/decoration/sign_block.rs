@@ -9,6 +9,7 @@ use steel_macros::block_behavior;
 use steel_math::{
     DEGREE_90, DEGREE_180, RAD_TO_DEG_F64, convert_to_rotation_segment, wrap_degrees,
 };
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::REGISTRY;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
@@ -122,7 +123,7 @@ fn get_sign_rotation_degrees(state: BlockStateId) -> f32 {
 ///
 /// Vanilla uses `isSolid()` which checks if the collision shape is a full cube.
 /// This means signs cannot be placed on other signs, fences, walls, etc.
-fn can_support_standing_sign(world: &dyn LevelReader, pos: BlockPos) -> bool {
+fn can_support_standing_sign(world: &(impl LevelReader + ?Sized), pos: BlockPos) -> bool {
     let below_pos = BlockPos::new(pos.x(), pos.y() - 1, pos.z());
     let below_state = world.get_block_state(below_pos);
     below_state.is_solid()
@@ -132,7 +133,11 @@ fn can_support_standing_sign(world: &dyn LevelReader, pos: BlockPos) -> bool {
 ///
 /// Vanilla uses `isSolid()` which allows wall signs to be placed on other signs
 /// (since signs have `forceSolidOn`).
-fn can_wall_sign_survive(world: &dyn LevelReader, pos: BlockPos, facing: Direction) -> bool {
+fn can_wall_sign_survive(
+    world: &(impl LevelReader + ?Sized),
+    pos: BlockPos,
+    facing: Direction,
+) -> bool {
     // Wall sign needs a solid block behind it
     let behind_pos = facing.opposite().relative(pos);
     let behind_state = world.get_block_state(behind_pos);
@@ -140,7 +145,7 @@ fn can_wall_sign_survive(world: &dyn LevelReader, pos: BlockPos, facing: Directi
 }
 
 /// Checks if a ceiling hanging sign can survive at the given position.
-fn can_ceiling_hanging_sign_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
+fn can_ceiling_hanging_sign_survive(world: &(impl LevelReader + ?Sized), pos: BlockPos) -> bool {
     let above_pos = BlockPos::new(pos.x(), pos.y() + 1, pos.z());
     let above_state = world.get_block_state(above_pos);
     world.is_face_sturdy_for(above_state, above_pos, Direction::Down, SupportType::Center)
@@ -152,7 +157,7 @@ fn can_ceiling_hanging_sign_survive(world: &dyn LevelReader, pos: BlockPos) -> b
 /// 1. If the neighbor is a wall hanging sign on the same axis, allow attachment
 /// 2. Otherwise, check if the face is sturdy with FULL support type
 fn can_attach_to(
-    world: &dyn LevelReader,
+    world: &(impl LevelReader + ?Sized),
     sign_facing: Direction,
     attach_pos: BlockPos,
     attach_face: Direction,
@@ -179,7 +184,7 @@ fn can_attach_to(
 /// Wall hanging signs need support on at least one side perpendicular to facing.
 /// This matches vanilla's `WallHangingSignBlock.canPlace`.
 fn can_wall_hanging_sign_survive(
-    world: &dyn LevelReader,
+    world: &(impl LevelReader + ?Sized),
     pos: BlockPos,
     facing: Direction,
 ) -> bool {
@@ -199,7 +204,6 @@ fn can_wall_hanging_sign_survive(
     can_attach_clockwise || can_attach_counter
 }
 
-// TODO: Implement dye sign applicators.
 fn try_apply_sign_item(
     state: BlockStateId,
     world: &Arc<World>,
@@ -275,22 +279,25 @@ fn try_open_sign_editor(
         return InteractionResult::Pass;
     };
 
-    // Check 1: Is the sign waxed?
     if sign.is_waxed() {
-        // TODO: Play waxed sign interaction fail sound
+        world.play_sound(
+            sign.sign_interaction_failed_sound_event(),
+            SoundSource::Blocks,
+            pos,
+            1.0,
+            1.0,
+            None,
+        );
         return InteractionResult::Success; // Vanilla returns SUCCESS even when waxed
     }
 
-    // Check 2: Is another player editing?
     if sign.is_other_player_editing(player.gameprofile.id()) {
         return InteractionResult::Pass;
     }
 
-    // Check 3: Player must have build permission
-    // TODO: Implement may_build check properly
-    // if !player.may_build() {
-    //     return InteractionResult::Pass;
-    // }
+    if !player.abilities.lock().may_build {
+        return InteractionResult::Pass;
+    }
 
     // Determine which side the player is facing
     let slot = facing_text_slot(state, pos, player);
@@ -853,10 +860,19 @@ impl BlockBehavior for WallHangingSignBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::init_vanilla_registry;
+    use steel_registry::data_components::vanilla_components::DYE;
+    use steel_registry::item_stack::ItemStack;
+    use steel_registry::{DyeColor, init_vanilla_registry, vanilla_items};
+    use steel_utils::ChunkPos;
+    use steel_utils::types::UpdateFlags;
+    use text_components::TextComponent;
 
     use super::*;
-    use crate::test_support::{TestLevel, fresh_test_world};
+    use crate::behavior::init_behaviors;
+    use crate::block_entity::entities::SignText;
+    use crate::test_support::{
+        TestLevel, TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk,
+    };
 
     const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
@@ -955,6 +971,91 @@ mod tests {
                     &vanilla_block_entity_types::SIGN,
                 )
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn try_open_sign_editor_checks_waxed_and_may_build() {
+        init_vanilla_registry();
+        let world_fixture = fresh_test_world("sign_editor_checks");
+        let world = &world_fixture.world;
+        let pos = BlockPos::new(0, 64, 0);
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let state = vanilla_blocks::OAK_SIGN.default_state();
+        assert!(world.set_block(pos, state, UpdateFlags::UPDATE_ALL));
+
+        let sign = Arc::new(SignBlockEntity::new(Arc::downgrade(world), pos, state));
+        let block_entity: Arc<dyn BlockEntity> = Arc::<SignBlockEntity>::clone(&sign);
+        assert!(world.set_block_entity(block_entity));
+
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Editor", 1).build();
+
+        sign.wax();
+        assert_eq!(
+            try_open_sign_editor(state, world, pos, &player),
+            InteractionResult::Success
+        );
+
+        let unwaxed = Arc::new(SignBlockEntity::new(Arc::downgrade(world), pos, state));
+        assert!(world.set_block_entity(unwaxed));
+        player.abilities.lock().may_build = false;
+        assert_eq!(
+            try_open_sign_editor(state, world, pos, &player),
+            InteractionResult::Pass
+        );
+    }
+
+    #[test]
+    fn try_apply_sign_item_dyes_sign_text() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world_fixture = fresh_test_world("sign_dye_application");
+        let world = &world_fixture.world;
+        let pos = BlockPos::new(0, 64, 0);
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let state = vanilla_blocks::OAK_SIGN.default_state();
+        assert!(world.set_block(pos, state, UpdateFlags::UPDATE_ALL));
+
+        let sign = Arc::new(SignBlockEntity::new(Arc::downgrade(world), pos, state));
+        let mut text = SignText::new();
+        text.set_message(0, TextComponent::plain("Steel"));
+        sign.set_text(text, SignTextSlot::Front);
+        let block_entity: Arc<dyn BlockEntity> = Arc::<SignBlockEntity>::clone(&sign);
+        assert!(world.set_block_entity(block_entity));
+
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Painter", 2).build();
+        let mut dye_stack = ItemStack::new(&vanilla_items::RED_DYE);
+        dye_stack.set(DYE, DyeColor::Red);
+        player
+            .inventory
+            .lock()
+            .set_item_in_hand(InteractionHand::MainHand, dye_stack.clone());
+
+        let mut inv =
+            InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
+        assert_eq!(
+            try_apply_sign_item(state, world, pos, &player, &mut inv),
+            InteractionResult::Success
+        );
+        assert_eq!(sign.get_text(SignTextSlot::Front).color, DyeColor::Red);
+        assert_eq!(
+            player
+                .inventory
+                .lock()
+                .get_item_in_hand(InteractionHand::MainHand)
+                .count(),
+            0
+        );
+
+        player
+            .inventory
+            .lock()
+            .set_item_in_hand(InteractionHand::MainHand, dye_stack);
+        let mut inv =
+            InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
+        assert_eq!(
+            try_apply_sign_item(state, world, pos, &player, &mut inv),
+            InteractionResult::TryEmptyHandInteraction
         );
     }
 }

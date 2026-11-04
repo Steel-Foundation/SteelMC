@@ -27,7 +27,7 @@ use crate::inventory::container::{Container, calculate_redstone_signal_from_cont
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::kinds::generic_3x3_menu;
 use crate::player::Player;
-use crate::world::{LevelReader, SignalGetter as _, World};
+use crate::world::{SignalGetter as _, World};
 
 pub(crate) const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
 const TRIGGERED: &BoolProperty = &BlockStateProperties::TRIGGERED;
@@ -179,7 +179,7 @@ impl BlockBehavior for DropperBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        world: &dyn LevelReader,
+        world: &World,
         pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
@@ -326,7 +326,7 @@ impl BlockBehavior for DispenserBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        world: &dyn LevelReader,
+        world: &World,
         pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
@@ -334,7 +334,7 @@ impl BlockBehavior for DispenserBlock {
     }
 }
 
-fn get_analog_signal(world: &dyn LevelReader, pos: BlockPos) -> i32 {
+fn get_analog_signal(world: &World, pos: BlockPos) -> i32 {
     let Some(block_entity) = world.get_block_entity(pos) else {
         return 0;
     };

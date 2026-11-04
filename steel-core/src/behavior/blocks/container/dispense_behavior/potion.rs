@@ -1,15 +1,15 @@
 use std::sync::Arc;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::data_components::PotionContents;
 use steel_registry::fluid::FluidStateExt;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_game_events;
+use steel_registry::{vanilla_game_events, vanilla_items, vanilla_potions};
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
 use super::DefaultDispenseBehavior;
 use super::DispenseItemBehavior;
 use crate::behavior::blocks::container::dispenser_block::FACING;
-use crate::behavior::items::water_potion_stack;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
 
@@ -36,7 +36,10 @@ impl DispenseItemBehavior for GlassBottleDispenseBehavior {
                 pos,
                 &GameEventContext::new(None, None),
             );
-            return water_potion_stack();
+            return PotionContents::create_item_stack(
+                &vanilla_items::POTION,
+                &vanilla_potions::WATER,
+            );
         }
 
         DefaultDispenseBehavior.dispense(world, pos, state, item)

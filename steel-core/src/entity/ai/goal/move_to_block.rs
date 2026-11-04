@@ -1,8 +1,7 @@
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::PathfinderMob;
-use crate::entity::SharedEntity;
-use crate::world::LevelReader;
+use crate::entity::{PathfinderMob, SharedEntity};
+use crate::world::World;
 use glam::DVec3;
 use steel_utils::BlockPos;
 
@@ -13,7 +12,7 @@ const DEFAULT_VERTICAL_SEARCH_RANGE: i32 = 1;
 const DEFAULT_RECALCULATE_PATH_INTERVAL: i32 = 40;
 const DEFAULT_ACCEPTED_DISTANCE: f64 = 1.0;
 
-type ValidTargetPredicate = Box<dyn Fn(&dyn LevelReader, BlockPos) -> bool + Send + Sync>;
+type ValidTargetPredicate = Box<dyn Fn(&World, BlockPos) -> bool + Send + Sync>;
 type MoveToTarget = Box<dyn Fn(BlockPos) -> BlockPos + Send + Sync>;
 
 pub struct MoveToBlockGoal {
@@ -37,7 +36,7 @@ impl MoveToBlockGoal {
     pub(crate) fn new(
         speed_modifier: f64,
         search_range: i32,
-        target_predicate: impl Fn(&dyn LevelReader, BlockPos) -> bool + Send + Sync + 'static,
+        target_predicate: impl Fn(&World, BlockPos) -> bool + Send + Sync + 'static,
     ) -> Self {
         Self::with_vertical_search_range(
             speed_modifier,
@@ -52,7 +51,7 @@ impl MoveToBlockGoal {
         speed_modifier: f64,
         search_range: i32,
         vertical_search_range: i32,
-        target_predicate: impl Fn(&dyn LevelReader, BlockPos) -> bool + Send + Sync + 'static,
+        target_predicate: impl Fn(&World, BlockPos) -> bool + Send + Sync + 'static,
     ) -> Self {
         Self {
             block_pos: BlockPos::ZERO,
@@ -130,7 +129,7 @@ impl MoveToBlockGoal {
         self.try_ticks % self.recalculate_path_interval == 0
     }
 
-    fn find_nearest_block(&mut self, mob: &dyn PathfinderMob, level: &dyn LevelReader) -> bool {
+    fn find_nearest_block(&mut self, mob: &dyn PathfinderMob, level: &World) -> bool {
         let Some(block_pos) = find_nearest_block_from(
             mob.block_position(),
             self.search_range,

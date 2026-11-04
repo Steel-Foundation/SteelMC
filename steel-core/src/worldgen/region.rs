@@ -13,6 +13,7 @@ use std::{
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use simdnbt::owned::NbtCompound;
 use small_map::FxSmallMap;
+use smallvec::SmallVec;
 use steel_registry::{
     REGISTRY, block_entity_type::BlockEntityTypeRef, blocks::BlockRef,
     blocks::block_state_ext::BlockStateExt as _, blocks::properties::Direction,
@@ -34,7 +35,7 @@ use crate::chunk::{
     chunk_pyramid::ChunkStep,
     full_chunk::FullChunkRef,
     heightmap::{Heightmap, HeightmapType},
-    section::{ChunkSection, SectionHolder, SectionWriteGuard, Sections},
+    section::{SectionHolder, SectionWriteGuard, Sections},
     status::ChunkStatus,
 };
 use crate::entity::SharedEntity;
@@ -162,6 +163,16 @@ impl WorldGenAccessMode {
     const fn allows_writes(self) -> bool {
         matches!(self, Self::WritableProto)
     }
+}
+
+// keep four probed chunks inline bigger scans spill to the heap
+const INLINE_PROBED_HEIGHT_CHUNKS: usize = 4;
+
+/// a chunk already reached by the height scan
+struct ProbedHeightChunk {
+    chunk: (i32, i32),
+    /// no cached columns means regular lookups including readonly full chunks
+    columns: Option<[i32; 256]>,
 }
 
 #[derive(Default)]
@@ -737,6 +748,70 @@ impl<'a> WorldGenRegion<'a> {
         })
     }
 
+    /// any column in this inclusive rectangle reaching `min_height`
+    /// scans x then z the first lookup per chunk keeps normal access and cache order
+    #[must_use]
+    pub fn any_height_at_least(
+        &self,
+        heightmap_type: HeightmapType,
+        (min_x, min_z): (i32, i32),
+        (max_x, max_z): (i32, i32),
+        min_height: i32,
+    ) -> bool {
+        let mut probed: SmallVec<[ProbedHeightChunk; INLINE_PROBED_HEIGHT_CHUNKS]> =
+            SmallVec::new();
+
+        for x in min_x..=max_x {
+            for z in min_z..=max_z {
+                let chunk = (
+                    SectionPos::block_to_section_coord(x),
+                    SectionPos::block_to_section_coord(z),
+                );
+                let column_index = (x & 15) as usize + (z & 15) as usize * 16;
+                let height = match probed.iter().find(|probed| probed.chunk == chunk) {
+                    Some(ProbedHeightChunk {
+                        columns: Some(columns),
+                        ..
+                    }) => columns[column_index],
+                    Some(_) => self.height_at(heightmap_type, x, z),
+                    None => {
+                        let height = self.height_at(heightmap_type, x, z);
+                        probed.push(ProbedHeightChunk {
+                            chunk,
+                            columns: self.cached_proto_columns(heightmap_type, chunk),
+                        });
+                        height
+                    }
+                };
+                if height >= min_height {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// copy the proto chunk columns if `height_at` already cached them
+    fn cached_proto_columns(
+        &self,
+        heightmap_type: HeightmapType,
+        (chunk_x, chunk_z): (i32, i32),
+    ) -> Option<[i32; 256]> {
+        let cache_index = self.chunk_cache_index(chunk_x, chunk_z)?;
+        let writable = self
+            .chunks
+            .borrow()
+            .get(cache_index)
+            .and_then(Option::as_ref)
+            .is_some_and(|cached| cached.access_mode == WorldGenAccessMode::WritableProto);
+        if !writable {
+            return None;
+        }
+
+        let heightmaps = self.worldgen_heightmaps.borrow();
+        heightmaps.get(cache_index)?.get(heightmap_type).copied()
+    }
+
     fn cached_proto_height_at(
         &self,
         proto: &Chunk,
@@ -984,7 +1059,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         let local_x = Self::local_coord(pos.x());
         let local_y = Self::local_coord(pos.y());
         let local_z = Self::local_coord(pos.z());
-        let old_state = section_guard.states.get(local_x, local_y, local_z);
+        let old_state = section_guard.states().get(local_x, local_y, local_z);
         let Some(state) = replacement(old_state) else {
             Self::record_ore_write_time(ore_profile, started_at);
             return false;
@@ -1060,7 +1135,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_x = usize::from(pos.x());
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
-                let old_state = section_guard.states.get(local_x, local_y, local_z);
+                let old_state = section_guard.states().get(local_x, local_y, local_z);
                 if let Some(state) = replacement(old_state, section_base_y + local_y as i32) {
                     let old_state = Self::set_bulk_block_state(
                         chunk.holder,
@@ -1080,7 +1155,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_x = usize::from(pos.x());
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
-                let old_state = section_guard.states.get(local_x, local_y, local_z);
+                let old_state = section_guard.states().get(local_x, local_y, local_z);
                 if let Some(state) = replacement(old_state, section_base_y + local_y as i32) {
                     let old_state = Self::set_bulk_block_state(
                         chunk.holder,
@@ -1148,12 +1223,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         } else {
             section.read()
         };
-        if section_guard.states.has_only_air() {
-            Self::record_ore_read_time(ore_profile, started_at);
-            return air;
-        }
-
-        let state = section_guard.states.get(
+        let state = section_guard.states().get(
             Self::local_coord(pos.x()),
             Self::local_coord(pos.y()),
             Self::local_coord(pos.z()),
@@ -1240,7 +1310,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
 
     fn set_bulk_block_state(
         holder: &ChunkHolder,
-        section: &mut ChunkSection,
+        section: &mut SectionWriteGuard<'_>,
         local_x: usize,
         local_y: usize,
         local_z: usize,
@@ -1525,7 +1595,7 @@ mod tests {
         chunk_holder::ChunkHolder,
         chunk_ticket_manager::ChunkTicketLevel,
         heightmap::{Heightmap, HeightmapType},
-        section::{ChunkSection, Sections},
+        section::{ChunkSection, SectionHolder, Sections},
         status::ChunkStatus,
     };
 
@@ -1713,7 +1783,8 @@ mod tests {
         let stone = vanilla_blocks::STONE.default_state();
         let air = vanilla_blocks::AIR.default_state();
 
-        let mut pre_light_section = ChunkSection::new_empty();
+        let pre_light_section = SectionHolder::new(ChunkSection::new_empty());
+        let mut pre_light_section = pre_light_section.write();
         let pre_light_holder = published_holder(ChunkStatus::Empty);
 
         WorldGenBulkSectionAccess::set_bulk_block_state(
@@ -1727,7 +1798,8 @@ mod tests {
 
         assert_eq!(pre_light_section.non_empty_block_count(), 0);
 
-        let mut initialized_section = ChunkSection::new_empty();
+        let initialized_section = SectionHolder::new(ChunkSection::new_empty());
+        let mut initialized_section = initialized_section.write();
         let initialized_holder = published_holder(ChunkStatus::InitializeLight);
 
         WorldGenBulkSectionAccess::set_bulk_block_state(
@@ -1740,8 +1812,19 @@ mod tests {
         );
 
         assert_eq!(initialized_section.non_empty_block_count(), 1);
+        WorldGenBulkSectionAccess::set_bulk_block_state(
+            &initialized_holder,
+            &mut initialized_section,
+            1,
+            2,
+            3,
+            air,
+        );
+        assert_eq!(initialized_section.non_empty_block_count(), 0);
+        assert!(initialized_section.stable_air_box_is_clear(0, 15, 0, 15, 0, 15));
 
-        let mut initialized_building_section = ChunkSection::new_empty();
+        let initialized_building_section = SectionHolder::new(ChunkSection::new_empty());
+        let mut initialized_building_section = initialized_building_section.write();
         initialized_building_section.set_block_state_for_generation(1, 2, 3, stone);
 
         let old_state = WorldGenBulkSectionAccess::set_bulk_block_state(

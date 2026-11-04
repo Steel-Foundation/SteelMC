@@ -412,6 +412,9 @@ impl Entity for FallingBlockEntity {
             self.tick_server(&world, block);
         }
         self.set_velocity(self.velocity() * DEFAULT_AIR_DRAG);
+        self.base.set_requires_precise_position(
+            self.horizontal_collision() || self.vertical_collision(),
+        );
     }
 
     fn get_default_gravity(&self) -> f64 {

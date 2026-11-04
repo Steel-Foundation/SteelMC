@@ -1,4 +1,4 @@
-use steel_math::DEGREE_90;
+use steel_math::{DEGREE_90, trig};
 use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
@@ -54,12 +54,18 @@ pub trait LivingEntity: Entity {
     }
 
     /// Runs the shared per-tick living-entity behavior: rotation/animation
-    /// snapshots, base entity tick, and environmental damage.
+    /// snapshots, base entity tick, environmental damage, the hurt timer, and
+    /// combat memory expiry. Memory must expire before mob effects tick, so a
+    /// lethal effect tick sees the same kill credit as vanilla.
     fn base_tick_living_entity(&self) {
         self.advance_living_rotation_for_base_tick();
         self.living_base().tick_swing_state();
         self.entity_base_tick();
         self.tick_living_environmental_damage();
+        self.living_base().decrement_hurt_time();
+        self.living_base().tick_last_hurt_by_player_memory();
+        self.living_base()
+            .tick_living_combat_memory(self.tick_count());
     }
 
     /// Returns vanilla arm-swing animation state.
@@ -215,6 +221,10 @@ pub trait LivingEntity: Entity {
     /// Appends vanilla-shaped living state used by command NBT predicates.
     fn save_command_nbt(&self, nbt: &mut NbtCompound) {
         nbt.insert("Health", self.get_health());
+        nbt.insert(
+            "HurtTime",
+            NbtTag::Short(self.living_base().hurt_time() as i16),
+        );
         nbt.insert(
             "DeathTime",
             NbtTag::Short(self.living_base().death_time() as i16),
@@ -667,6 +677,15 @@ pub trait LivingEntity: Entity {
     /// `world` is the `ServerLevel` supplied by the vanilla caller. It may
     /// intentionally differ from the entity's attached world.
     fn hurt_server(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        self.default_hurt_server(world, source, amount)
+    }
+
+    /// Runs the base `LivingEntity.hurtServer` body.
+    ///
+    /// Overrides of [`Self::hurt_server`] call this where vanilla calls
+    /// `super.hurtServer`; the Ender Dragon routes its per-part damage scaling
+    /// through here.
+    fn default_hurt_server(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         if self.is_invulnerable_to(world, source) {
             return false;
         }
@@ -711,6 +730,9 @@ pub trait LivingEntity: Entity {
 
         self.before_actually_hurt(source, effective_amount);
         self.actually_hurt(world, source, effective_amount);
+        if took_full_damage {
+            self.living_base().begin_hurt_animation();
+        }
         self.resolve_mob_responsible_for_damage(source);
         self.resolve_player_responsible_for_damage(source);
 
@@ -718,7 +740,6 @@ pub trait LivingEntity: Entity {
             self.broadcast_damage_event(world, source);
             if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT) {
                 self.mark_hurt();
-                self.broadcast_hurt_animation(world);
             }
             self.apply_damage_knockback(source);
         }
@@ -968,19 +989,6 @@ pub trait LivingEntity: Entity {
         );
     }
 
-    /// Broadcasts vanilla hurt animation near this entity.
-    fn broadcast_hurt_animation(&self, world: &World) {
-        let (yaw, _) = self.rotation();
-        world.broadcast_to_nearby(
-            self.hurt_broadcast_chunk(),
-            CHurtAnimation {
-                entity_id: self.id(),
-                yaw,
-            },
-            None,
-        );
-    }
-
     /// Uses a held death-protection item to survive lethal damage. Returns whether one was used.
     fn check_totem_death_protection(&self, source: &DamageSource) -> bool {
         if source.bypasses_invulnerability() {
@@ -1033,6 +1041,8 @@ pub trait LivingEntity: Entity {
             return;
         }
 
+        self.handle_killing_blow();
+
         // Can't directly use &self for &dyn LivingEntity, as the compiler doesn't know if it's Sized.
         // Using a function meant for getting &dyn LivingEntity directly works well here.
         if let Some(world) = self.level()
@@ -1051,6 +1061,15 @@ pub trait LivingEntity: Entity {
         self.set_pose(EntityPose::Dying);
     }
 
+    /// Runs vanilla `LivingEntity.handleKillingBlow`.
+    ///
+    /// Vanilla's body is `this.dead = true`, which [`Self::die`] has already done
+    /// atomically by the time this runs. The hook exists for the subclasses that
+    /// replace it: bosses playing a death animation clamp their health and enter a
+    /// dying state here instead of falling over.
+    fn handle_killing_blow(&self) {}
+
+    /// Returns vanilla `LivingEntity.shouldDropLoot`.
     /// Returns whether this entity should drop loot on death: not a baby,
     /// and the mob-drops game rule allows it.
     fn should_drop_loot(&self, world: &World) -> bool {
@@ -1397,11 +1416,24 @@ pub trait LivingEntity: Entity {
 
     /// Adds or updates active vanilla mob-effect state.
     fn add_mob_effect(&self, effect: MobEffectInstance) -> bool {
+        self.add_mob_effect_with_source(effect, None)
+    }
+
+    /// Adds or updates active vanilla mob-effect state, attributing it to
+    /// `source`.
+    fn add_mob_effect_with_source(
+        &self,
+        effect: MobEffectInstance,
+        source: Option<&dyn Entity>,
+    ) -> bool {
         if !self.can_be_affected(&effect) {
             return false;
         }
         let (effect_key, amplifier) = (effect.effect(), effect.amplifier());
         let changed = self.living_base().add_mob_effect(effect);
+        // TODO: Trigger CriteriaTriggers.EFFECTS_CHANGED with `source` when `changed`,
+        // once the advancement-criteria foundation exists.
+        let _ = source;
         // Calls on_effect_started unconditionally, even when it didn't replace a stronger instance.
         let dyn_self = self
             .as_living_entity()
@@ -1746,6 +1778,26 @@ pub trait LivingEntity: Entity {
             .flatten()
     }
 
+    /// Applies the sound portion of vanilla's equipment-change hook.
+    fn on_equip_item(&self, slot: EquipmentSlot, previous: &ItemStack, stack: &ItemStack) {
+        if self.is_spectator()
+            || self.is_first_tick()
+            || ItemStack::is_same_item_same_components(previous, stack)
+        {
+            return;
+        }
+
+        let Some(sound) = self.equip_sound(slot, stack) else {
+            return;
+        };
+        if self.is_silent() {
+            return;
+        }
+        if let Some(world) = self.level() {
+            world.play_sound_at(sound, self.sound_source(), self.position(), 1.0, 1.0, None);
+        }
+    }
+
     /// Runs vanilla's equippable `ItemStack.interactLivingEntity` branch.
     fn interact_living_entity_with_equippable(
         &self,
@@ -1789,9 +1841,7 @@ pub trait LivingEntity: Entity {
             equipment.get_ref(slot).copy_with_count(1)
         };
 
-        if let Some(sound) = self.equip_sound(slot, &equipped) {
-            self.play_sound(sound, 1.0, 1.0);
-        }
+        self.on_equip_item(slot, &ItemStack::empty(), &equipped);
         if let Some(mob) = self.as_mob() {
             mob.set_guaranteed_drop(slot);
         }
@@ -1972,12 +2022,13 @@ pub trait LivingEntity: Entity {
     fn tick_living_entity(&self, entity: &SharedEntity) {
         self.default_tick();
         self.living_base().decrement_invulnerable_time();
-        self.tick_mob_effects();
-        self.detect_equipment_updates();
 
         if self.is_dead_or_dying() {
             self.tick_death();
         }
+
+        self.tick_mob_effects();
+        self.detect_equipment_updates();
 
         if !self.is_removed() {
             self.ai_step(entity);
@@ -1995,9 +2046,6 @@ pub trait LivingEntity: Entity {
             .tick_fall_flying_state(self.is_fall_flying());
         self.refresh_dirty_attributes();
         self.living_base().tick_post_impulse_grace_time();
-        self.living_base().tick_last_hurt_by_player_memory();
-        self.living_base()
-            .tick_living_combat_memory(self.tick_count());
     }
 
     /// Returns whether the given item in the given slot allows elytra-style gliding.
@@ -2168,6 +2216,12 @@ pub trait LivingEntity: Entity {
         self.living_base().tick_no_jump_delay();
     }
 
+    /// returns the remaining hurt animation ticks
+    fn hurt_time(&self) -> i32 {
+        self.living_base().hurt_time()
+    }
+
+    /// Returns vanilla `LivingEntity.isImmobile()`.
     /// Returns whether this entity is immobile because it's dead or dying.
     fn default_is_immobile(&self) -> bool {
         self.is_dead_or_dying()
@@ -2250,9 +2304,9 @@ pub trait LivingEntity: Entity {
             self.set_velocity(
                 self.velocity()
                     + DVec3::new(
-                        f64::from(-angle.sin() * 0.2),
+                        -f64::from(trig::sin(angle)) * 0.2,
                         0.0,
-                        f64::from(angle.cos() * 0.2),
+                        f64::from(trig::cos(angle)) * 0.2,
                     ),
             );
         }
@@ -2805,7 +2859,7 @@ pub trait LivingEntity: Entity {
         }
 
         if pitch_radians < 0.0 && look_horizontal_length > 0.0 {
-            let convert = move_horizontal_length * -f64::from(pitch_radians.sin()) * 0.04;
+            let convert = move_horizontal_length * -f64::from(trig::sin(pitch_radians)) * 0.04;
             movement += DVec3::new(
                 -look_angle.x * convert / look_horizontal_length,
                 convert * 3.2,
