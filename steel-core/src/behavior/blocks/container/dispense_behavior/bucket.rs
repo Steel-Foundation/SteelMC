@@ -1,8 +1,10 @@
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::BlockStateBehaviorExt;
+use log::info;
 use std::sync::Arc;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::level_events;
 use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
@@ -81,26 +83,56 @@ impl DispenseItemBehavior for FilledBucketDispenseBehavior {
             return ItemStack::new(&vanilla_items::BUCKET);
         }
 
-        let fluid_block = if item.item() == &*vanilla_items::WATER_BUCKET {
-            &vanilla_blocks::WATER
-        } else if item.item() == &*vanilla_items::LAVA_BUCKET {
-            &vanilla_blocks::LAVA
-        } else {
-            return DefaultDispenseBehavior.dispense(world, pos, state, item);
-        };
+        let (fluid_block, empty_sound, is_water_bucket) =
+            if item.item() == &*vanilla_items::WATER_BUCKET {
+                (
+                    &vanilla_blocks::WATER,
+                    &sound_events::ITEM_BUCKET_EMPTY,
+                    true,
+                )
+            } else if item.item() == &*vanilla_items::LAVA_BUCKET {
+                (
+                    &vanilla_blocks::LAVA,
+                    &sound_events::ITEM_BUCKET_EMPTY_LAVA,
+                    false,
+                )
+            } else {
+                return DefaultDispenseBehavior.dispense(world, pos, state, item);
+            };
 
         let can_replace = target_state.can_be_replaced_by_fluid(fluid_block);
         if can_replace {
-            if !target_state.get_block().config.liquid && !target_state.get_block().config.is_air {
+            if world.dimension_type.water_evaporates && is_water_bucket {
+                world.play_block_sound(
+                    &sound_events::BLOCK_FIRE_EXTINGUISH,
+                    target_pos,
+                    0.5,
+                    2.6 + (rand::random::<f32>() - rand::random::<f32>()) * 0.8,
+                    None,
+                );
+                return ItemStack::new(&vanilla_items::BUCKET);
+            }
+
+            // !target_state.get_block().config.liquid &&
+            if !target_state.get_block().config.is_air {
                 world.destroy_block(target_pos, true);
             }
+
             if world.set_block(
                 target_pos,
                 fluid_block.default_state(),
-                UpdateFlags::UPDATE_ALL,
+                UpdateFlags::UPDATE_ALL_IMMEDIATE,
             ) {
+                world.play_block_sound(empty_sound, target_pos, 1.0, 1.0, None);
+                world.game_event(
+                    &vanilla_game_events::FLUID_PLACE,
+                    target_pos,
+                    &GameEventContext::new(None, None),
+                );
+
                 return ItemStack::new(&vanilla_items::BUCKET);
             }
+            info!("set block failed");
         }
 
         DefaultDispenseBehavior.dispense(world, pos, state, item)
