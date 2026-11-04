@@ -57,8 +57,12 @@ pub trait Monster: PathfinderMob + Enemy {
         )
     }
 
-    /// Returns the hostile swim sound. Steel has no separate hook for
-    /// vanilla's `entity.hostile.splash` sound yet.
+    /// Returns the hostile water-entry splash sound.
+    fn swim_splash_sound_monster(&self) -> SoundEventRef {
+        &sound_events::ENTITY_HOSTILE_SPLASH
+    }
+
+    /// Returns the hostile swim sound.
     fn swim_sound_monster(&self) -> SoundEventRef {
         &sound_events::ENTITY_HOSTILE_SWIM
     }

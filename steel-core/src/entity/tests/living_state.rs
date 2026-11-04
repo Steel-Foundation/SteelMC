@@ -17,14 +17,14 @@ fn default_entity_tick_dispatches_living_tick() {
 }
 
 #[test]
-fn living_tick_state_decrements_last_hurt_by_player_memory() {
+fn living_base_tick_decrements_last_hurt_by_player_memory() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let player_uuid = Uuid::from_u128(42);
     entity.set_last_hurt_by_player(player_uuid, 1);
 
-    entity.tick_living_state();
+    entity.base_tick_living_entity();
 
     assert_eq!(
         entity.living_base().last_hurt_by_player_uuid(),
@@ -32,7 +32,7 @@ fn living_tick_state_decrements_last_hurt_by_player_memory() {
     );
     assert_eq!(entity.last_hurt_by_player_memory_time(), 0);
 
-    entity.tick_living_state();
+    entity.base_tick_living_entity();
 
     assert!(entity.living_base().last_hurt_by_player_uuid().is_none());
     assert_eq!(entity.last_hurt_by_player_memory_time(), 0);

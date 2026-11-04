@@ -7,10 +7,7 @@ use glam::DVec3;
 use simdnbt::borrow::read_compound;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::packets::game::RelativeMovement;
-use steel_registry::blocks::{
-    block_state_ext::BlockStateExt as _,
-    properties::{BlockStateProperties, Direction as BlockDirection},
-};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction as BlockDirection};
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidState;
@@ -22,45 +19,33 @@ use steel_registry::{
     vanilla_damage_types, vanilla_entities, vanilla_fluids, vanilla_game_events, vanilla_items,
     vanilla_loot_tables, vanilla_mob_effects,
 };
-use steel_utils::Downcast as _;
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::{Difficulty, InteractionHand};
+use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Identifier, SectionPos, WorldAabb, axis::Axis,
     block_util::FoundRectangle,
 };
 use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
-use text_components::{Modifier as _, TextComponent, format::Color, interactivity::ClickEvent};
+use text_components::{TextComponent, format::Color, interactivity::ClickEvent};
 use uuid::Uuid;
 
 use crate::behavior::{BlockBehavior, blocks::WitherRoseBlock, init_behaviors};
 use crate::chunk_saver::ChunkStorage;
+use crate::entity::ExperienceOrbEntity;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::{ChestMinecartEntity, PigEntity};
 use crate::entity::mob::Mob;
 use crate::inventory::equipment::EquipmentSlot;
 use crate::portal::PortalKind;
 use crate::test_support::{
-    cross_world_damage_test_world, fresh_test_world, insert_ready_full_chunk, test_world,
+    TestEntity, cross_world_damage_test_world, fresh_test_world, insert_ready_full_chunk,
+    test_world,
 };
 use crate::world::game_event::GameEventContext;
 use crate::world::game_event::{GameEventListener, SharedGameEventListener};
 use crate::world::{LevelReader, World};
 
-use super::{
-    ActiveMobEffect, AttributeModifier, AttributeModifierOperation, DAMAGE_KNOCKBACK_POWER,
-    DEFAULT_SWING_DURATION, DEFAULT_TICKS_REQUIRED_TO_FREEZE, ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
-    ENTITY_LOAD_MAX_VERTICAL_POSITION, Entity, EntityBase, EntityFluidContact, EntityLevelCallback,
-    EntityMoveError, EntityOwnership, EntitySyncedData, EntityVerticalMovementStateUpdate,
-    InsideBlockEffectCollector, InsideBlockEffectType, LivingEntity, LivingEntityBase,
-    LivingTravelInput, MobEffectInstance, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID,
-    SharedEntity, block_state_suffocates_eye_box, closest_open_space_direction,
-    fall_damage_reset_clip_target, fall_flying_collision_damage, fall_flying_free_fall_interval,
-    get_input_vector, indirect_passengers, passenger_transition_position,
-    passenger_transition_rotation, remove_after_changing_dimensions,
-    should_apply_entity_cramming_damage, should_apply_resolved_movement, start_riding_entities,
-    transfer_leashables_to_holder, trapdoor_usable_as_ladder_state,
-};
+use super::*;
 
 struct PushableTestEntity {
     base: EntityBase,
@@ -74,7 +59,7 @@ impl PushableTestEntity {
     }
 }
 
-crate::entity::impl_test_downcast_type!(PushableTestEntity);
+impl_test_downcast_type!(PushableTestEntity);
 
 impl Entity for PushableTestEntity {
     fn base(&self) -> &EntityBase {
@@ -486,6 +471,105 @@ impl GameEventListener for RecordingGameEventListener {
         self.events.lock().push((event, source_pos));
         true
     }
+}
+
+#[test]
+fn water_entry_emits_splash_only_on_transition() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("water_entry_splash");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+
+    let entity = TestEntity::new(
+        1,
+        DVec3::new(8.0, 64.0, 8.0),
+        Arc::downgrade(world),
+        &vanilla_entities::ITEM,
+    );
+
+    let listener = Arc::new(RecordingGameEventListener::new(DVec3::new(8.5, 64.5, 8.5)));
+    let shared_listener = Arc::clone(&listener) as SharedGameEventListener;
+    let _registration = RegisteredGameEventListener::new(
+        world,
+        SectionPos::from_block_pos(BlockPos::new(8, 64, 8)),
+        shared_listener,
+    );
+
+    // The first tick clears `firstTick` without a splash.
+    entity.base_tick();
+    assert!(listener.events.lock().is_empty());
+
+    // Entering water emits exactly one splash.
+    assert!(world.set_block(
+        BlockPos::new(8, 64, 8),
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    entity.base_tick();
+    assert_eq!(
+        listener
+            .events
+            .lock()
+            .iter()
+            .map(|(event, _)| *event)
+            .collect::<Vec<_>>(),
+        [&vanilla_game_events::SPLASH]
+    );
+
+    // Remaining in water does not repeat the event.
+    entity.base_tick();
+    assert_eq!(listener.events.lock().len(), 1);
+
+    // Leaving and re-entering water emits again.
+    assert!(world.set_block(
+        BlockPos::new(8, 64, 8),
+        vanilla_blocks::AIR.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    entity.base_tick();
+    assert_eq!(listener.events.lock().len(), 1);
+
+    assert!(world.set_block(
+        BlockPos::new(8, 64, 8),
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    entity.base_tick();
+    assert_eq!(listener.events.lock().len(), 2);
+}
+
+#[test]
+fn experience_orb_water_entry_emits_no_splash() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("experience_orb_water_entry");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+
+    let orb = ExperienceOrbEntity::new(
+        &vanilla_entities::EXPERIENCE_ORB,
+        1,
+        DVec3::new(8.0, 64.0, 8.0),
+        Arc::downgrade(world),
+    );
+
+    let listener = Arc::new(RecordingGameEventListener::new(DVec3::new(8.5, 64.5, 8.5)));
+    let shared_listener = Arc::clone(&listener) as SharedGameEventListener;
+    let _registration = RegisteredGameEventListener::new(
+        world,
+        SectionPos::from_block_pos(BlockPos::new(8, 64, 8)),
+        shared_listener,
+    );
+
+    orb.base_tick();
+    assert!(world.set_block(
+        BlockPos::new(8, 64, 8),
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    orb.base_tick();
+    assert!(listener.events.lock().is_empty());
 }
 
 #[test]

@@ -74,7 +74,7 @@ fn open_furnace(
     InteractionResult::Success
 }
 
-fn analog_output(world: &dyn LevelReader, pos: BlockPos) -> i32 {
+fn analog_output(world: &(impl LevelReader + ?Sized), pos: BlockPos) -> i32 {
     let Some(container) = world
         .get_block_entity(pos)
         .and_then(ContainerRef::from_block_entity)
@@ -168,7 +168,7 @@ macro_rules! impl_furnace_block {
             fn get_analog_output_signal(
                 &self,
                 _state: BlockStateId,
-                world: &dyn LevelReader,
+                world: &World,
                 pos: BlockPos,
                 _direction: Direction,
             ) -> i32 {

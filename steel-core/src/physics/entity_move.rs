@@ -86,7 +86,7 @@ pub(crate) fn move_entity(
     state: &EntityPhysicsState,
     delta: DVec3,
     mover_type: MoverType,
-    world: &dyn CollisionWorld,
+    world: &(impl CollisionWorld + ?Sized),
 ) -> MoveResult {
     // Early exit for zero movement
     if delta.x.abs() < ZERO_MOVEMENT_EPSILON
@@ -150,7 +150,7 @@ fn apply_sneak_edge_prevention(
     state: &EntityPhysicsState,
     delta: DVec3,
     aabb: &WorldAabb,
-    world: &dyn CollisionWorld,
+    world: &(impl CollisionWorld + ?Sized),
 ) -> DVec3 {
     if delta.y > 0.0 || !is_above_ground(state, aabb, world) {
         return delta;
@@ -203,7 +203,7 @@ fn apply_sneak_edge_prevention(
 fn is_above_ground(
     state: &EntityPhysicsState,
     aabb: &WorldAabb,
-    world: &dyn CollisionWorld,
+    world: &(impl CollisionWorld + ?Sized),
 ) -> bool {
     if state.on_ground() {
         return true;
@@ -221,7 +221,7 @@ fn can_fall_at_least(
     delta_x: f64,
     delta_z: f64,
     min_height: f64,
-    world: &dyn CollisionWorld,
+    world: &(impl CollisionWorld + ?Sized),
 ) -> bool {
     if min_height <= 0.0 {
         return false;
@@ -267,7 +267,7 @@ fn collide_with_world(
     state: &EntityPhysicsState,
     movement: DVec3,
     aabb: &WorldAabb,
-    world: &dyn CollisionWorld,
+    world: &(impl CollisionWorld + ?Sized),
     entity_collisions: &[WorldAabb],
 ) -> MoveResult {
     // Get all collision shapes that could intersect with our movement
@@ -342,7 +342,7 @@ fn collide_with_shapes(
 }
 
 fn collect_collisions_with_context(
-    world: &dyn CollisionWorld,
+    world: &(impl CollisionWorld + ?Sized),
     aabb: &WorldAabb,
     context: BlockCollisionContext,
     entity_collisions: &[WorldAabb],
@@ -415,7 +415,7 @@ fn try_step_up(
     aabb: &WorldAabb,
     ground_result: &MoveResult,
     entity_collisions: &[WorldAabb],
-    world: &dyn CollisionWorld,
+    world: &(impl CollisionWorld + ?Sized),
 ) -> MoveResult {
     let max_step = f64::from(state.max_up_step());
     let on_ground_after_collision = ground_result.vertical_collision && movement.y < 0.0;

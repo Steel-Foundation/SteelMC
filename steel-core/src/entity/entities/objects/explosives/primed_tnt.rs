@@ -300,8 +300,7 @@ impl Entity for PrimedTntEntity {
                 self.explode(&world);
             }
         } else {
-            self.refresh_fluid_contact_with_currents();
-            self.base.reset_fall_distance_in_water();
+            self.update_fluid_interaction();
         }
 
         self.base.set_requires_precise_position(
