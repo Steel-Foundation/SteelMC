@@ -1,10 +1,6 @@
 //! Bucket item behavior implementation.
 //!
 //! Handles empty buckets and buckets of any fluid.
-//!
-//! Vanilla's `BucketItem` holds a `Fluid`; here `fluid_block` holds its block, and
-//! `None` is an empty bucket. Logic is dispatched in `use_item`.
-//!
 use crate::behavior::context::InteractionResult;
 use crate::behavior::item_utils::create_filled_result;
 use crate::behavior::{
@@ -12,10 +8,9 @@ use crate::behavior::{
     pickup_waterlogged_block,
 };
 use crate::entity::Entity;
-use crate::fluid::{is_lava_fluid, is_water_fluid};
+use crate::fluid::{fluid_state_to_block, is_lava_fluid, is_water_fluid};
 use crate::world::RaytraceAction;
 use steel_macros::item_behavior;
-use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::{FluidRef, FluidState};
@@ -35,24 +30,24 @@ use crate::world::game_event::GameEventContext;
 /// Handles all bucket variants (empty, water, lava).
 #[item_behavior]
 pub struct BucketItem {
-    #[json_arg(vanilla_blocks, json = "content", optional = "empty")]
-    fluid_block: Option<BlockRef>,
+    #[json_arg(vanilla_fluids, ref, json = "content")]
+    content: FluidRef,
 }
 
 impl BucketItem {
-    /// Creates a new bucket behavior. `None` = empty bucket, `Some(block)` = filled.
+    /// Creates a new bucket behavior. An empty `content` fluid makes it an empty bucket.
     #[must_use]
-    pub const fn new(fluid_block: Option<BlockRef>) -> Self {
-        Self { fluid_block }
+    pub const fn new(content: FluidRef) -> Self {
+        Self { content }
     }
 }
 
 impl ItemBehavior for BucketItem {
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
-        match self.fluid_block {
-            None => use_empty_bucket(context),
-            Some(fluid_block) => use_filled_bucket(fluid_block, context),
+        if self.content.is_empty {
+            return use_empty_bucket(context);
         }
+        use_filled_bucket(self.content, context)
     }
 }
 
@@ -142,7 +137,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
     InteractionResult::Success
 }
 
-fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> InteractionResult {
+fn use_filled_bucket(fluid: FluidRef, context: &mut UseItemContext) -> InteractionResult {
     // Raytrace to find target block
     let (start, end) = context.player.get_ray_endpoints();
     let (ray_block, ray_dir) = context.world.raytrace(start, end, |pos, world| {
@@ -176,7 +171,6 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
 
     let clicked_state = context.world.get_block_state(clicked_pos);
     let is_sneaking = context.player.is_crouching();
-    let fluid = fluid_block.default_state().get_fluid_state().fluid_id;
     // Only water itself enters liquid containers, not water-tagged fluids.
     let is_water_bucket = fluid == &vanilla_fluids::WATER;
 
@@ -200,7 +194,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         let is_liquid_container = state.is_liquid_container();
         let can_place_liquid = is_liquid_container
             && behavior.can_place_liquid_with_player(state, fluid, Some(context.player));
-        let can_replace = state.can_be_replaced_by_fluid(fluid_block);
+        let can_replace = state.can_be_replaced_by_fluid(fluid);
 
         if !can_replace && !can_place_liquid {
             return false;
@@ -240,7 +234,7 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         }
 
         // Place fluid block
-        let fluid_state_to_place = fluid_block.default_state();
+        let fluid_state_to_place = fluid_state_to_block(FluidState::source(fluid));
         if context
             .world
             .set_block(pos, fluid_state_to_place, UpdateFlags::UPDATE_ALL_IMMEDIATE)
