@@ -17,7 +17,7 @@ use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::ErasedType;
 
-/// Default distance buffer for container interaction range checks.
+/// Extra reach allowed when validating containers and menus.
 pub const DEFAULT_DISTANCE_BUFFER: f32 = 4.0;
 
 /// Something that contains items.

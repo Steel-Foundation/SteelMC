@@ -1,13 +1,9 @@
 //! Block entity registry for creating block entity instances.
 
-use std::io::Cursor;
 use std::ops::Deref;
 use std::sync::{Arc, OnceLock, Weak};
 
-use simdnbt::borrow::NbtCompound as BorrowedRootNbtCompound;
-use simdnbt::borrow::{
-    BaseNbtCompound as BorrowedNbtCompound, read_compound as read_borrowed_compound,
-};
+use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::vanilla_block_entity_types;
@@ -114,21 +110,9 @@ impl BlockEntityRegistry {
         state: BlockStateId,
         nbt: &BorrowedNbtCompound<'_>,
     ) -> SharedBlockEntity {
-        let id = block_entity_type.id();
-        if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
-            let entity = factory(level, pos, state);
-            entity.load_additional(nbt);
-            entity
-        } else {
-            let nbt_view: BorrowedRootNbtCompound<'_, '_> = nbt.into();
-            Arc::new(UnimplementedBlockEntity::with_data(
-                block_entity_type,
-                level,
-                pos,
-                state,
-                nbt_view.to_owned(),
-            ))
-        }
+        let entity = self.create_or_unimplemented(block_entity_type, level, pos, state);
+        entity.load_with_components(nbt);
+        entity
     }
 
     /// Creates and loads owned block entity NBT, falling back to an unimplemented entity.
@@ -141,29 +125,14 @@ impl BlockEntityRegistry {
         state: BlockStateId,
         nbt: NbtCompound,
     ) -> SharedBlockEntity {
-        let id = block_entity_type.id();
-        if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
-            let entity = factory(level, pos, state);
-            let mut nbt_bytes = Vec::new();
-            nbt.write(&mut nbt_bytes);
-            if let Ok(borrowed) = read_borrowed_compound(&mut Cursor::new(&nbt_bytes)) {
-                entity.load_additional(&borrowed);
-            } else {
-                log::warn!(
-                    "failed to reborrow owned NBT for block entity {}",
-                    block_entity_type.key()
-                );
-            }
-            entity
-        } else {
-            Arc::new(UnimplementedBlockEntity::with_data(
-                block_entity_type,
-                level,
-                pos,
-                state,
-                nbt,
-            ))
+        let entity = self.create_or_unimplemented(block_entity_type, level, pos, state);
+        if let Err(error) = entity.load_with_owned_components(&nbt) {
+            log::warn!(
+                "failed to reborrow owned NBT for block entity {}: {error}",
+                block_entity_type.key()
+            );
         }
+        entity
     }
 
     /// Returns whether a factory is registered for the given type.
@@ -311,6 +280,12 @@ pub fn init_block_entities() {
         registry.register(
             &vanilla_block_entity_types::ENDER_CHEST,
             |level, pos, state| Arc::new(EnderChestBlockEntity::new(level, pos, state)),
+        );
+
+        // Register enchanting table block entity factory
+        registry.register(
+            &vanilla_block_entity_types::ENCHANTING_TABLE,
+            |level, pos, state| Arc::new(EnchantingTableBlockEntity::new(level, pos, state)),
         );
 
         // Register potent sulfur block entity factory
