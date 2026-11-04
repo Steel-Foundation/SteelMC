@@ -24,7 +24,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::packets::play::{
     C_ADD_ENTITY, C_CLEAR_TITLES, C_PLAYER_INFO_UPDATE, C_SET_ACTION_BAR_TEXT, C_SET_SUBTITLE_TEXT,
-    C_SET_TITLE_TEXT, C_SET_TITLES_ANIMATION, C_SYSTEM_CHAT,
+    C_SET_TITLE_TEXT, C_SET_TITLES_ANIMATION, C_SYSTEM_CHAT, C_UPDATE_ADVANCEMENTS,
 };
 use steel_registry::{
     init_vanilla_registry, stat::vanilla_stat_types, vanilla_blocks, vanilla_custom_stats,
@@ -1484,6 +1484,43 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         drop(player);
         drop(server);
     });
+}
+
+#[test]
+fn first_advancement_flush_resets_client_without_progress() {
+    let world_fixture = fresh_test_world("advancement_reset");
+    let world = &world_fixture.world;
+    let TestConnectionHandles {
+        connection,
+        sent_packets,
+        ..
+    } = test_connection();
+    let player = TestPlayerBuilder::new(Arc::clone(world), "AdvancementReset", 1)
+        .connection(connection)
+        .build();
+    sent_packets.lock().clear();
+
+    player.advancements.lock().flush_dirty(&player, true);
+
+    let packets = sent_packets.lock();
+    assert_eq!(packets.len(), 1, "the first flush must reach the client");
+    let payload = packet_payload(&packets[0], C_UPDATE_ADVANCEMENTS);
+    let mut cursor = Cursor::new(payload.as_slice());
+    assert!(
+        bool::read(&mut cursor).expect("reset flag should decode"),
+        "an empty first flush must reset the client tree"
+    );
+    for list in ["added", "removed", "progress"] {
+        assert_eq!(
+            VarInt::read(&mut cursor)
+                .expect("list length should decode")
+                .0,
+            0,
+            "{list} should be empty"
+        );
+    }
+    assert!(bool::read(&mut cursor).expect("show advancements flag should decode"));
+    assert_eq!(cursor.position() as usize, payload.len());
 }
 
 #[test]
