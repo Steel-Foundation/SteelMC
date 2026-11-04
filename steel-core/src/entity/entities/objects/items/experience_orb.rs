@@ -18,8 +18,8 @@ use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeK
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData, LivingEntity,
-    RemovalReason, SharedEntity, next_entity_id,
+    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission,
+    EntitySyncedData, LivingEntity, RemovalReason, SharedEntity, next_entity_id,
 };
 use crate::fluid::get_fluid_state;
 use crate::physics::{MoverType, WorldCollisionProvider};
@@ -393,7 +393,17 @@ impl ExperienceOrbEntity {
     }
 }
 
+impl DefaultEntityPush for ExperienceOrbEntity {}
+
 impl Entity for ExperienceOrbEntity {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }

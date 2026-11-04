@@ -350,7 +350,13 @@ fn collect_collisions_with_context(
     let mut collisions = Vec::with_capacity(entity_collisions.len());
     collisions.extend_from_slice(entity_collisions);
     collisions.extend(world.get_world_border_collisions(aabb));
-    collisions.extend(world.get_block_collisions_with_context(aabb, context));
+    let block_collisions = world.get_block_collisions_with_context(aabb, context);
+
+    if collisions.is_empty() {
+        return block_collisions;
+    }
+
+    collisions.extend(block_collisions);
     collisions
 }
 
