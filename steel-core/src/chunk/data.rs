@@ -274,10 +274,8 @@ impl Chunk {
     }
 
     /// Adds one tick of inhabited time.
-    ///
-    /// Vanilla does not mark chunks unsaved for inhabited-time changes alone.
     pub fn increment_inhabited_time(&self) {
-        self.inhabited_time.fetch_add(1, Ordering::AcqRel);
+        self.inhabited_time.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Reads a block using coordinates relative to the chunk's minimum Y.

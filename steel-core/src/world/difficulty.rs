@@ -2,7 +2,7 @@
 
 use steel_registry::vanilla_world_clocks;
 use steel_utils::types::Difficulty;
-use steel_utils::{BlockPos, ChunkPos, SectionPos};
+use steel_utils::{BlockPos, ChunkPos};
 
 use super::World;
 use super::environment;
@@ -103,10 +103,7 @@ impl World {
     /// loaded at Full status.
     #[must_use]
     pub fn get_current_difficulty_at(&self, pos: BlockPos) -> DifficultyInstance {
-        let chunk_pos = ChunkPos::new(
-            SectionPos::block_to_section_coord(pos.0.x),
-            SectionPos::block_to_section_coord(pos.0.z),
-        );
+        let chunk_pos = ChunkPos::from_block_pos(pos);
         let local_game_time = self
             .chunk_map
             .with_full_chunk(chunk_pos, |chunk| chunk.common().inhabited_time());

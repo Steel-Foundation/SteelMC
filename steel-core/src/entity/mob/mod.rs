@@ -1924,8 +1924,8 @@ pub(crate) fn do_hurt_target_default<M: Mob + ?Sized>(
 }
 
 /// Shared implementation of vanilla `Mob.populateDefaultEquipmentSlots`.
-pub(crate) fn populate_default_equipment_slots_default(
-    mob: &(impl Mob + ?Sized),
+pub(crate) fn populate_default_equipment_slots_default<M: Mob + ?Sized>(
+    mob: &M,
     difficulty: DifficultyInstance,
 ) {
     if rand::random::<f32>() >= MAX_WEARING_ARMOR_CHANCE * difficulty.special_multiplier() {

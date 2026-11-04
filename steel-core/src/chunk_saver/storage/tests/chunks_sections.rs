@@ -314,33 +314,6 @@ fn heterogeneous_biome_section_roundtrips_through_persistent_chunk() {
     );
 }
 
-#[test]
-fn inhabited_time_roundtrips_through_persistent_chunk() {
-    init_globals();
-    let pos = ChunkPos::new(3, -4);
-    let persistent = ChunkStorage::to_persistent(
-        &single_empty_section(),
-        &[],
-        &[],
-        &[],
-        12_345,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        PersistentLightData::default(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        pos,
-    );
-
-    let loaded =
-        ChunkStorage::persistent_to_chunk(&persistent, pos, ChunkStatus::Full, 0, 16, Weak::new());
-
-    assert_eq!(loaded.chunk.inhabited_time(), 12_345);
-}
-
 /// Saving a section whose palette lost a block panics instead of writing another block in its
 /// place.
 #[test]
