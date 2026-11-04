@@ -883,7 +883,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             && !self.is_passenger_of_same_vehicle(other)
     }
 
-    /// opt in to [`DefaultEntityPush`] same answer for whole entity lifetime read only lookup under manager lock, no side effects
+    /// Opts this entity into the [`DefaultEntityPush`] fast path. It is read under the
+    /// entity manager lock, so it must give the same answer for the entity's whole
+    /// lifetime and have no side effects.
     fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
         None
     }

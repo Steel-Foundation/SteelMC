@@ -714,7 +714,8 @@ impl EntityBase {
         self.state.lock().no_physics
     }
 
-    /// base push inputs, if riding then normal callbacks got this
+    /// Reads the push inputs under one lock, or `None` while riding so the caller
+    /// falls back to the regular push callbacks.
     pub(crate) fn unmounted_push_state(&self) -> Option<EntityPushState> {
         let mut relationships = self.relationships.lock();
 
@@ -1262,7 +1263,9 @@ impl EntityBase {
         }
     }
 
-    /// velocity + sync one lock bad impulse then skip it if sum overflow keep velocity but still sync
+    /// Vanilla `push(double, double, double)` under one lock: a non-finite impulse is
+    /// ignored, and a non-finite sum keeps the old velocity like `setDeltaMovement`
+    /// while still marking the velocity for sync.
     pub(crate) fn push_impulse(&self, impulse: DVec3) {
         if !impulse.is_finite() {
             return;

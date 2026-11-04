@@ -3,10 +3,12 @@ use glam::DVec3;
 use super::EntityPush;
 use crate::entity::{Entity, LivingEntity};
 
-/// base push and cramming behavior, pure reads, only velocity + sync writes
-/// no manager reentry; custom contact/velocity/cramming hooks keep `None`
+/// Vanilla push and cramming behavior with no overrides. Implementors only read state,
+/// only write velocity and the velocity sync flag, and never re-enter the entity manager.
+/// Entities that override contact, velocity or cramming hooks must not opt in.
 pub trait DefaultEntityPush: Entity {
-    /// riding returns `None`; known pushable needs selection without cramming effects
+    /// Push inputs for one contact, or `None` while riding. `known_pushable` skips the
+    /// `is_pushable` check when the selector has already passed this entity.
     fn push_snapshot(&self, known_pushable: bool) -> Option<EntityPushSnapshot> {
         let state = self.base().unmounted_push_state()?;
 
@@ -21,7 +23,7 @@ pub trait DefaultEntityPush: Entity {
     }
 }
 
-/// saved inputs for one push contact
+/// Saved inputs for one push contact.
 #[derive(Clone, Copy, Debug)]
 pub struct EntityPushSnapshot {
     position: DVec3,

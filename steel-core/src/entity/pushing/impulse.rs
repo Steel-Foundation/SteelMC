@@ -1,4 +1,4 @@
-//! shared vanilla push math
+//! Vanilla `Entity.push` impulse math.
 
 use std::simd::f64x2;
 

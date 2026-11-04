@@ -2461,7 +2461,7 @@ pub trait LivingEntity: Entity {
         EntityPush::push_entities(self);
     }
 
-    /// cramming first then contacts in same order
+    /// Pushes against `entities` in the given order. The caller applies cramming damage first.
     fn push_entities_in_order(&self, entities: &[SharedEntity]) {
         EntityPush::push_entities_in_order(self.as_entity_event_source(), entities);
     }

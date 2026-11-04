@@ -1,4 +1,4 @@
-//! shared push stuff, contacts stay in order
+//! Entity pushing, with a batched fast path that keeps vanilla's contact order.
 
 use std::cell::RefCell;
 
@@ -103,8 +103,8 @@ impl EntityPush {
                 return false;
             };
 
-            // select + check first, then impulses
-            // default contacts under lock, custom callbacks after unlock
+            // Select and validate every contact before applying any impulse. Default contacts
+            // run under the manager lock; custom callbacks run after it is released.
             for (entity, source) in entities.iter().zip(states.iter()) {
                 if let Some(source) = source {
                     Self::apply_contact(entity.as_ref(), *source, target, target_state);

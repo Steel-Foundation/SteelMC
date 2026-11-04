@@ -1,4 +1,4 @@
-//! ordered hits from already sorted cells
+//! Ordered query hits gathered from already sorted spatial cells.
 
 use std::{slice, vec::IntoIter};
 

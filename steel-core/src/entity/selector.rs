@@ -1,4 +1,4 @@
-//! entity query filters, same deal everywhere
+//! Entity selection predicates shared by queries, after vanilla `EntitySelector`.
 
 use super::Entity;
 

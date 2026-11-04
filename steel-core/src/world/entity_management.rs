@@ -691,7 +691,6 @@ impl World {
         Self::filter_pushable_entities(pusher, self.get_entities_in_aabb(aabb))
     }
 
-    /// push selector on a ready snapshot
     pub(crate) fn filter_pushable_entities(
         pusher: &dyn Entity,
         entities: Vec<SharedEntity>,

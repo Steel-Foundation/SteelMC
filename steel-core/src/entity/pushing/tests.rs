@@ -220,7 +220,7 @@ fn default_impulses_preserve_bits_and_custom_velocity_accessors() {
     assert_eq!(custom.velocity(), DVec3::X);
 }
 
-// java 25 results from 26.3 Entity.push, compare exact bits
+// Expected values come from vanilla 26.3 `Entity.push` on Java 25 and are compared bit for bit.
 #[test]
 fn separation_rounding_matches_java_reference() {
     let edge = f64::from(0.01_f32);

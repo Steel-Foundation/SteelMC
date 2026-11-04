@@ -23,7 +23,7 @@ use super::{
     tick_vehicle_passengers_if,
 };
 
-// callbacks can move later targets inside a cell so keep this grid
+// Vanilla treats four blocks as the largest ordinary entity search extent.
 const ENTITY_SPATIAL_CELL_SIZE: f64 = 4.0;
 
 // Center common integer positions inside cells instead of on cell boundaries.
@@ -77,6 +77,33 @@ impl EntityCollisionCandidates {
     }
 }
 
+/// Bounds an index update can leave in place when an entity's old and new cells overlap.
+#[derive(Debug, Clone, Copy)]
+struct RetainedSpatialCells {
+    /// Bounds of the old cells; new cells inside them are already indexed.
+    previous: Option<EntitySpatialCellBounds>,
+    /// Bounds of the new cells; old cells inside them stay indexed.
+    current: Option<EntitySpatialCellBounds>,
+}
+
+impl RetainedSpatialCells {
+    const NONE: Self = Self {
+        previous: None,
+        current: None,
+    };
+
+    const fn between(previous: &[EntitySpatialCell], current: &[EntitySpatialCell]) -> Self {
+        if !EntitySpatialCellBounds::cells_overlap(previous, current) {
+            return Self::NONE;
+        }
+
+        Self {
+            previous: EntitySpatialCellBounds::from_cells(previous),
+            current: EntitySpatialCellBounds::from_cells(current),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct EntitySpatialCellBounds {
     minimum: EntitySpatialCell,
@@ -92,7 +119,7 @@ impl EntitySpatialCellBounds {
     }
 
     const fn from_cells(cells: &[EntitySpatialCell]) -> Option<Self> {
-        // complete rectangular range in x/y/z order, endpoints give the bounds
+        // `cells` is a complete rectangular range in x/y/z order, so its endpoints are the bounds.
         let (Some(&minimum), Some(&maximum)) = (cells.first(), cells.last()) else {
             return None;
         };
@@ -1226,8 +1253,12 @@ impl WorldEntityManager {
             });
         }
 
-        let retain_overlapping_cells = !section_changed
-            && EntitySpatialCellBounds::cells_overlap(&current.spatial_cells, &new_spatial_cells);
+        // A new section changes the query order, so every cell has to be re-sorted.
+        let retained = if section_changed {
+            RetainedSpatialCells::NONE
+        } else {
+            RetainedSpatialCells::between(&current.spatial_cells, &new_spatial_cells)
+        };
 
         if section_changed {
             Self::remove_from_section(&mut state, old_section, entity_id);
@@ -1240,46 +1271,20 @@ impl WorldEntityManager {
             current_section_order
         };
 
-        let previous_bounds = if spatial_index_changed {
+        if spatial_index_changed {
             let Some(entry) = state.live_by_id.get_mut(entity_id) else {
                 return Err(EntityMoveError::NotLive { entity_id });
             };
 
             let previous_cells = mem::take(&mut entry.spatial_cells);
-            let retained_bounds = if retain_overlapping_cells {
-                EntitySpatialCellBounds::from_cells(&new_spatial_cells)
-            } else {
-                None
-            };
-
-            let previous_bounds = if retain_overlapping_cells {
-                EntitySpatialCellBounds::from_cells(&previous_cells)
-            } else {
-                None
-            };
-
-            Self::remove_from_spatial_cells(
+            Self::remove_from_spatial_indexes(
                 &mut state,
                 &previous_cells,
                 entity_slot,
-                EntityCollisionCandidates::All,
-                retained_bounds,
+                hard_collision_relevant,
+                retained.current,
             );
-
-            if hard_collision_relevant {
-                Self::remove_from_spatial_cells(
-                    &mut state,
-                    &previous_cells,
-                    entity_slot,
-                    EntityCollisionCandidates::HardCollisionRelevant,
-                    retained_bounds,
-                );
-            }
-
-            previous_bounds
-        } else {
-            None
-        };
+        }
 
         if let Some(entry) = state.live_by_id.get_mut(entity_id) {
             entry.section = new_section;
@@ -1300,21 +1305,12 @@ impl WorldEntityManager {
         }
 
         if spatial_index_changed {
-            Self::insert_into_spatial_cells(
+            Self::insert_into_spatial_indexes(
                 &mut state,
                 entity_slot,
-                EntityCollisionCandidates::All,
-                previous_bounds,
+                hard_collision_relevant,
+                retained.previous,
             );
-
-            if hard_collision_relevant {
-                Self::insert_into_spatial_cells(
-                    &mut state,
-                    entity_slot,
-                    EntityCollisionCandidates::HardCollisionRelevant,
-                    previous_bounds,
-                );
-            }
         }
 
         if section_changed {
@@ -1386,19 +1382,7 @@ impl WorldEntityManager {
             return;
         }
 
-        let retain_overlapping_cells =
-            EntitySpatialCellBounds::cells_overlap(&current.spatial_cells, &new_spatial_cells);
-        let previous_bounds = if retain_overlapping_cells {
-            EntitySpatialCellBounds::from_cells(&current.spatial_cells)
-        } else {
-            None
-        };
-
-        let retained_bounds = if retain_overlapping_cells {
-            EntitySpatialCellBounds::from_cells(&new_spatial_cells)
-        } else {
-            None
-        };
+        let retained = RetainedSpatialCells::between(&current.spatial_cells, &new_spatial_cells);
 
         let Some(entry) = state.live_by_id.get_mut(entity_id) else {
             return;
@@ -1410,44 +1394,25 @@ impl WorldEntityManager {
             return;
         };
 
-        Self::remove_from_spatial_cells(
+        Self::remove_from_spatial_indexes(
             &mut state,
             &previous_cells,
             entity_slot,
-            EntityCollisionCandidates::All,
-            retained_bounds,
+            hard_collision_relevant,
+            retained.current,
         );
-
-        if hard_collision_relevant {
-            Self::remove_from_spatial_cells(
-                &mut state,
-                &previous_cells,
-                entity_slot,
-                EntityCollisionCandidates::HardCollisionRelevant,
-                retained_bounds,
-            );
-        }
 
         if let Some(entry) = state.live_by_id.get_mut(entity_id) {
             entry.bounding_box = bounding_box;
             entry.spatial_cells = new_spatial_cells;
         }
 
-        Self::insert_into_spatial_cells(
+        Self::insert_into_spatial_indexes(
             &mut state,
             entity_slot,
-            EntityCollisionCandidates::All,
-            previous_bounds,
+            hard_collision_relevant,
+            retained.previous,
         );
-
-        if hard_collision_relevant {
-            Self::insert_into_spatial_cells(
-                &mut state,
-                entity_slot,
-                EntityCollisionCandidates::HardCollisionRelevant,
-                previous_bounds,
-            );
-        }
     }
 
     fn can_move_manager_owned_to_chunk(
@@ -1680,8 +1645,10 @@ impl WorldEntityManager {
         result
     }
 
-    /// try ordered borrowed hits under the read lock; return owned hits on fallback
-    /// no reentry or spatial/lifecycle writes while the callback runs
+    /// Runs `action` on the ordered hits borrowed under the read lock, returning `None` when
+    /// it handled them. Returns the hits as owned entities when `action` declines or more
+    /// than `borrow_limit` entities match.
+    /// `action` must not re-enter the manager or write spatial or lifecycle state.
     pub(crate) fn try_with_entities_in_aabb(
         &self,
         aabb: &WorldAabb,
@@ -2172,16 +2139,7 @@ impl WorldEntityManager {
             .insert(entity_id);
         let hard_collision_relevant = entry.hard_collision_relevant;
         let entity_slot = state.live_by_id.insert(entity_id, entry);
-        Self::insert_into_spatial_cells(state, entity_slot, EntityCollisionCandidates::All, None);
-
-        if hard_collision_relevant {
-            Self::insert_into_spatial_cells(
-                state,
-                entity_slot,
-                EntityCollisionCandidates::HardCollisionRelevant,
-                None,
-            );
-        }
+        Self::insert_into_spatial_indexes(state, entity_slot, hard_collision_relevant, None);
 
         if is_accessible {
             state.accessible_order.insert(entity_id);
@@ -2259,23 +2217,13 @@ impl WorldEntityManager {
         state.live_by_uuid.remove(&entry.uuid);
         state.accessible_order.remove(entity_id);
         Self::remove_from_section(state, entry.section, entity_id);
-        Self::remove_from_spatial_cells(
+        Self::remove_from_spatial_indexes(
             state,
             &entry.spatial_cells,
             entity_slot,
-            EntityCollisionCandidates::All,
+            entry.hard_collision_relevant,
             None,
         );
-
-        if entry.hard_collision_relevant {
-            Self::remove_from_spatial_cells(
-                state,
-                &entry.spatial_cells,
-                entity_slot,
-                EntityCollisionCandidates::HardCollisionRelevant,
-                None,
-            );
-        }
 
         Self::remove_from_chunk(state, entry.chunk, entity_id);
 
@@ -2292,6 +2240,57 @@ impl WorldEntityManager {
         state.next_section_order += 1;
 
         order
+    }
+
+    /// Indexes `entity_slot` in every spatial index it belongs to, skipping cells inside `retained`.
+    fn insert_into_spatial_indexes(
+        state: &mut ManagerState,
+        entity_slot: EntitySlot,
+        hard_collision_relevant: bool,
+        retained: Option<EntitySpatialCellBounds>,
+    ) {
+        Self::insert_into_spatial_cells(
+            state,
+            entity_slot,
+            EntityCollisionCandidates::All,
+            retained,
+        );
+
+        if hard_collision_relevant {
+            Self::insert_into_spatial_cells(
+                state,
+                entity_slot,
+                EntityCollisionCandidates::HardCollisionRelevant,
+                retained,
+            );
+        }
+    }
+
+    /// Removes `entity_slot` from every spatial index it belongs to, keeping cells inside `retained`.
+    fn remove_from_spatial_indexes(
+        state: &mut ManagerState,
+        cells: &[EntitySpatialCell],
+        entity_slot: EntitySlot,
+        hard_collision_relevant: bool,
+        retained: Option<EntitySpatialCellBounds>,
+    ) {
+        Self::remove_from_spatial_cells(
+            state,
+            cells,
+            entity_slot,
+            EntityCollisionCandidates::All,
+            retained,
+        );
+
+        if hard_collision_relevant {
+            Self::remove_from_spatial_cells(
+                state,
+                cells,
+                entity_slot,
+                EntityCollisionCandidates::HardCollisionRelevant,
+                retained,
+            );
+        }
     }
 
     fn insert_into_spatial_cells(

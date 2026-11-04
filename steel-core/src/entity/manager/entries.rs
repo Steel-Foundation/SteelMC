@@ -1,10 +1,10 @@
-//! slots instead of hash spam for every candidate
+//! Slot storage for entity entries, so queries index a `Vec` instead of hashing each candidate.
 
 use rustc_hash::FxHashMap;
 
 use super::EntityEntry;
 
-/// manager lock held no slot reuse while query borrows it
+/// Index into [`EntityEntries`]. A slot is not reused while a query borrows it under the manager lock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) struct EntitySlot(usize);
 
