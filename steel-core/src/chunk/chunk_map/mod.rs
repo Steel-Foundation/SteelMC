@@ -886,10 +886,8 @@ impl ChunkMap {
                 let delta_z = center_z - position.z;
                 delta_x * delta_x + delta_z * delta_z < SPAWN_CANDIDATE_PLAYER_DISTANCE_SQUARED
             });
-            if is_spawn_candidate {
-                if let Some(chunk) = holder.try_full_chunk() {
-                    chunk.common().increment_inhabited_time();
-                }
+            if is_spawn_candidate && let Some(chunk) = holder.try_full_chunk() {
+                chunk.common().increment_inhabited_time();
             }
             true
         });
