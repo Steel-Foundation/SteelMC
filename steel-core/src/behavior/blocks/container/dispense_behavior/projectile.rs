@@ -76,7 +76,12 @@ impl DispenseItemBehavior for ProjectileDispenseBehavior {
         }
 
         let _ = world.try_add_entity(entity);
-        world.level_event(level_events::SOUND_DISPENSER_DISPENSE, pos, 0, None);
+        world.level_event(
+            level_events::SOUND_DISPENSER_PROJECTILE_LAUNCH,
+            pos,
+            0,
+            None,
+        );
 
         ItemStack::empty()
     }
