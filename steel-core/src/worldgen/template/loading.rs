@@ -144,16 +144,16 @@ impl StructureTemplate {
     ) -> Result<Vec<BlockStateId>, String> {
         let mut states = Vec::with_capacity(entries.len());
         for entry in entries.clone() {
-            let Some(name) = entry.string("Name") else {
+            let Some(name) = entry.string("id") else {
                 return Err(format!(
-                    "structure template {context} has palette entry without Name"
+                    "structure template {context} has palette entry without id"
                 ));
             };
             let name = Identifier::from_str(name.to_str().as_ref()).map_err(|err| {
                 format!("structure template {context} has invalid block identifier: {err}")
             })?;
             let mut properties = BTreeMap::new();
-            if let Some(props) = entry.compound("Properties") {
+            if let Some(props) = entry.compound("properties") {
                 for (key, value) in props.iter() {
                     let Some(value) = value.string() else {
                         return Err(format!(
@@ -339,13 +339,12 @@ impl StructureTemplate {
     pub(super) fn read_entity_tags(nbt: &BorrowedNbtCompound<'_, '_>) -> BTreeSet<String> {
         nbt.list("Tags")
             .and_then(|list| list.strings())
-            .map(|tags| {
+            .map_or_default(|tags| {
                 tags.iter()
                     .take(MAX_ENTITY_TAGS)
                     .map(|tag| tag.to_str().into_owned())
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     pub(super) fn strip_entity_base_fields(nbt: &mut NbtCompound) {

@@ -281,7 +281,7 @@ where
                 .executor
                 .as_ref()
                 .filter(|_| child.execution_requirement.allows(context.source()))
-                .map(Arc::clone);
+                .cloned();
             context.set_executor(executor);
             let redirect = child.redirect();
             let required_remaining = if redirect.is_some() { 1 } else { 2 };

@@ -819,7 +819,6 @@ mod tests {
             fluid_ticks: Vec::new(),
             heightmaps: Vec::new(),
             light: PersistentLightData::default(),
-            carving_mask: None,
             postprocessing: Vec::new(),
             structure_starts: Vec::new(),
             structure_references: Vec::new(),

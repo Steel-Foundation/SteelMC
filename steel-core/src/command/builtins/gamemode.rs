@@ -147,7 +147,7 @@ pub(crate) fn handle_client_request(
     if !player_can_change_game_mode(player, &world, game_mode) {
         log::warn!(
             "Player {} tried to change game mode to {} without permission",
-            player.gameprofile.name,
+            player.gameprofile.name(),
             game_mode.name()
         );
         return;
@@ -160,7 +160,7 @@ pub(crate) fn handle_client_request(
     if let Err(error) = set_game_mode(&source, slice::from_ref(player), game_mode) {
         log::error!(
             "Failed to apply client game-mode change for {}: {error}",
-            player.gameprofile.name
+            player.gameprofile.name()
         );
     }
 }
@@ -217,7 +217,7 @@ fn game_mode_permission(game_mode: GameType) -> Result<PermissionExpr, Permissio
     Ok(PermissionExpr::scoped_key(root, mode))
 }
 
-const fn game_mode_translation(game_mode: GameType) -> &'static Translation<0> {
+pub(super) const fn game_mode_translation(game_mode: GameType) -> &'static Translation<0> {
     match game_mode {
         GameType::Survival => &translations::GAME_MODE_SURVIVAL,
         GameType::Creative => &translations::GAME_MODE_CREATIVE,

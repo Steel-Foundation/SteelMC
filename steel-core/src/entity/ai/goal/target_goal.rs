@@ -195,7 +195,7 @@ mod tests {
         let mob = pig(1, DVec3::ZERO);
         let target: SharedEntity = pig(2, DVec3::new(2.0, 0.0, 0.0));
         let mut goal = TargetGoalBase::new(false, false);
-        goal.set_target_mob(Some(target.clone()));
+        goal.set_target_mob(Some(Arc::clone(&target)));
 
         assert!(mob.target().is_none());
         assert!(goal.can_continue_to_use(mob.as_ref()));

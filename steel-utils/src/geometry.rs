@@ -22,7 +22,7 @@ pub trait Space {
 }
 
 /// Marker type for block-local AABBs.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlockLocal;
 
 impl Space for BlockLocal {
@@ -30,7 +30,7 @@ impl Space for BlockLocal {
 }
 
 /// Marker type for world-space AABBs.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct World;
 
 impl Space for World {
@@ -270,13 +270,29 @@ impl<I> Aabb<DVec3, I> {
     }
 
     /// Returns the squared distance from `point` to this box.
-    ///
-    /// Mirrors vanilla `AABB.distanceToSqr`.
     #[must_use]
     pub fn distance_to_sqr(self, point: DVec3) -> f64 {
         let dx = f64::max(f64::max(self.min.x - point.x, point.x - self.max.x), 0.0);
         let dy = f64::max(f64::max(self.min.y - point.y, point.y - self.max.y), 0.0);
         let dz = f64::max(f64::max(self.min.z - point.z, point.z - self.max.z), 0.0);
+        dx * dx + dy * dy + dz * dz
+    }
+
+    /// Returns the squared distance from `other` to this box.
+    #[must_use]
+    pub fn distance_to_sqr_aabb(self, other: Self) -> f64 {
+        let dx = f64::max(
+            f64::max(self.min.x - other.max.x, other.min.x - self.max.x),
+            0.0,
+        );
+        let dy = f64::max(
+            f64::max(self.min.y - other.max.y, other.min.y - self.max.y),
+            0.0,
+        );
+        let dz = f64::max(
+            f64::max(self.min.z - other.max.z, other.min.z - self.max.z),
+            0.0,
+        );
         dx * dx + dy * dy + dz * dz
     }
 
@@ -531,6 +547,50 @@ impl<I: Space> Aabb<DVec3, I> {
     pub fn size(self) -> f64 {
         (self.width() + self.height() + self.depth()) / 3.0
     }
+
+    /// Expands the box only in the direction of `delta`.
+    #[must_use]
+    pub fn expand_towards(self, delta: DVec3) -> Self {
+        Self {
+            min: self.min + delta.min(DVec3::ZERO),
+            max: self.max + delta.max(DVec3::ZERO),
+            p: PhantomData,
+        }
+    }
+
+    /// Shrinks the box in the direction of `delta`.
+    ///
+    /// Positive components move the maximum edge inward, while negative
+    /// components move the minimum edge inward.
+    #[must_use]
+    pub fn contract(self, delta: DVec3) -> Self {
+        let mut min = self.min;
+        let mut max = self.max;
+
+        if delta.x < 0.0 {
+            min.x -= delta.x;
+        } else if delta.x > 0.0 {
+            max.x -= delta.x;
+        }
+
+        if delta.y < 0.0 {
+            min.y -= delta.y;
+        } else if delta.y > 0.0 {
+            max.y -= delta.y;
+        }
+
+        if delta.z < 0.0 {
+            min.z -= delta.z;
+        } else if delta.z > 0.0 {
+            max.z -= delta.z;
+        }
+
+        Self {
+            min,
+            max,
+            p: PhantomData,
+        }
+    }
 }
 
 impl Aabb<DVec3, BlockLocal> {
@@ -558,16 +618,6 @@ impl Aabb<DVec3, World> {
             y + height,
             z + half_width,
         )
-    }
-
-    /// Expands the box only in the direction of `delta`.
-    #[must_use]
-    pub fn expand_towards(self, delta: DVec3) -> Self {
-        Self {
-            min: self.min + delta.min(DVec3::ZERO),
-            max: self.max + delta.max(DVec3::ZERO),
-            p: PhantomData,
-        }
     }
 
     /// Returns `true` if this box intersects the full block at `pos`.
@@ -600,8 +650,6 @@ impl Aabb<IVec3, Structure> {
     }
 
     /// Returns the squared distance from `point` to this box.
-    ///
-    /// Mirrors vanilla `AABB.distanceToSqr`.
     #[must_use]
     pub fn distance_to_sqr(self, point: DVec3) -> f64 {
         let min_x = f64::from(self.min_x());
@@ -681,6 +729,27 @@ mod tests {
         assert_eq!(aabb.distance_to_sqr(DVec3::new(2.0, 3.0, 4.0)), 0.0);
         assert_eq!(aabb.distance_to_sqr(DVec3::new(0.0, 1.0, 1.0)), 6.0);
         assert_eq!(aabb.distance_to_sqr(DVec3::new(5.0, 7.0, 9.0)), 3.0);
+    }
+
+    #[test]
+    fn distance_to_sqr_aabb_uses_nearest_gap_between_boxes() {
+        let aabb = WorldAabb::new(1.0, 2.0, 3.0, 4.0, 6.0, 8.0);
+
+        // Overlapping boxes have zero distance.
+        assert_eq!(
+            aabb.distance_to_sqr_aabb(WorldAabb::new(2.0, 3.0, 4.0, 5.0, 7.0, 9.0)),
+            0.0
+        );
+        // A box entirely below on every axis: gaps of 1, 1, 2 -> 1+1+4 = 6.
+        assert_eq!(
+            aabb.distance_to_sqr_aabb(WorldAabb::new(-1.0, 0.0, 0.0, 0.0, 1.0, 1.0)),
+            6.0
+        );
+        // A box entirely above on every axis: gaps of 1, 1, 1 -> 3.
+        assert_eq!(
+            aabb.distance_to_sqr_aabb(WorldAabb::new(5.0, 7.0, 9.0, 6.0, 8.0, 10.0)),
+            3.0
+        );
     }
 
     #[test]

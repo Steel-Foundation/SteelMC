@@ -1,6 +1,8 @@
+use steel_protocol::packets::game::CommonPlayerSpawnInfo;
+
 use super::{
     Arc, BlockBreakingManager, CContainerClose, CGameEvent, CRespawn, CSetDefaultSpawnPosition,
-    CSetHeldSlot, CSetPassengers, DVec3, Entity, GameEventType, GameType, MenuRemovalStatus,
+    CSetHeldSlot, CSetPassengers, DVec3, Entity, GameEventType, MenuRemovalStatus,
     MobEffectSyncChange, MobEffectSyncPacket, Player, RegistryEntry, RelativeMovement, ResetReason,
     World,
 };
@@ -8,13 +10,9 @@ use super::{
 impl Player {
     /// Resets the player's transient state and prepares them for a new world.
     ///
-    /// This is the shared "clean slate" path used by initial join, respawn, and
-    /// world change. If the player is currently in a different world, they are
-    /// removed from the old world first.
-    ///
-    /// Vanilla creates a fresh `ServerPlayer` for death and End-credits respawns,
-    /// but reuses it for dimension changes. Steel reuses the same `Player` for
-    /// every path, so this resets only the transient state appropriate to `reason`.
+    /// This is the shared "clean slate" path used by initial join and world
+    /// changes that preserve the player incarnation. If the player is currently
+    /// in a different world, they are removed from the old world first.
     pub(crate) fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
         self.reset_inner_after(new_world, reason, false, || {});
     }
@@ -27,7 +25,11 @@ impl Player {
     ) where
         F: FnOnce(),
     {
-        self.reset_inner_after(new_world, ResetReason::WorldChange, true, restore_state);
+        self.reset_inner_after(new_world, ResetReason::WorldChange, true, || {
+            restore_state();
+            // Damage timestamps belong to the source domain's clock.
+            self.base.damage_history().clear();
+        });
     }
 
     fn reset_inner_after<F>(
@@ -62,7 +64,7 @@ impl Player {
             if !source_world_detached {
                 old_world.remove_player_for_world_change(self);
             }
-            self.set_world(new_world.clone());
+            self.set_world(Arc::clone(&new_world));
         } else if !source_world_detached {
             old_world.chunk_map.remove_player(self);
         }
@@ -77,25 +79,39 @@ impl Player {
         restore_state();
 
         if reason != ResetReason::InitialJoin {
-            // 0x01 = keep attributes, 0x02 = keep entity data
-            let data_kept = reason.respawn_data_kept();
-
-            self.send_packet(CRespawn {
-                dimension_type: new_world.dimension_type.id() as i32,
-                dimension_name: new_world.key.clone(),
-                hashed_seed: new_world.obfuscated_seed(),
-                gamemode: self.game_mode() as u8,
-                previous_gamemode: nullable_game_mode_id(self.previous_game_mode()),
-                is_debug: false,
-                is_flat: new_world.is_flat,
-                has_death_location: false,
-                death_dimension_name: None,
-                death_location: None,
-                portal_cooldown_ticks: self.portal_cooldown(),
-                sea_level: new_world.sea_level,
-                data_kept,
-            });
+            self.send_respawn_packet(&new_world, reason);
         }
+    }
+
+    /// Prepares a newly allocated player for a death or End-credits respawn.
+    pub(crate) fn prepare_respawn_replacement(&self, reason: ResetReason) {
+        debug_assert!(matches!(
+            reason,
+            ResetReason::Respawn | ResetReason::EndCredits
+        ));
+        self.set_client_loaded(false);
+        self.send_respawn_packet(&self.get_world(), reason);
+    }
+
+    fn send_respawn_packet(&self, world: &World, reason: ResetReason) {
+        // 0x01 = keep attributes, 0x02 = keep entity data
+        let data_kept = reason.respawn_data_kept();
+
+        self.send_packet(CRespawn {
+            common_player_spawn_info: CommonPlayerSpawnInfo {
+                dimension_type: world.dimension_type.id() as i32,
+                dimension: world.key.clone(),
+                seed: world.obfuscated_seed(),
+                game_type: self.game_mode(),
+                previous_game_type: self.previous_game_mode(),
+                is_debug: false,
+                is_flat: world.is_flat,
+                last_death_location: None,
+                portal_cooldown: self.portal_cooldown(),
+                sea_level: world.sea_level,
+            },
+            data_kept,
+        });
     }
 
     /// Spawns the player into their current world at the given position.
@@ -152,16 +168,7 @@ impl Player {
         packet_velocity: DVec3,
         relatives: RelativeMovement,
     ) -> bool {
-        let world = self.get_world();
-
-        // Set position and rotation
-        self.base.set_position_local(position);
-        self.set_rotation(rotation);
-        self.set_old_position_to_current();
-        self.movement.lock().reset_for_position_sync(position);
-
-        // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
-        if let Err(error) = self.teleport_with_velocity_packet(
+        let world = self.synchronize_spawn_with_velocity_packet(
             position,
             velocity,
             rotation,
@@ -169,22 +176,8 @@ impl Player {
             packet_velocity,
             packet_rotation,
             relatives,
-        ) {
-            panic!(
-                "failed to synchronize player {} spawn position: {error}",
-                self.id()
-            );
-        }
-        self.reset_flying_ticks();
-
-        self.send_spawn_state_packets(&world);
-
-        // Force health/xp resync on next tick
-        self.reset_sent_info();
-
-        // Resend client context that is not fully covered by CLogin/CRespawn.
-        self.server().resend_player_context(self);
-        self.send_active_effects_for_self();
+            true,
+        );
 
         // Add to world / re-enter chunk tracking
         match reason {
@@ -192,15 +185,15 @@ impl Player {
                 if reason == ResetReason::WorldChange {
                     log::info!(
                         "Player {} changed world to {}",
-                        self.gameprofile.name,
+                        self.gameprofile.name(),
                         world.key
                     );
                 }
-                world.add_player(self.clone(), reason)
+                world.add_player(Arc::clone(self), reason)
             }
             ResetReason::Respawn | ResetReason::EndCredits => {
                 if world.players.get_by_entity_id(self.id()).is_none() {
-                    return world.add_respawned_player(self.clone());
+                    return world.add_respawned_player(Arc::clone(self));
                 }
 
                 // Same world — re-enter chunk tracking
@@ -216,6 +209,71 @@ impl Player {
                 true
             }
         }
+    }
+
+    /// Sends the spawn synchronization for a fresh respawn replacement without
+    /// inserting it into world indexes. The replacement transaction owns that step.
+    pub(crate) fn synchronize_respawn_replacement(
+        self: &Arc<Self>,
+        position: DVec3,
+        rotation: (f32, f32),
+    ) {
+        self.synchronize_spawn_with_velocity_packet(
+            position,
+            DVec3::ZERO,
+            rotation,
+            position,
+            DVec3::ZERO,
+            rotation,
+            RelativeMovement::NONE,
+            false,
+        );
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "packet-relative teleports must keep resolved and protocol values separate"
+    )]
+    fn synchronize_spawn_with_velocity_packet(
+        self: &Arc<Self>,
+        position: DVec3,
+        velocity: DVec3,
+        rotation: (f32, f32),
+        packet_position: DVec3,
+        packet_velocity: DVec3,
+        packet_rotation: (f32, f32),
+        relatives: RelativeMovement,
+        resend_player_context: bool,
+    ) -> Arc<World> {
+        let world = self.get_world();
+
+        self.base.set_position_local(position);
+        self.set_rotation(rotation);
+        self.set_old_position_to_current();
+        self.movement.lock().reset_for_position_sync(position);
+
+        if let Err(error) = self.teleport_with_velocity_packet(
+            position,
+            velocity,
+            rotation,
+            packet_position,
+            packet_velocity,
+            packet_rotation,
+            relatives,
+        ) {
+            panic!(
+                "failed to synchronize player {} spawn position: {error}",
+                self.id()
+            );
+        }
+        self.reset_flying_ticks();
+        self.send_spawn_state_packets(&world);
+        self.reset_sent_info();
+        if resend_player_context {
+            self.server().resend_player_context(self);
+        }
+        self.send_active_effects_for_self();
+        world
     }
 
     fn send_spawn_state_packets(&self, world: &World) {
@@ -246,7 +304,7 @@ impl Player {
                 Err(error) => {
                     log::error!(
                         "Failed to send default spawn position to player {}: {error}",
-                        self.gameprofile.name
+                        self.gameprofile.name()
                     );
                 }
             }
@@ -340,8 +398,4 @@ impl Player {
             );
         }
     }
-}
-
-pub(in crate::player) fn nullable_game_mode_id(game_mode: Option<GameType>) -> i8 {
-    game_mode.map_or(-1, |game_mode| game_mode as i8)
 }

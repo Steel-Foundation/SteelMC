@@ -2,6 +2,7 @@ use std::f64::consts::PI;
 use std::sync::Arc;
 
 use glam::DVec3;
+use steel_math::DEGREE_360;
 use steel_registry::vanilla_entities;
 
 use super::super::prelude::*;
@@ -184,7 +185,7 @@ impl FeatureDecorationRunner {
         ));
         crystal.set_beam_target(config.crystal_beam_target.map(BlockPos));
         crystal.set_invulnerable(config.crystal_invulnerable);
-        crystal.snap_to(position, random.next_f32() * 360.0, 0.0);
+        crystal.snap_to(position, random.next_f32() * DEGREE_360, 0.0);
         let _ = region.add_fresh_entity(crystal);
 
         let crystal_pos = BlockPos::from(position);

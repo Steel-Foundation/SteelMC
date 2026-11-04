@@ -135,10 +135,8 @@ impl EntityTracker {
         get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
         get_player: impl Fn(i32) -> Option<Arc<Player>>,
     ) {
-        // Mirrors vanilla `ChunkMap.addEntity`, which skips `EnderDragonPart` before
-        // anything else. The guard is load-bearing: a part reports its parent's entity
-        // type, so it inherits a live tracking range and nothing else would keep it
-        // off the wire.
+        // A part reports its parent's type and would get a live tracking range, so skip it
+        // as vanilla's `ChunkMap.addEntity` does.
         if entity.as_part_entity().is_some() {
             return;
         }
@@ -263,7 +261,7 @@ impl EntityTracker {
                 let mut seen_by = tracked.seen_by.write();
                 if visible {
                     if seen_by.insert(player_id) {
-                        entities_to_spawn.push(entity.clone());
+                        entities_to_spawn.push(Arc::clone(&entity));
                     }
                 } else if seen_by.remove(&player_id) {
                     despawn = true;
@@ -397,6 +395,10 @@ impl EntityTracker {
                     .server_entity
                     .lock()
                     .record_send_changes(ServerEntityMovementSyncUpdate {
+                        entity_type: entity.entity_type(),
+                        vertical_collision: entity.vertical_collision(),
+                        horizontal_collision: entity.horizontal_collision(),
+                        requires_precise_position: entity.base().requires_precise_position(),
                         entity_id,
                         is_passenger: entity.is_passenger(),
                         position: entity.position(),

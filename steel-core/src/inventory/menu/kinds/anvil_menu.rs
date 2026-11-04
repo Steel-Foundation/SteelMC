@@ -26,7 +26,7 @@ use text_components::TextComponent;
 use crate::{
     behavior::ITEM_BEHAVIORS,
     inventory::{
-        container::{ResultContainer, SimpleContainer},
+        container::{DEFAULT_DISTANCE_BUFFER, ResultContainer, SimpleContainer},
         prelude::*,
         slots::AnvilResultHandler,
     },
@@ -53,13 +53,13 @@ pub fn anvil(
 
     let input = builder.section_all(&input_container);
     let result = builder.result_slot(AnvilResultHandler::new(
-        input_container.clone(),
-        result_container.clone(),
-        repair_item_count.clone(),
-        level_cost.clone(),
-        only_renaming.clone(),
+        Arc::clone(&input_container),
+        Arc::clone(&result_container),
+        Arc::clone(&repair_item_count),
+        Arc::clone(&level_cost),
+        Arc::clone(&only_renaming),
         pos,
-        world.clone(),
+        Arc::clone(world),
     ));
 
     let player = builder.player_inventory(&inventory);
@@ -132,7 +132,7 @@ impl AnvilKind {
     ///
     /// # Panics
     /// Panics if the input container is not exactly two slots.
-    #[tracing::instrument(skip(self, behavior, player, guard), level = "info", fields(player = %player.gameprofile.name))]
+    #[tracing::instrument(skip(self, behavior, player, guard), level = "info", fields(player = %player.gameprofile.name()))]
     #[expect(
         clippy::too_many_lines,
         reason = "mirrors Vanilla's ordered createResult flow in one auditable calculation"
@@ -357,7 +357,9 @@ impl AnvilKind {
         })
     }
 
-    const fn calculate_increased_repair_cost(old_repair_cost: i32) -> i32 {
+    #[must_use]
+    /// Calculates repair cost
+    pub const fn calculate_increased_repair_cost(old_repair_cost: i32) -> i32 {
         old_repair_cost.saturating_mul(2).saturating_add(1)
     }
 }
@@ -369,7 +371,10 @@ impl MenuKind for AnvilKind {
         REGISTRY
             .blocks
             .is_in_tag(state.get_block(), &BlockTag::ANVIL)
-            && player.is_within_block_interaction_range_with_buffer(self.block_pos, 4.0)
+            && player.is_within_block_interaction_range_with_buffer(
+                self.block_pos,
+                f64::from(DEFAULT_DISTANCE_BUFFER),
+            )
     }
 
     fn slots_changed(

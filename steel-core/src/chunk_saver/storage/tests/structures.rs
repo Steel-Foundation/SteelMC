@@ -515,7 +515,7 @@ fn structure_start_roundtrip_preserves_template_and_procedural_payloads() {
     assert_eq!(template.post_process, TemplatePostProcess::NetherFossil);
     assert_eq!(
         template.processors,
-        TemplateProcessorList::Registry(processor_id.clone())
+        TemplateProcessorList::Registry(processor_id)
     );
 
     let StructurePiecePayload::Template(template) = &loaded_start.pieces[1].payload else {

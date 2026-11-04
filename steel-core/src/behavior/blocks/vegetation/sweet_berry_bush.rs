@@ -19,7 +19,9 @@ use steel_utils::{
     types::{InteractionHand, UpdateFlags},
 };
 
-use crate::behavior::block::drop_from_block_interact_loot_table;
+use crate::{
+    behavior::block::drop_from_block_interact_loot_table, block_entity::SharedBlockEntity,
+};
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
@@ -162,7 +164,7 @@ impl BlockBehavior for SweetBerryBushBlock {
             &sound_events::BLOCK_SWEET_BERRY_BUSH_PICK_BERRIES,
             pos,
             1.0,
-            0.8 + rng.random::<f32>() * 0.4,
+            rng.random_range(0.8..1.2),
             Some(player.id()),
         );
 
@@ -176,6 +178,7 @@ impl BlockBehavior for SweetBerryBushBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::SWEET_BERRIES))
@@ -251,10 +254,7 @@ impl Vegetation for SweetBerryBushBlock {}
 mod tests {
     use std::sync::Weak;
 
-    use steel_registry::{
-        entity_type::{EntityDimensions, EntityTypeRef},
-        init_vanilla_registry, vanilla_blocks,
-    };
+    use steel_registry::{entity_type::EntityTypeRef, init_vanilla_registry, vanilla_blocks};
     use steel_utils::locks::SyncMutex;
 
     use super::*;
@@ -273,12 +273,7 @@ mod tests {
     impl TestEntity {
         fn living(entity_type: EntityTypeRef) -> Self {
             Self {
-                base: EntityBase::new(
-                    1,
-                    DVec3::ZERO,
-                    EntityDimensions::new(0.6, 1.8, 1.62),
-                    Weak::<World>::new(),
-                ),
+                base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::<World>::new()),
                 entity_type,
                 is_living: true,
                 uses_client_movement_packets: false,

@@ -186,7 +186,7 @@ fn resolve_name(name: &str, source: &CommandSource) -> ScoreHolder {
         .get_players()
         .into_iter()
         .filter(|player| player.get_world().domain() == source.world().domain())
-        .find(|player| player.gameprofile.name.eq_ignore_ascii_case(name))
+        .find(|player| player.gameprofile.name().eq_ignore_ascii_case(name))
         .map_or_else(
             || ScoreHolder::new(name.to_owned()),
             |player| ScoreHolder::new(player.scoreboard_name()),

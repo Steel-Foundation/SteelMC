@@ -2,11 +2,13 @@ use super::{
     Arc, BlockPos, DomainSwitchJob, DomainSwitchRequest, EndGatewayTeleportJob,
     EndPortalTeleportJob, Entity, MenuRemovalStatus, NetherPortalTeleportJob, NetworkConnection,
     PendingWorldChangeToken, Player, PlayerAdmissionState, PortalKind, RespawnData, Server,
-    SharedEntity, World, WorldChangeRequest, WorldSpawnTeleportJob, can_teleport_between_worlds,
-    change_entity_world, clear_pending_world_change, is_allowed_to_enter_portal,
-    is_nether_dimension_type, mem, nether_portal, portal_entity_still_valid,
+    SharedEntity, World, WorldChangeRequest, WorldEntry, WorldSelection, WorldSpawnTeleportJob,
+    can_teleport_between_worlds, change_entity_world, clear_pending_world_change,
+    is_allowed_to_enter_portal, is_nether_dimension_type, mem, nether_portal,
+    portal_entity_still_valid,
 };
 use crate::entity::LivingEntity as _;
+use crate::world::player_spawn_finder::PlayerSpawnSearch;
 
 impl Server {
     pub(super) fn process_world_changes(self: &Arc<Self>, tick_count: u64, runs_normally: bool) {
@@ -23,16 +25,14 @@ impl Server {
                 WorldChangeRequest::Computed(transition) => {
                     change_entity_world(entity, &transition);
                 }
-                WorldChangeRequest::WorldSpawn {
-                    target_world,
-                    pending_token,
-                } => self.process_player_world_selection(
-                    entity,
-                    target_world,
-                    pending_token,
-                    tick_count,
-                    runs_normally,
-                ),
+                WorldChangeRequest::WorldSpawn(selection) => {
+                    self.process_player_world_selection(
+                        entity,
+                        selection,
+                        tick_count,
+                        runs_normally,
+                    );
+                }
                 WorldChangeRequest::Portal {
                     portal: PortalKind::Nether,
                     source_world,
@@ -395,15 +395,17 @@ impl Server {
     ///
     /// Same-domain selections move to the world's spawn. Cross-domain
     /// selections restore that domain while honoring the explicit target.
+    /// `entry` can instead place the player exactly, or only change their rotation.
     pub fn queue_player_world_selection(
         &self,
         player: Arc<Player>,
-        target_world: Arc<World>,
+        target_world: &Arc<World>,
+        entry: WorldEntry,
     ) -> Result<(), String> {
         let target_world = self
             .worlds
             .get(&target_world.key)
-            .filter(|registered| Arc::ptr_eq(registered, &target_world))
+            .filter(|registered| Arc::ptr_eq(registered, target_world))
             .cloned()
             .ok_or_else(|| "target world is not the registered loaded world".to_owned())?;
         let target_domain = target_world.domain().to_owned();
@@ -413,12 +415,24 @@ impl Server {
         let (current_world, pending_token) = self.begin_player_relocation(&player)?;
 
         if current_world.domain() == target_domain {
+            let prefetch = if matches!(entry, WorldEntry::Exact(_)) {
+                None
+            } else {
+                let spawn_suggestion = target_world.level_data.read().data().spawn_pos();
+                PlayerSpawnSearch::prefetch_spawn_area(
+                    &target_world,
+                    spawn_suggestion,
+                    target_world.default_gamemode(),
+                )
+            };
             self.pending_world_changes.lock().push((
                 player,
-                WorldChangeRequest::WorldSpawn {
+                WorldChangeRequest::WorldSpawn(WorldSelection {
                     target_world,
                     pending_token,
-                },
+                    prefetch,
+                    entry,
+                }),
             ));
             return Ok(());
         }
@@ -433,6 +447,7 @@ impl Server {
                 player,
                 target_domain,
                 target_world: Some(target_world),
+                entry,
                 pending_token,
             });
         Ok(())
@@ -465,6 +480,7 @@ impl Server {
                 player,
                 target_domain,
                 target_world: None,
+                entry: WorldEntry::Usual,
                 pending_token,
             });
         Ok(())
@@ -475,7 +491,7 @@ impl Server {
 
         for request in switches {
             let player = Arc::clone(&request.player);
-            let player_name = player.gameprofile.name.clone();
+            let player_name = player.gameprofile.name().to_owned();
             let pending_token = request.pending_token;
             if let Err(error) = self.start_domain_switch(request) {
                 player.finish_domain_switch(pending_token);
@@ -490,6 +506,7 @@ impl Server {
             player,
             target_domain,
             target_world,
+            entry,
             pending_token,
         } = request;
         if player.connection.closed() {
@@ -534,13 +551,19 @@ impl Server {
             return Err("domain switch could not reserve player persistence".to_owned());
         }
         if !player.mark_domain_switch_detached(pending_token) {
-            self.release_player_admission(player.gameprofile.id, PlayerAdmissionState::Relocating);
+            self.release_player_admission(
+                player.gameprofile.id(),
+                PlayerAdmissionState::Relocating,
+            );
             return Err("domain switch lost ownership before detaching".to_owned());
         }
         let Some((current_data, residence_token)) =
             current_world.detach_player_for_domain_switch(&player)
         else {
-            self.release_player_admission(player.gameprofile.id, PlayerAdmissionState::Relocating);
+            self.release_player_admission(
+                player.gameprofile.id(),
+                PlayerAdmissionState::Relocating,
+            );
             return Err("player is not present in the current world".to_owned());
         };
         self.jobs.spawn(DomainSwitchJob::new(
@@ -550,6 +573,7 @@ impl Server {
             current_data,
             target_domain,
             target_world,
+            entry,
             pending_token,
             residence_token,
         ));
@@ -560,11 +584,16 @@ impl Server {
     fn process_player_world_selection(
         self: &Arc<Self>,
         entity: SharedEntity,
-        target_world: Arc<World>,
-        pending_token: PendingWorldChangeToken,
+        selection: WorldSelection,
         tick_count: u64,
         runs_normally: bool,
     ) {
+        let WorldSelection {
+            target_world,
+            pending_token,
+            prefetch,
+            entry,
+        } = selection;
         if !entity.is_world_change_token_pending(pending_token) {
             return;
         }
@@ -582,6 +611,8 @@ impl Server {
             source_world,
             target_world,
             pending_token,
+            prefetch,
+            entry,
         ) {
             Ok(job) => job,
             Err(error) => {

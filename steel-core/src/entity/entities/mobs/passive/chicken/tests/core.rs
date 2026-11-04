@@ -130,15 +130,16 @@ fn chicken_breeding_offspring_inherits_parent_variant() {
 fn chicken_finalize_spawn_assigns_registered_variant_and_sound_variant() {
     init_vanilla_registry();
 
-    let world = fresh_test_world("chicken_finalize_spawn");
+    let world_fixture = fresh_test_world("chicken_finalize_spawn");
+    let world = &world_fixture.world;
     let chicken = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         1,
         DVec3::new(0.0, 80.0, 0.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
 
-    let _ = Mob::finalize_spawn(&chicken, &world, EntitySpawnReason::Natural, None);
+    let _ = Mob::finalize_spawn(&chicken, world, EntitySpawnReason::Natural, None);
 
     assert!(
         REGISTRY
@@ -158,12 +159,13 @@ fn chicken_finalize_spawn_assigns_registered_variant_and_sound_variant() {
 fn chicken_egg_timer_decrements_only_for_adult_non_jockeys() {
     init_vanilla_registry();
 
-    let world = fresh_test_world("chicken_egg_timer");
+    let world_fixture = fresh_test_world("chicken_egg_timer");
+    let world = &world_fixture.world;
     let chicken = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         1,
         DVec3::new(0.0, 80.0, 0.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
 
     chicken.set_egg_time(2);
@@ -186,12 +188,13 @@ fn chicken_egg_timer_decrements_only_for_adult_non_jockeys() {
 fn chicken_resets_egg_timer_within_vanilla_range_after_laying() {
     init_vanilla_registry();
 
-    let world = fresh_test_world("chicken_egg_lay");
+    let world_fixture = fresh_test_world("chicken_egg_lay");
+    let world = &world_fixture.world;
     let chicken = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         1,
         DVec3::new(0.0, 80.0, 0.0),
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
 
     chicken.set_egg_time(1);

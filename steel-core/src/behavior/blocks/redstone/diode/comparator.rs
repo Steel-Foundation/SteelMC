@@ -482,16 +482,17 @@ mod tests {
     #[test]
     fn item_frame_signal_uses_item_frame_capability() {
         init_vanilla_registry();
-        let world = fresh_test_world("comparator_item_frame_capability");
+        let world_fixture = fresh_test_world("comparator_item_frame_capability");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let frame: SharedEntity = Arc::new(TestItemFrame {
             base: EntityBase::new(
                 9_001,
                 DVec3::new(8.5, 64.25, 8.5),
                 vanilla_entities::ITEM_FRAME.dimensions,
-                Arc::downgrade(&world),
+                Arc::downgrade(world),
             ),
             direction: Direction::North,
             analog_output: 6,

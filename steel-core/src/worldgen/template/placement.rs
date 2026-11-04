@@ -1,4 +1,5 @@
 use super::*;
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270, wrap_degrees};
 
 impl StructureTemplate {
     pub(crate) fn bounding_box(&self, pos: BlockPos, rotation: Rotation) -> BoundingBox {
@@ -69,16 +70,16 @@ impl StructureTemplate {
         mirror: StructureMirror,
         rotation: Rotation,
     ) -> (f32, f32) {
-        let yaw = Self::wrap_degrees(yaw);
+        let yaw = wrap_degrees(yaw);
         let rotated = match rotation {
-            Rotation::Clockwise180 => yaw + 180.0,
-            Rotation::CounterClockwise90 => yaw + 270.0,
-            Rotation::Clockwise90 => yaw + 90.0,
+            Rotation::Clockwise180 => yaw + DEGREE_180,
+            Rotation::CounterClockwise90 => yaw + DEGREE_270,
+            Rotation::Clockwise90 => yaw + DEGREE_90,
             Rotation::None => yaw,
         };
         let mirrored = match mirror {
             StructureMirror::FrontBack => -yaw,
-            StructureMirror::LeftRight => 180.0 - yaw,
+            StructureMirror::LeftRight => DEGREE_180 - yaw,
             StructureMirror::None => yaw,
         };
         (rotated + mirrored - yaw, pitch)
@@ -125,17 +126,6 @@ impl StructureTemplate {
             Direction::West => 4,
             Direction::East => 5,
         }
-    }
-
-    pub(super) fn wrap_degrees(mut degrees: f32) -> f32 {
-        degrees %= 360.0;
-        if degrees >= 180.0 {
-            degrees -= 360.0;
-        }
-        if degrees < -180.0 {
-            degrees += 360.0;
-        }
-        degrees
     }
 
     #[expect(
@@ -376,7 +366,7 @@ impl StructureTemplate {
                 continue;
             };
 
-            let runtime_entity = ENTITIES.create_and_load_or_raw(
+            let Some(runtime_entity) = ENTITIES.create_and_load(
                 EntityLoadRequest {
                     entity_type: entity.entity_type,
                     position: pos,
@@ -390,7 +380,9 @@ impl StructureTemplate {
                     world: region.weak_world(),
                 },
                 &nbt,
-            );
+            ) else {
+                continue;
+            };
             let _ = region.add_fresh_entity(runtime_entity);
         }
     }
@@ -458,8 +450,7 @@ impl StructureTemplate {
             }
             let metadata = nbt
                 .string("metadata")
-                .map(|metadata| metadata.to_str().into_owned())
-                .unwrap_or_default();
+                .map_or_default(|metadata| metadata.to_str().into_owned());
             markers.push(StructureDataMarker {
                 metadata,
                 pos: world_pos,
@@ -710,9 +701,13 @@ impl StructureTemplate {
         state: BlockStateId,
         nbt: &NbtCompound,
     ) -> Option<BlockEntityTypeRef> {
+        let block = Self::block_for_state(registry, state);
         if let Some(id) = nbt.string("id") {
             let id = Identifier::from_str(id.to_str().as_ref()).ok()?;
-            return registry.block_entity_types.by_key(&id);
+            return registry
+                .block_entity_types
+                .by_key(&id)
+                .filter(|block_entity_type| block_entity_type.is_valid(block));
         }
         Self::block_entity_type_for_state(registry, state)
     }

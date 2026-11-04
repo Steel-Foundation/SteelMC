@@ -2,6 +2,11 @@ use super::{
     Component, ComponentData, DataComponentMap, DataComponentType, Debug, DowncastType, FxHashMap,
     Identifier,
 };
+use rustc_hash::FxBuildHasher;
+
+static EMPTY: DataComponentPatch = DataComponentPatch {
+    entries: FxHashMap::with_hasher(FxBuildHasher),
+};
 
 /// Entry in a component patch.
 #[derive(Debug, Clone)]
@@ -33,6 +38,12 @@ pub struct DataComponentPatch {
 }
 
 impl DataComponentPatch {
+    /// Returns a shared patch with no entries.
+    #[must_use]
+    pub fn empty() -> &'static Self {
+        &EMPTY
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -53,7 +64,7 @@ impl DataComponentPatch {
     /// Sets a component value in the patch.
     pub fn set<T: Component + DowncastType>(&mut self, component: DataComponentType<T>, value: T) {
         self.entries.insert(
-            component.key.clone(),
+            component.key,
             ComponentPatchEntry::Set(ComponentData::new(value)),
         );
     }
@@ -85,7 +96,7 @@ impl DataComponentPatch {
     /// Marks a component as removed.
     pub fn remove<T>(&mut self, component: DataComponentType<T>) {
         self.entries
-            .insert(component.key.clone(), ComponentPatchEntry::Removed);
+            .insert(component.key, ComponentPatchEntry::Removed);
     }
 
     /// Marks a dynamically resolved component as removed.

@@ -275,8 +275,7 @@ impl FeatureDecorationRunner {
         let references = center_chunk.structure_references();
         let source_positions = references
             .get(structure_id)
-            .map(|positions| positions.iter().copied().collect::<Vec<_>>())
-            .unwrap_or_default();
+            .map_or_default(|positions| positions.iter().copied().collect::<Vec<_>>());
         drop(references);
         source_positions
     }

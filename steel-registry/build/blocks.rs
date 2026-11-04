@@ -8,7 +8,7 @@
 )]
 
 use core::panic;
-use std::{borrow::Cow, fs};
+use std::{borrow::Cow, fs, path::Path};
 
 use rustc_hash::FxHashMap;
 
@@ -30,6 +30,8 @@ pub struct BlockConfig {
     pub friction: f32,
     pub speed_factor: f32,
     pub jump_factor: f32,
+    pub bounce_restitution: f32,
+    pub fall_distance_reduction: f32,
     pub dynamic_shape: bool,
     pub offset_type: Cow<'static, str>,
     pub max_horizontal_offset: f32,
@@ -43,6 +45,7 @@ pub struct BlockConfig {
     pub replaceable: bool,
     #[serde(default, rename = "sound_type")]
     pub sound_type: Option<Cow<'static, str>>,
+    pub loot_table: Option<String>,
 }
 
 impl BlockConfig {
@@ -55,10 +58,12 @@ impl BlockConfig {
             is_randomly_ticking: false,
             force_solid_off: false,
             force_solid_on: false,
-            push_reaction: Cow::Borrowed("NORMAL"),
+            push_reaction: Cow::Borrowed("PUSH_PULL"),
             friction: 0.6,
             speed_factor: 1.0,
             jump_factor: 1.0,
+            bounce_restitution: 0.0,
+            fall_distance_reduction: 0.0,
             dynamic_shape: false,
             offset_type: Cow::Borrowed("NONE"),
             max_horizontal_offset: 0.25,
@@ -71,6 +76,7 @@ impl BlockConfig {
             instrument: Cow::Borrowed("HARP"),
             replaceable: false,
             sound_type: None,
+            loot_table: None,
         }
     }
 }
@@ -185,11 +191,11 @@ pub struct BlockAssets {
 /// Converts a push reaction string to a `TokenStream` representing the enum variant
 fn push_reaction_to_tokens(reaction: &str) -> TokenStream {
     match reaction {
-        "NORMAL" => quote! { PushReaction::Normal },
-        "DESTROY" => quote! { PushReaction::Destroy },
-        "BLOCK" => quote! { PushReaction::Block },
-        "IGNORE" => quote! { PushReaction::Ignore },
-        "PUSH_ONLY" => quote! { PushReaction::PushOnly },
+        "PUSH_PULL" => quote! { PushReaction::PushPull },
+        "POPPED" => quote! { PushReaction::Popped },
+        "IMMOVEABLE" => quote! { PushReaction::Immoveable },
+        "IGNORE_ENTITY" => quote! { PushReaction::IgnoreEntity },
+        "PUSH" => quote! { PushReaction::Push },
         _ => panic!("Unknown push reaction: {reaction}"),
     }
 }
@@ -285,6 +291,14 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
         let val = bp.jump_factor;
         builder_calls.push(quote! { .jump_factor(#val) });
     }
+    if bp.bounce_restitution != default_props.bounce_restitution {
+        let val = bp.bounce_restitution;
+        builder_calls.push(quote! { .bounce_restitution(#val) });
+    }
+    if bp.fall_distance_reduction != default_props.fall_distance_reduction {
+        let val = bp.fall_distance_reduction;
+        builder_calls.push(quote! { .fall_distance_reduction(#val) });
+    }
     if bp.dynamic_shape != default_props.dynamic_shape {
         let val = bp.dynamic_shape;
         builder_calls.push(quote! { .dynamic_shape(#val) });
@@ -335,6 +349,39 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
     }
 
     builder_calls
+}
+
+fn generate_loot_table_builder_call(loot_table: Option<&str>) -> TokenStream {
+    let Some(key) = loot_table else {
+        return quote! {};
+    };
+    let Some(path) = key.strip_prefix("minecraft:") else {
+        panic!("Unsupported block loot table key {key}: expected the minecraft namespace");
+    };
+    if path.is_empty()
+        || path
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        panic!("Invalid block loot table key {key}");
+    }
+
+    let table_path =
+        Path::new("../steel-utils/build_assets/builtin_datapacks/minecraft/loot_table")
+            .join(format!("{path}.json"));
+    assert!(
+        table_path.is_file(),
+        "Block loot table {key} does not exist at {}",
+        table_path.display()
+    );
+
+    let const_ident = Ident::new(
+        &path.replace('/', "_").to_shouty_snake_case(),
+        Span::call_site(),
+    );
+    quote! {
+        .loot_table(Some(&crate::vanilla_loot_tables::#const_ident))
+    }
 }
 
 /// Generates the default state initialization for blocks with properties
@@ -840,6 +887,8 @@ pub(crate) fn build() -> TokenStream {
 
         // Generate builder method calls for properties that differ from defaults
         let builder_calls = generate_builder_calls(&block.behavior_properties, &default_props);
+        let loot_table_builder_call =
+            generate_loot_table_builder_call(block.behavior_properties.loot_table.as_deref());
 
         // Generate default state if block has properties
         let default_state = generate_default_state(block);
@@ -957,7 +1006,7 @@ pub(crate) fn build() -> TokenStream {
         stream.extend(quote! {
             pub static #block_name: Block = Block::new(
                 Identifier::vanilla_static(#block_name_str),
-                BlockConfig::new()#(#builder_calls)*,
+                BlockConfig::new()#(#builder_calls)* #loot_table_builder_call,
                 &[
                     #(#properties),*
                 ],

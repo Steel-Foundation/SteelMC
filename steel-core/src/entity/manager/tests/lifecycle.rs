@@ -6,7 +6,7 @@ fn add_live_entity_rejects_manager_owned_unloaded_chunk() {
     let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
 
     assert!(matches!(
-        manager.add_live_entity(entity.clone(), EntityOwnership::ManagerOwned),
+        manager.add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned),
         Err(AddEntityError::ChunkNotLoaded {
             entity_id: 1,
             chunk,
@@ -23,7 +23,7 @@ fn add_live_entity_accepts_external_unloaded_chunk() {
 
     assert!(
         manager
-            .add_live_entity(entity.clone(), EntityOwnership::External)
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::External)
             .is_ok()
     );
     assert_eq!(manager.count(), 1);
@@ -45,7 +45,7 @@ fn add_live_entity_rejects_duplicate_uuid_without_registering_second_entity() {
 
     assert!(
         manager
-            .add_live_entity(first.clone(), EntityOwnership::ManagerOwned)
+            .add_live_entity(Arc::clone(&first), EntityOwnership::ManagerOwned)
             .is_ok()
     );
     assert!(matches!(

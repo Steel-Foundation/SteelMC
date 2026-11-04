@@ -703,17 +703,6 @@ fn parse_range<T: Copy, E>(
     Ok((min, max))
 }
 
-pub(super) fn wrap_degrees(value: f32) -> f32 {
-    let mut value = value % 360.0;
-    if value >= 180.0 {
-        value -= 360.0;
-    }
-    if value < -180.0 {
-        value += 360.0;
-    }
-    value
-}
-
 #[derive(Clone)]
 struct SelectorReader<'a> {
     input: &'a str,

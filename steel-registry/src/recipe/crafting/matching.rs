@@ -4,6 +4,7 @@ use crate::data_components::vanilla_components::{
     BANNER_PATTERNS, DAMAGE, DYE, MAX_DAMAGE, WRITTEN_BOOK_CONTENT,
 };
 use crate::item_stack::ItemStack;
+use crate::item_stack_template::ItemStackTemplate;
 
 use super::{
     BannerDuplicateRecipe, BookCloningRecipe, CraftingInput, CraftingRecipe, DecoratedPotRecipe,
@@ -137,15 +138,20 @@ fn transmute(recipe: &TransmuteRecipe, input: &CraftingInput) -> bool {
     if !(recipe.min_material_count..=recipe.max_material_count).contains(&material_count) {
         return false;
     }
+    let base_count = recipe.result.as_ref().map_or(1, ItemStackTemplate::count);
     let result_count = if recipe.add_material_count_to_result {
-        recipe.result.count() + i32::try_from(material_count).unwrap_or(i32::MAX)
+        base_count + i32::try_from(material_count).unwrap_or(i32::MAX)
     } else {
-        recipe.result.count()
+        base_count
     };
     if result_count != 1 {
         return true;
     }
-    let result = recipe.result.apply(1, found_input.components_patch());
+    // Without a result override the transmuted stack is the input stack.
+    let Some(result) = &recipe.result else {
+        return false;
+    };
+    let result = result.apply(1, found_input.components_patch());
     !result.is_empty() && !ItemStack::is_same_item_same_components(found_input, &result)
 }
 

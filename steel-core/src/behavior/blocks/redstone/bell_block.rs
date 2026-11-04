@@ -56,7 +56,11 @@ impl BellBlock {
         }
     }
 
-    fn has_support(world: &dyn LevelReader, pos: BlockPos, direction: Direction) -> bool {
+    fn has_support(
+        world: &(impl LevelReader + ?Sized),
+        pos: BlockPos,
+        direction: Direction,
+    ) -> bool {
         let support_pos = pos.relative(direction);
         let support = world.get_block_state(support_pos);
 
@@ -367,9 +371,10 @@ mod tests {
         init_vanilla_registry();
         init_block_entities();
         init_behaviors();
-        let world = fresh_test_world("placed_bell_entity");
+        let world_fixture = fresh_test_world("placed_bell_entity");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(4, 64, 4);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         assert!(world.set_block(
             pos.relative(Direction::Down),
             vanilla_blocks::STONE.default_state(),
@@ -385,7 +390,7 @@ mod tests {
         assert!(
             BLOCK_BEHAVIORS
                 .get_behavior(&vanilla_blocks::BELL)
-                .get_block_entity_ticker(&world, state, entity.get_type())
+                .get_block_entity_ticker(world, state, entity.get_type())
                 .is_some()
         );
     }

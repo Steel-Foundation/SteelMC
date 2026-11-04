@@ -1385,7 +1385,7 @@ mod tests {
         let container = container(1);
         let slots: Vec<Box<dyn Slot>> = vec![
             Box::new(NormalSlot::new(container.clone(), 0)),
-            Box::new(ResultSlot::new(NoopResultHandler(container.clone()))),
+            Box::new(ResultSlot::new(NoopResultHandler(container))),
         ];
         let mut b = MenuBuilder::new(None, 0);
         b.grid(1, |g| {

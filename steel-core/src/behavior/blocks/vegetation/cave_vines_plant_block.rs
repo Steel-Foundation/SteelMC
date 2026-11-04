@@ -14,6 +14,7 @@ use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemeal
 use crate::behavior::blocks::vegetation::growing_plant_body_block::GrowingPlantBodyBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{InteractionResult, InventoryAccess};
+use crate::block_entity::SharedBlockEntity;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess};
 use crate::{behavior::block::BlockBehavior, world::World};
@@ -105,6 +106,7 @@ impl BlockBehavior for CaveVinesPlantBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::GLOW_BERRIES))
@@ -178,6 +180,7 @@ mod tests {
             .get_clone_item_stack(
                 &vanilla_blocks::CAVE_VINES_PLANT,
                 vanilla_blocks::CAVE_VINES_PLANT.default_state(),
+                None,
                 false,
             )
             .expect("cave vines plants have a vanilla clone item");

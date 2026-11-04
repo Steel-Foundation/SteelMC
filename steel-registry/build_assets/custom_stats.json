@@ -245,66 +245,70 @@
   },
   {
     "id": 61,
-    "key": "minecraft:open_shulker_box"
+    "key": "minecraft:sleep_in_straw_bed"
   },
   {
     "id": 62,
-    "key": "minecraft:open_barrel"
+    "key": "minecraft:open_shulker_box"
   },
   {
     "id": 63,
-    "key": "minecraft:interact_with_blast_furnace"
+    "key": "minecraft:open_barrel"
   },
   {
     "id": 64,
-    "key": "minecraft:interact_with_smoker"
+    "key": "minecraft:interact_with_blast_furnace"
   },
   {
     "id": 65,
-    "key": "minecraft:interact_with_lectern"
+    "key": "minecraft:interact_with_smoker"
   },
   {
     "id": 66,
-    "key": "minecraft:interact_with_campfire"
+    "key": "minecraft:interact_with_lectern"
   },
   {
     "id": 67,
-    "key": "minecraft:interact_with_cartography_table"
+    "key": "minecraft:interact_with_campfire"
   },
   {
     "id": 68,
-    "key": "minecraft:interact_with_loom"
+    "key": "minecraft:interact_with_cartography_table"
   },
   {
     "id": 69,
-    "key": "minecraft:interact_with_stonecutter"
+    "key": "minecraft:interact_with_loom"
   },
   {
     "id": 70,
-    "key": "minecraft:bell_ring"
+    "key": "minecraft:interact_with_stonecutter"
   },
   {
     "id": 71,
-    "key": "minecraft:raid_trigger"
+    "key": "minecraft:bell_ring"
   },
   {
     "id": 72,
-    "key": "minecraft:raid_win"
+    "key": "minecraft:raid_trigger"
   },
   {
     "id": 73,
-    "key": "minecraft:interact_with_anvil"
+    "key": "minecraft:raid_win"
   },
   {
     "id": 74,
-    "key": "minecraft:interact_with_grindstone"
+    "key": "minecraft:interact_with_anvil"
   },
   {
     "id": 75,
-    "key": "minecraft:target_hit"
+    "key": "minecraft:interact_with_grindstone"
   },
   {
     "id": 76,
+    "key": "minecraft:target_hit"
+  },
+  {
+    "id": 77,
     "key": "minecraft:interact_with_smithing_table"
   }
 ]

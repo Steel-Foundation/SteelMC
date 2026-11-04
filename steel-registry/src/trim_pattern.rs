@@ -14,7 +14,7 @@ use text_components::TextComponent;
 use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
 
 /// Complete registry-independent trim pattern definition.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrimPatternValue {
     asset_id: Identifier,
     description: TextComponent,

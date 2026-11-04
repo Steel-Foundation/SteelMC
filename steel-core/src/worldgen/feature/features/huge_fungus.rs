@@ -44,7 +44,8 @@ impl FeatureDecorationRunner {
         origin: BlockPos,
         generation_height: i32,
     ) -> bool {
-        let valid_base_state = Self::block_state_from_data(registry, &config.valid_base_block);
+        let valid_base_state =
+            BlockStateProviderEvaluator::block_state_from_data(registry, &config.valid_base_block);
         if level.get_block_state(origin.below()).get_block() != valid_base_state.get_block() {
             return false;
         }
@@ -58,9 +59,12 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        let stem_state = Self::block_state_from_data(registry, &config.stem_state);
-        let hat_state = Self::block_state_from_data(registry, &config.hat_state);
-        let decor_state = Self::block_state_from_data(registry, &config.decor_state);
+        let stem_state =
+            BlockStateProviderEvaluator::block_state_from_data(registry, &config.stem_state);
+        let hat_state =
+            BlockStateProviderEvaluator::block_state_from_data(registry, &config.hat_state);
+        let decor_state =
+            BlockStateProviderEvaluator::block_state_from_data(registry, &config.decor_state);
         let is_huge = !config.planted && random.next_f32() < 0.06;
         let _ = level.set_block_state(
             origin,
@@ -307,6 +311,11 @@ impl FeatureDecorationRunner {
         }
 
         check_non_replaceable_plants
-            && Self::test_block_predicate(level, registry, &config.replaceable_blocks, pos)
+            && BlockStateProviderEvaluator::test_block_predicate(
+                level,
+                registry,
+                &config.replaceable_blocks,
+                pos,
+            )
     }
 }

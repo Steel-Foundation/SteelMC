@@ -187,7 +187,7 @@ impl World {
             .map(|first_available| first_available - 1)
     }
 
-    /// Mirrors vanilla `LevelReader.getHeightmapPos`.
+    /// Returns a position at the heightmap height keeping the given X and Z
     #[must_use]
     pub(crate) fn heightmap_pos(&self, heightmap_type: HeightmapType, pos: BlockPos) -> BlockPos {
         BlockPos::new(
@@ -203,7 +203,7 @@ impl World {
         self.heightmap_pos(HeightmapType::MotionBlockingNoLeaves, spawn_suggestion)
     }
 
-    pub(super) fn level_height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+    pub(crate) fn level_height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
         if !Self::is_in_world_bounds_horizontal(BlockPos::new(x, 0, z)) {
             return self.sea_level + 1;
         }

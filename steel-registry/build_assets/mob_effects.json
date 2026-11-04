@@ -4,6 +4,7 @@
     "name": "speed",
     "category": "BENEFICIAL",
     "color": 3402751,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -24,6 +25,7 @@
     "name": "slowness",
     "category": "HARMFUL",
     "color": 9154528,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -44,6 +46,7 @@
     "name": "haste",
     "category": "BENEFICIAL",
     "color": 14270531,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -64,6 +67,7 @@
     "name": "mining_fatigue",
     "category": "HARMFUL",
     "color": 4866583,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -84,6 +88,7 @@
     "name": "strength",
     "category": "BENEFICIAL",
     "color": 16762624,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -104,6 +109,7 @@
     "name": "instant_health",
     "category": "BENEFICIAL",
     "color": 16262179,
+    "instantaneous": true,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -116,6 +122,7 @@
     "name": "instant_damage",
     "category": "HARMFUL",
     "color": 11101546,
+    "instantaneous": true,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -128,6 +135,7 @@
     "name": "jump_boost",
     "category": "BENEFICIAL",
     "color": 16646020,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -148,6 +156,7 @@
     "name": "nausea",
     "category": "HARMFUL",
     "color": 5578058,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -160,6 +169,7 @@
     "name": "regeneration",
     "category": "BENEFICIAL",
     "color": 13458603,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -172,6 +182,7 @@
     "name": "resistance",
     "category": "BENEFICIAL",
     "color": 9520880,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -184,6 +195,7 @@
     "name": "fire_resistance",
     "category": "BENEFICIAL",
     "color": 16750848,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -196,6 +208,7 @@
     "name": "water_breathing",
     "category": "BENEFICIAL",
     "color": 10017472,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -208,6 +221,7 @@
     "name": "invisibility",
     "category": "BENEFICIAL",
     "color": 16185078,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -228,6 +242,7 @@
     "name": "blindness",
     "category": "HARMFUL",
     "color": 2039587,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -240,6 +255,7 @@
     "name": "night_vision",
     "category": "BENEFICIAL",
     "color": 12779366,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -252,6 +268,7 @@
     "name": "hunger",
     "category": "HARMFUL",
     "color": 5797459,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -264,6 +281,7 @@
     "name": "weakness",
     "category": "HARMFUL",
     "color": 4738376,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -284,6 +302,7 @@
     "name": "poison",
     "category": "HARMFUL",
     "color": 8889187,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -296,6 +315,7 @@
     "name": "wither",
     "category": "HARMFUL",
     "color": 7561558,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -308,6 +328,7 @@
     "name": "health_boost",
     "category": "BENEFICIAL",
     "color": 16284963,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -328,6 +349,7 @@
     "name": "absorption",
     "category": "BENEFICIAL",
     "color": 2445989,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -348,6 +370,7 @@
     "name": "saturation",
     "category": "BENEFICIAL",
     "color": 16262179,
+    "instantaneous": true,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -360,6 +383,7 @@
     "name": "glowing",
     "category": "NEUTRAL",
     "color": 9740385,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -372,6 +396,7 @@
     "name": "levitation",
     "category": "HARMFUL",
     "color": 13565951,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -384,6 +409,7 @@
     "name": "luck",
     "category": "BENEFICIAL",
     "color": 5882118,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -404,6 +430,7 @@
     "name": "unluck",
     "category": "HARMFUL",
     "color": 12624973,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -424,6 +451,7 @@
     "name": "slow_falling",
     "category": "BENEFICIAL",
     "color": 15978425,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -436,6 +464,7 @@
     "name": "conduit_power",
     "category": "BENEFICIAL",
     "color": 1950417,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -448,6 +477,7 @@
     "name": "dolphins_grace",
     "category": "BENEFICIAL",
     "color": 8954814,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -460,6 +490,7 @@
     "name": "bad_omen",
     "category": "NEUTRAL",
     "color": 745784,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -472,6 +503,7 @@
     "name": "hero_of_the_village",
     "category": "BENEFICIAL",
     "color": 4521796,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -484,6 +516,7 @@
     "name": "darkness",
     "category": "HARMFUL",
     "color": 2696993,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",
@@ -496,6 +529,7 @@
     "name": "trial_omen",
     "category": "NEUTRAL",
     "color": 1484454,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:trial_omen",
       "options_type": "simple"
@@ -506,6 +540,7 @@
     "name": "raid_omen",
     "category": "NEUTRAL",
     "color": 14565464,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:raid_omen",
       "options_type": "simple"
@@ -516,6 +551,7 @@
     "name": "wind_charged",
     "category": "HARMFUL",
     "color": 12438015,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:small_gust",
       "options_type": "simple"
@@ -526,6 +562,7 @@
     "name": "weaving",
     "category": "HARMFUL",
     "color": 7891290,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:item_cobweb",
       "options_type": "simple"
@@ -536,6 +573,7 @@
     "name": "oozing",
     "category": "HARMFUL",
     "color": 10092451,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:item_slime",
       "options_type": "simple"
@@ -546,6 +584,7 @@
     "name": "infested",
     "category": "HARMFUL",
     "color": 9214860,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:infested",
       "options_type": "simple"
@@ -556,6 +595,7 @@
     "name": "breath_of_the_nautilus",
     "category": "BENEFICIAL",
     "color": 65518,
+    "instantaneous": false,
     "particle": {
       "type": "minecraft:entity_effect",
       "options_type": "mob_effect_color",

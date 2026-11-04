@@ -287,12 +287,7 @@ mod tests {
     use super::{ConfigurationPhase, LoginPhase, PrePlayPacket, PrePlayPhase, PrePlayState};
 
     fn profile(id: Uuid, name: &str) -> GameProfile {
-        GameProfile {
-            id,
-            name: name.to_string(),
-            properties: vec![],
-            profile_actions: None,
-        }
+        GameProfile::new(id, name.to_owned(), Vec::new()).expect("valid test profile")
     }
 
     fn login_state() -> PrePlayState {
@@ -330,7 +325,7 @@ mod tests {
             .finish_configuration()
             .expect("client should finish configuration");
 
-        assert_eq!(accepted.id, authenticated_id);
+        assert_eq!(accepted.id(), authenticated_id);
         assert_eq!(state.phase(), PrePlayPhase::Play);
     }
 
@@ -352,7 +347,7 @@ mod tests {
             .finish_configuration()
             .expect("client should finish configuration");
 
-        assert_eq!(accepted.id, offline_id);
+        assert_eq!(accepted.id(), offline_id);
         assert_eq!(state.phase(), PrePlayPhase::Play);
     }
 

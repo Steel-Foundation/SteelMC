@@ -21,6 +21,7 @@ mod file;
 mod history;
 mod input;
 mod output;
+mod search;
 mod selection;
 mod state;
 mod suggestions;
@@ -74,10 +75,10 @@ impl CommandLogger {
             start_time: Instant::now(),
             log_config,
         });
-        task::spawn(log.clone().log_loop(receiver));
-        task::spawn(log.clone().input_main());
+        task::spawn(Arc::clone(&log).log_loop(receiver));
+        task::spawn(Arc::clone(&log).input_main());
         STEEL_LOGGER
-            .set(log.clone())
+            .set(Arc::<CommandLogger>::clone(&log))
             .map_err(|_| "Steel logger is already initialized".to_string())?;
         Ok(log)
     }

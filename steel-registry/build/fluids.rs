@@ -120,7 +120,7 @@ pub(crate) fn build() -> TokenStream {
     let mut register_stream = TokenStream::new();
 
     // Sort by ID to ensure correct registration order
-    let mut sorted_fluids = fluids.clone();
+    let mut sorted_fluids = fluids;
     sorted_fluids.sort_by_key(|f| f.id);
 
     for fluid in &sorted_fluids {

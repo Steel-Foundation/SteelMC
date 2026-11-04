@@ -116,7 +116,7 @@ impl World {
         // Vanilla splits stacks into 10-30 items each
         while !item.is_empty() {
             // Split off 10-30 items (or remaining if less)
-            let split_count = (rand::random::<u32>() % 21 + 10) as i32;
+            let split_count = rand::random_range(10..=30);
             let split_stack = item.split(split_count);
 
             if split_stack.is_empty() {
@@ -124,9 +124,11 @@ impl World {
             }
 
             // Random position within the block (vanilla logic)
-            let x = f64::from(pos.x()).floor() + rand::random::<f64>() * center_range + half_size;
-            let y = f64::from(pos.y()).floor() + rand::random::<f64>() * center_range;
-            let z = f64::from(pos.z()).floor() + rand::random::<f64>() * center_range + half_size;
+            let x = f64::from(pos.x()).floor()
+                + rand::random_range(half_size..half_size + center_range);
+            let y = f64::from(pos.y()).floor() + rand::random_range(0.0..center_range);
+            let z = f64::from(pos.z()).floor()
+                + rand::random_range(half_size..half_size + center_range);
 
             // triangle(mode, deviation) produces values centered around mode with spread of deviation
             let vx = triangle_random(0.0, VELOCITY_SPREAD);

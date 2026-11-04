@@ -69,7 +69,7 @@ impl BlockBehavior for BarrelBlock {
         };
 
         // Open the chest menu (3 rows for barrel)
-        let inventory = player.inventory.clone();
+        let inventory = Arc::clone(&player.inventory);
         player.open_menu(
             TextComponent::translated(translations::CONTAINER_BARREL.msg()),
             move |context| chest(inventory, context.container_id, container_ref, 3),
@@ -105,7 +105,7 @@ impl BlockBehavior for BarrelBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        world: &dyn LevelReader,
+        world: &World,
         pos: BlockPos,
         _direction: Direction,
     ) -> i32 {

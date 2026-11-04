@@ -4,8 +4,6 @@
 
 #![feature(const_trait_impl, const_cmp, derive_const, array_try_from_fn)]
 
-/// axis
-pub mod angle;
 pub mod axis;
 /// Vanilla `BlockUtil` helpers.
 pub mod block_util;
@@ -29,6 +27,8 @@ pub mod java;
 pub mod locks;
 /// Utilities for Steel logging.
 pub mod logger;
+/// Vanilla `Mth` helpers.
+pub mod mth;
 /// Vanilla-compatible NBT helpers.
 pub mod nbt;
 pub mod random;
@@ -68,7 +68,12 @@ pub mod version;
 /// The Minecraft version this server supports.
 pub const MC_VERSION: &str = version::MINECRAFT_VERSION;
 
-pub use angle::wrap_degrees;
+/// Fixed game ticks per second for duration conversions and the default tick rate.
+pub const TICKS_PER_SECOND: i32 = 20;
+
+/// Number of Y values processed by the density SIMD batch.
+pub const SIMD_BATCH: usize = 8;
+
 pub use color::{ArgbColor, RgbColor};
 pub use direction::Direction;
 pub use downcast::{Downcast, DowncastType, DowncastTypeKey, ErasedType};

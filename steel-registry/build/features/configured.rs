@@ -72,9 +72,15 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
         ConfiguredFeatureKind::BlueIce => quote! { ConfiguredFeatureKind::BlueIce },
         ConfiguredFeatureKind::BonusChest => quote! { ConfiguredFeatureKind::BonusChest },
         ConfiguredFeatureKind::ChorusPlant => quote! { ConfiguredFeatureKind::ChorusPlant },
-        ConfiguredFeatureKind::CoralClaw => quote! { ConfiguredFeatureKind::CoralClaw },
+        ConfiguredFeatureKind::CoralClaw { feature } => {
+            let feature = generate_placed_feature_ref(feature);
+            quote! { ConfiguredFeatureKind::CoralClaw { feature: #feature } }
+        }
         ConfiguredFeatureKind::CoralMushroom => quote! { ConfiguredFeatureKind::CoralMushroom },
-        ConfiguredFeatureKind::CoralTree => quote! { ConfiguredFeatureKind::CoralTree },
+        ConfiguredFeatureKind::CoralTree { feature } => {
+            let feature = generate_placed_feature_ref(feature);
+            quote! { ConfiguredFeatureKind::CoralTree { feature: #feature } }
+        }
         ConfiguredFeatureKind::DeltaFeature(config) => {
             let contents = generate_block_state_data(&config.contents);
             let rim = generate_block_state_data(&config.rim);
@@ -188,6 +194,9 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
         }
         ConfiguredFeatureKind::EndIsland => quote! { ConfiguredFeatureKind::EndIsland },
         ConfiguredFeatureKind::EndPlatform => quote! { ConfiguredFeatureKind::EndPlatform },
+        ConfiguredFeatureKind::EndPodium { active } => {
+            quote! { ConfiguredFeatureKind::EndPodium { active: #active } }
+        }
         ConfiguredFeatureKind::EndSpike(config) => {
             let spikes = generate_vec(&config.spikes, generate_end_spike);
             let crystal_invulnerable = config.crystal_invulnerable;
@@ -339,6 +348,7 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
             }
         }
         ConfiguredFeatureKind::MonsterRoom => quote! { ConfiguredFeatureKind::MonsterRoom },
+        ConfiguredFeatureKind::NoOp => quote! { ConfiguredFeatureKind::NoOp },
         ConfiguredFeatureKind::MultifaceGrowth(config) => {
             let block = generate_block_ref(&config.block);
             let search_range = config.search_range;
@@ -383,6 +393,10 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
                 })
             }
         }
+        ConfiguredFeatureKind::Overlay { features } => {
+            let features = generate_vec(features, generate_placed_feature_ref);
+            quote! { ConfiguredFeatureKind::Overlay { features: #features } }
+        }
         ConfiguredFeatureKind::Ore(config) => {
             let targets = generate_vec(&config.targets, generate_ore_target);
             let size = config.size;
@@ -406,6 +420,38 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
                     chance_of_directional_spread: #chance_of_directional_spread,
                     chance_of_spread_radius2: #chance_of_spread_radius2,
                     chance_of_spread_radius3: #chance_of_spread_radius3,
+                })
+            }
+        }
+        ConfiguredFeatureKind::RandomNeighborSpread(config) => {
+            let block = generate_block_state_provider(&config.block);
+            let accepted_neighbors = generate_block_holder_set(&config.accepted_neighbors);
+            let can_replace = generate_block_predicate(&config.can_replace);
+            let attempts = generate_int_provider(&config.attempts);
+            let xz_offset = generate_int_provider(&config.xz_offset);
+            let y_offset = generate_int_provider(&config.y_offset);
+            quote! {
+                ConfiguredFeatureKind::RandomNeighborSpread(RandomNeighborSpreadConfiguration {
+                    block: #block,
+                    accepted_neighbors: #accepted_neighbors,
+                    can_replace: #can_replace,
+                    attempts: #attempts,
+                    xz_offset: #xz_offset,
+                    y_offset: #y_offset,
+                })
+            }
+        }
+        ConfiguredFeatureKind::ProjectedRandomPatchySquare(config) => {
+            let block = generate_block_state_provider(&config.block);
+            let project_through = generate_block_predicate(&config.project_through);
+            let size = generate_int_provider(&config.size);
+            let max_projection_height = config.max_projection_height;
+            quote! {
+                ConfiguredFeatureKind::ProjectedRandomPatchySquare(ProjectedRandomPatchySquareConfiguration {
+                    block: #block,
+                    project_through: #project_through,
+                    size: #size,
+                    max_projection_height: #max_projection_height,
                 })
             }
         }
@@ -492,8 +538,6 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
             let spread_attempts = config.spread_attempts;
             let growth_rounds = config.growth_rounds;
             let spread_rounds = config.spread_rounds;
-            let extra_rare_growths = generate_int_provider(&config.extra_rare_growths);
-            let catalyst_chance = config.catalyst_chance;
             quote! {
                 ConfiguredFeatureKind::SculkPatch(SculkPatchConfiguration {
                     charge_count: #charge_count,
@@ -501,8 +545,6 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
                     spread_attempts: #spread_attempts,
                     growth_rounds: #growth_rounds,
                     spread_rounds: #spread_rounds,
-                    extra_rare_growths: #extra_rare_growths,
-                    catalyst_chance: #catalyst_chance,
                 })
             }
         }
@@ -545,6 +587,44 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
             quote! {
                 ConfiguredFeatureKind::SimpleRandomSelector(SimpleRandomSelectorConfiguration {
                     features: #features,
+                })
+            }
+        }
+        ConfiguredFeatureKind::SingleBlockPillar(config) => {
+            let block = generate_block_state_provider(&config.block);
+            let can_replace = generate_block_predicate(&config.can_replace);
+            let direction = generate_direction(config.direction);
+            let chance_to_continue = config.chance_to_continue;
+            let cap_feature = generate_option(&config.cap_feature, generate_placed_feature_ref);
+            quote! {
+                ConfiguredFeatureKind::SingleBlockPillar(SingleBlockPillarConfiguration {
+                    block: #block,
+                    can_replace: #can_replace,
+                    direction: #direction,
+                    chance_to_continue: #chance_to_continue,
+                    cap_feature: #cap_feature,
+                })
+            }
+        }
+        ConfiguredFeatureKind::SteppedColumnCluster(config) => {
+            let block = generate_block_state_provider(&config.block);
+            let continue_through = generate_block_predicate(&config.continue_through);
+            let can_replace = generate_block_predicate(&config.can_replace);
+            let cannot_place_on = generate_block_holder_set(&config.cannot_place_on);
+            let cluster_reach = generate_int_provider(&config.cluster_reach);
+            let column_count = generate_int_provider(&config.column_count);
+            let column_reach = generate_int_provider(&config.column_reach);
+            let height = generate_int_provider(&config.height);
+            quote! {
+                ConfiguredFeatureKind::SteppedColumnCluster(SteppedColumnClusterConfiguration {
+                    block: #block,
+                    continue_through: #continue_through,
+                    can_replace: #can_replace,
+                    cannot_place_on: #cannot_place_on,
+                    cluster_reach: #cluster_reach,
+                    column_count: #column_count,
+                    column_reach: #column_reach,
+                    height: #height,
                 })
             }
         }
@@ -598,9 +678,13 @@ pub(super) fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> 
         }
         ConfiguredFeatureKind::Template(config) => {
             let templates = generate_vec(&config.templates, generate_weighted_template_entry);
+            let processors = generate_option(&config.processors, |data| {
+                crate::structure::processors::generate_processor_list_data(data)
+            });
             quote! {
                 ConfiguredFeatureKind::Template(TemplateFeatureConfiguration {
                     templates: #templates,
+                    processors: #processors,
                 })
             }
         }

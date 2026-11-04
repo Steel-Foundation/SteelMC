@@ -6,30 +6,81 @@
 use std::sync::Arc;
 
 use steel_protocol::packets::game::CBlockUpdate;
+use steel_registry::attribute::AttributeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::data_components::AdventureModePredicate;
-use steel_registry::data_components::vanilla_components::CAN_BREAK;
 use steel_registry::equipment::EquipmentSlot;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::vanilla_attributes;
 use steel_registry::{
-    REGISTRY, blocks::properties::Direction, item_stack::ItemStack, vanilla_blocks,
+    REGISTRY, blocks::properties::Direction, item_stack::ItemStack, level_events, vanilla_blocks,
     vanilla_game_events,
 };
+use steel_registry::{vanilla_attributes, vanilla_mob_effects};
 use steel_utils::{
     BlockPos, BlockStateId,
-    nbt::compare_nbt_compounds,
     types::{GameType, InteractionHand, UpdateFlags},
 };
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockLootContext};
-use crate::entity::{Entity, LivingEntity};
+use crate::block_entity::BlockEntity;
+use crate::entity::{ActiveMobEffect, Entity, LivingEntity};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
 use crate::player::food_data::food_constants;
 use crate::world::{ConditionalBlockSetResult, World, game_event::GameEventContext};
 
+use super::adventure_mode;
+
 impl Player {
+    /// Mining speed for `state` with the held item, after attributes, effects and
+    /// position penalties.
+    fn get_destroy_speed(&self, state: BlockStateId) -> f32 {
+        let mut speed = {
+            let inv = self.inventory.lock();
+            inv.get_item_in_hand(InteractionHand::MainHand)
+                .get_destroy_speed(state)
+        };
+
+        let attributes = self.attributes().lock();
+        let attribute_value = |attribute: AttributeRef| {
+            attributes
+                .get_value(attribute)
+                .unwrap_or(attribute.default_value) as f32
+        };
+
+        // TODO: Efficiency and Aqua Affinity have no effect until the enchantment
+        // `attributes` effect (`EnchantmentHelper.runLocationChangedEffects`) installs
+        // its attribute modifiers on equipment changes.
+        if speed > 1.0 {
+            speed += attribute_value(vanilla_attributes::MINING_EFFICIENCY);
+        }
+
+        let haste = self.mob_effect(vanilla_mob_effects::HASTE);
+        let conduit_power = self.mob_effect(vanilla_mob_effects::CONDUIT_POWER);
+        let dig_speed_amplifier = haste
+            .iter()
+            .chain(conduit_power.iter())
+            .map(ActiveMobEffect::amplifier)
+            .max();
+        if let Some(amplifier) = dig_speed_amplifier {
+            speed *= 1.0 + (amplifier + 1) as f32 * 0.2;
+        }
+
+        if let Some(mining_fatigue) = self.mob_effect(vanilla_mob_effects::MINING_FATIGUE) {
+            speed *= 0.3_f32.powi(mining_fatigue.amplifier() + 1);
+        }
+
+        speed *= attribute_value(vanilla_attributes::BLOCK_BREAK_SPEED);
+        if self.is_eye_in_water() {
+            speed *= attribute_value(vanilla_attributes::SUBMERGED_MINING_SPEED);
+        }
+
+        if !self.on_ground() {
+            speed /= 5.0;
+        }
+
+        speed
+    }
+
     /// Mirrors vanilla `Player.blockActionRestricted` for block breaking.
     pub(super) fn block_action_restricted(&self, world: &World, pos: BlockPos) -> bool {
         let game_mode = self.game_mode();
@@ -43,44 +94,15 @@ impl Player {
             return false;
         }
 
-        // TODO: Retain Vanilla's mutable per-component AdventureModePredicate
-        // cache once Steel's item components support that identity. Until then,
-        // snapshotting safely releases the inventory lock but reevaluates each use.
-        let can_break = {
+        let item = {
             let inventory = self.inventory.lock();
             let item = inventory.get_selected_item();
             if item.is_empty() {
                 return true;
             }
-            item.get(CAN_BREAK).cloned()
+            item.clone()
         };
-        let Some(can_break) = can_break else {
-            return true;
-        };
-        !Self::can_break_block_in_adventure_mode(&can_break, world, pos)
-    }
-
-    fn can_break_block_in_adventure_mode(
-        predicate: &AdventureModePredicate,
-        world: &World,
-        pos: BlockPos,
-    ) -> bool {
-        let state = world.get_block_state(pos);
-        // Vanilla's BlockInWorld overload intentionally does not test the
-        // predicate's block-entity component matchers.
-        predicate.predicates().iter().any(|predicate| {
-            if !predicate.matches_state(state) {
-                return false;
-            }
-            let Some(expected_nbt) = predicate.nbt() else {
-                return true;
-            };
-            let Some(block_entity) = world.get_block_entity(pos) else {
-                return false;
-            };
-            let actual_nbt = block_entity.save_with_full_metadata();
-            compare_nbt_compounds(expected_nbt.tag(), &actual_nbt, true)
-        })
+        !adventure_mode::can_break(&item, world, pos)
     }
 }
 
@@ -94,6 +116,8 @@ pub struct BlockBreakingManager {
     destroy_progress_start: u64,
     /// The position of the block being destroyed.
     destroy_pos: BlockPos,
+    /// The face being mined, used as the data value for the destroy-progress level event.
+    destroy_direction: Direction,
     /// The current game tick counter.
     game_ticks: u64,
     /// Whether there's a delayed destroy pending (for slow mining).
@@ -120,6 +144,7 @@ impl BlockBreakingManager {
             is_destroying_block: false,
             destroy_progress_start: 0,
             destroy_pos: BlockPos::new(0, 0, 0),
+            destroy_direction: Direction::Down,
             game_ticks: 0,
             has_delayed_destroy: false,
             delayed_destroy_pos: BlockPos::new(0, 0, 0),
@@ -159,12 +184,26 @@ impl BlockBreakingManager {
                 self.last_sent_state = -1;
                 self.is_destroying_block = false;
             } else {
+                let ticks_spent_destroying =
+                    self.game_ticks.saturating_sub(self.destroy_progress_start);
+                let event = if ticks_spent_destroying.is_multiple_of(4) {
+                    level_events::PARTICLES_AND_SOUND_DESTROY_PROGRESS
+                } else {
+                    level_events::PARTICLES_DESTROY_PROGRESS
+                };
+
                 self.increment_destroy_progress(
                     player,
                     world,
                     state,
                     self.destroy_pos,
                     self.destroy_progress_start,
+                );
+                world.level_event(
+                    event,
+                    self.destroy_pos,
+                    self.destroy_direction.get_3d_data_value(),
+                    None,
                 );
             }
         }
@@ -202,10 +241,13 @@ impl BlockBreakingManager {
         world: &Arc<World>,
         pos: BlockPos,
         action: BlockBreakAction,
-        _direction: Direction,
+        direction: Direction,
     ) {
         // Validate interaction range
         if !player.is_within_block_interaction_range(pos) {
+            if self.is_destroying_block && action == BlockBreakAction::Abort {
+                self.abort_destroy_block(player, world, pos);
+            }
             return;
         }
 
@@ -219,6 +261,10 @@ impl BlockBreakingManager {
         }
 
         match action {
+            BlockBreakAction::ChangeDirection => {
+                self.destroy_direction = direction;
+            }
+
             BlockBreakAction::Start => {
                 // Check may_interact permission
                 if !world.may_interact(player, pos) {
@@ -269,6 +315,7 @@ impl BlockBreakingManager {
 
                         self.is_destroying_block = true;
                         self.destroy_pos = pos;
+                        self.destroy_direction = direction;
                         let state = (progress * 10.0) as i32;
                         world.broadcast_block_destruction(player.id(), pos, state);
                         self.last_sent_state = state;
@@ -305,20 +352,24 @@ impl BlockBreakingManager {
             }
 
             BlockBreakAction::Abort => {
-                self.is_destroying_block = false;
-
-                if self.destroy_pos != pos {
-                    log::warn!(
-                        "Mismatch in destroy block pos: {:?} vs {:?}",
-                        self.destroy_pos,
-                        pos
-                    );
-                    world.broadcast_block_destruction(player.id(), self.destroy_pos, -1);
-                }
-
-                world.broadcast_block_destruction(player.id(), pos, -1);
+                self.abort_destroy_block(player, world, pos);
             }
         }
+    }
+
+    fn abort_destroy_block(&mut self, player: &Player, world: &Arc<World>, pos: BlockPos) {
+        self.is_destroying_block = false;
+
+        if self.destroy_pos != pos {
+            log::warn!(
+                "Mismatch in destroy block pos: {:?} vs {:?}",
+                self.destroy_pos,
+                pos
+            );
+            world.broadcast_block_destruction(player.id(), self.destroy_pos, -1);
+        }
+
+        world.broadcast_block_destruction(player.id(), pos, -1);
     }
 
     /// Destroys a block and sends appropriate response.
@@ -342,8 +393,9 @@ impl BlockBreakingManager {
     fn destroy_block(&self, player: &Player, world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
 
-        // Check if player's tool can destroy this block
-        // TODO: Implement canDestroyBlock check for adventure mode
+        if player.get_abilities().instabuild && !held_item_can_destroy_in_creative(player) {
+            return false;
+        }
 
         // Get block info
         let Some(_block) = REGISTRY.blocks.by_state_id(state) else {
@@ -351,7 +403,10 @@ impl BlockBreakingManager {
         };
 
         // TODO: Check for GameMasterBlock (command blocks, etc.)
-        // TODO: Check blockActionRestricted
+
+        if player.block_action_restricted(world, pos) {
+            return false;
+        }
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         let adjusted_state = behavior.player_will_destroy(state, world, pos, player);
@@ -365,6 +420,11 @@ impl BlockBreakingManager {
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
         // block leaves water behind instead of air.
         let replacement = fluid_state_to_block(state.get_fluid_state());
+
+        // Read before the removal below, so loot generation still sees the
+        // block entity's contents.
+        let block_entity = world.get_block_entity(pos);
+
         // Vanilla removes the live state after `playerWillDestroy`; tripwire uses
         // that callback to set DISARMED before the same block is removed.
         let removed_by_player_break = !state_after_player_will_destroy.is_air()
@@ -444,8 +504,14 @@ impl BlockBreakingManager {
                 player.award_stat(&vanilla_stat_types::BLOCK_MINED, state.get_block());
                 player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
 
-                drop_block_loot(player, world, pos, adjusted_state, &destroyed_with);
-                let block_entity = world.get_block_entity(pos);
+                drop_block_loot(
+                    player,
+                    world,
+                    pos,
+                    adjusted_state,
+                    &destroyed_with,
+                    block_entity.as_deref(),
+                );
                 behavior.player_destroy(
                     world,
                     player,
@@ -466,10 +532,18 @@ impl BlockBreakingManager {
 pub enum BlockBreakAction {
     /// Player started breaking a block.
     Start,
+    /// Player redirected the block-break raycast without resetting progress.
+    ChangeDirection,
     /// Player stopped breaking a block (finished or released).
     Stop,
     /// Player aborted breaking a block.
     Abort,
+}
+
+fn held_item_can_destroy_in_creative(player: &Player) -> bool {
+    let inventory = player.inventory.lock();
+    let main_hand = inventory.get_item_in_hand(InteractionHand::MainHand);
+    main_hand.can_destroy_blocks_in_creative()
 }
 
 /// Checks if a block state is air.
@@ -516,26 +590,13 @@ fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
         return 1.0;
     }
 
-    // Get player's mining speed
-    let mining_speed = {
-        let inv = player.inventory.lock();
-        let main_hand = inv.get_item_in_hand(InteractionHand::MainHand);
-        main_hand.get_destroy_speed(block_state)
-    };
+    let speed = player.get_destroy_speed(block_state);
 
-    // Check if player has the correct tool
     let has_correct_tool = {
         let inv = player.inventory.lock();
         let main_hand = inv.get_item_in_hand(InteractionHand::MainHand);
         main_hand.is_correct_tool_for_drops(block_state)
     };
-
-    // Apply speed modifiers
-    let speed = mining_speed;
-
-    // TODO: Apply efficiency enchantment
-    // TODO: Apply haste/mining fatigue effects
-    // TODO: Apply underwater/in-air penalties
 
     // Calculate destroy progress per tick
     // Vanilla formula: speed / hardness / (hasCorrectTool ? 30 : 100)
@@ -555,6 +616,7 @@ fn drop_block_loot(
     pos: BlockPos,
     state: BlockStateId,
     tool: &ItemStack,
+    block_entity: Option<&dyn BlockEntity>,
 ) {
     let luck = player
         .attributes()
@@ -565,6 +627,7 @@ fn drop_block_loot(
     let drops = BlockLootContext::new(world, pos)
         .with_luck(luck)
         .with_tool(tool)
+        .with_block_entity(block_entity)
         .get_drops(state);
 
     // Spawn each dropped item using the player's world reference (Arc<World>)

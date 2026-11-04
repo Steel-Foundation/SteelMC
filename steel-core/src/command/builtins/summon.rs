@@ -99,7 +99,7 @@ fn command_failed(translation: &'static Translation<0>) -> CommandSyntaxError {
 #[cfg(test)]
 mod tests {
     use super::super::create_dispatcher;
-    use crate::bootstrap::init_globals_once;
+    use crate::bootstrap::init_globals;
     use crate::command::{
         brigadier::{CommandDispatcher, NodeId},
         execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn summon_graph_uses_typed_entity_and_deferred_position_arguments() {
-        init_globals_once();
+        init_globals();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

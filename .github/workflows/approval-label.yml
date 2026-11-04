@@ -3,11 +3,11 @@ name: Approval label
 # Privileged half of the approval-label pair. Runs via workflow_run so the
 # token gets normal write permissions even when the triggering review came
 # from a fork PR (workflow_run never gets the fork read-only downgrade that
-# pull_request_review does — see approval-label-capture.yml).
+# pull_request_review does — see pr-review-capture.yml).
 
 on:
   workflow_run:
-    workflows: ["Approval label (capture)"]
+    workflows: ["PR review capture"]
     types: [completed]
 
 permissions:

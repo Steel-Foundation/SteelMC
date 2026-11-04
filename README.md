@@ -32,7 +32,7 @@
 ## What is SteelMC?
 
 SteelMC is an independent implementation of the Minecraft Java Edition server. It
-tracks the latest Java Edition release and currently targets **Minecraft 26.2**.
+tracks the latest Java Edition release and currently targets **Minecraft 26.3**.
 
 The goal is to match vanilla behavior while making better use of modern multicore
 hardware. Gameplay updates remain synchronous, while chunk generation, lighting,
@@ -92,6 +92,11 @@ Contributions are welcome. Most changes begin by reading the vanilla source,
 understanding the behavior it implements, and deciding how to express that behavior
 cleanly in Rust.
 
+As a new contributor, please limit yourself to 3 open PRs at a time,
+so we can give feedback on your existing ones before you open more.
+Also, start with a small, simple contribution first,
+around 1k lines changed or less, so it's quicker to review.
+
 Before you start:
 
 1. Check existing issues and pull requests, then discuss substantial changes with
@@ -115,6 +120,14 @@ typos
 Nix and NixOS users can get the pinned toolchain, `lld`, `prek`, and `typos` in one
 step with `nix develop` (or `direnv allow`, using the checked-in `.envrc`).
 
+Generated Rust formatting is disabled by default. Enable the `fmt` feature on
+`steel-registry`, `steel-utils`, and `steel-worldgen` to format their generated files
+with prettyplease during compilation:
+
+```bash
+cargo build --features steel-registry/fmt,steel-utils/fmt,steel-worldgen/fmt
+```
+
 Generated documentation for SteelMC's Rust crates is available in the
 [Rust API reference](https://rustdoc.steelmc.dev/steel_core/index.html).
 
@@ -129,6 +142,9 @@ which is always a good first start.
 The [SteelMC Discord](https://steelmc.dev/discord) is where we discuss designs,
 coordinate work, share progress, and answer questions. Longer project updates are
 published on the [SteelMC website](https://steelmc.dev/).
+
+If you enjoy SteelMC, you can support its development by
+[sponsoring the project on GitHub](https://github.com/sponsors/Steel-Foundation). Any support is greatly appreciated!
 
 ## License
 

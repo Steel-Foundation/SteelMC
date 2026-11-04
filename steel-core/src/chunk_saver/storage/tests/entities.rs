@@ -1,5 +1,9 @@
 use super::*;
+use crate::entity::{ENTITY_LOAD_MAX_HORIZONTAL_POSITION, ENTITY_LOAD_MAX_VERTICAL_POSITION};
 use steel_registry::RegistryEntry as _;
+use steel_registry::data_components::vanilla_components::{CUSTOM_NAME, REPAIR_COST};
+use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_items;
 
 fn test_persistent_end_crystal(pos: DVec3) -> PersistentEntity {
     PersistentEntity {
@@ -32,7 +36,7 @@ fn test_persistent_end_crystal(pos: DVec3) -> PersistentEntity {
 
 #[test]
 fn persistent_entity_load_clamps_position_like_vanilla() {
-    init_globals_once();
+    init_globals();
 
     let persistent =
         test_persistent_end_crystal(DVec3::new(100_000_000.0, -100_000_000.0, -100_000_000.0));
@@ -50,11 +54,13 @@ fn persistent_entity_load_clamps_position_like_vanilla() {
             -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
         )
     );
+    assert_eq!(entity.base().old_position(), entity.position());
+    assert_eq!(entity.base().old_rotation(), entity.rotation());
 }
 
 #[test]
 fn persistent_entity_load_rejects_non_finite_rotation_like_vanilla() {
-    init_globals_once();
+    init_globals();
 
     let mut persistent = test_persistent_end_crystal(DVec3::new(1.0, 2.0, 3.0));
     persistent.rotation = [f32::NAN, 0.0];
@@ -70,8 +76,127 @@ fn persistent_entity_load_rejects_non_finite_rotation_like_vanilla() {
 }
 
 #[test]
+fn block_entity_stored_components_survive_chunk_save_load() {
+    init_globals();
+
+    let pos = ChunkPos::new(0, 0);
+    let block_pos = BlockPos::new(3, 4, 5);
+    let chunk = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+    let state = vanilla_blocks::ENCHANTING_TABLE.default_state();
+    chunk.set_block_state_for_generation(
+        ChunkStatus::Features,
+        block_pos,
+        state,
+        UpdateFlags::UPDATE_NONE,
+    );
+    let entity = BLOCK_ENTITIES.create_or_unimplemented(
+        &vanilla_block_entity_types::ENCHANTING_TABLE,
+        Weak::new(),
+        block_pos,
+        state,
+    );
+    let name = TextComponent::from("Arcane Desk".to_owned());
+    let mut item = ItemStack::new(&vanilla_items::ENCHANTING_TABLE);
+    item.set(CUSTOM_NAME, name.clone());
+    item.set(REPAIR_COST, 3);
+    entity.apply_components_from_item_stack(&item);
+    assert!(chunk.set_block_entity(entity));
+
+    let prepared = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Features, &[], false)
+        .expect("dirty chunk should prepare for saving");
+    let saved = read_borrowed_compound(&mut Cursor::new(
+        &prepared.persistent.block_entities[0].nbt_data,
+    ))
+    .expect("saved block entity should contain valid NBT");
+    let saved = simdnbt::borrow::NbtCompound::from(&saved);
+    assert_eq!(
+        saved
+            .compound("components")
+            .and_then(|data| data.int("minecraft:repair_cost")),
+        Some(3)
+    );
+
+    let loaded = ChunkStorage::persistent_to_chunk(
+        &prepared.persistent,
+        pos,
+        ChunkStatus::Features,
+        0,
+        16,
+        Weak::new(),
+    );
+    let loaded_entity = loaded
+        .chunk
+        .get_block_entity(block_pos)
+        .expect("enchanting table should survive chunk load");
+    let components = loaded_entity.collect_components();
+    assert_eq!(components.get(CUSTOM_NAME), Some(name));
+    assert_eq!(components.get(REPAIR_COST), Some(3));
+    let full = loaded_entity.save_with_full_metadata();
+    assert_eq!(
+        full.compound("components")
+            .and_then(|data| data.int("minecraft:repair_cost")),
+        Some(3)
+    );
+}
+
+#[test]
+fn owned_block_entity_load_preserves_stored_components() {
+    init_globals();
+    assert!(
+        !BLOCK_ENTITIES.has_factory(&vanilla_block_entity_types::LECTERN),
+        "the lectern now has a block entity; pick another unimplemented type for this test"
+    );
+
+    for (entity_type, state) in [
+        (
+            &vanilla_block_entity_types::ENCHANTING_TABLE,
+            vanilla_blocks::ENCHANTING_TABLE.default_state(),
+        ),
+        (
+            &vanilla_block_entity_types::LECTERN,
+            vanilla_blocks::LECTERN.default_state(),
+        ),
+    ] {
+        let mut components = NbtCompound::new();
+        components.insert("minecraft:repair_cost", 3_i32);
+        let mut nbt = NbtCompound::new();
+        nbt.insert("components", components);
+        nbt.insert("marker", 7_i32);
+        let entity = BLOCK_ENTITIES.create_and_load_owned_or_unimplemented(
+            entity_type,
+            Weak::new(),
+            BlockPos::new(3, 4, 5),
+            state,
+            nbt,
+        );
+        assert_eq!(entity.collect_components().get(REPAIR_COST), Some(3));
+
+        let mut item = ItemStack::new(REGISTRY.items.by_block(state.get_block()));
+        item.set(REPAIR_COST, 5);
+        entity.apply_components_from_item_stack(&item);
+        let saved = entity.save_without_metadata();
+        assert_eq!(
+            saved
+                .compound("components")
+                .and_then(|data| data.int("minecraft:repair_cost")),
+            Some(5)
+        );
+        assert_eq!(
+            saved
+                .keys()
+                .filter(|key| key.to_str() == "components")
+                .count(),
+            1
+        );
+        if !BLOCK_ENTITIES.has_factory(entity_type) {
+            assert_eq!(saved.int("marker"), Some(7));
+        }
+    }
+}
+
+#[test]
 fn proto_block_entities_roundtrip_and_promote_to_full_chunk() {
-    init_globals_once();
+    init_globals();
 
     let pos = ChunkPos::new(0, 0);
     let block_pos = BlockPos::new(3, 4, 5);
@@ -140,7 +265,7 @@ fn proto_block_entities_roundtrip_and_promote_to_full_chunk() {
 
 #[test]
 fn persistent_block_entity_with_invalid_live_state_is_rejected_before_construction() {
-    init_globals_once();
+    init_globals();
     let persistent = PersistentBlockEntity {
         x: 1,
         y: 2,
@@ -162,7 +287,7 @@ fn persistent_block_entity_with_invalid_live_state_is_rejected_before_constructi
 
 #[test]
 fn persistent_block_entity_with_malformed_nbt_is_dropped() {
-    init_globals_once();
+    init_globals();
     let persistent = PersistentBlockEntity {
         x: 1,
         y: 2,
@@ -184,7 +309,7 @@ fn persistent_block_entity_with_malformed_nbt_is_dropped() {
 
 #[test]
 fn proto_entities_roundtrip_and_promote_to_full_chunk() {
-    init_globals_once();
+    init_globals();
 
     let pos = ChunkPos::new(0, 0);
     let entity_pos = DVec3::new(5.5, 6.0, 7.5);
@@ -283,8 +408,42 @@ fn proto_entities_roundtrip_and_promote_to_full_chunk() {
 }
 
 #[test]
+fn unsupported_persistent_entity_is_dropped_after_load_and_resave() {
+    init_globals();
+
+    let pos = ChunkPos::new(0, 0);
+    let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+    let Some(mut prepared) =
+        ChunkStorage::prepare_chunk_save(&proto, ChunkStatus::Features, &[], true)
+    else {
+        panic!("forced proto chunk save should prepare");
+    };
+    let mut unsupported = test_persistent_end_crystal(DVec3::new(5.5, 6.0, 7.5));
+    unsupported.entity_type = vanilla_entities::VILLAGER.key.clone();
+    prepared.persistent.entities.push(unsupported);
+
+    let loaded = ChunkStorage::persistent_to_chunk(
+        &prepared.persistent,
+        pos,
+        ChunkStatus::Features,
+        0,
+        16,
+        Weak::new(),
+    );
+    assert!(loaded.pending_entities.is_empty());
+    assert!(loaded.chunk.get_entities().is_empty());
+
+    let Some(resaved) =
+        ChunkStorage::prepare_chunk_save(&loaded.chunk, ChunkStatus::Features, &[], true)
+    else {
+        panic!("forced loaded chunk save should prepare");
+    };
+    assert!(resaved.persistent.entities.is_empty());
+}
+
+#[test]
 fn prepared_save_reports_handled_runtime_entity_ids() {
-    init_globals_once();
+    init_globals();
 
     let pos = ChunkPos::new(0, 0);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -311,7 +470,7 @@ fn prepared_save_reports_handled_runtime_entity_ids() {
 
 #[test]
 fn full_chunk_load_defers_entities_to_world_registration() {
-    init_globals_once();
+    init_globals();
 
     let pos = ChunkPos::new(0, 0);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -348,7 +507,7 @@ fn full_chunk_load_defers_entities_to_world_registration() {
 
 #[test]
 fn runtime_entity_passengers_save_nested_and_load_flattened_for_registration() {
-    init_globals_once();
+    init_globals();
 
     let pos = ChunkPos::new(0, 0);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -414,7 +573,7 @@ fn runtime_entity_passengers_save_nested_and_load_flattened_for_registration() {
 
 #[test]
 fn runtime_entity_passengers_skip_non_serializable_entities_like_vanilla() {
-    init_globals_once();
+    init_globals();
 
     let pos = ChunkPos::new(0, 0);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -425,12 +584,12 @@ fn runtime_entity_passengers_skip_non_serializable_entities_like_vanilla() {
         DVec3::new(5.5, 6.0, 7.5),
         Weak::new(),
     ));
-    let passenger: SharedEntity = Arc::new(RawEntity::new(
+    let passenger: SharedEntity = TestEntity::shared(
         next_entity_id(),
         DVec3::new(5.5, 8.0, 7.5),
         Weak::new(),
         &vanilla_entities::PLAYER,
-    ));
+    );
     EntityBase::restore_passenger_relationship(&vehicle, &passenger);
     let vehicle_uuid = vehicle.uuid();
 
@@ -466,29 +625,32 @@ fn runtime_entity_passengers_skip_non_serializable_entities_like_vanilla() {
 
 #[test]
 fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
-    init_globals_once();
+    init_globals();
 
     let pos = ChunkPos::new(0, 0);
     let block_pos = BlockPos::new(4, 4, 6);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
-    let spawner = REGISTRY
+    let banner = REGISTRY
         .blocks
-        .get_default_state_id(&vanilla_blocks::SPAWNER);
+        .get_default_state_id(&vanilla_blocks::WHITE_BANNER);
     proto.set_block_state_for_generation(
         ChunkStatus::Features,
         block_pos,
-        spawner,
+        banner,
         UpdateFlags::UPDATE_NONE,
     );
 
     let mut nbt = NbtCompound::new();
     nbt.insert("LootTable", "minecraft:chests/simple_dungeon");
     nbt.insert("LootTableSeed", 42_i64);
-    let entity = BLOCK_ENTITIES.create_and_load_owned_or_raw(
-        &vanilla_block_entity_types::MOB_SPAWNER,
+    let mut components = NbtCompound::new();
+    components.insert("minecraft:repair_cost", 3_i32);
+    nbt.insert("components", components);
+    let entity = BLOCK_ENTITIES.create_and_load_owned_or_unimplemented(
+        &vanilla_block_entity_types::BANNER,
         proto.level_weak(),
         block_pos,
-        spawner,
+        banner,
         nbt,
     );
     assert!(proto.set_block_entity(entity));
@@ -511,13 +673,13 @@ fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
     );
     let loaded_proto = loaded.chunk;
     let Some(loaded_entity) = loaded_proto.get_block_entity(block_pos) else {
-        panic!("raw block entity should survive chunk load");
+        panic!("unimplemented block entity should survive chunk load");
     };
 
     let mut saved = NbtCompound::new();
     assert_eq!(
         loaded_entity.get_type().id(),
-        vanilla_block_entity_types::MOB_SPAWNER.id()
+        vanilla_block_entity_types::BANNER.id()
     );
     loaded_entity.save_additional(&mut saved);
 
@@ -526,4 +688,5 @@ fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
         Some("minecraft:chests/simple_dungeon".to_owned())
     );
     assert_eq!(saved.long("LootTableSeed"), Some(42));
+    assert_eq!(loaded_entity.collect_components().get(REPAIR_COST), Some(3));
 }

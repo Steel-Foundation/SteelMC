@@ -4,7 +4,7 @@ use std::{slice, sync::Arc};
 
 use glam::DVec3;
 use steel_protocol::packets::game::{CSetCamera, RelativeMovement};
-use steel_utils::{BlockPos, Identifier, translations};
+use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 
 use super::super::{
@@ -15,6 +15,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use super::position::{ensure_spawnable_position, finite_rotation, wrap_rotation};
 use crate::{
     entity::{Entity, EntityAnchor, LivingEntity as _, SharedEntity, change_entity_world},
     portal::{TeleportPostTransition, TeleportTransition},
@@ -236,7 +237,9 @@ fn teleport_to_position(
             same_world,
         );
         let target_rotation = target.rotation();
-        let desired_rotation = resolved_rotation.unwrap_or(target_rotation);
+        let desired_rotation = resolved_rotation.map_or(target_rotation, |rotation| {
+            finite_rotation(rotation, target_rotation)
+        });
         let transition = TeleportTransition {
             target_world: Arc::clone(source.world()),
             position: packet_position(position, target.position(), relatives),
@@ -291,26 +294,10 @@ fn perform_teleport(
         }
     }
 
-    if target
-        .as_living_entity()
-        .is_none_or(|living| !living.is_fall_flying())
-    {
-        let velocity = target.velocity();
-        target.set_velocity(DVec3::new(velocity.x, 0.0, velocity.z));
-        target.set_on_ground(true);
-    }
+    target.land_after_teleport();
     if let Some(pathfinder) = target.as_pathfinder_mob() {
         pathfinder.mob_base().navigation().lock().stop();
     }
-}
-
-fn ensure_spawnable_position(position: DVec3) -> Result<(), CommandSyntaxError> {
-    if World::is_in_spawnable_bounds(BlockPos::from(position)) {
-        return Ok(());
-    }
-    Err(CommandSyntaxError::dynamic(TextComponent::from(
-        &translations::COMMANDS_TELEPORT_INVALID_POSITION,
-    )))
 }
 
 fn ensure_same_domain_targets(
@@ -408,19 +395,6 @@ fn packet_rotation(
             desired.1
         },
     ))
-}
-
-fn wrap_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {
-    (wrap_degrees(yaw), wrap_degrees(pitch))
-}
-
-fn wrap_degrees(value: f32) -> f32 {
-    let wrapped = value.rem_euclid(360.0);
-    if wrapped >= 180.0 {
-        wrapped - 360.0
-    } else {
-        wrapped
-    }
 }
 
 fn send_entity_success(source: &CommandSource, targets: &[SharedEntity], destination: &dyn Entity) {
