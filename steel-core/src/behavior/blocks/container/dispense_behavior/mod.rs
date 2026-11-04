@@ -10,7 +10,7 @@ use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::Downcast as _;
 
-use crate::entity::entities::ThrownEggEntity;
+use crate::entity::entities::{LingeringPotionEntity, SplashPotionEntity, ThrownEggEntity};
 use crate::entity::projectile::ThrowableItemProjectile;
 use crate::world::World;
 
@@ -184,6 +184,30 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
             1.1,
             6.0,
         )),
+    );
+
+    registry.set_behavior(
+        &vanilla_items::SPLASH_POTION,
+        Box::new(
+            ProjectileDispenseBehavior::new(&vanilla_entities::SPLASH_POTION, 1.375, 3.0)
+                .with_item_setter(|entity, item| {
+                    if let Some(potion) = entity.downcast_ref::<SplashPotionEntity>() {
+                        potion.set_item_clamped(item.clone());
+                    }
+                }),
+        ),
+    );
+
+    registry.set_behavior(
+        &vanilla_items::LINGERING_POTION,
+        Box::new(
+            ProjectileDispenseBehavior::new(&vanilla_entities::LINGERING_POTION, 1.375, 3.0)
+                .with_item_setter(|entity, item| {
+                    if let Some(potion) = entity.downcast_ref::<LingeringPotionEntity>() {
+                        potion.set_item_clamped(item.clone());
+                    }
+                }),
+        ),
     );
 
     registry.set_behavior(&vanilla_items::TNT, Box::new(TntDispenseBehavior));
