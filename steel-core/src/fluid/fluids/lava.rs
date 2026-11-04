@@ -7,7 +7,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::Direction;
 use steel_registry::level_events;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::sound_events;
@@ -21,7 +21,7 @@ use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
 use crate::fluid::{FlowingFluid, FluidBehavior, get_flow as flowing_fluid_flow};
 use crate::fluid::{
     FluidRef, FluidState, FluidStateExt, get_fluid_state, get_height, is_lava_fluid,
-    is_water_fluid, lava_id,
+    is_water_fluid, lava_id, liquid_block_state,
 };
 use crate::world::World;
 const NORMAL_LAVA_ENTITY_FLOW_SCALE: f64 = 0.002_333_333_333_333_333_5;
@@ -56,9 +56,7 @@ impl FluidBehavior for LavaFluid {
     }
 
     fn create_legacy_block(&self, fluid_state: FluidState) -> BlockStateId {
-        vanilla_blocks::LAVA
-            .default_state()
-            .set_value(&BlockStateProperties::LEVEL, fluid_state.to_block_level())
+        liquid_block_state(&vanilla_blocks::LAVA, fluid_state)
     }
 
     fn fluid_type(&self) -> FluidRef {

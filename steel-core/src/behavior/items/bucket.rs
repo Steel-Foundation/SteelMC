@@ -1,6 +1,4 @@
 //! Bucket item behavior implementation.
-//!
-//! Handles empty buckets and buckets of any fluid.
 use crate::behavior::context::InteractionResult;
 use crate::behavior::item_utils::create_filled_result;
 use crate::behavior::{
@@ -27,7 +25,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::world::game_event::GameEventContext;
 
-/// Handles all bucket variants (empty, water, lava).
+/// A bucket holding `content`, or the empty bucket when `content` is the empty fluid.
 #[item_behavior]
 pub struct BucketItem {
     #[json_arg(vanilla_fluids, ref, json = "content")]
@@ -35,7 +33,7 @@ pub struct BucketItem {
 }
 
 impl BucketItem {
-    /// Creates a new bucket behavior. An empty `content` fluid makes it an empty bucket.
+    /// Creates a bucket behavior for `content`.
     #[must_use]
     pub const fn new(content: FluidRef) -> Self {
         Self { content }
@@ -90,11 +88,7 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         return InteractionResult::Pass;
     };
 
-    let item = context.inv.with_item(|item| item.clone());
-    if !context
-        .player
-        .may_use_item_at(direction.relative(hit_pos), direction, &item)
-    {
+    if !may_use_bucket_at(context, hit_pos, direction) {
         return InteractionResult::Fail;
     }
 
@@ -138,7 +132,6 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
 }
 
 fn use_filled_bucket(fluid: FluidRef, context: &mut UseItemContext) -> InteractionResult {
-    // Raytrace to find target block
     let (start, end) = context.player.get_ray_endpoints();
     let (ray_block, ray_dir) = context.world.raytrace(start, end, |pos, world| {
         let state = world.get_block_state(pos);
@@ -151,21 +144,15 @@ fn use_filled_bucket(fluid: FluidRef, context: &mut UseItemContext) -> Interacti
         RaytraceAction::CheckShape
     });
 
-    // A miss passes, so other handlers can try.
     let (Some(clicked_pos), Some(direction)) = (ray_block, ray_dir) else {
         return InteractionResult::Pass;
     };
 
-    // If the block is out of bounds, return fail
     if !context.world.is_in_valid_bounds(clicked_pos) {
         return InteractionResult::Fail;
     }
 
-    let item = context.inv.with_item(|item| item.clone());
-    if !context
-        .player
-        .may_use_item_at(direction.relative(clicked_pos), direction, &item)
-    {
+    if !may_use_bucket_at(context, clicked_pos, direction) {
         return InteractionResult::Fail;
     }
 
@@ -174,7 +161,6 @@ fn use_filled_bucket(fluid: FluidRef, context: &mut UseItemContext) -> Interacti
     // Only water itself enters liquid containers, not water-tagged fluids.
     let is_water_bucket = fluid == &vanilla_fluids::WATER;
 
-    // Define fluid placement logic as a closure to reuse for primary/secondary targets.
     // `check_sneak` is false for the secondary attempt, which ignores sneaking.
     let try_place_fluid = |pos: BlockPos, check_sneak: bool| -> bool {
         if !context.world.is_in_valid_bounds(pos) {
@@ -209,7 +195,6 @@ fn use_filled_bucket(fluid: FluidRef, context: &mut UseItemContext) -> Interacti
             return true;
         }
 
-        // 1. Try LiquidBlockContainer handling (only if Water bucket).
         if is_water_bucket && is_liquid_container {
             let source_water = FluidState::source(&vanilla_fluids::WATER);
             behavior.place_liquid(context.world, pos, state, source_water);
@@ -217,8 +202,8 @@ fn use_filled_bucket(fluid: FluidRef, context: &mut UseItemContext) -> Interacti
             return true;
         }
 
-        // 2. Try Standard Placement. Containers that accept a fluid other than water get
-        // overwritten here too. An existing source of the same fluid just consumes the bucket.
+        // Containers that accept a fluid other than water get overwritten here too.
+        // An existing source of the same fluid just consumes the bucket.
         let is_same_fluid = FLUID_BEHAVIORS
             .get_behavior(fluid)
             .is_same(fluid_state.fluid_id);
@@ -233,7 +218,6 @@ fn use_filled_bucket(fluid: FluidRef, context: &mut UseItemContext) -> Interacti
             context.player.get_world().destroy_block(pos, true);
         }
 
-        // Place fluid block
         let fluid_state_to_place = fluid_state_to_block(FluidState::source(fluid));
         if context
             .world
@@ -258,20 +242,23 @@ fn use_filled_bucket(fluid: FluidRef, context: &mut UseItemContext) -> Interacti
     let primary_pos =
         filled_bucket_primary_pos(clicked_state, clicked_pos, direction, is_water_bucket);
 
-    if try_place_fluid(primary_pos, true) {
-        let result_stack = filled_bucket_success_stack(context);
-        create_filled_result(context, result_stack, true);
-        return InteractionResult::Success;
+    if !try_place_fluid(primary_pos, true)
+        && !try_place_fluid(direction.relative(clicked_pos), false)
+    {
+        return InteractionResult::Fail;
     }
 
-    let secondary_pos = direction.relative(clicked_pos);
-    if try_place_fluid(secondary_pos, false) {
-        let result_stack = filled_bucket_success_stack(context);
-        create_filled_result(context, result_stack, true);
-        return InteractionResult::Success;
-    }
+    let result_stack = filled_bucket_success_stack(context);
+    create_filled_result(context, result_stack, true);
+    InteractionResult::Success
+}
 
-    InteractionResult::Fail
+/// Whether the player may use the held bucket against the `direction` face of `pos`.
+fn may_use_bucket_at(context: &UseItemContext, pos: BlockPos, direction: Direction) -> bool {
+    let item = context.inv.with_item(|item| item.clone());
+    context
+        .player
+        .may_use_item_at(direction.relative(pos), direction, &item)
 }
 
 fn play_empty_sound_and_event(context: &UseItemContext, pos: BlockPos, fluid: FluidRef) {

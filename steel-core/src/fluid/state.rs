@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::REGISTRY;
+use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::fluid::{FluidRef, FluidState};
@@ -68,6 +69,14 @@ pub fn fluid_state_to_block_with_existing(
     }
 
     fluid_state_to_block(fluid_state)
+}
+
+/// The `block` liquid state at `fluid_state`'s level, for fluids that have their own liquid block.
+#[must_use]
+pub fn liquid_block_state(block: BlockRef, fluid_state: FluidState) -> BlockStateId {
+    block
+        .default_state()
+        .set_value(&BlockStateProperties::LEVEL, fluid_state.to_block_level())
 }
 
 /// Converts a `FluidState` into a `BlockStateId` directly without preserving any block.

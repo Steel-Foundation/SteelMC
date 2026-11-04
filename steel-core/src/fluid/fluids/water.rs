@@ -5,8 +5,7 @@
 use std::sync::Arc;
 
 use glam::DVec3;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::Direction;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
@@ -16,7 +15,7 @@ use steel_utils::BlockStateId;
 
 use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
 use crate::fluid::{FlowingFluid, FluidBehavior, get_flow as flowing_fluid_flow};
-use crate::fluid::{FluidRef, FluidState, is_water_fluid, water_id};
+use crate::fluid::{FluidRef, FluidState, is_water_fluid, liquid_block_state, water_id};
 use crate::world::World;
 
 /// Water fluid implementation.
@@ -27,9 +26,7 @@ pub struct WaterFluid;
 
 impl FluidBehavior for WaterFluid {
     fn create_legacy_block(&self, fluid_state: FluidState) -> BlockStateId {
-        vanilla_blocks::WATER
-            .default_state()
-            .set_value(&BlockStateProperties::LEVEL, fluid_state.to_block_level())
+        liquid_block_state(&vanilla_blocks::WATER, fluid_state)
     }
 
     fn fluid_type(&self) -> FluidRef {

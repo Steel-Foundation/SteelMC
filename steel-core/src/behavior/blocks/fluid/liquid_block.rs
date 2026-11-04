@@ -59,49 +59,44 @@ impl LiquidBlock {
         if !is_lava_fluid(self.fluid) {
             return true;
         }
-        // Check if there's soul soil below (for basalt generation)
         let below_pos = pos.offset(0, -1, 0);
         let below_state = world.get_block_state(below_pos);
         let has_soul_soil_below = below_state.get_block() == &vanilla_blocks::SOUL_SOIL;
 
-        // Get fluid state to check if this is a source
         let fluid_state = world.get_block_state(pos).get_fluid_state();
 
         for direction in Direction::FLOW_NEIGHBOR_CHECK {
             let neighbor_pos = direction.relative(pos);
             let neighbor_fluid = world.get_block_state(neighbor_pos).get_fluid_state();
 
-            // Check for water (including flowing_water and waterlogged blocks)
-            // Using fluid tag check to support modded fluids registered in the water tag
+            // `is_water` checks the fluid tag, so flowing, waterlogged and modded water count too.
             if neighbor_fluid.is_water() {
-                // Lava + Water = Obsidian (if source) or Cobblestone (if flowing)
                 let new_block = if fluid_state.is_source() {
                     &vanilla_blocks::OBSIDIAN
                 } else {
                     &vanilla_blocks::COBBLESTONE
                 };
 
-                let new_state = REGISTRY.blocks.get_default_state_id(new_block);
-                world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
-                world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
-                return false; // Don't schedule fluid tick - block was converted
+                Self::convert_and_fizz(world, pos, new_block);
+                return false;
             }
 
-            // Check for basalt generation: soul soil below + blue ice adjacent
             if has_soul_soil_below {
                 let neighbor_state = world.get_block_state(neighbor_pos);
                 if neighbor_state.get_block() == &vanilla_blocks::BLUE_ICE {
-                    let new_state = REGISTRY
-                        .blocks
-                        .get_default_state_id(&vanilla_blocks::BASALT);
-                    world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
-                    world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
-                    return false; // Don't schedule fluid tick - block was converted
+                    Self::convert_and_fizz(world, pos, &vanilla_blocks::BASALT);
+                    return false;
                 }
             }
         }
 
-        true // No interaction occurred, proceed with normal fluid tick
+        true
+    }
+
+    /// Replaces the lava at `pos` with `block` and plays vanilla's `fizz` level event.
+    fn convert_and_fizz(world: &Arc<World>, pos: BlockPos, block: BlockRef) {
+        world.set_block(pos, block.default_state(), UpdateFlags::UPDATE_ALL);
+        world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
     }
 
     fn should_bubble_column_occupy(state: BlockStateId) -> bool {
