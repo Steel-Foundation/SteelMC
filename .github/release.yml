@@ -1,0 +1,17 @@
+# Groups for auto-generated release notes. A PR lands in the first matching category.
+changelog:
+  categories:
+    - title: Blocks
+      labels: [Block]
+    - title: Items
+      labels: [Item]
+    - title: Commands
+      labels: [Command]
+    - title: Entities
+      labels: [Entity, Mob]
+    - title: Bugs
+      labels: [Bug]
+    - title: Performance
+      labels: [Performance]
+    - title: Features
+      labels: ["*"]
