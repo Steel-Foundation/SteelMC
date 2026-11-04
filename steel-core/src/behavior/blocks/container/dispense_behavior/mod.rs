@@ -33,7 +33,7 @@ pub use consumables::{
 };
 pub use container::ShulkerBoxDispenseBehavior;
 pub use default::DefaultDispenseBehavior;
-pub use potion::GlassBottleDispenseBehavior;
+pub use potion::{GlassBottleDispenseBehavior, PotionDispenseBehavior};
 pub use projectile::ProjectileDispenseBehavior;
 pub use tnt::TntDispenseBehavior;
 pub use tools::FlintAndSteelDispenseBehavior;
@@ -146,9 +146,7 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         &vanilla_items::GLASS_BOTTLE,
         Box::new(GlassBottleDispenseBehavior),
     );
-    // TODO: plain Potion (potion.rs) — a water bottle in front of the
-    // dispenser converts CONVERTABLE_TO_MUD blocks to mud; deferred pending
-    // verification that the tag exists in Steel.
+    registry.set_behavior(&vanilla_items::POTION, Box::new(PotionDispenseBehavior));
 
     // projectile
     for egg in [
