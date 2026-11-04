@@ -449,7 +449,7 @@ pub struct PersistentBlockEntity {
     /// Block entity type identifier, or `None` for Vanilla's pending `DUMMY` marker.
     pub entity_type: Option<Identifier>,
     /// Serialized NBT data (simdnbt binary format).
-    /// Contains the block entity's custom data from `save_additional`.
+    /// Contains entity-specific data and stored components without type/position metadata.
     pub nbt_data: Vec<u8>,
 }
 
