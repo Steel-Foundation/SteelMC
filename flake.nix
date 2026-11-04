@@ -127,10 +127,7 @@
 
             cargoLock = {
               lockFile = ./Cargo.lock;
-              outputHashes = {
-                "flint-core-1.2.2" = "sha256-/tT1I41zQrv8R+CHz6TlCJCqNcOYEi1OZ3iaKf6Mjxc=";
-                "text_components-0.1.7" = "sha256-cGVxp7QX9qYuPl/NW+ya889cCmj5D/bV7tW5SjzBohs=";
-              };
+              allowBuiltinFetchGit = true;
             };
 
             nativeBuildInputs = [ pkgs.lld ];

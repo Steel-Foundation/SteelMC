@@ -88,8 +88,8 @@ jobs:
           echo "::error file=nix/minecraft-assets.json::Stale pin; run ./update-minecraft-assets.sh (see job summary)."
           exit 1
 
-      # Evaluation only: catches a nightly missing from flake.lock and missing cargo
-      # outputHashes without a full Steel build.
+      # Evaluation only: catches a nightly missing from flake.lock without a full
+      # Steel build.
       - name: Evaluate flake
         if: success() || failure()
         run: |
@@ -98,10 +98,38 @@ jobs:
           fi
           cat flake-check.log
           touch report/failed
+
+          # If a fresh lock fixes evaluation, the lock was stale: hand over the new one.
+          if nix flake update && nix flake check --no-build 2> /dev/null; then
+            {
+              echo "### \`flake.lock\` is stale"
+              echo
+              echo "\`rust-toolchain.toml\` points at a nightly the locked \`rust-overlay\` doesn't know. Fix it one of these ways:"
+              echo
+              echo "- With Nix: run \`nix flake update\` and commit \`flake.lock\`."
+              echo "- With Docker:"
+              echo '  ```sh'
+              echo "  docker run --rm -v \"\$PWD\":/w -w /w nixos/nix nix --extra-experimental-features 'nix-command flakes' flake update"
+              echo '  ```'
+              echo "- Without either: replace \`flake.lock\` with the file below."
+              echo
+              echo "<details><summary>Updated flake.lock</summary>"
+              echo
+              echo '````json'
+              cat flake.lock
+              echo '````'
+              echo
+              echo "</details>"
+              echo
+            } >> "$REPORT"
+            echo "::error file=flake.lock::Stale flake.lock; run nix flake update (see job summary)."
+            exit 1
+          fi
+
           {
             echo "### Flake does not evaluate"
             echo
-            echo "If \`rust-toolchain.toml\` moved to a newer nightly, run \`nix flake update\` and commit \`flake.lock\`."
+            echo "Updating \`flake.lock\` did not fix it, so the problem is in \`flake.nix\` itself. This is not something to fix in this PR; the Nix setup needs updating separately."
             echo
             echo "<details><summary>nix flake check output</summary>"
             echo
@@ -112,13 +140,15 @@ jobs:
             echo "</details>"
             echo
           } >> "$REPORT"
-          echo "::error file=flake.lock::Flake does not evaluate; run nix flake update if the nightly changed (see job summary)."
+          echo "::error file=flake.nix::Flake does not evaluate even with an updated lock (see job summary)."
           exit 1
 
       - name: Publish report
         if: success() || failure()
         run: |
-          if [ ! -e report/failed ]; then
+          if [ -e report/failed ]; then
+            echo "Only the Nix build is affected; \`cargo build\` and the required checks work either way, so this does not block merging." >> "$REPORT"
+          else
             echo "Nix pins are up to date." >> "$REPORT"
           fi
           cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
