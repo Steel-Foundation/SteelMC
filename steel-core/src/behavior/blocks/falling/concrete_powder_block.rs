@@ -34,7 +34,7 @@ impl ConcretePowderBlock {
         state.get_fluid_state().is_water()
     }
 
-    fn touches_liquid(world: &dyn LevelReader, pos: BlockPos) -> bool {
+    fn touches_liquid(world: &(impl LevelReader + ?Sized), pos: BlockPos) -> bool {
         let mut test_pos = pos;
         for direction in Direction::ALL {
             let state_at_test_pos = world.get_block_state(test_pos);
@@ -54,7 +54,7 @@ impl ConcretePowderBlock {
     }
 
     fn should_solidify(
-        world: &dyn LevelReader,
+        world: &(impl LevelReader + ?Sized),
         pos: BlockPos,
         replaced_state: BlockStateId,
     ) -> bool {

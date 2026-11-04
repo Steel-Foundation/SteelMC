@@ -14,7 +14,6 @@ use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::data_components::vanilla_components::{
     SIGN_TEXT_BACK, SIGN_TEXT_FRONT, SignText as SignTextComponent, WAXED,
 };
-use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::sound_events::{
     BLOCK_HANGING_SIGN_WAXED_INTERACT_FAIL, BLOCK_SIGN_WAXED_INTERACT_FAIL,
@@ -26,7 +25,7 @@ use steel_utils::{
 use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
 
-use crate::block_entity::{BlockEntity, BlockEntityBase};
+use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::entity::Entity;
 use crate::world::World;
 
@@ -337,11 +336,11 @@ impl BlockEntity for SignBlockEntity {
         }
     }
 
-    fn apply_components_from_item(&self, item: &ItemStack) {
+    fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
         let mut sign = self.sign.lock();
-        sign.front_text = SignText::from_component(item.get(SIGN_TEXT_FRONT));
-        sign.back_text = SignText::from_component(item.get(SIGN_TEXT_BACK));
-        sign.is_waxed = item.has(WAXED);
+        sign.front_text = SignText::from_component(components.get(SIGN_TEXT_FRONT).as_ref());
+        sign.back_text = SignText::from_component(components.get(SIGN_TEXT_BACK).as_ref());
+        sign.is_waxed = components.get(WAXED).is_some();
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -401,14 +400,14 @@ mod tests {
 
     use simdnbt::borrow::read_tag;
     use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
+    use steel_registry::{
+        init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_items,
+    };
     use steel_utils::{BlockPos, translations, types::SignTextSlot};
     use text_components::{Modifier as _, TextComponent};
     use uuid::Uuid;
 
-    use super::{
-        DyeColor, ItemStack, SIGN_TEXT_FRONT, SignBlockEntity, SignText, SignTextComponent, WAXED,
-    };
+    use super::{DyeColor, SIGN_TEXT_FRONT, SignBlockEntity, SignText, SignTextComponent, WAXED};
     use crate::block_entity::BlockEntity as _;
     use crate::test_support::fresh_test_world;
 
@@ -492,7 +491,7 @@ mod tests {
         );
         item.set(WAXED, ());
 
-        sign.apply_components_from_item(&item);
+        sign.apply_components_from_item_stack(&item);
 
         let front = sign.get_text(SignTextSlot::Front);
         assert_eq!(front.messages, messages);
@@ -500,6 +499,8 @@ mod tests {
         assert!(front.has_glowing_text);
         assert!(!sign.get_text(SignTextSlot::Back).has_message());
         assert!(sign.is_waxed());
+        assert!(!sign.base().stored_components().has(SIGN_TEXT_FRONT));
+        assert!(!sign.base().stored_components().has(WAXED));
     }
 
     #[test]

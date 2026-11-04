@@ -4,6 +4,7 @@ use super::*;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use rand::{RngExt, rng};
 use steel_math::DEGREE_90;
+use steel_utils::nbt::{NbtNumeric, nbt_collection_values};
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
@@ -40,23 +41,38 @@ fn landing_particle_position(entity_position: DVec3, landing_pos: BlockPos) -> D
     )
 }
 
-fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
-    let values = nbt.list(key)?.doubles()?;
+pub(crate) fn nbt_dvec3(tag: &NbtTag) -> Option<DVec3> {
+    let values = nbt_collection_values(tag)?;
+    let values = values
+        .iter()
+        .filter_map(NbtNumeric::codec_f64)
+        .collect::<Vec<_>>();
     let &[x, y, z, ..] = values.as_slice() else {
         return None;
     };
     Some(DVec3::new(x, y, z))
 }
 
-fn read_nbt_rotation(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<(f32, f32)> {
-    let values = nbt.list(key)?.floats()?;
+pub(crate) fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
+    nbt_dvec3(&nbt.get(key)?.to_owned())
+}
+
+pub(crate) fn read_nbt_rotation(
+    nbt: &BorrowedNbtCompoundView<'_, '_>,
+    key: &str,
+) -> Option<(f32, f32)> {
+    let values = nbt_collection_values(&nbt.get(key)?.to_owned())?;
+    let values = values
+        .iter()
+        .filter_map(NbtNumeric::codec_f32)
+        .collect::<Vec<_>>();
     let &[yaw, pitch, ..] = values.as_slice() else {
         return None;
     };
     Some((yaw, pitch))
 }
 
-fn sanitize_nbt_motion(motion: DVec3) -> DVec3 {
+pub(crate) fn sanitize_nbt_motion(motion: DVec3) -> DVec3 {
     let sanitize = |value: f64| {
         if value.abs() > MAX_ENTITY_MOTION_COMPONENT {
             0.0
@@ -419,8 +435,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether vanilla fluid currents can push this entity.
+    ///
+    /// The extractor flattens vanilla's per-subclass overrides into one flag.
+    /// Entities with extra conditions still override, as `Player` does.
     fn is_pushed_by_fluid(&self) -> bool {
-        true
+        self.entity_type().flags.is_pushed_by_fluid
     }
 
     /// Applies bubble-column surface push velocity, dispatching to the
@@ -2512,6 +2531,19 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let entity = self.as_entity_event_source();
         let movements = self.base().last_movements_for_block_effects();
         apply_effects_from_block_movements(entity, &movements);
+    }
+
+    /// What vanilla's `/teleport` does once an entity has moved: unless it is gliding, it ends up
+    /// on the ground without vertical motion.
+    fn land_after_teleport(&self) {
+        if self
+            .as_living_entity()
+            .is_none_or(|living| !living.is_fall_flying())
+        {
+            let velocity = self.velocity();
+            self.set_velocity(DVec3::new(velocity.x, 0.0, velocity.z));
+            self.set_on_ground(true);
+        }
     }
 
     /// Sets whether the entity is on the ground.

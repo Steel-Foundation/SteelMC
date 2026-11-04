@@ -257,7 +257,7 @@ fn entity_eye_suffocation_box(eye_pos: DVec3, width: f64) -> WorldAabb {
 
 fn block_state_suffocates_eye_box(
     state: BlockStateId,
-    world: &dyn LevelReader,
+    world: &impl LevelReader,
     pos: BlockPos,
     eye_box: WorldAabb,
 ) -> bool {
@@ -799,6 +799,7 @@ mod reference;
 mod registry;
 pub(crate) mod selector;
 mod spawn;
+mod spawn_placements;
 mod storage;
 mod synced_data;
 mod ticking;
@@ -823,6 +824,7 @@ pub use callback::{
 };
 pub use conversion::{AfterConversion, ConversionParams, ConversionType};
 pub(crate) use entity::apply_entity_look_at;
+pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
@@ -866,12 +868,14 @@ pub use projectile::{
 };
 pub use pushing::{DefaultEntityPush, EntityPushSnapshot};
 pub use reference::EntityReference;
+pub(crate) use registry::SpawnRule;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
     AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest,
     SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
-    create_entity_instance, spawn_entity,
+    create_entity_instance, load_entity_recursive_owned, spawn_entity,
 };
+pub(crate) use spawn_placements::SpawnPlacements;
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
 pub(crate) use ticking::{snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_if};

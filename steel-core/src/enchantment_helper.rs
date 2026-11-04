@@ -18,6 +18,10 @@ use crate::entity::{Entity, LivingEntity, MobEffectInstance, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
 
+mod selection;
+
+pub(crate) use selection::{EnchantmentInstance, get_enchantment_cost, select_enchantment};
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct EnchantmentDamageContext<'a> {
     this_entity_type: EntityTypeRef,
@@ -211,7 +215,7 @@ pub(crate) fn do_post_attack_effects_from_item(
 
 pub(crate) fn do_post_attack_effects_with_item_source(
     world: &World,
-    victim: &dyn Entity,
+    victim: &(impl Entity + ?Sized),
     source: &ItemStack,
     context: &EnchantmentPostAttackContext<'_>,
 ) {

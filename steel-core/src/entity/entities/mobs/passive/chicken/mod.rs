@@ -38,8 +38,8 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
     EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
-    LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData, entity_loot_ref,
-    living_loot_equipment, position_rider_default, sync_dirty_mob_effects,
+    LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule,
+    entity_loot_ref, living_loot_equipment, position_rider_default, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -120,7 +120,7 @@ impl ChickenState {
 }
 
 /// Vanilla chicken entity.
-#[entity_behavior(class = "Chicken")]
+#[entity_behavior(class = "Chicken", spawn_rule)]
 pub struct ChickenEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -138,6 +138,11 @@ unsafe impl DowncastType for ChickenEntity {
 }
 
 impl ChickenEntity {
+    /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
+    pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, random| {
+        <Self as Animal>::check_animal_spawn_rules(entity_type, level, spawn_reason, pos, random)
+    };
+
     /// Creates a new chicken at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
