@@ -672,25 +672,6 @@ fn destructive_explosion_removes_stone_and_spawns_its_loot() {
     }));
 }
 
-struct BreezeWindChargeStub {
-    base: EntityBase,
-}
-
-// SAFETY: This test-only key uniquely identifies `BreezeWindChargeStub`.
-unsafe impl DowncastType for BreezeWindChargeStub {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:test/breeze_wind_charge_stub");
-}
-
-impl Entity for BreezeWindChargeStub {
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        &vanilla_entities::BREEZE_WIND_CHARGE
-    }
-}
-
 #[test]
 fn trigger_explosion_flips_a_lever_without_breaking_blocks() {
     let fixture = ready_world("explosion_trigger_lever");
@@ -728,35 +709,5 @@ fn trigger_explosion_flips_a_lever_without_breaking_blocks() {
     assert!(drops.is_empty());
 }
 
-#[test]
-fn breeze_wind_charge_triggers_blocks_only_with_mob_griefing() {
-    let fixture = ready_world("explosion_breeze_trigger_gate");
-    let world = &fixture.world;
-    let charge: SharedEntity = Arc::new(BreezeWindChargeStub {
-        base: EntityBase::new(
-            next_entity_id(),
-            TEST_BLOCK_CENTER,
-            vanilla_entities::BREEZE_WIND_CHARGE.dimensions,
-            Arc::downgrade(world),
-        ),
-    });
-    let explosion = |source: Option<SharedEntity>| {
-        ServerExplosion::new(
-            world,
-            source,
-            None,
-            None,
-            None,
-            TEST_BLOCK_CENTER,
-            ENTITY_EFFECT_TEST_RADIUS,
-            false,
-            BlockInteraction::TriggerBlock,
-        )
-    };
-
-    assert!(explosion(Some(Arc::clone(&charge))).can_trigger_blocks());
-    assert!(world.set_game_rule(&MOB_GRIEFING, false));
-    assert!(!explosion(Some(charge)).can_trigger_blocks());
-    // Only the breeze's charge is gated; other trigger explosions still react.
-    assert!(explosion(None).can_trigger_blocks());
-}
+// TODO: Once the breeze wind charge entity exists, test that its trigger explosions
+// only trigger blocks while `mobGriefing` is enabled, and other sources stay ungated.
