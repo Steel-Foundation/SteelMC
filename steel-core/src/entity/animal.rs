@@ -3,9 +3,11 @@
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
+use rand::Rng;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::MOB_DROPS;
@@ -191,7 +193,7 @@ pub trait Animal: AgeableMob {
     }
 
     /// Returns whether light at `pos` is bright enough for an animal to naturally spawn.
-    fn is_bright_enough_to_spawn(level: &dyn LevelReader, pos: BlockPos) -> bool
+    fn is_bright_enough_to_spawn(level: &(impl LevelReader + ?Sized), pos: BlockPos) -> bool
     where
         Self: Sized,
     {
@@ -202,9 +204,11 @@ pub trait Animal: AgeableMob {
     /// below must allow animal spawning, and light must be sufficient unless
     /// the spawn reason ignores light requirements.
     fn check_animal_spawn_rules(
-        level: &dyn LevelReader,
+        _entity_type: EntityTypeRef,
+        level: &(impl LevelReader + ?Sized),
         spawn_reason: EntitySpawnReason,
         pos: BlockPos,
+        _random: &mut dyn Rng,
     ) -> bool
     where
         Self: Sized,
@@ -428,9 +432,11 @@ mod tests {
         let level = spawn_rule_level(vanilla_blocks::STONE.default_state(), 15);
 
         assert!(!<PigEntity as Animal>::check_animal_spawn_rules(
+            &vanilla_entities::PIG,
             &level,
             EntitySpawnReason::Natural,
-            BlockPos::new(0, 64, 0)
+            BlockPos::new(0, 64, 0),
+            &mut rand::rng(),
         ));
     }
 
@@ -440,17 +446,21 @@ mod tests {
         let level = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 8);
 
         assert!(!<PigEntity as Animal>::check_animal_spawn_rules(
+            &vanilla_entities::PIG,
             &level,
             EntitySpawnReason::Natural,
-            BlockPos::new(0, 64, 0)
+            BlockPos::new(0, 64, 0),
+            &mut rand::rng(),
         ));
 
         let level = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 9);
 
         assert!(<PigEntity as Animal>::check_animal_spawn_rules(
+            &vanilla_entities::PIG,
             &level,
             EntitySpawnReason::Natural,
-            BlockPos::new(0, 64, 0)
+            BlockPos::new(0, 64, 0),
+            &mut rand::rng(),
         ));
     }
 
@@ -460,9 +470,11 @@ mod tests {
         let level = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 0);
 
         assert!(<PigEntity as Animal>::check_animal_spawn_rules(
+            &vanilla_entities::PIG,
             &level,
             EntitySpawnReason::TrialSpawner,
-            BlockPos::new(0, 64, 0)
+            BlockPos::new(0, 64, 0),
+            &mut rand::rng(),
         ));
     }
 }

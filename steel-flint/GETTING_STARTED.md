@@ -35,7 +35,7 @@ git clone https://github.com/FlintTestMC/SteelBenchmark.git test
 To keep the tests somewhere else, set `TEST_PATH`:
 
 ```bash
-TEST_PATH=/path/to/SteelBenchmark cargo test --lib test_run_flint_selected
+TEST_PATH=/path/to/SteelBenchmark cargo test --lib test_run_flint_selected  -- --nocapture --ignored
 ```
 
 ## 5. Configure Test Filtering
@@ -62,10 +62,10 @@ walls = false
 Environment variables override config filters:
 
 ```bash
-FLINT_TEST=place_fence cargo test --lib test_run_flint_selected
-FLINT_PATTERN="*fence" cargo test --lib test_run_flint_selected
-FLINT_TAGS=redstone,walls cargo test --lib test_run_flint_selected
-FLINT_IMPLEMENTED_ONLY=true cargo test --lib test_run_flint_selected
+FLINT_TEST=place_fence cargo test --lib test_run_flint_selected  -- --nocapture --ignored
+FLINT_PATTERN="*fence" cargo test --lib test_run_flint_selected -- --nocapture --ignored
+FLINT_TAGS=redstone,walls cargo test --lib test_run_flint_selected -- --nocapture --ignored
+FLINT_IMPLEMENTED_ONLY=true cargo test --lib test_run_flint_selected -- --nocapture --ignored
 ```
 
 ## 6. Run the Benchmark Tests
@@ -73,13 +73,13 @@ FLINT_IMPLEMENTED_ONLY=true cargo test --lib test_run_flint_selected
 Run the selected Flint tests:
 
 ```bash
-cargo test --lib test_run_flint_selected -- --nocapture
+cargo test --lib test_run_flint_selected -- --nocapture --ignored
 ```
 
 Run every loaded benchmark spec:
 
 ```bash
-cargo test --lib test_run_all_flint_benchmarks -- --nocapture
+cargo test --lib test_run_all_flint_benchmarks -- --nocapture --ignored
 ```
 
 The test runner writes a CI summary to `log/flint_summary.json`.

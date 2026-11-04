@@ -47,7 +47,11 @@ impl NoteBlock {
         state.get_block().config.instrument
     }
 
-    fn set_instrument(level: &dyn LevelReader, pos: BlockPos, state: BlockStateId) -> BlockStateId {
+    fn set_instrument(
+        level: &(impl LevelReader + ?Sized),
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> BlockStateId {
         let instrument_above = Self::block_instrument(level.get_block_state(pos.above()));
         if instrument_above.works_above_note_block() {
             return state.set_value(NOTEBLOCK_INSTRUMENT, instrument_above);

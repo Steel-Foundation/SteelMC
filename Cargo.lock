@@ -2876,6 +2876,7 @@ dependencies = [
  "rayon",
  "rustc-hash 2.1.3",
  "serde",
+ "serde_json",
  "simdnbt",
  "steel-core",
  "steel-protocol",
@@ -2925,6 +2926,9 @@ dependencies = [
 [[package]]
 name = "steel-math"
 version = "0.16.1+mc26.3"
+dependencies = [
+ "glam",
+]
 
 [[package]]
 name = "steel-protocol"
