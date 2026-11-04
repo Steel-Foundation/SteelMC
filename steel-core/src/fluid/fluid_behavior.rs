@@ -8,6 +8,7 @@ use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::World;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::{FluidRef, FluidState};
+use steel_registry::items::ItemRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -19,6 +20,9 @@ pub trait FluidBehavior: Send + Sync {
 
     /// Creates the block state that holds `fluid_state` on its own.
     fn create_legacy_block(&self, fluid_state: FluidState) -> BlockStateId;
+
+    /// The filled bucket of this fluid, or air if it has none.
+    fn bucket(&self) -> ItemRef;
 
     /// Checks if this fluid is the same type as another fluid ref.
     ///

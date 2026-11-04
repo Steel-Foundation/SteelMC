@@ -8,11 +8,13 @@ use glam::DVec3;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::items::ItemRef;
 use steel_registry::level_events;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::LAVA_SOURCE_CONVERSION;
+use steel_registry::vanilla_items;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
@@ -57,6 +59,10 @@ impl FluidBehavior for LavaFluid {
 
     fn create_legacy_block(&self, fluid_state: FluidState) -> BlockStateId {
         liquid_block_state(&vanilla_blocks::LAVA, fluid_state)
+    }
+
+    fn bucket(&self) -> ItemRef {
+        &vanilla_items::LAVA_BUCKET
     }
 
     fn fluid_type(&self) -> FluidRef {

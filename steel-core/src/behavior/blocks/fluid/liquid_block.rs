@@ -2,6 +2,7 @@
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
+use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, IntProperty};
@@ -10,7 +11,6 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluid_tags::FluidTag;
-use steel_registry::{REGISTRY, RegistryExt as _};
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
@@ -235,11 +235,12 @@ impl BlockBehavior for LiquidBlock {
         if state.try_get_value(LEVEL) != Some(0) {
             return None;
         }
-        // Unlike vanilla, a fluid without a bucket item (`minecraft:air`) stays in place.
-        let bucket = REGISTRY
-            .items
-            .by_key(&self.fluid.bucket_item)
-            .filter(|item| *item != &*vanilla_items::AIR)?;
+        let behavior = FLUID_BEHAVIORS.get_behavior(self.fluid);
+        // Unlike vanilla, a fluid without a bucket stays in place.
+        let bucket = behavior.bucket();
+        if bucket == &*vanilla_items::AIR {
+            return None;
+        }
 
         let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         if world.set_block_if_unchanged(pos, state, air, UpdateFlags::UPDATE_ALL_IMMEDIATE)
@@ -250,7 +251,7 @@ impl BlockBehavior for LiquidBlock {
 
         Some(PickupResult {
             filled_bucket: ItemStack::new(bucket),
-            sound: FLUID_BEHAVIORS.get_behavior(self.fluid).pickup_sound(),
+            sound: behavior.pickup_sound(),
         })
     }
 }

@@ -19,8 +19,6 @@ pub struct Fluid {
     pub is_randomly_ticking: bool,
     /// The block this fluid places.
     pub block: Identifier,
-    /// The bucket item for this fluid.
-    pub bucket_item: Identifier,
     /// The source fluid identifier (for flowing fluids).
     pub source_fluid: Option<Identifier>,
     /// The flowing fluid identifier (for source fluids).

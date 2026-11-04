@@ -6,10 +6,12 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::items::ItemRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::WATER_SOURCE_CONVERSION;
+use steel_registry::vanilla_items;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
@@ -27,6 +29,10 @@ pub struct WaterFluid;
 impl FluidBehavior for WaterFluid {
     fn create_legacy_block(&self, fluid_state: FluidState) -> BlockStateId {
         liquid_block_state(&vanilla_blocks::WATER, fluid_state)
+    }
+
+    fn bucket(&self) -> ItemRef {
+        &vanilla_items::WATER_BUCKET
     }
 
     fn fluid_type(&self) -> FluidRef {
