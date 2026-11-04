@@ -22,6 +22,7 @@ pub mod container;
 pub mod default;
 pub mod potion;
 pub mod projectile;
+pub mod tnt;
 pub mod tools;
 
 pub use armor::ArmorDispenseBehavior;
@@ -34,6 +35,7 @@ pub use container::ShulkerBoxDispenseBehavior;
 pub use default::DefaultDispenseBehavior;
 pub use potion::GlassBottleDispenseBehavior;
 pub use projectile::ProjectileDispenseBehavior;
+pub use tnt::TntDispenseBehavior;
 pub use tools::FlintAndSteelDispenseBehavior;
 
 pub trait DispenseItemBehavior: Send + Sync {
@@ -184,7 +186,7 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         )),
     );
 
-    // TODO: tnt - needs the PrimedTnt entity.
+    registry.set_behavior(&vanilla_items::TNT, Box::new(TntDispenseBehavior));
 
     // tools
     registry.set_behavior(

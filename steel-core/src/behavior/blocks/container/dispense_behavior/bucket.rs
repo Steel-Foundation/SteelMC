@@ -4,7 +4,6 @@ use log::info;
 use std::sync::Arc;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::level_events;
 use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
