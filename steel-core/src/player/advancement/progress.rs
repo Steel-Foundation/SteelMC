@@ -39,16 +39,18 @@ impl AdvancementProgressMap {
     /// Replaces the progress of an advancement with persisted state.
     pub fn start_progress(
         &mut self,
-        advancement: AdvancementRef,
+        registry: &FrozenAdvancementRegistry,
+        advancement_idx: AdvancementIdx,
         mut progress: AdvancementProgress,
     ) {
-        progress.update(advancement.requirements());
-        if let Some(&idx) = self.map.get(&advancement) {
+        let advancement = registry.get_by_idx(advancement_idx);
+        progress.update(advancement.value().requirements());
+        if let Some(&idx) = self.map.get(&advancement_idx) {
             self.order[idx].1 = progress;
         } else {
             let idx = self.order.len();
-            self.order.push((advancement, progress));
-            self.map.insert(advancement, idx);
+            self.order.push((advancement_idx, progress));
+            self.map.insert(advancement_idx, idx);
         }
     }
 

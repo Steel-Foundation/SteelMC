@@ -67,20 +67,17 @@ impl PlayerAdvancement {
     }
 
     /// Synchronizes the player's advancement data with the current advancement registry.
-    /// This is useful when the advancement registry has been updated, and the player's data needs to be aligned with the new state.
+    ///
+    /// Progress is kept by advancement identifier because indices belong to the old tree. It is
+    /// reapplied to the new registry so an advancement reload does not drop live progress.
     pub fn sync(&mut self, current: Arc<FrozenAdvancementRegistry>) {
         if Arc::ptr_eq(&self.registry, &current) {
             return;
         }
         // TODO: clear advancement listeners once listener registration is implemented.
-        self.progress.clear();
-        self.visible.clear();
-        self.roots_to_update.clear();
-        self.progress_changed.clear();
-        self.is_first_packet = true;
-        self.last_selected_tab = None;
+        let progress = self.persisted_progress();
         self.registry = current;
-        // TODO: reload advancement progress from storage once advancement saving/loading exists.
+        self.apply_persisted_progress(progress);
     }
 
     /// Award a criterion to a player. If this completes the advancement,
@@ -269,7 +266,12 @@ impl PlayerAdvancement {
         self.progress
             .iter()
             .filter(|(_, progress)| progress.has_progress())
-            .map(|(advancement, progress)| (advancement.key().clone(), progress.clone()))
+            .map(|(advancement, progress)| {
+                (
+                    self.registry.value_by_idx(*advancement).key().clone(),
+                    progress.clone(),
+                )
+            })
             .collect()
     }
 
@@ -289,16 +291,17 @@ impl PlayerAdvancement {
         self.is_first_packet = true;
 
         for (advancement_id, progress) in entries {
-            let Some(advancement) = REGISTRY.advancements.value_by_key(&advancement_id) else {
+            let Some(advancement_idx) = self.registry.get_idx_by_key(&advancement_id) else {
                 tracing::warn!(
                     "Ignored advancement '{}' in saved progress - it doesn't exist anymore?",
                     advancement_id
                 );
                 continue;
             };
-            self.progress.start_progress(advancement, progress);
-            self.progress_changed.insert(advancement);
-            self.mark_for_visibility_update(advancement);
+            self.progress
+                .start_progress(&self.registry, advancement_idx, progress);
+            self.progress_changed.insert(advancement_idx);
+            self.mark_for_visibility_update(advancement_idx);
         }
     }
 }
@@ -306,69 +309,74 @@ impl PlayerAdvancement {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::borrow::Cow;
     use steel_registry::init_vanilla_registry;
 
-    fn advancement_with_criteria() -> AdvancementRef {
-        REGISTRY
-            .advancements
+    fn advancement_with_criteria() -> (Identifier, Cow<'static, str>) {
+        let registry = REGISTRY.advancements.snapshot();
+        let advancement = registry
             .advancements()
-            .iter()
-            .copied()
             .find(|advancement| !advancement.requirements().names().is_empty())
-            .expect("vanilla registry should contain an advancement with criteria")
+            .expect("vanilla registry should contain an advancement with criteria");
+        let criterion = advancement
+            .requirements()
+            .names()
+            .into_iter()
+            .next()
+            .expect("advancement should have a criterion");
+        (advancement.key().clone(), criterion)
     }
 
     #[test]
     fn persisted_progress_skips_advancements_without_progress() {
         init_vanilla_registry();
 
-        let advancement = advancement_with_criteria();
-        let untouched = REGISTRY
-            .advancements
-            .advancements()
-            .iter()
-            .copied()
-            .find(|candidate| *candidate != advancement)
-            .expect("vanilla registry should contain more than one advancement");
-
+        let (advancement_id, criterion) = advancement_with_criteria();
         let mut player_advancement = PlayerAdvancement::default();
-        let criterion = advancement
-            .requirements()
-            .names()
-            .into_iter()
-            .next()
-            .expect("advancement should have a criterion");
+        let advancement_idx = player_advancement
+            .registry
+            .get_idx_by_key(&advancement_id)
+            .expect("advancement should exist in the registry");
+        let untouched_id = player_advancement
+            .registry
+            .advancements()
+            .find(|candidate| candidate.key() != &advancement_id)
+            .expect("vanilla registry should contain more than one advancement")
+            .key()
+            .clone();
+        let untouched_idx = player_advancement
+            .registry
+            .get_idx_by_key(&untouched_id)
+            .expect("advancement should exist in the registry");
+
         player_advancement
             .progress
-            .get_mut_or_start_progress(advancement)
+            .get_mut_or_start_progress(&player_advancement.registry, advancement_idx)
             .grant_progress(&criterion);
         player_advancement
             .progress
-            .get_mut_or_start_progress(untouched)
+            .get_mut_or_start_progress(&player_advancement.registry, untouched_idx)
             .grant_progress("steel_never_completed");
 
         let persisted = player_advancement.persisted_progress();
 
         assert_eq!(persisted.len(), 1);
-        assert_eq!(persisted[0].0, *advancement.key());
+        assert_eq!(persisted[0].0, advancement_id);
     }
 
     #[test]
     fn apply_persisted_progress_restores_progress_and_resets_client_state() {
         init_vanilla_registry();
 
-        let advancement = advancement_with_criteria();
-        let criterion = advancement
-            .requirements()
-            .names()
-            .into_iter()
-            .next()
-            .expect("advancement should have a criterion");
-
+        let (advancement_id, criterion) = advancement_with_criteria();
         let mut source = PlayerAdvancement::default();
+        let advancement_idx = source
+            .registry
+            .get_idx_by_key(&advancement_id)
+            .expect("advancement should exist in the registry");
         source
             .progress
-            .get_mut_or_start_progress(advancement)
+            .get_mut_or_start_progress(&source.registry, advancement_idx)
             .grant_progress(&criterion);
         let persisted = source.persisted_progress();
 
@@ -382,8 +390,45 @@ mod tests {
         assert_eq!(restored.progress.len(), 1);
         let progress = restored
             .progress
-            .get_progress(advancement)
+            .get_progress(advancement_idx)
             .expect("progress should be restored");
+        assert_eq!(
+            progress.get_completed_criteria().collect::<Vec<_>>(),
+            vec![&*criterion]
+        );
+    }
+
+    #[test]
+    fn sync_reapplies_progress_to_the_replacement_registry() {
+        init_vanilla_registry();
+
+        let (key, criterion) = advancement_with_criteria();
+        let mut player_advancement = PlayerAdvancement::default();
+        let advancement_idx = player_advancement
+            .registry
+            .get_idx_by_key(&key)
+            .expect("advancement should exist in the registry");
+        player_advancement
+            .progress
+            .get_mut_or_start_progress(&player_advancement.registry, advancement_idx)
+            .grant_progress(&criterion);
+
+        let replacement = Arc::new(REGISTRY.advancements.prepare_tree());
+        player_advancement.sync(Arc::clone(&replacement));
+
+        assert!(Arc::ptr_eq(&player_advancement.registry, &replacement));
+        assert!(
+            player_advancement.is_first_packet,
+            "client state must be reset"
+        );
+        let idx = player_advancement
+            .registry
+            .get_idx_by_key(&key)
+            .expect("advancement should exist in the replacement registry");
+        let progress = player_advancement
+            .progress
+            .get_progress(idx)
+            .expect("progress should survive the registry swap");
         assert_eq!(
             progress.get_completed_criteria().collect::<Vec<_>>(),
             vec![&*criterion]
