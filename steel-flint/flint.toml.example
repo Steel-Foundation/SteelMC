@@ -8,9 +8,9 @@
 test_path = "../../../FlintBenchmark/tests"
 
 # Filter priority (first match wins):
-#   test > tags (FLINT_TAGS, implemented_only, filter.tags) > pattern > all tests
+#   test > FLINT_TAGS > implemented_only > filter.tags > pattern > all tests
 [filter]
-# Only run tests tagged with an implemented item, block or entity.
+# Only run tests whose `minecraftIds` are all implemented items, blocks or entities.
 # Env: FLINT_IMPLEMENTED_ONLY=true
 implemented_only = true
 

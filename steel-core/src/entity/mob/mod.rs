@@ -354,6 +354,11 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn set_mob_flags(&self, flags: i8);
 
+    /// Returns whether the entity-specific spawn predicate accepts this spawn.
+    fn check_spawn_rules(&self, _world: &Arc<World>, _reason: EntitySpawnReason) -> bool {
+        true
+    }
+
     /// Sets the vanilla baby state. Vanilla `Mob.setBaby` is a no-op; ageable
     /// mobs derive it from their start age, and other mobs override as needed.
     fn set_baby(&self, baby: bool) {
@@ -375,6 +380,14 @@ pub trait Mob: LivingEntity + Leashable {
             is_saddled = self.is_equippable_in_slot(item_stack, EquipmentSlot::Saddle);
         });
         is_saddled
+    }
+
+    /// Checks line of sight using this mob sensing cache
+    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
+        self.mob_base()
+            .sensing()
+            .lock()
+            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
     }
 
     fn custom_server_ai_step(&self) {}
@@ -1310,14 +1323,6 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn is_aggressive(&self) -> bool {
         self.mob_flags() & MOB_FLAG_AGGRESSIVE != 0
-    }
-
-    /// Whether this mob can see `target`.
-    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
-        self.mob_base()
-            .sensing()
-            .lock()
-            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
     }
 
     /// Maximum degrees the head may pitch up or down independently of the body.
