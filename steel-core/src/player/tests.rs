@@ -1921,4 +1921,19 @@ fn player_melee_attack_plays_sound_packets() {
         sound_packet_ids(&sent_packets.lock()),
         vec![sound_events::ENTITY_PLAYER_ATTACK_NODAMAGE.packet_holder_id()]
     );
+
+    // 5. Sprinting with attack damage reduced to zero (for example by weakness)
+    // plays no knockback sound, matching vanilla's baseDamage/magicBoost gate.
+    attacker
+        .attributes()
+        .lock()
+        .set_base_value(vanilla_attributes::ATTACK_DAMAGE, 0.0);
+    pig.set_invulnerable_time(0);
+    for _ in 0..40 {
+        attacker.tick_attack_strength();
+    }
+    attacker.set_sprinting(true);
+    sent_packets.lock().clear();
+    assert!(!attacker.attack(&pig_target));
+    assert!(sound_packet_ids(&sent_packets.lock()).is_empty());
 }
