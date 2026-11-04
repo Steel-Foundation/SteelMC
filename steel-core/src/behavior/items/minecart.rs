@@ -8,7 +8,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events;
 
 use crate::behavior::{BLOCK_BEHAVIORS, InteractionResult, ItemBehavior, UseOnContext};
-use crate::entity::entities::objects::vehicles::create_minecart;
+use crate::entity::entities::objects::vehicles::{CreateMinecartError, create_minecart};
 use crate::world::game_event::GameEventContext;
 
 const RAIL_HEIGHT_OFFSET: f64 = 0.0625;
@@ -57,14 +57,24 @@ impl ItemBehavior for MinecartItem {
         );
 
         let stack = context.inv.with_item(|stack| stack.clone());
-        let Some(cart) = create_minecart(
+        let cart = match create_minecart(
             context.world,
             position,
             self.entity_type,
             &stack,
             Some(context.player),
-        ) else {
-            return InteractionResult::Fail;
+        ) {
+            Ok(cart) => cart,
+            // TODO: Place chest, furnace, TNT, hopper and command block minecarts once
+            // their entities implement `AbstractMinecart`.
+            Err(CreateMinecartError::Unsupported) => return InteractionResult::Pass,
+            Err(CreateMinecartError::Spawn(error)) => {
+                log::warn!(
+                    "Failed to create minecart {}: {error:?}",
+                    self.entity_type.key
+                );
+                return InteractionResult::Fail;
+            }
         };
 
         if let Err(error) = context.world.try_add_entity(cart) {
@@ -218,7 +228,10 @@ mod tests {
             .unwrap_or(0)
     }
 
-    fn carts_at(fixture: &Fixture) -> Vec<SharedEntity> {
+    fn entities_near(
+        fixture: &Fixture,
+        matches: impl Fn(&dyn Entity) -> bool,
+    ) -> Vec<SharedEntity> {
         let pos = fixture.pos;
         let bounds = WorldAabb::new(
             f64::from(pos.x()) - 2.0,
@@ -232,9 +245,13 @@ mod tests {
         fixture
             .world_fixture
             .world
-            .get_entities_in_aabb_matching(&bounds, |entity| {
-                entity.entity_type() == &vanilla_entities::MINECART
-            })
+            .get_entities_in_aabb_matching(&bounds, matches)
+    }
+
+    fn carts_at(fixture: &Fixture) -> Vec<SharedEntity> {
+        entities_near(fixture, |entity| {
+            entity.entity_type() == &vanilla_entities::MINECART
+        })
     }
 
     fn single_cart(fixture: &Fixture) -> SharedEntity {
@@ -269,6 +286,46 @@ mod tests {
             );
             assert!(carts_at(&fixture).is_empty());
             assert_eq!(minecart_use_count(&fixture.player), 0);
+        }
+    }
+
+    #[test]
+    fn unimplemented_minecart_variants_pass_without_consumption_or_spawning() {
+        init_globals();
+
+        for item in [
+            &vanilla_items::CHEST_MINECART,
+            &vanilla_items::FURNACE_MINECART,
+            &vanilla_items::TNT_MINECART,
+            &vanilla_items::HOPPER_MINECART,
+            &vanilla_items::COMMAND_BLOCK_MINECART,
+        ] {
+            let fixture = create_fixture(
+                "minecart_item_unimplemented_variant",
+                BlockPos::new(8, 64, 8),
+                &vanilla_blocks::RAIL,
+                Some(RailShape::NorthSouth),
+                GameType::Survival,
+            );
+            let stack = ItemStack::new(item);
+            prepare_hand(&fixture.player, InteractionHand::MainHand, stack.clone());
+
+            assert_eq!(
+                use_cart(&fixture, InteractionHand::MainHand),
+                InteractionResult::Pass,
+                "{}",
+                item.key
+            );
+            assert_eq!(
+                held_stack(&fixture.player, InteractionHand::MainHand),
+                stack
+            );
+            let player_id = fixture.player.id();
+            assert!(
+                entities_near(&fixture, |entity| entity.id() != player_id).is_empty(),
+                "{} should not spawn an entity",
+                item.key
+            );
         }
     }
 

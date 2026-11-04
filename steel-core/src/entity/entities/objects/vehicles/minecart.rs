@@ -16,9 +16,14 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey};
 
-use super::abstract_minecart::{AbstractMinecart, AbstractMinecartBase};
+use super::abstract_minecart::{
+    AbstractMinecart, AbstractMinecartBase, minecart_relative_portal_position,
+};
 use super::minecart_behavior::MinecartBehavior;
-use super::vehicle_entity::{VEHICLE_HURT_DURATION_TICKS, VehicleEntity};
+use super::vehicle_entity::{
+    VEHICLE_DIMENSION_CHANGING_DELAY, VEHICLE_HURT_DURATION_TICKS, VehicleEntity,
+    vehicle_ignores_explosion,
+};
 use crate::behavior::InteractionResult;
 use crate::entity::{
     DamageSource, Entity, EntityBase, EntityBaseLoad, EntityEventSource, EntityMovementEmission,
@@ -258,11 +263,11 @@ impl Entity for MinecartEntity {
     }
 
     fn dimension_changing_delay(&self) -> i32 {
-        self.vehicle_dimension_changing_delay()
+        VEHICLE_DIMENSION_CHANGING_DELAY
     }
 
     fn get_relative_portal_position(&self, axis: Axis, area: FoundRectangle) -> DVec3 {
-        self.minecart_relative_portal_position(axis, area)
+        minecart_relative_portal_position(self, axis, area)
     }
 
     fn passenger_attachment_point(&self, passenger: &dyn Entity) -> DVec3 {
@@ -282,7 +287,7 @@ impl Entity for MinecartEntity {
     }
 
     fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
-        self.vehicle_ignore_explosion(explosion)
+        vehicle_ignores_explosion(explosion)
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {

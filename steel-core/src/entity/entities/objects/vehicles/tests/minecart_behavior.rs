@@ -4,32 +4,9 @@ use steel_registry::init_vanilla_registry;
 use steel_utils::{ChunkPos, types::UpdateFlags};
 
 use super::*;
-use crate::behavior::init_behaviors;
 use crate::entity::entities::objects::vehicles::MinecartEntity;
+use crate::entity::entities::objects::vehicles::test_support::{assert_vec_close, test_world};
 use crate::entity::{Entity, EntityEventSource};
-use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
-
-fn assert_close(actual: f64, expected: f64) {
-    assert!(
-        (actual - expected).abs() <= 1.0e-12,
-        "expected {expected}, got {actual}",
-    );
-}
-
-fn assert_vec_close(actual: DVec3, expected: DVec3) {
-    assert_close(actual.x, expected.x);
-    assert_close(actual.y, expected.y);
-    assert_close(actual.z, expected.z);
-}
-
-fn test_world(key: &'static str, chunk: ChunkPos) -> TestWorld {
-    init_vanilla_registry();
-    init_behaviors();
-
-    let fixture = fresh_test_world(key);
-    insert_ready_full_chunk(&fixture.world, chunk);
-    fixture
-}
 
 fn run_flat_track_case(
     key: &'static str,

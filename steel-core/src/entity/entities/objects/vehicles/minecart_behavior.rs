@@ -52,7 +52,6 @@ const SLOPE_HEIGHT_SCALE: f64 = 2.0;
 pub struct MinecartBehavior;
 
 impl MinecartBehavior {
-    /// Advances this minecart's movement behavior by one game tick.
     pub(crate) fn tick(minecart: &dyn AbstractMinecart, entity: &SharedEntity, world: &World) {
         minecart.apply_gravity();
         let pos = minecart.current_block_pos_or_rail_below(world);
@@ -74,7 +73,6 @@ impl MinecartBehavior {
         Self::push_and_pickup_entities(minecart);
     }
 
-    /// Returns the horizontal direction used by this minecart's movement behavior.
     pub(crate) fn motion_direction(minecart: &dyn AbstractMinecart) -> Direction {
         let direction = minecart.direction_yaw();
 
@@ -102,7 +100,6 @@ impl MinecartBehavior {
         )
     }
 
-    /// Returns the maximum speed of this minecart.
     pub(crate) fn max_speed(minecart: &dyn AbstractMinecart, _world: &World) -> f64 {
         if minecart.is_in_water() {
             MAX_SPEED_IN_WATER
@@ -111,7 +108,6 @@ impl MinecartBehavior {
         }
     }
 
-    /// Returns the slowdown factor of this minecart.
     pub(crate) fn slowdown_factor(minecart: &dyn AbstractMinecart) -> f64 {
         if minecart.is_vehicle() {
             RIDDEN_SLOWDOWN_FACTOR
@@ -124,7 +120,6 @@ impl MinecartBehavior {
         clippy::too_many_lines,
         reason = "keeping it together makes it easier to audit"
     )]
-    /// Moves the minecart along its current rail.
     fn move_along_track(minecart: &dyn AbstractMinecart, entity: &SharedEntity, world: &World) {
         let pos = minecart.current_block_pos_or_rail_below(world);
         let state = world.get_block_state(pos);
@@ -220,12 +215,11 @@ impl MinecartBehavior {
             position.y,
             position.z,
             Some((pos, shape)),
-        ) && let Err(error) = minecart.try_set_position(DVec3::new(projected.x, y, projected.z))
-        {
-            log::debug!(
-                "failed to project minecart {} onto rail: {error}",
-                minecart.id()
-            );
+        ) && !Self::set_position(
+            minecart,
+            DVec3::new(projected.x, y, projected.z),
+            "project onto rail",
+        ) {
             return;
         }
 
@@ -260,15 +254,8 @@ impl MinecartBehavior {
 
         if let Some(exit_y) = exit_y {
             let position = minecart.position();
-            if let Err(error) = minecart.try_set_position(DVec3::new(
-                position.x,
-                position.y + f64::from(exit_y),
-                position.z,
-            )) {
-                log::debug!(
-                    "failed to adjust minecart {} to rail exit height: {error}",
-                    minecart.id()
-                );
+            let raised = DVec3::new(position.x, position.y + f64::from(exit_y), position.z);
+            if !Self::set_position(minecart, raised, "raise to rail exit height") {
                 return;
             }
         }
@@ -292,13 +279,8 @@ impl MinecartBehavior {
                 ));
             }
             let position = minecart.position();
-            if let Err(error) =
-                minecart.try_set_position(DVec3::new(position.x, new_projected.y, position.z))
-            {
-                log::debug!(
-                    "failed to correct minecart {} rail height: {error}",
-                    minecart.id()
-                );
+            let corrected = DVec3::new(position.x, new_projected.y, position.z);
+            if !Self::set_position(minecart, corrected, "correct rail height") {
                 return;
             }
         }
@@ -353,6 +335,16 @@ impl MinecartBehavior {
                 minecart.set_velocity(DVec3::new(dx, velocity.y, dz));
             }
         }
+    }
+
+    /// Moves `minecart` to `position`, logging `step` and returning `false` if the move was
+    /// rejected so the caller can end the tick.
+    fn set_position(minecart: &dyn AbstractMinecart, position: DVec3, step: &str) -> bool {
+        let Err(error) = minecart.try_set_position(position) else {
+            return true;
+        };
+        log::debug!("failed to {step} for minecart {}: {error}", minecart.id());
+        false
     }
 
     /// Returns whether the minecart should continue its movement after pushing or picking up entities.

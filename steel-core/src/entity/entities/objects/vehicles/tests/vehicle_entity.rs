@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use glam::DVec3;
 use steel_registry::data_components::vanilla_components::CUSTOM_NAME;
 use steel_registry::vanilla_game_rules::ENTITY_DROPS;
@@ -8,37 +6,16 @@ use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
 use text_components::TextComponent;
 
 use super::VehicleEntity;
-use crate::bootstrap::init_globals;
-use crate::entity::entities::{ItemEntity, MinecartEntity};
-use crate::entity::{
-    DamageSource, Entity, EntityEventSource, RemovalReason, SharedEntity, next_entity_id,
-};
-use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
+use crate::entity::entities::ItemEntity;
+use crate::entity::entities::objects::vehicles::test_support;
+use crate::entity::{DamageSource, Entity, RemovalReason, SharedEntity};
+use crate::test_support::TestWorld;
 use crate::world::World;
 
 fn test_world(key: &'static str) -> TestWorld {
-    init_globals();
-
-    let fixture = fresh_test_world(key);
-    insert_ready_full_chunk(&fixture.world, ChunkPos::new(0, 0));
+    let fixture = test_support::test_world(key, ChunkPos::new(0, 0));
     assert!(fixture.world.set_game_rule(&ENTITY_DROPS, true));
-
     fixture
-}
-
-fn test_cart(world: &Arc<World>) -> Arc<MinecartEntity> {
-    let cart = Arc::new(MinecartEntity::new(
-        &vanilla_entities::MINECART,
-        next_entity_id(),
-        DVec3::new(8.5, 64.0, 8.5),
-        Arc::downgrade(world),
-    ));
-
-    world
-        .try_add_entity(Arc::clone(&cart).into_shared_entity())
-        .expect("test minecart should enter the loaded chunk");
-
-    cart
 }
 
 fn dropped_items(world: &World, position: DVec3) -> Vec<SharedEntity> {
@@ -51,7 +28,7 @@ fn dropped_items(world: &World, position: DVec3) -> Vec<SharedEntity> {
 fn damage_accumulates_and_destruction_requires_more_than_forty() {
     let fixture = test_world("vehicle_damage_threshold");
     let world = &fixture.world;
-    let cart = test_cart(world);
+    let cart = test_support::spawned_minecart(world);
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
     let initial_direction = cart.hurt_dir();
 
@@ -89,7 +66,7 @@ fn destruction_respects_entity_drops_and_preserves_the_custom_name() {
         let world = &fixture.world;
         assert!(world.set_game_rule(&ENTITY_DROPS, entity_drops));
 
-        let cart = test_cart(world);
+        let cart = test_support::spawned_minecart(world);
         let name = TextComponent::plain("Rail Runner");
         cart.set_custom_name(Some(name.clone()));
 

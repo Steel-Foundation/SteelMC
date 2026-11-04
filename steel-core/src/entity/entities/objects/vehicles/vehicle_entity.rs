@@ -98,19 +98,18 @@ pub trait VehicleEntity: Entity {
             self.spawn_at_location(item, 0.0);
         }
     }
+}
 
-    /// Returns the default dimension changing delay for vehicles.
-    fn vehicle_dimension_changing_delay(&self) -> i32 {
-        10
-    }
+/// Vanilla `VehicleEntity.getDimensionChangingDelay`.
+pub(crate) const VEHICLE_DIMENSION_CHANGING_DELAY: i32 = 10;
 
-    /// Returns whether this vehicle ignores the explosion.
-    fn vehicle_ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
-        explosion
-            .indirect_source_entity()
-            .is_some_and(|entity| entity.as_mob().is_some())
-            && !explosion.world().get_game_rule(&MOB_GRIEFING)
-    }
+/// Vanilla `VehicleEntity.ignoreExplosion`: mob explosions leave vehicles intact while
+/// `mobGriefing` is off.
+pub(crate) fn vehicle_ignores_explosion(explosion: &dyn Explosion) -> bool {
+    explosion
+        .indirect_source_entity()
+        .is_some_and(|entity| entity.as_mob().is_some())
+        && !explosion.world().get_game_rule(&MOB_GRIEFING)
 }
 
 #[cfg(test)]

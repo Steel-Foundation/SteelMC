@@ -22,7 +22,9 @@ use super::vehicle_entity::VehicleEntity;
 use crate::block_entity::block_state_nbt;
 use crate::entity::reset_forward_direction_of_relative_portal_position;
 use crate::entity::{Entity, EntityMovementEmission};
-use crate::entity::{SharedEntity, apply_item_stack_components, create_entity_instance};
+use crate::entity::{
+    EntitySpawnError, SharedEntity, apply_item_stack_components, create_entity_instance,
+};
 use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
 use crate::portal::portal_shape::PortalShape;
@@ -413,16 +415,6 @@ pub trait AbstractMinecart: VehicleEntity + AbstractMinecartEventSource {
         }
     }
 
-    /// Returns the relative portal position for the given axis and portal area.
-    fn minecart_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
-        reset_forward_direction_of_relative_portal_position(PortalShape::get_relative_position(
-            portal_area,
-            axis,
-            self.position(),
-            self.dimensions_for_pose(self.pose()),
-        ))
-    }
-
     /// Returns the passenger attachment point used by this minecart.
     ///
     /// Villagers and wandering traders use vanilla's lowered attachment point.
@@ -438,7 +430,7 @@ pub trait AbstractMinecart: VehicleEntity + AbstractMinecartEventSource {
         }
     }
 
-    /// Saves display settings, flipped rotation, and first-tick state from NBT.
+    /// Saves display settings, flipped rotation, and first-tick state to NBT.
     fn save_abstract_minecart_data(&self, nbt: &mut NbtCompound) {
         if let Some(display_state) = self.custom_display_block() {
             nbt.insert(
@@ -495,50 +487,54 @@ pub const fn rail_exits(shape: RailShape) -> ((i32, i32, i32), (i32, i32, i32)) 
     }
 }
 
+/// Vanilla `AbstractMinecart.getRelativePortalPosition`.
+pub(crate) fn minecart_relative_portal_position(
+    minecart: &dyn Entity,
+    axis: Axis,
+    portal_area: FoundRectangle,
+) -> DVec3 {
+    reset_forward_direction_of_relative_portal_position(PortalShape::get_relative_position(
+        portal_area,
+        axis,
+        minecart.position(),
+        minecart.dimensions_for_pose(minecart.pose()),
+    ))
+}
+
+/// Why [`create_minecart`] produced no minecart.
+#[derive(Debug)]
+pub(crate) enum CreateMinecartError {
+    /// This minecart variant has no [`AbstractMinecart`] implementation yet.
+    Unsupported,
+    /// Creating the entity or applying the item's components failed.
+    Spawn(EntitySpawnError),
+}
+
 /// Creates and configures a minecart without adding it to the world.
-///
-/// Logs creation or configuration failures and returns `None`.
-#[must_use]
 pub(crate) fn create_minecart(
     world: &Arc<World>,
     position: DVec3,
     entity_type: EntityTypeRef,
     item_stack: &ItemStack,
     player: Option<&Player>,
-) -> Option<SharedEntity> {
-    let cart = match create_entity_instance(world, entity_type, position) {
-        Ok(cart) => cart,
-        Err(error) => {
-            log::warn!(
-                "Failed to create minecart {} at {position:?}: {error:?}",
-                entity_type.key,
-            );
-            return None;
-        }
-    };
+) -> Result<SharedEntity, CreateMinecartError> {
+    let cart =
+        create_entity_instance(world, entity_type, position).map_err(|error| match error {
+            EntitySpawnError::MissingFactory => CreateMinecartError::Unsupported,
+            error => CreateMinecartError::Spawn(error),
+        })?;
 
     if cart.as_abstract_minecart().is_none() {
-        log::error!(
-            "Entity factory for {} does not implement AbstractMinecart",
-            entity_type.key,
-        );
-        return None;
+        return Err(CreateMinecartError::Unsupported);
     }
 
     cart.base().set_position_local(position);
     cart.set_old_position_to_current();
 
-    if let Err(error) =
-        apply_item_stack_components(&cart, item_stack, player.is_some_and(Player::is_operator))
-    {
-        log::warn!(
-            "Failed to configure minecart {} from its item: {error:?}",
-            entity_type.key,
-        );
-        return None;
-    }
+    apply_item_stack_components(&cart, item_stack, player.is_some_and(Player::is_operator))
+        .map_err(CreateMinecartError::Spawn)?;
 
-    Some(cart)
+    Ok(cart)
 }
 
 #[cfg(test)]

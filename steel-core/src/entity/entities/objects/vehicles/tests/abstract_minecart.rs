@@ -7,36 +7,13 @@ use steel_registry::init_vanilla_registry;
 use steel_utils::{ChunkPos, types::UpdateFlags};
 
 use super::*;
-use crate::behavior::init_behaviors;
+use crate::entity::entities::objects::vehicles::test_support::{assert_vec_close, test_world};
 use crate::entity::entities::{MinecartEntity, PigEntity};
 use crate::entity::{EntityBase, EntityEventSource, EntityFluidContact};
-use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
-
-fn assert_close(actual: f64, expected: f64) {
-    assert!(
-        (actual - expected).abs() <= 1.0e-12,
-        "expected {expected}, got {actual}",
-    );
-}
-
-fn assert_vec_close(actual: DVec3, expected: DVec3) {
-    assert_close(actual.x, expected.x);
-    assert_close(actual.y, expected.y);
-    assert_close(actual.z, expected.z);
-}
 
 fn test_cart(id: i32, position: DVec3) -> MinecartEntity {
     init_vanilla_registry();
     MinecartEntity::new(&vanilla_entities::MINECART, id, position, Weak::new())
-}
-
-fn test_world(key: &'static str) -> TestWorld {
-    init_vanilla_registry();
-    init_behaviors();
-
-    let fixture = fresh_test_world(key);
-    insert_ready_full_chunk(&fixture.world, ChunkPos::new(0, 0));
-    fixture
 }
 
 fn load_nbt(cart: &MinecartEntity, nbt: &NbtCompound) {
@@ -107,7 +84,7 @@ fn derailing_clamps_before_ground_slowdown_and_applies_air_drag_after_moving() {
             DVec3::new(0.2, 0.0, -0.2),
         ),
     ] {
-        let fixture = test_world("abstract_minecart_derailing");
+        let fixture = test_world("abstract_minecart_derailing", ChunkPos::new(0, 0));
         let world = &fixture.world;
 
         if grounded {
