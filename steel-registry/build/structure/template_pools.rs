@@ -231,17 +231,8 @@ fn extract_template(path: &str) -> Result<ExtractedTemplate, String> {
 
 // ── Code generation helpers ──
 
+/// A constant expression, so that it can be used in a `static`.
 fn gen_identifier(id: &str) -> TokenStream {
-    assert!(!id.is_empty(), "Cannot generate an empty identifier");
-    if let Some((namespace, path)) = id.split_once(':') {
-        quote! { Identifier::new(#namespace, #path) }
-    } else {
-        quote! { Identifier::vanilla(#id.to_string()) }
-    }
-}
-
-/// Like `gen_identifier`, but a constant expression, for use in a `static`.
-fn gen_static_identifier(id: &str) -> TokenStream {
     assert!(!id.is_empty(), "Cannot generate an empty identifier");
     if let Some((namespace, path)) = id.split_once(':') {
         quote! { Identifier::new_static(#namespace, #path) }
@@ -398,7 +389,7 @@ pub(crate) fn build() -> TokenStream {
     let mut template_tokens = TokenStream::new();
     let mut template_nbt_match_arms = TokenStream::new();
     for (name, tmpl) in &templates {
-        let key = gen_static_identifier(&format!("minecraft:{name}"));
+        let key = gen_identifier(&format!("minecraft:{name}"));
         let sx = tmpl.size[0];
         let sy = tmpl.size[1];
         let sz = tmpl.size[2];
@@ -414,11 +405,11 @@ pub(crate) fn build() -> TokenStream {
                 let py = j.pos[1];
                 let pz = j.pos[2];
                 let orientation = gen_orientation(&j.orientation);
-                let jname = gen_static_identifier(&j.name);
-                let target = gen_static_identifier(&j.target);
-                let pool = gen_static_identifier(&j.pool);
+                let jname = gen_identifier(&j.name);
+                let target = gen_identifier(&j.target);
+                let pool = gen_identifier(&j.pool);
                 let joint = gen_joint(&j.joint);
-                let final_state = gen_static_identifier(&j.final_state);
+                let final_state = gen_identifier(&j.final_state);
                 let sel_pri = j.selection_priority;
                 let plc_pri = j.placement_priority;
 
@@ -465,8 +456,7 @@ pub(crate) fn build() -> TokenStream {
         ///
         /// Each entry is (template_key, template_data).
         pub fn vanilla_templates() -> Vec<(Identifier, TemplateData)> {
-            // A static table rather than one `vec![]` literal: unoptimized, that literal needs
-            // a stack frame of several MB, more than a thread usually has.
+            // A static table keeps the stack frame small in unoptimized builds.
             static TEMPLATES: &[(Identifier, [i32; 3], &[JigsawBlock])] = &[#template_tokens];
             TEMPLATES
                 .iter()
