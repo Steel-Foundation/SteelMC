@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::FluidRef;
-use steel_registry::vanilla_fluids;
+use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::types::{BlockPos, BlockStateId};
 
 use crate::fluid::FluidBehavior;
@@ -18,6 +18,10 @@ use crate::world::World;
 pub struct EmptyFluid;
 
 impl FluidBehavior for EmptyFluid {
+    fn create_legacy_block(&self, _fluid_state: FluidState) -> BlockStateId {
+        vanilla_blocks::AIR.default_state()
+    }
+
     fn fluid_type(&self) -> FluidRef {
         &vanilla_fluids::EMPTY
     }

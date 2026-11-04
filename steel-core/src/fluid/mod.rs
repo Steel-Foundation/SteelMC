@@ -4,8 +4,6 @@
 //! Based on vanilla Minecraft's `FlowingFluid` system.
 //!
 //! ### TODOs
-//! - TODO: Remaining entity fluid side effects: drowning, splash particles/sounds.
-//! - TODO: Block item drops when water destroys blocks (cactus infrastructure merged, needs implementation).
 //! - TODO: Lava random tick fire spread.
 pub mod collision;
 pub mod conversion;
