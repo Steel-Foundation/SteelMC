@@ -1976,5 +1976,5 @@ fn player_melee_attack_plays_sound_packets() {
     attacker.set_sprinting(true);
     sent_packets.lock().clear();
     assert!(!attacker.attack(&pig_target));
-    assert!(sound_packet_ids(&sent_packets.lock()).is_empty());
+    assert_eq!(sound_packet_ids(&sent_packets.lock()), Vec::<i32>::new());
 }
