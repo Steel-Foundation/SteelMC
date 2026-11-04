@@ -36,19 +36,23 @@ const MIN_KILL_SIZE: usize = 42;
 const KILL_RANGE: f64 = 8.0;
 const ATTACK_DAMAGE: f32 = 4.0;
 
-/// The frame positions around the conduit, in vanilla's x, y, z scan order.
-const FRAME_OFFSETS: [(i32, i32, i32); MIN_KILL_SIZE] = frame_offsets();
-
-const fn frame_offsets() -> [(i32, i32, i32); MIN_KILL_SIZE] {
+/// The frame positions around the conduit, in vanilla's x, y, z scan order: outside the
+/// 3x3x3 water cage, on one of the three axis-aligned rings of radius 2.
+const FRAME_OFFSETS: [(i32, i32, i32); MIN_KILL_SIZE] = {
     let mut offsets = [(0, 0, 0); MIN_KILL_SIZE];
     let mut count = 0;
-    let mut ox = -2;
+    let mut ox: i32 = -2;
     while ox <= 2 {
-        let mut oy = -2;
+        let mut oy: i32 = -2;
         while oy <= 2 {
-            let mut oz = -2;
+            let mut oz: i32 = -2;
             while oz <= 2 {
-                if ConduitBlockEntity::is_frame_offset(ox, oy, oz) {
+                let (ax, ay, az) = (ox.abs(), oy.abs(), oz.abs());
+                let outside_cage = ax > 1 || ay > 1 || az > 1;
+                let on_ring = ox == 0 && (ay == 2 || az == 2)
+                    || oy == 0 && (ax == 2 || az == 2)
+                    || oz == 0 && (ax == 2 || ay == 2);
+                if outside_cage && on_ring {
                     offsets[count] = (ox, oy, oz);
                     count += 1;
                 }
@@ -63,7 +67,7 @@ const fn frame_offsets() -> [(i32, i32, i32); MIN_KILL_SIZE] {
         "a full conduit frame is the hunting size"
     );
     offsets
-}
+};
 
 struct ConduitState {
     is_active: bool,
@@ -132,17 +136,6 @@ impl ConduitBlockEntity {
                 )
             })
             .count()
-    }
-
-    /// Whether an offset lies on the frame: outside the water cage, on one of the three
-    /// axis-aligned rings of radius 2.
-    const fn is_frame_offset(ox: i32, oy: i32, oz: i32) -> bool {
-        let (ax, ay, az) = (ox.abs(), oy.abs(), oz.abs());
-        let outside_cage = ax > 1 || ay > 1 || az > 1;
-        outside_cage
-            && (ox == 0 && (ay == 2 || az == 2)
-                || oy == 0 && (ax == 2 || az == 2)
-                || oz == 0 && (ax == 2 || ay == 2))
     }
 
     fn apply_effects(world: &Arc<World>, pos: BlockPos, active_size: usize) {
@@ -246,7 +239,6 @@ impl ConduitBlockEntity {
         Some(EntityReference::from_entity(chosen))
     }
 
-    /// Resolves `reference` only when it points at a living entity.
     fn living_entity(reference: &EntityReference, world: &World) -> Option<SharedEntity> {
         reference
             .get_entity(world)
