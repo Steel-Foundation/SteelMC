@@ -257,7 +257,7 @@ fn entity_eye_suffocation_box(eye_pos: DVec3, width: f64) -> WorldAabb {
 
 fn block_state_suffocates_eye_box(
     state: BlockStateId,
-    world: &dyn LevelReader,
+    world: &impl LevelReader,
     pos: BlockPos,
     eye_box: WorldAabb,
 ) -> bool {
@@ -773,6 +773,7 @@ pub mod entities;
     reason = "the entity module mirrors vanilla's Entity class and groups its implementation"
 )]
 mod entity;
+pub mod entity_selector;
 mod fluid_contact;
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -796,6 +797,7 @@ pub mod projectile;
 mod reference;
 mod registry;
 mod spawn;
+mod spawn_placements;
 mod storage;
 mod synced_data;
 mod ticking;
@@ -820,6 +822,7 @@ pub use callback::{
 };
 pub use conversion::{AfterConversion, ConversionParams, ConversionType};
 pub(crate) use entity::apply_entity_look_at;
+pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
@@ -832,9 +835,10 @@ pub use inside_block_effects::{
 pub(crate) use item_based_steering::{ItemBasedSteering, ItemSteerable};
 pub use item_frame::ItemFrame;
 pub use living_base::{
-    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase,
-    LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
-    MobEffectSyncChange, MobEffectSyncPacket,
+    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION,
+    HURT_DURATION_TICKS, LivingEntityBase, LivingRotationState, LivingSwingState,
+    LivingTravelInput, MobEffectInstance, MobEffectSyncChange, MobEffectSyncPacket,
+    sync_dirty_mob_effects,
 };
 pub use living_entity::LivingEntity;
 pub(crate) use manager::EntityCollisionCandidates;
@@ -861,12 +865,14 @@ pub use projectile::{
     compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
 pub use reference::EntityReference;
+pub(crate) use registry::SpawnRule;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
     AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest,
     SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
-    create_entity_instance, spawn_entity,
+    create_entity_instance, load_entity_recursive_owned, spawn_entity,
 };
+pub(crate) use spawn_placements::SpawnPlacements;
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
 pub(crate) use ticking::{snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_if};

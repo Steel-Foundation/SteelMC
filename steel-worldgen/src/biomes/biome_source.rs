@@ -130,7 +130,7 @@ impl BiomeSourceKind {
         origin_x: i32,
         origin_z: i32,
         search_radius: i32,
-        allowed: &dyn Fn(BiomeRef) -> bool,
+        allowed: &(impl Fn(BiomeRef) -> bool + ?Sized),
         rng: &mut LegacyRandom,
     ) -> Option<(i32, i32)> {
         let mut sampler = self.chunk_sampler();
