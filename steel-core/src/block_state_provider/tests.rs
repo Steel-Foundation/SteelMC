@@ -4,7 +4,9 @@ use steel_registry::feature::{
     BlockHolderSet, BlockPredicate, BlockStateData, BlockStateProviderKind,
     RuleBasedStateProviderRule, WeightedBlockState,
 };
-use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
+use steel_registry::{
+    REGISTRY, init_vanilla_registry, vanilla_block_state_providers, vanilla_blocks,
+};
 use steel_utils::random::{
     Random as _, legacy_random::LegacyRandom, worldgen_random::WorldgenRandom,
 };
@@ -192,4 +194,74 @@ fn shipped_transformer_providers_never_consume_randomness() {
         }
     }
     assert_eq!(random.next_i64(), untouched.next_i64());
+}
+
+#[test]
+fn cached_threshold_noise_preserves_states_and_random_draws() {
+    init_vanilla_registry();
+    let BlockStateProviderKind::NoiseThreshold(vanilla_provider) =
+        &vanilla_block_state_providers::FLOWER_PLAIN.kind
+    else {
+        panic!("plain flower provider must supply the threshold test inputs");
+    };
+    let mut provider = vanilla_provider.clone();
+    for boundary in 0..4 {
+        for seed in 0..8 {
+            let mut actual_random = WorldgenRandom::from_seed(seed);
+            let mut expected_random = WorldgenRandom::from_seed(seed);
+            for pos in [
+                BlockPos::ZERO,
+                BlockPos::new(-129, 75, 257),
+                BlockPos::new(153, -63, -81),
+                BlockPos::new(20_000_000, 64, -19_999_999),
+            ] {
+                let fresh =
+                    BlockStateProviderEvaluator::normal_noise(&provider.noise, provider.seed);
+                let scale = f64::from(provider.scale);
+                let value = fresh.get_value(
+                    f64::from(pos.x()) * scale,
+                    f64::from(pos.y()) * scale,
+                    f64::from(pos.z()) * scale,
+                );
+                let rounded_value =
+                    BlockStateProviderEvaluator::noise_value(&fresh, pos, provider.scale) as f32;
+                // The fourth boundary exposes premature f32 coordinate rounding.
+                provider.threshold = match boundary {
+                    0 => -1.0,
+                    1 => vanilla_provider.threshold,
+                    2 => 1.0,
+                    _ => value.max(rounded_value),
+                };
+                let value = f64::from(value);
+                let expected = if value < f64::from(provider.threshold) {
+                    BlockStateProviderEvaluator::random_block_state_from_data_list(
+                        &REGISTRY,
+                        &mut expected_random,
+                        &provider.low_states,
+                    )
+                } else if expected_random.next_f32() < provider.high_chance {
+                    BlockStateProviderEvaluator::random_block_state_from_data_list(
+                        &REGISTRY,
+                        &mut expected_random,
+                        &provider.high_states,
+                    )
+                } else {
+                    BlockStateProviderEvaluator::block_state_from_data(
+                        &REGISTRY,
+                        &provider.default_state,
+                    )
+                };
+                assert_eq!(
+                    BlockStateProviderEvaluator::sample_noise_threshold_provider(
+                        &REGISTRY,
+                        &mut actual_random,
+                        &provider,
+                        pos,
+                    ),
+                    expected,
+                );
+                assert_eq!(actual_random.next_i64(), expected_random.next_i64());
+            }
+        }
+    }
 }

@@ -19,6 +19,14 @@ use super::naming::{
     named_fn_ident, named_fn_ident_simd, router_cache_field_ident, router_compute_fn_ident,
     sanitize_name,
 };
+use super::nonpositive::final_density_nonpositive_channels;
+
+const AQUIFER_ROUTERS: [&str; 4] = [
+    "barrier",
+    "fluid_level_floodedness",
+    "fluid_level_spread",
+    "lava",
+];
 
 impl TranspileContext {
     pub(super) fn gen_named_functions(&mut self, input: &TranspilerInput) -> TokenStream {
@@ -83,6 +91,12 @@ impl TranspileContext {
     /// router, called by `ensure()` to populate the cache.
     pub(super) fn gen_router_functions(&mut self, input: &TranspilerInput) -> TokenStream {
         let mut fns = Vec::new();
+        let aquifer_needs_column_cache = AQUIFER_ROUTERS.iter().any(|name| {
+            input
+                .router_entries
+                .get(*name)
+                .is_none_or(Self::router_needs_column_cache)
+        });
 
         for (name, df) in &input.router_entries {
             let fn_name = format_ident!("router_{}", sanitize_name(name));
@@ -106,7 +120,7 @@ impl TranspileContext {
                 // Public router function returns the cached value.
                 // Keeps the full (noises, cache, x, y, z) signature for API consistency.
                 let cache_field = router_cache_field_ident(name);
-                let full_params = self.fn_params_router(false);
+                let full_params = self.fn_params_router(false, true);
                 fns.push(quote! {
                     #[doc = #doc]
                     #[inline]
@@ -118,14 +132,21 @@ impl TranspileContext {
                 let inner = unwrap_markers(df);
                 let is_flat = is_flat_cached(df);
                 let body = self.gen_expr(inner, input, is_flat);
-                let params = self.fn_params_router(is_flat);
+                let needs_cache = !AQUIFER_ROUTERS.contains(&name.as_str())
+                    || Self::router_needs_column_cache(df);
+                let params = self.fn_params_router(is_flat, needs_cache);
+                let cache_coordinates = needs_cache.then(|| {
+                    quote! {
+                        let x = cache.x as f64;
+                        let z = cache.z as f64;
+                    }
+                });
 
                 fns.push(quote! {
                     #[doc = #doc]
                     #[inline]
                     pub fn #fn_name(#params) -> f32 {
-                        let x = cache.x as f64;
-                        let z = cache.z as f64;
+                        #cache_coordinates
                         #body
                     }
                 });
@@ -138,9 +159,16 @@ impl TranspileContext {
 
         let spline_fns = mem::take(&mut self.spline_fns);
         quote! {
+            /// Whether any aquifer router needs prepared column values.
+            pub const AQUIFER_NEEDS_COLUMN_CACHE: bool = #aquifer_needs_column_cache;
+
             #(#fns)*
             #(#spline_fns)*
         }
+    }
+
+    fn router_needs_column_cache(df: &DensityFunction) -> bool {
+        !matches!(df, DensityFunction::Noise(noise) if noise.y_scale != 0.0)
     }
 
     /// Generate interpolation functions for ALL router entries that contain
@@ -242,6 +270,18 @@ impl TranspileContext {
             quote! { 0.0 }
         };
         let combine_fd_splines = mem::take(&mut self.spline_fns);
+        let nonpositive_channels = entries
+            .get("final_density")
+            .and_then(|info| {
+                final_density_nonpositive_channels(&info.df, &input.registry, info.start)
+            })
+            .map_or_else(
+                || quote! { None },
+                |channels| {
+                    let channels = channels.iter().map(|&c| Literal::usize_unsuffixed(c));
+                    quote! { Some(&[#(#channels),*]) }
+                },
+            );
 
         // Phase 4: Generate combine functions for vein entries
         let combine_vein_toggle_body = if let Some(info) = entries.get("vein_toggle") {
@@ -318,6 +358,10 @@ impl TranspileContext {
 
             /// Whether vein functions have interpolation channels.
             pub const VEIN_INTERP_ENABLED: bool = #has_vein_interp_tok;
+
+            /// Channels that, when `<= 0` at a block, prove its combined final
+            /// density is not positive. Check actual interpolated block values.
+            pub const FINAL_DENSITY_NONPOSITIVE_CHANNELS: Option<&[usize]> = #nonpositive_channels;
 
             /// Evaluate the inner functions of all `Interpolated` markers at a cell corner.
             ///
