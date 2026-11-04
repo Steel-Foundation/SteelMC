@@ -842,8 +842,10 @@ mod movement_sync;
 mod part;
 mod potion_contents;
 pub mod projectile;
+pub(crate) mod pushing;
 mod reference;
 mod registry;
+pub(crate) mod selector;
 mod spawn;
 mod spawn_placements;
 mod storage;
@@ -913,6 +915,7 @@ pub use projectile::{
     SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
     compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
+pub use pushing::{DefaultEntityPush, EntityPushSnapshot};
 pub use reference::EntityReference;
 pub(crate) use registry::SpawnRule;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
