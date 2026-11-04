@@ -456,7 +456,6 @@ pub(crate) fn build() -> TokenStream {
         ///
         /// Each entry is (template_key, template_data).
         pub fn vanilla_templates() -> Vec<(Identifier, TemplateData)> {
-            // A static table keeps the stack frame small in unoptimized builds.
             static TEMPLATES: &[(Identifier, [i32; 3], &[JigsawBlock])] = &[#template_tokens];
             TEMPLATES
                 .iter()
