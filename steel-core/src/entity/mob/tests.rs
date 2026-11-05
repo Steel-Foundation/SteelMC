@@ -14,9 +14,9 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Downcast as _, Identifier};
 use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
+use super::spawn_armor::VANILLA_SPAWN_ARMOR_TIERS;
 use super::{
-    can_attempt_equipment_drop, find_ground_path_target_surface, get_equipment_for_slot,
-    path_end_node_can_reach_target,
+    can_attempt_equipment_drop, find_ground_path_target_surface, path_end_node_can_reach_target,
 };
 use crate::behavior::init_behaviors;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
@@ -88,27 +88,35 @@ fn spawn_armor_tiers_map_to_vanilla_materials() {
         ),
     ];
 
-    for (tier, head, chest, legs, feet) in tiers {
+    for (index, head, chest, legs, feet) in tiers {
+        let tier = VANILLA_SPAWN_ARMOR_TIERS
+            .get(index)
+            .copied()
+            .expect("spawn armor tier");
         assert_eq!(
-            get_equipment_for_slot(EquipmentSlot::Head, tier).map(|item| &item.key),
+            tier.item_for(EquipmentSlot::Head).map(|item| &item.key),
             Some(&head.key)
         );
         assert_eq!(
-            get_equipment_for_slot(EquipmentSlot::Chest, tier).map(|item| &item.key),
+            tier.item_for(EquipmentSlot::Chest).map(|item| &item.key),
             Some(&chest.key)
         );
         assert_eq!(
-            get_equipment_for_slot(EquipmentSlot::Legs, tier).map(|item| &item.key),
+            tier.item_for(EquipmentSlot::Legs).map(|item| &item.key),
             Some(&legs.key)
         );
         assert_eq!(
-            get_equipment_for_slot(EquipmentSlot::Feet, tier).map(|item| &item.key),
+            tier.item_for(EquipmentSlot::Feet).map(|item| &item.key),
             Some(&feet.key)
         );
     }
 
-    assert!(get_equipment_for_slot(EquipmentSlot::Head, 6).is_none());
-    assert!(get_equipment_for_slot(EquipmentSlot::MainHand, 0).is_none());
+    assert!(VANILLA_SPAWN_ARMOR_TIERS.get(6).is_none());
+    assert!(
+        VANILLA_SPAWN_ARMOR_TIERS[0]
+            .item_for(EquipmentSlot::MainHand)
+            .is_none()
+    );
 }
 
 struct SurfaceLevel {

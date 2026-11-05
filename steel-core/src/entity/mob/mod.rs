@@ -1,12 +1,14 @@
 //! Vanilla-shaped mob foundations.
 
 mod pathfinder;
+mod spawn_armor;
 
 use crate::entity::leash::{LeashData, Leashable};
 pub use pathfinder::PathfinderMob;
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
 use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target};
+use spawn_armor::VANILLA_SPAWN_ARMOR_TIERS;
 
 use std::sync::Arc;
 
@@ -1963,7 +1965,13 @@ pub(crate) fn populate_default_equipment_slots_default<M: Mob + ?Sized>(
         if !mob.equipment_in_slot(slot).is_empty() {
             continue;
         }
-        let Some(item) = get_equipment_for_slot(slot, armor_type) else {
+        let Some(tier) = usize::try_from(armor_type)
+            .ok()
+            .and_then(|index| VANILLA_SPAWN_ARMOR_TIERS.get(index))
+        else {
+            continue;
+        };
+        let Some(item) = tier.item_for(slot) else {
             continue;
         };
         mob.living_base()
@@ -1971,51 +1979,6 @@ pub(crate) fn populate_default_equipment_slots_default<M: Mob + ?Sized>(
             .lock()
             .set(slot, ItemStack::new(item));
     }
-}
-
-/// Returns vanilla's armor item for a spawn armor tier and slot.
-fn get_equipment_for_slot(slot: EquipmentSlot, armor_type: i32) -> Option<ItemRef> {
-    let items: [ItemRef; 6] = match slot {
-        EquipmentSlot::Head => [
-            &vanilla_items::LEATHER_HELMET,
-            &vanilla_items::COPPER_HELMET,
-            &vanilla_items::GOLDEN_HELMET,
-            &vanilla_items::CHAINMAIL_HELMET,
-            &vanilla_items::IRON_HELMET,
-            &vanilla_items::DIAMOND_HELMET,
-        ],
-        EquipmentSlot::Chest => [
-            &vanilla_items::LEATHER_CHESTPLATE,
-            &vanilla_items::COPPER_CHESTPLATE,
-            &vanilla_items::GOLDEN_CHESTPLATE,
-            &vanilla_items::CHAINMAIL_CHESTPLATE,
-            &vanilla_items::IRON_CHESTPLATE,
-            &vanilla_items::DIAMOND_CHESTPLATE,
-        ],
-        EquipmentSlot::Legs => [
-            &vanilla_items::LEATHER_LEGGINGS,
-            &vanilla_items::COPPER_LEGGINGS,
-            &vanilla_items::GOLDEN_LEGGINGS,
-            &vanilla_items::CHAINMAIL_LEGGINGS,
-            &vanilla_items::IRON_LEGGINGS,
-            &vanilla_items::DIAMOND_LEGGINGS,
-        ],
-        EquipmentSlot::Feet => [
-            &vanilla_items::LEATHER_BOOTS,
-            &vanilla_items::COPPER_BOOTS,
-            &vanilla_items::GOLDEN_BOOTS,
-            &vanilla_items::CHAINMAIL_BOOTS,
-            &vanilla_items::IRON_BOOTS,
-            &vanilla_items::DIAMOND_BOOTS,
-        ],
-        EquipmentSlot::MainHand
-        | EquipmentSlot::OffHand
-        | EquipmentSlot::Body
-        | EquipmentSlot::Saddle => return None,
-    };
-    usize::try_from(armor_type)
-        .ok()
-        .and_then(|index| items.get(index).copied())
 }
 
 // Blanket implementation for all mobs to implement `Leashable`
