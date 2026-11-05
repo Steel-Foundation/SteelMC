@@ -13,6 +13,7 @@ use std::{
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use simdnbt::owned::NbtCompound;
 use small_map::FxSmallMap;
+use smallvec::SmallVec;
 use steel_registry::{
     REGISTRY, block_entity_type::BlockEntityTypeRef, blocks::BlockRef,
     blocks::block_state_ext::BlockStateExt as _, blocks::properties::Direction,
@@ -162,6 +163,16 @@ impl WorldGenAccessMode {
     const fn allows_writes(self) -> bool {
         matches!(self, Self::WritableProto)
     }
+}
+
+// keep four probed chunks inline bigger scans spill to the heap
+const INLINE_PROBED_HEIGHT_CHUNKS: usize = 4;
+
+/// a chunk already reached by the height scan
+struct ProbedHeightChunk {
+    chunk: (i32, i32),
+    /// no cached columns means regular lookups including readonly full chunks
+    columns: Option<[i32; 256]>,
 }
 
 #[derive(Default)]
@@ -737,6 +748,70 @@ impl<'a> WorldGenRegion<'a> {
         })
     }
 
+    /// any column in this inclusive rectangle reaching `min_height`
+    /// scans x then z the first lookup per chunk keeps normal access and cache order
+    #[must_use]
+    pub fn any_height_at_least(
+        &self,
+        heightmap_type: HeightmapType,
+        (min_x, min_z): (i32, i32),
+        (max_x, max_z): (i32, i32),
+        min_height: i32,
+    ) -> bool {
+        let mut probed: SmallVec<[ProbedHeightChunk; INLINE_PROBED_HEIGHT_CHUNKS]> =
+            SmallVec::new();
+
+        for x in min_x..=max_x {
+            for z in min_z..=max_z {
+                let chunk = (
+                    SectionPos::block_to_section_coord(x),
+                    SectionPos::block_to_section_coord(z),
+                );
+                let column_index = (x & 15) as usize + (z & 15) as usize * 16;
+                let height = match probed.iter().find(|probed| probed.chunk == chunk) {
+                    Some(ProbedHeightChunk {
+                        columns: Some(columns),
+                        ..
+                    }) => columns[column_index],
+                    Some(_) => self.height_at(heightmap_type, x, z),
+                    None => {
+                        let height = self.height_at(heightmap_type, x, z);
+                        probed.push(ProbedHeightChunk {
+                            chunk,
+                            columns: self.cached_proto_columns(heightmap_type, chunk),
+                        });
+                        height
+                    }
+                };
+                if height >= min_height {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// copy the proto chunk columns if `height_at` already cached them
+    fn cached_proto_columns(
+        &self,
+        heightmap_type: HeightmapType,
+        (chunk_x, chunk_z): (i32, i32),
+    ) -> Option<[i32; 256]> {
+        let cache_index = self.chunk_cache_index(chunk_x, chunk_z)?;
+        let writable = self
+            .chunks
+            .borrow()
+            .get(cache_index)
+            .and_then(Option::as_ref)
+            .is_some_and(|cached| cached.access_mode == WorldGenAccessMode::WritableProto);
+        if !writable {
+            return None;
+        }
+
+        let heightmaps = self.worldgen_heightmaps.borrow();
+        heightmaps.get(cache_index)?.get(heightmap_type).copied()
+    }
+
     fn cached_proto_height_at(
         &self,
         proto: &Chunk,
@@ -1148,11 +1223,6 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         } else {
             section.read()
         };
-        if section_guard.states().has_only_air() {
-            Self::record_ore_read_time(ore_profile, started_at);
-            return air;
-        }
-
         let state = section_guard.states().get(
             Self::local_coord(pos.x()),
             Self::local_coord(pos.y()),

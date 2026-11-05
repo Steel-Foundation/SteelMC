@@ -1,4 +1,5 @@
 use super::BlockStateProviderEvaluator;
+use super::noise_cache::NoiseCache;
 use crate::world::LevelReader;
 use smallvec::SmallVec;
 use steel_math::map_clamped;
@@ -234,8 +235,9 @@ impl BlockStateProviderEvaluator {
         provider: &NoiseProvider,
         pos: BlockPos,
     ) -> BlockStateId {
-        let noise = Self::normal_noise(&provider.noise, provider.seed);
-        let noise_value = Self::noise_value(&noise, pos, provider.scale);
+        let noise = NoiseCache::get(&provider.noise, provider.seed);
+        let noise_value = Self::noise_value(&noise, pos, f64::from(provider.scale));
+
         Self::noise_state_by_value(registry, &provider.states, noise_value)
     }
 
@@ -245,8 +247,9 @@ impl BlockStateProviderEvaluator {
         provider: &NoiseThresholdProvider,
         pos: BlockPos,
     ) -> BlockStateId {
-        let noise = Self::normal_noise(&provider.noise, provider.seed);
-        let noise_value = Self::noise_value(&noise, pos, provider.scale);
+        let noise = NoiseCache::get(&provider.noise, provider.seed);
+        let noise_value = Self::noise_value(&noise, pos, f64::from(provider.scale));
+
         if noise_value < f64::from(provider.threshold) {
             Self::random_block_state_from_data_list(registry, random, &provider.low_states)
         } else if random.next_f32() < provider.high_chance {
@@ -261,7 +264,7 @@ impl BlockStateProviderEvaluator {
         provider: &DualNoiseProvider,
         pos: BlockPos,
     ) -> BlockStateId {
-        let slow_noise = Self::normal_noise(&provider.slow_noise, provider.seed);
+        let slow_noise = NoiseCache::get(&provider.slow_noise, provider.seed);
         let variety_noise = Self::noise_value(&slow_noise, pos, provider.slow_scale);
         let local_variety = map_clamped(
             variety_noise,
@@ -289,8 +292,9 @@ impl BlockStateProviderEvaluator {
             ));
         }
 
-        let noise = Self::normal_noise(&provider.noise, provider.seed);
-        let noise_value = Self::noise_value(&noise, pos, provider.scale);
+        let noise = NoiseCache::get(&provider.noise, provider.seed);
+        let noise_value = Self::noise_value(&noise, pos, f64::from(provider.scale));
+
         Self::noise_state_by_resolved_value(&possible_states, noise_value)
     }
 
