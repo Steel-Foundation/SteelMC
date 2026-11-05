@@ -290,9 +290,7 @@ impl Heightmap {
         F: Fn(usize, i32, usize) -> BlockStateId,
     {
         let first_available = self.get_first_available(local_x, local_z);
-
-        // If the block is well below the current height, it can't affect the heightmap
-        if y <= first_available - 2 {
+        if Self::is_below_reach(y, first_available) {
             return false;
         }
 
@@ -317,6 +315,33 @@ impl Heightmap {
         }
 
         false
+    }
+
+    /// Applies one column's writes in order, the same as calling [`Self::update`] for each,
+    /// but without re-reading the height for writes too deep to change it.
+    pub fn update_column<F>(
+        &mut self,
+        local_x: usize,
+        local_z: usize,
+        writes: impl IntoIterator<Item = (i32, BlockStateId)>,
+        get_block: F,
+    ) where
+        F: Fn(usize, i32, usize) -> BlockStateId + Copy,
+    {
+        let mut first_available = self.get_first_available(local_x, local_z);
+        for (y, state) in writes {
+            if Self::is_below_reach(y, first_available) {
+                continue;
+            }
+            if self.update(local_x, y, local_z, state, get_block) {
+                first_available = self.get_first_available(local_x, local_z);
+            }
+        }
+    }
+
+    /// Whether a write at `y` is too far below the column's top to change this heightmap.
+    const fn is_below_reach(y: i32, first_available: i32) -> bool {
+        y <= first_available - 2
     }
 
     /// Updates this heightmap for a direct write into a previously-air block.
@@ -726,6 +751,51 @@ mod tests {
 
         assert!(!ocean_floor.update_for_initial_fill(0, 4, 0, stone));
         assert_eq!(ocean_floor.get_first_available(0, 0), 6);
+    }
+
+    /// `update_column` skips writes using a cached height; it must still match one `update` per
+    /// write, including when a write removes the top block and the height drops.
+    #[test]
+    fn column_update_matches_per_write_updates() {
+        init_test_state();
+
+        let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
+        // Final column contents, as the sections hold them when heightmaps update.
+        let mut column = [air; 32];
+        column[..20].fill(stone);
+        column[3] = water;
+        let writes = [
+            (31, stone),
+            (31, air),
+            (19, air),
+            (2, stone),
+            (25, water),
+            (18, stone),
+            (0, stone),
+            (30, stone),
+            (30, air),
+        ];
+        for &(y, state) in &writes {
+            column[y as usize] = state;
+        }
+        let get_block = |_: usize, y: i32, _: usize| column[y as usize];
+
+        for heightmap_type in HeightmapType::all_types().iter().copied() {
+            let mut per_write = Heightmap::new(heightmap_type, 0, 32);
+            per_write.set_height(0, 0, 20);
+            let mut batched = per_write.clone();
+            for &(y, state) in &writes {
+                per_write.update(0, y, 0, state, get_block);
+            }
+            batched.update_column(0, 0, writes, get_block);
+            assert_eq!(
+                batched.get_first_available(0, 0),
+                per_write.get_first_available(0, 0),
+                "{heightmap_type:?}"
+            );
+        }
     }
 
     /// Worldgen sections stay in the palette-free `Building` layout until light; priming must read
