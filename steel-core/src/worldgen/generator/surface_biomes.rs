@@ -94,6 +94,9 @@ pub(super) struct SurfaceQuartBiomes<'a> {
     total_quarts_y: i32,
     neighbor_biomes: &'a dyn Fn(IVec3) -> u16,
     ring: Box<[u16]>,
+    /// Per fuzzing group (parent x, z, y): the uniform-class biome, [`NOT_UNIFORM`], or
+    /// [`UNREAD`]. All 16 columns of a group share it.
+    uniform_groups: Box<[u16]>,
 }
 
 const QUARTS_PER_SECTION_SIDE: i32 = 4;
@@ -101,6 +104,9 @@ const QUARTS_PER_SECTION_PLANE: i32 = QUARTS_PER_SECTION_SIDE * QUARTS_PER_SECTI
 const QUARTS_PER_SECTION: i32 = QUARTS_PER_SECTION_PLANE * QUARTS_PER_SECTION_SIDE;
 const RING_SIDE: i32 = QUARTS_PER_SECTION_SIDE + 2;
 const UNREAD: u16 = u16::MAX;
+const NOT_UNIFORM: u16 = u16::MAX - 1;
+/// Fuzzing groups a chunk's columns use per axis: block `16k - 2 .. 16k + 13` shifted by `>> 2`.
+const GROUPS_PER_SIDE: i32 = QUARTS_PER_SECTION_SIDE + 1;
 
 impl<'a> SurfaceQuartBiomes<'a> {
     pub(super) fn new(
@@ -121,7 +127,65 @@ impl<'a> SurfaceQuartBiomes<'a> {
             total_quarts_y,
             neighbor_biomes,
             ring: vec![UNREAD; (RING_SIDE * RING_SIDE * total_quarts_y) as usize].into(),
+            uniform_groups: vec![
+                UNREAD;
+                (GROUPS_PER_SIDE * GROUPS_PER_SIDE * (total_quarts_y + 1)) as usize
+            ]
+            .into(),
         }
+    }
+
+    /// Index of a fuzzing group in `uniform_groups`, or `None` outside the chunk's groups.
+    /// Groups start one quart before the chunk on every axis.
+    fn group_index(&self, parent: IVec3) -> Option<usize> {
+        let x = parent.x - (self.chunk_quart_x - 1);
+        let z = parent.z - (self.chunk_quart_z - 1);
+        let y = parent.y - (self.min_qy - 1);
+        ((0..GROUPS_PER_SIDE).contains(&x)
+            && (0..GROUPS_PER_SIDE).contains(&z)
+            && (0..=self.total_quarts_y).contains(&y))
+        .then(|| ((y * GROUPS_PER_SIDE + z) * GROUPS_PER_SIDE + x) as usize)
+    }
+
+    /// The group's shared-class candidate biome, if its 8 candidates agree.
+    fn uniform_candidate_biome(
+        &mut self,
+        classes: &SurfaceBiomeClasses,
+        parent: IVec3,
+    ) -> Option<u16> {
+        let index = self.group_index(parent);
+        match index.map(|index| self.uniform_groups[index]) {
+            Some(NOT_UNIFORM) => return None,
+            Some(UNREAD) | None => {}
+            Some(biome) => return Some(biome),
+        }
+        let biome = self.compute_uniform_candidate_biome(classes, parent);
+        if let Some(index) = index {
+            self.uniform_groups[index] = biome.unwrap_or(NOT_UNIFORM);
+        }
+        biome
+    }
+
+    fn compute_uniform_candidate_biome(
+        &mut self,
+        classes: &SurfaceBiomeClasses,
+        parent: IVec3,
+    ) -> Option<u16> {
+        let first = self.biome_at(parent);
+        let class = classes.class(first)?;
+
+        for i in 1..8 {
+            let biome = self.biome_at(IVec3::new(
+                parent.x + i32::from(i & 4 != 0),
+                parent.y + i32::from(i & 2 != 0),
+                parent.z + i32::from(i & 1 != 0),
+            ));
+            if classes.class(biome) != Some(class) {
+                return None;
+            }
+        }
+
+        Some(first)
     }
 
     #[expect(
@@ -331,34 +395,13 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
         let parent_y = (block_y - 2) >> 2;
         if parent_y != self.class_parent_y {
             self.class_parent_y = parent_y;
-            self.uniform_biome = self.uniform_candidate_biome(classes, parent_y);
+            self.uniform_biome = self.quarts.uniform_candidate_biome(
+                classes,
+                IVec3::new(self.parent_x, parent_y, self.parent_z),
+            );
         }
 
         self.uniform_biome
-    }
-
-    fn uniform_candidate_biome(
-        &mut self,
-        classes: &SurfaceBiomeClasses,
-        parent_y: i32,
-    ) -> Option<u16> {
-        let first = self
-            .quarts
-            .biome_at(IVec3::new(self.parent_x, parent_y, self.parent_z));
-        let class = classes.class(first)?;
-
-        for i in 1..self.candidates.len() {
-            let biome = self.quarts.biome_at(IVec3::new(
-                self.parent_x + i32::from(i & 4 != 0),
-                parent_y + i32::from(i & 2 != 0),
-                self.parent_z + i32::from(i & 1 != 0),
-            ));
-            if classes.class(biome) != Some(class) {
-                return None;
-            }
-        }
-
-        Some(first)
     }
 }
 
