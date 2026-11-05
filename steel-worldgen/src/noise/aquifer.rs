@@ -579,6 +579,8 @@ impl<N: DimensionNoises> Aquifer<N> {
     }
 
     /// Compute what block to place at this position given the interpolated density.
+    // Inlined so solid blocks, most calls, skip the call into the larger body.
+    #[inline]
     pub fn compute_substance(
         &mut self,
         noises: &N,
@@ -592,7 +594,17 @@ impl<N: DimensionNoises> Aquifer<N> {
             self.should_schedule_fluid_update = false;
             return AquiferResult::Solid;
         }
+        self.compute_non_solid_substance(noises, world_x, world_y, world_z, density)
+    }
 
+    fn compute_non_solid_substance(
+        &mut self,
+        noises: &N,
+        world_x: i32,
+        world_y: i32,
+        world_z: i32,
+        density: f64,
+    ) -> AquiferResult {
         // Disabled aquifers (nether/end): use global fluid picker directly,
         // matching vanilla's `Aquifer.createDisabled`.
         if !N::Settings::AQUIFERS_ENABLED {
