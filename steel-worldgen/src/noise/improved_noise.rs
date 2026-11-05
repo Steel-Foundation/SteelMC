@@ -343,6 +343,61 @@ impl ImprovedNoise {
         ]
     }
 
+    #[inline]
+    fn column_corner_hashes(&self, x0: u8, x1: u8, y: u8, z: u8) -> [usize; 8] {
+        let xy = [
+            self.p[x0.wrapping_add(y) as usize],
+            self.p[x1.wrapping_add(y) as usize],
+            self.p[x0.wrapping_add(y).wrapping_add(1) as usize],
+            self.p[x1.wrapping_add(y).wrapping_add(1) as usize],
+        ];
+        let low = xy.map(|xy| self.p[xy.wrapping_add(z) as usize] as usize);
+        let high = xy.map(|xy| self.p[xy.wrapping_add(z).wrapping_add(1) as usize] as usize);
+        [
+            low[0], low[1], low[2], low[3], high[0], high[1], high[2], high[3],
+        ]
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors scalar sample_and_lerp with SIMD Y lanes"
+    )]
+    #[inline]
+    fn sample_and_lerp_y_simd<const N: usize>(
+        &self,
+        x: i32,
+        ys: Simd<i32, N>,
+        z: i32,
+        relative_x: f32,
+        relative_ys: Simd<f32, N>,
+        relative_z: f32,
+        original_relative_ys: Simd<f32, N>,
+    ) -> Simd<f32, N> {
+        let wrapped_ys = ys.cast::<u8>();
+        // Specialize shared Y indices so hashes and gradient components can be broadcast.
+        if wrapped_ys.simd_eq(Simd::splat(wrapped_ys[0])).all() {
+            self.sample_and_lerp_y_simd_kernel::<N, true>(
+                x,
+                ys,
+                z,
+                relative_x,
+                relative_ys,
+                relative_z,
+                original_relative_ys,
+            )
+        } else {
+            self.sample_and_lerp_y_simd_kernel::<N, false>(
+                x,
+                ys,
+                z,
+                relative_x,
+                relative_ys,
+                relative_z,
+                original_relative_ys,
+            )
+        }
+    }
+
     #[expect(
         clippy::too_many_arguments,
         reason = "mirrors scalar sample_and_lerp with SIMD Y lanes"
@@ -352,7 +407,7 @@ impl ImprovedNoise {
         reason = "coordinate offsets mirror vanilla's eight Perlin corners"
     )]
     #[inline]
-    fn sample_and_lerp_y_simd<const N: usize>(
+    fn sample_and_lerp_y_simd_kernel<const N: usize, const SHARED_Y: bool>(
         &self,
         x: i32,
         ys: Simd<i32, N>,
@@ -378,19 +433,16 @@ impl ImprovedNoise {
         let mut h111 = [0_usize; N];
 
         for lane in 0..N {
-            let y = ys[lane];
-            let xy00 = self.p[x0.wrapping_add(y) as usize];
-            let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
-            let xy10 = self.p[x1.wrapping_add(y) as usize];
-            let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
-            h000[lane] = self.p[xy00.wrapping_add(z) as usize] as usize;
-            h100[lane] = self.p[xy10.wrapping_add(z) as usize] as usize;
-            h010[lane] = self.p[xy01.wrapping_add(z) as usize] as usize;
-            h110[lane] = self.p[xy11.wrapping_add(z) as usize] as usize;
-            h001[lane] = self.p[xy00.wrapping_add(z).wrapping_add(1) as usize] as usize;
-            h101[lane] = self.p[xy10.wrapping_add(z).wrapping_add(1) as usize] as usize;
-            h011[lane] = self.p[xy01.wrapping_add(z).wrapping_add(1) as usize] as usize;
-            h111[lane] = self.p[xy11.wrapping_add(z).wrapping_add(1) as usize] as usize;
+            let y = ys[if SHARED_Y { 0 } else { lane }];
+            let hashes = self.column_corner_hashes(x0, x1, y, z);
+            h000[lane] = hashes[0];
+            h100[lane] = hashes[1];
+            h010[lane] = hashes[2];
+            h110[lane] = hashes[3];
+            h001[lane] = hashes[4];
+            h101[lane] = hashes[5];
+            h011[lane] = hashes[6];
+            h111[lane] = hashes[7];
         }
 
         let relative_xs = Simd::splat(relative_x);
@@ -894,22 +946,27 @@ mod tests {
     fn smeared_noise_y_simd_matches_scalar() {
         let mut rng = Xoroshiro::from_seed(42);
         let noise = ImprovedNoise::new(&mut rng);
-        let ys = [-64.0, -56.0, -48.0, -40.0, -32.0, -24.0, -16.0, -8.0];
-        let simd = noise.smeared_noise_y_simd(
-            20_000_068.0,
-            f64x8::from_array(ys),
-            -19_999_796.0,
-            5475.296,
-        );
-
-        for (&y, &value) in ys.iter().zip(simd.as_array()) {
-            assert_eq!(
-                value.to_bits(),
-                noise
-                    .smeared_noise(20_000_068.0, y, -19_999_796.0, 5475.296)
-                    .to_bits(),
-                "Y={y}"
+        let columns = [
+            [-64.0, -56.0, -48.0, -40.0, -32.0, -24.0, -16.0, -8.0],
+            [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 0.9375].map(|y| y - noise.yo),
+        ];
+        for ys in columns {
+            let simd = noise.smeared_noise_y_simd(
+                20_000_068.0,
+                f64x8::from_array(ys),
+                -19_999_796.0,
+                5475.296,
             );
+
+            for (&y, &value) in ys.iter().zip(simd.as_array()) {
+                assert_eq!(
+                    value.to_bits(),
+                    noise
+                        .smeared_noise(20_000_068.0, y, -19_999_796.0, 5475.296)
+                        .to_bits(),
+                    "Y={y}"
+                );
+            }
         }
     }
 
@@ -919,6 +976,12 @@ mod tests {
         let noise = ImprovedNoise::new(&mut rng);
         let columns = [
             (0.0, 0.0, [0.0, 1.25, -5.5, 1000.75]),
+            (0.0, 0.0, [0.125, 0.25, 0.5, 0.75].map(|y| y - noise.yo)),
+            (
+                0.0,
+                0.0,
+                [0.125, 256.25, 512.5, 768.75].map(|y| y - noise.yo),
+            ),
             (
                 255.25 - noise.xo,
                 -256.25 - noise.zo,
