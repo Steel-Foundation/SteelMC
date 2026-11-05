@@ -175,7 +175,7 @@ impl ThrownTridentEntity {
         i32::from(*self.entity_data.lock().thrown_trident.id_loyalty.get())
     }
 
-    fn is_acceptible_return_owner(&self) -> bool {
+    fn is_acceptable_return_owner(&self) -> bool {
         let Some(current_owner) = self.get_owner() else {
             return false;
         };
@@ -197,7 +197,7 @@ impl ThrownTridentEntity {
             return true;
         };
 
-        if !self.is_acceptible_return_owner() {
+        if !self.is_acceptable_return_owner() {
             if self.arrow_base().pickup() == ArrowPickup::Allowed {
                 let _ = self
                     .spawn_at_location_with_offset(self.arrow_pickup_item(), PICKUP_SPAWN_OFFSET);
