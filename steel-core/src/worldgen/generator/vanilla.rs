@@ -806,7 +806,7 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                         PartialSurfaceOutcome::Evaluate => {}
                     }
 
-                    // The fill below writes only the veins that place a block.
+                    // The fill only writes placed veins.
                     material_ore_vein_results.fill(None);
                     if let Some(ore_veinifier) = &self.ore_veinifier {
                         let offset = (relative_y * 16 * 16 + local_z * 16 + local_x)

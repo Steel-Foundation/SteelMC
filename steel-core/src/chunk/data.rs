@@ -1083,7 +1083,7 @@ impl Chunk {
         let mut heightmaps = self.heightmaps.write();
         heightmaps.prime_from_sections(heightmap_types, min_y, height, &sections.sections);
 
-        // Heightmaps never read each other, so each can take the column's writes on its own.
+        // Heightmaps are independent, so each takes the whole column in turn.
         for &hm_type in heightmap_types {
             let Some(heightmap) = heightmaps.get_mut(hm_type) else {
                 panic!("heightmap {hm_type:?} missing after priming");

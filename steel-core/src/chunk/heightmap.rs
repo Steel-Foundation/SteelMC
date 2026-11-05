@@ -290,7 +290,7 @@ impl Heightmap {
         F: Fn(usize, i32, usize) -> BlockStateId,
     {
         let first_available = self.get_first_available(local_x, local_z);
-        if Self::is_below_reach(y, first_available) {
+        if Self::cannot_change_height(y, first_available) {
             return false;
         }
 
@@ -317,8 +317,7 @@ impl Heightmap {
         false
     }
 
-    /// Applies one column's writes in order, the same as calling [`Self::update`] for each,
-    /// but without re-reading the height for writes too deep to change it.
+    /// [`Self::update`] for each write, skipping those too deep to change the height.
     pub fn update_column<F>(
         &mut self,
         local_x: usize,
@@ -330,7 +329,7 @@ impl Heightmap {
     {
         let mut first_available = self.get_first_available(local_x, local_z);
         for (y, state) in writes {
-            if Self::is_below_reach(y, first_available) {
+            if Self::cannot_change_height(y, first_available) {
                 continue;
             }
             if self.update(local_x, y, local_z, state, get_block) {
@@ -339,8 +338,7 @@ impl Heightmap {
         }
     }
 
-    /// Whether a write at `y` is too far below the column's top to change this heightmap.
-    const fn is_below_reach(y: i32, first_available: i32) -> bool {
+    const fn cannot_change_height(y: i32, first_available: i32) -> bool {
         y <= first_available - 2
     }
 
@@ -753,8 +751,7 @@ mod tests {
         assert_eq!(ocean_floor.get_first_available(0, 0), 6);
     }
 
-    /// `update_column` skips writes using a cached height; it must still match one `update` per
-    /// write, including when a write removes the top block and the height drops.
+    /// `update_column` must match one `update` per write, including when the top is removed.
     #[test]
     fn column_update_matches_per_write_updates() {
         init_test_state();
@@ -762,7 +759,7 @@ mod tests {
         let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
         let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
-        // Final column contents, as the sections hold them when heightmaps update.
+        // Sections already hold every write when heightmaps update.
         let mut column = [air; 32];
         column[..20].fill(stone);
         column[3] = water;
