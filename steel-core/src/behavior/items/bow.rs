@@ -1,5 +1,3 @@
-//! Bow item behavior (`BowItem`).
-
 use std::sync::Arc;
 
 use steel_macros::item_behavior;
@@ -16,32 +14,30 @@ use crate::entity::{Entity as _, LivingEntity, LivingEntityRef};
 use crate::player::Player;
 use crate::world::World;
 
-/// Vanilla `BowItem.MAX_DRAW_DURATION`: the ticks needed for a full-power shot.
-pub const MAX_DRAW_DURATION: i32 = 20;
+/// Ticks needed for a full-power shot.
+const MAX_DRAW_DURATION: i32 = 20;
 
-/// Vanilla `BowItem.DEFAULT_RANGE`.
-pub const DEFAULT_RANGE: i32 = 15;
+/// Maximum projectile range.
+const DEFAULT_RANGE: i32 = 15;
 
-/// Vanilla `BowItem.getUseDuration`.
 const MAX_USE_DURATION: i32 = 72_000;
 
-/// Vanilla `BowItem.releaseUsing` rejects shots below this power.
+/// Shots below this draw power are rejected.
 const MIN_POWER: f32 = 0.1;
 
-/// Vanilla `BowItem.getPowerForTime` clamps the draw power to this value.
+/// Draw power is clamped to this value.
 const MAX_POWER: f32 = 1.0;
 
-/// Vanilla scales the draw power by this factor when launching an arrow.
+/// Draw power is multiplied by this when launching an arrow.
 const ARROW_POWER_SCALE: f32 = 3.0;
 
-/// Vanilla passes this inaccuracy to `Projectile.shootFromRotation`.
 const ARROW_UNCERTAINTY: f32 = 1.0;
 
 const SOUND_PITCH_RANDOM_RANGE: f32 = 0.4;
 const SOUND_PITCH_RANDOM_BASE: f32 = 1.2;
 const SOUND_PITCH_POWER_SCALE: f32 = 0.5;
 
-/// Vanilla `BowItem`: draws ammo from the shooter's inventory and fires it.
+/// Draws ammo from the shooter's inventory and fires it.
 #[item_behavior]
 pub struct BowItem;
 
@@ -142,7 +138,6 @@ impl ProjectileWeaponItem for BowItem {
     }
 }
 
-/// Vanilla `BowItem.getPowerForTime`.
 #[must_use]
 pub fn get_power_for_time(time_held: i32) -> f32 {
     let mut power = time_held as f32 / MAX_DRAW_DURATION as f32;

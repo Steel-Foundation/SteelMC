@@ -1,8 +1,3 @@
-//! Arrow item behavior (`ArrowItem`).
-//!
-//! Arrow items are the ammo capability a [`super::BowItem`] draws from; each
-//! subclass creates the matching `AbstractArrow` projectile.
-
 use std::sync::Arc;
 
 use steel_macros::item_behavior;
@@ -13,8 +8,6 @@ use crate::entity::entities::ArrowEntity;
 use crate::entity::{LivingEntityRef, SharedEntity, next_entity_id};
 use crate::world::World;
 
-/// Vanilla `ArrowItem.createArrow`: spawns a plain [`ArrowEntity`] owned by the
-/// shooter.
 pub(crate) fn create_arrow_entity(
     world: &Arc<World>,
     pickup_item_stack: &mut ItemStack,

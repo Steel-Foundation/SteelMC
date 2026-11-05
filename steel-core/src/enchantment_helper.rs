@@ -5,12 +5,14 @@ use std::sync::Arc;
 use item_in_use::EnchantedItemInUse;
 
 use steel_registry::enchantment_effect::{
-    DamageSourcePredicate, EnchantmentEffectComponent, EnchantmentEffectRequirements,
-    EnchantmentEntityEffect, EnchantmentEntityTarget, EnchantmentTarget, EntityPredicate,
-    EntityTypePredicate, EntityTypeSpecificPredicate, EntityVehiclePredicate, MobEffectSelection,
+    CrossbowChargingSounds, DamageSourcePredicate, EnchantmentEffectComponent,
+    EnchantmentEffectRequirements, EnchantmentEntityEffect, EnchantmentEntityTarget,
+    EnchantmentTarget, EntityPredicate, EntityTypePredicate, EntityTypeSpecificPredicate,
+    EntityVehiclePredicate, MobEffectSelection,
 };
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_entities, vanilla_items};
 
 use crate::entity::damage::DamageSource;
@@ -222,9 +224,8 @@ pub(crate) fn do_post_attack_effects_with_item_source(
     do_post_attack_effects_with_item_source_on_break(world, victim, source, context, None);
 }
 
-/// Applies post-attack effects and reports a broken item stack through
-/// `attackerless_on_break` when the damage source has no living attacker, matching
-/// vanilla's `doPostAttackEffectsWithItemSourceOnBreak`.
+/// Applies post-attack effects and reports a broken item through
+/// `attackerless_on_break` when the damage source has no living attacker.
 pub(crate) fn do_post_attack_effects_with_item_source_on_break(
     world: &World,
     victim: &dyn Entity,
@@ -280,10 +281,8 @@ pub(crate) fn do_post_attack_effects_with_item_source_on_break(
     }
 }
 
-/// Vanilla `EnchantmentHelper.getTridentReturnToOwnerAcceleration`.
-///
 /// `remove_binomial` effects are skipped because Steel's value-effect pipeline has
-/// no thread-local random source; vanilla loyalty only uses linear effects.
+/// no thread-local random source; loyalty only uses linear effects.
 pub(crate) fn get_trident_return_to_owner_acceleration(
     weapon: &ItemStack,
     trident: &dyn Entity,
@@ -318,7 +317,76 @@ pub(crate) fn get_trident_return_to_owner_acceleration(
     (value.floor() as i32).max(0)
 }
 
-/// Vanilla `EnchantmentHelper.processAmmoUse`.
+pub(crate) fn modify_crossbow_charging_time(crossbow: &ItemStack, time: f32) -> f32 {
+    crossbow
+        .apply_unconditional_enchantment_value_effects(
+            EnchantmentEffectComponent::CrossbowChargeTime,
+            time,
+        )
+        .max(0.0)
+}
+
+/// Picks the highest-level enchantment's crossbow charging sounds.
+pub(crate) fn get_crossbow_charging_sounds(
+    crossbow: &ItemStack,
+) -> Option<&'static CrossbowChargingSounds> {
+    let enchantments = crossbow.get_enchantments()?;
+    let mut picked: Option<(&'static [CrossbowChargingSounds], i32)> = None;
+
+    for (key, level) in enchantments.iter() {
+        if *level == 0 {
+            continue;
+        }
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            continue;
+        };
+        let sounds = enchantment.effects.crossbow_charging_sounds;
+        if sounds.is_empty() {
+            continue;
+        }
+        let level = *level as i32;
+        if picked.is_none_or(|(_, best)| best < level) {
+            picked = Some((sounds, level));
+        }
+    }
+
+    let (sounds, level) = picked?;
+    sounds.get((level as usize).min(sounds.len()) - 1)
+}
+
+pub(crate) fn get_trident_spin_attack_strength(trident: &ItemStack) -> f32 {
+    trident.apply_unconditional_enchantment_value_effects(
+        EnchantmentEffectComponent::TridentSpinAttackStrength,
+        0.0,
+    )
+}
+
+/// Picks the highest-level enchantment's trident sound.
+pub(crate) fn get_trident_sound(trident: &ItemStack) -> Option<SoundEventRef> {
+    let enchantments = trident.get_enchantments()?;
+    let mut picked: Option<(&'static [SoundEventRef], i32)> = None;
+
+    for (key, level) in enchantments.iter() {
+        if *level == 0 {
+            continue;
+        }
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            continue;
+        };
+        let sounds = enchantment.effects.trident_sound;
+        if sounds.is_empty() {
+            continue;
+        }
+        let level = *level as i32;
+        if picked.is_none_or(|(_, best)| best < level) {
+            picked = Some((sounds, level));
+        }
+    }
+
+    let (sounds, level) = picked?;
+    sounds.get((level as usize).min(sounds.len()) - 1).copied()
+}
+
 pub(crate) fn process_ammo_use(weapon: &ItemStack, ammo: &ItemStack, amount: i32) -> i32 {
     process_value_effects(
         weapon,
@@ -328,7 +396,6 @@ pub(crate) fn process_ammo_use(weapon: &ItemStack, ammo: &ItemStack, amount: i32
     ) as i32
 }
 
-/// Vanilla `EnchantmentHelper.processProjectileCount`.
 pub(crate) fn process_projectile_count(
     weapon: &ItemStack,
     shooter: &dyn Entity,
@@ -343,7 +410,6 @@ pub(crate) fn process_projectile_count(
     (value as i32).max(0)
 }
 
-/// Vanilla `EnchantmentHelper.processProjectileSpread`.
 pub(crate) fn process_projectile_spread(
     weapon: &ItemStack,
     shooter: &dyn Entity,
@@ -358,7 +424,6 @@ pub(crate) fn process_projectile_spread(
     .max(0.0)
 }
 
-/// Vanilla `EnchantmentHelper.getPiercingCount`.
 pub(crate) fn get_piercing_count(weapon: &ItemStack, ammo: &ItemStack) -> i32 {
     let value = process_value_effects(
         weapon,
@@ -369,11 +434,11 @@ pub(crate) fn get_piercing_count(weapon: &ItemStack, ammo: &ItemStack) -> i32 {
     (value as i32).max(0)
 }
 
-/// Applies a weapon's value effects for `component` in vanilla
-/// `EnchantmentHelper.runIterationOnItem` order.
+/// Applies a weapon's value effects for `component` in enchantment iteration
+/// order.
 ///
 /// `remove_binomial` effects are skipped because Steel's value-effect pipeline
-/// has no per-entity random source; no vanilla projectile enchantment uses them.
+/// has no per-entity random source; no projectile enchantment uses them.
 fn process_value_effects(
     item: &ItemStack,
     component: EnchantmentEffectComponent,
@@ -560,8 +625,8 @@ fn apply_post_attack_effects(
     enchanted_item_broke
 }
 
-/// Mirrors vanilla `EnchantmentHelper.onProjectileSpawned` after the projectile
-/// has been handed to the world. Returns whether an effect broke the item.
+/// Applies projectile-spawned effects after the projectile has been handed to the
+/// world. Returns whether an effect broke the item.
 pub(crate) fn on_projectile_spawned(
     world: &World,
     weapon: &mut ItemStack,

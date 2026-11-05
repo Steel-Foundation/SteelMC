@@ -1,10 +1,8 @@
-//! Vanilla `AbstractArrow` shared projectile behavior.
+//! Shared behavior for arrow-like projectiles.
 //!
-//! Concrete arrow-like projectiles embed [`ArrowBase`] and implement
-//! [`AbstractArrow`]. The layers chain explicitly through
-//! [`AbstractArrow::arrow_tick`] and [`AbstractArrow::arrow_save`] /
-//! [`AbstractArrow::arrow_load`], which stand in for vanilla `super.tick()` and
-//! `super.addAdditionalSaveData()`.
+//! Concrete arrows embed [`ArrowBase`] and implement [`AbstractArrow`]. The layers
+//! chain through `arrow_tick` and `arrow_save` / `arrow_load`, which stand in for
+//! `super.tick()` and `super.addAdditionalSaveData()`.
 
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -40,39 +38,72 @@ use super::{
     lerp_rotation,
 };
 
-/// Vanilla `AbstractArrow.getAirDrag`.
-pub const ARROW_AIR_DRAG: f64 = 0.99;
+pub(crate) const ARROW_AIR_DRAG: f64 = 0.99;
 
-/// Vanilla `AbstractArrow.getDefaultGravity`.
-pub const ARROW_GRAVITY: f64 = 0.05;
+pub(crate) const ARROW_GRAVITY: f64 = 0.05;
 
-/// Vanilla `AbstractArrow.getWaterInertia` default.
+/// Inertia applied while the arrow is in water.
 const DEFAULT_WATER_INERTIA: f32 = 0.6;
 
-/// Vanilla `AbstractArrow.tickDespawn` lifetime in ticks.
+/// Ticks before an arrow despawns.
 const ARROW_LIFETIME_TICKS: i32 = 1200;
 
-/// Vanilla `AbstractArrow` shake duration after landing.
+/// Shake duration after landing.
 const HIT_SHAKE_TICKS: i32 = 7;
 
-/// Vanilla `AbstractArrow` ground offset applied against the hit direction.
+/// Ground offset applied against the hit direction.
 const GROUND_HIT_OFFSET: f64 = 0.05;
 
-/// Vanilla `AbstractArrow.shouldFall` probe inflation.
+/// Probe inflation used to check whether a landed arrow lost its support.
 const FALL_PROBE_INFLATION: f64 = 0.06;
 
-/// Vanilla `AbstractArrow.baseDamage` default.
 const DEFAULT_BASE_DAMAGE: f64 = 2.0;
 
-/// Vanilla arrow damage is clamped to the `int` range before rounding.
+/// Arrow damage is clamped to the `int` range before rounding.
 const MAX_ARROW_DAMAGE: f64 = 2_147_483_647.0;
+
+/// Ticks an entity burns when hit by a flaming arrow.
+const FIRE_TICKS_ON_HIT: i32 = 100;
+
+/// Horizontal knockback scale applied by the knockback enchantment.
+const KNOCKBACK_VELOCITY_SCALE: f64 = 0.6;
+
+/// Upward lift added to knockback.
+const KNOCKBACK_LIFT: f64 = 0.1;
+
+/// Velocity below this is treated as stopped.
+const STOPPED_VELOCITY_SQUARED: f64 = 1.0e-7;
+
+/// Deflection power applied when a hit does not hurt.
+const HIT_DEFLECTION_POWER: f64 = 0.2;
+
+/// Spread applied per axis when an unsupported arrow starts falling.
+const FALL_SPREAD: f32 = 0.2;
+
+/// Offset applied when dropping a stopped arrow as an item.
+const PICKUP_SPAWN_OFFSET: DVec3 = DVec3::new(0.0, 0.1, 0.0);
+
+/// Entity search box inflation.
+const ENTITY_SEARCH_INFLATE: f64 = 1.0;
+
+const CRIT_DAMAGE_DIVISOR: i32 = 2;
+const CRIT_DAMAGE_BASE: i32 = 2;
+
+const HIT_SOUND_PITCH_BASE: f32 = 1.2;
+const HIT_SOUND_PITCH_RANDOM_RANGE: f32 = 0.2;
+const HIT_SOUND_PITCH_OFFSET: f32 = 0.9;
+
+fn hit_sound_pitch() -> f32 {
+    HIT_SOUND_PITCH_BASE
+        / (rand::random::<f32>() * HIT_SOUND_PITCH_RANDOM_RANGE + HIT_SOUND_PITCH_OFFSET)
+}
 
 const CRIT_FLAG: i8 = 1 << 0;
 const NO_PHYSICS_FLAG: i8 = 1 << 1;
 
-/// Vanilla `AbstractArrow.Pickup`.
+/// How this arrow can be picked up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ArrowPickup {
+pub(crate) enum ArrowPickup {
     /// Cannot be picked up.
     Disallowed,
     /// Can be picked up by any player.
@@ -82,7 +113,6 @@ pub enum ArrowPickup {
 }
 
 impl ArrowPickup {
-    /// Decodes vanilla `Pickup.LEGACY_CODEC`.
     #[must_use]
     pub const fn from_legacy_byte(value: i8) -> Self {
         match value {
@@ -92,7 +122,6 @@ impl ArrowPickup {
         }
     }
 
-    /// Encodes vanilla `Pickup.LEGACY_CODEC`.
     #[must_use]
     pub const fn legacy_byte(self) -> i8 {
         match self {
@@ -118,13 +147,12 @@ struct ArrowState {
     weapon: Option<ItemStack>,
 }
 
-/// Runtime fields shared by vanilla `AbstractArrow` subclasses.
-pub struct ArrowBase {
+/// Runtime state shared by arrow-like projectiles.
+pub(crate) struct ArrowBase {
     state: SyncMutex<ArrowState>,
 }
 
 impl ArrowBase {
-    /// Creates arrow state with vanilla defaults for the owning arrow type.
     #[must_use]
     pub fn new(default_sound_event: SoundEventRef, default_pickup_item: ItemStack) -> Self {
         Self {
@@ -145,56 +173,46 @@ impl ArrowBase {
         }
     }
 
-    /// Sets the block state the arrow is embedded in.
     pub fn set_last_state(&self, last_state: Option<BlockStateId>) {
         self.state.lock().last_state = last_state;
     }
 
-    /// Returns the block state the arrow is embedded in, if it has landed.
     #[must_use]
     pub fn last_state(&self) -> Option<BlockStateId> {
         self.state.lock().last_state
     }
 
-    /// Returns how many ticks the arrow has been stuck in a block.
     #[must_use]
     pub fn in_ground_time(&self) -> i32 {
         self.state.lock().in_ground_time
     }
 
-    /// Sets how many ticks the arrow has been stuck in a block.
     pub fn set_in_ground_time(&self, in_ground_time: i32) {
         self.state.lock().in_ground_time = in_ground_time;
     }
 
-    /// Advances the in-ground tick counter.
     pub fn increment_in_ground_time(&self) {
         self.state.lock().in_ground_time += 1;
     }
 
-    /// Returns the pickup rule that decides who may collect this arrow.
     #[must_use]
     pub fn pickup(&self) -> ArrowPickup {
         self.state.lock().pickup
     }
 
-    /// Sets the pickup rule that decides who may collect this arrow.
     pub fn set_pickup(&self, pickup: ArrowPickup) {
         self.state.lock().pickup = pickup;
     }
 
-    /// Returns the remaining landing shake time.
     #[must_use]
     pub fn shake_time(&self) -> i32 {
         self.state.lock().shake_time
     }
 
-    /// Sets the landing shake time.
     pub fn set_shake_time(&self, shake_time: i32) {
         self.state.lock().shake_time = shake_time;
     }
 
-    /// Decrements the landing shake time while it is positive.
     pub fn decrement_shake_time(&self) {
         let mut state = self.state.lock();
         if state.shake_time > 0 {
@@ -202,59 +220,49 @@ impl ArrowBase {
         }
     }
 
-    /// Returns how many ticks the arrow has been alive.
     #[must_use]
     pub fn life(&self) -> i32 {
         self.state.lock().life
     }
 
-    /// Advances and returns the arrow lifetime counter.
     pub fn increment_life(&self) -> i32 {
         let mut state = self.state.lock();
         state.life += 1;
         state.life
     }
 
-    /// Sets the arrow lifetime counter.
     pub fn set_life(&self, life: i32) {
         self.state.lock().life = life;
     }
 
-    /// Returns the base damage scaled by impact speed on a hit.
     #[must_use]
     pub fn base_damage(&self) -> f64 {
         self.state.lock().base_damage
     }
 
-    /// Sets the base damage scaled by impact speed on a hit.
     pub fn set_base_damage(&self, base_damage: f64) {
         self.state.lock().base_damage = base_damage;
     }
 
-    /// Returns the sound played when this arrow hits a block.
     #[must_use]
     pub fn sound_event(&self) -> SoundEventRef {
         self.state.lock().sound_event
     }
 
-    /// Overrides the sound played when this arrow hits a block.
     pub fn set_sound_event(&self, sound_event: SoundEventRef) {
         self.state.lock().sound_event = sound_event;
     }
 
-    /// Returns the sound this arrow falls back to when no override is set.
     #[must_use]
     pub fn default_sound_event(&self) -> SoundEventRef {
         self.state.lock().default_sound_event
     }
 
-    /// Returns the item this arrow falls back to when its pickup stack is empty.
     #[must_use]
     pub fn default_pickup_item(&self) -> ItemStack {
         self.state.lock().default_pickup_item.clone()
     }
 
-    /// Adds `entity_id` to the piercing ignore set, keeping it duplicate-free.
     pub fn ignore_entity(&self, entity_id: i32) {
         let mut state = self.state.lock();
         if !state.ignored_entity_ids.contains(&entity_id) {
@@ -262,30 +270,25 @@ impl ArrowBase {
         }
     }
 
-    /// Returns whether `entity_id` has already been pierced.
     #[must_use]
     pub fn is_ignored(&self, entity_id: i32) -> bool {
         self.state.lock().ignored_entity_ids.contains(&entity_id)
     }
 
-    /// Returns how many entities this arrow has pierced.
     #[must_use]
     pub fn ignored_entity_count(&self) -> usize {
         self.state.lock().ignored_entity_ids.len()
     }
 
-    /// Clears the piercing ignore set.
     pub fn clear_ignored(&self) {
         self.state.lock().ignored_entity_ids.clear();
     }
 
-    /// Returns the item stack this arrow drops when picked up.
     #[must_use]
     pub fn pickup_item_stack(&self) -> ItemStack {
         self.state.lock().pickup_item_stack.clone()
     }
 
-    /// Sets the pickup item stack, falling back to the vanilla default when empty.
     pub fn set_pickup_item_stack(&self, item_stack: ItemStack) {
         let mut state = self.state.lock();
         state.pickup_item_stack = if item_stack.is_empty() {
@@ -295,30 +298,25 @@ impl ArrowBase {
         };
     }
 
-    /// Returns the weapon that fired this arrow, if any.
     #[must_use]
     pub fn weapon(&self) -> Option<ItemStack> {
         self.state.lock().weapon.clone()
     }
 
-    /// Sets the weapon that fired this arrow.
     pub fn set_weapon(&self, weapon: Option<ItemStack>) {
         self.state.lock().weapon = weapon;
     }
 }
 
-/// Vanilla `AbstractArrow` behavior layered on top of [`Projectile`].
+/// Behavior layered on top of [`Projectile`].
 ///
-/// Rust traits cannot call `super`, so each overridable vanilla hook delegates
-/// to a shared body that overrides call to keep the base behavior.
-pub trait AbstractArrow: Projectile + Sized {
-    /// Returns shared arrow runtime state.
+/// Rust traits cannot call `super`, so each overridable hook delegates to a shared
+/// body that overrides call to keep the base behavior.
+pub(crate) trait AbstractArrow: Projectile + Sized {
     fn arrow_base(&self) -> &ArrowBase;
 
-    /// Returns this projectile's `AbstractArrow` synchronized data layer.
     fn abstract_arrow_data(&self) -> MappedMutexGuard<'_, AbstractArrowEntityData>;
 
-    /// Vanilla `AbstractArrow.tick`.
     fn arrow_tick(self: Arc<Self>) {
         let physics_enabled = !self.no_physics();
         let movement = self.velocity();
@@ -426,16 +424,14 @@ pub trait AbstractArrow: Projectile + Sized {
         self.projectile_base_tick();
     }
 
-    /// Vanilla `AbstractArrow.shoot` resets the lifetime counter after the
-    /// base launch.
     fn arrow_shoot(&self, direction: DVec3, power: f32, uncertainty: f32) {
         self.default_shoot(direction, power, uncertainty);
         self.arrow_base().set_life(0);
     }
 
-    /// Applies vanilla `Projectile.applyOnProjectileSpawned` for arrow
-    /// subclasses: the pickup item's effects, then the firing weapon's
-    /// effects when the weapon is a different item (a bow firing an arrow).
+    /// Applies the pickup item's effects, then the firing weapon's effects when the
+    /// weapon is a different item (for example a bow firing an arrow).
+    ///
     /// Arrow overrides call this from [`Projectile::apply_on_projectile_spawned`].
     fn arrow_apply_on_projectile_spawned(&self, world: &World, pickup_item_stack: &mut ItemStack) {
         self.projectile_apply_on_projectile_spawned(world, pickup_item_stack);
@@ -456,7 +452,6 @@ pub trait AbstractArrow: Projectile + Sized {
         }
     }
 
-    /// Vanilla `AbstractArrow.stepMoveAndHit`.
     fn step_move_and_hit(self: Arc<Self>, block_hit: ClipHitResult) {
         while self.is_alive() {
             let initial_position = self.position();
@@ -503,7 +498,6 @@ pub trait AbstractArrow: Projectile + Sized {
         }
     }
 
-    /// Vanilla `AbstractArrow.hitTargetsOrDeflectSelf`.
     fn hit_targets_or_deflect_self(
         self: Arc<Self>,
         entities_hit: Vec<EntityHitResult>,
@@ -519,12 +513,10 @@ pub trait AbstractArrow: Projectile + Sized {
         ProjectileDeflection::None
     }
 
-    /// Vanilla `AbstractArrow.applyInertia`.
     fn arrow_apply_inertia(&self, inertia: f32) {
         self.set_velocity(self.velocity() * f64::from(inertia));
     }
 
-    /// Vanilla `AbstractArrow.shouldFall`.
     fn arrow_should_fall(&self) -> bool {
         if !self.in_ground() {
             return false;
@@ -538,21 +530,19 @@ pub trait AbstractArrow: Projectile + Sized {
             .has_collision_with_context(&probe, BlockCollisionContext::empty())
     }
 
-    /// Vanilla `AbstractArrow.startFalling`.
     fn arrow_start_falling(&self) {
         self.set_in_ground(false);
         let movement = self.velocity();
         let scale = DVec3::new(
-            f64::from(rand::random::<f32>() * 0.2),
-            f64::from(rand::random::<f32>() * 0.2),
-            f64::from(rand::random::<f32>() * 0.2),
+            f64::from(rand::random::<f32>() * FALL_SPREAD),
+            f64::from(rand::random::<f32>() * FALL_SPREAD),
+            f64::from(rand::random::<f32>() * FALL_SPREAD),
         );
         self.set_velocity(movement * scale);
         self.arrow_base().set_life(0);
     }
 
-    /// Vanilla `AbstractArrow.move`: an external mover that leaves the arrow
-    /// unsupported makes it start falling.
+    /// An external mover that leaves the arrow unsupported makes it start falling.
     fn arrow_move(self: Arc<Self>, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let result = Arc::clone(&self).default_move_entity(mover_type, delta);
         if mover_type != MoverType::SelfMovement && self.arrow_should_fall() {
@@ -561,52 +551,44 @@ pub trait AbstractArrow: Projectile + Sized {
         result
     }
 
-    /// Vanilla `AbstractArrow.push`: arrows stuck in a block ignore impulses.
+    /// Arrows stuck in a block ignore impulses.
     fn arrow_push_impulse(&self, impulse: DVec3) {
         if !self.in_ground() {
             self.default_push_impulse(impulse);
         }
     }
 
-    /// Vanilla `AbstractArrow.onAboveBubbleColumn`: stuck arrows ignore columns.
+    /// Stuck arrows ignore bubble columns.
     fn arrow_on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
         if !self.in_ground() {
             self.on_above_bubble_column_projectile(drag_down, pos);
         }
     }
 
-    /// Vanilla `AbstractArrow.onInsideBubbleColumn`: stuck arrows ignore columns.
+    /// Stuck arrows ignore bubble columns.
     fn arrow_on_inside_bubble_column(&self, drag_down: bool) {
         if !self.in_ground() {
             self.on_inside_bubble_column_projectile(drag_down);
         }
     }
 
-    /// Vanilla `AbstractArrow.tickDespawn`.
     fn tick_despawn(&self) {
         self.arrow_tick_despawn();
     }
 
-    /// Shared `AbstractArrow.tickDespawn` body.
     fn arrow_tick_despawn(&self) {
         if self.arrow_base().increment_life() >= ARROW_LIFETIME_TICKS {
             self.set_removed(RemovalReason::Discarded);
         }
     }
 
-    /// Vanilla `AbstractArrow.resetPiercedEntities`.
-    ///
-    /// Vanilla also clears `piercedAndKilledEntities`, which only feeds the
-    /// `killed_by_arrow` advancement trigger; that trigger is not implemented.
+    /// `piercedAndKilledEntities` is not tracked because it only feeds the
+    /// `killed_by_arrow` advancement trigger, which is not implemented.
     fn reset_pierced_entities(&self) {
         self.arrow_base().clear_ignored();
     }
 
-    /// Vanilla `AbstractArrow.onHitEntity`.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "mirrors vanilla AbstractArrow.onHitEntity"
-    )]
+    #[expect(clippy::too_many_lines, reason = "keeps the hit sequence in order")]
     fn arrow_on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
         let Some(world) = entity.level() else {
             return;
@@ -649,7 +631,7 @@ pub trait AbstractArrow: Projectile + Sized {
         }
 
         if self.is_crit_arrow() {
-            let bonus = rand::random_range(0..(damage / 2 + 2));
+            let bonus = rand::random_range(0..(damage / CRIT_DAMAGE_DIVISOR + CRIT_DAMAGE_BASE));
             damage = (i64::from(damage) + i64::from(bonus)).min(i64::from(i32::MAX)) as i32;
         }
 
@@ -663,7 +645,7 @@ pub trait AbstractArrow: Projectile + Sized {
         if self.is_on_fire()
             && let Some(living) = entity.as_living_entity()
         {
-            living.ignite_for_ticks(100);
+            living.ignite_for_ticks(FIRE_TICKS_ON_HIT);
         }
 
         if entity.hurt(&world, &damage_source, damage as f32) {
@@ -701,11 +683,7 @@ pub trait AbstractArrow: Projectile + Sized {
             // TODO: vanilla tracks killed entities and triggers the
             // `killed_by_arrow` advancement for player owners.
 
-            self.play_sound(
-                self.arrow_base().sound_event(),
-                1.0,
-                1.2 / (rand::random::<f32>() * 0.2 + 0.9),
-            );
+            self.play_sound(self.arrow_base().sound_event(), 1.0, hit_sound_pitch());
             if self.pierce_level() <= 0 {
                 self.set_removed(RemovalReason::Discarded);
             }
@@ -717,13 +695,13 @@ pub trait AbstractArrow: Projectile + Sized {
                 Some(entity.as_ref()),
                 owner_reference,
                 false,
-                DVec3::splat(0.2),
+                DVec3::splat(HIT_DEFLECTION_POWER),
             );
-            if self.velocity().length_squared() < 1.0e-7 {
+            if self.velocity().length_squared() < STOPPED_VELOCITY_SQUARED {
                 if self.arrow_base().pickup() == ArrowPickup::Allowed {
                     let _ = self.spawn_at_location_with_offset(
                         self.arrow_pickup_item(),
-                        DVec3::new(0.0, 0.1, 0.0),
+                        PICKUP_SPAWN_OFFSET,
                     );
                 }
                 self.set_removed(RemovalReason::Discarded);
@@ -731,7 +709,6 @@ pub trait AbstractArrow: Projectile + Sized {
         }
     }
 
-    /// Vanilla `AbstractArrow.doKnockback`.
     fn arrow_do_knockback(&self, mob: &dyn LivingEntity, damage_source: &DamageSource) {
         let Some(weapon_item) = self.arrow_base().weapon() else {
             return;
@@ -749,19 +726,18 @@ pub trait AbstractArrow: Projectile + Sized {
         }
 
         let knockback_resistance = (1.0 - mob.knockback_resistance()).max(0.0);
-        let scale = f64::from(knockback) * 0.6 * knockback_resistance;
+        let scale = f64::from(knockback) * KNOCKBACK_VELOCITY_SCALE * knockback_resistance;
         let velocity = self.velocity();
         let movement = DVec3::new(velocity.x, 0.0, velocity.z).normalize_or_zero() * scale;
         if movement.length_squared() > 0.0 {
-            mob.push_impulse(DVec3::new(movement.x, 0.1, movement.z));
+            mob.push_impulse(DVec3::new(movement.x, KNOCKBACK_LIFT, movement.z));
         }
     }
 
-    /// Vanilla `AbstractArrow.doPostHurtEffects` (no-op by default).
     fn arrow_do_post_hurt_effects(self: Arc<Self>, _mob: &dyn LivingEntity) {}
 
-    /// Vanilla `Projectile.getEffectSource`: the owner when present, otherwise
-    /// the projectile itself. The owner need not be a living entity.
+    /// Returns the owner when present, otherwise the projectile itself. The owner
+    /// need not be a living entity.
     fn arrow_get_effect_source(self: Arc<Self>) -> SharedEntity {
         if let Some(owner) = self.get_owner() {
             return owner;
@@ -769,7 +745,6 @@ pub trait AbstractArrow: Projectile + Sized {
         self
     }
 
-    /// Vanilla `AbstractArrow.onHitBlock`.
     fn arrow_on_hit_block(self: Arc<Self>, hit: &ClipHitResult) {
         if let Some(world) = self.level() {
             self.arrow_base()
@@ -792,11 +767,7 @@ pub trait AbstractArrow: Projectile + Sized {
             );
         }
         self.set_velocity(DVec3::ZERO);
-        self.play_sound(
-            self.arrow_base().sound_event(),
-            1.0,
-            1.2 / (rand::random::<f32>() * 0.2 + 0.9),
-        );
+        self.play_sound(self.arrow_base().sound_event(), 1.0, hit_sound_pitch());
         self.set_in_ground(true);
         self.arrow_base().set_shake_time(HIT_SHAKE_TICKS);
         self.set_crit_arrow(false);
@@ -806,22 +777,14 @@ pub trait AbstractArrow: Projectile + Sized {
         self.reset_pierced_entities();
     }
 
-    /// Vanilla `AbstractArrow.getDefaultHitGroundSoundEvent`.
-    fn arrow_default_hit_ground_sound_event(&self) -> SoundEventRef {
-        self.arrow_base().default_sound_event()
-    }
-
-    /// Vanilla `AbstractArrow.getWeaponItem`.
     fn get_weapon_item(&self) -> Option<ItemStack> {
         self.arrow_base().weapon()
     }
 
-    /// Vanilla `AbstractArrow.findHitEntity`.
     fn find_hit_entity(&self, from: DVec3, to: DVec3) -> Option<EntityHitResult> {
         self.arrow_find_hit_entity(from, to)
     }
 
-    /// Shared `AbstractArrow.findHitEntity` body.
     fn arrow_find_hit_entity(&self, from: DVec3, to: DVec3) -> Option<EntityHitResult> {
         self.arrow_find_hit_entities(from, to)
             .into_iter()
@@ -834,12 +797,10 @@ pub trait AbstractArrow: Projectile + Sized {
             })
     }
 
-    /// Vanilla `AbstractArrow.findHitEntities`.
     fn find_hit_entities(&self, from: DVec3, to: DVec3) -> Vec<EntityHitResult> {
         self.arrow_find_hit_entities(from, to)
     }
 
-    /// Shared `AbstractArrow.findHitEntities` body.
     fn arrow_find_hit_entities(&self, from: DVec3, to: DVec3) -> Vec<EntityHitResult> {
         let Some(world) = self.level() else {
             return Vec::new();
@@ -847,7 +808,7 @@ pub trait AbstractArrow: Projectile + Sized {
         let search_box = self
             .bounding_box()
             .expand_towards(self.velocity())
-            .inflate(1.0);
+            .inflate(ENTITY_SEARCH_INFLATE);
         get_many_entity_hits(
             world.as_ref(),
             self.id(),
@@ -861,14 +822,12 @@ pub trait AbstractArrow: Projectile + Sized {
         )
     }
 
-    /// Vanilla `AbstractArrow.canHitEntity`, layered on the base projectile check.
     fn arrow_can_hit_entity(&self, entity: &dyn Entity) -> bool {
         // TODO: vanilla also rejects player-vs-player hits when the owner is a
         // player; `Player::can_harm_player` is not implemented yet.
         self.base_can_hit_entity(entity) && !self.arrow_base().is_ignored(entity.id())
     }
 
-    /// Vanilla `AbstractArrow.addAdditionalSaveData`.
     fn arrow_save(&self, nbt: &mut NbtCompound) {
         let arrow_base = self.arrow_base();
         nbt.insert("life", arrow_base.life() as i16);
@@ -891,7 +850,6 @@ pub trait AbstractArrow: Projectile + Sized {
         }
     }
 
-    /// Vanilla `AbstractArrow.readAdditionalSaveData`.
     fn arrow_load(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let arrow_base = self.arrow_base();
         arrow_base.set_last_state(nbt.compound("inBlockState").and_then(block_state_nbt::load));
@@ -920,11 +878,9 @@ pub trait AbstractArrow: Projectile + Sized {
         self.set_in_ground(nbt.byte("inGround").is_some_and(|value| value != 0));
         self.set_crit_arrow(nbt.byte("crit").is_some_and(|value| value != 0));
         self.set_pierce_level(nbt.byte("PierceLevel").unwrap_or(0));
-        // Vanilla reads `life` first and stores it as a short.
         arrow_base.set_life(i32::from(nbt.short("life").unwrap_or(0)));
     }
 
-    /// Vanilla `AbstractArrow.playerTouch`.
     fn arrow_player_touch(self: Arc<Self>, player: &Arc<Player>) {
         if (self.in_ground() || self.no_physics())
             && self.arrow_base().shake_time() <= 0
@@ -935,12 +891,10 @@ pub trait AbstractArrow: Projectile + Sized {
         }
     }
 
-    /// Vanilla `AbstractArrow.tryPickup`.
     fn try_pickup(&self, player: &Arc<Player>) -> bool {
         self.arrow_try_pickup(player)
     }
 
-    /// Shared `AbstractArrow.tryPickup` body.
     fn arrow_try_pickup(&self, player: &Arc<Player>) -> bool {
         match self.arrow_base().pickup() {
             ArrowPickup::Disallowed => false,
@@ -952,69 +906,53 @@ pub trait AbstractArrow: Projectile + Sized {
         }
     }
 
-    /// Vanilla `AbstractArrow.getPickupItem`.
     fn arrow_pickup_item(&self) -> ItemStack {
         self.arrow_base().pickup_item_stack()
     }
 
-    /// Vanilla `AbstractArrow.getPickupItemStackOrigin`.
     fn arrow_pickup_item_stack_origin(&self) -> ItemStack {
         self.arrow_base().pickup_item_stack()
     }
 
-    /// Vanilla `AbstractArrow.setPickupItemStack`.
     fn arrow_set_pickup_item_stack(&self, item_stack: ItemStack) {
         self.arrow_base().set_pickup_item_stack(item_stack);
     }
 
-    /// Vanilla `AbstractArrow.setBaseDamage`.
-    fn set_base_damage(&self, base_damage: f64) {
-        self.arrow_base().set_base_damage(base_damage);
-    }
-
-    /// Vanilla `AbstractArrow.setCritArrow`.
     fn set_crit_arrow(&self, crit_arrow: bool) {
         self.arrow_set_flag(CRIT_FLAG, crit_arrow);
     }
 
-    /// Vanilla `AbstractArrow.isCritArrow`.
     fn is_crit_arrow(&self) -> bool {
         *self.abstract_arrow_data().id_flags.get() & CRIT_FLAG != 0
     }
 
-    /// Vanilla `AbstractArrow.setPierceLevel`.
     fn set_pierce_level(&self, pierce_level: i8) {
         self.abstract_arrow_data().pierce_level.set(pierce_level);
     }
 
-    /// Vanilla `AbstractArrow.getPierceLevel`.
     fn pierce_level(&self) -> i8 {
         *self.abstract_arrow_data().pierce_level.get()
     }
 
-    /// Vanilla `AbstractArrow.setInGround`.
     fn set_in_ground(&self, in_ground: bool) {
         self.abstract_arrow_data().in_ground.set(in_ground);
     }
 
-    /// Vanilla `AbstractArrow.isInGround`.
     fn in_ground(&self) -> bool {
         *self.abstract_arrow_data().in_ground.get()
     }
 
-    /// Vanilla `AbstractArrow.isPushedByFluid`.
     fn arrow_is_pushed_by_fluid(&self) -> bool {
         !self.in_ground()
     }
 
-    /// Vanilla `AbstractArrow.setNoPhysics`: mirrors the flag into synced data.
+    /// Mirrors the flag into synced data.
     fn arrow_set_no_physics(&self, no_physics: bool) {
         self.base().set_no_physics(no_physics);
         self.arrow_set_flag(NO_PHYSICS_FLAG, no_physics);
     }
 
-    /// Vanilla `AbstractArrow.setOwner`: a player owner makes an otherwise
-    /// disallowed arrow pickable.
+    /// A player owner makes an otherwise disallowed arrow pickable.
     fn arrow_set_owner(&self, owner: Option<&SharedEntity>) {
         self.default_set_owner_entity(owner);
         if self.arrow_base().pickup() == ArrowPickup::Disallowed
@@ -1024,25 +962,23 @@ pub trait AbstractArrow: Projectile + Sized {
         }
     }
 
-    /// Vanilla `AbstractArrow.isPickable`: inherits `Projectile`'s
-    /// redirectable-only rule and additionally refuses while in ground.
+    /// Inherits the redirectable-only rule and additionally refuses while in
+    /// ground.
     fn arrow_is_pickable(&self) -> bool {
         self.arrow_is_attackable() && !self.in_ground()
     }
 
-    /// Vanilla `AbstractArrow.getWaterInertia`.
     fn arrow_water_inertia(&self) -> f32 {
         DEFAULT_WATER_INERTIA
     }
 
-    /// Vanilla `AbstractArrow.isAttackable`.
     fn arrow_is_attackable(&self) -> bool {
         REGISTRY
             .entity_types
             .is_in_tag(self.entity_type(), &EntityTypeTag::REDIRECTABLE_PROJECTILE)
     }
 
-    /// Vanilla `AbstractArrow` flags are stored in the synced `ID_FLAGS` byte.
+    /// Flags live in the synced `ID_FLAGS` byte.
     fn arrow_set_flag(&self, flag: i8, value: bool) {
         let mut data = self.abstract_arrow_data();
         let flags = *data.id_flags.get();
@@ -1050,7 +986,6 @@ pub trait AbstractArrow: Projectile + Sized {
             .set(if value { flags | flag } else { flags & !flag });
     }
 
-    /// Returns how long this arrow has been stuck in a block.
     fn arrow_in_ground_time(&self) -> i32 {
         self.arrow_base().in_ground_time()
     }

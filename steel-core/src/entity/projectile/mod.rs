@@ -1,13 +1,8 @@
-//! Vanilla `Projectile` class hierarchy, mirrored as Rust traits + base structs.
+//! Projectile trait hierarchy and the shared move-vector raycasts.
 //!
-//! Mirrors `net.minecraft.world.entity.projectile`:
-//! `Entity → Projectile → ThrowableProjectile → ThrowableItemProjectile`.
-//! Concrete projectiles embed [`ProjectileBase`] (owner / left-owner / shot state)
-//! and implement the trait stack; the per-layer tick logic chains explicitly via
-//! [`Projectile::projectile_base_tick`] and
-//! [`ThrowableProjectile::throwable_projectile_tick`] (vanilla `super.tick()`).
-//!
-//! The block + entity move-vector raycast mirrors `ProjectileUtil`.
+//! Rust traits cannot call `super`, so the layers chain explicitly through
+//! [`Projectile::projectile_base_tick`] and the `default_*` bodies that overrides
+//! delegate to. The block and entity raycasts follow `ProjectileUtil`.
 
 mod arrow;
 mod throwable;
@@ -17,7 +12,6 @@ mod thrown_potion;
 #[cfg(test)]
 mod owner_tests;
 
-use std::mem;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -47,19 +41,38 @@ use super::{
     BUBBLE_COLUMN_INSIDE_UP_ACCELERATION,
 };
 
-pub use arrow::{ARROW_AIR_DRAG, ARROW_GRAVITY, AbstractArrow, ArrowBase, ArrowPickup};
+pub(crate) use arrow::{ARROW_GRAVITY, AbstractArrow, ArrowBase, ArrowPickup};
 pub use throwable::ThrowableProjectile;
 pub use throwable_item::ThrowableItemProjectile;
 pub use thrown_potion::{
     AbstractThrownPotion, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH,
 };
 
-/// Vanilla `Projectile.shoot` per-axis spread scale (`0.0172275 * uncertainty`).
+/// Per-axis spread scale of `Projectile.shoot` (`0.0172275 * uncertainty`).
 const SHOOT_INACCURACY_SCALE: f64 = 0.0172_275;
 
 const MAX_ENTITY_HIT_MARGIN: f32 = 0.3;
+const ENTITY_HIT_MARGIN_START_TICKS: i32 = 2;
+const ENTITY_HIT_MARGIN_RAMP_TICKS: f32 = 20.0;
+const ENTITY_SEARCH_INFLATE: f64 = 1.0;
+const OWNER_COLLISION_SEARCH_INFLATE: f64 = 1.0;
 
-/// Vanilla `ThrowableItemProjectile` spawn offset below the shooter's eye.
+/// Movement shorter than this is treated as stopped.
+const STOPPED_MOVEMENT_EPSILON: f64 = 1.0e-12;
+
+/// Default deflection power applied when an entity deflects a projectile.
+const DEFLECTION_POWER: f64 = 1.0;
+
+/// Deflection power applied when a projectile bounces off its hit target.
+const HIT_DEFLECTION_POWER: f64 = 0.2;
+
+const REVERSE_ROTATION_MIN_DEGREES: f32 = 170.0;
+const REVERSE_ROTATION_MAX_DEGREES: f32 = 190.0;
+const REVERSE_VELOCITY_SCALE: f64 = 0.5;
+
+const ROTATION_LERP_FACTOR: f32 = 0.2;
+
+/// Spawn offset below the shooter's eye for thrown item projectiles.
 const THROWN_ITEM_SPAWN_EYE_OFFSET: f64 = 0.1;
 
 /// Returns a triangle-distributed random value.
@@ -68,16 +81,16 @@ pub fn triangle_random(mode: f64, deviation: f64) -> f64 {
     mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
 }
 
-/// Result of a projectile move-vector raycast (vanilla `HitResult`).
+/// A projectile move-vector raycast hit.
 pub enum ProjectileHit {
-    /// The pearl's path entered a block collider.
+    /// The projectile's path entered a block collider.
     Block {
         /// Exact entry location.
         location: DVec3,
         /// The underlying block clip result.
         hit: ClipHitResult,
     },
-    /// The pearl's path intersected an entity.
+    /// The projectile's path intersected an entity.
     Entity(EntityHitResult),
 }
 
@@ -92,7 +105,7 @@ impl ProjectileHit {
     }
 }
 
-/// A projectile-versus-entity raycast hit (vanilla `EntityHitResult`).
+/// A projectile-versus-entity raycast hit.
 pub struct EntityHitResult {
     /// The entity that was hit.
     pub entity: SharedEntity,
@@ -100,15 +113,15 @@ pub struct EntityHitResult {
     pub location: DVec3,
 }
 
-/// Vanilla `Vec3.normalize` treats vectors shorter than this as zero.
+/// `Vec3.normalize` treats vectors shorter than this as zero.
 const VEC3_NORMALIZE_EPSILON: f64 = 1.0e-5;
 
-/// Vanilla projectile deflection behaviors (`ProjectileDeflection`).
+/// Deflection behavior applied when a projectile hits an entity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProjectileDeflection {
     /// Continue with normal hit handling.
     None,
-    /// Reverse the projectile with Vanilla's randomized yaw adjustment.
+    /// Reverse the projectile with a randomized yaw adjustment.
     Reverse,
     /// Redirect the projectile along the deflecting entity's look direction.
     AimDeflect,
@@ -126,12 +139,13 @@ impl ProjectileDeflection {
         match self {
             Self::None => {}
             Self::Reverse => {
-                let rotation = rand::random_range(170.0..190.0);
+                let rotation =
+                    rand::random_range(REVERSE_ROTATION_MIN_DEGREES..REVERSE_ROTATION_MAX_DEGREES);
                 let velocity = projectile.velocity();
                 projectile.set_velocity(DVec3::new(
-                    velocity.x * -power.x * 0.5,
-                    velocity.y * -power.y * 0.5,
-                    velocity.z * -power.z * 0.5,
+                    velocity.x * -power.x * REVERSE_VELOCITY_SCALE,
+                    velocity.y * -power.y * REVERSE_VELOCITY_SCALE,
+                    velocity.z * -power.z * REVERSE_VELOCITY_SCALE,
                 ));
                 let (yaw, pitch) = projectile.rotation();
                 projectile.set_rotation((yaw + rotation, pitch));
@@ -183,7 +197,7 @@ struct ProjectileState {
     last_deflected_by: Option<Weak<dyn Entity>>,
 }
 
-/// Runtime fields shared by vanilla projectiles (vanilla `Projectile` fields).
+/// Runtime state shared by all projectiles.
 pub struct ProjectileBase {
     state: SyncMutex<ProjectileState>,
 }
@@ -222,7 +236,7 @@ impl<T: Projectile> ProjectileEventSource for T {
     }
 }
 
-/// Vanilla-shaped behavior shared by entities that extend `Projectile`.
+/// Behavior shared by entities that extend `Projectile`.
 pub trait Projectile: Entity + ProjectileEventSource {
     /// Returns shared projectile runtime state.
     fn projectile_base(&self) -> &ProjectileBase;
@@ -272,8 +286,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.default_set_owner_entity(owner);
     }
 
-    /// Vanilla `Projectile.setOwner` body, exposed so overrides can store the
-    /// owner without their own side effects.
+    /// Base `setOwner` body for overrides that need the stored owner without
+    /// their own side effects.
     fn default_set_owner_entity(&self, owner: Option<&SharedEntity>) {
         self.projectile_base().state.lock().owner = owner.map(EntityReference::from_entity);
     }
@@ -377,7 +391,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         let aabb = self
             .bounding_box()
             .expand_towards(self.velocity())
-            .inflate(1.0);
+            .inflate(OWNER_COLLISION_SEARCH_INFLATE);
         let root_vehicle = owner.root_vehicle().unwrap_or_else(|| Arc::clone(&owner));
         let mut to_check = vec![root_vehicle];
         let mut visited = Vec::new();
@@ -398,14 +412,16 @@ pub trait Projectile: Entity + ProjectileEventSource {
         true
     }
 
-    /// Returns vanilla `Projectile.canHitEntity`.
+    /// Returns whether this projectile can hit `entity`.
     /// Use this if you don't need to override.
     fn can_hit_entity(&self, entity: &dyn Entity) -> bool {
         self.base_can_hit_entity(entity)
     }
 
-    /// Returns vanilla `Projectile.canHitEntity`.
-    /// We had to split this up, because Rust doesn't allow for calling super trait fns (without causing unbounded recursion) for overrides, so otherwise vanilla behavior would not be achievable.
+    /// Base `canHitEntity` body for overrides that need the default checks.
+    ///
+    /// Split from [`Projectile::can_hit_entity`] because Rust has no `super`
+    /// call, so an override cannot reach the base body otherwise.
     fn base_can_hit_entity(&self, entity: &dyn Entity) -> bool {
         if !entity.can_be_hit_by_projectile() {
             return false;
@@ -434,8 +450,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.default_shoot(direction, power, uncertainty);
     }
 
-    /// Vanilla `Projectile.shoot` body, exposed so overrides can apply the base
-    /// launch without their own side effects.
+    /// Base `shoot` body for overrides that need the launch without their own side
+    /// effects.
     fn default_shoot(&self, direction: DVec3, power: f32, uncertainty: f32) {
         let movement = self.get_movement_to_shoot(direction, power, uncertainty);
         self.set_velocity(movement);
@@ -448,7 +464,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.base().set_old_rotation_to_current();
     }
 
-    /// Vanilla `Projectile.shoot` overload that aims at `(x, y, z)`.
+    /// Shoots this projectile at `(x, y, z)`.
     fn shoot_at(&self, x: f64, y: f64, z: f64, power: f32, uncertainty: f32) {
         self.shoot(DVec3::new(x, y, z), power, uncertainty);
     }
@@ -485,7 +501,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         );
     }
 
-    /// Runs vanilla `Projectile.updateRotation` (lerped toward the movement vector).
+    /// Runs `updateRotation` (lerped toward the movement vector).
     fn update_rotation(&self) {
         let movement = self.velocity();
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
@@ -495,7 +511,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.set_rotation((yaw, pitch));
     }
 
-    /// Applies a Vanilla projectile deflection.
+    /// Applies a deflection and replaces the stored owner.
     fn deflect(
         &self,
         deflection: ProjectileDeflection,
@@ -510,7 +526,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         true
     }
 
-    /// Called after a successful Vanilla projectile deflection.
+    /// Called after a successful deflection.
     fn on_deflection(&self, _by_attack: bool) {}
 
     /// Returns whether this projectile bounces from the world border.
@@ -518,14 +534,12 @@ pub trait Projectile: Entity + ProjectileEventSource {
         false
     }
 
-    /// Casts the move vector and returns the nearest block/entity hit (vanilla
-    /// `ProjectileUtil.getHitResultOnMoveVector` with `this::canHitEntity`).
+    /// Casts the move vector and returns the nearest block or entity hit.
     fn get_hit_result_on_move_vector(&self) -> Option<ProjectileHit> {
-        const EPSILON: f64 = 1.0e-12;
         let world = self.level()?;
         let from = self.position();
         let delta = self.velocity();
-        if delta.length_squared() < EPSILON {
+        if delta.length_squared() < STOPPED_MOVEMENT_EPSILON {
             return None;
         }
         let to = from + delta;
@@ -538,7 +552,10 @@ pub trait Projectile: Entity + ProjectileEventSource {
             block_hit.location
         };
 
-        let search_box = self.bounding_box().expand_towards(delta).inflate(1.0);
+        let search_box = self
+            .bounding_box()
+            .expand_towards(delta)
+            .inflate(ENTITY_SEARCH_INFLATE);
         let margin = compute_margin(self.tick_count());
         let self_id = self.id();
         let entity_hit =
@@ -581,7 +598,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
                         Some(entity_hit.entity.as_ref()),
                         owner,
                         false,
-                        DVec3::splat(1.0),
+                        DVec3::splat(DEFLECTION_POWER),
                     )
                 {
                     self.projectile_base().state.lock().last_deflected_by =
@@ -602,7 +619,13 @@ pub trait Projectile: Entity + ProjectileEventSource {
             } else if self.should_bounce_on_world_border() {
                 let deflection = ProjectileDeflection::Reverse;
                 let owner = self.owner_reference();
-                if self.deflect(deflection, None, owner, false, DVec3::splat(0.2)) {
+                if self.deflect(
+                    deflection,
+                    None,
+                    owner,
+                    false,
+                    DVec3::splat(HIT_DEFLECTION_POWER),
+                ) {
                     return deflection;
                 }
             }
@@ -612,14 +635,15 @@ pub trait Projectile: Entity + ProjectileEventSource {
         ProjectileDeflection::None
     }
 
-    /// Vanilla `Projectile.onHit`. Subclasses override this and call
-    /// [`Projectile::projectile_on_hit`] for the base dispatch (`super.onHit()`).
+    /// Subclasses override this and call [`Projectile::projectile_on_hit`] for the
+    /// base dispatch.
     fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         self.projectile_on_hit(hit);
     }
 
-    /// The base `Projectile.onHit` dispatch to block/entity handlers. Not meant to
-    /// be overridden — override [`Projectile::on_hit`] and delegate here instead.
+    /// Base `onHit` dispatch to the block and entity handlers.
+    ///
+    /// Override [`Projectile::on_hit`] and delegate here instead.
     fn projectile_on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         let world = self.level();
         match hit {
@@ -636,7 +660,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
                         owner_entity.as_deref(),
                         owner,
                         true,
-                        DVec3::splat(1.0),
+                        DVec3::splat(DEFLECTION_POWER),
                     );
                 }
                 Arc::clone(&self).on_hit_entity(&entity_hit.entity, entity_hit.location);
@@ -662,7 +686,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         }
     }
 
-    /// Vanilla `Projectile.onHitEntity` (no-op by default).
+    /// No-op by default.
     fn on_hit_entity(self: Arc<Self>, _entity: &SharedEntity, _location: DVec3) {}
 
     /// Default block-hit hook; concrete projectiles override this and call
@@ -686,8 +710,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
             .on_projectile_hit(state, &world, hit, projectile);
     }
 
-    /// Vanilla `Projectile.hurtServer`: marks hurt unless invulnerable to the
-    /// base checks, but never takes damage.
+    /// Marks hurt unless invulnerable to the base checks, but never takes damage.
     fn hurt(&self, _world: &World, source: &DamageSource, _amount: f32) -> bool {
         if !self.is_invulnerable_to_base(source) {
             self.mark_hurt();
@@ -695,7 +718,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         false
     }
 
-    /// Vanilla `Projectile.tick` (the `super.tick()` reached from subclasses).
+    /// Base tick reached from subclasses (`super.tick()`).
     fn projectile_base_tick(&self) {
         if !self.has_been_shot() {
             let owner = self.get_owner();
@@ -710,8 +733,6 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.reset_left_owner_checked();
     }
 
-    /// Vanilla `Projectile.applyOnProjectileSpawned`.
-    ///
     /// Overrides call [`Projectile::projectile_apply_on_projectile_spawned`] to
     /// run the base behavior.
     fn apply_on_projectile_spawned(&self, world: &World, pickup_item_stack: &mut ItemStack) {
@@ -737,10 +758,10 @@ pub trait Projectile: Entity + ProjectileEventSource {
     }
 
     /// Called when an enchantment effect breaks the item that spawned this
-    /// projectile (vanilla `Projectile.onItemBreak`).
+    /// projectile.
     fn on_item_break(&self, _item: &ItemStack) {}
 
-    /// Saves vanilla `Projectile` fields (`Owner`, `LeftOwner`, `HasBeenShot`).
+    /// Saves `Owner`, `LeftOwner`, and `HasBeenShot`.
     fn save_projectile(&self, nbt: &mut NbtCompound) {
         let state = self.projectile_base().state.lock();
         if let Some(owner) = &state.owner {
@@ -752,7 +773,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         nbt.insert("HasBeenShot", i8::from(state.has_been_shot));
     }
 
-    /// Loads vanilla `Projectile` fields (`Owner`, `LeftOwner`, `HasBeenShot`).
+    /// Loads `Owner`, `LeftOwner`, and `HasBeenShot`.
     fn load_projectile(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.projectile_base().state.lock();
         state.owner = EntityReference::read(&nbt, "Owner");
@@ -761,15 +782,12 @@ pub trait Projectile: Entity + ProjectileEventSource {
     }
 }
 
-/// Spawns a throwable-item projectile from the source's eye along its look
+/// Spawns a throwable-item projectile from the player's eye along its look
 /// direction and registers it in the world.
 ///
-/// Mirrors vanilla `Projectile.spawnProjectileFromRotation` + `spawnProjectile`:
-/// create the projectile at the eye minus 0.1, set its owner, shoot it with
-/// `shootFromRotation`, add it to the world, then run `applyOnProjectileSpawned`
-/// (the `minecraft:projectile_spawned` enchantment effects). `create` receives
-/// the spawn position and must return the concrete projectile type. Returns
-/// `None` when the world rejects the projectile so the caller can fail the use.
+/// `create` receives the spawn position (eye minus the spawn offset) and must
+/// return the concrete projectile type. Returns `None` when the world rejects the
+/// projectile so the caller can fail the use.
 #[must_use]
 pub fn spawn_throwable_item_projectile<E>(
     world: &Arc<World>,
@@ -817,8 +835,8 @@ where
     Some(entity)
 }
 
-/// Vanilla `Projectile.spawnProjectile`: shoots the projectile, adds it to the
-/// world, then applies the spawn enchantment effects to `pickup_item_stack`.
+/// Shoots the projectile, adds it to the world, then applies the spawn
+/// enchantment effects to `pickup_item_stack`.
 ///
 /// Returns `None` when the world rejects the projectile so the caller can fail
 /// the attack.
@@ -846,8 +864,8 @@ pub fn spawn_projectile(
     Some(projectile)
 }
 
-/// Vanilla `Projectile.spawnProjectileUsingShoot`: shoots a new projectile at a
-/// point, adds it to the world, then applies the spawn enchantment effects.
+/// Shoots a new projectile at `target`, adds it to the world, then applies the
+/// spawn enchantment effects.
 ///
 /// Returns `None` when the world rejects the projectile so the caller can fail
 /// the attack.
@@ -869,11 +887,11 @@ where
     })
 }
 
-/// Vanilla `ProjectileUtil.computeMargin`: ramps the entity hit margin from 0 to
-/// 0.3 over the first ticks of flight.
+/// Ramps the entity hit margin from zero to the cap over the first flight ticks.
 #[must_use]
 pub fn compute_margin(tick_count: i32) -> f64 {
-    f64::from(((tick_count - 2) as f32 / 20.0).clamp(0.0, MAX_ENTITY_HIT_MARGIN))
+    let elapsed = (tick_count - ENTITY_HIT_MARGIN_START_TICKS) as f32;
+    f64::from((elapsed / ENTITY_HIT_MARGIN_RAMP_TICKS).clamp(0.0, MAX_ENTITY_HIT_MARGIN))
 }
 
 /// Outcome of casting a projectile-style ray along an entity's view vector.
@@ -908,7 +926,10 @@ pub fn get_hit_result_on_view_vector(
         block_hit.location
     };
 
-    let search_box = source.bounding_box().expand_towards(delta).inflate(1.0);
+    let search_box = source
+        .bounding_box()
+        .expand_towards(delta)
+        .inflate(ENTITY_SEARCH_INFLATE);
     let source_id = source.id();
     let entity_hit = get_entity_hit_result(world, from, entity_end, search_box, 0.0, |entity| {
         entity.id() != source_id && matching(entity)
@@ -923,8 +944,8 @@ pub fn get_hit_result_on_view_vector(
     ViewVectorHitResult::Miss
 }
 
-/// Vanilla `ProjectileUtil.getEntityHitResult` (entity-margin overload): returns
-/// the nearest entity whose inflated box the segment `from -> to` enters.
+/// Returns the nearest entity whose inflated box the segment `from -> to`
+/// enters.
 fn get_entity_hit_result(
     world: &World,
     from: DVec3,
@@ -954,14 +975,13 @@ fn get_entity_hit_result(
     nearest
 }
 
-/// Vanilla `ProjectileUtil.getManyEntityHitResult`: every entity whose inflated
-/// box the segment `from -> to` enters.
+/// Returns every entity whose inflated box the segment `from -> to` enters.
 ///
 /// Unlike [`get_entity_hit_result`], this returns all matching entities and
 /// re-clips against the entity's surface when only the margin box was hit.
 #[expect(
     clippy::too_many_arguments,
-    reason = "mirrors the vanilla ProjectileUtil.getManyEntityHitResult parameters"
+    reason = "mirrors the getManyEntityHitResult parameters"
 )]
 pub(crate) fn get_many_entity_hits(
     world: &World,
@@ -1028,54 +1048,142 @@ pub(crate) fn get_many_entity_hits(
 
 /// Clips the segment `from -> to` against `aabb`, returning the entry point.
 ///
-/// Returns `from` when the segment starts inside the box and `None` when it never
-/// intersects. Mirrors vanilla `AABB.clip` using the slab method.
+/// The entry parameter is strictly positive, so a segment that starts inside or
+/// exactly on the box never hits at its origin. This keeps a deflected
+/// projectile resting on an entity's surface from re-hitting it every tick.
+#[expect(
+    clippy::too_many_lines,
+    reason = "keeps the per-axis ordering explicit"
+)]
 fn clip_segment(aabb: WorldAabb, from: DVec3, to: DVec3) -> Option<DVec3> {
     const EPSILON: f64 = 1.0e-7;
 
-    let direction = to - from;
-    let mut t_min = 0.0_f64;
-    let mut t_max = 1.0_f64;
+    let delta = to - from;
+    // Entry parameter of the nearest face crossed so far; starts at 1.0 and
+    // only shrinks.
+    let mut scale = 1.0_f64;
+    let mut hit = false;
 
-    for axis in [Axis::X, Axis::Y, Axis::Z] {
-        let start = axis_component(from, axis);
-        let delta = axis_component(direction, axis);
-        let axis_min = aabb.min(axis);
-        let axis_max = aabb.max(axis);
-
-        if delta.abs() < EPSILON {
-            if start < axis_min || start > axis_max {
-                return None;
-            }
-            continue;
+    let mut clip_point = |axis_delta: f64,
+                          other_b: f64,
+                          other_c: f64,
+                          plane: f64,
+                          min_b: f64,
+                          max_b: f64,
+                          min_c: f64,
+                          max_c: f64,
+                          from_axis: f64,
+                          from_b: f64,
+                          from_c: f64| {
+        let s = (plane - from_axis) / axis_delta;
+        let point_b = from_b + s * other_b;
+        let point_c = from_c + s * other_c;
+        if 0.0 < s
+            && s < scale
+            && min_b - EPSILON < point_b
+            && point_b < max_b + EPSILON
+            && min_c - EPSILON < point_c
+            && point_c < max_c + EPSILON
+        {
+            scale = s;
+            hit = true;
         }
+    };
 
-        let inv_delta = 1.0 / delta;
-        let mut low = (axis_min - start) * inv_delta;
-        let mut high = (axis_max - start) * inv_delta;
-        if low > high {
-            mem::swap(&mut low, &mut high);
-        }
-
-        t_min = t_min.max(low);
-        t_max = t_max.min(high);
-        if t_min > t_max {
-            return None;
-        }
+    if delta.x > EPSILON {
+        clip_point(
+            delta.x,
+            delta.y,
+            delta.z,
+            aabb.min(Axis::X),
+            aabb.min(Axis::Y),
+            aabb.max(Axis::Y),
+            aabb.min(Axis::Z),
+            aabb.max(Axis::Z),
+            from.x,
+            from.y,
+            from.z,
+        );
+    } else if delta.x < -EPSILON {
+        clip_point(
+            delta.x,
+            delta.y,
+            delta.z,
+            aabb.max(Axis::X),
+            aabb.min(Axis::Y),
+            aabb.max(Axis::Y),
+            aabb.min(Axis::Z),
+            aabb.max(Axis::Z),
+            from.x,
+            from.y,
+            from.z,
+        );
     }
 
-    Some(from + direction * t_min)
-}
-
-const fn axis_component(vec: DVec3, axis: Axis) -> f64 {
-    match axis {
-        Axis::X => vec.x,
-        Axis::Y => vec.y,
-        Axis::Z => vec.z,
+    if delta.y > EPSILON {
+        clip_point(
+            delta.y,
+            delta.z,
+            delta.x,
+            aabb.min(Axis::Y),
+            aabb.min(Axis::Z),
+            aabb.max(Axis::Z),
+            aabb.min(Axis::X),
+            aabb.max(Axis::X),
+            from.y,
+            from.z,
+            from.x,
+        );
+    } else if delta.y < -EPSILON {
+        clip_point(
+            delta.y,
+            delta.z,
+            delta.x,
+            aabb.max(Axis::Y),
+            aabb.min(Axis::Z),
+            aabb.max(Axis::Z),
+            aabb.min(Axis::X),
+            aabb.max(Axis::X),
+            from.y,
+            from.z,
+            from.x,
+        );
     }
+
+    if delta.z > EPSILON {
+        clip_point(
+            delta.z,
+            delta.x,
+            delta.y,
+            aabb.min(Axis::Z),
+            aabb.min(Axis::X),
+            aabb.max(Axis::X),
+            aabb.min(Axis::Y),
+            aabb.max(Axis::Y),
+            from.z,
+            from.x,
+            from.y,
+        );
+    } else if delta.z < -EPSILON {
+        clip_point(
+            delta.z,
+            delta.x,
+            delta.y,
+            aabb.max(Axis::Z),
+            aabb.min(Axis::X),
+            aabb.max(Axis::X),
+            aabb.min(Axis::Y),
+            aabb.max(Axis::Y),
+            from.z,
+            from.x,
+            from.y,
+        );
+    }
+
+    hit.then(|| from + delta * scale)
 }
 
-/// Vanilla `Mth.lerp(0.2, rotO, rot)` after wrapping the old angle into range.
+/// Interpolates toward `rot` after wrapping the old angle into range.
 pub(crate) fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
     while rot - rot_old < -DEGREE_180 {
         rot_old -= DEGREE_360;
@@ -1083,7 +1191,7 @@ pub(crate) fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
     while rot - rot_old >= DEGREE_180 {
         rot_old += DEGREE_360;
     }
-    rot_old + 0.2 * (rot - rot_old)
+    rot_old + ROTATION_LERP_FACTOR * (rot - rot_old)
 }
 
 #[cfg(test)]
@@ -1094,13 +1202,22 @@ mod tests {
         entity_type::EntityTypeRef,
         init_vanilla_registry, vanilla_blocks, vanilla_entities,
     };
-    use steel_utils::{BlockPos, ChunkPos, Direction, types::UpdateFlags};
+    use steel_utils::{
+        BlockPos, ChunkPos, Direction,
+        types::{GameType, UpdateFlags},
+    };
 
     use crate::{
         behavior::init_behaviors,
         block_entity::init_block_entities,
-        entity::{EntityBase, entities::FireworkRocketEntity},
-        test_support::{TestPlayerBuilder, test_world, world_border_projectile_test_world},
+        entity::{
+            EntityBase,
+            entities::{ArrowEntity, FireworkRocketEntity},
+        },
+        test_support::{
+            TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world,
+            world_border_projectile_test_world,
+        },
     };
 
     struct OwnerCollisionProjectile {
@@ -1209,11 +1326,26 @@ mod tests {
     }
 
     #[test]
-    fn clip_segment_returns_start_when_inside() {
+    fn clip_segment_ignores_segment_starting_inside() {
         let aabb = WorldAabb::new(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
-        let hit = clip_segment(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0))
-            .expect("a ray starting inside the box hits at its origin");
-        assert_eq!(hit, DVec3::ZERO);
+        let hit = clip_segment(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0));
+        assert_eq!(hit, None);
+    }
+
+    #[test]
+    fn clip_segment_ignores_segment_starting_on_surface() {
+        let aabb = WorldAabb::new(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
+        // Exactly on the +z face, moving away from the box.
+        assert_eq!(
+            clip_segment(aabb, DVec3::new(0.0, 0.0, 1.0), DVec3::new(0.0, 0.0, 2.0)),
+            None
+        );
+        // Exactly on the +z face, moving into the box: vanilla only tests the
+        // entry face for the direction of travel, which is behind the origin.
+        assert_eq!(
+            clip_segment(aabb, DVec3::new(0.0, 0.0, 1.0), DVec3::new(0.0, 0.0, 0.0)),
+            None
+        );
     }
 
     #[test]
@@ -1456,5 +1588,67 @@ mod tests {
         projectile.set_owner_entity(Some(&owner));
 
         assert!(projectile.is_outside_owner_collision_range());
+    }
+
+    #[test]
+    fn deflected_arrow_leaves_an_invulnerable_creative_player() {
+        init_vanilla_registry();
+        init_behaviors();
+
+        let world_fixture = fresh_test_world("deflected_arrow_creative_player");
+        let world = &world_fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Target", 1).build();
+        player.base().set_position_local(DVec3::new(0.0, 64.0, 0.0));
+        player.set_client_loaded(true);
+        player.restore_game_modes(GameType::Creative, None);
+        player
+            .abilities
+            .lock()
+            .update_for_game_mode(GameType::Creative);
+        world
+            .try_add_entity(Arc::clone(&player) as SharedEntity)
+            .expect("player should attach to the loaded chunk");
+
+        // Flying along -z toward the player's +z face at z = 0.3.
+        let arrow = Arc::new(ArrowEntity::new(
+            &vanilla_entities::ARROW,
+            2,
+            DVec3::new(0.0, 64.9, 0.5),
+            Arc::downgrade(world),
+        ));
+        arrow.set_velocity(DVec3::new(0.0, 0.0, -0.5));
+        world
+            .try_add_entity(Arc::clone(&arrow) as SharedEntity)
+            .expect("arrow should attach to the loaded chunk");
+
+        let health_before = player.get_health();
+
+        Entity::tick(Arc::clone(&arrow));
+        assert!(
+            arrow.velocity().z > 0.0,
+            "the creative player must deflect the arrow instead of taking the hit"
+        );
+        let surface_z = arrow.position().z;
+        assert!(
+            (0.29..=0.31).contains(&surface_z),
+            "arrow should stop on the player's surface, got {surface_z}"
+        );
+
+        // A deflected arrow resting on the surface must keep moving away. If
+        // clipping treats the surface as a new entry hit, it is snapped back
+        // every tick and hovers on the player.
+        for _ in 0..5 {
+            Entity::tick(Arc::clone(&arrow));
+        }
+
+        assert!(
+            arrow.position().z > surface_z + 0.05,
+            "arrow stayed on the player's surface at z={}",
+            arrow.position().z
+        );
+        assert!(!arrow.is_removed());
+        assert_eq!(player.get_health(), health_before);
     }
 }

@@ -1,8 +1,5 @@
-//! Thrown trident projectile entity (`ThrownTrident`).
-//!
-//! Mirrors vanilla `ThrownTrident` on top of [`AbstractArrow`]: loyalty return
-//! flight, the single non-piercing entity hit, and the trident-specific damage
-//! and pickup rules.
+//! Thrown trident projectile entity: loyalty return flight, the single
+//! non-piercing entity hit, and the trident-specific damage and pickup rules.
 
 use std::sync::{Arc, Weak};
 
@@ -33,26 +30,42 @@ use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
 use crate::world::{ClipHitResult, World};
 
-/// Vanilla `ThrownTrident.WATER_INERTIA`.
+/// Inertia applied while the trident is in water.
 const WATER_INERTIA: f32 = 0.99;
 
-/// Vanilla base damage of a thrown trident hit, before enchantment modifiers.
+/// Base damage of a thrown trident hit, before enchantment modifiers.
 const TRIDENT_DAMAGE: f32 = 8.0;
 
-/// Vanilla `getLoyaltyFromItem` clamp upper bound.
+/// Upper clamp for the loyalty level.
 const MAX_LOYALTY: i32 = 127;
 
-/// Vanilla loyalty return-flight dampening.
+/// Return-flight velocity dampening.
 const RETURN_VELOCITY_SCALE: f64 = 0.95;
 
-/// Vanilla loyalty return-flight lift per loyalty level.
+/// Return-flight lift per loyalty level.
 const RETURN_Y_LIFT: f64 = 0.015;
 
-/// Vanilla loyalty return-flight acceleration per loyalty level.
+/// Return-flight acceleration per loyalty level.
 const RETURN_ACCELERATION: f64 = 0.05;
 
-/// Vanilla `Vec3.normalize` treats vectors shorter than this as zero.
+/// `normalize` treats vectors shorter than this as zero.
 const NORMALIZE_EPSILON: f64 = 1.0e-4;
+
+/// In-ground ticks after which the trident counts as having dealt damage.
+const DEALT_DAMAGE_GROUND_TIME: i32 = 4;
+
+/// Distance beyond the owner's width at which a non-player owner picks up the
+/// returning trident.
+const OWNER_PICKUP_DISTANCE: f64 = 1.0;
+
+/// Volume of the return sound.
+const RETURN_SOUND_VOLUME: f32 = 10.0;
+
+/// Offset applied when dropping a trident as an item.
+const PICKUP_SPAWN_OFFSET: DVec3 = DVec3::new(0.0, 0.1, 0.0);
+
+/// Per-axis deflection power applied by a trident hit.
+const HIT_DEFLECTION_POWER: DVec3 = DVec3::new(0.02, 0.2, 0.02);
 
 /// A thrown trident.
 #[entity_behavior(class = "ThrownTrident")]
@@ -65,8 +78,7 @@ pub struct ThrownTridentEntity {
     arrow_base: ArrowBase,
     /// Whether this trident has already dealt damage in this flight.
     dealt_damage: SyncMutex<bool>,
-    /// Vanilla `clientSideReturnTridentTickCount`, used to play the return
-    /// sound once per return flight.
+    /// Return-flight tick counter, used to play the return sound once per flight.
     return_tick_count: SyncMutex<i32>,
 }
 
@@ -110,8 +122,8 @@ impl ThrownTridentEntity {
         }
     }
 
-    /// Vanilla `ThrownTrident`'s `(level, owner, tridentItem)` constructor: the
-    /// trident spawns at the owner's eye minus 0.1 and is owned by `owner`.
+    /// Creates a thrown trident owned by `owner`, with loyalty and foil taken
+    /// from the trident item.
     #[must_use]
     pub fn from_owner(
         trident_item: &ItemStack,
@@ -143,14 +155,12 @@ impl ThrownTridentEntity {
         entity
     }
 
-    /// Vanilla `ThrownTrident.isFoil`.
+    /// Returns whether the trident item is foiled.
     #[must_use]
     pub fn is_foil(&self) -> bool {
         *self.entity_data.lock().thrown_trident.id_foil.get()
     }
 
-    /// Vanilla `ThrownTrident.getLoyaltyFromItem`.
-    #[must_use]
     fn get_loyalty_from_item(&self, trident_item: &ItemStack) -> i8 {
         if self.level().is_none() {
             return 0;
@@ -160,13 +170,11 @@ impl ThrownTridentEntity {
         acceleration.clamp(0, MAX_LOYALTY) as i8
     }
 
-    /// Returns this trident's synced loyalty level (`ID_LOYALTY`).
     #[must_use]
     fn loyalty(&self) -> i32 {
         i32::from(*self.entity_data.lock().thrown_trident.id_loyalty.get())
     }
 
-    /// Vanilla `ThrownTrident.isAcceptibleReturnOwner`.
     fn is_acceptible_return_owner(&self) -> bool {
         let Some(current_owner) = self.get_owner() else {
             return false;
@@ -177,9 +185,8 @@ impl ThrownTridentEntity {
         current_owner.as_player().is_none() || !current_owner.is_spectator()
     }
 
-    /// Vanilla `ThrownTrident.tick`'s loyalty block. Returns `false` when the
-    /// trident was picked up by a close, non-player owner and vanilla skips the
-    /// rest of the tick.
+    /// Returns `false` when a close non-player owner picked the trident up and the
+    /// rest of the tick must be skipped.
     fn loyalty_tick(&self) -> bool {
         let loyalty = self.loyalty();
         let dealt_damage = *self.dealt_damage.lock();
@@ -192,10 +199,8 @@ impl ThrownTridentEntity {
 
         if !self.is_acceptible_return_owner() {
             if self.arrow_base().pickup() == ArrowPickup::Allowed {
-                let _ = self.spawn_at_location_with_offset(
-                    self.arrow_pickup_item(),
-                    DVec3::new(0.0, 0.1, 0.0),
-                );
+                let _ = self
+                    .spawn_at_location_with_offset(self.arrow_pickup_item(), PICKUP_SPAWN_OFFSET);
             }
             self.set_removed(RemovalReason::Discarded);
             return true;
@@ -206,7 +211,7 @@ impl ThrownTridentEntity {
         if current_owner.as_player().is_none() {
             let owner_box = current_owner.bounding_box();
             let owner_width = owner_box.max_x() - owner_box.min_x();
-            if position.distance(eye_position) < owner_width + 1.0 {
+            if position.distance(eye_position) < owner_width + OWNER_PICKUP_DISTANCE {
                 self.set_removed(RemovalReason::Discarded);
                 return false;
             }
@@ -236,7 +241,7 @@ impl ThrownTridentEntity {
 
         let mut return_tick_count = self.return_tick_count.lock();
         if *return_tick_count == 0 {
-            self.play_sound(&sound_events::ITEM_TRIDENT_RETURN, 10.0, 1.0);
+            self.play_sound(&sound_events::ITEM_TRIDENT_RETURN, RETURN_SOUND_VOLUME, 1.0);
         }
         *return_tick_count += 1;
         true
@@ -253,7 +258,7 @@ impl Entity for ThrownTridentEntity {
     }
 
     fn tick(self: Arc<Self>) {
-        if self.arrow_in_ground_time() > 4 {
+        if self.arrow_in_ground_time() > DEALT_DAMAGE_GROUND_TIME {
             *self.dealt_damage.lock() = true;
         }
         if !self.loyalty_tick() {
@@ -370,9 +375,8 @@ impl Projectile for ThrownTridentEntity {
     }
 
     fn on_hit_entity(self: Arc<Self>, entity: &SharedEntity, _location: DVec3) {
-        // Vanilla `ThrownTrident.onHitEntity` does not delegate to
-        // `AbstractArrow.onHitEntity`: a trident deals a fixed damage and never
-        // discards itself on impact.
+        // A trident deals fixed damage and never discards itself on impact, so
+        // it does not reuse the abstract-arrow hit path.
         let Some(world) = entity.level() else {
             return;
         };
@@ -421,7 +425,7 @@ impl Projectile for ThrownTridentEntity {
                 Some(entity.as_ref()),
                 owner_reference,
                 false,
-                DVec3::new(0.02, 0.2, 0.02),
+                HIT_DEFLECTION_POWER,
             );
         }
     }

@@ -37,8 +37,7 @@ use crate::world::World;
 
 pub use steel_registry::data_components::vanilla_components::ItemUseAnimation;
 
-/// Vanilla `InteractionHand.asEquipmentSlot`, used to attribute weapon
-/// durability loss to the hand that fired the projectile.
+/// Attributes weapon durability loss to the hand that fired the projectile.
 const fn equipment_slot(hand: InteractionHand) -> EquipmentSlot {
     match hand {
         InteractionHand::MainHand => EquipmentSlot::MainHand,
@@ -46,14 +45,11 @@ const fn equipment_slot(hand: InteractionHand) -> EquipmentSlot {
     }
 }
 
-/// Item capability for vanilla `ArrowItem` subclasses: creates the concrete
-/// `AbstractArrow` a projectile weapon fires with this item as ammo.
+/// Creates the concrete arrow entity a projectile weapon fires with this item
+/// as ammo.
 pub trait ArrowItemBehavior: Send + Sync {
-    /// Vanilla `ArrowItem.createArrow`.
-    ///
-    /// `is_crit` folds vanilla `ProjectileWeaponItem.createProjectile`'s
-    /// `setCritArrow` call into construction because `AbstractArrow` is not
-    /// object-safe, so the caller cannot set it afterwards.
+    /// `is_crit` folds the weapon's crit flag into construction because
+    /// `AbstractArrow` is not object-safe.
     fn create_arrow(
         &self,
         world: &Arc<World>,
@@ -64,29 +60,22 @@ pub trait ArrowItemBehavior: Send + Sync {
     ) -> Option<SharedEntity>;
 }
 
-/// Item capability for vanilla `ProjectileWeaponItem`: a weapon that draws ammo
-/// from the holder's inventory and fires projectiles with it.
+/// A weapon that draws ammo from the holder's inventory and fires projectiles.
 pub trait ProjectileWeaponItem: Send + Sync {
-    /// Vanilla `getSupportedHeldProjectiles`.
     fn is_supported_held_projectile(&self, stack: &ItemStack) -> bool {
         self.is_supported_projectile(stack)
     }
 
-    /// Vanilla `getAllSupportedProjectiles`. The base `ProjectileWeaponItem`
-    /// default is `ARROW_ONLY`.
     fn is_supported_projectile(&self, stack: &ItemStack) -> bool {
         stack.item.has_tag(&ItemTag::ARROWS)
     }
 
-    /// Vanilla `getDefaultProjectileRange`.
     fn get_default_projectile_range(&self) -> i32;
 
-    /// Vanilla `getDurabilityUse`.
     fn get_durability_use(&self, _projectile: &ItemStack) -> i32 {
         1
     }
 
-    /// Vanilla `shootProjectile`.
     fn shoot_projectile(
         &self,
         shooter: &Player,
@@ -97,8 +86,12 @@ pub trait ProjectileWeaponItem: Send + Sync {
         angle: f32,
     );
 
-    /// Vanilla `createProjectile`.
-    fn create_projectile(
+    /// Vanilla `createProjectile` for arrow ammo.
+    ///
+    /// Split out so weapons that spawn a non-arrow projectile can still fall
+    /// back to the standard arrow path without recursing through their
+    /// [`ProjectileWeaponItem::create_projectile`] override.
+    fn create_arrow_projectile(
         &self,
         world: &Arc<World>,
         shooter: LivingEntityRef<'_>,
@@ -124,8 +117,19 @@ pub trait ProjectileWeaponItem: Send + Sync {
         arrow_item.create_arrow(world, projectile, shooter, Some(weapon), is_crit)
     }
 
-    /// Vanilla `ProjectileWeaponItem.shoot`: spawns each drawn projectile with
-    /// its spread angle, then damages the weapon once per shot.
+    fn create_projectile(
+        &self,
+        world: &Arc<World>,
+        shooter: LivingEntityRef<'_>,
+        weapon: &ItemStack,
+        projectile: &mut ItemStack,
+        is_crit: bool,
+    ) -> Option<SharedEntity> {
+        self.create_arrow_projectile(world, shooter, weapon, projectile, is_crit)
+    }
+
+    /// Spawns each drawn projectile with its spread angle, then damages the
+    /// weapon once per shot.
     #[expect(
         clippy::too_many_arguments,
         reason = "mirrors vanilla ProjectileWeaponItem.shoot"
@@ -171,8 +175,7 @@ pub trait ProjectileWeaponItem: Send + Sync {
                 });
             }
 
-            // Vanilla damages the weapon after the spawn attempt regardless of
-            // whether the projectile entity could be created or added.
+            // Damage the weapon even when the projectile could not be spawned.
             let durability = self.get_durability_use(&projectile);
             let weapon_item = weapon.item();
             if weapon.hurt_and_break(durability, shooter.has_infinite_materials()) {
@@ -184,8 +187,7 @@ pub trait ProjectileWeaponItem: Send + Sync {
         }
     }
 
-    /// Vanilla `draw`: splits the ammo stack into `processProjectileCount`
-    /// projectiles.
+    /// Splits the ammo stack into `process_projectile_count` projectiles.
     fn draw(
         &self,
         weapon: &ItemStack,
@@ -215,8 +217,6 @@ pub trait ProjectileWeaponItem: Send + Sync {
         drawn
     }
 
-    /// Vanilla `useAmmo`.
-    ///
     /// `slot` is the inventory slot the ammo came from; the split remainder is
     /// written back there because Steel hands out a stack copy where vanilla
     /// mutates the live inventory stack.
@@ -511,13 +511,12 @@ pub trait ItemBehavior: Send + Sync {
         None
     }
 
-    /// Returns the projectile-weapon capability (vanilla `ProjectileWeaponItem`).
+    /// Returns the projectile-weapon capability.
     fn as_projectile_weapon(&self) -> Option<&dyn ProjectileWeaponItem> {
         None
     }
 
-    /// Returns the arrow-item capability (vanilla `ArrowItem`) used as
-    /// projectile-weapon ammo.
+    /// Returns the ammo capability used by projectile weapons.
     fn as_arrow_item(&self) -> Option<&dyn ArrowItemBehavior> {
         None
     }

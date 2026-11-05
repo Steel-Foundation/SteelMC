@@ -15,8 +15,7 @@ use crate::world::World;
 use super::arrow::create_arrow_entity;
 use super::dynamic_name::potion_name;
 
-/// Tipped-arrow behavior providing Vanilla's potion-content-dependent name and
-/// poison default instance.
+/// Provides the potion-content-dependent name and the poison default instance.
 #[item_behavior]
 pub struct TippedArrowItem;
 

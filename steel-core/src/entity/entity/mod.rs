@@ -646,9 +646,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         !self.is_removed() && self.is_pickable()
     }
 
-    /// Vanilla `Entity.projectileReceivesSideEffectsOnHit`: whether a projectile
-    /// that hit this entity still applies its side effects (hit sound,
-    /// deflection) when the hit did not hurt.
+    /// Returns whether a projectile that hit this entity still applies its side
+    /// effects (hit sound, deflection) when the hit did not hurt.
     fn projectile_receives_side_effects_on_hit(&self, _was_hurt: bool) -> bool {
         true
     }
@@ -907,8 +906,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.default_push_impulse(impulse);
     }
 
-    /// Vanilla `Entity.push` body, exposed so overrides can apply the base
-    /// impulse.
+    /// Base `push` body for overrides that need the default impulse.
     fn default_push_impulse(&self, impulse: DVec3) {
         if !impulse.is_finite() {
             return;
@@ -2259,8 +2257,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.fluid_contact().water_height() > 0.0
     }
 
-    /// Vanilla `Entity.isInRain`, which tests the block under the entity and the
-    /// block at the top of its bounding box.
+    /// Returns whether rain falls on the block under the entity or at the top of
+    /// its bounding box.
     fn is_in_rain(&self) -> bool {
         let Some(world) = self.level() else {
             return false;
@@ -2275,7 +2273,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             ))
     }
 
-    /// Vanilla `Entity.isInWaterOrRain`.
+    /// Returns whether this entity is in water or rain.
     fn is_in_water_or_rain(&self) -> bool {
         self.is_in_water() || self.is_in_rain()
     }
@@ -3520,8 +3518,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.default_move_entity(mover_type, delta)
     }
 
-    /// Vanilla `Entity.move` body, exposed so overrides can apply the base
-    /// collision-resolved movement.
+    /// Base `move` body for overrides that need the collision-resolved movement.
     #[expect(
         clippy::too_many_lines,
         reason = "keeps vanilla movement phases in order"
@@ -3928,8 +3925,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors the overridable part of vanilla's `Entity.applyImplicitComponents`.
     fn apply_implicit_item_components(&self, _item_stack: &ItemStack) {}
 
-    /// Vanilla `Entity.applyComponentsFromItemStack`: implicit entity components,
-    /// then the stack's custom name and custom data.
+    /// Applies implicit entity components, then the stack's custom name and
+    /// custom data.
     fn apply_components_from_item_stack(&self, item_stack: &ItemStack) {
         self.apply_implicit_item_components(item_stack);
 
@@ -3942,9 +3939,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
-    /// Returns whether vanilla `LivingEntity.take` sends the take-item
-    /// animation packet for this entity (`ItemEntity`, `AbstractArrow`,
-    /// `ExperienceOrb`).
+    /// Returns whether `take` sends the take-item animation packet for this
+    /// entity type (`ItemEntity`, `AbstractArrow`, `ExperienceOrb`).
     fn is_takeable(&self) -> bool {
         self.is_abstract_arrow()
             || self.downcast_ref::<entities::ItemEntity>().is_some()

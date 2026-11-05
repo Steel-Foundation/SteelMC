@@ -658,6 +658,10 @@ struct LivingEntityState {
     rotation: LivingRotationState,
     swing: LivingSwingState,
     active_item_use: Option<ActiveItemUseState>,
+    auto_spin_attack_ticks: i32,
+    auto_spin_attack_dmg: f32,
+    auto_spin_attack_item_stack: Option<ItemStack>,
+    auto_spin_attack_hand: Option<InteractionHand>,
     no_jump_delay: i32,
     no_action_time: i32,
 }
@@ -695,6 +699,10 @@ impl LivingEntityState {
             rotation: LivingRotationState::new(),
             swing: LivingSwingState::new(),
             active_item_use: None,
+            auto_spin_attack_ticks: 0,
+            auto_spin_attack_dmg: 0.0,
+            auto_spin_attack_item_stack: None,
+            auto_spin_attack_hand: None,
             no_jump_delay: 0,
             no_action_time: 0,
         }
@@ -887,6 +895,58 @@ impl LivingEntityBase {
         let active = state.active_item_use.as_mut()?;
         active.remaining_ticks -= 1;
         Some(*active)
+    }
+
+    /// Returns the remaining auto-spin-attack ticks.
+    #[must_use]
+    pub fn auto_spin_attack_ticks(&self) -> i32 {
+        self.state.lock().auto_spin_attack_ticks
+    }
+
+    /// Sets the remaining auto-spin-attack ticks.
+    pub fn set_auto_spin_attack_ticks(&self, ticks: i32) {
+        self.state.lock().auto_spin_attack_ticks = ticks;
+    }
+
+    /// Returns the auto-spin-attack damage.
+    #[must_use]
+    pub fn auto_spin_attack_dmg(&self) -> f32 {
+        self.state.lock().auto_spin_attack_dmg
+    }
+
+    /// Returns the item stack used to start the auto-spin attack.
+    #[must_use]
+    pub fn auto_spin_attack_item_stack(&self) -> Option<ItemStack> {
+        self.state.lock().auto_spin_attack_item_stack.clone()
+    }
+
+    /// Returns the hand that started the auto-spin attack.
+    #[must_use]
+    pub fn auto_spin_attack_hand(&self) -> Option<InteractionHand> {
+        self.state.lock().auto_spin_attack_hand
+    }
+
+    /// Starts a vanilla auto-spin attack with its damage, weapon, and hand.
+    pub fn start_auto_spin_attack(
+        &self,
+        ticks: i32,
+        dmg: f32,
+        item_stack: &ItemStack,
+        hand: InteractionHand,
+    ) {
+        let mut state = self.state.lock();
+        state.auto_spin_attack_ticks = ticks;
+        state.auto_spin_attack_dmg = dmg;
+        state.auto_spin_attack_item_stack = Some(item_stack.clone());
+        state.auto_spin_attack_hand = Some(hand);
+    }
+
+    /// Clears auto-spin-attack damage, weapon, and hand once the attack has ended.
+    pub fn clear_auto_spin_attack(&self) {
+        let mut state = self.state.lock();
+        state.auto_spin_attack_dmg = 0.0;
+        state.auto_spin_attack_item_stack = None;
+        state.auto_spin_attack_hand = None;
     }
 
     /// Returns the entity's body yaw, used for turning smoothing separate from head yaw.

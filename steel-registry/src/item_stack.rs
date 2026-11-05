@@ -300,6 +300,27 @@ impl ItemStack {
         false
     }
 
+    /// Damages the item without ever breaking it.
+    ///
+    /// Vanilla `ItemStack.hurtWithoutBreaking` clamps the resulting damage to
+    /// `max_damage - 1`, leaving the stack at one durability point.
+    pub fn hurt_without_breaking(&mut self, amount: i32, has_infinite_materials: bool) {
+        if !self.is_damageable_item() || has_infinite_materials {
+            return;
+        }
+
+        let mut random = Xoroshiro::from_seed_unmixed(rand::rng().random());
+        let effective_amount = self.process_durability_change(amount, &mut random);
+        if effective_amount == 0 {
+            return;
+        }
+
+        let new_damage =
+            (self.get_damage_value() + effective_amount).min(self.get_max_damage() - 1);
+        // TODO: Trigger ITEM_DURABILITY_CHANGED advancement criteria
+        self.set_damage_value(new_damage);
+    }
+
     fn process_durability_change(&self, amount: i32, random: &mut impl Random) -> i32 {
         if amount <= 0 {
             return amount;
@@ -601,10 +622,8 @@ impl ItemStack {
         self.get(ENCHANTMENTS)
     }
 
-    /// Vanilla `ItemStack.hasFoil`.
-    ///
-    /// Steel does not model per-item `Item.isFoil` overrides, so every item
-    /// falls back to the base enchantment check.
+    /// Steel does not model per-item `Item.isFoil` overrides, so every item falls
+    /// back to the base enchantment check.
     #[must_use]
     pub fn has_foil(&self) -> bool {
         self.get(ENCHANTMENT_GLINT_OVERRIDE)

@@ -1,7 +1,5 @@
-//! Spectral arrow projectile entity (`SpectralArrow`).
-//!
-//! Mirrors vanilla `SpectralArrow`: a plain arrow whose post-hurt effect is a
-//! configurable-duration `minecraft:glowing` instance.
+//! Spectral arrow projectile entity: a plain arrow whose post-hurt effect is a
+//! configurable-duration glowing instance.
 
 use std::sync::{Arc, Weak};
 
@@ -29,10 +27,10 @@ use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
 use crate::world::{ClipHitResult, World};
 
-/// Vanilla `SpectralArrow.DEFAULT_DURATION`.
+/// Default glowing duration applied on hit.
 const DEFAULT_DURATION: i32 = 200;
 
-/// Vanilla spawns a fired spectral arrow at the owner's eye minus this offset.
+/// Spawn offset below the shooter's eye.
 const SPAWN_EYE_OFFSET: f64 = 0.1;
 
 /// A spectral arrow.
@@ -86,9 +84,7 @@ impl SpectralArrowEntity {
         }
     }
 
-    /// Vanilla `SpectralArrow`'s `(level, owner, pickupItemStack,
-    /// firedFromWeapon)` constructor: the arrow spawns at the owner's eye minus
-    /// 0.1 and is owned by `owner`.
+    /// Creates a fired spectral arrow at the shooter's eye, owned by the shooter.
     #[must_use]
     pub fn from_owner(
         id: i32,
@@ -120,8 +116,8 @@ impl SpectralArrowEntity {
             entity.set_crit_arrow(true);
         }
 
-        // Vanilla rejects an empty firing weapon; Steel skips the piercing
-        // roll instead of panicking on a caller bug.
+        // Skip the piercing roll for an empty weapon instead of panicking on a
+        // caller bug.
         if let Some(weapon) = weapon
             && !weapon.is_empty()
         {

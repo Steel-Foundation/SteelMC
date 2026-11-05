@@ -1,8 +1,5 @@
-//! Arrow projectile entity (`Arrow`).
-//!
-//! Mirrors vanilla `Arrow` on top of [`AbstractArrow`]: the potion contents
-//! carried by the pickup stack, the synced effect color, the tipped-arrow
-//! decay, and the post-hurt potion effect application.
+//! Arrow projectile entity: potion contents carried by the pickup stack, the
+//! synced effect color, the tipped-arrow decay, and the post-hurt effect.
 
 use std::sync::{Arc, Weak};
 
@@ -35,13 +32,13 @@ use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
 use crate::world::{ClipHitResult, World};
 
-/// Vanilla `Arrow.EXPOSED_POTION_DECAY_TIME`.
+/// Ticks a tipped arrow must stay in the ground before its effect decays.
 const EXPOSED_POTION_DECAY_TIME: i32 = 600;
 
-/// Vanilla `Arrow.NO_EFFECT_COLOR`.
+/// Effect color used when the arrow carries no potion effect.
 const NO_EFFECT_COLOR: i32 = -1;
 
-/// Vanilla spawns a fired arrow at the owner's eye minus this offset.
+/// Spawn offset below the shooter's eye.
 const SPAWN_EYE_OFFSET: f64 = 0.1;
 
 /// A plain (possibly tipped) arrow.
@@ -91,9 +88,7 @@ impl ArrowEntity {
         }
     }
 
-    /// Vanilla `Arrow`'s `(level, owner, pickupItemStack, firedFromWeapon)`
-    /// constructor: the arrow spawns at the owner's eye minus 0.1 and is owned
-    /// by `owner`.
+    /// Creates a fired arrow at the shooter's eye, owned by the shooter.
     #[must_use]
     pub fn from_owner(
         id: i32,
@@ -125,8 +120,8 @@ impl ArrowEntity {
             entity.set_crit_arrow(true);
         }
 
-        // Vanilla rejects an empty firing weapon; Steel skips the piercing
-        // roll instead of panicking on a caller bug.
+        // Skip the piercing roll for an empty weapon instead of panicking on a
+        // caller bug.
         if let Some(weapon) = weapon
             && !weapon.is_empty()
         {
@@ -145,7 +140,6 @@ impl ArrowEntity {
         entity
     }
 
-    /// Vanilla `Arrow.getPotionContents`.
     fn get_potion_contents(&self) -> PotionContents {
         self.arrow_base()
             .pickup_item_stack()
@@ -154,7 +148,6 @@ impl ArrowEntity {
             .unwrap_or_default()
     }
 
-    /// Vanilla `Arrow.getPotionDurationScale`.
     fn get_potion_duration_scale(&self) -> f32 {
         self.arrow_base()
             .pickup_item_stack()
@@ -163,7 +156,6 @@ impl ArrowEntity {
             .unwrap_or(1.0)
     }
 
-    /// Vanilla `Arrow.updateColor`.
     fn update_color(&self) {
         let contents = self.get_potion_contents();
         let color = if contents == PotionContents::empty() {

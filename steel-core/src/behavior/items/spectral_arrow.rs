@@ -1,5 +1,3 @@
-//! Spectral arrow item behavior (`SpectralArrowItem`).
-
 use std::sync::Arc;
 
 use steel_macros::item_behavior;
@@ -10,8 +8,7 @@ use crate::entity::entities::SpectralArrowEntity;
 use crate::entity::{LivingEntityRef, SharedEntity, next_entity_id};
 use crate::world::World;
 
-/// Vanilla `SpectralArrowItem`: creates a [`SpectralArrowEntity`] instead of a
-/// plain arrow.
+/// Fires a [`SpectralArrowEntity`] instead of a plain arrow.
 #[item_behavior]
 pub struct SpectralArrowItem;
 

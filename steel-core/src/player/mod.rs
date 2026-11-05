@@ -454,9 +454,8 @@ impl Player {
         self.stop_using_item();
     }
 
-    /// Vanilla `Player.getProjectile`: resolves the ammo stack for
-    /// `held_weapon`, plus the inventory slot it came from (or `None` for the
-    /// creative-mode arrow).
+    /// Resolves the ammo stack for `held_weapon`, plus the inventory slot it came
+    /// from (or `None` for the creative-mode arrow).
     ///
     /// Returns `None` when `held_weapon` is not a projectile weapon.
     pub fn get_projectile(&self, held_weapon: &ItemStack) -> Option<(ItemStack, Option<usize>)> {
@@ -473,7 +472,7 @@ impl Player {
             }
         }
 
-        for slot in 0..PlayerInventory::CONTAINER_SIZE {
+        for slot in 0..PlayerInventory::INVENTORY_SIZE {
             let stack = inventory.get_item(slot);
             if weapon.is_supported_projectile(stack) {
                 return Some((stack.clone(), Some(slot)));
@@ -485,8 +484,8 @@ impl Player {
             .then(|| (ItemStack::new(&vanilla_items::ARROW), None))
     }
 
-    /// Vanilla `ServerPlayer.take`: broadcasts the take-item animation for
-    /// pickable entities and refreshes the inventory menu.
+    /// Broadcasts the take-item animation for pickable entities and refreshes the
+    /// inventory menu.
     pub fn take(&self, entity: &dyn Entity, org_count: i32) {
         if !entity.is_removed() && entity.is_takeable() {
             self.get_world().broadcast_to_nearby(
@@ -2203,6 +2202,13 @@ impl LivingEntity for Player {
             self.touch_nearby_items();
         }
         result
+    }
+
+    fn do_auto_attack_on_touch(&self, target: &SharedEntity) {
+        let Some(player) = self.get_world().players.get_by_entity_id(self.id()) else {
+            return;
+        };
+        let _ = player.attack(target);
     }
 
     fn travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {

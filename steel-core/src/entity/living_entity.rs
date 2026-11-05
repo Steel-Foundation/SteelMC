@@ -11,6 +11,9 @@ use crate::entity::pushing::EntityPush;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
 
+/// Vanilla `LivingEntity.DATA_LIVING_ENTITY_FLAGS` spin-attack bit.
+const SPIN_ATTACK_FLAG: i8 = 1 << 2;
+
 /// A trait for living entities that can take damage, heal, and die.
 ///
 /// This trait provides the core functionality for entities that have health,
@@ -1673,6 +1676,69 @@ pub trait LivingEntity: Entity {
         self.living_base().set_fall_flying(fall_flying);
     }
 
+    /// Returns whether this entity is performing a riptide spin attack.
+    fn is_auto_spin_attack(&self) -> bool {
+        self.living_synced_data()
+            .is_some_and(|data| data.living_entity_flag(SPIN_ATTACK_FLAG))
+    }
+
+    /// Starts a vanilla auto-spin attack with its duration, damage, weapon, and hand.
+    fn start_auto_spin_attack(
+        &self,
+        ticks: i32,
+        damage: f32,
+        item_stack: &ItemStack,
+        hand: InteractionHand,
+    ) {
+        self.living_base()
+            .start_auto_spin_attack(ticks, damage, item_stack, hand);
+        if let Some(data) = self.living_synced_data() {
+            data.set_living_entity_flag(SPIN_ATTACK_FLAG, true);
+        }
+    }
+
+    /// Runs vanilla `checkAutoSpinAttack`: stops on the first touched living
+    /// entity or on a horizontal collision, and clears the attack once its
+    /// ticks run out.
+    fn check_auto_spin_attack(&self, old: WorldAabb, current: WorldAabb) {
+        let Some(world) = self.level() else {
+            return;
+        };
+
+        let touched = world
+            .get_entities_in_aabb_matching(&WorldAabb::encapsulating(&old, &current), |entity| {
+                !entity.is_spectator()
+            });
+        if touched.is_empty() {
+            if self.horizontal_collision() {
+                self.living_base().set_auto_spin_attack_ticks(0);
+            }
+        } else {
+            for entity in touched {
+                if entity.id() == self.id() {
+                    continue;
+                }
+                if entity.as_living_entity().is_some() {
+                    self.do_auto_attack_on_touch(&entity);
+                    self.living_base().set_auto_spin_attack_ticks(0);
+                    self.set_velocity(self.velocity() * -0.2);
+                    break;
+                }
+            }
+        }
+
+        if self.living_base().auto_spin_attack_ticks() <= 0 {
+            if let Some(data) = self.living_synced_data() {
+                data.set_living_entity_flag(SPIN_ATTACK_FLAG, false);
+            }
+            self.living_base().clear_auto_spin_attack();
+        }
+    }
+
+    /// Called when an auto-spin attack touches `target`; the player override
+    /// deals the hit.
+    fn do_auto_attack_on_touch(&self, _target: &SharedEntity) {}
+
     /// Returns ticks this entity has been fall-flying.
     fn fall_flying_ticks(&self) -> i32 {
         self.living_base().fall_flying_ticks()
@@ -2434,6 +2500,7 @@ pub trait LivingEntity: Entity {
             f64::from(input.vertical()),
             f64::from(input.forward()),
         );
+        let before_travel_box = self.bounding_box();
         let result = if Entity::is_alive(self)
             && let Some(controller_entity) = self.controlling_passenger()
             && let Some(controller) = controller_entity.as_player()
@@ -2447,6 +2514,12 @@ pub trait LivingEntity: Entity {
 
         self.apply_effects_from_blocks();
         self.tick_freezing();
+        let auto_spin_attack_ticks = self.living_base().auto_spin_attack_ticks();
+        if auto_spin_attack_ticks > 0 {
+            self.living_base()
+                .set_auto_spin_attack_ticks(auto_spin_attack_ticks - 1);
+            self.check_auto_spin_attack(before_travel_box, self.bounding_box());
+        }
         self.push_entities();
         result
     }
