@@ -25,8 +25,8 @@ use crate::entity::projectile::{
     ARROW_GRAVITY, AbstractArrow, ArrowBase, ArrowPickup, Projectile, ProjectileDeflection,
 };
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityHitResult, EntityReference, EntitySyncedData,
-    ProjectileBase, RemovalReason, SharedEntity,
+    Entity, EntityBase, EntityBaseLoad, EntityHitResult, EntitySyncedData, ProjectileBase,
+    RemovalReason, SharedEntity,
 };
 use crate::inventory::container::Container as _;
 use crate::physics::{MoveResult, MoverType};
@@ -415,7 +415,7 @@ impl Projectile for ThrownTridentEntity {
 
         if entity.projectile_receives_side_effects_on_hit(was_hurt) {
             self.play_sound(&sound_events::ITEM_TRIDENT_HIT, 1.0, 1.0);
-            let owner_reference = owner.as_ref().map(EntityReference::from_entity);
+            let owner_reference = self.owner_reference();
             self.deflect(
                 ProjectileDeflection::Reverse,
                 Some(entity.as_ref()),

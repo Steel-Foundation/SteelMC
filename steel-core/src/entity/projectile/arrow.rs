@@ -28,9 +28,7 @@ use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::block_entity::block_state_nbt;
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::damage::DamageSource;
-use crate::entity::{
-    Entity, EntityHitResult, EntityReference, LivingEntity, RemovalReason, SharedEntity,
-};
+use crate::entity::{Entity, EntityHitResult, LivingEntity, RemovalReason, SharedEntity};
 use crate::inventory::container::Container as _;
 use crate::physics::collision::CollisionWorld as _;
 use crate::physics::{MoveResult, MoverType, WorldCollisionProvider};
@@ -713,7 +711,7 @@ pub trait AbstractArrow: Projectile + Sized {
             }
         } else if entity.projectile_receives_side_effects_on_hit(false) {
             entity.set_remaining_fire_ticks(remaining_fire_ticks);
-            let owner_reference = owner.as_ref().map(EntityReference::from_entity);
+            let owner_reference = self.owner_reference();
             self.deflect(
                 ProjectileDeflection::Reverse,
                 Some(entity.as_ref()),
@@ -852,6 +850,7 @@ pub trait AbstractArrow: Projectile + Sized {
             .inflate(1.0);
         get_many_entity_hits(
             world.as_ref(),
+            self.id(),
             from,
             to,
             search_box,

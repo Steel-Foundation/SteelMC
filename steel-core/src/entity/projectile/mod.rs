@@ -100,6 +100,9 @@ pub struct EntityHitResult {
     pub location: DVec3,
 }
 
+/// Vanilla `Vec3.normalize` treats vectors shorter than this as zero.
+const VEC3_NORMALIZE_EPSILON: f64 = 1.0e-5;
+
 /// Vanilla projectile deflection behaviors (`ProjectileDeflection`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProjectileDeflection {
@@ -154,9 +157,9 @@ impl ProjectileDeflection {
                 let Some(entity) = deflecting_entity else {
                     return;
                 };
-                let movement = entity.velocity();
+                let movement = entity.known_speed();
                 let length = movement.length();
-                let normalized = if length < 1.0e-5 {
+                let normalized = if length < VEC3_NORMALIZE_EPSILON {
                     DVec3::ZERO
                 } else {
                     movement / length
@@ -290,6 +293,11 @@ pub trait Projectile: Entity + ProjectileEventSource {
             .owner
             .as_ref()
             .map(EntityReference::uuid)
+    }
+
+    /// Returns the stored owner reference without resolving it to a live entity.
+    fn owner_reference(&self) -> Option<EntityReference> {
+        self.projectile_base().state.lock().owner.clone()
     }
 
     /// Resolves the cached owner, then looks up its UUID in the current domain.
@@ -566,7 +574,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
                     .as_ref()
                     .and_then(Weak::upgrade)
                     .is_some_and(|last| Arc::ptr_eq(&last, &entity_hit.entity));
-                let owner = self.projectile_base().state.lock().owner.clone();
+                let owner = self.owner_reference();
                 if !already_deflected
                     && self.deflect(
                         deflection,
@@ -581,14 +589,22 @@ pub trait Projectile: Entity + ProjectileEventSource {
                 }
                 return deflection;
             }
-        } else if let ProjectileHit::Block { hit, .. } = hit
-            && self.should_bounce_on_world_border()
-            && hit.world_border_hit
-        {
-            let deflection = ProjectileDeflection::Reverse;
-            let owner = self.projectile_base().state.lock().owner.clone();
-            if self.deflect(deflection, None, owner, false, DVec3::splat(0.2)) {
-                return deflection;
+        } else if let ProjectileHit::Block { hit, .. } = hit {
+            if !hit.world_border_hit {
+                // Vanilla skips the hit entirely when the collider clip reports a
+                // position whose block state is air.
+                if self
+                    .level()
+                    .is_some_and(|world| world.get_block_state(hit.block_pos).is_air())
+                {
+                    return ProjectileDeflection::None;
+                }
+            } else if self.should_bounce_on_world_border() {
+                let deflection = ProjectileDeflection::Reverse;
+                let owner = self.owner_reference();
+                if self.deflect(deflection, None, owner, false, DVec3::splat(0.2)) {
+                    return deflection;
+                }
             }
         }
 
@@ -614,7 +630,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
                 ) && let Some(projectile) = entity_hit.entity.as_projectile()
                 {
                     let owner_entity = self.get_owner();
-                    let owner = self.projectile_base().state.lock().owner.clone();
+                    let owner = self.owner_reference();
                     projectile.deflect(
                         ProjectileDeflection::AimDeflect,
                         owner_entity.as_deref(),
@@ -949,6 +965,7 @@ fn get_entity_hit_result(
 )]
 pub(crate) fn get_many_entity_hits(
     world: &World,
+    source_id: i32,
     from: DVec3,
     to: DVec3,
     search_box: WorldAabb,
@@ -960,7 +977,7 @@ pub(crate) fn get_many_entity_hits(
     let mut hits = Vec::new();
 
     for entity in world.get_entities_in_aabb(&search_box) {
-        if !predicate(entity.as_ref()) {
+        if entity.id() == source_id || !predicate(entity.as_ref()) {
             continue;
         }
 
