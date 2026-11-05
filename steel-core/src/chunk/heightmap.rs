@@ -598,16 +598,22 @@ impl ChunkHeightmaps {
             }
 
             // Paletted block storage is contiguous in y-z-x order.
+            let states = guard.states();
+            let flat_states = states.flat_values();
             for local_y in (0..16).rev() {
                 let y = min_y + (section_idx * 16 + local_y) as i32;
                 let layer_start = local_y * 16 * 16;
+                let layer = flat_states.map(|values| &values[layer_start..layer_start + 16 * 16]);
 
                 for (column_index, pending_mask) in pending_masks.iter_mut().enumerate() {
                     if *pending_mask == 0 {
                         continue;
                     }
 
-                    let state = guard.states().get_at_index(layer_start + column_index);
+                    let state = layer.map_or_else(
+                        || states.get_at_index(layer_start + column_index),
+                        |layer| layer[column_index],
+                    );
                     let matched_mask = heightmap_opacity_mask(state, *pending_mask);
                     if matched_mask == 0 {
                         continue;
@@ -720,6 +726,73 @@ mod tests {
 
         assert!(!ocean_floor.update_for_initial_fill(0, 4, 0, stone));
         assert_eq!(ocean_floor.get_first_available(0, 0), 6);
+    }
+
+    /// Worldgen sections stay in the palette-free `Building` layout until light; priming must read
+    /// them exactly like palette-backed sections.
+    #[test]
+    fn section_priming_reads_building_sections_like_paletted_ones() {
+        init_test_state();
+
+        let states = [
+            REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE),
+            REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER),
+            REGISTRY
+                .blocks
+                .get_default_state_id(&vanilla_blocks::OAK_LEAVES),
+            REGISTRY
+                .blocks
+                .get_default_state_id(&vanilla_blocks::COBWEB),
+        ];
+        let mut paletted = [ChunkSection::new_empty(), ChunkSection::new_empty()];
+        let mut building = [ChunkSection::new_empty(), ChunkSection::new_empty()];
+        for x in 0..16 {
+            for z in 0..16 {
+                let column = x * 16 + z;
+                // A different top block and height per column, some columns left empty.
+                if column % 7 == 0 {
+                    continue;
+                }
+                let section = column % 2;
+                let y = (column * 5) % 16;
+                let state = states[column % states.len()];
+                paletted[section].set_block_state(x, y, z, state);
+                building[section].set_block_state_for_generation(x, y, z, state);
+            }
+        }
+        let all_types = [
+            HeightmapType::WorldSurface,
+            HeightmapType::MotionBlocking,
+            HeightmapType::MotionBlockingNoLeaves,
+            HeightmapType::OceanFloor,
+            HeightmapType::WorldSurfaceWg,
+            HeightmapType::OceanFloorWg,
+        ];
+        let prime = |sections: [ChunkSection; 2]| {
+            let sections = Sections::from_owned(sections.into());
+            let mut heightmaps = ChunkHeightmaps::empty();
+            heightmaps.prime_from_sections(&all_types, -16, 32, &sections.sections);
+            heightmaps
+        };
+        let (paletted, building) = (prime(paletted), prime(building));
+
+        for heightmap_type in all_types {
+            for x in 0..16 {
+                for z in 0..16 {
+                    let height = |heightmaps: &ChunkHeightmaps| {
+                        let Some(heightmap) = heightmaps.get(heightmap_type) else {
+                            panic!("heightmap {heightmap_type:?} was not primed");
+                        };
+                        heightmap.get_first_available(x, z)
+                    };
+                    assert_eq!(
+                        height(&building),
+                        height(&paletted),
+                        "{heightmap_type:?} at ({x}, {z})"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
