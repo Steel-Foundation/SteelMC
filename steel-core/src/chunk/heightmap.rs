@@ -798,8 +798,7 @@ mod tests {
         }
     }
 
-    /// Worldgen sections stay in the palette-free `Building` layout until light; priming must read
-    /// them exactly like palette-backed sections.
+    /// Priming must read `Building` sections, the worldgen layout, like paletted ones.
     #[test]
     fn section_priming_reads_building_sections_like_paletted_ones() {
         init_test_state();
@@ -819,7 +818,7 @@ mod tests {
         for x in 0..16 {
             for z in 0..16 {
                 let column = x * 16 + z;
-                // A different top block and height per column, some columns left empty.
+                // Vary the top block and height per column; leave some empty.
                 if column % 7 == 0 {
                     continue;
                 }

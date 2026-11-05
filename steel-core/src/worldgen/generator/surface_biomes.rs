@@ -94,8 +94,7 @@ pub(super) struct SurfaceQuartBiomes<'a> {
     total_quarts_y: i32,
     neighbor_biomes: &'a dyn Fn(IVec3) -> u16,
     ring: Box<[u16]>,
-    /// Per fuzzing group (parent x, z, y): the uniform-class biome, [`NOT_UNIFORM`], or
-    /// [`UNREAD`]. All 16 columns of a group share it.
+    /// Per fuzzing group: its uniform-class biome, [`NOT_UNIFORM`], or [`UNREAD`].
     uniform_groups: Box<[u16]>,
 }
 
@@ -105,7 +104,6 @@ const QUARTS_PER_SECTION: i32 = QUARTS_PER_SECTION_PLANE * QUARTS_PER_SECTION_SI
 const RING_SIDE: i32 = QUARTS_PER_SECTION_SIDE + 2;
 const UNREAD: u16 = u16::MAX;
 const NOT_UNIFORM: u16 = u16::MAX - 1;
-/// Fuzzing groups a chunk's columns use per axis: block `16k - 2 .. 16k + 13` shifted by `>> 2`.
 const GROUPS_PER_SIDE: i32 = QUARTS_PER_SECTION_SIDE + 1;
 
 impl<'a> SurfaceQuartBiomes<'a> {
@@ -135,8 +133,7 @@ impl<'a> SurfaceQuartBiomes<'a> {
         }
     }
 
-    /// Index of a fuzzing group in `uniform_groups`, or `None` outside the chunk's groups.
-    /// Groups start one quart before the chunk on every axis.
+    /// Index into `uniform_groups`; groups start one quart before the chunk on each axis.
     fn group_index(&self, parent: IVec3) -> Option<usize> {
         let x = parent.x - (self.chunk_quart_x - 1);
         let z = parent.z - (self.chunk_quart_z - 1);
@@ -147,7 +144,7 @@ impl<'a> SurfaceQuartBiomes<'a> {
         .then(|| ((y * GROUPS_PER_SIDE + z) * GROUPS_PER_SIDE + x) as usize)
     }
 
-    /// The group's shared-class candidate biome, if its 8 candidates agree.
+    /// [`FuzzedBiomeColumn::uniform_group_biome`], cached per group.
     fn uniform_candidate_biome(
         &mut self,
         classes: &SurfaceBiomeClasses,
