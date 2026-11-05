@@ -760,23 +760,16 @@ mod tests {
                 building[section].set_block_state_for_generation(x, y, z, state);
             }
         }
-        let all_types = [
-            HeightmapType::WorldSurface,
-            HeightmapType::MotionBlocking,
-            HeightmapType::MotionBlockingNoLeaves,
-            HeightmapType::OceanFloor,
-            HeightmapType::WorldSurfaceWg,
-            HeightmapType::OceanFloorWg,
-        ];
+        let all_types = HeightmapType::all_types();
         let prime = |sections: [ChunkSection; 2]| {
             let sections = Sections::from_owned(sections.into());
             let mut heightmaps = ChunkHeightmaps::empty();
-            heightmaps.prime_from_sections(&all_types, -16, 32, &sections.sections);
+            heightmaps.prime_from_sections(all_types, -16, 32, &sections.sections);
             heightmaps
         };
         let (paletted, building) = (prime(paletted), prime(building));
 
-        for heightmap_type in all_types {
+        for heightmap_type in all_types.iter().copied() {
             for x in 0..16 {
                 for z in 0..16 {
                     let height = |heightmaps: &ChunkHeightmaps| {
