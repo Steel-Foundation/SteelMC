@@ -203,6 +203,10 @@ pub fn init_block_entities() {
             Arc::new(BeaconBlockEntity::new(level, pos, state))
         });
 
+        registry.register(&vanilla_block_entity_types::CONDUIT, |level, pos, state| {
+            Arc::new(ConduitBlockEntity::new(level, pos, state))
+        });
+
         registry.register(&vanilla_block_entity_types::FURNACE, |level, pos, state| {
             Arc::new(FurnaceBlockEntity::new(level, pos, state))
         });
