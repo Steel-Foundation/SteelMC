@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SOUND_FLAG","SOURCE_FLAG"],"struct":["CStopSound"]};

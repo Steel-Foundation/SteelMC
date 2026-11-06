@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["vanilla_structure_sets"]};

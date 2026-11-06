@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ENDERMITE_SPAWN_CHANCE","TELEPORT_DAMAGE"],"struct":["EnderPearlEntity"]};

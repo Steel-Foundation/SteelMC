@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BonemealAction"],"fn":["find_spreadable_neighbor_pos","get_spreadable_neighbor_pos","has_spreadable_neighbor_pos","shuffle_directions"],"trait":["Bonemealable","CropBonemealExt"]};

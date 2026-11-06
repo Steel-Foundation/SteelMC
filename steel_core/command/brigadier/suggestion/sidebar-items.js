@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SuggestionError"],"struct":["Suggestion","Suggestions","SuggestionsBuilder"],"trait":["SuggestionProvider"]};

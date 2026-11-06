@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_MERGED_QUERY_CELLS"],"enum":["EntityQueryEntries"],"fn":["next_candidate"],"struct":["EntityQueryCursor"]};

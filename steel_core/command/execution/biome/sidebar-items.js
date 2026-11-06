@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BiomeOrTag"],"fn":["parse_biome_or_tag","suggest_biomes"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["block_predicate_matches","can_break","can_place_on","matches"]};

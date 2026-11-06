@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SMALL_EXPLOSION_RADIUS"],"fn":["default_damage_source"],"mod":["block_effects","block_rays","entity_effects","exposure"],"struct":["ServerExplosion"]};

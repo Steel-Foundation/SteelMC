@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["POTTED_BY_CONTENT"],"struct":["FlowerPotBlock"]};

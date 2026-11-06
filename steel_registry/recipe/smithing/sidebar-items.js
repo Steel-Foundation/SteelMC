@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SmithingRecipe"],"fn":["optional_ingredient_matches"],"struct":["SmithingRecipeInput","SmithingTransformRecipe","SmithingTrimRecipe"]};

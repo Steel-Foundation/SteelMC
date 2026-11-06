@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["HeightmapType"],"fn":["build_state_opacity_masks","build_world_surface_opacity_masks","heightmap_opacity_mask"],"static":["HEIGHTMAP_OPACITY_MASK_BY_STATE","WORLD_SURFACE_OPACITY_MASK_BY_STATE"],"struct":["ChunkHeightmaps","Heightmap"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ROOM_1X1","ROOM_1X2","ROOM_2X2","ROOM_CORRIDOR_FLAG","ROOM_DOOR_FLAG","ROOM_ID_MASK","ROOM_ORIGIN_FLAG","ROOM_STAIRS_FLAG","ROOM_TYPE_MASK"],"fn":["is_house"],"struct":["MansionGrid","SimpleGrid"]};

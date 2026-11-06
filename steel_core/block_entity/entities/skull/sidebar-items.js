@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CUSTOM_NAME_NBT_KEY","NOTE_BLOCK_SOUND_NBT_KEY","PROFILE_NBT_KEY"],"struct":["SkullBlockEntity"]};

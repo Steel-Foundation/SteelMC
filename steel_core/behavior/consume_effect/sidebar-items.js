@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["CONSUME_EFFECT_BEHAVIORS"],"struct":["ConsumeEffectBehaviorLock","ConsumeEffectBehaviorRegistry","NoopConsumeEffect"]};

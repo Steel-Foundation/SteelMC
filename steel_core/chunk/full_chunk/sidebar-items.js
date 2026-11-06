@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FullChunkBlockSetResult","PendingPromotionCommit","ProtoBlockEntityAdoption"],"fn":["random_tick_kinds"],"struct":["BlockEntityActivation","BlockEntityActivationBatch","BlockRandomPositionGenerator","FullChunkPromotion","FullChunkRef","FullChunkRuntime"]};

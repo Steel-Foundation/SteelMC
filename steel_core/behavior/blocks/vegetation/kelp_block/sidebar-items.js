@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GROW_PER_TICK_PROBABILITY"],"struct":["KelpBlock"]};

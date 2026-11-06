@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["chicken","cow","mooshroom","pig","sheep","squid"],"struct":["ChickenEntity","CowEntity","MushroomCowEntity","PigEntity","SheepEntity","SquidEntity"]};

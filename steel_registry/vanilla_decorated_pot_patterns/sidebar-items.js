@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_decorated_pot_patterns"],"static":["ANGLER","ARCHER","ARMS_UP","BLADE","BREWER","BURN","DANGER","EXPLORER","FLOW","FRIEND","GUSTER","HEART","HEARTBREAK","HOWL","MINER","MOURNER","PLENTY","PRIZE","SCRAPE","SHEAF","SHELTER","SKULL","SNORT"]};

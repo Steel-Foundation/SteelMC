@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["GrassColorModifier","TemperatureModifier"],"struct":["AdditionsSound","Biome","BiomeEffects","BiomeRegistry","MoodSound","Music","Particle","ParticleOptions","SpawnCost","SpawnerData","WeightedMusic"],"type":["BiomeRef"]};

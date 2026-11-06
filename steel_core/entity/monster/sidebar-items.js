@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BRIGHT_LIGHT_NO_ACTION_TIME_INCREMENT","DEFAULT_XP_REWARD","SKY_LIGHT_SPAWN_ROLL_BOUND","THUNDERING_SKY_DARKENING"],"fn":["is_spawn_allowed_on_difficulty","sample_monster_spawn_light_test"],"trait":["Enemy","Monster"]};

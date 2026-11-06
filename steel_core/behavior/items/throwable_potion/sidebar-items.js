@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["LINGERING_THROW","SPLASH_THROW"],"struct":["LingeringPotionItem","SplashPotionItem"]};

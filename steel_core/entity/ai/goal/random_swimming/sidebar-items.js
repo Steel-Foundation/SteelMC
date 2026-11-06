@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["RANDOM_SWIMMING_HORIZONTAL_RANGE","RANDOM_SWIMMING_RETRIES","RANDOM_SWIMMING_VERTICAL_RANGE"],"fn":["is_water_pathfindable","random_swimmable_pos","retry_random_swimmable_pos"],"struct":["RandomSwimmingGoal"]};

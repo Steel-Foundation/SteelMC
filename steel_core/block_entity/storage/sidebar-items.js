@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BlockEntityInsert","BlockEntityLookup"],"struct":["BlockEntityEntries","BlockEntityStorage","ClearedBlockEntities","DetachedBlockEntity"],"type":["LifecycleDispatchers"]};

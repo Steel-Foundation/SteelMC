@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["float_equals","hash_entries","is_non_negative_float","is_positive_float","optional_f32","push_hash_entry","read_count","write_count"],"struct":["BlocksAttacks","DamageReduction","DamageReductionList","ItemDamageFunction"]};

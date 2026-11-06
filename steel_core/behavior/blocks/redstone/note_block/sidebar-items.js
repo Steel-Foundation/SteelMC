@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["NOTE","NOTEBLOCK_INSTRUMENT","NOTE_VOLUME","POWERED"],"struct":["NoteBlock"]};

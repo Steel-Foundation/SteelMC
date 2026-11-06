@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CANDLES_PROPERTY","LIT_PROPERTY","MAX_CANDLES","WATERLOGGED"],"struct":["CandleBlock"]};

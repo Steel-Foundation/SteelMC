@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_random_item","get_total_weight","get_weighted_item"]};

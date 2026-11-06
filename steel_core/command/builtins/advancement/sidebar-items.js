@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Action","Mode"],"fn":["add_children","command","get_advancements","perform","perform_and_show","perform_criterion","perform_error_generator","registration"]};

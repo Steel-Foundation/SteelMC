@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["command","registration","send_seed"]};

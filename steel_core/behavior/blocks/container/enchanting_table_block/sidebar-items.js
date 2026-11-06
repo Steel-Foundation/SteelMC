@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["bookshelf_offsets"],"struct":["EnchantingTableBlock"]};

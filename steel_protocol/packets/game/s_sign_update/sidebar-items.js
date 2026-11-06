@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_SIGN_LINE_LENGTH"],"struct":["SSignUpdate"]};

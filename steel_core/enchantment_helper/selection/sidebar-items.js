@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ADDITIONAL_ENCHANTMENT_RANDOM_BOUND","BASE_COST_RANDOM_BOUND","COST_VARIATION","ENCHANTABILITY_RANDOM_DIVISOR","MAX_BOOKSHELVES"],"fn":["filter_compatible_enchantments","get_available_enchantment_results","get_enchantment_cost","select_enchantment"],"struct":["EnchantmentInstance"]};

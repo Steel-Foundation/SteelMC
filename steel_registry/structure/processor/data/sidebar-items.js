@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PosRuleTestData","RuleBlockEntityModifierData","StructureProcessorAxis","StructureProcessorKind","StructureRuleTestData"],"fn":["default_structure_processor_axis","deserialize_processor_axis"],"struct":["ProcessorRuleData","StructureProcessorListData"]};

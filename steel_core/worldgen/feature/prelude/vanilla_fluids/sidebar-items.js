@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_fluids"],"static":["EMPTY","FLOWING_LAVA","FLOWING_WATER","LAVA","WATER"]};

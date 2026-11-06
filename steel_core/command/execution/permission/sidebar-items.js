@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PermissionSuggestionScope"],"fn":["collect_custom_contexts","known_custom_contexts","permission_expression_argument","permission_group_argument","suggest_context","suggest_expression"],"struct":["PermissionGroupName","PermissionGroupParser","PermissionMetadataParser","PermissionRuleParser"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["GOAT_HORNS_TAG_LIST","REGULAR_GOAT_HORNS_TAG_LIST","SCREAMING_GOAT_HORNS_TAG_LIST"],"struct":["InstrumentTag"]};

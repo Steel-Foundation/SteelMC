@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_DELTA","MIN_DELTA","TRUNCATION_STEPS"],"enum":["VecDelta"],"fn":["calc_delta","encode_position","to_angle_byte"],"struct":["CMoveEntityPos","CMoveEntityPosRot","CMoveEntityRot","DeltaStep","PackedEntityDelta"]};

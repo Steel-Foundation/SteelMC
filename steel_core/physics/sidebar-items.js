@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["COLLISION_EPSILON"],"enum":["MoverType"],"fn":["block_has_extensible_collision_behavior","block_may_expand_collision_cursor","block_state_has_extensible_collision_behavior","block_state_may_expand_collision_cursor"],"mod":["collision","entity_move","movement_validation","physics_state","shapes"],"struct":["MoveResult"]};
