@@ -169,7 +169,7 @@ impl BlockBehavior for LeverBlock {
         self.default_on_explosion_hit(state, world, pos, explosion, on_hit);
     }
 
-    // Client-local interaction/ambient dust particles are omitted.
+    // TODO: Client-local interaction/ambient dust particles are omitted.
 }
 
 #[cfg(test)]
