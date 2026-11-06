@@ -6,6 +6,7 @@ use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as Nbt
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
 use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
@@ -128,9 +129,11 @@ impl BlockEntity for EndGatewayBlockEntity {
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
         let mut gateway = self.gateway.lock();
-        gateway.age = nbt.long("Age").unwrap_or(0);
+        gateway.age = nbt.long_value("Age").unwrap_or(0);
         gateway.exit_portal = Self::load_exit_portal(&nbt);
-        gateway.exact_teleport = nbt.byte("ExactTeleport").is_some_and(|value| value != 0);
+        gateway.exact_teleport = nbt
+            .byte_value("ExactTeleport")
+            .is_some_and(|value| value != 0);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
