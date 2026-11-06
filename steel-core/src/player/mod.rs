@@ -695,7 +695,7 @@ impl Player {
 
     /// Ticks the death animation timer.
     /// Vanilla: `LivingEntity.tickDeath()` (not overridden by `ServerPlayer`).
-    fn tick_death(&self) {
+    fn tick_death(&self, _entity: &SharedEntity) {
         let death_time = self.living_base.increment_death_time();
 
         if death_time >= DEATH_DURATION && !self.is_removed() {
@@ -1849,7 +1849,7 @@ impl LivingEntity for Player {
         self.tick_stats();
 
         if self.get_health() <= 0.0 {
-            self.tick_death();
+            self.tick_death(entity);
         } else {
             let world = self.get_world();
             self.block_breaking.lock().tick(self, &world);

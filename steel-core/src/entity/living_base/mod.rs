@@ -1535,7 +1535,8 @@ impl LivingEntityBase {
         }
     }
 
-    /// Starts the vanilla hurt animation.
+    /// Starts the vanilla hurt animation. Vanilla does this after `actuallyHurt`, so death
+    /// handling still sees the previous animation state.
     pub fn begin_hurt_animation(&self) {
         let mut state = self.state.lock();
         state.hurt_duration = HURT_DURATION_TICKS;
