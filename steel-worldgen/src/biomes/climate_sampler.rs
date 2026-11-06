@@ -57,7 +57,6 @@ impl OverworldClimateSampler {
         let block_y = quart_y << 2;
         let block_z = quart_z << 2;
 
-        // Only the fields the climate routers read
         cache.ensure_climate(block_x, block_z, &self.noises);
 
         let block_x = f64::from(block_x);
@@ -82,15 +81,8 @@ impl OverworldClimateSampler {
         )
     }
 
-    /// Pre-populate a column cache's flat-noise grid for a chunk's quart columns.
-    ///
-    /// The biome stage samples every quart cell in a chunk (1536 for the
-    /// overworld) in `section → x → y → z` order. Without a grid, the cache is a
-    /// single-entry lazy cache that misses on every cell (the innermost `z` loop
-    /// changes column each step), so the expensive flat (xz-only) climate noise
-    /// is recomputed per cell. Pre-computing the climate fields once turns those into
-    /// O(1) lookups. Bit-identical because the grid evaluates the same functions at
-    /// the same quart coordinates.
+    /// Pre-computes the climate fields at a chunk's quart columns. The biome stage changes
+    /// column every cell, so the single-entry cache alone would miss each time.
     pub fn init_column_grid(
         &self,
         cache: &mut OverworldColumnCache,

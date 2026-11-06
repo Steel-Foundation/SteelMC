@@ -14,8 +14,7 @@ use super::naming::{
     router_cache_field_ident, router_compute_fn_ident, router_grid_field_ident,
 };
 
-/// One column-cache value: its active field, its grid array and the expression that
-/// computes it from `noises`, `self` and `x`/`z`.
+/// A column-cache value; `compute` reads `noises`, `self` and `x`/`z`.
 struct CachedValue {
     active: Ident,
     grid: Ident,

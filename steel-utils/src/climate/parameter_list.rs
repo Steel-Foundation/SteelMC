@@ -260,8 +260,7 @@ struct FlatNode {
 /// Index of the offset axis in a parameter array.
 const OFFSET_AXIS: usize = PARAMETER_COUNT - 1;
 
-/// The axes the tree search compares. A `TargetPoint` has no offset (it is always 0), so
-/// each node's offset distance is precomputed as `FlatNode::offset_term`.
+/// Every axis but offset, which is always 0 and covered by `FlatNode::offset_term`.
 fn search_axes(target: &TargetPoint) -> [i64; OFFSET_AXIS] {
     let axes = target.to_parameter_array();
     array::from_fn(|axis| axes[axis])

@@ -338,8 +338,7 @@ impl Heightmap {
         }
     }
 
-    /// Vanilla's `Heightmap.update` ignores writes at or below `first_available - 2`. One
-    /// higher, at `first_available - 1`, is the current top block, whose removal lowers it.
+    /// Writes below the top block (`first_available - 1`), which `Heightmap.update` ignores.
     const fn cannot_change_height(y: i32, first_available: i32) -> bool {
         y <= first_available - 2
     }
@@ -592,7 +591,7 @@ impl ChunkHeightmaps {
         height: i32,
         sections: &[super::section::SectionHolder],
     ) {
-        // Columns per section layer, in `get_at_index` order.
+        // Columns in one section layer.
         const LAYER_COLUMNS: usize = 16 * 16;
 
         let mut types_to_prime = SmallVec::<[(HeightmapType, u8); 4]>::new();
@@ -757,7 +756,7 @@ mod tests {
         assert_eq!(ocean_floor.get_first_available(0, 0), 6);
     }
 
-    /// `update_column` must match one `update` per write, including when the top is removed.
+    /// Includes writes that remove the column's top block.
     #[test]
     fn column_update_matches_per_write_updates() {
         init_test_state();
@@ -801,8 +800,7 @@ mod tests {
         }
     }
 
-    /// Priming must give the true column heights for both section layouts, including
-    /// `Building`, the palette-free layout worldgen uses until light.
+    /// `Building` is the palette-free layout sections keep during worldgen.
     #[test]
     fn section_priming_finds_top_blocks_in_both_layouts() {
         init_test_state();

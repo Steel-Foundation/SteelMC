@@ -84,8 +84,7 @@ impl TranspileContext {
         }
     }
 
-    /// Generate the bulk-order `_fill` variants the generated code calls. Must run after
-    /// every other function is generated, since those record which variants they call.
+    /// Generate the bulk-order `_fill` variants other generated code calls, so it runs last.
     pub(super) fn gen_fill_functions(&mut self, input: &TranspilerInput) -> TokenStream {
         self.fill_mode = true;
         let mut fill_fns = Vec::new();

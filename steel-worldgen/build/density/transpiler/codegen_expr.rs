@@ -436,8 +436,7 @@ impl TranspileContext {
                 // upper_bound is flat (xz-only)
                 let upper_expr = self.gen_expr(&fts.upper_bound, input, is_flat);
                 // density uses y — generate with is_flat=false so it references our loop var.
-                // Vanilla probes it with `sampleValue`, even inside the chunk fill.
-                // Outer CSE bindings hold values at the outer y, not at each probe y.
+                // Vanilla probes it per point, and outer CSE bindings hold outer-y values.
                 assert!(
                     !(self.interpolated_param_mode
                         && contains_function(
@@ -478,8 +477,7 @@ impl TranspileContext {
 
             DensityFunction::Slice(s) => {
                 let coord = Literal::f64_suffixed(f64::from(s.coordinate));
-                // Column-cache reads inside an X or Z slice would use the unsliced column.
-                // Vanilla only slices Y.
+                // Vanilla only slices Y; cache reads in an X or Z slice would ignore the slice.
                 assert!(
                     matches!(s.axis, Axis::Y),
                     "unsupported slice on the {:?} axis",
@@ -552,8 +550,8 @@ impl TranspileContext {
         quote! { (#expression) as f32 }
     }
 
-    /// Vanilla samples the combine stage in bulk too, but it is generated in point order, so
-    /// it must not reach an unshifted noise. 26.3 keeps them all under interpolated markers.
+    /// The combine stage is generated in point order, but vanilla samples it in bulk, so it
+    /// must not reach an unshifted noise.
     fn assert_not_point_noise_in_combine(&self, reaches_noise: bool, via: &str) {
         assert!(
             !(self.interpolated_param_mode && reaches_noise),

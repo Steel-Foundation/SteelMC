@@ -28,7 +28,6 @@ pub(super) fn collect_inline_flat_noises(
         out.entry(fp)
             .or_insert_with(|| (n.noise_id.clone(), n.xz_scale));
     }
-    // References are separate functions, so `children` does not follow them.
     for child in children(df) {
         collect_inline_flat_noises(child, out);
     }
