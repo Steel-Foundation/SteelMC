@@ -23,7 +23,7 @@ use steel_registry::blocks::{
 };
 use steel_registry::data_components::DataComponentType;
 use steel_registry::data_components::vanilla_components::{
-    ATTACK_ANIMATION, GLIDER, INTERACT_ANIMATION, SwingAnimation,
+    ATTACK_ANIMATION, CUSTOM_DATA, CUSTOM_NAME, GLIDER, INTERACT_ANIMATION, SwingAnimation,
 };
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_data::{DataValue, EntityPose, HumanoidArm};

@@ -97,6 +97,7 @@ struct PlayerFloatingValidation {
     may_fly: bool,
     has_levitation: bool,
     is_fall_flying: bool,
+    is_auto_spin_attack: bool,
 }
 
 impl PlayerFloatingValidation {
@@ -108,6 +109,7 @@ impl PlayerFloatingValidation {
             && !self.may_fly
             && !self.has_levitation
             && !self.is_fall_flying
+            && !self.is_auto_spin_attack
     }
 }
 
@@ -462,13 +464,17 @@ impl Player {
         world.chunk_map.update_player_status(self);
 
         if let Some((player_stands_on_something, y_dist)) = floating_check {
-            self.record_client_floating(
-                &world,
+            let validation = PlayerFloatingValidation {
                 y_dist,
                 player_stands_on_something,
                 is_spectator,
+                server_allows_flight: self.config.allow_flight,
+                may_fly: self.abilities.lock().may_fly,
+                has_levitation: self.has_mob_effect(vanilla_mob_effects::LEVITATION),
                 is_fall_flying,
-            );
+                is_auto_spin_attack: self.is_auto_spin_attack(),
+            };
+            self.record_client_floating(&world, validation);
         }
         self.movement
             .lock()
@@ -677,27 +683,9 @@ impl Player {
             .set_last_known_client_movement(client_delta);
     }
 
-    fn record_client_floating(
-        &self,
-        world: &World,
-        y_dist: f64,
-        player_stands_on_something: bool,
-        is_spectator: bool,
-        is_fall_flying: bool,
-    ) {
-        // TODO: Add auto-spin exemption when riptide/spin attack state exists.
-        let can_violate_floating = PlayerFloatingValidation {
-            y_dist,
-            player_stands_on_something,
-            is_spectator,
-            server_allows_flight: self.config.allow_flight,
-            may_fly: self.abilities.lock().may_fly,
-            has_levitation: self.has_mob_effect(vanilla_mob_effects::LEVITATION),
-            is_fall_flying,
-        }
-        .can_violate();
-
-        let client_is_floating = can_violate_floating && Self::no_blocks_around_entity(world, self);
+    fn record_client_floating(&self, world: &World, validation: PlayerFloatingValidation) {
+        let client_is_floating =
+            validation.can_violate() && Self::no_blocks_around_entity(world, self);
         self.movement
             .lock()
             .record_client_floating(client_is_floating);
@@ -1192,6 +1180,7 @@ mod tests {
             may_fly: false,
             has_levitation: false,
             is_fall_flying: false,
+            is_auto_spin_attack: false,
         };
 
         assert!(validation.can_violate());
