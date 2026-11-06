@@ -5,6 +5,7 @@
 //! rewriting, and scalar fallbacks for SIMD paths.
 
 use std::collections::BTreeSet;
+use std::mem;
 use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
@@ -83,10 +84,18 @@ impl TranspileContext {
                 let field = noise_field_ident(&n.noise_id);
                 let xz_scale = Literal::f64_unsuffixed(n.xz_scale);
                 let y_scale = Literal::f64_unsuffixed(n.y_scale);
-                if is_flat || n.y_scale == 0.0 {
-                    quote! { noises.#field.get_value_xz(x * #xz_scale, z * #xz_scale) }
-                } else {
-                    quote! { noises.#field.get_value(x * #xz_scale, y * #y_scale, z * #xz_scale) }
+                // The chunk fill samples in vanilla's bulk coordinate order.
+                match (self.fill_mode, is_flat || n.y_scale == 0.0) {
+                    (true, true) => quote! { noises.#field.get_value_xz_bulk(x, z, #xz_scale) },
+                    (true, false) => {
+                        quote! { noises.#field.get_value_bulk(x, y, z, #xz_scale, #y_scale) }
+                    }
+                    (false, true) => {
+                        quote! { noises.#field.get_value_xz(x * #xz_scale, z * #xz_scale) }
+                    }
+                    (false, false) => quote! {
+                        noises.#field.get_value(x * #xz_scale, y * #y_scale, z * #xz_scale)
+                    },
                 }
             }
 
@@ -422,8 +431,11 @@ impl TranspileContext {
             DensityFunction::FindTopSurface(fts) => {
                 // upper_bound is flat (xz-only)
                 let upper_expr = self.gen_expr(&fts.upper_bound, input, is_flat);
-                // density uses y — generate with is_flat=false so it references our loop var
+                // density uses y — generate with is_flat=false so it references our loop var.
+                // Vanilla probes it per point, even inside the chunk fill.
+                let fill_mode = mem::replace(&mut self.fill_mode, false);
                 let density_expr = self.gen_expr(&fts.density, input, false);
+                self.fill_mode = fill_mode;
                 let cell_height = Literal::i32_unsuffixed(fts.cell_height);
                 let lower_bound = Literal::i32_unsuffixed(fts.lower_bound);
                 quote! {{
@@ -497,9 +509,13 @@ impl TranspileContext {
                     } else {
                         quote! { 0.0 }
                     }
-                } else if self.fill_mode && self.blended_noise_refs.contains(&r.id) {
+                } else if self.fill_mode
+                    && (self.blended_noise_refs.contains(&r.id)
+                        || self.unshifted_noise_refs.contains(&r.id))
+                {
                     // In fill mode, inline references that contain BlendedNoise
-                    // so the precomputed blended_noise_value is used.
+                    // so the precomputed blended_noise_value is used, or an unshifted
+                    // noise so it is sampled in bulk order.
                     if let Some(ref_df) = input.registry.get(&r.id) {
                         self.gen_expr(ref_df, input, is_flat)
                     } else {
@@ -754,18 +770,24 @@ impl TranspileContext {
                 let field = noise_field_ident(&n.noise_id);
                 let xz_scale = Literal::f64_unsuffixed(n.xz_scale);
                 let y_scale = Literal::f64_unsuffixed(n.y_scale);
-                if n.y_scale == 0.0 {
-                    quote! {
+                // The chunk fill samples in vanilla's bulk coordinate order.
+                match (self.fill_mode, n.y_scale == 0.0) {
+                    (true, true) => quote! {
+                        #f32x::splat(noises.#field.get_value_xz_bulk(x, z, #xz_scale))
+                    },
+                    (true, false) => quote! {
+                        noises.#field.get_value_y_simd_bulk(x, ys, z, #xz_scale, #y_scale)
+                    },
+                    (false, true) => quote! {
                         #f32x::splat(noises.#field.get_value_xz(x * #xz_scale, z * #xz_scale))
-                    }
-                } else {
-                    quote! {
+                    },
+                    (false, false) => quote! {
                         noises.#field.get_value_y_simd(
                             x * #xz_scale,
                             ys * #f64x::splat(#y_scale),
                             z * #xz_scale,
                         )
-                    }
+                    },
                 }
             }
 
@@ -792,10 +814,12 @@ impl TranspileContext {
             }
 
             DensityFunction::Reference(r) => {
-                // Both interpolated params and fill-mode blended-noise refs inline
+                // Both interpolated params and fill-mode blended/unshifted-noise refs inline
                 // the referenced function's SIMD expression directly.
                 if (self.interpolated_param_mode && self.interpolated_refs.contains(&r.id))
-                    || (self.fill_mode && self.blended_noise_refs.contains(&r.id))
+                    || (self.fill_mode
+                        && (self.blended_noise_refs.contains(&r.id)
+                            || self.unshifted_noise_refs.contains(&r.id)))
                 {
                     if let Some(ref_df) = input.registry.get(&r.id) {
                         self.gen_expr_simd(ref_df, input, is_flat)

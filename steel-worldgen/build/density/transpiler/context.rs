@@ -55,6 +55,9 @@ pub(super) struct TranspileContext {
     /// Named functions that (transitively) contain `BlendedNoise`.
     /// In fill mode, these are inlined so the precomputed value is used.
     pub(super) blended_noise_refs: BTreeSet<String>,
+    /// Named functions that (transitively) contain an unshifted `Noise`.
+    /// In fill mode, these are inlined so the noise is sampled in bulk order.
+    pub(super) unshifted_noise_refs: BTreeSet<String>,
     /// CSE bindings keyed by structural hash. When a subexpression has been
     /// hoisted into a `let` binding, subsequent occurrences emit the variable
     /// name instead of recomputing. Covers `Reference`, `Noise`,
@@ -95,6 +98,7 @@ impl TranspileContext {
             interpolated_param_counter: 0,
             interpolated_refs: BTreeSet::new(),
             blended_noise_refs: BTreeSet::new(),
+            unshifted_noise_refs: BTreeSet::new(),
             cse_bindings: FxHashMap::default(),
             cse_bindings_simd: FxHashMap::default(),
             cse_counter: 0,

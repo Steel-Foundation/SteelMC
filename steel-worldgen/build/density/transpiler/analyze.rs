@@ -12,7 +12,7 @@ use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::fingerprint::collect_inline_flat_noises;
 use super::graph::{
-    collect_references, has_blended_noise, has_interpolated_markers, is_flat_cached,
+    collect_references, contains_function, has_interpolated_markers, is_flat_cached,
     unwrap_markers, uses_y,
 };
 
@@ -163,11 +163,30 @@ impl TranspileContext {
                     self.interpolated_refs.insert(name.clone());
                 }
                 let mut visited = BTreeSet::new();
-                if has_blended_noise(df, &input.registry, &mut visited) {
+                if contains_function(df, &input.registry, &mut visited, |df| {
+                    matches!(df, DensityFunction::BlendedNoise(_))
+                }) {
                     self.blended_noise_refs.insert(name.clone());
+                }
+                let mut visited = BTreeSet::new();
+                if contains_function(df, &input.registry, &mut visited, |df| {
+                    matches!(df, DensityFunction::Noise(_))
+                }) {
+                    self.unshifted_noise_refs.insert(name.clone());
                 }
             }
         }
+
+        // The column cache evaluates flat-cached functions in point order, so none may hold
+        // an unshifted noise that vanilla samples in bulk.
+        let flat_with_noise: Vec<_> = self
+            .flat_cached
+            .intersection(&self.unshifted_noise_refs)
+            .collect();
+        assert!(
+            flat_with_noise.is_empty(),
+            "flat-cached functions contain unshifted noise: {flat_with_noise:?}"
+        );
 
         self.topo_order = self.topological_sort(input);
     }

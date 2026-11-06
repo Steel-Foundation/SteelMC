@@ -278,45 +278,54 @@ pub(super) fn collect_interpolated_spline_walk(
     }
 }
 
-/// Check if a density function tree transitively contains `BlendedNoise`.
-pub(super) fn has_blended_noise(
+/// Check if a density function tree transitively contains a node matching `is_target`.
+pub(super) fn contains_function(
     df: &DensityFunction,
     registry: &BTreeMap<String, DensityFunction>,
     visited: &mut BTreeSet<String>,
+    is_target: fn(&DensityFunction) -> bool,
 ) -> bool {
+    if is_target(df) {
+        return true;
+    }
     match df {
-        DensityFunction::BlendedNoise(_) => true,
         DensityFunction::TwoArgumentSimple(t) => {
-            has_blended_noise(&t.argument1, registry, visited)
-                || has_blended_noise(&t.argument2, registry, visited)
+            contains_function(&t.argument1, registry, visited, is_target)
+                || contains_function(&t.argument2, registry, visited, is_target)
         }
-        DensityFunction::Mapped(m) => has_blended_noise(&m.input, registry, visited),
-        DensityFunction::Clamp(c) => has_blended_noise(&c.input, registry, visited),
-        DensityFunction::Marker(m) => has_blended_noise(&m.wrapped, registry, visited),
+        DensityFunction::Mapped(m) => contains_function(&m.input, registry, visited, is_target),
+        DensityFunction::Clamp(c) => contains_function(&c.input, registry, visited, is_target),
+        DensityFunction::Marker(m) => contains_function(&m.wrapped, registry, visited, is_target),
         DensityFunction::RangeChoice(rc) => {
-            has_blended_noise(&rc.input, registry, visited)
-                || has_blended_noise(&rc.when_in_range, registry, visited)
-                || has_blended_noise(&rc.when_out_of_range, registry, visited)
+            contains_function(&rc.input, registry, visited, is_target)
+                || contains_function(&rc.when_in_range, registry, visited, is_target)
+                || contains_function(&rc.when_out_of_range, registry, visited, is_target)
         }
         DensityFunction::IntervalSelect(interval) => {
-            has_blended_noise(&interval.input, registry, visited)
+            contains_function(&interval.input, registry, visited, is_target)
                 || interval
                     .functions
                     .iter()
-                    .any(|function| has_blended_noise(function, registry, visited))
+                    .any(|function| contains_function(function, registry, visited, is_target))
         }
-        DensityFunction::BlendDensity(bd) => has_blended_noise(&bd.input, registry, visited),
-        DensityFunction::WeirdScaledSampler(ws) => has_blended_noise(&ws.input, registry, visited),
+        DensityFunction::BlendDensity(bd) => {
+            contains_function(&bd.input, registry, visited, is_target)
+        }
+        DensityFunction::WeirdScaledSampler(ws) => {
+            contains_function(&ws.input, registry, visited, is_target)
+        }
         DensityFunction::ShiftedNoise(sn) => {
-            has_blended_noise(&sn.shift_x, registry, visited)
-                || has_blended_noise(&sn.shift_y, registry, visited)
-                || has_blended_noise(&sn.shift_z, registry, visited)
+            contains_function(&sn.shift_x, registry, visited, is_target)
+                || contains_function(&sn.shift_y, registry, visited, is_target)
+                || contains_function(&sn.shift_z, registry, visited, is_target)
         }
         DensityFunction::FindTopSurface(fts) => {
-            has_blended_noise(&fts.density, registry, visited)
-                || has_blended_noise(&fts.upper_bound, registry, visited)
+            contains_function(&fts.density, registry, visited, is_target)
+                || contains_function(&fts.upper_bound, registry, visited, is_target)
         }
-        DensityFunction::Spline(s) => has_blended_noise_spline(&s.spline, registry, visited),
+        DensityFunction::Spline(s) => {
+            contains_function_spline(&s.spline, registry, visited, is_target)
+        }
         DensityFunction::Reference(r) => {
             if visited.contains(&r.id) {
                 return false;
@@ -324,23 +333,24 @@ pub(super) fn has_blended_noise(
             visited.insert(r.id.clone());
             registry
                 .get(&r.id)
-                .is_some_and(|ref_df| has_blended_noise(ref_df, registry, visited))
+                .is_some_and(|ref_df| contains_function(ref_df, registry, visited, is_target))
         }
         _ => false,
     }
 }
 
-pub(super) fn has_blended_noise_spline(
+fn contains_function_spline(
     spline: &CubicSpline,
     registry: &BTreeMap<String, DensityFunction>,
     visited: &mut BTreeSet<String>,
+    is_target: fn(&DensityFunction) -> bool,
 ) -> bool {
-    if has_blended_noise(&spline.coordinate, registry, visited) {
+    if contains_function(&spline.coordinate, registry, visited, is_target) {
         return true;
     }
     spline.points.iter().any(|p| {
         if let SplineValue::Spline(nested) = &p.value {
-            has_blended_noise_spline(nested, registry, visited)
+            contains_function_spline(nested, registry, visited, is_target)
         } else {
             false
         }
