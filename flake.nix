@@ -92,6 +92,7 @@
                 cp -r inner/data/minecraft "$out/builtin_datapacks/minecraft"
                 cp inner/assets/minecraft/lang/en_us.json "$out/en_us.json"
                 cp inner/assets/minecraft/lang/deprecated.json "$out/deprecated.json"
+                cp inner/version.json "$out/version.json"
 
                 chmod -R u+w "$out"
                 printf '%s' "${assets.minecraftVersion}" > "$out/builtin_datapacks/minecraft/.version"
@@ -101,13 +102,32 @@
             pname = "steel";
             inherit (assets) version;
 
-            src = ./.;
+            # Only cargo inputs, so docs/CI/Nix edits don't trigger a full rebuild.
+            # A new workspace crate must be added here; cargo fails loudly otherwise.
+            src = lib.fileset.toSource {
+              root = ./.;
+              fileset = lib.fileset.unions [
+                ./Cargo.toml
+                ./Cargo.lock
+                ./.cargo
+                ./package-content
+                ./steel
+                ./steel-core
+                ./steel-crypto
+                ./steel-flint
+                ./steel-login
+                ./steel-macros
+                ./steel-math
+                ./steel-protocol
+                ./steel-registry
+                ./steel-utils
+                ./steel-worldgen
+              ];
+            };
 
             cargoLock = {
               lockFile = ./Cargo.lock;
-              outputHashes = {
-                "text_components-0.1.7" = "sha256-cGVxp7QX9qYuPl/NW+ya889cCmj5D/bV7tW5SjzBohs=";
-              };
+              allowBuiltinFetchGit = true;
             };
 
             nativeBuildInputs = [ pkgs.lld ];
@@ -156,6 +176,7 @@
 
             system.pkgs.prek
             system.pkgs.typos
+            system.pkgs.ast-grep
 
             system.pkgs.git
             system.pkgs.jdk25
