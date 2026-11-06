@@ -14,7 +14,6 @@ use steel_utils::types::InteractionHand;
 use crate::behavior::InteractionResult;
 use crate::entity::{
     AgeableMobGroupData, ENTITIES, Entity, EntitySpawnReason, Mob, SharedEntity, SpawnGroupData,
-    next_entity_id,
 };
 use crate::player::Player;
 use crate::world::World;
@@ -303,7 +302,7 @@ pub trait AgeableMob: Mob {
     fn create_breed_offspring(&self, world: &Arc<World>) -> Option<SharedEntity> {
         ENTITIES.create(
             self.entity_type(),
-            next_entity_id(),
+            ENTITIES.reserve_id(self.entity_type()).first(),
             self.position(),
             Arc::downgrade(world),
         )

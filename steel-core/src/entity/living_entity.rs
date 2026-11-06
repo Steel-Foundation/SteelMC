@@ -1038,6 +1038,8 @@ pub trait LivingEntity: Entity {
         if self.is_removed() {
             return;
         }
+        // Vanilla checks `!this.dead` and sets it in `handleKillingBlow`; worlds tick in
+        // parallel here, so the check and set stay one atomic step.
         if !self.living_base().mark_death_processed() {
             return;
         }
@@ -2022,8 +2024,11 @@ pub trait LivingEntity: Entity {
     /// The default `Entity::tick` dispatches living entities here.
     fn tick_living_entity(&self, entity: &SharedEntity) {
         self.default_tick();
+        self.living_base().decrement_hurt_time();
         self.living_base().decrement_invulnerable_time();
 
+        // As in vanilla, dying only stops the AI (`isImmobile` skips `serverAiStep`);
+        // movement keeps running because death animations depend on it.
         if self.is_dead_or_dying() {
             self.tick_death();
         }
