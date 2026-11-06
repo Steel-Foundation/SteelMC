@@ -3,6 +3,7 @@ mod broadcasting;
 /// Tick-polled server jobs.
 pub mod jobs;
 mod packet_processor;
+mod perf;
 mod pregen;
 /// The registry cache for the server.
 pub mod registry_cache;
@@ -78,6 +79,7 @@ use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
 use crossbeam::queue::SegQueue;
 use glam::DVec3;
+use perf::PerfRecorder;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use rustc_hash::FxHashMap;
 use std::sync::atomic::AtomicI32;
@@ -249,6 +251,7 @@ pub async fn test_server_with_worlds_and_config(
         player_admission_changed: Notify::new(),
         server_tick_changed: Notify::new(),
         tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
+        perf: PerfRecorder::new(),
         scoreboards,
         command_storage,
         command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
@@ -485,6 +488,8 @@ pub struct Server {
     server_tick_changed: Notify,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
+    /// Tick-phase recorder behind `/perf`.
+    pub(crate) perf: PerfRecorder,
     /// The number of minutes required for a player to be idle for them to be kicked (timed out) from the server.
     /// If this is equal to 0, no kicking will happen.
     pub player_idle_timeout: AtomicI32,
@@ -831,6 +836,7 @@ impl Server {
             server_tick_changed: Notify::new(),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
+            perf: PerfRecorder::new(),
             player_idle_timeout: AtomicI32::new(0),
             scoreboards,
             command_storage,
