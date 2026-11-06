@@ -23,7 +23,10 @@ use super::bounds::compute_bounds;
 use super::context::TranspileContext;
 use super::fingerprint::{collect_expensive_subexprs, fingerprint, is_cse_candidate};
 use super::graph::collect_interpolated_inners;
-use super::naming::{named_fn_field_ident, named_fn_ident, named_fn_ident_simd, noise_field_ident};
+use super::naming::{
+    named_fn_field_ident, named_fn_ident, named_fn_ident_fill, named_fn_ident_fill_simd,
+    named_fn_ident_simd, noise_field_ident,
+};
 
 impl TranspileContext {
     #[expect(
@@ -73,6 +76,7 @@ impl TranspileContext {
             }
 
             DensityFunction::Noise(n) => {
+                self.assert_not_point_noise_in_combine(true, &n.noise_id);
                 // Y-independent noise in the 3D fill: read from the bulk-order column cache
                 if self.fill_mode && !is_flat && n.y_scale == 0.0 {
                     let fp = fingerprint(df);
@@ -464,20 +468,15 @@ impl TranspileContext {
 
             DensityFunction::Slice(s) => {
                 let coord = Literal::f64_suffixed(f64::from(s.coordinate));
-                match s.axis {
-                    Axis::X => {
-                        let inner = self.gen_expr(&s.input, input, is_flat);
-                        quote! {{ let x = #coord; #inner }}
-                    }
-                    Axis::Z => {
-                        let inner = self.gen_expr(&s.input, input, is_flat);
-                        quote! {{ let z = #coord; #inner }}
-                    }
-                    Axis::Y => {
-                        let inner = self.gen_expr(&s.input, input, false);
-                        quote! {{ let y = #coord; #inner }}
-                    }
-                }
+                // Column-cache reads inside an X or Z slice would use the unsliced column.
+                // Vanilla only slices Y.
+                assert!(
+                    matches!(s.axis, Axis::Y),
+                    "unsupported slice on the {:?} axis",
+                    s.axis
+                );
+                let inner = self.gen_expr(&s.input, input, false);
+                quote! {{ let y = #coord; #inner }}
             }
 
             DensityFunction::DistanceToPoint(d) => {
@@ -512,8 +511,9 @@ impl TranspileContext {
                     } else {
                         quote! { 0.0 }
                     }
-                } else if self.fill_mode && self.fill_inlined_refs.contains(&r.id) {
-                    // See `fill_inlined_refs`.
+                } else if self.fill_mode && self.blended_noise_refs.contains(&r.id) {
+                    // In fill mode, inline references that contain BlendedNoise
+                    // so the precomputed blended_noise_value is used.
                     if let Some(ref_df) = input.registry.get(&r.id) {
                         self.gen_expr(ref_df, input, is_flat)
                     } else {
@@ -524,8 +524,15 @@ impl TranspileContext {
                     let field = named_fn_field_ident(&r.id);
                     quote! { cache.#field }
                 } else {
-                    // 3D named function — call it
-                    let fn_name = named_fn_ident(&r.id);
+                    self.assert_not_point_noise_in_combine(
+                        self.unshifted_noise_refs.contains(&r.id),
+                        &r.id,
+                    );
+                    let fn_name = if self.fill_mode && self.unshifted_noise_refs.contains(&r.id) {
+                        named_fn_ident_fill(&r.id)
+                    } else {
+                        named_fn_ident(&r.id)
+                    };
                     quote! { #fn_name(noises, cache, x, y, z) }
                 }
             }
@@ -542,6 +549,15 @@ impl TranspileContext {
     ///
     /// Math is bit-identical to [`spline_eval::evaluate_spline`] so vanilla
     /// determinism is preserved (same operation order, same intermediate types).
+    /// Vanilla samples the combine stage in bulk too, but it is generated in point order, so
+    /// it must not reach an unshifted noise. 26.3 keeps them all under interpolated markers.
+    fn assert_not_point_noise_in_combine(&self, reaches_noise: bool, via: &str) {
+        assert!(
+            !(self.interpolated_param_mode && reaches_noise),
+            "combine stage reaches unshifted noise through {via}"
+        );
+    }
+
     pub(super) fn gen_spline_expr(
         &mut self,
         spline: &CubicSpline,
@@ -756,6 +772,7 @@ impl TranspileContext {
             }
 
             DensityFunction::Noise(n) => {
+                self.assert_not_point_noise_in_combine(true, &n.noise_id);
                 // Y-independent noise in the 3D fill: use the bulk-order cached
                 // scalar value, splatted across the lanes.
                 if self.fill_mode && n.y_scale == 0.0 {
@@ -812,10 +829,10 @@ impl TranspileContext {
             }
 
             DensityFunction::Reference(r) => {
-                // Both interpolated params and fill-mode inlined refs inline
+                // Both interpolated params and fill-mode blended-noise refs inline
                 // the referenced function's SIMD expression directly.
                 if (self.interpolated_param_mode && self.interpolated_refs.contains(&r.id))
-                    || (self.fill_mode && self.fill_inlined_refs.contains(&r.id))
+                    || (self.fill_mode && self.blended_noise_refs.contains(&r.id))
                 {
                     if let Some(ref_df) = input.registry.get(&r.id) {
                         self.gen_expr_simd(ref_df, input, is_flat)
@@ -826,7 +843,15 @@ impl TranspileContext {
                     let field = named_fn_field_ident(&r.id);
                     quote! { #f32x::splat(cache.#field) }
                 } else {
-                    let fn_name = named_fn_ident_simd(&r.id);
+                    self.assert_not_point_noise_in_combine(
+                        self.unshifted_noise_refs.contains(&r.id),
+                        &r.id,
+                    );
+                    let fn_name = if self.fill_mode && self.unshifted_noise_refs.contains(&r.id) {
+                        named_fn_ident_fill_simd(&r.id)
+                    } else {
+                        named_fn_ident_simd(&r.id)
+                    };
                     quote! { #fn_name::<N>(noises, cache, x, ys, z) }
                 }
             }

@@ -161,11 +161,12 @@ impl TranspileContext {
                 if contains(is_interpolated_marker) {
                     self.interpolated_refs.insert(name.clone());
                 }
+                if contains(|df| matches!(df, DensityFunction::BlendedNoise(_))) {
+                    self.blended_noise_refs.insert(name.clone());
+                }
                 let has_unshifted_noise = contains(|df| matches!(df, DensityFunction::Noise(_)));
-                if has_unshifted_noise
-                    || contains(|df| matches!(df, DensityFunction::BlendedNoise(_)))
-                {
-                    self.fill_inlined_refs.insert(name.clone());
+                if has_unshifted_noise {
+                    self.unshifted_noise_refs.insert(name.clone());
                 }
                 // The column cache evaluates flat-cached functions in point order, so none
                 // may hold an unshifted noise that vanilla samples in bulk.
