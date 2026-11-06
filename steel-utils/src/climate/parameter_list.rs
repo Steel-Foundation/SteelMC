@@ -260,6 +260,13 @@ struct FlatNode {
 /// Index of the offset axis in a parameter array.
 const OFFSET_AXIS: usize = PARAMETER_COUNT - 1;
 
+/// The axes the tree search compares. A `TargetPoint` has no offset (it is always 0), so
+/// each node's offset distance is precomputed as `FlatNode::offset_term`.
+fn search_axes(target: &TargetPoint) -> [i64; OFFSET_AXIS] {
+    let axes = target.to_parameter_array();
+    array::from_fn(|axis| axes[axis])
+}
+
 impl FlatNode {
     fn new(
         parameter_space: &[Parameter; PARAMETER_COUNT],
@@ -280,8 +287,7 @@ impl FlatNode {
     ///
     /// Every term is non-negative, so the sum stops once it reaches `bound`.
     #[inline]
-    fn distance_below(&self, target: &[i64; PARAMETER_COUNT], bound: i64) -> Option<i64> {
-        debug_assert_eq!(target[OFFSET_AXIS], 0);
+    fn distance_below(&self, target: &[i64; OFFSET_AXIS], bound: i64) -> Option<i64> {
         let mut d = self.offset_term;
         for i in 0..OFFSET_AXIS {
             if d >= bound {
@@ -357,7 +363,7 @@ fn flatten_tree(root: RTreeNode) -> Vec<FlatNode> {
 fn search_nearest(
     nodes: &[FlatNode],
     node: &FlatNode,
-    target: &[i64; PARAMETER_COUNT],
+    target: &[i64; OFFSET_AXIS],
     best_dist: &mut i64,
     best_idx: &mut Option<u32>,
 ) {
@@ -446,7 +452,6 @@ impl<T> ParameterList<T> {
     /// Panics if the R-Tree search fails to find any matching value.
     #[must_use]
     pub fn find_value(&self, target: &TargetPoint) -> &T {
-        let target_array = target.to_parameter_array();
         let root = &self.nodes[0];
         if root.is_leaf() {
             return &self.values[root.value_index as usize].1;
@@ -456,7 +461,7 @@ impl<T> ParameterList<T> {
         search_nearest(
             &self.nodes,
             root,
-            &target_array,
+            &search_axes(target),
             &mut best_dist,
             &mut best_idx,
         );
@@ -502,7 +507,7 @@ impl<T> ParameterList<T> {
         search_nearest(
             &self.nodes,
             root,
-            &target_array,
+            &search_axes(target),
             &mut best_dist,
             &mut best_idx,
         );

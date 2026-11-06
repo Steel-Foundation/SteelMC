@@ -11,7 +11,10 @@ use crate::density::{CubicSpline, DensityFunction, MarkerType, SplineValue};
 use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::fingerprint::collect_inline_flat_noises;
-use super::graph::{collect_references, contains_function, is_flat_cached, unwrap_markers, uses_y};
+use super::graph::{
+    collect_references, contains_function, is_flat_cached, is_interpolated_marker, unwrap_markers,
+    uses_y,
+};
 
 /// The router entries a biome climate `TargetPoint` is built from.
 pub(super) const CLIMATE_ROUTERS: [&str; 6] = [
@@ -187,10 +190,19 @@ impl TranspileContext {
             }
         }
 
+        self.collect_climate_names(input);
+        self.topo_order = self.topological_sort(input);
+    }
+
+    /// Fills `climate_names` with the named functions the climate routers reach.
+    fn collect_climate_names(&mut self, input: &TranspilerInput) {
         let mut pending: Vec<String> = CLIMATE_ROUTERS
             .iter()
-            .filter_map(|router| input.router_entries.get(*router))
-            .flat_map(collect_references)
+            .flat_map(|router| {
+                let df = input.router_entries.get(*router);
+                assert!(df.is_some(), "missing climate router {router}");
+                df.into_iter().flat_map(collect_references)
+            })
             .collect();
         while let Some(name) = pending.pop() {
             if let Some(df) = input.registry.get(&name)
@@ -199,8 +211,6 @@ impl TranspileContext {
                 pending.extend(collect_references(df));
             }
         }
-
-        self.topo_order = self.topological_sort(input);
     }
 
     pub(super) fn walk_df(&mut self, df: &DensityFunction, input: &TranspilerInput) {
@@ -331,8 +341,4 @@ impl TranspileContext {
         }
         order.push(name.to_string());
     }
-}
-
-fn is_interpolated_marker(df: &DensityFunction) -> bool {
-    matches!(df, DensityFunction::Marker(m) if m.kind == MarkerType::Interpolated)
 }

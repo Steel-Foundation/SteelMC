@@ -14,6 +14,16 @@ use super::naming::{
     router_cache_field_ident, router_compute_fn_ident, router_grid_field_ident,
 };
 
+/// One column-cache value: its active field, its grid array and the expression that
+/// computes it from `noises`, `self` and `x`/`z`.
+struct CachedValue {
+    active: Ident,
+    grid: Ident,
+    compute: TokenStream,
+    /// Whether a climate router reads it.
+    climate: bool,
+}
+
 impl TranspileContext {
     pub(super) fn gen_noises_struct(&self) -> TokenStream {
         let fields: Vec<TokenStream> = self
@@ -168,262 +178,62 @@ impl TranspileContext {
         let grid_side_lit = Literal::i32_unsuffixed(grid_side);
         let grid_total_lit = Literal::usize_unsuffixed(grid_total);
 
-        let flat_names: Vec<&String> = self
-            .topo_order
-            .iter()
-            .filter(|n| self.flat_cached.contains(*n))
-            .collect();
+        let values = self.column_cache_values();
+        let climate: Vec<&CachedValue> = values.iter().filter(|v| v.climate).collect();
 
-        // Active-value fields (one f32 per flat-cached function)
-        let cache_fields: Vec<TokenStream> = flat_names
-            .iter()
-            .map(|name| {
-                let field = named_fn_field_ident(name);
-                quote! { pub #field: f32 }
-            })
-            .collect();
+        let active_fields = values.iter().map(|v| &v.active);
+        let grid_fields = values.iter().map(|v| &v.grid);
+        let active_defaults = active_fields.clone();
+        let grid_defaults = grid_fields.clone();
 
-        // Grid storage fields (fixed-size array per flat-cached function)
-        let grid_fields: Vec<TokenStream> = flat_names
-            .iter()
-            .map(|name| {
-                let field = grid_field_ident(name);
-                quote! { #field: [f32; #grid_total_lit] }
-            })
-            .collect();
-
-        // Compute statements for ensure() fallback path (same as before)
-        let ensure_stmts: Vec<TokenStream> = flat_names
-            .iter()
-            .map(|name| {
-                let field = named_fn_field_ident(name);
-                let compute_fn = named_fn_ident(name);
-                quote! {
-                    let val = #compute_fn(noises, &*self, x, z);
-                    self.#field = val;
-                }
-            })
-            .collect();
-
-        // Grid load statements: copy from grid[idx] into active fields
-        let grid_load_stmts: Vec<TokenStream> = flat_names
-            .iter()
-            .map(|name| {
-                let active = named_fn_field_ident(name);
-                let grid = grid_field_ident(name);
-                quote! { self.#active = self.#grid[idx]; }
-            })
-            .collect();
-
-        // Grid store statements: copy active field into grid[idx]
-        let grid_store_stmts: Vec<TokenStream> = flat_names
-            .iter()
-            .map(|name| {
-                let active = named_fn_field_ident(name);
-                let grid = grid_field_ident(name);
-                quote! { self.#grid[idx] = self.#active; }
-            })
-            .collect();
-
-        let default_fields: Vec<TokenStream> = flat_names
-            .iter()
-            .map(|name| {
-                let field = named_fn_field_ident(name);
-                quote! { #field: 0.0 }
-            })
-            .collect();
-
-        let grid_default_fields: Vec<TokenStream> = flat_names
-            .iter()
-            .map(|name| {
-                let field = grid_field_ident(name);
-                quote! { #field: [0.0; #grid_total_lit] }
-            })
-            .collect();
-
-        // Flat router entries
-        let router_fields: Vec<TokenStream> = self
-            .flat_routers
-            .iter()
-            .map(|name| {
-                let field = router_cache_field_ident(name);
-                quote! { pub #field: f32 }
-            })
-            .collect();
-
-        let router_grid_fields: Vec<TokenStream> = self
-            .flat_routers
-            .iter()
-            .map(|name| {
-                let field = router_grid_field_ident(name);
-                quote! { #field: [f32; #grid_total_lit] }
-            })
-            .collect();
-
-        let router_ensure_stmts: Vec<TokenStream> = self
-            .flat_routers
-            .iter()
-            .map(|name| {
-                let field = router_cache_field_ident(name);
-                let compute_fn = router_compute_fn_ident(name);
-                quote! {
-                    let val = #compute_fn(noises, &*self, x, z);
-                    self.#field = val;
-                }
-            })
-            .collect();
-
-        let router_grid_load_stmts: Vec<TokenStream> = self
-            .flat_routers
-            .iter()
-            .map(|name| {
-                let active = router_cache_field_ident(name);
-                let grid = router_grid_field_ident(name);
-                quote! { self.#active = self.#grid[idx]; }
-            })
-            .collect();
-
-        let router_grid_store_stmts: Vec<TokenStream> = self
-            .flat_routers
-            .iter()
-            .map(|name| {
-                let active = router_cache_field_ident(name);
-                let grid = router_grid_field_ident(name);
-                quote! { self.#grid[idx] = self.#active; }
-            })
-            .collect();
-
-        let router_default_fields: Vec<TokenStream> = self
-            .flat_routers
-            .iter()
-            .map(|name| {
-                let field = router_cache_field_ident(name);
-                quote! { #field: 0.0 }
-            })
-            .collect();
-
-        let router_grid_default_fields: Vec<TokenStream> = self
-            .flat_routers
-            .iter()
-            .map(|name| {
-                let field = router_grid_field_ident(name);
-                quote! { #field: [0.0; #grid_total_lit] }
-            })
-            .collect();
-
-        // Inline Y-independent noise cache
-        let inline_noise_fields: Vec<TokenStream> = self
-            .inline_flat_noises
-            .values()
-            .map(|(idx, _, _)| {
-                let field = format_ident!("inline_noise_{}", idx);
-                quote! { pub #field: f32 }
-            })
-            .collect();
-
-        let inline_noise_grid_fields: Vec<TokenStream> = self
-            .inline_flat_noises
-            .values()
-            .map(|(idx, _, _)| {
-                let field = format_ident!("grid_inline_noise_{}", idx);
-                quote! { #field: [f32; #grid_total_lit] }
-            })
-            .collect();
-
-        let inline_noise_ensure_stmts: Vec<TokenStream> = self
-            .inline_flat_noises
-            .values()
-            .map(|(idx, noise_id, xz_scale)| {
-                let field = format_ident!("inline_noise_{}", idx);
-                let noise_field = noise_field_ident(noise_id);
-                let scale = Literal::f64_unsuffixed(*xz_scale);
-                // Only the chunk fill reads these, so they use vanilla's bulk order.
-                quote! {
-                    self.#field = noises.#noise_field.get_value_xz_bulk(x, z, #scale);
-                }
-            })
-            .collect();
-
-        let inline_noise_grid_load_stmts: Vec<TokenStream> = self
-            .inline_flat_noises
-            .values()
-            .map(|(idx, _, _)| {
-                let active = format_ident!("inline_noise_{}", idx);
-                let grid = format_ident!("grid_inline_noise_{}", idx);
-                quote! { self.#active = self.#grid[idx]; }
-            })
-            .collect();
-
-        let inline_noise_grid_store_stmts: Vec<TokenStream> = self
-            .inline_flat_noises
-            .values()
-            .map(|(idx, _, _)| {
-                let active = format_ident!("inline_noise_{}", idx);
-                let grid = format_ident!("grid_inline_noise_{}", idx);
-                quote! { self.#grid[idx] = self.#active; }
-            })
-            .collect();
-
-        let inline_noise_default_fields: Vec<TokenStream> = self
-            .inline_flat_noises
-            .values()
-            .map(|(idx, _, _)| {
-                let field = format_ident!("inline_noise_{}", idx);
-                quote! { #field: 0.0 }
-            })
-            .collect();
-
-        let inline_noise_grid_default_fields: Vec<TokenStream> = self
-            .inline_flat_noises
-            .values()
-            .map(|(idx, _, _)| {
-                let field = format_ident!("grid_inline_noise_{}", idx);
-                quote! { #field: [0.0; #grid_total_lit] }
-            })
-            .collect();
-
-        // Climate-only subset, in the same order, for `ensure_climate` / `init_grid_climate`.
-        let climate_flat: Vec<&String> = flat_names
-            .iter()
-            .copied()
-            .filter(|name| self.climate_names.contains(*name))
-            .collect();
-        let climate_routers: Vec<&String> = self
-            .flat_routers
-            .iter()
-            .filter(|name| CLIMATE_ROUTERS.contains(&name.as_str()))
-            .collect();
-        let climate_ensure_stmts: Vec<TokenStream> = climate_flat
-            .iter()
-            .map(|name| {
-                let field = named_fn_field_ident(name);
-                let compute_fn = named_fn_ident(name);
-                quote! { self.#field = #compute_fn(noises, &*self, x, z); }
-            })
-            .chain(climate_routers.iter().map(|name| {
-                let field = router_cache_field_ident(name);
-                let compute_fn = router_compute_fn_ident(name);
-                quote! { self.#field = #compute_fn(noises, &*self, x, z); }
-            }))
-            .collect();
-        let climate_grid_pairs: Vec<(Ident, Ident)> = climate_flat
-            .iter()
-            .map(|name| (named_fn_field_ident(name), grid_field_ident(name)))
-            .chain(climate_routers.iter().map(|name| {
-                (
-                    router_cache_field_ident(name),
-                    router_grid_field_ident(name),
+        let compute = |values: &[&CachedValue]| -> Vec<TokenStream> {
+            values
+                .iter()
+                .map(
+                    |CachedValue {
+                         active, compute, ..
+                     }| quote! { self.#active = #compute; },
                 )
-            }))
-            .collect();
-        let climate_grid_store_stmts: Vec<TokenStream> = climate_grid_pairs
-            .iter()
-            .map(|(active, grid)| quote! { self.#grid[idx] = self.#active; })
-            .collect();
-        let climate_grid_load_stmts: Vec<TokenStream> = climate_grid_pairs
-            .iter()
-            .map(|(active, grid)| quote! { self.#active = self.#grid[idx]; })
-            .collect();
+                .collect()
+        };
+        let load = |values: &[&CachedValue]| -> Vec<TokenStream> {
+            values
+                .iter()
+                .map(|CachedValue { active, grid, .. }| quote! { self.#active = self.#grid[idx]; })
+                .collect()
+        };
+        // Computes each grid point in topological order, so dependent values read the
+        // active fields, then stores them into the grid.
+        let fill_grid = |values: &[&CachedValue]| {
+            let compute = compute(values);
+            let store = values
+                .iter()
+                .map(|CachedValue { active, grid, .. }| quote! { self.#grid[idx] = self.#active; });
+            quote! {
+                self.grid_first_quart_x = chunk_block_x >> 2;
+                self.grid_first_quart_z = chunk_block_z >> 2;
+                self.has_grid = true;
+                self.valid = false;
+                self.climate_valid = false;
+                for rel_z in 0..Self::GRID_SIDE {
+                    for rel_x in 0..Self::GRID_SIDE {
+                        let x = ((self.grid_first_quart_x + rel_x) << 2) as f64;
+                        let z = ((self.grid_first_quart_z + rel_z) << 2) as f64;
+                        let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
+                        #(#compute)*
+                        #(#store)*
+                    }
+                }
+            }
+        };
+
+        let all: Vec<&CachedValue> = values.iter().collect();
+        let fill_grid_all = fill_grid(&all);
+        let fill_grid_climate = fill_grid(&climate);
+        let compute_all = compute(&all);
+        let compute_climate = compute(&climate);
+        let load_all = load(&all);
+        let load_climate = load(&climate);
 
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
@@ -456,13 +266,9 @@ impl TranspileContext {
                 /// Whether the grid holds every field, not only the climate ones.
                 grid_is_full: bool,
                 // Active value fields (read by compute functions)
-                #(#cache_fields,)*
-                #(#router_fields,)*
-                #(#inline_noise_fields,)*
+                #(pub #active_fields: f32,)*
                 // Grid arrays (SoA layout, fixed-size per dimension)
-                #(#grid_fields,)*
-                #(#router_grid_fields,)*
-                #(#inline_noise_grid_fields),*
+                #(#grid_fields: [f32; #grid_total_lit],)*
             }
 
             impl #cache {
@@ -483,13 +289,20 @@ impl TranspileContext {
                         grid_first_quart_z: 0,
                         has_grid: false,
                         grid_is_full: false,
-                        #(#default_fields,)*
-                        #(#router_default_fields,)*
-                        #(#inline_noise_default_fields,)*
-                        #(#grid_default_fields,)*
-                        #(#router_grid_default_fields,)*
-                        #(#inline_noise_grid_default_fields),*
+                        #(#active_defaults: 0.0,)*
+                        #(#grid_defaults: [0.0; #grid_total_lit],)*
                     }
+                }
+
+                /// The grid slot holding `(x, z)`, if it is a grid point.
+                fn grid_index(&self, x: i32, z: i32) -> Option<usize> {
+                    let rel_x = (x >> 2) - self.grid_first_quart_x;
+                    let rel_z = (z >> 2) - self.grid_first_quart_z;
+                    let on_grid = self.has_grid
+                        && x & 3 == 0 && z & 3 == 0
+                        && (0..Self::GRID_SIDE).contains(&rel_x)
+                        && (0..Self::GRID_SIDE).contains(&rel_z);
+                    on_grid.then(|| (rel_z * Self::GRID_SIDE + rel_x) as usize)
                 }
 
                 /// Pre-compute flat-cached values for all quart positions in a chunk.
@@ -499,31 +312,8 @@ impl TranspileContext {
                 /// coordinates.
                 pub fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32,
                                  noises: &#noises) {
-                    self.grid_first_quart_x = chunk_block_x >> 2;
-                    self.grid_first_quart_z = chunk_block_z >> 2;
-                    self.has_grid = true;
                     self.grid_is_full = true;
-                    self.valid = false;
-                    self.climate_valid = false;
-
-                    // Pre-compute all grid positions in topological order.
-                    // For each position, write to active fields first (so
-                    // dependent compute functions can read them), then copy
-                    // into the grid arrays.
-                    for rel_z in 0..Self::GRID_SIDE {
-                        for rel_x in 0..Self::GRID_SIDE {
-                            let x = ((self.grid_first_quart_x + rel_x) << 2) as f64;
-                            let z = ((self.grid_first_quart_z + rel_z) << 2) as f64;
-                            let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
-
-                            #(#ensure_stmts)*
-                            #(#grid_store_stmts)*
-                            #(#router_ensure_stmts)*
-                            #(#router_grid_store_stmts)*
-                            #(#inline_noise_ensure_stmts)*
-                            #(#inline_noise_grid_store_stmts)*
-                        }
-                    }
+                    #fill_grid_all
                 }
 
                 /// Ensure the cache is populated for the given `(x, z)` block coordinates.
@@ -533,84 +323,28 @@ impl TranspileContext {
                 pub fn ensure(&mut self, x: i32, z: i32, noises: &#noises) {
                     self.x = x;
                     self.z = z;
-
-                    let quart_x = x >> 2;
-                    let quart_z = z >> 2;
-
-                    if self.has_grid && self.grid_is_full {
-                        let rel_x = quart_x - self.grid_first_quart_x;
-                        let rel_z = quart_z - self.grid_first_quart_z;
-                        if x & 3 == 0 && z & 3 == 0
-                            && rel_x >= 0 && rel_z >= 0
-                            && rel_x < Self::GRID_SIDE
-                            && rel_z < Self::GRID_SIDE
-                        {
-                            // In-bounds: load from grid
-                            let eval_x = quart_x << 2;
-                            let eval_z = quart_z << 2;
-                            if self.valid && self.qx == eval_x && self.qz == eval_z {
-                                return;
-                            }
-                            let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
-                            #(#grid_load_stmts)*
-                            #(#router_grid_load_stmts)*
-                            #(#inline_noise_grid_load_stmts)*
-                            self.qx = eval_x;
-                            self.qz = eval_z;
-                            self.valid = true;
-                            self.climate_valid = true;
-                            return;
-                        }
-                        // Non-grid position: compute on the fly at exact coordinates.
-                        if self.valid && self.qx == x && self.qz == z {
-                            return;
-                        }
-                        self.qx = x;
-                        self.qz = z;
-                        let x = x as f64;
-                        let z = z as f64;
-                        #(#ensure_stmts)*
-                        #(#router_ensure_stmts)*
-                        #(#inline_noise_ensure_stmts)*
-                        self.valid = true;
-                        self.climate_valid = true;
-                        return;
-                    }
-
-                    // No grid: compute lazily at exact coordinates.
                     if self.valid && self.qx == x && self.qz == z {
                         return;
                     }
                     self.qx = x;
                     self.qz = z;
-                    let x = x as f64;
-                    let z = z as f64;
-                    #(#ensure_stmts)*
-                    #(#router_ensure_stmts)*
-                    #(#inline_noise_ensure_stmts)*
                     self.valid = true;
                     self.climate_valid = true;
+                    if self.grid_is_full && let Some(idx) = self.grid_index(x, z) {
+                        #(#load_all)*
+                        return;
+                    }
+                    let x = x as f64;
+                    let z = z as f64;
+                    #(#compute_all)*
                 }
 
                 /// [`Self::init_grid`] for the climate fields only. A later [`Self::ensure`]
                 /// recomputes the other fields instead of reading the partial grid.
                 pub fn init_grid_climate(&mut self, chunk_block_x: i32, chunk_block_z: i32,
                                          noises: &#noises) {
-                    self.grid_first_quart_x = chunk_block_x >> 2;
-                    self.grid_first_quart_z = chunk_block_z >> 2;
-                    self.has_grid = true;
                     self.grid_is_full = false;
-                    self.valid = false;
-                    self.climate_valid = false;
-                    for rel_z in 0..Self::GRID_SIDE {
-                        for rel_x in 0..Self::GRID_SIDE {
-                            let x = ((self.grid_first_quart_x + rel_x) << 2) as f64;
-                            let z = ((self.grid_first_quart_z + rel_z) << 2) as f64;
-                            let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
-                            #(#climate_ensure_stmts)*
-                            #(#climate_grid_store_stmts)*
-                        }
-                    }
+                    #fill_grid_climate
                 }
 
                 /// [`Self::ensure`] for the fields the climate routers read. Leaves the other
@@ -618,15 +352,6 @@ impl TranspileContext {
                 pub fn ensure_climate(&mut self, x: i32, z: i32, noises: &#noises) {
                     self.x = x;
                     self.z = z;
-                    let quart_x = x >> 2;
-                    let quart_z = z >> 2;
-                    let rel_x = quart_x - self.grid_first_quart_x;
-                    let rel_z = quart_z - self.grid_first_quart_z;
-                    let in_grid = self.has_grid
-                        && x & 3 == 0 && z & 3 == 0
-                        && rel_x >= 0 && rel_z >= 0
-                        && rel_x < Self::GRID_SIDE
-                        && rel_z < Self::GRID_SIDE;
                     if self.climate_valid && self.qx == x && self.qz == z {
                         return;
                     }
@@ -634,17 +359,58 @@ impl TranspileContext {
                     self.qz = z;
                     self.valid = false;
                     self.climate_valid = true;
-                    if in_grid {
-                        let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
-                        #(#climate_grid_load_stmts)*
+                    if let Some(idx) = self.grid_index(x, z) {
+                        #(#load_climate)*
                         return;
                     }
                     let x = x as f64;
                     let z = z as f64;
-                    #(#climate_ensure_stmts)*
+                    #(#compute_climate)*
                 }
             }
         }
+    }
+
+    /// Every column-cache value, in topological order within each kind: flat-cached
+    /// functions, then flat routers, then inline flat noises.
+    fn column_cache_values(&self) -> Vec<CachedValue> {
+        let functions = self
+            .topo_order
+            .iter()
+            .filter(|name| self.flat_cached.contains(*name))
+            .map(|name| {
+                let compute_fn = named_fn_ident(name);
+                CachedValue {
+                    active: named_fn_field_ident(name),
+                    grid: grid_field_ident(name),
+                    compute: quote! { #compute_fn(noises, &*self, x, z) },
+                    climate: self.climate_names.contains(name),
+                }
+            });
+        let routers = self.flat_routers.iter().map(|name| {
+            let compute_fn = router_compute_fn_ident(name);
+            CachedValue {
+                active: router_cache_field_ident(name),
+                grid: router_grid_field_ident(name),
+                compute: quote! { #compute_fn(noises, &*self, x, z) },
+                climate: CLIMATE_ROUTERS.contains(&name.as_str()),
+            }
+        });
+        let inline_noises = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, noise_id, xz_scale)| {
+                let noise_field = noise_field_ident(noise_id);
+                let scale = Literal::f64_unsuffixed(*xz_scale);
+                CachedValue {
+                    active: format_ident!("inline_noise_{}", idx),
+                    grid: format_ident!("grid_inline_noise_{}", idx),
+                    // Only the chunk fill reads these, so they use vanilla's bulk order.
+                    compute: quote! { noises.#noise_field.get_value_xz_bulk(x, z, #scale) },
+                    climate: false,
+                }
+            });
+        functions.chain(routers).chain(inline_noises).collect()
     }
 
     /// Generate the function parameter list for a density function.

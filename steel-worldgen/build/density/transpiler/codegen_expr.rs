@@ -22,7 +22,7 @@ use super::TranspilerInput;
 use super::bounds::compute_bounds;
 use super::context::TranspileContext;
 use super::fingerprint::{collect_expensive_subexprs, fingerprint, is_cse_candidate};
-use super::graph::collect_interpolated_inners;
+use super::graph::{collect_interpolated_inners, contains_function, is_interpolated_marker};
 use super::naming::{
     named_fn_field_ident, named_fn_ident, named_fn_ident_fill, named_fn_ident_fill_simd,
     named_fn_ident_simd, noise_field_ident,
@@ -438,6 +438,16 @@ impl TranspileContext {
                 // density uses y — generate with is_flat=false so it references our loop var.
                 // Vanilla probes it with `sampleValue`, even inside the chunk fill.
                 // Outer CSE bindings hold values at the outer y, not at each probe y.
+                assert!(
+                    !(self.interpolated_param_mode
+                        && contains_function(
+                            &fts.density,
+                            &input.registry,
+                            &mut BTreeSet::new(),
+                            is_interpolated_marker
+                        )),
+                    "find_top_surface density would read interpolated values at the outer y"
+                );
                 let fill_mode = mem::replace(&mut self.fill_mode, false);
                 let cse_bindings = mem::take(&mut self.cse_bindings);
                 let density_expr = self.gen_expr(&fts.density, input, false);
@@ -529,6 +539,7 @@ impl TranspileContext {
                         &r.id,
                     );
                     let fn_name = if self.fill_mode && self.unshifted_noise_refs.contains(&r.id) {
+                        self.fill_refs.insert(r.id.clone());
                         named_fn_ident_fill(&r.id)
                     } else {
                         named_fn_ident(&r.id)
@@ -541,14 +552,6 @@ impl TranspileContext {
         quote! { (#expression) as f32 }
     }
 
-    /// Generate a spline evaluation expression.
-    /// Generate a spline expression as an inlined `if`/`else` chain over the
-    /// piecewise intervals — no closure indirection, no binary search, and only
-    /// the spline points the chosen interval needs are evaluated. Mirrors C2ME's
-    /// `SplineAstNode` flat codegen.
-    ///
-    /// Math is bit-identical to [`spline_eval::evaluate_spline`] so vanilla
-    /// determinism is preserved (same operation order, same intermediate types).
     /// Vanilla samples the combine stage in bulk too, but it is generated in point order, so
     /// it must not reach an unshifted noise. 26.3 keeps them all under interpolated markers.
     fn assert_not_point_noise_in_combine(&self, reaches_noise: bool, via: &str) {
@@ -558,6 +561,14 @@ impl TranspileContext {
         );
     }
 
+    /// Generate a spline evaluation expression.
+    /// Generate a spline expression as an inlined `if`/`else` chain over the
+    /// piecewise intervals — no closure indirection, no binary search, and only
+    /// the spline points the chosen interval needs are evaluated. Mirrors C2ME's
+    /// `SplineAstNode` flat codegen.
+    ///
+    /// Math is bit-identical to [`spline_eval::evaluate_spline`] so vanilla
+    /// determinism is preserved (same operation order, same intermediate types).
     pub(super) fn gen_spline_expr(
         &mut self,
         spline: &CubicSpline,
@@ -848,6 +859,7 @@ impl TranspileContext {
                         &r.id,
                     );
                     let fn_name = if self.fill_mode && self.unshifted_noise_refs.contains(&r.id) {
+                        self.fill_refs.insert(r.id.clone());
                         named_fn_ident_fill_simd(&r.id)
                     } else {
                         named_fn_ident_simd(&r.id)

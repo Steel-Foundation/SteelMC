@@ -108,6 +108,15 @@ const NOT_UNIFORM: u16 = u16::MAX - 1;
 const CANDIDATE_COUNT: usize = 8;
 const GROUPS_PER_SIDE: i32 = QUARTS_PER_SECTION_SIDE + 1;
 
+/// The quart of candidate `i`: bits 2, 1 and 0 step x, y and z from `parent`.
+fn candidate_quart(parent: IVec3, i: usize) -> IVec3 {
+    IVec3::new(
+        parent.x + i32::from(i & 4 != 0),
+        parent.y + i32::from(i & 2 != 0),
+        parent.z + i32::from(i & 1 != 0),
+    )
+}
+
 impl<'a> SurfaceQuartBiomes<'a> {
     pub(super) fn new(
         biome_data: &'a [u16],
@@ -174,11 +183,7 @@ impl<'a> SurfaceQuartBiomes<'a> {
         let class = classes.class(first)?;
 
         for i in 1..CANDIDATE_COUNT {
-            let biome = self.biome_at(IVec3::new(
-                parent.x + i32::from(i & 4 != 0),
-                parent.y + i32::from(i & 2 != 0),
-                parent.z + i32::from(i & 1 != 0),
-            ));
+            let biome = self.biome_at(candidate_quart(parent, i));
             if classes.class(biome) != Some(class) {
                 return None;
             }
@@ -361,10 +366,9 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
             }
         }
 
-        self.quarts.biome_at(IVec3::new(
-            self.parent_x + i32::from(min_i & 4 != 0),
-            parent_y + i32::from(min_i & 2 != 0),
-            self.parent_z + i32::from(min_i & 1 != 0),
+        self.quarts.biome_at(candidate_quart(
+            IVec3::new(self.parent_x, parent_y, self.parent_z),
+            min_i,
         ))
     }
 

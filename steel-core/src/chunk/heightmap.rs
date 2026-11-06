@@ -338,6 +338,8 @@ impl Heightmap {
         }
     }
 
+    /// Vanilla's `Heightmap.update` ignores writes at or below `first_available - 2`. One
+    /// higher, at `first_available - 1`, is the current top block, whose removal lowers it.
     const fn cannot_change_height(y: i32, first_available: i32) -> bool {
         y <= first_available - 2
     }
@@ -590,6 +592,9 @@ impl ChunkHeightmaps {
         height: i32,
         sections: &[super::section::SectionHolder],
     ) {
+        // Columns per section layer, in `get_at_index` order.
+        const LAYER_COLUMNS: usize = 16 * 16;
+
         let mut types_to_prime = SmallVec::<[(HeightmapType, u8); 4]>::new();
         let mut pending_mask_base = 0;
         for &hm_type in types {
@@ -608,7 +613,7 @@ impl ChunkHeightmaps {
             self.get_or_insert(hm_type, min_y, height);
         }
 
-        let mut pending_masks = [pending_mask_base; 16 * 16];
+        let mut pending_masks = [pending_mask_base; LAYER_COLUMNS];
         let mut pending_columns = pending_masks.len();
 
         'sections: for section_idx in (0..sections.len()).rev() {
@@ -625,8 +630,9 @@ impl ChunkHeightmaps {
             let flat_states = states.flat_values();
             for local_y in (0..16).rev() {
                 let y = min_y + (section_idx * 16 + local_y) as i32;
-                let layer_start = local_y * 16 * 16;
-                let layer = flat_states.map(|values| &values[layer_start..layer_start + 16 * 16]);
+                let layer_start = local_y * LAYER_COLUMNS;
+                let layer =
+                    flat_states.map(|values| &values[layer_start..layer_start + LAYER_COLUMNS]);
 
                 for (column_index, pending_mask) in pending_masks.iter_mut().enumerate() {
                     if *pending_mask == 0 {
