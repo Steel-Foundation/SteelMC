@@ -22,6 +22,7 @@ mod operator;
 mod perms;
 mod playsound;
 mod position;
+mod reload;
 mod return_command;
 mod seed;
 mod setblock;
@@ -93,6 +94,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(operator::op_registration())?;
     builder.register(perms::registration())?;
     builder.register(playsound::registration())?;
+    builder.register(reload::registration())?;
     builder.register(return_command::registration())?;
     builder.register(seed::registration())?;
     builder.register(setblock::registration())?;
@@ -179,6 +181,7 @@ mod tests {
                 "op",
                 "perms",
                 "playsound",
+                "reload",
                 "return",
                 "seed",
                 "setblock",
