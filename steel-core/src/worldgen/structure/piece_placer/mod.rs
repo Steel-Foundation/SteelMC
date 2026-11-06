@@ -36,6 +36,7 @@ use steel_utils::{
     types::UpdateFlags,
 };
 
+use crate::chunk::{chunk_pyramid::GENERATION_PYRAMID, status::ChunkStatus};
 use crate::entity::{ENTITIES, SharedEntity, next_entity_id};
 use crate::world::World;
 use crate::worldgen::region::WorldGenRegion;
@@ -45,7 +46,29 @@ use steel_worldgen::structure::{
 
 pub(crate) struct StructurePiecePlacer;
 
+/// Most chunks on each axis a piece may span when its placement depends on which chunk places
+/// it first, like a scattered feature's height. All chunks that place such a piece are then
+/// close enough for the window gate to run them one at a time (see
+/// `ChunkMap::window_gate_for_step`).
+const ORDER_DEPENDENT_PIECE_MAX_CHUNK_SPAN: i32 = 2 * GENERATION_PYRAMID
+    .get_step_to(ChunkStatus::Features)
+    .block_state_write_radius
+    + 1;
+
 impl StructurePiecePlacer {
+    /// Checks in debug builds that a piece whose placement depends on which chunk places it
+    /// first spans at most [`ORDER_DEPENDENT_PIECE_MAX_CHUNK_SPAN`] chunks on each axis.
+    pub(super) fn debug_assert_order_dependent_piece_span(bounding_box: &BoundingBox) {
+        let span = |min: i32, max: i32| (max >> 4) - (min >> 4) + 1;
+        debug_assert!(
+            span(bounding_box.min_x(), bounding_box.max_x())
+                <= ORDER_DEPENDENT_PIECE_MAX_CHUNK_SPAN
+                && span(bounding_box.min_z(), bounding_box.max_z())
+                    <= ORDER_DEPENDENT_PIECE_MAX_CHUNK_SPAN,
+            "piece {bounding_box:?} is too wide for the window gate to order the chunks placing it"
+        );
+    }
+
     /// Vanilla jigsaw pool-element placement flags: `UPDATE_CLIENTS | UPDATE_KNOWN_SHAPE`.
     pub(crate) const JIGSAW_UPDATE_FLAGS: UpdateFlags =
         UpdateFlags::UPDATE_CLIENTS.union(UpdateFlags::UPDATE_KNOWN_SHAPE);
