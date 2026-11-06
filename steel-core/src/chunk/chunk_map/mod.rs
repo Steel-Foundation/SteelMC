@@ -90,6 +90,9 @@ use light_update_state::{InFlightLightUpdates, LightUpdateState, PendingChunkLig
 const GENERATION_THREAD_MULTIPLE: usize = 2;
 // Vanilla applies this limit independently to block ticks and fluid ticks.
 const MAX_SCHEDULED_TICKS_PER_TICK: usize = 65_536;
+/// Squared block distance from a chunk center within which a non-spectator
+/// player makes that chunk a natural-spawn candidate.
+const SPAWN_CANDIDATE_PLAYER_DISTANCE_SQUARED: f64 = 16_384.0;
 
 /// Lifetime, in ticks, of a thrown ender pearl's chunk ticket (vanilla
 /// `TicketType.ENDER_PEARL` timeout). The pearl refreshes it every
@@ -855,6 +858,41 @@ impl ChunkMap {
         }
     }
 
+    /// Advances inhabited time for loaded Full chunks that are natural-spawn candidates.
+    ///
+    /// Vanilla's spawn-candidate tracker only retains chunks near a non-spectator
+    /// player, and `collectSpawningChunks` still requires the chunk center to be
+    /// within 128 blocks of that player.
+    fn tick_spawning_chunks(&self, world: &World) {
+        let mut player_positions = Vec::new();
+        world.players.iter_players(|_, player| {
+            if !player.is_spectator() {
+                player_positions.push(player.position());
+            }
+            true
+        });
+        if player_positions.is_empty() {
+            return;
+        }
+
+        self.chunks.iter_sync(|pos, holder| {
+            if !holder.load_level().is_some_and(is_full) {
+                return true;
+            }
+            let center_x = f64::from(pos.0.x * 16 + 8);
+            let center_z = f64::from(pos.0.y * 16 + 8);
+            let is_spawn_candidate = player_positions.iter().any(|position| {
+                let delta_x = center_x - position.x;
+                let delta_z = center_z - position.z;
+                delta_x * delta_x + delta_z * delta_z < SPAWN_CANDIDATE_PLAYER_DISTANCE_SQUARED
+            });
+            if is_spawn_candidate && let Some(chunk) = holder.try_full_chunk() {
+                chunk.common().increment_inhabited_time();
+            }
+            true
+        });
+    }
+
     /// Processes chunk updates, ticks chunks, and executes ready scheduled ticks.
     ///
     /// # Arguments
@@ -924,6 +962,10 @@ impl ChunkMap {
             timings.collect_tickable += start.elapsed();
             timings.total_chunks = self.chunks.len();
             timings.tickable_count = tickable_chunks.block.len();
+
+            if runs_normally {
+                self.tick_spawning_chunks(world);
+            }
 
             if runs_normally && random_tick_speed > 0 && !tickable_chunks.block.is_empty() {
                 let _span = tracing::trace_span!(
