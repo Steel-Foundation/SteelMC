@@ -89,16 +89,16 @@ impl TranspileContext {
         self.fill_mode = true;
         let mut fill_fns = Vec::new();
         // Reverse topological order visits each caller before the variants it adds.
-        for name in self.topo_order.clone().iter().rev() {
-            if !self.fill_refs.contains(name) {
+        for name in self.topo_order.clone().into_iter().rev() {
+            if !self.fill_refs.contains(&name) {
                 continue;
             }
-            let Some(df) = input.registry.get(name) else {
+            let Some(df) = input.registry.get(&name) else {
                 continue;
             };
             let inner = unwrap_markers(df);
-            let fn_name = named_fn_ident_fill(name);
-            let fn_name_simd = named_fn_ident_fill_simd(name);
+            let fn_name = named_fn_ident_fill(&name);
+            let fn_name_simd = named_fn_ident_fill_simd(&name);
             let body = self.gen_expr(inner, input, false);
             let body_simd = self.gen_expr_simd(inner, input, false);
             let params = self.fn_params(false);
