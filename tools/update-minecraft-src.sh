@@ -58,6 +58,18 @@ git clone https://github.com/WinPlay02/GitCraft "$TEMP_DIR/GitCraft"
 # Increase heap from default 4G to 8G
 sed -i.bak "s/-Xmx4G/-Xmx8G/" "$TEMP_DIR/GitCraft/build.gradle" && rm -f "$TEMP_DIR/GitCraft/build.gradle.bak"
 
+# GitCraft downloads every extra version's metadata before applying version
+# filters, and some combat test zips are only hosted on archive.org, which can
+# fail and make GitCraft retry forever. Skip the combat test chain entirely; no
+# other version lists a combat test as its parent.
+METADATA_PROVIDER="$TEMP_DIR/GitCraft/src/main/groovy/com/github/winplay02/gitcraft/manifest/BaseMetadataProvider.java"
+METADATA_SOURCE_ADD='this.metadataSources.add(MetadataSources.RemoteMetadata.of(manifestEntry));'
+if ! grep -qF "$METADATA_SOURCE_ADD" "$METADATA_PROVIDER"; then
+    echo "error: GitCraft changed; cannot skip combat test metadata in $METADATA_PROVIDER" >&2
+    exit 1
+fi
+sed -i.bak "s/$METADATA_SOURCE_ADD/if (!manifestEntry.id().contains(\"_combat-\")) { $METADATA_SOURCE_ADD }/" "$METADATA_PROVIDER" && rm -f "$METADATA_PROVIDER.bak"
+
 cd "$TEMP_DIR/GitCraft"
 # Refreshing from the min version resets the repo's main branch, so
 # minecraft-src only contains the requested range.
