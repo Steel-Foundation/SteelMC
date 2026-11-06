@@ -1,6 +1,5 @@
 //! Lava fluid callbacks.
 //!
-//! Based on vanilla's `LavaFluid.java`.
 //! Implements `FluidBehavior` and `FlowingFluid` for sharing base spread logic.
 
 use std::sync::Arc;
@@ -9,9 +8,13 @@ use glam::DVec3;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::items::ItemRef;
 use steel_registry::level_events;
+use steel_registry::sound_event::SoundEventRef;
+use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::LAVA_SOURCE_CONVERSION;
+use steel_registry::vanilla_items;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
@@ -20,7 +23,7 @@ use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
 use crate::fluid::{FlowingFluid, FluidBehavior, get_flow as flowing_fluid_flow};
 use crate::fluid::{
     FluidRef, FluidState, FluidStateExt, get_fluid_state, get_height, is_lava_fluid,
-    is_water_fluid, lava_id,
+    is_water_fluid, lava_id, liquid_block_state,
 };
 use crate::world::World;
 const NORMAL_LAVA_ENTITY_FLOW_SCALE: f64 = 0.002_333_333_333_333_333_5;
@@ -39,7 +42,7 @@ impl LavaFluid {
         world.dimension_type.fast_lava
     }
 
-    /// Returns vanilla's lava current scale for entity fluid pushing.
+    /// Returns the lava current scale for entity fluid pushing.
     pub(crate) fn entity_flow_scale(world: &Arc<World>) -> f64 {
         if Self::is_fast_lava(world) {
             FAST_LAVA_ENTITY_FLOW_SCALE
@@ -50,6 +53,18 @@ impl LavaFluid {
 }
 
 impl FluidBehavior for LavaFluid {
+    fn pickup_sound(&self) -> Option<SoundEventRef> {
+        Some(&sound_events::ITEM_BUCKET_FILL_LAVA)
+    }
+
+    fn create_legacy_block(&self, fluid_state: FluidState) -> BlockStateId {
+        liquid_block_state(&vanilla_blocks::LAVA, fluid_state)
+    }
+
+    fn bucket(&self) -> ItemRef {
+        &vanilla_items::LAVA_BUCKET
+    }
+
     fn fluid_type(&self) -> FluidRef {
         lava_id()
     }
@@ -82,7 +97,6 @@ impl FluidBehavior for LavaFluid {
         flowing_fluid_flow(world, pos, fluid_state)
     }
 
-    /// Vanilla parity: `LavaFluid.canBeReplacedWith()`.
     /// Lava can be replaced if its effective height >= 0.444 and the replacer is water.
     ///
     /// Uses `get_height()` (not raw `amount / 9.0`) so that falling lava
@@ -98,7 +112,6 @@ impl FluidBehavior for LavaFluid {
         get_height(world, pos, fluid_state) >= 0.444_444_45 && is_water_fluid(other_fluid)
     }
 
-    /// Vanilla parity: `LavaFluid.getSpreadDelay`.
     /// Uphill lava spreads 4× slower with 3/4 probability.
     ///
     /// "Uphill" means the target position (`new_state`) has a greater effective
@@ -125,13 +138,12 @@ impl FluidBehavior for LavaFluid {
         }
     }
 
-    /// Vanilla parity: `LavaFluid.beforeDestroyingBlock()` → fizz sound.
-    /// Lava does NOT drop block items (unlike water).
+    /// Plays the fizz sound. Lava does NOT drop block items (unlike water).
     fn before_destroying_block(&self, world: &Arc<World>, pos: BlockPos, _state: BlockStateId) {
         world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
     }
 
-    /// Vanilla parity: `LavaFluid.entityInside()` clears freezing, ignites, then applies lava damage.
+    /// Clears freezing, ignites, then applies lava damage.
     fn entity_inside(
         &self,
         _world: &Arc<World>,
@@ -180,11 +192,11 @@ impl FlowingFluid for LavaFluid {
         if direction == Direction::Down {
             let below_fluid = get_fluid_state(world, pos);
             if below_fluid.is_water() {
-                // Vanilla: fizz always plays when lava meets water going down,
+                // Fizz always plays when lava meets water going down,
                 // regardless of whether stone is formed.
                 world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
 
-                // Vanilla: stone only forms when the target is a pure water LiquidBlock,
+                // Stone only forms when the target is a pure water LiquidBlock,
                 // not a waterlogged block (stairs, slabs, etc.).
                 let below_block = world.get_block_state(pos).get_block();
                 if below_block == &vanilla_blocks::WATER {
