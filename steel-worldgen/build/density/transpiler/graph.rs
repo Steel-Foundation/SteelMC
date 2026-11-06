@@ -8,8 +8,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::density::{Axis, CubicSpline, DensityFunction, MarkerType, SplineValue};
 
-use super::fingerprint::fingerprint;
-
 /// Check if a density function subtree directly uses the `y` coordinate.
 /// Does NOT recurse into References (those are handled by the flat inference loop).
 pub(super) fn uses_y(df: &DensityFunction) -> bool {
@@ -129,56 +127,6 @@ pub(super) fn collect_refs_inner(df: &DensityFunction, refs: &mut Vec<String>) {
     }
 }
 
-/// Recursively collect `Noise` nodes with `y_scale == 0.0` in a density
-/// function tree. These are Y-independent computations that can be cached
-/// per (x, z) column. Keyed by structural hash → `(noise_id, xz_scale)`.
-pub(super) fn collect_inline_flat_noises(
-    df: &DensityFunction,
-    out: &mut BTreeMap<u64, (String, f64)>,
-) {
-    if let DensityFunction::Noise(n) = df
-        && n.y_scale == 0.0
-    {
-        let fp = fingerprint(df);
-        out.entry(fp)
-            .or_insert_with(|| (n.noise_id.clone(), n.xz_scale));
-    }
-    // Recurse into children (but NOT into References — those are separate functions)
-    match df {
-        DensityFunction::TwoArgumentSimple(t) => {
-            collect_inline_flat_noises(&t.argument1, out);
-            collect_inline_flat_noises(&t.argument2, out);
-        }
-        DensityFunction::Lerp(l) => {
-            collect_inline_flat_noises(&l.alpha, out);
-            collect_inline_flat_noises(&l.first, out);
-            collect_inline_flat_noises(&l.second, out);
-        }
-        DensityFunction::Mapped(m) => collect_inline_flat_noises(&m.input, out),
-        DensityFunction::Clamp(c) => collect_inline_flat_noises(&c.input, out),
-        DensityFunction::RangeChoice(rc) => {
-            collect_inline_flat_noises(&rc.input, out);
-            collect_inline_flat_noises(&rc.when_in_range, out);
-            collect_inline_flat_noises(&rc.when_out_of_range, out);
-        }
-        DensityFunction::IntervalSelect(interval) => {
-            collect_inline_flat_noises(&interval.input, out);
-            for function in &interval.functions {
-                collect_inline_flat_noises(function, out);
-            }
-        }
-        DensityFunction::WeirdScaledSampler(ws) => collect_inline_flat_noises(&ws.input, out),
-        DensityFunction::BlendDensity(bd) => collect_inline_flat_noises(&bd.input, out),
-        DensityFunction::Slice(s) => collect_inline_flat_noises(&s.input, out),
-        DensityFunction::Marker(m) => collect_inline_flat_noises(&m.wrapped, out),
-        DensityFunction::ShiftedNoise(sn) => {
-            collect_inline_flat_noises(&sn.shift_x, out);
-            collect_inline_flat_noises(&sn.shift_y, out);
-            collect_inline_flat_noises(&sn.shift_z, out);
-        }
-        _ => {}
-    }
-}
 pub(super) fn collect_spline_refs(spline: &CubicSpline, refs: &mut Vec<String>) {
     collect_refs_inner(&spline.coordinate, refs);
     for point in &spline.points {

@@ -433,8 +433,11 @@ impl TranspileContext {
                 let upper_expr = self.gen_expr(&fts.upper_bound, input, is_flat);
                 // density uses y — generate with is_flat=false so it references our loop var.
                 // Vanilla probes it with `sampleValue`, even inside the chunk fill.
+                // Outer CSE bindings hold values at the outer y, not at each probe y.
                 let fill_mode = mem::replace(&mut self.fill_mode, false);
+                let cse_bindings = mem::take(&mut self.cse_bindings);
                 let density_expr = self.gen_expr(&fts.density, input, false);
+                self.cse_bindings = cse_bindings;
                 self.fill_mode = fill_mode;
                 let cell_height = Literal::i32_unsuffixed(fts.cell_height);
                 let lower_bound = Literal::i32_unsuffixed(fts.lower_bound);

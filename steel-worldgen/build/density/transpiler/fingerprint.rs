@@ -26,11 +26,17 @@ pub(super) fn collect_inline_flat_noises(
         out.entry(fp)
             .or_insert_with(|| (n.noise_id.clone(), n.xz_scale));
     }
-    // Recurse into children (but NOT into References — those are separate functions)
+    // Recurse into children, but not into References (separate functions) or `Slice`,
+    // which can move x or z away from the column the cache is filled for.
     match df {
         DensityFunction::TwoArgumentSimple(t) => {
             collect_inline_flat_noises(&t.argument1, out);
             collect_inline_flat_noises(&t.argument2, out);
+        }
+        DensityFunction::Lerp(l) => {
+            collect_inline_flat_noises(&l.alpha, out);
+            collect_inline_flat_noises(&l.first, out);
+            collect_inline_flat_noises(&l.second, out);
         }
         DensityFunction::Mapped(m) => collect_inline_flat_noises(&m.input, out),
         DensityFunction::Clamp(c) => collect_inline_flat_noises(&c.input, out),
