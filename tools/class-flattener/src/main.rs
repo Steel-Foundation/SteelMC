@@ -19,7 +19,11 @@ use std::process::{Command, ExitCode};
 
 use clap::Parser;
 
+use std::fmt::Write as _;
+
+use crate::calls::Resolver;
 use crate::hierarchy::Hierarchy;
+use crate::model::TypeDecl;
 use crate::render::{Options, Renderer};
 use crate::source::SourceTree;
 
@@ -51,6 +55,11 @@ struct Cli {
     /// analysis instead of the listing.
     #[arg(long, conflicts_with_all = ["inline", "summary", "methods"])]
     tsv: bool,
+
+    /// Print calls on other entity-typed receivers made by the class's own
+    /// methods (and its nested types) as tab-separated rows.
+    #[arg(long, conflicts_with_all = ["inline", "summary", "methods", "tsv"])]
+    entity_calls: bool,
 }
 
 fn main() -> ExitCode {
@@ -77,6 +86,11 @@ fn main() -> ExitCode {
 fn run(cli: &Cli) -> Result<String, String> {
     let source = SourceTree::new(cli.src.clone())?;
     let target = source.find_class(&cli.class)?;
+    if cli.entity_calls {
+        let mut out = String::new();
+        entity_calls(&source, target, &mut out);
+        return Ok(out);
+    }
     let hierarchy = Hierarchy::build(&source, target);
     let options = Options {
         methods: cli.methods.clone(),
@@ -90,6 +104,30 @@ fn run(cli: &Cli) -> Result<String, String> {
     } else {
         renderer.render()
     })
+}
+
+fn entity_calls(source: &SourceTree, ty: &'static TypeDecl, out: &mut String) {
+    let hierarchy = Hierarchy::build(source, ty);
+    let resolver = Resolver {
+        source,
+        hierarchy: &hierarchy,
+    };
+    for decl in ty.methods.iter().chain(&ty.constructors) {
+        for (receiver, name, line) in resolver.entity_receiver_calls(decl) {
+            let _ = writeln!(
+                out,
+                "call\t{}\t{}\t{receiver}\t{name}\t{}:{line}",
+                ty.display_name(),
+                decl.signature(),
+                decl.file.rel_path,
+            );
+        }
+    }
+    for nested in &ty.nested {
+        if let Some(nested) = source.load_fqn(nested) {
+            entity_calls(source, nested, out);
+        }
+    }
 }
 
 /// `minecraft-src (26.3)` from the `GitCraft` commit subject, when available.

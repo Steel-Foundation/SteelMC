@@ -691,6 +691,47 @@ impl Resolver<'_> {
         }
     }
 
+    /// Calls in `decl` whose receiver is another object of a type that
+    /// extends `Entity`: `(receiver type, method name, line)`.
+    pub fn entity_receiver_calls(&self, decl: &'static MethodDecl) -> Vec<(String, String, usize)> {
+        let Some(body) = decl.body else {
+            return Vec::new();
+        };
+        let Some(owner) = self.source.load_fqn(&decl.owner) else {
+            return Vec::new();
+        };
+        let mut found = Vec::new();
+        visit_own_code(body, &mut |node| {
+            if node.kind() != "method_invocation" {
+                return;
+            }
+            let (Some(object), Some(name)) = (
+                node.child_by_field_name("object"),
+                node.child_by_field_name("name"),
+            ) else {
+                return;
+            };
+            if matches!(object.kind(), "this" | "super") {
+                return;
+            }
+            // Static calls name a type rather than evaluate to a value.
+            let Some(receiver) = self
+                .infer(object, decl, owner)
+                .and_then(|value| self.source.resolve_type(value.ctx?, &value.written))
+            else {
+                return;
+            };
+            if self.source.ancestry(receiver).names.contains("Entity") {
+                found.push((
+                    receiver.display_name().to_owned(),
+                    decl.file.text(name).to_owned(),
+                    node.start_position().row + 1,
+                ));
+            }
+        });
+        found
+    }
+
     /// Return type of a call on another receiver (`entity.position()`,
     /// `Vec3.atCenterOf(pos)`), using the same overload selection.
     fn infer_foreign_call(
