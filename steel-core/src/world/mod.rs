@@ -96,7 +96,7 @@ use crate::{
         InactiveEntityCallback, MobEffectSyncPacket, RemovalReason, SharedEntity,
         WorldEntityManager,
         entities::{ExperienceOrbEntity, ItemEntity},
-        entity_loot_ref,
+        entity_loot_ref, snapshot_old_pos_and_rot_for_tick,
     },
     fluid::{FluidStateExt as _, fluid_state_to_block},
     level_data::{
@@ -521,6 +521,21 @@ impl World {
         })
     }
 
+    /// Vanilla keeps ticking removed players from their connection. Steel ticks
+    /// players through the entity manager, which skips removed entities, so tick
+    /// them here instead. This must run before the entity tick so the removal
+    /// tick itself is not processed twice.
+    fn tick_removed_players(&self) {
+        self.players.iter_players(|_, player| {
+            if player.is_removed() {
+                snapshot_old_pos_and_rot_for_tick(player.as_ref());
+                player.advance_tick_count();
+                Arc::clone(player).tick();
+            }
+            true
+        });
+    }
+
     /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),
     /// and player logic (without chunk sending).
     ///
@@ -566,6 +581,8 @@ impl World {
 
         // Vanilla clears this before ticking entities and block entities.
         self.handling_tick.store(false, Ordering::Relaxed);
+
+        self.tick_removed_players();
 
         let entity_tick = {
             let _span = tracing::trace_span!("entity_tick").entered();
