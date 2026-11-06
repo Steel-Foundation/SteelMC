@@ -57,8 +57,8 @@ impl OverworldClimateSampler {
         let block_y = quart_y << 2;
         let block_z = quart_z << 2;
 
-        // Ensure column cache is populated for this (x, z)
-        cache.ensure(block_x, block_z, &self.noises);
+        // Only the fields the climate routers read
+        cache.ensure_climate(block_x, block_z, &self.noises);
 
         let block_x = f64::from(block_x);
         let block_y = f64::from(block_y);
@@ -88,16 +88,16 @@ impl OverworldClimateSampler {
     /// overworld) in `section → x → y → z` order. Without a grid, the cache is a
     /// single-entry lazy cache that misses on every cell (the innermost `z` loop
     /// changes column each step), so the expensive flat (xz-only) climate noise
-    /// is recomputed per cell. Pre-computing the grid once — exactly as the noise
-    /// stage's `fill_from_noise` does — turns those into O(1) lookups. Bit-identical
-    /// because the grid evaluates the same functions at the same quart coordinates.
+    /// is recomputed per cell. Pre-computing the climate fields once turns those into
+    /// O(1) lookups. Bit-identical because the grid evaluates the same functions at
+    /// the same quart coordinates.
     pub fn init_column_grid(
         &self,
         cache: &mut OverworldColumnCache,
         chunk_block_x: i32,
         chunk_block_z: i32,
     ) {
-        cache.init_grid(chunk_block_x, chunk_block_z, &self.noises);
+        cache.init_grid_climate(chunk_block_x, chunk_block_z, &self.noises);
     }
 
     /// Finds the climate-biased overworld spawn origin.
@@ -205,4 +205,79 @@ fn overworld_spawn_targets() -> [ParameterPoint; 2] {
             0,
         ),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The climate-only cache must give the same climate bits as the full one, on and off
+    /// its grid, and a full `ensure` afterwards must not read the partial grid.
+    #[test]
+    fn climate_only_cache_matches_full_cache() {
+        let sampler = OverworldClimateSampler::new(12_345);
+        let full_climate = |quart_x: i32, quart_y: i32, quart_z: i32| {
+            let mut cache = OverworldColumnCache::new();
+            cache.ensure(quart_x << 2, quart_z << 2, &sampler.noises);
+            let (x, y, z) = (
+                f64::from(quart_x << 2),
+                f64::from(quart_y << 2),
+                f64::from(quart_z << 2),
+            );
+            let noises = &sampler.noises;
+            [
+                overworld::router_temperature(noises, &cache, x, y, z),
+                overworld::router_vegetation(noises, &cache, x, y, z),
+                overworld::router_continentalness(noises, &cache, x, y, z),
+                overworld::router_erosion(noises, &cache, x, y, z),
+                overworld::router_depth(noises, &cache, x, y, z),
+                overworld::router_ridges(noises, &cache, x, y, z),
+            ]
+            .map(|value| quantize_coord(f64::from(value)))
+        };
+        let as_array = |point: TargetPoint| point.to_parameter_array();
+
+        let mut cache = OverworldColumnCache::new();
+        for (quart_x, quart_z) in [(0, 0), (-7_500_000, 7_499_999), (123_457, -98_765)] {
+            for quart_y in [-16, 0, 31, 79] {
+                let point = sampler.sample(quart_x, quart_y, quart_z, &mut cache);
+                assert_eq!(
+                    as_array(point)[..6],
+                    full_climate(quart_x, quart_y, quart_z)
+                );
+            }
+        }
+
+        let (chunk_x, chunk_z) = (-1_000_000, 2_000_016);
+        sampler.init_column_grid(&mut cache, chunk_x, chunk_z);
+        for quart_x in (chunk_x >> 2) - 1..(chunk_x >> 2) + 6 {
+            for quart_z in (chunk_z >> 2) - 1..(chunk_z >> 2) + 6 {
+                let point = sampler.sample(quart_x, 8, quart_z, &mut cache);
+                assert_eq!(as_array(point)[..6], full_climate(quart_x, 8, quart_z));
+            }
+        }
+
+        let (block_x, block_z) = (chunk_x + 4, chunk_z + 8);
+        cache.ensure(block_x, block_z, &sampler.noises);
+        let mut reference = OverworldColumnCache::new();
+        reference.ensure(block_x, block_z, &sampler.noises);
+        assert_eq!(
+            overworld::router_final_density(
+                &sampler.noises,
+                &cache,
+                f64::from(block_x),
+                0.0,
+                f64::from(block_z)
+            )
+            .to_bits(),
+            overworld::router_final_density(
+                &sampler.noises,
+                &reference,
+                f64::from(block_x),
+                0.0,
+                f64::from(block_z)
+            )
+            .to_bits()
+        );
+    }
 }

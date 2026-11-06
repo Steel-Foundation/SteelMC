@@ -13,6 +13,16 @@ use super::context::TranspileContext;
 use super::fingerprint::collect_inline_flat_noises;
 use super::graph::{collect_references, contains_function, is_flat_cached, unwrap_markers, uses_y};
 
+/// The router entries a biome climate `TargetPoint` is built from.
+pub(super) const CLIMATE_ROUTERS: [&str; 6] = [
+    "temperature",
+    "vegetation",
+    "continentalness",
+    "erosion",
+    "depth",
+    "ridges",
+];
+
 impl TranspileContext {
     /// Conservatively retain cache preparation unless all remaining inputs
     /// are constants, Y, or already-interpolated values.
@@ -174,6 +184,19 @@ impl TranspileContext {
                     !(has_unshifted_noise && self.flat_cached.contains(name)),
                     "flat-cached function {name} contains unshifted noise"
                 );
+            }
+        }
+
+        let mut pending: Vec<String> = CLIMATE_ROUTERS
+            .iter()
+            .filter_map(|router| input.router_entries.get(*router))
+            .flat_map(collect_references)
+            .collect();
+        while let Some(name) = pending.pop() {
+            if let Some(df) = input.registry.get(&name)
+                && self.climate_names.insert(name)
+            {
+                pending.extend(collect_references(df));
             }
         }
 

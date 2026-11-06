@@ -52,6 +52,9 @@ pub(super) struct TranspileContext {
     /// Named functions that (transitively) contain `Interpolated` markers.
     /// In param mode, these are inlined instead of called as functions.
     pub(super) interpolated_refs: BTreeSet<String>,
+    /// Named functions the climate routers (transitively) read; `ensure_climate` and
+    /// `init_grid_climate` compute only these.
+    pub(super) climate_names: BTreeSet<String>,
     /// Named functions that (transitively) contain `BlendedNoise`.
     /// In fill mode, these are inlined so the precomputed value is used.
     pub(super) blended_noise_refs: BTreeSet<String>,
@@ -97,6 +100,7 @@ impl TranspileContext {
             interpolated_param_mode: false,
             interpolated_param_counter: 0,
             interpolated_refs: BTreeSet::new(),
+            climate_names: BTreeSet::new(),
             blended_noise_refs: BTreeSet::new(),
             unshifted_noise_refs: BTreeSet::new(),
             cse_bindings: FxHashMap::default(),

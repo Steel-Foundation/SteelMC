@@ -3,10 +3,11 @@
 //! Emits noise generator fields, seed-based constructors (including legacy-random
 //! overrides), and the per-column flat-cache with optional grid backing stores.
 
-use proc_macro2::{Literal, TokenStream};
+use proc_macro2::{Ident, Literal, TokenStream};
 use quote::{format_ident, quote};
 
 use super::TranspilerInput;
+use super::analyze::CLIMATE_ROUTERS;
 use super::context::TranspileContext;
 use super::naming::{
     grid_field_ident, named_fn_field_ident, named_fn_ident, noise_field_ident,
@@ -381,6 +382,49 @@ impl TranspileContext {
             })
             .collect();
 
+        // Climate-only subset, in the same order, for `ensure_climate` / `init_grid_climate`.
+        let climate_flat: Vec<&String> = flat_names
+            .iter()
+            .copied()
+            .filter(|name| self.climate_names.contains(*name))
+            .collect();
+        let climate_routers: Vec<&String> = self
+            .flat_routers
+            .iter()
+            .filter(|name| CLIMATE_ROUTERS.contains(&name.as_str()))
+            .collect();
+        let climate_ensure_stmts: Vec<TokenStream> = climate_flat
+            .iter()
+            .map(|name| {
+                let field = named_fn_field_ident(name);
+                let compute_fn = named_fn_ident(name);
+                quote! { self.#field = #compute_fn(noises, &*self, x, z); }
+            })
+            .chain(climate_routers.iter().map(|name| {
+                let field = router_cache_field_ident(name);
+                let compute_fn = router_compute_fn_ident(name);
+                quote! { self.#field = #compute_fn(noises, &*self, x, z); }
+            }))
+            .collect();
+        let climate_grid_pairs: Vec<(Ident, Ident)> = climate_flat
+            .iter()
+            .map(|name| (named_fn_field_ident(name), grid_field_ident(name)))
+            .chain(climate_routers.iter().map(|name| {
+                (
+                    router_cache_field_ident(name),
+                    router_grid_field_ident(name),
+                )
+            }))
+            .collect();
+        let climate_grid_store_stmts: Vec<TokenStream> = climate_grid_pairs
+            .iter()
+            .map(|(active, grid)| quote! { self.#grid[idx] = self.#active; })
+            .collect();
+        let climate_grid_load_stmts: Vec<TokenStream> = climate_grid_pairs
+            .iter()
+            .map(|(active, grid)| quote! { self.#active = self.#grid[idx]; })
+            .collect();
+
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
         quote! {
@@ -403,10 +447,14 @@ impl TranspileContext {
                 /// Z coordinate used to evaluate the cached values.
                 qz: i32,
                 valid: bool,
+                /// Whether the climate fields hold `qx`/`qz` (also true when `valid`).
+                climate_valid: bool,
                 // ── Grid backing store ──
                 grid_first_quart_x: i32,
                 grid_first_quart_z: i32,
                 has_grid: bool,
+                /// Whether the grid holds every field, not only the climate ones.
+                grid_is_full: bool,
                 // Active value fields (read by compute functions)
                 #(#cache_fields,)*
                 #(#router_fields,)*
@@ -430,9 +478,11 @@ impl TranspileContext {
                         qx: i32::MIN,
                         qz: i32::MIN,
                         valid: false,
+                        climate_valid: false,
                         grid_first_quart_x: 0,
                         grid_first_quart_z: 0,
                         has_grid: false,
+                        grid_is_full: false,
                         #(#default_fields,)*
                         #(#router_default_fields,)*
                         #(#inline_noise_default_fields,)*
@@ -452,7 +502,9 @@ impl TranspileContext {
                     self.grid_first_quart_x = chunk_block_x >> 2;
                     self.grid_first_quart_z = chunk_block_z >> 2;
                     self.has_grid = true;
+                    self.grid_is_full = true;
                     self.valid = false;
+                    self.climate_valid = false;
 
                     // Pre-compute all grid positions in topological order.
                     // For each position, write to active fields first (so
@@ -485,7 +537,7 @@ impl TranspileContext {
                     let quart_x = x >> 2;
                     let quart_z = z >> 2;
 
-                    if self.has_grid {
+                    if self.has_grid && self.grid_is_full {
                         let rel_x = quart_x - self.grid_first_quart_x;
                         let rel_z = quart_z - self.grid_first_quart_z;
                         if x & 3 == 0 && z & 3 == 0
@@ -506,6 +558,7 @@ impl TranspileContext {
                             self.qx = eval_x;
                             self.qz = eval_z;
                             self.valid = true;
+                            self.climate_valid = true;
                             return;
                         }
                         // Non-grid position: compute on the fly at exact coordinates.
@@ -520,6 +573,7 @@ impl TranspileContext {
                         #(#router_ensure_stmts)*
                         #(#inline_noise_ensure_stmts)*
                         self.valid = true;
+                        self.climate_valid = true;
                         return;
                     }
 
@@ -535,6 +589,59 @@ impl TranspileContext {
                     #(#router_ensure_stmts)*
                     #(#inline_noise_ensure_stmts)*
                     self.valid = true;
+                    self.climate_valid = true;
+                }
+
+                /// [`Self::init_grid`] for the climate fields only. A later [`Self::ensure`]
+                /// recomputes the other fields instead of reading the partial grid.
+                pub fn init_grid_climate(&mut self, chunk_block_x: i32, chunk_block_z: i32,
+                                         noises: &#noises) {
+                    self.grid_first_quart_x = chunk_block_x >> 2;
+                    self.grid_first_quart_z = chunk_block_z >> 2;
+                    self.has_grid = true;
+                    self.grid_is_full = false;
+                    self.valid = false;
+                    self.climate_valid = false;
+                    for rel_z in 0..Self::GRID_SIDE {
+                        for rel_x in 0..Self::GRID_SIDE {
+                            let x = ((self.grid_first_quart_x + rel_x) << 2) as f64;
+                            let z = ((self.grid_first_quart_z + rel_z) << 2) as f64;
+                            let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
+                            #(#climate_ensure_stmts)*
+                            #(#climate_grid_store_stmts)*
+                        }
+                    }
+                }
+
+                /// [`Self::ensure`] for the fields the climate routers read. Leaves the other
+                /// fields stale, so it clears `valid`.
+                pub fn ensure_climate(&mut self, x: i32, z: i32, noises: &#noises) {
+                    self.x = x;
+                    self.z = z;
+                    let quart_x = x >> 2;
+                    let quart_z = z >> 2;
+                    let rel_x = quart_x - self.grid_first_quart_x;
+                    let rel_z = quart_z - self.grid_first_quart_z;
+                    let in_grid = self.has_grid
+                        && x & 3 == 0 && z & 3 == 0
+                        && rel_x >= 0 && rel_z >= 0
+                        && rel_x < Self::GRID_SIDE
+                        && rel_z < Self::GRID_SIDE;
+                    if self.climate_valid && self.qx == x && self.qz == z {
+                        return;
+                    }
+                    self.qx = x;
+                    self.qz = z;
+                    self.valid = false;
+                    self.climate_valid = true;
+                    if in_grid {
+                        let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
+                        #(#climate_grid_load_stmts)*
+                        return;
+                    }
+                    let x = x as f64;
+                    let z = z as f64;
+                    #(#climate_ensure_stmts)*
                 }
             }
         }
