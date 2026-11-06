@@ -170,7 +170,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::entity::entities::{CowEntity, PigEntity};
+    use crate::entity::entities::ChickenEntity;
     use crate::entity::{Entity, LivingEntity, Mob};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
     use steel_utils::ChunkPos;
@@ -183,28 +183,28 @@ mod tests {
         let world = &world_fixture.world;
         insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-        let hunter = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let hunter = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             1,
             DVec3::new(8.0, 65.0, 8.0),
             Arc::downgrade(world),
         ));
-        let ally = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let ally = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             2,
             DVec3::new(9.0, 65.0, 8.0),
             Arc::downgrade(world),
         ));
-        let attacker = Arc::new(CowEntity::new(
-            &vanilla_entities::COW,
+        let attacker = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             3,
             DVec3::new(10.0, 65.0, 8.0),
             Arc::downgrade(world),
         ));
 
-        let hunter_entity: SharedEntity = Arc::<PigEntity>::clone(&hunter);
-        let ally_entity: SharedEntity = Arc::<PigEntity>::clone(&ally);
-        let attacker_entity: SharedEntity = Arc::<CowEntity>::clone(&attacker);
+        let hunter_entity: SharedEntity = Arc::<ChickenEntity>::clone(&hunter);
+        let ally_entity: SharedEntity = Arc::<ChickenEntity>::clone(&ally);
+        let attacker_entity: SharedEntity = Arc::<ChickenEntity>::clone(&attacker);
         for entity in [hunter_entity, ally_entity, Arc::clone(&attacker_entity)] {
             world
                 .try_add_entity(entity)

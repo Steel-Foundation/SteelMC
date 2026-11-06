@@ -1,14 +1,11 @@
 use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
-use crate::entity::entities::LeashFenceKnotEntity;
-use crate::entity::{RemovalReason, leashables_leashed_to_holder_in_area_near_position};
+use crate::entity::leashables_leashed_to_holder_in_area_near_position;
 use crate::player::Player;
 use crate::world::World;
-use crate::world::game_event::GameEventContext;
 use std::sync::Arc;
 use steel_macros::item_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::{sound_events, vanilla_game_events};
 use steel_utils::BlockPos;
 
 /// Vanilla lead item behavior.
@@ -35,35 +32,9 @@ impl LeadItem {
             return InteractionResult::Pass;
         }
 
-        let existing_knot_exists = LeashFenceKnotEntity::get_knot(world, pos).is_some();
-        let Some(knot) = LeashFenceKnotEntity::get_or_create_knot(world, pos) else {
-            return InteractionResult::Pass;
-        };
-        let mut any_leashed = false;
-
-        for entity in entities_to_leash {
-            if let Some(leashable) = entity.as_leashable()
-                && leashable.can_have_a_leash_attached_to(knot.as_ref())
-            {
-                leashable.set_leashed_to(&knot);
-                any_leashed = true;
-            }
-        }
-
-        if any_leashed {
-            knot.play_sound(&sound_events::ITEM_LEAD_TIED, 1.0, 1.0);
-            world.game_event(
-                &vanilla_game_events::BLOCK_ATTACH,
-                pos,
-                &GameEventContext::new(Some(player), None),
-            );
-            InteractionResult::SuccessServer
-        } else {
-            if !existing_knot_exists {
-                knot.set_removed(RemovalReason::Discarded);
-            }
-            InteractionResult::Pass
-        }
+        // TODO(entity components): tie leads to fences again once `LeashFenceKnotEntity` is
+        // ported out of `steel-core/legacy_entities/`.
+        InteractionResult::Pass
     }
 }
 

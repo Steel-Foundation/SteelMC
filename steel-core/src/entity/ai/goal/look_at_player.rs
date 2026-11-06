@@ -198,7 +198,7 @@ mod tests {
     use std::sync::Weak;
 
     use super::*;
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::ChickenEntity;
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn look_at_player_goal_uses_vanilla_adjusted_look_time() {
         init_vanilla_registry();
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
         let mut goal = LookAtPlayerGoal::new(6.0);
 
         goal.start(&pig);

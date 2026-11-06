@@ -11,10 +11,7 @@ use steel_registry::{
 use steel_utils::{BlockPos, ChunkPos};
 
 use crate::bootstrap::init_globals;
-use crate::entity::entities::{
-    BatEntity, ChickenEntity, CowEntity, EndermiteEntity, ExperienceOrbEntity, ItemEntity,
-    MushroomCowEntity, PigEntity, SheepEntity,
-};
+use crate::entity::entities::{ChickenEntity, ExperienceOrbEntity, ItemEntity};
 use crate::entity::{Entity, EntityBase, SharedEntity, next_entity_id};
 use crate::test_support::{
     TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
@@ -23,26 +20,30 @@ use crate::world::World;
 
 pub(super) type Factory = fn(&Arc<World>, i32, DVec3) -> SharedEntity;
 
+/// Leading `DEFAULT_ENTITIES` entries that are living mobs. The removed
+/// species' slots use chickens until those entities are ported.
+pub(super) const LIVING_FIXTURES: usize = 6;
+
 pub(super) const DEFAULT_ENTITIES: [(&str, Factory); 9] = [
-    ("cow", |world, id, pos| {
-        Arc::new(CowEntity::new(
-            &vanilla_entities::COW,
+    ("chicken in cow slot", |world, id, pos| {
+        Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             id,
             pos,
             Arc::downgrade(world),
         ))
     }),
-    ("pig", |world, id, pos| {
-        Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+    ("chicken in pig slot", |world, id, pos| {
+        Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             id,
             pos,
             Arc::downgrade(world),
         ))
     }),
-    ("sheep", |world, id, pos| {
-        Arc::new(SheepEntity::new(
-            &vanilla_entities::SHEEP,
+    ("chicken in sheep slot", |world, id, pos| {
+        Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             id,
             pos,
             Arc::downgrade(world),
@@ -56,25 +57,25 @@ pub(super) const DEFAULT_ENTITIES: [(&str, Factory); 9] = [
             Arc::downgrade(world),
         ))
     }),
-    ("mooshroom", |world, id, pos| {
-        Arc::new(MushroomCowEntity::new(
-            &vanilla_entities::MOOSHROOM,
+    ("chicken in mooshroom slot", |world, id, pos| {
+        Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             id,
             pos,
             Arc::downgrade(world),
         ))
     }),
-    ("endermite", |world, id, pos| {
-        Arc::new(EndermiteEntity::new(
-            &vanilla_entities::ENDERMITE,
+    ("chicken in endermite slot", |world, id, pos| {
+        Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             id,
             pos,
             Arc::downgrade(world),
         ))
     }),
-    ("bat", |world, id, pos| {
-        Arc::new(BatEntity::new(
-            &vanilla_entities::BAT,
+    ("chicken in bat slot", |world, id, pos| {
+        Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             id,
             pos,
             Arc::downgrade(world),

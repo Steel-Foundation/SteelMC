@@ -323,14 +323,14 @@ fn summonable_entity_argument_resolves_only_registered_factories() {
     init_globals();
     let dispatcher = resource_dispatcher(SteelArgumentType::summonable_entity());
 
-    for input in ["resource pig", "resource minecraft:pig"] {
+    for input in ["resource chicken", "resource minecraft:chicken"] {
         let parse = dispatcher.parse(input, TestSource::new());
         let Ok(chain) = dispatcher.context_chain(parse) else {
             panic!("registered summonable entity should parse");
         };
         assert_eq!(
             chain.top_context().entity_type("value"),
-            Ok(&vanilla_entities::PIG)
+            Ok(&vanilla_entities::CHICKEN)
         );
     }
 
@@ -344,7 +344,7 @@ fn summonable_entity_argument_resolves_only_registered_factories() {
 fn summonable_entity_argument_suggests_only_registered_factories() {
     init_globals();
     let dispatcher = resource_dispatcher(SteelArgumentType::summonable_entity());
-    let parse = dispatcher.parse("resource minecraft:pi", TestSource::new());
+    let parse = dispatcher.parse("resource minecraft:chi", TestSource::new());
     let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
         panic!("summonable entity suggestions should build");
     };
@@ -354,7 +354,7 @@ fn summonable_entity_argument_suggests_only_registered_factories() {
         .map(Suggestion::text)
         .collect::<Vec<_>>();
 
-    assert_eq!(suggestions, ["minecraft:pig"]);
+    assert_eq!(suggestions, ["minecraft:chicken"]);
 }
 
 #[test]

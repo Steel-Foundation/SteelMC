@@ -426,7 +426,7 @@ mod tests {
 
         for persistence_required in [false, true] {
             let Some(entity) = StructurePiecePlacer::create_mob(
-                &vanilla_entities::PIG,
+                &vanilla_entities::CHICKEN,
                 position,
                 Weak::new(),
                 persistence_required,

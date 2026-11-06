@@ -1,34 +1,4 @@
-use super::*;
-
-use crate::chunk::chunk_holder::TickingReadiness;
-use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use crate::level_data::GameTimeSource;
-use crate::test_support::create_test_world_with_time_source;
-use steel_registry::packets::play::C_PLAYER_POSITION;
-use steel_registry::vanilla_game_rules;
-use steel_utils::{Identifier, types::Difficulty};
-
-#[test]
-fn uuid_pearl_impact_overworld_to_nether() {
-    assert_pearl_impact(false, true, false);
-}
-
-#[test]
-fn uuid_pearl_impact_nether_to_overworld() {
-    assert_pearl_impact(true, false, false);
-}
-
-#[test]
-fn same_dimension_uuid_pearl_impact() {
-    assert_pearl_impact(false, false, false);
-    assert_pearl_impact(true, true, false);
-}
-
-#[test]
-fn cached_owner_pearl_impact_between_dimensions() {
-    assert_pearl_impact(false, true, true);
-    assert_pearl_impact(true, false, true);
-}
+// Moved from server/tests/projectile_owners.rs with the entities it depends on.
 
 fn assert_pearl_impact(owner_in_nether: bool, pearl_in_nether: bool, cached: bool) {
     init_behaviors();
@@ -122,3 +92,37 @@ fn assert_pearl_impact(owner_in_nether: bool, pearl_in_nether: bool, cached: boo
         }
     });
 }
+
+// Remaining contents of src/server/tests/projectile_owners.rs
+use super::*;
+
+use crate::chunk::chunk_holder::TickingReadiness;
+use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
+use crate::level_data::GameTimeSource;
+use crate::test_support::create_test_world_with_time_source;
+use steel_registry::packets::play::C_PLAYER_POSITION;
+use steel_registry::vanilla_game_rules;
+use steel_utils::{Identifier, types::Difficulty};
+
+#[test]
+fn uuid_pearl_impact_overworld_to_nether() {
+    assert_pearl_impact(false, true, false);
+}
+
+#[test]
+fn uuid_pearl_impact_nether_to_overworld() {
+    assert_pearl_impact(true, false, false);
+}
+
+#[test]
+fn same_dimension_uuid_pearl_impact() {
+    assert_pearl_impact(false, false, false);
+    assert_pearl_impact(true, true, false);
+}
+
+#[test]
+fn cached_owner_pearl_impact_between_dimensions() {
+    assert_pearl_impact(false, true, true);
+    assert_pearl_impact(true, false, true);
+}
+

@@ -745,7 +745,6 @@ pub(crate) mod ai;
 mod animal;
 pub mod attribute;
 mod base;
-mod block_attached_entity;
 mod block_effects;
 mod callback;
 mod combat_rules;
@@ -820,7 +819,7 @@ pub use identity::EntityGeneration;
 pub use inside_block_effects::{
     InsideBlockEffectCallback, InsideBlockEffectCollector, InsideBlockEffectType,
 };
-pub(crate) use item_based_steering::{ItemBasedSteering, ItemSteerable};
+pub(crate) use item_based_steering::ItemSteerable;
 pub use item_frame::ItemFrame;
 pub use living_base::{
     ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION,

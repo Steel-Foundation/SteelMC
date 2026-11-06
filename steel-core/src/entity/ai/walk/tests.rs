@@ -16,7 +16,7 @@ use crate::entity::Mob as _;
 use crate::entity::ai::path::{
     PathComputationType, PathType, PathfindingContext, PathfindingMalus,
 };
-use crate::entity::entities::PigEntity;
+use crate::entity::entities::ChickenEntity;
 use crate::world::LevelReader;
 
 struct GridLevel {
@@ -66,7 +66,7 @@ impl LevelReader for GridLevel {
 #[test]
 fn mob_path_settings_reads_can_open_doors_from_navigation() {
     init_vanilla_registry();
-    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+    let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
     pig.mob_base().navigation().lock().set_can_open_doors(true);
 
     let settings = MobPathSettings::from_mob(&pig);
@@ -77,7 +77,7 @@ fn mob_path_settings_reads_can_open_doors_from_navigation() {
 #[test]
 fn mob_path_settings_reads_can_walk_over_fences_from_navigation() {
     init_vanilla_registry();
-    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+    let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
     pig.mob_base()
         .navigation()
         .lock()

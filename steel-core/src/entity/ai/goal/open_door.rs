@@ -64,10 +64,10 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::ChickenEntity;
 
-    fn pig() -> PigEntity {
-        PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new())
+    fn pig() -> ChickenEntity {
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new())
     }
 
     #[test]
@@ -92,7 +92,7 @@ mod tests {
         init_vanilla_registry();
         let mut goal = OpenDoorGoal::new(true);
         let mob = Arc::new(pig());
-        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
+        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
 
         goal.start(mob.as_ref());
 

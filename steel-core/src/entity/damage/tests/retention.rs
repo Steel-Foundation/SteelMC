@@ -4,19 +4,19 @@ use super::*;
 use std::ptr;
 use steel_registry::vanilla_damage_type_tags::DamageTypeTag;
 
-fn live_pig(world: &Arc<World>, id: i32) -> Arc<PigEntity> {
+fn live_pig(world: &Arc<World>, id: i32) -> Arc<ChickenEntity> {
     let chunk = steel_utils::ChunkPos::new(0, 0);
     if !world.has_full_chunk(chunk) {
         insert_ready_full_chunk(world, chunk);
     }
-    let pig = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let pig = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         id,
         DVec3::ZERO,
         Arc::downgrade(world),
     ));
     world
-        .try_add_entity(Arc::<PigEntity>::clone(&pig))
+        .try_add_entity(Arc::<ChickenEntity>::clone(&pig))
         .expect("register pig");
     pig
 }
@@ -87,15 +87,15 @@ fn active_history_retains_removed_attacker_but_not_its_removed_attacker() {
     let second = live_pig(&world, 3);
     victim.record_last_damage_source(&DamageSource::direct(
         &vanilla_damage_types::MOB_ATTACK,
-        Arc::<PigEntity>::clone(&first),
+        Arc::<ChickenEntity>::clone(&first),
     ));
     first.record_last_damage_source(&DamageSource::direct(
         &vanilla_damage_types::MOB_ATTACK,
-        Arc::<PigEntity>::clone(&second),
+        Arc::<ChickenEntity>::clone(&second),
     ));
     second.record_last_damage_source(&DamageSource::direct(
         &vanilla_damage_types::MOB_ATTACK,
-        Arc::<PigEntity>::clone(&first),
+        Arc::<ChickenEntity>::clone(&first),
     ));
     let second_generation = second.generation();
     let first_weak = Arc::downgrade(&first);
@@ -156,7 +156,7 @@ fn final_removal_cannot_be_undone_by_a_late_history_write() {
         "clearing removal must not reset age"
     );
     world
-        .try_add_entity(Arc::<PigEntity>::clone(&victim))
+        .try_add_entity(Arc::<ChickenEntity>::clone(&victim))
         .expect("reactivate victim");
     let attacker = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let weak = Arc::downgrade(&attacker);
@@ -176,7 +176,7 @@ fn world_teardown_releases_self_history_on_the_frozen_ownership_sweep() {
     let victim = live_pig(&world, 1);
     victim.record_last_damage_source(&DamageSource::direct(
         &vanilla_damage_types::GENERIC,
-        Arc::<PigEntity>::clone(&victim),
+        Arc::<ChickenEntity>::clone(&victim),
     ));
     let weak = Arc::downgrade(&victim);
     drop(victim);

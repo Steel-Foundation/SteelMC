@@ -33,7 +33,7 @@ use crate::behavior::{BlockBehavior, blocks::WitherRoseBlock, init_behaviors};
 use crate::chunk_saver::ChunkStorage;
 use crate::entity::ExperienceOrbEntity;
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::{ChestMinecartEntity, PigEntity};
+use crate::entity::entities::ChickenEntity;
 use crate::entity::mob::Mob;
 use crate::inventory::equipment::EquipmentSlot;
 use crate::portal::PortalKind;
@@ -1262,7 +1262,6 @@ fn closest_direction_with_blocked_neighbors(
 }
 
 mod damage;
-mod death_loot;
 mod equipment_and_freezing;
 mod fall_and_fluids;
 mod living_state;

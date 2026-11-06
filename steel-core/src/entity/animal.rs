@@ -384,7 +384,7 @@ mod tests {
     use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use super::*;
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::ChickenEntity;
 
     struct SpawnRuleLevel {
         below_pos: BlockPos,
@@ -431,7 +431,7 @@ mod tests {
         init_vanilla_registry();
         let level = spawn_rule_level(vanilla_blocks::STONE.default_state(), 15);
 
-        assert!(!<PigEntity as Animal>::check_animal_spawn_rules(
+        assert!(!<ChickenEntity as Animal>::check_animal_spawn_rules(
             &vanilla_entities::PIG,
             &level,
             EntitySpawnReason::Natural,
@@ -445,7 +445,7 @@ mod tests {
         init_vanilla_registry();
         let level = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 8);
 
-        assert!(!<PigEntity as Animal>::check_animal_spawn_rules(
+        assert!(!<ChickenEntity as Animal>::check_animal_spawn_rules(
             &vanilla_entities::PIG,
             &level,
             EntitySpawnReason::Natural,
@@ -455,7 +455,7 @@ mod tests {
 
         let level = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 9);
 
-        assert!(<PigEntity as Animal>::check_animal_spawn_rules(
+        assert!(<ChickenEntity as Animal>::check_animal_spawn_rules(
             &vanilla_entities::PIG,
             &level,
             EntitySpawnReason::Natural,
@@ -469,7 +469,7 @@ mod tests {
         init_vanilla_registry();
         let level = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 0);
 
-        assert!(<PigEntity as Animal>::check_animal_spawn_rules(
+        assert!(<ChickenEntity as Animal>::check_animal_spawn_rules(
             &vanilla_entities::PIG,
             &level,
             EntitySpawnReason::TrialSpawner,

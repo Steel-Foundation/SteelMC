@@ -86,17 +86,17 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::{Entity, Mob, entities::PigEntity};
+    use crate::entity::{Entity, Mob, entities::ChickenEntity};
 
-    fn pig(id: i32, position: DVec3) -> PigEntity {
-        PigEntity::new(&vanilla_entities::PIG, id, position, Weak::new())
+    fn pig(id: i32, position: DVec3) -> ChickenEntity {
+        ChickenEntity::new(&vanilla_entities::CHICKEN, id, position, Weak::new())
     }
 
     fn shared_pig(id: i32, position: DVec3) -> SharedEntity {
         Arc::new(pig(id, position))
     }
 
-    fn set_target(mob: &PigEntity, target: &SharedEntity) {
+    fn set_target(mob: &ChickenEntity, target: &SharedEntity) {
         assert!(mob.set_target(Some(target)));
     }
 

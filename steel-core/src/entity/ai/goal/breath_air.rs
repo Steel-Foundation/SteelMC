@@ -140,7 +140,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::ChickenEntity;
     use crate::entity::{Entity, LivingEntity, LivingTravelInput};
 
     #[test]
@@ -155,7 +155,7 @@ mod tests {
     fn breath_air_goal_uses_vanilla_air_threshold() {
         init_vanilla_registry();
         let mut goal = BreathAirGoal::new();
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
         mob.set_air_supply(BREATH_AIR_THRESHOLD);
         assert!(!goal.can_use(&mob));
@@ -169,13 +169,13 @@ mod tests {
     fn breath_air_goal_tick_applies_travel_input_to_velocity() {
         init_vanilla_registry();
         let mut goal = BreathAirGoal::new();
-        let mob = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let mob = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             1,
             DVec3::ZERO,
             Weak::new(),
         ));
-        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
+        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
         mob.set_travel_input(LivingTravelInput::new(1.0, 0.0, 0.0));
 
         goal.tick(mob.as_ref(), &mob_entity);

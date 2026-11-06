@@ -46,8 +46,8 @@ fn kill_credit_keeps_a_player_in_another_world_until_memory_expires() {
     let player_world = &player_world_fixture.world;
     let player: SharedEntity =
         TestPlayerBuilder::new(Arc::clone(player_world), "Attacker", 2).build();
-    let victim = PigEntity::new(
-        &vanilla_entities::PIG,
+    let victim = ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         1,
         DVec3::ZERO,
         Arc::downgrade(world),
@@ -185,11 +185,14 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
 fn living_death_loot_table_uses_default_and_custom_mob_tables() {
     init_vanilla_registry();
 
-    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+    let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
     let Some(default_table) = pig.death_loot_table() else {
         panic!("pig should resolve its default entity loot table");
     };
-    assert_eq!(&default_table.key, &vanilla_loot_tables::ENTITIES_PIG.key);
+    assert_eq!(
+        &default_table.key,
+        &vanilla_loot_tables::ENTITIES_CHICKEN.key
+    );
 
     pig.set_death_loot_table(Some(Identifier::vanilla_static("entities/cow")));
     let Some(custom_table) = pig.death_loot_table() else {

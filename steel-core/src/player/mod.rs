@@ -55,7 +55,6 @@ pub use session::PlayerSession;
 pub(crate) use session::PlayerSessionId;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
-use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
@@ -166,7 +165,6 @@ static INTENTIONAL_GAME_DESIGN_STYLE: LazyLock<Interactivity> = LazyLock::new(||
 });
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
-use crate::entity::entities::objects::projectiles::FishingHookEntity;
 use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
 use crate::player::advancement::PlayerAdvancement;
 use crate::player::chunk_sender::ChunkSender;
@@ -288,9 +286,8 @@ pub struct Player {
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
     ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
 
-    /// Active fishing hook, kept weakly because the world owns live entities.
-    pub(crate) fishing: SyncMutex<Option<Weak<FishingHookEntity>>>,
-
+    // TODO(entity components): the active fishing hook returns with `FishingHookEntity`
+    // from `steel-core/legacy_entities/`.
     /// The counter keeping track of this player's statistics.
     stats: SyncMutex<StatsCounter>,
 
@@ -640,37 +637,9 @@ impl Player {
             chunk_send_epoch: SyncMutex::new(0),
             residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
-            fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
             advancements: SyncMutex::new(PlayerAdvancement::default()), // TODO save the advancement
-        }
-    }
-
-    /// Returns the active fishing hook, clearing a stale reference after removal.
-    pub fn fishing_hook(&self) -> Option<Arc<FishingHookEntity>> {
-        let mut fishing = self.fishing.lock();
-        let hook = fishing.as_ref().and_then(Weak::upgrade);
-        if hook.is_none() {
-            *fishing = None;
-        }
-        hook
-    }
-
-    /// Records the hook currently owned by this player.
-    pub fn set_fishing_hook(&self, hook: &Arc<FishingHookEntity>) {
-        *self.fishing.lock() = Some(Arc::downgrade(hook));
-    }
-
-    /// Clears `hook` if it is still this player's active fishing hook.
-    pub fn clear_fishing_hook(&self, hook: &FishingHookEntity) {
-        let mut fishing = self.fishing.lock();
-        if fishing
-            .as_ref()
-            .and_then(Weak::upgrade)
-            .is_some_and(|active| ptr::eq(active.as_ref(), hook))
-        {
-            *fishing = None;
         }
     }
 

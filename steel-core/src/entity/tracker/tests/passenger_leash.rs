@@ -78,8 +78,8 @@ fn spawn_pairing_includes_live_mob_leash_link_packet() {
     init_vanilla_registry();
 
     let tracker = EntityTracker::new();
-    let pig_typed = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let pig_typed = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         1,
         DVec3::ZERO,
         Weak::new(),
@@ -98,8 +98,8 @@ fn send_changes_broadcasts_leash_link_changes_once() {
     init_vanilla_registry();
 
     let tracker = EntityTracker::new();
-    let pig: SharedEntity = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let pig: SharedEntity = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         1,
         DVec3::ZERO,
         Weak::new(),

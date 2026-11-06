@@ -154,11 +154,11 @@ mod tests {
 
     use super::*;
     use crate::entity::ai::targeting::TargetingConditions;
-    use crate::entity::{Mob, entities::PigEntity};
+    use crate::entity::{Mob, entities::ChickenEntity};
 
-    fn pig(id: i32, position: DVec3) -> Arc<PigEntity> {
-        Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+    fn pig(id: i32, position: DVec3) -> Arc<ChickenEntity> {
+        Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             id,
             position,
             Weak::new(),

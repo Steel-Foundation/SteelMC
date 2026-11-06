@@ -238,10 +238,10 @@ mod tests {
 
     use super::*;
     use crate::entity::ai::goal::selector::Goal;
-    use crate::entity::{Mob, entities::PigEntity};
+    use crate::entity::{Mob, entities::ChickenEntity};
 
-    fn pig(id: i32, position: DVec3) -> PigEntity {
-        PigEntity::new(&vanilla_entities::PIG, id, position, Weak::new())
+    fn pig(id: i32, position: DVec3) -> ChickenEntity {
+        ChickenEntity::new(&vanilla_entities::CHICKEN, id, position, Weak::new())
     }
 
     fn shared_pig(id: i32, position: DVec3) -> SharedEntity {
@@ -321,7 +321,7 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MeleeAttackGoal::new(1.0, true);
         let mob = Arc::new(pig(1, DVec3::ZERO));
-        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
+        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));
         assert!(mob.set_target(Some(&target)));
 

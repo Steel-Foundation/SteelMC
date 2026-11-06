@@ -5,28 +5,18 @@ use std::sync::Arc;
 use crate::entity::Entity;
 use crate::worldgen::generator::ChunkGenerator;
 use steel_macros::item_behavior;
-use steel_protocol::packets::game::SoundSource;
+use steel_registry::TaggedRegistryExt;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{
-    REGISTRY, level_events, sound_events, vanilla_blocks, vanilla_entities, vanilla_game_events,
-    vanilla_structure_tags,
-};
-use steel_registry::{TaggedRegistryExt, vanilla_items};
+use steel_registry::{REGISTRY, level_events, vanilla_blocks, vanilla_structure_tags};
 use steel_utils::{BlockPos, types::UpdateFlags};
 
 use crate::behavior::ItemBehavior;
 use crate::behavior::block::push_entities_up;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::item_utils::get_player_pov_hit_result;
-use crate::entity::entities::EyeOfEnderEntity;
-use crate::entity::{SharedEntity, next_entity_id};
-use crate::world::game_event::GameEventContext;
 use crate::world::{ClipFluid, LevelReader, World};
-
-use glam::DVec3;
 
 const END_PORTAL_PATTERN_DISTANCE: i32 = 5;
 const END_PORTAL_PATTERN: [[char; 5]; 5] = [
@@ -142,69 +132,13 @@ impl ItemBehavior for EnderEyeItem {
 
         let strongholds = structure_locate_plan.ring_candidates(context.player.block_position());
 
-        let Some(closest_stronghold) = strongholds.first() else {
-            return InteractionResult::Consume;
-        };
-
-        let stronghold_pos = closest_stronghold.locate_pos;
-
-        let player_pos = context.player.position();
-        let spawn_pos = DVec3::new(
-            player_pos.x,
-            player_pos.y + f64::from(context.player.base().dimensions().height * 0.5),
-            player_pos.z,
-        );
-
-        let target_pos = DVec3::new(
-            f64::from(stronghold_pos.x()),
-            f64::from(stronghold_pos.y()),
-            f64::from(stronghold_pos.z()),
-        );
-
-        world.game_event_at(
-            &vanilla_game_events::PROJECTILE_SHOOT,
-            spawn_pos,
-            &GameEventContext::new(Some(context.player.as_ref()), None),
-        );
-
-        let pitch = 0.4 / rand::random_range(0.8..1.2);
-        world.play_sound_at(
-            &sound_events::ENTITY_ENDER_EYE_LAUNCH,
-            SoundSource::Neutral,
-            player_pos,
-            1.0,
-            pitch,
-            None,
-        );
-
-        let thrown_stack = context.inv.with_item(|stack| stack.copy_with_count(1));
-        let eye = EyeOfEnderEntity::with_item(
-            &vanilla_entities::EYE_OF_ENDER,
-            next_entity_id(),
-            spawn_pos,
-            thrown_stack,
-            Arc::downgrade(world),
-        );
-
-        eye.init_target_pos(target_pos);
-
-        let entity: SharedEntity = Arc::new(eye);
-        if let Err(error) = world.try_add_entity(entity) {
-            log::debug!("failed to spawn eye of ender: {error}");
+        if strongholds.is_empty() {
             return InteractionResult::Consume;
         }
 
-        let has_infinite_materials = context.player.has_infinite_materials();
-        context
-            .inv
-            .with_item(|item| item.consume_one(has_infinite_materials));
-        context
-            .player
-            .award_stat(&vanilla_stat_types::ITEM_USED, &vanilla_items::ENDER_EYE);
-
-        InteractionResult::SuccessServer
-
-        // TODO implement advancment
+        // TODO(entity components): throw the eye again once `EyeOfEnderEntity` is ported out of
+        // `steel-core/legacy_entities/`.
+        InteractionResult::Pass
     }
 }
 

@@ -160,42 +160,47 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::entity::entities::{CowEntity, PigEntity};
+    use crate::entity::entities::ChickenEntity;
     use crate::entity::{Entity, Mob};
     use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     fn animal_fixture(
         name: &'static str,
-    ) -> (TestWorld, Arc<PigEntity>, Arc<PigEntity>, Arc<CowEntity>) {
+    ) -> (
+        TestWorld,
+        Arc<ChickenEntity>,
+        Arc<ChickenEntity>,
+        Arc<ChickenEntity>,
+    ) {
         init_vanilla_registry();
         init_behaviors();
         let world_fixture = fresh_test_world(name);
         let world = &world_fixture.world;
         insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-        let pig_hunter = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let pig_hunter = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             1,
             DVec3::new(8.0, 65.0, 8.0),
             Arc::downgrade(world),
         ));
-        let nearer_pig = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let nearer_pig = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             2,
             DVec3::new(9.0, 65.0, 8.0),
             Arc::downgrade(world),
         ));
-        let farther_cow = Arc::new(CowEntity::new(
-            &vanilla_entities::COW,
+        let farther_cow = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             3,
             DVec3::new(10.0, 65.0, 8.0),
             Arc::downgrade(world),
         ));
 
         let entities: [SharedEntity; 3] = [
-            Arc::<PigEntity>::clone(&pig_hunter),
-            Arc::<PigEntity>::clone(&nearer_pig),
-            Arc::<CowEntity>::clone(&farther_cow),
+            Arc::<ChickenEntity>::clone(&pig_hunter),
+            Arc::<ChickenEntity>::clone(&nearer_pig),
+            Arc::<ChickenEntity>::clone(&farther_cow),
         ];
         for entity in entities {
             world

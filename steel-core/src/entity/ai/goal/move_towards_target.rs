@@ -81,7 +81,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::{Mob, entities::PigEntity};
+    use crate::entity::{Mob, entities::ChickenEntity};
 
     #[test]
     fn move_towards_target_goal_uses_move_control() {
@@ -94,7 +94,7 @@ mod tests {
     fn move_towards_target_goal_requires_target() {
         init_vanilla_registry();
         let mut goal = MoveTowardsTargetGoal::new(1.0, 16.0);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
         assert!(!goal.can_use(&mob));
     }
@@ -103,9 +103,9 @@ mod tests {
     fn move_towards_target_goal_rejects_target_outside_range() {
         init_vanilla_registry();
         let mut goal = MoveTowardsTargetGoal::new(1.0, 8.0);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        let target: SharedEntity = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+        let target: SharedEntity = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             2,
             DVec3::new(9.0, 0.0, 0.0),
             Weak::new(),

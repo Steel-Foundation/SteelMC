@@ -129,7 +129,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::{Mob, entities::PigEntity};
+    use crate::entity::{Mob, entities::ChickenEntity};
 
     #[test]
     fn avoid_entity_goal_uses_move_control() {
@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn avoid_entity_default_selector_allows_non_player_living_entities() {
         init_vanilla_registry();
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
         assert!(entity_selector::no_creative_or_spectator(&pig));
     }
@@ -150,7 +150,7 @@ mod tests {
     fn avoid_entity_goal_requires_world() {
         init_vanilla_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
         assert!(!goal.can_use(&mob));
     }
@@ -159,15 +159,15 @@ mod tests {
     fn avoid_entity_goal_sprints_when_close_to_avoided_entity() {
         init_vanilla_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
-        let mob = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let mob = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             1,
             DVec3::ZERO,
             Weak::new(),
         ));
-        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
-        goal.to_avoid = Some(Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
+        goal.to_avoid = Some(Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             2,
             DVec3::new(2.0, 0.0, 0.0),
             Weak::new(),
@@ -189,15 +189,15 @@ mod tests {
     fn avoid_entity_goal_walks_when_far_from_avoided_entity() {
         init_vanilla_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
-        let mob = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let mob = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             1,
             DVec3::ZERO,
             Weak::new(),
         ));
-        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
-        goal.to_avoid = Some(Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
+        goal.to_avoid = Some(Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             2,
             DVec3::new(8.0, 0.0, 0.0),
             Weak::new(),

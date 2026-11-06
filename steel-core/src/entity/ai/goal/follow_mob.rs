@@ -165,7 +165,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::ChickenEntity;
 
     #[test]
     fn follow_mob_goal_uses_move_and_look_controls() {
@@ -178,7 +178,7 @@ mod tests {
     fn follow_mob_goal_requires_world() {
         init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
         assert!(!goal.can_use(&mob));
     }
@@ -187,7 +187,7 @@ mod tests {
     fn follow_mob_goal_temporarily_removes_water_malus() {
         init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
         mob.set_pathfinding_malus(PathType::Water, 4.0);
 
         goal.start(&mob);
@@ -209,9 +209,9 @@ mod tests {
     fn follow_mob_goal_stops_when_no_navigation_is_running() {
         init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        goal.following_mob = Some(Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+        goal.following_mob = Some(Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             2,
             DVec3::new(4.0, 0.0, 0.0),
             Weak::new(),
@@ -224,15 +224,15 @@ mod tests {
     fn follow_mob_goal_looks_at_following_mob() {
         init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
-        let mob = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let mob = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             1,
             DVec3::ZERO,
             Weak::new(),
         ));
-        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
-        let following_mob: SharedEntity = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
+        let following_mob: SharedEntity = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             2,
             DVec3::new(4.0, 0.0, 0.0),
             Weak::new(),

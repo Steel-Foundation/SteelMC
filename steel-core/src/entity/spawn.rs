@@ -532,20 +532,18 @@ mod tests {
     use steel_registry::data_components::CustomData;
     use steel_registry::data_components::components::EntityData;
     use steel_registry::data_components::vanilla_components::{
-        CHICKEN_SOUND_VARIANT, CHICKEN_VARIANT, COW_SOUND_VARIANT, COW_VARIANT, ENTITY_DATA,
-        PIG_VARIANT, SHEEP_COLOR,
+        CHICKEN_SOUND_VARIANT, CHICKEN_VARIANT, ENTITY_DATA,
     };
     use steel_registry::init_vanilla_registry;
     use steel_registry::item_stack::ItemStack;
     use steel_registry::{
-        DyeColor, RegistryReference, vanilla_chicken_sound_variants, vanilla_chicken_variants,
-        vanilla_cow_sound_variants, vanilla_cow_variants, vanilla_entities, vanilla_items,
-        vanilla_pig_variants,
+        RegistryReference, vanilla_chicken_sound_variants, vanilla_chicken_variants,
+        vanilla_entities, vanilla_items,
     };
     use steel_utils::types::Difficulty;
     use text_components::TextComponent;
 
-    use crate::entity::entities::{ChickenEntity, CowEntity, PigEntity, SheepEntity};
+    use crate::entity::entities::ChickenEntity;
     use crate::entity::{
         AgeableMob, Entity, EntitySpawnReason, SharedEntity, init_entities,
         load_entity_recursive_owned,
@@ -593,21 +591,21 @@ mod tests {
         let world_fixture = fresh_test_world("spawner_recursive_load_rejects_passenger");
         let world = &world_fixture.world;
 
-        let mut root = entity_nbt("minecraft:pig");
+        let mut root = entity_nbt("minecraft:chicken");
         root.insert(
             "Passengers",
             NbtList::Compound(vec![
                 entity_nbt("minecraft:not_an_entity"),
                 entity_nbt("minecraft:blaze"),
                 entity_nbt("minecraft:chicken"),
-                entity_nbt("minecraft:pig"),
+                entity_nbt("minecraft:chicken"),
             ]),
         );
 
         let loaded = load_entity_recursive_owned(world, &root, EntitySpawnReason::Spawner, |_| {})
             .expect("failed passengers must not discard the root");
         let root = Arc::clone(&loaded.root);
-        assert_eq!(root.entity_type(), &vanilla_entities::PIG);
+        assert_eq!(root.entity_type(), &vanilla_entities::CHICKEN);
         let passengers = root.passengers();
         assert_eq!(passengers.len(), 2);
         assert_eq!(passengers[0].entity_type(), &vanilla_entities::CHICKEN);
@@ -642,7 +640,7 @@ mod tests {
             .is_none()
         );
 
-        let mut root = entity_nbt("minecraft:pig");
+        let mut root = entity_nbt("minecraft:chicken");
         root.insert(
             "Passengers",
             NbtList::Compound(vec![
@@ -689,89 +687,60 @@ mod tests {
     fn item_entity_data_overrides_entity_state_without_replacing_defaults() {
         init_vanilla_registry();
 
-        let pig = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let chicken = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             1,
             DVec3::ZERO,
             Weak::new(),
         ));
-        let entity: SharedEntity = Arc::<PigEntity>::clone(&pig);
-        pig.set_custom_name(Some(TextComponent::plain("Existing")));
+        let entity: SharedEntity = Arc::<ChickenEntity>::clone(&chicken);
+        chicken.set_custom_name(Some(TextComponent::plain("Existing")));
 
         let mut payload = NbtCompound::new();
-        payload.insert("Age", pig.get_baby_start_age());
-        payload.insert("variant", vanilla_pig_variants::WARM.key.to_string());
+        payload.insert("Age", chicken.get_baby_start_age());
+        payload.insert("variant", vanilla_chicken_variants::WARM.key.to_string());
         let entity_data = EntityData::new(
-            &vanilla_entities::PIG,
+            &vanilla_entities::CHICKEN,
             CustomData::try_from_compound(payload).expect("test entity data should be valid"),
         );
-        let mut spawn_egg = ItemStack::new(&vanilla_items::PIG_SPAWN_EGG);
+        let mut spawn_egg = ItemStack::new(&vanilla_items::CHICKEN_SPAWN_EGG);
         spawn_egg.set(ENTITY_DATA, entity_data);
 
         apply_item_stack_components(&entity, &spawn_egg, false)
             .expect("valid typed entity data should load");
 
-        assert_eq!(pig.get_age(), pig.get_baby_start_age());
-        assert_eq!(pig.variant().key, vanilla_pig_variants::WARM.key);
-        assert!(AgeableMob::is_baby(pig.as_ref()));
-        assert_eq!(pig.custom_name(), Some(TextComponent::plain("Existing")));
-    }
-
-    #[test]
-    fn item_pig_variant_overrides_spawn_variant() {
-        init_vanilla_registry();
-
-        let pig = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
-        pig.set_variant(&vanilla_pig_variants::WARM);
-        let entity: SharedEntity = Arc::<PigEntity>::clone(&pig);
-
-        let mut spawn_egg = ItemStack::new(&vanilla_items::PIG_SPAWN_EGG);
-        spawn_egg.set(
-            PIG_VARIANT,
-            RegistryReference::new(&vanilla_pig_variants::COLD),
-        );
-
-        apply_item_stack_components(&entity, &spawn_egg, false)
-            .expect("valid pig variant component should apply");
-
-        assert_eq!(pig.variant().key, vanilla_pig_variants::COLD.key);
-    }
-
-    #[test]
-    fn item_cow_components_override_spawn_state() {
-        init_vanilla_registry();
-
-        let cow = Arc::new(CowEntity::new(
-            &vanilla_entities::COW,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
-        let entity: SharedEntity = Arc::<CowEntity>::clone(&cow);
-
-        let mut spawn_egg = ItemStack::new(&vanilla_items::COW_SPAWN_EGG);
-        spawn_egg.set(
-            COW_VARIANT,
-            RegistryReference::new(&vanilla_cow_variants::COLD),
-        );
-        spawn_egg.set(
-            COW_SOUND_VARIANT,
-            RegistryReference::new(&vanilla_cow_sound_variants::MOODY),
-        );
-
-        apply_item_stack_components(&entity, &spawn_egg, false)
-            .expect("valid cow components should apply");
-
-        assert_eq!(cow.variant().key, vanilla_cow_variants::COLD.key);
+        assert_eq!(chicken.get_age(), chicken.get_baby_start_age());
+        assert_eq!(chicken.variant().key, vanilla_chicken_variants::WARM.key);
+        assert!(AgeableMob::is_baby(chicken.as_ref()));
         assert_eq!(
-            cow.sound_variant().key,
-            vanilla_cow_sound_variants::MOODY.key
+            chicken.custom_name(),
+            Some(TextComponent::plain("Existing"))
         );
+    }
+
+    #[test]
+    fn item_chicken_variant_overrides_spawn_variant() {
+        init_vanilla_registry();
+
+        let chicken = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        chicken.set_variant(&vanilla_chicken_variants::WARM);
+        let entity: SharedEntity = Arc::<ChickenEntity>::clone(&chicken);
+
+        let mut spawn_egg = ItemStack::new(&vanilla_items::CHICKEN_SPAWN_EGG);
+        spawn_egg.set(
+            CHICKEN_VARIANT,
+            RegistryReference::new(&vanilla_chicken_variants::COLD),
+        );
+
+        apply_item_stack_components(&entity, &spawn_egg, false)
+            .expect("valid chicken variant component should apply");
+
+        assert_eq!(chicken.variant().key, vanilla_chicken_variants::COLD.key);
     }
 
     #[test]
@@ -804,26 +773,5 @@ mod tests {
             chicken.sound_variant().key,
             vanilla_chicken_sound_variants::PICKY.key
         );
-    }
-
-    #[test]
-    fn item_sheep_color_overrides_spawn_state() {
-        init_vanilla_registry();
-
-        let sheep = Arc::new(SheepEntity::new(
-            &vanilla_entities::SHEEP,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
-        let entity: SharedEntity = Arc::<SheepEntity>::clone(&sheep);
-
-        let mut spawn_egg = ItemStack::new(&vanilla_items::SHEEP_SPAWN_EGG);
-        spawn_egg.set(SHEEP_COLOR, DyeColor::Pink);
-
-        apply_item_stack_components(&entity, &spawn_egg, false)
-            .expect("valid sheep color should apply");
-
-        assert_eq!(sheep.color(), DyeColor::Pink);
     }
 }

@@ -122,7 +122,7 @@ mod tests {
     use super::*;
     use crate::entity::LivingEntity;
     use crate::entity::damage::DamageSource;
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::ChickenEntity;
     use crate::test_support::test_world;
 
     #[test]
@@ -136,8 +136,8 @@ mod tests {
     #[test]
     fn panic_goal_uses_vanilla_panic_damage_tag() {
         init_vanilla_registry();
-        let pig = PigEntity::new(
-            &vanilla_entities::PIG,
+        let pig = ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             1,
             DVec3::ZERO,
             Arc::downgrade(test_world()),

@@ -267,14 +267,14 @@ mod tests {
         vanilla_mob_effects,
     };
     use steel_utils::Downcast as _;
-    use steel_utils::types::Difficulty;
+
     use steel_utils::{ChunkPos, Identifier};
     use text_components::TextComponent;
 
     use super::{ConversionParams, ConversionType};
     use crate::behavior::init_behaviors;
     use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::ChickenEntity;
     use crate::entity::mob_effect::ABSORPTION_PER_LEVEL;
     use crate::entity::{
         AgeableMob, Mob, MobEffectInstance, SharedEntity, init_entities, next_entity_id,
@@ -291,8 +291,8 @@ mod tests {
     }
 
     fn add_pig(world: &Arc<World>) -> SharedEntity {
-        let pig: SharedEntity = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let pig: SharedEntity = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             next_entity_id(),
             DVec3::new(1.0, 64.0, 1.0),
             Arc::downgrade(world),
@@ -361,16 +361,16 @@ mod tests {
         pig_ageable.set_forced_age_timer(3);
 
         let cow = pig
-            .downcast_ref::<PigEntity>()
+            .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
             .convert_to(
-                &vanilla_entities::COW,
+                &vanilla_entities::CHICKEN,
                 ConversionParams::single(true, true),
                 None,
             )
             .expect("pig should convert to cow");
 
-        assert_eq!(cow.entity_type(), &vanilla_entities::COW);
+        assert_eq!(cow.entity_type(), &vanilla_entities::CHICKEN);
         assert!(pig.is_removed(), "single conversion discards the source");
         assert!(
             world_fixture.world.get_entity_by_id(cow.id()).is_some(),
@@ -440,10 +440,10 @@ mod tests {
         assert_eq!(pig.first_passenger().map(|p| p.id()), Some(passenger.id()));
 
         let cow = pig
-            .downcast_ref::<PigEntity>()
+            .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
             .convert_to(
-                &vanilla_entities::COW,
+                &vanilla_entities::CHICKEN,
                 ConversionParams::single(false, false),
                 None,
             )
@@ -478,10 +478,10 @@ mod tests {
         };
 
         let converted = pig
-            .downcast_ref::<PigEntity>()
+            .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
             .convert_to(
-                &vanilla_entities::COW,
+                &vanilla_entities::CHICKEN,
                 ConversionParams::single(true, false),
                 Some(&after_conversion),
             );
@@ -497,10 +497,10 @@ mod tests {
         let pig = add_pig(world);
 
         let cow = pig
-            .downcast_ref::<PigEntity>()
+            .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
             .convert_to(
-                &vanilla_entities::COW,
+                &vanilla_entities::CHICKEN,
                 ConversionParams {
                     conversion_type: ConversionType::SplitOnDeath,
                     keep_equipment: false,
@@ -510,7 +510,7 @@ mod tests {
             )
             .expect("split conversion should create the cow");
 
-        assert_eq!(cow.entity_type(), &vanilla_entities::COW);
+        assert_eq!(cow.entity_type(), &vanilla_entities::CHICKEN);
         assert!(world.get_entity_by_id(cow.id()).is_some());
         assert!(!pig.is_removed(), "split-on-death keeps the source living");
     }
@@ -524,7 +524,7 @@ mod tests {
         let pig = add_pig(world);
 
         let converted = pig
-            .downcast_ref::<PigEntity>()
+            .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
             .convert_to(
                 &vanilla_entities::ZOMBIE,
@@ -556,7 +556,7 @@ mod tests {
         );
 
         let converted = source
-            .downcast_ref::<PigEntity>()
+            .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
             .convert_to(
                 &vanilla_entities::ZOMBIE,
@@ -590,7 +590,7 @@ mod tests {
         );
 
         let converted = source
-            .downcast_ref::<PigEntity>()
+            .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
             .convert_to(
                 &vanilla_entities::ZOMBIE,
@@ -625,7 +625,7 @@ mod tests {
         );
 
         let converted = source
-            .downcast_ref::<PigEntity>()
+            .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
             .convert_to(
                 &vanilla_entities::ZOMBIE,
@@ -646,48 +646,6 @@ mod tests {
     }
 
     #[test]
-    fn convert_to_refuses_hostile_types_on_peaceful_difficulty() {
-        init_vanilla_registry();
-        init_entities();
-        let world_fixture = conversion_world();
-        let world = &world_fixture.world;
-
-        world.set_difficulty(Difficulty::Peaceful);
-        let pig = add_pig(world);
-        let pig_mob = pig.as_mob().expect("pig is a mob");
-        assert!(
-            pig.downcast_ref::<PigEntity>()
-                .expect("pig is concrete")
-                .convert_to(
-                    &vanilla_entities::ENDERMITE,
-                    ConversionParams::single(true, true),
-                    None,
-                )
-                .is_none(),
-            "hostile conversions are refused on peaceful"
-        );
-        assert!(
-            !pig_mob.is_removed(),
-            "refused conversions leave the source untouched"
-        );
-
-        world.set_difficulty(Difficulty::Normal);
-        let other_pig = add_pig(world);
-        assert!(
-            other_pig
-                .downcast_ref::<PigEntity>()
-                .expect("pig is concrete")
-                .convert_to(
-                    &vanilla_entities::ENDERMITE,
-                    ConversionParams::single(true, true),
-                    None,
-                )
-                .is_some(),
-            "hostile conversions are allowed on non-peaceful difficulties"
-        );
-    }
-
-    #[test]
     fn conversion_skips_equipment_when_not_requested() {
         init_vanilla_registry();
         init_entities();
@@ -701,10 +659,10 @@ mod tests {
         );
 
         let cow = pig
-            .downcast_ref::<PigEntity>()
+            .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
             .convert_to(
-                &vanilla_entities::COW,
+                &vanilla_entities::CHICKEN,
                 ConversionParams::single(false, true),
                 None,
             )
@@ -726,15 +684,15 @@ mod tests {
         let pig = add_pig(world);
         let finalized = Cell::new(false);
         let after_conversion = |mob: &dyn Mob| {
-            assert_eq!(mob.entity_type(), &vanilla_entities::COW);
+            assert_eq!(mob.entity_type(), &vanilla_entities::CHICKEN);
             finalized.set(true);
         };
 
         let cow = pig
-            .downcast_ref::<PigEntity>()
+            .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
             .convert_to(
-                &vanilla_entities::COW,
+                &vanilla_entities::CHICKEN,
                 ConversionParams::single(false, false),
                 Some(&after_conversion),
             )
@@ -744,6 +702,6 @@ mod tests {
             finalized.get(),
             "the after-conversion callback runs on the new mob"
         );
-        assert_eq!(cow.entity_type(), &vanilla_entities::COW);
+        assert_eq!(cow.entity_type(), &vanilla_entities::CHICKEN);
     }
 }

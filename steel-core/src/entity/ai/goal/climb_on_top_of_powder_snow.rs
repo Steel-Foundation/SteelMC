@@ -72,11 +72,11 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::ChickenEntity;
     use crate::entity::{Entity as _, InsideBlockEffectType, Mob as _};
 
-    fn pig() -> PigEntity {
-        PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new())
+    fn pig() -> ChickenEntity {
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new())
     }
 
     #[test]
@@ -110,7 +110,7 @@ mod tests {
     fn climb_on_top_of_powder_snow_goal_requires_world_after_tag_and_contact() {
         init_vanilla_registry();
         let mut goal = ClimbOnTopOfPowderSnowGoal::new();
-        let mob = PigEntity::new(&vanilla_entities::RABBIT, 1, DVec3::ZERO, Weak::new());
+        let mob = ChickenEntity::new(&vanilla_entities::RABBIT, 1, DVec3::ZERO, Weak::new());
         mob.apply_inside_block_effect(InsideBlockEffectType::Freeze);
 
         assert!(!goal.can_use(&mob));
@@ -121,7 +121,7 @@ mod tests {
         init_vanilla_registry();
         let mut goal = ClimbOnTopOfPowderSnowGoal::new();
         let mob = Arc::new(pig());
-        let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
+        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
 
         goal.tick(mob.as_ref(), &mob_entity);
 

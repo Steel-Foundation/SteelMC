@@ -23,7 +23,7 @@ use crate::entity::ai::goal::{Goal, GoalControl, GoalControls};
 use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::PigEntity;
+use crate::entity::entities::ChickenEntity;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::leash::{LEASH_ELASTIC_DISTANCE, LEASH_SNAP_DISTANCE, Leashable};
 use crate::entity::mob::pathfinder::LEASH_CLOSE_RANGE_WANTED_DISTANCE;
@@ -53,7 +53,12 @@ fn spawner_obstruction_rejects_overlapping_players() {
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     let position = player.position();
     insert_ready_full_chunk(world, ChunkPos::from_entity_pos(position));
-    let mob = PigEntity::new(&vanilla_entities::PIG, 2, position, Arc::downgrade(world));
+    let mob = ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
+        2,
+        position,
+        Arc::downgrade(world),
+    );
 
     assert!(!mob.check_spawn_obstruction(world));
     mob.snap_to(position + DVec3::new(3.0, 0.0, 0.0), 0.0, 0.0);
@@ -1037,8 +1042,8 @@ fn looting_collects_nearby_item_into_main_hand() {
     let world = &world_fixture.world;
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-    let mob = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let mob = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         1,
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(world),
@@ -1095,13 +1100,13 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
     let world = &world_fixture.world;
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-    let mob = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let mob = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         1,
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(world),
     ));
-    let mob_entity: SharedEntity = Arc::<PigEntity>::clone(&mob);
+    let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
     mob.set_can_pick_up_loot(true);
     mob.set_no_ai(true);
     assert!(
@@ -1152,8 +1157,8 @@ fn looting_skips_when_mob_cannot_pick_up_loot() {
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     // A mob leaves `canPickUpLoot` off by default, so it should ignore the item.
-    let mob = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let mob = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         1,
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(world),
@@ -1256,14 +1261,14 @@ fn equip_replaces_worse_armor_and_drops_the_old_piece() {
     let world = &world_fixture.world;
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-    let mob = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let mob = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(world),
     ));
     world
-        .try_add_entity(Arc::<PigEntity>::clone(&mob))
+        .try_add_entity(Arc::<ChickenEntity>::clone(&mob))
         .expect("test mob should attach to the loaded chunk");
 
     // Wear a leather helmet and force it to always drop, so the swap is
@@ -1408,8 +1413,8 @@ fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
     let world = &world_fixture.world;
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-    let mob = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let mob = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         1,
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(world),

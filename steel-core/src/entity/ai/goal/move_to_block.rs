@@ -253,7 +253,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::ChickenEntity;
 
     #[test]
     fn move_to_block_goal_uses_move_and_jump_controls() {
@@ -267,7 +267,7 @@ mod tests {
     fn move_to_block_goal_requires_world_after_start_delay() {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
         assert!(!goal.can_use(&pig));
     }
@@ -277,7 +277,7 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
         goal.next_start_tick = 2;
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
         assert!(!goal.can_use(&pig));
 
@@ -313,13 +313,13 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| false);
         goal.block_pos = BlockPos::new(0, -1, 0);
-        let pig = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let pig = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             1,
             DVec3::new(0.5, 0.5, 0.5),
             Weak::new(),
         ));
-        let pig_entity: SharedEntity = Arc::<PigEntity>::clone(&pig);
+        let pig_entity: SharedEntity = Arc::<ChickenEntity>::clone(&pig);
 
         goal.tick(pig.as_ref(), &pig_entity);
 

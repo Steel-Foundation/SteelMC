@@ -1,3 +1,214 @@
+// Moved from entity/monster/tests.rs with the entities it depends on.
+
+#[test]
+fn monster_ai_step_grows_no_action_time_by_vanilla_light_rate() {
+    init_vanilla_registry();
+    init_behaviors();
+    let bright_world_fixture = fresh_test_world("monster_ai_step_bright");
+    let bright_world = &bright_world_fixture.world;
+    insert_ready_full_chunk(bright_world, ChunkPos::new(0, 0));
+    let bright_mob = Arc::new(EndermiteEntity::new(
+        &vanilla_entities::ENDERMITE,
+        next_entity_id(),
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(bright_world),
+    ));
+    bright_world
+        .try_add_entity(Arc::clone(&bright_mob) as SharedEntity)
+        .expect("test endermite should attach to the loaded chunk");
+
+    let bright_mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&bright_mob);
+    bright_mob.ai_step(&bright_mob_entity);
+
+    // Bright light adds two idle ticks alongside the normal AI tick.
+    assert_eq!(bright_mob.no_action_time(), 3);
+
+    let dark_world_fixture = fresh_test_world_with_dimension_type(
+        "monster",
+        "monster_ai_step_dark",
+        &vanilla_dimension_types::THE_NETHER,
+    );
+    let dark_world = &dark_world_fixture.world;
+    insert_ready_full_chunk(dark_world, ChunkPos::new(0, 0));
+    let dark_mob = Arc::new(EndermiteEntity::new(
+        &vanilla_entities::ENDERMITE,
+        next_entity_id(),
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(dark_world),
+    ));
+    dark_world
+        .try_add_entity(Arc::clone(&dark_mob) as SharedEntity)
+        .expect("test endermite should attach to the loaded chunk");
+
+    let dark_mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&dark_mob);
+    dark_mob.ai_step(&dark_mob_entity);
+
+    assert_eq!(dark_mob.no_action_time(), 1);
+}
+
+#[test]
+fn monster_check_spawn_obstruction_rejects_liquids_without_checking_blocks() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("monster_spawn_obstruction");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let mob = EndermiteEntity::new(
+        &vanilla_entities::ENDERMITE,
+        next_entity_id(),
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(world),
+    );
+    let mob_pos = mob.block_position();
+
+    assert!(
+        mob.check_spawn_obstruction(world),
+        "an empty spawn box should be unobstructed"
+    );
+
+    assert!(world.set_block(
+        mob_pos,
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    assert!(
+        !mob.check_spawn_obstruction(world),
+        "liquid inside the spawn box must reject the spawn"
+    );
+
+    assert!(world.set_block(
+        mob_pos,
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    assert!(
+        mob.check_spawn_obstruction(world),
+        "block collisions are checked separately from entity spawn obstruction"
+    );
+
+    assert!(world.set_block(
+        mob_pos,
+        vanilla_blocks::AIR.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    assert!(mob.check_spawn_obstruction(world));
+}
+
+#[test]
+fn monster_spawn_obstruction_checks_entities_and_excludes_spectators_and_shared_vehicles() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("monster_spawn_entity_obstruction");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let position = DVec3::new(8.0, 65.0, 8.0);
+    let mob = Arc::new(EndermiteEntity::new(
+        &vanilla_entities::ENDERMITE,
+        next_entity_id(),
+        position,
+        Arc::downgrade(world),
+    ));
+    let mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&mob);
+    world
+        .try_add_entity(Arc::clone(&mob_entity))
+        .expect("mob should join world");
+    assert!(mob.check_spawn_obstruction(world));
+
+    let player =
+        TestPlayerBuilder::new(Arc::clone(world), "SpawnBlocker", next_entity_id()).build();
+    player.base().set_position_local(position);
+    let player_entity: SharedEntity = Arc::clone(&player) as SharedEntity;
+    world
+        .try_add_entity(Arc::clone(&player_entity))
+        .expect("player should join world");
+    assert!(!mob.check_spawn_obstruction(world));
+
+    player.restore_game_modes(GameType::Spectator, None);
+    assert!(mob.check_spawn_obstruction(world));
+    player.restore_game_modes(GameType::Survival, None);
+    assert!(!mob.check_spawn_obstruction(world));
+
+    EntityBase::restore_passenger_relationship(&player_entity, &mob_entity);
+    assert!(mob.check_spawn_obstruction(world));
+    mob.stop_riding();
+    assert!(!mob.check_spawn_obstruction(world));
+
+    player.set_removed(RemovalReason::Discarded);
+    assert!(mob.check_spawn_obstruction(world));
+}
+
+#[test]
+fn enemy_monsters_cannot_be_leashed() {
+    init_vanilla_registry();
+    let world_fixture = fresh_test_world("enemy_leash");
+    let world = &world_fixture.world;
+    let hostile: SharedEntity = Arc::new(EndermiteEntity::new(
+        &vanilla_entities::ENDERMITE,
+        next_entity_id(),
+        DVec3::ZERO,
+        Arc::downgrade(world),
+    ));
+    let pig: SharedEntity = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
+        next_entity_id(),
+        DVec3::new(2.0, 0.0, 0.0),
+        Arc::downgrade(world),
+    ));
+
+    assert!(hostile.is_enemy(), "monsters are vanilla `Enemy`s");
+    assert!(!pig.is_enemy(), "a passive animal is not a vanilla `Enemy`");
+    let hostile_leashable = hostile
+        .as_leashable()
+        .expect("a hostile mob implements Leashable");
+    assert!(
+        !hostile_leashable.can_be_leashed(),
+        "enemy mobs must not be leashable"
+    );
+    let pig_leashable = pig.as_leashable().expect("a pig implements Leashable");
+    assert!(
+        pig_leashable.can_be_leashed(),
+        "non-enemy mobs keep their existing leashability"
+    );
+    assert!(
+        !hostile_leashable.can_have_a_leash_attached_to(pig.as_ref()),
+        "a lead must not attach to a hostile mob"
+    );
+    assert!(
+        pig_leashable.can_have_a_leash_attached_to(hostile.as_ref()),
+        "a lead should still attach to a non-enemy mob in reach"
+    );
+    assert!(
+        !pig_leashable.can_have_a_leash_attached_to(pig.as_ref()),
+        "an entity can never leash to itself"
+    );
+}
+
+#[test]
+fn monster_downcasts_from_shared_entity() {
+    init_vanilla_registry();
+    let world_fixture = fresh_test_world("monster_downcast");
+    let world = &world_fixture.world;
+    let endermite: SharedEntity = Arc::new(EndermiteEntity::new(
+        &vanilla_entities::ENDERMITE,
+        next_entity_id(),
+        DVec3::ZERO,
+        Arc::downgrade(world),
+    ));
+
+    assert!(endermite.is_monster());
+    let monster = endermite
+        .as_monster()
+        .expect("endermite should be a monster");
+    assert_eq!(monster.sound_source_monster(), SoundSource::Hostile);
+    let mob = endermite.as_mob().expect("endermite should be a mob");
+    assert_eq!(
+        mob.xp_reward(),
+        3,
+        "the endermite constructor assigns its own reward"
+    );
+}
+
+// Remaining contents of src/entity/monster/tests.rs
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -19,11 +230,11 @@ use super::{DEFAULT_XP_REWARD, SKY_LIGHT_SPAWN_ROLL_BOUND};
 use crate::behavior::init_behaviors;
 use crate::chunk::light::MAX_LIGHT_LEVEL;
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::PigEntity;
+use crate::entity::entities::ChickenEntity;
 use crate::entity::mob::{Mob, MobBase};
 use crate::entity::{
     Entity, EntityBase, EntitySpawnReason, LivingEntity, LivingEntityBase, Monster, PathfinderMob,
-    RemovalReason, SharedEntity, entities::mobs::hostile::EndermiteEntity, next_entity_id,
+    RemovalReason, SharedEntity, entities::mobs::hostile::next_entity_id,
 };
 use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, fresh_test_world_with_dimension_type,
@@ -55,11 +266,11 @@ impl TestMonster {
             base: EntityBase::new(
                 1,
                 DVec3::new(8.0, 65.0, 8.0),
-                vanilla_entities::PIG.dimensions,
+                vanilla_entities::CHICKEN.dimensions,
                 world.map_or_else(Weak::new, Arc::downgrade),
             ),
-            entity_type: &vanilla_entities::PIG,
-            living_base: LivingEntityBase::new(&vanilla_entities::PIG),
+            entity_type: &vanilla_entities::CHICKEN,
+            living_base: LivingEntityBase::new(&vanilla_entities::CHICKEN),
             mob_base: MobBase::new(),
             mob_flags: SyncMutex::new(0),
             health: SyncMutex::new(INITIAL_TEST_HEALTH),
@@ -522,7 +733,7 @@ fn monster_spawn_rules_refuse_hostile_types_on_peaceful_difficulty() {
     );
     assert!(
         TestMonster::check_any_light_monster_spawn_rules(
-            &vanilla_entities::COW,
+            &vanilla_entities::CHICKEN,
             world,
             EntitySpawnReason::TrialSpawner,
             pos,
@@ -571,210 +782,7 @@ fn monster_walk_target_value_prefers_darkness() {
     );
 }
 
-#[test]
-fn monster_ai_step_grows_no_action_time_by_vanilla_light_rate() {
-    init_vanilla_registry();
-    init_behaviors();
-    let bright_world_fixture = fresh_test_world("monster_ai_step_bright");
-    let bright_world = &bright_world_fixture.world;
-    insert_ready_full_chunk(bright_world, ChunkPos::new(0, 0));
-    let bright_mob = Arc::new(EndermiteEntity::new(
-        &vanilla_entities::ENDERMITE,
-        next_entity_id(),
-        DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(bright_world),
-    ));
-    bright_world
-        .try_add_entity(Arc::clone(&bright_mob) as SharedEntity)
-        .expect("test endermite should attach to the loaded chunk");
 
-    let bright_mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&bright_mob);
-    bright_mob.ai_step(&bright_mob_entity);
 
-    // Bright light adds two idle ticks alongside the normal AI tick.
-    assert_eq!(bright_mob.no_action_time(), 3);
 
-    let dark_world_fixture = fresh_test_world_with_dimension_type(
-        "monster",
-        "monster_ai_step_dark",
-        &vanilla_dimension_types::THE_NETHER,
-    );
-    let dark_world = &dark_world_fixture.world;
-    insert_ready_full_chunk(dark_world, ChunkPos::new(0, 0));
-    let dark_mob = Arc::new(EndermiteEntity::new(
-        &vanilla_entities::ENDERMITE,
-        next_entity_id(),
-        DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(dark_world),
-    ));
-    dark_world
-        .try_add_entity(Arc::clone(&dark_mob) as SharedEntity)
-        .expect("test endermite should attach to the loaded chunk");
 
-    let dark_mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&dark_mob);
-    dark_mob.ai_step(&dark_mob_entity);
-
-    assert_eq!(dark_mob.no_action_time(), 1);
-}
-
-#[test]
-fn monster_check_spawn_obstruction_rejects_liquids_without_checking_blocks() {
-    init_vanilla_registry();
-    init_behaviors();
-    let world_fixture = fresh_test_world("monster_spawn_obstruction");
-    let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
-    let mob = EndermiteEntity::new(
-        &vanilla_entities::ENDERMITE,
-        next_entity_id(),
-        DVec3::new(8.0, 65.0, 8.0),
-        Arc::downgrade(world),
-    );
-    let mob_pos = mob.block_position();
-
-    assert!(
-        mob.check_spawn_obstruction(world),
-        "an empty spawn box should be unobstructed"
-    );
-
-    assert!(world.set_block(
-        mob_pos,
-        vanilla_blocks::WATER.default_state(),
-        UpdateFlags::UPDATE_ALL,
-    ));
-    assert!(
-        !mob.check_spawn_obstruction(world),
-        "liquid inside the spawn box must reject the spawn"
-    );
-
-    assert!(world.set_block(
-        mob_pos,
-        vanilla_blocks::STONE.default_state(),
-        UpdateFlags::UPDATE_ALL,
-    ));
-    assert!(
-        mob.check_spawn_obstruction(world),
-        "block collisions are checked separately from entity spawn obstruction"
-    );
-
-    assert!(world.set_block(
-        mob_pos,
-        vanilla_blocks::AIR.default_state(),
-        UpdateFlags::UPDATE_ALL,
-    ));
-    assert!(mob.check_spawn_obstruction(world));
-}
-
-#[test]
-fn monster_spawn_obstruction_checks_entities_and_excludes_spectators_and_shared_vehicles() {
-    init_vanilla_registry();
-    init_behaviors();
-    let world_fixture = fresh_test_world("monster_spawn_entity_obstruction");
-    let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
-    let position = DVec3::new(8.0, 65.0, 8.0);
-    let mob = Arc::new(EndermiteEntity::new(
-        &vanilla_entities::ENDERMITE,
-        next_entity_id(),
-        position,
-        Arc::downgrade(world),
-    ));
-    let mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&mob);
-    world
-        .try_add_entity(Arc::clone(&mob_entity))
-        .expect("mob should join world");
-    assert!(mob.check_spawn_obstruction(world));
-
-    let player =
-        TestPlayerBuilder::new(Arc::clone(world), "SpawnBlocker", next_entity_id()).build();
-    player.base().set_position_local(position);
-    let player_entity: SharedEntity = Arc::clone(&player) as SharedEntity;
-    world
-        .try_add_entity(Arc::clone(&player_entity))
-        .expect("player should join world");
-    assert!(!mob.check_spawn_obstruction(world));
-
-    player.restore_game_modes(GameType::Spectator, None);
-    assert!(mob.check_spawn_obstruction(world));
-    player.restore_game_modes(GameType::Survival, None);
-    assert!(!mob.check_spawn_obstruction(world));
-
-    EntityBase::restore_passenger_relationship(&player_entity, &mob_entity);
-    assert!(mob.check_spawn_obstruction(world));
-    mob.stop_riding();
-    assert!(!mob.check_spawn_obstruction(world));
-
-    player.set_removed(RemovalReason::Discarded);
-    assert!(mob.check_spawn_obstruction(world));
-}
-
-#[test]
-fn enemy_monsters_cannot_be_leashed() {
-    init_vanilla_registry();
-    let world_fixture = fresh_test_world("enemy_leash");
-    let world = &world_fixture.world;
-    let hostile: SharedEntity = Arc::new(EndermiteEntity::new(
-        &vanilla_entities::ENDERMITE,
-        next_entity_id(),
-        DVec3::ZERO,
-        Arc::downgrade(world),
-    ));
-    let pig: SharedEntity = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
-        next_entity_id(),
-        DVec3::new(2.0, 0.0, 0.0),
-        Arc::downgrade(world),
-    ));
-
-    assert!(hostile.is_enemy(), "monsters are vanilla `Enemy`s");
-    assert!(!pig.is_enemy(), "a passive animal is not a vanilla `Enemy`");
-    let hostile_leashable = hostile
-        .as_leashable()
-        .expect("a hostile mob implements Leashable");
-    assert!(
-        !hostile_leashable.can_be_leashed(),
-        "enemy mobs must not be leashable"
-    );
-    let pig_leashable = pig.as_leashable().expect("a pig implements Leashable");
-    assert!(
-        pig_leashable.can_be_leashed(),
-        "non-enemy mobs keep their existing leashability"
-    );
-    assert!(
-        !hostile_leashable.can_have_a_leash_attached_to(pig.as_ref()),
-        "a lead must not attach to a hostile mob"
-    );
-    assert!(
-        pig_leashable.can_have_a_leash_attached_to(hostile.as_ref()),
-        "a lead should still attach to a non-enemy mob in reach"
-    );
-    assert!(
-        !pig_leashable.can_have_a_leash_attached_to(pig.as_ref()),
-        "an entity can never leash to itself"
-    );
-}
-
-#[test]
-fn monster_downcasts_from_shared_entity() {
-    init_vanilla_registry();
-    let world_fixture = fresh_test_world("monster_downcast");
-    let world = &world_fixture.world;
-    let endermite: SharedEntity = Arc::new(EndermiteEntity::new(
-        &vanilla_entities::ENDERMITE,
-        next_entity_id(),
-        DVec3::ZERO,
-        Arc::downgrade(world),
-    ));
-
-    assert!(endermite.is_monster());
-    let monster = endermite
-        .as_monster()
-        .expect("endermite should be a monster");
-    assert_eq!(monster.sound_source_monster(), SoundSource::Hostile);
-    let mob = endermite.as_mob().expect("endermite should be a mob");
-    assert_eq!(
-        mob.xp_reward(),
-        3,
-        "the endermite constructor assigns its own reward"
-    );
-}

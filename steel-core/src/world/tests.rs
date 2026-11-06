@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use crate::entity::{EntityBase, LivingEntity as _, entities::PigEntity};
+use crate::entity::{EntityBase, LivingEntity as _, entities::ChickenEntity};
 use crate::player::ResetReason;
 use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world,
@@ -613,8 +613,8 @@ fn navigating_mob_tracker_tracks_only_pathfinder_mobs() {
 
     let tracker = NavigatingMobTracker::new();
     let non_pathfinder = TrackerTestEntity::shared(1);
-    let pig: SharedEntity = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let pig: SharedEntity = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         2,
         DVec3::ZERO,
         Weak::new(),

@@ -211,6 +211,3 @@ fn sample_monster_spawn_light_test(
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -320,7 +320,7 @@ mod tests {
     use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_entities;
 
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::ChickenEntity;
 
     use super::*;
     use crate::test_support::TestEntity;
@@ -337,7 +337,7 @@ mod tests {
 
         let Some(entity) = registry.create_and_load(
             EntityLoadRequest {
-                entity_type: &vanilla_entities::PIG,
+                entity_type: &vanilla_entities::CHICKEN,
                 position: DVec3::ZERO,
                 uuid: Uuid::from_u128(1),
                 velocity: DVec3::ZERO,
@@ -420,7 +420,7 @@ mod tests {
         init_vanilla_registry();
         let mut registry = EntityRegistry::new();
         registry.register_load(&vanilla_entities::PIG, |entity_type, load| {
-            let entity: SharedEntity = Arc::new(PigEntity::from_saved(entity_type, load));
+            let entity: SharedEntity = Arc::new(ChickenEntity::from_saved(entity_type, load));
             entity
         });
         assert!(!registry.has_factory(&vanilla_entities::PIG));

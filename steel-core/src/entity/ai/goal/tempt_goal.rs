@@ -180,7 +180,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
 
     use super::*;
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::ChickenEntity;
     use crate::inventory::equipment::EquipmentSlot;
 
     #[test]
@@ -199,7 +199,7 @@ mod tests {
             |item_stack| item_stack.is(&vanilla_items::CARROT),
             false,
         );
-        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
         assert!(!goal.should_follow(&pig));
 

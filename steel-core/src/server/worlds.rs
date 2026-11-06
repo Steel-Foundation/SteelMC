@@ -249,7 +249,7 @@ mod tests {
 
     #[test]
     fn domain_uuid_lookup_excludes_replaced_worlds_without_retaining_worlds() {
-        use crate::entity::{SharedEntity, entities::PigEntity};
+        use crate::entity::{SharedEntity, entities::ChickenEntity};
         use crate::test_support::{
             fresh_test_derived_world, fresh_test_world_in_domain, insert_ready_full_chunk,
         };
@@ -263,8 +263,8 @@ mod tests {
         let other_fixture = fresh_test_derived_world(primary, "other");
         let other = &other_fixture.world;
         insert_ready_full_chunk(other, ChunkPos::new(0, 0));
-        let owner: SharedEntity = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
+        let owner: SharedEntity = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
             1,
             DVec3::ZERO,
             Arc::downgrade(other),

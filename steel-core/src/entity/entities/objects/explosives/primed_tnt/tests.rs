@@ -7,7 +7,7 @@ use steel_utils::{ChunkPos, Identifier};
 
 use super::*;
 use crate::behavior::init_behaviors;
-use crate::entity::entities::PigEntity;
+use crate::entity::entities::ChickenEntity;
 use crate::entity::{LivingEntity, change_entity_world, init_entities, next_entity_id};
 use crate::player::ResetReason;
 use crate::portal::{TeleportPostTransition, TeleportTransition};
@@ -102,14 +102,14 @@ fn cross_world_recreation_preserves_owner_and_explosion_attribution() {
         .expect("recreated entity should remain primed TNT");
     assert!(recreated_tnt.state.lock().used_portal);
 
-    let victim = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let victim = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         next_entity_id(),
         position + DVec3::X,
         Arc::downgrade(target),
     ));
     target
-        .try_add_entity(Arc::<PigEntity>::clone(&victim))
+        .try_add_entity(Arc::<ChickenEntity>::clone(&victim))
         .expect("victim should enter the loaded target chunk");
     recreated_tnt.set_fuse(1);
     Arc::clone(&recreated).tick();

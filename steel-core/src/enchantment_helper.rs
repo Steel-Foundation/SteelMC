@@ -1012,7 +1012,7 @@ fn damage_source_predicate_matches(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::Arc;
 
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
@@ -1026,9 +1026,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::entity::{
-        EntityBase, LivingEntity, LivingEntityBase, entities::FireworkRocketEntity,
-    };
+    use crate::entity::{EntityBase, LivingEntity, LivingEntityBase};
     use crate::test_support::{enchanted_item, test_world};
 
     struct TestLivingEntity {
@@ -1362,27 +1360,6 @@ mod tests {
         do_post_attack_effects_from_item(test_world(), &stack, &context);
 
         assert_eq!(victim.remaining_fire_ticks(), 160);
-    }
-
-    #[test]
-    fn projectile_spawned_effect_ignites_firework() {
-        init_vanilla_registry();
-
-        let projectile = FireworkRocketEntity::new(
-            &vanilla_entities::FIREWORK_ROCKET,
-            2,
-            DVec3::ZERO,
-            Weak::new(),
-        );
-        let mut rocket = enchanted_item(
-            &vanilla_items::FIREWORK_ROCKET,
-            Identifier::vanilla_static("flame"),
-            1,
-        );
-
-        on_projectile_spawned(test_world(), &mut rocket, &projectile, None);
-
-        assert_eq!(projectile.remaining_fire_ticks(), 2_000);
     }
 
     #[test]

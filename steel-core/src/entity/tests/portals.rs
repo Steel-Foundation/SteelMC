@@ -153,9 +153,9 @@ fn dimension_transition_persistence_keeps_non_chunk_serializable_entities() {
 fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
     init_vanilla_registry();
 
-    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-    let holder: SharedEntity = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+    let holder: SharedEntity = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         2,
         DVec3::new(1.0, 0.0, 0.0),
         Weak::new(),
@@ -191,26 +191,6 @@ fn can_use_portal_rejects_sleeping_living_entities() {
     entity.set_sleeping_pos(BlockPos::ZERO);
 
     assert!(!entity.can_use_portal(false));
-}
-
-#[test]
-fn dimension_changing_delay_uses_vanilla_class_overrides() {
-    let base = TypedTestEntity::new(1, &vanilla_entities::ITEM);
-    assert_eq!(base.dimension_changing_delay(), 300);
-
-    let unimplemented_minecart = TypedTestEntity::new(2, &vanilla_entities::MINECART);
-    assert_eq!(unimplemented_minecart.dimension_changing_delay(), 300);
-
-    let minecart = ChestMinecartEntity::new(
-        &vanilla_entities::CHEST_MINECART,
-        3,
-        DVec3::ZERO,
-        Weak::new(),
-    );
-    assert_eq!(minecart.dimension_changing_delay(), 10);
-
-    let arrow = TypedTestEntity::new(4, &vanilla_entities::ARROW);
-    assert_eq!(arrow.dimension_changing_delay(), 2);
 }
 
 #[test]

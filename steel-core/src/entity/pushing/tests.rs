@@ -6,14 +6,16 @@ use steel_registry::vanilla_game_rules::MAX_ENTITY_CRAMMING;
 use steel_utils::ChunkPos;
 
 use super::EntityPush;
-use super::test_fixtures::{CustomContact, DEFAULT_ENTITIES, Factory, Fixture, player};
+use super::test_fixtures::{
+    CustomContact, DEFAULT_ENTITIES, Factory, Fixture, LIVING_FIXTURES, player,
+};
 use crate::bootstrap::init_globals;
 use crate::entity::{Entity, next_entity_id};
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
 #[test]
 fn mixed_species_pushes_match_sequential_contacts_and_custom_callbacks() {
-    let pushers = DEFAULT_ENTITIES[..6]
+    let pushers = DEFAULT_ENTITIES[..LIVING_FIXTURES]
         .iter()
         .copied()
         .chain(once(("player", player as Factory)));
@@ -85,7 +87,7 @@ fn pushes_match_sequential_contacts_at_the_cramming_boundary() {
                         64.0,
                         1.6 + f64::from(index / 5) * 0.02,
                     );
-                    let entity = DEFAULT_ENTITIES[index as usize % 6].1(
+                    let entity = DEFAULT_ENTITIES[index as usize % LIVING_FIXTURES].1(
                         &fixture.world,
                         next_entity_id(),
                         position,
@@ -148,21 +150,6 @@ fn pushes_match_sequential_contacts_at_the_cramming_boundary() {
             }
         }
     }
-}
-
-#[test]
-fn bat_keeps_its_empty_push_entities_override() {
-    let reference = Fixture::new(DEFAULT_ENTITIES[6].1, false);
-    let actual = Fixture::new(DEFAULT_ENTITIES[6].1, false);
-    reference.reset(0);
-    actual.reset(0);
-
-    actual.entities[0]
-        .as_living_entity()
-        .expect("bat")
-        .push_entities();
-
-    actual.assert_same_state(&reference, "bat", 0);
 }
 
 #[test]

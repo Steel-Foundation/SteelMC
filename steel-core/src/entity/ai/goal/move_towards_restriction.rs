@@ -60,7 +60,7 @@ mod tests {
     use steel_utils::BlockPos;
 
     use super::*;
-    use crate::entity::{Mob, entities::PigEntity};
+    use crate::entity::{Mob, entities::ChickenEntity};
 
     #[test]
     fn move_towards_restriction_goal_uses_move_control() {
@@ -73,7 +73,7 @@ mod tests {
     fn move_towards_restriction_goal_requires_outside_home() {
         init_vanilla_registry();
         let mut goal = MoveTowardsRestrictionGoal::new(1.0);
-        let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
         mob.set_home_to(BlockPos::ZERO, 4);
 
         assert!(!goal.can_use(&mob));

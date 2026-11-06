@@ -1,3 +1,21 @@
+// Moved from entity/projectile/owner_tests.rs with the entities it depends on.
+
+fn pearl(world: &Arc<World>) -> EnderPearlEntity {
+    EnderPearlEntity::new(
+        &vanilla_entities::ENDER_PEARL,
+        10,
+        DVec3::ZERO,
+        Arc::downgrade(world),
+    )
+}
+
+fn load_projectile(pearl: &EnderPearlEntity, nbt: &NbtCompound) {
+    let mut bytes = Vec::new();
+    nbt.write(&mut bytes);
+    let borrowed = read_compound(&mut Cursor::new(&bytes)).expect("borrow test NBT");
+    pearl.load_projectile((&borrowed).into());
+}
+// Moved from src/entity/projectile/owner_tests.rs
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -9,20 +27,12 @@ use steel_utils::{ChunkPos, UuidExt as _};
 
 use crate::entity::{
     Entity as _, EntityReference, LivingEntity as _, Projectile, RemovalReason, SharedEntity,
-    entities::{EnderPearlEntity, PigEntity},
+    entities::{ChickenEntity},
 };
 use crate::server::worlds::WorldMap;
 use crate::test_support::{TestPlayerBuilder, insert_ready_full_chunk, test_domain};
 use crate::world::World;
 
-fn pearl(world: &Arc<World>) -> EnderPearlEntity {
-    EnderPearlEntity::new(
-        &vanilla_entities::ENDER_PEARL,
-        10,
-        DVec3::ZERO,
-        Arc::downgrade(world),
-    )
-}
 
 #[test]
 fn cached_dead_owner_takes_precedence_until_cache_expires() {
@@ -143,13 +153,13 @@ fn uuid_owner_is_attributed_on_projectile_entity_hit() {
         .expect("register owner");
     let projectile = Arc::new(pearl(worlds[1]));
     projectile.set_owner_uuid(Some(owner.uuid()));
-    let victim = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let victim = Arc::new(ChickenEntity::new(
+        &vanilla_entities::CHICKEN,
         2,
         DVec3::ZERO,
         Arc::downgrade(worlds[1]),
     ));
-    let target: SharedEntity = Arc::<PigEntity>::clone(&victim);
+    let target: SharedEntity = Arc::<ChickenEntity>::clone(&victim);
     worlds[1]
         .try_add_entity(Arc::clone(&target))
         .expect("register victim");
@@ -168,12 +178,6 @@ fn uuid_owner_is_attributed_on_projectile_entity_hit() {
     );
 }
 
-fn load_projectile(pearl: &EnderPearlEntity, nbt: &NbtCompound) {
-    let mut bytes = Vec::new();
-    nbt.write(&mut bytes);
-    let borrowed = read_compound(&mut Cursor::new(&bytes)).expect("borrow test NBT");
-    pearl.load_projectile((&borrowed).into());
-}
 
 #[test]
 fn serialized_owner_resolves_by_uuid_and_loading_clears_old_cache() {

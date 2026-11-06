@@ -141,7 +141,7 @@ fn selector_argument_shapes_enforce_cardinality_and_player_only_rules() {
 fn selector_parses_core_filters_and_nested_snbt() {
     init_vanilla_registry();
     let Ok(selector) = parse_selector_plan(
-        "@e[type=pig,nbt={Tags:[\"foo\"]},scores={kills=1..},team=!red]",
+        "@e[type=chicken,nbt={Tags:[\"foo\"]},scores={kills=1..},team=!red]",
         true,
     ) else {
         panic!("selector should parse");
@@ -154,7 +154,7 @@ fn selector_parses_core_filters_and_nested_snbt() {
     assert!(selector.filters.iter().any(|filter| matches!(
         filter,
         SelectorFilter::EntityType { value, inverted: false }
-            if ptr::eq(*value, &raw const vanilla_entities::PIG)
+            if ptr::eq(*value, &raw const vanilla_entities::CHICKEN)
     )));
     assert!(selector.filters.iter().any(|filter| matches!(
         filter,
