@@ -77,7 +77,7 @@
                 if [ "$jarVersion" != "${assets.minecraftVersion}" ]; then
                   echo "error: pinned server jar is Minecraft $jarVersion, but the" >&2
                   echo "targeted version is ${assets.minecraftVersion}." >&2
-                  echo "Run ./update-minecraft-assets.sh to regenerate the pin." >&2
+                  echo "Run ./tools/update-minecraft-assets.sh to regenerate the pin." >&2
                   exit 1
                 fi
 

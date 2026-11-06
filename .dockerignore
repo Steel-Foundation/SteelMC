@@ -16,7 +16,7 @@ _typos.toml
 README.md
 AGENTS.md
 prek.toml
-update-minecraft-src.sh
+tools/update-minecraft-src.sh
 clippy.toml
 docker-compose.yml
 Dockerfile

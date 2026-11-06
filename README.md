@@ -103,7 +103,7 @@ Before you start:
    the community.
 2. Read the [contributor guide](https://steelmc.dev/development/start-contributing/)
    and [code standards](https://steelmc.dev/development/code-standard/).
-3. Generate the targeted vanilla source with `./update-minecraft-src.sh` and verify
+3. Generate the targeted vanilla source with `./tools/update-minecraft-src.sh` and verify
    behavior against it.
 4. Run the relevant tests and checks before opening a pull request.
 
