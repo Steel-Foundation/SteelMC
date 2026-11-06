@@ -425,24 +425,111 @@ impl<'a> Renderer<'a> {
             .max()
             .unwrap_or(0);
         for decl in &slot.decls {
-            let marker = if effective.is_some_and(|e| ptr::eq(e, *decl)) {
-                "▶"
-            } else if !decl.is_concrete() {
-                "○"
-            } else if slot.is_static {
-                "·"
-            } else if self.reached.contains(&(*decl as DeclKey)) {
-                "↳"
-            } else {
-                "✗"
-            };
             let line = format!(
-                "\t//   {marker} {:width$}  {:loc_width$}  {}",
+                "\t//   {} {:width$}  {:loc_width$}  {}",
+                self.mark(slot, decl, effective).symbol(),
                 decl.owner_display,
                 decl.location(),
                 self.super_summary(slot, decl)
             );
             let _ = writeln!(out, "{}", line.trim_end());
+        }
+    }
+
+    fn mark(
+        &self,
+        slot: &Slot,
+        decl: &'static MethodDecl,
+        effective: Option<&'static MethodDecl>,
+    ) -> Mark {
+        if effective.is_some_and(|e| ptr::eq(e, decl)) {
+            Mark::Effective
+        } else if !decl.is_concrete() {
+            Mark::Abstract
+        } else if slot.is_static {
+            Mark::HiddenStatic
+        } else if self.reached.contains(&(decl as DeclKey)) {
+            Mark::Reached
+        } else {
+            Mark::NeverReached
+        }
+    }
+
+    /// Tab-separated rows for aggregating over many classes:
+    /// `decl  target  signature  owner  class|interface  mark  super-shapes` for every
+    /// declaration, and `dispatch  target  caller  callee  runs` for inherited
+    /// `this` calls that land in an override.
+    pub fn records(&self) -> String {
+        let h = self.hierarchy;
+        let target = h.target.display_name();
+        let mut out = String::new();
+        for slot in &h.slots {
+            let effective = h.effective(slot).concrete();
+            for decl in &slot.decls {
+                let kind = if h.class_index(&decl.owner).is_some() {
+                    "class"
+                } else {
+                    "interface"
+                };
+                let _ = writeln!(
+                    out,
+                    "decl\t{target}\t{}\t{}\t{kind}\t{}\t{}",
+                    decl.signature(),
+                    decl.owner_display,
+                    self.mark(slot, decl, effective).name(),
+                    self.super_shapes(slot, decl),
+                );
+            }
+        }
+        for slot in &h.slots {
+            for decl in &slot.decls {
+                if !self.reached.contains(&(*decl as DeclKey)) {
+                    continue;
+                }
+                for (call, outcome) in self.calls.get(&(*decl as DeclKey)).into_iter().flatten() {
+                    let CallOutcome::Dispatch(implementation) = outcome else {
+                        continue;
+                    };
+                    let _ = writeln!(
+                        out,
+                        "dispatch\t{target}\t{}\t{}\t{}",
+                        decl.qualified_signature(),
+                        call.name,
+                        impl_owner(implementation),
+                    );
+                }
+            }
+        }
+        out
+    }
+
+    /// Shapes of `decl`'s super calls into its own slot, `;`-separated:
+    /// `empty`, `none` (stops the chain), or e.g. `first,conditional`.
+    fn super_shapes(&self, slot: &Slot, decl: &'static MethodDecl) -> String {
+        let Some(body) = decl.body.filter(|_| decl.is_concrete()) else {
+            return String::new();
+        };
+        if decl.is_empty() {
+            return "empty".to_owned();
+        }
+        let shapes: Vec<String> = self
+            .calls
+            .get(&(decl as DeclKey))
+            .into_iter()
+            .flatten()
+            .filter(|(call, outcome)| {
+                call.name == slot.name && matches!(outcome, CallOutcome::Super(_))
+            })
+            .map(|(call, _)| {
+                calls::call_shape(call.node, body)
+                    .describe()
+                    .replace(", ", ",")
+            })
+            .collect();
+        if shapes.is_empty() {
+            "none".to_owned()
+        } else {
+            shapes.join(";")
         }
     }
 
@@ -626,6 +713,37 @@ impl<'a> Renderer<'a> {
             CtorOutcome::External => format!("{prefix} superclass not in minecraft-src"),
         };
         notes.entry(row).or_default().push(note);
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Mark {
+    Effective,
+    Reached,
+    NeverReached,
+    Abstract,
+    HiddenStatic,
+}
+
+impl Mark {
+    const fn symbol(self) -> &'static str {
+        match self {
+            Self::Effective => "▶",
+            Self::Reached => "↳",
+            Self::NeverReached => "✗",
+            Self::Abstract => "○",
+            Self::HiddenStatic => "·",
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Effective => "effective",
+            Self::Reached => "reached",
+            Self::NeverReached => "never-reached",
+            Self::Abstract => "abstract",
+            Self::HiddenStatic => "hidden-static",
+        }
     }
 }
 

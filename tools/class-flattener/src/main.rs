@@ -46,6 +46,11 @@ struct Cli {
     /// Only print the member index without bodies.
     #[arg(short, long)]
     summary: bool,
+
+    /// Print tab-separated declaration and dispatch rows for aggregate
+    /// analysis instead of the listing.
+    #[arg(long, conflicts_with_all = ["inline", "summary", "methods"])]
+    tsv: bool,
 }
 
 fn main() -> ExitCode {
@@ -79,7 +84,12 @@ fn run(cli: &Cli) -> Result<String, String> {
         summary: cli.summary,
         source_label: source_label(&cli.src),
     };
-    Ok(Renderer::new(&source, &hierarchy, &options).render())
+    let renderer = Renderer::new(&source, &hierarchy, &options);
+    Ok(if cli.tsv {
+        renderer.records()
+    } else {
+        renderer.render()
+    })
 }
 
 /// `minecraft-src (26.3)` from the `GitCraft` commit subject, when available.
