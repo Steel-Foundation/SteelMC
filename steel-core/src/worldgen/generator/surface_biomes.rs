@@ -104,6 +104,8 @@ const QUARTS_PER_SECTION: i32 = QUARTS_PER_SECTION_PLANE * QUARTS_PER_SECTION_SI
 const RING_SIDE: i32 = QUARTS_PER_SECTION_SIDE + 2;
 const UNREAD: u16 = u16::MAX;
 const NOT_UNIFORM: u16 = u16::MAX - 1;
+/// Candidate quarts per fuzzing group: its 2 × 2 × 2 parent corners.
+const CANDIDATE_COUNT: usize = 8;
 const GROUPS_PER_SIDE: i32 = QUARTS_PER_SECTION_SIDE + 1;
 
 impl<'a> SurfaceQuartBiomes<'a> {
@@ -171,7 +173,7 @@ impl<'a> SurfaceQuartBiomes<'a> {
         let first = self.biome_at(parent);
         let class = classes.class(first)?;
 
-        for i in 1..8 {
+        for i in 1..CANDIDATE_COUNT {
             let biome = self.biome_at(IVec3::new(
                 parent.x + i32::from(i & 4 != 0),
                 parent.y + i32::from(i & 2 != 0),
@@ -243,7 +245,7 @@ pub(super) struct FuzzedBiomeColumn<'a, 'b> {
     fract_x: f64,
     fract_z: f64,
     cached_parent_y: i32,
-    candidates: [BiomeCandidate; 8],
+    candidates: [BiomeCandidate; CANDIDATE_COUNT],
     rval_after_cx: [i64; 2],
     class_parent_y: i32,
     uniform_biome: Option<u16>,
@@ -270,7 +272,7 @@ impl<'a, 'b> FuzzedBiomeColumn<'a, 'b> {
             fract_x: f64::from(abs_x & 3) / 4.0,
             fract_z: f64::from(abs_z & 3) / 4.0,
             cached_parent_y: i32::MIN,
-            candidates: [BiomeCandidate::default(); 8],
+            candidates: [BiomeCandidate::default(); CANDIDATE_COUNT],
             rval_after_cx: [
                 lcg_next(biome_zoom_seed, i64::from(parent_x)),
                 lcg_next(biome_zoom_seed, i64::from(parent_x + 1)),

@@ -1,7 +1,7 @@
 //! Graph walks over density function trees.
 //!
 //! Utilities for flatness inference (`uses_y`, `is_flat_cached`), reference
-//! collection, and detecting `Interpolated` / `BlendedNoise` markers transitively
+//! collection, and detecting nodes transitively with `contains_function`
 //! (used to decide inlining vs function calls during codegen).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -293,6 +293,12 @@ pub(super) fn contains_function(
             contains_function(&t.argument1, registry, visited, is_target)
                 || contains_function(&t.argument2, registry, visited, is_target)
         }
+        DensityFunction::Lerp(l) => {
+            contains_function(&l.alpha, registry, visited, is_target)
+                || contains_function(&l.first, registry, visited, is_target)
+                || contains_function(&l.second, registry, visited, is_target)
+        }
+        DensityFunction::Slice(sl) => contains_function(&sl.input, registry, visited, is_target),
         DensityFunction::Mapped(m) => contains_function(&m.input, registry, visited, is_target),
         DensityFunction::Clamp(c) => contains_function(&c.input, registry, visited, is_target),
         DensityFunction::Marker(m) => contains_function(&m.wrapped, registry, visited, is_target),
@@ -351,78 +357,6 @@ fn contains_function_spline(
     spline.points.iter().any(|p| {
         if let SplineValue::Spline(nested) = &p.value {
             contains_function_spline(nested, registry, visited, is_target)
-        } else {
-            false
-        }
-    })
-}
-
-/// Check if a named function (transitively) contains `Interpolated` markers.
-pub(super) fn has_interpolated_markers(
-    df: &DensityFunction,
-    registry: &BTreeMap<String, DensityFunction>,
-    visited: &mut BTreeSet<String>,
-) -> bool {
-    match df {
-        DensityFunction::Marker(m) if m.kind == MarkerType::Interpolated => true,
-        DensityFunction::Marker(m) => has_interpolated_markers(&m.wrapped, registry, visited),
-        DensityFunction::TwoArgumentSimple(t) => {
-            has_interpolated_markers(&t.argument1, registry, visited)
-                || has_interpolated_markers(&t.argument2, registry, visited)
-        }
-        DensityFunction::Mapped(m) => has_interpolated_markers(&m.input, registry, visited),
-        DensityFunction::Clamp(c) => has_interpolated_markers(&c.input, registry, visited),
-        DensityFunction::RangeChoice(rc) => {
-            has_interpolated_markers(&rc.input, registry, visited)
-                || has_interpolated_markers(&rc.when_in_range, registry, visited)
-                || has_interpolated_markers(&rc.when_out_of_range, registry, visited)
-        }
-        DensityFunction::IntervalSelect(interval) => {
-            has_interpolated_markers(&interval.input, registry, visited)
-                || interval
-                    .functions
-                    .iter()
-                    .any(|function| has_interpolated_markers(function, registry, visited))
-        }
-        DensityFunction::BlendDensity(bd) => has_interpolated_markers(&bd.input, registry, visited),
-        DensityFunction::WeirdScaledSampler(ws) => {
-            has_interpolated_markers(&ws.input, registry, visited)
-        }
-        DensityFunction::ShiftedNoise(sn) => {
-            has_interpolated_markers(&sn.shift_x, registry, visited)
-                || has_interpolated_markers(&sn.shift_y, registry, visited)
-                || has_interpolated_markers(&sn.shift_z, registry, visited)
-        }
-        DensityFunction::FindTopSurface(fts) => {
-            has_interpolated_markers(&fts.density, registry, visited)
-                || has_interpolated_markers(&fts.upper_bound, registry, visited)
-        }
-        DensityFunction::Reference(r) => {
-            if visited.contains(&r.id) {
-                return false;
-            }
-            visited.insert(r.id.clone());
-            registry
-                .get(&r.id)
-                .is_some_and(|ref_df| has_interpolated_markers(ref_df, registry, visited))
-        }
-        // Splines could contain interpolated markers in theory
-        DensityFunction::Spline(s) => has_interpolated_spline(&s.spline, registry, visited),
-        _ => false,
-    }
-}
-
-pub(super) fn has_interpolated_spline(
-    spline: &CubicSpline,
-    registry: &BTreeMap<String, DensityFunction>,
-    visited: &mut BTreeSet<String>,
-) -> bool {
-    if has_interpolated_markers(&spline.coordinate, registry, visited) {
-        return true;
-    }
-    spline.points.iter().any(|p| {
-        if let SplineValue::Spline(nested) = &p.value {
-            has_interpolated_spline(nested, registry, visited)
         } else {
             false
         }

@@ -73,8 +73,8 @@ impl TranspileContext {
             }
 
             DensityFunction::Noise(n) => {
-                // Y-independent noise inside a 3D function: read from column cache
-                if !is_flat && n.y_scale == 0.0 {
+                // Y-independent noise in the 3D fill: read from the bulk-order column cache
+                if self.fill_mode && !is_flat && n.y_scale == 0.0 {
                     let fp = fingerprint(df);
                     if let Some((idx, _, _)) = self.inline_flat_noises.get(&fp) {
                         let cache_field = format_ident!("inline_noise_{}", idx);
@@ -432,7 +432,7 @@ impl TranspileContext {
                 // upper_bound is flat (xz-only)
                 let upper_expr = self.gen_expr(&fts.upper_bound, input, is_flat);
                 // density uses y — generate with is_flat=false so it references our loop var.
-                // Vanilla probes it per point, even inside the chunk fill.
+                // Vanilla probes it with `sampleValue`, even inside the chunk fill.
                 let fill_mode = mem::replace(&mut self.fill_mode, false);
                 let density_expr = self.gen_expr(&fts.density, input, false);
                 self.fill_mode = fill_mode;
@@ -509,13 +509,8 @@ impl TranspileContext {
                     } else {
                         quote! { 0.0 }
                     }
-                } else if self.fill_mode
-                    && (self.blended_noise_refs.contains(&r.id)
-                        || self.unshifted_noise_refs.contains(&r.id))
-                {
-                    // In fill mode, inline references that contain BlendedNoise
-                    // so the precomputed blended_noise_value is used, or an unshifted
-                    // noise so it is sampled in bulk order.
+                } else if self.fill_mode && self.fill_inlined_refs.contains(&r.id) {
+                    // See `fill_inlined_refs`.
                     if let Some(ref_df) = input.registry.get(&r.id) {
                         self.gen_expr(ref_df, input, is_flat)
                     } else {
@@ -758,9 +753,9 @@ impl TranspileContext {
             }
 
             DensityFunction::Noise(n) => {
-                // Y-independent noise inside a 3D function: use the cached
+                // Y-independent noise in the 3D fill: use the bulk-order cached
                 // scalar value, splatted across the lanes.
-                if n.y_scale == 0.0 {
+                if self.fill_mode && n.y_scale == 0.0 {
                     let fp = fingerprint(df);
                     if let Some((idx, _, _)) = self.inline_flat_noises.get(&fp) {
                         let cache_field = format_ident!("inline_noise_{}", idx);
@@ -814,12 +809,10 @@ impl TranspileContext {
             }
 
             DensityFunction::Reference(r) => {
-                // Both interpolated params and fill-mode blended/unshifted-noise refs inline
+                // Both interpolated params and fill-mode inlined refs inline
                 // the referenced function's SIMD expression directly.
                 if (self.interpolated_param_mode && self.interpolated_refs.contains(&r.id))
-                    || (self.fill_mode
-                        && (self.blended_noise_refs.contains(&r.id)
-                            || self.unshifted_noise_refs.contains(&r.id)))
+                    || (self.fill_mode && self.fill_inlined_refs.contains(&r.id))
                 {
                     if let Some(ref_df) = input.registry.get(&r.id) {
                         self.gen_expr_simd(ref_df, input, is_flat)

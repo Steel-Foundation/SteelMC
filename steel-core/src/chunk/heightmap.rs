@@ -795,9 +795,10 @@ mod tests {
         }
     }
 
-    /// Priming must read `Building` sections, the worldgen layout, like paletted ones.
+    /// Priming must give the true column heights for both section layouts, including
+    /// `Building`, the palette-free layout worldgen uses until light.
     #[test]
-    fn section_priming_reads_building_sections_like_paletted_ones() {
+    fn section_priming_finds_top_blocks_in_both_layouts() {
         init_test_state();
 
         let states = [
@@ -810,12 +811,14 @@ mod tests {
                 .blocks
                 .get_default_state_id(&vanilla_blocks::COBWEB),
         ];
+        let min_y = -16;
         let mut paletted = [ChunkSection::new_empty(), ChunkSection::new_empty()];
         let mut building = [ChunkSection::new_empty(), ChunkSection::new_empty()];
+        // One block per column at a column-specific height; some columns stay empty.
+        let mut top_blocks = [None; 256];
         for x in 0..16 {
             for z in 0..16 {
                 let column = x * 16 + z;
-                // Vary the top block and height per column; leave some empty.
                 if column % 7 == 0 {
                     continue;
                 }
@@ -824,31 +827,30 @@ mod tests {
                 let state = states[column % states.len()];
                 paletted[section].set_block_state(x, y, z, state);
                 building[section].set_block_state_for_generation(x, y, z, state);
+                top_blocks[column] = Some((min_y + (section * 16 + y) as i32, state));
             }
         }
         let all_types = HeightmapType::all_types();
-        let prime = |sections: [ChunkSection; 2]| {
+        for (layout, sections) in [("paletted", paletted), ("building", building)] {
             let sections = Sections::from_owned(sections.into());
             let mut heightmaps = ChunkHeightmaps::empty();
-            heightmaps.prime_from_sections(all_types, -16, 32, &sections.sections);
-            heightmaps
-        };
-        let (paletted, building) = (prime(paletted), prime(building));
-
-        for heightmap_type in all_types.iter().copied() {
-            for x in 0..16 {
-                for z in 0..16 {
-                    let height = |heightmaps: &ChunkHeightmaps| {
-                        let Some(heightmap) = heightmaps.get(heightmap_type) else {
-                            panic!("heightmap {heightmap_type:?} was not primed");
+            heightmaps.prime_from_sections(all_types, min_y, 32, &sections.sections);
+            for heightmap_type in all_types.iter().copied() {
+                let Some(heightmap) = heightmaps.get(heightmap_type) else {
+                    panic!("heightmap {heightmap_type:?} was not primed");
+                };
+                for x in 0..16 {
+                    for z in 0..16 {
+                        let expected = match top_blocks[x * 16 + z] {
+                            Some((y, state)) if heightmap_type.is_opaque(state) => y + 1,
+                            _ => min_y,
                         };
-                        heightmap.get_first_available(x, z)
-                    };
-                    assert_eq!(
-                        height(&building),
-                        height(&paletted),
-                        "{heightmap_type:?} at ({x}, {z})"
-                    );
+                        assert_eq!(
+                            heightmap.get_first_available(x, z),
+                            expected,
+                            "{layout} {heightmap_type:?} at ({x}, {z})"
+                        );
+                    }
                 }
             }
         }

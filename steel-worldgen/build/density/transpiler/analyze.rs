@@ -11,10 +11,7 @@ use crate::density::{CubicSpline, DensityFunction, MarkerType, SplineValue};
 use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::fingerprint::collect_inline_flat_noises;
-use super::graph::{
-    collect_references, contains_function, has_interpolated_markers, is_flat_cached,
-    unwrap_markers, uses_y,
-};
+use super::graph::{collect_references, contains_function, is_flat_cached, unwrap_markers, uses_y};
 
 impl TranspileContext {
     /// Conservatively retain cache preparation unless all remaining inputs
@@ -159,34 +156,35 @@ impl TranspileContext {
         for name in &self.used_names {
             if let Some(df) = input.registry.get(name) {
                 let mut visited = BTreeSet::new();
-                if has_interpolated_markers(df, &input.registry, &mut visited) {
+                if contains_function(
+                    df,
+                    &input.registry,
+                    &mut visited,
+                    |df| matches!(df, DensityFunction::Marker(m) if m.kind == MarkerType::Interpolated),
+                ) {
                     self.interpolated_refs.insert(name.clone());
                 }
                 let mut visited = BTreeSet::new();
-                if contains_function(df, &input.registry, &mut visited, |df| {
-                    matches!(df, DensityFunction::BlendedNoise(_))
-                }) {
-                    self.blended_noise_refs.insert(name.clone());
-                }
+                let has_blended_noise =
+                    contains_function(df, &input.registry, &mut visited, |df| {
+                        matches!(df, DensityFunction::BlendedNoise(_))
+                    });
                 let mut visited = BTreeSet::new();
-                if contains_function(df, &input.registry, &mut visited, |df| {
-                    matches!(df, DensityFunction::Noise(_))
-                }) {
-                    self.unshifted_noise_refs.insert(name.clone());
+                let has_unshifted_noise =
+                    contains_function(df, &input.registry, &mut visited, |df| {
+                        matches!(df, DensityFunction::Noise(_))
+                    });
+                if has_blended_noise || has_unshifted_noise {
+                    self.fill_inlined_refs.insert(name.clone());
                 }
+                // The column cache evaluates flat-cached functions in point order, so none
+                // may hold an unshifted noise that vanilla samples in bulk.
+                assert!(
+                    !(has_unshifted_noise && self.flat_cached.contains(name)),
+                    "flat-cached function {name} contains unshifted noise"
+                );
             }
         }
-
-        // The column cache evaluates flat-cached functions in point order, so none may hold
-        // an unshifted noise that vanilla samples in bulk.
-        let flat_with_noise: Vec<_> = self
-            .flat_cached
-            .intersection(&self.unshifted_noise_refs)
-            .collect();
-        assert!(
-            flat_with_noise.is_empty(),
-            "flat-cached functions contain unshifted noise: {flat_with_noise:?}"
-        );
 
         self.topo_order = self.topological_sort(input);
     }

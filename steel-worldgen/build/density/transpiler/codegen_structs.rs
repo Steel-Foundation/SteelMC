@@ -336,7 +336,7 @@ impl TranspileContext {
                 let field = format_ident!("inline_noise_{}", idx);
                 let noise_field = noise_field_ident(noise_id);
                 let scale = Literal::f64_unsuffixed(*xz_scale);
-                // Vanilla reaches these only through the chunk fill, so they use its bulk order.
+                // Only the chunk fill reads these, so they use vanilla's bulk order.
                 quote! {
                     self.#field = noises.#noise_field.get_value_xz_bulk(x, z, #scale);
                 }

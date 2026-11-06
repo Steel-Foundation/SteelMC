@@ -12,6 +12,7 @@
     reason = "must match vanilla's truncate-toward-zero behavior"
 )]
 
+use std::array;
 use std::cmp::Ordering;
 
 use super::PARAMETER_COUNT;
@@ -241,10 +242,10 @@ fn snapshot_buckets(entries: &[BuildEntry]) -> (i64, Vec<Vec<BuildEntry>>) {
 /// The BFS-order layout also means that nodes accessed together during a
 /// search tend to be near each other in memory.
 struct FlatNode {
-    /// Bounding box minimum values for each parameter dimension.
-    mins: [i64; PARAMETER_COUNT],
-    /// Bounding box maximum values for each parameter dimension.
-    maxs: [i64; PARAMETER_COUNT],
+    /// Bounding box minimum per axis, except offset (see `offset_term`).
+    mins: [i64; OFFSET_AXIS],
+    /// Bounding box maximum per axis, except offset (see `offset_term`).
+    maxs: [i64; OFFSET_AXIS],
     /// For leaf nodes: index into the values array.
     /// For subtree nodes: `u32::MAX` (sentinel).
     value_index: u32,
@@ -266,8 +267,8 @@ impl FlatNode {
         children_count: u8,
     ) -> Self {
         Self {
-            mins: parameter_space.map(|p| p.min),
-            maxs: parameter_space.map(|p| p.max),
+            mins: array::from_fn(|axis| parameter_space[axis].min),
+            maxs: array::from_fn(|axis| parameter_space[axis].max),
             value_index,
             children_start: 0,
             children_count,

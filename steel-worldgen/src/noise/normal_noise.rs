@@ -222,28 +222,15 @@ impl NormalNoise {
     #[must_use]
     /// Samples the float-valued vanilla noise stack.
     pub fn get_value(&self, x: f64, y: f64, z: f64) -> f32 {
-        self.layers.iter().fold(0.0_f32, |value, layer| {
-            value
-                + layer.amplitude
-                    * layer.noise.noise(
-                        x * layer.frequency,
-                        y * layer.frequency,
-                        z * layer.frequency,
-                    )
-        })
+        // Point order is bulk order with unit scales: `1.0 * frequency` is exact.
+        self.get_value_bulk(x, y, z, 1.0, 1.0)
     }
 
     #[inline]
     #[must_use]
     /// Samples the float-valued vanilla noise stack with a fixed Y coordinate.
     pub fn get_value_xz(&self, x: f64, z: f64) -> f32 {
-        self.layers.iter().fold(0.0_f32, |value, layer| {
-            value
-                + layer.amplitude
-                    * layer
-                        .noise
-                        .noise_xz(x * layer.frequency, z * layer.frequency)
-        })
+        self.get_value_xz_bulk(x, z, 1.0)
     }
 
     #[inline]
@@ -268,16 +255,7 @@ impl NormalNoise {
         ys: Simd<f64, N>,
         z: f64,
     ) -> Simd<f32, N> {
-        let mut value = Simd::splat(0.0_f32);
-        for layer in &self.layers {
-            let noise = layer.noise.noise_y_simd(
-                x * layer.frequency,
-                ys * Simd::splat(layer.frequency),
-                z * layer.frequency,
-            );
-            value += Simd::splat(layer.amplitude) * noise;
-        }
-        value
+        self.get_value_y_simd_bulk(x, ys, z, 1.0, 1.0)
     }
 
     // Vanilla's chunk fill samples unshifted noise through `NoiseStack.addToVolume`, which
@@ -485,10 +463,19 @@ mod tests {
 
     /// The bulk entries must agree with each other, and with point order wherever
     /// `scale * frequency` is exact (dyadic scales, and 1.5 and 0.75 against `INPUT_FACTOR`).
+    /// Where it is not, as for `jagged`'s 1500, the two orders must differ.
     #[test]
     fn bulk_order_entries_agree() {
         let mut random = RandomSource::Legacy(LegacyRandom::from_seed(12_345));
         let noise = NormalNoise::create_from_random(&mut random, -16, &[1.0; 16]);
+        assert_ne!(
+            noise
+                .get_value_xz_bulk(-29_999_888.0, -4.0, 1500.0)
+                .to_bits(),
+            noise
+                .get_value_xz(-29_999_888.0 * 1500.0, -4.0 * 1500.0)
+                .to_bits()
+        );
         let (x, z) = (-29_999_976.0, 5_000_004.0);
         let ys = [-64.0, -40.0, 40.0, 72.0, 0.0, 8.0, 312.0, 320.0];
 
