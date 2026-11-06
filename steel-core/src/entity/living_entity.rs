@@ -335,7 +335,7 @@ pub trait LivingEntity: Entity {
 
     /// Returns whether this entity is currently a baby.
     fn is_baby(&self) -> bool {
-        self.as_ageable_mob().is_some_and(AgeableMob::is_baby)
+        Ageable::of(self.as_entity_event_source()).is_some_and(|ageable| ageable.is_baby())
     }
 
     /// Returns the vanilla sheep loot predicate state (`minecraft:components.sheep/color`
@@ -764,7 +764,7 @@ pub trait LivingEntity: Entity {
 
     /// Hook before applying damage after vanilla reductions.
     fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {
-        if let Some(animal) = self.as_animal() {
+        if let Some(animal) = Animal::of(self.as_entity_event_source()) {
             animal.reset_love();
         }
     }
@@ -1101,8 +1101,8 @@ pub trait LivingEntity: Entity {
     /// Returns the base experience reward for killing this entity, using the
     /// animal-specific reward when applicable.
     fn base_experience_reward(&self) -> i32 {
-        if let Some(animal) = self.as_animal() {
-            return animal.base_experience_reward_animal();
+        if Animal::of(self.as_entity_event_source()).is_some() {
+            return Animal::base_experience_reward();
         }
 
         self.as_mob().map_or(0, Mob::base_experience_reward_mob)

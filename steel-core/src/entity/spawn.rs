@@ -543,10 +543,11 @@ mod tests {
     use steel_utils::types::Difficulty;
     use text_components::TextComponent;
 
+    use crate::entity::ageable::BABY_START_AGE;
+    use crate::entity::animal::Parts as _;
     use crate::entity::entities::ChickenEntity;
     use crate::entity::{
-        AgeableMob, Entity, EntitySpawnReason, SharedEntity, init_entities,
-        load_entity_recursive_owned,
+        Entity, EntitySpawnReason, SharedEntity, init_entities, load_entity_recursive_owned,
     };
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
@@ -697,7 +698,7 @@ mod tests {
         chicken.set_custom_name(Some(TextComponent::plain("Existing")));
 
         let mut payload = NbtCompound::new();
-        payload.insert("Age", chicken.get_baby_start_age());
+        payload.insert("Age", BABY_START_AGE);
         payload.insert("variant", vanilla_chicken_variants::WARM.key.to_string());
         let entity_data = EntityData::new(
             &vanilla_entities::CHICKEN,
@@ -709,9 +710,9 @@ mod tests {
         apply_item_stack_components(&entity, &spawn_egg, false)
             .expect("valid typed entity data should load");
 
-        assert_eq!(chicken.get_age(), chicken.get_baby_start_age());
+        assert_eq!(chicken.animal().ageable().age(), BABY_START_AGE);
         assert_eq!(chicken.variant().key, vanilla_chicken_variants::WARM.key);
-        assert!(AgeableMob::is_baby(chicken.as_ref()));
+        assert!(chicken.animal().ageable().is_baby());
         assert_eq!(
             chicken.custom_name(),
             Some(TextComponent::plain("Existing"))

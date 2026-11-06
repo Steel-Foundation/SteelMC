@@ -1,287 +1,337 @@
-//! Shared vanilla `AgeableMob` state and hooks.
+//! Vanilla `AgeableMob`: age, forced growth and age locking.
+//!
+//! State lives in the [`Age`] component; behavior lives on the [`Ageable`]
+//! view, which any code holding an entity can obtain with [`Ageable::of`].
+//! The `aiStep`, `finalizeSpawn` and `mobInteract` layers are pipeline stages
+//! in this module.
 
 use std::sync::Arc;
 
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::SoundSource;
+use steel_registry::vanilla_entity_data::AgeableMobEntityData;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
-use steel_utils::Identifier;
-use steel_utils::locks::SyncMutex;
-use steel_utils::types::InteractionHand;
+use steel_utils::locks::CheckedMutex;
+use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::behavior::InteractionResult;
-use crate::entity::{
-    AgeableMobGroupData, ENTITIES, Entity, EntitySpawnReason, Mob, SharedEntity, SpawnGroupData,
-    next_entity_id,
+use crate::entity::component::entries::{
+    AiStep, FinalizeSpawn, FinalizeSpawnCtx, MobInteract, MobInteractCtx,
 };
-use crate::player::Player;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
+use crate::entity::component::{Component, Components as _, Has};
+use crate::entity::next_entity_id;
+use crate::entity::{AgeableMobGroupData, ENTITIES, Entity, Mob, SharedEntity, SpawnGroupData};
 use crate::world::World;
 
-const BABY_START_AGE: i32 = -24_000;
+/// Age assigned to a newly spawned or bred baby (`AgeableMob.BABY_START_AGE`).
+pub const BABY_START_AGE: i32 = -24_000;
 const AGE_LOCK_COOLDOWN_TICKS: i32 = 40;
 const FORCED_AGE_PARTICLE_TICKS: i32 = 40;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct AgeableMobState {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct AgeState {
     age: i32,
     forced_age: i32,
     forced_age_timer: i32,
     age_lock_particle_timer: i32,
 }
 
-impl AgeableMobState {
-    const fn new() -> Self {
+/// Per-type properties of a vanilla `AgeableMob`.
+pub struct AgeableProps {
+    /// `AgeableMob.getBreedOffspring`: creates the offspring of `parent` and
+    /// `partner`. Spawn eggs used on an adult pass the parent as partner.
+    pub breed_offspring:
+        fn(parent: &Ageable<'_>, world: &Arc<World>, partner: &Ageable<'_>) -> Option<SharedEntity>,
+}
+
+/// Age state of a vanilla `AgeableMob`. The baby and age-locked flags are
+/// synchronized data and live in the entity's generated synced data.
+pub struct Age {
+    state: CheckedMutex<AgeState>,
+    props: &'static AgeableProps,
+}
+
+impl Age {
+    /// An adult with no forced growth, with `props` describing its type.
+    #[must_use]
+    pub const fn new(props: &'static AgeableProps) -> Self {
         Self {
-            age: 0,
-            forced_age: 0,
-            forced_age_timer: 0,
-            age_lock_particle_timer: 0,
+            state: CheckedMutex::new(
+                "Age",
+                AgeState {
+                    age: 0,
+                    forced_age: 0,
+                    forced_age_timer: 0,
+                    age_lock_particle_timer: 0,
+                },
+            ),
+            props,
         }
     }
 }
 
-/// Runtime fields shared by vanilla ageable mobs.
-#[derive(Debug)]
-pub struct AgeableMobBase {
-    state: SyncMutex<AgeableMobState>,
+// SAFETY: This key is owned by Steel and uniquely identifies `Age`.
+unsafe impl DowncastType for Age {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity_component/age");
 }
 
-impl AgeableMobBase {
-    /// Creates default ageable runtime state.
+impl Component for Age {
+    fn save(&self, owner: &dyn Entity, nbt: &mut NbtCompound) {
+        let ageable = Ageable::new(owner, self);
+        nbt.insert("Age", ageable.age());
+        nbt.insert("ForcedAge", ageable.forced_age());
+        nbt.insert("AgeLocked", i8::from(ageable.is_age_locked()));
+    }
+
+    fn load(&self, owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        let ageable = Ageable::new(owner, self);
+        ageable.set_age(nbt.int("Age").unwrap_or(0));
+        self.state.lock().forced_age = nbt.int("ForcedAge").unwrap_or(0);
+        ageable.set_age_locked(nbt.byte("AgeLocked").is_some_and(|value| value != 0));
+    }
+}
+
+/// An entity seen as a vanilla `AgeableMob`.
+#[derive(Clone, Copy)]
+pub struct Ageable<'a> {
+    entity: &'a dyn Entity,
+    age: &'a Age,
+}
+
+impl<'a> Ageable<'a> {
+    /// Pairs `entity` with its age component.
     #[must_use]
-    pub const fn new() -> Self {
-        Self {
-            state: SyncMutex::new(AgeableMobState::new()),
-        }
+    pub const fn new(entity: &'a dyn Entity, age: &'a Age) -> Self {
+        Self { entity, age }
+    }
+
+    /// Returns `entity` as an ageable mob, if it is one.
+    #[must_use]
+    pub fn of(entity: &'a dyn Entity) -> Option<Self> {
+        Some(Self::new(entity, entity.query::<Age>()?))
+    }
+
+    /// Returns the entity this view belongs to.
+    #[must_use]
+    pub const fn entity(&self) -> &'a dyn Entity {
+        self.entity
+    }
+
+    fn with_synced<R>(&self, f: impl FnOnce(&mut AgeableMobEntityData) -> R) -> Option<R> {
+        let synced = self.entity.synced_data()?;
+        let mut data = synced.lock_data();
+        data.ageable_mob_layer_mut().map(f)
     }
 
     /// Age in ticks: negative while a baby, reaching zero at adulthood.
     #[must_use]
     pub fn age(&self) -> i32 {
-        self.state.lock().age
+        self.age.state.lock().age
     }
 
-    /// Sets vanilla `AgeableMob.age`, returning whether the baby/adult boundary changed.
-    pub fn set_age(&self, age: i32) -> bool {
-        let mut state = self.state.lock();
-        let old_age = state.age;
-        state.age = age;
-        old_age < 0 && age >= 0 || old_age >= 0 && age < 0
+    /// Sets the age, updating the synchronized baby flag when the
+    /// baby/adult boundary is crossed (`AgeableMob.setAge`).
+    pub fn set_age(&self, age: i32) {
+        let old_age = {
+            let mut state = self.age.state.lock();
+            let old_age = state.age;
+            state.age = age;
+            old_age
+        };
+        if (old_age < 0) != (age < 0) {
+            let baby = age < 0;
+            self.with_synced(|data| data.baby.set(baby));
+            // Vanilla refreshes from `onSyncedDataUpdated(DATA_BABY_ID)`.
+            // TODO: `ageBoundaryReached` also dismounts grown mobs from boats
+            // without space for them.
+            self.entity.refresh_dimensions();
+        }
+    }
+
+    /// Returns whether this mob is a baby.
+    #[must_use]
+    pub fn is_baby(&self) -> bool {
+        self.age() < 0
+    }
+
+    /// Makes this mob a baby or an adult (`AgeableMob.setBaby`).
+    pub fn set_baby(&self, baby: bool) {
+        self.set_age(if baby { BABY_START_AGE } else { 0 });
+    }
+
+    /// Returns the synchronized age-lock flag.
+    #[must_use]
+    pub fn is_age_locked(&self) -> bool {
+        self.with_synced(|data| *data.age_locked.get())
+            .unwrap_or(false)
+    }
+
+    /// Sets the synchronized age-lock flag.
+    pub fn set_age_locked(&self, age_locked: bool) {
+        self.with_synced(|data| data.age_locked.set(age_locked));
     }
 
     /// Extra age credited by forced growth, reapplied once natural age reaches zero.
     #[must_use]
     pub fn forced_age(&self) -> i32 {
-        self.state.lock().forced_age
-    }
-
-    /// Sets the extra age credited by forced growth.
-    pub fn set_forced_age(&self, forced_age: i32) {
-        self.state.lock().forced_age = forced_age;
+        self.age.state.lock().forced_age
     }
 
     /// Ticks remaining in the forced-growth particle effect.
     #[must_use]
     pub fn forced_age_timer(&self) -> i32 {
-        self.state.lock().forced_age_timer
+        self.age.state.lock().forced_age_timer
     }
 
-    /// Sets the ticks remaining in the forced-growth particle effect.
-    pub fn set_forced_age_timer(&self, forced_age_timer: i32) {
-        self.state.lock().forced_age_timer = forced_age_timer;
+    /// Copies forced growth from `other`, as mob conversion does.
+    pub fn copy_forced_growth_from(&self, other: &Ageable<'_>) {
+        let (forced_age, forced_age_timer) = {
+            let other = other.age.state.lock();
+            (other.forced_age, other.forced_age_timer)
+        };
+        let mut state = self.age.state.lock();
+        state.forced_age = forced_age;
+        state.forced_age_timer = forced_age_timer;
     }
 
-    /// Ticks remaining before this mob's age-lock state can be toggled again.
+    /// Returns whether this mob can naturally age toward adulthood.
     #[must_use]
-    pub fn age_lock_particle_timer(&self) -> i32 {
-        self.state.lock().age_lock_particle_timer
+    pub fn can_age_up(&self) -> bool {
+        self.is_baby() && !self.is_age_locked()
     }
 
-    /// Sets the cooldown before this mob's age-lock state can be toggled again.
-    pub fn set_age_lock_particle_timer(&self, timer: i32) {
-        self.state.lock().age_lock_particle_timer = timer;
-    }
-
-    /// Adds delta to the extra age credited by forced growth.
-    pub fn add_forced_age(&self, delta: i32) {
-        self.state.lock().forced_age += delta;
-    }
-
-    /// Seconds to reduce the remaining growth time by when fed, roughly a tenth of the time left in seconds.
+    /// Seconds of growth gained from feeding: a tenth of the time left, in seconds.
     #[must_use]
-    pub fn get_speed_up_seconds_when_feeding(ticks_until_adult: i32) -> i32 {
+    pub const fn speed_up_seconds_when_feeding(ticks_until_adult: i32) -> i32 {
         ((ticks_until_adult / 20) as f32 * 0.1) as i32
     }
-}
 
-impl Default for AgeableMobBase {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Vanilla-shaped behavior shared by entities that extend `AgeableMob`.
-pub trait AgeableMob: Mob {
-    /// Returns shared ageable runtime state.
-    fn ageable_base(&self) -> &AgeableMobBase;
-
-    /// Returns the synchronized vanilla age-lock flag.
-    fn is_age_locked(&self) -> bool;
-
-    /// Sets the synchronized vanilla age-lock flag.
-    fn set_age_locked(&self, age_locked: bool);
-
-    /// Sets the synchronized baby flag.
-    fn set_synced_baby(&self, baby: bool);
-
-    /// Hook called after the baby/adult boundary changes.
-    fn age_boundary_changed(&self, _baby: bool) {
-        self.refresh_dimensions();
-    }
-
-    /// Starting age assigned to a newly spawned baby.
-    fn get_baby_start_age(&self) -> i32 {
-        BABY_START_AGE
-    }
-
-    /// Age in ticks: negative while a baby, reaching zero at adulthood.
-    fn get_age(&self) -> i32 {
-        self.ageable_base().age()
-    }
-
-    /// Sets vanilla `AgeableMob.age` and updates synchronized baby state.
-    fn set_age(&self, age: i32) {
-        if self.ageable_base().set_age(age) {
-            let baby = age < 0;
-            self.set_synced_baby(baby);
-            self.age_boundary_changed(baby);
-        }
-    }
-
-    /// Returns whether this ageable mob is a baby.
-    fn is_baby(&self) -> bool {
-        self.get_age() < 0
-    }
-
-    /// Extra age credited by forced growth, reapplied once natural age reaches zero.
-    fn forced_age(&self) -> i32 {
-        self.ageable_base().forced_age()
-    }
-
-    /// Sets the extra age credited by forced growth.
-    fn set_forced_age(&self, forced_age: i32) {
-        self.ageable_base().set_forced_age(forced_age);
-    }
-
-    /// Ticks remaining in the forced-growth particle effect.
-    fn forced_age_timer(&self) -> i32 {
-        self.ageable_base().forced_age_timer()
-    }
-
-    /// Sets the ticks remaining in the forced-growth particle effect.
-    fn set_forced_age_timer(&self, forced_age_timer: i32) {
-        self.ageable_base().set_forced_age_timer(forced_age_timer);
-    }
-
-    /// Ticks remaining before this mob's age-lock state can be toggled again.
-    fn age_lock_particle_timer(&self) -> i32 {
-        self.ageable_base().age_lock_particle_timer()
-    }
-
-    /// Sets the cooldown before this mob's age-lock state can be toggled again.
-    fn set_age_lock_particle_timer(&self, timer: i32) {
-        self.ageable_base().set_age_lock_particle_timer(timer);
-    }
-
-    /// Returns whether this mob can naturally age toward adulthood this tick.
-    fn can_age_up(&self) -> bool {
-        AgeableMob::is_baby(self) && !self.is_age_locked()
-    }
-
-    /// Seconds to reduce the remaining growth time by when fed, roughly a tenth of the time left in seconds.
-    fn get_speed_up_seconds_when_feeding(ticks_until_adult: i32) -> i32
-    where
-        Self: Sized,
-    {
-        AgeableMobBase::get_speed_up_seconds_when_feeding(ticks_until_adult)
-    }
-
-    /// Advances age toward adulthood by the given seconds; when forced, also credits
-    /// forced-growth bookkeeping and restarts its particle timer.
-    fn age_up(&self, seconds: i32, forced: bool) {
-        let old_age = self.get_age();
-        let mut age = old_age + seconds * 20;
-        if age > 0 {
-            age = 0;
-        }
-
-        let delta = age - old_age;
+    /// Advances age toward adulthood by `seconds`; forced growth is also
+    /// credited to the forced age and restarts its particle timer.
+    pub fn age_up(&self, seconds: i32, forced: bool) {
+        let old_age = self.age();
+        let age = (old_age + seconds * 20).min(0);
         self.set_age(age);
         if forced {
-            self.ageable_base().add_forced_age(delta);
-            if self.forced_age_timer() == 0 {
-                self.set_forced_age_timer(FORCED_AGE_PARTICLE_TICKS);
+            let mut state = self.age.state.lock();
+            state.forced_age += age - old_age;
+            if state.forced_age_timer == 0 {
+                state.forced_age_timer = FORCED_AGE_PARTICLE_TICKS;
             }
         }
 
-        if self.get_age() == 0 {
+        if self.age() == 0 {
             self.set_age(self.forced_age());
         }
     }
 
-    /// Runs vanilla `AgeableMob.finalizeSpawn`, then delegates to `Mob.finalizeSpawn`.
-    fn finalize_spawn_ageable_mob(
+    /// Creates this mob's offspring with `partner` (`getBreedOffspring`).
+    #[must_use]
+    pub fn breed_offspring(
         &self,
         world: &Arc<World>,
-        spawn_reason: EntitySpawnReason,
-        group_data: Option<SpawnGroupData>,
-    ) -> Option<SpawnGroupData> {
-        let mut group_data = match group_data {
+        partner: &Ageable<'_>,
+    ) -> Option<SharedEntity> {
+        (self.age.props.breed_offspring)(self, world, partner)
+    }
+
+    /// Creates a same-type entity at this mob's position to become offspring.
+    #[must_use]
+    pub fn create_offspring(&self, world: &Arc<World>) -> Option<SharedEntity> {
+        ENTITIES.create(
+            self.entity.entity_type(),
+            next_entity_id(),
+            self.entity.position(),
+            Arc::downgrade(world),
+        )
+    }
+
+    /// `AgeableMob.aiStep` after `super`: natural growth and the age-lock cooldown.
+    pub fn tick(&self) {
+        if !self.entity.is_alive() {
+            return;
+        }
+
+        let age = self.age();
+        if self.can_age_up() {
+            self.set_age(age + 1);
+        } else if age > 0 {
+            self.set_age(age - 1);
+        }
+
+        let mut state = self.age.state.lock();
+        if state.age_lock_particle_timer > 0 {
+            state.age_lock_particle_timer -= 1;
+        }
+    }
+}
+
+/// Stage running [`Ageable::tick`].
+pub const AI_STEP: StageId = StageId("ageable.ai_step");
+/// Stage rolling whether a spawned group member is a baby.
+pub const FINALIZE_SPAWN: StageId = StageId("ageable.finalize_spawn");
+/// Stage toggling the age lock with a golden dandelion.
+pub const MOB_INTERACT: StageId = StageId("ageable.mob_interact");
+
+/// The `AgeableMob.aiStep` stage.
+pub fn ai_step<E: Entity + Has<Age>>() -> Stage<E, AiStep> {
+    fn run<E: Entity + Has<Age>>(entity: &E) {
+        Ageable::new(entity, entity.get::<Age>()).tick();
+    }
+    Stage::effect(AI_STEP, "AgeableMob.aiStep", run::<E>)
+}
+
+/// The `AgeableMob.finalizeSpawn` stage, before `Mob.finalizeSpawn`.
+pub fn finalize_spawn<E: Entity + Has<Age>>() -> Stage<E, FinalizeSpawn> {
+    fn run<E: Entity + Has<Age>>(entity: &E, ctx: &mut FinalizeSpawnCtx<'_>) -> Flow {
+        let mut group_data = match ctx.group_data.take() {
             Some(SpawnGroupData::AgeableMob(group_data)) => group_data,
             None => AgeableMobGroupData::with_should_spawn_baby(true),
         };
         if group_data.finalize_ageable_spawn(rand::random::<f32>) {
-            self.set_age(self.get_baby_start_age());
+            Ageable::new(entity, entity.get::<Age>()).set_age(BABY_START_AGE);
         }
-
-        self.finalize_spawn_mob_base(
-            world,
-            spawn_reason,
-            Some(SpawnGroupData::AgeableMob(group_data)),
-        )
+        ctx.group_data = Some(SpawnGroupData::AgeableMob(group_data));
+        Flow::Continue
     }
+    Stage::new(FINALIZE_SPAWN, "AgeableMob.finalizeSpawn", run::<E>)
+}
 
-    /// Toggles this baby mob's age lock when fed a golden dandelion, preventing further growth while locked.
-    fn mob_interact_ageable(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
-        let item_stack = {
-            let inventory = player.inventory.lock();
-            let item_stack = inventory.get_item_in_hand(hand);
-            item_stack.copy_with_count(item_stack.count())
-        };
-
-        if !item_stack.is(&vanilla_items::GOLDEN_DANDELION)
-            || !AgeableMob::is_baby(self)
-            || self.age_lock_particle_timer() != 0
+/// The `AgeableMob.mobInteract` stage: toggles a baby's age lock when fed a
+/// golden dandelion.
+pub fn mob_interact<E: Mob + Has<Age>>() -> Stage<E, MobInteract> {
+    fn run<E: Mob + Has<Age>>(entity: &E, ctx: &mut MobInteractCtx<'_>) -> Flow {
+        let ageable = Ageable::new(entity, entity.get::<Age>());
+        let holds_dandelion = ctx
+            .player
+            .inventory
+            .lock()
+            .get_item_in_hand(ctx.hand)
+            .is(&vanilla_items::GOLDEN_DANDELION);
+        if !holds_dandelion
+            || !ageable.is_baby()
+            || ageable.age.state.lock().age_lock_particle_timer != 0
             || REGISTRY
                 .entity_types
-                .is_in_tag(self.entity_type(), &EntityTypeTag::CANNOT_BE_AGE_LOCKED)
+                .is_in_tag(entity.entity_type(), &EntityTypeTag::CANNOT_BE_AGE_LOCKED)
         {
-            return InteractionResult::Pass;
+            return Flow::Continue;
         }
 
-        self.set_age_locked(!self.is_age_locked());
-        self.set_age(self.get_baby_start_age());
-        self.set_age_lock_particle_timer(AGE_LOCK_COOLDOWN_TICKS);
-        Mob::use_player_item(self, player, hand);
+        let age_locked = !ageable.is_age_locked();
+        ageable.set_age_locked(age_locked);
+        ageable.set_age(BABY_START_AGE);
+        ageable.age.state.lock().age_lock_particle_timer = AGE_LOCK_COOLDOWN_TICKS;
+        entity.use_player_item(ctx.player, ctx.hand);
 
-        let is_age_locked = self.is_age_locked();
-        if is_age_locked {
-            self.set_persistence_required();
+        if age_locked {
+            entity.set_persistence_required();
         }
-        if let Some(world) = self.level() {
-            let sound = if is_age_locked {
+        if let Some(world) = entity.level() {
+            let sound = if age_locked {
                 &sound_events::ITEM_GOLDEN_DANDELION_USE
             } else {
                 &sound_events::ITEM_GOLDEN_DANDELION_UNUSE
@@ -289,90 +339,17 @@ pub trait AgeableMob: Mob {
             world.play_sound(
                 sound,
                 SoundSource::Players,
-                self.block_position(),
+                entity.block_position(),
                 1.0,
                 1.0,
                 None,
             );
         }
 
-        InteractionResult::Success
+        ctx.result = InteractionResult::Success;
+        Flow::Stop
     }
-
-    /// Creates a same-type offspring using the registered entity factory.
-    fn create_breed_offspring(&self, world: &Arc<World>) -> Option<SharedEntity> {
-        ENTITIES.create(
-            self.entity_type(),
-            next_entity_id(),
-            self.position(),
-            Arc::downgrade(world),
-        )
-    }
-
-    /// Creates this animal's vanilla breeding offspring.
-    fn get_breed_offspring(
-        &self,
-        world: &Arc<World>,
-        partner: &dyn AgeableMob,
-    ) -> Option<SharedEntity> {
-        let offspring = self.create_breed_offspring(world)?;
-        let Some(offspring_animal) = offspring.as_ageable_mob() else {
-            log::error!(
-                "breeding entity type {} created non-ageable offspring",
-                self.entity_type().key
-            );
-            return None;
-        };
-
-        self.initialize_breed_offspring(partner, offspring_animal);
-        Some(offspring)
-    }
-
-    /// Returns this animal's breedable variant key when offspring inherit it.
-    fn breed_variant_key(&self) -> Option<&Identifier> {
-        None
-    }
-
-    /// Applies a breedable variant key to offspring that inherit one.
-    fn set_breed_variant_key(&self, _key: &Identifier) -> bool {
-        false
-    }
-
-    /// Applies entity-specific state to freshly created breeding offspring.
-    fn initialize_breed_offspring(&self, _partner: &dyn AgeableMob, _offspring: &dyn AgeableMob) {}
-
-    /// Ticks vanilla age progression.
-    fn tick_ageable_mob(&self) {
-        if !Entity::is_alive(self) {
-            return;
-        }
-
-        let age = self.get_age();
-        if self.can_age_up() {
-            self.set_age(age + 1);
-        } else if age > 0 {
-            self.set_age(age - 1);
-        }
-
-        let age_lock_particle_timer = self.age_lock_particle_timer();
-        if age_lock_particle_timer > 0 {
-            self.set_age_lock_particle_timer(age_lock_particle_timer - 1);
-        }
-    }
-
-    /// Saves vanilla ageable mob fields.
-    fn save_ageable_mob(&self, nbt: &mut NbtCompound) {
-        nbt.insert("Age", self.get_age());
-        nbt.insert("ForcedAge", self.forced_age());
-        nbt.insert("AgeLocked", i8::from(self.is_age_locked()));
-    }
-
-    /// Loads vanilla ageable mob fields.
-    fn load_ageable_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.set_age(nbt.int("Age").unwrap_or(0));
-        self.set_forced_age(nbt.int("ForcedAge").unwrap_or(0));
-        self.set_age_locked(nbt.byte("AgeLocked").is_some_and(|value| value != 0));
-    }
+    Stage::new(MOB_INTERACT, "AgeableMob.mobInteract", run::<E>)
 }
 
 #[cfg(test)]
@@ -380,168 +357,101 @@ mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
-    use super::*;
-    use crate::entity::{EntityBase, LivingEntity, LivingEntityBase, MobBase};
+    use super::{Age, Ageable};
+    use crate::entity::Entity;
+    use crate::entity::component::Components as _;
+    use crate::entity::entities::ChickenEntity;
 
-    struct TestAgeableMob {
-        base: EntityBase,
-        living_base: LivingEntityBase,
-        mob_base: MobBase,
-        ageable_base: AgeableMobBase,
-        mob_flags: SyncMutex<i8>,
-        health: SyncMutex<f32>,
-        baby: SyncMutex<bool>,
-        age_locked: SyncMutex<bool>,
+    fn chicken() -> ChickenEntity {
+        init_vanilla_registry();
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new())
     }
 
-    impl TestAgeableMob {
-        fn new() -> Self {
-            init_vanilla_registry();
-            Self {
-                base: EntityBase::new(
-                    1,
-                    DVec3::ZERO,
-                    vanilla_entities::PIG.dimensions,
-                    Weak::new(),
-                ),
-                living_base: LivingEntityBase::new(&vanilla_entities::PIG),
-                mob_base: MobBase::new(),
-                ageable_base: AgeableMobBase::new(),
-                mob_flags: SyncMutex::new(0),
-                health: SyncMutex::new(10.0),
-                baby: SyncMutex::new(false),
-                age_locked: SyncMutex::new(false),
-            }
-        }
-    }
-
-    crate::entity::impl_test_downcast_type!(TestAgeableMob);
-
-    impl Entity for TestAgeableMob {
-        fn base(&self) -> &EntityBase {
-            &self.base
-        }
-
-        fn entity_type(&self) -> EntityTypeRef {
-            &vanilla_entities::PIG
-        }
-    }
-
-    impl LivingEntity for TestAgeableMob {
-        fn living_base(&self) -> &LivingEntityBase {
-            &self.living_base
-        }
-
-        fn get_health(&self) -> f32 {
-            *self.health.lock()
-        }
-
-        fn set_health(&self, health: f32) {
-            *self.health.lock() = health;
-        }
-    }
-
-    impl Mob for TestAgeableMob {
-        fn mob_base(&self) -> &MobBase {
-            &self.mob_base
-        }
-
-        fn mob_flags(&self) -> i8 {
-            *self.mob_flags.lock()
-        }
-
-        fn set_mob_flags(&self, flags: i8) {
-            *self.mob_flags.lock() = flags;
-        }
-    }
-
-    impl AgeableMob for TestAgeableMob {
-        fn ageable_base(&self) -> &AgeableMobBase {
-            &self.ageable_base
-        }
-
-        fn is_age_locked(&self) -> bool {
-            *self.age_locked.lock()
-        }
-
-        fn set_age_locked(&self, age_locked: bool) {
-            *self.age_locked.lock() = age_locked;
-        }
-
-        fn set_synced_baby(&self, baby: bool) {
-            *self.baby.lock() = baby;
-        }
+    fn ageable(chicken: &ChickenEntity) -> Ageable<'_> {
+        Ageable::new(chicken, chicken.get::<Age>())
     }
 
     #[test]
     fn age_boundary_updates_synced_baby_flag() {
-        let mob = TestAgeableMob::new();
+        let chicken = chicken();
+        let ageable = ageable(&chicken);
 
-        mob.set_age(-1);
-        assert!(AgeableMob::is_baby(&mob));
-        assert!(*mob.baby.lock());
+        ageable.set_age(-1);
+        assert!(ageable.is_baby());
+        assert!(
+            chicken
+                .synced_data()
+                .and_then(|data| data.lock_data().ageable_mob_layer().map(|l| *l.baby.get()))
+                .expect("chickens have ageable synced data")
+        );
 
-        mob.set_age(0);
-        assert!(!AgeableMob::is_baby(&mob));
-        assert!(!*mob.baby.lock());
+        ageable.set_age(0);
+        assert!(!ageable.is_baby());
     }
 
     #[test]
-    fn age_tick_grows_babies_and_reduces_positive_forced_age() {
-        let mob = TestAgeableMob::new();
+    fn age_tick_grows_babies_and_reduces_positive_age() {
+        let chicken = chicken();
+        let ageable = ageable(&chicken);
 
-        mob.set_age(-2);
-        mob.tick_ageable_mob();
-        assert_eq!(mob.get_age(), -1);
+        ageable.set_age(-2);
+        ageable.tick();
+        assert_eq!(ageable.age(), -1);
 
-        mob.set_age(2);
-        mob.tick_ageable_mob();
-        assert_eq!(mob.get_age(), 1);
+        ageable.set_age(2);
+        ageable.tick();
+        assert_eq!(ageable.age(), 1);
     }
 
     #[test]
     fn age_lock_blocks_baby_growth() {
-        let mob = TestAgeableMob::new();
+        let chicken = chicken();
+        let ageable = ageable(&chicken);
 
-        mob.set_age(-2);
-        mob.set_age_locked(true);
-        mob.tick_ageable_mob();
+        ageable.set_age(-2);
+        ageable.set_age_locked(true);
+        ageable.tick();
 
-        assert_eq!(mob.get_age(), -2);
+        assert_eq!(ageable.age(), -2);
     }
 
     #[test]
     fn age_up_adds_forced_age_and_timer() {
-        let mob = TestAgeableMob::new();
+        let chicken = chicken();
+        let ageable = ageable(&chicken);
 
-        mob.set_age(-100);
-        mob.age_up(1, true);
+        ageable.set_age(-100);
+        ageable.age_up(1, true);
 
-        assert_eq!(mob.get_age(), -80);
-        assert_eq!(mob.forced_age(), 20);
-        assert_eq!(mob.forced_age_timer(), 40);
+        assert_eq!(ageable.age(), -80);
+        assert_eq!(ageable.forced_age(), 20);
+        assert_eq!(ageable.forced_age_timer(), 40);
     }
 
     #[test]
     fn age_up_applies_forced_age_when_reaching_adulthood() {
-        let mob = TestAgeableMob::new();
+        let chicken = chicken();
+        let ageable = ageable(&chicken);
 
-        mob.set_age(-10);
-        mob.age_up(1, true);
+        ageable.set_age(-10);
+        ageable.age_up(1, true);
 
-        assert_eq!(mob.get_age(), 10);
-        assert_eq!(mob.forced_age(), 10);
+        assert_eq!(ageable.age(), 10);
+        assert_eq!(ageable.forced_age(), 10);
     }
 
     #[test]
     fn feeding_speed_up_seconds_matches_vanilla_integer_order() {
-        assert_eq!(
-            TestAgeableMob::get_speed_up_seconds_when_feeding(24_000),
-            120
-        );
-        assert_eq!(TestAgeableMob::get_speed_up_seconds_when_feeding(199), 0);
+        assert_eq!(Ageable::speed_up_seconds_when_feeding(24_000), 120);
+        assert_eq!(Ageable::speed_up_seconds_when_feeding(199), 0);
+    }
+
+    #[test]
+    fn dynamic_lookup_finds_the_age_component() {
+        let chicken = chicken();
+        let entity: &dyn Entity = &chicken;
+        assert!(Ageable::of(entity).is_some());
     }
 }

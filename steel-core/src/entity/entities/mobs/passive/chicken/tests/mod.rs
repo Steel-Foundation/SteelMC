@@ -16,3 +16,4 @@ use super::*;
 
 mod core;
 mod persistence;
+mod pipelines;

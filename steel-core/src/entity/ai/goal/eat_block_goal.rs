@@ -11,7 +11,7 @@ use steel_utils::types::UpdateFlags;
 
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{AgeableMob, Mob, PathfinderMob, SharedEntity};
+use crate::entity::{Animal, Mob, PathfinderMob, SharedEntity};
 use crate::world::LevelAccessor;
 
 /// Constant mirroring vanilla `EatBlockGoal.EAT_ANIMATION_TICKS`, the full animation
@@ -54,7 +54,9 @@ impl Goal for EatBlockGoal {
     }
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        let interval = if mob.as_animal().is_some_and(AgeableMob::is_baby) {
+        let interval = if Animal::of(mob.as_entity_event_source())
+            .is_some_and(|animal| animal.ageable().is_baby())
+        {
             BABY_EAT_CHECK_TICKS
         } else {
             ADULT_EAT_CHECK_TICKS

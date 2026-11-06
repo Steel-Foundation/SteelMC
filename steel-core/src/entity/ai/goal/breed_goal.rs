@@ -25,7 +25,7 @@ impl BreedGoal {
         }
     }
 
-    fn get_free_partner(mob: &dyn PathfinderMob, animal: &dyn Animal) -> Option<SharedEntity> {
+    fn get_free_partner(mob: &dyn PathfinderMob, animal: &Animal<'_>) -> Option<SharedEntity> {
         let world = mob.level()?;
         let search_box = mob.bounding_box().inflate(PARTNER_SEARCH_RANGE);
         let partner_targeting = TargetingConditions::for_non_combat()
@@ -33,13 +33,14 @@ impl BreedGoal {
             .ignore_line_of_sight();
 
         world.nearest_entity_in_aabb_matching(&search_box, mob.position(), |entity| {
-            let Some(candidate) = entity.as_animal() else {
+            let (Some(candidate), Some(living)) = (Animal::of(entity), entity.as_living_entity())
+            else {
                 return false;
             };
-            if !partner_targeting.test(world.as_ref(), Some(mob), candidate) {
+            if !partner_targeting.test(world.as_ref(), Some(mob), living) {
                 return false;
             }
-            if !animal.can_mate(candidate) {
+            if !animal.can_mate(&candidate) {
                 return false;
             }
 
@@ -56,14 +57,14 @@ impl Goal for BreedGoal {
     }
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        let Some(animal) = mob.as_animal() else {
+        let Some(animal) = Animal::of(mob.as_entity_event_source()) else {
             return false;
         };
         if !animal.is_in_love() {
             return false;
         }
 
-        self.partner = Self::get_free_partner(mob, animal);
+        self.partner = Self::get_free_partner(mob, &animal);
         self.partner.is_some()
     }
 
@@ -84,7 +85,7 @@ impl Goal for BreedGoal {
             return false;
         }
 
-        partner.as_animal().is_some_and(Animal::is_in_love)
+        Animal::of(partner.as_ref()).is_some_and(|partner| partner.is_in_love())
     }
 
     fn stop(&mut self, _mob: &dyn PathfinderMob) {
@@ -96,10 +97,10 @@ impl Goal for BreedGoal {
         let Some(partner) = &self.partner else {
             return;
         };
-        let Some(animal) = mob.as_animal() else {
+        let Some(animal) = Animal::of(mob.as_entity_event_source()) else {
             return;
         };
-        let Some(partner_animal) = partner.as_animal() else {
+        let Some(partner_animal) = Animal::of(partner.as_ref()) else {
             return;
         };
 
@@ -121,7 +122,7 @@ impl Goal for BreedGoal {
         let Some(world) = mob.level() else {
             return;
         };
-        animal.spawn_child_from_breeding(&world, partner_animal);
+        animal.spawn_child_from_breeding(&world, &partner_animal);
     }
 }
 

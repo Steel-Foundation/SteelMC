@@ -753,6 +753,90 @@ fn parent_field_ident(simple_name: &str) -> Ident {
     Ident::new(&field_name, Span::call_site())
 }
 
+/// Simple names of `root_layer` and every ancestor layer, most derived first.
+fn layer_chain<'a>(
+    root_layer: &'a LayerDefinition,
+    layer_indices: &FxHashMap<&str, usize>,
+    layers: &'a [LayerDefinition],
+) -> Vec<&'a LayerDefinition> {
+    let mut chain = vec![root_layer];
+    let mut current_layer = root_layer;
+    while let Some(parent_java_class) = current_layer.parent_java_class.as_ref() {
+        let parent_index = layer_indices
+            .get(parent_java_class.as_str())
+            .unwrap_or_else(|| panic!("Missing parent entity data layer: {parent_java_class}"));
+        current_layer = &layers[*parent_index];
+        chain.push(current_layer);
+    }
+    chain
+}
+
+/// Optional per-layer accessors on `VanillaEntityData`, so code that only
+/// knows a layer (a mob, an ageable mob, ...) can reach its fields through any
+/// concrete entity-data struct without naming that struct.
+fn optional_layer_accessor_idents(simple_name: &str) -> (Ident, Ident) {
+    let field = parent_field_ident(simple_name);
+    (
+        Ident::new(&format!("{field}_layer"), Span::call_site()),
+        Ident::new(&format!("{field}_layer_mut"), Span::call_site()),
+    )
+}
+
+fn optional_layer_accessor_declarations(layers: &[LayerDefinition]) -> Vec<TokenStream> {
+    layers
+        .iter()
+        .filter(|layer| layer.simple_name != "Entity")
+        .map(|layer| {
+            let (accessor, accessor_mut) = optional_layer_accessor_idents(&layer.simple_name);
+            let struct_ident = data_struct_ident(&layer.simple_name);
+            let doc = format!(
+                "Returns the `{}` layer when this entity data contains it.",
+                data_struct_name(&layer.simple_name)
+            );
+            let doc_mut = format!(
+                "Returns the mutable `{}` layer when this entity data contains it.",
+                data_struct_name(&layer.simple_name)
+            );
+            quote! {
+                #[doc = #doc]
+                fn #accessor(&self) -> Option<&#struct_ident> {
+                    None
+                }
+
+                #[doc = #doc_mut]
+                fn #accessor_mut(&mut self) -> Option<&mut #struct_ident> {
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+fn optional_layer_accessor_overrides(
+    chain: &[&LayerDefinition],
+    concrete: &Ident,
+) -> Vec<TokenStream> {
+    chain
+        .iter()
+        .filter(|layer| layer.simple_name != "Entity")
+        .map(|layer| {
+            let (accessor, accessor_mut) = optional_layer_accessor_idents(&layer.simple_name);
+            let inherent = parent_field_ident(&layer.simple_name);
+            let inherent_mut = Ident::new(&format!("{inherent}_mut"), Span::call_site());
+            let struct_ident = data_struct_ident(&layer.simple_name);
+            quote! {
+                fn #accessor(&self) -> Option<&#struct_ident> {
+                    Some(#concrete::#inherent(self))
+                }
+
+                fn #accessor_mut(&mut self) -> Option<&mut #struct_ident> {
+                    Some(#concrete::#inherent_mut(self))
+                }
+            }
+        })
+        .collect()
+}
+
 fn layer_accessor_methods(
     root_layer: &LayerDefinition,
     layer_indices: &FxHashMap<&str, usize>,
@@ -1017,6 +1101,7 @@ pub(crate) fn build() -> TokenStream {
     }
 
     let mut stream = TokenStream::new();
+    let optional_layer_declarations = optional_layer_accessor_declarations(&layers);
 
     // Imports
     stream.extend(quote! {
@@ -1048,6 +1133,8 @@ pub(crate) fn build() -> TokenStream {
 
             /// Returns `true` if any field has been modified.
             fn is_dirty(&self) -> bool;
+
+            #(#optional_layer_declarations)*
         }
 
         /// Common access to vanilla synchronized data declared by `LivingEntity`.
@@ -1186,6 +1273,10 @@ pub(crate) fn build() -> TokenStream {
         };
         let layer_accessors =
             layer_accessor_methods(layer, &layer_indices, &layers, quote! { self }, true);
+        let optional_layer_overrides = optional_layer_accessor_overrides(
+            &layer_chain(layer, &layer_indices, &layers),
+            &struct_ident,
+        );
         let living_entity_data_impl =
             if layer_has_living_entity_data(layer, &layer_indices, &layers) {
                 quote! {
@@ -1294,6 +1385,8 @@ pub(crate) fn build() -> TokenStream {
                 fn is_dirty(&self) -> bool {
                     #struct_ident::is_dirty(self)
                 }
+
+                #(#optional_layer_overrides)*
             }
 
             #living_entity_data_impl
@@ -1340,6 +1433,16 @@ pub(crate) fn build() -> TokenStream {
                 false,
             )
         };
+        let optional_layer_overrides = optional_layer_accessor_overrides(
+            &layer_chain(
+                &layers[*layer_indices
+                    .get(last_layer.java_class.as_str())
+                    .unwrap_or_else(|| panic!("Missing layer {}", last_layer.java_class))],
+                &layer_indices,
+                &layers,
+            ),
+            &concrete_ident,
+        );
         let doc = format!(
             "Concrete synchronized entity data for vanilla entity `{}`.",
             entity.name
@@ -1433,6 +1536,8 @@ pub(crate) fn build() -> TokenStream {
                 fn is_dirty(&self) -> bool {
                     #concrete_ident::is_dirty(self)
                 }
+
+                #(#optional_layer_overrides)*
             }
 
             #living_entity_data_impl

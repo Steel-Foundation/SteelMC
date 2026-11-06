@@ -6,7 +6,7 @@ fn chicken_saves_vanilla_state_and_variant_data() {
     init_vanilla_registry();
 
     let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    chicken.set_age(-24_000);
+    chicken.animal().ageable().set_age(-24_000);
     chicken.set_variant(&vanilla_chicken_variants::WARM);
     chicken.set_sound_variant(&vanilla_chicken_sound_variants::PICKY);
     chicken.set_chicken_jockey(true);
@@ -47,7 +47,7 @@ fn chicken_loads_vanilla_state_and_variant_data() {
     let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
     chicken.load_additional((&borrowed).into());
 
-    assert_eq!(chicken.get_age(), -24_000);
+    assert_eq!(chicken.animal().ageable().age(), -24_000);
     assert!(chicken.is_chicken_jockey());
     assert_eq!(chicken.egg_time(), 5678);
     assert_eq!(chicken.variant().key, vanilla_chicken_variants::COLD.key);

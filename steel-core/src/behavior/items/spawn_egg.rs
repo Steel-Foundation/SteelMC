@@ -20,7 +20,7 @@ use crate::behavior::{
     InteractionResult, InventoryAccess, ItemBehavior, UseItemContext, UseOnContext,
 };
 use crate::entity::{
-    EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, Mob, SharedEntity,
+    Ageable, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, Mob, SharedEntity,
     add_spawned_entity, apply_implicit_item_stack_components, create_entity_instance, spawn_entity,
 };
 use crate::player::Player;
@@ -103,8 +103,8 @@ impl SpawnEggItem {
         }
 
         let world = parent.level()?;
-        let offspring = if let Some(ageable) = parent.as_ageable_mob() {
-            ageable.get_breed_offspring(&world, ageable)?
+        let offspring = if let Some(ageable) = Ageable::of(parent.as_entity_event_source()) {
+            ageable.breed_offspring(&world, &ageable)?
         } else {
             match create_entity_instance(&world, entity_type, parent.position()) {
                 Ok(offspring) => offspring,

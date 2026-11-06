@@ -1,7 +1,10 @@
 //! Vanilla-shaped mob foundations.
 
 mod pathfinder;
+pub(crate) mod stages;
 
+use crate::entity::Ageable;
+use crate::entity::animal::{self, Animal};
 use crate::entity::leash::{LeashData, Leashable};
 pub use pathfinder::PathfinderMob;
 use pathfinder::tick_path_navigation_target;
@@ -362,15 +365,9 @@ pub trait Mob: LivingEntity + Leashable {
     /// Sets the vanilla baby state. Vanilla `Mob.setBaby` is a no-op; ageable
     /// mobs derive it from their start age, and other mobs override as needed.
     fn set_baby(&self, baby: bool) {
-        let Some(ageable) = self.as_ageable_mob() else {
-            return;
-        };
-        let age = if baby {
-            ageable.get_baby_start_age()
-        } else {
-            0
-        };
-        ageable.set_age(age);
+        if let Some(ageable) = Ageable::of(self.as_entity_event_source()) {
+            ageable.set_baby(baby);
+        }
     }
 
     /// Returns whether this mob has a saddle equipped.
@@ -460,8 +457,8 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     fn ambient_sound_interval(&self) -> i32 {
-        if let Some(animal) = self.as_animal() {
-            return animal.ambient_sound_interval_animal();
+        if Animal::of(self.as_entity_event_source()).is_some() {
+            return animal::AMBIENT_SOUND_INTERVAL;
         }
 
         80
@@ -691,9 +688,9 @@ pub trait Mob: LivingEntity + Leashable {
         // TODO: Apply USE_REMAINDER components once item use-remainder support exists.
     }
 
-    fn remove_when_far_away(&self, dist_sqr: f64) -> bool {
-        self.as_animal()
-            .is_none_or(|animal| animal.remove_when_far_away_animal(dist_sqr))
+    fn remove_when_far_away(&self, _dist_sqr: f64) -> bool {
+        // `Animal.removeWhenFarAway` is false.
+        Animal::of(self.as_entity_event_source()).is_none()
     }
 
     fn requires_custom_persistence(&self) -> bool {

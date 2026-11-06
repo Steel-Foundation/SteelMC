@@ -1,5 +1,5 @@
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
-use crate::entity::{PathfinderMob, SharedEntity};
+use crate::entity::{Animal, PathfinderMob, SharedEntity};
 
 use super::reduced_tick_delay;
 
@@ -31,10 +31,10 @@ impl Goal for FollowParentGoal {
     }
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        let Some(animal) = mob.as_animal() else {
+        let Some(animal) = Animal::of(mob.as_entity_event_source()) else {
             return false;
         };
-        if animal.get_age() >= 0 {
+        if animal.ageable().age() >= 0 {
             return false;
         }
 
@@ -49,9 +49,7 @@ impl Goal for FollowParentGoal {
         let parent = world.nearest_entity_in_aabb_matching(&search_box, mob.position(), |entity| {
             entity.uuid() != mob.uuid()
                 && entity.entity_type() == mob.entity_type()
-                && entity
-                    .as_animal()
-                    .is_some_and(|candidate| candidate.get_age() >= 0)
+                && Animal::of(entity).is_some_and(|candidate| candidate.ageable().age() >= 0)
         });
         let Some(parent) = parent else {
             return false;
@@ -65,10 +63,10 @@ impl Goal for FollowParentGoal {
     }
 
     fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        let Some(animal) = mob.as_animal() else {
+        let Some(animal) = Animal::of(mob.as_entity_event_source()) else {
             return false;
         };
-        if animal.get_age() >= 0 {
+        if animal.ageable().age() >= 0 {
             return false;
         }
 

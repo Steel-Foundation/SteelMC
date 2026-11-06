@@ -740,14 +740,15 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
     finish_inside_block_effects(entity, &mut effect_collector, before_effects);
 }
 
-mod ageable;
+pub(crate) mod ageable;
 pub(crate) mod ai;
-mod animal;
+pub(crate) mod animal;
 pub mod attribute;
 mod base;
 mod block_effects;
 mod callback;
 mod combat_rules;
+pub mod component;
 pub mod consume_effect;
 mod conversion;
 pub mod damage;
@@ -794,8 +795,8 @@ use crate::portal::{
     PortalKind, PortalProcessResult, PortalProcessor, PortalTicketTarget, TeleportPostAction,
     TeleportTransition, WorldChangeRequest, portal_shape::PortalShape,
 };
-pub(crate) use ageable::{AgeableMob, AgeableMobBase};
-pub(crate) use animal::{Animal, AnimalBase};
+pub(crate) use ageable::Ageable;
+pub(crate) use animal::Animal;
 pub use base::{
     DEFAULT_MAX_AIR_SUPPLY, DEFAULT_TICKS_REQUIRED_TO_FREEZE, EntityAmethystStepSound, EntityBase,
     EntityBaseLoad, EntityBaseSaveData, EntityBaseState, EntityFireFreezeState,

@@ -1,4 +1,5 @@
 use super::*;
+use crate::bootstrap::init_globals;
 use steel_registry::init_vanilla_registry;
 
 #[test]
@@ -66,7 +67,7 @@ fn chicken_sounds_switch_to_baby_set_for_babies() {
     init_vanilla_registry();
 
     let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    chicken.set_baby(true);
+    chicken.animal().ageable().set_baby(true);
 
     assert_eq!(
         Mob::ambient_sound(&chicken).map(|sound| &sound.key),
@@ -107,17 +108,24 @@ fn chicken_jockey_does_not_despawn_far_away() {
 
 #[test]
 fn chicken_breeding_offspring_inherits_parent_variant() {
-    init_vanilla_registry();
+    init_globals();
 
+    let world_fixture = fresh_test_world("chicken_breed_offspring");
+    let world = &world_fixture.world;
     let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
     let partner = ChickenEntity::new(&vanilla_entities::CHICKEN, 2, DVec3::ZERO, Weak::new());
-    let offspring = ChickenEntity::new(&vanilla_entities::CHICKEN, 3, DVec3::ZERO, Weak::new());
 
     chicken.set_variant(&vanilla_chicken_variants::WARM);
     partner.set_variant(&vanilla_chicken_variants::COLD);
-    offspring.set_variant(&vanilla_chicken_variants::TEMPERATE);
 
-    chicken.initialize_breed_offspring(&partner, &offspring);
+    let offspring = chicken
+        .animal()
+        .ageable()
+        .breed_offspring(world, &partner.animal().ageable())
+        .expect("chickens breed chickens");
+    let offspring = offspring
+        .downcast_ref::<ChickenEntity>()
+        .expect("chicken offspring is a chicken");
 
     let variant_key = &offspring.variant().key;
     assert!(
@@ -172,12 +180,12 @@ fn chicken_egg_timer_decrements_only_for_adult_non_jockeys() {
     chicken.tick_egg_laying();
     assert_eq!(chicken.egg_time(), 1);
 
-    chicken.set_baby(true);
+    chicken.animal().ageable().set_baby(true);
     chicken.set_egg_time(2);
     chicken.tick_egg_laying();
     assert_eq!(chicken.egg_time(), 2);
 
-    chicken.set_baby(false);
+    chicken.animal().ageable().set_baby(false);
     chicken.set_chicken_jockey(true);
     chicken.set_egg_time(2);
     chicken.tick_egg_laying();

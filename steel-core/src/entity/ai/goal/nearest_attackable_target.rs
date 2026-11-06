@@ -161,7 +161,7 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::entity::entities::ChickenEntity;
-    use crate::entity::{Entity, Mob};
+    use crate::entity::{Animal, Entity, Mob};
     use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     fn animal_fixture(
@@ -217,7 +217,7 @@ mod tests {
             animal_fixture("nearest_attackable_selector");
         let mut goal =
             NearestAttackableTargetGoal::new_with_interval(0, false, false, |target, _| {
-                target.as_animal().is_some()
+                Animal::of(target.as_entity_event_source()).is_some()
             });
 
         assert!(goal.can_use(pig_hunter.as_ref()));

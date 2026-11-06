@@ -2,7 +2,7 @@
 //! slow-fall, and periodic egg-laying behavior.
 
 use std::str::FromStr;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -26,20 +26,28 @@ use steel_registry::{
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier};
+use steel_utils::{
+    BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
+};
 
 use crate::behavior::InteractionResult;
+use crate::entity::ageable::{self, Age, Ageable, AgeableProps};
 use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
     TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::ai::path::PathType;
+use crate::entity::animal::{self, Animal, Breeding, BreedingProps, Parts as _};
+use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::entries::{AiStepCtx, FinalizeSpawnCtx, MobInteractCtx};
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
+use crate::entity::component::{Component as _, Has};
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
-    EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
-    LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule,
-    entity_loot_ref, living_loot_equipment, position_rider_default, sync_dirty_mob_effects,
+    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySpawnReason,
+    EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity,
+    SpawnGroupData, SpawnRule, entity_loot_ref, living_loot_equipment, position_rider_default,
+    sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -126,8 +134,8 @@ pub struct ChickenEntity {
     entity_type: EntityTypeRef,
     living_base: LivingEntityBase,
     mob_base: MobBase,
-    ageable_base: AgeableMobBase,
-    animal_base: AnimalBase,
+    age: Age,
+    breeding: Breeding,
     chicken_state: SyncMutex<ChickenState>,
     entity_data: SyncMutex<ChickenEntityData>,
 }
@@ -140,8 +148,42 @@ unsafe impl DowncastType for ChickenEntity {
 impl ChickenEntity {
     /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
     pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, random| {
-        <Self as Animal>::check_animal_spawn_rules(entity_type, level, spawn_reason, pos, random)
+        animal::check_animal_spawn_rules(entity_type, level, spawn_reason, pos, random)
     };
+
+    const AGEABLE: AgeableProps = AgeableProps {
+        breed_offspring: Self::breed_offspring,
+    };
+    const BREEDING: BreedingProps = BreedingProps::new(Self::is_food);
+    const FLAP: StageId = StageId("chicken.flap");
+    const LAY_EGG: StageId = StageId("chicken.lay_egg");
+    const PICK_VARIANTS: StageId = StageId("chicken.pick_variants");
+
+    /// Vanilla `Chicken`: the animal chains plus flapping and egg laying
+    /// after `Animal.aiStep`, and variant selection before
+    /// `AgeableMob.finalizeSpawn`.
+    fn define() -> MobDefinition<Self> {
+        let mut definition = animal::definition::<Self>();
+        definition.ai_step = definition.ai_step.then([
+            Stage::effect(Self::FLAP, "Chicken.aiStep", Self::tick_flapping),
+            Stage::effect(Self::LAY_EGG, "Chicken.aiStep", Self::tick_egg_laying),
+        ]);
+        definition.finalize_spawn = definition.finalize_spawn.before(
+            ageable::FINALIZE_SPAWN,
+            [Stage::new(
+                Self::PICK_VARIANTS,
+                "Chicken.finalizeSpawn",
+                Self::pick_spawn_variants,
+            )],
+        );
+        definition
+    }
+
+    fn definition() -> &'static MobDefinition<Self> {
+        static DEFINITION: LazyLock<MobDefinition<ChickenEntity>> =
+            LazyLock::new(ChickenEntity::define);
+        &DEFINITION
+    }
 
     /// Creates a new chicken at runtime.
     #[must_use]
@@ -164,9 +206,7 @@ impl ChickenEntity {
     fn new_with_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let living_base = LivingEntityBase::new(entity_type);
         let mob_base = MobBase::new();
-        let ageable_base = AgeableMobBase::new();
-        let animal_base = AnimalBase::new();
-        AnimalBase::initialize_pathfinding_malus(&mob_base);
+        Breeding::initialize_pathfinding_malus(&mob_base);
         // Chickens do not avoid water (`setPathfindingMalus(PathType.WATER, 0.0F)`).
         mob_base
             .pathfinding_malus()
@@ -206,8 +246,8 @@ impl ChickenEntity {
             entity_type,
             living_base,
             mob_base,
-            ageable_base,
-            animal_base,
+            age: Age::new(&Self::AGEABLE),
+            breeding: Breeding::new(&Self::BREEDING),
             chicken_state: SyncMutex::new(chicken_state),
             entity_data: SyncMutex::new(entity_data),
         }
@@ -258,7 +298,7 @@ impl ChickenEntity {
     /// Returns the sound set for this chicken's current age (vanilla `Chicken.getSoundSet`).
     fn current_sound_set(&self) -> &'static ChickenAge {
         let sound_variant = self.sound_variant();
-        if AgeableMob::is_baby(self) {
+        if self.animal().ageable().is_baby() {
             &sound_variant.baby_sounds
         } else {
             &sound_variant.adult_sounds
@@ -340,7 +380,7 @@ impl ChickenEntity {
 
     /// Runs vanilla `Chicken.aiStep` egg-laying side effects.
     fn tick_egg_laying(&self) {
-        if self.level().is_none() || !Entity::is_alive(self) || AgeableMob::is_baby(self) {
+        if self.level().is_none() || !Entity::is_alive(self) || self.animal().ageable().is_baby() {
             return;
         }
 
@@ -367,6 +407,51 @@ impl ChickenEntity {
             }
             self.set_egg_time(Self::roll_egg_lay_time());
         }
+    }
+
+    /// `Chicken.getBreedOffspring`: a baby chicken with either parent's variant.
+    fn breed_offspring(
+        parent: &Ageable<'_>,
+        world: &Arc<World>,
+        partner: &Ageable<'_>,
+    ) -> Option<SharedEntity> {
+        let offspring = parent.create_offspring(world)?;
+        let inherited = if rand::random::<bool>() {
+            parent
+        } else {
+            partner
+        };
+        if let (Some(source), Some(chicken)) = (
+            inherited.entity().downcast_ref::<Self>(),
+            offspring.downcast_ref::<Self>(),
+        ) {
+            chicken.set_variant(source.variant());
+        }
+        Some(offspring)
+    }
+
+    /// `Chicken.finalizeSpawn` before `super`: biome variant and random sound variant.
+    fn pick_spawn_variants(&self, ctx: &mut FinalizeSpawnCtx<'_>) -> Flow {
+        let biome = ctx.world.biome_at(self.block_position());
+        // Mirrors the cow/pig convention.
+        let (variant, sound_variant) = {
+            let mut random = LegacyRandom::from_seed(rand::random());
+            let variant = biome.and_then(|biome| {
+                REGISTRY
+                    .chicken_variants
+                    .select_spawn_variant(biome, &mut random)
+            });
+            let sound_variant = REGISTRY.chicken_sound_variants.pick_random(&mut random);
+            (variant, sound_variant)
+        };
+
+        if let Some(variant) = variant {
+            self.set_variant(variant);
+        }
+        if let Some(sound_variant) = sound_variant {
+            self.set_sound_variant(sound_variant);
+        }
+        Flow::Continue
     }
 
     /// Rolls a gift loot table at this entity's position and drops each result.
@@ -425,7 +510,7 @@ impl Entity for ChickenEntity {
 
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
         let scale = LivingEntity::get_scale(self);
-        if AgeableMob::is_baby(self) {
+        if self.animal().ageable().is_baby() {
             CHICKEN_BABY_DIMENSIONS.scale(scale)
         } else if self.entity_type.fixed {
             self.entity_type.dimensions
@@ -464,10 +549,18 @@ impl Entity for ChickenEntity {
         }
     }
 
+    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+        match key {
+            Age::TYPE_KEY => Some(&self.age),
+            Breeding::TYPE_KEY => Some(&self.breeding),
+            _ => None,
+        }
+    }
+
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.save_mob(nbt);
-        self.save_ageable_mob(nbt);
-        self.save_animal(nbt);
+        self.age.save(self, nbt);
+        self.breeding.save(self, nbt);
         nbt.insert("IsChickenJockey", i8::from(self.is_chicken_jockey()));
         nbt.insert("EggLayTime", self.egg_time());
         nbt.insert("variant", self.variant().key.to_string());
@@ -476,8 +569,8 @@ impl Entity for ChickenEntity {
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_mob(nbt);
-        self.load_ageable_mob(nbt);
-        self.load_animal(nbt);
+        self.age.load(self, nbt);
+        self.breeding.load(self, nbt);
 
         self.set_chicken_jockey(nbt.byte("IsChickenJockey").is_some_and(|value| value != 0));
         if let Some(egg_time) = nbt.int("EggLayTime") {
@@ -531,7 +624,7 @@ impl LivingEntity for ChickenEntity {
         if self.is_chicken_jockey() {
             CHICKEN_JOCKEY_EXPERIENCE_REWARD
         } else {
-            Animal::base_experience_reward_animal(self)
+            Animal::base_experience_reward()
         }
     }
 
@@ -540,73 +633,24 @@ impl LivingEntity for ChickenEntity {
     }
 
     fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
-        let result = Mob::mob_ai_step(self, entity);
-
-        AgeableMob::tick_ageable_mob(self);
-        Animal::tick_animal_love(self);
-        self.tick_flapping();
-        self.tick_egg_laying();
-        result
+        let mut ctx = AiStepCtx {
+            entity,
+            movement: None,
+        };
+        Self::definition().ai_step.run(self, &mut ctx);
+        ctx.movement
     }
 }
 
-impl AgeableMob for ChickenEntity {
-    fn ageable_base(&self) -> &AgeableMobBase {
-        &self.ageable_base
-    }
-
-    fn is_age_locked(&self) -> bool {
-        *self.entity_data.lock().ageable_mob().age_locked.get()
-    }
-
-    fn set_age_locked(&self, age_locked: bool) {
-        self.entity_data
-            .lock()
-            .ageable_mob_mut()
-            .age_locked
-            .set(age_locked);
-    }
-
-    fn set_synced_baby(&self, baby: bool) {
-        self.entity_data.lock().ageable_mob_mut().baby.set(baby);
-    }
-
-    fn age_boundary_changed(&self, _baby: bool) {
-        self.refresh_dimensions();
-    }
-
-    fn breed_variant_key(&self) -> Option<&Identifier> {
-        Some(&self.variant().key)
-    }
-
-    fn set_breed_variant_key(&self, key: &Identifier) -> bool {
-        self.set_variant_by_key(key)
-    }
-
-    fn initialize_breed_offspring(&self, partner: &dyn AgeableMob, offspring: &dyn AgeableMob) {
-        let use_self_variant = rand::random::<bool>();
-        let variant_key = if use_self_variant {
-            self.breed_variant_key()
-        } else {
-            partner.breed_variant_key()
-        };
-        let Some(variant_key) = variant_key else {
-            return;
-        };
-
-        if !offspring.set_breed_variant_key(variant_key) {
-            log::error!("chicken offspring could not inherit breeding variant {variant_key}");
-        }
+impl Has<Age> for ChickenEntity {
+    fn component(&self) -> &Age {
+        &self.age
     }
 }
 
-impl Animal for ChickenEntity {
-    fn animal_base(&self) -> &AnimalBase {
-        &self.animal_base
-    }
-
-    fn is_food(&self, item_stack: &ItemStack) -> bool {
-        ChickenEntity::is_food(item_stack)
+impl Has<Breeding> for ChickenEntity {
+    fn component(&self) -> &Breeding {
+        &self.breeding
     }
 }
 
@@ -624,7 +668,7 @@ impl Mob for ChickenEntity {
     }
 
     fn custom_server_ai_step(&self) {
-        Animal::custom_server_ai_step_animal(self);
+        Self::definition().custom_server_ai_step.run(self, &mut ());
     }
 
     fn ambient_sound(&self) -> Option<SoundEventRef> {
@@ -642,32 +686,23 @@ impl Mob for ChickenEntity {
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
-        let biome = world.biome_at(self.block_position());
-        // Mirrors the cow/pig convention.
-        let (variant, sound_variant) = {
-            let mut random = LegacyRandom::from_seed(rand::random());
-            let variant = biome.and_then(|biome| {
-                REGISTRY
-                    .chicken_variants
-                    .select_spawn_variant(biome, &mut random)
-            });
-            let sound_variant = REGISTRY.chicken_sound_variants.pick_random(&mut random);
-            (variant, sound_variant)
+        let mut ctx = FinalizeSpawnCtx {
+            world,
+            reason: spawn_reason,
+            group_data,
         };
-
-        if let Some(variant) = variant {
-            self.set_variant(variant);
-        }
-
-        if let Some(sound_variant) = sound_variant {
-            self.set_sound_variant(sound_variant);
-        }
-
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        Self::definition().finalize_spawn.run(self, &mut ctx);
+        ctx.group_data
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
-        Animal::mob_interact_animal(self, player, hand)
+        let mut ctx = MobInteractCtx {
+            player,
+            hand,
+            result: InteractionResult::Pass,
+        };
+        Self::definition().mob_interact.run(self, &mut ctx);
+        ctx.result
     }
 
     fn mob_flags(&self) -> i8 {

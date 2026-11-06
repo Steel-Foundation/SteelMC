@@ -13,7 +13,7 @@ use crate::entity::ai::navigation::{
 };
 use crate::entity::ai::path::Path;
 use crate::entity::ai::walk::{MobPathSettings, WalkNodeEvaluator};
-use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::entity::{Animal, Entity, LivingEntity, SharedEntity};
 use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
 
@@ -110,8 +110,8 @@ pub trait PathfinderMob: Mob {
     fn get_walk_target_value(&self, pos: BlockPos) -> f32 {
         if let Some(monster) = self.as_monster() {
             monster.get_walk_target_value_monster(pos)
-        } else if let Some(animal) = self.as_animal() {
-            animal.animal_walk_target_value(pos)
+        } else if let Some(animal) = Animal::of(self.as_entity_event_source()) {
+            animal.walk_target_value(pos)
         } else {
             0.0
         }

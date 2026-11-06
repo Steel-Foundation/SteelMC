@@ -1,4 +1,5 @@
 use bitflags::bitflags;
+use parking_lot::{MappedMutexGuard, MutexGuard};
 use steel_registry::{
     entity_data::{DataValue, EntityPose},
     vanilla_entity_data::{VanillaEntityData, VanillaLivingEntityData},
@@ -40,6 +41,10 @@ pub trait EntitySyncedData: Send + Sync {
 
     /// Packs all non-default values for initial entity spawn.
     fn pack_all(&self) -> Vec<DataValue>;
+
+    /// Locks the generated data so layer code can reach its own fields
+    /// through the `*_layer` accessors without naming the concrete struct.
+    fn lock_data(&self) -> MappedMutexGuard<'_, dyn VanillaEntityData>;
 
     /// Returns whether this entity ignores gravity, synced to clients.
     fn is_no_gravity(&self) -> bool;
@@ -107,7 +112,7 @@ pub trait LivingEntitySyncedData: EntitySyncedData {
 
 impl<T> LivingEntitySyncedData for SyncMutex<T>
 where
-    T: VanillaLivingEntityData + Send + Sync,
+    T: VanillaLivingEntityData + Send + Sync + 'static,
 {
     fn set_sleeping_pos(&self, sleeping_pos: BlockPos) {
         self.lock()
@@ -123,7 +128,7 @@ where
 
 impl<T> EntitySyncedData for SyncMutex<T>
 where
-    T: VanillaEntityData + Send + Sync,
+    T: VanillaEntityData + Send + Sync + 'static,
 {
     fn pack_dirty(&self) -> Option<Vec<DataValue>> {
         VanillaEntityData::pack_dirty(&mut *self.lock())
@@ -131,6 +136,10 @@ where
 
     fn pack_all(&self) -> Vec<DataValue> {
         VanillaEntityData::pack_all(&*self.lock())
+    }
+
+    fn lock_data(&self) -> MappedMutexGuard<'_, dyn VanillaEntityData> {
+        MutexGuard::map(self.lock(), |data| data as &mut dyn VanillaEntityData)
     }
 
     fn is_no_gravity(&self) -> bool {

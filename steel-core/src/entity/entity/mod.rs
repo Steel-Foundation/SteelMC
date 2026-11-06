@@ -4,6 +4,7 @@ use super::*;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use rand::{RngExt, rng};
 use steel_math::DEGREE_90;
+use steel_utils::DowncastTypeKey;
 use steel_utils::nbt::{NbtNumeric, nbt_collection_values};
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
@@ -155,6 +156,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Gets the entity type containing tracking range, dimensions, etc.
     fn entity_type(&self) -> EntityTypeRef;
+
+    /// Returns this entity's component whose downcast key is `key`; see
+    /// [`Components::query`](crate::entity::component::Components::query).
+    fn erased_component(&self, _key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+        None
+    }
 
     /// Returns whether this entity ignores chunk ticking visibility.
     fn is_always_ticking(&self) -> bool {
@@ -1621,16 +1628,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn Leashable>(self)
     }
 
-    /// Returns true for entities that implement vanilla animal behavior.
-    fn is_animal(&self) -> bool {
-        self.as_animal().is_some()
-    }
-
-    /// Returns this entity as an animal when it has animal behavior.
-    fn as_animal(&self) -> Option<&dyn Animal> {
-        try_as_dyn::<Self, dyn Animal>(self)
-    }
-
     /// Returns true for entities that implement vanilla hostile-mob behavior.
     fn is_monster(&self) -> bool {
         self.as_monster().is_some()
@@ -1649,16 +1646,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns the `Enemy` marker, equivalent to vanilla's `instanceof Enemy`.
     fn as_enemy(&self) -> Option<&dyn Enemy> {
         try_as_dyn::<Self, dyn Enemy>(self)
-    }
-
-    /// Returns true for entities that implement vanilla ageable-mob behavior.
-    fn is_ageable_mob(&self) -> bool {
-        self.as_ageable_mob().is_some()
-    }
-
-    /// Returns this entity as an ageable mob when it has ageable behavior.
-    fn as_ageable_mob(&self) -> Option<&dyn AgeableMob> {
-        try_as_dyn::<Self, dyn AgeableMob>(self)
     }
 
     /// Returns true for entities that implement vanilla item-steered boosts.

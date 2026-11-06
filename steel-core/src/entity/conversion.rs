@@ -5,7 +5,7 @@ use steel_utils::types::Difficulty;
 
 use crate::entity::registry::ENTITIES;
 use crate::entity::{
-    Entity, Mob, RemovalReason, SharedEntity, next_entity_id, start_riding_entities,
+    Ageable, Entity, Mob, RemovalReason, SharedEntity, next_entity_id, start_riding_entities,
 };
 use crate::inventory::equipment::EquipmentSlot;
 
@@ -199,18 +199,18 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
         to.add_mob_effect(effect);
     }
 
+    let to_ageable = Ageable::of(to.as_entity_event_source());
     if from.is_baby()
-        && let Some(to_ageable) = to.as_ageable_mob()
+        && let Some(to_ageable) = to_ageable
     {
         to_ageable.set_baby(true);
     }
 
     if let (Some(old_ageable), Some(converted_ageable)) =
-        (from.as_ageable_mob(), to.as_ageable_mob())
+        (Ageable::of(from.as_entity_event_source()), to_ageable)
     {
-        converted_ageable.set_age(old_ageable.get_age());
-        converted_ageable.set_forced_age(old_ageable.forced_age());
-        converted_ageable.set_forced_age_timer(old_ageable.forced_age_timer());
+        converted_ageable.set_age(old_ageable.age());
+        converted_ageable.copy_forced_growth_from(&old_ageable);
     }
 
     // The vanilla `ANGRY_AT` memory copy awaits the Brain foundation.
@@ -277,7 +277,7 @@ mod tests {
     use crate::entity::entities::ChickenEntity;
     use crate::entity::mob_effect::ABSORPTION_PER_LEVEL;
     use crate::entity::{
-        AgeableMob, Mob, MobEffectInstance, SharedEntity, init_entities, next_entity_id,
+        Ageable, Mob, MobEffectInstance, SharedEntity, init_entities, next_entity_id,
     };
     use crate::inventory::equipment::EquipmentSlot;
     use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
@@ -355,10 +355,11 @@ mod tests {
             EquipmentSlot::Head,
             ItemStack::new(&vanilla_items::IRON_HELMET),
         );
-        let pig_ageable = pig.as_ageable_mob().expect("pig is ageable");
+        let pig_ageable = Ageable::of(pig.as_ref()).expect("pig is ageable");
+        // Feeding a baby credits forced growth: one second is 20 ticks.
+        pig_ageable.set_age(-24_020);
+        pig_ageable.age_up(1, true);
         pig_ageable.set_age(-24_000);
-        pig_ageable.set_forced_age(12);
-        pig_ageable.set_forced_age_timer(3);
 
         let cow = pig
             .downcast_ref::<ChickenEntity>()
@@ -418,11 +419,11 @@ mod tests {
             vanilla_items::IRON_HELMET.key
         );
 
-        let cow_ageable = cow.as_ageable_mob().expect("cow is ageable");
-        assert!(AgeableMob::is_baby(cow_ageable));
-        assert_eq!(cow_ageable.get_age(), -24_000);
-        assert_eq!(cow_ageable.forced_age(), 12);
-        assert_eq!(cow_ageable.forced_age_timer(), 3);
+        let cow_ageable = Ageable::of(cow.as_ref()).expect("cow is ageable");
+        assert!(cow_ageable.is_baby());
+        assert_eq!(cow_ageable.age(), -24_000);
+        assert_eq!(cow_ageable.forced_age(), 20);
+        assert_eq!(cow_ageable.forced_age_timer(), 40);
     }
 
     #[test]

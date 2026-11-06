@@ -1,4 +1,9 @@
-//! Shared vanilla `Animal` state and hooks.
+//! Vanilla `Animal`: feeding, love mode and breeding.
+//!
+//! State and per-type properties live in the [`Breeding`] component;
+//! behavior lives on the [`Animal`] view. The `aiStep`, `customServerAiStep`
+//! and `mobInteract` layers are pipeline stages in this module, and
+//! [`ai_step`] / [`mob_interact`] build an animal's whole vanilla chain.
 
 use std::ops::RangeInclusive;
 use std::sync::Arc;
@@ -13,175 +18,225 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::MOB_DROPS;
 use steel_registry::{vanilla_blocks, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::locks::SyncMutex;
-use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, UuidExt};
+use steel_utils::locks::CheckedMutex;
+use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, UuidExt};
 use uuid::Uuid;
 
 use crate::behavior::InteractionResult;
+use crate::entity::ageable::{self, Age, Ageable};
 use crate::entity::ai::path::PathType;
+use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::entries::{AiStep, CustomServerAiStep, MobInteract, MobInteractCtx};
+use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
+use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::entities::ExperienceOrbEntity;
-use crate::entity::{
-    AgeableMob, AgeableMobBase, EntitySpawnReason, Mob, MobBase, SharedEntity, next_entity_id,
-};
+use crate::entity::{Entity, EntitySpawnReason, Mob, MobBase, SharedEntity, mob, next_entity_id};
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 
 const PARENT_AGE_AFTER_BREEDING: i32 = 6000;
 const IN_LOVE_TIME: i32 = 600;
 const BREEDING_XP: RangeInclusive<i32> = 1..=7;
+/// `Animal.getAmbientSoundInterval`.
+pub const AMBIENT_SOUND_INTERVAL: i32 = 120;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct AnimalState {
+/// Per-type properties of a vanilla `Animal`.
+pub struct BreedingProps {
+    /// `Animal.isFood`.
+    pub is_food: fn(&ItemStack) -> bool,
+    /// `Animal.playEatingSound`; vanilla's default plays nothing.
+    pub play_eating_sound: fn(&dyn Entity),
+}
+
+impl BreedingProps {
+    /// Properties for an animal eating `is_food`, with vanilla's defaults
+    /// for everything else.
+    #[must_use]
+    pub const fn new(is_food: fn(&ItemStack) -> bool) -> Self {
+        Self {
+            is_food,
+            play_eating_sound: |_| {},
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct LoveState {
     in_love: i32,
     love_cause: Option<Uuid>,
 }
 
-impl AnimalState {
-    const fn new() -> Self {
-        Self {
-            in_love: 0,
-            love_cause: None,
-        }
-    }
+/// Love state and properties of a vanilla `Animal`.
+pub struct Breeding {
+    state: CheckedMutex<LoveState>,
+    props: &'static BreedingProps,
 }
 
-/// Runtime fields shared by vanilla animals.
-#[derive(Debug)]
-pub struct AnimalBase {
-    state: SyncMutex<AnimalState>,
-}
-
-impl AnimalBase {
-    /// Creates default animal runtime state.
+impl Breeding {
+    /// Not in love, with `props` describing this animal type.
     #[must_use]
-    pub const fn new() -> Self {
+    pub const fn new(props: &'static BreedingProps) -> Self {
         Self {
-            state: SyncMutex::new(AnimalState::new()),
+            state: CheckedMutex::new(
+                "Breeding",
+                LoveState {
+                    in_love: 0,
+                    love_cause: None,
+                },
+            ),
+            props,
         }
     }
 
+    /// The pathfinding malus every animal starts with (`Animal` constructor).
     pub fn initialize_pathfinding_malus(mob_base: &MobBase) {
         let mut malus = mob_base.pathfinding_malus().lock();
         malus.set(PathType::FireInNeighbor, 16.0);
         malus.set(PathType::Fire, -1.0);
     }
+}
 
-    /// Ticks remaining in this animal's in-love state.
-    #[must_use]
-    pub fn in_love_time(&self) -> i32 {
-        self.state.lock().in_love
-    }
+// SAFETY: This key is owned by Steel and uniquely identifies `Breeding`.
+unsafe impl DowncastType for Breeding {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity_component/breeding");
+}
 
-    /// Sets the ticks remaining in this animal's in-love state.
-    pub fn set_in_love_time(&self, in_love: i32) {
-        self.state.lock().in_love = in_love;
-    }
-
-    /// Decrements vanilla `Animal.inLove` when it is active.
-    pub fn tick_in_love_time(&self) {
-        let mut state = self.state.lock();
-        if state.in_love > 0 {
-            state.in_love -= 1;
+impl Component for Breeding {
+    fn save(&self, _owner: &dyn Entity, nbt: &mut NbtCompound) {
+        let state = *self.state.lock();
+        nbt.insert("InLove", state.in_love);
+        if let Some(love_cause) = state.love_cause {
+            nbt.insert(
+                "LoveCause",
+                NbtTag::IntArray(love_cause.to_int_array().to_vec()),
+            );
         }
     }
 
-    /// Returns the UUID of the player who caused this animal to fall in love, if any.
+    fn load(&self, _owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        let mut state = self.state.lock();
+        state.in_love = nbt.int("InLove").unwrap_or(0);
+        if let Some(love_cause) = nbt.int_array("LoveCause")
+            && let Some(uuid) = Uuid::from_int_array(&love_cause)
+        {
+            state.love_cause = Some(uuid);
+        }
+    }
+}
+
+/// An entity seen as a vanilla `Animal`.
+#[derive(Clone, Copy)]
+pub struct Animal<'a> {
+    ageable: Ageable<'a>,
+    breeding: &'a Breeding,
+}
+
+impl<'a> Animal<'a> {
+    /// Pairs `entity` with its animal components.
     #[must_use]
-    pub fn love_cause_uuid(&self) -> Option<Uuid> {
-        self.state.lock().love_cause
+    pub const fn new(entity: &'a dyn Entity, age: &'a Age, breeding: &'a Breeding) -> Self {
+        Self {
+            ageable: Ageable::new(entity, age),
+            breeding,
+        }
     }
 
-    /// Sets the UUID of the player who caused this animal to fall in love.
-    pub fn set_love_cause_uuid(&self, love_cause: Option<Uuid>) {
-        self.state.lock().love_cause = love_cause;
-    }
-}
-
-impl Default for AnimalBase {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Vanilla-shaped behavior shared by entities that extend `Animal`.
-pub trait Animal: AgeableMob {
-    /// Returns shared animal runtime state.
-    fn animal_base(&self) -> &AnimalBase;
-
-    /// Ticks remaining in this animal's in-love state.
-    fn in_love_time(&self) -> i32 {
-        self.animal_base().in_love_time()
+    /// Returns `entity` as an animal, if it is one.
+    #[must_use]
+    pub fn of(entity: &'a dyn Entity) -> Option<Self> {
+        Some(Self::new(
+            entity,
+            entity.query::<Age>()?,
+            entity.query::<Breeding>()?,
+        ))
     }
 
-    /// Sets the ticks remaining in this animal's in-love state.
-    fn set_in_love_time(&self, in_love: i32) {
-        self.animal_base().set_in_love_time(in_love);
+    /// Returns this animal's age view.
+    #[must_use]
+    pub const fn ageable(&self) -> Ageable<'a> {
+        self.ageable
     }
 
-    /// Returns the UUID of the player who caused this animal to fall in love, if any.
-    fn love_cause_uuid(&self) -> Option<Uuid> {
-        self.animal_base().love_cause_uuid()
+    /// Returns the entity this view belongs to.
+    #[must_use]
+    pub const fn entity(&self) -> &'a dyn Entity {
+        self.ageable.entity()
     }
 
-    /// Sets the UUID of the player who caused this animal to fall in love.
-    fn set_love_cause_uuid(&self, love_cause: Option<Uuid>) {
-        self.animal_base().set_love_cause_uuid(love_cause);
+    /// Returns whether `item_stack` is this animal's food (`Animal.isFood`).
+    #[must_use]
+    pub fn is_food(&self, item_stack: &ItemStack) -> bool {
+        (self.breeding.props.is_food)(item_stack)
     }
 
-    /// Returns whether this animal is currently in love.
-    fn is_in_love(&self) -> bool {
+    /// Ticks remaining in love mode.
+    #[must_use]
+    pub fn in_love_time(&self) -> i32 {
+        self.breeding.state.lock().in_love
+    }
+
+    /// Returns whether this animal is in love mode.
+    #[must_use]
+    pub fn is_in_love(&self) -> bool {
         self.in_love_time() > 0
     }
 
-    /// Returns whether this animal can currently be fed to fall in love.
-    fn can_fall_in_love(&self) -> bool {
+    /// Returns whether this animal can be fed into love mode.
+    #[must_use]
+    pub fn can_fall_in_love(&self) -> bool {
         self.in_love_time() <= 0
     }
 
-    /// Sets vanilla love mode and records the player that caused it.
-    fn set_in_love(&self, player: Option<&Player>) {
-        self.set_in_love_time(IN_LOVE_TIME);
-        if let Some(player) = player {
-            self.set_love_cause_uuid(Some(player.gameprofile.id()));
+    /// The player who caused this animal to fall in love, if any.
+    #[must_use]
+    pub fn love_cause(&self) -> Option<Uuid> {
+        self.breeding.state.lock().love_cause
+    }
+
+    /// Starts love mode, recording `player` as its cause (`Animal.setInLove`).
+    pub fn set_in_love(&self, player: Option<&Player>) {
+        {
+            let mut state = self.breeding.state.lock();
+            state.in_love = IN_LOVE_TIME;
+            if let Some(player) = player {
+                state.love_cause = Some(player.gameprofile.id());
+            }
         }
-
-        self.broadcast_entity_event(EntityStatus::InLoveHearts);
+        self.entity()
+            .broadcast_entity_event(EntityStatus::InLoveHearts);
     }
 
-    /// Resets vanilla love mode without clearing the stored love cause.
-    fn reset_love(&self) {
-        self.set_in_love_time(0);
+    /// Ends love mode without clearing its cause (`Animal.resetLove`).
+    pub fn reset_love(&self) {
+        self.breeding.state.lock().in_love = 0;
     }
 
-    /// Returns whether this animal and `partner` are eligible to breed:
-    /// distinct entities of the same type, both currently in love.
-    fn can_mate(&self, partner: &dyn Animal) -> bool {
-        self.uuid() != partner.uuid()
-            && self.entity_type() == partner.entity_type()
+    /// Returns whether this animal and `partner` can breed: distinct animals
+    /// of the same type, both in love (`Animal.canMate`).
+    #[must_use]
+    pub fn can_mate(&self, partner: &Animal<'_>) -> bool {
+        self.entity().uuid() != partner.entity().uuid()
+            && self.entity().entity_type() == partner.entity().entity_type()
             && self.is_in_love()
             && partner.is_in_love()
     }
 
-    /// Returns whether the stack is valid food for this animal.
-    fn is_food(&self, _item_stack: &ItemStack) -> bool {
-        false
+    /// Plays this animal type's eating sound.
+    pub fn play_eating_sound(&self) {
+        (self.breeding.props.play_eating_sound)(self.entity());
     }
 
-    /// Returns the base breeding experience reward: 1 to 3, randomly.
-    fn base_experience_reward_animal(&self) -> i32 {
+    /// Random breeding experience: 1 to 3 (`Animal.getBaseExperienceReward`).
+    #[must_use]
+    pub fn base_experience_reward() -> i32 {
         1 + rand::random_range(0..3)
     }
 
-    /// Returns the default ticks between ambient sounds for animals.
-    fn ambient_sound_interval_animal(&self) -> i32 {
-        120
-    }
-
-    /// Returns how attractive `pos` is as an AI walk target: favors grass
-    /// blocks, otherwise falls back to light-level pathfinding cost.
-    fn animal_walk_target_value(&self, pos: BlockPos) -> f32 {
-        let Some(world) = self.level() else {
+    /// How attractive `pos` is as a walk target: grass first, then light
+    /// (`Animal.getWalkTargetValue`).
+    #[must_use]
+    pub fn walk_target_value(&self, pos: BlockPos) -> f32 {
+        let Some(world) = self.entity().level() else {
             return 0.0;
         };
 
@@ -192,137 +247,60 @@ pub trait Animal: AgeableMob {
         }
     }
 
-    /// Returns whether light at `pos` is bright enough for an animal to naturally spawn.
-    fn is_bright_enough_to_spawn(level: &(impl LevelReader + ?Sized), pos: BlockPos) -> bool
-    where
-        Self: Sized,
-    {
-        level.raw_brightness(pos, 0) > 8
-    }
-
-    /// Returns whether an animal may naturally spawn at `pos`: the block
-    /// below must allow animal spawning, and light must be sufficient unless
-    /// the spawn reason ignores light requirements.
-    fn check_animal_spawn_rules(
-        _entity_type: EntityTypeRef,
-        level: &(impl LevelReader + ?Sized),
-        spawn_reason: EntitySpawnReason,
-        pos: BlockPos,
-        _random: &mut dyn Rng,
-    ) -> bool
-    where
-        Self: Sized,
-    {
-        let bright_enough = spawn_reason.ignores_light_requirements()
-            || Self::is_bright_enough_to_spawn(level, pos);
-        level
-            .get_block_state(pos.below())
-            .get_block()
-            .has_tag(&BlockTag::ANIMALS_SPAWNABLE_ON)
-            && bright_enough
-    }
-
-    /// Plays this animal's vanilla eating sound.
-    fn play_eating_sound(&self) {}
-
-    /// Feeds this animal when holding valid food: triggers love mode for
-    /// adults, or speeds up growth for babies; falls back to the
-    /// ageable-mob interaction otherwise.
-    fn mob_interact_animal(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
-        let item_stack = {
-            let inventory = player.inventory.lock();
-            let item_stack = inventory.get_item_in_hand(hand);
-            item_stack.copy_with_count(item_stack.count())
-        };
-
-        if !self.is_food(&item_stack) {
-            return self.mob_interact_ageable(player, hand);
-        }
-
-        let age = self.get_age();
-        if age == 0 && self.can_fall_in_love() {
-            Mob::use_player_item(self, player, hand);
-            self.set_in_love(Some(player));
-            self.play_eating_sound();
-            return InteractionResult::SuccessServer;
-        }
-
-        if self.can_age_up() {
-            Mob::use_player_item(self, player, hand);
-            self.age_up(
-                AgeableMobBase::get_speed_up_seconds_when_feeding(-age),
-                true,
-            );
-            self.play_eating_sound();
-            return InteractionResult::Success;
-        }
-
-        self.mob_interact_ageable(player, hand)
-    }
-
-    /// Creates, initializes, and inserts vanilla breeding offspring.
-    fn spawn_child_from_breeding(&self, world: &Arc<World>, partner: &dyn Animal) {
-        let Some(offspring) = self.get_breed_offspring(world, partner) else {
+    /// Creates offspring with `partner` and adds it to `world`
+    /// (`Animal.spawnChildFromBreeding`).
+    pub fn spawn_child_from_breeding(&self, world: &Arc<World>, partner: &Animal<'_>) {
+        let Some(offspring) = self.ageable.breed_offspring(world, &partner.ageable) else {
             return;
         };
 
-        {
-            let Some(offspring_animal) = offspring.as_animal() else {
-                log::error!(
-                    "breeding entity type {} created non-animal offspring",
-                    self.entity_type().key
-                );
-                return;
-            };
-            offspring_animal.set_baby(true);
-            if let Err(error) = offspring_animal.try_set_position(self.position()) {
-                log::error!(
-                    "failed to position breeding offspring {} at parent {}: {error}",
-                    offspring.id(),
-                    self.id()
-                );
-                return;
-            }
-            offspring_animal.set_rotation((0.0, 0.0));
-            offspring_animal.set_old_position_to_current();
-
-            self.finalize_spawn_child_from_breeding(world, partner, Some(offspring_animal));
+        let Some(offspring_ageable) = Ageable::of(offspring.as_ref()) else {
+            log::error!(
+                "breeding entity type {} created non-ageable offspring",
+                self.entity().entity_type().key
+            );
+            return;
+        };
+        offspring_ageable.set_baby(true);
+        if let Err(error) = offspring.try_set_position(self.entity().position()) {
+            log::error!(
+                "failed to position breeding offspring {} at parent {}: {error}",
+                offspring.id(),
+                self.entity().id()
+            );
+            return;
         }
+        offspring.set_rotation((0.0, 0.0));
+        offspring.set_old_position_to_current();
+
+        self.finalize_spawn_child_from_breeding(world, partner);
 
         if let Err(error) = world.try_add_entity(offspring) {
             log::error!(
                 "failed to add breeding offspring for entity {} to world: {error}",
-                self.id()
+                self.entity().id()
             );
         }
     }
 
-    /// Applies vanilla breeding side effects after offspring creation.
-    fn finalize_spawn_child_from_breeding(
-        &self,
-        world: &Arc<World>,
-        partner: &dyn Animal,
-        _offspring: Option<&dyn Animal>,
-    ) {
-        if self
-            .love_cause_uuid()
-            .or_else(|| partner.love_cause_uuid())
-            .is_some()
-        {
+    /// Breeding side effects on both parents (`Animal.finalizeSpawnChildFromBreeding`).
+    fn finalize_spawn_child_from_breeding(&self, world: &Arc<World>, partner: &Animal<'_>) {
+        if self.love_cause().or_else(|| partner.love_cause()).is_some() {
             // TODO: Award the animals-bred stat and advancement once those foundations exist.
         }
 
-        self.set_age(PARENT_AGE_AFTER_BREEDING);
-        partner.set_age(PARENT_AGE_AFTER_BREEDING);
+        self.ageable.set_age(PARENT_AGE_AFTER_BREEDING);
+        partner.ageable.set_age(PARENT_AGE_AFTER_BREEDING);
         self.reset_love();
         partner.reset_love();
-        self.broadcast_entity_event(EntityStatus::InLoveHearts);
+        self.entity()
+            .broadcast_entity_event(EntityStatus::InLoveHearts);
 
         if world.get_game_rule(&MOB_DROPS) {
             let orb: SharedEntity = Arc::new(ExperienceOrbEntity::with_value(
                 &vanilla_entities::EXPERIENCE_ORB,
                 next_entity_id(),
-                self.position(),
+                self.entity().position(),
                 rand::random_range(BREEDING_XP),
                 Arc::downgrade(world),
             ));
@@ -332,49 +310,148 @@ pub trait Animal: AgeableMob {
         }
     }
 
-    /// Ticks vanilla animal love state.
-    fn tick_animal_love(&self) {
-        if self.get_age() != 0 {
+    /// `Animal.aiStep` after `super`: love mode only lasts for adults and
+    /// counts down. Vanilla's periodic heart particles are client-local.
+    fn tick_love(&self) {
+        if self.ageable.age() != 0 {
             self.reset_love();
             return;
         }
-
-        self.animal_base().tick_in_love_time();
-        // VANILLA CLIENT-LOCAL: `Animal.aiStep` creates the periodic heart particles.
-    }
-
-    /// Clears this animal's in-love state whenever its age isn't exactly zero (adult).
-    fn custom_server_ai_step_animal(&self) {
-        if self.get_age() != 0 {
-            self.reset_love();
+        let mut state = self.breeding.state.lock();
+        if state.in_love > 0 {
+            state.in_love -= 1;
         }
     }
 
-    /// Returns vanilla animal far-away despawn behavior.
-    fn remove_when_far_away_animal(&self, _dist_sqr: f64) -> bool {
-        false
-    }
+    /// `Animal.mobInteract`: feeding food starts love mode for adults and
+    /// speeds up growth for babies.
+    fn feed(&self, mob: &dyn Mob, ctx: &mut MobInteractCtx<'_>) -> Flow {
+        let is_food = {
+            let inventory = ctx.player.inventory.lock();
+            self.is_food(inventory.get_item_in_hand(ctx.hand))
+        };
+        if !is_food {
+            return Flow::Continue;
+        }
 
-    /// Saves vanilla animal fields.
-    fn save_animal(&self, nbt: &mut NbtCompound) {
-        nbt.insert("InLove", self.in_love_time());
-        if let Some(love_cause) = self.love_cause_uuid() {
-            nbt.insert(
-                "LoveCause",
-                NbtTag::IntArray(love_cause.to_int_array().to_vec()),
-            );
+        let age = self.ageable.age();
+        if age == 0 && self.can_fall_in_love() {
+            mob.use_player_item(ctx.player, ctx.hand);
+            self.set_in_love(Some(ctx.player));
+            self.play_eating_sound();
+            ctx.result = InteractionResult::SuccessServer;
+            return Flow::Stop;
+        }
+
+        if self.ageable.can_age_up() {
+            mob.use_player_item(ctx.player, ctx.hand);
+            self.ageable
+                .age_up(Ageable::speed_up_seconds_when_feeding(-age), true);
+            self.play_eating_sound();
+            ctx.result = InteractionResult::Success;
+            return Flow::Stop;
+        }
+
+        Flow::Continue
+    }
+}
+
+/// Components every animal has; keeps stage bounds short.
+pub trait Parts: Mob + Has<Age> + Has<Breeding> {
+    /// Returns this entity as an animal.
+    fn animal(&self) -> Animal<'_>;
+}
+
+impl<E: Mob + Has<Age> + Has<Breeding>> Parts for E {
+    fn animal(&self) -> Animal<'_> {
+        Animal::new(self, self.get::<Age>(), self.get::<Breeding>())
+    }
+}
+
+/// Stage running [`Animal::tick_love`].
+pub const AI_STEP: StageId = StageId("animal.ai_step");
+/// Stage ending love mode for non-adults in `customServerAiStep`.
+pub const CUSTOM_SERVER_AI_STEP: StageId = StageId("animal.custom_server_ai_step");
+/// Stage feeding the animal in `mobInteract`.
+pub const MOB_INTERACT: StageId = StageId("animal.mob_interact");
+
+/// Vanilla's chains for an animal type: `LivingEntity` → `Mob` →
+/// `AgeableMob` → `Animal`, base first.
+#[must_use]
+pub fn definition<E: Parts>() -> MobDefinition<E> {
+    MobDefinition {
+        ai_step: ai_step(),
+        custom_server_ai_step: custom_server_ai_step(),
+        mob_interact: mob_interact(),
+        finalize_spawn: Pipeline::new([
+            ageable::finalize_spawn::<E>(),
+            mob::stages::finalize_spawn::<E>(),
+        ]),
+    }
+}
+
+/// Vanilla's animal `aiStep` chain.
+#[must_use]
+pub fn ai_step<E: Parts>() -> Pipeline<E, AiStep> {
+    fn love<E: Parts>(entity: &E) {
+        entity.animal().tick_love();
+    }
+    Pipeline::new([
+        mob::stages::ai_step::<E>(),
+        ageable::ai_step::<E>(),
+        Stage::effect(AI_STEP, "Animal.aiStep", love::<E>),
+    ])
+}
+
+/// Vanilla's animal `customServerAiStep` chain.
+#[must_use]
+pub fn custom_server_ai_step<E: Parts>() -> Pipeline<E, CustomServerAiStep> {
+    fn run<E: Parts>(entity: &E) {
+        let animal = entity.animal();
+        if animal.ageable.age() != 0 {
+            animal.reset_love();
         }
     }
+    Pipeline::new([Stage::effect(
+        CUSTOM_SERVER_AI_STEP,
+        "Animal.customServerAiStep",
+        run::<E>,
+    )])
+}
 
-    /// Loads vanilla animal fields.
-    fn load_animal(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.set_in_love_time(nbt.int("InLove").unwrap_or(0));
-        if let Some(love_cause) = nbt.int_array("LoveCause")
-            && let Some(uuid) = Uuid::from_int_array(&love_cause)
-        {
-            self.set_love_cause_uuid(Some(uuid));
-        }
+/// Vanilla's animal `mobInteract` chain: feeding, then the age lock.
+#[must_use]
+pub fn mob_interact<E: Parts>() -> Pipeline<E, MobInteract> {
+    fn run<E: Parts>(entity: &E, ctx: &mut MobInteractCtx<'_>) -> Flow {
+        entity.animal().feed(entity, ctx)
     }
+    Pipeline::new([
+        Stage::new(MOB_INTERACT, "Animal.mobInteract", run::<E>),
+        ageable::mob_interact::<E>(),
+    ])
+}
+
+/// Returns whether light at `pos` allows animals to spawn naturally.
+pub fn is_bright_enough_to_spawn(level: &(impl LevelReader + ?Sized), pos: BlockPos) -> bool {
+    level.raw_brightness(pos, 0) > 8
+}
+
+/// `Animal.checkAnimalSpawnRules`: the block below must allow animals, and
+/// light must suffice unless the spawn reason ignores it.
+pub fn check_animal_spawn_rules(
+    _entity_type: EntityTypeRef,
+    level: &(impl LevelReader + ?Sized),
+    spawn_reason: EntitySpawnReason,
+    pos: BlockPos,
+    _random: &mut dyn Rng,
+) -> bool {
+    let bright_enough =
+        spawn_reason.ignores_light_requirements() || is_bright_enough_to_spawn(level, pos);
+    level
+        .get_block_state(pos.below())
+        .get_block()
+        .has_tag(&BlockTag::ANIMALS_SPAWNABLE_ON)
+        && bright_enough
 }
 
 #[cfg(test)]
@@ -384,7 +461,6 @@ mod tests {
     use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use super::*;
-    use crate::entity::entities::ChickenEntity;
 
     struct SpawnRuleLevel {
         below_pos: BlockPos,
@@ -426,55 +502,37 @@ mod tests {
         }
     }
 
+    fn natural_spawn(level: &SpawnRuleLevel, reason: EntitySpawnReason) -> bool {
+        check_animal_spawn_rules(
+            &vanilla_entities::PIG,
+            level,
+            reason,
+            BlockPos::new(0, 64, 0),
+            &mut rand::rng(),
+        )
+    }
+
     #[test]
     fn animal_spawn_rules_require_spawnable_block_tag() {
         init_vanilla_registry();
         let level = spawn_rule_level(vanilla_blocks::STONE.default_state(), 15);
-
-        assert!(!<ChickenEntity as Animal>::check_animal_spawn_rules(
-            &vanilla_entities::PIG,
-            &level,
-            EntitySpawnReason::Natural,
-            BlockPos::new(0, 64, 0),
-            &mut rand::rng(),
-        ));
+        assert!(!natural_spawn(&level, EntitySpawnReason::Natural));
     }
 
     #[test]
     fn animal_spawn_rules_require_raw_brightness_above_eight() {
         init_vanilla_registry();
-        let level = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 8);
+        let dark = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 8);
+        assert!(!natural_spawn(&dark, EntitySpawnReason::Natural));
 
-        assert!(!<ChickenEntity as Animal>::check_animal_spawn_rules(
-            &vanilla_entities::PIG,
-            &level,
-            EntitySpawnReason::Natural,
-            BlockPos::new(0, 64, 0),
-            &mut rand::rng(),
-        ));
-
-        let level = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 9);
-
-        assert!(<ChickenEntity as Animal>::check_animal_spawn_rules(
-            &vanilla_entities::PIG,
-            &level,
-            EntitySpawnReason::Natural,
-            BlockPos::new(0, 64, 0),
-            &mut rand::rng(),
-        ));
+        let lit = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 9);
+        assert!(natural_spawn(&lit, EntitySpawnReason::Natural));
     }
 
     #[test]
     fn animal_spawn_rules_trial_spawner_ignores_light() {
         init_vanilla_registry();
         let level = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 0);
-
-        assert!(<ChickenEntity as Animal>::check_animal_spawn_rules(
-            &vanilla_entities::PIG,
-            &level,
-            EntitySpawnReason::TrialSpawner,
-            BlockPos::new(0, 64, 0),
-            &mut rand::rng(),
-        ));
+        assert!(natural_spawn(&level, EntitySpawnReason::TrialSpawner));
     }
 }
