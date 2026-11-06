@@ -82,9 +82,6 @@ pub trait Explosion {
     /// Returns the exact explosion center.
     fn center(&self) -> DVec3;
     /// Returns whether blocks may react to this explosion without being destroyed.
-    ///
-    /// Only a [`BlockInteraction::TriggerBlock`] explosion can; a breeze wind charge's
-    /// is additionally gated on `mobGriefing`.
     fn can_trigger_blocks(&self) -> bool;
     /// Returns whether block-like entities may be affected.
     fn should_affect_blocklike_entities(&self) -> bool;
