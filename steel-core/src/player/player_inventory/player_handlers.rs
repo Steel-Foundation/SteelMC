@@ -1,7 +1,8 @@
+use crate::entity::LivingParts as _;
 use std::{f32::consts::TAU, mem, sync::Arc};
 
 use crate::{
-    entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity},
+    entity::{Entity, RemovalReason, entities::ItemEntity},
     inventory::{
         click::Click,
         container::{Container, CraftingContainer, clear_or_count_matching_stack},
@@ -288,7 +289,7 @@ impl Player {
     /// This is the common implementation shared between inventory menu and
     /// external menus (crafting table, chest, etc.).
     fn process_container_click(&self, menu: &mut Menu, packet: SContainerClick) {
-        if self.game_mode() == GameType::Spectator || self.get_health() <= 0.0 {
+        if self.game_mode() == GameType::Spectator || self.living().get_health() <= 0.0 {
             menu.behavior_mut()
                 .send_all_data_to_remote(&self.connection);
             return;
@@ -1137,7 +1138,10 @@ impl Player {
     fn default_menu_item_disposition(&self) -> MenuItemDisposition {
         let removed_outside_world_change =
             self.is_removed() && self.removal_reason() != Some(RemovalReason::ChangedWorld);
-        if removed_outside_world_change || self.connection.closed() || self.get_health() <= 0.0 {
+        if removed_outside_world_change
+            || self.connection.closed()
+            || self.living().get_health() <= 0.0
+        {
             MenuItemDisposition::Drop
         } else {
             MenuItemDisposition::ReturnToInventory

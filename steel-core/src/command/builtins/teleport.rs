@@ -1,5 +1,6 @@
 //! Vanilla entity teleport command.
 
+use crate::entity::LivingParts as _;
 use std::{slice, sync::Arc};
 
 use glam::DVec3;
@@ -17,7 +18,7 @@ use super::super::{
 };
 use super::position::{ensure_spawnable_position, finite_rotation, wrap_rotation};
 use crate::{
-    entity::{Entity, EntityAnchor, LivingEntity as _, SharedEntity, change_entity_world},
+    entity::{Entity, EntityAnchor, SharedEntity, change_entity_world},
     portal::{TeleportPostTransition, TeleportTransition},
     world::World,
 };
@@ -272,8 +273,8 @@ fn perform_teleport(
     facing: Option<&TeleportFacing>,
 ) {
     if let Some(player) = target.as_player() {
-        if player.is_sleeping() {
-            player.stop_sleeping();
+        if player.living().is_sleeping() {
+            player.living().stop_sleeping();
         }
         player.send_packet(CSetCamera {
             camera_id: player.id(),

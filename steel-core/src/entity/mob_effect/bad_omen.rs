@@ -1,7 +1,7 @@
 //! `BadOmenMobEffect` behavior.
 
 use super::MobEffectBehavior;
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::world::World;
 
 /// Bad omen mob effect behavior.
@@ -15,7 +15,7 @@ impl MobEffectBehavior for BadOmenBehavior {
         true
     }
 
-    fn apply_effect_tick(&self, _world: &World, _user: &dyn LivingEntity, _amplifier: i32) -> bool {
+    fn apply_effect_tick(&self, _world: &World, _user: &Living<'_>, _amplifier: i32) -> bool {
         true
     }
 }

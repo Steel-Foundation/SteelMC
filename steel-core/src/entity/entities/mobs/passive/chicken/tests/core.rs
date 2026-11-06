@@ -8,8 +8,8 @@ fn chicken_initializes_vanilla_living_attributes_and_health() {
 
     let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-    assert_eq!(chicken.get_health().to_bits(), 4.0_f32.to_bits());
-    let attributes = chicken.attributes().lock();
+    assert_eq!(chicken.living().get_health().to_bits(), 4.0_f32.to_bits());
+    let attributes = chicken.living().attributes().lock();
     assert_eq!(
         attributes
             .required_value(vanilla_attributes::MAX_HEALTH)
@@ -53,11 +53,11 @@ fn chicken_sound_methods_follow_selected_sound_variant() {
         Some(&chicken.sound_variant().adult_sounds.ambient_sound.key)
     );
     assert_eq!(
-        LivingEntity::hurt_sound(&chicken, &source).map(|sound| &sound.key),
+        chicken.living().hurt_sound(&source).map(|sound| &sound.key),
         Some(&chicken.sound_variant().adult_sounds.hurt_sound.key)
     );
     assert_eq!(
-        LivingEntity::death_sound(&chicken).map(|sound| &sound.key),
+        chicken.living().death_sound().map(|sound| &sound.key),
         Some(&chicken.sound_variant().adult_sounds.death_sound.key)
     );
 }
@@ -81,7 +81,7 @@ fn chicken_jockey_rewards_ten_experience() {
 
     let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-    let normal_reward = LivingEntity::base_experience_reward(&chicken);
+    let normal_reward = chicken.living().base_experience_reward();
     assert!(
         (1..=3).contains(&normal_reward),
         "adult chicken reward should be 1..=3, got {normal_reward}"
@@ -89,7 +89,7 @@ fn chicken_jockey_rewards_ten_experience() {
 
     chicken.set_chicken_jockey(true);
     assert_eq!(
-        LivingEntity::base_experience_reward(&chicken),
+        chicken.living().base_experience_reward(),
         CHICKEN_JOCKEY_EXPERIENCE_REWARD
     );
 }

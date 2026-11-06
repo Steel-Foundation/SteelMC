@@ -3,6 +3,7 @@
 //! This module implements the logic from Java's `ServerPlayerGameMode` for handling
 //! block breaking, including progress tracking and validation.
 
+use crate::entity::LivingParts as _;
 use std::sync::Arc;
 
 use steel_protocol::packets::game::CBlockUpdate;
@@ -22,7 +23,7 @@ use steel_utils::{
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockLootContext};
 use crate::block_entity::BlockEntity;
-use crate::entity::{ActiveMobEffect, Entity, LivingEntity};
+use crate::entity::{ActiveMobEffect, Entity};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
 use crate::player::food_data::food_constants;
@@ -40,7 +41,7 @@ impl Player {
                 .get_destroy_speed(state)
         };
 
-        let attributes = self.attributes().lock();
+        let attributes = self.living_base.attributes().lock();
         let attribute_value = |attribute: AttributeRef| {
             attributes
                 .get_value(attribute)
@@ -54,8 +55,8 @@ impl Player {
             speed += attribute_value(vanilla_attributes::MINING_EFFICIENCY);
         }
 
-        let haste = self.mob_effect(vanilla_mob_effects::HASTE);
-        let conduit_power = self.mob_effect(vanilla_mob_effects::CONDUIT_POWER);
+        let haste = self.living().mob_effect(vanilla_mob_effects::HASTE);
+        let conduit_power = self.living().mob_effect(vanilla_mob_effects::CONDUIT_POWER);
         let dig_speed_amplifier = haste
             .iter()
             .chain(conduit_power.iter())
@@ -65,7 +66,10 @@ impl Player {
             speed *= 1.0 + (amplifier + 1) as f32 * 0.2;
         }
 
-        if let Some(mining_fatigue) = self.mob_effect(vanilla_mob_effects::MINING_FATIGUE) {
+        if let Some(mining_fatigue) = self
+            .living()
+            .mob_effect(vanilla_mob_effects::MINING_FATIGUE)
+        {
             speed *= 0.3_f32.powi(mining_fatigue.amplifier() + 1);
         }
 
@@ -490,7 +494,9 @@ impl BlockBreakingManager {
                 };
 
                 if let Some(item) = broke {
-                    player.on_equipped_item_broken(item, EquipmentSlot::MainHand);
+                    player
+                        .living()
+                        .on_equipped_item_broken(item, EquipmentSlot::MainHand);
                     log::debug!("Tool broke while mining block at {pos:?}");
                 }
             }
@@ -619,6 +625,7 @@ fn drop_block_loot(
     block_entity: Option<&dyn BlockEntity>,
 ) {
     let luck = player
+        .living()
         .attributes()
         .lock()
         .get_value(vanilla_attributes::LUCK)

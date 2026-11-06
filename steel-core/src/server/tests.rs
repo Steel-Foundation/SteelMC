@@ -1,3 +1,4 @@
+use crate::entity::LivingParts as _;
 use glam::DVec3;
 use std::ptr;
 use std::thread;
@@ -51,8 +52,8 @@ use crate::config::{ResolvedDomainConfig, RuntimeConfig, WorldsConfig};
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, RemovalReason, SharedEntity,
-    init_entities, next_entity_id,
+    DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, RemovalReason, SharedEntity, init_entities,
+    next_entity_id,
 };
 use crate::permission::{
     OP_GROUP, PermissionEntry, PermissionExpr, PermissionGroupConfig, PermissionGroupManager,
@@ -271,7 +272,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
         let saved_velocity = DVec3::new(0.25, -0.5, 0.75);
         saved_player.base().set_position_local(saved_position);
         saved_player.set_velocity(saved_velocity);
-        saved_player.set_health(7.0);
+        saved_player.living().set_health(7.0);
         let mut saved_data = PersistentPlayerData::from_player(&saved_player);
         let saved_root_uuid = [3; 16];
         saved_data.root_vehicle = Some(PersistentRootVehicle {
@@ -328,7 +329,10 @@ fn saved_location_planning_honors_explicit_world_selection() {
         Server::apply_domain_player_state(&mismatch_player, &mismatch_state);
         assert_eq!(mismatch_player.position(), mismatch_spawn.position);
         assert_eq!(mismatch_player.velocity(), DVec3::ZERO);
-        assert_eq!(mismatch_player.get_health().to_bits(), 7.0_f32.to_bits());
+        assert_eq!(
+            mismatch_player.living().get_health().to_bits(),
+            7.0_f32.to_bits()
+        );
         let restores = server.prepare_domain_restores(&mismatch_player, &mismatch_state, true);
         assert!(restores.root_vehicle.is_none());
         assert!(Server::install_domain_restores(
@@ -374,7 +378,10 @@ fn saved_location_planning_honors_explicit_world_selection() {
         Server::apply_domain_player_state(&matching_player, &matching_state);
         assert_eq!(matching_player.position(), saved_position);
         assert_eq!(matching_player.velocity(), saved_velocity);
-        assert_eq!(matching_player.get_health().to_bits(), 7.0_f32.to_bits());
+        assert_eq!(
+            matching_player.living().get_health().to_bits(),
+            7.0_f32.to_bits()
+        );
         assert_eq!(
             Server::root_vehicle_to_restore(&matching_state)
                 .as_ref()
@@ -905,7 +912,7 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
 
         let player = test_player(&server, Arc::clone(source_world));
         let player_id = player.gameprofile.id();
-        player.set_health(7.0);
+        player.living().set_health(7.0);
         player
             .base()
             .set_position_local(DVec3::new(12.5, 70.0, -3.5));
@@ -1163,7 +1170,7 @@ fn rejected_queued_domain_switch_retries_deferred_respawn_request() {
                 .queue_domain_switch(Arc::clone(&player), "target".to_owned())
                 .is_ok()
         );
-        player.set_health(0.0);
+        player.living().set_health(0.0);
         player.respawn();
         assert_eq!(server.jobs.len(), 0);
 
@@ -1210,10 +1217,12 @@ fn portal_job_validity_rechecks_vanilla_portal_eligibility() {
         };
 
         assert!(portal_entity_still_valid(&entity, world, pending_token));
-        player.set_sleeping_pos(steel_utils::BlockPos::new(0, 64, 0));
+        player
+            .living()
+            .set_sleeping_pos(steel_utils::BlockPos::new(0, 64, 0));
         assert!(!portal_entity_still_valid(&entity, world, pending_token));
-        player.clear_sleeping_pos();
-        player.set_health(0.0);
+        player.living().clear_sleeping_pos();
+        player.living().set_health(0.0);
         assert!(!portal_entity_still_valid(&entity, world, pending_token));
 
         assert!(entity.finish_pending_world_change(pending_token));
@@ -1264,7 +1273,7 @@ fn assert_default_domain_data(player: &Player) {
     assert!(!target_data.has_visual_fire);
     assert_eq!(
         target_data.health.to_bits(),
-        player.get_max_health().to_bits()
+        player.living().get_max_health().to_bits()
     );
     assert_eq!(
         target_data.abilities.flying_speed.to_bits(),
@@ -1337,7 +1346,7 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         apply_non_default_domain_data(&player);
         let damage = DamageSource::environment(&vanilla_damage_types::GENERIC)
             .with_causing_entity(Arc::<Player>::clone(&player));
-        player.record_last_damage_source(&damage);
+        player.living().record_last_damage_source(&damage);
 
         let target_before_switch = server
             .player_data_storage
@@ -1348,7 +1357,7 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         let queued = server.queue_domain_switch(Arc::clone(&player), "target".to_owned());
         assert!(queued.is_ok());
         assert!(
-            player.last_damage_source().is_some(),
+            player.living().last_damage_source().is_some(),
             "request must preserve source history"
         );
         server.process_domain_switches();
@@ -1367,7 +1376,7 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         assert!(Arc::ptr_eq(&player.get_world(), target_world));
 
         assert!(
-            player.last_damage_source().is_none(),
+            player.living().last_damage_source().is_none(),
             "committed target restore must clear source history"
         );
         assert_default_domain_data(&player);
@@ -2514,7 +2523,7 @@ fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
                 WorldEntry::Exact(DESTINATION),
                 Box::new(|saved| saved.health = 0.0),
                 // As at login, the saved health carries over: the player arrives dead.
-                Box::new(|player, _| assert!(player.get_health() <= 0.0)),
+                Box::new(|player, _| assert!(player.living().get_health() <= 0.0)),
             ),
             (
                 "a saved ground and glide state that differ from the player",
@@ -3582,7 +3591,7 @@ fn death_respawn_replaces_the_live_player_incarnation() {
         let source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
             .with_causing_entity(Arc::clone(&old_entity))
             .with_direct_entity(old_entity);
-        old_player.record_last_damage_source(&source);
+        old_player.living().record_last_damage_source(&source);
 
         let requested_chunks_per_tick = 2;
         assert_ne!(
@@ -3596,7 +3605,7 @@ fn death_respawn_replaces_the_live_player_incarnation() {
                 .on_chunk_batch_received_by_client(requested_chunks_per_tick as f32)
         );
 
-        old_player.set_health(0.0);
+        old_player.living().set_health(0.0);
         old_player.respawn();
         assert_eq!(server.jobs.len(), 1);
         finish_test_respawn_job(&server, world).await;
@@ -3620,9 +3629,12 @@ fn death_respawn_replaces_the_live_player_incarnation() {
                 .unacknowledged_batch_count_for_test(),
             1
         );
-        assert_eq!(replacement.get_health(), replacement.get_max_health());
-        assert!(replacement.last_damage_source().is_none());
-        assert!(old_player.last_damage_source().is_some());
+        assert_eq!(
+            replacement.living().get_health(),
+            replacement.living().get_max_health()
+        );
+        assert!(replacement.living().last_damage_source().is_none());
+        assert!(old_player.living().last_damage_source().is_some());
         let retained = source.causing_entity().expect("retained old player");
         assert!(ptr::eq(
             retained.as_player().expect("player"),
@@ -4076,7 +4088,7 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
         );
 
         assert_eq!(
-            target.last_hurt_by_player_uuid(),
+            target.living().last_hurt_by_player_uuid(),
             Some(attacker_uuid),
             "the `by` entity must be recorded as the player responsible for damage"
         );

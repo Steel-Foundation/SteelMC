@@ -3,11 +3,11 @@
 //! Manages food level, saturation, and exhaustion — the three values that
 //! control natural health regeneration and starvation damage.
 
+use crate::entity::LivingParts as _;
 use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_game_rules::NATURAL_HEALTH_REGENERATION;
 use steel_utils::types::Difficulty;
 
-use crate::entity::LivingEntity;
 use crate::entity::damage::DamageSource;
 use crate::player::Player;
 
@@ -277,7 +277,7 @@ impl Player {
         if difficulty == Difficulty::Peaceful && natural_regen {
             if tick % 20 == 0 {
                 if self.is_hurt() {
-                    self.heal(1.0);
+                    self.living().heal(1.0);
                 }
 
                 let mut food = self.food_data.lock();
@@ -300,8 +300,8 @@ impl Player {
         let world = self.get_world();
         let difficulty = world.level_data.read().data().difficulty;
         let natural_regen = world.get_game_rule(&NATURAL_HEALTH_REGENERATION);
-        let current_health = self.get_health();
-        let max_health = self.get_max_health();
+        let current_health = self.living().get_health();
+        let max_health = self.living().get_max_health();
 
         let mut food = self.food_data.lock();
         let result = food.tick(difficulty, natural_regen, current_health, max_health);
@@ -311,7 +311,7 @@ impl Player {
                 food.add_exhaustion(exhaustion);
 
                 drop(food);
-                self.heal(amount);
+                self.living().heal(amount);
             }
             FoodTickResult::Starve => {
                 drop(food);
@@ -335,8 +335,8 @@ impl Player {
 
     /// Returns `true` if the player is alive but below max health.
     pub fn is_hurt(&self) -> bool {
-        let health = self.get_health();
-        health > 0.0 && health < self.get_max_health()
+        let health = self.living().get_health();
+        health > 0.0 && health < self.living().get_max_health()
     }
 }
 

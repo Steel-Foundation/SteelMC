@@ -6,7 +6,7 @@ use steel_registry::vanilla_damage_types;
 
 use super::{InstantaneousMobEffect, MobEffectBehavior};
 use crate::entity::damage::DamageSource;
-use crate::entity::{LivingEntity, SharedEntity};
+use crate::entity::{Living, SharedEntity};
 use crate::world::World;
 
 /// Heal or harm mob effect behavior.
@@ -27,7 +27,7 @@ impl MobEffectBehavior for HealOrHarmBehavior {
 
     /// Reached through `ApplyStatusEffectsConsumeEffect` (e.g. a golden
     /// apple-style item), one tick after `LivingEntity.addEffect`.
-    fn apply_effect_tick(&self, world: &World, user: &dyn LivingEntity, amplifier: i32) -> bool {
+    fn apply_effect_tick(&self, world: &World, user: &Living<'_>, amplifier: i32) -> bool {
         if self.is_harm == user.is_inverted_heal_and_harm() {
             // Mirrors vanilla's `Math.max(4 << amplification, 0)` clamp
             // against Java's signed-int overflow at extreme amplifiers.
@@ -52,7 +52,7 @@ impl InstantaneousMobEffect for HealOrHarmBehavior {
     fn apply_instantaneous(
         &self,
         world: &World,
-        user: &dyn LivingEntity,
+        user: &Living<'_>,
         amplifier: i32,
         direct_entity: Option<&SharedEntity>,
         causing_entity: Option<&SharedEntity>,

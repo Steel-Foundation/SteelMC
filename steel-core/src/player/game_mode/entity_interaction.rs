@@ -1,13 +1,14 @@
+use crate::entity::LivingParts as _;
 use std::sync::Arc;
 
 use super::{
     ATTACK_RANGE_BUFFER, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
     EnchantmentPostAttackContext, Entity, EntityTypeRef, GameType, ITEM_BEHAVIORS, InteractionHand,
-    InteractionResult, InventoryAccess, ItemStack, LivingEntity, PiercingWeapon, Player, SAttack,
-    SInteract, SharedEntity, SoundEventHolder, SoundEventRef, TextComponent, TranslatedMessage,
-    World, WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes,
-    vanilla_damage_types, vanilla_entities,
+    InteractionResult, InventoryAccess, ItemStack, PiercingWeapon, Player, SAttack, SInteract,
+    SharedEntity, SoundEventHolder, SoundEventRef, TextComponent, TranslatedMessage, World,
+    WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes, vanilla_damage_types,
+    vanilla_entities,
 };
 
 use crate::player::food_data::food_constants;
@@ -89,6 +90,7 @@ impl Player {
 
     fn current_item_attack_strength_delay(&self) -> f32 {
         let attack_speed = self
+            .living()
             .attributes()
             .lock()
             .required_value(vanilla_attributes::ATTACK_SPEED);
@@ -155,7 +157,7 @@ impl Player {
 
             let velocity = self.velocity();
             self.set_velocity(DVec3::new(velocity.x * 0.6, velocity.y, velocity.z * 0.6));
-            self.set_sprinting(false);
+            self.living().set_sprinting(false);
         }
 
         if entity.entity_type() == &vanilla_entities::PLAYER
@@ -170,7 +172,8 @@ impl Player {
     }
 
     fn entity_interaction_range(&self) -> f64 {
-        self.attributes()
+        self.living()
+            .attributes()
             .lock()
             .required_value(vanilla_attributes::ENTITY_INTERACTION_RANGE)
     }
@@ -291,6 +294,7 @@ impl Player {
     ) {
         let world = self.get_world();
         let base_damage = self
+            .living()
             .attributes()
             .lock()
             .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32;
@@ -306,14 +310,14 @@ impl Player {
         }
 
         self.reset_attack_strength_ticker();
-        enchantment_helper::do_post_piercing_attack_effects(&world, self.as_ref());
+        enchantment_helper::do_post_piercing_attack_effects(&world, &self.living());
         if hit_something {
             self.play_sound_holder(piercing_weapon.hit_sound.as_ref());
         }
         self.play_sound_holder(piercing_weapon.sound.as_ref());
         self.swing(
             InteractionHand::MainHand,
-            self.attack_animation(InteractionHand::MainHand),
+            self.living().attack_animation(InteractionHand::MainHand),
             false,
         );
     }
@@ -373,7 +377,7 @@ impl Player {
         }
 
         self.item_attack_interaction(target, &damage_source, damage_dealt);
-        self.set_last_hurt_mob(Some(target));
+        self.living().set_last_hurt_mob(Some(target));
         self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         true
     }
@@ -406,7 +410,7 @@ impl Player {
             stack.copy_with_count(stack.count())
         };
         let (attack_damage, attack_speed, attack_knockback) = {
-            let attributes = self.attributes().lock();
+            let attributes = self.living_base.attributes().lock();
             (
                 attributes.required_value(vanilla_attributes::ATTACK_DAMAGE) as f32,
                 attributes.required_value(vanilla_attributes::ATTACK_SPEED),
@@ -429,10 +433,10 @@ impl Player {
         let mut base_damage = attack_damage * Self::base_damage_scale_factor(attack_strength_scale);
         base_damage += ITEM_BEHAVIORS
             .get_behavior(attacking_item.item())
-            .get_attack_damage_bonus(self.as_ref(), entity, base_damage, &damage_source);
+            .get_attack_damage_bonus(&self.living(), entity, base_damage, &damage_source);
         let total_damage = base_damage + magic_boost;
         let full_strength_attack = attack_strength_scale > 0.9;
-        let knockback_attack = self.is_sprinting() && full_strength_attack;
+        let knockback_attack = self.living().is_sprinting() && full_strength_attack;
         self.reset_attack_strength_ticker();
 
         if total_damage <= 0.0 {
@@ -441,7 +445,7 @@ impl Player {
 
         let old_entity_living_health = entity
             .as_living_entity()
-            .map_or(0.0, LivingEntity::get_health);
+            .map_or(0.0, |living| living.get_health());
 
         // TODO: Apply crits, sweep attacks, and sounds.
         let old_movement = entity.velocity();
@@ -450,7 +454,7 @@ impl Player {
         };
         let was_hurt = entity.hurt(&target_world, &damage_source, total_damage);
         if was_hurt {
-            self.set_last_hurt_mob(Some(target));
+            self.living().set_last_hurt_mob(Some(target));
             let sprint_knockback = if knockback_attack { 0.5 } else { 0.0 };
             self.cause_extra_knockback(
                 entity,
@@ -464,7 +468,7 @@ impl Player {
         }
 
         let world = self.get_world();
-        enchantment_helper::do_post_piercing_attack_effects(&world, self.as_ref());
+        enchantment_helper::do_post_piercing_attack_effects(&world, &self.living());
         was_hurt
     }
 
@@ -484,7 +488,7 @@ impl Player {
                 }
                 let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
                 if let Some(living_target) = entity.as_living_entity() {
-                    behavior.hurt_enemy(stack, living_target, self);
+                    behavior.hurt_enemy(stack, &living_target, &self.living());
                 }
                 let source_item = stack.copy_with_count(stack.count());
                 (source_item, stack.get_weapon().is_some())
@@ -515,7 +519,7 @@ impl Player {
                 return;
             }
             let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
-            behavior.post_hurt_enemy(stack, living_target, self);
+            behavior.post_hurt_enemy(stack, &living_target, &self.living());
             if let Some(damage) = behavior.item_damage_per_attack(stack) {
                 stack.hurt_and_break(damage, has_infinite_materials);
             }
@@ -571,7 +575,7 @@ impl Player {
         let item_ref = inventory_access.with_item(|item| item.item());
         let item_behavior = ITEM_BEHAVIORS.get_behavior(item_ref);
         let result = inventory_access.with_item(|item| {
-            item_behavior.interact_living_entity(item, self, living_entity, hand)
+            item_behavior.interact_living_entity(item, self, &living_entity, hand)
         });
         if self.has_infinite_materials() {
             inventory_access.with_item(|item| {
@@ -692,7 +696,7 @@ impl Player {
             return;
         }
 
-        let animation = self.interact_animation(packet.hand);
+        let animation = self.living().interact_animation(packet.hand);
         let result = self.interact_on(target.as_ref(), packet.hand, packet.location);
         self.swing_after_interaction(packet.hand, animation, result);
         self.broadcast_inventory_changes();

@@ -1,4 +1,5 @@
 use super::{block_breaking::BlockBreakAction, *};
+use crate::entity::LivingParts as _;
 
 impl Player {
     /// Sends block update packets for a position and its neighbor.
@@ -77,7 +78,7 @@ impl Player {
             return;
         }
 
-        let animation = self.interact_animation(packet.hand);
+        let animation = self.living().interact_animation(packet.hand);
         let result = use_item_on(self, &world, packet.hand, &packet.block_hit);
         self.swing_after_interaction(packet.hand, animation, result);
 

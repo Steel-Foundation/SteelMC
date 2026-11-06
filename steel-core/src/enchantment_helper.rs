@@ -14,7 +14,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_entities, vanilla_items};
 
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity, MobEffectInstance, SharedEntity};
+use crate::entity::{Entity, Living, MobEffectInstance, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
 
@@ -157,10 +157,7 @@ pub(crate) fn modify_smash_damage_per_fallen_block(
     )
 }
 
-pub(crate) fn is_immune_to_damage<V: LivingEntity + ?Sized>(
-    victim: &V,
-    damage_source: &DamageSource,
-) -> bool {
+pub(crate) fn is_immune_to_damage(victim: &Living<'_>, damage_source: &DamageSource) -> bool {
     let context = EnchantmentDamageContext::from_damage_source(victim.entity_type(), damage_source);
 
     for slot in EquipmentSlot::ALL {
@@ -176,10 +173,7 @@ pub(crate) fn is_immune_to_damage<V: LivingEntity + ?Sized>(
     false
 }
 
-pub(crate) fn get_damage_protection<V: LivingEntity + ?Sized>(
-    victim: &V,
-    damage_source: &DamageSource,
-) -> f32 {
+pub(crate) fn get_damage_protection(victim: &Living<'_>, damage_source: &DamageSource) -> f32 {
     let context = EnchantmentDamageContext::from_damage_source(victim.entity_type(), damage_source);
     let mut protection = 0.0;
 
@@ -222,7 +216,7 @@ pub(crate) fn do_post_attack_effects_with_item_source(
     if let Some(living_victim) = victim.as_living_entity() {
         for slot in EquipmentSlot::ALL {
             let mut item = EnchantedItemInUse::Equipped {
-                owner: living_victim,
+                owner: &living_victim,
                 slot,
             };
             let mut item_ref = &*vanilla_items::AIR;
@@ -442,7 +436,7 @@ pub(crate) fn on_projectile_spawned(
     }
 }
 
-pub(crate) fn do_post_piercing_attack_effects(world: &World, user: &dyn LivingEntity) {
+pub(crate) fn do_post_piercing_attack_effects(world: &World, user: &Living<'_>) {
     let mut item_stack = ItemStack::empty();
     user.with_equipment_slot(EquipmentSlot::MainHand, &mut |stack| {
         item_stack = stack.copy_with_count(stack.count());
@@ -466,7 +460,7 @@ pub(crate) fn do_post_piercing_attack_effects(world: &World, user: &dyn LivingEn
 
         let level = *level as i32;
         for effect in enchantment.effects.post_piercing_attack {
-            if !entity_requirements_match(effect.requirements, user, level) {
+            if !entity_requirements_match(effect.requirements, user.entity(), level) {
                 continue;
             }
             if apply_post_piercing_entity_effect(world, &effect.effect, level, user) {
@@ -543,7 +537,7 @@ fn apply_supported_entity_effect(
             let amount = amount.calculate(level) as i32;
             let has_infinite_materials = enchanted_entity
                 .and_then(|entity| entity.as_living_entity())
-                .is_some_and(LivingEntity::has_infinite_materials);
+                .is_some_and(|living| living.has_infinite_materials());
             enchanted_item.hurt_and_break(amount, has_infinite_materials)
         }
         EnchantmentEntityEffect::DamageEntity {
@@ -603,7 +597,7 @@ fn apply_post_piercing_entity_effect(
     world: &World,
     effect: &EnchantmentEntityEffect,
     level: i32,
-    user: &dyn LivingEntity,
+    user: &Living<'_>,
 ) -> bool {
     if !post_piercing_entity_effect_is_supported(effect) {
         return false;
@@ -636,7 +630,7 @@ fn apply_supported_post_piercing_entity_effect(
     world: &World,
     effect: &EnchantmentEntityEffect,
     level: i32,
-    user: &dyn LivingEntity,
+    user: &Living<'_>,
 ) -> bool {
     match effect {
         EnchantmentEntityEffect::AllOf(effects) => {
@@ -689,7 +683,7 @@ fn apply_supported_post_piercing_entity_effect(
                 world,
                 effect,
                 level,
-                user,
+                user.entity(),
                 None,
                 &mut EnchantedItemInUse::Stack(&mut ignored_item),
             )
@@ -943,7 +937,7 @@ fn entity_predicate_matches_entity(
     if let Some(expected) = predicate.flags.is_fall_flying {
         let is_fall_flying = entity
             .as_living_entity()
-            .is_some_and(LivingEntity::is_fall_flying);
+            .is_some_and(|living| living.is_fall_flying());
         if is_fall_flying != expected {
             return Some(false);
         }
@@ -1012,7 +1006,15 @@ fn damage_source_predicate_matches(
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntitySyncedData;
+    use crate::entity::LivingProps;
+    use crate::entity::component::Has;
+    use crate::test_support::synced_with_health;
     use std::sync::Arc;
+    use steel_registry::vanilla_entity_data::LivingEntityData;
+    use steel_utils::DowncastType as _;
+    use steel_utils::DowncastTypeKey;
+    use steel_utils::ErasedType;
 
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
@@ -1025,14 +1027,16 @@ mod tests {
     use steel_utils::locks::SyncMutex;
 
     use super::*;
+
     use crate::behavior::init_behaviors;
-    use crate::entity::{EntityBase, LivingEntity, LivingEntityBase};
+    use crate::entity::LivingParts as _;
+    use crate::entity::{EntityBase, LivingEntityBase};
     use crate::test_support::{enchanted_item, test_world};
 
     struct TestLivingEntity {
         base: EntityBase,
         living_base: LivingEntityBase,
-        health: SyncMutex<f32>,
+        entity_data: SyncMutex<LivingEntityData>,
         broken_slots: SyncMutex<Vec<EquipmentSlot>>,
         entity_type: EntityTypeRef,
     }
@@ -1046,8 +1050,8 @@ mod tests {
                     entity_type.dimensions,
                     Arc::downgrade(test_world()),
                 ),
-                living_base: LivingEntityBase::new(entity_type),
-                health: SyncMutex::new(20.0),
+                living_base: LivingEntityBase::new(entity_type, &TestLivingEntity::LIVING),
+                entity_data: SyncMutex::new(synced_with_health(LivingEntityData::new(), 20.0)),
                 broken_slots: SyncMutex::new(Vec::new()),
                 entity_type,
             }
@@ -1065,6 +1069,14 @@ mod tests {
     crate::entity::impl_test_downcast_type!(TestLivingEntity);
 
     impl Entity for TestLivingEntity {
+        fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+            Some(&self.entity_data)
+        }
+
+        fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+            (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+        }
+
         fn base(&self) -> &EntityBase {
             &self.base
         }
@@ -1081,27 +1093,36 @@ mod tests {
         }
     }
 
-    impl LivingEntity for TestLivingEntity {
-        fn living_base(&self) -> &LivingEntityBase {
-            &self.living_base
-        }
+    impl TestLivingEntity {
+        const LIVING: LivingProps<Self> = LivingProps {
+            get_absorption_amount: Self::living_get_absorption_amount,
+            set_absorption_amount: Self::living_set_absorption_amount,
+            on_equipped_item_broken: Self::living_on_equipped_item_broken,
+            ..LivingProps::new()
+        };
 
-        fn get_health(&self) -> f32 {
-            *self.health.lock()
-        }
-
-        fn set_health(&self, health: f32) {
-            *self.health.lock() = health.clamp(0.0, self.get_max_health());
-        }
-
-        fn get_absorption_amount(&self) -> f32 {
+        #[expect(
+            clippy::unused_self,
+            reason = "kept as a method of the view for callers; the body does not need the entity"
+        )]
+        fn living_get_absorption_amount(&self) -> f32 {
             0.0
         }
 
-        fn set_absorption_amount(&self, _amount: f32) {}
+        #[expect(
+            clippy::unused_self,
+            reason = "kept as a method of the view for callers; the body does not need the entity"
+        )]
+        fn living_set_absorption_amount(&self, _amount: f32) {}
 
-        fn on_equipped_item_broken(&self, _item: ItemRef, slot: EquipmentSlot) {
+        fn living_on_equipped_item_broken(&self, _item: ItemRef, slot: EquipmentSlot) {
             self.broken_slots.lock().push(slot);
+        }
+    }
+
+    impl Has<LivingEntityBase> for TestLivingEntity {
+        fn component(&self) -> &LivingEntityBase {
+            &self.living_base
         }
     }
 
@@ -1266,7 +1287,7 @@ mod tests {
         );
         let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
 
-        assert_f32_eq(get_damage_protection(&victim, &source), 8.0);
+        assert_f32_eq(get_damage_protection(&victim.living(), &source), 8.0);
     }
 
     #[test]
@@ -1284,7 +1305,7 @@ mod tests {
         );
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
-        assert_f32_eq(get_damage_protection(&victim, &source), 0.0);
+        assert_f32_eq(get_damage_protection(&victim.living(), &source), 0.0);
     }
 
     #[test]
@@ -1301,7 +1322,7 @@ mod tests {
         victim.equip(EquipmentSlot::Chest, broken_chestplate);
         let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
-        assert_f32_eq(get_damage_protection(&victim, &source), 0.0);
+        assert_f32_eq(get_damage_protection(&victim.living(), &source), 0.0);
     }
 
     #[test]
@@ -1317,11 +1338,11 @@ mod tests {
         victim.equip(EquipmentSlot::Feet, boots);
 
         assert!(is_immune_to_damage(
-            &victim,
+            &victim.living(),
             &DamageSource::environment(&vanilla_damage_types::HOT_FLOOR)
         ));
         assert!(!is_immune_to_damage(
-            &victim,
+            &victim.living(),
             &DamageSource::environment(&vanilla_damage_types::IN_FIRE)
         ));
 
@@ -1334,7 +1355,7 @@ mod tests {
         wrong_slot_victim.equip(EquipmentSlot::Head, helmet);
 
         assert!(!is_immune_to_damage(
-            &wrong_slot_victim,
+            &wrong_slot_victim.living(),
             &DamageSource::environment(&vanilla_damage_types::HOT_FLOOR)
         ));
     }
@@ -1424,9 +1445,11 @@ mod tests {
         do_post_attack_effects_with_item_source(test_world(), victim.as_ref(), &source, &context);
 
         let mut chestplate_broke = false;
-        victim.with_equipment_slot(EquipmentSlot::Chest, &mut |stack| {
-            chestplate_broke = stack.is_empty();
-        });
+        victim
+            .living()
+            .with_equipment_slot(EquipmentSlot::Chest, &mut |stack| {
+                chestplate_broke = stack.is_empty();
+            });
         assert!(chestplate_broke);
         assert_eq!(victim.broken_slots(), vec![EquipmentSlot::Chest]);
     }
@@ -1490,11 +1513,16 @@ mod tests {
         do_post_attack_effects_from_item(test_world(), &stack, &spider_context);
         do_post_attack_effects_from_item(test_world(), &stack, &zombie_context);
 
-        let Some(slowness) = spider.mob_effect(vanilla_mob_effects::SLOWNESS) else {
+        let Some(slowness) = spider.living().mob_effect(vanilla_mob_effects::SLOWNESS) else {
             panic!("bane of arthropods should apply slowness to spiders");
         };
         assert_eq!(slowness.duration(), 30);
         assert_eq!(slowness.amplifier(), 3);
-        assert!(zombie.mob_effect(vanilla_mob_effects::SLOWNESS).is_none());
+        assert!(
+            zombie
+                .living()
+                .mob_effect(vanilla_mob_effects::SLOWNESS)
+                .is_none()
+        );
     }
 }

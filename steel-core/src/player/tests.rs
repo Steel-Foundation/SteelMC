@@ -1,3 +1,4 @@
+use crate::entity::LivingParts as _;
 use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -16,8 +17,8 @@ use super::{
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
-    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, SharedEntity,
-    damage::DamageSource, entities::ItemEntity, next_entity_id,
+    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, SharedEntity, damage::DamageSource,
+    entities::ItemEntity, next_entity_id,
 };
 use crate::inventory::{
     click::{Click, DragKind, QuickCraft},
@@ -447,11 +448,11 @@ fn ai_step_copies_player_yaw_to_head_yaw() {
     let player = test_player(Arc::clone(test_world()));
     let player_entity: SharedEntity = Arc::<Player>::clone(&player);
     player.set_rotation((90.0, 15.0));
-    player.set_y_head_rot(-45.0);
+    player.living().set_y_head_rot(-45.0);
 
-    let _ = player.ai_step(&player_entity);
+    let _ = player.living().ai_step(&player_entity);
 
-    assert_eq!(player.y_head_rot().to_bits(), 90.0_f32.to_bits());
+    assert_eq!(player.living().y_head_rot().to_bits(), 90.0_f32.to_bits());
 }
 
 #[test]
@@ -528,7 +529,7 @@ fn death_keeps_menu_items_until_entity_removal() {
         builder.build(BasicKind {})
     });
 
-    player.set_health(0.0);
+    player.living().set_health(0.0);
     player.die(&DamageSource::environment(&vanilla_damage_types::GENERIC));
 
     assert_eq!(transient.lock().get_item(0).count(), 3);
@@ -684,7 +685,7 @@ fn death_respawn_cleanup_drops_menu_items_before_fresh_player_construction() {
         builder.build(BasicKind {})
     });
 
-    player.set_health(0.0);
+    player.living().set_health(0.0);
     player.die(&DamageSource::environment(&vanilla_damage_types::GENERIC));
     assert_eq!(
         player.remove_all_menus_with_disposition(MenuItemDisposition::Drop),
@@ -859,10 +860,10 @@ fn hurt_uses_explicit_world_difficulty() {
 
     assert_eq!(player.get_world().difficulty(), Difficulty::Normal);
     assert_eq!(damage_world.difficulty(), Difficulty::Hard);
-    assert_eq!(player.get_health().to_bits(), 20.0_f32.to_bits());
+    assert_eq!(player.living().get_health().to_bits(), 20.0_f32.to_bits());
 
     assert!(player.hurt(damage_world, &source, 4.0));
-    assert_eq!(player.get_health().to_bits(), 14.0_f32.to_bits());
+    assert_eq!(player.living().get_health().to_bits(), 14.0_f32.to_bits());
 }
 
 #[test]
@@ -882,7 +883,7 @@ fn conditional_damage_does_not_scale_without_a_living_non_player_cause() {
         }
         let target = test_player(Arc::clone(world));
         assert!(target.hurt(world, &source, 4.0));
-        assert_eq!(target.get_health().to_bits(), 16.0_f32.to_bits());
+        assert_eq!(target.living().get_health().to_bits(), 16.0_f32.to_bits());
     }
 }
 
@@ -892,17 +893,20 @@ fn player_damage_applies_armor_and_absorption() {
     let world = Arc::clone(test_world());
     let player = test_player(Arc::clone(&world));
     {
-        let mut attributes = player.attributes().lock();
+        let mut attributes = player.living().attributes().lock();
         attributes.set_base_value(vanilla_attributes::ARMOR, 20.0);
         attributes.set_base_value(vanilla_attributes::MAX_ABSORPTION, 3.0);
     }
-    player.set_absorption_amount(3.0);
+    player.living().set_absorption_amount(3.0);
     let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
 
     assert!(player.hurt(&world, &source, 10.0));
 
-    assert_eq!(player.get_health().to_bits(), 19.0_f32.to_bits());
-    assert_eq!(player.get_absorption_amount().to_bits(), 0.0_f32.to_bits());
+    assert_eq!(player.living().get_health().to_bits(), 19.0_f32.to_bits());
+    assert_eq!(
+        player.living().get_absorption_amount().to_bits(),
+        0.0_f32.to_bits()
+    );
 }
 
 #[test]
@@ -910,15 +914,22 @@ fn player_absorption_amount_clamps_to_attribute_range() {
     let world = Arc::clone(test_world());
     let player = test_player(world);
     player
+        .living()
         .attributes()
         .lock()
         .set_base_value(vanilla_attributes::MAX_ABSORPTION, 4.0);
 
-    player.set_absorption_amount(10.0);
-    assert_eq!(player.get_absorption_amount().to_bits(), 4.0_f32.to_bits());
+    player.living().set_absorption_amount(10.0);
+    assert_eq!(
+        player.living().get_absorption_amount().to_bits(),
+        4.0_f32.to_bits()
+    );
 
-    player.set_absorption_amount(-1.0);
-    assert_eq!(player.get_absorption_amount().to_bits(), 0.0_f32.to_bits());
+    player.living().set_absorption_amount(-1.0);
+    assert_eq!(
+        player.living().get_absorption_amount().to_bits(),
+        0.0_f32.to_bits()
+    );
 }
 
 #[test]
@@ -967,17 +978,20 @@ fn player_attack_applies_thorns_damage_and_breaks_enchanted_armor() {
         .inventory
         .lock()
         .set(EquipmentSlot::Chest, chestplate);
-    LivingEntity::detect_equipment_updates(attacker.as_ref());
-    LivingEntity::detect_equipment_updates(victim.as_ref());
-    let attacker_health = attacker.get_health();
-    let victim_health = victim.get_health();
+    attacker.living().detect_equipment_updates();
+    victim.living().detect_equipment_updates();
+    let attacker_health = attacker.living().get_health();
+    let victim_health = victim.living().get_health();
     let target: SharedEntity = Arc::<Player>::clone(&victim);
 
     assert!(attacker.attack(&target));
 
-    assert!(victim.get_health() < victim_health);
-    assert!(attacker.get_health() < attacker_health);
-    let retaliation = attacker.last_damage_source().expect("Thorns retaliation");
+    assert!(victim.living().get_health() < victim_health);
+    assert!(attacker.living().get_health() < attacker_health);
+    let retaliation = attacker
+        .living()
+        .last_damage_source()
+        .expect("Thorns retaliation");
     assert_eq!(retaliation.damage_type, &vanilla_damage_types::THORNS);
     assert!(Arc::ptr_eq(
         retaliation.causing_entity().expect("Thorns owner"),
@@ -992,6 +1006,7 @@ fn player_attack_applies_thorns_damage_and_breaks_enchanted_armor() {
     );
     assert_eq!(
         victim
+            .living()
             .last_damage_source()
             .expect("original attack")
             .damage_type,
@@ -1028,11 +1043,9 @@ fn equipping_player_target_uses_inventory_equipment_storage() {
     helmet.set(EQUIPPABLE, equippable);
     source.inventory.lock().set_selected_item(helmet.clone());
 
-    let result = LivingEntity::interact_living_entity_with_equippable(
-        target.as_ref(),
-        source.as_ref(),
-        InteractionHand::MainHand,
-    );
+    let result = target
+        .living()
+        .interact_living_entity_with_equippable(source.as_ref(), InteractionHand::MainHand);
 
     assert_eq!(result, InteractionResult::Success);
     assert!(source.inventory.lock().get_selected_item().is_empty());
@@ -1042,6 +1055,7 @@ fn equipping_player_target_uses_inventory_equipment_storage() {
     );
     assert_eq!(
         target
+            .living()
             .living_base()
             .equipment()
             .lock()
@@ -1049,9 +1063,9 @@ fn equipping_player_target_uses_inventory_equipment_storage() {
         &helmet,
         "LivingEntityBase and Player::inventory must share one equipment backing",
     );
-    LivingEntity::detect_equipment_updates(target.as_ref());
+    target.living().detect_equipment_updates();
     assert_eq!(
-        LivingEntity::drain_dirty_equipment(target.as_ref()),
+        target.living().drain_dirty_equipment(),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::Head,
             item_stack: helmet,
@@ -1064,7 +1078,7 @@ fn living_tick_detects_raw_inventory_equipment_mutation() {
     init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let (base_armor, base_toughness) = {
-        let attributes = player.attributes().lock();
+        let attributes = player.living().attributes().lock();
         (
             attributes.required_value(vanilla_attributes::ARMOR),
             attributes.required_value(vanilla_attributes::ARMOR_TOUGHNESS),
@@ -1076,10 +1090,10 @@ fn living_tick_detects_raw_inventory_equipment_mutation() {
         inventory.items_mut()[39] = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
     }
 
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    player.living().detect_equipment_updates();
 
     {
-        let attributes = player.attributes().lock();
+        let attributes = player.living().attributes().lock();
         assert_eq!(
             attributes
                 .required_value(vanilla_attributes::ARMOR)
@@ -1094,17 +1108,14 @@ fn living_tick_detects_raw_inventory_equipment_mutation() {
         );
     }
     assert_eq!(
-        LivingEntity::drain_dirty_equipment(player.as_ref()),
+        player.living().drain_dirty_equipment(),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::Head,
             item_stack: ItemStack::new(&vanilla_items::DIAMOND_HELMET),
         }]
     );
-    LivingEntity::detect_equipment_updates(player.as_ref());
-    assert_eq!(
-        LivingEntity::drain_dirty_equipment(player.as_ref()).len(),
-        0
-    );
+    player.living().detect_equipment_updates();
+    assert_eq!(player.living().drain_dirty_equipment().len(), 0);
 }
 
 #[test]
@@ -1112,7 +1123,7 @@ fn fresh_death_respawn_redetects_unchanged_kept_equipment() {
     init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let (base_armor, base_toughness) = {
-        let attributes = player.attributes().lock();
+        let attributes = player.living().attributes().lock();
         (
             attributes.required_value(vanilla_attributes::ARMOR),
             attributes.required_value(vanilla_attributes::ARMOR_TOUGHNESS),
@@ -1124,9 +1135,9 @@ fn fresh_death_respawn_redetects_unchanged_kept_equipment() {
         .lock()
         .set(EquipmentSlot::Head, helmet.clone());
 
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    player.living().detect_equipment_updates();
     assert_eq!(
-        LivingEntity::drain_dirty_equipment(player.as_ref()),
+        player.living().drain_dirty_equipment(),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::Head,
             item_stack: helmet.clone(),
@@ -1138,6 +1149,7 @@ fn fresh_death_respawn_redetects_unchanged_kept_equipment() {
     let replacement = player.new_respawn_replacement(Arc::clone(test_world()), false, true, true);
     assert_eq!(
         replacement
+            .living()
             .attributes()
             .lock()
             .required_value(vanilla_attributes::ARMOR)
@@ -1149,9 +1161,9 @@ fn fresh_death_respawn_redetects_unchanged_kept_equipment() {
         &helmet
     ));
 
-    LivingEntity::detect_equipment_updates(replacement.as_ref());
+    replacement.living().detect_equipment_updates();
     {
-        let attributes = replacement.attributes().lock();
+        let attributes = replacement.living().attributes().lock();
         assert_eq!(
             attributes
                 .required_value(vanilla_attributes::ARMOR)
@@ -1166,18 +1178,15 @@ fn fresh_death_respawn_redetects_unchanged_kept_equipment() {
         );
     }
     assert_eq!(
-        LivingEntity::drain_dirty_equipment(replacement.as_ref()),
+        replacement.living().drain_dirty_equipment(),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::Head,
             item_stack: helmet,
         }]
     );
 
-    LivingEntity::detect_equipment_updates(replacement.as_ref());
-    assert_eq!(
-        LivingEntity::drain_dirty_equipment(replacement.as_ref()).len(),
-        0
-    );
+    replacement.living().detect_equipment_updates();
+    assert_eq!(replacement.living().drain_dirty_equipment().len(), 0);
 }
 
 #[test]
@@ -1188,17 +1197,17 @@ fn fresh_death_respawn_discards_stale_pending_equipment_change() {
         EquipmentSlot::Head,
         ItemStack::new(&vanilla_items::DIAMOND_HELMET),
     );
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    player.living().detect_equipment_updates();
 
     player
         .inventory
         .lock()
         .set(EquipmentSlot::Head, ItemStack::empty());
     let replacement = player.new_respawn_replacement(Arc::clone(test_world()), false, true, true);
-    LivingEntity::detect_equipment_updates(replacement.as_ref());
+    replacement.living().detect_equipment_updates();
 
     assert!(
-        LivingEntity::drain_dirty_equipment(replacement.as_ref()).is_empty(),
+        replacement.living().drain_dirty_equipment().is_empty(),
         "respawn must not emit equipment queued by the removed living entity"
     );
 }
@@ -1213,9 +1222,9 @@ fn equipment_detection_tracks_selected_main_hand() {
         inventory.set_item(1, ItemStack::new(&vanilla_items::OAK_LOG));
     }
 
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    player.living().detect_equipment_updates();
     assert_eq!(
-        LivingEntity::drain_dirty_equipment(player.as_ref()),
+        player.living().drain_dirty_equipment(),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::MainHand,
             item_stack: ItemStack::new(&vanilla_items::STICK),
@@ -1223,9 +1232,9 @@ fn equipment_detection_tracks_selected_main_hand() {
     );
 
     player.inventory.lock().set_selected_slot(1);
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    player.living().detect_equipment_updates();
     assert_eq!(
-        LivingEntity::drain_dirty_equipment(player.as_ref()),
+        player.living().drain_dirty_equipment(),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::MainHand,
             item_stack: ItemStack::new(&vanilla_items::OAK_LOG),
@@ -1242,17 +1251,14 @@ fn equipment_detection_suppresses_exact_hand_swap_packet() {
         inventory.set_selected_item(ItemStack::new(&vanilla_items::STICK));
         inventory.set_offhand_item(ItemStack::new(&vanilla_items::SHIELD));
     }
-    LivingEntity::detect_equipment_updates(player.as_ref());
-    let initial = LivingEntity::drain_dirty_equipment(player.as_ref());
+    player.living().detect_equipment_updates();
+    let initial = player.living().drain_dirty_equipment();
     assert_eq!(initial.len(), 2);
 
     assert!(player.inventory.lock().swap_hands());
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    player.living().detect_equipment_updates();
 
-    assert_eq!(
-        LivingEntity::drain_dirty_equipment(player.as_ref()).len(),
-        0
-    );
+    assert_eq!(player.living().drain_dirty_equipment().len(), 0);
 }
 
 #[test]
@@ -1263,16 +1269,16 @@ fn equipment_detection_coalesces_before_tracker_drain() {
         EquipmentSlot::Head,
         ItemStack::new(&vanilla_items::IRON_HELMET),
     );
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    player.living().detect_equipment_updates();
 
     player.inventory.lock().set(
         EquipmentSlot::Head,
         ItemStack::new(&vanilla_items::DIAMOND_HELMET),
     );
-    LivingEntity::detect_equipment_updates(player.as_ref());
+    player.living().detect_equipment_updates();
 
     assert_eq!(
-        LivingEntity::drain_dirty_equipment(player.as_ref()),
+        player.living().drain_dirty_equipment(),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::Head,
             item_stack: ItemStack::new(&vanilla_items::DIAMOND_HELMET),
@@ -1609,7 +1615,9 @@ fn extra_items_created_on_use_fill_inventory_when_there_is_room() {
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(world));
 
-    player.handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
+    player
+        .living()
+        .handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
 
     assert!(
         player
@@ -1641,7 +1649,9 @@ fn extra_items_created_on_use_are_dropped_when_inventory_is_full() {
         }
     }
 
-    player.handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
+    player
+        .living()
+        .handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
 
     assert!(
         player

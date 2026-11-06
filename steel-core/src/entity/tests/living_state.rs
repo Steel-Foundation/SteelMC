@@ -13,7 +13,7 @@ fn default_entity_tick_dispatches_living_tick() {
 
     Arc::clone(&entity_ref).tick();
 
-    assert_eq!(entity.living_base().death_time(), 1);
+    assert_eq!(entity.living().living_base().death_time(), 1);
 }
 
 #[test]
@@ -22,20 +22,26 @@ fn living_base_tick_decrements_last_hurt_by_player_memory() {
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let player_uuid = Uuid::from_u128(42);
-    entity.set_last_hurt_by_player(player_uuid, 1);
+    entity.living().set_last_hurt_by_player(player_uuid, 1);
 
-    entity.base_tick_living_entity();
+    entity.living().base_tick_living_entity();
 
     assert_eq!(
-        entity.living_base().last_hurt_by_player_uuid(),
+        entity.living().living_base().last_hurt_by_player_uuid(),
         Some(player_uuid)
     );
-    assert_eq!(entity.last_hurt_by_player_memory_time(), 0);
+    assert_eq!(entity.living().last_hurt_by_player_memory_time(), 0);
 
-    entity.base_tick_living_entity();
+    entity.living().base_tick_living_entity();
 
-    assert!(entity.living_base().last_hurt_by_player_uuid().is_none());
-    assert_eq!(entity.last_hurt_by_player_memory_time(), 0);
+    assert!(
+        entity
+            .living()
+            .living_base()
+            .last_hurt_by_player_uuid()
+            .is_none()
+    );
+    assert_eq!(entity.living().last_hurt_by_player_memory_time(), 0);
 }
 
 #[test]
@@ -54,25 +60,34 @@ fn kill_credit_keeps_a_player_in_another_world_until_memory_expires() {
     );
     let source = DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, Arc::clone(&player));
 
-    victim.resolve_player_responsible_for_damage(&source);
+    victim
+        .living()
+        .resolve_player_responsible_for_damage(&source);
     drop(source);
 
     assert!(world.get_entity_by_uuid(&player.uuid()).is_none());
     assert!(Arc::ptr_eq(
-        &get_kill_credit(&victim, world).expect("cached player credit"),
+        &get_kill_credit(&victim.living(), world).expect("cached player credit"),
         &player,
     ));
-    victim.set_last_hurt_by_player(Uuid::from_u128(42), 100);
-    assert!(get_kill_credit(&victim, world).is_none());
+    victim
+        .living()
+        .set_last_hurt_by_player(Uuid::from_u128(42), 100);
+    assert!(get_kill_credit(&victim.living(), world).is_none());
 
-    victim.resolve_player_responsible_for_damage(&DamageSource::direct(
-        &vanilla_damage_types::PLAYER_ATTACK,
-        Arc::clone(&player),
-    ));
+    victim
+        .living()
+        .resolve_player_responsible_for_damage(&DamageSource::direct(
+            &vanilla_damage_types::PLAYER_ATTACK,
+            Arc::clone(&player),
+        ));
     for _ in 0..=100 {
-        victim.living_base().tick_last_hurt_by_player_memory();
+        victim
+            .living()
+            .living_base()
+            .tick_last_hurt_by_player_memory();
     }
-    assert!(get_kill_credit(&victim, world).is_none());
+    assert!(get_kill_credit(&victim.living(), world).is_none());
 }
 
 #[test]
@@ -80,14 +95,22 @@ fn living_base_tick_advances_swing_before_living_state() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    assert!(entity.swing(InteractionHand::MainHand, SwingAnimation::DEFAULT, false));
-    assert_eq!(entity.living_swing_state().swing_time(), 0);
+    assert!(
+        entity
+            .living()
+            .swing(InteractionHand::MainHand, SwingAnimation::DEFAULT, false)
+    );
+    assert_eq!(entity.living().living_swing_state().swing_time(), 0);
 
-    entity.base_tick_living_entity();
-    entity.tick_living_state();
-    assert!(!entity.swing(InteractionHand::OffHand, SwingAnimation::DEFAULT, false));
+    entity.living().base_tick_living_entity();
+    entity.living().tick_living_state();
+    assert!(
+        !entity
+            .living()
+            .swing(InteractionHand::OffHand, SwingAnimation::DEFAULT, false)
+    );
 
-    let swing = entity.living_swing_state();
+    let swing = entity.living().living_swing_state();
     assert!(swing.swinging());
     assert_eq!(swing.swing_time(), 1);
     assert_eq!(swing.attack_anim().to_bits(), 0.0_f32.to_bits());
@@ -101,19 +124,23 @@ fn modified_swing_duration_uses_vanilla_dig_effects() {
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let default = SwingAnimation::DEFAULT;
     assert_eq!(
-        entity.modified_swing_duration(default),
+        entity.living().modified_swing_duration(default),
         DEFAULT_SWING_DURATION
     );
 
-    entity.set_mob_effect(vanilla_mob_effects::MINING_FATIGUE, 2);
+    entity
+        .living()
+        .set_mob_effect(vanilla_mob_effects::MINING_FATIGUE, 2);
     assert_eq!(
-        entity.modified_swing_duration(default),
+        entity.living().modified_swing_duration(default),
         DEFAULT_SWING_DURATION + 6
     );
 
-    entity.set_mob_effect(vanilla_mob_effects::HASTE, 1);
+    entity
+        .living()
+        .set_mob_effect(vanilla_mob_effects::HASTE, 1);
     assert_eq!(
-        entity.modified_swing_duration(default),
+        entity.living().modified_swing_duration(default),
         DEFAULT_SWING_DURATION - 2
     );
 }
@@ -129,11 +156,16 @@ fn attack_animation_uses_held_item_component() {
     );
 
     assert_eq!(
-        entity.attack_animation(InteractionHand::MainHand).duration,
+        entity
+            .living()
+            .attack_animation(InteractionHand::MainHand)
+            .duration,
         13
     );
     assert_eq!(
-        entity.interact_animation(InteractionHand::MainHand),
+        entity
+            .living()
+            .interact_animation(InteractionHand::MainHand),
         SwingAnimation::DEFAULT
     );
 }
@@ -146,20 +178,20 @@ fn living_combat_memory_stores_and_expires_last_hurt_by_mob() {
     let attacker: SharedEntity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     entity.advance_tick_count();
 
-    entity.set_last_hurt_by_mob(Some(&attacker));
+    entity.living().set_last_hurt_by_mob(Some(&attacker));
 
-    let Some(stored_attacker) = entity.last_hurt_by_mob() else {
+    let Some(stored_attacker) = entity.living().last_hurt_by_mob() else {
         panic!("last hurt-by mob should be stored");
     };
     assert_eq!(stored_attacker.uuid(), attacker.uuid());
-    assert_eq!(entity.last_hurt_by_mob_timestamp(), 1);
+    assert_eq!(entity.living().last_hurt_by_mob_timestamp(), 1);
 
-    entity.living_base().tick_living_combat_memory(101);
-    assert!(entity.last_hurt_by_mob().is_some());
+    entity.living().living_base().tick_living_combat_memory(101);
+    assert!(entity.living().last_hurt_by_mob().is_some());
 
-    entity.living_base().tick_living_combat_memory(102);
-    assert!(entity.last_hurt_by_mob().is_none());
-    assert_eq!(entity.last_hurt_by_mob_timestamp(), 102);
+    entity.living().living_base().tick_living_combat_memory(102);
+    assert!(entity.living().last_hurt_by_mob().is_none());
+    assert_eq!(entity.living().last_hurt_by_mob_timestamp(), 102);
 }
 
 #[test]
@@ -170,15 +202,15 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
     let target = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     let target_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&target);
 
-    entity.set_last_hurt_mob(Some(&target_entity));
-    assert!(entity.last_hurt_mob().is_some());
-    assert_eq!(entity.last_hurt_mob_timestamp(), 0);
+    entity.living().set_last_hurt_mob(Some(&target_entity));
+    assert!(entity.living().last_hurt_mob().is_some());
+    assert_eq!(entity.living().last_hurt_mob_timestamp(), 0);
 
-    target.set_health(0.0);
-    entity.living_base().tick_living_combat_memory(1);
+    target.living().set_health(0.0);
+    entity.living().living_base().tick_living_combat_memory(1);
 
-    assert!(entity.last_hurt_mob().is_none());
-    assert_eq!(entity.last_hurt_mob_timestamp(), 1);
+    assert!(entity.living().last_hurt_mob().is_none());
+    assert_eq!(entity.living().last_hurt_mob_timestamp(), 1);
 }
 
 #[test]
@@ -186,7 +218,7 @@ fn living_death_loot_table_uses_default_and_custom_mob_tables() {
     init_vanilla_registry();
 
     let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    let Some(default_table) = pig.death_loot_table() else {
+    let Some(default_table) = pig.living().death_loot_table() else {
         panic!("pig should resolve its default entity loot table");
     };
     assert_eq!(
@@ -196,15 +228,15 @@ fn living_death_loot_table_uses_default_and_custom_mob_tables() {
 
     pig.mob()
         .set_death_loot_table(Some(Identifier::vanilla_static("entities/cow")));
-    let Some(custom_table) = pig.death_loot_table() else {
+    let Some(custom_table) = pig.living().death_loot_table() else {
         panic!("custom cow loot table should resolve");
     };
     assert_eq!(&custom_table.key, &vanilla_loot_tables::ENTITIES_COW.key);
-    assert_eq!(LivingEntity::death_loot_table_seed(&pig), 0);
+    assert_eq!(pig.living().death_loot_table_seed(), 0);
 
     pig.mob()
         .set_death_loot_table(Some(Identifier::vanilla_static("entities/not_real")));
-    assert!(pig.death_loot_table().is_none());
+    assert!(pig.living().death_loot_table().is_none());
 }
 
 #[test]

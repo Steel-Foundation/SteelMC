@@ -1,6 +1,6 @@
 use super::reduced_tick_delay;
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{LivingEntity, Mob, SharedEntity};
+use crate::entity::{Living, Mob, SharedEntity};
 use steel_registry::vanilla_attributes;
 
 const DEFAULT_UNSEEN_MEMORY_TICKS: i32 = 60;
@@ -52,7 +52,7 @@ impl TargetGoalBase {
             return false;
         };
 
-        if !Mob::can_attack(mob, target_living) || mob.is_allied_to(target_living) {
+        if !Mob::can_attack(mob, &target_living) || mob.is_allied_to(target_living.entity()) {
             return false;
         }
 
@@ -61,7 +61,7 @@ impl TargetGoalBase {
             return false;
         }
 
-        if self.must_see && !self.update_unseen_ticks(mob, target_living) {
+        if self.must_see && !self.update_unseen_ticks(mob, &target_living) {
             return false;
         }
 
@@ -82,7 +82,7 @@ impl TargetGoalBase {
     pub(super) fn can_attack(
         &mut self,
         mob: &Mob<'_>,
-        target: Option<&dyn LivingEntity>,
+        target: Option<&Living<'_>>,
         target_conditions: &TargetingConditions,
     ) -> bool {
         let Some(target) = target else {
@@ -92,7 +92,7 @@ impl TargetGoalBase {
             return false;
         };
 
-        if !target_conditions.test(world.as_ref(), Some(mob.living()), target) {
+        if !target_conditions.test(world.as_ref(), Some(&mob.living()), target) {
             return false;
         }
         if !mob.is_within_home_pos(target.block_position()) {
@@ -106,8 +106,8 @@ impl TargetGoalBase {
         true
     }
 
-    fn update_unseen_ticks(&mut self, mob: &Mob<'_>, target: &dyn LivingEntity) -> bool {
-        if mob.has_line_of_sight_cached(target) {
+    fn update_unseen_ticks(&mut self, mob: &Mob<'_>, target: &Living<'_>) -> bool {
+        if mob.has_line_of_sight_cached(target.entity()) {
             self.unseen_ticks = 0;
             return true;
         }
@@ -116,7 +116,7 @@ impl TargetGoalBase {
         self.unseen_ticks <= reduced_tick_delay(self.unseen_memory_ticks)
     }
 
-    fn can_reach(&mut self, mob: &Mob<'_>, target: &dyn LivingEntity) -> bool {
+    fn can_reach(&mut self, mob: &Mob<'_>, target: &Living<'_>) -> bool {
         self.reach_cache_time -= 1;
         if self.reach_cache_time <= 0 {
             self.reach_cache = ReachCache::Empty;
@@ -133,7 +133,7 @@ impl TargetGoalBase {
         self.reach_cache == ReachCache::CanReach
     }
 
-    fn check_reach(&mut self, mob: &Mob<'_>, target: &dyn LivingEntity) -> bool {
+    fn check_reach(&mut self, mob: &Mob<'_>, target: &Living<'_>) -> bool {
         self.reach_cache_time = reduced_tick_delay(10 + rand::random_range(0..5));
         mob.can_reach_living_target(target)
     }
@@ -167,7 +167,7 @@ mod tests {
         ))
     }
 
-    fn target_living(target: &SharedEntity) -> &dyn LivingEntity {
+    fn target_living(target: &SharedEntity) -> Living<'_> {
         let Some(living) = target.as_living_entity() else {
             panic!("test target should be a living entity");
         };
@@ -245,7 +245,11 @@ mod tests {
         let mut goal = TargetGoalBase::new(false, false);
         let target_conditions = TargetingConditions::for_combat().ignore_line_of_sight();
 
-        assert!(!goal.can_attack(&mob.mob(), Some(target_living(&target)), &target_conditions));
+        assert!(!goal.can_attack(
+            &mob.mob(),
+            Some(&target_living(&target)),
+            &target_conditions
+        ));
     }
 
     #[test]
@@ -255,11 +259,11 @@ mod tests {
         let target: SharedEntity = pig(2, DVec3::new(2.0, 0.0, 0.0));
         let mut goal = TargetGoalBase::new(false, true);
 
-        assert!(!goal.can_reach(&mob.mob(), target_living(&target)));
+        assert!(!goal.can_reach(&mob.mob(), &target_living(&target)));
         assert_eq!(goal.reach_cache, ReachCache::CantReach);
         let first_reach_cache_time = goal.reach_cache_time;
 
-        assert!(!goal.can_reach(&mob.mob(), target_living(&target)));
+        assert!(!goal.can_reach(&mob.mob(), &target_living(&target)));
         assert_eq!(goal.reach_cache, ReachCache::CantReach);
         assert_eq!(goal.reach_cache_time, first_reach_cache_time - 1);
     }

@@ -26,7 +26,7 @@ pub(crate) fn apply_potion_contents(
             // a `source` distinct from `owner`.
             instantaneous.apply_instantaneous(
                 world,
-                user.living(),
+                &user.living(),
                 effect.amplifier(),
                 damage_source_entity,
                 damage_source_entity,
@@ -57,6 +57,7 @@ pub(crate) const fn to_runtime_instance(
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::LivingParts as _;
     use std::sync::Arc;
 
     use steel_registry::data_components::PotionContents;
@@ -67,7 +68,7 @@ mod tests {
 
     use super::apply_potion_contents;
     use crate::behavior::init_behaviors;
-    use crate::entity::{LivingEntity, LivingEntityRef, SharedEntity};
+    use crate::entity::{LivingEntityRef, SharedEntity};
     use crate::player::Player;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
@@ -84,7 +85,7 @@ mod tests {
         insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(world), "Test", 1).build();
         let player_entity: SharedEntity = Arc::<Player>::clone(&player);
-        player.set_health(1.0);
+        player.living().set_health(1.0);
 
         let contents = PotionContents::new(
             None,
@@ -105,6 +106,6 @@ mod tests {
         );
 
         // 4 << 32 wraps to 4 << (32 % 32) == 4 << 0 == 4, matching Java.
-        assert_eq!(player.get_health(), 5.0);
+        assert_eq!(player.living().get_health(), 5.0);
     }
 }

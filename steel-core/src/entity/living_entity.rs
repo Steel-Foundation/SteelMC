@@ -3,54 +3,234 @@ use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
+use std::ops::Deref;
+
+use steel_registry::vanilla_entity_data::LivingEntityData;
+
 use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
+use crate::entity::component::props::entity_props;
+use crate::entity::component::{Components as _, Has};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::RecentDamageSource;
 use crate::entity::pushing::EntityPush;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
 
-/// A trait for living entities that can take damage, heal, and die.
-///
-/// This trait provides the core functionality for entities that have health,
-/// can be damaged, and can die. It's based on Minecraft's `LivingEntity` class.
-///
-/// **Note:** All methods take `&self` (not `&mut self`) because living entities
-/// are shared via `Arc` and use interior mutability (`SyncMutex`, etc.).
-pub trait LivingEntity: Entity {
-    /// Returns a reference to the shared [`LivingEntityBase`] that holds
-    /// living runtime state such as attributes, cached movement speed,
-    /// damage cooldown, and death animation counters.
-    fn living_base(&self) -> &LivingEntityBase;
+entity_props! {
+    /// Per-type properties of a vanilla `LivingEntity`.
+    pub struct LivingProps<E>: LivingHooks for Living
+    where E: Parts => living {
+        /// Current absorption hearts.
+        fn get_absorption_amount() -> f32 = get_absorption_amount_default;
+        /// Sets the absorption hearts.
+        fn set_absorption_amount(amount: f32) = set_absorption_amount_default;
+        /// Reacts to an equipped item breaking.
+        fn on_equipped_item_broken(item: ItemRef, slot: EquipmentSlot) = on_equipped_item_broken_default;
+        /// `LivingEntity.canBeSeenAsEnemy`.
+        fn can_be_seen_as_enemy() -> bool = can_be_seen_as_enemy_default;
+        /// `LivingEntity.isAffectedByFluids`.
+        fn is_affected_by_fluids() -> bool = is_affected_by_fluids_default;
+        /// `LivingEntity.aiStep`.
+        fn ai_step(entity: &SharedEntity) -> Option<MoveResult> = ai_step_default;
+        /// `LivingEntity.indicateDamage`.
+        fn indicate_damage(xd: f64, zd: f64) = indicate_damage_default;
+        /// `LivingEntity.tick`.
+        fn tick_living_entity(entity: &SharedEntity) = tick_living_entity_default;
+        /// `LivingEntity.isUsingItem`.
+        fn is_using_item() -> bool = is_using_item_default;
+        /// `LivingEntity.getLuck`.
+        fn get_luck() -> f32 = get_luck_default;
+        /// `LivingEntity.isInvulnerableTo`.
+        fn is_invulnerable_to(world: &World, source: &DamageSource) -> bool = is_invulnerable_to_default;
+        /// `LivingEntity.hurtArmor`.
+        fn hurt_armor(source: &DamageSource, damage: f32) = hurt_armor_default;
+        /// `LivingEntity.actuallyHurt`.
+        fn actually_hurt(world: &World, source: &DamageSource, amount: f32) = actually_hurt_default;
+        /// The chunk whose viewers receive this entity's hurt animation.
+        fn hurt_broadcast_chunk() -> ChunkPos = hurt_broadcast_chunk_default;
+        /// `LivingEntity.die`.
+        fn die(source: &DamageSource) = die_default;
+        /// Ticks equipment change detection.
+        fn tick_equipment() = tick_equipment_default;
+        /// Visits the item in `slot`.
+        fn with_equipment_slot(slot: EquipmentSlot, visitor: &mut dyn FnMut(&ItemStack)) = with_equipment_slot_default;
+        /// Visits the item in `slot` mutably.
+        fn with_equipment_slot_mut(slot: EquipmentSlot, visitor: &mut dyn FnMut(&mut ItemStack)) = with_equipment_slot_mut_default;
+        /// Equips `player`'s held item onto this entity.
+        fn interact_living_entity_with_equippable(player: &Player, hand: InteractionHand) -> InteractionResult = interact_living_entity_with_equippable_default;
+        /// `LivingEntity.hasInfiniteMaterials`.
+        fn has_infinite_materials() -> bool = has_infinite_materials_default;
+        /// `LivingEntity.handleExtraItemsCreatedOnUse`.
+        fn handle_extra_items_created_on_use(extra: ItemStack) = handle_extra_items_created_on_use_default;
+        /// `LivingEntity.canGlide`.
+        fn can_glide() -> bool = can_glide_default;
+        /// `LivingEntity.isImmobile`.
+        fn is_immobile() -> bool = is_immobile_default;
+        /// `LivingEntity.stopSleeping`.
+        fn stop_sleeping() = stop_sleeping_default;
+        /// `LivingEntity.jumpFromGround`.
+        fn jump_from_ground() = jump_from_ground_default;
+        /// `LivingEntity.travel`.
+        fn travel(entity: &SharedEntity, input: DVec3) -> Option<MoveResult> = travel_default;
+        /// `LivingEntity.getFlyingSpeed`.
+        fn get_flying_speed() -> f32 = get_flying_speed_default;
+        /// `LivingEntity.getHurtSound`.
+        fn hurt_sound(source: &DamageSource) -> Option<SoundEventRef> = hurt_sound_default;
+        /// `LivingEntity.getDeathSound`.
+        fn death_sound() -> Option<SoundEventRef> = death_sound_default;
+        /// The chicken variant key for loot predicates, when this is a chicken.
+        fn chicken_loot_variant() -> Option<&'static Identifier> = chicken_loot_variant_default;
+        /// `LivingEntity.getBaseExperienceReward`.
+        fn base_experience_reward() -> i32 = base_experience_reward_default;
+        /// `LivingEntity.serverAiStep`.
+        fn server_ai_step(entity: &SharedEntity) = server_ai_step_default;
+        /// `LivingEntity.canBeAffected`.
+        fn can_be_affected(effect: &MobEffectInstance) -> bool = can_be_affected_default;
+        /// `LivingEntity.canStandOnFluid`.
+        fn can_stand_on_fluid(fluid_state: FluidState) -> bool = can_stand_on_fluid_default;
+        /// Whether Frost Walker may act under this entity.
+        fn is_on_non_air_block_for_frost() -> bool = is_on_non_air_block_for_frost_default;
+        /// `LivingEntity.isInWall`.
+        fn is_in_wall() -> bool = is_in_wall_default;
+        /// All attributes clients see, for spawning.
+        fn pack_syncable_attributes() -> Vec<AttributeSnapshot> = pack_syncable_attributes_default;
+        /// Changed attributes clients see.
+        fn drain_dirty_syncable_attributes() -> Vec<AttributeSnapshot> = drain_dirty_syncable_attributes_default;
+        /// All equipment clients see, for spawning.
+        fn pack_all_equipment() -> Vec<EquipmentSlotItem> = pack_all_equipment_default;
+        /// Changed equipment clients see.
+        fn drain_dirty_equipment() -> Vec<EquipmentSlotItem> = drain_dirty_equipment_default;
+        /// The sheep color and sheared state for loot predicates, when this is a sheep.
+        fn sheep_loot_state() -> Option<(DyeColor, bool)> = sheep_loot_state_default;
+        /// Returns the volume used for this entity's sounds.
+        fn sound_volume() -> f32 = sound_volume_default;
+        /// Runs vanilla `LivingEntity.handleKillingBlow`.
+        fn handle_killing_blow() = handle_killing_blow_default;
+        /// `LivingEntity.isAlwaysExperienceDropper`.
+        fn is_always_experience_dropper() -> bool = is_always_experience_dropper_default;
+        /// Hook for non-mob custom death loot.
+        fn drop_custom_death_loot(source: &DamageSource, killed_by_player: bool) = drop_custom_death_loot_default;
+        /// Checks if the entity is blocking with a shield or similar item.
+        fn is_blocking() -> bool = is_blocking_default;
+        /// Returns whether vanilla allows this entity to use `slot`.
+        fn can_use_slot(slot: EquipmentSlot) -> bool = can_use_slot_default;
+        /// Returns the equip sound Steel can currently resolve for this entity.
+        fn equip_sound(slot: EquipmentSlot, stack: &ItemStack) -> Option<SoundEventRef> = equip_sound_default;
+        /// Returns whether the given item in the given slot allows elytra-style gliding.
+        fn can_glide_using(item_stack: &ItemStack, slot: EquipmentSlot) -> bool = can_glide_using_default;
+        /// Ticks side effects of a rider controlling this entity, such as steering-based input.
+        fn tick_ridden(controller: &Player, ridden_input: DVec3) = tick_ridden_default;
+        /// Transforms the rider's raw input into this entity's movement input while ridden.
+        fn ridden_input(controller: &Player, self_input: DVec3) -> DVec3 = ridden_input_default;
+        /// Returns the water-movement slowdown multiplier.
+        fn get_water_slow_down() -> f32 = get_water_slow_down_default;
+        /// Returns the vertical friction used by `travelInAir`.
+        fn air_travel_vertical_friction(horizontal_friction: f32) -> f32 = air_travel_vertical_friction_default;
+    }
+}
+
+/// An entity seen as a vanilla `LivingEntity`. Derefs to the entity.
+#[derive(Clone, Copy)]
+pub struct Living<'a> {
+    entity: &'a (dyn Entity + 'static),
+    base: &'a LivingEntityBase,
+}
+
+impl<'a> Living<'a> {
+    /// Pairs a concrete living entity with its state.
+    #[must_use]
+    pub fn new<E: Entity + Has<LivingEntityBase>>(entity: &'a E) -> Self {
+        Self {
+            entity,
+            base: entity.get::<LivingEntityBase>(),
+        }
+    }
+
+    /// Returns `entity` as a living entity, if it is one.
+    #[must_use]
+    pub fn of(entity: &'a (dyn Entity + 'static)) -> Option<Self> {
+        Some(Self {
+            entity,
+            base: entity.query::<LivingEntityBase>()?,
+        })
+    }
+
+    /// Returns the entity this view belongs to.
+    #[must_use]
+    pub const fn entity(&self) -> &'a (dyn Entity + 'static) {
+        self.entity
+    }
+
+    fn hooks(&self) -> &'static dyn LivingHooks {
+        self.base.hooks()
+    }
+
+    fn with_synced<R>(&self, f: impl FnOnce(&mut LivingEntityData) -> R) -> Option<R> {
+        let synced = self.entity.synced_data()?;
+        let mut data = synced.lock_data();
+        data.living_entity_layer_mut().map(f)
+    }
+}
+
+impl Deref for Living<'_> {
+    type Target = dyn Entity;
+
+    fn deref(&self) -> &Self::Target {
+        self.entity
+    }
+}
+
+/// Components every living entity has; keeps generic bounds short.
+pub trait Parts: Entity + Has<LivingEntityBase> {
+    /// Returns this entity as a living entity.
+    fn living(&self) -> Living<'_>;
+}
+
+impl<E: Entity + Has<LivingEntityBase>> Parts for E {
+    fn living(&self) -> Living<'_> {
+        Living::new(self)
+    }
+}
+
+impl<'a> Living<'a> {
+    /// Returns the shared living runtime state: attributes, cached movement
+    /// speed, damage cooldown and death animation counters.
+    #[must_use]
+    pub const fn living_base(&self) -> &'a LivingEntityBase {
+        self.base
+    }
 
     /// Returns vanilla living body/head rotation state.
-    fn living_rotation_state(&self) -> LivingRotationState {
+    #[must_use]
+    pub fn living_rotation_state(&self) -> LivingRotationState {
         self.living_base().rotation_state()
     }
 
     /// Returns the entity's body yaw, used for turning smoothing separate from head yaw.
-    fn y_body_rot(&self) -> f32 {
+    #[must_use]
+    pub fn y_body_rot(&self) -> f32 {
         self.living_base().y_body_rot()
     }
 
     /// Sets the entity's body yaw.
-    fn set_y_body_rot(&self, y_body_rot: f32) {
+    pub fn set_y_body_rot(&self, y_body_rot: f32) {
         self.living_base().set_y_body_rot(y_body_rot);
     }
 
     /// Returns the entity's head yaw.
-    fn y_head_rot(&self) -> f32 {
+    #[must_use]
+    pub fn y_head_rot(&self) -> f32 {
         self.living_base().y_head_rot()
     }
 
     /// Sets the entity's head yaw.
-    fn set_y_head_rot(&self, y_head_rot: f32) {
+    pub fn set_y_head_rot(&self, y_head_rot: f32) {
         self.living_base().set_y_head_rot(y_head_rot);
     }
 
     /// Copies current living body/head rotations to vanilla old-rotation state.
-    fn advance_living_rotation_for_base_tick(&self) {
+    pub fn advance_living_rotation_for_base_tick(&self) {
         self.living_base().advance_rotation_for_base_tick();
     }
 
@@ -58,7 +238,7 @@ pub trait LivingEntity: Entity {
     /// snapshots, base entity tick, environmental damage, the hurt timer, and
     /// combat memory expiry. Memory must expire before mob effects tick, so a
     /// lethal effect tick sees the same kill credit as vanilla.
-    fn base_tick_living_entity(&self) {
+    pub fn base_tick_living_entity(&self) {
         self.advance_living_rotation_for_base_tick();
         self.living_base().tick_swing_state();
         self.entity_base_tick();
@@ -70,12 +250,14 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns vanilla arm-swing animation state.
-    fn living_swing_state(&self) -> LivingSwingState {
+    #[must_use]
+    pub fn living_swing_state(&self) -> LivingSwingState {
         self.living_base().swing_state()
     }
 
     /// Returns the animation duration adjusted by Haste or Mining Fatigue.
-    fn modified_swing_duration(&self, animation: SwingAnimation) -> i32 {
+    #[must_use]
+    pub fn modified_swing_duration(&self, animation: SwingAnimation) -> i32 {
         let swing_duration = animation.duration;
         if let Some(haste) = self.mob_effect(vanilla_mob_effects::HASTE) {
             swing_duration - (1 + haste.amplifier())
@@ -87,18 +269,21 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns the held item's attack animation.
-    fn attack_animation(&self, hand: InteractionHand) -> SwingAnimation {
+    #[must_use]
+    pub fn attack_animation(&self, hand: InteractionHand) -> SwingAnimation {
         self.held_swing_animation(hand, ATTACK_ANIMATION)
     }
 
     /// Returns the held item's interaction animation.
-    fn interact_animation(&self, hand: InteractionHand) -> SwingAnimation {
+    #[must_use]
+    pub fn interact_animation(&self, hand: InteractionHand) -> SwingAnimation {
         self.held_swing_animation(hand, INTERACT_ANIMATION)
     }
 
     /// Reads a swing animation component off the item held in `hand`, falling
     /// back to the vanilla default when the item does not carry one.
-    fn held_swing_animation(
+    #[must_use]
+    pub fn held_swing_animation(
         &self,
         hand: InteractionHand,
         component: DataComponentType<SwingAnimation>,
@@ -118,7 +303,16 @@ pub trait LivingEntity: Entity {
     }
 
     /// Sends the animation to tracking players and returns whether a swing started
-    fn swing(&self, hand: InteractionHand, animation: SwingAnimation, update_self: bool) -> bool {
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "callers that start a swing unconditionally ignore whether one started"
+    )]
+    pub fn swing(
+        &self,
+        hand: InteractionHand,
+        animation: SwingAnimation,
+        update_self: bool,
+    ) -> bool {
         if !self
             .living_base()
             .start_swing(hand, animation, self.modified_swing_duration(animation))
@@ -141,17 +335,23 @@ pub trait LivingEntity: Entity {
     }
 
     /// Swings with the held item's attack animation.
-    fn swing_for_attack(&self, hand: InteractionHand) {
+    pub fn swing_for_attack(&self, hand: InteractionHand) {
         self.swing(hand, self.attack_animation(hand), false);
     }
 
     /// Returns a reference to this entity's attribute map.
-    fn attributes(&self) -> &SyncMutex<AttributeMap> {
+    #[must_use]
+    pub const fn attributes(&self) -> &'a SyncMutex<AttributeMap> {
         self.living_base().attributes()
     }
 
     /// Vanilla `LivingEntity.getLuck` - non-players contribute no luck to loot.
-    fn get_luck(&self) -> f32 {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn get_luck_default(&self) -> f32 {
         0.0
     }
 
@@ -159,7 +359,8 @@ pub trait LivingEntity: Entity {
     ///
     /// Mirrors vanilla `ServerEntity.sendPairingData`, which sends all syncable
     /// living attributes after the add-entity and metadata packets.
-    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+    #[must_use]
+    pub fn pack_syncable_attributes_default(&self) -> Vec<AttributeSnapshot> {
         self.attributes().lock().syncable_snapshots()
     }
 
@@ -167,27 +368,31 @@ pub trait LivingEntity: Entity {
     ///
     /// Mirrors vanilla `ServerEntity.sendDirtyEntityData`, which sends dirty
     /// living attributes after dirty entity data.
-    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+    #[must_use]
+    pub fn drain_dirty_syncable_attributes_default(&self) -> Vec<AttributeSnapshot> {
         self.attributes().lock().drain_dirty_sync()
     }
 
     /// Drains dirty mob-effect packet changes for vanilla recipients.
-    fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
+    #[must_use]
+    pub fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
         self.living_base().drain_dirty_mob_effects()
     }
 
     /// Packs non-empty equipment slots for initial spawn pairing.
-    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
+    #[must_use]
+    pub fn pack_all_equipment_default(&self) -> Vec<EquipmentSlotItem> {
         self.pack_living_equipment()
     }
 
     /// Drains equipment slots that changed since the last tracker sync.
-    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
+    #[must_use]
+    pub fn drain_dirty_equipment_default(&self) -> Vec<EquipmentSlotItem> {
         self.drain_dirty_living_equipment()
     }
 
     /// Saves equipment slots to NBT.
-    fn save_equipment(&self, nbt: &mut NbtCompound) {
+    pub fn save_equipment(&self, nbt: &mut NbtCompound) {
         let mut equipment = NbtCompound::new();
         for slot in EquipmentSlot::ALL {
             self.with_equipment_slot(slot, &mut |item| {
@@ -202,7 +407,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Loads equipment slots from NBT.
-    fn load_equipment(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+    pub fn load_equipment(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         if let Some(equipment_tag) = nbt.compound("equipment") {
             let mut equipment = self.living_base().equipment().lock();
             for slot in EquipmentSlot::ALL {
@@ -220,7 +425,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Appends vanilla-shaped living state used by command NBT predicates.
-    fn save_command_nbt(&self, nbt: &mut NbtCompound) {
+    pub fn save_command_nbt(&self, nbt: &mut NbtCompound) {
         nbt.insert("Health", self.get_health());
         nbt.insert(
             "HurtTime",
@@ -293,35 +498,43 @@ pub trait LivingEntity: Entity {
     }
 
     /// Gets the current health of the entity.
-    fn get_health(&self) -> f32;
+    #[must_use]
+    pub fn get_health(&self) -> f32 {
+        self.with_synced(|data| *data.health.get()).unwrap_or(0.0)
+    }
 
     /// Sets the health of the entity, clamped between 0 and max health.
-    fn set_health(&self, health: f32);
+    pub fn set_health(&self, health: f32) {
+        let health = health.clamp(0.0, self.get_max_health());
+        self.with_synced(|data| data.health.set(health));
+    }
 
     /// Gets the maximum health from the attribute system.
-    fn get_max_health(&self) -> f32 {
+    #[must_use]
+    pub fn get_max_health(&self) -> f32 {
         self.attributes()
             .lock()
             .required_value(vanilla_attributes::MAX_HEALTH) as f32
     }
 
     /// Returns ticks this entity has gone without taking a noteworthy action.
-    fn no_action_time(&self) -> i32 {
+    #[must_use]
+    pub fn no_action_time(&self) -> i32 {
         self.living_base().no_action_time()
     }
 
     /// Sets ticks this entity has gone without taking a noteworthy action.
-    fn set_no_action_time(&self, no_action_time: i32) {
+    pub fn set_no_action_time(&self, no_action_time: i32) {
         self.living_base().set_no_action_time(no_action_time);
     }
 
     /// Increments the no-action-time counter by one tick.
-    fn increment_no_action_time(&self) {
+    pub fn increment_no_action_time(&self) {
         self.living_base().increment_no_action_time();
     }
 
     /// Heals the entity by the specified amount.
-    fn heal(&self, amount: f32) {
+    pub fn heal(&self, amount: f32) {
         let current_health = self.get_health();
         if current_health > 0.0 {
             self.set_health(current_health + amount);
@@ -329,12 +542,14 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns true if the entity is dead or dying (health <= 0).
-    fn is_dead_or_dying(&self) -> bool {
+    #[must_use]
+    pub fn is_dead_or_dying(&self) -> bool {
         self.get_health() <= 0.0
     }
 
     /// Returns whether this entity is currently a baby.
-    fn is_baby(&self) -> bool {
+    #[must_use]
+    pub fn is_baby(&self) -> bool {
         Ageable::of(self.as_entity_event_source()).is_some_and(|ageable| ageable.is_baby())
     }
 
@@ -343,7 +558,12 @@ pub trait LivingEntity: Entity {
     ///
     /// Mirrors `Sheep.get(DataComponents.SHEEP_COLOR)` + `Sheep.isSheared()` for the
     /// entity loot context.
-    fn sheep_loot_state(&self) -> Option<(DyeColor, bool)> {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn sheep_loot_state_default(&self) -> Option<(DyeColor, bool)> {
         None
     }
 
@@ -351,22 +571,34 @@ pub trait LivingEntity: Entity {
     /// entity loot context, when it is a chicken.
     ///
     /// Mirrors `Chicken.get(DataComponents.CHICKEN_VARIANT)` for the loot predicate.
-    fn chicken_loot_variant(&self) -> Option<&Identifier> {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn chicken_loot_variant_default(&self) -> Option<&'static Identifier> {
         None
     }
 
     /// Returns the volume used for this entity's sounds.
-    fn sound_volume(&self) -> f32 {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn sound_volume_default(&self) -> f32 {
         1.0
     }
 
     /// Returns the pitch used for this entity's sounds; babies get a randomized higher pitch.
-    fn voice_pitch(&self) -> f32 {
+    #[must_use]
+    pub fn voice_pitch(&self) -> f32 {
         self.default_voice_pitch()
     }
 
     /// Returns the base voice pitch before entity-specific adjustments.
-    fn default_voice_pitch(&self) -> f32 {
+    #[must_use]
+    pub fn default_voice_pitch(&self) -> f32 {
         if self.is_baby() {
             (rand::random::<f32>() - rand::random::<f32>()) * 0.2 + 1.5
         } else {
@@ -375,24 +607,42 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns the sound played when this entity is hurt.
-    fn hurt_sound(&self, _source: &DamageSource) -> Option<SoundEventRef> {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the hook lets entity types return no sound"
+    )]
+    pub fn hurt_sound_default(&self, _source: &DamageSource) -> Option<SoundEventRef> {
         Some(&sound_events::ENTITY_GENERIC_HURT)
     }
 
     /// Returns the sound played when this entity dies.
-    fn death_sound(&self) -> Option<SoundEventRef> {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the hook lets entity types return no sound"
+    )]
+    pub fn death_sound_default(&self) -> Option<SoundEventRef> {
         Some(&sound_events::ENTITY_GENERIC_DEATH)
     }
 
     /// Plays `sound` at this entity's current volume and pitch, if any.
-    fn make_sound(&self, sound: Option<SoundEventRef>) {
+    pub fn make_sound(&self, sound: Option<SoundEventRef>) {
         if let Some(sound) = sound {
             self.play_sound(sound, self.sound_volume(), self.voice_pitch());
         }
     }
 
     /// Plays this entity's hurt sound and resets its ambient-sound timer if it's a mob.
-    fn play_hurt_sound(&self, source: &DamageSource) {
+    pub fn play_hurt_sound(&self, source: &DamageSource) {
         if let Some(mob) = self.as_mob() {
             mob.reset_ambient_sound_time();
         }
@@ -400,17 +650,19 @@ pub trait LivingEntity: Entity {
     }
 
     /// Plays vanilla's death sound for this living entity.
-    fn play_death_sound(&self) {
+    pub fn play_death_sound(&self) {
         self.make_sound(self.death_sound());
     }
 
     /// Returns the render scale from age: 0.5 for babies, 1.0 for adults.
-    fn get_age_scale(&self) -> f32 {
+    #[must_use]
+    pub fn get_age_scale(&self) -> f32 {
         if self.is_baby() { 0.5 } else { 1.0 }
     }
 
     /// Returns this entity's overall render scale, from the scale attribute.
-    fn get_scale(&self) -> f32 {
+    #[must_use]
+    pub fn get_scale(&self) -> f32 {
         self.attributes()
             .lock()
             .get_value(vanilla_attributes::SCALE)
@@ -418,13 +670,15 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns true if the entity is alive (health > 0).
-    fn is_alive(&self) -> bool {
+    #[must_use]
+    pub fn is_alive(&self) -> bool {
         !self.is_dead_or_dying()
     }
 
     /// Returns the fraction of armor slots that currently have equipment,
     /// used for armor-tint rendering.
-    fn get_armor_cover_percentage(&self) -> f32 {
+    #[must_use]
+    pub fn get_armor_cover_percentage(&self) -> f32 {
         let mut covered_slots = 0;
         for slot in EquipmentSlot::ARMOR_SLOTS {
             self.with_equipment_slot(slot, &mut |item_stack| {
@@ -439,7 +693,8 @@ pub trait LivingEntity: Entity {
 
     /// Returns how visible this entity is, from 0.0 to 1.0: reduced while
     /// sneaking, invisible, or disguised with a matching mob head.
-    fn get_visibility_percent(&self, targeting_entity: Option<&dyn Entity>) -> f64 {
+    #[must_use]
+    pub fn get_visibility_percent(&self, targeting_entity: Option<&dyn Entity>) -> f64 {
         let mut visibility_percent = 1.0;
         if self.is_discrete() {
             visibility_percent *= 0.8;
@@ -457,7 +712,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether the equipped head item reduces visibility to `targeting_entity`.
-    fn disguise_head_matches_targeting_entity(
+    #[must_use]
+    pub fn disguise_head_matches_targeting_entity(
         &self,
         targeting_entity: Option<&dyn Entity>,
     ) -> bool {
@@ -483,18 +739,21 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether this entity is currently visible to anything: alive and not a spectator.
-    fn can_be_seen_by_anyone(&self) -> bool {
-        !self.is_spectator() && Entity::is_alive(self)
+    #[must_use]
+    pub fn can_be_seen_by_anyone(&self) -> bool {
+        !self.is_spectator() && Entity::is_alive(self.entity())
     }
 
     /// Returns whether this entity can be targeted as an enemy: visible and not invulnerable.
-    fn can_be_seen_as_enemy(&self) -> bool {
+    #[must_use]
+    pub fn can_be_seen_as_enemy_default(&self) -> bool {
         !self.is_invulnerable() && self.can_be_seen_by_anyone()
     }
 
     /// Returns whether this entity may attack `target`: never a player on
     /// peaceful difficulty, and only visible, non-invulnerable targets otherwise.
-    fn can_attack(&self, target: &dyn LivingEntity) -> bool {
+    #[must_use]
+    pub fn can_attack(&self, target: &Living<'_>) -> bool {
         if target.entity_type() == &vanilla_entities::PLAYER
             && self
                 .level()
@@ -508,12 +767,17 @@ pub trait LivingEntity: Entity {
 
     /// Returns the last damage source, unless it's older than the timeout window, with
     /// [`RecentDamageSource`] retention semantics.
-    fn last_damage_source(&self) -> Option<RecentDamageSource> {
+    #[must_use]
+    pub fn last_damage_source(&self) -> Option<RecentDamageSource> {
         self.base().damage_history().last_damage_source()
     }
 
     /// Records a successful hit using the victim's own level clock.
-    fn record_last_damage_source(&self, source: &DamageSource) {
+    ///
+    /// # Panics
+    ///
+    /// Panics if the entity has no level or the server has no damage history.
+    pub fn record_last_damage_source(&self, source: &DamageSource) {
         let Some(world) = self.level() else {
             panic!("recording living damage requires the victim's level");
         };
@@ -524,65 +788,72 @@ pub trait LivingEntity: Entity {
     }
 
     /// Records the player that last hurt this entity.
-    fn set_last_hurt_by_player(&self, player_uuid: Uuid, time_to_remember: i32) {
+    pub fn set_last_hurt_by_player(&self, player_uuid: Uuid, time_to_remember: i32) {
         self.living_base()
             .set_last_hurt_by_player(player_uuid, time_to_remember);
     }
 
     /// Returns the remaining hurt-cooldown ticks (vanilla `Entity.invulnerableTime`).
-    fn invulnerable_time(&self) -> i32 {
+    #[must_use]
+    pub fn invulnerable_time(&self) -> i32 {
         self.living_base().invulnerable_time()
     }
 
     /// Sets the remaining hurt-cooldown ticks.
-    fn set_invulnerable_time(&self, invulnerable_time: i32) {
+    pub fn set_invulnerable_time(&self, invulnerable_time: i32) {
         self.living_base().set_invulnerable_time(invulnerable_time);
     }
 
     /// Sets the remaining memory time without touching the remembered player.
-    fn set_last_hurt_by_player_memory_time(&self, time_to_remember: i32) {
+    pub fn set_last_hurt_by_player_memory_time(&self, time_to_remember: i32) {
         self.living_base()
             .set_last_hurt_by_player_memory_time(time_to_remember);
     }
 
     /// Returns ticks remaining that this entity will remember the player who last hurt it.
-    fn last_hurt_by_player_memory_time(&self) -> i32 {
+    #[must_use]
+    pub fn last_hurt_by_player_memory_time(&self) -> i32 {
         self.living_base().last_hurt_by_player_memory_time()
     }
 
     /// Returns vanilla `LivingEntity.lastHurtByPlayer`, if still remembered.
-    fn last_hurt_by_player_uuid(&self) -> Option<Uuid> {
+    #[must_use]
+    pub fn last_hurt_by_player_uuid(&self) -> Option<Uuid> {
         self.living_base().last_hurt_by_player_uuid()
     }
 
     /// Returns the mob that last hurt this entity, if still resolvable.
-    fn last_hurt_by_mob(&self) -> Option<SharedEntity> {
+    #[must_use]
+    pub fn last_hurt_by_mob(&self) -> Option<SharedEntity> {
         self.living_base().last_hurt_by_mob()
     }
 
     /// Returns the tick timestamp this entity was last hurt by a mob.
-    fn last_hurt_by_mob_timestamp(&self) -> i32 {
+    #[must_use]
+    pub fn last_hurt_by_mob_timestamp(&self) -> i32 {
         self.living_base().last_hurt_by_mob_timestamp()
     }
 
     /// Records the mob that last hurt this entity.
-    fn set_last_hurt_by_mob(&self, target: Option<&SharedEntity>) {
+    pub fn set_last_hurt_by_mob(&self, target: Option<&SharedEntity>) {
         self.living_base()
             .set_last_hurt_by_mob(target, self.tick_count());
     }
 
     /// Returns the mob this entity last hurt, if still resolvable.
-    fn last_hurt_mob(&self) -> Option<SharedEntity> {
+    #[must_use]
+    pub fn last_hurt_mob(&self) -> Option<SharedEntity> {
         self.living_base().last_hurt_mob()
     }
 
     /// Returns the tick timestamp this entity last hurt a mob.
-    fn last_hurt_mob_timestamp(&self) -> i32 {
+    #[must_use]
+    pub fn last_hurt_mob_timestamp(&self) -> i32 {
         self.living_base().last_hurt_mob_timestamp()
     }
 
     /// Records the mob this entity last hurt.
-    fn set_last_hurt_mob(&self, target: Option<&SharedEntity>) {
+    pub fn set_last_hurt_mob(&self, target: Option<&SharedEntity>) {
         self.living_base()
             .set_last_hurt_mob(target, self.tick_count());
     }
@@ -590,7 +861,7 @@ pub trait LivingEntity: Entity {
     /// Records the causing entity as this entity's last-hurt-by mob, skipping
     /// damage types that shouldn't provoke anger (e.g. `no_anger`, or wind
     /// charges when this mob is immune to their anger).
-    fn resolve_mob_responsible_for_damage(&self, source: &DamageSource) {
+    pub fn resolve_mob_responsible_for_damage(&self, source: &DamageSource) {
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_ANGER) {
             return;
         }
@@ -613,7 +884,7 @@ pub trait LivingEntity: Entity {
 
     /// Records the causing entity as this entity's last-hurt-by player, if
     /// the causing entity is a player.
-    fn resolve_player_responsible_for_damage(&self, source: &DamageSource) {
+    pub fn resolve_player_responsible_for_damage(&self, source: &DamageSource) {
         let Some(entity) = source.causing_entity() else {
             return;
         };
@@ -624,7 +895,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether this entity has an unobstructed line of sight to target's eyes.
-    fn has_line_of_sight(&self, target: &dyn Entity) -> bool {
+    pub fn has_line_of_sight(&self, target: &dyn Entity) -> bool {
         self.has_line_of_sight_with(
             target,
             ClipBlockShape::Collider,
@@ -634,7 +905,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns vanilla line-of-sight with explicit clip options.
-    fn has_line_of_sight_with(
+    pub fn has_line_of_sight_with(
         &self,
         target: &dyn Entity,
         block_shape: ClipBlockShape,
@@ -663,12 +934,13 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns vanilla base living-entity invulnerability.
-    fn default_is_invulnerable_to(&self, source: &DamageSource) -> bool {
+    #[must_use]
+    pub fn default_is_invulnerable_to(&self, source: &DamageSource) -> bool {
         self.is_invulnerable_to_base(source)
     }
 
     /// Returns whether this living entity ignores a damage source.
-    fn is_invulnerable_to(&self, _world: &World, source: &DamageSource) -> bool {
+    pub fn is_invulnerable_to_default(&self, _world: &World, source: &DamageSource) -> bool {
         self.default_is_invulnerable_to(source)
             || enchantment_helper::is_immune_to_damage(self, source)
     }
@@ -677,7 +949,7 @@ pub trait LivingEntity: Entity {
     ///
     /// `world` is the `ServerLevel` supplied by the vanilla caller. It may
     /// intentionally differ from the entity's attached world.
-    fn hurt_server(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+    pub fn hurt_server(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         self.default_hurt_server(world, source, amount)
     }
 
@@ -686,7 +958,7 @@ pub trait LivingEntity: Entity {
     /// Overrides of [`Self::hurt_server`] call this where vanilla calls
     /// `super.hurtServer`; the Ender Dragon routes its per-part damage scaling
     /// through here.
-    fn default_hurt_server(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+    pub fn default_hurt_server(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         if self.is_invulnerable_to(world, source) {
             return false;
         }
@@ -763,17 +1035,21 @@ pub trait LivingEntity: Entity {
     }
 
     /// Hook before applying damage after vanilla reductions.
-    fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {
+    pub fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {
         if let Some(animal) = Animal::of(self.as_entity_event_source()) {
             animal.reset_love();
         }
     }
 
     /// Damages equipment that participates in vanilla armor absorption.
-    fn hurt_armor(&self, _source: &DamageSource, _damage: f32) {}
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn hurt_armor_default(&self, _source: &DamageSource, _damage: f32) {}
 
     /// Damages equipped items in the given slots that are eligible to absorb this damage source.
-    fn do_hurt_equipment(&self, source: &DamageSource, damage: f32, slots: &[EquipmentSlot]) {
+    pub fn do_hurt_equipment(&self, source: &DamageSource, damage: f32, slots: &[EquipmentSlot]) {
         if damage <= 0.0 {
             return;
         }
@@ -802,7 +1078,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Reduces damage by the entity's armor value and toughness, unless the source bypasses armor.
-    fn get_damage_after_armor_absorb(&self, source: &DamageSource, mut damage: f32) -> f32 {
+    #[must_use]
+    pub fn get_damage_after_armor_absorb(&self, source: &DamageSource, mut damage: f32) -> f32 {
         if !source.is(&vanilla_damage_type_tags::DamageTypeTag::BYPASSES_ARMOR) {
             self.hurt_armor(source, damage);
             let armor_toughness =
@@ -821,7 +1098,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Reduces damage based on the resistance effect, unless the source bypasses it or effects entirely.
-    fn get_damage_after_magic_absorb(&self, source: &DamageSource, mut damage: f32) -> f32 {
+    #[must_use]
+    pub fn get_damage_after_magic_absorb(&self, source: &DamageSource, mut damage: f32) -> f32 {
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::BYPASSES_EFFECTS) {
             return damage;
         }
@@ -867,7 +1145,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Applies damage after vanilla reductions.
-    fn actually_hurt(&self, world: &World, source: &DamageSource, amount: f32) {
+    pub fn actually_hurt_default(&self, world: &World, source: &DamageSource, amount: f32) {
         if self.is_invulnerable_to(world, source) {
             return;
         }
@@ -897,7 +1175,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Applies vanilla hurt knockback for a damage source.
-    fn apply_damage_knockback(&self, source: &DamageSource) {
+    pub fn apply_damage_knockback(&self, source: &DamageSource) {
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_KNOCKBACK) {
             return;
         }
@@ -908,13 +1186,14 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns the horizontal direction used by vanilla damage knockback.
-    fn damage_knockback_direction(&self, source: &DamageSource) -> (f64, f64) {
+    #[must_use]
+    pub fn damage_knockback_direction(&self, source: &DamageSource) -> (f64, f64) {
         if let Some(direct_entity) = source.direct_entity()
             && let Some(projectile) = direct_entity.as_projectile()
             && let Some(hurt_entity) = self.as_living_entity()
         {
             let (xd, zd) =
-                projectile.calculate_horizontal_hurt_knockback_direction(hurt_entity, source);
+                projectile.calculate_horizontal_hurt_knockback_direction(&hurt_entity, source);
             return (-xd, -zd);
         }
 
@@ -931,7 +1210,7 @@ pub trait LivingEntity: Entity {
 
     /// Applies knockback velocity in the direction (`xd`, `zd`), scaled by
     /// `power` and reduced by knockback resistance.
-    fn knockback(&self, mut power: f64, mut xd: f64, mut zd: f64) {
+    pub fn knockback(&self, mut power: f64, mut xd: f64, mut zd: f64) {
         power *= 1.0 - self.knockback_resistance();
         if power <= 0.0 {
             return;
@@ -957,22 +1236,28 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns vanilla knockback resistance.
-    fn knockback_resistance(&self) -> f64 {
+    #[must_use]
+    pub fn knockback_resistance(&self) -> f64 {
         self.attributes()
             .lock()
             .required_value(vanilla_attributes::KNOCKBACK_RESISTANCE)
     }
 
     /// Applies a client-visible damage knockback indication in the given direction.
-    fn indicate_damage(&self, _xd: f64, _zd: f64) {}
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn indicate_damage_default(&self, _xd: f64, _zd: f64) {}
 
     /// Returns the chunk used for vanilla nearby hurt broadcasts.
-    fn hurt_broadcast_chunk(&self) -> ChunkPos {
+    #[must_use]
+    pub fn hurt_broadcast_chunk_default(&self) -> ChunkPos {
         ChunkPos::from_entity_pos(self.position())
     }
 
     /// Broadcasts vanilla damage-event metadata near this entity.
-    fn broadcast_damage_event(&self, world: &World, source: &DamageSource) {
+    pub fn broadcast_damage_event(&self, world: &World, source: &DamageSource) {
         world.broadcast_to_nearby(
             self.hurt_broadcast_chunk(),
             CDamageEvent {
@@ -991,7 +1276,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Uses a held death-protection item to survive lethal damage. Returns whether one was used.
-    fn check_totem_death_protection(&self, source: &DamageSource) -> bool {
+    #[must_use]
+    pub fn check_totem_death_protection(&self, source: &DamageSource) -> bool {
         if source.bypasses_invulnerability() {
             return false;
         }
@@ -1026,7 +1312,7 @@ pub trait LivingEntity: Entity {
         self.set_health(1.0);
         if let (Some(world), Some(entity)) = (self.level(), self.as_living_entity()) {
             for effect in protection.death_effects() {
-                apply_consume_effect(effect, &world, entity);
+                apply_consume_effect(effect, &world, &entity);
             }
         }
         self.broadcast_entity_event(EntityStatus::ProtectedFromDeath);
@@ -1034,7 +1320,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Processes vanilla living death side effects.
-    fn die(&self, source: &DamageSource) {
+    pub fn die_default(&self, source: &DamageSource) {
         if self.is_removed() {
             return;
         }
@@ -1044,13 +1330,13 @@ pub trait LivingEntity: Entity {
 
         self.handle_killing_blow();
 
-        // Can't directly use &self for &dyn LivingEntity, as the compiler doesn't know if it's Sized.
-        // Using a function meant for getting &dyn LivingEntity directly works well here.
+        // Can't directly use &self for &Living<'_>, as the compiler doesn't know if it's Sized.
+        // Using a function meant for getting &Living<'_> directly works well here.
         if let Some(world) = self.level()
             && let Some(self_entity) = self.as_living_entity()
         {
             let source_entity = source.causing_entity();
-            if source_entity.is_none_or(|entity| entity.killed_entity(&world, self_entity, source))
+            if source_entity.is_none_or(|entity| entity.killed_entity(&world, &self_entity, source))
             {
                 self.game_event(&vanilla_game_events::ENTITY_DIE);
                 self.drop_all_death_loot(source);
@@ -1068,57 +1354,68 @@ pub trait LivingEntity: Entity {
     /// atomically by the time this runs. The hook exists for the subclasses that
     /// replace it: bosses playing a death animation clamp their health and enter a
     /// dying state here instead of falling over.
-    fn handle_killing_blow(&self) {}
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn handle_killing_blow_default(&self) {}
 
     /// Returns vanilla `LivingEntity.shouldDropLoot`.
     /// Returns whether this entity should drop loot on death: not a baby,
     /// and the mob-drops game rule allows it.
-    fn should_drop_loot(&self, world: &World) -> bool {
+    pub fn should_drop_loot(&self, world: &World) -> bool {
         !self.is_baby() && world.get_game_rule(&MOB_DROPS)
     }
 
     /// Returns whether this entity should drop experience on death: not a baby.
-    fn should_drop_experience(&self) -> bool {
+    #[must_use]
+    pub fn should_drop_experience(&self) -> bool {
         !self.is_baby()
     }
 
     /// Returns whether this entity always drops experience regardless of the
     /// player-kill requirement; false by default.
-    fn is_always_experience_dropper(&self) -> bool {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn is_always_experience_dropper_default(&self) -> bool {
         false
     }
 
     /// Marks this entity to skip dropping experience on death.
-    fn skip_drop_experience(&self) {
+    pub fn skip_drop_experience(&self) {
         self.living_base().skip_drop_experience();
     }
 
     /// Returns whether this entity has been marked to skip dropping experience.
-    fn was_experience_consumed(&self) -> bool {
+    #[must_use]
+    pub fn was_experience_consumed(&self) -> bool {
         self.living_base().was_experience_consumed()
     }
 
     /// Returns the base experience reward for killing this entity, using the
     /// animal-specific reward when applicable.
-    fn base_experience_reward(&self) -> i32 {
-        if Animal::of(self.as_entity_event_source()).is_some() {
-            return Animal::base_experience_reward();
-        }
-
-        self.as_mob()
-            .map_or(0, |mob| mob.base_experience_reward_mob())
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn base_experience_reward_default(&self) -> i32 {
+        0
     }
 
     /// Returns the experience reward for this entity's death; currently
     /// equal to the base reward (see TODO).
-    fn experience_reward(&self, _world: &World, _killer_entity: Option<&dyn Entity>) -> i32 {
+    pub fn experience_reward(&self, _world: &World, _killer_entity: Option<&dyn Entity>) -> i32 {
         // TODO: Apply EnchantmentHelper.processMobExperience once enchantment
         // value-effect hooks can receive the killer/living-entity context.
         self.base_experience_reward()
     }
 
     /// Runs the currently implemented subset of vanilla `LivingEntity.dropAllDeathLoot`.
-    fn drop_all_death_loot(&self, source: &DamageSource) {
+    pub fn drop_all_death_loot(&self, source: &DamageSource) {
         let Some(world) = self.level() else {
             return;
         };
@@ -1135,7 +1432,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Awards experience for this entity's death when eligible, spawning an experience orb.
-    fn drop_experience(&self, world: &Arc<World>, killer_entity: Option<&dyn Entity>) {
+    pub fn drop_experience(&self, world: &Arc<World>, killer_entity: Option<&dyn Entity>) {
         if self.was_experience_consumed() {
             return;
         }
@@ -1156,7 +1453,8 @@ pub trait LivingEntity: Entity {
 
     /// Returns this entity's death loot table: a mob's custom override if
     /// set, otherwise the default table for its entity type.
-    fn death_loot_table(&self) -> Option<LootTableRef> {
+    #[must_use]
+    pub fn death_loot_table(&self) -> Option<LootTableRef> {
         if let Some(mob) = self.as_mob()
             && mob.has_custom_death_loot_table()
         {
@@ -1169,13 +1467,14 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns the loot-table seed for this entity's death loot, if it's a mob.
-    fn death_loot_table_seed(&self) -> i64 {
+    #[must_use]
+    pub fn death_loot_table_seed(&self) -> i64 {
         self.as_mob().map_or(0, |mob| mob.death_loot_table_seed())
     }
 
     /// Rolls and spawns this entity's death-loot drops from its loot table,
     /// seeded deterministically when a loot-table seed is set.
-    fn drop_from_loot_table(&self, source: &DamageSource, killed_by_player: bool) {
+    pub fn drop_from_loot_table(&self, source: &DamageSource, killed_by_player: bool) {
         let Some(world) = self.level() else {
             return;
         };
@@ -1222,10 +1521,19 @@ pub trait LivingEntity: Entity {
     }
 
     /// Hook for non-mob custom death loot.
-    fn drop_custom_death_loot(&self, _source: &DamageSource, _killed_by_player: bool) {}
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn drop_custom_death_loot_default(
+        &self,
+        _source: &DamageSource,
+        _killed_by_player: bool,
+    ) {
+    }
 
     /// Ticks the vanilla living death animation and removes the entity at completion.
-    fn tick_death(&self) {
+    pub fn tick_death(&self) {
         let death_time = self.living_base().increment_death_time();
         if death_time >= DEATH_DURATION && !self.is_removed() {
             self.broadcast_entity_event(EntityStatus::Poof);
@@ -1234,23 +1542,25 @@ pub trait LivingEntity: Entity {
     }
 
     /// Gets the absorption amount (extra health from effects like absorption).
-    fn get_absorption_amount(&self) -> f32 {
+    #[must_use]
+    pub fn get_absorption_amount_default(&self) -> f32 {
         self.living_base().absorption_amount()
     }
 
     /// Sets the absorption amount.
-    fn set_absorption_amount(&self, amount: f32) {
+    pub fn set_absorption_amount_default(&self, amount: f32) {
         self.living_base().set_absorption_amount(amount);
     }
 
     /// Returns the small or big fall sound based on `damage`.
-    fn fall_damage_sound(&self, damage: i32) -> SoundEventRef {
+    #[must_use]
+    pub fn fall_damage_sound(&self, damage: i32) -> SoundEventRef {
         let (small, big) = self.fall_sounds();
         if damage > 4 { big } else { small }
     }
 
     /// Plays the sound of the block this entity is standing in/on after a fall.
-    fn play_block_fall_sound(&self) {
+    pub fn play_block_fall_sound(&self) {
         let Some(world) = self.level() else {
             return;
         };
@@ -1274,7 +1584,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Applies fall damage to a living entity, factoring in effects that reduce or negate it.
-    fn cause_living_fall_damage(
+    #[must_use]
+    pub fn cause_living_fall_damage(
         &self,
         fall_distance: f64,
         damage_modifier: f32,
@@ -1328,7 +1639,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Gets the entity's armor value from the attribute system.
-    fn get_armor_value(&self) -> i32 {
+    #[must_use]
+    pub fn get_armor_value(&self) -> i32 {
         self.attributes()
             .lock()
             .get_value(vanilla_attributes::ARMOR)
@@ -1336,14 +1648,16 @@ pub trait LivingEntity: Entity {
     }
 
     /// Gets the gravity value from the attribute system.
-    fn get_attribute_gravity(&self) -> f64 {
+    #[must_use]
+    pub fn get_attribute_gravity(&self) -> f64 {
         self.attributes()
             .lock()
             .required_value(vanilla_attributes::GRAVITY)
     }
 
     /// Returns this entity's gravity, reduced while falling under Slow Falling.
-    fn get_effective_gravity(&self) -> f64 {
+    #[must_use]
+    pub fn get_effective_gravity(&self) -> f64 {
         let gravity = self.get_gravity();
         if self.velocity().y <= 0.0 && self.has_mob_effect(vanilla_mob_effects::SLOW_FALLING) {
             gravity.min(0.01)
@@ -1353,12 +1667,14 @@ pub trait LivingEntity: Entity {
     }
 
     /// Checks if the entity can be affected by potions.
-    fn is_affected_by_potions(&self) -> bool {
+    #[must_use]
+    pub fn is_affected_by_potions(&self) -> bool {
         !self.is_dead_or_dying()
     }
 
     /// Returns whether healing and harm effects are inverted for this entity (e.g. undead mobs).
-    fn is_inverted_heal_and_harm(&self) -> bool {
+    #[must_use]
+    pub fn is_inverted_heal_and_harm(&self) -> bool {
         REGISTRY.entity_types.is_in_tag(
             self.entity_type(),
             &EntityTypeTag::INVERTED_HEALING_AND_HARM,
@@ -1366,7 +1682,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns vanilla base `LivingEntity.canBeAffected` eligibility.
-    fn default_can_be_affected(&self, effect: &MobEffectInstance) -> bool {
+    #[must_use]
+    pub fn default_can_be_affected(&self, effect: &MobEffectInstance) -> bool {
         if REGISTRY
             .entity_types
             .is_in_tag(self.entity_type(), &EntityTypeTag::IMMUNE_TO_INFESTED)
@@ -1393,38 +1710,46 @@ pub trait LivingEntity: Entity {
     /// Returns whether this entity accepts a mob-effect instance.
     ///
     /// Concrete entities override this for vanilla class-specific immunities.
-    fn can_be_affected(&self, effect: &MobEffectInstance) -> bool {
+    #[must_use]
+    pub fn can_be_affected_default(&self, effect: &MobEffectInstance) -> bool {
         self.default_can_be_affected(effect)
     }
 
     /// Returns whether this entity currently has `effect` active.
-    fn has_mob_effect(&self, effect: MobEffectRef) -> bool {
+    #[must_use]
+    pub fn has_mob_effect(&self, effect: MobEffectRef) -> bool {
         self.living_base().has_mob_effect(effect)
     }
 
     /// Returns this entity's active instance of `effect`, if any.
-    fn mob_effect(&self, effect: MobEffectRef) -> Option<ActiveMobEffect> {
+    #[must_use]
+    pub fn mob_effect(&self, effect: MobEffectRef) -> Option<ActiveMobEffect> {
         self.living_base().mob_effect(effect)
     }
 
     /// Returns all active vanilla mob effects.
-    fn active_mob_effects(&self) -> Vec<ActiveMobEffect> {
+    #[must_use]
+    pub fn active_mob_effects(&self) -> Vec<ActiveMobEffect> {
         self.living_base().active_mob_effects()
     }
 
     /// Sets active vanilla mob-effect state.
-    fn set_mob_effect(&self, effect: MobEffectRef, amplifier: i32) {
+    pub fn set_mob_effect(&self, effect: MobEffectRef, amplifier: i32) {
         self.add_mob_effect(MobEffectInstance::new(effect, amplifier));
     }
 
     /// Adds or updates active vanilla mob-effect state.
-    fn add_mob_effect(&self, effect: MobEffectInstance) -> bool {
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "callers often ignore whether the effect changed"
+    )]
+    pub fn add_mob_effect(&self, effect: MobEffectInstance) -> bool {
         self.add_mob_effect_with_source(effect, None)
     }
 
     /// Adds or updates active vanilla mob-effect state, attributing it to
     /// `source`.
-    fn add_mob_effect_with_source(
+    pub fn add_mob_effect_with_source(
         &self,
         effect: MobEffectInstance,
         source: Option<&dyn Entity>,
@@ -1438,17 +1763,15 @@ pub trait LivingEntity: Entity {
         // once the advancement-criteria foundation exists.
         let _ = source;
         // Calls on_effect_started unconditionally, even when it didn't replace a stronger instance.
-        let dyn_self = self
-            .as_living_entity()
-            .expect("Self implements LivingEntity");
+        let dyn_self = *self;
         MOB_EFFECT_BEHAVIORS
             .get_behavior(effect_key)
-            .on_effect_started(dyn_self, amplifier);
+            .on_effect_started(&dyn_self, amplifier);
         changed
     }
 
     /// Sets the presence of a vanilla mob effect.
-    fn set_mob_effect_active(&self, effect: MobEffectRef, active: bool) {
+    pub fn set_mob_effect_active(&self, effect: MobEffectRef, active: bool) {
         if active {
             self.set_mob_effect(effect, 0);
         } else {
@@ -1457,16 +1780,18 @@ pub trait LivingEntity: Entity {
     }
 
     /// Removes active vanilla mob-effect state.
-    fn remove_mob_effect(&self, effect: MobEffectRef) -> bool {
+    #[expect(
+        clippy::must_use_candidate,
+        reason = "callers often ignore whether an effect was removed"
+    )]
+    pub fn remove_mob_effect(&self, effect: MobEffectRef) -> bool {
         self.living_base().remove_mob_effect(effect)
     }
 
     /// Ticks vanilla server-side mob-effect behavior and durations.
-    fn tick_mob_effects(&self) {
+    pub fn tick_mob_effects(&self) {
         let world = self.level();
-        let dyn_self = self
-            .as_living_entity()
-            .expect("Self implements LivingEntity");
+        let dyn_self = *self;
         for effect in self.active_mob_effects() {
             if !effect.has_remaining_duration() {
                 self.living_base().tick_mob_effect_duration(effect.effect());
@@ -1476,7 +1801,7 @@ pub trait LivingEntity: Entity {
             if effect.should_apply_effect_tick_this_tick(self.tick_count())
                 && world
                     .as_deref()
-                    .is_some_and(|world| !effect.apply_effect_tick(world, dyn_self))
+                    .is_some_and(|world| !effect.apply_effect_tick(world, &dyn_self))
             {
                 self.remove_mob_effect(effect.effect());
                 continue;
@@ -1487,26 +1812,30 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether vanilla effects keep this entity from drowning.
-    fn has_water_breathing(&self) -> bool {
+    #[must_use]
+    pub fn has_water_breathing(&self) -> bool {
         self.has_mob_effect(vanilla_mob_effects::WATER_BREATHING)
             || self.has_mob_effect(vanilla_mob_effects::CONDUIT_POWER)
             || self.has_mob_effect(vanilla_mob_effects::BREATH_OF_THE_NAUTILUS)
     }
 
     /// Returns whether active vanilla effects refill this entity's air supply.
-    fn should_effects_refill_air_supply(&self) -> bool {
+    #[must_use]
+    pub fn should_effects_refill_air_supply(&self) -> bool {
         !self.has_mob_effect(vanilla_mob_effects::BREATH_OF_THE_NAUTILUS)
             || self.has_mob_effect(vanilla_mob_effects::WATER_BREATHING)
             || self.has_mob_effect(vanilla_mob_effects::CONDUIT_POWER)
     }
 
     /// Returns whether this entity's type can breathe underwater.
-    fn can_breathe_underwater(&self) -> bool {
+    #[must_use]
+    pub fn can_breathe_underwater(&self) -> bool {
         self.entity_type().flags.can_breathe_underwater
     }
 
     /// Returns whether this entity can lose air and take drowning damage.
-    fn can_drown_in_water(&self) -> bool {
+    #[must_use]
+    pub fn can_drown_in_water(&self) -> bool {
         if self.can_breathe_underwater() || self.has_water_breathing() {
             return false;
         }
@@ -1517,7 +1846,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether the entity's eye block is a bubble column.
-    fn is_eye_in_bubble_column(&self) -> bool {
+    #[must_use]
+    pub fn is_eye_in_bubble_column(&self) -> bool {
         let Some(world) = self.level() else {
             return false;
         };
@@ -1533,7 +1863,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Decreases air supply while drowning, occasionally skipped when the oxygen bonus effect applies.
-    fn decrease_air_supply(&self, current_supply: i32) -> i32 {
+    #[must_use]
+    pub fn decrease_air_supply(&self, current_supply: i32) -> i32 {
         let oxygen_bonus = self
             .attributes()
             .lock()
@@ -1547,18 +1878,20 @@ pub trait LivingEntity: Entity {
     }
 
     /// Refills air supply while out of water, capped at the entity's maximum.
-    fn increase_air_supply(&self, current_supply: i32) -> i32 {
+    #[must_use]
+    pub fn increase_air_supply(&self, current_supply: i32) -> i32 {
         (current_supply + 4).min(self.max_air_supply())
     }
 
     /// Returns whether air supply has dropped low enough to start dealing drowning damage.
-    fn should_take_drowning_damage(&self) -> bool {
+    #[must_use]
+    pub fn should_take_drowning_damage(&self) -> bool {
         self.air_supply() <= -20
     }
 
     /// Ticks vanilla living air-supply and drowning behavior from `baseTick`.
-    fn tick_living_air_supply(&self) {
-        if !LivingEntity::is_alive(self) {
+    pub fn tick_living_air_supply(&self) {
+        if !self.is_alive() {
             return;
         }
 
@@ -1598,13 +1931,14 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether the entity is suffocating in a wall, ignoring the check while sleeping.
-    fn is_in_wall(&self) -> bool {
-        !self.is_sleeping() && Entity::is_in_wall(self)
+    #[must_use]
+    pub fn is_in_wall_default(&self) -> bool {
+        !self.is_sleeping() && Entity::is_in_wall(self.entity())
     }
 
     /// Applies vanilla living in-wall damage from `baseTick`.
-    fn tick_in_wall_damage(&self) {
-        if !LivingEntity::is_alive(self) || !LivingEntity::is_in_wall(self) {
+    pub fn tick_in_wall_damage(&self) {
+        if !self.is_alive() || !self.is_in_wall() {
             return;
         }
 
@@ -1618,12 +1952,12 @@ pub trait LivingEntity: Entity {
     }
 
     /// Applies vanilla living environmental damage in `LivingEntity.baseTick` order.
-    fn tick_living_environmental_damage(&self) {
-        if !LivingEntity::is_alive(self) {
+    pub fn tick_living_environmental_damage(&self) {
+        if !self.is_alive() {
             return;
         }
 
-        if LivingEntity::is_in_wall(self) {
+        if self.is_in_wall() {
             self.tick_in_wall_damage();
         } else if self.as_player().is_some()
             && let Some(world) = self.level()
@@ -1645,49 +1979,75 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether this entity is affected by fluid physics; true by default.
-    fn is_affected_by_fluids(&self) -> bool {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn is_affected_by_fluids_default(&self) -> bool {
         true
     }
 
     /// Returns whether this entity can stand on the given fluid's surface; false by default.
-    fn can_stand_on_fluid(&self, _fluid_state: FluidState) -> bool {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn can_stand_on_fluid_default(&self, _fluid_state: FluidState) -> bool {
         false
     }
 
     /// Checks if the entity is currently using an item.
-    fn is_using_item(&self) -> bool {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn is_using_item_default(&self) -> bool {
         false
     }
 
     /// Checks if the entity is blocking with a shield or similar item.
-    fn is_blocking(&self) -> bool {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn is_blocking_default(&self) -> bool {
         false
     }
 
     /// Checks if the entity is fall flying (using elytra).
-    fn is_fall_flying(&self) -> bool {
+    #[must_use]
+    pub fn is_fall_flying(&self) -> bool {
         self.living_base().is_fall_flying()
     }
 
     /// Sets whether this entity is fall flying.
-    fn set_fall_flying(&self, fall_flying: bool) {
+    pub fn set_fall_flying(&self, fall_flying: bool) {
         self.set_shared_fall_flying(fall_flying);
         self.living_base().set_fall_flying(fall_flying);
     }
 
     /// Returns ticks this entity has been fall-flying.
-    fn fall_flying_ticks(&self) -> i32 {
+    #[must_use]
+    pub fn fall_flying_ticks(&self) -> i32 {
         self.living_base().fall_flying_ticks()
     }
 
     /// Visits the item in a vanilla living-entity equipment slot.
-    fn with_equipment_slot(&self, slot: EquipmentSlot, visitor: &mut dyn FnMut(&ItemStack)) {
+    pub fn with_equipment_slot_default(
+        &self,
+        slot: EquipmentSlot,
+        visitor: &mut dyn FnMut(&ItemStack),
+    ) {
         let equipment = self.living_base().equipment().lock();
         visitor(equipment.get_ref(slot));
     }
 
     /// Returns whether the item in this entity's main hand matches `predicate`.
-    fn is_holding(&self, predicate: &mut dyn FnMut(&ItemStack) -> bool) -> bool {
+    pub fn is_holding(&self, predicate: &mut dyn FnMut(&ItemStack) -> bool) -> bool {
         let mut holding = false;
         self.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
             holding = predicate(item_stack);
@@ -1703,15 +2063,15 @@ pub trait LivingEntity: Entity {
     }
 
     /// Ticks every equipped item.
-    fn tick_equipment(&self) {
+    pub fn tick_equipment_default(&self) {
         let (Some(world), Some(owner)) = (self.level(), self.as_living_entity()) else {
             return;
         };
-        InventoryTickContext::tick_equipment(&world, owner, EquipmentSlot::ALL);
+        InventoryTickContext::tick_equipment(&world, &owner, EquipmentSlot::ALL);
     }
 
     /// Mutates the item in a vanilla living-entity equipment slot.
-    fn with_equipment_slot_mut(
+    pub fn with_equipment_slot_mut_default(
         &self,
         slot: EquipmentSlot,
         visitor: &mut dyn FnMut(&mut ItemStack),
@@ -1721,7 +2081,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether this entity currently has an item in `slot`.
-    fn has_item_in_slot(&self, slot: EquipmentSlot) -> bool {
+    #[must_use]
+    pub fn has_item_in_slot(&self, slot: EquipmentSlot) -> bool {
         let mut has_item = false;
         self.with_equipment_slot(slot, &mut |item_stack| {
             has_item = !item_stack.is_empty();
@@ -1730,20 +2091,27 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether vanilla allows this entity to use `slot`.
-    fn can_use_slot(&self, _slot: EquipmentSlot) -> bool {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn can_use_slot_default(&self, _slot: EquipmentSlot) -> bool {
         true
     }
 
     /// Returns the effective vanilla dispenser slot gate for living entities and mobs.
-    fn can_dispenser_equip_into_slot(&self, _slot: EquipmentSlot) -> bool {
+    #[must_use]
+    pub fn can_dispenser_equip_into_slot(&self, _slot: EquipmentSlot) -> bool {
         self.as_mob().is_none_or(|mob| mob.can_pick_up_loot())
     }
 
     /// Returns whether a dispenser may auto-equip this item onto this entity:
     /// alive, not a spectator, and the item is dispensable equipment for an
     /// open, usable slot this entity's type accepts.
-    fn can_equip_with_dispenser(&self, item_stack: &ItemStack) -> bool {
-        if !Entity::is_alive(self) || self.is_spectator() {
+    #[must_use]
+    pub fn can_equip_with_dispenser(&self, item_stack: &ItemStack) -> bool {
+        if !Entity::is_alive(self.entity()) || self.is_spectator() {
             return false;
         }
 
@@ -1763,7 +2131,8 @@ pub trait LivingEntity: Entity {
 
     /// Returns whether `item_stack` may be worn in `slot`, defaulting to
     /// holdable-in-main-hand items with no equippable component.
-    fn is_equippable_in_slot(&self, item_stack: &ItemStack, slot: EquipmentSlot) -> bool {
+    #[must_use]
+    pub fn is_equippable_in_slot(&self, item_stack: &ItemStack, slot: EquipmentSlot) -> bool {
         let Some(equippable) = item_stack.get_equippable() else {
             return slot == EquipmentSlot::MainHand && self.can_use_slot(EquipmentSlot::MainHand);
         };
@@ -1774,7 +2143,16 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns the equip sound Steel can currently resolve for this entity.
-    fn equip_sound(&self, slot: EquipmentSlot, stack: &ItemStack) -> Option<SoundEventRef> {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub fn equip_sound_default(
+        &self,
+        slot: EquipmentSlot,
+        stack: &ItemStack,
+    ) -> Option<SoundEventRef> {
         let equippable = stack.get_equippable()?;
         (slot == equippable.slot)
             .then(|| equippable.equip_sound.registry_ref())
@@ -1782,7 +2160,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Applies the sound portion of vanilla's equipment-change hook.
-    fn on_equip_item(&self, slot: EquipmentSlot, previous: &ItemStack, stack: &ItemStack) {
+    pub fn on_equip_item(&self, slot: EquipmentSlot, previous: &ItemStack, stack: &ItemStack) {
         if self.is_spectator()
             || self.is_first_tick()
             || ItemStack::is_same_item_same_components(previous, stack)
@@ -1802,7 +2180,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Runs vanilla's equippable `ItemStack.interactLivingEntity` branch.
-    fn interact_living_entity_with_equippable(
+    pub fn interact_living_entity_with_equippable_default(
         &self,
         player: &Player,
         hand: InteractionHand,
@@ -1820,7 +2198,7 @@ pub trait LivingEntity: Entity {
         }
 
         let slot = equippable.slot;
-        if !self.is_equippable_in_slot(&item_stack, slot) || !Entity::is_alive(self) {
+        if !self.is_equippable_in_slot(&item_stack, slot) || !Entity::is_alive(self.entity()) {
             return InteractionResult::Pass;
         }
 
@@ -1853,7 +2231,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Refreshes transient item attribute modifiers for one equipment slot.
-    fn refresh_equipment_attribute_modifiers(&self, slot: EquipmentSlot) {
+    pub fn refresh_equipment_attribute_modifiers(&self, slot: EquipmentSlot) {
         self.with_equipment_slot(slot, &mut |item_stack| {
             self.living_base()
                 .refresh_equipment_attribute_modifiers(slot, item_stack);
@@ -1861,7 +2239,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Detects and applies Vanilla living-equipment changes once per tick.
-    fn detect_equipment_updates(&self) {
+    pub fn detect_equipment_updates(&self) {
         let mut changes = self.living_base().collect_equipment_changes();
         if changes.is_empty() {
             return;
@@ -1909,26 +2287,37 @@ pub trait LivingEntity: Entity {
     }
 
     /// Packs non-empty living equipment slots for initial spawn pairing.
-    fn pack_living_equipment(&self) -> Vec<EquipmentSlotItem> {
+    #[must_use]
+    pub fn pack_living_equipment(&self) -> Vec<EquipmentSlotItem> {
         equipment_items_to_packet_items(self.living_base().equipment().lock().non_empty_items())
     }
 
     /// Drains dirty living equipment slots for tracker sync.
-    fn drain_dirty_living_equipment(&self) -> Vec<EquipmentSlotItem> {
+    #[must_use]
+    pub fn drain_dirty_living_equipment(&self) -> Vec<EquipmentSlotItem> {
         equipment_items_to_packet_items(self.living_base().drain_equipment_changes())
     }
 
     /// Returns whether equipment durability should be skipped for this entity.
-    fn has_infinite_materials(&self) -> bool {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn has_infinite_materials_default(&self) -> bool {
         false
     }
 
     /// Mirrors vanilla `LivingEntity.handleExtraItemsCreatedOnUse`,
     /// which is a no-op for non-player mobs.
-    fn handle_extra_items_created_on_use(&self, _extra: ItemStack) {}
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub fn handle_extra_items_created_on_use_default(&self, _extra: ItemStack) {}
 
     /// Called after an equipped item breaks.
-    fn on_equipped_item_broken(&self, _item: ItemRef, slot: EquipmentSlot) {
+    pub fn on_equipped_item_broken_default(&self, _item: ItemRef, slot: EquipmentSlot) {
         self.broadcast_entity_event(slot.into());
         self.refresh_equipment_attribute_modifiers(slot);
     }
@@ -1938,7 +2327,8 @@ pub trait LivingEntity: Entity {
     /// Vanilla keeps the entity-type freeze immunity on `Entity` and the equipment
     /// immunity on `LivingEntity`. Steel keeps this helper separate so concrete
     /// `Entity::can_freeze` implementations can delegate without downcasting.
-    fn default_living_can_freeze(&self) -> bool {
+    #[must_use]
+    pub fn default_living_can_freeze(&self) -> bool {
         for slot in EquipmentSlot::ALL {
             if !slot.is_armor() {
                 continue;
@@ -1960,7 +2350,8 @@ pub trait LivingEntity: Entity {
 
     /// Returns whether the block this entity is standing on is non-air,
     /// required for the powder-snow speed penalty to apply.
-    fn is_on_non_air_block_for_frost(&self) -> bool {
+    #[must_use]
+    pub fn is_on_non_air_block_for_frost_default(&self) -> bool {
         let Some(world) = self.level() else {
             return false;
         };
@@ -1972,7 +2363,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Removes the powder snow speed penalty modifier.
-    fn remove_frost(&self) {
+    pub fn remove_frost(&self) {
         self.attributes().lock().remove_modifier(
             vanilla_attributes::MOVEMENT_SPEED,
             &SPEED_MODIFIER_POWDER_SNOW_ID,
@@ -1980,7 +2371,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Applies the powder snow speed penalty modifier if the entity is frozen and can freeze.
-    fn try_add_frost(&self) {
+    pub fn try_add_frost(&self) {
         if !self.is_on_non_air_block_for_frost() || self.ticks_frozen() <= 0 {
             return;
         }
@@ -1999,7 +2390,7 @@ pub trait LivingEntity: Entity {
     /// Ticks freeze-related state each AI step: cools `ticks_frozen` when not
     /// in powder snow (or unable to freeze), then refreshes the powder-snow
     /// speed penalty.
-    fn tick_freezing(&self) {
+    pub fn tick_freezing(&self) {
         if !self.is_in_powder_snow() || !self.can_freeze() {
             self.set_ticks_frozen((self.ticks_frozen() - 2).max(0));
         }
@@ -2022,7 +2413,7 @@ pub trait LivingEntity: Entity {
     /// Runs vanilla `LivingEntity.tick`.
     ///
     /// The default `Entity::tick` dispatches living entities here.
-    fn tick_living_entity(&self, entity: &SharedEntity) {
+    pub fn tick_living_entity_default(&self, entity: &SharedEntity) {
         self.default_tick();
         self.living_base().decrement_invulnerable_time();
 
@@ -2034,14 +2425,14 @@ pub trait LivingEntity: Entity {
         self.detect_equipment_updates();
 
         if !self.is_removed() {
-            self.ai_step(entity);
+            let _movement = self.ai_step(entity);
         }
 
         self.tick_living_state();
     }
 
     /// Ticks living-entity counters after movement.
-    fn tick_living_state(&self) {
+    pub fn tick_living_state(&self) {
         if let Some(mob) = self.as_mob() {
             mob.tick_body_rotation_control();
         }
@@ -2052,7 +2443,12 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether the given item in the given slot allows elytra-style gliding.
-    fn can_glide_using(&self, item_stack: &ItemStack, slot: EquipmentSlot) -> bool {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub fn can_glide_using_default(&self, item_stack: &ItemStack, slot: EquipmentSlot) -> bool {
         let Some(equippable) = item_stack.get_equippable() else {
             return false;
         };
@@ -2061,7 +2457,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether the item in `slot` can be used for vanilla gliding.
-    fn can_glide_using_equipment_slot(&self, slot: EquipmentSlot) -> bool {
+    #[must_use]
+    pub fn can_glide_using_equipment_slot(&self, slot: EquipmentSlot) -> bool {
         let mut can_glide = false;
         self.with_equipment_slot(slot, &mut |item_stack| {
             can_glide = self.can_glide_using(item_stack, slot);
@@ -2071,7 +2468,7 @@ pub trait LivingEntity: Entity {
 
     /// Damages a random equipped item slot that's currently enabling this
     /// entity to glide, breaking it if durability runs out.
-    fn damage_random_glider(&self) {
+    pub fn damage_random_glider(&self) {
         let mut slots_with_gliders = Vec::new();
         for slot in EquipmentSlot::ALL {
             if self.can_glide_using_equipment_slot(slot) {
@@ -2101,7 +2498,8 @@ pub trait LivingEntity: Entity {
     /// Returns whether this entity meets the base conditions to glide: not
     /// grounded, not a passenger, not levitating, and wearing something that
     /// allows gliding.
-    fn default_can_glide(&self) -> bool {
+    #[must_use]
+    pub fn default_can_glide(&self) -> bool {
         !self.on_ground()
             && !self.is_passenger()
             && !self.has_mob_effect(vanilla_mob_effects::LEVITATION)
@@ -2111,17 +2509,19 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether the entity currently meets the conditions to glide with an elytra.
-    fn can_glide(&self) -> bool {
+    #[must_use]
+    pub fn can_glide_default(&self) -> bool {
         self.default_can_glide()
     }
 
     /// Puts the entity into the fall-flying (elytra gliding) state.
-    fn start_fall_flying(&self) {
+    pub fn start_fall_flying(&self) {
         self.set_fall_flying(true);
     }
 
     /// Attempts to start fall flying if the entity isn't already gliding, can glide, and isn't in water.
-    fn try_to_start_fall_flying(&self) -> bool {
+    #[must_use]
+    pub fn try_to_start_fall_flying(&self) -> bool {
         if !self.is_fall_flying() && self.can_glide() && !self.is_in_water() {
             self.start_fall_flying();
             return true;
@@ -2131,18 +2531,20 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns the last climbable block position this living entity touched.
-    fn last_climbable_pos(&self) -> Option<BlockPos> {
+    #[must_use]
+    pub fn last_climbable_pos(&self) -> Option<BlockPos> {
         self.living_base().last_climbable_pos()
     }
 
     /// Records the last climbable block position this living entity touched.
-    fn set_last_climbable_pos(&self, pos: BlockPos) {
+    pub fn set_last_climbable_pos(&self, pos: BlockPos) {
         self.living_base().set_last_climbable_pos(pos);
     }
 
     /// Returns whether this entity is currently touching a climbable block;
     /// always false for spectators.
-    fn default_living_on_climbable(&self) -> bool {
+    #[must_use]
+    pub fn default_living_on_climbable(&self) -> bool {
         if self.is_spectator() {
             return false;
         }
@@ -2170,74 +2572,81 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether vanilla living travel should skip friction damping.
-    fn should_discard_friction(&self) -> bool {
+    #[must_use]
+    pub fn should_discard_friction(&self) -> bool {
         self.living_base().should_discard_friction()
     }
 
     /// Sets whether vanilla living travel should skip friction damping.
-    fn set_discard_friction(&self, discard_friction: bool) {
+    pub fn set_discard_friction(&self, discard_friction: bool) {
         self.living_base().set_discard_friction(discard_friction);
     }
 
     /// Returns whether this living entity is currently applying jump input.
-    fn is_jumping(&self) -> bool {
+    #[must_use]
+    pub fn is_jumping(&self) -> bool {
         self.living_base().is_jumping()
     }
 
     /// Sets whether this living entity is currently applying jump input.
-    fn set_jumping(&self, jumping: bool) {
+    pub fn set_jumping(&self, jumping: bool) {
         self.living_base().set_jumping(jumping);
     }
 
     /// Returns vanilla living travel input.
-    fn travel_input(&self) -> LivingTravelInput {
+    #[must_use]
+    pub fn travel_input(&self) -> LivingTravelInput {
         self.living_base().travel_input()
     }
 
     /// Sets vanilla living travel input.
-    fn set_travel_input(&self, input: LivingTravelInput) {
+    pub fn set_travel_input(&self, input: LivingTravelInput) {
         self.living_base().set_travel_input(input);
     }
 
     /// Applies horizontal damping to the entity's stored travel input for this tick.
-    fn apply_input(&self) {
+    pub fn apply_input(&self) {
         self.living_base().dampen_travel_input();
     }
 
     /// Returns vanilla jump cooldown ticks.
-    fn no_jump_delay(&self) -> i32 {
+    #[must_use]
+    pub fn no_jump_delay(&self) -> i32 {
         self.living_base().no_jump_delay()
     }
 
     /// Sets vanilla jump cooldown ticks.
-    fn set_no_jump_delay(&self, ticks: i32) {
+    pub fn set_no_jump_delay(&self, ticks: i32) {
         self.living_base().set_no_jump_delay(ticks);
     }
 
     /// Decrements vanilla jump cooldown once per living AI step.
-    fn tick_no_jump_delay(&self) {
+    pub fn tick_no_jump_delay(&self) {
         self.living_base().tick_no_jump_delay();
     }
 
     /// returns the remaining hurt animation ticks
-    fn hurt_time(&self) -> i32 {
+    #[must_use]
+    pub fn hurt_time(&self) -> i32 {
         self.living_base().hurt_time()
     }
 
     /// Returns vanilla `LivingEntity.isImmobile()`.
     /// Returns whether this entity is immobile because it's dead or dying.
-    fn default_is_immobile(&self) -> bool {
+    #[must_use]
+    pub fn default_is_immobile(&self) -> bool {
         self.is_dead_or_dying()
     }
 
     /// Returns whether this entity is currently immobile.
-    fn is_immobile(&self) -> bool {
+    #[must_use]
+    pub fn is_immobile_default(&self) -> bool {
         self.default_is_immobile()
     }
 
     /// Zeroes out velocity components too small to matter, using a stricter
     /// horizontal threshold for players than other entities.
-    fn apply_living_velocity_thresholds(&self) {
+    pub fn apply_living_velocity_thresholds(&self) {
         let movement = self.velocity();
         let mut dx = movement.x;
         let mut dy = movement.y;
@@ -2265,17 +2674,23 @@ pub trait LivingEntity: Entity {
     }
 
     /// Server AI hook called from vanilla `LivingEntity.aiStep()`.
-    fn server_ai_step(&self, _entity: &SharedEntity) {}
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub fn server_ai_step_default(&self, _entity: &SharedEntity) {}
 
     /// Returns the jump-height bonus from the Jump Boost effect, scaling with amplifier.
-    fn get_jump_boost_power(&self) -> f32 {
+    #[must_use]
+    pub fn get_jump_boost_power(&self) -> f32 {
         self.mob_effect(vanilla_mob_effects::JUMP_BOOST)
             .map_or(0.0, |effect| 0.1 * (effect.amplifier() as f32 + 1.0))
     }
 
     /// Returns jump velocity from the jump-strength attribute, scaled by
     /// `multiplier`, the standing block's jump factor, and Jump Boost.
-    fn get_jump_power_with_multiplier(&self, multiplier: f32) -> f32 {
+    #[must_use]
+    pub fn get_jump_power_with_multiplier(&self, multiplier: f32) -> f32 {
         let jump_strength =
             self.attributes()
                 .lock()
@@ -2285,12 +2700,13 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns this entity's jump power at the default multiplier.
-    fn get_jump_power(&self) -> f32 {
+    #[must_use]
+    pub fn get_jump_power(&self) -> f32 {
         self.get_jump_power_with_multiplier(1.0)
     }
 
     /// Applies this entity's jump velocity, unless jump power is negligible.
-    fn default_jump_from_ground(&self) {
+    pub fn default_jump_from_ground(&self) {
         let jump_power = self.get_jump_power();
         if jump_power <= 1.0E-5 {
             return;
@@ -2318,23 +2734,23 @@ pub trait LivingEntity: Entity {
     }
 
     /// Applies the entity's jump velocity.
-    fn jump_from_ground(&self) {
+    pub fn jump_from_ground_default(&self) {
         self.default_jump_from_ground();
     }
 
     /// Applies downward velocity while submerged and not jumping out of a liquid.
-    fn go_down_in_water(&self) {
+    pub fn go_down_in_water(&self) {
         self.set_velocity(self.velocity() + DVec3::new(0.0, f64::from(-0.04_f32), 0.0));
     }
 
     /// Applies upward velocity to jump out of the given liquid.
-    fn jump_in_liquid(&self, _fluid_tag: &Identifier) {
+    pub fn jump_in_liquid(&self, _fluid_tag: &Identifier) {
         self.set_velocity(self.velocity() + DVec3::new(0.0, f64::from(0.04_f32), 0.0));
     }
 
     /// Handles jump input each AI step: jumps from the ground when clear of
     /// jump delay, or jumps within water/lava when only partially submerged.
-    fn handle_living_jump(&self) {
+    pub fn handle_living_jump(&self) {
         if !self.is_jumping() || !self.is_affected_by_fluids() {
             self.set_no_jump_delay(0);
             return;
@@ -2367,20 +2783,28 @@ pub trait LivingEntity: Entity {
     }
 
     /// Ticks side effects of a rider controlling this entity, such as steering-based input.
-    fn tick_ridden(&self, _controller: &Player, _ridden_input: DVec3) {}
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn tick_ridden_default(&self, _controller: &Player, _ridden_input: DVec3) {}
 
     /// Transforms the rider's raw input into this entity's movement input while ridden.
-    fn ridden_input(&self, _controller: &Player, self_input: DVec3) -> DVec3 {
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn ridden_input_default(&self, _controller: &Player, self_input: DVec3) -> DVec3 {
         self_input
     }
 
     /// Returns the movement speed to use while being ridden.
-    fn ridden_speed(&self, _controller: &Player) -> f32 {
+    pub fn ridden_speed(&self, _controller: &Player) -> f32 {
         self.get_speed()
     }
 
     /// Handles movement while this entity is being ridden and steered by a controlling player.
-    fn travel_ridden(
+    pub fn travel_ridden(
         &self,
         entity: &SharedEntity,
         controller: &Player,
@@ -2401,7 +2825,7 @@ pub trait LivingEntity: Entity {
     ///
     /// This covers the shared travel state Steel currently has; mob AI and
     /// equipment ticking are still separate follow-up work.
-    fn default_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+    pub fn default_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
         self.tick_no_jump_delay();
         if !self.can_simulate_movement() {
             self.set_velocity(self.velocity() * 0.98);
@@ -2436,7 +2860,7 @@ pub trait LivingEntity: Entity {
             f64::from(input.vertical()),
             f64::from(input.forward()),
         );
-        let result = if Entity::is_alive(self)
+        let result = if Entity::is_alive(self.entity())
             && let Some(controller_entity) = self.controlling_passenger()
             && let Some(controller) = controller_entity.as_player()
         {
@@ -2454,22 +2878,22 @@ pub trait LivingEntity: Entity {
     }
 
     /// Runs one AI-driven movement and effect tick for the entity.
-    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+    pub fn ai_step_default(&self, entity: &SharedEntity) -> Option<MoveResult> {
         self.default_ai_step(entity)
     }
 
     /// Pushes nearby colliding entities away from this one.
-    fn push_entities(&self) {
+    pub fn push_entities(&self) {
         EntityPush::push_entities(self);
     }
 
     /// Pushes against `entities` in the given order. The caller applies cramming damage first.
-    fn push_entities_in_order(&self, entities: &[SharedEntity]) {
+    pub fn push_entities_in_order(&self, entities: &[SharedEntity]) {
         EntityPush::push_entities_in_order(self.as_entity_event_source(), entities);
     }
 
     /// Applies vanilla max entity cramming damage from `LivingEntity.pushEntities()`.
-    fn apply_entity_cramming_damage(&self, world: &World, pushable_entities: &[SharedEntity]) {
+    pub fn apply_entity_cramming_damage(&self, world: &World, pushable_entities: &[SharedEntity]) {
         let max_cramming = world.get_game_rule(&MAX_ENTITY_CRAMMING);
 
         if max_cramming <= 0 || pushable_entities.len() <= (max_cramming - 1) as usize {
@@ -2497,31 +2921,40 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether this entity is suppressing sliding down a ladder (sneaking on one).
-    fn is_suppressing_sliding_down_ladder(&self) -> bool {
+    #[must_use]
+    pub fn is_suppressing_sliding_down_ladder(&self) -> bool {
         self.is_suppressing_bounce()
     }
 
     /// Returns a levitation velocity adjustment for `travelInAir`.
-    fn levitation_travel_y_delta(&self, movement_y: f64) -> Option<f64> {
+    #[must_use]
+    pub fn levitation_travel_y_delta(&self, movement_y: f64) -> Option<f64> {
         self.mob_effect(vanilla_mob_effects::LEVITATION)
             .map(|effect| (0.05 * f64::from(effect.amplifier() + 1) - movement_y) * 0.2)
     }
 
     /// Returns whether movement should use fluid physics: currently in water
     /// or lava, affected by fluids, and unable to stand on this fluid.
-    fn should_travel_in_fluid(&self, fluid_state: FluidState) -> bool {
+    #[must_use]
+    pub fn should_travel_in_fluid(&self, fluid_state: FluidState) -> bool {
         (self.is_in_water() || self.is_in_lava())
             && self.is_affected_by_fluids()
             && !self.can_stand_on_fluid(fluid_state)
     }
 
     /// Returns the water-movement slowdown multiplier.
-    fn get_water_slow_down(&self) -> f32 {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn get_water_slow_down_default(&self) -> f32 {
         0.8
     }
 
     /// Returns the water movement efficiency attribute used by fluid travel.
-    fn water_movement_efficiency(&self) -> f32 {
+    #[must_use]
+    pub fn water_movement_efficiency(&self) -> f32 {
         self.attributes()
             .lock()
             .get_value(vanilla_attributes::WATER_MOVEMENT_EFFICIENCY)
@@ -2529,13 +2962,15 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns whether dolphin's grace should apply to water travel.
-    fn has_dolphins_grace(&self) -> bool {
+    #[must_use]
+    pub fn has_dolphins_grace(&self) -> bool {
         self.has_mob_effect(vanilla_mob_effects::DOLPHINS_GRACE)
     }
 
     /// Returns airborne movement speed: scaled from this entity's speed when
     /// ridden by a player, otherwise a small constant.
-    fn get_flying_speed(&self) -> f32 {
+    #[must_use]
+    pub fn get_flying_speed_default(&self) -> f32 {
         if self
             .controlling_passenger()
             .is_some_and(|passenger| passenger.entity_type() == &vanilla_entities::PLAYER)
@@ -2548,7 +2983,8 @@ pub trait LivingEntity: Entity {
 
     /// Returns movement speed adjusted by ground friction; airborne entities
     /// use flying speed instead.
-    fn get_friction_influenced_speed(&self, block_friction: f32) -> f32 {
+    #[must_use]
+    pub fn get_friction_influenced_speed(&self, block_friction: f32) -> f32 {
         if self.on_ground() {
             self.get_speed() * (0.216_000_02 / (block_friction * block_friction * block_friction))
         } else {
@@ -2557,7 +2993,12 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns the vertical friction used by `travelInAir`.
-    fn air_travel_vertical_friction(&self, _horizontal_friction: f32) -> f32 {
+    #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn air_travel_vertical_friction_default(&self, _horizontal_friction: f32) -> f32 {
         // TODO: FlyingAnimal uses horizontal friction here once animal types exist.
         0.98
     }
@@ -2565,7 +3006,8 @@ pub trait LivingEntity: Entity {
     /// Clamps movement while on a climbable block: caps horizontal and
     /// downward speed, and resets fall distance; sneaking players holding on
     /// don't slide down non-scaffolding ladders.
-    fn handle_on_climbable(&self, movement: DVec3) -> DVec3 {
+    #[must_use]
+    pub fn handle_on_climbable(&self, movement: DVec3) -> DVec3 {
         if !self.on_climbable() {
             return movement;
         }
@@ -2592,7 +3034,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Applies gravity using vanilla living-entity effective gravity.
-    fn apply_living_travel_gravity(&self) {
+    pub fn apply_living_travel_gravity(&self) {
         let gravity = self.get_effective_gravity();
         if gravity != 0.0 {
             let mut velocity = self.velocity();
@@ -2602,7 +3044,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Applies friction-adjusted relative movement and returns the resulting velocity and move result.
-    fn handle_relative_friction_and_calculate_movement(
+    pub fn handle_relative_friction_and_calculate_movement(
         &self,
         entity: &SharedEntity,
         input: DVec3,
@@ -2615,7 +3057,7 @@ pub trait LivingEntity: Entity {
         if (result.horizontal_collision || self.is_jumping())
             && (self.on_climbable()
                 || self.was_in_powder_snow()
-                    && PowderSnowBlock::can_entity_walk_on_powder_snow(self))
+                    && PowderSnowBlock::can_entity_walk_on_powder_snow(self.entity()))
         {
             movement.y = 0.2;
         }
@@ -2624,7 +3066,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Handles movement, gravity, and air friction while the entity is airborne.
-    fn travel_in_air(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+    pub fn travel_in_air(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         let pos_below = self.block_pos_below_that_affects_movement()?;
         let block_friction = if self.on_ground() {
@@ -2656,7 +3098,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Adjusts vertical movement while falling through a fluid to smooth the fall speed.
-    fn get_fluid_falling_adjusted_movement(
+    #[must_use]
+    pub fn get_fluid_falling_adjusted_movement(
         &self,
         base_gravity: f64,
         is_falling: bool,
@@ -2679,7 +3122,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Gives the entity an upward boost when it collides horizontally while rising out of a fluid.
-    fn jump_out_of_fluid(&self, old_y: f64) {
+    pub fn jump_out_of_fluid(&self, old_y: f64) {
         if !self.horizontal_collision() {
             return;
         }
@@ -2696,7 +3139,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Applies buoyancy to keep a ridden entity afloat when it's tagged to float while ridden.
-    fn float_in_water_while_ridden(&self) {
+    pub fn float_in_water_while_ridden(&self) {
         if !REGISTRY
             .entity_types
             .is_in_tag(self.entity_type(), &EntityTypeTag::CAN_FLOAT_WHILE_RIDDEN)
@@ -2713,7 +3156,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Handles movement, drag, and buoyancy effects while the entity is swimming in water.
-    fn travel_in_water(
+    pub fn travel_in_water(
         &self,
         entity: &SharedEntity,
         input: DVec3,
@@ -2764,7 +3207,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Handles movement and drag effects while the entity is moving through lava.
-    fn travel_in_lava(
+    pub fn travel_in_lava(
         &self,
         entity: &SharedEntity,
         input: DVec3,
@@ -2800,7 +3243,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Dispatches fluid movement handling to the water or lava variant based on the current fluid.
-    fn travel_in_fluid(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+    pub fn travel_in_fluid(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         let is_falling = self.velocity().y <= 0.0;
         let old_y = self.position().y;
         let base_gravity = self.get_effective_gravity();
@@ -2814,7 +3257,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Mirrors the validation part of vanilla `LivingEntity.updateFallFlying()`.
-    fn update_fall_flying(&self) {
+    pub fn update_fall_flying(&self) {
         self.check_fall_distance_accumulation();
         if self.can_glide() {
             if let Some(free_fall_interval) =
@@ -2831,7 +3274,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Computes the next movement vector for elytra gliding based on look direction and lift.
-    fn update_fall_flying_movement(&self, mut movement: DVec3) -> DVec3 {
+    #[must_use]
+    pub fn update_fall_flying_movement(&self, mut movement: DVec3) -> DVec3 {
         let look_angle = self.look_angle();
         let pitch_radians = self.rotation().1.to_radians();
         let look_horizontal_length = horizontal_distance(look_angle);
@@ -2874,13 +3318,13 @@ pub trait LivingEntity: Entity {
     }
 
     /// Toggles fall flying off, ending the elytra gliding state.
-    fn stop_fall_flying(&self) {
+    pub fn stop_fall_flying(&self) {
         self.set_fall_flying(true);
         self.set_fall_flying(false);
     }
 
     /// Applies fly-into-wall damage when a horizontal collision occurs while gliding.
-    fn handle_fall_flying_collisions(
+    pub fn handle_fall_flying_collisions(
         &self,
         previous_horizontal_speed: f64,
         new_horizontal_speed: f64,
@@ -2905,7 +3349,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Handles movement, lift, and collision damage while the entity is gliding with an elytra.
-    fn travel_fall_flying(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+    pub fn travel_fall_flying(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         if self.on_climbable() {
             let result = self.travel_in_air(entity, input);
             self.stop_fall_flying();
@@ -2923,7 +3367,7 @@ pub trait LivingEntity: Entity {
 
     /// Dispatches movement to fluid, fall-flying, or air travel handling
     /// based on current state.
-    fn default_travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+    pub fn default_travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         let fluid_state = get_fluid_state(&world, self.block_position());
         if self.should_travel_in_fluid(fluid_state) {
@@ -2937,44 +3381,36 @@ pub trait LivingEntity: Entity {
     }
 
     /// Handles the entity's self-driven movement for the current tick based on its input.
-    fn travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+    pub fn travel_default(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         self.default_travel(entity, input)
     }
 
     /// Returns the bed position that makes this living entity sleeping.
-    fn sleeping_pos(&self) -> Option<BlockPos> {
+    #[must_use]
+    pub fn sleeping_pos(&self) -> Option<BlockPos> {
         self.living_base().sleeping_pos()
     }
 
     /// Sets the vanilla living-entity sleeping position.
-    fn set_sleeping_pos(&self, bed_position: BlockPos) {
+    pub fn set_sleeping_pos(&self, bed_position: BlockPos) {
         self.living_base().set_sleeping_pos(bed_position);
-        if let Some(entity_data) = self.living_synced_data() {
-            entity_data.set_sleeping_pos(bed_position);
-        }
+        self.with_synced(|data| data.sleeping_pos.set(Some(bed_position)));
     }
 
     /// Clears the vanilla living-entity sleeping position.
-    fn clear_sleeping_pos(&self) {
+    pub fn clear_sleeping_pos(&self) {
         self.living_base().clear_sleeping_pos();
-        if let Some(entity_data) = self.living_synced_data() {
-            entity_data.clear_sleeping_pos();
-        }
+        self.with_synced(|data| data.sleeping_pos.set(None));
     }
 
     /// Checks if the entity is sleeping.
-    fn is_sleeping(&self) -> bool {
+    #[must_use]
+    pub fn is_sleeping(&self) -> bool {
         self.sleeping_pos().is_some()
     }
 
-    /// Returns synchronized data specific to this living entity type, if
-    /// any; `None` by default.
-    fn living_synced_data(&self) -> Option<&dyn LivingEntitySyncedData> {
-        None
-    }
-
     /// Starts sleeping at the given bed position.
-    fn start_sleeping(&self, bed_position: BlockPos) -> Result<(), EntityMoveError> {
+    pub fn start_sleeping(&self, bed_position: BlockPos) -> Result<(), EntityMoveError> {
         let Some(world) = self.level() else {
             return Err(EntityMoveError::NotLive {
                 entity_id: self.id(),
@@ -3017,7 +3453,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Shared body for overrides that need vanilla `super.stopSleeping()`.
-    fn default_stop_sleeping(&self) {
+    pub fn default_stop_sleeping(&self) {
         if let Some(bed_position) = self.sleeping_pos()
             && let Some(world) = self.level()
         {
@@ -3071,38 +3507,40 @@ pub trait LivingEntity: Entity {
     }
 
     /// Stops the entity from sleeping.
-    fn stop_sleeping(&self) {
+    pub fn stop_sleeping_default(&self) {
         self.default_stop_sleeping();
     }
 
     /// Checks if the entity is sprinting.
-    fn is_sprinting(&self) -> bool {
+    #[must_use]
+    pub fn is_sprinting(&self) -> bool {
         self.living_base().is_sprinting()
     }
 
     /// Sets whether the entity is sprinting.
-    fn set_sprinting(&self, sprinting: bool) {
+    pub fn set_sprinting(&self, sprinting: bool) {
         self.set_shared_sprinting(sprinting);
         self.living_base().set_sprinting(sprinting);
     }
 
     /// Gets the entity's cached movement speed.
-    fn get_speed(&self) -> f32 {
+    #[must_use]
+    pub fn get_speed(&self) -> f32 {
         self.living_base().speed()
     }
 
     /// Sets the entity's cached movement speed.
-    fn set_speed(&self, speed: f32) {
+    pub fn set_speed(&self, speed: f32) {
         self.living_base().set_speed(speed);
     }
 
     /// Applies vanilla post-impulse movement validation grace.
-    fn apply_post_impulse_grace_time(&self, ticks: i32) {
+    pub fn apply_post_impulse_grace_time(&self, ticks: i32) {
         self.living_base().apply_post_impulse_grace_time(ticks);
     }
 
     /// Sets whether fall damage from the current knockback/impulse impact should be ignored.
-    fn set_ignore_fall_damage_from_current_impulse(
+    pub fn set_ignore_fall_damage_from_current_impulse(
         &self,
         ignore_fall_damage: bool,
         new_impulse_impact_pos: DVec3,
@@ -3116,38 +3554,41 @@ pub trait LivingEntity: Entity {
 
     /// Returns whether fall damage should currently be ignored due to a
     /// recent knockback/impulse impact.
-    fn is_ignoring_fall_damage_from_current_impulse(&self) -> bool {
+    #[must_use]
+    pub fn is_ignoring_fall_damage_from_current_impulse(&self) -> bool {
         self.living_base()
             .is_ignoring_fall_damage_from_current_impulse()
     }
 
     /// Returns the position of the most recent knockback/impulse impact, if still active.
-    fn current_impulse_impact_pos(&self) -> Option<DVec3> {
+    #[must_use]
+    pub fn current_impulse_impact_pos(&self) -> Option<DVec3> {
         self.living_base().current_impulse_impact_pos()
     }
 
     /// Attempts to reset the current impulse context.
-    fn try_reset_current_impulse_context(&self) {
+    pub fn try_reset_current_impulse_context(&self) {
         self.living_base().try_reset_current_impulse_context();
     }
 
     /// Resets the current impulse context.
-    fn reset_current_impulse_context(&self) {
+    pub fn reset_current_impulse_context(&self) {
         self.living_base().reset_current_impulse_context();
     }
 
     /// Returns whether movement validation is inside post-impulse grace.
-    fn is_in_post_impulse_grace_time(&self) -> bool {
+    #[must_use]
+    pub fn is_in_post_impulse_grace_time(&self) -> bool {
         self.living_base().is_in_post_impulse_grace_time()
     }
 
     /// Decrements post-impulse grace once per living-entity tick.
-    fn tick_post_impulse_grace_time(&self) {
+    pub fn tick_post_impulse_grace_time(&self) {
         self.living_base().tick_post_impulse_grace_time();
     }
 
     /// Drains dirty attributes and applies server-side effects.
-    fn refresh_dirty_attributes(&self) {
+    pub fn refresh_dirty_attributes(&self) {
         let dirty = self.attributes().lock().drain_dirty_updates();
         for attr in dirty {
             if attr.key == vanilla_attributes::MAX_HEALTH.key {
@@ -3173,7 +3614,14 @@ pub trait LivingEntity: Entity {
 
     /// Returns `true` and commits the move on success, or
     /// `false` and leaves the entity untouched on failure.
-    fn random_teleport(&self, world: &Arc<World>, x: f64, y: f64, z: f64, broadcast: bool) -> bool {
+    pub fn random_teleport(
+        &self,
+        world: &Arc<World>,
+        x: f64,
+        y: f64,
+        z: f64,
+        broadcast: bool,
+    ) -> bool {
         let Some(landing_y) = random_teleport_ground_y(world, x, y, z) else {
             return false;
         };
@@ -3226,8 +3674,8 @@ fn random_teleport_ground_y(world: &Arc<World>, x: f64, y: f64, z: f64) -> Optio
     None
 }
 
-fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
-    entity: &E,
+fn death_loot_items_with_rng<R: rand::Rng>(
+    entity: &Living<'_>,
     loot_table: LootTableRef,
     world: &World,
     source: &DamageSource,

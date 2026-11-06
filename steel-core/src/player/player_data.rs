@@ -2,6 +2,7 @@
 //!
 //! This module defines the data format for saving and loading player state.
 
+use crate::entity::LivingParts as _;
 use rustc_hash::FxHashSet;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::stat::Stat;
@@ -17,7 +18,7 @@ use super::{
 use crate::player::stats_counter::StatState;
 use crate::{
     chunk_saver::{ChunkStorage, PersistentEntity},
-    entity::{Entity, EntityFireFreezeState, LivingEntity},
+    entity::{Entity, EntityFireFreezeState},
     inventory::{
         container::Container,
         ender_chest::{ENDER_CHEST_SLOTS, PlayerEnderChestContainer},
@@ -261,7 +262,7 @@ impl PersistentPlayerData {
             is_in_powder_snow: fire_freeze.is_in_powder_snow(),
             was_in_powder_snow: fire_freeze.was_in_powder_snow(),
             has_visual_fire: fire_freeze.has_visual_fire(),
-            health: player.get_health(),
+            health: player.living().get_health(),
             game_mode: player.game_mode() as i32,
             prev_game_mode: player
                 .previous_game_mode()
@@ -356,7 +357,7 @@ impl Player {
         self.base()
             .set_fire_freeze_state(EntityFireFreezeState::new());
         self.sync_base_fire_freeze_entity_data();
-        self.set_health(self.get_max_health());
+        self.living().set_health(self.living().get_max_health());
         *self.abilities.lock() = Abilities::default();
         *self.inventory.lock() = PlayerInventory::new();
         *self.ender_chest_inventory.lock() = PlayerEnderChestContainer::new();
@@ -464,7 +465,7 @@ impl PersistentPlayerData {
         player.set_respawn_position(self.respawn_config.clone(), false);
 
         // Health
-        player.set_health(self.health);
+        player.living().set_health(self.health);
 
         // Game mode
         player.restore_game_modes(

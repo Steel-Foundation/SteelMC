@@ -1,7 +1,7 @@
 //! `HungerMobEffect` behavior.
 
 use super::MobEffectBehavior;
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::world::World;
 
 /// Hunger mob effect behavior.
@@ -15,7 +15,7 @@ impl MobEffectBehavior for HungerBehavior {
         true
     }
 
-    fn apply_effect_tick(&self, _world: &World, user: &dyn LivingEntity, amplifier: i32) -> bool {
+    fn apply_effect_tick(&self, _world: &World, user: &Living<'_>, amplifier: i32) -> bool {
         if let Some(player) = user.as_player() {
             player.cause_food_exhaustion(EXHAUSTION_PER_LEVEL * (amplifier + 1) as f32);
         }

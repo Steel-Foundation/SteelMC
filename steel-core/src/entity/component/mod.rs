@@ -19,6 +19,7 @@
 pub mod definition;
 pub mod entries;
 pub mod pipeline;
+pub(crate) mod props;
 
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;

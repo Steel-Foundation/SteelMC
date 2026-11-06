@@ -8,7 +8,7 @@ fn generic_living_hurt_applies_health_damage() {
 
     assert!(entity.hurt(test_world(), &source, 4.0));
 
-    assert_f32_close(entity.get_health(), 16.0);
+    assert_f32_close(entity.living().get_health(), 16.0);
 }
 
 #[test]
@@ -16,12 +16,14 @@ fn generic_living_hurt_ignores_fire_damage_with_fire_resistance() {
     init_vanilla_registry();
     init_behaviors();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
-    entity.set_mob_effect(vanilla_mob_effects::FIRE_RESISTANCE, 0);
+    entity
+        .living()
+        .set_mob_effect(vanilla_mob_effects::FIRE_RESISTANCE, 0);
     let source = DamageSource::environment(&vanilla_damage_types::LAVA);
 
     assert!(!entity.hurt(test_world(), &source, 4.0));
 
-    assert_f32_close(entity.get_health(), 20.0);
+    assert_f32_close(entity.living().get_health(), 20.0);
 }
 
 #[test]
@@ -31,7 +33,7 @@ fn generic_living_hurt_processes_default_death_once() {
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
     assert!(entity.hurt(test_world(), &source, 4.0));
-    assert_f32_close(entity.get_health(), 0.0);
+    assert_f32_close(entity.living().get_health(), 0.0);
     assert_eq!(entity.pose(), EntityPose::Dying);
     assert!(!entity.hurt(test_world(), &source, 1.0));
 }
@@ -41,17 +43,17 @@ fn generic_living_hurt_applies_armor_and_absorption() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     {
-        let mut attributes = entity.attributes().lock();
+        let mut attributes = entity.living().attributes().lock();
         attributes.set_base_value(vanilla_attributes::ARMOR, 20.0);
         attributes.set_base_value(vanilla_attributes::MAX_ABSORPTION, 3.0);
     }
-    entity.set_absorption_amount(3.0);
+    entity.living().set_absorption_amount(3.0);
     let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
 
     assert!(entity.hurt(test_world(), &source, 10.0));
 
-    assert_f32_close(entity.get_health(), 19.0);
-    assert_f32_close(entity.get_absorption_amount(), 0.0);
+    assert_f32_close(entity.living().get_health(), 19.0);
+    assert_f32_close(entity.living().get_absorption_amount(), 0.0);
 }
 
 #[test]
@@ -59,12 +61,14 @@ fn generic_living_hurt_applies_resistance() {
     init_vanilla_registry();
     init_behaviors();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
-    entity.set_mob_effect(vanilla_mob_effects::RESISTANCE, 0);
+    entity
+        .living()
+        .set_mob_effect(vanilla_mob_effects::RESISTANCE, 0);
     let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
 
     assert!(entity.hurt(test_world(), &source, 10.0));
 
-    assert_f32_close(entity.get_health(), 12.0);
+    assert_f32_close(entity.living().get_health(), 12.0);
 }
 
 #[test]
@@ -84,6 +88,7 @@ fn damage_reductions_use_the_retained_attacker_after_removal() {
     let mut mace = ItemStack::new(&vanilla_items::MACE);
     mace.set_enchantments(&[(Identifier::vanilla_static("breach"), 4)], false);
     attacker
+        .living()
         .living_base()
         .equipment()
         .lock()
@@ -96,6 +101,7 @@ fn damage_reductions_use_the_retained_attacker_after_removal() {
 
     let victim = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, attached_world);
     victim
+        .living()
         .attributes()
         .lock()
         .set_base_value(vanilla_attributes::ARMOR, 20.0);
@@ -107,7 +113,7 @@ fn damage_reductions_use_the_retained_attacker_after_removal() {
     assert!(removed.is_some());
     attacker.set_removed(RemovalReason::Discarded);
     let damage_applied = victim.hurt(explicit_world, &source, 10.0);
-    let health = victim.get_health();
+    let health = victim.living().get_health();
 
     assert!(damage_applied);
     assert_f32_close(health, 10.0);
@@ -125,7 +131,10 @@ fn generic_living_hurt_applies_damage_protection_enchantments() {
     assert!(entity.hurt(test_world(), &source, 10.0));
 
     let expected_health = 20.0_f32 - 10.0_f32 * (1.0 - 4.0_f32 / 25.0);
-    assert_eq!(entity.get_health().to_bits(), expected_health.to_bits());
+    assert_eq!(
+        entity.living().get_health().to_bits(),
+        expected_health.to_bits()
+    );
 }
 
 #[test]
@@ -140,9 +149,11 @@ fn generic_living_default_does_not_damage_armor_equipment() {
 
     assert!(entity.hurt(test_world(), &source, 10.0));
 
-    entity.with_equipment_slot(EquipmentSlot::Chest, &mut |item| {
-        assert_eq!(item.get_damage_value(), 0);
-    });
+    entity
+        .living()
+        .with_equipment_slot(EquipmentSlot::Chest, &mut |item| {
+            assert_eq!(item.get_damage_value(), 0);
+        });
 }
 
 #[test]
@@ -182,7 +193,7 @@ fn head_yaw_uses_living_head_rotation_only() {
     init_vanilla_registry();
     let living = LivingFluidTestEntity::new(0.0, 0.0, true);
     living.set_rotation((35.0, 0.0));
-    living.set_y_head_rot(120.0);
+    living.living().set_y_head_rot(120.0);
 
     assert_f32_close(Entity::head_yaw(&living), 120.0);
 
@@ -196,7 +207,7 @@ fn living_equipment_attribute_modifiers_refresh_for_slot() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let (base_armor, base_toughness) = {
-        let attributes = entity.attributes().lock();
+        let attributes = entity.living().attributes().lock();
         (
             attributes.required_value(vanilla_attributes::ARMOR),
             attributes.required_value(vanilla_attributes::ARMOR_TOUGHNESS),
@@ -207,10 +218,12 @@ fn living_equipment_attribute_modifiers_refresh_for_slot() {
         EquipmentSlot::Head,
         ItemStack::new(&vanilla_items::DIAMOND_HELMET),
     );
-    LivingEntity::refresh_equipment_attribute_modifiers(&entity, EquipmentSlot::Head);
+    entity
+        .living()
+        .refresh_equipment_attribute_modifiers(EquipmentSlot::Head);
 
     {
-        let attributes = entity.attributes().lock();
+        let attributes = entity.living().attributes().lock();
         assert_eq!(
             attributes
                 .required_value(vanilla_attributes::ARMOR)
@@ -226,9 +239,11 @@ fn living_equipment_attribute_modifiers_refresh_for_slot() {
     }
 
     entity.equip(EquipmentSlot::Head, ItemStack::empty());
-    LivingEntity::refresh_equipment_attribute_modifiers(&entity, EquipmentSlot::Head);
+    entity
+        .living()
+        .refresh_equipment_attribute_modifiers(EquipmentSlot::Head);
 
-    let attributes = entity.attributes().lock();
+    let attributes = entity.living().attributes().lock();
     assert_eq!(
         attributes
             .required_value(vanilla_attributes::ARMOR)
@@ -265,6 +280,7 @@ fn generic_living_hurt_scales_knockback_by_resistance() {
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     entity.set_on_ground(true);
     entity
+        .living()
         .attributes()
         .lock()
         .set_base_value(vanilla_attributes::KNOCKBACK_RESISTANCE, 0.5);
@@ -288,14 +304,17 @@ fn full_damage_starts_the_vanilla_hurt_animation_timer() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
-    assert_eq!(entity.hurt_time(), 0);
+    assert_eq!(entity.living().hurt_time(), 0);
 
     assert!(entity.hurt(test_world(), &source, 4.0));
 
     // Vanilla `LivingEntity.hurtServer` sets `hurtTime = hurtDuration = 10` only on
     // the branch that applies the full damage amount.
-    assert_eq!(entity.hurt_time(), HURT_DURATION_TICKS);
-    assert_eq!(entity.living_base().hurt_duration(), HURT_DURATION_TICKS);
+    assert_eq!(entity.living().hurt_time(), HURT_DURATION_TICKS);
+    assert_eq!(
+        entity.living().living_base().hurt_duration(),
+        HURT_DURATION_TICKS
+    );
 }
 
 #[test]
@@ -308,12 +327,16 @@ fn hurt_time_counts_down_in_the_living_base_tick() {
     // Players override `tick_living_entity` but still run the living base tick,
     // like vanilla `LivingEntity.baseTick`.
     for _ in 0..HURT_DURATION_TICKS {
-        entity.base_tick_living_entity();
+        entity.living().base_tick_living_entity();
     }
 
-    assert_eq!(entity.hurt_time(), 0);
-    entity.base_tick_living_entity();
-    assert_eq!(entity.hurt_time(), 0, "the counter must not go negative");
+    assert_eq!(entity.living().hurt_time(), 0);
+    entity.living().base_tick_living_entity();
+    assert_eq!(
+        entity.living().hurt_time(),
+        0,
+        "the counter must not go negative"
+    );
 }
 
 #[test]
@@ -323,15 +346,15 @@ fn partial_damage_within_the_cooldown_leaves_hurt_time_alone() {
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
     assert!(entity.hurt(test_world(), &source, 4.0));
     for _ in 0..4 {
-        entity.living_base().decrement_hurt_time();
+        entity.living().living_base().decrement_hurt_time();
     }
-    let remaining = entity.hurt_time();
+    let remaining = entity.living().hurt_time();
 
     // A larger hit inside the invulnerability window takes the partial-damage
     // branch, which vanilla does not re-animate.
     assert!(entity.hurt(test_world(), &source, 6.0));
 
-    assert_eq!(entity.hurt_time(), remaining);
+    assert_eq!(entity.living().hurt_time(), remaining);
 }
 
 #[test]
@@ -339,18 +362,18 @@ fn death_side_effects_run_only_once() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world()).with_health(3.0);
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
-    assert!(!entity.living_base().is_death_processed());
+    assert!(!entity.living().living_base().is_death_processed());
 
     assert!(entity.hurt(test_world(), &source, 4.0));
 
-    assert!(entity.living_base().is_death_processed());
+    assert!(entity.living().living_base().is_death_processed());
     assert_eq!(entity.pose(), EntityPose::Dying);
 
     // `die` claims the death atomically, so a second call cannot re-run the side
     // effects. Whether a subclass hook keeps the entity alive for an animation is
     // that subclass's own contract, tested with it.
     entity.set_pose(EntityPose::Standing);
-    entity.die(&source);
+    entity.living().die(&source);
     assert_eq!(entity.pose(), EntityPose::Standing);
 }
 
@@ -360,24 +383,28 @@ fn lethal_hurts_consume_main_hand_totem_then_off_hand_totem() {
     init_behaviors();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world()).with_health(3.0);
     for slot in [EquipmentSlot::MainHand, EquipmentSlot::OffHand] {
-        entity.with_equipment_slot_mut(slot, &mut |stack| {
+        entity.living().with_equipment_slot_mut(slot, &mut |stack| {
             *stack = ItemStack::new(&vanilla_items::TOTEM_OF_UNDYING);
         });
     }
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
     assert!(entity.hurt(test_world(), &source, 4.0));
-    assert_f32_close(entity.get_health(), 1.0);
-    assert!(!entity.has_item_in_slot(EquipmentSlot::MainHand));
-    assert!(entity.has_item_in_slot(EquipmentSlot::OffHand));
-    assert!(entity.has_mob_effect(vanilla_mob_effects::REGENERATION));
+    assert_f32_close(entity.living().get_health(), 1.0);
+    assert!(!entity.living().has_item_in_slot(EquipmentSlot::MainHand));
+    assert!(entity.living().has_item_in_slot(EquipmentSlot::OffHand));
+    assert!(
+        entity
+            .living()
+            .has_mob_effect(vanilla_mob_effects::REGENERATION)
+    );
 
     for _ in 0..10 {
-        entity.living_base().decrement_invulnerable_time();
+        entity.living().living_base().decrement_invulnerable_time();
     }
-    let absorbed_and_lethal = entity.get_absorption_amount() + 4.0;
+    let absorbed_and_lethal = entity.living().get_absorption_amount() + 4.0;
     assert!(entity.hurt(test_world(), &source, absorbed_and_lethal));
-    assert_f32_close(entity.get_health(), 1.0);
-    assert!(!entity.has_item_in_slot(EquipmentSlot::OffHand));
+    assert_f32_close(entity.living().get_health(), 1.0);
+    assert!(!entity.living().has_item_in_slot(EquipmentSlot::OffHand));
     assert_ne!(entity.pose(), EntityPose::Dying);
 }

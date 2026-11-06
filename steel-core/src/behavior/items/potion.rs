@@ -48,7 +48,7 @@ impl ItemBehavior for PotionItem {
             stack.get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
         let duration_scale = stack.get_or_default(vanilla_components::POTION_DURATION_SCALE, 1.0);
         apply_potion_contents(&contents, world, user, duration_scale);
-        finish_consuming_stack(stack, world, user.living())
+        finish_consuming_stack(stack, world, &user.living())
     }
 
     fn get_default_instance(&self, item: ItemRef) -> ItemStack {

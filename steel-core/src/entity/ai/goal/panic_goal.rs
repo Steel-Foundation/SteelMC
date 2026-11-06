@@ -120,7 +120,9 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_damage_types, vanilla_entities};
 
     use super::*;
-    use crate::entity::LivingEntity;
+
+    use crate::entity::LivingParts as _;
+
     use crate::entity::MobParts as _;
     use crate::entity::damage::DamageSource;
     use crate::entity::entities::ChickenEntity;
@@ -146,14 +148,14 @@ mod tests {
 
         assert!(!PanicGoal::should_panic(&pig.mob()));
 
-        assert!(pig.hurt_server(
+        assert!(pig.living().hurt_server(
             test_world(),
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
             1.0
         ));
         assert!(!PanicGoal::should_panic(&pig.mob()));
 
-        assert!(pig.hurt_server(
+        assert!(pig.living().hurt_server(
             test_world(),
             &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK),
             2.0

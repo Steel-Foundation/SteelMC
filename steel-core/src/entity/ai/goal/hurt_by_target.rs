@@ -130,8 +130,11 @@ impl Goal for HurtByTargetGoal {
             return false;
         }
 
-        self.target_goal
-            .can_attack(mob, hurt_by_mob.as_living_entity(), &self.targeting)
+        self.target_goal.can_attack(
+            mob,
+            hurt_by_mob.as_living_entity().as_ref(),
+            &self.targeting,
+        )
     }
 
     fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
@@ -170,10 +173,12 @@ mod tests {
 
     use super::*;
 
+    use crate::entity::LivingParts as _;
+
     use crate::behavior::init_behaviors;
+    use crate::entity::Entity;
     use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
-    use crate::entity::{Entity, LivingEntity};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
     use steel_utils::ChunkPos;
 
@@ -214,7 +219,7 @@ mod tests {
         }
 
         hunter.advance_tick_count();
-        hunter.set_last_hurt_by_mob(Some(&attacker_entity));
+        hunter.living().set_last_hurt_by_mob(Some(&attacker_entity));
         let mut goal = HurtByTargetGoal::new().set_alert_others([]);
 
         assert!(goal.can_use(&hunter.mob()));

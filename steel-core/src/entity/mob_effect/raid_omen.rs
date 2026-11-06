@@ -1,7 +1,7 @@
 //! `RaidOmenMobEffect` behavior.
 
 use super::MobEffectBehavior;
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::world::World;
 
 /// Raid omen mob effect behavior.
@@ -16,7 +16,7 @@ impl MobEffectBehavior for RaidOmenBehavior {
         tick_count == 1
     }
 
-    fn apply_effect_tick(&self, _world: &World, _user: &dyn LivingEntity, _amplifier: i32) -> bool {
+    fn apply_effect_tick(&self, _world: &World, _user: &Living<'_>, _amplifier: i32) -> bool {
         true
     }
 }

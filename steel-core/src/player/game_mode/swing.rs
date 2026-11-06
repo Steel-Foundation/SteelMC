@@ -1,4 +1,5 @@
-use super::{InteractionHand, InteractionResult, LivingEntity, Player, SwingAnimation};
+use super::{InteractionHand, InteractionResult, Player, SwingAnimation};
+use crate::entity::LivingParts as _;
 
 impl Player {
     /// sends the animation to tracking players and returns whether a swing started
@@ -8,7 +9,7 @@ impl Player {
         animation: SwingAnimation,
         update_self: bool,
     ) -> bool {
-        LivingEntity::swing(self, hand, animation, update_self)
+        self.living().swing(hand, animation, update_self)
     }
 
     /// resets attack strength only when the requested swing starts

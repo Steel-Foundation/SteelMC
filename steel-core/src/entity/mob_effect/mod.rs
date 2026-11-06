@@ -31,7 +31,7 @@ pub use weaving::WeavingBehavior;
 pub use wind_charged::WindChargedBehavior;
 pub use wither::WitherBehavior;
 
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::entity::SharedEntity;
 use crate::world::World;
 
@@ -52,12 +52,12 @@ pub trait MobEffectBehavior: Send + Sync {
 
     /// Applies one tick of the effect. Returns whether the effect remains
     /// active.
-    fn apply_effect_tick(&self, _world: &World, _user: &dyn LivingEntity, _amplifier: i32) -> bool {
+    fn apply_effect_tick(&self, _world: &World, _user: &Living<'_>, _amplifier: i32) -> bool {
         true
     }
 
     /// Called when the effect starts.
-    fn on_effect_started(&self, _user: &dyn LivingEntity, _amplifier: i32) {}
+    fn on_effect_started(&self, _user: &Living<'_>, _amplifier: i32) {}
 }
 
 /// The instantaneous-only half of a [`MobEffectBehavior`] that also extends
@@ -71,7 +71,7 @@ pub trait InstantaneousMobEffect: MobEffectBehavior {
     fn apply_instantaneous(
         &self,
         world: &World,
-        user: &dyn LivingEntity,
+        user: &Living<'_>,
         amplifier: i32,
         direct_entity: Option<&SharedEntity>,
         causing_entity: Option<&SharedEntity>,

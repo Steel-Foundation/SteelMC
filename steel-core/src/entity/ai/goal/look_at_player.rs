@@ -1,15 +1,16 @@
+use crate::entity::LivingParts as _;
 use glam::DVec3;
 
 use super::reduced_tick_delay;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{LivingEntity, Mob, SharedEntity};
+use crate::entity::{Living, Mob, SharedEntity};
 use crate::world::World;
 
 const DEFAULT_PROBABILITY: f32 = 0.02;
 
-type LookAtEntitySelector = Box<dyn Fn(&dyn LivingEntity, &World) -> bool + Send + Sync>;
+type LookAtEntitySelector = Box<dyn Fn(&Living<'_>, &World) -> bool + Send + Sync>;
 
 enum LookAtTargetType {
     Player,
@@ -56,7 +57,7 @@ impl LookAtPlayerGoal {
     pub(crate) fn new_for_living_entities(
         look_distance: f64,
         probability: f32,
-        selector: impl Fn(&dyn LivingEntity, &World) -> bool + Send + Sync + 'static,
+        selector: impl Fn(&Living<'_>, &World) -> bool + Send + Sync + 'static,
     ) -> Self {
         Self::new_for_living_entities_with_controls(
             look_distance,
@@ -92,7 +93,7 @@ impl LookAtPlayerGoal {
         probability: f32,
         only_horizontal: bool,
         controls: GoalControls,
-        selector: impl Fn(&dyn LivingEntity, &World) -> bool + Send + Sync + 'static,
+        selector: impl Fn(&Living<'_>, &World) -> bool + Send + Sync + 'static,
     ) -> Self {
         Self {
             look_at: None,
@@ -127,9 +128,11 @@ impl Goal for LookAtPlayerGoal {
             LookAtTargetType::Player => world
                 .nearest_player(origin, self.look_distance, |player| {
                     !mob.has_indirect_passenger(player)
-                        && self
-                            .look_at_context
-                            .test(world.as_ref(), Some(mob.living()), player)
+                        && self.look_at_context.test(
+                            world.as_ref(),
+                            Some(&mob.living()),
+                            &player.living(),
+                        )
                 })
                 .map(|player| -> SharedEntity { player }),
             LookAtTargetType::LivingEntity(selector) => {
@@ -138,10 +141,12 @@ impl Goal for LookAtPlayerGoal {
                         .inflate_xyz(self.look_distance, 3.0, self.look_distance);
                 world.nearest_entity_in_aabb_matching(&search_box, origin, |entity| {
                     entity.as_living_entity().is_some_and(|living| {
-                        selector(living, world.as_ref())
-                            && self
-                                .look_at_context
-                                .test(world.as_ref(), Some(mob.living()), living)
+                        selector(&living, world.as_ref())
+                            && self.look_at_context.test(
+                                world.as_ref(),
+                                Some(&mob.living()),
+                                &living,
+                            )
                     })
                 })
             }
@@ -202,6 +207,7 @@ mod tests {
     use std::sync::Weak;
 
     use super::*;
+
     use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
     use glam::DVec3;

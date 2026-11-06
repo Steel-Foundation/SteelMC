@@ -150,7 +150,7 @@ fn fall_flying_movement_applies_vanilla_gravity_lift_and_drag() {
     entity.set_rotation((0.0, 0.0));
 
     assert_vec3_close(
-        entity.update_fall_flying_movement(DVec3::ZERO),
+        entity.living().update_fall_flying_movement(DVec3::ZERO),
         DVec3::new(
             0.0,
             -0.018 * f64::from(0.98_f32),
@@ -165,7 +165,9 @@ fn fall_flying_movement_converts_upward_pitch_to_lift() {
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_rotation((0.0, -45.0));
 
-    let movement = entity.update_fall_flying_movement(DVec3::new(0.0, -0.2, 0.4));
+    let movement = entity
+        .living()
+        .update_fall_flying_movement(DVec3::new(0.0, -0.2, 0.4));
 
     assert!(movement.y > -0.2);
     assert!(movement.z > 0.0);
@@ -220,11 +222,13 @@ fn jump_boost_power_uses_active_effect_amplifier() {
     init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
-    assert!(entity.get_jump_boost_power().abs() < f32::EPSILON);
+    assert!(entity.living().get_jump_boost_power().abs() < f32::EPSILON);
 
-    entity.set_mob_effect(vanilla_mob_effects::JUMP_BOOST, 2);
+    entity
+        .living()
+        .set_mob_effect(vanilla_mob_effects::JUMP_BOOST, 2);
 
-    assert!((entity.get_jump_boost_power() - 0.3).abs() < f32::EPSILON);
+    assert!((entity.living().get_jump_boost_power() - 0.3).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -233,11 +237,21 @@ fn levitation_travel_uses_active_effect_amplifier() {
     init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
-    assert!(entity.levitation_travel_y_delta(-0.2).is_none());
+    assert!(entity.living().levitation_travel_y_delta(-0.2).is_none());
 
-    entity.set_mob_effect(vanilla_mob_effects::LEVITATION, 1);
+    entity
+        .living()
+        .set_mob_effect(vanilla_mob_effects::LEVITATION, 1);
 
-    assert!((entity.levitation_travel_y_delta(-0.2).unwrap_or(0.0) - 0.06).abs() < f64::EPSILON);
+    assert!(
+        (entity
+            .living()
+            .levitation_travel_y_delta(-0.2)
+            .unwrap_or(0.0)
+            - 0.06)
+            .abs()
+            < f64::EPSILON
+    );
 }
 
 #[test]
@@ -245,14 +259,16 @@ fn slow_falling_caps_effective_gravity_only_while_falling() {
     init_vanilla_registry();
     init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    entity.set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
+    entity
+        .living()
+        .set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
     entity.set_velocity(DVec3::new(0.0, -0.1, 0.0));
 
-    assert!((entity.get_effective_gravity() - 0.01).abs() < f64::EPSILON);
+    assert!((entity.living().get_effective_gravity() - 0.01).abs() < f64::EPSILON);
 
     entity.set_velocity(DVec3::new(0.0, 0.1, 0.0));
 
-    assert!((entity.get_effective_gravity() - entity.get_gravity()).abs() < f64::EPSILON);
+    assert!((entity.living().get_effective_gravity() - entity.get_gravity()).abs() < f64::EPSILON);
 }
 
 #[test]

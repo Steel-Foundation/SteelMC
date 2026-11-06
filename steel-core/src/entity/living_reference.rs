@@ -1,10 +1,10 @@
-use crate::entity::{LivingEntity, SharedEntity};
+use crate::entity::{Living, SharedEntity};
 
 /// A living entity capability tied to the same shared allocation used for attribution.
 #[derive(Clone, Copy)]
 pub struct LivingEntityRef<'a> {
     entity: &'a SharedEntity,
-    living: &'a dyn LivingEntity,
+    living: Living<'a>,
 }
 
 impl<'a> LivingEntityRef<'a> {
@@ -25,7 +25,7 @@ impl<'a> LivingEntityRef<'a> {
 
     /// The living capability of this allocation.
     #[must_use]
-    pub const fn living(self) -> &'a dyn LivingEntity {
+    pub const fn living(self) -> Living<'a> {
         self.living
     }
 }

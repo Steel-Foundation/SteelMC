@@ -1,4 +1,5 @@
 //! This module contains the implementation of the world's entity-related methods.
+use crate::entity::LivingParts as _;
 use std::{ptr, sync::Arc};
 
 use steel_protocol::packets::game::{CGameEvent, GameEventType};
@@ -7,8 +8,8 @@ use steel_utils::ChunkPos;
 
 use crate::{
     entity::{
-        AddEntityError, Entity, EntityOwnership, LivingEntity, NullEntityCallback,
-        PlayerEntityCallback, RemovalReason, SharedEntity,
+        AddEntityError, Entity, EntityOwnership, NullEntityCallback, PlayerEntityCallback,
+        RemovalReason, SharedEntity,
     },
     player::connection::NetworkConnection,
     player::player_data::PersistentPlayerData,
@@ -224,7 +225,7 @@ impl World {
             return (player, domain, player_data);
         };
         let domain = self.domain().to_owned();
-        if player.is_sleeping() {
+        if player.living().is_sleeping() {
             player.stop_sleep_in_bed(true, false);
         }
         let player_data = PersistentPlayerData::from_player(&player);
@@ -269,7 +270,7 @@ impl World {
         if !self.contains_player(player) {
             return false;
         }
-        if player.is_sleeping() {
+        if player.living().is_sleeping() {
             player.stop_sleep_in_bed(true, false);
         }
 

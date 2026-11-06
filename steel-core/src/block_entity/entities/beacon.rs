@@ -5,6 +5,7 @@
 //! supporting pyramid is re-checked and the configured status effects are applied to nearby
 //! players while the beam is unobstructed.
 
+use crate::entity::LivingParts as _;
 use std::{
     mem,
     str::FromStr as _,
@@ -31,7 +32,7 @@ use crate::behavior::BLOCK_BEHAVIORS;
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::chunk::heightmap::HeightmapType;
 use crate::chunk::light::MAX_LIGHT_LEVEL;
-use crate::entity::{LivingEntity as _, MobEffectInstance};
+use crate::entity::MobEffectInstance;
 use crate::player::Player;
 use crate::world::World;
 
@@ -305,7 +306,7 @@ impl BeaconBlockEntity {
             let Some(player) = entity.downcast_ref::<Player>() else {
                 continue;
             };
-            player.add_mob_effect(
+            player.living().add_mob_effect(
                 MobEffectInstance::with_duration(primary, duration, base_amplifier)
                     .with_ambient(true)
                     .with_visible(true),
@@ -314,7 +315,7 @@ impl BeaconBlockEntity {
             if let Some(secondary) =
                 secondary.filter(|s| levels >= MAX_LEVELS && s.key != primary.key)
             {
-                player.add_mob_effect(
+                player.living().add_mob_effect(
                     MobEffectInstance::with_duration(secondary, duration, 0)
                         .with_ambient(true)
                         .with_visible(true),

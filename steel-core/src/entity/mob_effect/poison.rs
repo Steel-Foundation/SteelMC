@@ -3,7 +3,7 @@
 use steel_registry::vanilla_damage_types;
 
 use super::MobEffectBehavior;
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::entity::damage::DamageSource;
 use crate::world::World;
 
@@ -19,7 +19,7 @@ impl MobEffectBehavior for PoisonBehavior {
         interval <= 0 || tick_count % interval == 0
     }
 
-    fn apply_effect_tick(&self, world: &World, user: &dyn LivingEntity, _amplifier: i32) -> bool {
+    fn apply_effect_tick(&self, world: &World, user: &Living<'_>, _amplifier: i32) -> bool {
         if user.get_health() > 1.0 {
             user.hurt(
                 world,

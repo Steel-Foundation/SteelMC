@@ -7,6 +7,7 @@ mod kind;
 pub mod kinds;
 mod layout;
 
+use crate::entity::LivingParts as _;
 use crate::player::player_inventory::Prediction;
 use std::sync::Arc;
 
@@ -34,7 +35,6 @@ use steel_utils::{Downcast as _, types::GameType};
 use crate::inventory::container::CraftingContainer;
 use crate::inventory::menu::kinds::InventoryKind;
 use crate::{
-    entity::LivingEntity,
     inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef},
     inventory::slots::{ArmorSlot, Slot},
     player::{Player, PlayerConnection},
@@ -390,7 +390,7 @@ impl Menu {
         armor_before: Vec<(EquipmentSlot, ItemStack)>,
     ) {
         for ((slot, previous), (_, current)) in armor_before.into_iter().zip(self.armor_items()) {
-            player.on_equip_item(slot, &previous, &current);
+            player.living().on_equip_item(slot, &previous, &current);
         }
     }
 

@@ -1,5 +1,9 @@
+use crate::entity::LivingParts as _;
+use crate::entity::LivingProps;
 use crate::entity::MobParts as _;
+use crate::test_support::synced_with_health;
 use std::sync::{Arc, Weak};
+use steel_registry::vanilla_entity_data::LivingEntityData;
 
 use glam::DVec3;
 use steel_registry::entity_type::EntityTypeRef;
@@ -31,9 +35,7 @@ use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::leash::{LEASH_ELASTIC_DISTANCE, LEASH_SNAP_DISTANCE, Leashable};
 use crate::entity::mob::pathfinder::LEASH_CLOSE_RANGE_WANTED_DISTANCE;
 use crate::entity::mob::{Mob, MobBase};
-use crate::entity::{
-    Entity, EntityBase, LivingEntity, LivingEntityBase, SharedEntity, next_entity_id,
-};
+use crate::entity::{Entity, EntityBase, LivingEntityBase, SharedEntity, next_entity_id};
 use crate::entity::{EntitySyncedData, MobProps, mob};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::ResetReason;
@@ -130,7 +132,6 @@ struct DespawnTestMob {
     living_base: LivingEntityBase,
     mob_base: MobBase,
     entity_data: SyncMutex<MobEntityData>,
-    health: SyncMutex<f32>,
     nearest_player_distance_sqr: Option<f64>,
     remove_when_far_away: bool,
     controlling_passenger: SyncMutex<Option<SharedEntity>>,
@@ -175,11 +176,13 @@ impl DespawnTestMob {
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, Weak::new()),
             entity_type,
-            living_base: LivingEntityBase::new(entity_type),
+            living_base: LivingEntityBase::new(entity_type, &DespawnTestMob::LIVING),
             mob_base: MobBase::new(&DespawnTestMob::MOB),
-            entity_data: SyncMutex::new(MobEntityData::new()),
+            entity_data: SyncMutex::new(synced_with_health(
+                MobEntityData::new(),
+                INITIAL_TEST_HEALTH,
+            )),
             can_be_leashed: SyncMutex::new(true),
-            health: SyncMutex::new(INITIAL_TEST_HEALTH),
             nearest_player_distance_sqr,
             remove_when_far_away,
             controlling_passenger: SyncMutex::new(None),
@@ -198,11 +201,10 @@ impl DespawnTestMob {
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, Arc::downgrade(world)),
             entity_type,
-            living_base: LivingEntityBase::new(entity_type),
+            living_base: LivingEntityBase::new(entity_type, &HiddenTarget::LIVING),
             mob_base: MobBase::new(&DespawnTestMob::MOB),
             entity_data: SyncMutex::new(MobEntityData::new()),
             can_be_leashed: SyncMutex::new(true),
-            health: SyncMutex::new(INITIAL_TEST_HEALTH),
             nearest_player_distance_sqr: None,
             remove_when_far_away: false,
             controlling_passenger: SyncMutex::new(None),
@@ -253,7 +255,11 @@ impl DespawnTestMob {
 
 impl Entity for DespawnTestMob {
     fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-        (key == MobBase::TYPE_KEY).then_some(&self.mob_base as &dyn ErasedType)
+        match key {
+            MobBase::TYPE_KEY => Some(&self.mob_base),
+            LivingEntityBase::TYPE_KEY => Some(&self.living_base),
+            _ => None,
+        }
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
@@ -273,28 +279,26 @@ impl Entity for DespawnTestMob {
     }
 
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        LivingEntity::hurt_server(self, world, source, amount)
+        self.living().hurt_server(world, source, amount)
     }
 }
 
-impl LivingEntity for DespawnTestMob {
-    fn living_base(&self) -> &LivingEntityBase {
+impl DespawnTestMob {
+    const LIVING: LivingProps<Self> = LivingProps {
+        ..LivingProps::new()
+    };
+}
+
+impl Has<LivingEntityBase> for DespawnTestMob {
+    fn component(&self) -> &LivingEntityBase {
         &self.living_base
-    }
-
-    fn get_health(&self) -> f32 {
-        *self.health.lock()
-    }
-
-    fn set_health(&self, health: f32) {
-        *self.health.lock() = health;
     }
 }
 
 struct HiddenTarget {
     base: EntityBase,
     living_base: LivingEntityBase,
-    health: SyncMutex<f32>,
+    entity_data: SyncMutex<LivingEntityData>,
 }
 
 impl HiddenTarget {
@@ -306,8 +310,11 @@ impl HiddenTarget {
                 vanilla_entities::PIG.dimensions,
                 Weak::new(),
             ),
-            living_base: LivingEntityBase::new(&vanilla_entities::PIG),
-            health: SyncMutex::new(INITIAL_TEST_HEALTH),
+            living_base: LivingEntityBase::new(&vanilla_entities::PIG, &HiddenTarget::LIVING),
+            entity_data: SyncMutex::new(synced_with_health(
+                LivingEntityData::new(),
+                INITIAL_TEST_HEALTH,
+            )),
         })
     }
 }
@@ -315,6 +322,14 @@ impl HiddenTarget {
 crate::entity::impl_test_downcast_type!(HiddenTarget);
 
 impl Entity for HiddenTarget {
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
+    }
+
+    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+        (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -324,21 +339,24 @@ impl Entity for HiddenTarget {
     }
 }
 
-impl LivingEntity for HiddenTarget {
-    fn living_base(&self) -> &LivingEntityBase {
-        &self.living_base
-    }
+impl HiddenTarget {
+    const LIVING: LivingProps<Self> = LivingProps {
+        can_be_seen_as_enemy: Self::living_can_be_seen_as_enemy,
+        ..LivingProps::new()
+    };
 
-    fn get_health(&self) -> f32 {
-        *self.health.lock()
-    }
-
-    fn set_health(&self, health: f32) {
-        *self.health.lock() = health;
-    }
-
-    fn can_be_seen_as_enemy(&self) -> bool {
+    #[expect(
+        clippy::unused_self,
+        reason = "kept as a method of the view for callers; the body does not need the entity"
+    )]
+    fn living_can_be_seen_as_enemy(&self) -> bool {
         false
+    }
+}
+
+impl Has<LivingEntityBase> for HiddenTarget {
+    fn component(&self) -> &LivingEntityBase {
+        &self.living_base
     }
 }
 
@@ -407,10 +425,10 @@ fn mob_server_ai_step_increments_no_action_time() {
     let mob = Arc::new(DespawnTestMob::new(None, false));
     let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
 
-    mob.set_no_action_time(12);
+    mob.living().set_no_action_time(12);
     mob.mob().mob_server_ai_step(&mob_entity);
 
-    assert_eq!(mob.no_action_time(), 13);
+    assert_eq!(mob.living().no_action_time(), 13);
 }
 
 #[test]
@@ -571,8 +589,11 @@ fn melee_attack_range_uses_vanilla_default_reach() {
     let close_target = DespawnTestMob::with_position(2, DVec3::new(1.7, 0.0, 0.0), None, false);
     let far_target = DespawnTestMob::with_position(3, DVec3::new(1.8, 0.0, 0.0), None, false);
 
-    assert!(mob.mob().is_within_melee_attack_range(&close_target));
-    assert!(!mob.mob().is_within_melee_attack_range(&far_target));
+    assert!(
+        mob.mob()
+            .is_within_melee_attack_range(&close_target.living())
+    );
+    assert!(!mob.mob().is_within_melee_attack_range(&far_target.living()));
 }
 
 #[test]
@@ -585,13 +606,13 @@ fn melee_attack_range_uses_vehicle_expanded_attack_box() {
     ));
     let target = DespawnTestMob::with_position(2, DVec3::new(1.1, 0.0, 0.0), None, false);
 
-    assert!(!mob.mob().is_within_melee_attack_range(&target));
+    assert!(!mob.mob().is_within_melee_attack_range(&target.living()));
 
     let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let vehicle: SharedEntity = Arc::new(MobControlVehicleEntity::new(3, &vanilla_entities::PIG));
     EntityBase::restore_passenger_relationship(&vehicle, &mob_entity);
 
-    assert!(mob.mob().is_within_melee_attack_range(&target));
+    assert!(mob.mob().is_within_melee_attack_range(&target.living()));
 }
 
 #[test]
@@ -621,8 +642,8 @@ fn mob_can_attack_excludes_ghasts() {
         false,
     );
 
-    assert!(LivingEntity::can_attack(&mob, &ghast));
-    assert!(!Mob::can_attack(&mob.mob(), &ghast));
+    assert!(mob.living().can_attack(&ghast.living()));
+    assert!(!Mob::can_attack(&mob.mob(), &ghast.living()));
 }
 
 #[test]
@@ -650,7 +671,7 @@ fn mob_hurt_sound_resets_ambient_sound_time() {
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
     mob.mob().mob_base().set_ambient_sound_time(12);
-    LivingEntity::play_hurt_sound(&mob, &source);
+    mob.living().play_hurt_sound(&source);
 
     assert_eq!(mob.mob().mob_base().ambient_sound_time(), -80);
 }
@@ -668,7 +689,8 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
         false,
     ));
     let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
-    mob.attributes()
+    mob.living()
+        .attributes()
         .lock()
         .set_base_value(vanilla_attributes::ATTACK_DAMAGE, 4.0);
     let target = Arc::new(DespawnTestMob::with_position(
@@ -685,8 +707,9 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
             .do_hurt_target(&mob_entity, test_world(), &target_entity)
     );
 
-    assert_eq!(target.get_health().to_bits(), 6.0_f32.to_bits());
+    assert_eq!(target.living().get_health().to_bits(), 6.0_f32.to_bits());
     let stored_target = mob
+        .living()
         .last_hurt_mob()
         .expect("successful mob attack should record target");
     assert!(Arc::ptr_eq(&stored_target, &target_entity));
@@ -706,7 +729,7 @@ fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
     ));
     let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     {
-        let mut attributes = mob.attributes().lock();
+        let mut attributes = mob.living().attributes().lock();
         attributes.set_base_value(vanilla_attributes::ATTACK_DAMAGE, 4.0);
         attributes.set_base_value(vanilla_attributes::ATTACK_KNOCKBACK, 2.0);
     }
@@ -735,8 +758,8 @@ fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
 fn mob_look_control_rotates_head_yaw_without_turning_body_yaw() {
     let mob = DespawnTestMob::new(None, false);
     mob.set_rotation((0.0, 0.0));
-    mob.set_y_body_rot(0.0);
-    mob.set_y_head_rot(0.0);
+    mob.living().set_y_body_rot(0.0);
+    mob.living().set_y_head_rot(0.0);
     let position = mob.position();
     mob.mob()
         .mob_base()
@@ -752,22 +775,22 @@ fn mob_look_control_rotates_head_yaw_without_turning_body_yaw() {
     Mob::tick_look_control(&mob.mob());
 
     assert_eq!(mob.rotation(), (0.0, 0.0));
-    assert_eq!(mob.y_body_rot().to_bits(), 0.0_f32.to_bits());
-    assert_eq!(mob.y_head_rot().to_bits(), (-10.0_f32).to_bits());
+    assert_eq!(mob.living().y_body_rot().to_bits(), 0.0_f32.to_bits());
+    assert_eq!(mob.living().y_head_rot().to_bits(), (-10.0_f32).to_bits());
 }
 
 #[test]
 fn mob_look_control_returns_head_yaw_toward_body_when_idle() {
     let mob = DespawnTestMob::new(None, false);
     mob.set_rotation((0.0, 20.0));
-    mob.set_y_body_rot(90.0);
-    mob.set_y_head_rot(0.0);
+    mob.living().set_y_body_rot(90.0);
+    mob.living().set_y_head_rot(0.0);
 
     Mob::tick_look_control(&mob.mob());
 
     assert_eq!(mob.rotation(), (0.0, 0.0));
-    assert_eq!(mob.y_body_rot().to_bits(), 90.0_f32.to_bits());
-    assert_eq!(mob.y_head_rot().to_bits(), 10.0_f32.to_bits());
+    assert_eq!(mob.living().y_body_rot().to_bits(), 90.0_f32.to_bits());
+    assert_eq!(mob.living().y_head_rot().to_bits(), 10.0_f32.to_bits());
 }
 
 #[test]
@@ -776,13 +799,13 @@ fn mob_body_rotation_control_uses_tick_position_delta() {
     mob.set_old_position(DVec3::ZERO);
     mob.base.set_position_local(DVec3::new(1.0, 0.0, 0.0));
     mob.set_rotation((90.0, 0.0));
-    mob.set_y_body_rot(0.0);
-    mob.set_y_head_rot(200.0);
+    mob.living().set_y_body_rot(0.0);
+    mob.living().set_y_head_rot(200.0);
 
     Mob::tick_body_rotation_control(&mob.mob());
 
-    assert_eq!(mob.y_body_rot().to_bits(), 90.0_f32.to_bits());
-    assert_eq!(mob.y_head_rot().to_bits(), 165.0_f32.to_bits());
+    assert_eq!(mob.living().y_body_rot().to_bits(), 90.0_f32.to_bits());
+    assert_eq!(mob.living().y_head_rot().to_bits(), 165.0_f32.to_bits());
 }
 
 #[test]
@@ -1028,11 +1051,11 @@ fn mob_that_cannot_be_leashed_refuses_a_lead() {
 fn mob_despawn_resets_no_action_time_near_player() {
     let mob = DespawnTestMob::new(Some(31.0 * 31.0), false);
 
-    mob.set_no_action_time(42);
+    mob.living().set_no_action_time(42);
     mob.mob()
         .check_mob_despawn_with(mob.nearest_player_distance_sqr);
 
-    assert_eq!(mob.no_action_time(), 0);
+    assert_eq!(mob.living().no_action_time(), 0);
     assert!(!mob.is_removed());
 }
 
@@ -1050,12 +1073,12 @@ fn mob_despawn_discards_far_removable_mob() {
 fn mob_persistence_resets_no_action_time_and_blocks_removal() {
     let mob = DespawnTestMob::new(Some(129.0 * 129.0), true);
 
-    mob.set_no_action_time(42);
+    mob.living().set_no_action_time(42);
     mob.mob().set_persistence_required();
     mob.mob()
         .check_mob_despawn_with(mob.nearest_player_distance_sqr);
 
-    assert_eq!(mob.no_action_time(), 0);
+    assert_eq!(mob.living().no_action_time(), 0);
     assert!(!mob.is_removed());
 }
 
@@ -1116,9 +1139,10 @@ fn looting_collects_nearby_item_into_main_hand() {
         "the picked-up item entity should be discarded"
     );
     let mut held_is_stone = false;
-    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
-        held_is_stone = item_stack.is(&vanilla_items::STONE);
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+            held_is_stone = item_stack.is(&vanilla_items::STONE);
+        });
     assert!(
         held_is_stone,
         "the mob should now hold the picked-up item in its main hand"
@@ -1181,9 +1205,10 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
         "a NoAI mob should still pick up loot through aiStep"
     );
     let mut held_is_stone = false;
-    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
-        held_is_stone = item_stack.is(&vanilla_items::STONE);
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+            held_is_stone = item_stack.is(&vanilla_items::STONE);
+        });
     assert!(
         held_is_stone,
         "the NoAI mob should now hold the picked-up item in its main hand"
@@ -1231,7 +1256,7 @@ fn looting_skips_when_mob_cannot_pick_up_loot() {
         "the item should remain when the mob cannot pick up loot"
     );
     assert!(
-        !mob.has_item_in_slot(EquipmentSlot::MainHand),
+        !mob.living().has_item_in_slot(EquipmentSlot::MainHand),
         "the mob should not have grabbed anything"
     );
 }
@@ -1240,7 +1265,7 @@ fn looting_skips_when_mob_cannot_pick_up_loot() {
 fn pick_up_item_leaves_an_occupied_main_hand_untouched() {
     init_vanilla_registry();
     let mob = DespawnTestMob::new(None, false);
-    mob.living_base().equipment().lock().set(
+    mob.living().living_base().equipment().lock().set(
         EquipmentSlot::MainHand,
         ItemStack::new(&vanilla_items::WOODEN_SPEAR),
     );
@@ -1261,9 +1286,10 @@ fn pick_up_item_leaves_an_occupied_main_hand_untouched() {
         "the item should be left alone when the main hand is full"
     );
     let mut still_holding_spear = false;
-    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
-        still_holding_spear = item_stack.is(&vanilla_items::WOODEN_SPEAR);
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+            still_holding_spear = item_stack.is(&vanilla_items::WOODEN_SPEAR);
+        });
     assert!(
         still_holding_spear,
         "an existing main-hand item must not be replaced"
@@ -1283,15 +1309,16 @@ fn equip_routes_armor_to_its_armor_slot() {
         "the helmet should be reported as equipped"
     );
     let mut head_is_helmet = false;
-    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
-        head_is_helmet = item_stack.is(&vanilla_items::IRON_HELMET);
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+            head_is_helmet = item_stack.is(&vanilla_items::IRON_HELMET);
+        });
     assert!(
         head_is_helmet,
         "an equippable helmet should route to the head slot, not the main hand"
     );
     assert!(
-        !mob.has_item_in_slot(EquipmentSlot::MainHand),
+        !mob.living().has_item_in_slot(EquipmentSlot::MainHand),
         "the main hand should stay empty"
     );
 }
@@ -1316,7 +1343,7 @@ fn equip_replaces_worse_armor_and_drops_the_old_piece() {
 
     // Wear a leather helmet and force it to always drop, so the swap is
     // deterministic rather than riding on the drop-chance roll.
-    mob.living_base().equipment().lock().set(
+    mob.living().living_base().equipment().lock().set(
         EquipmentSlot::Head,
         ItemStack::new(&vanilla_items::LEATHER_HELMET),
     );
@@ -1330,9 +1357,10 @@ fn equip_replaces_worse_armor_and_drops_the_old_piece() {
         "the stronger helmet should be equipped"
     );
     let mut head_is_diamond = false;
-    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
-        head_is_diamond = item_stack.is(&vanilla_items::DIAMOND_HELMET);
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+            head_is_diamond = item_stack.is(&vanilla_items::DIAMOND_HELMET);
+        });
     assert!(head_is_diamond, "the head slot should now hold diamond");
 
     let dropped = world
@@ -1356,7 +1384,7 @@ fn equip_carries_worse_armor_in_a_free_hand() {
     // hand rather than being ignored.
     init_vanilla_registry();
     let mob = DespawnTestMob::new(None, false);
-    mob.living_base().equipment().lock().set(
+    mob.living().living_base().equipment().lock().set(
         EquipmentSlot::Head,
         ItemStack::new(&vanilla_items::DIAMOND_HELMET),
     );
@@ -1369,17 +1397,19 @@ fn equip_carries_worse_armor_in_a_free_hand() {
         "the worse helmet should still be taken into the free hand"
     );
     let mut head_is_diamond = false;
-    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
-        head_is_diamond = item_stack.is(&vanilla_items::DIAMOND_HELMET);
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+            head_is_diamond = item_stack.is(&vanilla_items::DIAMOND_HELMET);
+        });
     assert!(
         head_is_diamond,
         "the worn diamond helmet must not be swapped out"
     );
     let mut hand_is_leather = false;
-    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
-        hand_is_leather = item_stack.is(&vanilla_items::LEATHER_HELMET);
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+            hand_is_leather = item_stack.is(&vanilla_items::LEATHER_HELMET);
+        });
     assert!(
         hand_is_leather,
         "the leather helmet should be carried in the main hand"
@@ -1390,11 +1420,11 @@ fn equip_carries_worse_armor_in_a_free_hand() {
 fn equip_rejects_worse_armor_when_the_hands_are_full() {
     init_vanilla_registry();
     let mob = DespawnTestMob::new(None, false);
-    mob.living_base().equipment().lock().set(
+    mob.living().living_base().equipment().lock().set(
         EquipmentSlot::Head,
         ItemStack::new(&vanilla_items::DIAMOND_HELMET),
     );
-    mob.living_base().equipment().lock().set(
+    mob.living().living_base().equipment().lock().set(
         EquipmentSlot::MainHand,
         ItemStack::new(&vanilla_items::STONE),
     );
@@ -1407,14 +1437,16 @@ fn equip_rejects_worse_armor_when_the_hands_are_full() {
         "worse armor with no free hand should not be taken"
     );
     let mut head_is_diamond = false;
-    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
-        head_is_diamond = item_stack.is(&vanilla_items::DIAMOND_HELMET);
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+            head_is_diamond = item_stack.is(&vanilla_items::DIAMOND_HELMET);
+        });
     assert!(head_is_diamond, "the worn diamond helmet must be untouched");
     let mut hand_is_stone = false;
-    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
-        hand_is_stone = item_stack.is(&vanilla_items::STONE);
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+            hand_is_stone = item_stack.is(&vanilla_items::STONE);
+        });
     assert!(hand_is_stone, "the occupied main hand must be untouched");
 }
 
@@ -1424,12 +1456,13 @@ fn equip_respects_prevent_armor_change_on_worn_gear() {
     let mob = DespawnTestMob::new(None, false);
     let mut bound_helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
     bound_helmet.set_enchantments(&[(Identifier::vanilla_static("binding_curse"), 1)], false);
-    mob.living_base()
+    mob.living()
+        .living_base()
         .equipment()
         .lock()
         .set(EquipmentSlot::Head, bound_helmet);
     // Block the main-hand fallback so we test the armor slot in isolation.
-    mob.living_base().equipment().lock().set(
+    mob.living().living_base().equipment().lock().set(
         EquipmentSlot::MainHand,
         ItemStack::new(&vanilla_items::STONE),
     );
@@ -1442,9 +1475,10 @@ fn equip_respects_prevent_armor_change_on_worn_gear() {
         "a curse-of-binding helmet must not be swapped out even for stronger armor"
     );
     let mut head_is_diamond = false;
-    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
-        head_is_diamond = item_stack.is(&vanilla_items::DIAMOND_HELMET);
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+            head_is_diamond = item_stack.is(&vanilla_items::DIAMOND_HELMET);
+        });
     assert!(head_is_diamond, "the bound helmet must stay on");
 }
 
@@ -1496,9 +1530,10 @@ fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
         "the source stack should shrink by the single equipped helmet"
     );
     let mut head_is_helmet = false;
-    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
-        head_is_helmet = item_stack.is(&vanilla_items::IRON_HELMET) && item_stack.count() == 1;
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+            head_is_helmet = item_stack.is(&vanilla_items::IRON_HELMET) && item_stack.count() == 1;
+        });
     assert!(
         head_is_helmet,
         "the mob should be wearing exactly one of the helmets"
@@ -1512,7 +1547,8 @@ fn equip_keeps_a_preferred_weapon_over_a_stronger_one() {
     init_vanilla_registry();
     let mob = DespawnTestMob::new(None, false);
     mob.set_preferred_weapon_type(ItemTag::SKELETON_PREFERRED_WEAPONS);
-    mob.living_base()
+    mob.living()
+        .living_base()
         .equipment()
         .lock()
         .set(EquipmentSlot::MainHand, ItemStack::new(&vanilla_items::BOW));
@@ -1525,9 +1561,10 @@ fn equip_keeps_a_preferred_weapon_over_a_stronger_one() {
         "a stronger sword should not displace the preferred bow"
     );
     let mut hand_is_bow = false;
-    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
-        hand_is_bow = item_stack.is(&vanilla_items::BOW);
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+            hand_is_bow = item_stack.is(&vanilla_items::BOW);
+        });
     assert!(hand_is_bow, "the bow must stay in the main hand");
 }
 
@@ -1538,7 +1575,7 @@ fn equip_takes_a_preferred_weapon_over_a_held_non_preferred_one() {
     init_vanilla_registry();
     let mob = DespawnTestMob::new(None, false);
     mob.set_preferred_weapon_type(ItemTag::SKELETON_PREFERRED_WEAPONS);
-    mob.living_base().equipment().lock().set(
+    mob.living().living_base().equipment().lock().set(
         EquipmentSlot::MainHand,
         ItemStack::new(&vanilla_items::STONE_SWORD),
     );
@@ -1550,9 +1587,10 @@ fn equip_takes_a_preferred_weapon_over_a_held_non_preferred_one() {
         "the preferred bow should replace the held sword"
     );
     let mut hand_is_bow = false;
-    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
-        hand_is_bow = item_stack.is(&vanilla_items::BOW);
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+            hand_is_bow = item_stack.is(&vanilla_items::BOW);
+        });
     assert!(hand_is_bow, "the bow should now be held");
 }
 
@@ -1649,7 +1687,8 @@ fn daylight_burning_damages_a_protecting_helmet_without_igniting() {
         "an iron helmet must be damageable for the sun-protection test"
     );
     helmet.set_damage_value(helmet.get_max_damage() - 1);
-    mob.living_base()
+    mob.living()
+        .living_base()
         .equipment()
         .lock()
         .set(EquipmentSlot::Head, helmet);
@@ -1661,18 +1700,20 @@ fn daylight_burning_damages_a_protecting_helmet_without_igniting() {
             "a mob wearing sun protection must never be ignited by daylight"
         );
         let mut head_is_empty = false;
-        mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
-            head_is_empty = item_stack.is_empty();
-        });
+        mob.living()
+            .with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+                head_is_empty = item_stack.is_empty();
+            });
         if head_is_empty {
             break;
         }
     }
 
     let mut head_is_empty = false;
-    mob.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
-        head_is_empty = item_stack.is_empty();
-    });
+    mob.living()
+        .with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+            head_is_empty = item_stack.is_empty();
+        });
     assert!(
         head_is_empty,
         "the burnt-out helmet should break and be unequipped"

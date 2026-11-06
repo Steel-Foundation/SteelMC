@@ -1,3 +1,4 @@
+use crate::entity::LivingParts as _;
 use std::{
     ptr,
     sync::{
@@ -8,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity, next_entity_id},
+    entity::{Entity, RemovalReason, entities::ItemEntity, next_entity_id},
     inventory::{
         click::{Click, ClickOutcome, DragKind, MouseButton, QuickCraft},
         container::{Container, SimpleContainer},
@@ -1323,7 +1324,7 @@ fn dead_player_container_click_only_resynchronizes() {
         .inventory
         .lock()
         .set_item(0, ItemStack::new(&vanilla_items::STONE));
-    player.set_health(0.0);
+    player.living().set_health(0.0);
 
     player.handle_container_click(SContainerClick {
         container_id: 0,
@@ -1467,7 +1468,7 @@ fn closing_menu_while_dead_does_not_return_items_to_inventory() {
         builder.drain([transient_slots]);
         builder.build(BasicKind {})
     });
-    player.set_health(0.0);
+    player.living().set_health(0.0);
 
     player.do_close_container();
 

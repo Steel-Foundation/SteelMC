@@ -1,5 +1,6 @@
 //! Item behavior trait and registry.
 
+use crate::entity::LivingParts as _;
 use crate::player::player_inventory::Prediction;
 use std::sync::Arc;
 
@@ -23,7 +24,7 @@ use crate::behavior::{InteractionResult, InventoryTickContext, UseItemContext, U
 use crate::block_entity::entities::{SignBlockEntity, SignText};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity, LivingEntityRef, SharedEntity};
+use crate::entity::{Entity, Living, LivingEntityRef, SharedEntity};
 use crate::player::{Player, player_inventory::EquipmentSwapResult};
 use crate::world::World;
 
@@ -104,7 +105,8 @@ pub trait ItemBehavior: Send + Sync {
                 context.player.start_using_item(context.hand);
             } else {
                 let stack = context.inv.with_item(|item| item.clone());
-                let result = finish_consuming_stack(&stack, context.world, context.player.as_ref());
+                let result =
+                    finish_consuming_stack(&stack, context.world, &context.player.living());
                 context.inv.with_item(|item| *item = result);
             }
             return InteractionResult::Consume;
@@ -137,6 +139,7 @@ pub trait ItemBehavior: Send + Sync {
                 }
                 context
                     .player
+                    .living()
                     .on_equip_item(slot, &ItemStack::empty(), &equipped);
                 InteractionResult::Success
             }
@@ -160,7 +163,7 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Returns how many ticks this item can be held in active use before it
     /// finishes automatically.
-    fn get_use_duration(&self, stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+    fn get_use_duration(&self, stack: &ItemStack, _user: &Living<'_>) -> i32 {
         if let Some(consumable) = stack.get(CONSUMABLE) {
             consumable.consume_ticks()
         } else if stack.has(BLOCKS_ATTACKS) || stack.has(KINETIC_WEAPON) {
@@ -181,7 +184,7 @@ pub trait ItemBehavior: Send + Sync {
         if let Some(consumable) = stack.get(CONSUMABLE)
             && should_emit_consume_particles_and_sounds(consumable, ticks_remaining)
         {
-            emit_consume_particles_and_sounds(consumable, user.living());
+            emit_consume_particles_and_sounds(consumable, &user.living());
         }
     }
 
@@ -192,7 +195,7 @@ pub trait ItemBehavior: Send + Sync {
         &self,
         _stack: &mut ItemStack,
         _world: &Arc<World>,
-        _user: &dyn LivingEntity,
+        _user: &Living<'_>,
         _time_left: i32,
     ) -> bool {
         false
@@ -210,7 +213,7 @@ pub trait ItemBehavior: Send + Sync {
         world: &Arc<World>,
         user: LivingEntityRef<'_>,
     ) -> ItemStack {
-        finish_consuming_stack(stack, world, user.living())
+        finish_consuming_stack(stack, world, &user.living())
     }
 
     /// Called when this item is used to interact with a living entity
@@ -219,7 +222,7 @@ pub trait ItemBehavior: Send + Sync {
         &self,
         _stack: &mut ItemStack,
         _player: &Player,
-        _target: &dyn LivingEntity,
+        _target: &Living<'_>,
         _hand: InteractionHand,
     ) -> InteractionResult {
         InteractionResult::Pass
@@ -234,7 +237,7 @@ pub trait ItemBehavior: Send + Sync {
     /// Returns item-specific attack damage added by `Item.getAttackDamageBonus`.
     fn get_attack_damage_bonus(
         &self,
-        _attacker: &dyn LivingEntity,
+        _attacker: &Living<'_>,
         _victim: &dyn Entity,
         _base_damage: f32,
         _damage_source: &DamageSource,
@@ -244,21 +247,15 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Called immediately when this item's wielder deals a successful melee
     /// hit, before post-attack enchantment effects and durability loss.
-    fn hurt_enemy(
-        &self,
-        _stack: &mut ItemStack,
-        _target: &dyn LivingEntity,
-        _attacker: &dyn LivingEntity,
-    ) {
-    }
+    fn hurt_enemy(&self, _stack: &mut ItemStack, _target: &Living<'_>, _attacker: &Living<'_>) {}
 
     /// Called after `hurt_enemy` and post-attack enchantment effects, right
     /// before the item takes durability damage from the hit.
     fn post_hurt_enemy(
         &self,
         _stack: &mut ItemStack,
-        _target: &dyn LivingEntity,
-        _attacker: &dyn LivingEntity,
+        _target: &Living<'_>,
+        _attacker: &Living<'_>,
     ) {
     }
 
@@ -297,7 +294,7 @@ fn should_emit_consume_particles_and_sounds(consumable: &Consumable, ticks_remai
     ticks_used > wait_ticks && ticks_remaining % 4 == 0
 }
 
-fn emit_consume_particles_and_sounds(consumable: &Consumable, user: &dyn LivingEntity) {
+fn emit_consume_particles_and_sounds(consumable: &Consumable, user: &Living<'_>) {
     // TODO: spawn item-crumb particles when `has_consume_particles()` is set.
     let (volume, pitch) = if consumable.animation() == ItemUseAnimation::Drink {
         (0.5, 0.9 + rand::random::<f32>() * 0.1)
@@ -317,7 +314,7 @@ fn emit_consume_particles_and_sounds(consumable: &Consumable, user: &dyn LivingE
 pub(crate) fn finish_consuming_stack(
     stack: &ItemStack,
     world: &Arc<World>,
-    user: &dyn LivingEntity,
+    user: &Living<'_>,
 ) -> ItemStack {
     let Some(consumable) = stack.get(CONSUMABLE) else {
         return apply_use_remainder(stack, stack.copy_with_count(stack.count()), user);
@@ -386,7 +383,7 @@ pub(crate) fn finish_consuming_stack(
 pub(crate) fn apply_use_remainder(
     original_stack: &ItemStack,
     mut used_stack: ItemStack,
-    user: &dyn LivingEntity,
+    user: &Living<'_>,
 ) -> ItemStack {
     let Some(remainder) = original_stack.get(USE_REMAINDER) else {
         return used_stack;
@@ -468,6 +465,7 @@ impl Default for ItemBehaviorRegistry {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::LivingParts as _;
     use std::sync::Arc;
 
     use steel_registry::data_components::{Consumable, vanilla_components};
@@ -517,7 +515,7 @@ mod tests {
         }
 
         let stack = ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 5);
-        let result = finish_consuming_stack(&stack, world, player.as_ref());
+        let result = finish_consuming_stack(&stack, world, &player.living());
 
         assert!(result.is(&vanilla_items::HONEY_BOTTLE));
         assert_eq!(result.count(), 4);
@@ -623,7 +621,7 @@ mod tests {
         }
 
         let stack = ItemStack::new(&vanilla_items::APPLE);
-        let _ = finish_consuming_stack(&stack, world, player.as_ref());
+        let _ = finish_consuming_stack(&stack, world, &player.living());
 
         let food = player.food_data.lock();
         // Vanilla apple: nutrition 4, saturation 2.4.
@@ -643,7 +641,7 @@ mod tests {
         player.set_client_loaded(true);
 
         let stack = ItemStack::new(&vanilla_items::APPLE);
-        let _ = finish_consuming_stack(&stack, world, player.as_ref());
+        let _ = finish_consuming_stack(&stack, world, &player.living());
 
         let apple_used = vanilla_stat_types::ITEM_USED.get(&vanilla_items::APPLE);
         assert_eq!(

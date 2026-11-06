@@ -16,7 +16,7 @@ use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::behavior::blocks::{CampfireBlock, CandleBlock};
 use crate::entity::damage::DamageSource;
 use crate::entity::projectile::ThrowableItemProjectile;
-use crate::entity::{LivingEntity, ProjectileHit, RemovalReason, SharedEntity};
+use crate::entity::{Living, ProjectileHit, RemovalReason, SharedEntity};
 use crate::world::ClipHitResult;
 use crate::world::World;
 
@@ -45,7 +45,7 @@ pub trait AbstractThrownPotion: ThrowableItemProjectile {
     );
 
     /// Returns the horizontal direction from the potion to the hurt entity
-    fn thrown_potion_knockback_direction(&self, hurt_entity: &dyn LivingEntity) -> (f64, f64) {
+    fn thrown_potion_knockback_direction(&self, hurt_entity: &Living<'_>) -> (f64, f64) {
         let delta = hurt_entity.position() - self.position();
         (delta.x, delta.z)
     }

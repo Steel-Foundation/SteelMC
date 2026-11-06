@@ -1,3 +1,4 @@
+use crate::entity::LivingParts as _;
 use steel_protocol::packets::game::CSystemChat;
 use steel_registry::vanilla_game_rules::{
     ADVANCE_TIME, ADVANCE_WEATHER, PLAYERS_SLEEPING_PERCENTAGE,
@@ -6,7 +7,6 @@ use steel_utils::Identifier;
 use text_components::{TextComponent, translation::TranslatedMessage};
 
 use super::{World, sleep_status::SleepStatus};
-use crate::entity::LivingEntity as _;
 
 const WAKE_UP_FROM_SLEEP_TIME_MARKER: Identifier = Identifier::vanilla_static("wake_up_from_sleep");
 
@@ -117,7 +117,7 @@ impl World {
     fn wake_up_all_players(&self) {
         self.sleep_status.lock().remove_all_sleepers();
         self.players.iter_players(|_, player| {
-            if player.is_sleeping() {
+            if player.living().is_sleeping() {
                 player.stop_sleep_in_bed(false, false);
             }
             true

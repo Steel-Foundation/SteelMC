@@ -6,9 +6,11 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{ChunkPos, Identifier};
 
 use super::*;
+
 use crate::behavior::init_behaviors;
+use crate::entity::LivingParts as _;
 use crate::entity::entities::ChickenEntity;
-use crate::entity::{LivingEntity, change_entity_world, init_entities, next_entity_id};
+use crate::entity::{change_entity_world, init_entities, next_entity_id};
 use crate::player::ResetReason;
 use crate::portal::{TeleportPostTransition, TeleportTransition};
 use crate::test_support::{
@@ -115,7 +117,10 @@ fn cross_world_recreation_preserves_owner_and_explosion_attribution() {
     Arc::clone(&recreated).tick();
 
     // The damage source retains the discarded TNT and the owner resolved from another world.
-    let source = victim.last_damage_source().expect("TNT damage source");
+    let source = victim
+        .living()
+        .last_damage_source()
+        .expect("TNT damage source");
     assert_eq!(source.damage_type, &vanilla_damage_types::PLAYER_EXPLOSION);
     let direct = source.direct_entity().expect("discarded primed TNT");
     assert!(Arc::ptr_eq(direct, &recreated));
@@ -125,10 +130,16 @@ fn cross_world_recreation_preserves_owner_and_explosion_attribution() {
         &owner
     ));
     assert!(Arc::ptr_eq(
-        &victim.last_hurt_by_mob().expect("responsible owner"),
+        &victim
+            .living()
+            .last_hurt_by_mob()
+            .expect("responsible owner"),
         &owner
     ));
-    assert_eq!(victim.last_hurt_by_player_uuid(), Some(owner.uuid()));
+    assert_eq!(
+        victim.living().last_hurt_by_player_uuid(),
+        Some(owner.uuid())
+    );
 }
 
 #[test]

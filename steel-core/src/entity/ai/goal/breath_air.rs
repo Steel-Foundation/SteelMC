@@ -140,9 +140,11 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+
+    use crate::entity::LivingParts as _;
     use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
-    use crate::entity::{Entity, LivingEntity, LivingTravelInput};
+    use crate::entity::{Entity, LivingTravelInput};
 
     #[test]
     fn breath_air_goal_uses_move_and_look_controls() {
@@ -177,7 +179,8 @@ mod tests {
             Weak::new(),
         ));
         let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
-        mob.set_travel_input(LivingTravelInput::new(1.0, 0.0, 0.0));
+        mob.living()
+            .set_travel_input(LivingTravelInput::new(1.0, 0.0, 0.0));
 
         goal.tick(&mob.mob(), &mob_entity);
 

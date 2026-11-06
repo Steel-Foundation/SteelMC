@@ -1,5 +1,6 @@
 //! use to manage rewards
 
+use crate::entity::LivingParts as _;
 use crate::entity::{Entity, entity_loot_ref, living_loot_equipment};
 use crate::player::Player;
 use steel_registry::advancement::AdvancementRewards;
@@ -10,7 +11,7 @@ pub fn grant_reward(player: &Player, reward: &AdvancementRewards) {
     player.give_experience_points(reward.experience);
 
     let position = player.position();
-    let equipment = living_loot_equipment(player);
+    let equipment = living_loot_equipment(&player.living());
     let mut rng = rand::rng();
     let mut ctx = LootContext::new(&mut rng)
         .with_this_entity(entity_loot_ref(player, Some(&equipment)))

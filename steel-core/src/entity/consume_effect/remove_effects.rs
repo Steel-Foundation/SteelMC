@@ -5,14 +5,14 @@ use std::sync::Arc;
 use steel_registry::consume_effect::{ConsumeEffectData, RemoveStatusEffectsConsumeEffect};
 
 use super::ConsumeEffectBehavior;
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::world::World;
 
 /// Remove effects consume effect behavior.
 pub struct RemoveEffectsBehavior;
 
 impl ConsumeEffectBehavior for RemoveEffectsBehavior {
-    fn apply(&self, effect: &ConsumeEffectData, _world: &Arc<World>, user: &dyn LivingEntity) {
+    fn apply(&self, effect: &ConsumeEffectData, _world: &Arc<World>, user: &Living<'_>) {
         let Some(remove) = effect.downcast_ref::<RemoveStatusEffectsConsumeEffect>() else {
             return;
         };

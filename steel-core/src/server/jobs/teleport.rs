@@ -8,7 +8,7 @@ use super::super::{
     vanilla_entities,
 };
 use super::{JobPoll, ServerJob, ServerJobContext};
-use crate::entity::LivingEntity as _;
+use crate::entity::LivingParts as _;
 use crate::world::player_spawn_finder::POLL_TIME_BUDGET;
 
 pub(in crate::server) struct RootVehicleRestoreJob {
@@ -247,7 +247,7 @@ impl WorldSpawnTeleportJob {
         };
         !self.entity.is_removed()
             && !player.connection.closed()
-            && player.get_health() > 0.0
+            && player.living().get_health() > 0.0
             && !player.has_won_game()
             && self
                 .entity

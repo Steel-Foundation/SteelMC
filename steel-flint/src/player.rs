@@ -10,7 +10,7 @@ use flint_core::test_spec::{GameMode, PlayerSlot};
 use flint_core::{FlintPlayer, Item};
 use glam::DVec3;
 use rustc_hash::FxHashMap;
-use steel_core::entity::{Entity, LivingEntity};
+use steel_core::entity::{Entity, LivingParts as _};
 use steel_core::inventory::container::Container;
 use steel_core::player::game_mode;
 use steel_core::player::player_inventory::PlayerInventory;
@@ -196,7 +196,7 @@ impl FlintPlayer for SteelTestPlayer {
         let clip = world.clip(start, end, ClipBlockShape::Outline, ClipFluid::None);
 
         let hand = InteractionHand::MainHand;
-        let animation = self.player.interact_animation(hand);
+        let animation = self.player.living().interact_animation(hand);
         let result = if clip.is_miss() {
             game_mode::use_item(&self.player, &world, hand)
         } else {

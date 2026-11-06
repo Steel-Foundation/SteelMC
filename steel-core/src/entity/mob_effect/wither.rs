@@ -3,7 +3,7 @@
 use steel_registry::vanilla_damage_types;
 
 use super::MobEffectBehavior;
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::entity::damage::DamageSource;
 use crate::world::World;
 
@@ -18,7 +18,7 @@ impl MobEffectBehavior for WitherBehavior {
         interval <= 0 || tick_count % interval == 0
     }
 
-    fn apply_effect_tick(&self, world: &World, user: &dyn LivingEntity, _amplifier: i32) -> bool {
+    fn apply_effect_tick(&self, world: &World, user: &Living<'_>, _amplifier: i32) -> bool {
         user.hurt(
             world,
             &DamageSource::environment(&vanilla_damage_types::WITHER),

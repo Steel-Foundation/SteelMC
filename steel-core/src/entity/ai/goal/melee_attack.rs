@@ -5,7 +5,7 @@ use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::path::Path;
 use crate::entity::entity_selector;
-use crate::entity::{LivingEntity, Mob, SharedEntity};
+use crate::entity::{Living, Mob, SharedEntity};
 
 const ATTACK_INTERVAL_TICKS: i32 = 20;
 const COOLDOWN_BETWEEN_CAN_USE_CHECKS: i64 = 20;
@@ -52,7 +52,7 @@ impl MeleeAttackGoal {
         let Some(target_living) = target.as_living_entity() else {
             return;
         };
-        if !self.can_perform_attack(mob, target_living) {
+        if !self.can_perform_attack(mob, &target_living) {
             return;
         }
 
@@ -71,10 +71,10 @@ impl MeleeAttackGoal {
         self.ticks_until_next_attack <= 0
     }
 
-    fn can_perform_attack(&self, mob: &Mob<'_>, target: &dyn LivingEntity) -> bool {
+    fn can_perform_attack(&self, mob: &Mob<'_>, target: &Living<'_>) -> bool {
         self.is_time_to_attack()
             && mob.is_within_melee_attack_range(target)
-            && mob.has_line_of_sight_cached(target)
+            && mob.has_line_of_sight_cached(target.entity())
     }
 
     pub(crate) const fn get_ticks_until_next_attack(&self) -> i32 {
@@ -93,7 +93,9 @@ impl MeleeAttackGoal {
         let Some(target_living) = target.as_living_entity() else {
             return false;
         };
-        if !self.following_target_even_if_not_seen && !mob.has_line_of_sight_cached(target_living) {
+        if !self.following_target_even_if_not_seen
+            && !mob.has_line_of_sight_cached(target_living.entity())
+        {
             return false;
         }
         if self.ticks_until_next_path_recalculation > 0 {
@@ -153,12 +155,12 @@ impl Goal for MeleeAttackGoal {
         let Some(target_living) = target.as_living_entity() else {
             return false;
         };
-        if !LivingEntity::is_alive(target_living) {
+        if !target_living.is_alive() {
             return false;
         }
 
         self.path = mob.create_path_to(target.block_position(), 0);
-        self.path.is_some() || mob.is_within_melee_attack_range(target_living)
+        self.path.is_some() || mob.is_within_melee_attack_range(&target_living)
     }
 
     fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {

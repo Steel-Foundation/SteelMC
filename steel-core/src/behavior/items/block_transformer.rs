@@ -1,3 +1,4 @@
+use crate::entity::LivingParts as _;
 use glam::DVec3;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::block_transformer::{
@@ -16,7 +17,7 @@ use steel_utils::types::{InteractionHand, UpdateFlags};
 use crate::behavior::block::drop_from_block_interact_loot_table;
 use crate::behavior::{InteractionResult, UseOnContext};
 use crate::block_state_provider::BlockStateProviderEvaluator;
-use crate::entity::{Entity as _, LivingEntity as _};
+use crate::entity::Entity as _;
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
@@ -76,7 +77,7 @@ pub(crate) fn use_on(context: &mut UseOnContext) -> InteractionResult {
                 InteractionHand::MainHand => EquipmentSlot::MainHand,
                 InteractionHand::OffHand => EquipmentSlot::OffHand,
             };
-            context.player.on_equipped_item_broken(item, slot);
+            context.player.living().on_equipped_item_broken(item, slot);
         }
 
         context

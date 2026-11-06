@@ -11,6 +11,7 @@ pub use input::PlayerInput;
 pub(super) use state::MovementState;
 pub(super) use teleport::TeleportState;
 
+use crate::entity::LivingParts as _;
 use glam::{DVec3, Vec3Swizzles};
 use std::sync::Arc;
 use steel_math::wrap_degrees;
@@ -26,7 +27,7 @@ use steel_utils::types::GameType;
 use steel_utils::{TICKS_PER_SECOND, translations};
 
 use crate::entity::{
-    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityMoveError, LivingEntity,
+    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityMoveError,
 };
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
@@ -163,7 +164,7 @@ impl Player {
 
     /// Applies vanilla post-impulse movement validation grace.
     pub fn apply_post_impulse_grace_time(&self, ticks: i32) {
-        LivingEntity::apply_post_impulse_grace_time(self, ticks);
+        self.living().apply_post_impulse_grace_time(ticks);
     }
 
     /// Resets per-tick vanilla movement validation bases for the controlled root vehicle.
@@ -287,7 +288,7 @@ impl Player {
             clamp_horizontal(requested.z),
         );
         let game_mode = self.game_mode();
-        let is_sleeping = self.is_sleeping();
+        let is_sleeping = self.living().is_sleeping();
         let is_fall_flying = self.is_fall_flying();
         let was_on_ground = self.on_ground();
         let is_spectator = game_mode == GameType::Spectator;
@@ -370,7 +371,7 @@ impl Player {
         let player_stands_on_something = self.vertical_collision_below();
 
         if was_on_ground && !is_on_ground && moved_upwards {
-            self.jump_from_ground();
+            self.living().jump_from_ground();
         }
 
         if Arc::clone(self)
@@ -388,7 +389,7 @@ impl Player {
 
         let error_delta = movement_error_delta(target_pos, self.position());
         let error_dist_sq = error_delta.length_squared();
-        let in_impulse_grace = self.is_in_post_impulse_grace_time();
+        let in_impulse_grace = self.living().is_in_post_impulse_grace_time();
         let fail = error_dist_sq > MOVEMENT_ERROR_THRESHOLD
             && !is_creative
             && !is_spectator
@@ -692,7 +693,9 @@ impl Player {
             is_spectator,
             server_allows_flight: self.config.allow_flight,
             may_fly: self.abilities.lock().may_fly,
-            has_levitation: self.has_mob_effect(vanilla_mob_effects::LEVITATION),
+            has_levitation: self
+                .living()
+                .has_mob_effect(vanilla_mob_effects::LEVITATION),
             is_fall_flying,
         }
         .can_violate();
@@ -750,7 +753,9 @@ impl Player {
 
     /// Advances vanilla's floating violation tracker and disconnects when exceeded.
     pub(super) fn disconnect_if_floating_too_long(&self) -> bool {
-        let should_count = !self.is_sleeping() && !self.is_passenger() && !self.is_dead_or_dying();
+        let should_count = !self.living().is_sleeping()
+            && !self.is_passenger()
+            && !self.living().is_dead_or_dying();
         let maximum_flying_ticks = self.maximum_flying_ticks();
         let should_disconnect = self
             .movement
@@ -972,18 +977,18 @@ impl Player {
 
         match packet.action {
             PlayerCommandAction::StartSprinting => {
-                self.set_sprinting(true);
+                self.living().set_sprinting(true);
             }
             PlayerCommandAction::StopSprinting => {
-                self.set_sprinting(false);
+                self.living().set_sprinting(false);
             }
             PlayerCommandAction::StartFallFlying => {
-                if !self.try_to_start_fall_flying() {
-                    self.stop_fall_flying();
+                if !self.living().try_to_start_fall_flying() {
+                    self.living().stop_fall_flying();
                 }
             }
             PlayerCommandAction::LeaveBed => {
-                if self.is_sleeping() {
+                if self.living().is_sleeping() {
                     self.stop_sleep_in_bed(false, true);
                 }
             }
@@ -1025,7 +1030,7 @@ impl Player {
                 (delta_movement.y * 100.0).round() as i32,
             );
         } else if self.on_ground() {
-            if self.is_sprinting() {
+            if self.living().is_sprinting() {
                 self.award_horizontal_distance_stat(
                     &vanilla_custom_stats::SPRINT_ONE_CM,
                     delta_movement,
@@ -1159,7 +1164,7 @@ mod tests {
         let start = DVec3::new(8.0, 64.0, 8.0);
         player.base().set_position_local(start);
         player.movement.lock().reset_for_position_sync(start);
-        player.set_sprinting(true);
+        player.living().set_sprinting(true);
         player.food_data.lock().exhaustion_level = 0.0;
 
         // A 0.25-block ground sprint. Vanilla `handleMovePlayer` runs the sprint

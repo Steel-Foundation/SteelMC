@@ -25,13 +25,14 @@ use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
 use steel_registry::vanilla_mob_effects;
 use steel_utils::locks::{IntoShared, Shared, SyncMutex};
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, Identifier};
+use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, Identifier};
 use uuid::Uuid;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
+use crate::entity::component::Component;
 use crate::entity::synced_data::EntitySyncedData;
-use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
+use crate::entity::{Living, LivingHooks, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
 use crate::world::World;
 
@@ -215,7 +216,7 @@ impl MobEffectInstance {
             .should_apply_effect_tick_this_tick(tick_count, self.amplifier)
     }
 
-    pub(crate) fn apply_effect_tick(&self, world: &World, entity: &dyn LivingEntity) -> bool {
+    pub(crate) fn apply_effect_tick(&self, world: &World, entity: &Living<'_>) -> bool {
         MOB_EFFECT_BEHAVIORS
             .get_behavior(self.effect)
             .apply_effect_tick(world, entity, self.amplifier)
@@ -728,7 +729,15 @@ pub struct LivingEntityBase {
     pending_equipment_changes: SyncMutex<[Option<ItemStack>; EquipmentSlot::ALL.len()]>,
     equipment_attribute_modifiers:
         SyncMutex<[Vec<EquipmentAttributeModifierKey>; EquipmentSlot::ALL.len()]>,
+    hooks: &'static dyn LivingHooks,
 }
+
+// SAFETY: This key is owned by Steel and uniquely identifies `LivingEntityBase`.
+unsafe impl DowncastType for LivingEntityBase {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity_component/living");
+}
+
+impl Component for LivingEntityBase {}
 
 #[derive(Debug)]
 struct EquipmentAttributeModifierKey {
@@ -739,15 +748,15 @@ struct EquipmentAttributeModifierKey {
 impl LivingEntityBase {
     /// Creates living runtime state from an entity type's default attributes.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef) -> Self {
-        Self::with_attributes(AttributeMap::new_for_entity(entity_type))
+    pub fn new(entity_type: EntityTypeRef, hooks: &'static dyn LivingHooks) -> Self {
+        Self::with_attributes(AttributeMap::new_for_entity(entity_type), hooks)
     }
 
     /// Creates living runtime state from an explicit attribute map.
     #[must_use]
-    pub fn with_attributes(attributes: AttributeMap) -> Self {
+    pub fn with_attributes(attributes: AttributeMap, hooks: &'static dyn LivingHooks) -> Self {
         let equipment: Shared<dyn EntityEquipment> = OwnedEntityEquipment::new().into_shared();
-        Self::with_attributes_and_equipment(attributes, equipment)
+        Self::with_attributes_and_equipment(attributes, equipment, hooks)
     }
 
     /// Creates living runtime state with an explicit canonical equipment backing.
@@ -755,13 +764,19 @@ impl LivingEntityBase {
     pub fn with_equipment(
         entity_type: EntityTypeRef,
         equipment: Shared<dyn EntityEquipment>,
+        hooks: &'static dyn LivingHooks,
     ) -> Self {
-        Self::with_attributes_and_equipment(AttributeMap::new_for_entity(entity_type), equipment)
+        Self::with_attributes_and_equipment(
+            AttributeMap::new_for_entity(entity_type),
+            equipment,
+            hooks,
+        )
     }
 
     fn with_attributes_and_equipment(
         attributes: AttributeMap,
         equipment: Shared<dyn EntityEquipment>,
+        hooks: &'static dyn LivingHooks,
     ) -> Self {
         let speed = attributes.required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
 
@@ -774,7 +789,14 @@ impl LivingEntityBase {
             last_equipment_items: SyncMutex::new(array::from_fn(|_| ItemStack::empty())),
             pending_equipment_changes: SyncMutex::new(array::from_fn(|_| None)),
             equipment_attribute_modifiers: SyncMutex::new(array::from_fn(|_| Vec::new())),
+            hooks,
         }
+    }
+
+    /// Returns this entity type's living hooks.
+    #[must_use]
+    pub fn hooks(&self) -> &'static dyn LivingHooks {
+        self.hooks
     }
 
     /// Returns this entity's attribute map.
@@ -1781,7 +1803,7 @@ fn living_entity_from_weak(entity: &mut Option<WeakEntity>) -> Option<SharedEnti
 fn living_is_dead(entity: &SharedEntity) -> bool {
     entity
         .as_living_entity()
-        .is_none_or(|living| !LivingEntity::is_alive(living))
+        .is_none_or(|living| !living.is_alive())
 }
 
 #[cfg(test)]

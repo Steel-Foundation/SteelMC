@@ -5,7 +5,7 @@ use std::sync::Arc;
 use steel_registry::consume_effect::ConsumeEffectData;
 
 use super::ConsumeEffectBehavior;
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::world::World;
 
 /// Mirrors vanilla `ClearAllStatusEffectsConsumeEffect.apply`. Carries no
@@ -13,7 +13,7 @@ use crate::world::World;
 pub struct ClearAllEffectsBehavior;
 
 impl ConsumeEffectBehavior for ClearAllEffectsBehavior {
-    fn apply(&self, _effect: &ConsumeEffectData, _world: &Arc<World>, user: &dyn LivingEntity) {
+    fn apply(&self, _effect: &ConsumeEffectData, _world: &Arc<World>, user: &Living<'_>) {
         for active in user.active_mob_effects() {
             user.remove_mob_effect(active.effect());
         }

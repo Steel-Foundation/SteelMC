@@ -993,7 +993,7 @@ mod tests {
     use std::array;
 
     use crate::{
-        entity::{Entity as _, LivingEntity as _},
+        entity::Entity as _,
         test_support::{TestPlayerBuilder, fresh_test_world},
     };
     use rustc_hash::FxHashMap;
@@ -1009,6 +1009,8 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+
+    use crate::entity::LivingParts as _;
 
     fn decode(packet: RawPacket) -> DecodedPlayPacket {
         let Ok(decoded) = JavaConnection::decode_play_packet(packet) else {
@@ -1040,7 +1042,7 @@ mod tests {
             panic!("test player should acquire a world-change token");
         };
         assert!(player.begin_domain_switch(token));
-        player.set_health(0.0);
+        player.living().set_health(0.0);
 
         let request_stats = JavaConnection::decode_domain_gated_packet(
             RawPacket::new(

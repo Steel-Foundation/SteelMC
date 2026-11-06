@@ -1,8 +1,9 @@
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockHitResult, Entity, GameType, ITEM_BEHAVIORS, InteractionHand,
-    InteractionResult, InventoryAccess, LivingEntity, Player, REGISTRY, SUseItem, UseOnContext,
-    World, adventure_mode, wrap_degrees,
+    InteractionResult, InventoryAccess, Player, REGISTRY, SUseItem, UseOnContext, World,
+    adventure_mode, wrap_degrees,
 };
+use crate::entity::LivingParts as _;
 use steel_registry::data_components::vanilla_components::USE_REMAINDER;
 use steel_registry::stat::vanilla_stat_types;
 
@@ -125,7 +126,7 @@ pub fn use_item_on(
             });
 
             if let Some(extra) = extra {
-                player.handle_extra_items_created_on_use(extra);
+                player.living().handle_extra_items_created_on_use(extra);
             }
 
             player.apply_item_use_cooldown(&stack_before_use);
@@ -180,7 +181,7 @@ pub fn use_item(
         let item_behaviors = &*ITEM_BEHAVIORS;
         let item_behavior = item_behaviors.get_behavior(item_ref);
         let is_instantly_used =
-            item_behavior.get_use_duration(&stack_before_use, player.as_ref()) <= 0;
+            item_behavior.get_use_duration(&stack_before_use, &player.living()) <= 0;
 
         let result = item_behavior.use_item(&mut context);
 
@@ -240,7 +241,7 @@ impl Player {
         }
 
         let world = self.get_world();
-        let animation = self.interact_animation(packet.hand);
+        let animation = self.living().interact_animation(packet.hand);
         let result = use_item(self, &world, packet.hand);
         self.swing_after_interaction(packet.hand, animation, result);
 

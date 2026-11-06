@@ -1048,6 +1048,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::LivingParts as _;
     use std::{
         sync::{Arc, Weak, mpsc},
         thread,
@@ -1058,7 +1059,7 @@ mod tests {
     use tokio::time::timeout;
 
     use crate::{
-        entity::{Entity as _, LivingEntity as _},
+        entity::Entity as _,
         player::{ClientInformation, Player, connection::ScheduledPlayPacket},
         test_support::{TestPlayerBuilder, fresh_test_world},
     };
@@ -1121,7 +1122,7 @@ mod tests {
             panic!("test player should acquire a world-change token");
         };
         assert!(player.begin_domain_switch(token));
-        player.set_health(0.0);
+        player.living().set_health(0.0);
 
         assert!(!PacketProcessor::packet_is_runnable(
             &player, &packet, false

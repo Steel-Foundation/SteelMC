@@ -1,6 +1,7 @@
 use crate::player::Player;
 
 use super::*;
+
 use std::ptr;
 use steel_registry::vanilla_damage_type_tags::DamageTypeTag;
 
@@ -34,7 +35,7 @@ fn removed_history_resolves_shooter_after_projectile_is_released_without_rebindi
     let source = DamageSource::environment(&vanilla_damage_types::THROWN)
         .with_causing_entity(Arc::<Player>::clone(&shooter))
         .with_direct_entity(projectile);
-    victim.record_last_damage_source(&source);
+    victim.living().record_last_damage_source(&source);
     victim.set_removed(RemovalReason::Discarded);
     assert!(
         source.direct_entity().is_some(),
@@ -50,7 +51,10 @@ fn removed_history_resolves_shooter_after_projectile_is_released_without_rebindi
     for age in [0, 40] {
         advance_test_game_time_to(&world, age);
         history.expire();
-        let recent = victim.last_damage_source().expect("unexpired history");
+        let recent = victim
+            .living()
+            .last_damage_source()
+            .expect("unexpired history");
         assert_eq!(recent.damage_type, &vanilla_damage_types::THROWN);
         assert!(recent.is(&DamageTypeTag::IS_PROJECTILE));
         assert_eq!(
@@ -74,7 +78,7 @@ fn removed_history_resolves_shooter_after_projectile_is_released_without_rebindi
         assert!(!recent.is_direct());
     }
     advance_test_game_time_to(&world, 41);
-    assert!(victim.last_damage_source().is_none());
+    assert!(victim.living().last_damage_source().is_none());
     assert!(world.players.remove_player_sync(&shooter).is_some());
 }
 
@@ -85,18 +89,24 @@ fn active_history_retains_removed_attacker_but_not_its_removed_attacker() {
     let victim = live_pig(&world, 1);
     let first = live_pig(&world, 2);
     let second = live_pig(&world, 3);
-    victim.record_last_damage_source(&DamageSource::direct(
-        &vanilla_damage_types::MOB_ATTACK,
-        Arc::<ChickenEntity>::clone(&first),
-    ));
-    first.record_last_damage_source(&DamageSource::direct(
-        &vanilla_damage_types::MOB_ATTACK,
-        Arc::<ChickenEntity>::clone(&second),
-    ));
-    second.record_last_damage_source(&DamageSource::direct(
-        &vanilla_damage_types::MOB_ATTACK,
-        Arc::<ChickenEntity>::clone(&first),
-    ));
+    victim
+        .living()
+        .record_last_damage_source(&DamageSource::direct(
+            &vanilla_damage_types::MOB_ATTACK,
+            Arc::<ChickenEntity>::clone(&first),
+        ));
+    first
+        .living()
+        .record_last_damage_source(&DamageSource::direct(
+            &vanilla_damage_types::MOB_ATTACK,
+            Arc::<ChickenEntity>::clone(&second),
+        ));
+    second
+        .living()
+        .record_last_damage_source(&DamageSource::direct(
+            &vanilla_damage_types::MOB_ATTACK,
+            Arc::<ChickenEntity>::clone(&first),
+        ));
     let second_generation = second.generation();
     let first_weak = Arc::downgrade(&first);
     let second_weak = Arc::downgrade(&second);
@@ -105,7 +115,10 @@ fn active_history_retains_removed_attacker_but_not_its_removed_attacker() {
     drop((first, second));
     assert!(second_weak.upgrade().is_none());
     {
-        let recent = victim.last_damage_source().expect("active victim history");
+        let recent = victim
+            .living()
+            .last_damage_source()
+            .expect("active victim history");
         let attacker = recent.causing_entity().expect("retained first attacker");
         assert!(attacker.is_removed());
         let prior = attacker
@@ -132,10 +145,12 @@ fn final_removal_cannot_be_undone_by_a_late_history_write() {
     let attacker = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let attacker_generation = attacker.generation();
     let weak = Arc::downgrade(&attacker);
-    victim.record_last_damage_source(&DamageSource::direct(
-        &vanilla_damage_types::GENERIC,
-        Arc::clone(&attacker),
-    ));
+    victim
+        .living()
+        .record_last_damage_source(&DamageSource::direct(
+            &vanilla_damage_types::GENERIC,
+            Arc::clone(&attacker),
+        ));
     assert_eq!(weak.strong_count(), 1, "late hits must not retain sources");
 
     advance_test_game_time_to(&world, 40);
@@ -143,6 +158,7 @@ fn final_removal_cannot_be_undone_by_a_late_history_write() {
     drop(attacker);
     assert!(weak.upgrade().is_none());
     let recent = victim
+        .living()
         .last_damage_source()
         .expect("old metadata after reactivation");
     assert_eq!(
@@ -152,7 +168,7 @@ fn final_removal_cannot_be_undone_by_a_late_history_write() {
     assert!(recent.causing_entity().is_none());
     advance_test_game_time_to(&world, 41);
     assert!(
-        victim.last_damage_source().is_none(),
+        victim.living().last_damage_source().is_none(),
         "clearing removal must not reset age"
     );
     world
@@ -160,10 +176,12 @@ fn final_removal_cannot_be_undone_by_a_late_history_write() {
         .expect("reactivate victim");
     let attacker = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let weak = Arc::downgrade(&attacker);
-    victim.record_last_damage_source(&DamageSource::direct(
-        &vanilla_damage_types::GENERIC,
-        attacker,
-    ));
+    victim
+        .living()
+        .record_last_damage_source(&DamageSource::direct(
+            &vanilla_damage_types::GENERIC,
+            attacker,
+        ));
     assert!(weak.upgrade().is_some());
     victim.set_removed(RemovalReason::Discarded);
     assert!(weak.upgrade().is_none());
@@ -174,10 +192,12 @@ fn world_teardown_releases_self_history_on_the_frozen_ownership_sweep() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "history_world_teardown");
     let victim = live_pig(&world, 1);
-    victim.record_last_damage_source(&DamageSource::direct(
-        &vanilla_damage_types::GENERIC,
-        Arc::<ChickenEntity>::clone(&victim),
-    ));
+    victim
+        .living()
+        .record_last_damage_source(&DamageSource::direct(
+            &vanilla_damage_types::GENERIC,
+            Arc::<ChickenEntity>::clone(&victim),
+        ));
     let weak = Arc::downgrade(&victim);
     drop(victim);
     history.expire();
@@ -199,10 +219,12 @@ fn chunk_recovery_preserves_history_until_final_unload() {
     let victim = live_pig(&world, 1);
     let attacker = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let weak = Arc::downgrade(&attacker);
-    victim.record_last_damage_source(&DamageSource::direct(
-        &vanilla_damage_types::GENERIC,
-        attacker,
-    ));
+    victim
+        .living()
+        .record_last_damage_source(&DamageSource::direct(
+            &vanilla_damage_types::GENERIC,
+            attacker,
+        ));
     let chunk = steel_utils::ChunkPos::new(0, 0);
     let manager = world.entity_manager();
     drop(manager.begin_chunk_unload(chunk));
@@ -218,7 +240,7 @@ fn chunk_recovery_preserves_history_until_final_unload() {
         Some(RemovalReason::UnloadedToChunk)
     );
     assert!(weak.upgrade().is_none());
-    assert!(victim.last_damage_source().is_some());
+    assert!(victim.living().last_damage_source().is_some());
 }
 
 #[test]
@@ -229,20 +251,28 @@ fn weak_history_preserves_live_position_and_explicit_position_semantics() {
     let direct = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC)
         .with_direct_entity(Arc::clone(&direct));
-    victim.record_last_damage_source(&source);
+    victim.living().record_last_damage_source(&source);
     victim.set_removed(RemovalReason::Discarded);
     let position = DVec3::new(1.0, 2.0, 3.0);
     direct
         .try_set_position(position)
         .expect("move original source");
     {
-        let recent = victim.last_damage_source().expect("removed history");
+        let recent = victim
+            .living()
+            .last_damage_source()
+            .expect("removed history");
         assert_eq!(recent.source_position(), Some(position));
         assert!(recent.source_position_raw().is_none());
     }
-    victim.record_last_damage_source(&source.with_source_position(DVec3::ZERO));
+    victim
+        .living()
+        .record_last_damage_source(&source.with_source_position(DVec3::ZERO));
     drop(direct);
-    let recent = victim.last_damage_source().expect("positioned history");
+    let recent = victim
+        .living()
+        .last_damage_source()
+        .expect("positioned history");
     assert!(recent.causing_entity_generation().is_none());
     assert!(recent.direct_entity_generation().is_some());
     assert!(recent.direct_entity().is_none());

@@ -438,7 +438,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let Some(living) = self.as_living_entity() else {
             return false;
         };
-        Entity::is_alive(living) && !living.is_spectator() && !living.on_climbable()
+        Entity::is_alive(living.entity()) && !living.is_spectator() && !living.on_climbable()
     }
 
     /// Returns whether vanilla fluid currents can push this entity.
@@ -613,7 +613,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether this entity is a tameable animal owned by `owner`.
-    fn is_tame_owned_by(&self, _owner: &dyn LivingEntity) -> bool {
+    fn is_tame_owned_by(&self, _owner: &Living<'_>) -> bool {
         false
     }
 
@@ -916,7 +916,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn push_entity(&self, entity: &dyn Entity) {
         if self
             .as_living_entity()
-            .is_some_and(LivingEntity::is_sleeping)
+            .is_some_and(|living| living.is_sleeping())
         {
             return;
         }
@@ -1220,7 +1220,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             && self.is_alive()
             && !self
                 .as_living_entity()
-                .is_some_and(LivingEntity::is_sleeping)
+                .is_some_and(|living| living.is_sleeping())
     }
 
     /// Returns vanilla's dimension-changing portal cooldown delay in ticks.
@@ -1477,7 +1477,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let Some(mob) = self.as_mob() else {
             return InteractionResult::Pass;
         };
-        let is_alive = self.as_living_entity().is_none_or(LivingEntity::is_alive);
+        let is_alive = self
+            .as_living_entity()
+            .is_none_or(|living| living.is_alive());
         if !is_alive {
             return InteractionResult::Pass;
         }
@@ -1486,7 +1488,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             && mob.leashable().can_be_leashed()
             && self
                 .as_living_entity()
-                .is_none_or(|living| !LivingEntity::is_baby(living))
+                .is_none_or(|living| !living.is_baby())
             && self.transfer_leashables_from_holder(player)
         {
             if let Some(world) = self.level() {
@@ -1580,8 +1582,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this entity as a living entity when it has living behavior.
-    fn as_living_entity(&self) -> Option<&dyn LivingEntity> {
-        try_as_dyn::<Self, dyn LivingEntity>(self)
+    fn as_living_entity(&self) -> Option<Living<'_>> {
+        Living::of(self.as_entity_event_source())
     }
 
     /// Returns this entity as an item frame when it has item-frame behavior.
@@ -1652,7 +1654,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// it's currently fall-flying with an elytra.
     fn forces_fall_flying_velocity_sync(&self) -> bool {
         self.as_living_entity()
-            .is_some_and(LivingEntity::is_fall_flying)
+            .is_some_and(|living| living.is_fall_flying())
     }
 
     /// Returns true when movement is driven by serverbound movement packets.
@@ -1734,7 +1736,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             SwimmingEnvironment {
                 sprinting: self
                     .as_living_entity()
-                    .is_some_and(LivingEntity::is_sprinting),
+                    .is_some_and(|living| living.is_sprinting()),
                 passenger: self.is_passenger(),
                 in_water: self.is_in_water(),
                 under_water: self.is_under_water(),
@@ -1856,7 +1858,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns this entity's head yaw; 0.0 for non-living entities.
     fn head_yaw(&self) -> f32 {
         self.as_living_entity()
-            .map_or(0.0, LivingEntity::y_head_rot)
+            .map_or(0.0, |living| living.y_head_rot())
     }
 
     /// Extra spawn-packet data used by vanilla for entity-specific construction.
@@ -2142,7 +2144,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn can_freeze(&self) -> bool {
         self.as_living_entity().map_or_else(
             || self.default_can_freeze(),
-            LivingEntity::default_living_can_freeze,
+            |living| living.default_living_can_freeze(),
         )
     }
 
@@ -3384,7 +3386,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Vanilla values: `ItemEntity` = 0.04, `LivingEntity` = 0.08
     fn get_default_gravity(&self) -> f64 {
         self.as_living_entity()
-            .map_or(0.0, LivingEntity::get_attribute_gravity)
+            .map_or(0.0, |living| living.get_attribute_gravity())
     }
 
     /// Returns true if gravity is disabled for this entity.
@@ -3574,8 +3576,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 result.actual_movement.y,
                 self.is_living_entity(),
                 self.is_suppressing_bounce(),
-                self.as_living_entity()
-                    .map_or_else(|| self.get_gravity(), LivingEntity::get_effective_gravity),
+                self.as_living_entity().map_or_else(
+                    || self.get_gravity(),
+                    |living| living.get_effective_gravity(),
+                ),
                 self.get_air_drag(),
             );
 
@@ -4030,12 +4034,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Runs when this entity causes another entity to die.
     /// The entity provided is the entity who was killed.
-    fn killed_entity(
-        &self,
-        _world: &World,
-        _entity: &dyn LivingEntity,
-        _source: &DamageSource,
-    ) -> bool {
+    fn killed_entity(&self, _world: &World, _entity: &Living<'_>, _source: &DamageSource) -> bool {
         true
     }
 

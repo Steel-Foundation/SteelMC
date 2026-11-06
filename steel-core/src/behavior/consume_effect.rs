@@ -6,7 +6,7 @@ use std::sync::{Arc, OnceLock};
 use steel_registry::consume_effect::{ConsumeEffectData, ConsumeEffectTypeRef};
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::entity::consume_effect::ConsumeEffectBehavior;
 use crate::world::World;
 
@@ -15,7 +15,7 @@ use crate::world::World;
 struct NoopConsumeEffect;
 
 impl ConsumeEffectBehavior for NoopConsumeEffect {
-    fn apply(&self, _effect: &ConsumeEffectData, _world: &Arc<World>, _user: &dyn LivingEntity) {}
+    fn apply(&self, _effect: &ConsumeEffectData, _world: &Arc<World>, _user: &Living<'_>) {}
 }
 
 /// Wrapper for the global consume-effect behavior registry that implements `Deref`.

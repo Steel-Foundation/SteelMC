@@ -1,6 +1,7 @@
 use crate::player::Player;
 
 use super::*;
+
 use std::sync::Arc;
 
 use crate::server::world_tick_workers::WorldTickWorkers;
@@ -46,12 +47,12 @@ fn assert_disconnect_releases_damage_history(
         }
 
         let attacker = if mutual_damage { &second } else { &first };
-        first.record_last_damage_source(
+        first.living().record_last_damage_source(
             &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
                 .with_causing_entity(Arc::<Player>::clone(attacker)),
         );
         if mutual_damage {
-            second.record_last_damage_source(
+            second.living().record_last_damage_source(
                 &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
                     .with_causing_entity(Arc::<Player>::clone(&first)),
             );
@@ -67,6 +68,7 @@ fn assert_disconnect_releases_damage_history(
             server.damage_history.expire();
             assert!(
                 first
+                    .living()
                     .last_damage_source()
                     .expect("online history")
                     .causing_entity()

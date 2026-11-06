@@ -11,7 +11,7 @@ use steel_utils::locks::Shared;
 use steel_utils::types::InteractionHand;
 
 use crate::behavior::{BlockStateBehaviorExt, ITEM_BEHAVIORS};
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::{Entity, Living};
 use crate::fluid::FluidStateExt;
 use crate::inventory::equipment::EquipmentSlot;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
@@ -717,7 +717,7 @@ enum InventoryTickSource<'a> {
         index: usize,
     },
     Equipment {
-        owner: &'a dyn LivingEntity,
+        owner: &'a Living<'a>,
         slot: EquipmentSlot,
     },
 }
@@ -755,7 +755,7 @@ impl<'a> InventoryTickContext<'a> {
 
     pub(crate) fn tick_equipment(
         world: &'a Arc<World>,
-        owner: &'a dyn LivingEntity,
+        owner: &'a Living<'a>,
         slots: impl IntoIterator<Item = EquipmentSlot>,
     ) {
         for slot in slots {
@@ -771,7 +771,7 @@ impl<'a> InventoryTickContext<'a> {
 
             let mut context = Self {
                 world,
-                owner,
+                owner: owner.entity(),
                 slot: Some(slot),
                 item,
                 source: InventoryTickSource::Equipment { owner, slot },

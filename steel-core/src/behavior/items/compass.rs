@@ -122,8 +122,10 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+
     use crate::behavior::init_behaviors;
-    use crate::entity::{Entity, LivingEntity};
+    use crate::entity::Entity;
+    use crate::entity::LivingParts as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
     use glam::DVec3;
     use steel_registry::blocks::properties::Direction;
@@ -232,7 +234,7 @@ mod tests {
         compass.set(LODESTONE_TRACKER, tracker);
 
         player.inventory.lock().set_offhand_item(compass);
-        LivingEntity::tick_equipment(player.as_ref());
+        player.living().tick_equipment();
 
         let compass = player.inventory.lock().get_offhand_item().clone();
         let tracker = compass

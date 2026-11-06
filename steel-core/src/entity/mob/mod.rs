@@ -60,8 +60,9 @@ use crate::entity::conversion::{AfterConversion, convert_to as convert_mob};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
-    ConversionParams, Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason,
-    SharedEntity, SpawnGroupData, WeakEntity, aabb_contains_any_liquid,
+    ConversionParams, Entity, EntitySpawnReason, Living, LivingParts, LivingProps,
+    LivingTravelInput, RemovalReason, SharedEntity, SpawnGroupData, WeakEntity,
+    aabb_contains_any_liquid,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -242,14 +243,14 @@ impl MobBase {
     }
 
     #[must_use]
-    pub fn target(&self, is_valid: impl Fn(&dyn LivingEntity) -> bool) -> Option<SharedEntity> {
+    pub fn target(&self, is_valid: impl Fn(&Living<'_>) -> bool) -> Option<SharedEntity> {
         let mut target = self.target.lock();
         let Some(upgraded) = target.as_ref().and_then(WeakEntity::upgrade) else {
             *target = None;
             return None;
         };
         let living_target = upgraded.as_living_entity()?;
-        if !is_valid(living_target) {
+        if !is_valid(&living_target) {
             return None;
         }
         Some(upgraded)
@@ -258,7 +259,7 @@ impl MobBase {
     pub fn set_target(
         &self,
         target: Option<&SharedEntity>,
-        is_valid: impl Fn(&dyn LivingEntity) -> bool,
+        is_valid: impl Fn(&Living<'_>) -> bool,
     ) -> bool {
         let Some(target) = target else {
             *self.target.lock() = None;
@@ -270,7 +271,7 @@ impl MobBase {
         let Some(living_target) = target.as_living_entity() else {
             return false;
         };
-        if !is_valid(living_target) {
+        if !is_valid(&living_target) {
             *self.target.lock() = None;
             return false;
         }
@@ -447,7 +448,7 @@ impl MobProps {
 /// Derefs to the living entity so living and entity behavior stay reachable.
 #[derive(Clone, Copy)]
 pub struct Mob<'a> {
-    living: &'a (dyn LivingEntity + 'static),
+    living: Living<'a>,
     leashable: &'a (dyn Leashable + 'static),
     base: &'a MobBase,
 }
@@ -455,9 +456,9 @@ pub struct Mob<'a> {
 impl<'a> Mob<'a> {
     /// Pairs a concrete mob with its state.
     #[must_use]
-    pub fn new<E: LivingEntity + Leashable + Has<MobBase>>(entity: &'a E) -> Self {
+    pub fn new<E: LivingParts + Leashable + Has<MobBase>>(entity: &'a E) -> Self {
         Self {
-            living: entity,
+            living: entity.living(),
             leashable: entity,
             base: entity.get::<MobBase>(),
         }
@@ -465,9 +466,9 @@ impl<'a> Mob<'a> {
 
     /// Returns `entity` as a mob, if it is one.
     #[must_use]
-    pub fn of(entity: &'a dyn Entity) -> Option<Self> {
+    pub fn of(entity: &'a (dyn Entity + 'static)) -> Option<Self> {
         Some(Self {
-            living: entity.as_living_entity()?,
+            living: Living::of(entity)?,
             leashable: entity.as_leashable()?,
             base: entity.query::<MobBase>()?,
         })
@@ -475,13 +476,13 @@ impl<'a> Mob<'a> {
 
     /// Returns the entity this view belongs to.
     #[must_use]
-    pub fn entity(&self) -> &'a (dyn Entity + 'static) {
-        self.living
+    pub const fn entity(&self) -> &'a (dyn Entity + 'static) {
+        self.living.entity()
     }
 
     /// Returns the living entity this view belongs to.
     #[must_use]
-    pub const fn living(&self) -> &'a (dyn LivingEntity + 'static) {
+    pub const fn living(&self) -> Living<'a> {
         self.living
     }
 
@@ -514,23 +515,35 @@ impl<'a> Mob<'a> {
     }
 }
 
+/// `Mob`'s changes to the living defaults: the AI steps run this type's mob
+/// pipelines.
+#[must_use]
+pub const fn living_props<E: Parts>() -> LivingProps<E> {
+    LivingProps {
+        ai_step: |mob, entity| mob.mob().run_ai_step(entity),
+        server_ai_step: |mob, entity| mob.mob().mob_server_ai_step(entity),
+        base_experience_reward: |mob| mob.mob().base_experience_reward_mob(),
+        ..LivingProps::new()
+    }
+}
+
 /// Components every mob has; keeps stage bounds short.
-pub trait Parts: LivingEntity + Leashable + Has<MobBase> {
+pub trait Parts: LivingParts + Leashable + Has<MobBase> {
     /// Returns this entity as a mob.
     fn mob(&self) -> Mob<'_>;
 }
 
-impl<E: LivingEntity + Leashable + Has<MobBase>> Parts for E {
+impl<E: LivingParts + Leashable + Has<MobBase>> Parts for E {
     fn mob(&self) -> Mob<'_> {
         Mob::new(self)
     }
 }
 
-impl Deref for Mob<'_> {
-    type Target = dyn LivingEntity;
+impl<'a> Deref for Mob<'a> {
+    type Target = Living<'a>;
 
     fn deref(&self) -> &Self::Target {
-        self.living
+        &self.living
     }
 }
 
@@ -582,6 +595,11 @@ impl<'a> Mob<'a> {
             .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
     }
 
+    /// Runs this type's `aiStep` pipeline.
+    pub fn run_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        self.definition().ai_step(self.entity(), entity)
+    }
+
     /// Runs this type's `customServerAiStep` pipeline.
     pub fn custom_server_ai_step(&self) {
         self.definition().custom_server_ai_step(self.entity());
@@ -629,7 +647,7 @@ impl<'a> Mob<'a> {
             .set_target(target, |target| self.is_valid_target(target))
     }
 
-    pub fn is_valid_target(&self, target: &dyn LivingEntity) -> bool {
+    pub fn is_valid_target(&self, target: &Living<'_>) -> bool {
         if target
             .as_player()
             .is_some_and(|player| player.has_infinite_materials() || player.is_spectator())
@@ -642,7 +660,7 @@ impl<'a> Mob<'a> {
 
     /// Returns whether this mob may attack the target; excludes ghasts, which
     /// mobs never target directly.
-    pub fn can_attack(&self, target: &dyn LivingEntity) -> bool {
+    pub fn can_attack(&self, target: &Living<'_>) -> bool {
         target.entity_type() != &vanilla_entities::GHAST && self.living.can_attack(target)
     }
 
@@ -694,7 +712,7 @@ impl<'a> Mob<'a> {
 
     /// Runs the mob-owned portion of vanilla `Mob.baseTick`.
     pub fn mob_base_tick(&self) {
-        if !LivingEntity::is_alive(self.living) {
+        if !self.living.is_alive() {
             return;
         }
 
@@ -799,7 +817,7 @@ impl<'a> Mob<'a> {
         hand: InteractionHand,
         location: DVec3,
     ) -> InteractionResult {
-        if !LivingEntity::is_alive(self.living) {
+        if !self.living.is_alive() {
             return InteractionResult::Pass;
         }
 
@@ -851,7 +869,7 @@ impl<'a> Mob<'a> {
                 ITEM_BEHAVIORS.get_behavior(item).interact_living_entity(
                     item_stack,
                     player,
-                    living_entity,
+                    &living_entity,
                     hand,
                 )
             };
@@ -1224,7 +1242,7 @@ impl<'a> Mob<'a> {
             return;
         };
         if !self.can_pick_up_loot()
-            || !Entity::is_alive(self.living)
+            || !Entity::is_alive(self.entity())
             || !world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
         {
             return;
@@ -1580,7 +1598,7 @@ impl<'a> Mob<'a> {
             enchantment_helper::modify_damage(&weapon_item, &enchantment_context, attack_damage);
         damage += ITEM_BEHAVIORS
             .get_behavior(weapon_item.item())
-            .get_attack_damage_bonus(attacker, target.as_ref(), damage, &damage_source);
+            .get_attack_damage_bonus(&attacker, target.as_ref(), damage, &damage_source);
 
         let old_movement = target.velocity();
         let was_hurt = target.hurt(world, &damage_source, damage);
@@ -1597,8 +1615,8 @@ impl<'a> Mob<'a> {
                 if let Some(living_target) = target.as_living_entity() {
                     ITEM_BEHAVIORS.get_behavior(stack.item()).hurt_enemy(
                         stack,
-                        living_target,
-                        attacker,
+                        &living_target,
+                        &attacker,
                     );
                 }
             });
@@ -1613,7 +1631,7 @@ impl<'a> Mob<'a> {
         }
 
         if let Some(user) = self.as_entity_event_source().as_living_entity() {
-            enchantment_helper::do_post_piercing_attack_effects(world, user);
+            enchantment_helper::do_post_piercing_attack_effects(world, &user);
         }
         was_hurt
     }
@@ -1695,7 +1713,7 @@ impl<'a> Mob<'a> {
     }
 
     /// Returns whether `target` is within this mob's melee attack range.
-    pub fn is_within_melee_attack_range(&self, target: &dyn LivingEntity) -> bool {
+    pub fn is_within_melee_attack_range(&self, target: &Living<'_>) -> bool {
         // TODO: Use the held item's ATTACK_RANGE component once it has typed component data.
         let max_range = default_attack_reach();
         let min_range = 0.0;
@@ -1835,7 +1853,7 @@ impl<'a> Mob<'a> {
     /// Damages sun-protective gear on a successful burn roll, or ignites
     /// the mob if the slot is empty.
     pub fn tick_daylight_burning(&self) {
-        if !LivingEntity::is_alive(self.living) || !self.is_sun_burn_tick() {
+        if !self.living.is_alive() || !self.is_sun_burn_tick() {
             return;
         }
 
@@ -2126,7 +2144,7 @@ impl<'a> Mob<'a> {
 }
 
 // Every mob is `Leashable`.
-impl<T: LivingEntity + Has<MobBase>> Leashable for T {
+impl<T: LivingParts + Has<MobBase>> Leashable for T {
     fn leash_data(&self) -> &SyncMutex<Option<LeashData>> {
         self.get::<MobBase>().leash_data()
     }

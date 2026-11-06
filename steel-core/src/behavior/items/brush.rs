@@ -1,5 +1,6 @@
 //! Brush item behavior for continuous archaeology brushing.
 
+use crate::entity::LivingParts as _;
 use std::sync::Arc;
 
 use steel_macros::item_behavior;
@@ -13,7 +14,7 @@ use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior, ItemUseAnimation};
 use crate::block_entity::entities::BrushableBlockEntity;
 use crate::entity::projectile::{ViewVectorHitResult, get_hit_result_on_view_vector};
-use crate::entity::{Entity, LivingEntity, LivingEntityRef};
+use crate::entity::{Entity, Living, LivingEntityRef};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
 use crate::world::World;
@@ -34,7 +35,7 @@ impl ItemBehavior for BrushItem {
         InteractionResult::Consume
     }
 
-    fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+    fn get_use_duration(&self, _stack: &ItemStack, _user: &Living<'_>) -> i32 {
         USE_DURATION
     }
 
@@ -54,7 +55,7 @@ impl ItemBehavior for BrushItem {
             return;
         }
 
-        let Some(player) = user.living().as_player() else {
+        let Some(player) = user.entity().as_player() else {
             return;
         };
         let Some((pos, direction)) = calculate_block_hit(world, player) else {
@@ -89,7 +90,7 @@ impl ItemBehavior for BrushItem {
             let slot = equipped_brush_slot(player, stack);
             let item_ref = stack.item;
             if stack.hurt_and_break(1, player.has_infinite_materials()) {
-                player.on_equipped_item_broken(item_ref, slot);
+                player.living().on_equipped_item_broken(item_ref, slot);
             }
         }
     }

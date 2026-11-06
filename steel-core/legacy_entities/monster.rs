@@ -14,7 +14,7 @@ use steel_utils::types::Difficulty;
 use crate::chunk::light::{LightLayer, MAX_LIGHT_LEVEL};
 use crate::entity::damage::DamageSource;
 use crate::entity::mob::LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE;
-use crate::entity::{EntitySpawnReason, Mob, SharedEntity};
+use crate::entity::{EntitySpawnReason, Mob, PathfinderMob, SharedEntity};
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
@@ -33,7 +33,7 @@ impl<T: Monster + ?Sized> Enemy for T {}
 
 /// Shared hostile-mob behavior. Concrete mobs delegate to `_monster` hooks
 /// to avoid name collisions with base-trait methods.
-pub trait Monster: Mob + Enemy {
+pub trait Monster: PathfinderMob + Enemy {
     fn default_xp_reward_monster(&self) -> i32 {
         DEFAULT_XP_REWARD
     }
@@ -52,7 +52,9 @@ pub trait Monster: Mob + Enemy {
 
     fn fall_sounds_monster(&self) -> (SoundEventRef, SoundEventRef) {
         (
-            &sound_events::ENTITY_HOSTILE_SMALL_FALL, &sound_events::ENTITY_HOSTILE_BIG_FALL, )
+            &sound_events::ENTITY_HOSTILE_SMALL_FALL,
+            &sound_events::ENTITY_HOSTILE_BIG_FALL,
+        )
     }
 
     /// Returns the hostile water-entry splash sound.
@@ -62,7 +64,8 @@ pub trait Monster: Mob + Enemy {
 
     /// Returns the hostile swim sound.
     fn swim_sound_monster(&self) -> SoundEventRef {
-        &sound_events::ENTITY_HOSTILE_SWIM}
+        &sound_events::ENTITY_HOSTILE_SWIM
+    }
 
     /// Adds two idle ticks in bright light to hasten despawning.
     fn update_no_action_time(&self) {

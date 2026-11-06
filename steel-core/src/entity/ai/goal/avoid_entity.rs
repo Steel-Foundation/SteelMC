@@ -5,7 +5,7 @@ use super::selector::{Goal, GoalControls};
 use crate::entity::ai::path::Path;
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::entity_selector;
-use crate::entity::{LivingEntity, Mob, SharedEntity};
+use crate::entity::{Living, Mob, SharedEntity};
 use crate::world::World;
 
 pub struct AvoidEntityGoal {
@@ -33,7 +33,7 @@ impl AvoidEntityGoal {
         max_dist: f32,
         walk_speed_modifier: f64,
         sprint_speed_modifier: f64,
-        selector: impl Fn(&dyn LivingEntity, &World) -> bool + Send + Sync + 'static,
+        selector: impl Fn(&Living<'_>, &World) -> bool + Send + Sync + 'static,
     ) -> Self {
         Self {
             to_avoid: None,
@@ -65,7 +65,7 @@ impl Goal for AvoidEntityGoal {
             world.nearest_entity_in_aabb_matching(&search_box, mob.position(), |entity| {
                 entity.as_living_entity().is_some_and(|living| {
                     self.avoid_entity_targeting
-                        .test(world.as_ref(), Some(mob.living()), living)
+                        .test(world.as_ref(), Some(&mob.living()), &living)
                 })
             })
         else {

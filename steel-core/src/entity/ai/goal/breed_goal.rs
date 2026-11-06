@@ -37,7 +37,7 @@ impl BreedGoal {
             else {
                 return false;
             };
-            if !partner_targeting.test(world.as_ref(), Some(mob.living()), living) {
+            if !partner_targeting.test(world.as_ref(), Some(&mob.living()), &living) {
                 return false;
             }
             if !animal.can_mate(&candidate) {

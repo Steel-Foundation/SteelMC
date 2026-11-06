@@ -8,14 +8,30 @@ fn can_glide_using_matches_vanilla_component_gate() {
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let mut elytra = ItemStack::new(&vanilla_items::ELYTRA);
 
-    assert!(entity.can_glide_using(&elytra, EquipmentSlot::Chest));
-    assert!(!entity.can_glide_using(&elytra, EquipmentSlot::Head));
+    assert!(
+        entity
+            .living()
+            .can_glide_using(&elytra, EquipmentSlot::Chest)
+    );
+    assert!(
+        !entity
+            .living()
+            .can_glide_using(&elytra, EquipmentSlot::Head)
+    );
 
     elytra.set_damage_value(elytra.get_max_damage() - 1);
 
     assert!(elytra.next_damage_will_break());
-    assert!(!entity.can_glide_using(&elytra, EquipmentSlot::Chest));
-    assert!(!entity.can_glide_using(&ItemStack::new(&vanilla_items::STONE), EquipmentSlot::Chest));
+    assert!(
+        !entity
+            .living()
+            .can_glide_using(&elytra, EquipmentSlot::Chest)
+    );
+    assert!(
+        !entity
+            .living()
+            .can_glide_using(&ItemStack::new(&vanilla_items::STONE), EquipmentSlot::Chest)
+    );
 }
 
 #[test]
@@ -23,12 +39,12 @@ fn living_armor_cover_counts_non_empty_humanoid_armor_slots() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
-    assert_f32_close(entity.get_armor_cover_percentage(), 0.0);
+    assert_f32_close(entity.living().get_armor_cover_percentage(), 0.0);
 
     entity.equip(EquipmentSlot::Head, ItemStack::new(&vanilla_items::STONE));
     entity.equip(EquipmentSlot::Feet, ItemStack::new(&vanilla_items::STONE));
 
-    assert_f32_close(entity.get_armor_cover_percentage(), 0.5);
+    assert_f32_close(entity.living().get_armor_cover_percentage(), 0.5);
 }
 
 #[test]
@@ -36,17 +52,20 @@ fn living_visibility_percent_uses_discrete_and_invisible_scaling() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
-    assert_f64_close(entity.get_visibility_percent(None), 1.0);
+    assert_f64_close(entity.living().get_visibility_percent(None), 1.0);
 
     EntitySyncedData::set_base_invisible_flag(&entity.entity_data, true);
 
     let invisible_without_armor = 0.7 * f64::from(0.1_f32);
-    assert_f64_close(entity.get_visibility_percent(None), invisible_without_armor);
+    assert_f64_close(
+        entity.living().get_visibility_percent(None),
+        invisible_without_armor,
+    );
 
     entity.set_shared_shift_key_down(true);
 
     assert_f64_close(
-        entity.get_visibility_percent(None),
+        entity.living().get_visibility_percent(None),
         0.8 * invisible_without_armor,
     );
 }
@@ -63,7 +82,7 @@ fn living_visibility_percent_uses_matching_mob_head_disguise() {
         ItemStack::new(&vanilla_items::SKELETON_SKULL),
     );
 
-    assert_f64_close(entity.get_visibility_percent(Some(&skeleton)), 0.5);
+    assert_f64_close(entity.living().get_visibility_percent(Some(&skeleton)), 0.5);
 }
 
 #[test]
@@ -71,14 +90,14 @@ fn living_freeze_immunity_uses_armor_equipment() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
-    assert!(entity.default_living_can_freeze());
+    assert!(entity.living().default_living_can_freeze());
 
     entity.equip(
         EquipmentSlot::Feet,
         ItemStack::new(&vanilla_items::LEATHER_BOOTS),
     );
 
-    assert!(!entity.default_living_can_freeze());
+    assert!(!entity.living().default_living_can_freeze());
 }
 
 #[test]
@@ -91,7 +110,7 @@ fn living_freeze_immunity_uses_body_armor_equipment() {
         ItemStack::new(&vanilla_items::LEATHER_HORSE_ARMOR),
     );
 
-    assert!(!entity.default_living_can_freeze());
+    assert!(!entity.living().default_living_can_freeze());
 }
 
 #[test]
@@ -103,7 +122,7 @@ fn living_freeze_immunity_ignores_non_armor_equipment() {
         ItemStack::new(&vanilla_items::LEATHER_BOOTS),
     );
 
-    assert!(entity.default_living_can_freeze());
+    assert!(entity.living().default_living_can_freeze());
 }
 
 #[test]
@@ -112,7 +131,7 @@ fn living_freezing_decays_when_not_in_powder_snow() {
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_ticks_frozen(10);
 
-    entity.tick_freezing();
+    entity.living().tick_freezing();
 
     assert_eq!(entity.ticks_frozen(), 8);
 }
@@ -124,7 +143,7 @@ fn living_freezing_keeps_ticks_while_in_powder_snow() {
     entity.set_ticks_frozen(10);
     entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
 
-    entity.tick_freezing();
+    entity.living().tick_freezing();
 
     assert_eq!(entity.ticks_frozen(), 11);
 }
@@ -136,13 +155,14 @@ fn living_freezing_adds_powder_snow_speed_modifier() {
     entity.set_ticks_frozen(DEFAULT_TICKS_REQUIRED_TO_FREEZE / 2);
     entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
     let base_speed = entity
+        .living()
         .attributes()
         .lock()
         .required_value(vanilla_attributes::MOVEMENT_SPEED);
 
-    entity.tick_freezing();
+    entity.living().tick_freezing();
 
-    let attributes = entity.attributes().lock();
+    let attributes = entity.living().attributes().lock();
     assert!(attributes.has_modifier(
         vanilla_attributes::MOVEMENT_SPEED,
         &SPEED_MODIFIER_POWDER_SNOW_ID,
@@ -157,7 +177,7 @@ fn living_freezing_adds_powder_snow_speed_modifier() {
 fn living_freezing_removes_stale_powder_snow_speed_modifier() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    entity.attributes().lock().add_modifier(
+    entity.living().attributes().lock().add_modifier(
         vanilla_attributes::MOVEMENT_SPEED,
         AttributeModifier {
             id: SPEED_MODIFIER_POWDER_SNOW_ID,
@@ -167,9 +187,9 @@ fn living_freezing_removes_stale_powder_snow_speed_modifier() {
         false,
     );
 
-    entity.tick_freezing();
+    entity.living().tick_freezing();
 
-    assert!(!entity.attributes().lock().has_modifier(
+    assert!(!entity.living().attributes().lock().has_modifier(
         vanilla_attributes::MOVEMENT_SPEED,
         &SPEED_MODIFIER_POWDER_SNOW_ID,
     ));
@@ -185,9 +205,9 @@ fn living_freezing_damages_fully_frozen_entities_on_frequency() {
         entity.advance_tick_count();
     }
 
-    entity.tick_freezing();
+    entity.living().tick_freezing();
 
-    assert_f32_close(entity.get_health(), 19.0);
+    assert_f32_close(entity.living().get_health(), 19.0);
 }
 
 #[test]
@@ -207,13 +227,13 @@ fn default_ai_step_ticks_freezing_after_travel() {
         entity.advance_tick_count();
     }
 
-    entity.default_ai_step(&shared_entity);
+    entity.living().default_ai_step(&shared_entity);
 
     assert_eq!(
         entity.damage_type_keys(),
         vec![vanilla_damage_types::FREEZE.key.clone()]
     );
-    assert_f32_close(entity.get_health(), 19.0);
+    assert_f32_close(entity.living().get_health(), 19.0);
 }
 
 #[test]
@@ -237,7 +257,7 @@ fn freezing_damage_hurts_extra_tagged_entity_types() {
         1.0,
     ));
 
-    assert_f32_close(entity.get_health(), 15.0);
+    assert_f32_close(entity.living().get_health(), 15.0);
 }
 
 #[test]
@@ -273,11 +293,11 @@ fn default_can_glide_uses_living_equipment() {
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_on_ground(false);
 
-    assert!(!entity.can_glide());
+    assert!(!entity.living().can_glide());
 
     entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
 
-    assert!(entity.can_glide());
+    assert!(entity.living().can_glide());
 }
 
 #[test]
@@ -287,8 +307,8 @@ fn try_to_start_fall_flying_uses_vanilla_glider_gate() {
     entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
     entity.set_on_ground(false);
 
-    assert!(entity.try_to_start_fall_flying());
-    assert!(entity.is_fall_flying());
+    assert!(entity.living().try_to_start_fall_flying());
+    assert!(entity.living().is_fall_flying());
 }
 
 #[test]
@@ -301,7 +321,7 @@ fn gliding_non_player_living_entity_forces_velocity_sync() {
 
     entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
     entity.set_on_ground(false);
-    assert!(entity.try_to_start_fall_flying());
+    assert!(entity.living().try_to_start_fall_flying());
 
     assert!(
         entity_ref.forces_fall_flying_velocity_sync(),
@@ -316,10 +336,12 @@ fn try_to_start_fall_flying_rejects_levitation() {
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
     entity.set_on_ground(false);
-    entity.set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
+    entity
+        .living()
+        .set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
 
-    assert!(!entity.try_to_start_fall_flying());
-    assert!(!entity.is_fall_flying());
+    assert!(!entity.living().try_to_start_fall_flying());
+    assert!(!entity.living().is_fall_flying());
 }
 
 #[test]
@@ -332,7 +354,7 @@ fn update_fall_flying_damages_glider_every_second_event_interval() {
         entity.living_base.tick_fall_flying_state(true);
     }
 
-    entity.update_fall_flying();
+    entity.living().update_fall_flying();
 
     assert_eq!(
         entity
@@ -349,9 +371,9 @@ fn update_fall_flying_damages_glider_every_second_event_interval() {
 fn update_fall_flying_stops_when_glider_gate_fails() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    entity.set_fall_flying(true);
+    entity.living().set_fall_flying(true);
 
-    entity.update_fall_flying();
+    entity.living().update_fall_flying();
 
-    assert!(!entity.is_fall_flying());
+    assert!(!entity.living().is_fall_flying());
 }

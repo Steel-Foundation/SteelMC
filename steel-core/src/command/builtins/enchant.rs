@@ -19,7 +19,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::entity::{LivingEntity, SharedEntity};
+use crate::entity::{Living, SharedEntity};
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("enchant"), |_| command())
@@ -75,7 +75,7 @@ fn enchant(
             continue;
         };
 
-        match enchant_main_hand(living, enchantment, level) {
+        match enchant_main_hand(&living, enchantment, level) {
             EnchantTargetResult::Enchanted => success += 1,
             EnchantTargetResult::Itemless if targets.len() == 1 => {
                 return Err(itemless_error(target));
@@ -124,7 +124,7 @@ enum EnchantTargetResult {
 }
 
 fn enchant_main_hand(
-    target: &dyn LivingEntity,
+    target: &Living<'_>,
     enchantment: EnchantmentRef,
     level: u32,
 ) -> EnchantTargetResult {
@@ -206,7 +206,16 @@ fn enchantment_display_name(enchantment: EnchantmentRef, level: u32) -> TextComp
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntitySyncedData;
+    use crate::entity::LivingParts as _;
+    use crate::entity::LivingProps;
+    use crate::entity::component::Has;
+    use crate::test_support::synced_with_health;
     use std::sync::Weak;
+    use steel_registry::vanilla_entity_data::LivingEntityData;
+    use steel_utils::DowncastType as _;
+    use steel_utils::DowncastTypeKey;
+    use steel_utils::ErasedType;
 
     use glam::DVec3;
     use steel_registry::{
@@ -222,7 +231,7 @@ mod tests {
             brigadier::{ArgumentType, CommandDispatcher, NodeId},
             execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
         },
-        entity::{Entity, EntityBase, LivingEntity, LivingEntityBase},
+        entity::{Entity, EntityBase, LivingEntityBase},
     };
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
@@ -282,12 +291,12 @@ mod tests {
         target.equip(ItemStack::new(&vanilla_items::DIAMOND_SWORD));
 
         assert_eq!(
-            enchant_main_hand(&target, &vanilla_enchantments::SHARPNESS, 1),
+            enchant_main_hand(&target.living(), &vanilla_enchantments::SHARPNESS, 1),
             EnchantTargetResult::Enchanted
         );
         assert_eq!(target.main_hand_enchantment_level(), 1);
         assert!(matches!(
-            enchant_main_hand(&target, &vanilla_enchantments::SHARPNESS, 2),
+            enchant_main_hand(&target.living(), &vanilla_enchantments::SHARPNESS, 2),
             EnchantTargetResult::Incompatible(_)
         ));
         assert_eq!(target.main_hand_enchantment_level(), 1);
@@ -296,7 +305,7 @@ mod tests {
     struct TestLivingEntity {
         base: EntityBase,
         living_base: LivingEntityBase,
-        health: SyncMutex<f32>,
+        entity_data: SyncMutex<LivingEntityData>,
         entity_type: EntityTypeRef,
     }
 
@@ -304,8 +313,8 @@ mod tests {
         fn new(entity_type: EntityTypeRef) -> Self {
             Self {
                 base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::new()),
-                living_base: LivingEntityBase::new(entity_type),
-                health: SyncMutex::new(20.0),
+                living_base: LivingEntityBase::new(entity_type, &TestLivingEntity::LIVING),
+                entity_data: SyncMutex::new(synced_with_health(LivingEntityData::new(), 20.0)),
                 entity_type,
             }
         }
@@ -319,9 +328,10 @@ mod tests {
 
         fn main_hand_enchantment_level(&self) -> i32 {
             let mut level = 0;
-            self.with_equipment_slot(EquipmentSlot::MainHand, &mut |item| {
-                level = item.get_enchantment_level(&vanilla_enchantments::SHARPNESS.key);
-            });
+            self.living()
+                .with_equipment_slot(EquipmentSlot::MainHand, &mut |item| {
+                    level = item.get_enchantment_level(&vanilla_enchantments::SHARPNESS.key);
+                });
             level
         }
     }
@@ -329,6 +339,14 @@ mod tests {
     crate::entity::impl_test_downcast_type!(TestLivingEntity);
 
     impl Entity for TestLivingEntity {
+        fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+            Some(&self.entity_data)
+        }
+
+        fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+            (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+        }
+
         fn base(&self) -> &EntityBase {
             &self.base
         }
@@ -338,23 +356,31 @@ mod tests {
         }
     }
 
-    impl LivingEntity for TestLivingEntity {
-        fn living_base(&self) -> &LivingEntityBase {
-            &self.living_base
-        }
+    impl TestLivingEntity {
+        const LIVING: LivingProps<Self> = LivingProps {
+            get_absorption_amount: Self::living_get_absorption_amount,
+            set_absorption_amount: Self::living_set_absorption_amount,
+            ..LivingProps::new()
+        };
 
-        fn get_health(&self) -> f32 {
-            *self.health.lock()
-        }
-
-        fn set_health(&self, health: f32) {
-            *self.health.lock() = health;
-        }
-
-        fn get_absorption_amount(&self) -> f32 {
+        #[expect(
+            clippy::unused_self,
+            reason = "kept as a method of the view for callers; the body does not need the entity"
+        )]
+        fn living_get_absorption_amount(&self) -> f32 {
             0.0
         }
 
-        fn set_absorption_amount(&self, _amount: f32) {}
+        #[expect(
+            clippy::unused_self,
+            reason = "kept as a method of the view for callers; the body does not need the entity"
+        )]
+        fn living_set_absorption_amount(&self, _amount: f32) {}
+    }
+
+    impl Has<LivingEntityBase> for TestLivingEntity {
+        fn component(&self) -> &LivingEntityBase {
+            &self.living_base
+        }
     }
 }

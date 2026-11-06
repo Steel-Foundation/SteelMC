@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::LivingParts as _;
 use std::{
     sync::{Arc, Weak},
     thread,
@@ -14,7 +15,7 @@ use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use crate::entity::{EntityBase, LivingEntity as _, entities::ChickenEntity};
+use crate::entity::{EntityBase, entities::ChickenEntity};
 use crate::player::ResetReason;
 use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world,
@@ -50,8 +51,8 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
         |player_id| (player_id == old.id()).then(|| Arc::clone(&old)),
     );
     assert_eq!(world.entity_tracker().tracking_player_ids(2), [old.id()]);
-    old.set_sleeping_pos(BlockPos::new(0, 64, 0));
-    assert!(old.is_sleeping());
+    old.living().set_sleeping_pos(BlockPos::new(0, 64, 0));
+    assert!(old.living().is_sleeping());
 
     assert!(world.detach_player_for_respawn(&old, true));
     let Some(retained) = world.players.get_by_uuid(&uuid) else {
@@ -65,7 +66,7 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
         Vec::<i32>::new()
     );
     assert!(old.last_tracking_view.lock().is_none());
-    assert!(!old.is_sleeping());
+    assert!(!old.living().is_sleeping());
     assert!(old.try_set_position(DVec3::new(1.0, 64.0, 1.0)).is_ok());
 
     let leave_game = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::LEAVE_GAME);

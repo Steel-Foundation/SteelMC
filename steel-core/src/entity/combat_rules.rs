@@ -1,5 +1,5 @@
 use crate::enchantment_helper::{self, EnchantmentDamageContext};
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 
 use super::damage::DamageSource;
 
@@ -9,7 +9,7 @@ const BASE_ARMOR_TOUGHNESS: f32 = 2.0;
 const MIN_ARMOR_RATIO: f32 = 0.2;
 
 pub(super) fn get_damage_after_absorb(
-    victim: &(impl LivingEntity + ?Sized),
+    victim: &Living<'_>,
     damage: f32,
     source: &DamageSource,
     total_armor: f32,

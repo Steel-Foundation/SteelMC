@@ -31,7 +31,8 @@ use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    Entity, EntitySpawnReason, Mob, MobBase, MobProps, SharedEntity, mob, next_entity_id,
+    Entity, EntitySpawnReason, LivingProps, Mob, MobBase, MobProps, SharedEntity, mob,
+    next_entity_id,
 };
 use crate::player::Player;
 use crate::world::{LevelReader, World};
@@ -39,6 +40,15 @@ use crate::world::{LevelReader, World};
 const PARENT_AGE_AFTER_BREEDING: i32 = 6000;
 const IN_LOVE_TIME: i32 = 600;
 const BREEDING_XP: RangeInclusive<i32> = 1..=7;
+/// `Animal`'s changes to the living defaults.
+#[must_use]
+pub const fn living_props<E: Parts>() -> LivingProps<E> {
+    LivingProps {
+        base_experience_reward: |_| Animal::base_experience_reward(),
+        ..mob::living_props()
+    }
+}
+
 /// `Animal`'s changes to the mob defaults, for a type with `definition`.
 #[must_use]
 pub const fn mob_props(definition: fn() -> &'static dyn MobEntries) -> MobProps {

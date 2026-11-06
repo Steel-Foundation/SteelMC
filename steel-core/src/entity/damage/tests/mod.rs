@@ -1,3 +1,4 @@
+use crate::entity::LivingParts as _;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -8,7 +9,7 @@ use steel_utils::{Identifier, types::Difficulty};
 
 use super::{DamageHistory, DamageSource};
 use crate::entity::entities::ChickenEntity;
-use crate::entity::{Entity, LivingEntity, RemovalReason};
+use crate::entity::{Entity, RemovalReason};
 
 use crate::level_data::GameTimeSource;
 use crate::player::Player;
@@ -61,7 +62,7 @@ fn returned_self_damage_source_outlives_history_expiry_without_a_cycle() {
     let weak = Arc::downgrade(&player);
     let entity = Arc::clone(&player);
     let source = DamageSource::direct(&vanilla_damage_types::INDIRECT_MAGIC, entity);
-    player.record_last_damage_source(&source);
+    player.living().record_last_damage_source(&source);
     let generation = player.generation();
     drop(source);
     advance_test_game_time_to(&world, 40);
@@ -87,11 +88,11 @@ fn unmanaged_mutual_damage_does_not_retain_players_or_worlds() {
     let world = history_world(&history, "mutual_damage_history");
     let first = TestPlayerBuilder::new(Arc::clone(&world), "First", 1).build();
     let second = TestPlayerBuilder::new(Arc::clone(&world), "Second", 2).build();
-    first.record_last_damage_source(
+    first.living().record_last_damage_source(
         &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
             .with_causing_entity(Arc::<Player>::clone(&second)),
     );
-    second.record_last_damage_source(
+    second.living().record_last_damage_source(
         &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK)
             .with_causing_entity(Arc::<Player>::clone(&first)),
     );
@@ -113,17 +114,20 @@ fn replacing_damage_history_releases_the_previous_source() {
     assert!(world.players.insert(Arc::clone(&victim)));
     let first = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let weak = Arc::downgrade(&first);
-    victim.record_last_damage_source(
+    victim.living().record_last_damage_source(
         &DamageSource::environment(&vanilla_damage_types::GENERIC).with_direct_entity(first),
     );
     assert!(
         weak.upgrade().is_some(),
         "active history retains its source"
     );
-    victim.record_last_damage_source(&DamageSource::environment(&vanilla_damage_types::DROWN));
+    victim
+        .living()
+        .record_last_damage_source(&DamageSource::environment(&vanilla_damage_types::DROWN));
     assert!(weak.upgrade().is_none());
     assert_eq!(
         victim
+            .living()
             .last_damage_source()
             .expect("replacement")
             .damage_type,
@@ -137,15 +141,18 @@ fn returned_source_survives_history_clear_and_owner_teardown() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "damage_history_teardown");
     let player = TestPlayerBuilder::new(Arc::clone(&world), "Retained", 1).build();
-    player.record_last_damage_source(
+    player.living().record_last_damage_source(
         &DamageSource::environment(&vanilla_damage_types::GENERIC)
             .with_direct_entity(Arc::<Player>::clone(&player)),
     );
-    let retained = player.last_damage_source().expect("recorded source");
+    let retained = player
+        .living()
+        .last_damage_source()
+        .expect("recorded source");
     let weak_player = Arc::downgrade(&player);
     let weak_world = Arc::downgrade(&world);
     history.clear();
-    assert!(player.last_damage_source().is_none());
+    assert!(player.living().last_damage_source().is_none());
     drop((history, player, world));
     assert!(weak_player.upgrade().is_some());
     assert!(weak_world.upgrade().is_some());
@@ -173,10 +180,10 @@ fn successful_damage_uses_the_victims_clock_instead_of_the_supplied_world() {
     ));
     advance_test_game_time_to(&supplied_world, 200);
     history.expire();
-    assert!(victim.last_damage_source().is_some());
+    assert!(victim.living().last_damage_source().is_some());
     // Keep vanilla's boundary explicit so changing the implementation constant cannot mask drift.
     advance_test_game_time_to(&victim_world, 40);
-    assert!(victim.last_damage_source().is_some());
+    assert!(victim.living().last_damage_source().is_some());
     advance_test_game_time_to(&victim_world, 41);
-    assert!(victim.last_damage_source().is_none());
+    assert!(victim.living().last_damage_source().is_none());
 }

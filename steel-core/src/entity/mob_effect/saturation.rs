@@ -1,7 +1,7 @@
 //! `SaturationMobEffect` behavior.
 
 use super::{InstantaneousMobEffect, MobEffectBehavior};
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::world::World;
 
 /// Mirrors vanilla `SaturationMobEffect`. Only overrides `applyEffectTick`;
@@ -14,7 +14,7 @@ impl MobEffectBehavior for SaturationBehavior {
         Some(self)
     }
 
-    fn apply_effect_tick(&self, _world: &World, user: &dyn LivingEntity, amplifier: i32) -> bool {
+    fn apply_effect_tick(&self, _world: &World, user: &Living<'_>, amplifier: i32) -> bool {
         if let Some(player) = user.as_player() {
             player.food_data.lock().eat(amplifier + 1, 1.0);
         }

@@ -33,7 +33,7 @@ use uuid::Uuid;
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, EntityReference, LivingEntity, SharedEntity};
+use crate::entity::{Entity, EntityReference, Living, SharedEntity};
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
@@ -203,7 +203,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
     /// Returns the horizontal hurt-knockback vector used for this projectile.
     fn calculate_horizontal_hurt_knockback_direction(
         &self,
-        _hurt_entity: &dyn LivingEntity,
+        _hurt_entity: &Living<'_>,
         _damage_source: &DamageSource,
     ) -> (f64, f64) {
         let movement = self.velocity();

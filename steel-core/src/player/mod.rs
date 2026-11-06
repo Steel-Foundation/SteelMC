@@ -29,6 +29,7 @@ pub mod stats_counter;
 mod tick_state;
 mod title;
 
+use crate::entity::LivingParts as _;
 use crate::player::player_inventory::Prediction;
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
 use chat::ChatState;
@@ -103,13 +104,15 @@ use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::LivingEntityRef;
+use crate::entity::LivingProps;
+use crate::entity::component::Has;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
     ActiveItemUseState, DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource,
-    EntityMoveError, EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
-    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
-    apply_entity_look_at, get_kill_credit, start_riding_entities,
+    EntityMoveError, EntityMovementEmission, EntitySyncedData, Living, LivingEntityBase,
+    MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at,
+    get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -146,7 +149,8 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, Identifier, UuidExt as _,
+    BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, ErasedType, Identifier,
+    UuidExt as _,
 };
 
 use crate::inventory::container::Container;
@@ -371,7 +375,7 @@ impl Player {
         };
         let duration = ITEM_BEHAVIORS
             .get_behavior(item.item())
-            .get_use_duration(&item, self);
+            .get_use_duration(&item, &self.living());
         if self.living_base.start_using_item(hand, &item, duration) {
             let mut entity_data = self.entity_data.lock();
             let flags = entity_data.living_entity().living_entity_flags.get();
@@ -433,10 +437,10 @@ impl Player {
         let stack_before_using = item.clone();
         let world = self.get_world();
         let apply_side_effects =
-            behavior.release_using(&mut item, &world, self, active.remaining_ticks());
+            behavior.release_using(&mut item, &world, &self.living(), active.remaining_ticks());
         let use_on_release = behavior.use_on_release(&item);
         if apply_side_effects {
-            item = apply_use_remainder(&stack_before_using, item, self);
+            item = apply_use_remainder(&stack_before_using, item, &self.living());
             self.apply_item_use_cooldown(&stack_before_using);
         }
         self.inventory.lock().set_item_in_hand(hand, item);
@@ -583,7 +587,8 @@ impl Player {
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
         let equipment = Arc::clone(&inventory);
-        let living_base = LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment);
+        let living_base =
+            LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment, &Self::LIVING);
         let player_uuid = gameprofile.id();
         let world_ref = Arc::downgrade(&world);
         Self {
@@ -719,7 +724,7 @@ impl Player {
                 1,
             );
         }
-        if !self.is_sleeping() {
+        if !self.living().is_sleeping() {
             stats.increment(
                 vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::TIME_SINCE_REST),
                 1,
@@ -775,7 +780,7 @@ impl Player {
     /// `world` is vanilla's explicit `ServerLevel` argument and controls
     /// difficulty scaling and damage gamerules.
     pub fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        if LivingEntity::is_invulnerable_to(self, world, source) {
+        if self.living().is_invulnerable_to(world, source) {
             return false;
         }
 
@@ -787,7 +792,7 @@ impl Player {
         }
 
         // TODO: reset player noActionTime and remove shoulder entities.
-        if self.get_health() <= 0.0 {
+        if self.living().get_health() <= 0.0 {
             return false;
         }
 
@@ -813,7 +818,7 @@ impl Player {
             return false;
         }
 
-        LivingEntity::hurt_server(self, world, source, amount)
+        self.living().hurt_server(world, source, amount)
     }
 
     fn disabled_damage_game_rule(source: &DamageSource) -> Option<GameRuleRef<bool>> {
@@ -832,15 +837,17 @@ impl Player {
 
     /// Applies vanilla player damage reductions and health loss.
     fn actually_hurt(&self, world: &World, source: &DamageSource, amount: f32) {
-        if LivingEntity::is_invulnerable_to(self, world, source) {
+        if self.living().is_invulnerable_to(world, source) {
             return;
         }
 
-        let damage = LivingEntity::get_damage_after_armor_absorb(self, source, amount);
-        let damage = LivingEntity::get_damage_after_magic_absorb(self, source, damage);
+        let damage = self.living().get_damage_after_armor_absorb(source, amount);
+        let damage = self.living().get_damage_after_magic_absorb(source, damage);
         let original_damage = damage;
-        let damage = (damage - self.get_absorption_amount()).max(0.0);
-        self.set_absorption_amount(self.get_absorption_amount() - (original_damage - damage));
+        let damage = (damage - self.living().get_absorption_amount()).max(0.0);
+        self.living().set_absorption_amount(
+            self.living().get_absorption_amount() - (original_damage - damage),
+        );
 
         let absorbed_damage = original_damage - damage;
         if (0.0..f32::MAX).contains(&absorbed_damage) {
@@ -853,7 +860,8 @@ impl Player {
         // TODO: combat tracker (getCombatTracker().recordDamage)
         if damage != 0.0 {
             self.cause_food_exhaustion(source.damage_type.exhaustion);
-            self.set_health(self.get_health() - damage);
+            self.living()
+                .set_health(self.living().get_health() - damage);
             if damage < f32::MAX {
                 self.award_custom_stat_with_count(
                     &vanilla_custom_stats::DAMAGE_TAKEN,
@@ -963,7 +971,7 @@ impl Player {
         }
 
         // TODO: Increment DEATH_COUNT objective criterion
-        if let Some(killer) = get_kill_credit(self, world.as_ref()) {
+        if let Some(killer) = get_kill_credit(&self.living(), world.as_ref()) {
             self.award_stat(&vanilla_stat_types::ENTITY_KILLED_BY, killer.entity_type());
             killer.award_kill_score(self, source);
             // TODO: Create wither rose
@@ -1308,6 +1316,10 @@ impl Player {
 }
 
 impl Entity for Player {
+    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+        (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+    }
+
     fn is_hard_collision_relevant(&self) -> bool {
         false
     }
@@ -1321,7 +1333,7 @@ impl Entity for Player {
     }
 
     fn base_tick(&self) {
-        LivingEntity::base_tick_living_entity(self);
+        self.living().base_tick_living_entity();
     }
 
     fn do_water_splash_effect(&self) {
@@ -1475,7 +1487,7 @@ impl Entity for Player {
     }
 
     fn is_alive(&self) -> bool {
-        !self.is_removed() && self.get_health() > 0.0
+        !self.is_removed() && self.living().get_health() > 0.0
     }
 
     fn blocks_building(&self) -> bool {
@@ -1487,7 +1499,7 @@ impl Entity for Player {
     }
 
     fn is_pushable(&self) -> bool {
-        self.get_health() > 0.0 && !self.is_spectator() && !self.on_climbable()
+        self.living().get_health() > 0.0 && !self.is_spectator() && !self.on_climbable()
     }
 
     fn on_climbable(&self) -> bool {
@@ -1511,7 +1523,7 @@ impl Entity for Player {
     }
 
     fn get_default_gravity(&self) -> f64 {
-        LivingEntity::get_attribute_gravity(self)
+        self.living().get_attribute_gravity()
     }
 
     fn fire_ignite_extra_ticks(&self) -> i32 {
@@ -1523,7 +1535,7 @@ impl Entity for Player {
             return false;
         }
 
-        self.default_living_can_freeze()
+        self.living().default_living_can_freeze()
     }
 
     fn make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
@@ -1535,7 +1547,7 @@ impl Entity for Player {
     }
 
     fn can_be_hit_by_projectile(&self) -> bool {
-        self.get_health() > 0.0 && self.is_pickable()
+        self.living().get_health() > 0.0 && self.is_pickable()
     }
 
     fn uses_client_movement_packets(&self) -> bool {
@@ -1595,12 +1607,8 @@ impl Entity for Player {
             );
         }
 
-        LivingEntity::cause_living_fall_damage(
-            self.as_ref(),
-            fall_distance,
-            damage_modifier,
-            source,
-        )
+        self.living()
+            .cause_living_fall_damage(fall_distance, damage_modifier, source)
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
@@ -1612,7 +1620,8 @@ impl Entity for Player {
     }
 
     fn max_up_step(&self) -> f32 {
-        self.attributes()
+        self.living()
+            .attributes()
             .lock()
             .get_value(vanilla_attributes::STEP_HEIGHT)
             .unwrap_or(0.6) as f32
@@ -1705,7 +1714,7 @@ impl Entity for Player {
         if pose == EntityPose::Sleeping || self.entity_type().fixed {
             dimensions
         } else {
-            dimensions.scale(LivingEntity::get_scale(self))
+            dimensions.scale(self.living().get_scale())
         }
     }
 
@@ -1715,12 +1724,7 @@ impl Entity for Player {
         Player::hurt(self, world, source, amount)
     }
 
-    fn killed_entity(
-        &self,
-        _world: &World,
-        entity: &dyn LivingEntity,
-        _source: &DamageSource,
-    ) -> bool {
+    fn killed_entity(&self, _world: &World, entity: &Living<'_>, _source: &DamageSource) -> bool {
         log::debug!("1");
         self.award_stat(&vanilla_stat_types::ENTITY_KILLED, entity.entity_type());
         true
@@ -1747,12 +1751,40 @@ const fn protocol_look_at_anchor(anchor: EntityAnchor) -> LookAtAnchor {
     }
 }
 
-impl LivingEntity for Player {
-    fn living_synced_data(&self) -> Option<&dyn LivingEntitySyncedData> {
-        Some(&self.entity_data)
-    }
+/// `ServerPlayer`'s overrides of the living hooks.
+impl Player {
+    const LIVING: LivingProps<Self> = LivingProps {
+        indicate_damage: Self::living_indicate_damage,
+        tick_living_entity: Self::living_tick_living_entity,
+        is_using_item: Self::living_is_using_item,
+        get_luck: Self::living_get_luck,
+        can_be_seen_as_enemy: Self::living_can_be_seen_as_enemy,
+        is_invulnerable_to: Self::living_is_invulnerable_to,
+        hurt_armor: Self::living_hurt_armor,
+        actually_hurt: Self::living_actually_hurt,
+        hurt_broadcast_chunk: Self::living_hurt_broadcast_chunk,
+        die: Self::living_die,
+        tick_equipment: Self::living_tick_equipment,
+        with_equipment_slot: Self::living_with_equipment_slot,
+        with_equipment_slot_mut: Self::living_with_equipment_slot_mut,
+        interact_living_entity_with_equippable: Self::living_interact_living_entity_with_equippable,
+        has_infinite_materials: Self::living_has_infinite_materials,
+        handle_extra_items_created_on_use: Self::living_handle_extra_items_created_on_use,
+        get_absorption_amount: Self::living_get_absorption_amount,
+        set_absorption_amount: Self::living_set_absorption_amount,
+        is_affected_by_fluids: Self::living_is_affected_by_fluids,
+        can_glide: Self::living_can_glide,
+        is_immobile: Self::living_is_immobile,
+        stop_sleeping: Self::living_stop_sleeping,
+        jump_from_ground: Self::living_jump_from_ground,
+        ai_step: Self::living_ai_step,
+        travel: Self::living_travel,
+        get_flying_speed: Self::living_get_flying_speed,
+        on_equipped_item_broken: Self::living_on_equipped_item_broken,
+        ..LivingProps::new()
+    };
 
-    fn indicate_damage(&self, xd: f64, zd: f64) {
+    fn living_indicate_damage(&self, xd: f64, zd: f64) {
         let (y_rot, _) = self.rotation();
         let hurt_dir = zd.atan2(xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
         self.send_packet(CHurtAnimation {
@@ -1761,7 +1793,7 @@ impl LivingEntity for Player {
         });
     }
 
-    fn tick_living_entity(&self, entity: &SharedEntity) {
+    fn living_tick_living_entity(&self, entity: &SharedEntity) {
         self.advance_tick();
         self.tick_item_cooldowns();
         self.tick_attack_strength();
@@ -1769,15 +1801,19 @@ impl LivingEntity for Player {
         self.check_idle_timeout();
         self.tick_client_load_timeout();
         self.tick_sleep_counter();
-        if self.is_sleeping() {
+        if self.living().is_sleeping() {
             let world = self.get_world();
-            let state = self.sleeping_pos().map(|pos| world.get_block_state(pos));
+            let state = self
+                .living()
+                .sleeping_pos()
+                .map(|pos| world.get_block_state(pos));
             if state.is_some_and(|state| {
                 !self.bed_rule_value_allows(Self::bed_rule_for(&world, state).can_sleep)
             }) {
                 self.stop_sleep_in_bed(false, true);
             } else if !self.can_interact_with_level()
                 || self
+                    .living()
                     .sleeping_pos()
                     .is_none_or(|pos| !world.get_block_state(pos).is_bed())
             {
@@ -1797,8 +1833,8 @@ impl LivingEntity for Player {
         self.reset_vehicle_movement_for_tick();
 
         self.default_tick();
-        self.detect_equipment_updates();
-        self.ai_step(entity);
+        self.living().detect_equipment_updates();
+        let _movement = self.living().ai_step(entity);
 
         // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
         if let Err(error) = self.try_set_position(tick_position) {
@@ -1812,12 +1848,12 @@ impl LivingEntity for Player {
         self.tick_ack_block_changes();
 
         self.living_base.decrement_invulnerable_time();
-        self.tick_mob_effects();
+        self.living().tick_mob_effects();
         self.tick_active_item_use(entity);
         // TODO: Tick stats even when the player has been dead for more than 20 ticks.
         self.tick_stats();
 
-        if self.get_health() <= 0.0 {
+        if self.living().get_health() <= 0.0 {
             self.tick_death();
         } else {
             let world = self.get_world();
@@ -1828,8 +1864,8 @@ impl LivingEntity for Player {
             self.living_base.refresh_speed_from_attributes();
             self.tick_food_data();
 
-            if self.is_sprinting() && !self.food_data.lock().has_enough_food() {
-                self.set_sprinting(false);
+            if self.living().is_sprinting() && !self.food_data.lock().has_enough_food() {
+                self.living().set_sprinting(false);
             }
         }
 
@@ -1840,7 +1876,7 @@ impl LivingEntity for Player {
             return;
         }
 
-        self.tick_living_state();
+        self.living().tick_living_state();
 
         self.tick_open_menu();
         self.flush_inventory_resync();
@@ -1848,7 +1884,7 @@ impl LivingEntity for Player {
         self.update_pose();
 
         {
-            let health = self.get_health();
+            let health = self.living().get_health();
             let (food, saturation) = {
                 let food_data = self.food_data.lock();
                 (food_data.food_level, food_data.saturation_level)
@@ -1872,43 +1908,26 @@ impl LivingEntity for Player {
         self.connection.tick();
     }
 
-    fn get_health(&self) -> f32 {
-        *self.entity_data.lock().living_entity().health.get()
-    }
-
-    fn set_health(&self, health: f32) {
-        let max_health = self.get_max_health();
-        let clamped = health.clamp(0.0, max_health);
-        self.entity_data
-            .lock()
-            .living_entity_mut()
-            .health
-            .set(clamped);
-    }
-
-    fn living_base(&self) -> &LivingEntityBase {
-        &self.living_base
-    }
-
-    fn is_using_item(&self) -> bool {
+    fn living_is_using_item(&self) -> bool {
         self.living_base.is_using_item()
     }
 
-    fn get_luck(&self) -> f32 {
-        self.attributes()
+    fn living_get_luck(&self) -> f32 {
+        self.living()
+            .attributes()
             .lock()
             .required_value(vanilla_attributes::LUCK) as f32
     }
 
-    fn can_be_seen_as_enemy(&self) -> bool {
+    fn living_can_be_seen_as_enemy(&self) -> bool {
         !self.abilities.lock().invulnerable
             && !self.is_invulnerable()
-            && self.can_be_seen_by_anyone()
+            && self.living().can_be_seen_by_anyone()
     }
 
-    fn is_invulnerable_to(&self, world: &World, source: &DamageSource) -> bool {
-        if self.default_is_invulnerable_to(source)
-            || enchantment_helper::is_immune_to_damage(self, source)
+    fn living_is_invulnerable_to(&self, world: &World, source: &DamageSource) -> bool {
+        if self.living().default_is_invulnerable_to(source)
+            || enchantment_helper::is_immune_to_damage(&self.living(), source)
         {
             return true;
         }
@@ -1920,8 +1939,8 @@ impl LivingEntity for Player {
         !self.has_client_loaded()
     }
 
-    fn hurt_armor(&self, source: &DamageSource, damage: f32) {
-        self.do_hurt_equipment(
+    fn living_hurt_armor(&self, source: &DamageSource, damage: f32) {
+        self.living().do_hurt_equipment(
             source,
             damage,
             &[
@@ -1933,35 +1952,35 @@ impl LivingEntity for Player {
         );
     }
 
-    fn actually_hurt(&self, world: &World, source: &DamageSource, amount: f32) {
+    fn living_actually_hurt(&self, world: &World, source: &DamageSource, amount: f32) {
         Player::actually_hurt(self, world, source, amount);
     }
 
-    fn hurt_broadcast_chunk(&self) -> ChunkPos {
+    fn living_hurt_broadcast_chunk(&self) -> ChunkPos {
         *self.last_chunk_pos.lock()
     }
 
-    fn die(&self, source: &DamageSource) {
+    fn living_die(&self, source: &DamageSource) {
         Player::die(self, source);
     }
 
-    fn tick_equipment(&self) {
+    fn living_tick_equipment(&self) {
         // skip main hand because its already being ticked through player inventory
         InventoryTickContext::tick_equipment(
             &self.get_world(),
-            self,
+            &self.living(),
             EquipmentSlot::ALL
                 .into_iter()
                 .filter(|slot| *slot != EquipmentSlot::MainHand),
         );
     }
 
-    fn with_equipment_slot(&self, slot: EquipmentSlot, visitor: &mut dyn FnMut(&ItemStack)) {
+    fn living_with_equipment_slot(&self, slot: EquipmentSlot, visitor: &mut dyn FnMut(&ItemStack)) {
         let inventory = self.inventory.lock();
         visitor(inventory.get_ref(slot));
     }
 
-    fn with_equipment_slot_mut(
+    fn living_with_equipment_slot_mut(
         &self,
         slot: EquipmentSlot,
         visitor: &mut dyn FnMut(&mut ItemStack),
@@ -1970,7 +1989,7 @@ impl LivingEntity for Player {
         inventory.with_equipment_item_mut(slot, visitor);
     }
 
-    fn interact_living_entity_with_equippable(
+    fn living_interact_living_entity_with_equippable(
         &self,
         player: &Player,
         hand: InteractionHand,
@@ -1992,7 +2011,7 @@ impl LivingEntity for Player {
             stack.get_equippable().is_some_and(|equippable| {
                 equippable.equip_on_interact
                     && equippable.slot == slot
-                    && self.is_equippable_in_slot(stack, slot)
+                    && self.living().is_equippable_in_slot(stack, slot)
             })
         };
         if !can_equip(&item_stack) || !Entity::is_alive(self) {
@@ -2051,27 +2070,28 @@ impl LivingEntity for Player {
             self.inventory.lock().set_changed();
         }
 
-        self.on_equip_item(slot, &ItemStack::empty(), &equipped);
+        self.living()
+            .on_equip_item(slot, &ItemStack::empty(), &equipped);
         // TODO: Emit EQUIP game event once game-event dispatch is implemented.
         InteractionResult::Success
     }
 
-    fn has_infinite_materials(&self) -> bool {
+    fn living_has_infinite_materials(&self) -> bool {
         Player::has_infinite_materials(self)
     }
 
-    fn handle_extra_items_created_on_use(&self, extra: ItemStack) {
+    fn living_handle_extra_items_created_on_use(&self, extra: ItemStack) {
         let leftover = self.inventory.lock().add_or_return(extra);
         if !leftover.is_empty() {
             let _ = self.drop_item(leftover, false, Prediction::Predicted);
         }
     }
 
-    fn get_absorption_amount(&self) -> f32 {
+    fn living_get_absorption_amount(&self) -> f32 {
         *self.entity_data.lock().player_absorption.get()
     }
 
-    fn set_absorption_amount(&self, amount: f32) {
+    fn living_set_absorption_amount(&self, amount: f32) {
         let max_absorption = self
             .living_base
             .attributes()
@@ -2083,52 +2103,52 @@ impl LivingEntity for Player {
             .set(amount.clamp(0.0, max_absorption));
     }
 
-    fn is_affected_by_fluids(&self) -> bool {
+    fn living_is_affected_by_fluids(&self) -> bool {
         !self.is_flying()
     }
 
-    fn can_glide(&self) -> bool {
-        !self.is_flying() && self.default_can_glide()
+    fn living_can_glide(&self) -> bool {
+        !self.is_flying() && self.living().default_can_glide()
     }
 
-    fn is_immobile(&self) -> bool {
-        self.default_is_immobile() || self.is_sleeping()
+    fn living_is_immobile(&self) -> bool {
+        self.living().default_is_immobile() || self.living().is_sleeping()
     }
 
-    fn stop_sleeping(&self) {
+    fn living_stop_sleeping(&self) {
         self.stop_sleep_in_bed(true, true);
     }
 
-    fn jump_from_ground(&self) {
-        self.default_jump_from_ground();
+    fn living_jump_from_ground(&self) {
+        self.living().default_jump_from_ground();
         self.award_custom_stat(&vanilla_custom_stats::JUMP);
-        if self.is_sprinting() {
+        if self.living().is_sprinting() {
             self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT_JUMP);
         } else {
             self.cause_food_exhaustion(food_constants::EXHAUSTION_JUMP);
         }
     }
 
-    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+    fn living_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
         self.tick_regeneration();
         InventoryTickContext::tick_player_inventory(&self.get_world(), self);
         if self.is_flying() && !self.is_passenger() {
             self.reset_fall_distance();
         }
 
-        let result = self.default_ai_step(entity);
-        self.set_y_head_rot(self.rotation().0);
+        let result = self.living().default_ai_step(entity);
+        self.living().set_y_head_rot(self.rotation().0);
         // Pickup uses the simulated position; `tick_living_entity` restores the
         // authoritative tick position after this returns.
-        if self.get_health() > 0.0 {
+        if self.living().get_health() > 0.0 {
             self.touch_nearby_items();
         }
         result
     }
 
-    fn travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+    fn living_travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         if self.is_passenger() {
-            return self.default_travel(entity, input);
+            return self.living().default_travel(entity, input);
         }
 
         if self.is_swimming() {
@@ -2139,7 +2159,7 @@ impl LivingEntity for Player {
                 let pos = BlockPos::containing(position.x, position.y + 0.9, position.z);
                 !get_fluid_state(&world, pos).is_empty()
             });
-            if look_angle_y <= 0.0 || self.is_jumping() || has_fluid_above {
+            if look_angle_y <= 0.0 || self.living().is_jumping() || has_fluid_above {
                 let velocity = self.velocity();
                 self.set_velocity(
                     velocity + DVec3::new(0.0, (look_angle_y - velocity.y) * multiplier, 0.0),
@@ -2149,7 +2169,7 @@ impl LivingEntity for Player {
 
         if self.is_flying() {
             let original_movement_y = self.velocity().y;
-            let result = self.default_travel(entity, input);
+            let result = self.living().default_travel(entity, input);
             let velocity = self.velocity();
             self.set_velocity(DVec3::new(
                 velocity.x,
@@ -2158,29 +2178,35 @@ impl LivingEntity for Player {
             ));
             result
         } else {
-            self.default_travel(entity, input)
+            self.living().default_travel(entity, input)
         }
     }
 
-    fn get_flying_speed(&self) -> f32 {
+    fn living_get_flying_speed(&self) -> f32 {
         if self.is_flying() && !self.is_passenger() {
             let flying_speed = self.abilities.lock().flying_speed;
-            if self.is_sprinting() {
+            if self.living().is_sprinting() {
                 flying_speed * 2.0
             } else {
                 flying_speed
             }
-        } else if self.is_sprinting() {
+        } else if self.living().is_sprinting() {
             0.025_999_999
         } else {
             0.02
         }
     }
 
-    fn on_equipped_item_broken(&self, item: ItemRef, slot: EquipmentSlot) {
+    fn living_on_equipped_item_broken(&self, item: ItemRef, slot: EquipmentSlot) {
         self.broadcast_entity_event(slot.into());
-        self.refresh_equipment_attribute_modifiers(slot);
+        self.living().refresh_equipment_attribute_modifiers(slot);
         self.award_stat(&vanilla_stat_types::ITEM_BROKEN, item);
+    }
+}
+
+impl Has<LivingEntityBase> for Player {
+    fn component(&self) -> &LivingEntityBase {
+        &self.living_base
     }
 }
 

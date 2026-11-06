@@ -1,5 +1,6 @@
 //! Brushable block entity for archaeology brush progress and delayed loot.
 
+use crate::entity::LivingParts as _;
 use std::str::FromStr as _;
 use std::sync::{Arc, Weak};
 
@@ -21,7 +22,7 @@ use steel_utils::{
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::block_entity::{BlockEntity, BlockEntityBase};
-use crate::entity::{LivingEntity as _, entity_loot_ref, living_loot_equipment};
+use crate::entity::{entity_loot_ref, living_loot_equipment};
 use crate::player::Player;
 use crate::world::World;
 
@@ -225,9 +226,9 @@ impl BrushableBlockEntity {
         let loot = match loot_table {
             Some(table) => {
                 // TODO: Trigger CriteriaTriggers.GENERATE_LOOT once criteria triggers exist.
-                let equipment = living_loot_equipment(player);
+                let equipment = living_loot_equipment(&player.living());
                 let mut ctx = LootContext::new(rng)
-                    .with_luck(player.get_luck())
+                    .with_luck(player.living().get_luck())
                     .with_tool(brush)
                     .with_origin(
                         f64::from(self.get_block_pos().x()) + 0.5,

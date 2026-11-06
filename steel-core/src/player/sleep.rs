@@ -1,3 +1,4 @@
+use crate::entity::LivingParts as _;
 use glam::DVec3;
 use steel_protocol::packets::game::{AnimateAction, CAnimate};
 use steel_registry::{
@@ -11,11 +12,7 @@ use text_components::{TextComponent, translation::TranslatedMessage};
 
 use super::sleep_state::SLEEP_DURATION;
 use super::{Player, PlayerRespawnConfig};
-use crate::{
-    entity::{Entity, LivingEntity as _},
-    level_data::RespawnData,
-    world::World,
-};
+use crate::{entity::Entity, level_data::RespawnData, world::World};
 
 const BED_INTERACTION_XZ_RANGE: f64 = 3.0;
 const BED_INTERACTION_Y_RANGE: f64 = 2.0;
@@ -122,14 +119,14 @@ impl Player {
     }
 
     pub(crate) fn stop_sleep_in_bed(&self, forceful_wakeup: bool, update_level_list: bool) {
-        if self.is_sleeping() {
+        if self.living().is_sleeping() {
             let packet = CAnimate::new(self.id(), AnimateAction::WakeUp);
             self.get_world()
                 .broadcast_to_entity_trackers(self.id(), packet.clone(), None);
             self.send_packet(packet);
         }
 
-        self.default_stop_sleeping();
+        self.living().default_stop_sleeping();
         if update_level_list {
             self.get_world().update_sleeping_player_list();
         }
@@ -154,7 +151,7 @@ impl Player {
         let direction = world
             .get_block_state(pos)
             .get_value(&BlockStateProperties::HORIZONTAL_FACING);
-        if self.is_sleeping() || !Entity::is_alive(self) {
+        if self.living().is_sleeping() || !Entity::is_alive(self) {
             return Err(BedSleepingProblem::OtherProblem);
         }
 
@@ -206,7 +203,7 @@ impl Player {
         }
 
         self.set_sleep_counter(0);
-        if self.start_sleeping(pos).is_err() {
+        if self.living().start_sleeping(pos).is_err() {
             return Err(BedSleepingProblem::OtherProblem);
         }
 
@@ -275,7 +272,7 @@ impl Player {
     /// Returns whether this player has slept long enough for vanilla night skip.
     #[must_use]
     pub fn is_sleeping_long_enough(&self) -> bool {
-        self.is_sleeping() && self.sleep_counter() >= SLEEP_DURATION
+        self.living().is_sleeping() && self.sleep_counter() >= SLEEP_DURATION
     }
 
     fn set_sleep_counter(&self, sleep_counter: i32) {
@@ -285,7 +282,7 @@ impl Player {
     pub(super) fn tick_sleep_counter(&self) {
         self.sleep_state
             .lock()
-            .tick_sleep_counter(self.is_sleeping());
+            .tick_sleep_counter(self.living().is_sleeping());
     }
 }
 

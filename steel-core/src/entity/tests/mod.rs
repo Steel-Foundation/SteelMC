@@ -1,7 +1,11 @@
+use crate::entity::component::Has;
+use crate::test_support::synced_with_health;
 use std::{
     io::Cursor,
     sync::{Arc, Weak},
 };
+use steel_utils::DowncastType as _;
+use steel_utils::DowncastTypeKey;
 
 use glam::DVec3;
 use simdnbt::borrow::read_compound;
@@ -237,18 +241,19 @@ fn command_data_compare_nbt_contains_implemented_living_data() {
     init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(12.5);
     entity
+        .living()
         .attributes()
         .lock()
         .set_base_value(vanilla_attributes::MAX_ABSORPTION, 3.0);
-    entity.set_absorption_amount(3.0);
+    entity.living().set_absorption_amount(3.0);
     entity.living_base.increment_death_time();
     entity.living_base.apply_post_impulse_grace_time(7);
     entity
         .living_base
         .set_ignore_fall_damage_from_current_impulse(true, DVec3::new(1.0, 2.0, 3.0));
-    entity.set_fall_flying(true);
-    entity.set_sleeping_pos(BlockPos::new(4, 5, 6));
-    entity.add_mob_effect(
+    entity.living().set_fall_flying(true);
+    entity.living().set_sleeping_pos(BlockPos::new(4, 5, 6));
+    entity.living().add_mob_effect(
         ActiveMobEffect::with_duration(vanilla_mob_effects::HASTE, 200, 2)
             .with_ambient(true)
             .with_visible(false),
@@ -367,9 +372,9 @@ fn kill_uses_vanilla_living_and_non_living_paths() {
         living.damage_world_keys(),
         vec![source_world.key.to_string()]
     );
-    assert_f32_close(living.get_health(), 0.0);
+    assert_f32_close(living.living().get_health(), 0.0);
     assert_eq!(living.pose(), EntityPose::Dying);
-    let Some(last_damage_source) = living.last_damage_source() else {
+    let Some(last_damage_source) = living.living().last_damage_source() else {
         panic!("kill damage should be timestamped in the victim world");
     };
     assert_eq!(
@@ -733,7 +738,6 @@ struct LivingFluidTestEntity {
     base: EntityBase,
     living_base: LivingEntityBase,
     entity_data: SyncMutex<SyncedLivingEntityData>,
-    health: SyncMutex<f32>,
     damage_types: SyncMutex<Vec<Identifier>>,
     damage_world_keys: SyncMutex<Vec<String>>,
     entity_type: EntityTypeRef,
@@ -762,9 +766,11 @@ impl LivingFluidTestEntity {
         ));
         Self {
             base,
-            living_base: LivingEntityBase::new(&vanilla_entities::PLAYER),
-            entity_data: SyncMutex::new(SyncedLivingEntityData::new()),
-            health: SyncMutex::new(20.0),
+            living_base: LivingEntityBase::new(
+                &vanilla_entities::PLAYER,
+                &LivingFluidTestEntity::LIVING,
+            ),
+            entity_data: SyncMutex::new(synced_with_health(SyncedLivingEntityData::new(), 20.0)),
             damage_types: SyncMutex::new(Vec::new()),
             damage_world_keys: SyncMutex::new(Vec::new()),
             entity_type: &vanilla_entities::PLAYER,
@@ -825,7 +831,7 @@ impl LivingFluidTestEntity {
     }
 
     fn with_health(self, health: f32) -> Self {
-        *self.health.lock() = health;
+        self.living().set_health(health);
         self
     }
 
@@ -856,6 +862,10 @@ impl LivingFluidTestEntity {
 crate::entity::impl_test_downcast_type!(LivingFluidTestEntity);
 
 impl Entity for LivingFluidTestEntity {
+    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+        (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -869,7 +879,7 @@ impl Entity for LivingFluidTestEntity {
     }
 
     fn get_default_gravity(&self) -> f64 {
-        LivingEntity::get_attribute_gravity(self)
+        self.living().get_attribute_gravity()
     }
 
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
@@ -877,7 +887,7 @@ impl Entity for LivingFluidTestEntity {
             .lock()
             .push(source.damage_type.key.clone());
         self.damage_world_keys.lock().push(world.key.to_string());
-        LivingEntity::hurt_server(self, world, source, amount)
+        self.living().hurt_server(world, source, amount)
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
@@ -889,40 +899,43 @@ impl Entity for LivingFluidTestEntity {
     }
 }
 
-impl LivingEntity for LivingFluidTestEntity {
-    fn living_base(&self) -> &LivingEntityBase {
-        &self.living_base
-    }
+impl LivingFluidTestEntity {
+    const LIVING: LivingProps<Self> = LivingProps {
+        can_be_affected: Self::living_can_be_affected,
+        is_affected_by_fluids: Self::living_is_affected_by_fluids,
+        can_stand_on_fluid: Self::living_can_stand_on_fluid,
+        is_on_non_air_block_for_frost: Self::living_is_on_non_air_block_for_frost,
+        is_in_wall: Self::living_is_in_wall,
+        ..LivingProps::new()
+    };
 
-    fn get_health(&self) -> f32 {
-        *self.health.lock()
-    }
-
-    fn set_health(&self, health: f32) {
-        *self.health.lock() = health.clamp(0.0, self.get_max_health());
-    }
-
-    fn can_be_affected(&self, effect: &MobEffectInstance) -> bool {
+    fn living_can_be_affected(&self, effect: &MobEffectInstance) -> bool {
         if self.rejects_wither && effect.effect() == vanilla_mob_effects::WITHER {
             return false;
         }
-        self.default_can_be_affected(effect)
+        self.living().default_can_be_affected(effect)
     }
 
-    fn is_affected_by_fluids(&self) -> bool {
+    fn living_is_affected_by_fluids(&self) -> bool {
         self.affected_by_fluids
     }
 
-    fn can_stand_on_fluid(&self, _fluid_state: FluidState) -> bool {
+    fn living_can_stand_on_fluid(&self, _fluid_state: FluidState) -> bool {
         self.can_stand_on_fluid
     }
 
-    fn is_on_non_air_block_for_frost(&self) -> bool {
+    fn living_is_on_non_air_block_for_frost(&self) -> bool {
         self.on_non_air_block_for_frost
     }
 
-    fn is_in_wall(&self) -> bool {
-        !self.is_sleeping() && (self.in_wall_for_base_tick || Entity::is_in_wall(self))
+    fn living_is_in_wall(&self) -> bool {
+        !self.living().is_sleeping() && (self.in_wall_for_base_tick || Entity::is_in_wall(self))
+    }
+}
+
+impl Has<LivingEntityBase> for LivingFluidTestEntity {
+    fn component(&self) -> &LivingEntityBase {
+        &self.living_base
     }
 }
 
@@ -947,20 +960,22 @@ fn wither_rose_effect_ticks_vanilla_wither_damage() {
     apply_wither_rose_effect(world, &entity);
 
     let effect = entity
+        .living()
         .mob_effect(vanilla_mob_effects::WITHER)
         .expect("wither rose should apply Wither");
     assert_eq!(effect.duration(), 40);
     assert_eq!(effect.amplifier(), 0);
 
-    entity.tick_mob_effects();
+    entity.living().tick_mob_effects();
 
-    assert_f32_close(entity.get_health(), 19.0);
+    assert_f32_close(entity.living().get_health(), 19.0);
     assert_eq!(
         entity.damage_type_keys(),
         vec![vanilla_damage_types::WITHER.key.clone()]
     );
     assert_eq!(
         entity
+            .living()
             .mob_effect(vanilla_mob_effects::WITHER)
             .expect("Wither should remain active")
             .duration(),
@@ -973,18 +988,23 @@ fn wither_effect_only_damages_on_its_vanilla_interval() {
     let world = test_world();
     init_behaviors();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world);
-    assert!(entity.add_mob_effect(MobEffectInstance::with_duration(
-        vanilla_mob_effects::WITHER,
-        39,
-        0,
-    )));
+    assert!(
+        entity
+            .living()
+            .add_mob_effect(MobEffectInstance::with_duration(
+                vanilla_mob_effects::WITHER,
+                39,
+                0,
+            ))
+    );
 
-    entity.tick_mob_effects();
+    entity.living().tick_mob_effects();
 
-    assert_f32_close(entity.get_health(), 20.0);
+    assert_f32_close(entity.living().get_health(), 20.0);
     assert_eq!(entity.damage_type_keys().len(), 0);
     assert_eq!(
         entity
+            .living()
             .mob_effect(vanilla_mob_effects::WITHER)
             .expect("Wither should remain active")
             .duration(),
@@ -999,18 +1019,30 @@ fn wither_rose_respects_difficulty_invulnerability_and_effect_immunity() {
     peaceful_world.set_difficulty(Difficulty::Peaceful);
     let peaceful_entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, peaceful_world);
     apply_wither_rose_effect(peaceful_world, &peaceful_entity);
-    assert!(!peaceful_entity.has_mob_effect(vanilla_mob_effects::WITHER));
+    assert!(
+        !peaceful_entity
+            .living()
+            .has_mob_effect(vanilla_mob_effects::WITHER)
+    );
 
     let world = test_world();
     let invulnerable = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world);
     invulnerable.set_invulnerable(true);
     apply_wither_rose_effect(world, &invulnerable);
-    assert!(!invulnerable.has_mob_effect(vanilla_mob_effects::WITHER));
+    assert!(
+        !invulnerable
+            .living()
+            .has_mob_effect(vanilla_mob_effects::WITHER)
+    );
 
     let effect_immune =
         LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world).rejecting_wither();
     apply_wither_rose_effect(world, &effect_immune);
-    assert!(!effect_immune.has_mob_effect(vanilla_mob_effects::WITHER));
+    assert!(
+        !effect_immune
+            .living()
+            .has_mob_effect(vanilla_mob_effects::WITHER)
+    );
 }
 
 #[test]
@@ -1019,38 +1051,56 @@ fn default_mob_effect_eligibility_uses_vanilla_entity_type_tags() {
     let silverfish =
         LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::SILVERFISH);
     assert!(
-        !silverfish.can_be_affected(&MobEffectInstance::with_duration(
-            vanilla_mob_effects::INFESTED,
-            20,
-            0,
-        ))
+        !silverfish
+            .living()
+            .can_be_affected(&MobEffectInstance::with_duration(
+                vanilla_mob_effects::INFESTED,
+                20,
+                0,
+            ))
     );
 
     let slime =
         LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::SLIME);
-    assert!(!slime.can_be_affected(&MobEffectInstance::with_duration(
-        vanilla_mob_effects::OOZING,
-        20,
-        0,
-    )));
+    assert!(
+        !slime
+            .living()
+            .can_be_affected(&MobEffectInstance::with_duration(
+                vanilla_mob_effects::OOZING,
+                20,
+                0,
+            ))
+    );
 
     let zombie =
         LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::ZOMBIE);
-    assert!(!zombie.can_be_affected(&MobEffectInstance::with_duration(
-        vanilla_mob_effects::POISON,
-        20,
-        0,
-    )));
-    assert!(!zombie.can_be_affected(&MobEffectInstance::with_duration(
-        vanilla_mob_effects::REGENERATION,
-        20,
-        0,
-    )));
-    assert!(zombie.can_be_affected(&MobEffectInstance::with_duration(
-        vanilla_mob_effects::WITHER,
-        20,
-        0,
-    )));
+    assert!(
+        !zombie
+            .living()
+            .can_be_affected(&MobEffectInstance::with_duration(
+                vanilla_mob_effects::POISON,
+                20,
+                0,
+            ))
+    );
+    assert!(
+        !zombie
+            .living()
+            .can_be_affected(&MobEffectInstance::with_duration(
+                vanilla_mob_effects::REGENERATION,
+                20,
+                0,
+            ))
+    );
+    assert!(
+        zombie
+            .living()
+            .can_be_affected(&MobEffectInstance::with_duration(
+                vanilla_mob_effects::WITHER,
+                20,
+                0,
+            ))
+    );
 }
 
 /// Undead-like mobs are hurt by Instant Health and healed by Instant Damage,
@@ -1067,9 +1117,9 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
     let living = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world)
         .with_entity_type(&vanilla_entities::PIG)
         .with_health(10.0);
-    HealOrHarmBehavior { is_harm: false }.apply_effect_tick(world, &living, 0);
+    HealOrHarmBehavior { is_harm: false }.apply_effect_tick(world, &living.living(), 0);
     assert_eq!(
-        living.get_health(),
+        living.living().get_health(),
         14.0,
         "instant health heals a living mob"
     );
@@ -1077,9 +1127,9 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
     let zombie = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world)
         .with_entity_type(&vanilla_entities::ZOMBIE)
         .with_health(10.0);
-    HealOrHarmBehavior { is_harm: false }.apply_effect_tick(world, &zombie, 0);
+    HealOrHarmBehavior { is_harm: false }.apply_effect_tick(world, &zombie.living(), 0);
     assert_eq!(
-        zombie.get_health(),
+        zombie.living().get_health(),
         4.0,
         "instant health hurts an inverted (undead) mob"
     );
@@ -1087,9 +1137,9 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
     let living = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world)
         .with_entity_type(&vanilla_entities::PIG)
         .with_health(10.0);
-    HealOrHarmBehavior { is_harm: true }.apply_effect_tick(world, &living, 0);
+    HealOrHarmBehavior { is_harm: true }.apply_effect_tick(world, &living.living(), 0);
     assert_eq!(
-        living.get_health(),
+        living.living().get_health(),
         4.0,
         "instant damage hurts a living mob"
     );
@@ -1097,9 +1147,9 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
     let zombie = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world)
         .with_entity_type(&vanilla_entities::ZOMBIE)
         .with_health(10.0);
-    HealOrHarmBehavior { is_harm: true }.apply_effect_tick(world, &zombie, 0);
+    HealOrHarmBehavior { is_harm: true }.apply_effect_tick(world, &zombie.living(), 0);
     assert_eq!(
-        zombie.get_health(),
+        zombie.living().get_health(),
         14.0,
         "instant damage heals an inverted (undead) mob"
     );
@@ -1113,34 +1163,40 @@ fn adding_absorption_effect_grants_absorption_hearts() {
     init_behaviors();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    assert_eq!(entity.get_absorption_amount(), 0.0);
+    assert_eq!(entity.living().get_absorption_amount(), 0.0);
 
-    entity.add_mob_effect(ActiveMobEffect::with_duration(
-        vanilla_mob_effects::ABSORPTION,
-        2400,
-        0,
-    ));
+    entity
+        .living()
+        .add_mob_effect(ActiveMobEffect::with_duration(
+            vanilla_mob_effects::ABSORPTION,
+            2400,
+            0,
+        ));
     assert_eq!(
-        entity.get_absorption_amount(),
+        entity.living().get_absorption_amount(),
         4.0,
         "amplifier 0 grants 4 absorption hearts, clamped against the effect's own MAX_ABSORPTION bump"
     );
 
     // Re-adding the same amplifier must not stack additively.
-    entity.add_mob_effect(ActiveMobEffect::with_duration(
-        vanilla_mob_effects::ABSORPTION,
-        2400,
-        0,
-    ));
-    assert_eq!(entity.get_absorption_amount(), 4.0);
+    entity
+        .living()
+        .add_mob_effect(ActiveMobEffect::with_duration(
+            vanilla_mob_effects::ABSORPTION,
+            2400,
+            0,
+        ));
+    assert_eq!(entity.living().get_absorption_amount(), 4.0);
 
     // A higher amplifier raises the max, matching vanilla's `Math.max`.
-    entity.add_mob_effect(ActiveMobEffect::with_duration(
-        vanilla_mob_effects::ABSORPTION,
-        2400,
-        1,
-    ));
-    assert_eq!(entity.get_absorption_amount(), 8.0);
+    entity
+        .living()
+        .add_mob_effect(ActiveMobEffect::with_duration(
+            vanilla_mob_effects::ABSORPTION,
+            2400,
+            1,
+        ));
+    assert_eq!(entity.living().get_absorption_amount(), 8.0);
 }
 
 struct ControlledVehicleTestEntity {

@@ -1,3 +1,4 @@
+use crate::entity::LivingParts as _;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -7,7 +8,7 @@ use steel_registry::vanilla_attributes;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{Entity, LivingEntity, Mob, SharedEntity};
+use crate::entity::{Entity, Living, Mob, SharedEntity};
 use crate::player::Player;
 
 const DEFAULT_STOP_DISTANCE: f64 = 2.5;
@@ -63,7 +64,7 @@ impl TemptGoal {
         self.is_running
     }
 
-    fn should_follow(&self, player: &dyn LivingEntity) -> bool {
+    fn should_follow(&self, player: &Living<'_>) -> bool {
         player.is_holding(&mut |item_stack| (self.items)(item_stack))
     }
 
@@ -122,8 +123,8 @@ impl Goal for TemptGoal {
             .required_value(vanilla_attributes::TEMPT_RANGE);
         let targeting_conditions = Self::targeting_conditions(range);
         self.player = world.nearest_player(mob.position(), range, |player| {
-            targeting_conditions.test(world.as_ref(), Some(mob.living()), player)
-                && self.should_follow(player)
+            targeting_conditions.test(world.as_ref(), Some(&mob.living()), &player.living())
+                && self.should_follow(&player.living())
         });
         self.player.is_some()
     }
@@ -180,6 +181,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
 
     use super::*;
+
     use crate::entity::entities::ChickenEntity;
     use crate::inventory::equipment::EquipmentSlot;
 
@@ -201,12 +203,13 @@ mod tests {
         );
         let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.should_follow(&pig));
+        assert!(!goal.should_follow(&pig.living()));
 
-        pig.with_equipment_slot_mut(EquipmentSlot::OffHand, &mut |item_stack| {
-            *item_stack = ItemStack::new(&vanilla_items::CARROT);
-        });
+        pig.living()
+            .with_equipment_slot_mut(EquipmentSlot::OffHand, &mut |item_stack| {
+                *item_stack = ItemStack::new(&vanilla_items::CARROT);
+            });
 
-        assert!(goal.should_follow(&pig));
+        assert!(goal.should_follow(&pig.living()));
     }
 }

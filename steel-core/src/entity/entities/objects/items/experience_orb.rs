@@ -1,5 +1,6 @@
 //! Experience orb entity implementation.
 
+use crate::entity::LivingParts as _;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -19,7 +20,7 @@ use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeK
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission,
-    EntitySyncedData, LivingEntity, RemovalReason, SharedEntity, next_entity_id,
+    EntitySyncedData, RemovalReason, SharedEntity, next_entity_id,
 };
 use crate::fluid::get_fluid_state;
 use crate::physics::{MoverType, WorldCollisionProvider};
@@ -304,13 +305,13 @@ impl ExperienceOrbEntity {
 
         let should_refresh = current.as_ref().is_none_or(|player| {
             player.is_spectator()
-                || player.is_dead_or_dying()
+                || player.living().is_dead_or_dying()
                 || player.position().distance_squared(self.position()) > MAX_FOLLOW_DIST_SQR
         });
 
         let following = if should_refresh {
             let nearest = world.nearest_player(self.position(), MAX_FOLLOW_DIST, |player| {
-                !player.is_spectator() && !player.is_dead_or_dying()
+                !player.is_spectator() && !player.living().is_dead_or_dying()
             });
             self.state.lock().following_player_id = nearest.as_ref().map(|player| player.id());
             nearest

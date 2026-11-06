@@ -18,7 +18,7 @@ pub use remove_effects::RemoveEffectsBehavior;
 pub use teleport_randomly::TeleportRandomlyBehavior;
 
 use crate::behavior::CONSUME_EFFECT_BEHAVIORS;
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::world::World;
 
 /// Behavior for one kind of item consume effect, such as applying, clearing,
@@ -26,7 +26,7 @@ use crate::world::World;
 pub trait ConsumeEffectBehavior: Send + Sync {
     /// Applies this effect's behavior to `user`, downcasting `effect` to the
     /// concrete `ConsumeEffectData` payload this behavior expects.
-    fn apply(&self, effect: &ConsumeEffectData, world: &Arc<World>, user: &dyn LivingEntity);
+    fn apply(&self, effect: &ConsumeEffectData, world: &Arc<World>, user: &Living<'_>);
 }
 
 /// Applies one `ConsumeEffectData` entry from a `Consumable.on_consume_effects`
@@ -34,7 +34,7 @@ pub trait ConsumeEffectBehavior: Send + Sync {
 pub(crate) fn apply_consume_effect(
     effect: &ConsumeEffectData,
     world: &Arc<World>,
-    user: &dyn LivingEntity,
+    user: &Living<'_>,
 ) {
     CONSUME_EFFECT_BEHAVIORS
         .get_behavior(effect.effect_type())

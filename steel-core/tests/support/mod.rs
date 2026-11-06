@@ -16,6 +16,7 @@ use steel_registry::game_events::GameEventRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_entity_data::VanillaEntityData;
 use steel_registry::{
     init_vanilla_registry, vanilla_blocks, vanilla_dimension_types, vanilla_entities,
     vanilla_fluids,
@@ -33,7 +34,8 @@ use crate::chunk::chunk_holder::{ChunkHolder, TickingReadiness};
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk::status::ChunkStatus;
-use crate::entity::{Entity, EntityBase, SharedEntity};
+use crate::entity::entities::ChickenEntity;
+use crate::entity::{Entity, EntityBase, LivingProps, SharedEntity};
 use crate::level_data::{GameTimeSource, WorldGenerationSettings};
 use crate::world::game_event::GameEventContext;
 use crate::world::{
@@ -662,3 +664,16 @@ pub(crate) fn fresh_test_derived_world(primary: &Arc<World>, name: &'static str)
         GameTimeSource::Derived(Arc::clone(&primary.game_time)),
     )
 }
+
+/// Generated synced data for a test entity, with `health` stored where the
+/// living view reads it.
+pub(crate) fn synced_with_health<D: VanillaEntityData>(mut data: D, health: f32) -> D {
+    if let Some(living) = data.living_entity_layer_mut() {
+        living.health.set(health);
+    }
+    data
+}
+
+/// Living hooks with vanilla's defaults, for tests that build a
+/// `LivingEntityBase` without a concrete entity type.
+pub(crate) static DEFAULT_LIVING_HOOKS: LivingProps<ChickenEntity> = LivingProps::new();

@@ -164,7 +164,7 @@ fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
         panic!("pig should expose mob behavior");
     };
     assert!(mob.leashable().set_leashed_to(&holder));
-    pig.living_base().equipment().lock().set(
+    pig.living().living_base().equipment().lock().set(
         EquipmentSlot::Saddle,
         ItemStack::new(&vanilla_items::SADDLE),
     );
@@ -173,7 +173,8 @@ fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
 
     assert!(!mob.leashable().is_leashed());
     assert!(
-        pig.living_base()
+        pig.living()
+            .living_base()
             .equipment()
             .lock()
             .get_ref(EquipmentSlot::Saddle)
@@ -188,7 +189,7 @@ fn can_use_portal_rejects_sleeping_living_entities() {
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     assert!(entity.can_use_portal(false));
 
-    entity.set_sleeping_pos(BlockPos::ZERO);
+    entity.living().set_sleeping_pos(BlockPos::ZERO);
 
     assert!(!entity.can_use_portal(false));
 }

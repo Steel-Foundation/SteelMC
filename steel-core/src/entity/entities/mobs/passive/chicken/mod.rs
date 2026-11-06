@@ -1,6 +1,7 @@
 //! Vanilla Chicken entity with variant + sound-variant parity, wing-flap
 //! slow-fall, and periodic egg-laying behavior.
 
+use crate::entity::LivingParts as _;
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock, Weak};
 
@@ -16,7 +17,6 @@ use steel_registry::entity_type::{
 };
 use steel_registry::item_stack::ItemStack;
 use steel_registry::loot_table::{LootContext, LootTableRef};
-use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::ChickenEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_loot_tables;
@@ -37,17 +37,15 @@ use crate::entity::ai::goal::{
 use crate::entity::ai::path::PathType;
 use crate::entity::animal::{self, Animal, Breeding, BreedingProps, Parts as _};
 use crate::entity::component::definition::MobDefinition;
-use crate::entity::component::entries::{AiStepCtx, FinalizeSpawnCtx};
+use crate::entity::component::entries::FinalizeSpawnCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::component::{Component as _, Has};
-use crate::entity::damage::DamageSource;
 use crate::entity::mob::Parts as _;
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySyncedData,
-    LivingEntity, LivingEntityBase, MobBase, MobProps, SharedEntity, SpawnRule, entity_loot_ref,
+    LivingEntityBase, LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, entity_loot_ref,
     living_loot_equipment, position_rider_default, sync_dirty_mob_effects,
 };
-use crate::physics::MoveResult;
 use crate::world::World;
 
 const CHICKEN_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
@@ -152,6 +150,19 @@ impl ChickenEntity {
         breed_offspring: Self::breed_offspring,
     };
     const BREEDING: BreedingProps = BreedingProps::new(Self::is_food);
+    const LIVING: LivingProps<Self> = LivingProps {
+        hurt_sound: |chicken, _| Some(chicken.current_sound_set().hurt_sound),
+        death_sound: |chicken| Some(chicken.current_sound_set().death_sound),
+        chicken_loot_variant: |chicken| Some(&chicken.variant().key),
+        base_experience_reward: |chicken| {
+            if chicken.is_chicken_jockey() {
+                CHICKEN_JOCKEY_EXPERIENCE_REWARD
+            } else {
+                Animal::base_experience_reward()
+            }
+        },
+        ..animal::living_props()
+    };
     const MOB: MobProps = MobProps {
         ambient_sound: |mob| {
             let chicken = mob.entity().downcast_ref::<Self>()?;
@@ -210,7 +221,7 @@ impl ChickenEntity {
     }
 
     fn new_with_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
-        let living_base = LivingEntityBase::new(entity_type);
+        let living_base = LivingEntityBase::new(entity_type, &Self::LIVING);
         let mob_base = MobBase::new(&Self::MOB);
         Breeding::initialize_pathfinding_malus(&mob_base);
         // Chickens do not avoid water (`setPathfindingMalus(PathType.WATER, 0.0F)`).
@@ -467,7 +478,7 @@ impl ChickenEntity {
     fn drop_gift_loot_table(&self, loot_table: LootTableRef) -> bool {
         let position = self.position();
         let mut rng = rand::rng();
-        let equipment = living_loot_equipment(self);
+        let equipment = living_loot_equipment(&self.living());
         // Vanilla `LootContextParamSets.GIFT` carries only ORIGIN and THIS_ENTITY.
         let mut context = LootContext::new(&mut rng)
             .with_origin(position.x, position.y, position.z)
@@ -515,7 +526,7 @@ impl Entity for ChickenEntity {
     }
 
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
-        let scale = LivingEntity::get_scale(self);
+        let scale = self.living().get_scale();
         if self.animal().ageable().is_baby() {
             CHICKEN_BABY_DIMENSIONS.scale(scale)
         } else if self.entity_type.fixed {
@@ -551,12 +562,13 @@ impl Entity for ChickenEntity {
     fn position_rider(&self, passenger: &dyn Entity) {
         position_rider_default(self, passenger);
         if let Some(living) = passenger.as_living_entity() {
-            living.set_y_body_rot(self.y_body_rot());
+            living.set_y_body_rot(self.living().y_body_rot());
         }
     }
 
     fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
         match key {
+            LivingEntityBase::TYPE_KEY => Some(&self.living_base),
             MobBase::TYPE_KEY => Some(&self.mob_base),
             Age::TYPE_KEY => Some(&self.age),
             Breeding::TYPE_KEY => Some(&self.breeding),
@@ -596,56 +608,9 @@ impl Entity for ChickenEntity {
     }
 }
 
-impl LivingEntity for ChickenEntity {
-    fn living_base(&self) -> &LivingEntityBase {
+impl Has<LivingEntityBase> for ChickenEntity {
+    fn component(&self) -> &LivingEntityBase {
         &self.living_base
-    }
-
-    fn get_health(&self) -> f32 {
-        *self.entity_data.lock().living_entity().health.get()
-    }
-
-    fn set_health(&self, health: f32) {
-        let max_health = self.get_max_health();
-        let clamped = health.clamp(0.0, max_health);
-        self.entity_data
-            .lock()
-            .living_entity_mut()
-            .health
-            .set(clamped);
-    }
-
-    fn hurt_sound(&self, _source: &DamageSource) -> Option<SoundEventRef> {
-        Some(self.current_sound_set().hurt_sound)
-    }
-
-    fn death_sound(&self) -> Option<SoundEventRef> {
-        Some(self.current_sound_set().death_sound)
-    }
-
-    fn chicken_loot_variant(&self) -> Option<&Identifier> {
-        Some(&self.variant().key)
-    }
-
-    fn base_experience_reward(&self) -> i32 {
-        if self.is_chicken_jockey() {
-            CHICKEN_JOCKEY_EXPERIENCE_REWARD
-        } else {
-            Animal::base_experience_reward()
-        }
-    }
-
-    fn server_ai_step(&self, entity: &SharedEntity) {
-        self.mob().mob_server_ai_step(entity);
-    }
-
-    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
-        let mut ctx = AiStepCtx {
-            entity,
-            movement: None,
-        };
-        Self::definition().ai_step.run(self, &mut ctx);
-        ctx.movement
     }
 }
 

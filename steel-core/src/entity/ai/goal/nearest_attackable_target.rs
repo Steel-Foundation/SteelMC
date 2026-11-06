@@ -1,10 +1,11 @@
+use crate::entity::LivingParts as _;
 use glam::DVec3;
 
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use super::target_goal::{TargetGoalBase, follow_distance};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{LivingEntity, Mob, SharedEntity};
+use crate::entity::{Living, Mob, SharedEntity};
 use crate::world::World;
 
 const DEFAULT_RANDOM_INTERVAL: i32 = 10;
@@ -26,7 +27,7 @@ impl NearestAttackableTargetGoal {
     #[must_use]
     pub(crate) fn new(
         must_see: bool,
-        selector: impl Fn(&dyn LivingEntity, &World) -> bool + Send + Sync + 'static,
+        selector: impl Fn(&Living<'_>, &World) -> bool + Send + Sync + 'static,
     ) -> Self {
         Self::new_with_interval(DEFAULT_RANDOM_INTERVAL, must_see, false, selector)
     }
@@ -36,7 +37,7 @@ impl NearestAttackableTargetGoal {
         random_interval: i32,
         must_see: bool,
         must_reach: bool,
-        selector: impl Fn(&dyn LivingEntity, &World) -> bool + Send + Sync + 'static,
+        selector: impl Fn(&Living<'_>, &World) -> bool + Send + Sync + 'static,
     ) -> Self {
         Self::new_with_options(
             random_interval,
@@ -50,7 +51,7 @@ impl NearestAttackableTargetGoal {
     #[must_use]
     pub(crate) fn new_for_players(
         must_see: bool,
-        selector: impl Fn(&dyn LivingEntity, &World) -> bool + Send + Sync + 'static,
+        selector: impl Fn(&Living<'_>, &World) -> bool + Send + Sync + 'static,
     ) -> Self {
         Self::new_for_players_with_interval(DEFAULT_RANDOM_INTERVAL, must_see, false, selector)
     }
@@ -60,7 +61,7 @@ impl NearestAttackableTargetGoal {
         random_interval: i32,
         must_see: bool,
         must_reach: bool,
-        selector: impl Fn(&dyn LivingEntity, &World) -> bool + Send + Sync + 'static,
+        selector: impl Fn(&Living<'_>, &World) -> bool + Send + Sync + 'static,
     ) -> Self {
         Self::new_with_options(
             random_interval,
@@ -75,7 +76,7 @@ impl NearestAttackableTargetGoal {
         random_interval: i32,
         must_see: bool,
         must_reach: bool,
-        selector: impl Fn(&dyn LivingEntity, &World) -> bool + Send + Sync + 'static,
+        selector: impl Fn(&Living<'_>, &World) -> bool + Send + Sync + 'static,
         search: TargetSearch,
     ) -> Self {
         Self {
@@ -102,14 +103,14 @@ impl NearestAttackableTargetGoal {
         self.target = match self.search {
             TargetSearch::Players => level
                 .nearest_player(origin, follow, |player| {
-                    target_conditions.test(level, Some(mob.living()), player)
+                    target_conditions.test(level, Some(&mob.living()), &player.living())
                 })
                 .map(|player| -> SharedEntity { player }),
             TargetSearch::Entities => {
                 let search_box = mob.bounding_box().inflate_xyz(follow, follow, follow);
                 level.nearest_entity_in_aabb_matching(&search_box, origin, |entity| {
                     entity.as_living_entity().is_some_and(|target| {
-                        target_conditions.test(level, Some(mob.living()), target)
+                        target_conditions.test(level, Some(&mob.living()), &target)
                     })
                 })
             }

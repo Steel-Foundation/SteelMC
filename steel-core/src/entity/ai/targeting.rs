@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use steel_utils::types::Difficulty;
 
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::world::World;
 
 const MIN_VISIBILITY_DISTANCE_FOR_INVISIBLE_TARGET: f64 = 2.0;
 
-pub(crate) type TargetingSelector = Arc<dyn Fn(&dyn LivingEntity, &World) -> bool + Send + Sync>;
+pub(crate) type TargetingSelector = Arc<dyn Fn(&Living<'_>, &World) -> bool + Send + Sync>;
 
 #[derive(Clone)]
 pub(crate) struct TargetingConditions {
@@ -60,7 +60,7 @@ impl TargetingConditions {
     #[must_use]
     pub(crate) fn selector(
         mut self,
-        selector: impl Fn(&dyn LivingEntity, &World) -> bool + Send + Sync + 'static,
+        selector: impl Fn(&Living<'_>, &World) -> bool + Send + Sync + 'static,
     ) -> Self {
         self.selector = Some(Arc::new(selector));
         self
@@ -70,8 +70,8 @@ impl TargetingConditions {
     pub(crate) fn test(
         &self,
         world: &World,
-        targeter: Option<&dyn LivingEntity>,
-        target: &dyn LivingEntity,
+        targeter: Option<&Living<'_>>,
+        target: &Living<'_>,
     ) -> bool {
         if targeter.is_some_and(|targeter| targeter.uuid() == target.uuid()) {
             return false;
@@ -90,13 +90,15 @@ impl TargetingConditions {
                 || target.can_be_seen_as_enemy() && world.difficulty() != Difficulty::Peaceful;
         };
 
-        if self.is_combat && (!targeter.can_attack(target) || targeter.is_allied_to(target)) {
+        if self.is_combat
+            && (!targeter.can_attack(target) || targeter.is_allied_to(target.entity()))
+        {
             return false;
         }
 
         if self.range > 0.0 {
             let modifier = if self.test_invisible {
-                target.get_visibility_percent(Some(targeter))
+                target.get_visibility_percent(Some(targeter.entity()))
             } else {
                 1.0
             };
@@ -111,7 +113,7 @@ impl TargetingConditions {
 
         if self.check_line_of_sight
             && let Some(mob) = targeter.as_mob()
-            && !mob.has_line_of_sight_cached(target)
+            && !mob.has_line_of_sight_cached(target.entity())
         {
             return false;
         }
@@ -128,6 +130,8 @@ impl Default for TargetingConditions {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::LivingProps;
+    use crate::test_support::synced_with_health;
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -138,6 +142,8 @@ mod tests {
     use steel_utils::{BlockPos, ChunkPos};
 
     use super::*;
+
+    use crate::entity::LivingParts as _;
 
     use crate::behavior::init_behaviors;
     use crate::entity::MobParts as _;
@@ -156,7 +162,6 @@ mod tests {
         living_base: LivingEntityBase,
         mob_base: MobBase,
         entity_data: SyncMutex<MobEntityData>,
-        health: SyncMutex<f32>,
     }
 
     impl HoveringTestMob {
@@ -164,10 +169,12 @@ mod tests {
             init_vanilla_registry();
             Self {
                 base: EntityBase::new(id, position, vanilla_entities::PIG.dimensions, world),
-                living_base: LivingEntityBase::new(&vanilla_entities::PIG),
+                living_base: LivingEntityBase::new(
+                    &vanilla_entities::PIG,
+                    &HoveringTestMob::LIVING,
+                ),
                 mob_base: MobBase::new(&HoveringTestMob::MOB),
-                entity_data: SyncMutex::new(MobEntityData::new()),
-                health: SyncMutex::new(10.0),
+                entity_data: SyncMutex::new(synced_with_health(MobEntityData::new(), 10.0)),
             }
         }
     }
@@ -186,7 +193,11 @@ mod tests {
 
     impl Entity for HoveringTestMob {
         fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-            (key == MobBase::TYPE_KEY).then_some(&self.mob_base as &dyn ErasedType)
+            match key {
+                MobBase::TYPE_KEY => Some(&self.mob_base),
+                LivingEntityBase::TYPE_KEY => Some(&self.living_base),
+                _ => None,
+            }
         }
 
         fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
@@ -202,17 +213,15 @@ mod tests {
         }
     }
 
-    impl LivingEntity for HoveringTestMob {
-        fn living_base(&self) -> &LivingEntityBase {
+    impl HoveringTestMob {
+        const LIVING: LivingProps<Self> = LivingProps {
+            ..LivingProps::new()
+        };
+    }
+
+    impl Has<LivingEntityBase> for HoveringTestMob {
+        fn component(&self) -> &LivingEntityBase {
             &self.living_base
-        }
-
-        fn get_health(&self) -> f32 {
-            *self.health.lock()
-        }
-
-        fn set_health(&self, health: f32) {
-            *self.health.lock() = health;
         }
     }
 
@@ -239,7 +248,11 @@ mod tests {
         );
 
         assert!(
-            TargetingConditions::for_non_combat().test(world.as_ref(), Some(&targeter), &target),
+            TargetingConditions::for_non_combat().test(
+                world.as_ref(),
+                Some(&targeter.living()),
+                &target.living()
+            ),
             "a mob with a clear view should pick its target"
         );
 
@@ -250,13 +263,17 @@ mod tests {
         ));
         targeter.mob().mob_base().sensing().lock().tick();
         assert!(
-            !TargetingConditions::for_non_combat().test(world.as_ref(), Some(&targeter), &target),
+            !TargetingConditions::for_non_combat().test(
+                world.as_ref(),
+                Some(&targeter.living()),
+                &target.living()
+            ),
             "a mob that cannot see its target should not pick it, whether or not it pathfinds"
         );
         assert!(
             TargetingConditions::for_non_combat()
                 .ignore_line_of_sight()
-                .test(world.as_ref(), Some(&targeter), &target),
+                .test(world.as_ref(), Some(&targeter.living()), &target.living()),
             "the same target should be picked once sight is not required"
         );
     }

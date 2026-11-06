@@ -1,5 +1,5 @@
 use crate::behavior::{InteractionResult, ItemBehavior};
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::player::Player;
 use steel_macros::item_behavior;
 use steel_registry::data_components::vanilla_components::CUSTOM_NAME;
@@ -15,13 +15,13 @@ impl ItemBehavior for NameTagItem {
         &self,
         stack: &mut ItemStack,
         _player: &Player,
-        target: &dyn LivingEntity,
+        target: &Living<'_>,
         _hand: InteractionHand,
     ) -> InteractionResult {
         if target.entity_type().can_serialize
             && let Some(component) = stack.get(CUSTOM_NAME)
         {
-            if LivingEntity::is_alive(target) {
+            if target.is_alive() {
                 target.set_custom_name(Some(component.clone()));
                 if let Some(mob) = target.as_mob() {
                     mob.set_persistence_required();

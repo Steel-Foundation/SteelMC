@@ -3,6 +3,7 @@ use std::sync::Arc;
 use steel_utils::Identifier;
 
 use super::*;
+
 use crate::config::{DomainConfig, StorageSelection, WorldEntryConfig};
 
 use crate::level_data::LevelData;
@@ -65,7 +66,7 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
         let attacker_weak = Arc::downgrade(&attacker);
         let source =
             DamageSource::environment(&vanilla_damage_types::GENERIC).with_causing_entity(attacker);
-        player.record_last_damage_source(&source);
+        player.living().record_last_damage_source(&source);
         drop(source);
         let mut server_iteration = 0;
         let transfer_age = 39;
@@ -76,10 +77,10 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
                 .await
                 .expect("tick");
         }
-        assert!(player.last_damage_source().is_some());
+        assert!(player.living().last_damage_source().is_some());
         player.reset(Arc::clone(&derived), ResetReason::WorldChange);
         assert!(
-            player.last_damage_source().is_some(),
+            player.living().last_damage_source().is_some(),
             "same-domain transfer preserves history"
         );
         server.tick_rate_manager.write().set_frozen(true);
@@ -93,7 +94,7 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
                 .expect("frozen tick");
         }
         assert_eq!(primary.game_time(), 39);
-        assert!(player.last_damage_source().is_some());
+        assert!(player.living().last_damage_source().is_some());
         assert!(
             attacker_weak.upgrade().is_some(),
             "same-incarnation transfer retains the source"
@@ -107,7 +108,7 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
                 .await
                 .expect("step");
             assert_eq!(derived.game_time(), expected_damage_age);
-            assert_eq!(player.last_damage_source().is_some(), available);
+            assert_eq!(player.living().last_damage_source().is_some(), available);
             assert_eq!(attacker_weak.upgrade().is_some(), available);
         }
         let sprint_ticks = 3;

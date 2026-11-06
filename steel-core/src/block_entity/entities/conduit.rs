@@ -3,6 +3,7 @@
 //! Vanilla's client-only `effectBlocks` list, `tickCount` and `activeRotation` are not kept;
 //! the server only needs the frame size from each scan.
 
+use crate::entity::LivingParts as _;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -21,9 +22,7 @@ use steel_utils::{
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::entity::damage::DamageSource;
-use crate::entity::{
-    Entity as _, EntityReference, LivingEntity as _, MobEffectInstance, SharedEntity,
-};
+use crate::entity::{Entity as _, EntityReference, MobEffectInstance, SharedEntity};
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
 use crate::player::Player;
 use crate::world::World;
@@ -156,7 +155,7 @@ impl ConduitBlockEntity {
             {
                 continue;
             }
-            player.add_mob_effect(
+            player.living().add_mob_effect(
                 MobEffectInstance::with_duration(
                     vanilla_mob_effects::CONDUIT_POWER,
                     EFFECT_DURATION,

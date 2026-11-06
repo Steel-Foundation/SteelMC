@@ -828,7 +828,7 @@ pub use living_base::{
     LivingTravelInput, MobEffectInstance, MobEffectSyncChange, MobEffectSyncPacket,
     sync_dirty_mob_effects,
 };
-pub use living_entity::LivingEntity;
+pub use living_entity::{Living, LivingHooks, LivingProps, Parts as LivingParts};
 pub(crate) use manager::EntityCollisionCandidates;
 #[cfg(feature = "benchmark-support")]
 pub use manager::benchmark_support as entity_manager_benchmark_support;
@@ -865,7 +865,7 @@ pub(crate) use spawn::{
 };
 pub(crate) use spawn_placements::SpawnPlacements;
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
-pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
+pub use synced_data::EntitySyncedData;
 pub(crate) use ticking::{snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_if};
 pub use tracker::{EntityChangeSenders, EntityTracker};
 
@@ -1378,14 +1378,16 @@ fn remove_after_changing_dimensions(entity: &dyn Entity) {
 /// the equipment lock while the table rolls.
 ///
 /// Locks the entity's equipment (a player's inventory), so callers must not already hold it.
-pub(crate) fn living_loot_equipment<E: LivingEntity + ?Sized>(entity: &E) -> EntityEquipmentSlots {
+pub(crate) fn living_loot_equipment(entity: &Living<'_>) -> EntityEquipmentSlots {
     // TODO: Read live equipment once loot contexts can do so safely.
     entity.living_base().equipment().lock().snapshot()
 }
 
 /// [`living_loot_equipment`] for any entity; `None` for non-living entities.
 pub(crate) fn loot_equipment(entity: &dyn Entity) -> Option<EntityEquipmentSlots> {
-    entity.as_living_entity().map(living_loot_equipment)
+    entity
+        .as_living_entity()
+        .map(|living| living_loot_equipment(&living))
 }
 
 pub(crate) fn entity_loot_ref<'a>(
@@ -1393,22 +1395,22 @@ pub(crate) fn entity_loot_ref<'a>(
     equipment: Option<&'a EntityEquipmentSlots>,
 ) -> EntityRef<'a> {
     let living_entity = entity.as_living_entity();
-    let sheep = living_entity.and_then(LivingEntity::sheep_loot_state);
+    let sheep = living_entity.and_then(|living| living.sheep_loot_state());
     EntityRef {
         entity_type: Some(&entity.entity_type().key),
         flags: EntityRefFlags {
             is_on_fire: entity.is_on_fire(),
             is_sneaking: entity.is_crouching(),
-            is_sprinting: living_entity.is_some_and(LivingEntity::is_sprinting),
+            is_sprinting: living_entity.is_some_and(|living| living.is_sprinting()),
             is_swimming: entity.is_swimming(),
-            is_baby: living_entity.is_some_and(LivingEntity::is_baby),
+            is_baby: living_entity.is_some_and(|living| living.is_baby()),
         },
         equipment: equipment.map(EntityEquipmentRef::new),
         // TODO: Include custom name once loot contexts can snapshot entity data.
         custom_name: None,
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),
-        chicken_variant: living_entity.and_then(LivingEntity::chicken_loot_variant),
+        chicken_variant: living_entity.and_then(|living| living.chicken_loot_variant()),
     }
 }
 
@@ -1429,10 +1431,7 @@ pub fn leashables_leashed_to_holder_in_area_near_position(
 }
 
 /// Returns the living entity that will be credited with killing this entity.
-pub(crate) fn get_kill_credit<E: LivingEntity + ?Sized>(
-    entity: &E,
-    world: &World,
-) -> Option<SharedEntity> {
+pub(crate) fn get_kill_credit(entity: &Living<'_>, world: &World) -> Option<SharedEntity> {
     if entity.last_hurt_by_player_uuid().is_some() {
         entity.living_base().last_hurt_by_player(world)
     } else {

@@ -1,6 +1,6 @@
 use steel_registry::item_stack::ItemStack;
 
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::inventory::equipment::EquipmentSlot;
 
 /// Access to the enchanted stack without holding equipment locks across entity effects.
@@ -8,7 +8,7 @@ use crate::inventory::equipment::EquipmentSlot;
 pub(super) enum EnchantedItemInUse<'a> {
     Stack(&'a mut ItemStack),
     Equipped {
-        owner: &'a dyn LivingEntity,
+        owner: &'a Living<'a>,
         slot: EquipmentSlot,
     },
 }

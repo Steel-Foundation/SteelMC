@@ -1,7 +1,7 @@
 use glam::DVec3;
 
 use super::EntityPush;
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::Entity;
 
 /// Vanilla push and cramming behavior with no overrides. Implementors only read state,
 /// only write velocity and the velocity sync flag, and never re-enter the entity manager.
@@ -18,7 +18,7 @@ pub trait DefaultEntityPush: Entity {
             receives_impulse: !state.is_vehicle && (known_pushable || self.is_pushable()),
             sleeping: self
                 .as_living_entity()
-                .is_some_and(LivingEntity::is_sleeping),
+                .is_some_and(|living| living.is_sleeping()),
         })
     }
 }

@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use steel_registry::vanilla_game_rules::MAX_ENTITY_CRAMMING;
 
 use super::selector::EntitySelector;
-use super::{Entity, LivingEntity, SharedEntity};
+use super::{Entity, Living, SharedEntity};
 use crate::world::World;
 
 pub use snapshot::{DefaultEntityPush, EntityPushSnapshot};
@@ -20,7 +20,7 @@ thread_local! {
 pub(crate) struct EntityPush;
 
 impl EntityPush {
-    pub(crate) fn push_entities<E: LivingEntity + ?Sized>(pusher: &E) {
+    pub(crate) fn push_entities(pusher: &Living<'_>) {
         let Some(world) = pusher.level() else {
             return;
         };

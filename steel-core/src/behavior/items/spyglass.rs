@@ -8,7 +8,7 @@ use steel_registry::sound_events;
 use steel_registry::stat::vanilla_stat_types;
 
 use crate::behavior::{InteractionResult, ItemBehavior, ItemUseAnimation, UseItemContext};
-use crate::entity::{Entity, LivingEntity, LivingEntityRef};
+use crate::entity::{Entity, Living, LivingEntityRef};
 use crate::world::World;
 
 const USE_DURATION: i32 = 1200;
@@ -18,7 +18,7 @@ const USE_DURATION: i32 = 1200;
 pub struct SpyglassItem;
 
 impl SpyglassItem {
-    fn stop_using(user: &dyn LivingEntity) {
+    fn stop_using(user: &Living<'_>) {
         user.play_sound(&sound_events::ITEM_SPYGLASS_STOP_USING, 1.0, 1.0);
     }
 }
@@ -41,7 +41,7 @@ impl ItemBehavior for SpyglassItem {
         ItemUseAnimation::Spyglass
     }
 
-    fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+    fn get_use_duration(&self, _stack: &ItemStack, _user: &Living<'_>) -> i32 {
         USE_DURATION
     }
 
@@ -51,7 +51,7 @@ impl ItemBehavior for SpyglassItem {
         _world: &Arc<World>,
         user: LivingEntityRef<'_>,
     ) -> ItemStack {
-        Self::stop_using(user.living());
+        Self::stop_using(&user.living());
         stack.copy_with_count(stack.count())
     }
 
@@ -59,7 +59,7 @@ impl ItemBehavior for SpyglassItem {
         &self,
         _stack: &mut ItemStack,
         _world: &Arc<World>,
-        user: &dyn LivingEntity,
+        user: &Living<'_>,
         _time_left: i32,
     ) -> bool {
         Self::stop_using(user);

@@ -3,10 +3,11 @@ use super::{
     CBlockChangedAck, CChangeDifficulty, CGameEvent, CPlayerInfoUpdate,
     CREATIVE_BLOCK_RANGE_MODIFIER_AMOUNT, CREATIVE_ENTITY_RANGE_MODIFIER_AMOUNT, CSetCamera,
     CollisionWorld, Difficulty, Entity, FLIGHT_DISABLE_RANGE, GameEventType, GameType, Identifier,
-    LivingEntity, Player, SSpectatorAction, WorldAabb, WorldCollisionProvider,
-    player_can_change_difficulty, shapes, vanilla_attributes,
+    Player, SSpectatorAction, WorldAabb, WorldCollisionProvider, player_can_change_difficulty,
+    shapes, vanilla_attributes,
 };
 use crate::behavior::blocks::PowderSnowBlock;
+use crate::entity::LivingParts as _;
 use steel_protocol::packets::game::SPunch;
 use steel_utils::types::InteractionHand;
 
@@ -47,7 +48,7 @@ impl Player {
         self.get_world().update_sleeping_player_list();
 
         if gamemode == GameType::Creative {
-            self.reset_current_impulse_context();
+            self.living().reset_current_impulse_context();
         }
 
         self.send_packet(CGameEvent {
@@ -158,7 +159,7 @@ impl Player {
     /// range modifiers every tick.
     pub(in crate::player) fn update_player_attributes(&self) {
         let is_creative = self.game_mode() == GameType::Creative;
-        let mut attrs = self.attributes().lock();
+        let mut attrs = self.living_base.attributes().lock();
 
         if is_creative {
             attrs.set_modifier(
@@ -225,7 +226,8 @@ impl Player {
     /// attribute modifier if set, or the default range otherwise.
     #[must_use]
     pub fn block_interaction_range(&self) -> f64 {
-        self.attributes()
+        self.living()
+            .attributes()
             .lock()
             .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
             .unwrap_or(Self::DEFAULT_BLOCK_INTERACTION_RANGE)
@@ -276,6 +278,7 @@ impl Player {
         let dist_sq = dx * dx + dy * dy + dz * dz;
 
         let base_range = self
+            .living()
             .attributes()
             .lock()
             .get_value(vanilla_attributes::ENTITY_INTERACTION_RANGE)
@@ -324,7 +327,7 @@ impl Player {
         self.reset_last_action_time();
         self.swing(
             InteractionHand::MainHand,
-            self.attack_animation(InteractionHand::MainHand),
+            self.living().attack_animation(InteractionHand::MainHand),
             false,
         );
         self.reset_attack_strength_ticker();

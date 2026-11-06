@@ -13,7 +13,7 @@ use crate::entity::ai::navigation::{
 };
 use crate::entity::ai::path::Path;
 use crate::entity::ai::walk::{MobPathSettings, WalkNodeEvaluator};
-use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::entity::{Entity, Living, SharedEntity};
 use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
 
@@ -125,7 +125,7 @@ impl Mob<'_> {
             .can_path_to_targets_below_surface()
     }
 
-    pub fn can_reach_living_target(&self, target: &dyn LivingEntity) -> bool {
+    pub fn can_reach_living_target(&self, target: &Living<'_>) -> bool {
         let target_pos = target.block_position();
         self.create_path_to(target_pos, 0)
             .is_some_and(|path| path_end_node_can_reach_target(&path, target_pos))

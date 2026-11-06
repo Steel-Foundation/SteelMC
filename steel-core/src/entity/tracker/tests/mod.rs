@@ -1,7 +1,14 @@
+use crate::entity::EntitySyncedData;
+use crate::entity::LivingProps;
+use crate::entity::component::Has;
 use std::{
     mem,
     sync::{Arc, Weak},
 };
+use steel_registry::vanilla_entity_data::LivingEntityData;
+use steel_utils::DowncastType as _;
+use steel_utils::DowncastTypeKey;
+use steel_utils::ErasedType;
 
 use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem};
 use steel_registry::item_stack::ItemStack;
@@ -10,13 +17,14 @@ use steel_registry::{
 };
 
 use super::*;
-use crate::entity::{EntityBase, LivingEntity, LivingEntityBase, entities::ChickenEntity};
+use crate::entity::{EntityBase, LivingEntityBase, entities::ChickenEntity};
 use crate::inventory::equipment::EquipmentSlot;
 
 struct PairingTestEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     living_base: LivingEntityBase,
+    entity_data: SyncMutex<LivingEntityData>,
     attributes: Vec<AttributeSnapshot>,
     dirty_attributes: SyncMutex<Vec<AttributeSnapshot>>,
     equipment: SyncMutex<Vec<EquipmentSlotItem>>,
@@ -38,7 +46,8 @@ impl PairingTestEntity {
         Arc::new(Self {
             base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
             entity_type,
-            living_base: LivingEntityBase::new(&vanilla_entities::PIG),
+            living_base: LivingEntityBase::new(&vanilla_entities::PIG, &PairingTestEntity::LIVING),
+            entity_data: SyncMutex::new(LivingEntityData::new()),
             attributes,
             dirty_attributes: SyncMutex::new(Vec::new()),
             equipment: SyncMutex::new(Vec::new()),
@@ -80,6 +89,14 @@ impl PairingTestEntity {
 crate::entity::impl_test_downcast_type!(PairingTestEntity);
 
 impl Entity for PairingTestEntity {
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
+    }
+
+    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+        (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -105,31 +122,35 @@ impl Entity for PairingTestEntity {
     }
 }
 
-impl LivingEntity for PairingTestEntity {
-    fn living_base(&self) -> &LivingEntityBase {
-        &self.living_base
-    }
+impl PairingTestEntity {
+    const LIVING: LivingProps<Self> = LivingProps {
+        pack_syncable_attributes: Self::living_pack_syncable_attributes,
+        drain_dirty_syncable_attributes: Self::living_drain_dirty_syncable_attributes,
+        pack_all_equipment: Self::living_pack_all_equipment,
+        drain_dirty_equipment: Self::living_drain_dirty_equipment,
+        ..LivingProps::new()
+    };
 
-    fn get_health(&self) -> f32 {
-        20.0
-    }
-
-    fn set_health(&self, _health: f32) {}
-
-    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+    fn living_pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
         self.attributes.clone()
     }
 
-    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+    fn living_drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
         mem::take(&mut *self.dirty_attributes.lock())
     }
 
-    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
+    fn living_pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
         self.equipment.lock().clone()
     }
 
-    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
+    fn living_drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
         mem::take(&mut *self.dirty_equipment.lock())
+    }
+}
+
+impl Has<LivingEntityBase> for PairingTestEntity {
+    fn component(&self) -> &LivingEntityBase {
+        &self.living_base
     }
 }
 

@@ -630,7 +630,7 @@ fn equip_from_table(mob: &Mob<'_>, equipment: &EquipmentTable) {
     };
 
     let mut random = rng();
-    let mob_equipment = living_loot_equipment(mob.living());
+    let mob_equipment = living_loot_equipment(&mob.living());
     let entity_ref = entity_loot_ref(mob.as_entity_event_source(), Some(&mob_equipment));
     let mut context = LootContext::new(&mut random)
         .with_origin(mob.position().x, mob.position().y, mob.position().z)

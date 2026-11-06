@@ -7,7 +7,7 @@ fn jump_from_ground_uses_jump_strength_and_marks_velocity_sync() {
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
 
-    entity.jump_from_ground();
+    entity.living().jump_from_ground();
 
     assert_vec3_close(entity.velocity(), DVec3::new(0.0, jump_strength, 0.0));
     assert!(entity.needs_velocity_sync());
@@ -18,10 +18,10 @@ fn sprint_jump_from_ground_adds_vanilla_horizontal_impulse() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
-    entity.set_sprinting(true);
+    entity.living().set_sprinting(true);
     entity.set_rotation((0.0, 0.0));
 
-    entity.jump_from_ground();
+    entity.living().jump_from_ground();
 
     assert_vec3_close(
         entity.velocity(),
@@ -33,23 +33,23 @@ fn sprint_jump_from_ground_adds_vanilla_horizontal_impulse() {
 fn living_jump_in_water_uses_fluid_jump_impulse_without_cooldown() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.5, 0.0, true);
-    entity.set_jumping(true);
+    entity.living().set_jumping(true);
 
-    entity.handle_living_jump();
+    entity.living().handle_living_jump();
 
     assert_vec3_close(entity.velocity(), DVec3::new(0.0, f64::from(0.04_f32), 0.0));
-    assert_eq!(entity.no_jump_delay(), 0);
+    assert_eq!(entity.living().no_jump_delay(), 0);
 }
 
 #[test]
 fn living_jump_without_input_resets_jump_delay_like_vanilla() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    entity.set_no_jump_delay(4);
+    entity.living().set_no_jump_delay(4);
 
-    entity.handle_living_jump();
+    entity.living().handle_living_jump();
 
-    assert_eq!(entity.no_jump_delay(), 0);
+    assert_eq!(entity.living().no_jump_delay(), 0);
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn living_ai_step_zeroes_tiny_player_velocity_like_vanilla() {
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_velocity(DVec3::new(0.002, 0.002, 0.002));
 
-    entity.apply_living_velocity_thresholds();
+    entity.living().apply_living_velocity_thresholds();
 
     assert_vec3_close(entity.velocity(), DVec3::ZERO);
 }
@@ -70,7 +70,7 @@ fn living_ai_step_keeps_player_horizontal_velocity_above_combined_threshold() {
     let velocity = DVec3::new(0.002, 0.003, 0.0025);
     entity.set_velocity(velocity);
 
-    entity.apply_living_velocity_thresholds();
+    entity.living().apply_living_velocity_thresholds();
 
     assert_vec3_close(entity.velocity(), velocity);
 }
@@ -80,14 +80,16 @@ fn default_ai_step_resets_idle_jump_delay_and_dampens_input_before_travel() {
     init_vanilla_registry();
     let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     let shared_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
-    entity.set_no_jump_delay(2);
-    entity.set_travel_input(LivingTravelInput::new(1.0, 0.5, -1.0));
+    entity.living().set_no_jump_delay(2);
+    entity
+        .living()
+        .set_travel_input(LivingTravelInput::new(1.0, 0.5, -1.0));
 
-    assert!(entity.default_ai_step(&shared_entity).is_none());
+    assert!(entity.living().default_ai_step(&shared_entity).is_none());
 
-    assert_eq!(entity.no_jump_delay(), 0);
+    assert_eq!(entity.living().no_jump_delay(), 0);
     assert_eq!(
-        entity.travel_input(),
+        entity.living().travel_input(),
         LivingTravelInput::new(0.98, 0.5, -0.98)
     );
 }
@@ -100,16 +102,20 @@ fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
     let slow_falling = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     let slow_falling_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&slow_falling);
     slow_falling.set_fall_distance(7.0);
-    slow_falling.set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
-    slow_falling.default_ai_step(&slow_falling_entity);
+    slow_falling
+        .living()
+        .set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
+    slow_falling.living().default_ai_step(&slow_falling_entity);
 
     assert_f64_close(slow_falling.fall_distance(), 0.0);
 
     let levitating = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
     let levitating_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&levitating);
     levitating.set_fall_distance(7.0);
-    levitating.set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
-    levitating.default_ai_step(&levitating_entity);
+    levitating
+        .living()
+        .set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
+    levitating.living().default_ai_step(&levitating_entity);
 
     assert_f64_close(levitating.fall_distance(), 0.0);
 }
@@ -121,12 +127,12 @@ fn default_ai_step_jumps_from_ground_and_sets_vanilla_cooldown() {
     let shared_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
     let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
     entity.set_on_ground(true);
-    entity.set_jumping(true);
+    entity.living().set_jumping(true);
 
-    assert!(entity.default_ai_step(&shared_entity).is_none());
+    assert!(entity.living().default_ai_step(&shared_entity).is_none());
 
     assert_vec3_close(entity.velocity(), DVec3::new(0.0, jump_strength, 0.0));
-    assert_eq!(entity.no_jump_delay(), 10);
+    assert_eq!(entity.living().no_jump_delay(), 10);
     assert!(entity.needs_velocity_sync());
 }
 
@@ -137,13 +143,26 @@ fn living_travel_fluid_predicate_matches_vanilla_hooks() {
     let lava_entity = LivingFluidTestEntity::new(0.0, 0.4, true);
     lava_entity.set_first_tick(false);
 
-    assert!(LivingFluidTestEntity::new(0.4, 0.0, true).should_travel_in_fluid(water));
-    assert!(lava_entity.should_travel_in_fluid(water));
-    assert!(!LivingFluidTestEntity::new(0.0, 0.0, true).should_travel_in_fluid(water));
-    assert!(!LivingFluidTestEntity::new(0.4, 0.0, false).should_travel_in_fluid(water));
+    assert!(
+        LivingFluidTestEntity::new(0.4, 0.0, true)
+            .living()
+            .should_travel_in_fluid(water)
+    );
+    assert!(lava_entity.living().should_travel_in_fluid(water));
+    assert!(
+        !LivingFluidTestEntity::new(0.0, 0.0, true)
+            .living()
+            .should_travel_in_fluid(water)
+    );
+    assert!(
+        !LivingFluidTestEntity::new(0.4, 0.0, false)
+            .living()
+            .should_travel_in_fluid(water)
+    );
     assert!(
         !LivingFluidTestEntity::new(0.4, 0.0, true)
             .with_standing_on_fluid()
+            .living()
             .should_travel_in_fluid(water)
     );
 }

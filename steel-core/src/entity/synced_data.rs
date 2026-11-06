@@ -2,9 +2,8 @@ use bitflags::bitflags;
 use parking_lot::{MappedMutexGuard, MutexGuard};
 use steel_registry::{
     entity_data::{DataValue, EntityPose},
-    vanilla_entity_data::{VanillaEntityData, VanillaLivingEntityData},
+    vanilla_entity_data::VanillaEntityData,
 };
-use steel_utils::BlockPos;
 use steel_utils::locks::SyncMutex;
 use text_components::TextComponent;
 
@@ -99,31 +98,6 @@ pub trait EntitySyncedData: Send + Sync {
 
     /// Sets synchronized vanilla frozen ticks.
     fn set_base_ticks_frozen(&self, ticks_frozen: i32);
-}
-
-/// Thread-safe access to synchronized data declared by vanilla `LivingEntity`.
-pub trait LivingEntitySyncedData: EntitySyncedData {
-    /// Sets synchronized vanilla sleeping position.
-    fn set_sleeping_pos(&self, sleeping_pos: BlockPos);
-
-    /// Clears synchronized vanilla sleeping position.
-    fn clear_sleeping_pos(&self);
-}
-
-impl<T> LivingEntitySyncedData for SyncMutex<T>
-where
-    T: VanillaLivingEntityData + Send + Sync + 'static,
-{
-    fn set_sleeping_pos(&self, sleeping_pos: BlockPos) {
-        self.lock()
-            .living_entity_mut()
-            .sleeping_pos
-            .set(Some(sleeping_pos));
-    }
-
-    fn clear_sleeping_pos(&self) {
-        self.lock().living_entity_mut().sleeping_pos.set(None);
-    }
 }
 
 impl<T> EntitySyncedData for SyncMutex<T>
@@ -393,12 +367,23 @@ mod tests {
         assert!(matches!(values[4].value, EntityData::Boolean(true)));
     }
 
+    fn set_living_sleeping_pos(
+        data: &SyncMutex<PlayerEntityData>,
+        pos: Option<steel_utils::BlockPos>,
+    ) {
+        let mut data = EntitySyncedData::lock_data(data);
+        let Some(living) = data.living_entity_layer_mut() else {
+            panic!("players have living synced data");
+        };
+        living.sleeping_pos.set(pos);
+    }
+
     #[test]
     fn living_synced_data_writes_sleeping_pos_layer() {
         let data = SyncMutex::new(PlayerEntityData::new());
-        let bed_pos = BlockPos::new(1, 64, 2);
+        let bed_pos = steel_utils::BlockPos::new(1, 64, 2);
 
-        LivingEntitySyncedData::set_sleeping_pos(&data, bed_pos);
+        set_living_sleeping_pos(&data, Some(bed_pos));
 
         let values = EntitySyncedData::pack_dirty(&data)
             .expect("expected dirty living sleeping-pos metadata");
@@ -410,7 +395,7 @@ mod tests {
             EntityData::OptionalBlockPos(Some(pos)) if pos == bed_pos
         ));
 
-        LivingEntitySyncedData::clear_sleeping_pos(&data);
+        set_living_sleeping_pos(&data, None);
 
         let values = EntitySyncedData::pack_dirty(&data)
             .expect("expected dirty cleared sleeping-pos metadata");

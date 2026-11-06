@@ -9,7 +9,7 @@ use steel_utils::types::{InteractionHand, SignTextSlot};
 
 use crate::behavior::{InteractionResult, ItemBehavior, SignApplicator};
 use crate::block_entity::{BlockEntity as _, entities::SignBlockEntity};
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::player::Player;
 use crate::world::World;
 
@@ -30,7 +30,7 @@ impl ItemBehavior for DyeItem {
         &self,
         _stack: &mut ItemStack,
         _player: &Player,
-        _target: &dyn LivingEntity,
+        _target: &Living<'_>,
         _hand: InteractionHand,
     ) -> InteractionResult {
         // TODO(entity components): dye sheep again once `ChickenEntity` is ported out of

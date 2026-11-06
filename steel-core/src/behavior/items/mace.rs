@@ -10,7 +10,7 @@ use steel_registry::{level_events, sound_events, vanilla_damage_types};
 use crate::behavior::ItemBehavior;
 use crate::enchantment_helper::{self, EnchantmentDamageContext};
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::entity::{Entity, Living, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
 
 /// Vanilla mace item combat behavior.
@@ -24,11 +24,11 @@ impl MaceItem {
     const SMASH_ATTACK_KNOCKBACK_POWER: f64 = 0.7;
     const SMASH_ATTACK_PARTICLE_DATA: i32 = 750;
 
-    fn can_smash_attack(attacker: &dyn LivingEntity) -> bool {
+    fn can_smash_attack(attacker: &Living<'_>) -> bool {
         attacker.fall_distance() > Self::SMASH_ATTACK_FALL_THRESHOLD && !attacker.is_fall_flying()
     }
 
-    fn calculate_impact_position(attacker: &dyn LivingEntity) -> DVec3 {
+    fn calculate_impact_position(attacker: &Living<'_>) -> DVec3 {
         if let Some(impact_pos) = attacker.current_impulse_impact_pos()
             && impact_pos.y <= attacker.position().y
         {
@@ -38,7 +38,7 @@ impl MaceItem {
         attacker.position()
     }
 
-    fn smash_sound(target: &dyn LivingEntity, attacker: &dyn LivingEntity) -> SoundEventRef {
+    fn smash_sound(target: &Living<'_>, attacker: &Living<'_>) -> SoundEventRef {
         if !target.on_ground() {
             return &sound_events::ITEM_MACE_SMASH_AIR;
         }
@@ -50,11 +50,7 @@ impl MaceItem {
         }
     }
 
-    fn knockback_power(
-        attacker: &dyn LivingEntity,
-        nearby: &dyn LivingEntity,
-        direction: DVec3,
-    ) -> f64 {
+    fn knockback_power(attacker: &Living<'_>, nearby: &Living<'_>, direction: DVec3) -> f64 {
         let heavy_multiplier = if attacker.fall_distance() > Self::SMASH_ATTACK_HEAVY_THRESHOLD {
             2.0
         } else {
@@ -66,15 +62,11 @@ impl MaceItem {
             * (1.0 - nearby.knockback_resistance())
     }
 
-    fn should_knockback(
-        attacker: &dyn LivingEntity,
-        target: &dyn LivingEntity,
-        nearby: &dyn LivingEntity,
-    ) -> bool {
+    fn should_knockback(attacker: &Living<'_>, target: &Living<'_>, nearby: &Living<'_>) -> bool {
         if nearby.is_spectator() || nearby.id() == attacker.id() || nearby.id() == target.id() {
             return false;
         }
-        if attacker.is_allied_to(nearby) || nearby.is_tame_owned_by(target) {
+        if attacker.is_allied_to(nearby.entity()) || nearby.is_tame_owned_by(target) {
             return false;
         }
         if nearby.is_marker_armor_stand() {
@@ -91,7 +83,7 @@ impl MaceItem {
             <= Self::SMASH_ATTACK_KNOCKBACK_RADIUS * Self::SMASH_ATTACK_KNOCKBACK_RADIUS
     }
 
-    fn apply_knockback(attacker: &dyn LivingEntity, target: &dyn LivingEntity) {
+    fn apply_knockback(attacker: &Living<'_>, target: &Living<'_>) {
         let Some(world) = attacker.level() else {
             return;
         };
@@ -113,13 +105,13 @@ impl MaceItem {
             let Some(nearby) = entity.as_living_entity() else {
                 return false;
             };
-            Self::should_knockback(attacker, target, nearby)
+            Self::should_knockback(attacker, target, &nearby)
         }) {
             let Some(nearby_living) = nearby.as_living_entity() else {
                 continue;
             };
             let direction = nearby_living.position() - target.position();
-            let knockback_power = Self::knockback_power(attacker, nearby_living, direction);
+            let knockback_power = Self::knockback_power(attacker, &nearby_living, direction);
             if knockback_power <= 0.0 {
                 continue;
             }
@@ -143,13 +135,13 @@ impl MaceItem {
 impl ItemBehavior for MaceItem {
     fn get_item_damage_source(&self, attacker: &SharedEntity) -> Option<DamageSource> {
         let living = attacker.as_living_entity()?;
-        Self::can_smash_attack(living)
+        Self::can_smash_attack(&living)
             .then(|| DamageSource::direct(&vanilla_damage_types::MACE_SMASH, Arc::clone(attacker)))
     }
 
     fn get_attack_damage_bonus(
         &self,
-        attacker: &dyn LivingEntity,
+        attacker: &Living<'_>,
         victim: &dyn Entity,
         _base_damage: f32,
         damage_source: &DamageSource,
@@ -180,12 +172,7 @@ impl ItemBehavior for MaceItem {
         (damage + f64::from(damage_per_fallen_block) * fall_distance) as f32
     }
 
-    fn hurt_enemy(
-        &self,
-        _stack: &mut ItemStack,
-        target: &dyn LivingEntity,
-        attacker: &dyn LivingEntity,
-    ) {
+    fn hurt_enemy(&self, _stack: &mut ItemStack, target: &Living<'_>, attacker: &Living<'_>) {
         if !Self::can_smash_attack(attacker) {
             return;
         }
@@ -213,12 +200,7 @@ impl ItemBehavior for MaceItem {
         Self::apply_knockback(attacker, target);
     }
 
-    fn post_hurt_enemy(
-        &self,
-        _stack: &mut ItemStack,
-        _target: &dyn LivingEntity,
-        attacker: &dyn LivingEntity,
-    ) {
+    fn post_hurt_enemy(&self, _stack: &mut ItemStack, _target: &Living<'_>, attacker: &Living<'_>) {
         if Self::can_smash_attack(attacker) {
             attacker.reset_fall_distance();
         }

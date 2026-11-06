@@ -1,6 +1,7 @@
+use crate::entity::LivingParts as _;
 use std::sync::{Arc, Weak};
 
-use crate::{entity::LivingEntity as _, world::World};
+use crate::world::World;
 
 use super::super::{Abilities, Player, experience::Experience};
 
@@ -89,7 +90,7 @@ impl Player {
         if restore_all {
             self.restore_all_respawn_state_from(old_player);
         } else {
-            self.set_health(self.get_max_health());
+            self.living().set_health(self.living().get_max_health());
             if transfer_inventory {
                 self.restore_inventory_experience_and_score_from(old_player);
             }
@@ -101,11 +102,11 @@ impl Player {
     }
 
     fn restore_all_respawn_state_from(&self, old_player: &Self) {
-        self.set_health(old_player.get_health());
+        self.living().set_health(old_player.living().get_health());
         *self.food_data.lock() = old_player.food_data.lock().clone();
 
         for effect in old_player.living_base.active_mob_effects() {
-            self.add_mob_effect(effect);
+            self.living().add_mob_effect(effect);
         }
 
         self.restore_inventory_experience_and_score_from(old_player);
@@ -134,6 +135,7 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::LivingParts as _;
     use std::sync::Arc;
 
     use glam::DVec3;
@@ -146,7 +148,7 @@ mod tests {
     use crate::{
         behavior::init_behaviors,
         entity::{
-            Entity as _, LivingEntity as _, MobEffectInstance,
+            Entity as _, MobEffectInstance,
             attribute::{AttributeModifier, AttributeModifierOperation},
         },
         inventory::container::Container as _,
@@ -284,7 +286,7 @@ mod tests {
         old_player.restore_game_modes(GameType::Spectator, Some(GameType::Creative));
         old_player.abilities.lock().walking_speed = 0.7;
         {
-            let mut attributes = old_player.attributes().lock();
+            let mut attributes = old_player.living().attributes().lock();
             attributes.set_base_value(vanilla_attributes::MAX_HEALTH, 30.0);
             assert!(attributes.add_modifier(
                 vanilla_attributes::MAX_HEALTH,
@@ -296,13 +298,17 @@ mod tests {
                 true,
             ));
         }
-        old_player.set_health(12.0);
+        old_player.living().set_health(12.0);
         old_player.food_data.lock().food_level = 7;
-        assert!(old_player.add_mob_effect(MobEffectInstance::with_duration(
-            vanilla_mob_effects::SPEED,
-            200,
-            1,
-        )));
+        assert!(
+            old_player
+                .living()
+                .add_mob_effect(MobEffectInstance::with_duration(
+                    vanilla_mob_effects::SPEED,
+                    200,
+                    1,
+                ))
+        );
         old_player
             .inventory
             .lock()
@@ -347,18 +353,25 @@ mod tests {
         assert!(abilities.flying);
         assert_eq!(abilities.walking_speed, 0.1);
         drop(abilities);
-        assert_eq!(replacement.get_health().to_bits(), 12.0_f32.to_bits());
-        assert_eq!(replacement.get_max_health().to_bits(), 35.0_f32.to_bits());
+        assert_eq!(
+            replacement.living().get_health().to_bits(),
+            12.0_f32.to_bits()
+        );
+        assert_eq!(
+            replacement.living().get_max_health().to_bits(),
+            35.0_f32.to_bits()
+        );
         assert!(
             replacement
+                .living()
                 .attributes()
                 .lock()
                 .has_modifier(vanilla_attributes::MAX_HEALTH, &permanent_modifier_id)
         );
         assert_eq!(replacement.food_data.lock().food_level, 7);
         assert_eq!(
-            replacement.mob_effect(vanilla_mob_effects::SPEED),
-            old_player.mob_effect(vanilla_mob_effects::SPEED)
+            replacement.living().mob_effect(vanilla_mob_effects::SPEED),
+            old_player.living().mob_effect(vanilla_mob_effects::SPEED)
         );
         assert_eq!(replacement.inventory.lock().get_item(0).count(), 4);
         assert_eq!(replacement.experience.lock().level(), 8);
@@ -386,10 +399,18 @@ mod tests {
 
         replacement.inventory.lock().clear_content();
         replacement.food_data.lock().food_level = 2;
-        assert!(replacement.remove_mob_effect(vanilla_mob_effects::SPEED));
+        assert!(
+            replacement
+                .living()
+                .remove_mob_effect(vanilla_mob_effects::SPEED)
+        );
         assert_eq!(old_player.inventory.lock().get_item(0).count(), 4);
         assert_eq!(old_player.food_data.lock().food_level, 7);
-        assert!(old_player.has_mob_effect(vanilla_mob_effects::SPEED));
+        assert!(
+            old_player
+                .living()
+                .has_mob_effect(vanilla_mob_effects::SPEED)
+        );
     }
 
     #[test]
@@ -405,7 +426,7 @@ mod tests {
         let permanent_modifier_id = Identifier::vanilla_static("death_restore_test");
 
         {
-            let mut attributes = old_player.attributes().lock();
+            let mut attributes = old_player.living().attributes().lock();
             attributes.set_base_value(vanilla_attributes::MAX_HEALTH, 30.0);
             assert!(attributes.add_modifier(
                 vanilla_attributes::MAX_HEALTH,
@@ -417,13 +438,17 @@ mod tests {
                 true,
             ));
         }
-        old_player.set_health(0.0);
+        old_player.living().set_health(0.0);
         old_player.food_data.lock().food_level = 4;
-        assert!(old_player.add_mob_effect(MobEffectInstance::with_duration(
-            vanilla_mob_effects::SPEED,
-            100,
-            0,
-        )));
+        assert!(
+            old_player
+                .living()
+                .add_mob_effect(MobEffectInstance::with_duration(
+                    vanilla_mob_effects::SPEED,
+                    100,
+                    0,
+                ))
+        );
         old_player
             .inventory
             .lock()
@@ -447,22 +472,26 @@ mod tests {
         let transferred =
             old_player.new_respawn_replacement(Arc::clone(target_world), false, true, true);
 
-        assert_eq!(fresh.get_health().to_bits(), 30.0_f32.to_bits());
+        assert_eq!(fresh.living().get_health().to_bits(), 30.0_f32.to_bits());
         assert!(
             !fresh
+                .living()
                 .attributes()
                 .lock()
                 .has_modifier(vanilla_attributes::MAX_HEALTH, &permanent_modifier_id)
         );
         assert_eq!(fresh.food_data.lock().food_level, 20);
-        assert!(!fresh.has_mob_effect(vanilla_mob_effects::SPEED));
+        assert!(!fresh.living().has_mob_effect(vanilla_mob_effects::SPEED));
         assert!(fresh.inventory.lock().get_item(0).is_empty());
         assert_eq!(fresh.experience.lock().total_points(), 0);
         assert_eq!(fresh.score(), 0);
         assert_eq!(fresh.base.portal_process(), None);
         assert_eq!(fresh.respawn_config(), None);
 
-        assert_eq!(transferred.get_health().to_bits(), 30.0_f32.to_bits());
+        assert_eq!(
+            transferred.living().get_health().to_bits(),
+            30.0_f32.to_bits()
+        );
         assert_eq!(transferred.inventory.lock().get_item(0).count(), 3);
         assert_eq!(transferred.experience.lock().level(), 4);
         assert_eq!(transferred.experience.lock().total_points(), 36);
@@ -470,9 +499,16 @@ mod tests {
         assert_eq!(transferred.score(), 11);
         assert_eq!(transferred.respawn_config(), old_player.respawn_config());
 
-        assert_eq!(old_player.get_health().to_bits(), 0.0_f32.to_bits());
+        assert_eq!(
+            old_player.living().get_health().to_bits(),
+            0.0_f32.to_bits()
+        );
         assert_eq!(old_player.inventory.lock().get_item(0).count(), 3);
         assert_eq!(old_player.experience.lock().total_points(), 36);
-        assert!(old_player.has_mob_effect(vanilla_mob_effects::SPEED));
+        assert!(
+            old_player
+                .living()
+                .has_mob_effect(vanilla_mob_effects::SPEED)
+        );
     }
 }

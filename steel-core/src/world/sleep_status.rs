@@ -1,7 +1,5 @@
-use crate::{
-    entity::{Entity, LivingEntity},
-    player::Player,
-};
+use crate::entity::LivingParts as _;
+use crate::{entity::Entity, player::Player};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct SleepStatus {
@@ -36,7 +34,7 @@ impl SleepStatus {
             return;
         }
         self.active_players += 1;
-        if player.is_sleeping() {
+        if player.living().is_sleeping() {
             self.sleeping_players += 1;
         }
     }

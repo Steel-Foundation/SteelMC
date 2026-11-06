@@ -7,14 +7,14 @@ use glam::DVec3;
 use steel_registry::consume_effect::{ConsumeEffectData, PlaySoundConsumeEffect};
 
 use super::ConsumeEffectBehavior;
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::world::World;
 
 /// Play sound consume effect behavior.
 pub struct PlaySoundBehavior;
 
 impl ConsumeEffectBehavior for PlaySoundBehavior {
-    fn apply(&self, effect: &ConsumeEffectData, world: &Arc<World>, user: &dyn LivingEntity) {
+    fn apply(&self, effect: &ConsumeEffectData, world: &Arc<World>, user: &Living<'_>) {
         let Some(play_sound) = effect.downcast_ref::<PlaySoundConsumeEffect>() else {
             return;
         };

@@ -1,7 +1,7 @@
 //! `RegenerationMobEffect` behavior.
 
 use super::MobEffectBehavior;
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::world::World;
 
 const HEAL_INTERVAL: i32 = 50;
@@ -15,7 +15,7 @@ impl MobEffectBehavior for RegenerationBehavior {
         interval <= 0 || tick_count % interval == 0
     }
 
-    fn apply_effect_tick(&self, _world: &World, user: &dyn LivingEntity, _amplifier: i32) -> bool {
+    fn apply_effect_tick(&self, _world: &World, user: &Living<'_>, _amplifier: i32) -> bool {
         if user.get_health() < user.get_max_health() {
             user.heal(1.0);
         }

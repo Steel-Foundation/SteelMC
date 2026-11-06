@@ -2,13 +2,14 @@
 //!
 //! Groups player pose and shared-flag helpers.
 
+use crate::entity::LivingParts as _;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::{EntityAttachmentPoint, EntityAttachments, EntityDimensions};
 use steel_utils::WorldAabb;
 use steel_utils::types::GameType;
 
 use crate::behavior::{BlockCollisionContext, blocks::PowderSnowBlock};
-use crate::entity::{Entity, EntitySyncedData, LivingEntity};
+use crate::entity::{Entity, EntitySyncedData};
 use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::player::Player;
 
@@ -113,9 +114,9 @@ impl Player {
     pub(super) fn reset_entity_state(&self) {
         self.set_shared_swimming(false);
         self.set_shared_shift_key_down(false);
-        self.clear_sleeping_pos();
+        self.living().clear_sleeping_pos();
         self.set_fall_flying(false);
-        self.set_sprinting(false);
+        self.living().set_sprinting(false);
     }
 
     /// Returns true if the player is shifting (sneaking).
@@ -147,7 +148,7 @@ impl Player {
     /// Returns true if the player is currently fall flying (elytra).
     #[must_use]
     pub fn is_fall_flying(&self) -> bool {
-        LivingEntity::is_fall_flying(self)
+        self.living().is_fall_flying()
     }
 
     /// Returns true if vanilla rules consider this player to be on a climbable block.
@@ -157,19 +158,19 @@ impl Player {
             return false;
         }
 
-        self.default_living_on_climbable()
+        self.living().default_living_on_climbable()
     }
 
     /// Sets the player's fall flying state.
     pub fn set_fall_flying(&self, fall_flying: bool) {
-        LivingEntity::set_fall_flying(self, fall_flying);
+        self.living().set_fall_flying(fall_flying);
     }
 
     /// Determines the desired pose based on current player state.
     /// Priority: `Sleeping` > `Swimming` > `FallFlying` > `Sneaking` > `Standing`
     // TODO: Add SpinAttack pose (requires riptide trident)
     pub(super) fn get_desired_pose(&self) -> EntityPose {
-        if self.is_sleeping() {
+        if self.living().is_sleeping() {
             EntityPose::Sleeping
         } else if self.is_swimming() {
             EntityPose::Swimming

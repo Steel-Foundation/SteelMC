@@ -36,6 +36,8 @@ impl Goal for FloatGoal {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::LivingProps;
+    use crate::test_support::synced_with_health;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -47,7 +49,7 @@ mod tests {
     use crate::entity::MobParts as _;
     use crate::entity::component::Has;
     use crate::entity::component::definition::MobDefinition;
-    use crate::entity::{Entity, EntityBase, EntityFluidContact, LivingEntity, LivingEntityBase};
+    use crate::entity::{Entity, EntityBase, EntityFluidContact, LivingEntityBase};
     use crate::entity::{EntitySyncedData, MobProps, mob};
     use std::sync::LazyLock;
     use steel_registry::vanilla_entity_data::MobEntityData;
@@ -58,7 +60,6 @@ mod tests {
         living_base: LivingEntityBase,
         mob_base: MobBase,
         entity_data: SyncMutex<MobEntityData>,
-        health: SyncMutex<f32>,
     }
 
     impl TestPathfinderMob {
@@ -78,10 +79,12 @@ mod tests {
             ));
             Self {
                 base,
-                living_base: LivingEntityBase::new(&vanilla_entities::PIG),
+                living_base: LivingEntityBase::new(
+                    &vanilla_entities::PIG,
+                    &TestPathfinderMob::LIVING,
+                ),
                 mob_base: MobBase::new(&TestPathfinderMob::MOB),
-                entity_data: SyncMutex::new(MobEntityData::new()),
-                health: SyncMutex::new(10.0),
+                entity_data: SyncMutex::new(synced_with_health(MobEntityData::new(), 10.0)),
             }
         }
     }
@@ -103,7 +106,11 @@ mod tests {
 
     impl Entity for TestPathfinderMob {
         fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-            (key == MobBase::TYPE_KEY).then_some(&self.mob_base as &dyn ErasedType)
+            match key {
+                MobBase::TYPE_KEY => Some(&self.mob_base),
+                LivingEntityBase::TYPE_KEY => Some(&self.living_base),
+                _ => None,
+            }
         }
 
         fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
@@ -119,17 +126,15 @@ mod tests {
         }
     }
 
-    impl LivingEntity for TestPathfinderMob {
-        fn living_base(&self) -> &LivingEntityBase {
+    impl TestPathfinderMob {
+        const LIVING: LivingProps<Self> = LivingProps {
+            ..LivingProps::new()
+        };
+    }
+
+    impl Has<LivingEntityBase> for TestPathfinderMob {
+        fn component(&self) -> &LivingEntityBase {
             &self.living_base
-        }
-
-        fn get_health(&self) -> f32 {
-            *self.health.lock()
-        }
-
-        fn set_health(&self, health: f32) {
-            *self.health.lock() = health;
         }
     }
 

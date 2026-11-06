@@ -7,7 +7,7 @@ use std::sync::Arc;
 use steel_registry::consume_effect::{ApplyStatusEffectsConsumeEffect, ConsumeEffectData};
 
 use super::ConsumeEffectBehavior;
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::entity::potion_contents::to_runtime_instance;
 use crate::world::World;
 
@@ -16,7 +16,7 @@ use crate::world::World;
 pub struct ApplyEffectsBehavior;
 
 impl ConsumeEffectBehavior for ApplyEffectsBehavior {
-    fn apply(&self, effect: &ConsumeEffectData, _world: &Arc<World>, user: &dyn LivingEntity) {
+    fn apply(&self, effect: &ConsumeEffectData, _world: &Arc<World>, user: &Living<'_>) {
         let Some(apply) = effect.downcast_ref::<ApplyStatusEffectsConsumeEffect>() else {
             return;
         };

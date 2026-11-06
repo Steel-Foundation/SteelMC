@@ -7,7 +7,7 @@ use steel_registry::consume_effect::{ConsumeEffectData, TeleportRandomlyConsumeE
 use steel_registry::{sound_events, vanilla_game_events};
 
 use super::ConsumeEffectBehavior;
-use crate::entity::LivingEntity;
+use crate::entity::Living;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
 
@@ -15,7 +15,7 @@ use crate::world::game_event::GameEventContext;
 pub struct TeleportRandomlyBehavior;
 
 impl ConsumeEffectBehavior for TeleportRandomlyBehavior {
-    fn apply(&self, effect: &ConsumeEffectData, world: &Arc<World>, user: &dyn LivingEntity) {
+    fn apply(&self, effect: &ConsumeEffectData, world: &Arc<World>, user: &Living<'_>) {
         let Some(teleport) = effect.downcast_ref::<TeleportRandomlyConsumeEffect>() else {
             return;
         };
@@ -35,11 +35,7 @@ impl ConsumeEffectBehavior for TeleportRandomlyBehavior {
 // unloaded/non-solid candidate already is — this is specific to this
 // consume-effect path, not the shared `Entity.randomTeleport` primitive
 // (Enderman's own random teleport is unaffected by this tag).
-fn teleport_randomly(
-    effect: TeleportRandomlyConsumeEffect,
-    world: &Arc<World>,
-    user: &dyn LivingEntity,
-) {
+fn teleport_randomly(effect: TeleportRandomlyConsumeEffect, world: &Arc<World>, user: &Living<'_>) {
     let diameter = f64::from(effect.diameter());
     let min_y = f64::from(world.get_min_y());
     let max_y = f64::from(world.get_min_y() + world.dimension_type.logical_height - 1);
@@ -82,6 +78,7 @@ fn teleport_randomly(
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::LivingParts as _;
     use std::sync::Arc;
 
     use steel_registry::consume_effect::TeleportRandomlyConsumeEffect;
@@ -114,7 +111,7 @@ mod tests {
         teleport_randomly(
             TeleportRandomlyConsumeEffect::default_value(),
             world,
-            player.as_ref(),
+            &player.living(),
         );
 
         assert_eq!(player.position(), origin);
@@ -149,7 +146,7 @@ mod tests {
         teleport_randomly(
             TeleportRandomlyConsumeEffect::default_value(),
             world,
-            player.as_ref(),
+            &player.living(),
         );
 
         let landed = player.position();

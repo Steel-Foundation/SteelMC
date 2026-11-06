@@ -1,3 +1,4 @@
+use crate::test_support::DEFAULT_LIVING_HOOKS;
 use glam::DVec3;
 use steel_registry::{
     data_components::vanilla_components::{SwingAnimation, SwingAnimationType},
@@ -33,7 +34,7 @@ fn ends_within_treats_infinite_duration_as_never_ending() {
 #[test]
 fn living_constructor_initializes_health_from_max_health() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
     let mut entity_data = PlayerEntityData::new();
 
     assert_eq!(
@@ -52,7 +53,7 @@ fn living_constructor_initializes_health_from_max_health() {
 #[test]
 fn absorption_amount_clamps_to_attribute_range() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
     base.attributes()
         .lock()
         .set_base_value(vanilla_attributes::MAX_ABSORPTION, 4.0);
@@ -79,7 +80,7 @@ fn fall_damage_starts_above_safe_fall_distance() {
 #[test]
 fn last_hurt_by_player_memory_ticks_down_then_clears_reference() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PIG);
+    let base = LivingEntityBase::new(&vanilla_entities::PIG, &DEFAULT_LIVING_HOOKS);
     let player_uuid = uuid::Uuid::from_u128(7);
 
     base.set_last_hurt_by_player(player_uuid, 2);
@@ -118,7 +119,7 @@ fn fall_damage_applies_block_and_attribute_multipliers() {
 #[test]
 fn post_impulse_grace_counts_down_by_tick() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     base.apply_post_impulse_grace_time(2);
 
@@ -132,7 +133,7 @@ fn post_impulse_grace_counts_down_by_tick() {
 #[test]
 fn post_impulse_grace_keeps_larger_existing_window() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     base.apply_post_impulse_grace_time(5);
     base.apply_post_impulse_grace_time(2);
@@ -149,7 +150,7 @@ fn post_impulse_grace_keeps_larger_existing_window() {
 #[test]
 fn current_impulse_context_tracks_fall_damage_impact_position() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
     let impact_pos = DVec3::new(1.0, 72.0, -3.0);
 
     base.set_ignore_fall_damage_from_current_impulse(true, impact_pos);
@@ -162,7 +163,7 @@ fn current_impulse_context_tracks_fall_damage_impact_position() {
 #[test]
 fn current_impulse_context_resets_after_grace_window() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     base.set_ignore_fall_damage_from_current_impulse(true, DVec3::new(0.0, 72.0, 0.0));
     base.apply_post_impulse_grace_time(1);
@@ -181,7 +182,7 @@ fn current_impulse_context_resets_after_grace_window() {
 #[test]
 fn fall_flying_is_living_entity_state() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     assert!(!base.is_fall_flying());
     base.set_fall_flying(true);
@@ -193,7 +194,7 @@ fn fall_flying_is_living_entity_state() {
 #[test]
 fn fall_flying_ticks_are_living_entity_state() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     assert_eq!(base.fall_flying_ticks(), 0);
     base.tick_fall_flying_state(true);
@@ -206,7 +207,7 @@ fn fall_flying_ticks_are_living_entity_state() {
 #[test]
 fn living_rotation_is_base_tick_snapshot_state() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PIG);
+    let base = LivingEntityBase::new(&vanilla_entities::PIG, &DEFAULT_LIVING_HOOKS);
 
     base.set_y_body_rot(30.0);
     base.set_y_head_rot(45.0);
@@ -233,7 +234,7 @@ fn living_rotation_is_base_tick_snapshot_state() {
 #[test]
 fn living_swing_uses_vanilla_restart_gate() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PIG);
+    let base = LivingEntityBase::new(&vanilla_entities::PIG, &DEFAULT_LIVING_HOOKS);
     let animation = SwingAnimation::DEFAULT;
 
     assert!(base.start_swing(InteractionHand::MainHand, animation, animation.duration));
@@ -255,7 +256,7 @@ fn living_swing_uses_vanilla_restart_gate() {
 #[test]
 fn living_swing_tick_keeps_full_progress_until_after_duration() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PIG);
+    let base = LivingEntityBase::new(&vanilla_entities::PIG, &DEFAULT_LIVING_HOOKS);
     let animation = SwingAnimation::DEFAULT;
     assert!(base.start_swing(InteractionHand::MainHand, animation, animation.duration));
 
@@ -313,7 +314,7 @@ fn living_swing_restart_preserves_progress_only_for_same_description() {
             true,
         ),
     ] {
-        let base = LivingEntityBase::new(&vanilla_entities::PIG);
+        let base = LivingEntityBase::new(&vanilla_entities::PIG, &DEFAULT_LIVING_HOOKS);
         assert!(base.start_swing(InteractionHand::MainHand, animation, animation.duration));
         for _ in 0..4 {
             base.tick_swing_state();
@@ -341,7 +342,7 @@ fn living_swing_restart_preserves_progress_only_for_same_description() {
 fn living_swing_nonpositive_duration_never_divides_by_zero() {
     init_vanilla_registry();
     for duration in [0, -1] {
-        let base = LivingEntityBase::new(&vanilla_entities::PIG);
+        let base = LivingEntityBase::new(&vanilla_entities::PIG, &DEFAULT_LIVING_HOOKS);
         assert!(base.start_swing(InteractionHand::MainHand, SwingAnimation::DEFAULT, duration));
         base.tick_swing_state();
         assert_eq!(base.swing_state().attack_anim(), 0.0);
@@ -355,7 +356,7 @@ fn living_swing_nonpositive_duration_never_divides_by_zero() {
 #[test]
 fn equipment_is_living_entity_state() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     assert_eq!(base.equipment().lock().non_empty_items().len(), 0);
 
@@ -374,7 +375,7 @@ fn equipment_is_living_entity_state() {
 #[test]
 fn sprinting_is_living_entity_state_and_speed_modifier() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
     let movement_speed = vanilla_attributes::MOVEMENT_SPEED;
     let base_speed = base
         .attributes()
@@ -408,7 +409,7 @@ fn sprinting_is_living_entity_state_and_speed_modifier() {
 #[test]
 fn active_mob_effect_presence_is_living_entity_state() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     assert!(!base.has_mob_effect(vanilla_mob_effects::DOLPHINS_GRACE));
     base.set_mob_effect_active(vanilla_mob_effects::DOLPHINS_GRACE, true);
@@ -424,7 +425,7 @@ fn active_mob_effect_presence_is_living_entity_state() {
 #[test]
 fn active_mob_effect_amplifier_is_living_entity_state() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     base.set_mob_effect(vanilla_mob_effects::JUMP_BOOST, 2);
 
@@ -437,7 +438,7 @@ fn active_mob_effect_amplifier_is_living_entity_state() {
 #[test]
 fn mob_effect_attribute_modifiers_use_extracted_vanilla_data() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
     let movement_speed = vanilla_attributes::MOVEMENT_SPEED;
     let base_speed = base
         .attributes()
@@ -475,7 +476,7 @@ fn mob_effect_attribute_modifiers_use_extracted_vanilla_data() {
 #[test]
 fn mob_effect_duration_tick_removes_expired_effect() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     base.add_mob_effect(MobEffectInstance::with_duration(
         vanilla_mob_effects::DOLPHINS_GRACE,
@@ -498,7 +499,7 @@ fn mob_effect_duration_tick_removes_expired_effect() {
 #[test]
 fn stronger_shorter_effect_downgrades_to_hidden_effect() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     base.add_mob_effect(MobEffectInstance::with_duration(
         vanilla_mob_effects::SPEED,
@@ -532,7 +533,7 @@ fn stronger_shorter_effect_downgrades_to_hidden_effect() {
 #[test]
 fn sleeping_uses_living_entity_sleeping_position() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
     let bed_pos = BlockPos::new(12, 64, -4);
 
     assert!(!base.is_sleeping());
@@ -550,7 +551,7 @@ fn sleeping_uses_living_entity_sleeping_position() {
 #[test]
 fn last_climbable_pos_is_living_entity_state() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
     let climbable_pos = BlockPos::new(-5, 72, 3);
 
     assert_eq!(base.last_climbable_pos(), None);
@@ -561,7 +562,7 @@ fn last_climbable_pos_is_living_entity_state() {
 #[test]
 fn discard_friction_is_living_entity_state() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     assert!(!base.should_discard_friction());
     base.set_discard_friction(true);
@@ -573,7 +574,7 @@ fn discard_friction_is_living_entity_state() {
 #[test]
 fn living_travel_input_is_shared_living_state() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     assert_eq!(base.travel_input(), LivingTravelInput::ZERO);
     base.set_travel_input(LivingTravelInput::new(1.0, 0.5, -1.0));
@@ -589,7 +590,7 @@ fn living_travel_input_is_shared_living_state() {
 #[test]
 fn jumping_and_jump_delay_are_shared_living_state() {
     init_vanilla_registry();
-    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER, &DEFAULT_LIVING_HOOKS);
 
     assert!(!base.is_jumping());
     base.set_jumping(true);
