@@ -4,9 +4,16 @@ mod matching;
 
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-use crate::data_components::vanilla_components::FireworkExplosionShape;
+use crate::data_components::vanilla_components::{
+    BANNER_PATTERNS, BASE_COLOR, DYE, DYED_COLOR, DyedItemColor, ENCHANTMENTS, FIREWORK_EXPLOSION,
+    FIREWORKS, FireworkExplosion, FireworkExplosionShape, Fireworks, ItemEnchantments,
+    MAP_POST_PROCESSING, MAX_DAMAGE, MapPostProcessing, POT_DECORATIONS, POTION_CONTENTS,
+    PotDecorations, WRITTEN_BOOK_CONTENT,
+};
 use crate::item_stack::ItemStack;
 use crate::item_stack_template::ItemStackTemplate;
+use crate::registry::RegistryExt as _;
+use crate::{DyeColor, REGISTRY, TaggedRegistryExt as _, vanilla_enchantment_tags, vanilla_items};
 
 use super::{Ingredient, RecipeData, RecipeInput, RecipeMatches, RecipeProperties};
 
@@ -271,6 +278,317 @@ impl CraftingRecipe {
             Self::ShieldDecoration(recipe) => Some(&recipe.result),
         }
     }
+
+    /// Interprets this passive recipe data for a concrete input snapshot.
+    #[must_use]
+    pub fn assemble(&self, input: &CraftingInput) -> ItemStack {
+        match self {
+            Self::Shaped(recipe) => recipe.result.create(),
+            Self::Shapeless(recipe) => recipe.result.create(),
+            Self::Transmute(recipe) => {
+                let material_count = input
+                    .items
+                    .iter()
+                    .filter(|stack| !stack.is_empty() && recipe.material.test(stack))
+                    .count();
+                let extra_count = if recipe.add_material_count_to_result {
+                    i32::try_from(material_count).unwrap_or(i32::MAX)
+                } else {
+                    0
+                };
+                input
+                    .items
+                    .iter()
+                    .find(|stack| !stack.is_empty() && recipe.input.test(stack))
+                    .map_or_else(ItemStack::empty, |source| match &recipe.result {
+                        Some(result) => result.apply(
+                            result.count().saturating_add(extra_count),
+                            source.components_patch(),
+                        ),
+                        None => source.copy_with_count(1i32.saturating_add(extra_count)),
+                    })
+            }
+            Self::Dye(recipe) => assemble_dye(recipe, input),
+            Self::DecoratedPot(recipe) => {
+                // Vanilla stores one decoration item per side, never the slot's count.
+                let decoration = |x: usize, y: usize| {
+                    ItemStackTemplate::from_stack(&input.get(x, y).copy_with_count(1)).ok()
+                };
+                let decorations = PotDecorations::new(
+                    decoration(1, 0),
+                    decoration(0, 1),
+                    decoration(2, 1),
+                    decoration(1, 2),
+                );
+                let mut result = recipe.result.create();
+                result.set(POT_DECORATIONS, decorations);
+                result
+            }
+            Self::Imbue(recipe) => {
+                let mut result = recipe.result.create();
+                if let Some(contents) = input.get(1, 1).get(POTION_CONTENTS) {
+                    result.set(POTION_CONTENTS, contents.clone());
+                }
+                result
+            }
+            Self::BannerDuplicate(recipe) => input
+                .items
+                .iter()
+                .find(|stack| {
+                    recipe.banner.test(stack)
+                        && stack
+                            .get(BANNER_PATTERNS)
+                            .is_some_and(|patterns| !patterns.layers().is_empty())
+                })
+                .map_or_else(ItemStack::empty, |source| {
+                    recipe
+                        .result
+                        .apply(recipe.result.count(), source.components_patch())
+                }),
+            Self::BookCloning(recipe) => assemble_book_cloning(recipe, input),
+            Self::FireworkRocket(recipe) => assemble_firework_rocket(recipe, input),
+            Self::FireworkStar(recipe) => assemble_firework_star(recipe, input),
+            Self::FireworkStarFade(recipe) => assemble_firework_fade(recipe, input),
+            Self::MapExtending(recipe) => {
+                let source = input.get(1, 1);
+                let mut result = match &recipe.result {
+                    Some(result) => result.apply(result.count(), source.components_patch()),
+                    None => source.copy_with_count(1),
+                };
+                result.set(MAP_POST_PROCESSING, MapPostProcessing::Scale);
+                result
+            }
+            Self::RepairItem(_) => assemble_repair(input),
+            Self::ShieldDecoration(recipe) => assemble_shield(recipe, input),
+        }
+    }
+}
+
+fn assemble_dye(recipe: &DyeRecipe, input: &CraftingInput) -> ItemStack {
+    let mut target = None;
+    let mut dyes = Vec::new();
+    for stack in input.items.iter().filter(|stack| !stack.is_empty()) {
+        if recipe.target.test(stack) {
+            target = Some(stack);
+        } else if recipe.dye.test(stack) {
+            dyes.push(stack.get(DYE).copied().unwrap_or(DyeColor::White));
+        }
+    }
+    let Some(target) = target else {
+        return ItemStack::empty();
+    };
+    if dyes.is_empty() {
+        return ItemStack::empty();
+    }
+    let color = DyedItemColor::apply_dyes(target.get(DYED_COLOR).copied(), &dyes);
+    let mut result = recipe
+        .result
+        .apply(recipe.result.count(), target.components_patch());
+    result.set(DYED_COLOR, color);
+    result
+}
+
+fn assemble_book_cloning(recipe: &BookCloningRecipe, input: &CraftingInput) -> ItemStack {
+    let Some(source) = input
+        .items
+        .iter()
+        .find(|stack| !stack.is_empty() && recipe.source.test(stack))
+    else {
+        return ItemStack::empty();
+    };
+    let Some(content) = source.get(WRITTEN_BOOK_CONTENT) else {
+        return ItemStack::empty();
+    };
+    let material_count = input
+        .items
+        .iter()
+        .filter(|stack| !stack.is_empty() && recipe.material.test(stack))
+        .count();
+    let Ok(extra_count) = i32::try_from(material_count.saturating_sub(1)) else {
+        return ItemStack::empty();
+    };
+    let mut result = recipe.result.apply(
+        recipe.result.count().saturating_add(extra_count),
+        source.components_patch(),
+    );
+    result.set(WRITTEN_BOOK_CONTENT, content.craft_copy());
+    result
+}
+
+fn assemble_firework_rocket(recipe: &FireworkRocketRecipe, input: &CraftingInput) -> ItemStack {
+    let mut flight_duration = 0;
+    let mut explosions = Vec::new();
+    for stack in input.items.iter().filter(|stack| !stack.is_empty()) {
+        if recipe.fuel.test(stack) {
+            flight_duration += 1;
+        } else if recipe.star.test(stack)
+            && let Some(explosion) = stack.get(FIREWORK_EXPLOSION)
+        {
+            explosions.push(explosion.clone());
+        }
+    }
+    let Ok(fireworks) = Fireworks::new(flight_duration, explosions) else {
+        return ItemStack::empty();
+    };
+    let mut result = recipe.result.create();
+    result.set(FIREWORKS, fireworks);
+    result
+}
+
+fn assemble_firework_star(recipe: &FireworkStarRecipe, input: &CraftingInput) -> ItemStack {
+    let mut shape = FireworkExplosionShape::SmallBall;
+    let mut has_twinkle = false;
+    let mut has_trail = false;
+    let mut colors = Vec::new();
+    for stack in input.items.iter().filter(|stack| !stack.is_empty()) {
+        if let Some((found_shape, _)) = recipe
+            .shapes
+            .iter()
+            .find(|(_, ingredient)| ingredient.test(stack))
+        {
+            shape = *found_shape;
+        } else if recipe.twinkle.test(stack) {
+            has_twinkle = true;
+        } else if recipe.trail.test(stack) {
+            has_trail = true;
+        } else if recipe.dye.test(stack) {
+            colors.push(
+                stack
+                    .get(DYE)
+                    .copied()
+                    .unwrap_or(DyeColor::White)
+                    .firework_color(),
+            );
+        }
+    }
+    let mut result = recipe.result.create();
+    result.set(
+        FIREWORK_EXPLOSION,
+        FireworkExplosion::new(shape, colors, Vec::new(), has_trail, has_twinkle),
+    );
+    result
+}
+
+fn assemble_firework_fade(recipe: &FireworkStarFadeRecipe, input: &CraftingInput) -> ItemStack {
+    let Some(target) = input
+        .items
+        .iter()
+        .find(|stack| !stack.is_empty() && recipe.target.test(stack))
+    else {
+        return ItemStack::empty();
+    };
+    let fade_colors: Vec<_> = input
+        .items
+        .iter()
+        .filter(|stack| !stack.is_empty() && recipe.dye.test(stack))
+        .map(|stack| {
+            stack
+                .get(DYE)
+                .copied()
+                .unwrap_or(DyeColor::White)
+                .firework_color()
+        })
+        .collect();
+    let mut result = recipe
+        .result
+        .apply(recipe.result.count(), target.components_patch());
+    let explosion = target
+        .get(FIREWORK_EXPLOSION)
+        .cloned()
+        .unwrap_or_default()
+        .with_fade_colors(fade_colors);
+    result.set(FIREWORK_EXPLOSION, explosion);
+    result
+}
+
+fn assemble_repair(input: &CraftingInput) -> ItemStack {
+    let mut inputs = input.items.iter().filter(|stack| !stack.is_empty());
+    let Some(first) = inputs.next() else {
+        return ItemStack::empty();
+    };
+    let Some(second) = inputs.next() else {
+        return ItemStack::empty();
+    };
+    let durability = first.get_max_damage().max(second.get_max_damage());
+    let remaining = (first.get_max_damage() - first.get_damage_value())
+        + (second.get_max_damage() - second.get_damage_value())
+        + durability * 5 / 100;
+    let mut result = ItemStack::new(first.item());
+    result.set(MAX_DAMAGE, durability);
+    result.set_damage_value((durability - remaining).max(0));
+
+    let mut curses = ItemEnchantments::empty();
+    for enchantments in [
+        first.get_enchantments_for_crafting(),
+        second.get_enchantments_for_crafting(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        for (key, level) in enchantments.iter() {
+            let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+                continue;
+            };
+            if REGISTRY.enchantments.is_in_tag(
+                enchantment,
+                &vanilla_enchantment_tags::EnchantmentTag::CURSE,
+            ) {
+                curses.upgrade(key.clone(), *level);
+            }
+        }
+    }
+    result.set(ENCHANTMENTS, curses);
+    result
+}
+
+fn assemble_shield(recipe: &ShieldDecorationRecipe, input: &CraftingInput) -> ItemStack {
+    let Some(banner) = input
+        .items
+        .iter()
+        .find(|stack| !stack.is_empty() && recipe.banner.test(stack))
+    else {
+        return ItemStack::empty();
+    };
+    let Some(target) = input
+        .items
+        .iter()
+        .find(|stack| !stack.is_empty() && recipe.target.test(stack))
+    else {
+        return ItemStack::empty();
+    };
+    let mut result = recipe
+        .result
+        .apply(recipe.result.count(), target.components_patch());
+    if let Some(patterns) = banner.get(BANNER_PATTERNS) {
+        result.set(BANNER_PATTERNS, patterns.clone());
+    }
+    result.set(BASE_COLOR, banner_color(banner));
+    result
+}
+
+fn banner_color(stack: &ItemStack) -> DyeColor {
+    let banners = [
+        (&*vanilla_items::WHITE_BANNER, DyeColor::White),
+        (&*vanilla_items::ORANGE_BANNER, DyeColor::Orange),
+        (&*vanilla_items::MAGENTA_BANNER, DyeColor::Magenta),
+        (&*vanilla_items::LIGHT_BLUE_BANNER, DyeColor::LightBlue),
+        (&*vanilla_items::YELLOW_BANNER, DyeColor::Yellow),
+        (&*vanilla_items::LIME_BANNER, DyeColor::Lime),
+        (&*vanilla_items::PINK_BANNER, DyeColor::Pink),
+        (&*vanilla_items::GRAY_BANNER, DyeColor::Gray),
+        (&*vanilla_items::LIGHT_GRAY_BANNER, DyeColor::LightGray),
+        (&*vanilla_items::CYAN_BANNER, DyeColor::Cyan),
+        (&*vanilla_items::PURPLE_BANNER, DyeColor::Purple),
+        (&*vanilla_items::BLUE_BANNER, DyeColor::Blue),
+        (&*vanilla_items::BROWN_BANNER, DyeColor::Brown),
+        (&*vanilla_items::GREEN_BANNER, DyeColor::Green),
+        (&*vanilla_items::RED_BANNER, DyeColor::Red),
+        (&*vanilla_items::BLACK_BANNER, DyeColor::Black),
+    ];
+    banners
+        .into_iter()
+        .find_map(|(item, color)| (stack.item() == item).then_some(color))
+        .unwrap_or(DyeColor::White)
 }
 
 // SAFETY: This Steel-owned key uniquely identifies the unified vanilla crafting data enum.
