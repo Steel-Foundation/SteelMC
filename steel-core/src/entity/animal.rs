@@ -25,7 +25,7 @@ use uuid::Uuid;
 use crate::behavior::InteractionResult;
 use crate::entity::ageable::{self, Age, Ageable};
 use crate::entity::ai::path::PathType;
-use crate::entity::component::definition::{MobDefinition, MobEntries};
+use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::entries::{AiStep, CustomServerAiStep, MobInteract, MobInteractCtx};
 use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::component::{Component, Components as _, Has};
@@ -49,15 +49,15 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
     }
 }
 
-/// `Animal`'s changes to the mob defaults, for a type with `definition`.
+/// `Animal`'s changes to the mob defaults.
 #[must_use]
-pub const fn mob_props(definition: fn() -> &'static dyn MobEntries) -> MobProps {
+pub const fn mob_props<E: Parts>() -> MobProps<E> {
     MobProps {
-        ambient_sound_interval: 120,
+        ambient_sound_interval: |_| 120,
         remove_when_far_away: |_, _| false,
-        pathfinder: true,
-        walk_target_value: |mob, pos| walk_target_value(mob.entity(), pos),
-        ..MobProps::new(definition)
+        is_pathfinder: |_| true,
+        get_walk_target_value: |animal, pos| walk_target_value(animal, pos),
+        ..MobProps::new()
     }
 }
 

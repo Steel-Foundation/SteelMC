@@ -177,7 +177,7 @@ impl DespawnTestMob {
             base: EntityBase::new(id, position, entity_type.dimensions, Weak::new()),
             entity_type,
             living_base: LivingEntityBase::new(entity_type, &DespawnTestMob::LIVING),
-            mob_base: MobBase::new(&DespawnTestMob::MOB),
+            mob_base: MobBase::new(&DespawnTestMob::MOB, DespawnTestMob::definition()),
             entity_data: SyncMutex::new(synced_with_health(
                 MobEntityData::new(),
                 INITIAL_TEST_HEALTH,
@@ -202,7 +202,7 @@ impl DespawnTestMob {
             base: EntityBase::new(id, position, entity_type.dimensions, Arc::downgrade(world)),
             entity_type,
             living_base: LivingEntityBase::new(entity_type, &HiddenTarget::LIVING),
-            mob_base: MobBase::new(&DespawnTestMob::MOB),
+            mob_base: MobBase::new(&DespawnTestMob::MOB, DespawnTestMob::definition()),
             entity_data: SyncMutex::new(MobEntityData::new()),
             can_be_leashed: SyncMutex::new(true),
             nearest_player_distance_sqr: None,
@@ -224,26 +224,12 @@ impl DespawnTestMob {
 crate::entity::impl_test_downcast_type!(DespawnTestMob);
 
 impl DespawnTestMob {
-    const MOB: MobProps = MobProps {
-        pathfinder: true,
-        remove_when_far_away: |mob, _| {
-            mob.entity()
-                .downcast_ref::<Self>()
-                .is_some_and(|mob| mob.remove_when_far_away)
-        },
-        preferred_weapon_type: |mob| {
-            mob.entity()
-                .downcast_ref::<Self>()?
-                .preferred_weapon_type
-                .lock()
-                .clone()
-        },
-        can_be_leashed: |mob| {
-            mob.entity()
-                .downcast_ref::<Self>()
-                .is_some_and(|mob| *mob.can_be_leashed.lock())
-        },
-        ..MobProps::new(|| DespawnTestMob::definition())
+    const MOB: MobProps<Self> = MobProps {
+        is_pathfinder: |_| true,
+        remove_when_far_away: |mob, _| mob.remove_when_far_away,
+        get_preferred_weapon_type: |mob| mob.preferred_weapon_type.lock().clone(),
+        mob_can_be_leashed: |mob| *mob.can_be_leashed.lock(),
+        ..MobProps::new()
     };
 
     fn definition() -> &'static MobDefinition<Self> {
@@ -394,7 +380,7 @@ impl Entity for MobControlVehicleEntity {
 
 #[test]
 fn mob_base_uses_vanilla_fire_path_malus_defaults() {
-    let base = MobBase::new(&DespawnTestMob::MOB);
+    let base = MobBase::new(&DespawnTestMob::MOB, DespawnTestMob::definition());
     let malus = base.pathfinding_malus().lock();
 
     assert_eq!(

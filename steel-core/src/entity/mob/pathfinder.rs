@@ -103,11 +103,6 @@ impl Mob<'_> {
             .then_some(vehicle)
     }
 
-    /// Scores pathfinding positions: animals favor light, monsters darkness.
-    pub fn get_walk_target_value(&self, pos: BlockPos) -> f32 {
-        (self.props().walk_target_value)(self, pos)
-    }
-
     pub fn can_update_path(&self) -> bool {
         self.on_ground() || self.is_in_water() || self.is_in_lava() || self.is_passenger()
     }
@@ -249,14 +244,6 @@ impl Mob<'_> {
             .goal_selector()
             .lock()
             .has_running_panic_goal()
-    }
-
-    pub const fn should_stay_close_to_leash_holder(&self) -> bool {
-        self.props().stay_close_to_leash_holder
-    }
-
-    pub const fn follow_leash_speed(&self) -> f64 {
-        self.props().follow_leash_speed
     }
 
     pub fn when_leashed_to_pathfinder(&self, holder: &dyn Entity) {

@@ -173,7 +173,7 @@ mod tests {
                     &vanilla_entities::PIG,
                     &HoveringTestMob::LIVING,
                 ),
-                mob_base: MobBase::new(&HoveringTestMob::MOB),
+                mob_base: MobBase::new(&HoveringTestMob::MOB, HoveringTestMob::definition()),
                 entity_data: SyncMutex::new(synced_with_health(MobEntityData::new(), 10.0)),
             }
         }
@@ -182,7 +182,7 @@ mod tests {
     crate::entity::impl_test_downcast_type!(HoveringTestMob);
 
     impl HoveringTestMob {
-        const MOB: MobProps = MobProps::new(|| HoveringTestMob::definition());
+        const MOB: MobProps<Self> = MobProps::new();
 
         fn definition() -> &'static MobDefinition<Self> {
             static DEFINITION: LazyLock<MobDefinition<HoveringTestMob>> =

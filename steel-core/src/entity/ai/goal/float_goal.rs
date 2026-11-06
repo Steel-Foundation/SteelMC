@@ -83,7 +83,7 @@ mod tests {
                     &vanilla_entities::PIG,
                     &TestPathfinderMob::LIVING,
                 ),
-                mob_base: MobBase::new(&TestPathfinderMob::MOB),
+                mob_base: MobBase::new(&TestPathfinderMob::MOB, TestPathfinderMob::definition()),
                 entity_data: SyncMutex::new(synced_with_health(MobEntityData::new(), 10.0)),
             }
         }
@@ -92,9 +92,9 @@ mod tests {
     crate::entity::impl_test_downcast_type!(TestPathfinderMob);
 
     impl TestPathfinderMob {
-        const MOB: MobProps = MobProps {
-            pathfinder: true,
-            ..MobProps::new(|| TestPathfinderMob::definition())
+        const MOB: MobProps<Self> = MobProps {
+            is_pathfinder: |_| true,
+            ..MobProps::new()
         };
 
         fn definition() -> &'static MobDefinition<Self> {

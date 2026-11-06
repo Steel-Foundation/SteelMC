@@ -163,18 +163,11 @@ impl ChickenEntity {
         },
         ..animal::living_props()
     };
-    const MOB: MobProps = MobProps {
-        ambient_sound: |mob| {
-            let chicken = mob.entity().downcast_ref::<Self>()?;
-            Some(chicken.current_sound_set().ambient_sound)
-        },
+    const MOB: MobProps<Self> = MobProps {
+        ambient_sound: |chicken| Some(chicken.current_sound_set().ambient_sound),
         // Chicken jockeys persist like their rider.
-        remove_when_far_away: |mob, _| {
-            mob.entity()
-                .downcast_ref::<Self>()
-                .is_some_and(Self::is_chicken_jockey)
-        },
-        ..animal::mob_props(|| Self::definition())
+        remove_when_far_away: |chicken, _| chicken.is_chicken_jockey(),
+        ..animal::mob_props()
     };
     const FLAP: StageId = StageId("chicken.flap");
     const LAY_EGG: StageId = StageId("chicken.lay_egg");
@@ -222,7 +215,7 @@ impl ChickenEntity {
 
     fn new_with_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let living_base = LivingEntityBase::new(entity_type, &Self::LIVING);
-        let mob_base = MobBase::new(&Self::MOB);
+        let mob_base = MobBase::new(&Self::MOB, Self::definition());
         Breeding::initialize_pathfinding_malus(&mob_base);
         // Chickens do not avoid water (`setPathfindingMalus(PathType.WATER, 0.0F)`).
         mob_base

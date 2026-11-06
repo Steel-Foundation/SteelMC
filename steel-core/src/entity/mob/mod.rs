@@ -5,6 +5,7 @@ pub(crate) mod stages;
 
 use crate::entity::Ageable;
 use crate::entity::component::definition::MobEntries;
+use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::leash::{LeashData, Leashable};
 use pathfinder::tick_path_navigation_target;
@@ -185,7 +186,8 @@ pub struct MobBase {
     leash_data: SyncMutex<Option<LeashData>>,
     ambient_sound_time: SyncMutex<i32>,
     xp_reward: SyncMutex<i32>,
-    props: &'static MobProps,
+    hooks: &'static dyn MobHooks,
+    definition: &'static dyn MobEntries,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,9 +205,9 @@ impl MobHomeRestriction {
 }
 
 impl MobBase {
-    /// Fresh mob state for a type described by `props`.
+    /// Fresh mob state for a type with `hooks` and pipelines `definition`.
     #[must_use]
-    pub fn new(props: &'static MobProps) -> Self {
+    pub fn new(hooks: &'static dyn MobHooks, definition: &'static dyn MobEntries) -> Self {
         Self {
             goal_selector: SyncMutex::new(GoalSelector::new()),
             target_selector: SyncMutex::new(GoalSelector::new()),
@@ -223,7 +225,8 @@ impl MobBase {
             leash_data: SyncMutex::new(None),
             ambient_sound_time: SyncMutex::new(0),
             xp_reward: SyncMutex::new(0),
-            props,
+            hooks,
+            definition,
         }
     }
 
@@ -369,76 +372,46 @@ impl Component for MobBase {
     }
 }
 
-/// Per-type properties of a vanilla `Mob`.
-pub struct MobProps {
-    /// The type's pipelines, reached from code that only holds the entity.
-    pub definition: fn() -> &'static dyn MobEntries,
-    /// `Mob.getAmbientSound`.
-    pub ambient_sound: fn(&Mob<'_>) -> Option<SoundEventRef>,
-    /// `Mob.getAmbientSoundInterval`.
-    pub ambient_sound_interval: i32,
-    /// `Mob.removeWhenFarAway`, given the squared distance to the nearest player.
-    pub remove_when_far_away: fn(&Mob<'_>, f64) -> bool,
-    /// `Mob.ate`, called after an eating goal consumes a block.
-    pub ate: fn(&Mob<'_>),
-    /// `Mob.canBeLeashed`, before the leash state is considered.
-    pub can_be_leashed: fn(&Mob<'_>) -> bool,
-    /// `Mob.getPreferredWeaponType`: the item tag this mob favors when
-    /// picking up weapons.
-    pub preferred_weapon_type: fn(&Mob<'_>) -> Option<Identifier>,
-    /// `Mob.checkSpawnRules`: the type's own spawn predicate.
-    pub check_spawn_rules: fn(&Mob<'_>, &Arc<World>, EntitySpawnReason) -> bool,
-    /// `Mob.getPickupReach`: how far the item-pickup search box is inflated.
-    pub pickup_reach: DVec3,
-    /// `Mob.canHoldItem`: whether this mob is willing to hold the item.
-    pub can_hold_item: fn(&Mob<'_>, &ItemStack) -> bool,
-    /// `Mob.getMaxFallDistance`: blocks fallen before taking damage.
-    pub max_fall_distance: i32,
-    /// `Mob.getMaxHeadXRot`: degrees the head may pitch independently of the body.
-    pub max_head_x_rot: f32,
-    /// `Mob.getMaxHeadYRot`: degrees the head may yaw independently of the body.
-    pub max_head_y_rot: f32,
-    /// `Mob.playAttackSound`.
-    pub play_attack_sound: fn(&Mob<'_>),
-    /// `Mob.sunProtectionSlot`: the slot whose item shields from sun burning.
-    pub sun_protection_slot: EquipmentSlot,
-    /// `PathfinderMob.shouldStayCloseToLeashHolder`.
-    pub stay_close_to_leash_holder: bool,
-    /// `PathfinderMob.followLeashSpeed`.
-    pub follow_leash_speed: f64,
-    /// Whether the type is a vanilla `PathfinderMob`, which changes leash
-    /// behavior and passes `instanceof PathfinderMob` checks.
-    pub pathfinder: bool,
-    /// `PathfinderMob.getWalkTargetValue`: how attractive a position is to
-    /// wander to.
-    pub walk_target_value: fn(&Mob<'_>, BlockPos) -> f32,
-}
-
-impl MobProps {
-    /// Vanilla `Mob`'s defaults for a type with `definition`.
-    #[must_use]
-    pub const fn new(definition: fn() -> &'static dyn MobEntries) -> Self {
-        Self {
-            definition,
-            ambient_sound: |_| None,
-            ambient_sound_interval: 80,
-            remove_when_far_away: |_, _| true,
-            ate: |_| {},
-            can_be_leashed: |mob| !mob.is_enemy(),
-            preferred_weapon_type: |_| None,
-            check_spawn_rules: |_, _, _| true,
-            pickup_reach: ITEM_PICKUP_REACH,
-            can_hold_item: |_, _| true,
-            max_fall_distance: 3,
-            max_head_x_rot: 40.0,
-            max_head_y_rot: 75.0,
-            play_attack_sound: |_| {},
-            sun_protection_slot: EquipmentSlot::Head,
-            stay_close_to_leash_holder: true,
-            follow_leash_speed: 1.0,
-            pathfinder: false,
-            walk_target_value: |_, _| 0.0,
-        }
+entity_props! {
+    /// Per-type properties of a vanilla `Mob`.
+    pub struct MobProps<E>: MobHooks for Mob
+    where E: Parts => mob {
+        /// `Mob.getAmbientSound`.
+        fn ambient_sound() -> Option<SoundEventRef> = ambient_sound_default;
+        /// `Mob.getAmbientSoundInterval`.
+        fn ambient_sound_interval() -> i32 = ambient_sound_interval_default;
+        /// `Mob.removeWhenFarAway`, given the squared distance to the nearest player.
+        fn remove_when_far_away(dist_sqr: f64) -> bool = remove_when_far_away_default;
+        /// `Mob.ate`, called after an eating goal consumes a block.
+        fn ate() = ate_default;
+        /// `Mob.canBeLeashed`, before the leash state is considered.
+        fn mob_can_be_leashed() -> bool = mob_can_be_leashed_default;
+        /// `Mob.getPreferredWeaponType`: the item tag this mob favors when picking up weapons.
+        fn get_preferred_weapon_type() -> Option<Identifier> = get_preferred_weapon_type_default;
+        /// `Mob.checkSpawnRules`: the type's own spawn predicate.
+        fn check_spawn_rules(world: &Arc<World>, reason: EntitySpawnReason) -> bool = check_spawn_rules_default;
+        /// `Mob.getPickupReach`: how far the item-pickup search box is inflated.
+        fn get_pickup_reach() -> DVec3 = get_pickup_reach_default;
+        /// `Mob.canHoldItem`: whether this mob is willing to hold the item.
+        fn can_hold_item(item_stack: &ItemStack) -> bool = can_hold_item_default;
+        /// `Mob.getMaxFallDistance`: blocks fallen before taking damage.
+        fn max_fall_distance() -> i32 = max_fall_distance_default;
+        /// `Mob.getMaxHeadXRot`: degrees the head may pitch independently of the body.
+        fn max_head_x_rot() -> f32 = max_head_x_rot_default;
+        /// `Mob.getMaxHeadYRot`: degrees the head may yaw independently of the body.
+        fn max_head_y_rot() -> f32 = max_head_y_rot_default;
+        /// `Mob.playAttackSound`.
+        fn play_attack_sound() = play_attack_sound_default;
+        /// `Mob.sunProtectionSlot`: the slot whose item shields from sun burning.
+        fn sun_protection_slot() -> EquipmentSlot = sun_protection_slot_default;
+        /// `PathfinderMob.shouldStayCloseToLeashHolder`.
+        fn should_stay_close_to_leash_holder() -> bool = should_stay_close_to_leash_holder_default;
+        /// `PathfinderMob.followLeashSpeed`.
+        fn follow_leash_speed() -> f64 = follow_leash_speed_default;
+        /// Whether the type is a vanilla `PathfinderMob`, which changes leash behavior and passes `instanceof PathfinderMob` checks.
+        fn is_pathfinder() -> bool = is_pathfinder_default;
+        /// `PathfinderMob.getWalkTargetValue`: how attractive a position is to wander to.
+        fn get_walk_target_value(pos: BlockPos) -> f32 = get_walk_target_value_default;
     }
 }
 
@@ -492,20 +465,12 @@ impl<'a> Mob<'a> {
         self.leashable
     }
 
-    /// Returns whether this mob is a vanilla `PathfinderMob`.
-    #[must_use]
-    pub const fn is_pathfinder(&self) -> bool {
-        self.base.props.pathfinder
-    }
-
-    /// Returns this mob type's properties.
-    #[must_use]
-    pub const fn props(&self) -> &'static MobProps {
-        self.base.props
+    fn hooks(&self) -> &'static dyn MobHooks {
+        self.base.hooks
     }
 
     fn definition(&self) -> &'static dyn MobEntries {
-        (self.base.props.definition)()
+        self.base.definition
     }
 
     fn with_synced<R>(&self, f: impl FnOnce(&mut MobEntityData) -> R) -> Option<R> {
@@ -539,6 +504,148 @@ impl<E: LivingParts + Leashable + Has<MobBase>> Parts for E {
     }
 }
 
+impl Mob<'_> {
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn ambient_sound_default(&self) -> Option<SoundEventRef> {
+        None
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn ambient_sound_interval_default(&self) -> i32 {
+        80
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn remove_when_far_away_default(&self, _dist_sqr: f64) -> bool {
+        true
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn ate_default(&self) {}
+
+    fn mob_can_be_leashed_default(&self) -> bool {
+        !self.is_enemy()
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn get_preferred_weapon_type_default(&self) -> Option<Identifier> {
+        None
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn check_spawn_rules_default(
+        &self,
+        _world: &Arc<World>,
+        _reason: EntitySpawnReason,
+    ) -> bool {
+        true
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn get_pickup_reach_default(&self) -> DVec3 {
+        ITEM_PICKUP_REACH
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn can_hold_item_default(&self, _item_stack: &ItemStack) -> bool {
+        true
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn max_fall_distance_default(&self) -> i32 {
+        3
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn max_head_x_rot_default(&self) -> f32 {
+        40.0
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn max_head_y_rot_default(&self) -> f32 {
+        75.0
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn play_attack_sound_default(&self) {}
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn sun_protection_slot_default(&self) -> EquipmentSlot {
+        EquipmentSlot::Head
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn should_stay_close_to_leash_holder_default(&self) -> bool {
+        true
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn follow_leash_speed_default(&self) -> f64 {
+        1.0
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn is_pathfinder_default(&self) -> bool {
+        false
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn get_walk_target_value_default(&self, _pos: BlockPos) -> f32 {
+        0.0
+    }
+}
+
 impl<'a> Deref for Mob<'a> {
     type Target = Living<'a>;
 
@@ -563,11 +670,6 @@ impl<'a> Mob<'a> {
     /// Sets the synchronized vanilla mob flags byte.
     pub fn set_mob_flags(&self, flags: i8) {
         self.with_synced(|data| data.mob_flags.set(flags));
-    }
-
-    /// Returns whether the entity-specific spawn predicate accepts this spawn.
-    pub fn check_spawn_rules(&self, world: &Arc<World>, reason: EntitySpawnReason) -> bool {
-        (self.props().check_spawn_rules)(self, world, reason)
     }
 
     /// Sets the vanilla baby state. Vanilla `Mob.setBaby` is a no-op; ageable
@@ -603,11 +705,6 @@ impl<'a> Mob<'a> {
     /// Runs this type's `customServerAiStep` pipeline.
     pub fn custom_server_ai_step(&self) {
         self.definition().custom_server_ai_step(self.entity());
-    }
-
-    /// Runs vanilla `Mob.ate`, invoked after an eating goal resolves a block.
-    pub fn ate(&self) {
-        (self.props().ate)(self);
     }
 
     /// Ticks the target and goal selectors; between full updates only the
@@ -685,14 +782,6 @@ impl<'a> Mob<'a> {
             }
         }
         result
-    }
-
-    pub const fn ambient_sound_interval(&self) -> i32 {
-        self.props().ambient_sound_interval
-    }
-
-    pub fn ambient_sound(&self) -> Option<SoundEventRef> {
-        (self.props().ambient_sound)(self)
     }
 
     pub fn play_ambient_sound(&self) {
@@ -915,10 +1004,6 @@ impl<'a> Mob<'a> {
         // TODO: Apply USE_REMAINDER components once item use-remainder support exists.
     }
 
-    pub fn remove_when_far_away(&self, dist_sqr: f64) -> bool {
-        (self.props().remove_when_far_away)(self, dist_sqr)
-    }
-
     pub fn requires_custom_persistence(&self) -> bool {
         self.is_passenger() || self.leashable.is_leashed()
     }
@@ -929,11 +1014,6 @@ impl<'a> Mob<'a> {
 
     pub fn set_persistence_required(&self) {
         *self.mob_base().persistence_required().lock() = true;
-    }
-
-    /// Returns whether this mob can be leashed, before its leash state is considered.
-    pub fn mob_can_be_leashed(&self) -> bool {
-        (self.props().can_be_leashed)(self)
     }
 
     /// Returns whether this mob is allowed to pick up dropped items.
@@ -967,22 +1047,10 @@ impl<'a> Mob<'a> {
             .set_guaranteed_drop(slot);
     }
 
-    /// Vanilla `Mob.getPickupReach`: the per-axis distance the item-pickup search
-    /// box is inflated by. Overridable so mobs with a longer reach can widen it.
-    pub const fn get_pickup_reach(&self) -> DVec3 {
-        self.props().pickup_reach
-    }
-
     /// Vanilla `Mob.wantsToPickUp`: whether this mob wants to collect the item it
     /// just walked over. Defaults to whatever the mob is willing to hold.
     pub fn wants_to_pick_up(&self, item_stack: &ItemStack) -> bool {
         self.can_hold_item(item_stack)
-    }
-
-    /// Vanilla `Mob.canHoldItem`: whether this mob is willing to hold the item.
-    /// The base mob holds anything; specific mobs narrow this down.
-    pub fn can_hold_item(&self, item_stack: &ItemStack) -> bool {
-        (self.props().can_hold_item)(self, item_stack)
     }
 
     /// Vanilla `Mob.pickUpItem`: take a dropped item into this mob's equipment.
@@ -1134,13 +1202,6 @@ impl<'a> Mob<'a> {
         } else {
             new_toughness > old_toughness
         }
-    }
-
-    /// Vanilla `Mob.getPreferredWeaponType`: the item tag a mob favors for its
-    /// main hand regardless of raw damage (a skeleton keeps its bow over a
-    /// stronger sword). The base mob has no preference; specific mobs override it.
-    pub fn get_preferred_weapon_type(&self) -> Option<Identifier> {
-        (self.props().preferred_weapon_type)(self)
     }
 
     /// Vanilla `Mob.compareWeapons`: keep a piece of the mob's preferred weapon
@@ -1521,11 +1582,6 @@ impl<'a> Mob<'a> {
         self.mob_base().pathfinding_malus().lock().get(path_type)
     }
 
-    /// Blocks a mob can fall before taking fall damage; concrete mobs may raise this.
-    pub const fn max_fall_distance(&self) -> i32 {
-        self.props().max_fall_distance
-    }
-
     pub fn set_pathfinding_malus(&self, path_type: PathType, malus: f32) {
         self.mob_base()
             .pathfinding_malus()
@@ -1551,16 +1607,6 @@ impl<'a> Mob<'a> {
 
     pub fn is_aggressive(&self) -> bool {
         self.mob_flags() & MOB_FLAG_AGGRESSIVE != 0
-    }
-
-    /// Maximum degrees the head may pitch up or down independently of the body.
-    pub const fn max_head_x_rot(&self) -> f32 {
-        self.props().max_head_x_rot
-    }
-
-    /// Maximum degrees the head may yaw left or right independently of the body.
-    pub const fn max_head_y_rot(&self) -> f32 {
-        self.props().max_head_y_rot
     }
 
     /// Performs this mob's melee attack against `target`: computes weapon
@@ -1707,11 +1753,6 @@ impl<'a> Mob<'a> {
         self.set_velocity(DVec3::new(velocity.x * 0.6, velocity.y, velocity.z * 0.6));
     }
 
-    /// Plays this mob type's attack sound.
-    pub fn play_attack_sound(&self) {
-        (self.props().play_attack_sound)(self);
-    }
-
     /// Returns whether `target` is within this mob's melee attack range.
     pub fn is_within_melee_attack_range(&self, target: &Living<'_>) -> bool {
         // TODO: Use the held item's ATTACK_RANGE component once it has typed component data.
@@ -1844,10 +1885,6 @@ impl<'a> Mob<'a> {
                 < (brightness - SUN_BURN_LIGHT_OFFSET) * SUN_BURN_LIGHT_GAIN
             && !in_non_burnable_block
             && world.can_see_sky(eye_pos)
-    }
-
-    pub const fn sun_protection_slot(&self) -> EquipmentSlot {
-        self.props().sun_protection_slot
     }
 
     /// Damages sun-protective gear on a successful burn roll, or ignites
