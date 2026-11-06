@@ -218,31 +218,56 @@ impl NormalNoise {
         }
     }
 
+    /// Adds every layer's sample, scaled by its amplitude, in vanilla's f32 order.
+    #[inline]
+    fn sum_layers(&self, sample: impl Fn(&Layer) -> f32) -> f32 {
+        self.layers.iter().fold(0.0_f32, |value, layer| {
+            value + layer.amplitude * sample(layer)
+        })
+    }
+
+    /// [`Self::sum_layers`] over SIMD lanes.
+    #[inline]
+    fn sum_layers_simd<const N: usize>(
+        &self,
+        sample: impl Fn(&Layer) -> Simd<f32, N>,
+    ) -> Simd<f32, N> {
+        let mut value = Simd::splat(0.0_f32);
+        for layer in &self.layers {
+            value += Simd::splat(layer.amplitude) * sample(layer);
+        }
+        value
+    }
+
     #[inline]
     #[must_use]
     /// Samples the float-valued vanilla noise stack.
     pub fn get_value(&self, x: f64, y: f64, z: f64) -> f32 {
-        // Point order is bulk order with unit scales: `1.0 * frequency` is exact.
-        self.get_value_bulk(x, y, z, 1.0, 1.0)
+        self.sum_layers(|layer| {
+            let f = layer.frequency;
+            layer.noise.noise(x * f, y * f, z * f)
+        })
     }
 
     #[inline]
     #[must_use]
     /// Samples the float-valued vanilla noise stack with a fixed Y coordinate.
     pub fn get_value_xz(&self, x: f64, z: f64) -> f32 {
-        self.get_value_xz_bulk(x, z, 1.0)
+        self.sum_layers(|layer| {
+            layer
+                .noise
+                .noise_xz(x * layer.frequency, z * layer.frequency)
+        })
     }
 
     #[inline]
     #[must_use]
     /// Samples the float-valued vanilla noise stack with a fixed Z coordinate.
     pub fn get_value_xy(&self, x: f64, y: f64) -> f32 {
-        self.layers.iter().fold(0.0_f32, |value, layer| {
-            value
-                + layer.amplitude
-                    * layer
-                        .noise
-                        .noise_xy(x * layer.frequency, y * layer.frequency)
+        self.sum_layers(|layer| {
+            layer
+                .noise
+                .noise_xy(x * layer.frequency, y * layer.frequency)
         })
     }
 
@@ -255,7 +280,10 @@ impl NormalNoise {
         ys: Simd<f64, N>,
         z: f64,
     ) -> Simd<f32, N> {
-        self.get_value_y_simd_bulk(x, ys, z, 1.0, 1.0)
+        self.sum_layers_simd(|layer| {
+            let f = layer.frequency;
+            layer.noise.noise_y_simd(x * f, ys * Simd::splat(f), z * f)
+        })
     }
 
     // Vanilla's chunk fill samples unshifted noise through `NoiseStack.addToVolume`, which
@@ -266,15 +294,11 @@ impl NormalNoise {
     #[must_use]
     /// [`Self::get_value`] in vanilla's bulk coordinate order.
     pub fn get_value_bulk(&self, x: f64, y: f64, z: f64, xz_scale: f64, y_scale: f64) -> f32 {
-        self.layers.iter().fold(0.0_f32, |value, layer| {
-            let xz_frequency = xz_scale * layer.frequency;
-            value
-                + layer.amplitude
-                    * layer.noise.noise(
-                        x * xz_frequency,
-                        y * (y_scale * layer.frequency),
-                        z * xz_frequency,
-                    )
+        self.sum_layers(|layer| {
+            let xz_f = xz_scale * layer.frequency;
+            layer
+                .noise
+                .noise(x * xz_f, y * (y_scale * layer.frequency), z * xz_f)
         })
     }
 
@@ -282,9 +306,9 @@ impl NormalNoise {
     #[must_use]
     /// [`Self::get_value_xz`] in vanilla's bulk coordinate order.
     pub fn get_value_xz_bulk(&self, x: f64, z: f64, xz_scale: f64) -> f32 {
-        self.layers.iter().fold(0.0_f32, |value, layer| {
-            let xz_frequency = xz_scale * layer.frequency;
-            value + layer.amplitude * layer.noise.noise_xz(x * xz_frequency, z * xz_frequency)
+        self.sum_layers(|layer| {
+            let xz_f = xz_scale * layer.frequency;
+            layer.noise.noise_xz(x * xz_f, z * xz_f)
         })
     }
 
@@ -299,17 +323,14 @@ impl NormalNoise {
         xz_scale: f64,
         y_scale: f64,
     ) -> Simd<f32, N> {
-        let mut value = Simd::splat(0.0_f32);
-        for layer in &self.layers {
-            let xz_frequency = xz_scale * layer.frequency;
-            let noise = layer.noise.noise_y_simd(
-                x * xz_frequency,
+        self.sum_layers_simd(|layer| {
+            let xz_f = xz_scale * layer.frequency;
+            layer.noise.noise_y_simd(
+                x * xz_f,
                 ys * Simd::splat(y_scale * layer.frequency),
-                z * xz_frequency,
-            );
-            value += Simd::splat(layer.amplitude) * noise;
-        }
-        value
+                z * xz_f,
+            )
+        })
     }
 
     #[inline]
