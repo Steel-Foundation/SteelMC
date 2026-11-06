@@ -155,26 +155,16 @@ impl TranspileContext {
         // These must be inlined (not called) when generating combine_interpolated.
         for name in &self.used_names {
             if let Some(df) = input.registry.get(name) {
-                let mut visited = BTreeSet::new();
-                if contains_function(
-                    df,
-                    &input.registry,
-                    &mut visited,
-                    |df| matches!(df, DensityFunction::Marker(m) if m.kind == MarkerType::Interpolated),
-                ) {
+                let contains = |is_target: fn(&DensityFunction) -> bool| {
+                    contains_function(df, &input.registry, &mut BTreeSet::new(), is_target)
+                };
+                if contains(is_interpolated_marker) {
                     self.interpolated_refs.insert(name.clone());
                 }
-                let mut visited = BTreeSet::new();
-                let has_blended_noise =
-                    contains_function(df, &input.registry, &mut visited, |df| {
-                        matches!(df, DensityFunction::BlendedNoise(_))
-                    });
-                let mut visited = BTreeSet::new();
-                let has_unshifted_noise =
-                    contains_function(df, &input.registry, &mut visited, |df| {
-                        matches!(df, DensityFunction::Noise(_))
-                    });
-                if has_blended_noise || has_unshifted_noise {
+                let has_unshifted_noise = contains(|df| matches!(df, DensityFunction::Noise(_)));
+                if has_unshifted_noise
+                    || contains(|df| matches!(df, DensityFunction::BlendedNoise(_)))
+                {
                     self.fill_inlined_refs.insert(name.clone());
                 }
                 // The column cache evaluates flat-cached functions in point order, so none
@@ -317,4 +307,8 @@ impl TranspileContext {
         }
         order.push(name.to_string());
     }
+}
+
+fn is_interpolated_marker(df: &DensityFunction) -> bool {
+    matches!(df, DensityFunction::Marker(m) if m.kind == MarkerType::Interpolated)
 }
