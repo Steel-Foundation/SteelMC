@@ -30,6 +30,7 @@ use uuid::Uuid;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
+use crate::entity::damage::{CombatEntry, CombatTracker, DamageSource, FallLocation};
 use crate::entity::synced_data::EntitySyncedData;
 use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
@@ -660,6 +661,7 @@ struct LivingEntityState {
     active_item_use: Option<ActiveItemUseState>,
     no_jump_delay: i32,
     no_action_time: i32,
+    combat_tracker: CombatTracker,
 }
 
 impl LivingEntityState {
@@ -697,6 +699,7 @@ impl LivingEntityState {
             active_item_use: None,
             no_jump_delay: 0,
             no_action_time: 0,
+            combat_tracker: CombatTracker::new(),
         }
     }
 
@@ -1440,9 +1443,9 @@ impl LivingEntityBase {
         self.state.lock().last_climbable_pos
     }
 
-    /// Records the last climbable block position this living entity touched.
-    pub fn set_last_climbable_pos(&self, pos: BlockPos) {
-        self.state.lock().last_climbable_pos = Some(pos);
+    /// Records or clears the last climbable block position this living entity touched.
+    pub fn set_last_climbable_pos(&self, pos: Option<BlockPos>) {
+        self.state.lock().last_climbable_pos = pos;
     }
 
     /// Returns whether vanilla living travel should skip friction damping.
@@ -1715,6 +1718,54 @@ impl LivingEntityBase {
         if living_is_dead(&hurt_by) || tick_count - self.last_hurt_by_mob_timestamp() > 100 {
             self.set_last_hurt_by_mob(None, tick_count);
         }
+    }
+
+    /// Appends a hit to the combat tracker.
+    pub(crate) fn record_combat_damage(
+        &self,
+        source: &DamageSource,
+        damage: f32,
+        fall_location: Option<FallLocation>,
+        fall_distance: f32,
+        tick_count: i32,
+    ) {
+        self.state.lock().combat_tracker.record_damage(
+            source,
+            damage,
+            fall_location,
+            fall_distance,
+            tick_count,
+        );
+    }
+
+    /// Marks combat as started, returning whether it was not already active.
+    pub(crate) fn enter_combat(&self, tick_count: i32) -> bool {
+        self.state.lock().combat_tracker.enter_combat(tick_count)
+    }
+
+    /// Resets expired combat state.
+    ///
+    /// Returns whether combat ended.
+    pub(crate) fn recheck_combat_status(&self, tick_count: i32, alive: bool) -> bool {
+        self.state
+            .lock()
+            .combat_tracker
+            .recheck_status(tick_count, alive)
+    }
+
+    /// Returns the combat duration in ticks.
+    pub(crate) fn combat_duration(&self, tick_count: i32) -> i32 {
+        self.state.lock().combat_tracker.duration(tick_count)
+    }
+
+    /// Snapshot of recorded combat entries, oldest first.
+    pub(crate) fn combat_entries(&self) -> Vec<CombatEntry> {
+        self.state.lock().combat_tracker.entries().to_vec()
+    }
+
+    /// Drops recorded combat entries without changing combat status.
+    pub(crate) fn clear_combat_history(&self) {
+        self.state.lock().combat_tracker.clear_entries();
     }
 
     /// Returns whether death side effects have already run.
