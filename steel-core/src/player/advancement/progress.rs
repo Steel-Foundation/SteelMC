@@ -1,6 +1,5 @@
 //! represent the different struct related to the progress of an advancement
 use rustc_hash::FxHashMap;
-use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::time::SystemTime;
 use steel_registry::advancement::AdvancementRequirement;
@@ -111,8 +110,8 @@ pub struct AdvancementProgress {
 }
 
 impl AdvancementProgress {
-    /// Creates a new `AdvancementProgress` with the given criteria.
-    /// need to call `update` to set the requirements for the advancement
+    /// Creates progress from saved criteria. Call `update` to attach the advancement's
+    /// requirements before using it.
     #[must_use]
     pub fn new(criteria: FxHashMap<Cow<'static, str>, CriterionProgress>) -> AdvancementProgress {
         Self {
@@ -204,7 +203,7 @@ impl AdvancementProgress {
     }
 }
 /// represent a timestamp to when the criterion has been completed or None if it still un completed
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct CriterionProgress(pub Option<SystemTime>);
 
 impl CriterionProgress {

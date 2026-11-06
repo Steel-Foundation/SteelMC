@@ -174,7 +174,7 @@ impl PlayerAdvancement {
                 }
             }
             self.progress_changed.clear();
-            // even if it's empty it must be updated when switching domain
+            // The first flush always sends, even when empty, so a domain switch resets the client.
             if self.is_first_packet
                 || !progress.is_empty()
                 || !added.is_empty()
@@ -268,25 +268,35 @@ impl PlayerAdvancement {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    use std::borrow::Cow;
+
     use super::*;
     use steel_registry::init_vanilla_registry;
 
-    fn advancement_with_criteria() -> AdvancementRef {
-        REGISTRY
+    /// A vanilla advancement that has criteria, with its first criterion's name.
+    pub(crate) fn advancement_with_criterion() -> (AdvancementRef, Cow<'static, str>) {
+        let advancement = REGISTRY
             .advancements
             .advancements()
             .iter()
             .copied()
             .find(|advancement| !advancement.requirements().names().is_empty())
-            .expect("vanilla registry should contain an advancement with criteria")
+            .expect("vanilla registry should contain an advancement with criteria");
+        let criterion = advancement
+            .requirements()
+            .names()
+            .into_iter()
+            .next()
+            .expect("advancement should have a criterion");
+        (advancement, criterion)
     }
 
     #[test]
     fn persisted_progress_skips_advancements_without_progress() {
         init_vanilla_registry();
 
-        let advancement = advancement_with_criteria();
+        let (advancement, criterion) = advancement_with_criterion();
         let untouched = REGISTRY
             .advancements
             .advancements()
@@ -296,12 +306,6 @@ mod tests {
             .expect("vanilla registry should contain more than one advancement");
 
         let mut player_advancement = PlayerAdvancement::default();
-        let criterion = advancement
-            .requirements()
-            .names()
-            .into_iter()
-            .next()
-            .expect("advancement should have a criterion");
         player_advancement
             .progress
             .get_mut_or_start_progress(advancement)
@@ -321,13 +325,7 @@ mod tests {
     fn apply_persisted_progress_restores_progress_and_resets_client_state() {
         init_vanilla_registry();
 
-        let advancement = advancement_with_criteria();
-        let criterion = advancement
-            .requirements()
-            .names()
-            .into_iter()
-            .next()
-            .expect("advancement should have a criterion");
+        let (advancement, criterion) = advancement_with_criterion();
 
         let mut source = PlayerAdvancement::default();
         source
