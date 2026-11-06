@@ -281,7 +281,7 @@ pub fn ai_step<E: Entity + Has<Age>>() -> Stage<E, AiStep> {
     fn run<E: Entity + Has<Age>>(entity: &E) {
         Ageable::new(entity, entity.get::<Age>()).tick();
     }
-    Stage::effect(AI_STEP, "AgeableMob.aiStep", run::<E>)
+    Stage::effect(AI_STEP, run::<E>)
 }
 
 /// The `AgeableMob.finalizeSpawn` stage, before `Mob.finalizeSpawn`.
@@ -297,7 +297,7 @@ pub fn finalize_spawn<E: Entity + Has<Age>>() -> Stage<E, FinalizeSpawn> {
         ctx.group_data = Some(SpawnGroupData::AgeableMob(group_data));
         Flow::Continue
     }
-    Stage::new(FINALIZE_SPAWN, "AgeableMob.finalizeSpawn", run::<E>)
+    Stage::new(FINALIZE_SPAWN, run::<E>)
 }
 
 /// The `AgeableMob.mobInteract` stage: toggles a baby's age lock when fed a
@@ -349,7 +349,7 @@ pub fn mob_interact<E: Mob + Has<Age>>() -> Stage<E, MobInteract> {
         ctx.result = InteractionResult::Success;
         Flow::Stop
     }
-    Stage::new(MOB_INTERACT, "AgeableMob.mobInteract", run::<E>)
+    Stage::new(MOB_INTERACT, run::<E>)
 }
 
 #[cfg(test)]

@@ -399,7 +399,7 @@ pub fn ai_step<E: Parts>() -> Pipeline<E, AiStep> {
     Pipeline::new([
         mob::stages::ai_step::<E>(),
         ageable::ai_step::<E>(),
-        Stage::effect(AI_STEP, "Animal.aiStep", love::<E>),
+        Stage::effect(AI_STEP, love::<E>),
     ])
 }
 
@@ -412,11 +412,7 @@ pub fn custom_server_ai_step<E: Parts>() -> Pipeline<E, CustomServerAiStep> {
             animal.reset_love();
         }
     }
-    Pipeline::new([Stage::effect(
-        CUSTOM_SERVER_AI_STEP,
-        "Animal.customServerAiStep",
-        run::<E>,
-    )])
+    Pipeline::new([Stage::effect(CUSTOM_SERVER_AI_STEP, run::<E>)])
 }
 
 /// Vanilla's animal `mobInteract` chain: feeding, then the age lock.
@@ -426,7 +422,7 @@ pub fn mob_interact<E: Parts>() -> Pipeline<E, MobInteract> {
         entity.animal().feed(entity, ctx)
     }
     Pipeline::new([
-        Stage::new(MOB_INTERACT, "Animal.mobInteract", run::<E>),
+        Stage::new(MOB_INTERACT, run::<E>),
         ageable::mob_interact::<E>(),
     ])
 }

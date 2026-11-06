@@ -15,7 +15,7 @@ pub fn ai_step<E: Mob>() -> Stage<E, AiStep> {
         ctx.movement = entity.mob_ai_step(ctx.entity);
         Flow::Continue
     }
-    Stage::new(AI_STEP, "Mob.aiStep", run::<E>)
+    Stage::new(AI_STEP, run::<E>)
 }
 
 /// The `Mob.finalizeSpawn` stage: follow-range bonus and handedness.
@@ -25,5 +25,5 @@ pub fn finalize_spawn<E: Mob>() -> Stage<E, FinalizeSpawn> {
             entity.finalize_spawn_mob_base(ctx.world, ctx.reason, ctx.group_data.take());
         Flow::Continue
     }
-    Stage::new(FINALIZE_SPAWN, "Mob.finalizeSpawn", run::<E>)
+    Stage::new(FINALIZE_SPAWN, run::<E>)
 }

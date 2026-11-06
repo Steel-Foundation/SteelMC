@@ -1,10 +1,9 @@
-//! Ordered behavior chains replacing vanilla `super` call chains.
+//! Ordered behavior chains for entity entry points such as `ai_step`.
 //!
-//! A [`Pipeline`] is the flattened version of one overridable vanilla method
-//! for one entity type: its stages run in order, base layer first, each one
-//! recording which vanilla method it implements. Presets build a layer's
-//! vanilla chain; entity types adjust it with [`Pipeline::after`],
-//! [`Pipeline::before`], [`Pipeline::without`] and [`Pipeline::wrap`].
+//! A [`Pipeline`] is one entity type's behavior for one entry point, as an
+//! ordered list of stages. Layer presets build the shared chain; entity types
+//! adjust it with [`Pipeline::after`], [`Pipeline::before`],
+//! [`Pipeline::without`] and [`Pipeline::wrap`].
 //!
 //! Stages return [`Flow::Stop`] to end the chain early, which covers vanilla
 //! guards (`if (...) return false;` before `super`) and chain-of-responsibility
@@ -31,7 +30,7 @@ impl fmt::Display for StageId {
     }
 }
 
-/// One overridable vanilla method: names the context its stages share.
+/// One entry point: names the context its stages share.
 pub trait Entry: 'static {
     /// Arguments and result of one call, borrowed for the call.
     type Ctx<'a>;
@@ -54,29 +53,25 @@ enum Run<E: 'static, K: Entry> {
 /// One step of a pipeline.
 pub struct Stage<E: 'static, K: Entry> {
     id: StageId,
-    vanilla: &'static str,
     run: Run<E, K>,
 }
 
 impl<E: 'static, K: Entry> Stage<E, K> {
-    /// A stage implementing the vanilla method named by `vanilla`
-    /// (`"Animal.aiStep"`).
+    /// A stage that reads and writes the call's context and decides whether
+    /// the pipeline continues.
     #[must_use]
-    pub const fn new(id: StageId, vanilla: &'static str, run: StageFn<E, K>) -> Self {
+    pub const fn new(id: StageId, run: StageFn<E, K>) -> Self {
         Self {
             id,
-            vanilla,
             run: Run::Plain(run),
         }
     }
 
-    /// A stage that only acts on the entity and always continues; most
-    /// vanilla overrides that call `super` first or last are this.
+    /// A stage that only acts on the entity and always continues.
     #[must_use]
-    pub const fn effect(id: StageId, vanilla: &'static str, run: fn(&E)) -> Self {
+    pub const fn effect(id: StageId, run: fn(&E)) -> Self {
         Self {
             id,
-            vanilla,
             run: Run::Effect(run),
         }
     }
@@ -99,18 +94,9 @@ impl<E: 'static, K: Entry> Stage<E, K> {
             }
         }
     }
-
-    fn origins(&self, out: &mut Vec<&'static str>) {
-        if let Run::Wrap(_, inner) = &self.run {
-            inner.origins(out);
-        }
-        if !out.contains(&self.vanilla) {
-            out.push(self.vanilla);
-        }
-    }
 }
 
-/// The flattened chain of one vanilla method for one entity type.
+/// The ordered stages one entity type runs for one entry point.
 pub struct Pipeline<E: 'static, K: Entry> {
     stages: Vec<Stage<E, K>>,
 }
@@ -166,38 +152,36 @@ impl<E: 'static, K: Entry> Pipeline<E, K> {
         self
     }
 
-    /// Removes stage `id`, for vanilla overrides that replace a layer without
-    /// calling `super`. `vanilla_reason` documents which override does that.
+    /// Removes stage `id`, for entity types that replace a layer's behavior
+    /// entirely.
     ///
     /// # Panics
     ///
     /// Panics if the pipeline has no stage `id`.
     #[must_use]
     #[track_caller]
-    pub fn without(mut self, id: StageId, vanilla_reason: &'static str) -> Self {
-        let _ = vanilla_reason;
+    pub fn without(mut self, id: StageId) -> Self {
         let at = self.index_of(id);
         self.stages.remove(at);
         self
     }
 
     /// Replaces stage `id` with `wrapper`, which decides when (and whether)
-    /// the original stage runs: vanilla overrides that call `super` in the
-    /// middle or conditionally.
+    /// the original stage runs, for behavior that surrounds a layer or runs
+    /// it conditionally.
     ///
     /// # Panics
     ///
     /// Panics if the pipeline has no stage `id`.
     #[must_use]
     #[track_caller]
-    pub fn wrap(mut self, id: StageId, vanilla: &'static str, wrapper: WrapFn<E, K>) -> Self {
+    pub fn wrap(mut self, id: StageId, wrapper: WrapFn<E, K>) -> Self {
         let at = self.index_of(id);
         let inner = self.stages.remove(at);
         self.stages.insert(
             at,
             Stage {
                 id,
-                vanilla,
                 run: Run::Wrap(wrapper, Box::new(inner)),
             },
         );
@@ -211,17 +195,6 @@ impl<E: 'static, K: Entry> Pipeline<E, K> {
                 return;
             }
         }
-    }
-
-    /// The distinct vanilla methods this pipeline implements, in execution
-    /// order. Compared against the flattener's executed chain in tests.
-    #[must_use]
-    pub fn origins(&self) -> Vec<&'static str> {
-        let mut out = Vec::new();
-        for stage in &self.stages {
-            stage.origins(&mut out);
-        }
-        out
     }
 }
 
@@ -262,10 +235,7 @@ mod tests {
     }
 
     fn preset() -> Pipeline<Probe, Log> {
-        Pipeline::new([
-            Stage::new(BASE, "Base.tick", base),
-            Stage::new(MIDDLE, "Middle.tick", middle),
-        ])
+        Pipeline::new([Stage::new(BASE, base), Stage::new(MIDDLE, middle)])
     }
 
     fn run(pipeline: &Pipeline<Probe, Log>) -> Vec<&'static str> {
@@ -275,17 +245,16 @@ mod tests {
     }
 
     #[test]
-    fn insertions_and_removals_keep_vanilla_order() {
+    fn insertions_and_removals_keep_the_preset_order() {
         let pipeline = preset()
-            .before(BASE, [Stage::new(LEAF, "Leaf.tick", middle)])
-            .without(MIDDLE, "Leaf.tick does not call super");
+            .before(BASE, [Stage::new(LEAF, middle)])
+            .without(MIDDLE);
         assert_eq!(run(&pipeline), ["middle", "base"]);
-        assert_eq!(pipeline.origins(), ["Leaf.tick", "Base.tick"]);
     }
 
     #[test]
     fn stop_skips_the_remaining_stages() {
-        let pipeline = preset().before(MIDDLE, [Stage::new(LEAF, "Leaf.tick", guard)]);
+        let pipeline = preset().before(MIDDLE, [Stage::new(LEAF, guard)]);
         assert_eq!(run(&pipeline), ["base", "guard"]);
     }
 
@@ -301,12 +270,8 @@ mod tests {
             log.push("after");
             flow
         }
-        let pipeline = preset().wrap(BASE, "Leaf.tick", around);
+        let pipeline = preset().wrap(BASE, around);
         assert_eq!(run(&pipeline), ["before", "base", "after", "middle"]);
-        assert_eq!(
-            pipeline.origins(),
-            ["Base.tick", "Leaf.tick", "Middle.tick"]
-        );
     }
 
     #[test]

@@ -165,16 +165,12 @@ impl ChickenEntity {
     fn define() -> MobDefinition<Self> {
         let mut definition = animal::definition::<Self>();
         definition.ai_step = definition.ai_step.then([
-            Stage::effect(Self::FLAP, "Chicken.aiStep", Self::tick_flapping),
-            Stage::effect(Self::LAY_EGG, "Chicken.aiStep", Self::tick_egg_laying),
+            Stage::effect(Self::FLAP, Self::tick_flapping),
+            Stage::effect(Self::LAY_EGG, Self::tick_egg_laying),
         ]);
         definition.finalize_spawn = definition.finalize_spawn.before(
             ageable::FINALIZE_SPAWN,
-            [Stage::new(
-                Self::PICK_VARIANTS,
-                "Chicken.finalizeSpawn",
-                Self::pick_spawn_variants,
-            )],
+            [Stage::new(Self::PICK_VARIANTS, Self::pick_spawn_variants)],
         );
         definition
     }
