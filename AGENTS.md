@@ -109,6 +109,7 @@ prek run --all-files                # Full local precommit suite
 
 Uses **nightly Rust**.
 Tooling: `ast-grep` is available for structural code search/rewrites.
+`tools/class-flattener` flattens a vanilla class from `minecraft-src/`: which class's override actually runs, where each `super` call lands, and which inherited calls dispatch to overrides. Use it before porting entity/goal behavior: `cargo run -q --release --manifest-path tools/class-flattener/Cargo.toml -- Chicken [-m tick] [-i] [-s]` (`-m` method filter, `<init>` = constructors; `-i` inline super bodies; `-s` index only).
 
 ## Architecture
 
