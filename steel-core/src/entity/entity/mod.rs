@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::*;
-use crate::entity::leash::Leashable;
+use crate::entity::{leash::Leashable, pushing::EntityPush};
 use rand::{RngExt, rng};
 use steel_math::DEGREE_90;
 use steel_utils::nbt::{NbtNumeric, nbt_collection_values};
@@ -883,8 +883,20 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             && !self.is_passenger_of_same_vehicle(other)
     }
 
+    /// Opts this entity into the [`DefaultEntityPush`] fast path. It is read under the
+    /// entity manager lock, so it must give the same answer for the entity's whole
+    /// lifetime and have no side effects.
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        None
+    }
+
     /// Adds an impulse to this entity's velocity and marks velocity for sync.
     fn push_impulse(&self, impulse: DVec3) {
+        if self.as_default_entity_push().is_some() {
+            self.base().push_impulse(impulse);
+            return;
+        }
+
         if !impulse.is_finite() {
             return;
         }
@@ -895,29 +907,30 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Applies vanilla entity-to-entity push separation.
     fn push_entity(&self, entity: &dyn Entity) {
+        if self
+            .as_living_entity()
+            .is_some_and(LivingEntity::is_sleeping)
+        {
+            return;
+        }
+
         if self.is_passenger_of_same_vehicle(entity) || entity.no_physics() || self.no_physics() {
             return;
         }
 
-        let mut x = entity.position().x - self.position().x;
-        let mut z = entity.position().z - self.position().z;
-        let mut distance = x.abs().max(z.abs());
-        if distance < 0.01 {
-            return;
-        }
+        let other_position = entity.position();
+        let position = self.position();
 
-        distance = distance.sqrt();
-        x /= distance;
-        z /= distance;
-        let scale = (1.0 / distance).min(1.0) * 0.05;
-        x *= scale;
-        z *= scale;
+        let Some(impulse) = EntityPush::impulse(position, other_position) else {
+            return;
+        };
 
         if !self.is_vehicle() && self.is_pushable() {
-            self.push_impulse(DVec3::new(-x, 0.0, -z));
+            self.push_impulse(DVec3::new(-impulse.x, 0.0, -impulse.z));
         }
+
         if !entity.is_vehicle() && entity.is_pushable() {
-            entity.push_impulse(DVec3::new(x, 0.0, z));
+            entity.push_impulse(impulse);
         }
     }
 
@@ -2231,6 +2244,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns true if this entity is currently touching water.
     fn is_in_water(&self) -> bool {
         self.fluid_contact().water_height() > 0.0
+    }
+
+    /// Returns true if rain falls at this entity's feet or at the top of its bounding box.
+    fn is_in_rain(&self) -> bool {
+        let Some(world) = self.level() else {
+            return false;
+        };
+
+        let pos = self.block_position();
+        world.is_raining_at(pos)
+            || world.is_raining_at(BlockPos::new(
+                pos.x(),
+                self.bounding_box().max_y().floor() as i32,
+                pos.z(),
+            ))
+    }
+
+    /// Returns true if this entity is touching water or standing in rain.
+    fn is_in_water_or_rain(&self) -> bool {
+        self.is_in_water() || self.is_in_rain()
     }
 
     /// Returns true if this entity is currently touching lava.

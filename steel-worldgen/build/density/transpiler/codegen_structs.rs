@@ -559,14 +559,15 @@ impl TranspileContext {
     }
 
     /// Generate the function parameter list for a router entry point.
-    /// Router functions read x/z from the cache, so flat variants omit explicit coords.
-    pub(super) fn fn_params_router(&self, is_flat: bool) -> TokenStream {
+    /// Flat variants omit explicit coordinates; cache-free entries keep an unused cache slot.
+    pub(super) fn fn_params_router(&self, is_flat: bool, needs_cache: bool) -> TokenStream {
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
+        let cache_arg = format_ident!("{}", if needs_cache { "cache" } else { "_cache" });
         if is_flat {
-            quote! { noises: &#noises, cache: &#cache }
+            quote! { noises: &#noises, #cache_arg: &#cache }
         } else {
-            quote! { noises: &#noises, cache: &#cache, x: f64, y: f64, z: f64 }
+            quote! { noises: &#noises, #cache_arg: &#cache, x: f64, y: f64, z: f64 }
         }
     }
 }
