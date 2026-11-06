@@ -3,7 +3,7 @@ use glam::DVec3;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{Animal, PathfinderMob, SharedEntity};
+use crate::entity::{Animal, Mob, SharedEntity};
 
 const PARTNER_SEARCH_RANGE: f64 = 8.0;
 const BREED_DISTANCE_SQR: f64 = 9.0;
@@ -25,7 +25,7 @@ impl BreedGoal {
         }
     }
 
-    fn get_free_partner(mob: &dyn PathfinderMob, animal: &Animal<'_>) -> Option<SharedEntity> {
+    fn get_free_partner(mob: &Mob<'_>, animal: &Animal<'_>) -> Option<SharedEntity> {
         let world = mob.level()?;
         let search_box = mob.bounding_box().inflate(PARTNER_SEARCH_RANGE);
         let partner_targeting = TargetingConditions::for_non_combat()
@@ -37,7 +37,7 @@ impl BreedGoal {
             else {
                 return false;
             };
-            if !partner_targeting.test(world.as_ref(), Some(mob), living) {
+            if !partner_targeting.test(world.as_ref(), Some(mob.living()), living) {
                 return false;
             }
             if !animal.can_mate(&candidate) {
@@ -46,7 +46,7 @@ impl BreedGoal {
 
             !entity
                 .as_pathfinder_mob()
-                .is_some_and(PathfinderMob::is_panicking)
+                .is_some_and(|mob| mob.is_panicking())
         })
     }
 }
@@ -56,7 +56,7 @@ impl Goal for BreedGoal {
         GoalControls::MOVE | GoalControls::LOOK
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(animal) = Animal::of(mob.as_entity_event_source()) else {
             return false;
         };
@@ -68,7 +68,7 @@ impl Goal for BreedGoal {
         self.partner.is_some()
     }
 
-    fn can_continue_to_use(&mut self, _mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, _mob: &Mob<'_>) -> bool {
         let Some(partner) = &self.partner else {
             return false;
         };
@@ -80,7 +80,7 @@ impl Goal for BreedGoal {
         }
         if partner
             .as_pathfinder_mob()
-            .is_some_and(PathfinderMob::is_panicking)
+            .is_some_and(|mob| mob.is_panicking())
         {
             return false;
         }
@@ -88,12 +88,12 @@ impl Goal for BreedGoal {
         Animal::of(partner.as_ref()).is_some_and(|partner| partner.is_in_love())
     }
 
-    fn stop(&mut self, _mob: &dyn PathfinderMob) {
+    fn stop(&mut self, _mob: &Mob<'_>) {
         self.partner = None;
         self.love_time = 0;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         let Some(partner) = &self.partner else {
             return;
         };
@@ -134,6 +134,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
 
     #[test]
@@ -149,6 +150,6 @@ mod tests {
         let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
         let mut goal = BreedGoal::new(1.0);
 
-        assert!(!goal.can_use(&pig));
+        assert!(!goal.can_use(&pig.mob()));
     }
 }

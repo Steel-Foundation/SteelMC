@@ -163,7 +163,7 @@ fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
     let Some(mob) = pig.as_mob() else {
         panic!("pig should expose mob behavior");
     };
-    assert!(mob.set_leashed_to(&holder));
+    assert!(mob.leashable().set_leashed_to(&holder));
     pig.living_base().equipment().lock().set(
         EquipmentSlot::Saddle,
         ItemStack::new(&vanilla_items::SADDLE),
@@ -171,7 +171,7 @@ fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
 
     remove_after_changing_dimensions(&pig);
 
-    assert!(!mob.is_leashed());
+    assert!(!mob.leashable().is_leashed());
     assert!(
         pig.living_base()
             .equipment()

@@ -127,7 +127,7 @@ fn send_changes_broadcasts_leash_link_changes_once() {
     );
     assert_eq!(updates.len(), 0);
 
-    assert!(pig_mob.set_leashed_to(&holder));
+    assert!(pig_mob.leashable().set_leashed_to(&holder));
     tracker.send_changes(
         |_| Vec::new(),
         |_| None,
@@ -161,7 +161,7 @@ fn send_changes_broadcasts_leash_link_changes_once() {
     );
     assert_eq!(updates.len(), 0);
 
-    pig_mob.remove_leash_state();
+    pig_mob.leashable().remove_leash_state();
     tracker.send_changes(
         |_| Vec::new(),
         |_| None,

@@ -1,5 +1,5 @@
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
-use crate::entity::{MobBase, PathfinderMob, SharedEntity};
+use crate::entity::{Mob, MobBase, SharedEntity};
 
 const FLOAT_JUMP_CHANCE: f32 = 0.8;
 
@@ -18,7 +18,7 @@ impl Goal for FloatGoal {
         GoalControls::JUMP
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         mob.is_in_water() && mob.fluid_contact().water_height() > mob.get_fluid_jump_threshold()
             || mob.is_in_lava()
     }
@@ -27,7 +27,7 @@ impl Goal for FloatGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         if rand::random::<f32>() < FLOAT_JUMP_CHANCE {
             mob.mob_base().controls().lock().jump_control.jump();
         }
@@ -44,15 +44,20 @@ mod tests {
     use steel_utils::locks::SyncMutex;
 
     use super::*;
-    use crate::entity::{
-        Entity, EntityBase, EntityFluidContact, LivingEntity, LivingEntityBase, Mob,
-    };
+    use crate::entity::MobParts as _;
+    use crate::entity::component::Has;
+    use crate::entity::component::definition::MobDefinition;
+    use crate::entity::{Entity, EntityBase, EntityFluidContact, LivingEntity, LivingEntityBase};
+    use crate::entity::{EntitySyncedData, MobProps, mob};
+    use std::sync::LazyLock;
+    use steel_registry::vanilla_entity_data::MobEntityData;
+    use steel_utils::{DowncastType as _, DowncastTypeKey, ErasedType};
 
     struct TestPathfinderMob {
         base: EntityBase,
         living_base: LivingEntityBase,
         mob_base: MobBase,
-        mob_flags: SyncMutex<i8>,
+        entity_data: SyncMutex<MobEntityData>,
         health: SyncMutex<f32>,
     }
 
@@ -74,8 +79,8 @@ mod tests {
             Self {
                 base,
                 living_base: LivingEntityBase::new(&vanilla_entities::PIG),
-                mob_base: MobBase::new(),
-                mob_flags: SyncMutex::new(0),
+                mob_base: MobBase::new(&TestPathfinderMob::MOB),
+                entity_data: SyncMutex::new(MobEntityData::new()),
                 health: SyncMutex::new(10.0),
             }
         }
@@ -83,7 +88,28 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(TestPathfinderMob);
 
+    impl TestPathfinderMob {
+        const MOB: MobProps = MobProps {
+            pathfinder: true,
+            ..MobProps::new(|| TestPathfinderMob::definition())
+        };
+
+        fn definition() -> &'static MobDefinition<Self> {
+            static DEFINITION: LazyLock<MobDefinition<TestPathfinderMob>> =
+                LazyLock::new(mob::stages::definition);
+            &DEFINITION
+        }
+    }
+
     impl Entity for TestPathfinderMob {
+        fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+            (key == MobBase::TYPE_KEY).then_some(&self.mob_base as &dyn ErasedType)
+        }
+
+        fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+            Some(&self.entity_data)
+        }
+
         fn base(&self) -> &EntityBase {
             &self.base
         }
@@ -107,21 +133,11 @@ mod tests {
         }
     }
 
-    impl Mob for TestPathfinderMob {
-        fn mob_base(&self) -> &MobBase {
+    impl Has<MobBase> for TestPathfinderMob {
+        fn component(&self) -> &MobBase {
             &self.mob_base
         }
-
-        fn mob_flags(&self) -> i8 {
-            *self.mob_flags.lock()
-        }
-
-        fn set_mob_flags(&self, flags: i8) {
-            *self.mob_flags.lock() = flags;
-        }
     }
-
-    impl PathfinderMob for TestPathfinderMob {}
 
     #[test]
     fn float_goal_sets_navigation_can_float() {
@@ -142,8 +158,8 @@ mod tests {
         lava_mob.set_first_tick(false);
         let mut goal = FloatGoal;
 
-        assert!(!goal.can_use(&shallow_water_mob));
-        assert!(goal.can_use(&deep_water_mob));
-        assert!(goal.can_use(&lava_mob));
+        assert!(!goal.can_use(&shallow_water_mob.mob()));
+        assert!(goal.can_use(&deep_water_mob.mob()));
+        assert!(goal.can_use(&lava_mob.mob()));
     }
 }

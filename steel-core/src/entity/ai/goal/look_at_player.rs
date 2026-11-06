@@ -4,7 +4,7 @@ use super::reduced_tick_delay;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
+use crate::entity::{LivingEntity, Mob, SharedEntity};
 use crate::world::World;
 
 const DEFAULT_PROBABILITY: f32 = 0.02;
@@ -112,7 +112,7 @@ impl Goal for LookAtPlayerGoal {
         self.controls
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         if rand::random::<f32>() >= self.probability {
             return false;
         }
@@ -127,7 +127,9 @@ impl Goal for LookAtPlayerGoal {
             LookAtTargetType::Player => world
                 .nearest_player(origin, self.look_distance, |player| {
                     !mob.has_indirect_passenger(player)
-                        && self.look_at_context.test(world.as_ref(), Some(mob), player)
+                        && self
+                            .look_at_context
+                            .test(world.as_ref(), Some(mob.living()), player)
                 })
                 .map(|player| -> SharedEntity { player }),
             LookAtTargetType::LivingEntity(selector) => {
@@ -137,7 +139,9 @@ impl Goal for LookAtPlayerGoal {
                 world.nearest_entity_in_aabb_matching(&search_box, origin, |entity| {
                     entity.as_living_entity().is_some_and(|living| {
                         selector(living, world.as_ref())
-                            && self.look_at_context.test(world.as_ref(), Some(mob), living)
+                            && self
+                                .look_at_context
+                                .test(world.as_ref(), Some(mob.living()), living)
                     })
                 })
             }
@@ -146,7 +150,7 @@ impl Goal for LookAtPlayerGoal {
         self.look_at.is_some()
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(look_at) = &self.look_at else {
             return false;
         };
@@ -162,15 +166,15 @@ impl Goal for LookAtPlayerGoal {
         self.look_time > 0
     }
 
-    fn start(&mut self, _mob: &dyn PathfinderMob) {
+    fn start(&mut self, _mob: &Mob<'_>) {
         self.look_time = reduced_tick_delay(40 + rand::random_range(0..40));
     }
 
-    fn stop(&mut self, _mob: &dyn PathfinderMob) {
+    fn stop(&mut self, _mob: &Mob<'_>) {
         self.look_at = None;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         let Some(look_at) = &self.look_at else {
             return;
         };
@@ -198,6 +202,7 @@ mod tests {
     use std::sync::Weak;
 
     use super::*;
+    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
@@ -236,7 +241,7 @@ mod tests {
         let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
         let mut goal = LookAtPlayerGoal::new(6.0);
 
-        goal.start(&pig);
+        goal.start(&pig.mob());
 
         assert!(
             (reduced_tick_delay(40)..=reduced_tick_delay(79)).contains(&goal.look_time),

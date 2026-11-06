@@ -23,7 +23,7 @@ use crate::entity::component::entries::{
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::next_entity_id;
-use crate::entity::{AgeableMobGroupData, ENTITIES, Entity, Mob, SharedEntity, SpawnGroupData};
+use crate::entity::{AgeableMobGroupData, ENTITIES, Entity, SharedEntity, SpawnGroupData, mob};
 use crate::world::World;
 
 /// Age assigned to a newly spawned or bred baby (`AgeableMob.BABY_START_AGE`).
@@ -302,8 +302,8 @@ pub fn finalize_spawn<E: Entity + Has<Age>>() -> Stage<E, FinalizeSpawn> {
 
 /// The `AgeableMob.mobInteract` stage: toggles a baby's age lock when fed a
 /// golden dandelion.
-pub fn mob_interact<E: Mob + Has<Age>>() -> Stage<E, MobInteract> {
-    fn run<E: Mob + Has<Age>>(entity: &E, ctx: &mut MobInteractCtx<'_>) -> Flow {
+pub fn mob_interact<E: mob::Parts + Has<Age>>() -> Stage<E, MobInteract> {
+    fn run<E: mob::Parts + Has<Age>>(entity: &E, ctx: &mut MobInteractCtx<'_>) -> Flow {
         let ageable = Ageable::new(entity, entity.get::<Age>());
         let holds_dandelion = ctx
             .player
@@ -325,10 +325,10 @@ pub fn mob_interact<E: Mob + Has<Age>>() -> Stage<E, MobInteract> {
         ageable.set_age_locked(age_locked);
         ageable.set_age(BABY_START_AGE);
         ageable.age.state.lock().age_lock_particle_timer = AGE_LOCK_COOLDOWN_TICKS;
-        entity.use_player_item(ctx.player, ctx.hand);
+        entity.mob().use_player_item(ctx.player, ctx.hand);
 
         if age_locked {
-            entity.set_persistence_required();
+            entity.mob().set_persistence_required();
         }
         if let Some(world) = entity.level() {
             let sound = if age_locked {

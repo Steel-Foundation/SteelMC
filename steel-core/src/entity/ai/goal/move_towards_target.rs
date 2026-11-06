@@ -4,7 +4,7 @@ use glam::DVec3;
 
 use super::random_pos::default_random_pos_towards;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{PathfinderMob, SharedEntity};
+use crate::entity::{Mob, SharedEntity};
 
 pub struct MoveTowardsTargetGoal {
     target: Option<SharedEntity>,
@@ -34,7 +34,7 @@ impl Goal for MoveTowardsTargetGoal {
         GoalControls::MOVE
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(target) = mob.target() else {
             return false;
         };
@@ -53,7 +53,7 @@ impl Goal for MoveTowardsTargetGoal {
         true
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(target) = &self.target else {
             return false;
         };
@@ -63,11 +63,11 @@ impl Goal for MoveTowardsTargetGoal {
             && target.position().distance_squared(mob.position()) < self.within_distance_sqr()
     }
 
-    fn stop(&mut self, _mob: &dyn PathfinderMob) {
+    fn stop(&mut self, _mob: &Mob<'_>) {
         self.target = None;
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         if let Some(wanted_position) = self.wanted_position {
             mob.move_to_pos(wanted_position, self.speed_modifier);
         }
@@ -81,7 +81,8 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::{Mob, entities::ChickenEntity};
+    use crate::entity::MobParts as _;
+    use crate::entity::entities::ChickenEntity;
 
     #[test]
     fn move_towards_target_goal_uses_move_control() {
@@ -96,7 +97,7 @@ mod tests {
         let mut goal = MoveTowardsTargetGoal::new(1.0, 16.0);
         let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]
@@ -110,8 +111,8 @@ mod tests {
             DVec3::new(9.0, 0.0, 0.0),
             Weak::new(),
         ));
-        assert!(mob.set_target(Some(&target)));
+        assert!(mob.mob().set_target(Some(&target)));
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 }

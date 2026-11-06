@@ -194,14 +194,16 @@ fn living_death_loot_table_uses_default_and_custom_mob_tables() {
         &vanilla_loot_tables::ENTITIES_CHICKEN.key
     );
 
-    pig.set_death_loot_table(Some(Identifier::vanilla_static("entities/cow")));
+    pig.mob()
+        .set_death_loot_table(Some(Identifier::vanilla_static("entities/cow")));
     let Some(custom_table) = pig.death_loot_table() else {
         panic!("custom cow loot table should resolve");
     };
     assert_eq!(&custom_table.key, &vanilla_loot_tables::ENTITIES_COW.key);
     assert_eq!(LivingEntity::death_loot_table_seed(&pig), 0);
 
-    pig.set_death_loot_table(Some(Identifier::vanilla_static("entities/not_real")));
+    pig.mob()
+        .set_death_loot_table(Some(Identifier::vanilla_static("entities/not_real")));
     assert!(pig.death_loot_table().is_none());
 }
 

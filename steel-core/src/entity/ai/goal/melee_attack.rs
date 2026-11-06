@@ -5,7 +5,7 @@ use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::path::Path;
 use crate::entity::entity_selector;
-use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
+use crate::entity::{LivingEntity, Mob, SharedEntity};
 
 const ATTACK_INTERVAL_TICKS: i32 = 20;
 const COOLDOWN_BETWEEN_CAN_USE_CHECKS: i64 = 20;
@@ -45,7 +45,7 @@ impl MeleeAttackGoal {
 
     fn check_and_perform_attack(
         &mut self,
-        mob: &dyn PathfinderMob,
+        mob: &Mob<'_>,
         entity: &SharedEntity,
         target: &SharedEntity,
     ) {
@@ -71,7 +71,7 @@ impl MeleeAttackGoal {
         self.ticks_until_next_attack <= 0
     }
 
-    fn can_perform_attack(&self, mob: &dyn PathfinderMob, target: &dyn LivingEntity) -> bool {
+    fn can_perform_attack(&self, mob: &Mob<'_>, target: &dyn LivingEntity) -> bool {
         self.is_time_to_attack()
             && mob.is_within_melee_attack_range(target)
             && mob.has_line_of_sight_cached(target)
@@ -89,7 +89,7 @@ impl MeleeAttackGoal {
         self.pathed_target.x == 0.0 && self.pathed_target.y == 0.0 && self.pathed_target.z == 0.0
     }
 
-    fn should_recalculate_path(&mut self, mob: &dyn PathfinderMob, target: &SharedEntity) -> bool {
+    fn should_recalculate_path(&mut self, mob: &Mob<'_>, target: &SharedEntity) -> bool {
         let Some(target_living) = target.as_living_entity() else {
             return false;
         };
@@ -111,7 +111,7 @@ impl MeleeAttackGoal {
         rand::random::<f32>() < RANDOM_PATH_RECALC_CHANCE
     }
 
-    fn recalculate_path(&mut self, mob: &dyn PathfinderMob, target: &SharedEntity) {
+    fn recalculate_path(&mut self, mob: &Mob<'_>, target: &SharedEntity) {
         self.pathed_target = target.position();
         let random_delay = rand::random_range(0..PATH_RECALC_RANDOM_TICKS);
         self.ticks_until_next_path_recalculation = PATH_RECALC_BASE_TICKS + random_delay;
@@ -137,7 +137,7 @@ impl Goal for MeleeAttackGoal {
         GoalControls::MOVE | GoalControls::LOOK
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(world) = mob.level() else {
             return false;
         };
@@ -161,7 +161,7 @@ impl Goal for MeleeAttackGoal {
         self.path.is_some() || mob.is_within_melee_attack_range(target_living)
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(target) = mob.target() else {
             return false;
         };
@@ -178,7 +178,7 @@ impl Goal for MeleeAttackGoal {
         entity_selector::no_creative_or_spectator(target.as_ref())
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         if let Some(path) = self.path.take() {
             mob.move_to_path(Some(path), self.speed_modifier);
         } else {
@@ -189,7 +189,7 @@ impl Goal for MeleeAttackGoal {
         self.ticks_until_next_attack = 0;
     }
 
-    fn stop(&mut self, mob: &dyn PathfinderMob) {
+    fn stop(&mut self, mob: &Mob<'_>) {
         if mob
             .target()
             .as_ref()
@@ -206,7 +206,7 @@ impl Goal for MeleeAttackGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, entity: &SharedEntity) {
         let Some(target) = mob.target() else {
             return;
         };
@@ -237,8 +237,10 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+
+    use crate::entity::MobParts as _;
     use crate::entity::ai::goal::selector::Goal;
-    use crate::entity::{Mob, entities::ChickenEntity};
+    use crate::entity::entities::ChickenEntity;
 
     fn pig(id: i32, position: DVec3) -> ChickenEntity {
         ChickenEntity::new(&vanilla_entities::CHICKEN, id, position, Weak::new())
@@ -262,9 +264,9 @@ mod tests {
         let mut goal = MeleeAttackGoal::new(1.0, true);
         let mob = pig(1, DVec3::ZERO);
         let target = shared_pig(2, DVec3::new(1.0, 0.0, 0.0));
-        assert!(mob.set_target(Some(&target)));
+        assert!(mob.mob().set_target(Some(&target)));
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]
@@ -273,10 +275,10 @@ mod tests {
         let mut goal = MeleeAttackGoal::new(1.0, true);
         let mob = pig(1, DVec3::ZERO);
 
-        goal.start(&mob);
+        goal.start(&mob.mob());
 
-        assert!(mob.is_aggressive());
-        assert!(mob.mob_base().navigation().lock().is_done());
+        assert!(mob.mob().is_aggressive());
+        assert!(mob.mob().mob_base().navigation().lock().is_done());
         assert_eq!(goal.ticks_until_next_path_recalculation, 0);
         assert_eq!(goal.get_ticks_until_next_attack(), 0);
     }
@@ -286,16 +288,17 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MeleeAttackGoal::new(1.0, true);
         let mob = pig(1, DVec3::ZERO);
-        mob.set_aggressive(true);
-        mob.mob_base()
+        mob.mob().set_aggressive(true);
+        mob.mob()
+            .mob_base()
             .navigation()
             .lock()
             .set_direct_target(DVec3::new(4.0, 0.0, 0.0), 1.0);
 
-        goal.stop(&mob);
+        goal.stop(&mob.mob());
 
-        assert!(!mob.is_aggressive());
-        assert!(mob.mob_base().navigation().lock().is_done());
+        assert!(!mob.mob().is_aggressive());
+        assert!(mob.mob().mob_base().navigation().lock().is_done());
     }
 
     #[test]
@@ -304,16 +307,17 @@ mod tests {
         let mut goal = MeleeAttackGoal::new(1.0, false);
         let mob = pig(1, DVec3::ZERO);
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));
-        assert!(mob.set_target(Some(&target)));
+        assert!(mob.mob().set_target(Some(&target)));
 
-        assert!(!goal.can_continue_to_use(&mob));
+        assert!(!goal.can_continue_to_use(&mob.mob()));
 
-        mob.mob_base()
+        mob.mob()
+            .mob_base()
             .navigation()
             .lock()
             .set_direct_target(DVec3::new(4.0, 0.0, 0.0), 1.0);
 
-        assert!(goal.can_continue_to_use(&mob));
+        assert!(goal.can_continue_to_use(&mob.mob()));
     }
 
     #[test]
@@ -323,12 +327,12 @@ mod tests {
         let mob = Arc::new(pig(1, DVec3::ZERO));
         let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));
-        assert!(mob.set_target(Some(&target)));
+        assert!(mob.mob().set_target(Some(&target)));
 
-        goal.tick(mob.as_ref(), &mob_entity);
+        goal.tick(&mob.mob(), &mob_entity);
 
         assert_eq!(goal.pathed_target, target.position());
         assert!(goal.ticks_until_next_path_recalculation > 0);
-        assert!(mob.mob_base().navigation().lock().is_done());
+        assert!(mob.mob().mob_base().navigation().lock().is_done());
     }
 }

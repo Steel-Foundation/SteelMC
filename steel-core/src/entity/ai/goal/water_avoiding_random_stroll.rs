@@ -3,7 +3,7 @@ use glam::DVec3;
 use super::random_pos::{default_random_pos, land_random_pos};
 use super::random_stroll::RandomStrollGoal;
 use super::selector::{Goal, GoalControls};
-use crate::entity::PathfinderMob;
+use crate::entity::Mob;
 
 const WATER_AVOIDING_RANDOM_STROLL_PROBABILITY: f32 = 0.001;
 
@@ -32,26 +32,26 @@ impl Goal for WaterAvoidingRandomStrollGoal {
         self.stroll.controls()
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         let probability = self.probability;
         self.stroll
             .can_use_with_position(mob, |mob| random_stroll_pos(mob, probability))
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         self.stroll.can_continue_to_use(mob)
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         self.stroll.start(mob);
     }
 
-    fn stop(&mut self, mob: &dyn PathfinderMob) {
+    fn stop(&mut self, mob: &Mob<'_>) {
         self.stroll.stop(mob);
     }
 }
 
-fn random_stroll_pos(mob: &dyn PathfinderMob, probability: f32) -> Option<DVec3> {
+fn random_stroll_pos(mob: &Mob<'_>, probability: f32) -> Option<DVec3> {
     if mob.is_in_water() {
         return land_random_pos(mob, 15, 7).or_else(|| default_random_pos(mob, 10, 7));
     }

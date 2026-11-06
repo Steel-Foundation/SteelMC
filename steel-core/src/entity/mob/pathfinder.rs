@@ -13,14 +13,14 @@ use crate::entity::ai::navigation::{
 };
 use crate::entity::ai::path::Path;
 use crate::entity::ai::walk::{MobPathSettings, WalkNodeEvaluator};
-use crate::entity::{Animal, Entity, LivingEntity, SharedEntity};
+use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
 
 pub(super) const LEASH_CLOSE_RANGE_WANTED_DISTANCE: f64 = 2.0;
 
-pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
-    mob: &M,
+pub(super) fn tick_path_navigation_target(
+    mob: &Mob<'_>,
     world: &Arc<World>,
     game_time: i64,
     can_update_path: bool,
@@ -56,11 +56,7 @@ pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
     mob.set_wanted_position(DVec3::new(target.x, ground_y, target.z), speed_modifier);
 }
 
-fn ground_navigation_temp_mob_pos<M: Mob + ?Sized>(
-    mob: &M,
-    world: &World,
-    can_float: bool,
-) -> DVec3 {
+fn ground_navigation_temp_mob_pos(mob: &Mob<'_>, world: &World, can_float: bool) -> DVec3 {
     let position = mob.position();
     DVec3::new(
         position.x,
@@ -69,7 +65,7 @@ fn ground_navigation_temp_mob_pos<M: Mob + ?Sized>(
     )
 }
 
-fn ground_navigation_surface_y<M: Mob + ?Sized>(mob: &M, world: &World, can_float: bool) -> i32 {
+fn ground_navigation_surface_y(mob: &Mob<'_>, world: &World, can_float: bool) -> i32 {
     if !mob.is_in_water() || !can_float {
         return fast_floor(mob.position().y + 0.5);
     }
@@ -99,31 +95,26 @@ fn ground_navigation_surface_y<M: Mob + ?Sized>(mob: &M, world: &World, can_floa
     surface
 }
 
-pub trait PathfinderMob: Mob {
-    fn controlled_pathfinder_vehicle(&self) -> Option<SharedEntity> {
+impl Mob<'_> {
+    pub fn controlled_pathfinder_vehicle(&self) -> Option<SharedEntity> {
         let vehicle = self.controlled_mob_vehicle()?;
-        vehicle.as_pathfinder_mob()?;
-        Some(vehicle)
+        Mob::of(vehicle.as_ref())?
+            .is_pathfinder()
+            .then_some(vehicle)
     }
 
     /// Scores pathfinding positions: animals favor light, monsters darkness.
-    fn get_walk_target_value(&self, pos: BlockPos) -> f32 {
-        if let Some(monster) = self.as_monster() {
-            monster.get_walk_target_value_monster(pos)
-        } else if let Some(animal) = Animal::of(self.as_entity_event_source()) {
-            animal.walk_target_value(pos)
-        } else {
-            0.0
-        }
+    pub fn get_walk_target_value(&self, pos: BlockPos) -> f32 {
+        (self.props().walk_target_value)(self, pos)
     }
 
-    fn can_update_path(&self) -> bool {
+    pub fn can_update_path(&self) -> bool {
         self.on_ground() || self.is_in_water() || self.is_in_lava() || self.is_passenger()
     }
 
-    fn can_path_to_targets_below_surface(&self) -> bool {
+    pub fn can_path_to_targets_below_surface(&self) -> bool {
         if let Some(vehicle) = self.controlled_pathfinder_vehicle()
-            && let Some(pathfinder) = vehicle.as_pathfinder_mob()
+            && let Some(pathfinder) = Mob::of(vehicle.as_ref())
         {
             return pathfinder.can_path_to_targets_below_surface();
         }
@@ -134,53 +125,20 @@ pub trait PathfinderMob: Mob {
             .can_path_to_targets_below_surface()
     }
 
-    fn can_reach_living_target(&self, target: &dyn LivingEntity) -> bool {
+    pub fn can_reach_living_target(&self, target: &dyn LivingEntity) -> bool {
         let target_pos = target.block_position();
         self.create_path_to(target_pos, 0)
             .is_some_and(|path| path_end_node_can_reach_target(&path, target_pos))
     }
 
-    fn tick_pathfinder_path_navigation(&self) {
-        let Some(world) = self.level() else {
-            return;
-        };
-        let game_time = world.game_time();
-        let recompute_request = {
-            let mut navigation = self.mob_base().navigation().lock();
-            navigation.tick();
-            navigation.take_delayed_recompute_request(game_time, self.can_update_path())
-        };
-        if let Some(request) = recompute_request {
-            self.recompute_path(request);
-        }
-
-        tick_path_navigation_target(self, &world, game_time, self.can_update_path());
-    }
-
-    fn tick_pathfinder_goal_selectors(&self, entity: &SharedEntity)
-    where
-        Self: Sized,
-    {
-        let id_based_tick_count = self.tick_count().wrapping_add(self.id());
-        let mut target_selector = self.mob_base().target_selector().lock();
-        let mut goal_selector = self.mob_base().goal_selector().lock();
-        if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
-            target_selector.tick_running_goals(self, entity, false);
-            goal_selector.tick_running_goals(self, entity, false);
-        } else {
-            target_selector.tick(self, entity);
-            goal_selector.tick(self, entity);
-        }
-    }
-
-    fn is_stable_destination(&self, pos: BlockPos) -> bool {
+    pub fn is_stable_destination(&self, pos: BlockPos) -> bool {
         self.level()
             .is_some_and(|world| world.get_block_state(pos.below()).is_solid_render())
     }
 
-    fn create_path_to(&self, target: BlockPos, reach_range: i32) -> Option<Path> {
+    pub fn create_path_to(&self, target: BlockPos, reach_range: i32) -> Option<Path> {
         if let Some(vehicle) = self.controlled_pathfinder_vehicle()
-            && let Some(pathfinder) = vehicle.as_pathfinder_mob()
+            && let Some(pathfinder) = Mob::of(vehicle.as_ref())
         {
             return pathfinder.create_path_to(target, reach_range);
         }
@@ -195,9 +153,9 @@ pub trait PathfinderMob: Mob {
         self.create_path_to_targets(&world, &targets, reach_range)
     }
 
-    fn recompute_path(&self, request: NavigationRecomputeRequest) {
+    pub fn recompute_path(&self, request: NavigationRecomputeRequest) {
         if let Some(vehicle) = self.controlled_pathfinder_vehicle()
-            && let Some(pathfinder) = vehicle.as_pathfinder_mob()
+            && let Some(pathfinder) = Mob::of(vehicle.as_ref())
         {
             pathfinder.recompute_path(request);
             return;
@@ -210,13 +168,18 @@ pub trait PathfinderMob: Mob {
             .complete_recompute_path(path, request.game_time);
     }
 
-    fn move_to_pos(&self, target: DVec3, speed_modifier: f64) -> bool {
+    pub fn move_to_pos(&self, target: DVec3, speed_modifier: f64) -> bool {
         self.move_to_pos_with_reach(target, 1, speed_modifier)
     }
 
-    fn move_to_pos_with_reach(&self, target: DVec3, reach_range: i32, speed_modifier: f64) -> bool {
+    pub fn move_to_pos_with_reach(
+        &self,
+        target: DVec3,
+        reach_range: i32,
+        speed_modifier: f64,
+    ) -> bool {
         if let Some(vehicle) = self.controlled_pathfinder_vehicle()
-            && let Some(pathfinder) = vehicle.as_pathfinder_mob()
+            && let Some(pathfinder) = Mob::of(vehicle.as_ref())
         {
             return pathfinder.move_to_pos_with_reach(target, reach_range, speed_modifier);
         }
@@ -251,9 +214,9 @@ pub trait PathfinderMob: Mob {
         self.move_to_path(path, speed_modifier)
     }
 
-    fn move_to_path(&self, path: Option<Path>, speed_modifier: f64) -> bool {
+    pub fn move_to_path(&self, path: Option<Path>, speed_modifier: f64) -> bool {
         if let Some(vehicle) = self.controlled_pathfinder_vehicle()
-            && let Some(pathfinder) = vehicle.as_pathfinder_mob()
+            && let Some(pathfinder) = Mob::of(vehicle.as_ref())
         {
             return pathfinder.move_to_path(path, speed_modifier);
         }
@@ -271,9 +234,9 @@ pub trait PathfinderMob: Mob {
         navigation.move_to(world.as_ref(), path, speed_modifier, self.position())
     }
 
-    fn is_path_finding(&self) -> bool {
+    pub fn is_path_finding(&self) -> bool {
         if let Some(vehicle) = self.controlled_pathfinder_vehicle()
-            && let Some(pathfinder) = vehicle.as_pathfinder_mob()
+            && let Some(pathfinder) = Mob::of(vehicle.as_ref())
         {
             return pathfinder.is_path_finding();
         }
@@ -281,23 +244,23 @@ pub trait PathfinderMob: Mob {
         !self.mob_base().navigation().lock().is_done()
     }
 
-    fn is_panicking(&self) -> bool {
+    pub fn is_panicking(&self) -> bool {
         self.mob_base()
             .goal_selector()
             .lock()
             .has_running_panic_goal()
     }
 
-    fn should_stay_close_to_leash_holder(&self) -> bool {
-        true
+    pub const fn should_stay_close_to_leash_holder(&self) -> bool {
+        self.props().stay_close_to_leash_holder
     }
 
-    fn follow_leash_speed(&self) -> f64 {
-        1.0
+    pub const fn follow_leash_speed(&self) -> f64 {
+        self.props().follow_leash_speed
     }
 
-    fn when_leashed_to_pathfinder(&self, holder: &dyn Entity) {
-        let radius = self.leash_elastic_distance() as i32 - 1;
+    pub fn when_leashed_to_pathfinder(&self, holder: &dyn Entity) {
+        let radius = self.leashable().leash_elastic_distance() as i32 - 1;
         self.set_home_to(holder.block_position(), radius);
         holder.notify_leash_holder(self.as_entity_event_source());
     }
@@ -306,7 +269,7 @@ pub trait PathfinderMob: Mob {
     ///
     /// Brain-based panic detection awaits Brain support; Steel uses vanilla's
     /// running-`PanicGoal` fallback.
-    fn close_range_leash_behaviour_pathfinder(&self, holder: &dyn Entity) {
+    pub fn close_range_leash_behaviour_pathfinder(&self, holder: &dyn Entity) {
         if !self.should_stay_close_to_leash_holder() || self.is_panicking() {
             return;
         }
@@ -323,7 +286,7 @@ pub trait PathfinderMob: Mob {
 
     /// Stops and removes matching goals. Lives on `PathfinderMob` rather than
     /// vanilla's `Mob` because Steel's goal hooks require pathfinding mobs.
-    fn remove_all_goals(&self, predicate: impl FnMut(&dyn Goal) -> bool)
+    pub fn remove_all_goals(&self, predicate: impl FnMut(&dyn Goal) -> bool)
     where
         Self: Sized,
     {
@@ -333,7 +296,7 @@ pub trait PathfinderMob: Mob {
             .remove_all_goals(self, predicate);
     }
 
-    fn remove_free_will(&self)
+    pub fn remove_free_will(&self)
     where
         Self: Sized,
     {
@@ -341,14 +304,14 @@ pub trait PathfinderMob: Mob {
         // Vanilla also removes all brain behaviors; Steel has no brain system.
     }
 
-    fn create_path_to_targets(
+    pub fn create_path_to_targets(
         &self,
         world: &Arc<World>,
         targets: &[BlockPos],
         reach_range: i32,
     ) -> Option<Path> {
         if let Some(vehicle) = self.controlled_pathfinder_vehicle()
-            && let Some(pathfinder) = vehicle.as_pathfinder_mob()
+            && let Some(pathfinder) = Mob::of(vehicle.as_ref())
         {
             return pathfinder.create_path_to_targets(world, targets, reach_range);
         }
@@ -406,11 +369,7 @@ pub(super) fn path_end_node_can_reach_target(path: &Path, target: BlockPos) -> b
     f64::from(dx * dx + dz * dz) <= TARGET_REACH_DISTANCE_SQR
 }
 
-fn path_target_for_mob<M: PathfinderMob + ?Sized, L: LevelReader>(
-    mob: &M,
-    level: &L,
-    target: BlockPos,
-) -> BlockPos {
+fn path_target_for_mob<L: LevelReader>(mob: &Mob<'_>, level: &L, target: BlockPos) -> BlockPos {
     if mob.can_path_to_targets_below_surface() {
         target
     } else {

@@ -1,6 +1,6 @@
 use super::look_at_player::LookAtPlayerGoal;
 use super::selector::{Goal, GoalControls};
-use crate::entity::PathfinderMob;
+use crate::entity::Mob;
 use crate::entity::SharedEntity;
 
 pub struct InteractGoal {
@@ -26,23 +26,23 @@ impl Goal for InteractGoal {
         self.look_at.controls()
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         self.look_at.can_use(mob)
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         self.look_at.can_continue_to_use(mob)
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         self.look_at.start(mob);
     }
 
-    fn stop(&mut self, mob: &dyn PathfinderMob) {
+    fn stop(&mut self, mob: &Mob<'_>) {
         self.look_at.stop(mob);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, entity: &SharedEntity) {
         self.look_at.tick(mob, entity);
     }
 }

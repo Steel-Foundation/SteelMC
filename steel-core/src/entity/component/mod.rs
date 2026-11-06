@@ -67,4 +67,4 @@ pub trait Components {
     }
 }
 
-impl<T: ?Sized> Components for T {}
+impl<T: Entity + ?Sized> Components for T {}

@@ -4,7 +4,7 @@ use glam::DVec3;
 
 use super::random_pos::default_random_pos_towards;
 use super::selector::{Goal, GoalControls};
-use crate::entity::PathfinderMob;
+use crate::entity::Mob;
 
 pub struct MoveTowardsRestrictionGoal {
     wanted_position: Option<DVec3>,
@@ -26,7 +26,7 @@ impl Goal for MoveTowardsRestrictionGoal {
         GoalControls::MOVE
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         if mob.is_within_home() {
             return false;
         }
@@ -41,11 +41,11 @@ impl Goal for MoveTowardsRestrictionGoal {
         true
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         !mob.mob_base().navigation().lock().is_done()
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         if let Some(wanted_position) = self.wanted_position {
             mob.move_to_pos(wanted_position, self.speed_modifier);
         }
@@ -60,7 +60,8 @@ mod tests {
     use steel_utils::BlockPos;
 
     use super::*;
-    use crate::entity::{Mob, entities::ChickenEntity};
+    use crate::entity::MobParts as _;
+    use crate::entity::entities::ChickenEntity;
 
     #[test]
     fn move_towards_restriction_goal_uses_move_control() {
@@ -74,8 +75,8 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveTowardsRestrictionGoal::new(1.0);
         let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-        mob.set_home_to(BlockPos::ZERO, 4);
+        mob.mob().set_home_to(BlockPos::ZERO, 4);
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 }

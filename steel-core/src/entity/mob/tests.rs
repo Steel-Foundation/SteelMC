@@ -1,3 +1,4 @@
+use crate::entity::MobParts as _;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -22,6 +23,8 @@ use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MA
 use crate::entity::ai::goal::{Goal, GoalControl, GoalControls};
 use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
+use crate::entity::component::Has;
+use crate::entity::component::definition::MobDefinition;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ChickenEntity;
 use crate::entity::entities::objects::items::ItemEntity;
@@ -29,8 +32,9 @@ use crate::entity::leash::{LEASH_ELASTIC_DISTANCE, LEASH_SNAP_DISTANCE, Leashabl
 use crate::entity::mob::pathfinder::LEASH_CLOSE_RANGE_WANTED_DISTANCE;
 use crate::entity::mob::{Mob, MobBase};
 use crate::entity::{
-    Entity, EntityBase, LivingEntity, LivingEntityBase, PathfinderMob, SharedEntity, next_entity_id,
+    Entity, EntityBase, LivingEntity, LivingEntityBase, SharedEntity, next_entity_id,
 };
+use crate::entity::{EntitySyncedData, MobProps, mob};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::ResetReason;
 use crate::test_support::{
@@ -38,8 +42,11 @@ use crate::test_support::{
     insert_ready_full_chunk, test_world,
 };
 use crate::world::{LevelReader, World};
+use std::sync::LazyLock;
 use steel_registry::vanilla_dimension_types;
+use steel_registry::vanilla_entity_data::MobEntityData;
 use steel_utils::types::UpdateFlags;
+use steel_utils::{DowncastType as _, DowncastTypeKey, ErasedType};
 
 const INITIAL_TEST_HEALTH: f32 = 10.0;
 
@@ -60,9 +67,9 @@ fn spawner_obstruction_rejects_overlapping_players() {
         Arc::downgrade(world),
     );
 
-    assert!(!mob.check_spawn_obstruction(world));
+    assert!(!mob.mob().check_spawn_obstruction(world));
     mob.snap_to(position + DVec3::new(3.0, 0.0, 0.0), 0.0, 0.0);
-    assert!(mob.check_spawn_obstruction(world));
+    assert!(mob.mob().check_spawn_obstruction(world));
 }
 
 #[test]
@@ -122,7 +129,7 @@ struct DespawnTestMob {
     entity_type: EntityTypeRef,
     living_base: LivingEntityBase,
     mob_base: MobBase,
-    flags: SyncMutex<i8>,
+    entity_data: SyncMutex<MobEntityData>,
     health: SyncMutex<f32>,
     nearest_player_distance_sqr: Option<f64>,
     remove_when_far_away: bool,
@@ -169,8 +176,8 @@ impl DespawnTestMob {
             base: EntityBase::new(id, position, entity_type.dimensions, Weak::new()),
             entity_type,
             living_base: LivingEntityBase::new(entity_type),
-            mob_base: MobBase::new(),
-            flags: SyncMutex::new(0),
+            mob_base: MobBase::new(&DespawnTestMob::MOB),
+            entity_data: SyncMutex::new(MobEntityData::new()),
             can_be_leashed: SyncMutex::new(true),
             health: SyncMutex::new(INITIAL_TEST_HEALTH),
             nearest_player_distance_sqr,
@@ -192,8 +199,8 @@ impl DespawnTestMob {
             base: EntityBase::new(id, position, entity_type.dimensions, Arc::downgrade(world)),
             entity_type,
             living_base: LivingEntityBase::new(entity_type),
-            mob_base: MobBase::new(),
-            flags: SyncMutex::new(0),
+            mob_base: MobBase::new(&DespawnTestMob::MOB),
+            entity_data: SyncMutex::new(MobEntityData::new()),
             can_be_leashed: SyncMutex::new(true),
             health: SyncMutex::new(INITIAL_TEST_HEALTH),
             nearest_player_distance_sqr: None,
@@ -214,7 +221,45 @@ impl DespawnTestMob {
 
 crate::entity::impl_test_downcast_type!(DespawnTestMob);
 
+impl DespawnTestMob {
+    const MOB: MobProps = MobProps {
+        pathfinder: true,
+        remove_when_far_away: |mob, _| {
+            mob.entity()
+                .downcast_ref::<Self>()
+                .is_some_and(|mob| mob.remove_when_far_away)
+        },
+        preferred_weapon_type: |mob| {
+            mob.entity()
+                .downcast_ref::<Self>()?
+                .preferred_weapon_type
+                .lock()
+                .clone()
+        },
+        can_be_leashed: |mob| {
+            mob.entity()
+                .downcast_ref::<Self>()
+                .is_some_and(|mob| *mob.can_be_leashed.lock())
+        },
+        ..MobProps::new(|| DespawnTestMob::definition())
+    };
+
+    fn definition() -> &'static MobDefinition<Self> {
+        static DEFINITION: LazyLock<MobDefinition<DespawnTestMob>> =
+            LazyLock::new(mob::stages::definition);
+        &DEFINITION
+    }
+}
+
 impl Entity for DespawnTestMob {
+    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+        (key == MobBase::TYPE_KEY).then_some(&self.mob_base as &dyn ErasedType)
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -297,37 +342,11 @@ impl LivingEntity for HiddenTarget {
     }
 }
 
-impl Mob for DespawnTestMob {
-    fn mob_base(&self) -> &MobBase {
+impl Has<MobBase> for DespawnTestMob {
+    fn component(&self) -> &MobBase {
         &self.mob_base
     }
-
-    fn mob_flags(&self) -> i8 {
-        *self.flags.lock()
-    }
-
-    fn set_mob_flags(&self, flags: i8) {
-        *self.flags.lock() = flags;
-    }
-
-    fn remove_when_far_away(&self, _dist_sqr: f64) -> bool {
-        self.remove_when_far_away
-    }
-
-    fn nearest_player_distance_sqr(&self) -> Option<f64> {
-        self.nearest_player_distance_sqr
-    }
-
-    fn get_preferred_weapon_type(&self) -> Option<Identifier> {
-        self.preferred_weapon_type.lock().clone()
-    }
-
-    fn mob_can_be_leashed(&self) -> bool {
-        *self.can_be_leashed.lock()
-    }
 }
-
-impl PathfinderMob for DespawnTestMob {}
 
 struct MobControlVehicleEntity {
     base: EntityBase,
@@ -357,7 +376,7 @@ impl Entity for MobControlVehicleEntity {
 
 #[test]
 fn mob_base_uses_vanilla_fire_path_malus_defaults() {
-    let base = MobBase::new();
+    let base = MobBase::new(&DespawnTestMob::MOB);
     let malus = base.pathfinding_malus().lock();
 
     assert_eq!(
@@ -372,14 +391,15 @@ fn mob_base_uses_vanilla_fire_path_malus_defaults() {
 fn pathfinder_mob_reads_below_surface_capability_from_navigation() {
     let mob = DespawnTestMob::new(None, false);
 
-    assert!(!mob.can_path_to_targets_below_surface());
+    assert!(!mob.mob().can_path_to_targets_below_surface());
 
-    mob.mob_base()
+    mob.mob()
+        .mob_base()
         .navigation()
         .lock()
         .set_can_path_to_targets_below_surface(true);
 
-    assert!(mob.can_path_to_targets_below_surface());
+    assert!(mob.mob().can_path_to_targets_below_surface());
 }
 
 #[test]
@@ -388,7 +408,7 @@ fn mob_server_ai_step_increments_no_action_time() {
     let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
 
     mob.set_no_action_time(12);
-    mob.mob_server_ai_step(&mob_entity);
+    mob.mob().mob_server_ai_step(&mob_entity);
 
     assert_eq!(mob.no_action_time(), 13);
 }
@@ -397,15 +417,15 @@ fn mob_server_ai_step_increments_no_action_time() {
 fn mob_control_flags_enable_goals_without_controller_or_boat() {
     let mob = DespawnTestMob::new(None, false);
     {
-        let mut selector = mob.mob_base().goal_selector().lock();
+        let mut selector = mob.mob().mob_base().goal_selector().lock();
         selector.disable_control(GoalControl::Move);
         selector.disable_control(GoalControl::Jump);
         selector.disable_control(GoalControl::Look);
     }
 
-    mob.update_control_flags();
+    mob.mob().update_control_flags();
 
-    let selector = mob.mob_base().goal_selector().lock();
+    let selector = mob.mob().mob_base().goal_selector().lock();
     assert!(!selector.is_control_disabled(GoalControl::Move));
     assert!(!selector.is_control_disabled(GoalControl::Jump));
     assert!(!selector.is_control_disabled(GoalControl::Look));
@@ -418,9 +438,9 @@ fn mob_control_flags_disable_goals_for_mob_controller() {
         Arc::new(DespawnTestMob::with_position(2, DVec3::ZERO, None, false));
     mob.set_controlling_passenger(controller);
 
-    mob.update_control_flags();
+    mob.mob().update_control_flags();
 
-    let selector = mob.mob_base().goal_selector().lock();
+    let selector = mob.mob().mob_base().goal_selector().lock();
     assert!(selector.is_control_disabled(GoalControl::Move));
     assert!(selector.is_control_disabled(GoalControl::Jump));
     assert!(selector.is_control_disabled(GoalControl::Look));
@@ -433,9 +453,9 @@ fn mob_control_flags_disable_jump_when_riding_boat() {
     let boat: SharedEntity = Arc::new(MobControlVehicleEntity::new(2, &vanilla_entities::OAK_BOAT));
     EntityBase::restore_passenger_relationship(&boat, &mob_entity);
 
-    mob.update_control_flags();
+    mob.mob().update_control_flags();
 
-    let selector = mob.mob_base().goal_selector().lock();
+    let selector = mob.mob().mob_base().goal_selector().lock();
     assert!(!selector.is_control_disabled(GoalControl::Move));
     assert!(selector.is_control_disabled(GoalControl::Jump));
     assert!(!selector.is_control_disabled(GoalControl::Look));
@@ -447,7 +467,7 @@ fn mob_attack_damage_source_uses_item_damage_type_component() {
     let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let spear = ItemStack::new(&vanilla_items::WOODEN_SPEAR);
 
-    let source = mob.mob_attack_damage_source(&spear, &mob_entity);
+    let source = Mob::mob_attack_damage_source(&spear, &mob_entity);
 
     assert_eq!(source.damage_type.key, vanilla_damage_types::SPEAR.key);
     assert_eq!(
@@ -465,9 +485,9 @@ fn mob_target_stores_living_target_weakly() {
     let mob = DespawnTestMob::new(None, false);
     let target: SharedEntity = Arc::new(DespawnTestMob::with_position(2, DVec3::ZERO, None, false));
 
-    assert!(mob.set_target(Some(&target)));
+    assert!(mob.mob().set_target(Some(&target)));
 
-    let stored = mob.target().expect("living target should be stored");
+    let stored = mob.mob().target().expect("living target should be stored");
     assert!(Arc::ptr_eq(&stored, &target));
 }
 
@@ -475,11 +495,11 @@ fn mob_target_stores_living_target_weakly() {
 fn mob_target_can_be_cleared() {
     let mob = DespawnTestMob::new(None, false);
     let target: SharedEntity = Arc::new(DespawnTestMob::with_position(2, DVec3::ZERO, None, false));
-    assert!(mob.set_target(Some(&target)));
+    assert!(mob.mob().set_target(Some(&target)));
 
-    assert!(mob.set_target(None));
+    assert!(mob.mob().set_target(None));
 
-    assert!(mob.target().is_none());
+    assert!(mob.mob().target().is_none());
 }
 
 #[test]
@@ -488,10 +508,10 @@ fn mob_target_expires_with_target_entity() {
     {
         let target: SharedEntity =
             Arc::new(DespawnTestMob::with_position(2, DVec3::ZERO, None, false));
-        assert!(mob.set_target(Some(&target)));
+        assert!(mob.mob().set_target(Some(&target)));
     }
 
-    assert!(mob.target().is_none());
+    assert!(mob.mob().target().is_none());
 }
 
 #[test]
@@ -500,9 +520,9 @@ fn mob_target_rejects_non_living_entities() {
     let target: SharedEntity =
         Arc::new(MobControlVehicleEntity::new(2, &vanilla_entities::OAK_BOAT));
 
-    assert!(!mob.set_target(Some(&target)));
+    assert!(!mob.mob().set_target(Some(&target)));
 
-    assert!(mob.target().is_none());
+    assert!(mob.mob().target().is_none());
 }
 
 #[test]
@@ -510,9 +530,9 @@ fn mob_target_rejects_targets_it_cannot_attack() {
     let mob = DespawnTestMob::new(None, false);
     let target = HiddenTarget::shared(2);
 
-    assert!(!mob.set_target(Some(&target)));
+    assert!(!mob.mob().set_target(Some(&target)));
 
-    assert!(mob.target().is_none());
+    assert!(mob.mob().target().is_none());
 }
 
 #[test]
@@ -520,11 +540,12 @@ fn mob_target_filters_invalid_target_without_clearing_stored_target() {
     let mob = DespawnTestMob::new(None, false);
     let target: SharedEntity = Arc::new(DespawnTestMob::with_position(2, DVec3::ZERO, None, false));
 
-    assert!(mob.mob_base().set_target(Some(&target), |_| true));
+    assert!(mob.mob().mob_base().set_target(Some(&target), |_| true));
 
-    assert!(mob.mob_base().target(|_| false).is_none());
+    assert!(mob.mob().mob_base().target(|_| false).is_none());
 
     let stored = mob
+        .mob()
         .mob_base()
         .target(|_| true)
         .expect("temporary invalidity must not clear the stored target");
@@ -538,10 +559,10 @@ fn mob_target_clears_previous_target_when_new_target_is_invalid() {
         Arc::new(DespawnTestMob::with_position(2, DVec3::ZERO, None, false));
     let invalid = HiddenTarget::shared(3);
 
-    assert!(mob.set_target(Some(&previous)));
-    assert!(!mob.set_target(Some(&invalid)));
+    assert!(mob.mob().set_target(Some(&previous)));
+    assert!(!mob.mob().set_target(Some(&invalid)));
 
-    assert!(mob.target().is_none());
+    assert!(mob.mob().target().is_none());
 }
 
 #[test]
@@ -550,8 +571,8 @@ fn melee_attack_range_uses_vanilla_default_reach() {
     let close_target = DespawnTestMob::with_position(2, DVec3::new(1.7, 0.0, 0.0), None, false);
     let far_target = DespawnTestMob::with_position(3, DVec3::new(1.8, 0.0, 0.0), None, false);
 
-    assert!(mob.is_within_melee_attack_range(&close_target));
-    assert!(!mob.is_within_melee_attack_range(&far_target));
+    assert!(mob.mob().is_within_melee_attack_range(&close_target));
+    assert!(!mob.mob().is_within_melee_attack_range(&far_target));
 }
 
 #[test]
@@ -564,13 +585,13 @@ fn melee_attack_range_uses_vehicle_expanded_attack_box() {
     ));
     let target = DespawnTestMob::with_position(2, DVec3::new(1.1, 0.0, 0.0), None, false);
 
-    assert!(!mob.is_within_melee_attack_range(&target));
+    assert!(!mob.mob().is_within_melee_attack_range(&target));
 
     let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
     let vehicle: SharedEntity = Arc::new(MobControlVehicleEntity::new(3, &vanilla_entities::PIG));
     EntityBase::restore_passenger_relationship(&vehicle, &mob_entity);
 
-    assert!(mob.is_within_melee_attack_range(&target));
+    assert!(mob.mob().is_within_melee_attack_range(&target));
 }
 
 #[test]
@@ -601,26 +622,26 @@ fn mob_can_attack_excludes_ghasts() {
     );
 
     assert!(LivingEntity::can_attack(&mob, &ghast));
-    assert!(!Mob::can_attack(&mob, &ghast));
+    assert!(!Mob::can_attack(&mob.mob(), &ghast));
 }
 
 #[test]
 fn mob_base_tick_increments_ambient_sound_time_when_roll_fails() {
     let mob = DespawnTestMob::new(None, false);
 
-    mob.mob_base_tick();
+    mob.mob().mob_base_tick();
 
-    assert_eq!(mob.mob_base().ambient_sound_time(), 1);
+    assert_eq!(mob.mob().mob_base().ambient_sound_time(), 1);
 }
 
 #[test]
 fn mob_base_tick_resets_ambient_sound_time_after_vanilla_roll() {
     let mob = DespawnTestMob::new(None, false);
 
-    mob.mob_base().set_ambient_sound_time(1000);
-    mob.mob_base_tick();
+    mob.mob().mob_base().set_ambient_sound_time(1000);
+    mob.mob().mob_base_tick();
 
-    assert_eq!(mob.mob_base().ambient_sound_time(), -80);
+    assert_eq!(mob.mob().mob_base().ambient_sound_time(), -80);
 }
 
 #[test]
@@ -628,10 +649,10 @@ fn mob_hurt_sound_resets_ambient_sound_time() {
     let mob = DespawnTestMob::new(None, false);
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
-    mob.mob_base().set_ambient_sound_time(12);
+    mob.mob().mob_base().set_ambient_sound_time(12);
     LivingEntity::play_hurt_sound(&mob, &source);
 
-    assert_eq!(mob.mob_base().ambient_sound_time(), -80);
+    assert_eq!(mob.mob().mob_base().ambient_sound_time(), -80);
 }
 
 #[test]
@@ -659,7 +680,10 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
     target.base().set_world(Arc::downgrade(test_world()));
     let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
-    assert!(mob.do_hurt_target(&mob_entity, test_world(), &target_entity));
+    assert!(
+        mob.mob()
+            .do_hurt_target(&mob_entity, test_world(), &target_entity)
+    );
 
     assert_eq!(target.get_health().to_bits(), 6.0_f32.to_bits());
     let stored_target = mob
@@ -696,7 +720,10 @@ fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
     target.base().set_world(Arc::downgrade(test_world()));
     let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
-    assert!(mob.do_hurt_target(&mob_entity, test_world(), &target_entity));
+    assert!(
+        mob.mob()
+            .do_hurt_target(&mob_entity, test_world(), &target_entity)
+    );
 
     assert_eq!(mob.velocity().x.to_bits(), 0.6_f64.to_bits());
     assert_eq!(mob.velocity().z.to_bits(), 0.6_f64.to_bits());
@@ -711,13 +738,18 @@ fn mob_look_control_rotates_head_yaw_without_turning_body_yaw() {
     mob.set_y_body_rot(0.0);
     mob.set_y_head_rot(0.0);
     let position = mob.position();
-    mob.mob_base().controls().lock().look_control.set_look_at(
-        DVec3::new(position.x + 1.0, mob.get_eye_y(), position.z),
-        DEFAULT_LOOK_Y_MAX_ROT_SPEED,
-        DEFAULT_LOOK_X_MAX_ROT_ANGLE,
-    );
+    mob.mob()
+        .mob_base()
+        .controls()
+        .lock()
+        .look_control
+        .set_look_at(
+            DVec3::new(position.x + 1.0, mob.get_eye_y(), position.z),
+            DEFAULT_LOOK_Y_MAX_ROT_SPEED,
+            DEFAULT_LOOK_X_MAX_ROT_ANGLE,
+        );
 
-    Mob::tick_look_control(&mob);
+    Mob::tick_look_control(&mob.mob());
 
     assert_eq!(mob.rotation(), (0.0, 0.0));
     assert_eq!(mob.y_body_rot().to_bits(), 0.0_f32.to_bits());
@@ -731,7 +763,7 @@ fn mob_look_control_returns_head_yaw_toward_body_when_idle() {
     mob.set_y_body_rot(90.0);
     mob.set_y_head_rot(0.0);
 
-    Mob::tick_look_control(&mob);
+    Mob::tick_look_control(&mob.mob());
 
     assert_eq!(mob.rotation(), (0.0, 0.0));
     assert_eq!(mob.y_body_rot().to_bits(), 90.0_f32.to_bits());
@@ -747,7 +779,7 @@ fn mob_body_rotation_control_uses_tick_position_delta() {
     mob.set_y_body_rot(0.0);
     mob.set_y_head_rot(200.0);
 
-    Mob::tick_body_rotation_control(&mob);
+    Mob::tick_body_rotation_control(&mob.mob());
 
     assert_eq!(mob.y_body_rot().to_bits(), 90.0_f32.to_bits());
     assert_eq!(mob.y_head_rot().to_bits(), 165.0_f32.to_bits());
@@ -793,7 +825,8 @@ fn mob_leash_snap_drops_leash_and_disables_move_control() {
         "a snapped leash is dropped (and the lead item spawns)"
     );
     assert!(
-        mob.mob_base()
+        mob.mob()
+            .mob_base()
             .goal_selector()
             .lock()
             .is_control_disabled(GoalControl::Move),
@@ -815,9 +848,9 @@ fn pathfinder_leash_attach_pins_home_restriction_to_holder() {
 
     mob.tick_leash();
 
-    assert!(mob.has_home());
-    assert_eq!(mob.home_radius(), LEASH_ELASTIC_DISTANCE as i32 - 1);
-    let home = *mob.mob_base().home_restriction().lock();
+    assert!(mob.mob().has_home());
+    assert_eq!(mob.mob().home_radius(), LEASH_ELASTIC_DISTANCE as i32 - 1);
+    let home = *mob.mob().mob_base().home_restriction().lock();
     assert_eq!(home.position, BlockPos::new(5, 64, 0));
 }
 
@@ -838,13 +871,13 @@ fn mob_on_leash_removed_clears_home_restriction() {
     let holder_entity: SharedEntity = holder;
     assert!(mob.set_leashed_to(&holder_entity));
     mob.tick_leash();
-    assert!(mob.has_home());
+    assert!(mob.mob().has_home());
 
     mob.drop_leash();
 
     assert!(!mob.is_leashed());
     assert!(
-        !mob.has_home(),
+        !mob.mob().has_home(),
         "dropping the leash must clear the pinned home restriction"
     );
 }
@@ -906,11 +939,12 @@ fn pathfinder_close_range_leash_navigates_toward_holder() {
 
     assert!(mob.is_leashed(), "a close-range leash must not snap");
     assert!(
-        mob.is_path_finding(),
+        mob.mob().is_path_finding(),
         "the mob should path back toward its holder at close range"
     );
     assert!(
-        !mob.mob_base()
+        !mob.mob()
+            .mob_base()
             .goal_selector()
             .lock()
             .is_control_disabled(GoalControl::Move),
@@ -929,7 +963,7 @@ impl Goal for TestPanicGoal {
         true
     }
 
-    fn can_use(&mut self, _mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, _mob: &Mob<'_>) -> bool {
         true
     }
 }
@@ -949,26 +983,30 @@ fn pathfinder_close_range_leash_skips_following_while_panicking() {
         false,
     ));
 
-    mob.mob_base()
+    mob.mob()
+        .mob_base()
         .goal_selector()
         .lock()
         .add_goal(1, TestPanicGoal);
     let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
-    mob.mob_base()
+    mob.mob()
+        .mob_base()
         .goal_selector()
         .lock()
-        .tick(mob.as_ref(), &mob_entity);
-    assert!(mob.is_panicking());
+        .tick(&mob.mob(), &mob_entity);
+    assert!(mob.mob().is_panicking());
 
-    mob.mob_base()
+    mob.mob()
+        .mob_base()
         .goal_selector()
         .lock()
         .disable_control(GoalControl::Move);
     mob.close_range_leash_behaviour(holder.as_ref());
 
-    assert!(mob.mob_base().navigation().lock().is_done());
+    assert!(mob.mob().mob_base().navigation().lock().is_done());
     assert!(
-        mob.mob_base()
+        mob.mob()
+            .mob_base()
             .goal_selector()
             .lock()
             .is_control_disabled(GoalControl::Move)
@@ -991,7 +1029,8 @@ fn mob_despawn_resets_no_action_time_near_player() {
     let mob = DespawnTestMob::new(Some(31.0 * 31.0), false);
 
     mob.set_no_action_time(42);
-    mob.check_mob_despawn();
+    mob.mob()
+        .check_mob_despawn_with(mob.nearest_player_distance_sqr);
 
     assert_eq!(mob.no_action_time(), 0);
     assert!(!mob.is_removed());
@@ -1001,7 +1040,8 @@ fn mob_despawn_resets_no_action_time_near_player() {
 fn mob_despawn_discards_far_removable_mob() {
     let mob = DespawnTestMob::new(Some(129.0 * 129.0), true);
 
-    mob.check_mob_despawn();
+    mob.mob()
+        .check_mob_despawn_with(mob.nearest_player_distance_sqr);
 
     assert!(mob.is_removed());
 }
@@ -1011,8 +1051,9 @@ fn mob_persistence_resets_no_action_time_and_blocks_removal() {
     let mob = DespawnTestMob::new(Some(129.0 * 129.0), true);
 
     mob.set_no_action_time(42);
-    mob.set_persistence_required();
-    mob.check_mob_despawn();
+    mob.mob().set_persistence_required();
+    mob.mob()
+        .check_mob_despawn_with(mob.nearest_player_distance_sqr);
 
     assert_eq!(mob.no_action_time(), 0);
     assert!(!mob.is_removed());
@@ -1022,16 +1063,16 @@ fn mob_persistence_resets_no_action_time_and_blocks_removal() {
 fn mob_home_restriction_uses_vanilla_radius() {
     let mob = DespawnTestMob::new(None, false);
 
-    assert!(mob.is_within_home_pos(BlockPos::new(1000, 64, 1000)));
+    assert!(mob.mob().is_within_home_pos(BlockPos::new(1000, 64, 1000)));
 
-    mob.set_home_to(BlockPos::ZERO, 4);
-    assert!(mob.has_home());
-    assert!(mob.is_within_home_pos(BlockPos::new(3, 0, 0)));
-    assert!(!mob.is_within_home_pos(BlockPos::new(4, 0, 0)));
+    mob.mob().set_home_to(BlockPos::ZERO, 4);
+    assert!(mob.mob().has_home());
+    assert!(mob.mob().is_within_home_pos(BlockPos::new(3, 0, 0)));
+    assert!(!mob.mob().is_within_home_pos(BlockPos::new(4, 0, 0)));
 
-    mob.clear_home();
-    assert!(!mob.has_home());
-    assert!(mob.is_within_home_pos(BlockPos::new(1000, 64, 1000)));
+    mob.mob().clear_home();
+    assert!(!mob.mob().has_home());
+    assert!(mob.mob().is_within_home_pos(BlockPos::new(1000, 64, 1000)));
 }
 
 #[test]
@@ -1048,7 +1089,7 @@ fn looting_collects_nearby_item_into_main_hand() {
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(world),
     ));
-    mob.set_can_pick_up_loot(true);
+    mob.mob().set_can_pick_up_loot(true);
 
     let item = Arc::new(ItemEntity::with_item(
         &vanilla_entities::ITEM,
@@ -1068,7 +1109,7 @@ fn looting_collects_nearby_item_into_main_hand() {
             .expect("test entity should attach to the loaded chunk");
     }
 
-    Mob::tick_looting(mob.as_ref());
+    Mob::tick_looting(&mob.mob());
 
     assert!(
         item.is_removed(),
@@ -1083,7 +1124,8 @@ fn looting_collects_nearby_item_into_main_hand() {
         "the mob should now hold the picked-up item in its main hand"
     );
     assert!(
-        mob.is_equipment_drop_preserved(EquipmentSlot::MainHand),
+        mob.mob()
+            .is_equipment_drop_preserved(EquipmentSlot::MainHand),
         "picked-up gear should always drop on death"
     );
 }
@@ -1107,8 +1149,8 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
         Arc::downgrade(world),
     ));
     let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
-    mob.set_can_pick_up_loot(true);
-    mob.set_no_ai(true);
+    mob.mob().set_can_pick_up_loot(true);
+    mob.mob().set_no_ai(true);
     assert!(
         !mob.is_effective_ai(),
         "a NoAI mob should not be effective-ai"
@@ -1132,7 +1174,7 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
             .expect("test entity should attach to the loaded chunk");
     }
 
-    Mob::mob_ai_step(mob.as_ref(), &mob_entity);
+    Mob::mob_ai_step(&mob.mob(), &mob_entity);
 
     assert!(
         item.is_removed(),
@@ -1182,7 +1224,7 @@ fn looting_skips_when_mob_cannot_pick_up_loot() {
             .expect("test entity should attach to the loaded chunk");
     }
 
-    Mob::tick_looting(mob.as_ref());
+    Mob::tick_looting(&mob.mob());
 
     assert!(
         !item.is_removed(),
@@ -1212,7 +1254,7 @@ fn pick_up_item_leaves_an_occupied_main_hand_untouched() {
     );
     item.set_no_pickup_delay();
 
-    Mob::pick_up_item(&mob, test_world(), &item);
+    Mob::pick_up_item(&mob.mob(), test_world(), &item);
 
     assert!(
         !item.is_removed(),
@@ -1233,7 +1275,8 @@ fn equip_routes_armor_to_its_armor_slot() {
     init_vanilla_registry();
     let mob = DespawnTestMob::new(None, false);
 
-    let equipped = Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::IRON_HELMET));
+    let equipped =
+        Mob::equip_item_if_possible(&mob.mob(), ItemStack::new(&vanilla_items::IRON_HELMET));
 
     assert!(
         equipped.is(&vanilla_items::IRON_HELMET),
@@ -1277,10 +1320,10 @@ fn equip_replaces_worse_armor_and_drops_the_old_piece() {
         EquipmentSlot::Head,
         ItemStack::new(&vanilla_items::LEATHER_HELMET),
     );
-    mob.set_guaranteed_drop(EquipmentSlot::Head);
+    mob.mob().set_guaranteed_drop(EquipmentSlot::Head);
 
     let equipped =
-        Mob::equip_item_if_possible(mob.as_ref(), ItemStack::new(&vanilla_items::DIAMOND_HELMET));
+        Mob::equip_item_if_possible(&mob.mob(), ItemStack::new(&vanilla_items::DIAMOND_HELMET));
 
     assert!(
         equipped.is(&vanilla_items::DIAMOND_HELMET),
@@ -1319,7 +1362,7 @@ fn equip_carries_worse_armor_in_a_free_hand() {
     );
 
     let equipped =
-        Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::LEATHER_HELMET));
+        Mob::equip_item_if_possible(&mob.mob(), ItemStack::new(&vanilla_items::LEATHER_HELMET));
 
     assert!(
         equipped.is(&vanilla_items::LEATHER_HELMET),
@@ -1357,7 +1400,7 @@ fn equip_rejects_worse_armor_when_the_hands_are_full() {
     );
 
     let equipped =
-        Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::LEATHER_HELMET));
+        Mob::equip_item_if_possible(&mob.mob(), ItemStack::new(&vanilla_items::LEATHER_HELMET));
 
     assert!(
         equipped.is_empty(),
@@ -1392,7 +1435,7 @@ fn equip_respects_prevent_armor_change_on_worn_gear() {
     );
 
     let equipped =
-        Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::NETHERITE_HELMET));
+        Mob::equip_item_if_possible(&mob.mob(), ItemStack::new(&vanilla_items::NETHERITE_HELMET));
 
     assert!(
         equipped.is_empty(),
@@ -1419,7 +1462,7 @@ fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(world),
     ));
-    mob.set_can_pick_up_loot(true);
+    mob.mob().set_can_pick_up_loot(true);
 
     // Three helmets in one stack: the head slot only holds one, so the source
     // should shrink to two rather than being wholly consumed.
@@ -1441,7 +1484,7 @@ fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
             .expect("test entity should attach to the loaded chunk");
     }
 
-    Mob::pick_up_item(mob.as_ref(), world, &item);
+    Mob::pick_up_item(&mob.mob(), world, &item);
 
     assert!(
         !item.is_removed(),
@@ -1474,7 +1517,8 @@ fn equip_keeps_a_preferred_weapon_over_a_stronger_one() {
         .lock()
         .set(EquipmentSlot::MainHand, ItemStack::new(&vanilla_items::BOW));
 
-    let equipped = Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::DIAMOND_SWORD));
+    let equipped =
+        Mob::equip_item_if_possible(&mob.mob(), ItemStack::new(&vanilla_items::DIAMOND_SWORD));
 
     assert!(
         equipped.is_empty(),
@@ -1499,7 +1543,7 @@ fn equip_takes_a_preferred_weapon_over_a_held_non_preferred_one() {
         ItemStack::new(&vanilla_items::STONE_SWORD),
     );
 
-    let equipped = Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::BOW));
+    let equipped = Mob::equip_item_if_possible(&mob.mob(), ItemStack::new(&vanilla_items::BOW));
 
     assert!(
         equipped.is(&vanilla_items::BOW),
@@ -1582,7 +1626,7 @@ fn daylight_burning_ignites_unprotected_mob_in_burn_in_daylight_tag() {
     let mob = daylit_mob(world, &vanilla_entities::ZOMBIE);
 
     for _ in 0..BURN_ROLL_ATTEMPTS {
-        Mob::tick_daylight_burning(mob.as_ref());
+        Mob::tick_daylight_burning(&mob.mob());
         if mob.is_on_fire() {
             break;
         }
@@ -1611,7 +1655,7 @@ fn daylight_burning_damages_a_protecting_helmet_without_igniting() {
         .set(EquipmentSlot::Head, helmet);
 
     for _ in 0..BURN_ROLL_ATTEMPTS {
-        Mob::tick_daylight_burning(mob.as_ref());
+        Mob::tick_daylight_burning(&mob.mob());
         assert!(
             !mob.is_on_fire(),
             "a mob wearing sun protection must never be ignited by daylight"
@@ -1645,7 +1689,7 @@ fn daylight_burning_is_gated_off_at_night_and_in_the_nether() {
         "the pinned midnight clock must disable MONSTERS_BURN"
     );
     for _ in 0..BURN_ROLL_ATTEMPTS {
-        Mob::tick_daylight_burning(night_mob.as_ref());
+        Mob::tick_daylight_burning(&night_mob.mob());
         assert!(
             !night_mob.is_on_fire(),
             "a mob must not burn in daylight at night"
@@ -1662,7 +1706,7 @@ fn daylight_burning_is_gated_off_at_night_and_in_the_nether() {
     insert_ready_full_chunk(nether, ChunkPos::new(0, 0));
     let nether_mob = daylit_mob(nether, &vanilla_entities::ZOMBIE);
     for _ in 0..BURN_ROLL_ATTEMPTS {
-        Mob::tick_daylight_burning(nether_mob.as_ref());
+        Mob::tick_daylight_burning(&nether_mob.mob());
         assert!(
             !nether_mob.is_on_fire(),
             "a mob must not burn in a dimension without the day timeline"
@@ -1678,7 +1722,7 @@ fn mob_ai_step_gates_daylight_burning_on_burn_in_daylight_tag() {
     let zombie = daylit_mob(world, &vanilla_entities::ZOMBIE);
     let zombie_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&zombie);
     for _ in 0..BURN_ROLL_ATTEMPTS {
-        Mob::mob_ai_step(zombie.as_ref(), &zombie_entity);
+        Mob::mob_ai_step(&zombie.mob(), &zombie_entity);
         if zombie.is_on_fire() {
             break;
         }
@@ -1690,7 +1734,7 @@ fn mob_ai_step_gates_daylight_burning_on_burn_in_daylight_tag() {
 
     let pig = daylit_mob(world, &vanilla_entities::PIG);
     let pig_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&pig);
-    Mob::mob_ai_step(pig.as_ref(), &pig_entity);
+    Mob::mob_ai_step(&pig.mob(), &pig_entity);
     assert!(
         !pig.is_on_fire(),
         "aiStep must not burn a mob outside the burn_in_daylight tag"

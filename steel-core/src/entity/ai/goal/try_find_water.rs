@@ -4,7 +4,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_utils::BlockPos;
 
 use super::selector::{Goal, GoalControls};
-use crate::entity::PathfinderMob;
+use crate::entity::Mob;
 use crate::fluid::FluidStateExt as _;
 
 const WATER_SEARCH_HORIZONTAL_RADIUS: f64 = 2.0;
@@ -25,7 +25,7 @@ impl Goal for TryFindWaterGoal {
         GoalControls::EMPTY
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         if !mob.on_ground() {
             return false;
         }
@@ -39,7 +39,7 @@ impl Goal for TryFindWaterGoal {
             .is_water()
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         let Some(world) = mob.level() else {
             return;
         };
@@ -108,6 +108,7 @@ mod tests {
 
     use super::*;
     use crate::entity::Entity;
+    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
 
     #[test]
@@ -123,7 +124,7 @@ mod tests {
         let mut goal = TryFindWaterGoal::new();
         let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]
@@ -133,7 +134,7 @@ mod tests {
         let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
         mob.set_on_ground(true);
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]

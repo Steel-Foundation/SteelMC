@@ -2,7 +2,7 @@ use glam::DVec3;
 
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{PathfinderMob, SharedEntity};
+use crate::entity::{Mob, SharedEntity};
 
 const MIN_LEAP_DISTANCE_SQR: f64 = 4.0;
 const MAX_LEAP_DISTANCE_SQR: f64 = 16.0;
@@ -28,7 +28,7 @@ impl Goal for LeapAtTargetGoal {
         GoalControls::JUMP | GoalControls::MOVE
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         if mob.has_controlling_passenger() {
             return false;
         }
@@ -54,11 +54,11 @@ impl Goal for LeapAtTargetGoal {
         true
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         !mob.on_ground()
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         let Some(target) = &self.target else {
             return;
         };
@@ -73,7 +73,7 @@ impl Goal for LeapAtTargetGoal {
         mob.set_velocity(DVec3::new(delta.x, f64::from(self.yd), delta.z));
     }
 
-    fn stop(&mut self, _mob: &dyn PathfinderMob) {
+    fn stop(&mut self, _mob: &Mob<'_>) {
         self.target = None;
     }
 }
@@ -86,7 +86,9 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::{Entity, Mob, entities::ChickenEntity};
+
+    use crate::entity::MobParts as _;
+    use crate::entity::{Entity, entities::ChickenEntity};
 
     fn pig(id: i32, position: DVec3) -> ChickenEntity {
         ChickenEntity::new(&vanilla_entities::CHICKEN, id, position, Weak::new())
@@ -97,7 +99,7 @@ mod tests {
     }
 
     fn set_target(mob: &ChickenEntity, target: &SharedEntity) {
-        assert!(mob.set_target(Some(target)));
+        assert!(mob.mob().set_target(Some(target)));
     }
 
     fn assert_vec3_close(left: DVec3, right: DVec3) {
@@ -121,7 +123,7 @@ mod tests {
         let mob = pig(1, DVec3::ZERO);
         mob.base().set_on_ground(true);
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]
@@ -133,11 +135,11 @@ mod tests {
 
         let close_target = shared_pig(2, DVec3::new(1.0, 0.0, 0.0));
         set_target(&mob, &close_target);
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
 
         let far_target = shared_pig(3, DVec3::new(5.0, 0.0, 0.0));
         set_target(&mob, &far_target);
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]
@@ -148,7 +150,7 @@ mod tests {
         let target = shared_pig(2, DVec3::new(2.0, 0.0, 0.0));
         set_target(&mob, &target);
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]
@@ -162,7 +164,7 @@ mod tests {
         set_target(&mob, &target);
 
         goal.target = Some(target);
-        goal.start(&mob);
+        goal.start(&mob.mob());
 
         assert_vec3_close(mob.velocity(), DVec3::new(0.6, f64::from(0.42_f32), 0.0));
     }
@@ -173,9 +175,9 @@ mod tests {
         let mut goal = LeapAtTargetGoal::new(0.4);
         let mob = pig(1, DVec3::ZERO);
 
-        assert!(goal.can_continue_to_use(&mob));
+        assert!(goal.can_continue_to_use(&mob.mob()));
 
         mob.base().set_on_ground(true);
-        assert!(!goal.can_continue_to_use(&mob));
+        assert!(!goal.can_continue_to_use(&mob.mob()));
     }
 }

@@ -42,14 +42,14 @@ fn chicken_sound_methods_follow_selected_sound_variant() {
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
     assert_eq!(
-        Mob::ambient_sound(&chicken).map(|sound| &sound.key),
+        chicken.mob().ambient_sound().map(|sound| &sound.key),
         Some(&sound_events::ENTITY_CHICKEN_AMBIENT.key)
     );
 
     chicken.set_sound_variant(&vanilla_chicken_sound_variants::PICKY);
 
     assert_eq!(
-        Mob::ambient_sound(&chicken).map(|sound| &sound.key),
+        chicken.mob().ambient_sound().map(|sound| &sound.key),
         Some(&chicken.sound_variant().adult_sounds.ambient_sound.key)
     );
     assert_eq!(
@@ -70,7 +70,7 @@ fn chicken_sounds_switch_to_baby_set_for_babies() {
     chicken.animal().ageable().set_baby(true);
 
     assert_eq!(
-        Mob::ambient_sound(&chicken).map(|sound| &sound.key),
+        chicken.mob().ambient_sound().map(|sound| &sound.key),
         Some(&sound_events::ENTITY_BABY_CHICKEN_AMBIENT.key)
     );
 }
@@ -100,10 +100,10 @@ fn chicken_jockey_does_not_despawn_far_away() {
 
     let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-    assert!(!Mob::remove_when_far_away(&chicken, f64::MAX));
+    assert!(!chicken.mob().remove_when_far_away(f64::MAX));
 
     chicken.set_chicken_jockey(true);
-    assert!(Mob::remove_when_far_away(&chicken, f64::MAX));
+    assert!(chicken.mob().remove_when_far_away(f64::MAX));
 }
 
 #[test]
@@ -147,7 +147,9 @@ fn chicken_finalize_spawn_assigns_registered_variant_and_sound_variant() {
         Arc::downgrade(world),
     );
 
-    let _ = Mob::finalize_spawn(&chicken, world, EntitySpawnReason::Natural, None);
+    let _ = chicken
+        .mob()
+        .finalize_spawn(world, EntitySpawnReason::Natural, None);
 
     assert!(
         REGISTRY

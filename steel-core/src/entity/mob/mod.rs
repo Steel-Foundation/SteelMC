@@ -4,13 +4,14 @@ mod pathfinder;
 pub(crate) mod stages;
 
 use crate::entity::Ageable;
-use crate::entity::animal::{self, Animal};
+use crate::entity::component::definition::MobEntries;
+use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::leash::{LeashData, Leashable};
-pub use pathfinder::PathfinderMob;
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
 use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target};
 
+use std::ops::Deref;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -30,6 +31,7 @@ use steel_registry::items::ItemRef;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_entity_data::MobEntityData;
 use steel_registry::{
     REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_attributes, vanilla_damage_types,
     vanilla_entities, vanilla_entity_type_tags::EntityTypeTag, vanilla_game_events,
@@ -38,7 +40,8 @@ use steel_registry::{
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{
-    BlockPos, ChunkPos, Downcast as _, Identifier, TICKS_PER_SECOND, WorldAabb, axis::Axis,
+    BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, Identifier, TICKS_PER_SECOND,
+    WorldAabb, axis::Axis,
 };
 
 use crate::behavior::items::SpawnEggItem;
@@ -164,7 +167,6 @@ impl DropChances {
     }
 }
 
-#[derive(Debug)]
 pub struct MobBase {
     goal_selector: SyncMutex<GoalSelector>,
     target_selector: SyncMutex<GoalSelector>,
@@ -182,6 +184,7 @@ pub struct MobBase {
     leash_data: SyncMutex<Option<LeashData>>,
     ambient_sound_time: SyncMutex<i32>,
     xp_reward: SyncMutex<i32>,
+    props: &'static MobProps,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,8 +202,9 @@ impl MobHomeRestriction {
 }
 
 impl MobBase {
+    /// Fresh mob state for a type described by `props`.
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(props: &'static MobProps) -> Self {
         Self {
             goal_selector: SyncMutex::new(GoalSelector::new()),
             target_selector: SyncMutex::new(GoalSelector::new()),
@@ -218,6 +222,7 @@ impl MobBase {
             leash_data: SyncMutex::new(None),
             ambient_sound_time: SyncMutex::new(0),
             xp_reward: SyncMutex::new(0),
+            props,
         }
     }
 
@@ -344,34 +349,224 @@ impl MobBase {
     }
 }
 
-impl Default for MobBase {
-    fn default() -> Self {
-        Self::new()
+// SAFETY: This key is owned by Steel and uniquely identifies `MobBase`.
+unsafe impl DowncastType for MobBase {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity_component/mob");
+}
+
+impl Component for MobBase {
+    fn save(&self, owner: &dyn Entity, nbt: &mut NbtCompound) {
+        if let Some(mob) = Mob::of(owner) {
+            mob.save_mob(nbt);
+        }
+    }
+
+    fn load(&self, owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        if let Some(mob) = Mob::of(owner) {
+            mob.load_mob(nbt);
+        }
     }
 }
 
-pub trait Mob: LivingEntity + Leashable {
-    fn mob_base(&self) -> &MobBase;
+/// Per-type properties of a vanilla `Mob`.
+pub struct MobProps {
+    /// The type's pipelines, reached from code that only holds the entity.
+    pub definition: fn() -> &'static dyn MobEntries,
+    /// `Mob.getAmbientSound`.
+    pub ambient_sound: fn(&Mob<'_>) -> Option<SoundEventRef>,
+    /// `Mob.getAmbientSoundInterval`.
+    pub ambient_sound_interval: i32,
+    /// `Mob.removeWhenFarAway`, given the squared distance to the nearest player.
+    pub remove_when_far_away: fn(&Mob<'_>, f64) -> bool,
+    /// `Mob.ate`, called after an eating goal consumes a block.
+    pub ate: fn(&Mob<'_>),
+    /// `Mob.canBeLeashed`, before the leash state is considered.
+    pub can_be_leashed: fn(&Mob<'_>) -> bool,
+    /// `Mob.getPreferredWeaponType`: the item tag this mob favors when
+    /// picking up weapons.
+    pub preferred_weapon_type: fn(&Mob<'_>) -> Option<Identifier>,
+    /// `Mob.checkSpawnRules`: the type's own spawn predicate.
+    pub check_spawn_rules: fn(&Mob<'_>, &Arc<World>, EntitySpawnReason) -> bool,
+    /// `Mob.getPickupReach`: how far the item-pickup search box is inflated.
+    pub pickup_reach: DVec3,
+    /// `Mob.canHoldItem`: whether this mob is willing to hold the item.
+    pub can_hold_item: fn(&Mob<'_>, &ItemStack) -> bool,
+    /// `Mob.getMaxFallDistance`: blocks fallen before taking damage.
+    pub max_fall_distance: i32,
+    /// `Mob.getMaxHeadXRot`: degrees the head may pitch independently of the body.
+    pub max_head_x_rot: f32,
+    /// `Mob.getMaxHeadYRot`: degrees the head may yaw independently of the body.
+    pub max_head_y_rot: f32,
+    /// `Mob.playAttackSound`.
+    pub play_attack_sound: fn(&Mob<'_>),
+    /// `Mob.sunProtectionSlot`: the slot whose item shields from sun burning.
+    pub sun_protection_slot: EquipmentSlot,
+    /// `PathfinderMob.shouldStayCloseToLeashHolder`.
+    pub stay_close_to_leash_holder: bool,
+    /// `PathfinderMob.followLeashSpeed`.
+    pub follow_leash_speed: f64,
+    /// Whether the type is a vanilla `PathfinderMob`, which changes leash
+    /// behavior and passes `instanceof PathfinderMob` checks.
+    pub pathfinder: bool,
+    /// `PathfinderMob.getWalkTargetValue`: how attractive a position is to
+    /// wander to.
+    pub walk_target_value: fn(&Mob<'_>, BlockPos) -> f32,
+}
 
-    fn mob_flags(&self) -> i8;
+impl MobProps {
+    /// Vanilla `Mob`'s defaults for a type with `definition`.
+    #[must_use]
+    pub const fn new(definition: fn() -> &'static dyn MobEntries) -> Self {
+        Self {
+            definition,
+            ambient_sound: |_| None,
+            ambient_sound_interval: 80,
+            remove_when_far_away: |_, _| true,
+            ate: |_| {},
+            can_be_leashed: |mob| !mob.is_enemy(),
+            preferred_weapon_type: |_| None,
+            check_spawn_rules: |_, _, _| true,
+            pickup_reach: ITEM_PICKUP_REACH,
+            can_hold_item: |_, _| true,
+            max_fall_distance: 3,
+            max_head_x_rot: 40.0,
+            max_head_y_rot: 75.0,
+            play_attack_sound: |_| {},
+            sun_protection_slot: EquipmentSlot::Head,
+            stay_close_to_leash_holder: true,
+            follow_leash_speed: 1.0,
+            pathfinder: false,
+            walk_target_value: |_, _| 0.0,
+        }
+    }
+}
 
-    fn set_mob_flags(&self, flags: i8);
+/// An entity seen as a vanilla `Mob` (and `PathfinderMob`: Steel gives
+/// every mob navigation and goals, as vanilla's `Mob` does).
+///
+/// Derefs to the living entity so living and entity behavior stay reachable.
+#[derive(Clone, Copy)]
+pub struct Mob<'a> {
+    living: &'a (dyn LivingEntity + 'static),
+    leashable: &'a (dyn Leashable + 'static),
+    base: &'a MobBase,
+}
+
+impl<'a> Mob<'a> {
+    /// Pairs a concrete mob with its state.
+    #[must_use]
+    pub fn new<E: LivingEntity + Leashable + Has<MobBase>>(entity: &'a E) -> Self {
+        Self {
+            living: entity,
+            leashable: entity,
+            base: entity.get::<MobBase>(),
+        }
+    }
+
+    /// Returns `entity` as a mob, if it is one.
+    #[must_use]
+    pub fn of(entity: &'a dyn Entity) -> Option<Self> {
+        Some(Self {
+            living: entity.as_living_entity()?,
+            leashable: entity.as_leashable()?,
+            base: entity.query::<MobBase>()?,
+        })
+    }
+
+    /// Returns the entity this view belongs to.
+    #[must_use]
+    pub fn entity(&self) -> &'a (dyn Entity + 'static) {
+        self.living
+    }
+
+    /// Returns the living entity this view belongs to.
+    #[must_use]
+    pub const fn living(&self) -> &'a (dyn LivingEntity + 'static) {
+        self.living
+    }
+
+    /// Returns this mob's leash behavior.
+    #[must_use]
+    pub const fn leashable(&self) -> &'a (dyn Leashable + 'static) {
+        self.leashable
+    }
+
+    /// Returns whether this mob is a vanilla `PathfinderMob`.
+    #[must_use]
+    pub const fn is_pathfinder(&self) -> bool {
+        self.base.props.pathfinder
+    }
+
+    /// Returns this mob type's properties.
+    #[must_use]
+    pub const fn props(&self) -> &'static MobProps {
+        self.base.props
+    }
+
+    fn definition(&self) -> &'static dyn MobEntries {
+        (self.base.props.definition)()
+    }
+
+    fn with_synced<R>(&self, f: impl FnOnce(&mut MobEntityData) -> R) -> Option<R> {
+        let synced = self.living.synced_data()?;
+        let mut data = synced.lock_data();
+        data.mob_layer_mut().map(f)
+    }
+}
+
+/// Components every mob has; keeps stage bounds short.
+pub trait Parts: LivingEntity + Leashable + Has<MobBase> {
+    /// Returns this entity as a mob.
+    fn mob(&self) -> Mob<'_>;
+}
+
+impl<E: LivingEntity + Leashable + Has<MobBase>> Parts for E {
+    fn mob(&self) -> Mob<'_> {
+        Mob::new(self)
+    }
+}
+
+impl Deref for Mob<'_> {
+    type Target = dyn LivingEntity;
+
+    fn deref(&self) -> &Self::Target {
+        self.living
+    }
+}
+
+impl<'a> Mob<'a> {
+    /// Returns this mob's shared runtime state.
+    #[must_use]
+    pub const fn mob_base(&self) -> &'a MobBase {
+        self.base
+    }
+
+    /// Returns the synchronized vanilla mob flags byte.
+    #[must_use]
+    pub fn mob_flags(&self) -> i8 {
+        self.with_synced(|data| *data.mob_flags.get()).unwrap_or(0)
+    }
+
+    /// Sets the synchronized vanilla mob flags byte.
+    pub fn set_mob_flags(&self, flags: i8) {
+        self.with_synced(|data| data.mob_flags.set(flags));
+    }
 
     /// Returns whether the entity-specific spawn predicate accepts this spawn.
-    fn check_spawn_rules(&self, _world: &Arc<World>, _reason: EntitySpawnReason) -> bool {
-        true
+    pub fn check_spawn_rules(&self, world: &Arc<World>, reason: EntitySpawnReason) -> bool {
+        (self.props().check_spawn_rules)(self, world, reason)
     }
 
     /// Sets the vanilla baby state. Vanilla `Mob.setBaby` is a no-op; ageable
     /// mobs derive it from their start age, and other mobs override as needed.
-    fn set_baby(&self, baby: bool) {
+    pub fn set_baby(&self, baby: bool) {
         if let Some(ageable) = Ageable::of(self.as_entity_event_source()) {
             ageable.set_baby(baby);
         }
     }
 
     /// Returns whether this mob has a saddle equipped.
-    fn is_saddled(&self) -> bool {
+    pub fn is_saddled(&self) -> bool {
         let mut is_saddled = false;
         self.with_equipment_slot(EquipmentSlot::Saddle, &mut |item_stack| {
             is_saddled = self.is_equippable_in_slot(item_stack, EquipmentSlot::Saddle);
@@ -380,30 +575,48 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     /// Checks line of sight using this mob sensing cache
-    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
+    pub fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
         self.mob_base()
             .sensing()
             .lock()
             .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
     }
 
-    fn custom_server_ai_step(&self) {}
+    /// Runs this type's `customServerAiStep` pipeline.
+    pub fn custom_server_ai_step(&self) {
+        self.definition().custom_server_ai_step(self.entity());
+    }
 
     /// Runs vanilla `Mob.ate`, invoked after an eating goal resolves a block.
-    fn ate(&self) {}
+    pub fn ate(&self) {
+        (self.props().ate)(self);
+    }
 
-    fn tick_goal_selectors(&self, _entity: &SharedEntity) {}
+    /// Ticks the target and goal selectors; between full updates only the
+    /// running goals tick.
+    pub fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        let id_based_tick_count = self.tick_count().wrapping_add(self.id());
+        let mut target_selector = self.mob_base().target_selector().lock();
+        let mut goal_selector = self.mob_base().goal_selector().lock();
+        if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
+            target_selector.tick_running_goals(self, entity, false);
+            goal_selector.tick_running_goals(self, entity, false);
+        } else {
+            target_selector.tick(self, entity);
+            goal_selector.tick(self, entity);
+        }
+    }
 
-    fn xp_reward(&self) -> i32 {
+    pub fn xp_reward(&self) -> i32 {
         self.mob_base().xp_reward()
     }
 
-    fn set_xp_reward(&self, xp_reward: i32) {
+    pub fn set_xp_reward(&self, xp_reward: i32) {
         self.mob_base().set_xp_reward(xp_reward);
     }
 
     /// Returns this mob's current attack target, if it's still a valid one.
-    fn target(&self) -> Option<SharedEntity> {
+    pub fn target(&self) -> Option<SharedEntity> {
         self.mob_base()
             .target(|target| self.is_valid_target(target))
     }
@@ -411,12 +624,12 @@ pub trait Mob: LivingEntity + Leashable {
     /// Sets vanilla `Mob.target`.
     ///
     /// Returns `false` when the supplied entity is not a living entity.
-    fn set_target(&self, target: Option<&SharedEntity>) -> bool {
+    pub fn set_target(&self, target: Option<&SharedEntity>) -> bool {
         self.mob_base()
             .set_target(target, |target| self.is_valid_target(target))
     }
 
-    fn is_valid_target(&self, target: &dyn LivingEntity) -> bool {
+    pub fn is_valid_target(&self, target: &dyn LivingEntity) -> bool {
         if target
             .as_player()
             .is_some_and(|player| player.has_infinite_materials() || player.is_spectator())
@@ -429,11 +642,11 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Returns whether this mob may attack the target; excludes ghasts, which
     /// mobs never target directly.
-    fn can_attack(&self, target: &dyn LivingEntity) -> bool {
-        target.entity_type() != &vanilla_entities::GHAST && LivingEntity::can_attack(self, target)
+    pub fn can_attack(&self, target: &dyn LivingEntity) -> bool {
+        target.entity_type() != &vanilla_entities::GHAST && self.living.can_attack(target)
     }
 
-    fn base_experience_reward_mob(&self) -> i32 {
+    pub fn base_experience_reward_mob(&self) -> i32 {
         let xp_reward = self.xp_reward();
         if xp_reward <= 0 {
             return xp_reward;
@@ -456,36 +669,32 @@ pub trait Mob: LivingEntity + Leashable {
         result
     }
 
-    fn ambient_sound_interval(&self) -> i32 {
-        if Animal::of(self.as_entity_event_source()).is_some() {
-            return animal::AMBIENT_SOUND_INTERVAL;
-        }
-
-        80
+    pub const fn ambient_sound_interval(&self) -> i32 {
+        self.props().ambient_sound_interval
     }
 
-    fn ambient_sound(&self) -> Option<SoundEventRef> {
-        None
+    pub fn ambient_sound(&self) -> Option<SoundEventRef> {
+        (self.props().ambient_sound)(self)
     }
 
-    fn play_ambient_sound(&self) {
+    pub fn play_ambient_sound(&self) {
         self.make_sound(self.ambient_sound());
     }
 
-    fn reset_ambient_sound_time(&self) {
+    pub fn reset_ambient_sound_time(&self) {
         self.mob_base()
             .set_ambient_sound_time(-self.ambient_sound_interval());
     }
 
     /// Runs the shared living-entity base tick, then mob-specific per-tick behavior.
-    fn base_tick_mob(&self) {
+    pub fn base_tick_mob(&self) {
         self.base_tick_living_entity();
         self.mob_base_tick();
     }
 
     /// Runs the mob-owned portion of vanilla `Mob.baseTick`.
-    fn mob_base_tick(&self) {
-        if !LivingEntity::is_alive(self) {
+    pub fn mob_base_tick(&self) {
+        if !LivingEntity::is_alive(self.living) {
             return;
         }
 
@@ -496,16 +705,17 @@ pub trait Mob: LivingEntity + Leashable {
         }
     }
 
-    fn finalize_spawn(
+    pub fn finalize_spawn(
         &self,
         world: &Arc<World>,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
-        self.finalize_spawn_mob_base(world, spawn_reason, group_data)
+        self.definition()
+            .finalize_spawn(self.entity(), world, spawn_reason, group_data)
     }
 
-    fn finalize_spawn_mob_base(
+    pub fn finalize_spawn_mob_base(
         &self,
         _world: &Arc<World>,
         _spawn_reason: EntitySpawnReason,
@@ -538,30 +748,24 @@ pub trait Mob: LivingEntity + Leashable {
     /// The callback finalizes mob-specific state. Returns `None` without changing
     /// the source if it is removed or world, difficulty, factory, mob-type, or
     /// insertion checks fail.
-    fn convert_to(
+    pub fn convert_to(
         &self,
         entity_type: EntityTypeRef,
         params: ConversionParams,
         after_conversion: Option<&AfterConversion<'_>>,
-    ) -> Option<SharedEntity>
-    where
-        Self: Sized,
-    {
+    ) -> Option<SharedEntity> {
         convert_mob(self, entity_type, params, after_conversion)
     }
 
     /// Requires the block below to accept the spawn via
     /// [`BlockBehavior::is_valid_spawn`](crate::behavior::BlockBehavior::is_valid_spawn),
     /// unless a spawner bypasses the surface check.
-    fn check_mob_spawn_rules(
+    pub fn check_mob_spawn_rules(
         entity_type: EntityTypeRef,
         level: &dyn LevelReader,
         spawn_reason: EntitySpawnReason,
         pos: BlockPos,
-    ) -> bool
-    where
-        Self: Sized,
-    {
+    ) -> bool {
         if spawn_reason.is_spawner() {
             return true;
         }
@@ -573,7 +777,7 @@ pub trait Mob: LivingEntity + Leashable {
             .is_valid_spawn(state, level, below, entity_type)
     }
 
-    fn check_spawn_obstruction(&self, world: &Arc<World>) -> bool {
+    pub fn check_spawn_obstruction(&self, world: &Arc<World>) -> bool {
         let aabb = self.bounding_box();
         if aabb_contains_any_liquid(world, aabb) {
             return false;
@@ -589,13 +793,13 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     /// Dispatches held-item, entity, and mob-specific interactions in order.
-    fn interact_mob(
+    pub fn interact_mob(
         &self,
         player: &Player,
         hand: InteractionHand,
         location: DVec3,
     ) -> InteractionResult {
-        if !LivingEntity::is_alive(self) {
+        if !LivingEntity::is_alive(self.living) {
             return InteractionResult::Pass;
         }
 
@@ -626,7 +830,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Handles interactions that take priority over normal behavior: renaming
     /// with a name tag and spawning with a spawn egg.
-    fn check_and_handle_important_interactions(
+    pub fn check_and_handle_important_interactions(
         &self,
         player: &Player,
         hand: InteractionHand,
@@ -672,69 +876,73 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Mob-specific interaction hook for concrete mobs to override; does
     /// nothing by default.
-    fn mob_interact(&self, _player: &Player, _hand: InteractionHand) -> InteractionResult {
-        InteractionResult::Pass
+    /// Runs this type's `mobInteract` pipeline.
+    pub fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
+        self.definition().mob_interact(self.entity(), player, hand)
     }
 
     /// Returns whether this mob's equipment can be sheared; false while
     /// something is riding it.
-    fn can_shear_equipment(&self, _player: &Player) -> bool {
+    pub fn can_shear_equipment(&self, _player: &Player) -> bool {
         !self.is_vehicle()
     }
 
     /// Consumes one of the player's held item after this mob uses it in an interaction.
-    fn use_player_item(&self, player: &Player, hand: InteractionHand) {
+    #[expect(
+        clippy::unused_self,
+        reason = "use remainders (see the TODO) are given out at this mob"
+    )]
+    pub fn use_player_item(&self, player: &Player, hand: InteractionHand) {
         player.inventory.lock().shrink_item_in_hand(hand, 1);
         // TODO: Apply USE_REMAINDER components once item use-remainder support exists.
     }
 
-    fn remove_when_far_away(&self, _dist_sqr: f64) -> bool {
-        // `Animal.removeWhenFarAway` is false.
-        Animal::of(self.as_entity_event_source()).is_none()
+    pub fn remove_when_far_away(&self, dist_sqr: f64) -> bool {
+        (self.props().remove_when_far_away)(self, dist_sqr)
     }
 
-    fn requires_custom_persistence(&self) -> bool {
-        self.is_passenger() || self.is_leashed()
+    pub fn requires_custom_persistence(&self) -> bool {
+        self.is_passenger() || self.leashable.is_leashed()
     }
 
-    fn is_persistence_required(&self) -> bool {
+    pub fn is_persistence_required(&self) -> bool {
         *self.mob_base().persistence_required().lock()
     }
 
-    fn set_persistence_required(&self) {
+    pub fn set_persistence_required(&self) {
         *self.mob_base().persistence_required().lock() = true;
     }
 
     /// Returns whether this mob can be leashed, before its leash state is considered.
-    fn mob_can_be_leashed(&self) -> bool {
-        !self.is_enemy()
+    pub fn mob_can_be_leashed(&self) -> bool {
+        (self.props().can_be_leashed)(self)
     }
 
     /// Returns whether this mob is allowed to pick up dropped items.
-    fn can_pick_up_loot(&self) -> bool {
+    pub fn can_pick_up_loot(&self) -> bool {
         *self.mob_base().can_pick_up_loot().lock()
     }
 
-    fn set_can_pick_up_loot(&self, can_pick_up_loot: bool) {
+    pub fn set_can_pick_up_loot(&self, can_pick_up_loot: bool) {
         *self.mob_base().can_pick_up_loot().lock() = can_pick_up_loot;
     }
 
-    fn equipment_drop_chance(&self, slot: EquipmentSlot) -> f32 {
+    pub fn equipment_drop_chance(&self, slot: EquipmentSlot) -> f32 {
         self.mob_base().drop_chances().lock().by_equipment(slot)
     }
 
-    fn set_equipment_drop_chance(&self, slot: EquipmentSlot, chance: f32) {
+    pub fn set_equipment_drop_chance(&self, slot: EquipmentSlot, chance: f32) {
         self.mob_base()
             .drop_chances()
             .lock()
             .set_equipment_chance(slot, chance);
     }
 
-    fn is_equipment_drop_preserved(&self, slot: EquipmentSlot) -> bool {
+    pub fn is_equipment_drop_preserved(&self, slot: EquipmentSlot) -> bool {
         self.mob_base().drop_chances().lock().is_preserved(slot)
     }
 
-    fn set_guaranteed_drop(&self, slot: EquipmentSlot) {
+    pub fn set_guaranteed_drop(&self, slot: EquipmentSlot) {
         self.mob_base()
             .drop_chances()
             .lock()
@@ -743,20 +951,20 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Vanilla `Mob.getPickupReach`: the per-axis distance the item-pickup search
     /// box is inflated by. Overridable so mobs with a longer reach can widen it.
-    fn get_pickup_reach(&self) -> DVec3 {
-        ITEM_PICKUP_REACH
+    pub const fn get_pickup_reach(&self) -> DVec3 {
+        self.props().pickup_reach
     }
 
     /// Vanilla `Mob.wantsToPickUp`: whether this mob wants to collect the item it
     /// just walked over. Defaults to whatever the mob is willing to hold.
-    fn wants_to_pick_up(&self, item_stack: &ItemStack) -> bool {
+    pub fn wants_to_pick_up(&self, item_stack: &ItemStack) -> bool {
         self.can_hold_item(item_stack)
     }
 
     /// Vanilla `Mob.canHoldItem`: whether this mob is willing to hold the item.
     /// The base mob holds anything; specific mobs narrow this down.
-    fn can_hold_item(&self, _item_stack: &ItemStack) -> bool {
-        true
+    pub fn can_hold_item(&self, item_stack: &ItemStack) -> bool {
+        (self.props().can_hold_item)(self, item_stack)
     }
 
     /// Vanilla `Mob.pickUpItem`: take a dropped item into this mob's equipment.
@@ -765,7 +973,7 @@ pub trait Mob: LivingEntity + Leashable {
     /// [`equip_item_if_possible`](Self::equip_item_if_possible), then shrinks the
     /// source stack by however much was equipped, only removing the item entity
     /// once nothing is left.
-    fn pick_up_item(&self, world: &Arc<World>, item_entity: &ItemEntity) {
+    pub fn pick_up_item(&self, world: &Arc<World>, item_entity: &ItemEntity) {
         let equipped = self.equip_item_if_possible(item_entity.get_item());
         if equipped.is_empty() {
             return;
@@ -796,7 +1004,7 @@ pub trait Mob: LivingEntity + Leashable {
     /// target slot already holds worse gear, and drop the replaced piece by its
     /// drop chance. Returns the stack that was equipped, or empty when nothing
     /// was taken.
-    fn equip_item_if_possible(&self, mut item_stack: ItemStack) -> ItemStack {
+    pub fn equip_item_if_possible(&self, mut item_stack: ItemStack) -> ItemStack {
         let mut slot = self.get_equipment_slot_for_item(&item_stack);
         if !self.is_equippable_in_slot(&item_stack, slot) {
             return ItemStack::empty();
@@ -834,7 +1042,7 @@ pub trait Mob: LivingEntity + Leashable {
     /// Vanilla `LivingEntity.getEquipmentSlotForItem`: the slot an item wants to
     /// occupy, falling back to the main hand when it is not equippable or the mob
     /// cannot use that slot.
-    fn get_equipment_slot_for_item(&self, item_stack: &ItemStack) -> EquipmentSlot {
+    pub fn get_equipment_slot_for_item(&self, item_stack: &ItemStack) -> EquipmentSlot {
         match item_stack.get_equippable() {
             Some(equippable) if self.can_use_slot(equippable.slot) => equippable.slot,
             _ => EquipmentSlot::MainHand,
@@ -842,7 +1050,7 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     /// Returns a copy of whatever this mob currently holds in `slot`.
-    fn equipment_in_slot(&self, slot: EquipmentSlot) -> ItemStack {
+    pub fn equipment_in_slot(&self, slot: EquipmentSlot) -> ItemStack {
         let equipment = self.living_base().equipment().lock();
         let stack = equipment.get_ref(slot);
         stack.copy_with_count(stack.count())
@@ -850,7 +1058,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Vanilla `Mob.canReplaceCurrentItem`: whether the freshly picked-up item
     /// should displace what is already in `slot`.
-    fn can_replace_current_item(
+    pub fn can_replace_current_item(
         &self,
         new_item_stack: &ItemStack,
         current_item_stack: &ItemStack,
@@ -874,7 +1082,7 @@ pub trait Mob: LivingEntity + Leashable {
         clippy::float_cmp,
         reason = "vanilla compares approximate attribute values for exact equality"
     )]
-    fn compare_armor(
+    pub fn compare_armor(
         &self,
         new_item_stack: &ItemStack,
         current_item_stack: &ItemStack,
@@ -904,7 +1112,7 @@ pub trait Mob: LivingEntity + Leashable {
             slot,
         );
         if new_toughness == old_toughness {
-            self.can_replace_equal_item(new_item_stack, current_item_stack)
+            Self::can_replace_equal_item(new_item_stack, current_item_stack)
         } else {
             new_toughness > old_toughness
         }
@@ -913,8 +1121,8 @@ pub trait Mob: LivingEntity + Leashable {
     /// Vanilla `Mob.getPreferredWeaponType`: the item tag a mob favors for its
     /// main hand regardless of raw damage (a skeleton keeps its bow over a
     /// stronger sword). The base mob has no preference; specific mobs override it.
-    fn get_preferred_weapon_type(&self) -> Option<Identifier> {
-        None
+    pub fn get_preferred_weapon_type(&self) -> Option<Identifier> {
+        (self.props().preferred_weapon_type)(self)
     }
 
     /// Vanilla `Mob.compareWeapons`: keep a piece of the mob's preferred weapon
@@ -924,7 +1132,7 @@ pub trait Mob: LivingEntity + Leashable {
         clippy::float_cmp,
         reason = "vanilla compares approximate attribute values for exact equality"
     )]
-    fn compare_weapons(
+    pub fn compare_weapons(
         &self,
         new_item_stack: &ItemStack,
         current_item_stack: &ItemStack,
@@ -956,7 +1164,7 @@ pub trait Mob: LivingEntity + Leashable {
             slot,
         );
         if new_attack_damage == old_attack_damage {
-            self.can_replace_equal_item(new_item_stack, current_item_stack)
+            Self::can_replace_equal_item(new_item_stack, current_item_stack)
         } else {
             new_attack_damage > old_attack_damage
         }
@@ -966,7 +1174,7 @@ pub trait Mob: LivingEntity + Leashable {
     /// mob would have in `slot` while wearing `item_stack`, taking the mob's base
     /// value (zero when it lacks the attribute) and folding in the item's
     /// attribute modifiers.
-    fn approximate_attribute_with(
+    pub fn approximate_attribute_with(
         &self,
         item_stack: &ItemStack,
         attribute: AttributeRef,
@@ -986,8 +1194,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Vanilla `Mob.canReplaceEqualItem`: the tiebreak when two pieces grade out
     /// equally, favoring more enchantments, then less damage, then a custom name.
-    fn can_replace_equal_item(
-        &self,
+    pub fn can_replace_equal_item(
         new_item_stack: &ItemStack,
         current_item_stack: &ItemStack,
     ) -> bool {
@@ -1012,12 +1219,12 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Vanilla `Mob.aiStep` looting loop: while this mob may pick up loot and the
     /// `mobGriefing` game rule allows it, collect nearby dropped items in reach.
-    fn tick_looting(&self) {
+    pub fn tick_looting(&self) {
         let Some(world) = self.level() else {
             return;
         };
         if !self.can_pick_up_loot()
-            || !Entity::is_alive(self)
+            || !Entity::is_alive(self.living)
             || !world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
         {
             return;
@@ -1042,7 +1249,7 @@ pub trait Mob: LivingEntity + Leashable {
         }
     }
 
-    fn drop_custom_death_loot_mob(&self, _source: &DamageSource, killed_by_player: bool) {
+    pub fn drop_custom_death_loot_mob(&self, _source: &DamageSource, killed_by_player: bool) {
         if self.level().is_none() {
             return;
         }
@@ -1095,7 +1302,7 @@ pub trait Mob: LivingEntity + Leashable {
         }
     }
 
-    fn save_mob(&self, nbt: &mut NbtCompound) {
+    pub fn save_mob(&self, nbt: &mut NbtCompound) {
         self.save_equipment(nbt);
         nbt.insert("CanPickUpLoot", i8::from(self.can_pick_up_loot()));
         nbt.insert(
@@ -1133,7 +1340,7 @@ pub trait Mob: LivingEntity + Leashable {
         }
     }
 
-    fn load_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+    pub fn load_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_equipment(nbt);
         self.set_can_pick_up_loot(nbt.byte("CanPickUpLoot").is_some_and(|value| value != 0));
         *self.mob_base().persistence_required().lock() = nbt
@@ -1164,15 +1371,15 @@ pub trait Mob: LivingEntity + Leashable {
         self.set_no_ai(nbt.byte("NoAI").is_some_and(|value| value != 0));
     }
 
-    fn set_death_loot_table(&self, loot_table: Option<Identifier>) {
+    pub fn set_death_loot_table(&self, loot_table: Option<Identifier>) {
         *self.mob_base().death_loot_table().lock() = loot_table;
     }
 
-    fn set_death_loot_table_seed(&self, seed: i64) {
+    pub fn set_death_loot_table_seed(&self, seed: i64) {
         *self.mob_base().death_loot_table_seed().lock() = seed;
     }
 
-    fn custom_death_loot_table(&self) -> Option<LootTableRef> {
+    pub fn custom_death_loot_table(&self) -> Option<LootTableRef> {
         self.mob_base()
             .death_loot_table()
             .lock()
@@ -1180,55 +1387,61 @@ pub trait Mob: LivingEntity + Leashable {
             .and_then(|key| REGISTRY.loot_tables.by_key(key))
     }
 
-    fn has_custom_death_loot_table(&self) -> bool {
+    pub fn has_custom_death_loot_table(&self) -> bool {
         self.mob_base().death_loot_table().lock().is_some()
     }
 
-    fn death_loot_table_seed(&self) -> i64 {
+    pub fn death_loot_table_seed(&self) -> i64 {
         *self.mob_base().death_loot_table_seed().lock()
     }
 
-    fn clear_custom_death_loot_table(&self) {
+    pub fn clear_custom_death_loot_table(&self) {
         *self.mob_base().death_loot_table().lock() = None;
     }
 
-    fn is_within_home(&self) -> bool {
+    pub fn is_within_home(&self) -> bool {
         self.is_within_home_pos(self.block_position())
     }
 
-    fn is_within_home_pos(&self, pos: BlockPos) -> bool {
+    pub fn is_within_home_pos(&self, pos: BlockPos) -> bool {
         let home = *self.mob_base().home_restriction().lock();
         home.radius == -1
             || block_pos_distance_sqr(home.position, pos) < home_radius_sqr(home.radius)
     }
 
-    fn is_within_home_vec(&self, pos: DVec3) -> bool {
+    pub fn is_within_home_vec(&self, pos: DVec3) -> bool {
         let home = *self.mob_base().home_restriction().lock();
         home.radius == -1
             || block_center_distance_sqr(home.position, pos) < home_radius_sqr(home.radius)
     }
 
-    fn set_home_to(&self, position: BlockPos, radius: i32) {
+    pub fn set_home_to(&self, position: BlockPos, radius: i32) {
         *self.mob_base().home_restriction().lock() = MobHomeRestriction { position, radius };
     }
 
-    fn home_position(&self) -> BlockPos {
+    pub fn home_position(&self) -> BlockPos {
         self.mob_base().home_restriction().lock().position
     }
 
-    fn home_radius(&self) -> i32 {
+    pub fn home_radius(&self) -> i32 {
         self.mob_base().home_restriction().lock().radius
     }
 
-    fn clear_home(&self) {
+    pub fn clear_home(&self) {
         self.mob_base().home_restriction().lock().radius = -1;
     }
 
-    fn has_home(&self) -> bool {
+    pub fn has_home(&self) -> bool {
         self.home_radius() != -1
     }
 
-    fn check_mob_despawn(&self) {
+    pub fn check_mob_despawn(&self) {
+        self.check_mob_despawn_with(self.nearest_player_distance_sqr());
+    }
+
+    /// [`Self::check_mob_despawn`] given the squared distance to the nearest
+    /// player, if any.
+    pub(crate) fn check_mob_despawn_with(&self, nearest_player_dist_sqr: Option<f64>) {
         if self
             .level()
             .is_some_and(|world| world.difficulty() == Difficulty::Peaceful)
@@ -1243,7 +1456,7 @@ pub trait Mob: LivingEntity + Leashable {
             return;
         }
 
-        let Some(nearest_player_dist_sqr) = self.nearest_player_distance_sqr() else {
+        let Some(nearest_player_dist_sqr) = nearest_player_dist_sqr else {
             return;
         };
 
@@ -1272,12 +1485,12 @@ pub trait Mob: LivingEntity + Leashable {
         }
     }
 
-    fn nearest_player_distance_sqr(&self) -> Option<f64> {
+    pub fn nearest_player_distance_sqr(&self) -> Option<f64> {
         let world = self.level()?;
         world.nearest_player_distance_sqr(self.position())
     }
 
-    fn controlling_passenger_mob(&self) -> Option<SharedEntity> {
+    pub fn controlling_passenger_mob(&self) -> Option<SharedEntity> {
         let first_passenger = self.first_passenger()?;
         if self.is_no_ai() || !first_passenger.is_mob() || !first_passenger.can_control_vehicle() {
             return None;
@@ -1286,57 +1499,62 @@ pub trait Mob: LivingEntity + Leashable {
         Some(first_passenger)
     }
 
-    fn get_pathfinding_malus(&self, path_type: PathType) -> f32 {
+    pub fn get_pathfinding_malus(&self, path_type: PathType) -> f32 {
         self.mob_base().pathfinding_malus().lock().get(path_type)
     }
 
     /// Blocks a mob can fall before taking fall damage; concrete mobs may raise this.
-    fn max_fall_distance(&self) -> i32 {
-        3
+    pub const fn max_fall_distance(&self) -> i32 {
+        self.props().max_fall_distance
     }
 
-    fn set_pathfinding_malus(&self, path_type: PathType, malus: f32) {
+    pub fn set_pathfinding_malus(&self, path_type: PathType, malus: f32) {
         self.mob_base()
             .pathfinding_malus()
             .lock()
             .set(path_type, malus);
     }
 
-    fn is_no_ai(&self) -> bool {
+    pub fn is_no_ai(&self) -> bool {
         self.mob_flags() & MOB_FLAG_NO_AI != 0
     }
 
-    fn set_no_ai(&self, no_ai: bool) {
+    pub fn set_no_ai(&self, no_ai: bool) {
         self.set_mob_flag(MOB_FLAG_NO_AI, no_ai);
     }
 
-    fn is_left_handed(&self) -> bool {
+    pub fn is_left_handed(&self) -> bool {
         self.mob_flags() & MOB_FLAG_LEFT_HANDED != 0
     }
 
-    fn set_left_handed(&self, left_handed: bool) {
+    pub fn set_left_handed(&self, left_handed: bool) {
         self.set_mob_flag(MOB_FLAG_LEFT_HANDED, left_handed);
     }
 
-    fn is_aggressive(&self) -> bool {
+    pub fn is_aggressive(&self) -> bool {
         self.mob_flags() & MOB_FLAG_AGGRESSIVE != 0
     }
 
     /// Maximum degrees the head may pitch up or down independently of the body.
-    fn max_head_x_rot(&self) -> f32 {
-        40.0
+    pub const fn max_head_x_rot(&self) -> f32 {
+        self.props().max_head_x_rot
     }
 
     /// Maximum degrees the head may yaw left or right independently of the body.
-    fn max_head_y_rot(&self) -> f32 {
-        75.0
+    pub const fn max_head_y_rot(&self) -> f32 {
+        self.props().max_head_y_rot
     }
 
     /// Performs this mob's melee attack against `target`: computes weapon
     /// damage and knockback, applies enchantment effects, and returns whether
     /// the target was hurt.
     #[must_use]
-    fn do_hurt_target(&self, entity: &SharedEntity, world: &World, target: &SharedEntity) -> bool {
+    pub fn do_hurt_target(
+        &self,
+        entity: &SharedEntity,
+        world: &World,
+        target: &SharedEntity,
+    ) -> bool {
         let Some(attacker) = self.as_entity_event_source().as_living_entity() else {
             return false;
         };
@@ -1351,7 +1569,7 @@ pub trait Mob: LivingEntity + Leashable {
             .attributes()
             .lock()
             .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32;
-        let damage_source = self.mob_attack_damage_source(&weapon_item, entity);
+        let damage_source = Self::mob_attack_damage_source(&weapon_item, entity);
         let enchantment_context = EnchantmentDamageContext::new(
             target.entity_type(),
             Some(self.entity_type()),
@@ -1403,8 +1621,7 @@ pub trait Mob: LivingEntity + Leashable {
     /// Builds the damage source for this mob's melee attack: the weapon's
     /// custom damage type if set, else its behavior's item damage source,
     /// else the default mob-attack type.
-    fn mob_attack_damage_source(
-        &self,
+    pub fn mob_attack_damage_source(
         weapon_item: &ItemStack,
         attacker: &SharedEntity,
     ) -> DamageSource {
@@ -1424,7 +1641,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Computes attack knockback strength from the attack-knockback attribute
     /// and the weapon's knockback enchantments.
-    fn get_attack_knockback(
+    pub fn get_attack_knockback(
         &self,
         target: &dyn Entity,
         weapon_item: &ItemStack,
@@ -1450,7 +1667,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Knocks the target back in this mob's facing direction and dampens
     /// this mob's own horizontal velocity.
-    fn cause_extra_knockback(
+    pub fn cause_extra_knockback(
         &self,
         target: &dyn Entity,
         knockback_amount: f64,
@@ -1472,11 +1689,13 @@ pub trait Mob: LivingEntity + Leashable {
         self.set_velocity(DVec3::new(velocity.x * 0.6, velocity.y, velocity.z * 0.6));
     }
 
-    /// Plays this mob's attack sound; does nothing by default.
-    fn play_attack_sound(&self) {}
+    /// Plays this mob type's attack sound.
+    pub fn play_attack_sound(&self) {
+        (self.props().play_attack_sound)(self);
+    }
 
     /// Returns whether `target` is within this mob's melee attack range.
-    fn is_within_melee_attack_range(&self, target: &dyn LivingEntity) -> bool {
+    pub fn is_within_melee_attack_range(&self, target: &dyn LivingEntity) -> bool {
         // TODO: Use the held item's ATTACK_RANGE component once it has typed component data.
         let max_range = default_attack_reach();
         let min_range = 0.0;
@@ -1491,7 +1710,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Returns the bounding box used for melee range checks, expanded
     /// horizontally and extended to cover a ridden vehicle.
-    fn attack_bounding_box(&self, horizontal_expansion: f64) -> WorldAabb {
+    pub fn attack_bounding_box(&self, horizontal_expansion: f64) -> WorldAabb {
         let own_aabb = self.bounding_box();
         let base = if let Some(vehicle) = self.vehicle() {
             let mount_aabb = vehicle.bounding_box();
@@ -1510,17 +1729,17 @@ pub trait Mob: LivingEntity + Leashable {
         base.inflate_xyz(horizontal_expansion, 0.0, horizontal_expansion)
     }
 
-    fn set_aggressive(&self, aggressive: bool) {
+    pub fn set_aggressive(&self, aggressive: bool) {
         self.set_mob_flag(MOB_FLAG_AGGRESSIVE, aggressive);
     }
 
-    fn set_mob_flag(&self, flag: i8, enabled: bool) {
+    pub fn set_mob_flag(&self, flag: i8, enabled: bool) {
         let flags = self.mob_flags();
         let next = if enabled { flags | flag } else { flags & !flag };
         self.set_mob_flags(next);
     }
 
-    fn controlled_mob_vehicle(&self) -> Option<SharedEntity> {
+    pub fn controlled_mob_vehicle(&self) -> Option<SharedEntity> {
         let vehicle = self.vehicle()?;
         if vehicle
             .controlling_passenger()
@@ -1532,7 +1751,7 @@ pub trait Mob: LivingEntity + Leashable {
         Some(vehicle)
     }
 
-    fn set_wanted_position(&self, position: DVec3, speed_modifier: f64) {
+    pub fn set_wanted_position(&self, position: DVec3, speed_modifier: f64) {
         if let Some(vehicle) = self.controlled_mob_vehicle()
             && let Some(mob) = vehicle.as_mob()
         {
@@ -1547,12 +1766,12 @@ pub trait Mob: LivingEntity + Leashable {
             .set_wanted_position(position, speed_modifier);
     }
 
-    fn jump_control_jump(&self) {
+    pub fn jump_control_jump(&self) {
         self.mob_base().controls().lock().jump_control.jump();
     }
 
     /// Mirrors vanilla `Mob.setSpeed`: update cached speed and forward AI input.
-    fn set_mob_speed(&self, speed: f32) {
+    pub fn set_mob_speed(&self, speed: f32) {
         self.set_speed(speed);
         let input = self.travel_input();
         self.set_travel_input(LivingTravelInput::new(
@@ -1562,7 +1781,7 @@ pub trait Mob: LivingEntity + Leashable {
         ));
     }
 
-    fn mob_server_ai_step(&self, entity: &SharedEntity) {
+    pub fn mob_server_ai_step(&self, entity: &SharedEntity) {
         self.increment_no_action_time();
         self.mob_base().sensing().lock().tick();
         if self.tick_count() % 5 == 0 {
@@ -1578,7 +1797,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Rolls the daylight-burning chance when `MONSTERS_BURN` is enabled.
     /// Water, rain, and powder snow prevent burning.
-    fn is_sun_burn_tick(&self) -> bool {
+    pub fn is_sun_burn_tick(&self) -> bool {
         let Some(world) = self.level() else {
             return false;
         };
@@ -1609,14 +1828,14 @@ pub trait Mob: LivingEntity + Leashable {
             && world.can_see_sky(eye_pos)
     }
 
-    fn sun_protection_slot(&self) -> EquipmentSlot {
-        EquipmentSlot::Head
+    pub const fn sun_protection_slot(&self) -> EquipmentSlot {
+        self.props().sun_protection_slot
     }
 
     /// Damages sun-protective gear on a successful burn roll, or ignites
     /// the mob if the slot is empty.
-    fn tick_daylight_burning(&self) {
-        if !LivingEntity::is_alive(self) || !self.is_sun_burn_tick() {
+    pub fn tick_daylight_burning(&self) {
+        if !LivingEntity::is_alive(self.living) || !self.is_sun_burn_tick() {
             return;
         }
 
@@ -1652,7 +1871,7 @@ pub trait Mob: LivingEntity + Leashable {
     ///
     /// Burning and pickup belong here, outside the `serverAiStep` AI gate,
     /// so mobs with `NoAI` still burn and collect loot as in vanilla.
-    fn mob_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+    pub fn mob_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
         let result = self.default_ai_step(entity);
         if REGISTRY
             .entity_types
@@ -1664,16 +1883,24 @@ pub trait Mob: LivingEntity + Leashable {
         result
     }
 
-    fn tick_path_navigation(&self) {
+    pub fn tick_path_navigation(&self) {
         let Some(world) = self.level() else {
             return;
         };
         let game_time = world.game_time();
-        self.mob_base().navigation().lock().tick();
-        tick_path_navigation_target(self, &world, game_time, true);
+        let recompute_request = {
+            let mut navigation = self.mob_base().navigation().lock();
+            navigation.tick();
+            navigation.take_delayed_recompute_request(game_time, self.can_update_path())
+        };
+        if let Some(request) = recompute_request {
+            self.recompute_path(request);
+        }
+
+        tick_path_navigation_target(self, &world, game_time, self.can_update_path());
     }
 
-    fn tick_move_control(&self) {
+    pub fn tick_move_control(&self) {
         let move_control = {
             let mut controls = self.mob_base().controls().lock();
             let move_control = controls.move_control;
@@ -1708,7 +1935,7 @@ pub trait Mob: LivingEntity + Leashable {
         }
     }
 
-    fn tick_move_to_control(&self, wanted_position: DVec3, speed_modifier: f64) {
+    pub fn tick_move_to_control(&self, wanted_position: DVec3, speed_modifier: f64) {
         let position = self.position();
         let xd = wanted_position.x - position.x;
         let yd = wanted_position.y - position.y;
@@ -1742,7 +1969,7 @@ pub trait Mob: LivingEntity + Leashable {
         }
     }
 
-    fn tick_strafe_control(&self, forward: f32, right: f32) {
+    pub fn tick_strafe_control(&self, forward: f32, right: f32) {
         let movement_speed = self
             .attributes()
             .lock()
@@ -1775,7 +2002,7 @@ pub trait Mob: LivingEntity + Leashable {
         self.mob_base().controls().lock().move_control.set_wait();
     }
 
-    fn is_strafe_walkable(&self, dx: f32, dz: f32) -> bool {
+    pub fn is_strafe_walkable(&self, dx: f32, dz: f32) -> bool {
         let Some(world) = self.level() else {
             return true;
         };
@@ -1789,7 +2016,7 @@ pub trait Mob: LivingEntity + Leashable {
         WalkPathEvaluator::path_type_static(&mut context, pos) == PathType::Walkable
     }
 
-    fn tick_jumping_control(&self, speed_modifier: f64) {
+    pub fn tick_jumping_control(&self, speed_modifier: f64) {
         let movement_speed = self
             .attributes()
             .lock()
@@ -1802,7 +2029,7 @@ pub trait Mob: LivingEntity + Leashable {
         }
     }
 
-    fn tick_look_control(&self) {
+    pub fn tick_look_control(&self) {
         let look_control = {
             let mut controls = self.mob_base().controls().lock();
             let look_control = controls.look_control;
@@ -1840,7 +2067,7 @@ pub trait Mob: LivingEntity + Leashable {
         self.clamp_head_rotation_to_body_when_pathing();
     }
 
-    fn clamp_head_rotation_to_body_when_pathing(&self) {
+    pub fn clamp_head_rotation_to_body_when_pathing(&self) {
         if self.mob_base().navigation().lock().is_done() {
             return;
         }
@@ -1852,12 +2079,12 @@ pub trait Mob: LivingEntity + Leashable {
         ));
     }
 
-    fn tick_jump_control(&self) {
+    pub fn tick_jump_control(&self) {
         let jumping = self.mob_base().controls().lock().jump_control.tick();
         self.set_jumping(jumping);
     }
 
-    fn update_control_flags(&self) {
+    pub fn update_control_flags(&self) {
         let no_controller = self
             .controlling_passenger()
             .is_none_or(|passenger| !passenger.is_mob());
@@ -1871,7 +2098,7 @@ pub trait Mob: LivingEntity + Leashable {
         selector.set_control(GoalControl::Look, no_controller);
     }
 
-    fn tick_body_rotation_control(&self) {
+    pub fn tick_body_rotation_control(&self) {
         let moving = {
             let delta = self.position() - self.old_position();
             delta.x.mul_add(delta.x, delta.z * delta.z) > BODY_ROTATION_MOVING_DISTANCE_SQR
@@ -1898,43 +2125,45 @@ pub trait Mob: LivingEntity + Leashable {
     }
 }
 
-// Blanket implementation for all mobs to implement `Leashable`
-impl<T: Mob> Leashable for T {
+// Every mob is `Leashable`.
+impl<T: LivingEntity + Has<MobBase>> Leashable for T {
     fn leash_data(&self) -> &SyncMutex<Option<LeashData>> {
-        self.mob_base().leash_data()
+        self.get::<MobBase>().leash_data()
     }
 
     /// Rejects enemies by default; concrete mobs may override the type-level rule.
     fn can_be_leashed(&self) -> bool {
-        self.mob_can_be_leashed()
+        Mob::new(self).mob_can_be_leashed()
     }
 
     fn on_leash_removed(&self) {
         if self.leash_holder().is_none() {
-            self.clear_home();
+            Mob::new(self).clear_home();
         }
     }
 
     /// Drops the leash and disables MOVE until re-leashed at close range.
     fn leash_too_far_behaviour(&self) {
         self.drop_leash();
-        self.mob_base()
+        self.get::<MobBase>()
             .goal_selector()
             .lock()
             .disable_control(GoalControl::Move);
     }
 
     fn when_leashed_to(&self, holder: &dyn Entity) {
-        if let Some(pathfinder) = self.as_pathfinder_mob() {
-            pathfinder.when_leashed_to_pathfinder(holder);
+        let mob = Mob::new(self);
+        if mob.is_pathfinder() {
+            mob.when_leashed_to_pathfinder(holder);
         } else {
             holder.notify_leash_holder(self.as_entity_event_source());
         }
     }
 
     fn close_range_leash_behaviour(&self, holder: &dyn Entity) {
-        if let Some(pathfinder) = self.as_pathfinder_mob() {
-            pathfinder.close_range_leash_behaviour_pathfinder(holder);
+        let mob = Mob::new(self);
+        if mob.is_pathfinder() {
+            mob.close_range_leash_behaviour_pathfinder(holder);
         }
     }
 }
@@ -1947,7 +2176,7 @@ fn default_attack_reach() -> f64 {
     f64::from(DEFAULT_ATTACK_REACH_BASE).sqrt() - f64::from(DEFAULT_ATTACK_REACH_OFFSET)
 }
 
-fn should_jump_to_wanted_position<M: Mob + ?Sized>(mob: &M, xd: f64, yd: f64, zd: f64) -> bool {
+fn should_jump_to_wanted_position(mob: &Mob<'_>, xd: f64, yd: f64, zd: f64) -> bool {
     let max_up_step = f64::from(mob.max_up_step());
     if yd > max_up_step && xd * xd + zd * zd < mob.bounding_box().width().max(1.0) {
         return true;

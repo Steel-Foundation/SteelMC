@@ -1483,7 +1483,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         if player.is_secondary_use_active()
-            && mob.can_be_leashed()
+            && mob.leashable().can_be_leashed()
             && self
                 .as_living_entity()
                 .is_none_or(|living| !LivingEntity::is_baby(living))
@@ -1516,12 +1516,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return InteractionResult::Success;
         }
 
-        if let Some(holder) = mob.leash_holder() {
+        if let Some(holder) = mob.leashable().leash_holder() {
             if holder.id() == player.id() {
                 if player.has_infinite_materials() {
-                    mob.remove_leash();
+                    mob.leashable().remove_leash();
                 } else {
-                    mob.drop_leash();
+                    mob.leashable().drop_leash();
                 }
 
                 self.game_event_with_source_entity(
@@ -1541,7 +1541,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             let inventory = player.inventory.lock();
             inventory.get_item_in_hand(hand).is(&vanilla_items::LEAD)
         };
-        if !holding_lead || !mob.can_have_a_leash_attached_to(player) {
+        if !holding_lead || !mob.leashable().can_have_a_leash_attached_to(player) {
             return InteractionResult::Pass;
         }
 
@@ -1552,10 +1552,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return InteractionResult::Pass;
         };
 
-        if mob.is_leashed() {
-            mob.drop_leash();
+        if mob.leashable().is_leashed() {
+            mob.leashable().drop_leash();
         }
-        if !mob.set_leashed_to(&player_entity) {
+        if !mob.leashable().set_leashed_to(&player_entity) {
             return InteractionResult::Pass;
         }
 
@@ -1609,8 +1609,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this entity as a pathfinder mob when it has pathfinding behavior.
-    fn as_pathfinder_mob(&self) -> Option<&dyn PathfinderMob> {
-        try_as_dyn::<Self, dyn PathfinderMob>(self)
+    fn as_pathfinder_mob(&self) -> Option<Mob<'_>> {
+        self.as_mob().filter(Mob::is_pathfinder)
     }
 
     /// Returns true for entities that implement vanilla mob behavior.
@@ -1619,23 +1619,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this entity as a mob when it has mob behavior.
-    fn as_mob(&self) -> Option<&dyn Mob> {
-        try_as_dyn::<Self, dyn Mob>(self)
+    fn as_mob(&self) -> Option<Mob<'_>> {
+        Mob::of(self.as_entity_event_source())
     }
 
     /// Returns this entity as a `Leashable` if it has [`Leashable`] behavior.
     fn as_leashable(&self) -> Option<&dyn Leashable> {
         try_as_dyn::<Self, dyn Leashable>(self)
-    }
-
-    /// Returns true for entities that implement vanilla hostile-mob behavior.
-    fn is_monster(&self) -> bool {
-        self.as_monster().is_some()
-    }
-
-    /// Returns the `Monster` capability, equivalent to vanilla's `instanceof Monster`.
-    fn as_monster(&self) -> Option<&dyn Monster> {
-        try_as_dyn::<Self, dyn Monster>(self)
     }
 
     /// Whether this entity implements the `Enemy` marker.

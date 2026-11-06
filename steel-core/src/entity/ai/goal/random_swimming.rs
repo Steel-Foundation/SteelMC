@@ -5,7 +5,7 @@ use super::random_pos::default_random_pos;
 use super::random_stroll::RandomStrollGoal;
 use super::selector::{Goal, GoalControls};
 use crate::behavior::BlockStateBehaviorExt as _;
-use crate::entity::PathfinderMob;
+use crate::entity::Mob;
 use crate::entity::ai::path::PathComputationType;
 
 const RANDOM_SWIMMING_HORIZONTAL_RANGE: i32 = 10;
@@ -30,24 +30,24 @@ impl Goal for RandomSwimmingGoal {
         self.stroll.controls()
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         self.stroll.can_use_with_position(mob, random_swimmable_pos)
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         self.stroll.can_continue_to_use(mob)
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         self.stroll.start(mob);
     }
 
-    fn stop(&mut self, mob: &dyn PathfinderMob) {
+    fn stop(&mut self, mob: &Mob<'_>) {
         self.stroll.stop(mob);
     }
 }
 
-fn random_swimmable_pos(mob: &dyn PathfinderMob) -> Option<DVec3> {
+fn random_swimmable_pos(mob: &Mob<'_>) -> Option<DVec3> {
     retry_random_swimmable_pos(
         default_random_pos(
             mob,
@@ -82,7 +82,7 @@ fn retry_random_swimmable_pos(
     }
 }
 
-fn is_water_pathfindable(mob: &dyn PathfinderMob, pos: DVec3) -> bool {
+fn is_water_pathfindable(mob: &Mob<'_>, pos: DVec3) -> bool {
     let Some(world) = mob.level() else {
         return false;
     };

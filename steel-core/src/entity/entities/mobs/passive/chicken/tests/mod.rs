@@ -9,7 +9,7 @@ use steel_registry::{
 };
 
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity, Mob};
+use crate::entity::{Entity, EntitySpawnReason, LivingEntity};
 use crate::test_support::fresh_test_world;
 
 use super::*;

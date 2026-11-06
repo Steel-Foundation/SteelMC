@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::entity::{Entity, Mob, SharedEntity, WeakEntity};
+use crate::entity::{Entity, SharedEntity, WeakEntity};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -473,7 +473,7 @@ pub(super) fn leash_bounding_box_center(entity: &dyn Entity) -> DVec3 {
 }
 
 pub(super) fn leash_holder_movement(entity: &dyn Entity) -> DVec3 {
-    if entity.as_mob().is_some_and(Mob::is_no_ai) {
+    if entity.as_mob().is_some_and(|mob| mob.is_no_ai()) {
         return DVec3::ZERO;
     }
 

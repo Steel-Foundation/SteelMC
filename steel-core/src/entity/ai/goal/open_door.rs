@@ -1,6 +1,6 @@
 use super::door_interact::DoorInteractGoal;
 use super::selector::{Goal, GoalControls};
-use crate::entity::PathfinderMob;
+use crate::entity::Mob;
 use crate::entity::SharedEntity;
 
 const FORGET_TICKS: i32 = 20;
@@ -27,20 +27,20 @@ impl Goal for OpenDoorGoal {
         GoalControls::EMPTY
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         self.door_interact.can_use(mob)
     }
 
-    fn can_continue_to_use(&mut self, _mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, _mob: &Mob<'_>) -> bool {
         self.close_door && self.forget_time > 0 && self.door_interact.can_continue_to_use()
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         self.forget_time = FORGET_TICKS;
         self.door_interact.set_open(mob, true);
     }
 
-    fn stop(&mut self, mob: &dyn PathfinderMob) {
+    fn stop(&mut self, mob: &Mob<'_>) {
         self.door_interact.set_open(mob, false);
     }
 
@@ -48,7 +48,7 @@ impl Goal for OpenDoorGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         self.forget_time -= 1;
         self.door_interact.tick(mob);
     }
@@ -64,6 +64,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
 
     fn pig() -> ChickenEntity {
@@ -84,7 +85,7 @@ mod tests {
         let mut goal = OpenDoorGoal::new(false);
         goal.forget_time = 1;
 
-        assert!(!goal.can_continue_to_use(&pig()));
+        assert!(!goal.can_continue_to_use(&pig().mob()));
     }
 
     #[test]
@@ -94,12 +95,12 @@ mod tests {
         let mob = Arc::new(pig());
         let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
 
-        goal.start(mob.as_ref());
+        goal.start(&mob.mob());
 
         assert_eq!(goal.forget_time, FORGET_TICKS);
-        assert!(goal.can_continue_to_use(mob.as_ref()));
+        assert!(goal.can_continue_to_use(&mob.mob()));
 
-        goal.tick(mob.as_ref(), &mob_entity);
+        goal.tick(&mob.mob(), &mob_entity);
 
         assert_eq!(goal.forget_time, FORGET_TICKS - 1);
     }

@@ -1,3 +1,4 @@
+use crate::entity::MobParts as _;
 use std::sync::Weak;
 
 use glam::DVec3;
@@ -12,7 +13,6 @@ use super::{
     node_evaluator::{AcceptedNodeRequest, WalkNeighbors},
 };
 use crate::behavior::{BlockStateBehaviorExt as _, init_behaviors};
-use crate::entity::Mob as _;
 use crate::entity::ai::path::{
     PathComputationType, PathType, PathfindingContext, PathfindingMalus,
 };
@@ -67,9 +67,13 @@ impl LevelReader for GridLevel {
 fn mob_path_settings_reads_can_open_doors_from_navigation() {
     init_vanilla_registry();
     let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    pig.mob_base().navigation().lock().set_can_open_doors(true);
+    pig.mob()
+        .mob_base()
+        .navigation()
+        .lock()
+        .set_can_open_doors(true);
 
-    let settings = MobPathSettings::from_mob(&pig);
+    let settings = MobPathSettings::from_mob(&pig.mob());
 
     assert!(settings.can_open_doors());
 }
@@ -78,12 +82,13 @@ fn mob_path_settings_reads_can_open_doors_from_navigation() {
 fn mob_path_settings_reads_can_walk_over_fences_from_navigation() {
     init_vanilla_registry();
     let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    pig.mob_base()
+    pig.mob()
+        .mob_base()
         .navigation()
         .lock()
         .set_can_walk_over_fences(true);
 
-    let settings = MobPathSettings::from_mob(&pig);
+    let settings = MobPathSettings::from_mob(&pig.mob());
 
     assert!(settings.can_walk_over_fences());
 }

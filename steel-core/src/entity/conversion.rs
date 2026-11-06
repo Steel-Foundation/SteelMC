@@ -10,7 +10,7 @@ use crate::entity::{
 use crate::inventory::equipment::EquipmentSlot;
 
 /// Finalizes a freshly converted mob.
-pub type AfterConversion<'a> = dyn Fn(&dyn Mob) + 'a;
+pub type AfterConversion<'a> = dyn Fn(&Mob<'_>) + 'a;
 
 /// Controls which state a converted mob inherits.
 ///
@@ -53,7 +53,7 @@ impl ConversionType {
         matches!(self, Self::Single)
     }
 
-    fn convert(self, from: &dyn Mob, to: &SharedEntity, params: ConversionParams) {
+    fn convert(self, from: &Mob<'_>, to: &SharedEntity, params: ConversionParams) {
         let Some(to_mob) = to.as_mob() else {
             log::error!(
                 "cannot convert {} to {}: created entity is not a mob",
@@ -63,8 +63,8 @@ impl ConversionType {
             return;
         };
         match self {
-            Self::Single => convert_single(from, to_mob, to, params),
-            Self::SplitOnDeath => convert_split_on_death(from, to_mob, params),
+            Self::Single => convert_single(from, &to_mob, to, params),
+            Self::SplitOnDeath => convert_split_on_death(from, &to_mob, params),
         }
     }
 }
@@ -72,7 +72,7 @@ impl ConversionType {
 /// Unlike vanilla, inserts the new mob before transferring state so
 /// rejected insertions leave the source, passengers, and leash untouched.
 pub(crate) fn convert_to(
-    from: &dyn Mob,
+    from: &Mob<'_>,
     entity_type: EntityTypeRef,
     params: ConversionParams,
     after_conversion: Option<&AfterConversion<'_>>,
@@ -118,7 +118,7 @@ pub(crate) fn convert_to(
 
     params.conversion_type.convert(from, &to, params);
     if let Some(after_conversion) = after_conversion {
-        after_conversion(to_mob);
+        after_conversion(&to_mob);
     }
 
     if params.conversion_type.should_discard_after_conversion() {
@@ -127,10 +127,10 @@ pub(crate) fn convert_to(
     Some(to)
 }
 
-fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: ConversionParams) {
+fn convert_single(from: &Mob<'_>, to: &Mob<'_>, to_arc: &SharedEntity, params: ConversionParams) {
     let root_passenger = from.first_passenger();
 
-    copy_position(from, to);
+    copy_position(from.entity(), to.entity());
     to.set_velocity(from.velocity());
 
     if let Some(root_passenger) = root_passenger {
@@ -172,25 +172,25 @@ fn convert_single(from: &dyn Mob, to: &dyn Mob, to_arc: &SharedEntity, params: C
     if let Some(bed_position) = from.sleeping_pos() {
         to.set_sleeping_pos(bed_position);
     }
-    if let Some(leash_holder) = from.leash_holder() {
-        to.set_leashed_to(&leash_holder);
+    if let Some(leash_holder) = from.leashable().leash_holder() {
+        to.leashable().set_leashed_to(&leash_holder);
     }
 
     convert_common(from, to, params);
 }
 
-fn convert_split_on_death(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
+fn convert_split_on_death(from: &Mob<'_>, to: &Mob<'_>, params: ConversionParams) {
     if let Some(root_passenger) = from.first_passenger() {
         root_passenger.stop_riding();
     }
-    if from.leash_holder().is_some() {
-        from.drop_leash();
+    if from.leashable().leash_holder().is_some() {
+        from.leashable().drop_leash();
     }
 
     convert_common(from, to, params);
 }
 
-fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
+fn convert_common(from: &Mob<'_>, to: &Mob<'_>, params: ConversionParams) {
     to.set_absorption_amount(from.living_base().absorption_amount());
 
     for effect in from.active_mob_effects() {
@@ -273,6 +273,7 @@ mod tests {
 
     use super::{ConversionParams, ConversionType};
     use crate::behavior::init_behaviors;
+    use crate::entity::MobParts as _;
     use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
     use crate::entity::entities::ChickenEntity;
     use crate::entity::mob_effect::ABSORPTION_PER_LEVEL;
@@ -364,6 +365,7 @@ mod tests {
         let cow = pig
             .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
+            .mob()
             .convert_to(
                 &vanilla_entities::CHICKEN,
                 ConversionParams::single(true, true),
@@ -443,6 +445,7 @@ mod tests {
         let cow = pig
             .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
+            .mob()
             .convert_to(
                 &vanilla_entities::CHICKEN,
                 ConversionParams::single(false, false),
@@ -470,7 +473,7 @@ mod tests {
             EquipmentSlot::Head,
             ItemStack::new(&vanilla_items::IRON_HELMET),
         );
-        let after_conversion = |converted: &dyn Mob| {
+        let after_conversion = |converted: &Mob<'_>| {
             assert!(pig_mob.equipment_in_slot(EquipmentSlot::Head).is_empty());
             assert_eq!(
                 converted.equipment_in_slot(EquipmentSlot::Head).item().key,
@@ -481,6 +484,7 @@ mod tests {
         let converted = pig
             .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
+            .mob()
             .convert_to(
                 &vanilla_entities::CHICKEN,
                 ConversionParams::single(true, false),
@@ -500,6 +504,7 @@ mod tests {
         let cow = pig
             .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
+            .mob()
             .convert_to(
                 &vanilla_entities::CHICKEN,
                 ConversionParams {
@@ -527,6 +532,7 @@ mod tests {
         let converted = pig
             .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
+            .mob()
             .convert_to(
                 &vanilla_entities::ZOMBIE,
                 ConversionParams::single(true, true),
@@ -559,6 +565,7 @@ mod tests {
         let converted = source
             .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
+            .mob()
             .convert_to(
                 &vanilla_entities::ZOMBIE,
                 ConversionParams::single(true, true),
@@ -593,6 +600,7 @@ mod tests {
         let converted = source
             .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
+            .mob()
             .convert_to(
                 &vanilla_entities::ZOMBIE,
                 ConversionParams::single(true, true),
@@ -621,13 +629,14 @@ mod tests {
         let holder = add_pig(world);
         let source_mob = source.as_mob().expect("pig is a mob");
         assert!(
-            source_mob.set_leashed_to(&holder),
+            source_mob.leashable().set_leashed_to(&holder),
             "the test pig should leash to the holder"
         );
 
         let converted = source
             .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
+            .mob()
             .convert_to(
                 &vanilla_entities::ZOMBIE,
                 ConversionParams::single(true, true),
@@ -640,7 +649,10 @@ mod tests {
             "refused conversions leave the source alive"
         );
         assert_eq!(
-            source_mob.leash_holder().map(|entity| entity.id()),
+            source_mob
+                .leashable()
+                .leash_holder()
+                .map(|entity| entity.id()),
             Some(holder.id()),
             "a refused conversion must not steal the source's leash"
         );
@@ -662,6 +674,7 @@ mod tests {
         let cow = pig
             .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
+            .mob()
             .convert_to(
                 &vanilla_entities::CHICKEN,
                 ConversionParams::single(false, true),
@@ -684,7 +697,7 @@ mod tests {
         let world = &world_fixture.world;
         let pig = add_pig(world);
         let finalized = Cell::new(false);
-        let after_conversion = |mob: &dyn Mob| {
+        let after_conversion = |mob: &Mob<'_>| {
             assert_eq!(mob.entity_type(), &vanilla_entities::CHICKEN);
             finalized.set(true);
         };
@@ -692,6 +705,7 @@ mod tests {
         let cow = pig
             .downcast_ref::<ChickenEntity>()
             .expect("pig is concrete")
+            .mob()
             .convert_to(
                 &vanilla_entities::CHICKEN,
                 ConversionParams::single(false, false),

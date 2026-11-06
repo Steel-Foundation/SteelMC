@@ -1105,7 +1105,8 @@ pub trait LivingEntity: Entity {
             return Animal::base_experience_reward();
         }
 
-        self.as_mob().map_or(0, Mob::base_experience_reward_mob)
+        self.as_mob()
+            .map_or(0, |mob| mob.base_experience_reward_mob())
     }
 
     /// Returns the experience reward for this entity's death; currently
@@ -1169,7 +1170,7 @@ pub trait LivingEntity: Entity {
 
     /// Returns the loot-table seed for this entity's death loot, if it's a mob.
     fn death_loot_table_seed(&self) -> i64 {
-        self.as_mob().map_or(0, Mob::death_loot_table_seed)
+        self.as_mob().map_or(0, |mob| mob.death_loot_table_seed())
     }
 
     /// Rolls and spawns this entity's death-loot drops from its loot table,
@@ -1178,8 +1179,9 @@ pub trait LivingEntity: Entity {
         let Some(world) = self.level() else {
             return;
         };
-        let has_custom_death_loot_table =
-            self.as_mob().is_some_and(Mob::has_custom_death_loot_table);
+        let has_custom_death_loot_table = self
+            .as_mob()
+            .is_some_and(|mob| mob.has_custom_death_loot_table());
         let Some(loot_table) = self.death_loot_table() else {
             if has_custom_death_loot_table && let Some(mob) = self.as_mob() {
                 mob.clear_custom_death_loot_table();
@@ -1734,7 +1736,7 @@ pub trait LivingEntity: Entity {
 
     /// Returns the effective vanilla dispenser slot gate for living entities and mobs.
     fn can_dispenser_equip_into_slot(&self, _slot: EquipmentSlot) -> bool {
-        self.as_mob().is_none_or(Mob::can_pick_up_loot)
+        self.as_mob().is_none_or(|mob| mob.can_pick_up_loot())
     }
 
     /// Returns whether a dispenser may auto-equip this item onto this entity:

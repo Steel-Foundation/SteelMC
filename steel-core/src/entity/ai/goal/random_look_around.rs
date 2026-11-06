@@ -4,7 +4,7 @@ use glam::DVec3;
 
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
-use crate::entity::{PathfinderMob, SharedEntity};
+use crate::entity::{Mob, SharedEntity};
 
 const RANDOM_LOOK_AROUND_CHANCE: f32 = 0.02;
 
@@ -36,15 +36,15 @@ impl Goal for RandomLookAroundGoal {
         GoalControls::MOVE | GoalControls::LOOK
     }
 
-    fn can_use(&mut self, _mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, _mob: &Mob<'_>) -> bool {
         rand::random::<f32>() < RANDOM_LOOK_AROUND_CHANCE
     }
 
-    fn can_continue_to_use(&mut self, _mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, _mob: &Mob<'_>) -> bool {
         self.look_time >= 0
     }
 
-    fn start(&mut self, _mob: &dyn PathfinderMob) {
+    fn start(&mut self, _mob: &Mob<'_>) {
         let direction = rand::random_range(0.0..TAU);
         self.rel_x = direction.cos();
         self.rel_z = direction.sin();
@@ -55,7 +55,7 @@ impl Goal for RandomLookAroundGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         self.look_time -= 1;
         let position = mob.position();
         mob.mob_base().controls().lock().look_control.set_look_at(
@@ -81,13 +81,21 @@ mod tests {
     use steel_utils::locks::SyncMutex;
 
     use super::*;
-    use crate::entity::{Entity, EntityBase, LivingEntity, LivingEntityBase, Mob, MobBase};
+
+    use crate::entity::MobParts as _;
+    use crate::entity::component::Has;
+    use crate::entity::component::definition::MobDefinition;
+    use crate::entity::{Entity, EntityBase, LivingEntity, LivingEntityBase, MobBase};
+    use crate::entity::{EntitySyncedData, MobProps, mob};
+    use std::sync::LazyLock;
+    use steel_registry::vanilla_entity_data::MobEntityData;
+    use steel_utils::{DowncastType as _, DowncastTypeKey, ErasedType};
 
     struct TestPathfinderMob {
         base: EntityBase,
         living_base: LivingEntityBase,
         mob_base: MobBase,
-        mob_flags: SyncMutex<i8>,
+        entity_data: SyncMutex<MobEntityData>,
         health: SyncMutex<f32>,
     }
 
@@ -102,8 +110,8 @@ mod tests {
                     Weak::new(),
                 ),
                 living_base: LivingEntityBase::new(&vanilla_entities::PIG),
-                mob_base: MobBase::new(),
-                mob_flags: SyncMutex::new(0),
+                mob_base: MobBase::new(&TestPathfinderMob::MOB),
+                entity_data: SyncMutex::new(MobEntityData::new()),
                 health: SyncMutex::new(10.0),
             }
         }
@@ -111,7 +119,28 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(TestPathfinderMob);
 
+    impl TestPathfinderMob {
+        const MOB: MobProps = MobProps {
+            pathfinder: true,
+            ..MobProps::new(|| TestPathfinderMob::definition())
+        };
+
+        fn definition() -> &'static MobDefinition<Self> {
+            static DEFINITION: LazyLock<MobDefinition<TestPathfinderMob>> =
+                LazyLock::new(mob::stages::definition);
+            &DEFINITION
+        }
+    }
+
     impl Entity for TestPathfinderMob {
+        fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+            (key == MobBase::TYPE_KEY).then_some(&self.mob_base as &dyn ErasedType)
+        }
+
+        fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+            Some(&self.entity_data)
+        }
+
         fn base(&self) -> &EntityBase {
             &self.base
         }
@@ -135,21 +164,11 @@ mod tests {
         }
     }
 
-    impl Mob for TestPathfinderMob {
-        fn mob_base(&self) -> &MobBase {
+    impl Has<MobBase> for TestPathfinderMob {
+        fn component(&self) -> &MobBase {
             &self.mob_base
         }
-
-        fn mob_flags(&self) -> i8 {
-            *self.mob_flags.lock()
-        }
-
-        fn set_mob_flags(&self, flags: i8) {
-            *self.mob_flags.lock() = flags;
-        }
     }
-
-    impl PathfinderMob for TestPathfinderMob {}
 
     #[test]
     fn random_look_around_sets_look_control_to_eye_height() {
@@ -157,10 +176,10 @@ mod tests {
         let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
         let mut goal = RandomLookAroundGoal::new();
 
-        goal.start(mob.as_ref());
-        goal.tick(mob.as_ref(), &mob_entity);
+        goal.start(&mob.mob());
+        goal.tick(&mob.mob(), &mob_entity);
 
-        let look_control = mob.mob_base().controls().lock().look_control;
+        let look_control = mob.mob().mob_base().controls().lock().look_control;
         assert!(look_control.is_looking_at_target());
         assert_eq!(
             look_control.wanted_position().y.to_bits(),

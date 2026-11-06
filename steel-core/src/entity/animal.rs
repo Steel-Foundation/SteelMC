@@ -25,20 +25,31 @@ use uuid::Uuid;
 use crate::behavior::InteractionResult;
 use crate::entity::ageable::{self, Age, Ageable};
 use crate::entity::ai::path::PathType;
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::{MobDefinition, MobEntries};
 use crate::entity::component::entries::{AiStep, CustomServerAiStep, MobInteract, MobInteractCtx};
 use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::entities::ExperienceOrbEntity;
-use crate::entity::{Entity, EntitySpawnReason, Mob, MobBase, SharedEntity, mob, next_entity_id};
+use crate::entity::{
+    Entity, EntitySpawnReason, Mob, MobBase, MobProps, SharedEntity, mob, next_entity_id,
+};
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 
 const PARENT_AGE_AFTER_BREEDING: i32 = 6000;
 const IN_LOVE_TIME: i32 = 600;
 const BREEDING_XP: RangeInclusive<i32> = 1..=7;
-/// `Animal.getAmbientSoundInterval`.
-pub const AMBIENT_SOUND_INTERVAL: i32 = 120;
+/// `Animal`'s changes to the mob defaults, for a type with `definition`.
+#[must_use]
+pub const fn mob_props(definition: fn() -> &'static dyn MobEntries) -> MobProps {
+    MobProps {
+        ambient_sound_interval: 120,
+        remove_when_far_away: |_, _| false,
+        pathfinder: true,
+        walk_target_value: |mob, pos| walk_target_value(mob.entity(), pos),
+        ..MobProps::new(definition)
+    }
+}
 
 /// Per-type properties of a vanilla `Animal`.
 pub struct BreedingProps {
@@ -232,21 +243,6 @@ impl<'a> Animal<'a> {
         1 + rand::random_range(0..3)
     }
 
-    /// How attractive `pos` is as a walk target: grass first, then light
-    /// (`Animal.getWalkTargetValue`).
-    #[must_use]
-    pub fn walk_target_value(&self, pos: BlockPos) -> f32 {
-        let Some(world) = self.entity().level() else {
-            return 0.0;
-        };
-
-        if world.get_block_state(pos.below()).get_block() == &vanilla_blocks::GRASS_BLOCK {
-            10.0
-        } else {
-            world.pathfinding_cost_from_light_levels(pos)
-        }
-    }
-
     /// Creates offspring with `partner` and adds it to `world`
     /// (`Animal.spawnChildFromBreeding`).
     pub fn spawn_child_from_breeding(&self, world: &Arc<World>, partner: &Animal<'_>) {
@@ -325,7 +321,7 @@ impl<'a> Animal<'a> {
 
     /// `Animal.mobInteract`: feeding food starts love mode for adults and
     /// speeds up growth for babies.
-    fn feed(&self, mob: &dyn Mob, ctx: &mut MobInteractCtx<'_>) -> Flow {
+    fn feed(&self, mob: &Mob<'_>, ctx: &mut MobInteractCtx<'_>) -> Flow {
         let is_food = {
             let inventory = ctx.player.inventory.lock();
             self.is_food(inventory.get_item_in_hand(ctx.hand))
@@ -357,12 +353,12 @@ impl<'a> Animal<'a> {
 }
 
 /// Components every animal has; keeps stage bounds short.
-pub trait Parts: Mob + Has<Age> + Has<Breeding> {
+pub trait Parts: mob::Parts + Has<Age> + Has<Breeding> {
     /// Returns this entity as an animal.
     fn animal(&self) -> Animal<'_>;
 }
 
-impl<E: Mob + Has<Age> + Has<Breeding>> Parts for E {
+impl<E: mob::Parts + Has<Age> + Has<Breeding>> Parts for E {
     fn animal(&self) -> Animal<'_> {
         Animal::new(self, self.get::<Age>(), self.get::<Breeding>())
     }
@@ -419,12 +415,26 @@ pub fn custom_server_ai_step<E: Parts>() -> Pipeline<E, CustomServerAiStep> {
 #[must_use]
 pub fn mob_interact<E: Parts>() -> Pipeline<E, MobInteract> {
     fn run<E: Parts>(entity: &E, ctx: &mut MobInteractCtx<'_>) -> Flow {
-        entity.animal().feed(entity, ctx)
+        entity.animal().feed(&entity.mob(), ctx)
     }
     Pipeline::new([
         Stage::new(MOB_INTERACT, run::<E>),
         ageable::mob_interact::<E>(),
     ])
+}
+
+/// How attractive `pos` is as a walk target: grass first, then light
+/// (`Animal.getWalkTargetValue`).
+fn walk_target_value(entity: &dyn Entity, pos: BlockPos) -> f32 {
+    let Some(world) = entity.level() else {
+        return 0.0;
+    };
+
+    if world.get_block_state(pos.below()).get_block() == &vanilla_blocks::GRASS_BLOCK {
+        10.0
+    } else {
+        world.pathfinding_cost_from_light_levels(pos)
+    }
 }
 
 /// Returns whether light at `pos` allows animals to spawn naturally.

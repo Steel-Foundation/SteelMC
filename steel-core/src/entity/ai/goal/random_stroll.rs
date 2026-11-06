@@ -3,7 +3,7 @@ use glam::DVec3;
 use super::random_pos::default_random_pos;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::PathfinderMob;
+use crate::entity::Mob;
 
 const RANDOM_STROLL_DEFAULT_INTERVAL: i32 = 120;
 
@@ -51,8 +51,8 @@ impl RandomStrollGoal {
 
     pub(super) fn can_use_with_position(
         &mut self,
-        mob: &dyn PathfinderMob,
-        mut get_position: impl FnMut(&dyn PathfinderMob) -> Option<DVec3>,
+        mob: &Mob<'_>,
+        mut get_position: impl FnMut(&Mob<'_>) -> Option<DVec3>,
     ) -> bool {
         if mob.has_controlling_passenger() {
             return false;
@@ -84,21 +84,21 @@ impl Goal for RandomStrollGoal {
         GoalControls::MOVE
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         self.can_use_with_position(mob, |mob| default_random_pos(mob, 10, 7))
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         !mob.mob_base().navigation().lock().is_done() && !mob.has_controlling_passenger()
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         if let Some(wanted_position) = self.wanted_position {
             mob.move_to_pos(wanted_position, self.speed_modifier);
         }
     }
 
-    fn stop(&mut self, mob: &dyn PathfinderMob) {
+    fn stop(&mut self, mob: &Mob<'_>) {
         mob.mob_base().navigation().lock().stop();
     }
 }

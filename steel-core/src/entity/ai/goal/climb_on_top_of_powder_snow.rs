@@ -3,7 +3,7 @@ use steel_registry::{TaggedRegistryExt as _, vanilla_blocks, vanilla_entity_type
 
 use super::selector::{Goal, GoalControls};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
-use crate::entity::{PathfinderMob, SharedEntity};
+use crate::entity::{Mob, SharedEntity};
 
 pub struct ClimbOnTopOfPowderSnowGoal;
 
@@ -13,7 +13,7 @@ impl ClimbOnTopOfPowderSnowGoal {
         Self
     }
 
-    fn is_powder_snow_walkable_entity(mob: &dyn PathfinderMob) -> bool {
+    fn is_powder_snow_walkable_entity(mob: &Mob<'_>) -> bool {
         steel_registry::REGISTRY.entity_types.is_in_tag(
             mob.entity_type(),
             &vanilla_entity_type_tags::EntityTypeTag::POWDER_SNOW_WALKABLE_MOBS,
@@ -26,7 +26,7 @@ impl Goal for ClimbOnTopOfPowderSnowGoal {
         GoalControls::JUMP
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         let in_powder_snow = mob.was_in_powder_snow() || mob.is_in_powder_snow();
         if !in_powder_snow || !Self::is_powder_snow_walkable_entity(mob) {
             return false;
@@ -57,7 +57,7 @@ impl Goal for ClimbOnTopOfPowderSnowGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         mob.mob_base().controls().lock().jump_control.jump();
     }
 }
@@ -72,8 +72,10 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+
+    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
-    use crate::entity::{Entity as _, InsideBlockEffectType, Mob as _};
+    use crate::entity::{Entity as _, InsideBlockEffectType};
 
     fn pig() -> ChickenEntity {
         ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new())
@@ -93,7 +95,7 @@ mod tests {
         let mut goal = ClimbOnTopOfPowderSnowGoal::new();
         let mob = pig();
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]
@@ -103,7 +105,7 @@ mod tests {
         let mob = pig();
         mob.apply_inside_block_effect(InsideBlockEffectType::Freeze);
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]
@@ -113,7 +115,7 @@ mod tests {
         let mob = ChickenEntity::new(&vanilla_entities::RABBIT, 1, DVec3::ZERO, Weak::new());
         mob.apply_inside_block_effect(InsideBlockEffectType::Freeze);
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]
@@ -123,8 +125,8 @@ mod tests {
         let mob = Arc::new(pig());
         let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
 
-        goal.tick(mob.as_ref(), &mob_entity);
+        goal.tick(&mob.mob(), &mob_entity);
 
-        assert!(mob.mob_base().controls().lock().jump_control.tick());
+        assert!(mob.mob().mob_base().controls().lock().jump_control.tick());
     }
 }

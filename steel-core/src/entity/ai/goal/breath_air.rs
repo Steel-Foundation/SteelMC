@@ -9,7 +9,7 @@ use steel_utils::BlockPos;
 use super::selector::{Goal, GoalControls};
 use crate::behavior::BlockStateBehaviorExt as _;
 use crate::entity::ai::path::PathComputationType;
-use crate::entity::{PathfinderMob, SharedEntity};
+use crate::entity::{Mob, SharedEntity};
 use crate::physics::MoverType;
 use crate::world::World;
 
@@ -33,11 +33,11 @@ impl Goal for BreathAirGoal {
         GoalControls::MOVE | GoalControls::LOOK
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         mob.air_supply() < BREATH_AIR_THRESHOLD
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         self.can_use(mob)
     }
 
@@ -45,12 +45,12 @@ impl Goal for BreathAirGoal {
         false
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         find_air_position(mob);
         mob.mob_base().navigation().lock().stop();
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, entity: &SharedEntity) {
         find_air_position(mob);
         let input = mob.travel_input();
         mob.move_relative(
@@ -65,7 +65,7 @@ impl Goal for BreathAirGoal {
     }
 }
 
-fn find_air_position(mob: &dyn PathfinderMob) {
+fn find_air_position(mob: &Mob<'_>) {
     let position = mob.position();
     let destination_pos = mob
         .level()
@@ -140,6 +140,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
     use crate::entity::{Entity, LivingEntity, LivingTravelInput};
 
@@ -158,11 +159,11 @@ mod tests {
         let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
         mob.set_air_supply(BREATH_AIR_THRESHOLD);
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
 
         mob.set_air_supply(BREATH_AIR_THRESHOLD - 1);
-        assert!(goal.can_use(&mob));
-        assert!(goal.can_continue_to_use(&mob));
+        assert!(goal.can_use(&mob.mob()));
+        assert!(goal.can_continue_to_use(&mob.mob()));
     }
 
     #[test]
@@ -178,7 +179,7 @@ mod tests {
         let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
         mob.set_travel_input(LivingTravelInput::new(1.0, 0.0, 0.0));
 
-        goal.tick(mob.as_ref(), &mob_entity);
+        goal.tick(&mob.mob(), &mob_entity);
 
         assert!(mob.velocity().length_squared() > 0.0);
     }

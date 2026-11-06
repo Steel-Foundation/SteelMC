@@ -6,7 +6,7 @@ use steel_utils::BlockPos;
 use super::random_pos::default_random_pos;
 use super::selector::{Goal, GoalControls};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
-use crate::entity::PathfinderMob;
+use crate::entity::Mob;
 use crate::fluid::FluidStateExt as _;
 
 const WATER_CHECK_DISTANCE_VERTICAL: i32 = 1;
@@ -32,12 +32,12 @@ impl PanicGoal {
         self.is_running
     }
 
-    fn should_panic(mob: &dyn PathfinderMob) -> bool {
+    fn should_panic(mob: &Mob<'_>) -> bool {
         mob.last_damage_source()
             .is_some_and(|source| source.is(&vanilla_damage_type_tags::DamageTypeTag::PANIC_CAUSES))
     }
 
-    fn find_random_position(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn find_random_position(&mut self, mob: &Mob<'_>) -> bool {
         let Some(position) = default_random_pos(mob, 5, 4) else {
             return false;
         };
@@ -56,7 +56,7 @@ impl Goal for PanicGoal {
         true
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         if !Self::should_panic(mob) {
             return false;
         }
@@ -71,23 +71,23 @@ impl Goal for PanicGoal {
         self.find_random_position(mob)
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         !mob.mob_base().navigation().lock().is_done()
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         if let Some(wanted_position) = self.wanted_position {
             mob.move_to_pos(wanted_position, self.speed_modifier);
         }
         self.is_running = true;
     }
 
-    fn stop(&mut self, _mob: &dyn PathfinderMob) {
+    fn stop(&mut self, _mob: &Mob<'_>) {
         self.is_running = false;
     }
 }
 
-fn look_for_water(mob: &dyn PathfinderMob, xz_dist: i32) -> Option<BlockPos> {
+fn look_for_water(mob: &Mob<'_>, xz_dist: i32) -> Option<BlockPos> {
     let world = mob.level()?;
     let mob_position = mob.block_position();
     let block_state = world.get_block_state(mob_position);
@@ -121,6 +121,7 @@ mod tests {
 
     use super::*;
     use crate::entity::LivingEntity;
+    use crate::entity::MobParts as _;
     use crate::entity::damage::DamageSource;
     use crate::entity::entities::ChickenEntity;
     use crate::test_support::test_world;
@@ -143,20 +144,20 @@ mod tests {
             Arc::downgrade(test_world()),
         );
 
-        assert!(!PanicGoal::should_panic(&pig));
+        assert!(!PanicGoal::should_panic(&pig.mob()));
 
         assert!(pig.hurt_server(
             test_world(),
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
             1.0
         ));
-        assert!(!PanicGoal::should_panic(&pig));
+        assert!(!PanicGoal::should_panic(&pig.mob()));
 
         assert!(pig.hurt_server(
             test_world(),
             &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK),
             2.0
         ));
-        assert!(PanicGoal::should_panic(&pig));
+        assert!(PanicGoal::should_panic(&pig.mob()));
     }
 }

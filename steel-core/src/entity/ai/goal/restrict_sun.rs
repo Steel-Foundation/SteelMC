@@ -1,5 +1,5 @@
 use super::selector::{Goal, GoalControls};
-use crate::entity::PathfinderMob;
+use crate::entity::Mob;
 use crate::inventory::equipment::EquipmentSlot;
 
 pub struct RestrictSunGoal;
@@ -16,7 +16,7 @@ impl Goal for RestrictSunGoal {
         GoalControls::EMPTY
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(world) = mob.level() else {
             return false;
         };
@@ -24,11 +24,11 @@ impl Goal for RestrictSunGoal {
         world.is_bright_outside() && !mob.has_item_in_slot(EquipmentSlot::Head)
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         mob.mob_base().navigation().lock().set_avoid_sun(true);
     }
 
-    fn stop(&mut self, mob: &dyn PathfinderMob) {
+    fn stop(&mut self, mob: &Mob<'_>) {
         mob.mob_base().navigation().lock().set_avoid_sun(false);
     }
 }
@@ -41,7 +41,8 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::Mob as _;
+    use crate::entity::MobParts as _;
+
     use crate::entity::entities::ChickenEntity;
 
     fn pig() -> ChickenEntity {
@@ -60,7 +61,7 @@ mod tests {
         init_vanilla_registry();
         let mut goal = RestrictSunGoal::new();
 
-        assert!(!goal.can_use(&pig()));
+        assert!(!goal.can_use(&pig().mob()));
     }
 
     #[test]
@@ -69,12 +70,12 @@ mod tests {
         let mut goal = RestrictSunGoal::new();
         let pig = pig();
 
-        assert!(!pig.mob_base().navigation().lock().avoid_sun());
+        assert!(!pig.mob().mob_base().navigation().lock().avoid_sun());
 
-        goal.start(&pig);
-        assert!(pig.mob_base().navigation().lock().avoid_sun());
+        goal.start(&pig.mob());
+        assert!(pig.mob().mob_base().navigation().lock().avoid_sun());
 
-        goal.stop(&pig);
-        assert!(!pig.mob_base().navigation().lock().avoid_sun());
+        goal.stop(&pig.mob());
+        assert!(!pig.mob().mob_base().navigation().lock().avoid_sun());
     }
 }

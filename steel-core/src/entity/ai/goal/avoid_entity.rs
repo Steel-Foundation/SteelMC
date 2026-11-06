@@ -5,7 +5,7 @@ use super::selector::{Goal, GoalControls};
 use crate::entity::ai::path::Path;
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::entity_selector;
-use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
+use crate::entity::{LivingEntity, Mob, SharedEntity};
 use crate::world::World;
 
 pub struct AvoidEntityGoal {
@@ -53,7 +53,7 @@ impl Goal for AvoidEntityGoal {
         GoalControls::MOVE
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(world) = mob.level() else {
             return false;
         };
@@ -65,7 +65,7 @@ impl Goal for AvoidEntityGoal {
             world.nearest_entity_in_aabb_matching(&search_box, mob.position(), |entity| {
                 entity.as_living_entity().is_some_and(|living| {
                     self.avoid_entity_targeting
-                        .test(world.as_ref(), Some(mob), living)
+                        .test(world.as_ref(), Some(mob.living()), living)
                 })
             })
         else {
@@ -91,20 +91,20 @@ impl Goal for AvoidEntityGoal {
         true
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         !mob.mob_base().navigation().lock().is_done()
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         mob.move_to_path(self.path.take(), self.walk_speed_modifier);
     }
 
-    fn stop(&mut self, _mob: &dyn PathfinderMob) {
+    fn stop(&mut self, _mob: &Mob<'_>) {
         self.to_avoid = None;
         self.path = None;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         let Some(to_avoid) = &self.to_avoid else {
             return;
         };
@@ -129,7 +129,9 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::{Mob, entities::ChickenEntity};
+
+    use crate::entity::MobParts as _;
+    use crate::entity::entities::ChickenEntity;
 
     #[test]
     fn avoid_entity_goal_uses_move_control() {
@@ -152,7 +154,7 @@ mod tests {
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
         let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]
@@ -173,10 +175,11 @@ mod tests {
             Weak::new(),
         )));
 
-        goal.tick(mob.as_ref(), &mob_entity);
+        goal.tick(&mob.mob(), &mob_entity);
 
         assert_eq!(
-            mob.mob_base()
+            mob.mob()
+                .mob_base()
                 .navigation()
                 .lock()
                 .speed_modifier()
@@ -203,10 +206,11 @@ mod tests {
             Weak::new(),
         )));
 
-        goal.tick(mob.as_ref(), &mob_entity);
+        goal.tick(&mob.mob(), &mob_entity);
 
         assert_eq!(
-            mob.mob_base()
+            mob.mob()
+                .mob_base()
                 .navigation()
                 .lock()
                 .speed_modifier()

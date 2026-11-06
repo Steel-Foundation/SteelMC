@@ -479,7 +479,7 @@ impl BaseSpawner {
                     let _ = mob.finalize_spawn(world, EntitySpawnReason::Spawner, None);
                 }
                 if let Some(equipment) = &next_spawn_data.equipment {
-                    equip_from_table(mob, equipment);
+                    equip_from_table(&mob, equipment);
                 }
             }
 
@@ -623,14 +623,14 @@ fn random_spawn_position<R: Rng + ?Sized>(
     )
 }
 
-fn equip_from_table(mob: &dyn Mob, equipment: &EquipmentTable) {
+fn equip_from_table(mob: &Mob<'_>, equipment: &EquipmentTable) {
     let Some(table): Option<LootTableRef> = REGISTRY.loot_tables.by_key(&equipment.loot_table)
     else {
         return;
     };
 
     let mut random = rng();
-    let mob_equipment = living_loot_equipment(mob);
+    let mob_equipment = living_loot_equipment(mob.living());
     let entity_ref = entity_loot_ref(mob.as_entity_event_source(), Some(&mob_equipment));
     let mut context = LootContext::new(&mut random)
         .with_origin(mob.position().x, mob.position().y, mob.position().z)

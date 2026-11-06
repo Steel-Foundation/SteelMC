@@ -7,7 +7,7 @@ use steel_registry::vanilla_attributes;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{Entity, LivingEntity, PathfinderMob, SharedEntity};
+use crate::entity::{Entity, LivingEntity, Mob, SharedEntity};
 use crate::player::Player;
 
 const DEFAULT_STOP_DISTANCE: f64 = 2.5;
@@ -77,7 +77,7 @@ impl TemptGoal {
             .range(range)
     }
 
-    fn update_player_scare_state(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn update_player_scare_state(&mut self, mob: &Mob<'_>) -> bool {
         let Some(player) = &self.player else {
             return false;
         };
@@ -107,7 +107,7 @@ impl Goal for TemptGoal {
         GoalControls::MOVE | GoalControls::LOOK
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         if self.calm_down > 0 {
             self.calm_down -= 1;
             return false;
@@ -122,13 +122,13 @@ impl Goal for TemptGoal {
             .required_value(vanilla_attributes::TEMPT_RANGE);
         let targeting_conditions = Self::targeting_conditions(range);
         self.player = world.nearest_player(mob.position(), range, |player| {
-            targeting_conditions.test(world.as_ref(), Some(mob), player)
+            targeting_conditions.test(world.as_ref(), Some(mob.living()), player)
                 && self.should_follow(player)
         });
         self.player.is_some()
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         if self.can_scare() && !self.update_player_scare_state(mob) {
             return false;
         }
@@ -136,21 +136,21 @@ impl Goal for TemptGoal {
         self.can_use(mob)
     }
 
-    fn start(&mut self, _mob: &dyn PathfinderMob) {
+    fn start(&mut self, _mob: &Mob<'_>) {
         if let Some(player) = &self.player {
             self.player_position = player.position();
         }
         self.is_running = true;
     }
 
-    fn stop(&mut self, mob: &dyn PathfinderMob) {
+    fn stop(&mut self, mob: &Mob<'_>) {
         self.player = None;
         mob.mob_base().navigation().lock().stop();
         self.calm_down = reduced_tick_delay(100);
         self.is_running = false;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         let Some(player) = &self.player else {
             return;
         };

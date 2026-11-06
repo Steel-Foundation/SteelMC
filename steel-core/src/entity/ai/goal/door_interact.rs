@@ -5,7 +5,7 @@ use steel_utils::BlockPos;
 use super::selector::{Goal, GoalControls};
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::ai::path::Path;
-use crate::entity::{PathfinderMob, SharedEntity};
+use crate::entity::{Mob, SharedEntity};
 
 const DOOR_REACH_DISTANCE_SQR: f64 = 2.25;
 const PATH_NODE_SCAN_AHEAD: usize = 2;
@@ -40,7 +40,7 @@ impl DoorInteractGoal {
         self.has_door
     }
 
-    pub(super) fn is_open(&mut self, mob: &dyn PathfinderMob) -> bool {
+    pub(super) fn is_open(&mut self, mob: &Mob<'_>) -> bool {
         if !self.has_door {
             return false;
         }
@@ -58,7 +58,7 @@ impl DoorInteractGoal {
         state.get_value(&BlockStateProperties::OPEN)
     }
 
-    pub(super) fn set_open(&self, mob: &dyn PathfinderMob, open: bool) {
+    pub(super) fn set_open(&self, mob: &Mob<'_>, open: bool) {
         if !self.has_door {
             return;
         }
@@ -77,7 +77,7 @@ impl DoorInteractGoal {
         );
     }
 
-    pub(super) fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    pub(super) fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         if !mob.horizontal_collision() {
             return false;
         }
@@ -106,13 +106,13 @@ impl DoorInteractGoal {
         !self.passed
     }
 
-    pub(super) fn start(&mut self, mob: &dyn PathfinderMob) {
+    pub(super) fn start(&mut self, mob: &Mob<'_>) {
         self.passed = false;
         self.door_open_dir_x = (f64::from(self.door_pos.x()) + 0.5 - mob.position().x) as f32;
         self.door_open_dir_z = (f64::from(self.door_pos.z()) + 0.5 - mob.position().z) as f32;
     }
 
-    pub(super) fn tick(&mut self, mob: &dyn PathfinderMob) {
+    pub(super) fn tick(&mut self, mob: &Mob<'_>) {
         let new_door_dir_x = (f64::from(self.door_pos.x()) + 0.5 - mob.position().x) as f32;
         let new_door_dir_z = (f64::from(self.door_pos.z()) + 0.5 - mob.position().z) as f32;
         let dot = self
@@ -125,7 +125,7 @@ impl DoorInteractGoal {
 
     fn find_door_in_path(
         &mut self,
-        mob: &dyn PathfinderMob,
+        mob: &Mob<'_>,
         path: &Path,
         mut is_wooden_door: impl FnMut(BlockPos) -> bool,
     ) -> bool {
@@ -160,15 +160,15 @@ impl Goal for DoorInteractGoal {
         GoalControls::EMPTY
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         Self::can_use(self, mob)
     }
 
-    fn can_continue_to_use(&mut self, _mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, _mob: &Mob<'_>) -> bool {
         Self::can_continue_to_use(self)
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         Self::start(self, mob);
     }
 
@@ -176,12 +176,12 @@ impl Goal for DoorInteractGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         Self::tick(self, mob);
     }
 }
 
-fn distance_to_door_sqr(mob: &dyn PathfinderMob, door_pos: BlockPos) -> f64 {
+fn distance_to_door_sqr(mob: &Mob<'_>, door_pos: BlockPos) -> f64 {
     let position = mob.position();
     let dx = f64::from(door_pos.x()) - position.x;
     let dz = f64::from(door_pos.z()) - position.z;
@@ -196,6 +196,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use crate::entity::MobParts as _;
     use crate::entity::ai::node::Node;
     use crate::entity::entities::ChickenEntity;
     use crate::entity::{Entity, EntityGroundContact, EntityMovementFlags};
@@ -225,7 +226,7 @@ mod tests {
         let mut goal = DoorInteractGoal::new();
         let mob = pig(DVec3::ZERO);
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]
@@ -239,7 +240,7 @@ mod tests {
             true,
         );
 
-        assert!(goal.find_door_in_path(&mob, &path, |pos| pos == BlockPos::new(1, 1, 0)));
+        assert!(goal.find_door_in_path(&mob.mob(), &path, |pos| pos == BlockPos::new(1, 1, 0)));
         assert_eq!(goal.door_pos(), BlockPos::new(1, 1, 0));
         assert!(goal.has_door());
     }
@@ -251,7 +252,7 @@ mod tests {
         let mob = pig(DVec3::ZERO);
         let path = Path::new(vec![Node::new(8, 0, 0)], BlockPos::new(8, 0, 0), true);
 
-        assert!(goal.find_door_in_path(&mob, &path, |pos| pos == BlockPos::new(0, 1, 0)));
+        assert!(goal.find_door_in_path(&mob.mob(), &path, |pos| pos == BlockPos::new(0, 1, 0)));
         assert_eq!(goal.door_pos(), BlockPos::new(0, 1, 0));
     }
 
@@ -261,10 +262,10 @@ mod tests {
         let mut goal = DoorInteractGoal::new();
         let mob = pig(DVec3::ZERO);
         goal.door_pos = BlockPos::new(1, 1, 0);
-        goal.start(&mob);
+        goal.start(&mob.mob());
 
         mob.base().set_position_local(DVec3::new(2.0, 0.0, 0.0));
-        goal.tick(&mob);
+        goal.tick(&mob.mob());
 
         assert!(!goal.can_continue_to_use());
     }
@@ -276,6 +277,6 @@ mod tests {
         let mob = pig(DVec3::ZERO);
         set_horizontal_collision(&mob);
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 }

@@ -1,6 +1,5 @@
 use super::*;
 use crate::entity::leash::{DELAYED_LEASH_DROP_TICKS, LeashAttachment};
-use crate::entity::mob::Mob;
 use crate::entity::next_entity_id;
 use std::sync::Arc;
 
@@ -71,7 +70,7 @@ fn failed_save_restore_drops_leash_but_keeps_home_restriction() {
         .as_leashable()
         .expect("pig should expose leashable behavior");
 
-    mob.set_home_to(BlockPos::new(8, 65, 8), 5);
+    mob.mob().set_home_to(BlockPos::new(8, 65, 8), 5);
     leashable.set_delayed_leash_attachment(LeashAttachment::Entity(Uuid::nil()));
     for _ in 0..=DELAYED_LEASH_DROP_TICKS {
         mob.advance_tick_count();
@@ -84,7 +83,7 @@ fn failed_save_restore_drops_leash_but_keeps_home_restriction() {
         "an unresolvable save-leash is dropped after 100 ticks"
     );
     assert!(
-        mob.has_home(),
+        mob.mob().has_home(),
         "the failed restore must keep the saved home restriction"
     );
 }

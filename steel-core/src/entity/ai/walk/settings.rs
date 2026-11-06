@@ -22,7 +22,7 @@ pub struct MobPathSettings {
 
 impl MobPathSettings {
     #[must_use]
-    pub fn from_mob<M: Mob + ?Sized>(mob: &M) -> Self {
+    pub fn from_mob(mob: &Mob<'_>) -> Self {
         let bounding_box = mob.bounding_box();
         let mut malus = [0.0; PathType::COUNT];
         for path_type in PathType::ALL {

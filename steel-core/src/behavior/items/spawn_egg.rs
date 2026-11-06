@@ -77,10 +77,10 @@ impl SpawnEggItem {
     }
 
     /// Runs the interaction before normal mob handling.
-    pub(crate) fn interact_with_mob<M: Mob + ?Sized>(
+    pub(crate) fn interact_with_mob(
         stack: &mut ItemStack,
         player: &Player,
-        parent: &M,
+        parent: &Mob<'_>,
     ) -> InteractionResult {
         if ITEM_BEHAVIORS
             .get_behavior(stack.item())
@@ -96,7 +96,7 @@ impl SpawnEggItem {
         InteractionResult::SuccessServer
     }
 
-    fn spawn_offspring<M: Mob + ?Sized>(stack: &ItemStack, parent: &M) -> Option<SharedEntity> {
+    fn spawn_offspring(stack: &ItemStack, parent: &Mob<'_>) -> Option<SharedEntity> {
         let entity_type = Self::entity_type(stack)?;
         if entity_type != parent.entity_type() {
             return None;

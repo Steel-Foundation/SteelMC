@@ -1,5 +1,5 @@
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
-use crate::entity::{Animal, PathfinderMob, SharedEntity};
+use crate::entity::{Animal, Mob, SharedEntity};
 
 use super::reduced_tick_delay;
 
@@ -30,7 +30,7 @@ impl Goal for FollowParentGoal {
         GoalControls::EMPTY
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(animal) = Animal::of(mob.as_entity_event_source()) else {
             return false;
         };
@@ -62,7 +62,7 @@ impl Goal for FollowParentGoal {
         true
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(animal) = Animal::of(mob.as_entity_event_source()) else {
             return false;
         };
@@ -82,15 +82,15 @@ impl Goal for FollowParentGoal {
             || distance_sqr > STOP_FOLLOW_IF_FARTHER_THAN_SQR)
     }
 
-    fn start(&mut self, _mob: &dyn PathfinderMob) {
+    fn start(&mut self, _mob: &Mob<'_>) {
         self.time_to_recalc_path = 0;
     }
 
-    fn stop(&mut self, _mob: &dyn PathfinderMob) {
+    fn stop(&mut self, _mob: &Mob<'_>) {
         self.parent = None;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         self.time_to_recalc_path -= 1;
         if self.time_to_recalc_path > 0 {
             return;

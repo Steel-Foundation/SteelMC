@@ -34,7 +34,6 @@ use crate::chunk_saver::ChunkStorage;
 use crate::entity::ExperienceOrbEntity;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ChickenEntity;
-use crate::entity::mob::Mob;
 use crate::inventory::equipment::EquipmentSlot;
 use crate::portal::PortalKind;
 use crate::test_support::{

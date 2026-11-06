@@ -138,16 +138,24 @@ mod tests {
     use steel_utils::{BlockPos, ChunkPos};
 
     use super::*;
+
     use crate::behavior::init_behaviors;
-    use crate::entity::{Entity, EntityBase, LivingEntityBase, Mob, MobBase};
+    use crate::entity::MobParts as _;
+    use crate::entity::component::Has;
+    use crate::entity::component::definition::MobDefinition;
+    use crate::entity::{Entity, EntityBase, LivingEntityBase, MobBase};
+    use crate::entity::{EntitySyncedData, MobProps, mob};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
     use crate::world::World;
+    use std::sync::LazyLock;
+    use steel_registry::vanilla_entity_data::MobEntityData;
+    use steel_utils::{DowncastType as _, DowncastTypeKey, ErasedType};
 
     struct HoveringTestMob {
         base: EntityBase,
         living_base: LivingEntityBase,
         mob_base: MobBase,
-        mob_flags: SyncMutex<i8>,
+        entity_data: SyncMutex<MobEntityData>,
         health: SyncMutex<f32>,
     }
 
@@ -157,8 +165,8 @@ mod tests {
             Self {
                 base: EntityBase::new(id, position, vanilla_entities::PIG.dimensions, world),
                 living_base: LivingEntityBase::new(&vanilla_entities::PIG),
-                mob_base: MobBase::new(),
-                mob_flags: SyncMutex::new(0),
+                mob_base: MobBase::new(&HoveringTestMob::MOB),
+                entity_data: SyncMutex::new(MobEntityData::new()),
                 health: SyncMutex::new(10.0),
             }
         }
@@ -166,7 +174,25 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(HoveringTestMob);
 
+    impl HoveringTestMob {
+        const MOB: MobProps = MobProps::new(|| HoveringTestMob::definition());
+
+        fn definition() -> &'static MobDefinition<Self> {
+            static DEFINITION: LazyLock<MobDefinition<HoveringTestMob>> =
+                LazyLock::new(mob::stages::definition);
+            &DEFINITION
+        }
+    }
+
     impl Entity for HoveringTestMob {
+        fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+            (key == MobBase::TYPE_KEY).then_some(&self.mob_base as &dyn ErasedType)
+        }
+
+        fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+            Some(&self.entity_data)
+        }
+
         fn base(&self) -> &EntityBase {
             &self.base
         }
@@ -190,17 +216,9 @@ mod tests {
         }
     }
 
-    impl Mob for HoveringTestMob {
-        fn mob_base(&self) -> &MobBase {
+    impl Has<MobBase> for HoveringTestMob {
+        fn component(&self) -> &MobBase {
             &self.mob_base
-        }
-
-        fn mob_flags(&self) -> i8 {
-            *self.mob_flags.lock()
-        }
-
-        fn set_mob_flags(&self, flags: i8) {
-            *self.mob_flags.lock() = flags;
         }
     }
 
@@ -230,7 +248,7 @@ mod tests {
             vanilla_blocks::STONE.default_state(),
             UpdateFlags::UPDATE_ALL,
         ));
-        targeter.mob_base().sensing().lock().tick();
+        targeter.mob().mob_base().sensing().lock().tick();
         assert!(
             !TargetingConditions::for_non_combat().test(world.as_ref(), Some(&targeter), &target),
             "a mob that cannot see its target should not pick it, whether or not it pathfinds"

@@ -2,7 +2,7 @@ use glam::DVec3;
 use steel_utils::BlockPos;
 
 use super::selector::{Goal, GoalControls};
-use crate::entity::PathfinderMob;
+use crate::entity::Mob;
 use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
 
@@ -22,7 +22,7 @@ impl FleeSunGoal {
         }
     }
 
-    fn set_wanted_pos(&mut self, mob: &dyn PathfinderMob, level: &World) -> bool {
+    fn set_wanted_pos(&mut self, mob: &Mob<'_>, level: &World) -> bool {
         let Some(pos) = get_hide_pos(mob, level) else {
             return false;
         };
@@ -37,7 +37,7 @@ impl Goal for FleeSunGoal {
         GoalControls::MOVE
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         if mob.target().is_some() {
             return false;
         }
@@ -62,11 +62,11 @@ impl Goal for FleeSunGoal {
         self.set_wanted_pos(mob, &level)
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         !mob.mob_base().navigation().lock().is_done()
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         let Some(wanted_position) = self.wanted_position else {
             return;
         };
@@ -75,7 +75,7 @@ impl Goal for FleeSunGoal {
     }
 }
 
-fn get_hide_pos(mob: &dyn PathfinderMob, level: &World) -> Option<DVec3> {
+fn get_hide_pos(mob: &Mob<'_>, level: &World) -> Option<DVec3> {
     get_hide_pos_with(
         mob,
         |pos| level.can_see_sky(pos),
@@ -84,7 +84,7 @@ fn get_hide_pos(mob: &dyn PathfinderMob, level: &World) -> Option<DVec3> {
 }
 
 fn get_hide_pos_with(
-    mob: &dyn PathfinderMob,
+    mob: &Mob<'_>,
     mut can_see_sky: impl FnMut(BlockPos) -> bool,
     mut walk_target_value: impl FnMut(BlockPos) -> f32,
 ) -> Option<DVec3> {
@@ -115,6 +115,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
 
     fn pig() -> ChickenEntity {
@@ -133,7 +134,7 @@ mod tests {
         init_vanilla_registry();
         let mut goal = FleeSunGoal::new(1.0);
 
-        assert!(!goal.can_use(&pig()));
+        assert!(!goal.can_use(&pig().mob()));
     }
 
     #[test]
@@ -143,7 +144,7 @@ mod tests {
         let mut visited = Vec::new();
 
         let pos = get_hide_pos_with(
-            &mob,
+            &mob.mob(),
             |pos| {
                 visited.push(pos);
                 false
@@ -163,7 +164,7 @@ mod tests {
         let mut visited = Vec::new();
 
         let pos = get_hide_pos_with(
-            &mob,
+            &mob.mob(),
             |pos| {
                 visited.push(pos);
                 true
@@ -180,6 +181,6 @@ mod tests {
         init_vanilla_registry();
         let mob = pig();
 
-        assert!(get_hide_pos_with(&mob, |_| false, |_| 0.0).is_none());
+        assert!(get_hide_pos_with(&mob.mob(), |_| false, |_| 0.0).is_none());
     }
 }

@@ -4,7 +4,7 @@ use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use super::target_goal::{TargetGoalBase, follow_distance};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
+use crate::entity::{LivingEntity, Mob, SharedEntity};
 use crate::world::World;
 
 const DEFAULT_RANDOM_INTERVAL: i32 = 10;
@@ -87,7 +87,7 @@ impl NearestAttackableTargetGoal {
         }
     }
 
-    fn find_target(&mut self, mob: &dyn PathfinderMob) {
+    fn find_target(&mut self, mob: &Mob<'_>) {
         let Some(world) = mob.level() else {
             self.target = None;
             return;
@@ -102,15 +102,15 @@ impl NearestAttackableTargetGoal {
         self.target = match self.search {
             TargetSearch::Players => level
                 .nearest_player(origin, follow, |player| {
-                    target_conditions.test(level, Some(mob), player)
+                    target_conditions.test(level, Some(mob.living()), player)
                 })
                 .map(|player| -> SharedEntity { player }),
             TargetSearch::Entities => {
                 let search_box = mob.bounding_box().inflate_xyz(follow, follow, follow);
                 level.nearest_entity_in_aabb_matching(&search_box, origin, |entity| {
-                    entity
-                        .as_living_entity()
-                        .is_some_and(|target| target_conditions.test(level, Some(mob), target))
+                    entity.as_living_entity().is_some_and(|target| {
+                        target_conditions.test(level, Some(mob.living()), target)
+                    })
                 })
             }
         };
@@ -126,7 +126,7 @@ impl Goal for NearestAttackableTargetGoal {
         GoalControls::TARGET
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         if self.random_interval > 0 && rand::random_range(0..self.random_interval) != 0 {
             return false;
         }
@@ -135,16 +135,16 @@ impl Goal for NearestAttackableTargetGoal {
         self.target.is_some()
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         self.target_goal.can_continue_to_use(mob)
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         let _ = mob.set_target(self.target.as_ref());
         self.target_goal.start();
     }
 
-    fn stop(&mut self, mob: &dyn PathfinderMob) {
+    fn stop(&mut self, mob: &Mob<'_>) {
         self.target_goal.stop(mob);
         self.target = None;
     }
@@ -159,9 +159,11 @@ mod tests {
     use steel_utils::ChunkPos;
 
     use super::*;
+
     use crate::behavior::init_behaviors;
+    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
-    use crate::entity::{Animal, Entity, Mob};
+    use crate::entity::{Animal, Entity};
     use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     fn animal_fixture(
@@ -220,10 +222,10 @@ mod tests {
                 Animal::of(target.as_entity_event_source()).is_some()
             });
 
-        assert!(goal.can_use(pig_hunter.as_ref()));
-        goal.start(pig_hunter.as_ref());
+        assert!(goal.can_use(&pig_hunter.mob()));
+        goal.start(&pig_hunter.mob());
 
-        let Some(target) = pig_hunter.target() else {
+        let Some(target) = pig_hunter.mob().target() else {
             panic!("selector goal should assign a target");
         };
         assert_eq!(target.uuid(), nearer_pig.uuid());
@@ -235,6 +237,6 @@ mod tests {
             animal_fixture("nearest_attackable_selector_rejects");
         let mut goal = NearestAttackableTargetGoal::new(false, |_, _| false);
 
-        assert!(!goal.can_use(pig_hunter.as_ref()));
+        assert!(!goal.can_use(&pig_hunter.mob()));
     }
 }

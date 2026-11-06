@@ -4,7 +4,7 @@ use steel_utils::{DowncastTypeKey, WorldAabb};
 use super::selector::{Goal, GoalControls};
 use super::target_goal::{TargetGoalBase, follow_distance};
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::{PathfinderMob, SharedEntity};
+use crate::entity::{Mob, SharedEntity};
 
 const HURT_BY_UNSEEN_MEMORY_TICKS: i32 = 300;
 const ALERT_RANGE_Y: f64 = 10.0;
@@ -52,7 +52,7 @@ impl HurtByTargetGoal {
         self
     }
 
-    fn alert_others(&self, mob: &dyn PathfinderMob, hurt_by_mob: &SharedEntity) {
+    fn alert_others(&self, mob: &Mob<'_>, hurt_by_mob: &SharedEntity) {
         let Some(world) = mob.level() else {
             return;
         };
@@ -106,7 +106,7 @@ impl Goal for HurtByTargetGoal {
         GoalControls::TARGET
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         let timestamp = mob.last_hurt_by_mob_timestamp();
         if timestamp == self.timestamp {
             return false;
@@ -134,11 +134,11 @@ impl Goal for HurtByTargetGoal {
             .can_attack(mob, hurt_by_mob.as_living_entity(), &self.targeting)
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         self.target_goal.can_continue_to_use(mob)
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         let Some(hurt_by_mob) = mob.last_hurt_by_mob() else {
             return;
         };
@@ -156,7 +156,7 @@ impl Goal for HurtByTargetGoal {
         self.target_goal.start();
     }
 
-    fn stop(&mut self, mob: &dyn PathfinderMob) {
+    fn stop(&mut self, mob: &Mob<'_>) {
         self.target_goal.stop(mob);
     }
 }
@@ -169,9 +169,11 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+
     use crate::behavior::init_behaviors;
+    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
-    use crate::entity::{Entity, LivingEntity, Mob};
+    use crate::entity::{Entity, LivingEntity};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
     use steel_utils::ChunkPos;
 
@@ -215,13 +217,13 @@ mod tests {
         hunter.set_last_hurt_by_mob(Some(&attacker_entity));
         let mut goal = HurtByTargetGoal::new().set_alert_others([]);
 
-        assert!(goal.can_use(hunter.as_ref()));
-        goal.start(hunter.as_ref());
+        assert!(goal.can_use(&hunter.mob()));
+        goal.start(&hunter.mob());
 
-        let Some(hunter_target) = hunter.target() else {
+        let Some(hunter_target) = hunter.mob().target() else {
             panic!("hurt-by-target goal should assign the attacker");
         };
-        let Some(ally_target) = ally.target() else {
+        let Some(ally_target) = ally.mob().target() else {
             panic!("alerted same-type mob should receive the attacker");
         };
         assert_eq!(hunter_target.uuid(), attacker.uuid());

@@ -3,9 +3,9 @@ use glam::DVec3;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::path::PathType;
-use crate::entity::{Mob, PathfinderMob, SharedEntity};
+use crate::entity::{Mob, SharedEntity};
 
-type FollowMobPredicate = Box<dyn Fn(&dyn PathfinderMob, &dyn Mob) -> bool + Send + Sync>;
+type FollowMobPredicate = Box<dyn Fn(&Mob<'_>, &Mob<'_>) -> bool + Send + Sync>;
 
 pub struct FollowMobGoal {
     following_mob: Option<SharedEntity>,
@@ -23,7 +23,7 @@ impl FollowMobGoal {
         speed_modifier: f64,
         stop_distance: f32,
         area_size: f32,
-        follow_predicate: impl Fn(&dyn PathfinderMob, &dyn Mob) -> bool + Send + Sync + 'static,
+        follow_predicate: impl Fn(&Mob<'_>, &Mob<'_>) -> bool + Send + Sync + 'static,
     ) -> Self {
         Self {
             following_mob: None,
@@ -40,7 +40,7 @@ impl FollowMobGoal {
         f64::from(self.stop_distance * self.stop_distance)
     }
 
-    fn should_back_away(&self, mob: &dyn PathfinderMob, following_mob: &SharedEntity) -> bool {
+    fn should_back_away(&self, mob: &Mob<'_>, following_mob: &SharedEntity) -> bool {
         let mob_position = mob.position();
         let following_position = following_mob.position();
         let delta = mob_position - following_position;
@@ -66,7 +66,7 @@ impl Goal for FollowMobGoal {
         GoalControls::MOVE | GoalControls::LOOK
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(world) = mob.level() else {
             return false;
         };
@@ -79,7 +79,7 @@ impl Goal for FollowMobGoal {
             let Some(candidate_mob) = entity.as_mob() else {
                 return false;
             };
-            !candidate_mob.is_invisible() && (self.follow_predicate)(mob, candidate_mob)
+            !candidate_mob.is_invisible() && (self.follow_predicate)(mob, &candidate_mob)
         });
 
         let Some(following_mob) = candidates.into_iter().next() else {
@@ -89,7 +89,7 @@ impl Goal for FollowMobGoal {
         true
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(following_mob) = &self.following_mob else {
             return false;
         };
@@ -98,23 +98,23 @@ impl Goal for FollowMobGoal {
             && mob.position().distance_squared(following_mob.position()) > self.stop_distance_sqr()
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         self.time_to_recalc_path = 0;
         self.old_water_cost = mob.get_pathfinding_malus(PathType::Water);
         mob.set_pathfinding_malus(PathType::Water, 0.0);
     }
 
-    fn stop(&mut self, mob: &dyn PathfinderMob) {
+    fn stop(&mut self, mob: &Mob<'_>) {
         self.following_mob = None;
         mob.mob_base().navigation().lock().stop();
         mob.set_pathfinding_malus(PathType::Water, self.old_water_cost);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         let Some(following_mob) = &self.following_mob else {
             return;
         };
-        if mob.is_leashed() {
+        if mob.leashable().is_leashed() {
             return;
         }
 
@@ -165,6 +165,8 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+
+    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
 
     #[test]
@@ -180,7 +182,7 @@ mod tests {
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
         let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.can_use(&mob));
+        assert!(!goal.can_use(&mob.mob()));
     }
 
     #[test]
@@ -188,19 +190,19 @@ mod tests {
         init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
         let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-        mob.set_pathfinding_malus(PathType::Water, 4.0);
+        mob.mob().set_pathfinding_malus(PathType::Water, 4.0);
 
-        goal.start(&mob);
+        goal.start(&mob.mob());
 
         assert_eq!(
-            mob.get_pathfinding_malus(PathType::Water).to_bits(),
+            mob.mob().get_pathfinding_malus(PathType::Water).to_bits(),
             0.0_f32.to_bits()
         );
 
-        goal.stop(&mob);
+        goal.stop(&mob.mob());
 
         assert_eq!(
-            mob.get_pathfinding_malus(PathType::Water).to_bits(),
+            mob.mob().get_pathfinding_malus(PathType::Water).to_bits(),
             4.0_f32.to_bits()
         );
     }
@@ -217,7 +219,7 @@ mod tests {
             Weak::new(),
         )));
 
-        assert!(!goal.can_continue_to_use(&mob));
+        assert!(!goal.can_continue_to_use(&mob.mob()));
     }
 
     #[test]
@@ -239,9 +241,10 @@ mod tests {
         ));
         goal.following_mob = Some(Arc::clone(&following_mob));
 
-        goal.tick(mob.as_ref(), &mob_entity);
+        goal.tick(&mob.mob(), &mob_entity);
 
         let wanted_position = mob
+            .mob()
             .mob_base()
             .controls()
             .lock()

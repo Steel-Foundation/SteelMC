@@ -1,6 +1,6 @@
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{PathfinderMob, SharedEntity};
+use crate::entity::{Mob, SharedEntity};
 use crate::world::World;
 use glam::DVec3;
 use steel_utils::BlockPos;
@@ -110,11 +110,11 @@ impl MoveToBlockGoal {
         self.reached_target
     }
 
-    fn next_start_tick(_mob: &dyn PathfinderMob) -> i32 {
+    fn next_start_tick(_mob: &Mob<'_>) -> i32 {
         reduced_tick_delay(INTERVAL_TICKS + rand::random_range(0..200))
     }
 
-    fn move_mob_to_block(&self, mob: &dyn PathfinderMob) {
+    fn move_mob_to_block(&self, mob: &Mob<'_>) {
         mob.move_to_pos(
             block_center_with_y(self.block_pos, self.block_pos.y() + 1),
             self.speed_modifier,
@@ -129,7 +129,7 @@ impl MoveToBlockGoal {
         self.try_ticks % self.recalculate_path_interval == 0
     }
 
-    fn find_nearest_block(&mut self, mob: &dyn PathfinderMob, level: &World) -> bool {
+    fn find_nearest_block(&mut self, mob: &Mob<'_>, level: &World) -> bool {
         let Some(block_pos) = find_nearest_block_from(
             mob.block_position(),
             self.search_range,
@@ -154,7 +154,7 @@ impl Goal for MoveToBlockGoal {
         true
     }
 
-    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
         if self.next_start_tick > 0 {
             self.next_start_tick -= 1;
             return false;
@@ -167,7 +167,7 @@ impl Goal for MoveToBlockGoal {
         self.find_nearest_block(mob, world.as_ref())
     }
 
-    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
         let Some(world) = mob.level() else {
             return false;
         };
@@ -177,14 +177,14 @@ impl Goal for MoveToBlockGoal {
             && (self.target_predicate)(world.as_ref(), self.block_pos)
     }
 
-    fn start(&mut self, mob: &dyn PathfinderMob) {
+    fn start(&mut self, mob: &Mob<'_>) {
         self.move_mob_to_block(mob);
         self.try_ticks = 0;
         let inner_bound = rand::random_range(0..STAY_TICKS) + STAY_TICKS;
         self.max_stay_ticks = rand::random_range(0..inner_bound) + STAY_TICKS;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         let move_to_target = self.move_to_target();
         if move_to_target.closer_to_center_than(mob.position(), self.accepted_distance) {
             self.reached_target = true;
@@ -253,6 +253,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
 
     #[test]
@@ -269,7 +270,7 @@ mod tests {
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
         let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.can_use(&pig));
+        assert!(!goal.can_use(&pig.mob()));
     }
 
     #[test]
@@ -279,7 +280,7 @@ mod tests {
         goal.next_start_tick = 2;
         let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.can_use(&pig));
+        assert!(!goal.can_use(&pig.mob()));
 
         assert_eq!(goal.next_start_tick, 1);
     }
@@ -321,7 +322,7 @@ mod tests {
         ));
         let pig_entity: SharedEntity = Arc::<ChickenEntity>::clone(&pig);
 
-        goal.tick(pig.as_ref(), &pig_entity);
+        goal.tick(&pig.mob(), &pig_entity);
 
         assert!(goal.is_reached_target());
         assert_eq!(goal.try_ticks, -1);

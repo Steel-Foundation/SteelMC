@@ -6,7 +6,7 @@ use steel_registry::{
     stat::custom::CustomStatRef,
     vanilla_blocks, vanilla_custom_stats,
 };
-use steel_utils::{BlockPos, Direction, WorldAabb, types::GameType};
+use steel_utils::{BlockPos, Direction, types::GameType};
 use text_components::{TextComponent, translation::TranslatedMessage};
 
 use super::sleep_state::SLEEP_DURATION;
@@ -19,8 +19,6 @@ use crate::{
 
 const BED_INTERACTION_XZ_RANGE: f64 = 3.0;
 const BED_INTERACTION_Y_RANGE: f64 = 2.0;
-const MONSTER_SEARCH_XZ_RANGE: f64 = 8.0;
-const MONSTER_SEARCH_Y_RANGE: f64 = 5.0;
 
 #[derive(Debug)]
 pub(crate) enum BedSleepingProblem {
@@ -41,22 +39,14 @@ impl BedSleepingProblem {
 
 impl Player {
     /// Checks for monsters within 8 blocks horizontally and 5 vertically of the bed.
-    fn monster_prevents_rest(&self, pos: BlockPos) -> bool {
-        let world = self.get_world();
-        let center = DVec3::from(pos.get_bottom_center());
-        let search = WorldAabb::new(
-            center.x - MONSTER_SEARCH_XZ_RANGE,
-            center.y - MONSTER_SEARCH_Y_RANGE,
-            center.z - MONSTER_SEARCH_XZ_RANGE,
-            center.x + MONSTER_SEARCH_XZ_RANGE,
-            center.y + MONSTER_SEARCH_Y_RANGE,
-            center.z + MONSTER_SEARCH_XZ_RANGE,
-        );
-        world.has_entity_in_aabb_matching(&search, |entity| {
-            entity
-                .as_monster()
-                .is_some_and(|monster| monster.is_preventing_player_rest(&world, self))
-        })
+    #[expect(
+        clippy::unused_self,
+        reason = "the monster search uses the player once `Monster` is ported"
+    )]
+    const fn monster_prevents_rest(&self, _pos: BlockPos) -> bool {
+        // TODO(entity components): search the bed's surroundings for monsters again
+        // once the `Monster` layer is ported out of `steel-core/legacy_entities/`.
+        false
     }
 }
 

@@ -25,12 +25,10 @@ use steel_registry::{
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::types::InteractionHand;
 use steel_utils::{
     BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
 };
 
-use crate::behavior::InteractionResult;
 use crate::entity::ageable::{self, Age, Ageable, AgeableProps};
 use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
@@ -39,18 +37,17 @@ use crate::entity::ai::goal::{
 use crate::entity::ai::path::PathType;
 use crate::entity::animal::{self, Animal, Breeding, BreedingProps, Parts as _};
 use crate::entity::component::definition::MobDefinition;
-use crate::entity::component::entries::{AiStepCtx, FinalizeSpawnCtx, MobInteractCtx};
+use crate::entity::component::entries::{AiStepCtx, FinalizeSpawnCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::component::{Component as _, Has};
 use crate::entity::damage::DamageSource;
+use crate::entity::mob::Parts as _;
 use crate::entity::{
-    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySpawnReason,
-    EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity,
-    SpawnGroupData, SpawnRule, entity_loot_ref, living_loot_equipment, position_rider_default,
-    sync_dirty_mob_effects,
+    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySyncedData,
+    LivingEntity, LivingEntityBase, MobBase, MobProps, SharedEntity, SpawnRule, entity_loot_ref,
+    living_loot_equipment, position_rider_default, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
-use crate::player::Player;
 use crate::world::World;
 
 const CHICKEN_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
@@ -155,6 +152,19 @@ impl ChickenEntity {
         breed_offspring: Self::breed_offspring,
     };
     const BREEDING: BreedingProps = BreedingProps::new(Self::is_food);
+    const MOB: MobProps = MobProps {
+        ambient_sound: |mob| {
+            let chicken = mob.entity().downcast_ref::<Self>()?;
+            Some(chicken.current_sound_set().ambient_sound)
+        },
+        // Chicken jockeys persist like their rider.
+        remove_when_far_away: |mob, _| {
+            mob.entity()
+                .downcast_ref::<Self>()
+                .is_some_and(Self::is_chicken_jockey)
+        },
+        ..animal::mob_props(|| Self::definition())
+    };
     const FLAP: StageId = StageId("chicken.flap");
     const LAY_EGG: StageId = StageId("chicken.lay_egg");
     const PICK_VARIANTS: StageId = StageId("chicken.pick_variants");
@@ -201,7 +211,7 @@ impl ChickenEntity {
 
     fn new_with_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let living_base = LivingEntityBase::new(entity_type);
-        let mob_base = MobBase::new();
+        let mob_base = MobBase::new(&Self::MOB);
         Breeding::initialize_pathfinding_malus(&mob_base);
         // Chickens do not avoid water (`setPathfindingMalus(PathType.WATER, 0.0F)`).
         mob_base
@@ -501,7 +511,7 @@ impl Entity for ChickenEntity {
     }
 
     fn base_tick(&self) {
-        Mob::base_tick_mob(self);
+        self.mob().base_tick_mob();
     }
 
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
@@ -547,6 +557,7 @@ impl Entity for ChickenEntity {
 
     fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
         match key {
+            MobBase::TYPE_KEY => Some(&self.mob_base),
             Age::TYPE_KEY => Some(&self.age),
             Breeding::TYPE_KEY => Some(&self.breeding),
             _ => None,
@@ -554,7 +565,7 @@ impl Entity for ChickenEntity {
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
-        self.save_mob(nbt);
+        self.mob_base.save(self, nbt);
         self.age.save(self, nbt);
         self.breeding.save(self, nbt);
         nbt.insert("IsChickenJockey", i8::from(self.is_chicken_jockey()));
@@ -564,7 +575,7 @@ impl Entity for ChickenEntity {
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.load_mob(nbt);
+        self.mob_base.load(self, nbt);
         self.age.load(self, nbt);
         self.breeding.load(self, nbt);
 
@@ -625,7 +636,7 @@ impl LivingEntity for ChickenEntity {
     }
 
     fn server_ai_step(&self, entity: &SharedEntity) {
-        Mob::mob_server_ai_step(self, entity);
+        self.mob().mob_server_ai_step(entity);
     }
 
     fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
@@ -650,67 +661,11 @@ impl Has<Breeding> for ChickenEntity {
     }
 }
 
-impl Mob for ChickenEntity {
-    fn mob_base(&self) -> &MobBase {
+impl Has<MobBase> for ChickenEntity {
+    fn component(&self) -> &MobBase {
         &self.mob_base
     }
-
-    fn tick_goal_selectors(&self, entity: &SharedEntity) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
-    }
-
-    fn tick_path_navigation(&self) {
-        PathfinderMob::tick_pathfinder_path_navigation(self);
-    }
-
-    fn custom_server_ai_step(&self) {
-        Self::definition().custom_server_ai_step.run(self, &mut ());
-    }
-
-    fn ambient_sound(&self) -> Option<SoundEventRef> {
-        Some(self.current_sound_set().ambient_sound)
-    }
-
-    fn remove_when_far_away(&self, _dist_sqr: f64) -> bool {
-        // Chicken jockeys persist like their rider (vanilla `Chicken.removeWhenFarAway`).
-        self.is_chicken_jockey()
-    }
-
-    fn finalize_spawn(
-        &self,
-        world: &Arc<World>,
-        spawn_reason: EntitySpawnReason,
-        group_data: Option<SpawnGroupData>,
-    ) -> Option<SpawnGroupData> {
-        let mut ctx = FinalizeSpawnCtx {
-            world,
-            reason: spawn_reason,
-            group_data,
-        };
-        Self::definition().finalize_spawn.run(self, &mut ctx);
-        ctx.group_data
-    }
-
-    fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
-        let mut ctx = MobInteractCtx {
-            player,
-            hand,
-            result: InteractionResult::Pass,
-        };
-        Self::definition().mob_interact.run(self, &mut ctx);
-        ctx.result
-    }
-
-    fn mob_flags(&self) -> i8 {
-        *self.entity_data.lock().mob().mob_flags.get()
-    }
-
-    fn set_mob_flags(&self, flags: i8) {
-        self.entity_data.lock().mob_mut().mob_flags.set(flags);
-    }
 }
-
-impl PathfinderMob for ChickenEntity {}
 
 #[cfg(test)]
 mod tests;

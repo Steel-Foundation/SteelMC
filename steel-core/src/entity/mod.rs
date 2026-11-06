@@ -836,8 +836,10 @@ pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
 };
-pub(crate) use mob::{Mob, MobBase, PathfinderMob};
-pub(crate) use monster::{Enemy, Monster};
+#[cfg(test)]
+pub(crate) use mob::Parts as MobParts;
+pub(crate) use mob::{Mob, MobBase, MobProps};
+pub(crate) use monster::Enemy;
 pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
     EntityMovementSyncUpdate, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
@@ -950,9 +952,9 @@ pub(crate) fn start_riding_entities(
     passenger.set_pose(EntityPose::Standing);
     EntityBase::start_riding_relationship(entity_to_ride, passenger);
     if let Some(mob) = passenger.as_mob()
-        && mob.is_leashed()
+        && mob.leashable().is_leashed()
     {
-        mob.drop_leash();
+        mob.leashable().drop_leash();
     }
     // TODO: Emit ENTITY_MOUNT game event and riding advancement trigger once those foundations exist.
     true
@@ -1363,7 +1365,7 @@ fn remove_after_changing_dimensions(entity: &dyn Entity) {
         return;
     };
 
-    mob.remove_leash();
+    mob.leashable().remove_leash();
     for slot in EquipmentSlot::ALL {
         mob.living_base()
             .equipment()
