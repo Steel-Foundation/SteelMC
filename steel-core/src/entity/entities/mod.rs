@@ -6,6 +6,6 @@
 pub mod mobs;
 pub mod objects;
 
-pub use mobs::passive::{ChickenEntity, CowEntity};
+pub use mobs::passive::{ChickenEntity, CowEntity, PigEntity};
 pub use objects::explosives::PrimedTntEntity;
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
