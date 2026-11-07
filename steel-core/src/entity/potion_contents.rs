@@ -55,6 +55,15 @@ pub(crate) const fn to_runtime_instance(
         .with_show_icon(effect.show_icon())
 }
 
+/// [`to_runtime_instance`] for splash and lingering potions, which take
+/// `show_icon` from `show_particles` (vanilla MC-276746).
+pub(crate) const fn to_runtime_instance_icon_from_visibility(
+    effect: &RegistryMobEffectInstance,
+    duration: i32,
+) -> RuntimeMobEffectInstance {
+    to_runtime_instance(effect, duration).with_show_icon(effect.show_particles())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::entity::LivingParts as _;

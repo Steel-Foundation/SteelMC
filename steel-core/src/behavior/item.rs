@@ -471,7 +471,7 @@ mod tests {
     use steel_registry::data_components::{Consumable, vanilla_components};
     use steel_registry::item_stack::ItemStack;
     use steel_registry::stat::vanilla_stat_types;
-    use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items, vanilla_potions};
     use steel_utils::types::InteractionHand;
     use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
 
@@ -480,6 +480,32 @@ mod tests {
     use crate::entity::entities::ItemEntity;
     use crate::inventory::container::Container as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+
+    #[test]
+    fn potion_items_default_to_their_vanilla_base_potion() {
+        init_vanilla_registry();
+        init_behaviors();
+
+        for item in [
+            &vanilla_items::POTION,
+            &vanilla_items::SPLASH_POTION,
+            &vanilla_items::LINGERING_POTION,
+        ] {
+            let stack = ITEM_BEHAVIORS.default_instance(item);
+            assert!(stack.is(item));
+            assert_eq!(stack.count(), 1);
+            let contents = stack
+                .get(vanilla_components::POTION_CONTENTS)
+                .expect("potion default instance carries potion contents");
+            assert!(contents.is(&vanilla_potions::WATER));
+        }
+
+        let arrow = ITEM_BEHAVIORS.default_instance(&vanilla_items::TIPPED_ARROW);
+        let contents = arrow
+            .get(vanilla_components::POTION_CONTENTS)
+            .expect("tipped arrow default instance carries potion contents");
+        assert!(contents.is(&vanilla_potions::POISON));
+    }
 
     #[test]
     fn items_without_an_override_default_to_a_plain_stack() {

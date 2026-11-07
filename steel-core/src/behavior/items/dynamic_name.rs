@@ -85,12 +85,18 @@ mod tests {
                 .potions
                 .by_key(&Identifier::vanilla_static(potion_key))
                 .expect("swiftness potion variant should be registered");
-            // TODO(entity components): restore the splash and lingering potion rows with
-            // their item behaviors from `steel-core/legacy_entities/`.
             for (item, expected) in [
                 (
                     &*vanilla_items::POTION,
                     "item.minecraft.potion.effect.swiftness",
+                ),
+                (
+                    &*vanilla_items::SPLASH_POTION,
+                    "item.minecraft.splash_potion.effect.swiftness",
+                ),
+                (
+                    &*vanilla_items::LINGERING_POTION,
+                    "item.minecraft.lingering_potion.effect.swiftness",
                 ),
                 (
                     &*vanilla_items::TIPPED_ARROW,

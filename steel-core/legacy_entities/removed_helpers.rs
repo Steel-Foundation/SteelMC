@@ -25,15 +25,6 @@ pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Size
     loot_table.get_random_items(&mut context)
 }
 
-// From src/entity/potion_contents.rs (used by thrown potions).
-/// Reproduces MC-276746: splash potions use `show_particles` for `show_icon`
-pub(crate) const fn to_runtime_instance_icon_from_visibility(
-    effect: &RegistryMobEffectInstance,
-    duration: i32,
-) -> RuntimeMobEffectInstance {
-    to_runtime_instance(effect, duration).with_show_icon(effect.show_particles())
-}
-
 // From tests/support/mod.rs (used by projectile tests).
 pub(crate) fn world_border_projectile_test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();

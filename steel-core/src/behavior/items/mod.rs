@@ -35,6 +35,7 @@ mod spawn_egg;
 mod spyglass;
 mod standing_and_wall_block_item;
 mod throw_projectile;
+mod throwable_potion;
 mod tipped_arrow;
 
 mod flint_and_steel;
@@ -70,4 +71,5 @@ pub use solid_bucket_item::SolidBucketItem;
 pub use spawn_egg::SpawnEggItem;
 pub use spyglass::SpyglassItem;
 pub use standing_and_wall_block_item::StandingAndWallBlockItem;
+pub use throwable_potion::{LingeringPotionItem, SplashPotionItem};
 pub use tipped_arrow::TippedArrowItem;
