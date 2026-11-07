@@ -26,7 +26,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLOCKS};
-use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
+use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_damage_types, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, WorldAabb};
@@ -353,6 +353,18 @@ impl<'a> Projectile<'a> {
         let world = self.level()?;
         let owner = self.state().owner.clone()?;
         owner.get_entity(&world)
+    }
+
+    /// `DamageSources.thrown`: damage from this projectile (`entity`), caused
+    /// by its owner.
+    #[must_use]
+    pub fn thrown_damage(&self, entity: &SharedEntity) -> DamageSource {
+        let damage = DamageSource::environment(&vanilla_damage_types::THROWN)
+            .with_direct_entity(Arc::clone(entity));
+        match self.owner() {
+            Some(owner) => damage.with_causing_entity(owner),
+            None => damage,
+        }
     }
 
     /// `Projectile.mayInteract`: the owning player's build permission, or the

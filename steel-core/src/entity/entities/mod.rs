@@ -11,4 +11,5 @@ pub use objects::display_ui::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKno
 pub use objects::effects::AreaEffectCloudEntity;
 pub use objects::explosives::{EndCrystalEntity, PrimedTntEntity};
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
+pub use objects::projectiles::{SnowballEntity, ThrownEggEntity};
 pub use objects::technical::{InteractionEntity, MarkerEntity};

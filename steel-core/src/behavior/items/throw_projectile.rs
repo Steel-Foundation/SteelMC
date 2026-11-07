@@ -6,9 +6,9 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::stat::vanilla_stat_types;
 
 use crate::behavior::context::UseItemContext;
-use crate::entity::{
-    Entity, Projectile, SharedEntity, ThrowableItemProjectile, spawn_throwable_item_projectile,
-};
+use crate::entity::prelude::*;
+use crate::entity::projectile::throwable_item;
+use crate::entity::{SharedEntity, spawn_throwable_item_projectile};
 
 const THROW_PITCH_NUMERATOR: f32 = 0.4;
 const THROW_PITCH_DIVISOR_MIN: f32 = 0.8;
@@ -30,15 +30,12 @@ pub(super) struct ThrowParams {
     pub uncertainty: f32,
 }
 
-/// Throws a projectile plays its sound awards `ITEM_USED` and consumes one item
-pub(super) fn throw_item_projectile<E>(
+/// Throws a projectile, plays its sound, awards `ITEM_USED` and consumes one item.
+pub(super) fn throw_item_projectile<E: throwable_item::Parts>(
     context: &mut UseItemContext,
     params: &ThrowParams,
     create: impl FnOnce(DVec3) -> E,
-) -> Option<SharedEntity>
-where
-    E: Projectile + ThrowableItemProjectile + Entity + 'static,
-{
+) -> Option<SharedEntity> {
     let player = context.player;
     let world = context.world;
 
