@@ -320,6 +320,8 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         let mut air_cells = vec![false; cell_count_y];
         let y_count = cell_height as usize;
         debug_assert!(y_count <= MAX_CELL_HEIGHT);
+        // Never cleared: each fill writes its rows before reading them.
+        let mut values_by_y = [[0.0_f32; MAX_INTERP]; MAX_CELL_HEIGHT];
         let inverse_height = f32x4::splat(1.0 / cell_height as f32);
         let channel_batches = interp_count.div_ceil(INTERPOLATION_LANES);
         let all_batches = (1_usize << channel_batches) - 1;
@@ -413,7 +415,6 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                             let cell_world_y = (self.cell_min_y + cell_y_idx as i32) * cell_height;
                             let row =
                                 (z_in_cell as usize * corners_y + cell_y_idx) * channel_batches;
-                            let mut values_by_y = [[0.0_f32; MAX_INTERP]; MAX_CELL_HEIGHT];
 
                             if N::interpolated_count() <= INTERPOLATION_LANES {
                                 for (batch, channel) in

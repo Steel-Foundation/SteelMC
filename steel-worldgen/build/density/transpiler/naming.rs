@@ -22,6 +22,15 @@ pub(super) fn named_fn_ident_simd(name: &str) -> Ident {
     format_ident!("compute_{}_simd", sanitize_name(name))
 }
 
+/// The bulk-order variant called from the chunk fill.
+pub(super) fn named_fn_ident_fill(name: &str) -> Ident {
+    format_ident!("compute_{}_fill", sanitize_name(name))
+}
+
+pub(super) fn named_fn_ident_fill_simd(name: &str) -> Ident {
+    format_ident!("compute_{}_fill_simd", sanitize_name(name))
+}
+
 pub(super) fn grid_field_ident(name: &str) -> Ident {
     format_ident!("grid_df_{}", sanitize_name(name))
 }

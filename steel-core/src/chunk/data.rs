@@ -1083,14 +1083,19 @@ impl Chunk {
         let mut heightmaps = self.heightmaps.write();
         heightmaps.prime_from_sections(heightmap_types, min_y, height, &sections.sections);
 
-        for &(relative_y, state) in relative_writes {
-            let y = min_y + relative_y as i32;
-            for &hm_type in heightmap_types {
-                let Some(heightmap) = heightmaps.get_mut(hm_type) else {
-                    panic!("heightmap {hm_type:?} missing after priming");
-                };
-                heightmap.update(local_x, y, local_z, state, get_block);
-            }
+        // Heightmaps are independent, so each takes the whole column in turn.
+        for &hm_type in heightmap_types {
+            let Some(heightmap) = heightmaps.get_mut(hm_type) else {
+                panic!("heightmap {hm_type:?} missing after priming");
+            };
+            heightmap.update_column(
+                local_x,
+                local_z,
+                relative_writes
+                    .iter()
+                    .map(|&(relative_y, state)| (min_y + relative_y as i32, state)),
+                get_block,
+            );
         }
     }
 

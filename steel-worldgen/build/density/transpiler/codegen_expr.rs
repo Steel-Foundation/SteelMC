@@ -5,6 +5,7 @@
 //! rewriting, and scalar fallbacks for SIMD paths.
 
 use std::collections::BTreeSet;
+use std::mem;
 use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
@@ -21,8 +22,11 @@ use super::TranspilerInput;
 use super::bounds::compute_bounds;
 use super::context::TranspileContext;
 use super::fingerprint::{collect_expensive_subexprs, fingerprint, is_cse_candidate};
-use super::graph::collect_interpolated_inners;
-use super::naming::{named_fn_field_ident, named_fn_ident, named_fn_ident_simd, noise_field_ident};
+use super::graph::{collect_interpolated_inners, contains_function, is_interpolated_marker};
+use super::naming::{
+    named_fn_field_ident, named_fn_ident, named_fn_ident_fill, named_fn_ident_fill_simd,
+    named_fn_ident_simd, noise_field_ident,
+};
 
 impl TranspileContext {
     #[expect(
@@ -72,8 +76,9 @@ impl TranspileContext {
             }
 
             DensityFunction::Noise(n) => {
-                // Y-independent noise inside a 3D function: read from column cache
-                if !is_flat && n.y_scale == 0.0 {
+                self.assert_not_point_noise_in_combine(true, &n.noise_id);
+                // Y-independent noise in the 3D fill: read from the bulk-order column cache
+                if self.fill_mode && !is_flat && n.y_scale == 0.0 {
                     let fp = fingerprint(df);
                     if let Some((idx, _, _)) = self.inline_flat_noises.get(&fp) {
                         let cache_field = format_ident!("inline_noise_{}", idx);
@@ -83,10 +88,18 @@ impl TranspileContext {
                 let field = noise_field_ident(&n.noise_id);
                 let xz_scale = Literal::f64_unsuffixed(n.xz_scale);
                 let y_scale = Literal::f64_unsuffixed(n.y_scale);
-                if is_flat || n.y_scale == 0.0 {
-                    quote! { noises.#field.get_value_xz(x * #xz_scale, z * #xz_scale) }
-                } else {
-                    quote! { noises.#field.get_value(x * #xz_scale, y * #y_scale, z * #xz_scale) }
+                // The chunk fill samples in vanilla's bulk coordinate order.
+                match (self.fill_mode, is_flat || n.y_scale == 0.0) {
+                    (true, true) => quote! { noises.#field.get_value_xz_bulk(x, z, #xz_scale) },
+                    (true, false) => {
+                        quote! { noises.#field.get_value_bulk(x, y, z, #xz_scale, #y_scale) }
+                    }
+                    (false, true) => {
+                        quote! { noises.#field.get_value_xz(x * #xz_scale, z * #xz_scale) }
+                    }
+                    (false, false) => quote! {
+                        noises.#field.get_value(x * #xz_scale, y * #y_scale, z * #xz_scale)
+                    },
                 }
             }
 
@@ -422,8 +435,23 @@ impl TranspileContext {
             DensityFunction::FindTopSurface(fts) => {
                 // upper_bound is flat (xz-only)
                 let upper_expr = self.gen_expr(&fts.upper_bound, input, is_flat);
-                // density uses y — generate with is_flat=false so it references our loop var
+                // density uses y — generate with is_flat=false so it references our loop var.
+                // Vanilla probes it per point, and outer CSE bindings hold outer-y values.
+                assert!(
+                    !(self.interpolated_param_mode
+                        && contains_function(
+                            &fts.density,
+                            &input.registry,
+                            &mut BTreeSet::new(),
+                            is_interpolated_marker
+                        )),
+                    "find_top_surface density would read interpolated values at the outer y"
+                );
+                let fill_mode = mem::replace(&mut self.fill_mode, false);
+                let cse_bindings = mem::take(&mut self.cse_bindings);
                 let density_expr = self.gen_expr(&fts.density, input, false);
+                self.cse_bindings = cse_bindings;
+                self.fill_mode = fill_mode;
                 let cell_height = Literal::i32_unsuffixed(fts.cell_height);
                 let lower_bound = Literal::i32_unsuffixed(fts.lower_bound);
                 quote! {{
@@ -449,20 +477,14 @@ impl TranspileContext {
 
             DensityFunction::Slice(s) => {
                 let coord = Literal::f64_suffixed(f64::from(s.coordinate));
-                match s.axis {
-                    Axis::X => {
-                        let inner = self.gen_expr(&s.input, input, is_flat);
-                        quote! {{ let x = #coord; #inner }}
-                    }
-                    Axis::Z => {
-                        let inner = self.gen_expr(&s.input, input, is_flat);
-                        quote! {{ let z = #coord; #inner }}
-                    }
-                    Axis::Y => {
-                        let inner = self.gen_expr(&s.input, input, false);
-                        quote! {{ let y = #coord; #inner }}
-                    }
-                }
+                // Vanilla only slices Y; cache reads in an X or Z slice would ignore the slice.
+                assert!(
+                    matches!(s.axis, Axis::Y),
+                    "unsupported slice on the {:?} axis",
+                    s.axis
+                );
+                let inner = self.gen_expr(&s.input, input, false);
+                quote! {{ let y = #coord; #inner }}
             }
 
             DensityFunction::DistanceToPoint(d) => {
@@ -510,14 +532,31 @@ impl TranspileContext {
                     let field = named_fn_field_ident(&r.id);
                     quote! { cache.#field }
                 } else {
-                    // 3D named function — call it
-                    let fn_name = named_fn_ident(&r.id);
+                    self.assert_not_point_noise_in_combine(
+                        self.unshifted_noise_refs.contains(&r.id),
+                        &r.id,
+                    );
+                    let fn_name = if self.fill_mode && self.unshifted_noise_refs.contains(&r.id) {
+                        self.fill_refs.insert(r.id.clone());
+                        named_fn_ident_fill(&r.id)
+                    } else {
+                        named_fn_ident(&r.id)
+                    };
                     quote! { #fn_name(noises, cache, x, y, z) }
                 }
             }
         };
 
         quote! { (#expression) as f32 }
+    }
+
+    /// The combine stage is generated in point order, but vanilla samples it in bulk, so it
+    /// must not reach an unshifted noise.
+    fn assert_not_point_noise_in_combine(&self, reaches_noise: bool, via: &str) {
+        assert!(
+            !(self.interpolated_param_mode && reaches_noise),
+            "combine stage reaches unshifted noise through {via}"
+        );
     }
 
     /// Generate a spline evaluation expression.
@@ -742,9 +781,10 @@ impl TranspileContext {
             }
 
             DensityFunction::Noise(n) => {
-                // Y-independent noise inside a 3D function: use the cached
+                self.assert_not_point_noise_in_combine(true, &n.noise_id);
+                // Y-independent noise in the 3D fill: use the bulk-order cached
                 // scalar value, splatted across the lanes.
-                if n.y_scale == 0.0 {
+                if self.fill_mode && n.y_scale == 0.0 {
                     let fp = fingerprint(df);
                     if let Some((idx, _, _)) = self.inline_flat_noises.get(&fp) {
                         let cache_field = format_ident!("inline_noise_{}", idx);
@@ -754,18 +794,24 @@ impl TranspileContext {
                 let field = noise_field_ident(&n.noise_id);
                 let xz_scale = Literal::f64_unsuffixed(n.xz_scale);
                 let y_scale = Literal::f64_unsuffixed(n.y_scale);
-                if n.y_scale == 0.0 {
-                    quote! {
+                // The chunk fill samples in vanilla's bulk coordinate order.
+                match (self.fill_mode, n.y_scale == 0.0) {
+                    (true, true) => quote! {
+                        #f32x::splat(noises.#field.get_value_xz_bulk(x, z, #xz_scale))
+                    },
+                    (true, false) => quote! {
+                        noises.#field.get_value_y_simd_bulk(x, ys, z, #xz_scale, #y_scale)
+                    },
+                    (false, true) => quote! {
                         #f32x::splat(noises.#field.get_value_xz(x * #xz_scale, z * #xz_scale))
-                    }
-                } else {
-                    quote! {
+                    },
+                    (false, false) => quote! {
                         noises.#field.get_value_y_simd(
                             x * #xz_scale,
                             ys * #f64x::splat(#y_scale),
                             z * #xz_scale,
                         )
-                    }
+                    },
                 }
             }
 
@@ -806,7 +852,16 @@ impl TranspileContext {
                     let field = named_fn_field_ident(&r.id);
                     quote! { #f32x::splat(cache.#field) }
                 } else {
-                    let fn_name = named_fn_ident_simd(&r.id);
+                    self.assert_not_point_noise_in_combine(
+                        self.unshifted_noise_refs.contains(&r.id),
+                        &r.id,
+                    );
+                    let fn_name = if self.fill_mode && self.unshifted_noise_refs.contains(&r.id) {
+                        self.fill_refs.insert(r.id.clone());
+                        named_fn_ident_fill_simd(&r.id)
+                    } else {
+                        named_fn_ident_simd(&r.id)
+                    };
                     quote! { #fn_name::<N>(noises, cache, x, ys, z) }
                 }
             }

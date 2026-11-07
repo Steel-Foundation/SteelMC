@@ -12,9 +12,19 @@ use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::fingerprint::collect_inline_flat_noises;
 use super::graph::{
-    collect_references, has_blended_noise, has_interpolated_markers, is_flat_cached,
-    unwrap_markers, uses_y,
+    collect_references, contains_function, is_flat_cached, is_interpolated_marker, unwrap_markers,
+    uses_y,
 };
+
+/// The router entries a biome climate `TargetPoint` is built from.
+pub(super) const CLIMATE_ROUTERS: [&str; 6] = [
+    "temperature",
+    "vegetation",
+    "continentalness",
+    "erosion",
+    "depth",
+    "ridges",
+];
 
 impl TranspileContext {
     /// Conservatively retain cache preparation unless all remaining inputs
@@ -158,18 +168,49 @@ impl TranspileContext {
         // These must be inlined (not called) when generating combine_interpolated.
         for name in &self.used_names {
             if let Some(df) = input.registry.get(name) {
-                let mut visited = BTreeSet::new();
-                if has_interpolated_markers(df, &input.registry, &mut visited) {
+                let contains = |is_target: fn(&DensityFunction) -> bool| {
+                    contains_function(df, &input.registry, &mut BTreeSet::new(), is_target)
+                };
+                if contains(is_interpolated_marker) {
                     self.interpolated_refs.insert(name.clone());
                 }
-                let mut visited = BTreeSet::new();
-                if has_blended_noise(df, &input.registry, &mut visited) {
+                if contains(|df| matches!(df, DensityFunction::BlendedNoise(_))) {
                     self.blended_noise_refs.insert(name.clone());
                 }
+                let has_unshifted_noise = contains(|df| matches!(df, DensityFunction::Noise(_)));
+                if has_unshifted_noise {
+                    self.unshifted_noise_refs.insert(name.clone());
+                }
+                // The column cache evaluates flat-cached functions in point order, so none
+                // may hold an unshifted noise that vanilla samples in bulk.
+                assert!(
+                    !(has_unshifted_noise && self.flat_cached.contains(name)),
+                    "flat-cached function {name} contains unshifted noise"
+                );
             }
         }
 
+        self.collect_climate_names(input);
         self.topo_order = self.topological_sort(input);
+    }
+
+    /// Fills `climate_names` with the named functions the climate routers reach.
+    fn collect_climate_names(&mut self, input: &TranspilerInput) {
+        let mut pending: Vec<String> = CLIMATE_ROUTERS
+            .iter()
+            .flat_map(|router| {
+                let df = input.router_entries.get(*router);
+                assert!(df.is_some(), "missing climate router {router}");
+                df.into_iter().flat_map(collect_references)
+            })
+            .collect();
+        while let Some(name) = pending.pop() {
+            if let Some(df) = input.registry.get(&name)
+                && self.climate_names.insert(name)
+            {
+                pending.extend(collect_references(df));
+            }
+        }
     }
 
     pub(super) fn walk_df(&mut self, df: &DensityFunction, input: &TranspilerInput) {

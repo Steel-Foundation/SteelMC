@@ -290,9 +290,7 @@ impl Heightmap {
         F: Fn(usize, i32, usize) -> BlockStateId,
     {
         let first_available = self.get_first_available(local_x, local_z);
-
-        // If the block is well below the current height, it can't affect the heightmap
-        if y <= first_available - 2 {
+        if Self::cannot_change_height(y, first_available) {
             return false;
         }
 
@@ -317,6 +315,32 @@ impl Heightmap {
         }
 
         false
+    }
+
+    /// [`Self::update`] for each write, skipping those too deep to change the height.
+    pub fn update_column<F>(
+        &mut self,
+        local_x: usize,
+        local_z: usize,
+        writes: impl IntoIterator<Item = (i32, BlockStateId)>,
+        get_block: F,
+    ) where
+        F: Fn(usize, i32, usize) -> BlockStateId + Copy,
+    {
+        let mut first_available = self.get_first_available(local_x, local_z);
+        for (y, state) in writes {
+            if Self::cannot_change_height(y, first_available) {
+                continue;
+            }
+            if self.update(local_x, y, local_z, state, get_block) {
+                first_available = self.get_first_available(local_x, local_z);
+            }
+        }
+    }
+
+    /// Writes below the top block (`first_available - 1`), which `Heightmap.update` ignores.
+    const fn cannot_change_height(y: i32, first_available: i32) -> bool {
+        y <= first_available - 2
     }
 
     /// Updates this heightmap for a direct write into a previously-air block.
@@ -567,6 +591,9 @@ impl ChunkHeightmaps {
         height: i32,
         sections: &[super::section::SectionHolder],
     ) {
+        // Columns in one section layer.
+        const LAYER_COLUMNS: usize = 16 * 16;
+
         let mut types_to_prime = SmallVec::<[(HeightmapType, u8); 4]>::new();
         let mut pending_mask_base = 0;
         for &hm_type in types {
@@ -585,7 +612,7 @@ impl ChunkHeightmaps {
             self.get_or_insert(hm_type, min_y, height);
         }
 
-        let mut pending_masks = [pending_mask_base; 16 * 16];
+        let mut pending_masks = [pending_mask_base; LAYER_COLUMNS];
         let mut pending_columns = pending_masks.len();
 
         'sections: for section_idx in (0..sections.len()).rev() {
@@ -598,16 +625,23 @@ impl ChunkHeightmaps {
             }
 
             // Paletted block storage is contiguous in y-z-x order.
+            let states = guard.states();
+            let flat_states = states.flat_values();
             for local_y in (0..16).rev() {
                 let y = min_y + (section_idx * 16 + local_y) as i32;
-                let layer_start = local_y * 16 * 16;
+                let layer_start = local_y * LAYER_COLUMNS;
+                let layer =
+                    flat_states.map(|values| &values[layer_start..layer_start + LAYER_COLUMNS]);
 
                 for (column_index, pending_mask) in pending_masks.iter_mut().enumerate() {
                     if *pending_mask == 0 {
                         continue;
                     }
 
-                    let state = guard.states().get_at_index(layer_start + column_index);
+                    let state = layer.map_or_else(
+                        || states.get_at_index(layer_start + column_index),
+                        |layer| layer[column_index],
+                    );
                     let matched_mask = heightmap_opacity_mask(state, *pending_mask);
                     if matched_mask == 0 {
                         continue;
@@ -720,6 +754,110 @@ mod tests {
 
         assert!(!ocean_floor.update_for_initial_fill(0, 4, 0, stone));
         assert_eq!(ocean_floor.get_first_available(0, 0), 6);
+    }
+
+    /// Includes writes that remove the column's top block.
+    #[test]
+    fn column_update_matches_per_write_updates() {
+        init_test_state();
+
+        let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
+        // Sections already hold every write when heightmaps update.
+        let mut column = [air; 32];
+        column[..20].fill(stone);
+        column[3] = water;
+        let writes = [
+            (31, stone),
+            (31, air),
+            (19, air),
+            (2, stone),
+            (25, water),
+            (18, stone),
+            (0, stone),
+            (30, stone),
+            (30, air),
+        ];
+        for &(y, state) in &writes {
+            column[y as usize] = state;
+        }
+        let get_block = |_: usize, y: i32, _: usize| column[y as usize];
+
+        for heightmap_type in HeightmapType::all_types().iter().copied() {
+            let mut per_write = Heightmap::new(heightmap_type, 0, 32);
+            per_write.set_height(0, 0, 20);
+            let mut batched = per_write.clone();
+            for &(y, state) in &writes {
+                per_write.update(0, y, 0, state, get_block);
+            }
+            batched.update_column(0, 0, writes, get_block);
+            assert_eq!(
+                batched.get_first_available(0, 0),
+                per_write.get_first_available(0, 0),
+                "{heightmap_type:?}"
+            );
+        }
+    }
+
+    /// `Building` is the palette-free layout sections keep during worldgen.
+    #[test]
+    fn section_priming_finds_top_blocks_in_both_layouts() {
+        init_test_state();
+
+        let states = [
+            REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE),
+            REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER),
+            REGISTRY
+                .blocks
+                .get_default_state_id(&vanilla_blocks::OAK_LEAVES),
+            REGISTRY
+                .blocks
+                .get_default_state_id(&vanilla_blocks::COBWEB),
+        ];
+        let min_y = -16;
+        let mut paletted = [ChunkSection::new_empty(), ChunkSection::new_empty()];
+        let mut building = [ChunkSection::new_empty(), ChunkSection::new_empty()];
+        // One block per column at a column-specific height; some columns stay empty.
+        let mut top_blocks = [None; 256];
+        for x in 0..16 {
+            for z in 0..16 {
+                let column = x * 16 + z;
+                if column % 7 == 0 {
+                    continue;
+                }
+                let section = column % 2;
+                let y = (column * 5) % 16;
+                let state = states[column % states.len()];
+                paletted[section].set_block_state(x, y, z, state);
+                building[section].set_block_state_for_generation(x, y, z, state);
+                top_blocks[column] = Some((min_y + (section * 16 + y) as i32, state));
+            }
+        }
+        let all_types = HeightmapType::all_types();
+        for (layout, sections) in [("paletted", paletted), ("building", building)] {
+            let sections = Sections::from_owned(sections.into());
+            let mut heightmaps = ChunkHeightmaps::empty();
+            heightmaps.prime_from_sections(all_types, min_y, 32, &sections.sections);
+            for heightmap_type in all_types.iter().copied() {
+                let Some(heightmap) = heightmaps.get(heightmap_type) else {
+                    panic!("heightmap {heightmap_type:?} was not primed");
+                };
+                for x in 0..16 {
+                    for z in 0..16 {
+                        let expected = match top_blocks[x * 16 + z] {
+                            Some((y, state)) if heightmap_type.is_opaque(state) => y + 1,
+                            _ => min_y,
+                        };
+                        assert_eq!(
+                            heightmap.get_first_available(x, z),
+                            expected,
+                            "{layout} {heightmap_type:?} at ({x}, {z})"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

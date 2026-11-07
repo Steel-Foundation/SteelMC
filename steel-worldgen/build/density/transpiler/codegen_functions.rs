@@ -16,8 +16,8 @@ use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::graph::{collect_interpolated_inners, is_flat_cached, unwrap_markers};
 use super::naming::{
-    named_fn_ident, named_fn_ident_simd, router_cache_field_ident, router_compute_fn_ident,
-    sanitize_name,
+    named_fn_ident, named_fn_ident_fill, named_fn_ident_fill_simd, named_fn_ident_simd,
+    router_cache_field_ident, router_compute_fn_ident, sanitize_name,
 };
 use super::nonpositive::final_density_nonpositive_channels;
 
@@ -81,6 +81,45 @@ impl TranspileContext {
             #(#spline_fns)*
             #(#fns_simd)*
             #(#spline_fns_simd)*
+        }
+    }
+
+    /// Generate the bulk-order `_fill` variants other generated code calls, so it runs last.
+    pub(super) fn gen_fill_functions(&mut self, input: &TranspilerInput) -> TokenStream {
+        self.fill_mode = true;
+        let mut fill_fns = Vec::new();
+        // Reverse topological order visits each caller before the variants it adds.
+        for name in self.topo_order.clone().into_iter().rev() {
+            if !self.fill_refs.contains(&name) {
+                continue;
+            }
+            let Some(df) = input.registry.get(&name) else {
+                continue;
+            };
+            let inner = unwrap_markers(df);
+            let fn_name = named_fn_ident_fill(&name);
+            let fn_name_simd = named_fn_ident_fill_simd(&name);
+            let body = self.gen_expr(inner, input, false);
+            let body_simd = self.gen_expr_simd(inner, input, false);
+            let params = self.fn_params(false);
+            let params_simd = self.fn_params_simd_generic();
+            fill_fns.push(quote! {
+                #[inline]
+                fn #fn_name(#params) -> f32 {
+                    #body
+                }
+                #[inline]
+                fn #fn_name_simd<const N: usize>(#params_simd) -> Simd<f32, N> {
+                    #body_simd
+                }
+            });
+        }
+        self.fill_mode = false;
+        let fill_spline_fns = mem::take(&mut self.spline_fns);
+
+        quote! {
+            #(#fill_fns)*
+            #(#fill_spline_fns)*
         }
     }
 
