@@ -373,6 +373,8 @@ impl<E: mob::Parts + Has<Age> + Has<Breeding>> Parts for E {
 
 /// Stage running [`Animal::tick_love`].
 pub const AI_STEP: StageId = StageId("animal.ai_step");
+/// Stage setting the danger pathfinding malus every animal starts with.
+pub const PATHFINDING_MALUS: StageId = StageId("animal.pathfinding_malus");
 /// Stage ending love mode for non-adults in `customServerAiStep`.
 pub const CUSTOM_SERVER_AI_STEP: StageId = StageId("animal.custom_server_ai_step");
 /// Stage feeding the animal in `mobInteract`.
@@ -383,6 +385,10 @@ pub const MOB_INTERACT: StageId = StageId("animal.mob_interact");
 #[must_use]
 pub fn definition<E: Parts>() -> MobDefinition<E> {
     MobDefinition {
+        construct: Pipeline::new([Stage::effect(
+            PATHFINDING_MALUS,
+            Breeding::initialize_pathfinding_malus,
+        )]),
         ai_step: ai_step(),
         custom_server_ai_step: custom_server_ai_step(),
         mob_interact: mob_interact(),

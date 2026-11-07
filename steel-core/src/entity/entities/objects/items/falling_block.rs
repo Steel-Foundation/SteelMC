@@ -92,12 +92,10 @@ impl FallingBlockEntity {
     /// Creates the default sand-backed entity used by vanilla entity factories.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self {
-            base: EntityBase::new(id, position, entity_type.dimensions, world),
+        Self::from_base(
+            EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
-            entity_data: CheckedMutex::new(FallingBlockEntityData::new()),
-            state: CheckedMutex::new(FallingBlockState::new(vanilla_blocks::SAND.default_state())),
-        }
+        )
     }
 
     fn with_block_state(
@@ -107,25 +105,31 @@ impl FallingBlockEntity {
         block_state: BlockStateId,
         world: Weak<World>,
     ) -> Self {
-        let mut entity_data = FallingBlockEntityData::new();
-        entity_data.start_pos.set(BlockPos::new(
+        let mut entity = Self::from_base(
+            EntityBase::new(id, position, entity_type.dimensions, world),
+            entity_type,
+        );
+        entity.entity_data.get_mut().start_pos.set(BlockPos::new(
             position.x.floor() as i32,
             position.y.floor() as i32,
             position.z.floor() as i32,
         ));
-        Self {
-            base: EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-            entity_data: CheckedMutex::new(entity_data),
-            state: CheckedMutex::new(FallingBlockState::new(block_state)),
-        }
+        entity.state.get_mut().block_state = block_state;
+        entity
     }
 
     /// Creates a falling block from saved base data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
+        Self::from_base(
+            EntityBase::from_load(load, entity_type.dimensions),
+            entity_type,
+        )
+    }
+
+    fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {
-            base: EntityBase::from_load(load, entity_type.dimensions),
+            base,
             entity_type,
             entity_data: CheckedMutex::new(FallingBlockEntityData::new()),
             state: CheckedMutex::new(FallingBlockState::new(vanilla_blocks::SAND.default_state())),

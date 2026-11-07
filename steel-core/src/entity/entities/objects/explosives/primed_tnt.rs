@@ -154,12 +154,10 @@ impl PrimedTntEntity {
     /// Creates an unprimed TNT entity for the entity factory.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self {
-            base: EntityBase::new(id, position, entity_type.dimensions, world),
+        Self::from_base(
+            EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
-            entity_data: CheckedMutex::new(PrimedTntEntityData::new()),
-            state: CheckedMutex::new(PrimedTntState::new()),
-        }
+        )
     }
 
     /// Creates a normally primed TNT entity with Vanilla's randomized launch motion.
@@ -190,8 +188,15 @@ impl PrimedTntEntity {
     /// Creates a primed TNT entity from saved data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
+        Self::from_base(
+            EntityBase::from_load(load, entity_type.dimensions),
+            entity_type,
+        )
+    }
+
+    fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {
-            base: EntityBase::from_load(load, entity_type.dimensions),
+            base,
             entity_type,
             entity_data: CheckedMutex::new(PrimedTntEntityData::new()),
             state: CheckedMutex::new(PrimedTntState::new()),

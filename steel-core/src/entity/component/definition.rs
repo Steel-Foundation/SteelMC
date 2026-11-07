@@ -7,17 +7,19 @@ use steel_utils::{Downcast as _, DowncastType};
 
 use crate::behavior::InteractionResult;
 use crate::entity::component::entries::{
-    AiStep, AiStepCtx, CustomServerAiStep, FinalizeSpawn, FinalizeSpawnCtx, MobInteract,
+    AiStep, AiStepCtx, Construct, CustomServerAiStep, FinalizeSpawn, FinalizeSpawnCtx, MobInteract,
     MobInteractCtx,
 };
 use crate::entity::component::pipeline::Pipeline;
-use crate::entity::{Entity, EntitySpawnReason, SharedEntity, SpawnGroupData};
+use crate::entity::{Entity, EntitySpawnReason, MobBase, SharedEntity, SpawnGroupData};
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
 
 /// Pipelines of one mob type, built from its layer presets.
 pub struct MobDefinition<E: 'static> {
+    /// The constructor chain, `Mob.registerGoals` included.
+    pub construct: Pipeline<MobBase, Construct>,
     /// `LivingEntity.aiStep`.
     pub ai_step: Pipeline<E, AiStep>,
     /// `Mob.customServerAiStep`.
@@ -33,6 +35,9 @@ pub struct MobDefinition<E: 'static> {
 /// Implemented once for every definition, so entity types never forward
 /// entry points by hand.
 pub trait MobEntries: Send + Sync {
+    /// Runs the constructor chain on a fresh `mob_base`.
+    fn construct(&self, mob_base: &MobBase);
+
     /// Runs `aiStep` for `mob`, returning the movement it performed.
     fn ai_step(&self, mob: &dyn Entity, entity: &SharedEntity) -> Option<MoveResult>;
 
@@ -75,6 +80,10 @@ impl<E: Entity + DowncastType> MobDefinition<E> {
 }
 
 impl<E: Entity + DowncastType> MobEntries for MobDefinition<E> {
+    fn construct(&self, mob_base: &MobBase) {
+        self.construct.run(mob_base, &mut ());
+    }
+
     fn ai_step(&self, mob: &dyn Entity, entity: &SharedEntity) -> Option<MoveResult> {
         let mob = Self::typed(mob)?;
         let mut ctx = AiStepCtx {

@@ -134,7 +134,7 @@ pub struct ChickenEntity {
     age: Age,
     #[entity(component)]
     breeding: Breeding,
-    chicken_state: CheckedMutex<ChickenState>,
+    state: CheckedMutex<ChickenState>,
     #[entity(synced)]
     entity_data: CheckedMutex<ChickenEntityData>,
 }
@@ -173,6 +173,8 @@ impl ChickenEntity {
         remove_when_far_away: |chicken, _| chicken.is_chicken_jockey(),
         ..animal::mob_props()
     };
+    const GOALS: StageId = StageId("chicken.goals");
+    const WATER_MALUS: StageId = StageId("chicken.water_malus");
     const FLAP: StageId = StageId("chicken.flap");
     const LAY_EGG: StageId = StageId("chicken.lay_egg");
     const PICK_VARIANTS: StageId = StageId("chicken.pick_variants");
@@ -182,6 +184,20 @@ impl ChickenEntity {
     /// `AgeableMob.finalizeSpawn`.
     fn define() -> MobDefinition<Self> {
         let mut definition = animal::definition::<Self>();
+        // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
+        definition.construct = definition
+            .construct
+            .before(
+                animal::PATHFINDING_MALUS,
+                [Stage::effect(Self::GOALS, Self::register_goals)],
+            )
+            .then([Stage::effect(Self::WATER_MALUS, |mob_base: &MobBase| {
+                // Chickens do not avoid water.
+                mob_base
+                    .pathfinding_malus()
+                    .lock()
+                    .set(PathType::Water, 0.0);
+            })]);
         definition.ai_step = definition.ai_step.then([
             Stage::effect(Self::FLAP, Self::tick_flapping),
             Stage::effect(Self::LAY_EGG, Self::tick_egg_laying),
@@ -202,7 +218,7 @@ impl ChickenEntity {
     /// Creates a new chicken at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::new_with_base(
+        Self::from_base(
             EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
         )
@@ -211,49 +227,19 @@ impl ChickenEntity {
     /// Reconstructs a chicken from persisted base entity state.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::new_with_base(
+        Self::from_base(
             EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
         )
     }
 
-    fn new_with_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
+    fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let living_base = LivingEntityBase::new(entity_type, &Self::LIVING);
         let mob_base = MobBase::new(&Self::MOB, Self::definition());
-        Breeding::initialize_pathfinding_malus(&mob_base);
-        // Chickens do not avoid water (`setPathfindingMalus(PathType.WATER, 0.0F)`).
-        mob_base
-            .pathfinding_malus()
-            .lock()
-            .set(PathType::Water, 0.0);
-        let mut chicken_state = ChickenState::new();
-        chicken_state.egg_time = Self::roll_egg_lay_time();
+        let mut state = ChickenState::new();
+        state.egg_time = Self::roll_egg_lay_time();
         let mut entity_data = ChickenEntityData::new();
         living_base.initialize_synced_data(&mut entity_data);
-
-        {
-            // Keep vanilla Chicken goal priorities and speeds in the same order.
-            let mut goal_selector = mob_base.goal_selector().lock();
-            goal_selector.add_goal(0, FloatGoal::new(&mob_base));
-            goal_selector.add_goal(1, PanicGoal::new(1.4));
-            goal_selector.add_goal(2, BreedGoal::new(1.0));
-            goal_selector.add_goal(
-                3,
-                TemptGoal::new(
-                    1.0,
-                    |item_stack| {
-                        REGISTRY
-                            .items
-                            .is_in_tag(item_stack.item(), &ItemTag::CHICKEN_FOOD)
-                    },
-                    false,
-                ),
-            );
-            goal_selector.add_goal(4, FollowParentGoal::new(1.1));
-            goal_selector.add_goal(5, WaterAvoidingRandomStrollGoal::new(1.0));
-            goal_selector.add_goal(6, LookAtPlayerGoal::new(6.0));
-            goal_selector.add_goal(7, RandomLookAroundGoal::new());
-        }
 
         Self {
             base,
@@ -262,9 +248,22 @@ impl ChickenEntity {
             mob_base,
             age: Age::new(&Self::AGEABLE),
             breeding: Breeding::new(&Self::BREEDING),
-            chicken_state: CheckedMutex::new(chicken_state),
+            state: CheckedMutex::new(state),
             entity_data: CheckedMutex::new(entity_data),
         }
+    }
+
+    /// `Chicken.registerGoals`.
+    fn register_goals(mob_base: &MobBase) {
+        let mut goal_selector = mob_base.goal_selector().lock();
+        goal_selector.add_goal(0, FloatGoal::new(mob_base));
+        goal_selector.add_goal(1, PanicGoal::new(1.4));
+        goal_selector.add_goal(2, BreedGoal::new(1.0));
+        goal_selector.add_goal(3, TemptGoal::new(1.0, Self::is_food, false));
+        goal_selector.add_goal(4, FollowParentGoal::new(1.1));
+        goal_selector.add_goal(5, WaterAvoidingRandomStrollGoal::new(1.0));
+        goal_selector.add_goal(6, LookAtPlayerGoal::new(6.0));
+        goal_selector.add_goal(7, RandomLookAroundGoal::new());
     }
 
     /// Sets the active chicken variant by registry entry.
@@ -330,22 +329,22 @@ impl ChickenEntity {
     /// Returns whether this chicken is currently ridden by a chicken jockey mob.
     #[must_use]
     pub fn is_chicken_jockey(&self) -> bool {
-        self.chicken_state.lock().is_chicken_jockey
+        self.state.lock().is_chicken_jockey
     }
 
     /// Sets whether this chicken is a chicken jockey mount.
     pub fn set_chicken_jockey(&self, is_chicken_jockey: bool) {
-        self.chicken_state.lock().is_chicken_jockey = is_chicken_jockey;
+        self.state.lock().is_chicken_jockey = is_chicken_jockey;
     }
 
     /// Returns the remaining ticks before the next egg is laid.
     fn egg_time(&self) -> i32 {
-        self.chicken_state.lock().egg_time
+        self.state.lock().egg_time
     }
 
     /// Sets the remaining ticks before the next egg is laid.
     fn set_egg_time(&self, egg_time: i32) {
-        self.chicken_state.lock().egg_time = egg_time;
+        self.state.lock().egg_time = egg_time;
     }
 
     /// Rolls the vanilla randomized delay before the next egg lay.
@@ -359,7 +358,7 @@ impl ChickenEntity {
         let velocity = self.velocity();
 
         {
-            let mut state = self.chicken_state.lock();
+            let mut state = self.state.lock();
             state.o_flap = state.flap;
             state.o_flap_speed = state.flap_speed;
             let adjustment = if on_ground {
@@ -392,7 +391,7 @@ impl ChickenEntity {
         }
 
         let should_lay_egg = {
-            let mut state = self.chicken_state.lock();
+            let mut state = self.state.lock();
             // Vanilla gates egg laying on `!isChickenJockey()`.
             if state.is_chicken_jockey {
                 return;
@@ -505,12 +504,12 @@ impl ChickenEntity {
 
     fn entity_is_flapping(&self) -> bool {
         let fly_dist = self.base().movement_progress().fly_dist();
-        fly_dist > self.chicken_state.lock().next_flap
+        fly_dist > self.state.lock().next_flap
     }
 
     fn entity_on_flap(&self) {
         let fly_dist = self.base().movement_progress().fly_dist();
-        let mut state = self.chicken_state.lock();
+        let mut state = self.state.lock();
         state.next_flap = fly_dist + state.flap_speed / NEXT_FLAP_SPEED_DIVISOR;
     }
 

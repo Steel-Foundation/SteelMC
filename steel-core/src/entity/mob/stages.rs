@@ -43,6 +43,7 @@ pub fn finalize_spawn<E: Parts>() -> Stage<E, FinalizeSpawn> {
 #[must_use]
 pub fn definition<E: Parts>() -> MobDefinition<E> {
     MobDefinition {
+        construct: Pipeline::new([]),
         ai_step: Pipeline::new([ai_step::<E>()]),
         custom_server_ai_step: Pipeline::new([]),
         mob_interact: Pipeline::new([]),

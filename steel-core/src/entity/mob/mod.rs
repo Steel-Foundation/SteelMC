@@ -211,10 +211,11 @@ impl MobHomeRestriction {
 }
 
 impl MobBase {
-    /// Fresh mob state for a type with `hooks` and pipelines `definition`.
+    /// Fresh mob state for a type with `hooks` and pipelines `definition`, after
+    /// the definition's constructor chain ran on it.
     #[must_use]
     pub fn new(hooks: &'static dyn MobHooks, definition: &'static dyn MobEntries) -> Self {
-        Self {
+        let mob_base = Self {
             goal_selector: CheckedMutex::new(GoalSelector::new()),
             target_selector: CheckedMutex::new(GoalSelector::new()),
             target: CheckedMutex::new(None),
@@ -235,7 +236,9 @@ impl MobBase {
             leash_data: CheckedMutex::new(None),
             hooks,
             definition,
-        }
+        };
+        definition.construct(&mob_base);
+        mob_base
     }
 
     #[must_use]

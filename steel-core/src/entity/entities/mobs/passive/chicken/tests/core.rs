@@ -238,3 +238,17 @@ fn chicken_slow_fall_reduces_downward_velocity() {
     );
     assert_eq!(velocity.z.to_bits(), 3.0_f64.to_bits());
 }
+
+#[test]
+fn chicken_construction_runs_the_animal_and_chicken_malus_steps() {
+    init_vanilla_registry();
+    let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+
+    let malus = chicken.mob().mob_base().pathfinding_malus().lock();
+    assert_eq!(malus.get(PathType::Fire).to_bits(), (-1.0_f32).to_bits());
+    assert_eq!(
+        malus.get(PathType::FireInNeighbor).to_bits(),
+        16.0_f32.to_bits()
+    );
+    assert_eq!(malus.get(PathType::Water).to_bits(), 0.0_f32.to_bits());
+}

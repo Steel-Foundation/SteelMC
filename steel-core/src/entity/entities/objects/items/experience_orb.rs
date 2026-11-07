@@ -84,12 +84,10 @@ impl ExperienceOrbEntity {
     /// Creates a new experience orb with value 0.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self {
-            base: EntityBase::new(id, position, entity_type.dimensions, world),
+        Self::from_base(
+            EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
-            entity_data: CheckedMutex::new(ExperienceOrbEntityData::new()),
-            state: CheckedMutex::new(ExperienceOrbState::new()),
-        }
+        )
     }
 
     /// Creates a new experience orb with a value and vanilla spawn motion.
@@ -110,8 +108,15 @@ impl ExperienceOrbEntity {
     /// Creates an experience orb from saved base data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
+        Self::from_base(
+            EntityBase::from_load(load, entity_type.dimensions),
+            entity_type,
+        )
+    }
+
+    fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {
-            base: EntityBase::from_load(load, entity_type.dimensions),
+            base,
             entity_type,
             entity_data: CheckedMutex::new(ExperienceOrbEntityData::new()),
             state: CheckedMutex::new(ExperienceOrbState::new()),
