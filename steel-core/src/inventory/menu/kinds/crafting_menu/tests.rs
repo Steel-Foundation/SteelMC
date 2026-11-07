@@ -87,7 +87,7 @@ fn partial_result_overflow_uses_the_default_drop_policy() {
     let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
         panic!("dropped entity should retain its concrete item type");
     };
-    assert!(item.get_item().is(&vanilla_items::OAK_PLANKS));
-    assert_eq!(item.get_item().count(), 3);
-    assert_eq!(item.get_thrower(), None);
+    assert!(item.item().is(&vanilla_items::OAK_PLANKS));
+    assert_eq!(item.item().count(), 3);
+    assert_eq!(item.thrower(), None);
 }

@@ -582,7 +582,7 @@ fn death_keeps_menu_items_until_entity_removal() {
         let Some(item) = entity.as_ref().downcast_ref::<ItemEntity>() else {
             panic!("dropped entity should retain its concrete item type");
         };
-        dropped_stacks.push(item.get_item());
+        dropped_stacks.push(item.item());
     }
     assert!(
         dropped_stacks
@@ -722,7 +722,7 @@ fn death_respawn_cleanup_drops_menu_items_before_fresh_player_construction() {
     let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
         panic!("dropped entity should retain its concrete item type");
     };
-    assert_eq!(item.get_item().count(), 3);
+    assert_eq!(item.item().count(), 3);
 }
 
 #[test]
@@ -1669,7 +1669,7 @@ fn extra_items_created_on_use_are_dropped_when_inventory_is_full() {
     let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
         panic!("dropped entity should retain its concrete item type");
     };
-    assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+    assert!(item.item().is(&vanilla_items::GLASS_BOTTLE));
 }
 
 /// Regression test: drinking a honey bottle from a full inventory, through
@@ -1714,7 +1714,7 @@ fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tic
     let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
         panic!("dropped entity should retain its concrete item type");
     };
-    assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+    assert!(item.item().is(&vanilla_items::GLASS_BOTTLE));
 }
 
 #[test]

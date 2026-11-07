@@ -809,11 +809,7 @@ mod tests {
         assert_eq!(drops.len(), CHISELED_BOOKSHELF_SLOTS);
         let dropped_items = drops
             .iter()
-            .filter_map(|entity| {
-                entity
-                    .downcast_ref::<ItemEntity>()
-                    .map(ItemEntity::get_item)
-            })
+            .filter_map(|entity| entity.downcast_ref::<ItemEntity>().map(ItemEntity::item))
             .collect::<Vec<_>>();
         assert_eq!(dropped_items.len(), CHISELED_BOOKSHELF_SLOTS);
         assert_eq!(

@@ -220,7 +220,7 @@ impl ItemEntity {
 
     /// Gets a clone of the item stack.
     #[must_use]
-    pub fn get_item(&self) -> ItemStack {
+    pub fn item(&self) -> ItemStack {
         self.entity_data.lock().item.get().clone()
     }
 
@@ -231,7 +231,7 @@ impl ItemEntity {
 
     /// Gets the current age in ticks.
     #[must_use]
-    pub fn get_age(&self) -> i32 {
+    pub fn age(&self) -> i32 {
         self.state.lock().age
     }
 
@@ -249,7 +249,7 @@ impl ItemEntity {
 
     /// Gets the pickup delay in ticks.
     #[must_use]
-    pub fn get_pickup_delay(&self) -> i32 {
+    pub fn pickup_delay(&self) -> i32 {
         self.state.lock().pickup_delay
     }
 
@@ -276,7 +276,7 @@ impl ItemEntity {
 
     /// Gets the health (damage resistance).
     #[must_use]
-    pub fn get_health(&self) -> i32 {
+    pub fn health(&self) -> i32 {
         self.state.lock().health
     }
 
@@ -292,7 +292,7 @@ impl ItemEntity {
 
     /// Gets the UUID of the entity that threw/dropped this item.
     #[must_use]
-    pub fn get_thrower(&self) -> Option<Uuid> {
+    pub fn thrower(&self) -> Option<Uuid> {
         self.state.lock().thrower
     }
 
@@ -308,7 +308,7 @@ impl ItemEntity {
     ///
     /// Returns `None` if any player can pick it up.
     #[must_use]
-    pub fn get_owner(&self) -> Option<Uuid> {
+    pub fn owner(&self) -> Option<Uuid> {
         self.state.lock().owner
     }
 
@@ -323,14 +323,14 @@ impl ItemEntity {
         }
 
         // Check owner restriction
-        if let Some(owner_uuid) = self.get_owner()
+        if let Some(owner_uuid) = self.owner()
             && owner_uuid != player.gameprofile.id()
         {
             return false;
         }
 
         // Get the item and try to add to inventory
-        let mut item = self.get_item();
+        let mut item = self.item();
         let original_count = item.count();
 
         // Try to add to player's inventory
@@ -388,7 +388,7 @@ impl ItemEntity {
     /// - Its count is less than max stack size
     #[must_use]
     pub fn is_mergeable(&self) -> bool {
-        let item = self.get_item();
+        let item = self.item();
         let state = self.state.lock();
         !self.is_removed()
             && state.pickup_delay != INFINITE_PICKUP_DELAY
@@ -415,11 +415,11 @@ impl ItemEntity {
     ///
     /// The item with fewer items is merged into the one with more.
     fn try_to_merge(&self, other: &Self) {
-        let this_stack = self.get_item();
-        let other_stack = other.get_item();
+        let this_stack = self.item();
+        let other_stack = other.item();
 
         // Both items must have the same owner (target)
-        if self.get_owner() != other.get_owner() {
+        if self.owner() != other.owner() {
             return;
         }
 
@@ -563,7 +563,7 @@ impl ItemEntity {
     /// Unlike other entities, the custom name keeps its click and hover actions.
     fn entity_name(&self) -> TextComponent {
         self.custom_name().unwrap_or_else(|| {
-            let item = self.get_item();
+            let item = self.item();
             ITEM_BEHAVIORS
                 .get_behavior(item.item())
                 .get_name(&item)
@@ -573,7 +573,7 @@ impl ItemEntity {
 
     fn entity_tick(&self, entity: &SharedEntity) {
         // Check if item is empty
-        if self.get_item().is_empty() {
+        if self.item().is_empty() {
             self.set_removed(RemovalReason::Discarded);
             return;
         }
@@ -707,13 +707,11 @@ impl ItemEntity {
     }
 
     fn entity_should_play_lava_hurt_sound(&self) -> bool {
-        self.get_health() <= 0 || self.tick_count() % 10 == 0
+        self.health() <= 0 || self.tick_count() % 10 == 0
     }
 
     fn entity_fire_immune(&self) -> bool {
-        !self
-            .get_item()
-            .can_be_hurt_by(&vanilla_damage_types::IN_FIRE)
+        !self.item().can_be_hurt_by(&vanilla_damage_types::IN_FIRE)
             || self.entity_type().fire_immune
     }
 
@@ -730,7 +728,7 @@ impl ItemEntity {
         {
             return false;
         }
-        if !self.get_item().can_be_hurt_by(source.damage_type) {
+        if !self.item().can_be_hurt_by(source.damage_type) {
             return false;
         }
         let new_health = {
@@ -760,7 +758,7 @@ impl ItemEntity {
         }
         drop(state);
 
-        let item = self.get_item();
+        let item = self.item();
         if !item.is_empty() {
             nbt.insert("Item", item.to_nbt_tag());
         }
@@ -798,7 +796,7 @@ impl ItemEntity {
         }
 
         // Vanilla behavior: discard if item is empty after load
-        if self.get_item().is_empty() {
+        if self.item().is_empty() {
             self.set_removed(RemovalReason::Discarded);
         }
     }
@@ -936,8 +934,8 @@ mod tests {
 
         item.make_fake_item();
 
-        assert_eq!(item.get_pickup_delay(), 32_767);
-        assert_eq!(item.get_age(), 5_999);
+        assert_eq!(item.pickup_delay(), 32_767);
+        assert_eq!(item.age(), 5_999);
     }
 
     #[test]
@@ -967,9 +965,9 @@ mod tests {
         source.try_to_merge(&target);
 
         assert!(source.is_removed());
-        assert_eq!(target.get_item().count(), 30);
-        assert_eq!(target.get_pickup_delay(), 5);
-        assert_eq!(target.get_age(), 20);
+        assert_eq!(target.item().count(), 30);
+        assert_eq!(target.pickup_delay(), 5);
+        assert_eq!(target.age(), 20);
     }
 
     #[test]
@@ -987,7 +985,7 @@ mod tests {
             0.75
         ));
 
-        assert_eq!(item.get_health(), 4);
+        assert_eq!(item.health(), 4);
     }
 
     #[test]
@@ -1008,13 +1006,13 @@ mod tests {
             &DamageSource::environment(&vanilla_damage_types::IN_FIRE),
             1.0
         ));
-        assert_eq!(item.get_health(), 5);
+        assert_eq!(item.health(), 5);
 
         assert!(item.hurt(
             test_world(),
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
             1.0
         ));
-        assert_eq!(item.get_health(), 4);
+        assert_eq!(item.health(), 4);
     }
 }

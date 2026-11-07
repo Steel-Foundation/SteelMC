@@ -170,7 +170,7 @@ impl BlockBehavior for TntBlock {
         }
 
         let entity = Self::primed_entity(world, pos, explosion.indirect_source_entity());
-        entity.set_fuse(PrimedTntEntity::get_random_short_fuse(entity.fuse()));
+        entity.set_fuse(PrimedTntEntity::random_short_fuse(entity.fuse()));
         if let Err(error) = world.try_add_entity(entity) {
             log::debug!("failed to add primed TNT: {error}");
         }

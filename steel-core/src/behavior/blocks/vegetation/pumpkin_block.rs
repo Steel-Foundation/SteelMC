@@ -211,7 +211,7 @@ mod tests {
         let Some(seeds) = dropped[0].downcast_ref::<ItemEntity>() else {
             panic!("carved pumpkin drop should be an item entity");
         };
-        let seeds = seeds.get_item();
+        let seeds = seeds.item();
         assert!(seeds.is(&vanilla_items::PUMPKIN_SEEDS));
         assert_eq!(seeds.count, 4);
     }

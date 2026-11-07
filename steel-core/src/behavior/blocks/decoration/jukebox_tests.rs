@@ -394,11 +394,8 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
     let Some(item_entity) = dropped[0].downcast_ref::<ItemEntity>() else {
         panic!("ejected record should be an item entity");
     };
-    assert!(item_entity.get_item().is(&vanilla_items::MUSIC_DISC_CAT));
-    assert_eq!(
-        item_entity.get_pickup_delay(),
-        DEFAULT_ITEM_PICKUP_DELAY_TICKS
-    );
+    assert!(item_entity.item().is(&vanilla_items::MUSIC_DISC_CAT));
+    assert_eq!(item_entity.pickup_delay(), DEFAULT_ITEM_PICKUP_DELAY_TICKS);
     let item_pos = item_entity.position();
     let expected_ejection_center = DVec3::new(
         f64::from(pos.x()) + BLOCK_CENTER_OFFSET,
@@ -743,7 +740,7 @@ fn breaking_a_playing_jukebox_drops_one_record_and_runs_vanilla_cleanup() {
     let Some(item_entity) = dropped[0].downcast_ref::<ItemEntity>() else {
         panic!("broken jukebox record should be an item entity");
     };
-    assert!(item_entity.get_item().is(&vanilla_items::MUSIC_DISC_CAT));
+    assert!(item_entity.item().is(&vanilla_items::MUSIC_DISC_CAT));
     assert_eq!(
         level_events(&packets)
             .iter()

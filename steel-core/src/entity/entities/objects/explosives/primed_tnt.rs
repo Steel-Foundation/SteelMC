@@ -236,7 +236,7 @@ impl PrimedTntEntity {
     /// Adds one eighth of the fuse to a random duration below one quarter,
     /// with a minimum random bound of one tick.
     #[must_use]
-    pub fn get_random_short_fuse(fuse: i32) -> i32 {
+    pub fn random_short_fuse(fuse: i32) -> i32 {
         rand::random_range(0..(fuse / 4).max(1)) + fuse / 8
     }
 

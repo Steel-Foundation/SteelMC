@@ -528,7 +528,7 @@ mod tests {
         let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
             panic!("dropped entity should retain its concrete item type");
         };
-        assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+        assert!(item.item().is(&vanilla_items::GLASS_BOTTLE));
     }
 
     /// Regression test for a deadlock: `use_item` on a `consume_seconds:

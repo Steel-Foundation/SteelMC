@@ -1379,7 +1379,7 @@ fn equip_replaces_worse_armor_and_drops_the_old_piece() {
         .filter_map(|entity| {
             entity
                 .downcast_ref::<ItemEntity>()
-                .map(|item| item.get_item().is(&vanilla_items::LEATHER_HELMET))
+                .map(|item| item.item().is(&vanilla_items::LEATHER_HELMET))
         })
         .any(|is_leather_helmet| is_leather_helmet);
     assert!(
@@ -1535,7 +1535,7 @@ fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
         "the item entity should survive when only part of the stack is taken"
     );
     assert_eq!(
-        item.get_item().count(),
+        item.item().count(),
         2,
         "the source stack should shrink by the single equipped helmet"
     );

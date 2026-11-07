@@ -1239,7 +1239,7 @@ fn disconnected_menu_removal_drops_transient_items() {
     let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
         panic!("dropped entity should retain its concrete item type");
     };
-    assert!(item.get_item().is(&vanilla_items::STONE));
+    assert!(item.item().is(&vanilla_items::STONE));
 
     probe_state.armed.store(false, Ordering::Release);
     world.remove_player_for_world_change(&observer);
@@ -1729,8 +1729,8 @@ fn pending_terminal_removal_preserves_drop_disposition() {
     let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
         panic!("dropped entity should retain its concrete item type");
     };
-    assert!(item.get_item().is(&vanilla_items::STONE));
-    assert_eq!(item.get_item().count(), 2);
+    assert!(item.item().is(&vanilla_items::STONE));
+    assert_eq!(item.item().count(), 2);
 }
 
 #[test]
@@ -1803,8 +1803,8 @@ fn prepared_menu_is_cleaned_when_replacement_removal_turns_terminal() {
     let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
         panic!("dropped entity should retain its concrete item type");
     };
-    assert!(item.get_item().is(&vanilla_items::STONE));
-    assert_eq!(item.get_item().count(), 2);
+    assert!(item.item().is(&vanilla_items::STONE));
+    assert_eq!(item.item().count(), 2);
 }
 
 #[test]

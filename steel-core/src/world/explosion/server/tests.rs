@@ -586,6 +586,6 @@ fn destructive_explosion_removes_stone_and_spawns_its_loot() {
         entity
             .as_ref()
             .downcast_ref::<ItemEntity>()
-            .is_some_and(|item| item.get_item().is(&vanilla_items::COBBLESTONE))
+            .is_some_and(|item| item.item().is(&vanilla_items::COBBLESTONE))
     }));
 }

@@ -244,8 +244,8 @@ fn partial_swap_overflow_marks_displaced_item_as_thrown() {
     let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
         panic!("dropped entity should retain its concrete item type");
     };
-    assert!(item.get_item().is(&vanilla_items::STONE));
-    assert_eq!(item.get_thrower(), Some(player_id));
+    assert!(item.item().is(&vanilla_items::STONE));
+    assert_eq!(item.thrower(), Some(player_id));
 }
 
 #[test]

@@ -198,8 +198,8 @@ fn extra_remainder_drops_when_the_inventory_is_full() {
         .filter_map(|entity| entity.downcast_ref::<ItemEntity>())
         .collect();
     assert_eq!(drops.len(), 1);
-    assert!(drops[0].get_item().is(&vanilla_items::DIAMOND));
-    assert_eq!(drops[0].get_item().count(), 1);
+    assert!(drops[0].item().is(&vanilla_items::DIAMOND));
+    assert_eq!(drops[0].item().count(), 1);
     assert_eq!(
         interaction
             .player

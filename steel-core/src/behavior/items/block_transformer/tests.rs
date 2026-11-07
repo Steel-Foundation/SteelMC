@@ -111,8 +111,8 @@ fn rooted_dirt_drops_loot_from_each_clicked_face_even_with_a_block_above() {
             .collect();
         assert_eq!(dropped.len(), 1);
         let drop = dropped[0].downcast_ref::<ItemEntity>().expect("item drop");
-        assert!(drop.get_item().is(&vanilla_items::HANGING_ROOTS));
-        assert_eq!(drop.get_item().count(), 1);
+        assert!(drop.item().is(&vanilla_items::HANGING_ROOTS));
+        assert_eq!(drop.item().count(), 1);
         let position = drop.position();
         match face {
             Direction::Down => assert!(position.y < f64::from(interaction.pos.y())),

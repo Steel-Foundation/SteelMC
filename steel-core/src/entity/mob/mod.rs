@@ -1061,7 +1061,7 @@ impl<'a> Mob<'a> {
     /// source stack by however much was equipped, only removing the item entity
     /// once nothing is left.
     pub fn pick_up_item(&self, world: &Arc<World>, item_entity: &ItemEntity) {
-        let equipped = self.equip_item_if_possible(item_entity.get_item());
+        let equipped = self.equip_item_if_possible(item_entity.item());
         if equipped.is_empty() {
             return;
         }
@@ -1077,7 +1077,7 @@ impl<'a> Mob<'a> {
             None,
         );
 
-        let mut remaining = item_entity.get_item();
+        let mut remaining = item_entity.item();
         remaining.shrink(count);
         if remaining.is_empty() {
             item_entity.set_removed(RemovalReason::Discarded);
@@ -1316,7 +1316,7 @@ impl<'a> Mob<'a> {
             let Some(item_entity) = entity.downcast_ref::<ItemEntity>() else {
                 continue;
             };
-            let item = item_entity.get_item();
+            let item = item_entity.item();
             if item_entity.is_removed()
                 || item.is_empty()
                 || item_entity.has_pickup_delay()
