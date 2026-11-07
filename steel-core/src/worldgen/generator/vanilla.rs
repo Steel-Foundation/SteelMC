@@ -640,7 +640,7 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
 
         let mut pending_writes: Vec<(usize, BlockStateId)> = Vec::new();
         let mut column_buf: Vec<BlockStateId> = Vec::new();
-        let mut material_ore_vein_results = vec![None; material_ore_vein_count];
+        let mut material_ore_vein_results = vec![None; material_ore_vein_count].into_boxed_slice();
         let condition_noise_values = N::surface_noise_ids()
             .iter()
             .map(|_| Cell::new(0.0))
