@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::behavior::init_behaviors;
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use crate::entity::{
-    DEATH_DURATION, EntityBase, LivingEntity as _, damage::DamageSource, entities::PigEntity,
+    DEATH_DURATION, Entity, EntityBase, LivingEntity, damage::DamageSource, entities::PigEntity,
     next_entity_id,
 };
 use crate::player::{Player, ResetReason};
@@ -843,6 +843,7 @@ fn removed_dead_players_continue_ticking_stats() {
             .unwrap_or(0)
     };
     let before = stat_count(&player);
+    let tick_count_before = Entity::tick_count(player.as_ref());
 
     tick_test_world(world, death_duration, true);
 
@@ -850,5 +851,10 @@ fn removed_dead_players_continue_ticking_stats() {
         stat_count(&player),
         before + 1,
         "removed players should keep accruing TIME_SINCE_REST like vanilla"
+    );
+    assert_eq!(
+        Entity::tick_count(player.as_ref()),
+        tick_count_before,
+        "removed players skip commonTick, so tickCount stays frozen like vanilla"
     );
 }
