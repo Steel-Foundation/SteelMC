@@ -17,9 +17,10 @@ use steel_utils::Direction;
 use crate::behavior::context::{InteractionResult, UseItemContext, UseOnContext};
 use crate::behavior::item::ItemBehavior;
 use crate::enchantment_helper;
-use crate::entity::LivingEntityRef;
 use crate::entity::entities::FireworkRocketEntity;
-use crate::entity::{Entity, Projectile, SharedEntity, next_entity_id};
+use crate::entity::prelude::*;
+use crate::entity::projectile::Parts as _;
+use crate::entity::{SharedEntity, next_entity_id};
 use crate::world::World;
 
 const ROCKET_PLACEMENT_OFFSET: f64 = 0.15;
@@ -65,7 +66,7 @@ impl ItemBehavior for FireworkRocketItem {
             source_item,
         );
         let owner: SharedEntity = Arc::<Player>::clone(context.player);
-        rocket.set_owner_entity(Some(&owner));
+        rocket.projectile().set_owner(Some(&owner));
         let rocket = Self::add_rocket(context.world, rocket);
         context.inv.with_item(|item| {
             enchantment_helper::on_projectile_spawned(
@@ -98,15 +99,12 @@ impl ItemBehavior for FireworkRocketItem {
 
         let source_item = context.inv.with_item(|item| item.clone());
         let owner: SharedEntity = Arc::<Player>::clone(context.player);
-        let Some(attached_to) = LivingEntityRef::new(&owner) else {
-            panic!("firework user must be a living player");
-        };
         let rocket = FireworkRocketEntity::attached_to_living(
             &vanilla_entities::FIREWORK_ROCKET,
             next_entity_id(),
             Arc::downgrade(context.world),
             source_item,
-            attached_to,
+            &owner,
         );
         let rocket = Self::add_rocket(context.world, rocket);
         let has_infinite_materials = context.player.has_infinite_materials();

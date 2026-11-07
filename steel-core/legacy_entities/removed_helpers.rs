@@ -24,17 +24,3 @@ pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Size
     }
     loot_table.get_random_items(&mut context)
 }
-
-// From tests/support/mod.rs (used by projectile tests).
-pub(crate) fn world_border_projectile_test_world() -> &'static Arc<World> {
-    static WORLD: OnceLock<Arc<World>> = OnceLock::new();
-    WORLD.get_or_init(|| {
-        let world = create_static_test_world("test_world_border_projectile", Difficulty::Normal);
-        let result = world.set_world_border_size(10.0);
-        assert!(
-            result.is_ok(),
-            "test world border should resize: {result:?}"
-        );
-        world
-    })
-}
