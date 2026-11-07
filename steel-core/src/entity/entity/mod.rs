@@ -144,22 +144,30 @@ impl<T: Entity> EntityEventSource for T {
 ///
 /// # Implementing
 ///
-/// Entities expose [`EntityBase`] for the state every entity has, and their
-/// [`EntityHooks`] for the methods entity types change (see [`EntityProps`]).
-/// Every other method is `final`.
+/// Entities expose [`EntityBase`] for the state every entity has, their
+/// components, and their [`EntityHooks`] for the methods entity types change
+/// (see [`EntityProps`]). Every other method is `final`. `#[derive(Entity)]`
+/// writes the impl:
 ///
 /// ```ignore
+/// #[derive(Entity)]
+/// #[entity(hooks = Self::ENTITY, save = Self::save_my_entity, load = Self::load_my_entity)]
+/// pub struct MyEntity {
+///     #[entity(base)]
+///     base: EntityBase,
+///     #[entity(entity_type)]
+///     entity_type: EntityTypeRef,
+///     #[entity(component)]
+///     living_base: LivingEntityBase,
+///     #[entity(synced)]
+///     entity_data: SyncMutex<MyEntityData>,
+/// }
+///
 /// impl MyEntity {
 ///     const ENTITY: EntityProps<Self> = EntityProps {
 ///         is_pickable: |_| true,
-///         ..EntityProps::new()
+///         ..living_entity::entity_props()
 ///     };
-/// }
-///
-/// impl Entity for MyEntity {
-///     fn base(&self) -> &EntityBase { &self.base }
-///     fn entity_type(&self) -> EntityTypeRef { &vanilla_entities::MY_ENTITY }
-///     fn entity_hooks(&self) -> &'static dyn EntityHooks { &Self::ENTITY }
 /// }
 /// ```
 pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
@@ -872,7 +880,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// entity manager lock, so it must give the same answer for the entity's whole
     /// lifetime and have no side effects.
     fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
-        None
+        try_as_dyn::<Self, dyn DefaultEntityPush>(self)
     }
 
     /// Adds an impulse to this entity's velocity and marks velocity for sync.

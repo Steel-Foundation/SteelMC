@@ -17,12 +17,12 @@ use steel_registry::vanilla_entity_data::ExperienceOrbEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 
+use crate::entity::EntityProps;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission,
-    EntitySyncedData, RemovalReason, SharedEntity, next_entity_id,
+    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, RemovalReason,
+    SharedEntity, next_entity_id,
 };
-use crate::entity::{EntityHooks, EntityProps};
 use crate::fluid::get_fluid_state;
 use crate::physics::{MoverType, WorldCollisionProvider};
 use crate::player::Player;
@@ -63,9 +63,14 @@ impl ExperienceOrbState {
 
 /// Vanilla experience orb entity.
 #[entity_behavior(class = "ExperienceOrb")]
+#[derive(Entity)]
+#[entity(hooks = Self::ENTITY, save = Self::save_orb, load = Self::load_orb)]
 pub struct ExperienceOrbEntity {
+    #[entity(base)]
     base: EntityBase,
+    #[entity(entity_type)]
     entity_type: EntityTypeRef,
+    #[entity(synced)]
     entity_data: SyncMutex<ExperienceOrbEntityData>,
     state: SyncMutex<ExperienceOrbState>,
 }
@@ -497,28 +502,8 @@ impl ExperienceOrbEntity {
     }
 }
 
-impl Entity for ExperienceOrbEntity {
-    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
-        Some(self)
-    }
-
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
-    }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
-    }
-
-    fn save_additional(&self, nbt: &mut NbtCompound) {
+impl ExperienceOrbEntity {
+    fn save_orb(&self, nbt: &mut NbtCompound) {
         let state = self.state.lock();
         nbt.insert("Health", state.health as i16);
         nbt.insert("Age", state.age as i16);
@@ -526,7 +511,7 @@ impl Entity for ExperienceOrbEntity {
         nbt.insert("Count", state.count);
     }
 
-    fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+    fn load_orb(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.state.lock();
         state.health = i32::from(nbt.short("Health").unwrap_or(DEFAULT_HEALTH as i16));
         state.age = i32::from(nbt.short("Age").unwrap_or(0));

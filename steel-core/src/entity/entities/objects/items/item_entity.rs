@@ -23,14 +23,14 @@ use crate::entity::SharedEntity;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEFAULT_AIR_DRAG, DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityBaseState,
-    EntityMovementEmission, EntitySyncedData, RemovalReason,
+    EntityMovementEmission, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
 use crate::player::Player;
 use crate::world::World;
 
-use crate::entity::{EntityHooks, EntityProps};
+use crate::entity::EntityProps;
 use simdnbt::ToNbtTag;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -101,14 +101,19 @@ impl ItemEntityState {
 /// - Despawns after 5 minutes (6000 ticks)
 /// - Has pickup delay before players can collect it
 #[entity_behavior]
+#[derive(Entity)]
+#[entity(hooks = Self::ENTITY, save = Self::save_item, load = Self::load_item)]
 pub struct ItemEntity {
     /// Common entity fields (id, uuid, position, etc.).
+    #[entity(base)]
     base: EntityBase,
 
     /// Vanilla entity type registered for this implementation.
+    #[entity(entity_type)]
     entity_type: EntityTypeRef,
 
     /// Entity data containing the `ItemStack`.
+    #[entity(synced)]
     entity_data: SyncMutex<ItemEntityData>,
 
     /// Item-specific mutable state.
@@ -718,28 +723,8 @@ impl ItemEntity {
     }
 }
 
-impl Entity for ItemEntity {
-    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
-        Some(self)
-    }
-
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
-    }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
-    }
-
-    fn save_additional(&self, nbt: &mut NbtCompound) {
+impl ItemEntity {
+    fn save_item(&self, nbt: &mut NbtCompound) {
         // Match vanilla's ItemEntity.addAdditionalSaveData
         let state = self.item_state.lock();
         nbt.insert("Health", state.health as i16);
@@ -760,7 +745,7 @@ impl Entity for ItemEntity {
         }
     }
 
-    fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+    fn load_item(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         // Match vanilla's ItemEntity.readAdditionalSaveData
         let mut state = self.item_state.lock();
         if let Some(health) = nbt.short("Health") {

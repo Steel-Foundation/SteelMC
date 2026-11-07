@@ -19,11 +19,11 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::block_entity::block_state_nbt;
+use crate::entity::EntityProps;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityReference, EntitySyncedData,
-    RemovalReason, SharedEntity,
+    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityReference, RemovalReason,
+    SharedEntity,
 };
-use crate::entity::{EntityHooks, EntityProps};
 use crate::physics::MoverType;
 use crate::world::{
     DefaultExplosionDamageCalculator, Explosion, ExplosionBlockReader, ExplosionDamageCalculator,
@@ -130,9 +130,14 @@ static USED_PORTAL_DAMAGE_CALCULATOR: NetherPortalPreservingExplosionDamageCalcu
 
 /// Vanilla primed TNT entity.
 #[entity_behavior(class = "PrimedTnt")]
+#[derive(Entity)]
+#[entity(hooks = Self::ENTITY, save = Self::save_tnt, load = Self::load_tnt)]
 pub struct PrimedTntEntity {
+    #[entity(base)]
     base: EntityBase,
+    #[entity(entity_type)]
     entity_type: EntityTypeRef,
+    #[entity(synced)]
     entity_data: SyncMutex<PrimedTntEntityData>,
     state: SyncMutex<PrimedTntState>,
 }
@@ -319,24 +324,8 @@ impl PrimedTntEntity {
     }
 }
 
-impl Entity for PrimedTntEntity {
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
-    }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
-    }
-
-    fn save_additional(&self, nbt: &mut NbtCompound) {
+impl PrimedTntEntity {
+    fn save_tnt(&self, nbt: &mut NbtCompound) {
         nbt.insert("fuse", self.fuse() as i16);
         nbt.insert("block_state", block_state_nbt::save(self.block_state()));
         let state = self.state.lock();
@@ -348,7 +337,7 @@ impl Entity for PrimedTntEntity {
         }
     }
 
-    fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+    fn load_tnt(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.set_fuse(i32::from(
             nbt.short("fuse").unwrap_or(Self::DEFAULT_FUSE_TIME as i16),
         ));

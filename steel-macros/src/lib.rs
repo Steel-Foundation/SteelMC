@@ -3,6 +3,7 @@
 //! Macros for the Steel Minecraft server.
 
 mod behavior;
+mod entity;
 mod packet;
 mod read_from;
 mod strategy;
@@ -48,6 +49,27 @@ pub fn item_behavior(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn entity_behavior(attr: TokenStream, item: TokenStream) -> TokenStream {
     behavior::entity_behavior(attr.into(), item.into()).into()
+}
+
+/// Derives `Entity` for a struct of entity components.
+///
+/// Field roles, one per field:
+/// - `#[entity(base)]`: the `EntityBase`.
+/// - `#[entity(entity_type)]`: the `EntityTypeRef`, unless the struct option
+///   `entity_type = ..` gives a fixed one.
+/// - `#[entity(component)]`: a `Component`. Emits `Has<C>`, keyed lookup through
+///   `erased_component`, and saves/loads it in field order.
+/// - `#[entity(synced)]`: the generated synced entity data.
+///
+/// Struct options in `#[entity(..)]`:
+/// - `hooks = Self::ENTITY`: the `EntityProps` (default: `EntityDefaults`).
+/// - `save = Self::save_x` / `load = Self::load_x`: type-specific NBT, run after
+///   the components.
+///
+/// Expands to `crate::` paths, so it is only usable inside `steel-core`.
+#[proc_macro_derive(Entity, attributes(entity))]
+pub fn entity_derive(input: TokenStream) -> TokenStream {
+    entity::derive(input.into()).into()
 }
 
 /// Derives the `ReadFrom` trait for a struct.

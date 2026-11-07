@@ -26,7 +26,7 @@ use steel_registry::{
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{
-    BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
+    BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, Identifier,
 };
 
 use crate::entity::ageable::{self, Age, Ageable, AgeableProps};
@@ -39,13 +39,12 @@ use crate::entity::animal::{self, Animal, Breeding, BreedingProps, Parts as _};
 use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::entries::FinalizeSpawnCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
-use crate::entity::component::{Component as _, Has};
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySyncedData,
     LivingEntityBase, LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, entity_loot_ref,
     living_loot_equipment, position_rider_default, sync_dirty_mob_effects,
 };
-use crate::entity::{EntityHooks, EntityProps, mob};
+use crate::entity::{EntityProps, mob};
 use crate::world::World;
 
 const CHICKEN_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
@@ -124,14 +123,23 @@ impl ChickenState {
 
 /// Vanilla chicken entity.
 #[entity_behavior(class = "Chicken", spawn_rule)]
+#[derive(Entity)]
+#[entity(hooks = Self::ENTITY, save = Self::save_chicken, load = Self::load_chicken)]
 pub struct ChickenEntity {
+    #[entity(base)]
     base: EntityBase,
+    #[entity(entity_type)]
     entity_type: EntityTypeRef,
+    #[entity(component)]
     living_base: LivingEntityBase,
+    #[entity(component)]
     mob_base: MobBase,
+    #[entity(component)]
     age: Age,
+    #[entity(component)]
     breeding: Breeding,
     chicken_state: SyncMutex<ChickenState>,
+    #[entity(synced)]
     entity_data: SyncMutex<ChickenEntityData>,
 }
 
@@ -548,52 +556,15 @@ impl ChickenEntity {
     }
 }
 
-impl Entity for ChickenEntity {
-    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
-        Some(self)
-    }
-
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
-    }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
-    }
-
-    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-        match key {
-            LivingEntityBase::TYPE_KEY => Some(&self.living_base),
-            MobBase::TYPE_KEY => Some(&self.mob_base),
-            Age::TYPE_KEY => Some(&self.age),
-            Breeding::TYPE_KEY => Some(&self.breeding),
-            _ => None,
-        }
-    }
-
-    fn save_additional(&self, nbt: &mut NbtCompound) {
-        self.mob_base.save(self, nbt);
-        self.age.save(self, nbt);
-        self.breeding.save(self, nbt);
+impl ChickenEntity {
+    fn save_chicken(&self, nbt: &mut NbtCompound) {
         nbt.insert("IsChickenJockey", i8::from(self.is_chicken_jockey()));
         nbt.insert("EggLayTime", self.egg_time());
         nbt.insert("variant", self.variant().key.to_string());
         nbt.insert("sound_variant", self.sound_variant().key.to_string());
     }
 
-    fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.mob_base.load(self, nbt);
-        self.age.load(self, nbt);
-        self.breeding.load(self, nbt);
-
+    fn load_chicken(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.set_chicken_jockey(nbt.byte("IsChickenJockey").is_some_and(|value| value != 0));
         if let Some(egg_time) = nbt.int("EggLayTime") {
             self.set_egg_time(egg_time);
@@ -608,30 +579,6 @@ impl Entity for ChickenEntity {
         {
             self.set_sound_variant_by_key(&key);
         }
-    }
-}
-
-impl Has<LivingEntityBase> for ChickenEntity {
-    fn component(&self) -> &LivingEntityBase {
-        &self.living_base
-    }
-}
-
-impl Has<Age> for ChickenEntity {
-    fn component(&self) -> &Age {
-        &self.age
-    }
-}
-
-impl Has<Breeding> for ChickenEntity {
-    fn component(&self) -> &Breeding {
-        &self.breeding
-    }
-}
-
-impl Has<MobBase> for ChickenEntity {
-    fn component(&self) -> &MobBase {
-        &self.mob_base
     }
 }
 

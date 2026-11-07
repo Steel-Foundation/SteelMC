@@ -27,13 +27,12 @@ use crate::behavior::blocks::{AnvilBlock, FallingBlock};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockPlaceContext, Fallable};
 use crate::block_entity::block_state_nbt;
 use crate::entity::DEFAULT_AIR_DRAG;
+use crate::entity::EntityProps;
 use crate::entity::SharedEntity;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData, RemovalReason,
-    next_entity_id,
+    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, RemovalReason, next_entity_id,
 };
-use crate::entity::{EntityHooks, EntityProps};
 use crate::fluid::fluid_state_to_block;
 use crate::physics::MoverType;
 use crate::world::{ClipBlockShape, ClipFluid, World};
@@ -72,9 +71,14 @@ impl FallingBlockState {
 
 /// Entity carrying a block state while it falls under vanilla physics.
 #[entity_behavior(class = "FallingBlockEntity")]
+#[derive(Entity)]
+#[entity(hooks = Self::ENTITY, save = Self::save_falling_block, load = Self::load_falling_block)]
 pub struct FallingBlockEntity {
+    #[entity(base)]
     base: EntityBase,
+    #[entity(entity_type)]
     entity_type: EntityTypeRef,
+    #[entity(synced)]
     entity_data: SyncMutex<FallingBlockEntityData>,
     state: SyncMutex<FallingBlockState>,
 }
@@ -495,24 +499,8 @@ impl FallingBlockEntity {
     }
 }
 
-impl Entity for FallingBlockEntity {
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
-    }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
-    }
-
-    fn save_additional(&self, nbt: &mut NbtCompound) {
+impl FallingBlockEntity {
+    fn save_falling_block(&self, nbt: &mut NbtCompound) {
         let state = self.state.lock();
         nbt.insert(
             "BlockState",
@@ -529,7 +517,7 @@ impl Entity for FallingBlockEntity {
         nbt.insert("CancelDrop", i8::from(state.cancel_drop));
     }
 
-    fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+    fn load_falling_block(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let block_state = nbt
             .compound("BlockState")
             .and_then(block_state_nbt::load)

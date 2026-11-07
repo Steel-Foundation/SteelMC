@@ -68,7 +68,7 @@ use steel_protocol::packets::game::{
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
-use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
+use steel_registry::entity_type::EntityDimensions;
 use steel_registry::game_rules::GameRuleRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -105,7 +105,6 @@ use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::LivingEntityRef;
 use crate::entity::LivingProps;
-use crate::entity::component::Has;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
@@ -149,8 +148,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, ErasedType, Identifier,
-    UuidExt as _,
+    BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, Identifier, UuidExt as _,
 };
 
 use crate::inventory::container::Container;
@@ -169,7 +167,7 @@ static INTENTIONAL_GAME_DESIGN_STYLE: LazyLock<Interactivity> = LazyLock::new(||
 });
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
-use crate::entity::{EntityHooks, EntityProps, living_entity};
+use crate::entity::{EntityProps, living_entity};
 use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
 use crate::player::advancement::PlayerAdvancement;
 use crate::player::chunk_sender::ChunkSender;
@@ -180,6 +178,8 @@ use crate::portal::{
 use crate::world::World;
 
 /// A struct representing a player.
+#[derive(Entity)]
+#[entity(hooks = Self::ENTITY, entity_type = &vanilla_entities::PLAYER)]
 pub struct Player {
     /// The player's game profile.
     pub gameprofile: GameProfile,
@@ -197,6 +197,7 @@ pub struct Player {
     pub(crate) config: Arc<RuntimeConfig>,
 
     /// Common entity fields (id, uuid, position, rotation, removal, callback).
+    #[entity(base)]
     base: EntityBase,
 
     /// Client lifecycle flags.
@@ -206,6 +207,7 @@ pub struct Player {
     pub(crate) movement: SyncMutex<MovementState>,
 
     /// Synchronized entity data (health, pose, flags, etc.) for network sync.
+    #[entity(synced)]
     entity_data: SyncMutex<PlayerEntityData>,
 
     /// The last chunk position of the player.
@@ -261,6 +263,7 @@ pub struct Player {
 
     /// Shared living-entity runtime fields (attributes, speed, damage/death state).
     /// Vanilla: `LivingEntity` (L230-232) + `Entity.invulnerableTime` (L256).
+    #[entity(component)]
     living_base: LivingEntityBase,
 
     /// Player food/hunger state (food level, saturation, exhaustion).
@@ -1674,28 +1677,6 @@ impl Player {
     }
 }
 
-impl Entity for Player {
-    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-        (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
-    }
-
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        &vanilla_entities::PLAYER
-    }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
-    }
-}
-
 const fn protocol_look_at_anchor(anchor: EntityAnchor) -> LookAtAnchor {
     match anchor {
         EntityAnchor::Feet => LookAtAnchor::Feet,
@@ -2153,12 +2134,6 @@ impl Player {
         self.broadcast_entity_event(slot.into());
         self.living().refresh_equipment_attribute_modifiers(slot);
         self.award_stat(&vanilla_stat_types::ITEM_BROKEN, item);
-    }
-}
-
-impl Has<LivingEntityBase> for Player {
-    fn component(&self) -> &LivingEntityBase {
-        &self.living_base
     }
 }
 

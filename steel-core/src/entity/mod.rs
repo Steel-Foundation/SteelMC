@@ -865,6 +865,8 @@ pub(crate) use spawn::{
     create_entity_instance, load_entity_recursive_owned, spawn_entity,
 };
 pub(crate) use spawn_placements::SpawnPlacements;
+/// `#[derive(Entity)]`; see [`steel_macros::Entity`].
+pub use steel_macros::Entity;
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::EntitySyncedData;
 pub(crate) use ticking::{snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_if};
