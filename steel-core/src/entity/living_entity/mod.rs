@@ -141,6 +141,10 @@ entity_props! {
         fn tick_ridden(controller: &Player, ridden_input: DVec3) = tick_ridden_default;
         /// Transforms the rider's raw input into this entity's movement input while ridden.
         fn ridden_input(controller: &Player, self_input: DVec3) -> DVec3 = ridden_input_default;
+        /// `LivingEntity.getRiddenSpeed`.
+        fn ridden_speed(controller: &Player) -> f32 = ridden_speed_default;
+        /// `LivingEntity.canDispenserEquipIntoSlot`.
+        fn can_dispenser_equip_into_slot(slot: EquipmentSlot) -> bool = can_dispenser_equip_into_slot_default;
         /// Returns the water-movement slowdown multiplier.
         fn water_slow_down() -> f32 = water_slow_down_default;
         /// Returns the vertical friction used by `travelInAir`.

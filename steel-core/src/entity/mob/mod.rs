@@ -475,6 +475,7 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
         ai_step: |mob, entity| mob.mob().run_ai_step(entity),
         server_ai_step: |mob, entity| mob.mob().mob_server_ai_step(entity),
         base_experience_reward: |mob| mob.mob().base_experience_reward_mob(),
+        can_dispenser_equip_into_slot: |mob, _| mob.mob().can_pick_up_loot(),
         ..LivingProps::new()
     }
 }
@@ -488,6 +489,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         check_despawn: |mob| mob.mob().check_mob_despawn(),
         is_effective_ai: |mob| mob.is_server_driven_movement() && !mob.mob().is_no_ai(),
         interact: |mob, player, hand, location| mob.mob().interact_mob(player, hand, location),
+        controlling_passenger: |mob| mob.mob().controlling_passenger_mob(),
         ..living_entity::entity_props()
     }
 }

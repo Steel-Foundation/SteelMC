@@ -552,8 +552,8 @@ impl Living<'_> {
         self_input
     }
 
-    /// Returns the movement speed to use while being ridden.
-    pub fn ridden_speed(&self, _controller: &Player) -> f32 {
+    /// Default for [`Self::ridden_speed`]: the current speed.
+    pub fn ridden_speed_default(&self, _controller: &Player) -> f32 {
         self.speed()
     }
 

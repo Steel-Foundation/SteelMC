@@ -92,10 +92,14 @@ impl Living<'_> {
         true
     }
 
-    /// Returns the effective vanilla dispenser slot gate for living entities and mobs.
+    /// Default for [`Self::can_dispenser_equip_into_slot`]: any slot.
     #[must_use]
-    pub fn can_dispenser_equip_into_slot(&self, _slot: EquipmentSlot) -> bool {
-        self.as_mob().is_none_or(|mob| mob.can_pick_up_loot())
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn can_dispenser_equip_into_slot_default(&self, _slot: EquipmentSlot) -> bool {
+        true
     }
 
     /// Returns whether a dispenser may auto-equip this item onto this entity:
