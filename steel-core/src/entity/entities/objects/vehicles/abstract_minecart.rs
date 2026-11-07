@@ -6,7 +6,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_math::trig;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::RailShape;
+use steel_registry::blocks::properties::{Direction, RailShape};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -470,20 +470,25 @@ pub trait AbstractMinecart: VehicleEntity + AbstractMinecartEventSource {
 /// Returns the block-relative exit offsets connected by the rail shape.
 #[must_use]
 pub const fn rail_exits(shape: RailShape) -> ((i32, i32, i32), (i32, i32, i32)) {
-    let (x_neg, x_pos, z_neg, z_pos) = ((-1, 0, 0), (1, 0, 0), (0, 0, -1), (0, 0, 1));
-    let (x_neg_below, x_pos_below, z_neg_below, z_pos_below) =
-        ((-1, -1, 0), (1, -1, 0), (0, -1, -1), (0, -1, 1));
+    const fn below((x, y, z): (i32, i32, i32)) -> (i32, i32, i32) {
+        (x, y - 1, z)
+    }
+
+    let north = Direction::North.offset();
+    let south = Direction::South.offset();
+    let west = Direction::West.offset();
+    let east = Direction::East.offset();
     match shape {
-        RailShape::NorthSouth => (z_neg, z_pos),
-        RailShape::EastWest => (x_neg, x_pos),
-        RailShape::AscendingEast => (x_neg_below, x_pos),
-        RailShape::AscendingWest => (x_neg, x_pos_below),
-        RailShape::AscendingNorth => (z_neg, z_pos_below),
-        RailShape::AscendingSouth => (z_neg_below, z_pos),
-        RailShape::SouthEast => (z_pos, x_pos),
-        RailShape::SouthWest => (z_pos, x_neg),
-        RailShape::NorthWest => (z_neg, x_neg),
-        RailShape::NorthEast => (z_neg, x_pos),
+        RailShape::NorthSouth => (north, south),
+        RailShape::EastWest => (west, east),
+        RailShape::AscendingEast => (below(west), east),
+        RailShape::AscendingWest => (west, below(east)),
+        RailShape::AscendingNorth => (north, below(south)),
+        RailShape::AscendingSouth => (below(north), south),
+        RailShape::SouthEast => (south, east),
+        RailShape::SouthWest => (south, west),
+        RailShape::NorthWest => (north, west),
+        RailShape::NorthEast => (north, east),
     }
 }
 
