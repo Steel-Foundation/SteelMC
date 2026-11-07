@@ -628,16 +628,14 @@ impl Living<'_> {
     )]
     pub const fn handle_killing_blow_default(&self) {}
 
-    /// Returns vanilla `LivingEntity.shouldDropLoot`.
-    /// Returns whether this entity should drop loot on death: not a baby,
-    /// and the mob-drops game rule allows it.
-    pub fn should_drop_loot(&self, world: &World) -> bool {
+    /// Default for [`LivingProps::should_drop_loot`]: not a baby, and the
+    /// mob-drops game rule allows it.
+    pub(crate) fn should_drop_loot_default(&self, world: &World) -> bool {
         !self.is_baby() && world.get_game_rule(&MOB_DROPS)
     }
 
-    /// Returns whether this entity should drop experience on death: not a baby.
-    #[must_use]
-    pub fn should_drop_experience(&self) -> bool {
+    /// Default for [`LivingProps::should_drop_experience`]: not a baby.
+    pub(crate) fn should_drop_experience_default(&self) -> bool {
         !self.is_baby()
     }
 

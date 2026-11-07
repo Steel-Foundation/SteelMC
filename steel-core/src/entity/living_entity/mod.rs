@@ -125,6 +125,10 @@ entity_props! {
         fn sound_volume() -> f32 = sound_volume_default;
         /// Runs vanilla `LivingEntity.handleKillingBlow`.
         fn handle_killing_blow() = handle_killing_blow_default;
+        /// `LivingEntity.shouldDropLoot`.
+        fn should_drop_loot(world: &World) -> bool = should_drop_loot_default;
+        /// `LivingEntity.shouldDropExperience`.
+        fn should_drop_experience() -> bool = should_drop_experience_default;
         /// `LivingEntity.isAlwaysExperienceDropper`.
         fn is_always_experience_dropper() -> bool = is_always_experience_dropper_default;
         /// Hook for non-mob custom death loot.

@@ -777,7 +777,7 @@ mod living_reference;
 mod manager;
 pub(crate) mod mob;
 pub mod mob_effect;
-mod monster;
+pub(crate) mod monster;
 mod movement_sync;
 mod potion_contents;
 pub mod projectile;

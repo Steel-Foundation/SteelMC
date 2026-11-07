@@ -399,6 +399,9 @@ entity_props! {
         fn is_pathfinder() -> bool = is_pathfinder_default;
         /// `PathfinderMob.getWalkTargetValue`: how attractive a position is to wander to.
         fn walk_target_value(pos: BlockPos) -> f32 = walk_target_value_default;
+        /// `Monster.isPreventingPlayerRest`: whether this mob keeps `player`
+        /// from sleeping nearby. Only monsters ever do.
+        fn is_preventing_player_rest(world: &World, player: &Player) -> bool = is_preventing_player_rest_default;
     }
 }
 
@@ -645,6 +648,14 @@ impl Mob<'_> {
     )]
     const fn walk_target_value_default(&self, _pos: BlockPos) -> f32 {
         0.0
+    }
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn is_preventing_player_rest_default(&self, _world: &World, _player: &Player) -> bool {
+        false
     }
 }
 

@@ -33,13 +33,6 @@ pub fn finalize_spawn<E: Parts>() -> Stage<E, FinalizeSpawn> {
 }
 
 /// Vanilla `Mob`'s own chains, for mobs without further layers.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "no ported mob is a plain `Mob` yet; test mobs use it"
-    )
-)]
 #[must_use]
 pub fn definition<E: Parts>() -> MobDefinition<E> {
     MobDefinition {
