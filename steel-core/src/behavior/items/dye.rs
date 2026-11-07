@@ -33,7 +33,7 @@ impl ItemBehavior for DyeItem {
         _target: &Living<'_>,
         _hand: InteractionHand,
     ) -> InteractionResult {
-        // TODO(entity components): dye sheep again once `ChickenEntity` is ported out of
+        // TODO(entity components): dye sheep again once `SheepEntity` is ported out of
         // `steel-core/legacy_entities/`.
         InteractionResult::Pass
     }
