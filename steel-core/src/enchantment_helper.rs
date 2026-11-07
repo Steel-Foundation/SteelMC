@@ -1051,7 +1051,10 @@ mod tests {
                     entity_type.dimensions,
                     Arc::downgrade(test_world()),
                 ),
-                living_base: LivingEntityBase::new(entity_type, &TestLivingEntity::LIVING),
+                living_base: LivingEntityBase::without_synced_data(
+                    entity_type,
+                    &TestLivingEntity::LIVING,
+                ),
                 entity_data: CheckedMutex::new(synced_with_health(LivingEntityData::new(), 20.0)),
                 broken_slots: SyncMutex::new(Vec::new()),
                 entity_type,

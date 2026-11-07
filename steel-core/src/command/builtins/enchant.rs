@@ -314,7 +314,10 @@ mod tests {
         fn new(entity_type: EntityTypeRef) -> Self {
             Self {
                 base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::new()),
-                living_base: LivingEntityBase::new(entity_type, &TestLivingEntity::LIVING),
+                living_base: LivingEntityBase::without_synced_data(
+                    entity_type,
+                    &TestLivingEntity::LIVING,
+                ),
                 entity_data: CheckedMutex::new(synced_with_health(LivingEntityData::new(), 20.0)),
                 entity_type,
             }

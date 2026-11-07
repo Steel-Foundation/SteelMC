@@ -800,7 +800,7 @@ impl LivingFluidTestEntity {
         ));
         Self {
             base,
-            living_base: LivingEntityBase::new(
+            living_base: LivingEntityBase::without_synced_data(
                 &vanilla_entities::PLAYER,
                 &LivingFluidTestEntity::LIVING,
             ),

@@ -278,7 +278,10 @@ mod tests {
             init_vanilla_registry();
             Self::new(
                 entity_type,
-                Some(LivingEntityBase::new(entity_type, &DEFAULT_LIVING_HOOKS)),
+                Some(LivingEntityBase::without_synced_data(
+                    entity_type,
+                    &DEFAULT_LIVING_HOOKS,
+                )),
             )
         }
 

@@ -46,7 +46,10 @@ impl PairingTestEntity {
         Arc::new(Self {
             base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
             entity_type,
-            living_base: LivingEntityBase::new(&vanilla_entities::PIG, &PairingTestEntity::LIVING),
+            living_base: LivingEntityBase::without_synced_data(
+                &vanilla_entities::PIG,
+                &PairingTestEntity::LIVING,
+            ),
             entity_data: CheckedMutex::new(LivingEntityData::new()),
             attributes,
             dirty_attributes: SyncMutex::new(Vec::new()),

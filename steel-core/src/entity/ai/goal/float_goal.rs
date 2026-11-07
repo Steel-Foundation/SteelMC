@@ -80,7 +80,7 @@ mod tests {
             ));
             Self {
                 base,
-                living_base: LivingEntityBase::new(
+                living_base: LivingEntityBase::without_synced_data(
                     &vanilla_entities::PIG,
                     &TestPathfinderMob::LIVING,
                 ),

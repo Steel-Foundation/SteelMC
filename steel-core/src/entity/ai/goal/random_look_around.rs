@@ -111,7 +111,7 @@ mod tests {
                     vanilla_entities::PIG.dimensions,
                     Weak::new(),
                 ),
-                living_base: LivingEntityBase::new(
+                living_base: LivingEntityBase::without_synced_data(
                     &vanilla_entities::PIG,
                     &TestPathfinderMob::LIVING,
                 ),

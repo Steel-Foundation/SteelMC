@@ -758,26 +758,43 @@ struct EquipmentAttributeModifierKey {
 }
 
 impl LivingEntityBase {
-    /// Creates living runtime state from an entity type's default attributes.
+    /// Creates living runtime state from an entity type's default attributes and
+    /// starts `entity_data` at full health.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, hooks: &'static dyn LivingHooks) -> Self {
-        Self::with_attributes(AttributeMap::new_for_entity(entity_type), hooks)
-    }
-
-    /// Creates living runtime state from an explicit attribute map.
-    #[must_use]
-    pub fn with_attributes(attributes: AttributeMap, hooks: &'static dyn LivingHooks) -> Self {
+    pub fn new<T: VanillaLivingEntityData>(
+        entity_type: EntityTypeRef,
+        hooks: &'static dyn LivingHooks,
+        entity_data: &mut T,
+    ) -> Self {
         let equipment: Shared<dyn EntityEquipment> = OwnedEntityEquipment::new().into_shared();
-        Self::with_attributes_and_equipment(attributes, equipment, hooks)
+        Self::with_equipment(entity_type, equipment, hooks, entity_data)
     }
 
-    /// Creates living runtime state with an explicit canonical equipment backing.
+    /// Like [`Self::new`], with an explicit canonical equipment backing.
     #[must_use]
-    pub fn with_equipment(
+    pub fn with_equipment<T: VanillaLivingEntityData>(
         entity_type: EntityTypeRef,
         equipment: Shared<dyn EntityEquipment>,
         hooks: &'static dyn LivingHooks,
+        entity_data: &mut T,
     ) -> Self {
+        let base = Self::with_attributes_and_equipment(
+            AttributeMap::new_for_entity(entity_type),
+            equipment,
+            hooks,
+        );
+        base.initialize_synced_data(entity_data);
+        base
+    }
+
+    /// Living state for tests that keep no synced data of their own.
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn without_synced_data(
+        entity_type: EntityTypeRef,
+        hooks: &'static dyn LivingHooks,
+    ) -> Self {
+        let equipment: Shared<dyn EntityEquipment> = OwnedEntityEquipment::new().into_shared();
         Self::with_attributes_and_equipment(
             AttributeMap::new_for_entity(entity_type),
             equipment,
@@ -822,7 +839,7 @@ impl LivingEntityBase {
     ///
     /// Vanilla defines `DATA_HEALTH_ID` as `1.0F`, then `LivingEntity` constructs
     /// its attribute map and calls `setHealth(getMaxHealth())`.
-    pub fn initialize_synced_data<T: VanillaLivingEntityData>(&self, entity_data: &mut T) {
+    fn initialize_synced_data<T: VanillaLivingEntityData>(&self, entity_data: &mut T) {
         let max_health = self
             .attributes
             .lock()

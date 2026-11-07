@@ -177,7 +177,10 @@ impl DespawnTestMob {
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, Weak::new()),
             entity_type,
-            living_base: LivingEntityBase::new(entity_type, &DespawnTestMob::LIVING),
+            living_base: LivingEntityBase::without_synced_data(
+                entity_type,
+                &DespawnTestMob::LIVING,
+            ),
             mob_base: MobBase::new(&DespawnTestMob::MOB, DespawnTestMob::definition()),
             entity_data: CheckedMutex::new(synced_with_health(
                 MobEntityData::new(),
@@ -202,7 +205,7 @@ impl DespawnTestMob {
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, Arc::downgrade(world)),
             entity_type,
-            living_base: LivingEntityBase::new(entity_type, &HiddenTarget::LIVING),
+            living_base: LivingEntityBase::without_synced_data(entity_type, &HiddenTarget::LIVING),
             mob_base: MobBase::new(&DespawnTestMob::MOB, DespawnTestMob::definition()),
             entity_data: CheckedMutex::new(MobEntityData::new()),
             can_be_leashed: SyncMutex::new(true),
@@ -300,7 +303,10 @@ impl HiddenTarget {
                 vanilla_entities::PIG.dimensions,
                 Weak::new(),
             ),
-            living_base: LivingEntityBase::new(&vanilla_entities::PIG, &HiddenTarget::LIVING),
+            living_base: LivingEntityBase::without_synced_data(
+                &vanilla_entities::PIG,
+                &HiddenTarget::LIVING,
+            ),
             entity_data: CheckedMutex::new(synced_with_health(
                 LivingEntityData::new(),
                 INITIAL_TEST_HEALTH,

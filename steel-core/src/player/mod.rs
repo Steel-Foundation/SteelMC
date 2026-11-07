@@ -602,8 +602,14 @@ impl Player {
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
         let equipment = Arc::clone(&inventory);
-        let living_base =
-            LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment, &Self::LIVING);
+        let mut entity_data = PlayerEntityData::new();
+        let living_base = LivingEntityBase::with_equipment(
+            &vanilla_entities::PLAYER,
+            equipment,
+            &Self::LIVING,
+            &mut entity_data,
+        );
+        Self::apply_client_information_to_entity_data(&mut entity_data, &client_information);
         let player_uuid = gameprofile.id();
         let world_ref = Arc::downgrade(&world);
         Self {
@@ -623,12 +629,7 @@ impl Player {
             ),
             lifecycle: CheckedMutex::new(PlayerLifecycleState::default()),
             movement: CheckedMutex::new(MovementState::new()),
-            entity_data: CheckedMutex::new({
-                let mut data = PlayerEntityData::new();
-                living_base.initialize_synced_data(&mut data);
-                Self::apply_client_information_to_entity_data(&mut data, &client_information);
-                data
-            }),
+            entity_data: CheckedMutex::new(entity_data),
             last_chunk_pos: CheckedMutex::new(ChunkPos::new(0, 0)),
             last_tracking_view: CheckedMutex::new(None),
             client_information: CheckedMutex::new(client_information),

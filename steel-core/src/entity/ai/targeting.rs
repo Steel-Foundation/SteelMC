@@ -170,7 +170,7 @@ mod tests {
             init_vanilla_registry();
             Self {
                 base: EntityBase::new(id, position, vanilla_entities::PIG.dimensions, world),
-                living_base: LivingEntityBase::new(
+                living_base: LivingEntityBase::without_synced_data(
                     &vanilla_entities::PIG,
                     &HoveringTestMob::LIVING,
                 ),

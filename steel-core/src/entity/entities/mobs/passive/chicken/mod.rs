@@ -234,12 +234,11 @@ impl ChickenEntity {
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
-        let living_base = LivingEntityBase::new(entity_type, &Self::LIVING);
+        let mut entity_data = ChickenEntityData::new();
+        let living_base = LivingEntityBase::new(entity_type, &Self::LIVING, &mut entity_data);
         let mob_base = MobBase::new(&Self::MOB, Self::definition());
         let mut state = ChickenState::new();
         state.egg_time = Self::roll_egg_lay_time();
-        let mut entity_data = ChickenEntityData::new();
-        living_base.initialize_synced_data(&mut entity_data);
 
         Self {
             base,
