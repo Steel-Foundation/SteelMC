@@ -316,6 +316,8 @@ macro_rules! entity_hook_list {
                 ///
                 /// For the base method, see [`Self::try_set_position_base`]
                 fn try_set_position(pos: DVec3) -> Result<(), EntityMoveError> = try_set_position_default;
+                /// `Entity.onRemoval`: runs once, after the entity is first removed.
+                fn on_removal(reason: RemovalReason) = on_removal_default;
                 /// Called when a player touches this entity during nearby pickup processing.
                 fn player_touch(player: &Arc<Player>) = player_touch_default;
                 /// Kills this entity. `world` is vanilla's explicit `ServerLevel`

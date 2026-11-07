@@ -1,8 +1,7 @@
 //! Vanilla `FishingHook`: the bobber a fishing rod casts.
 //!
-//! The owning player keeps a weak reference to its hook; a removed hook no
-//! longer counts, which stands in for vanilla clearing `Player.fishing` when
-//! the hook is removed.
+//! The owning player keeps a weak reference to its hook, cleared when the
+//! hook is removed.
 
 use std::f32::consts::PI;
 use std::sync::{Arc, Weak};
@@ -124,6 +123,14 @@ unsafe impl DowncastType for FishingHookEntity {
 impl FishingHookEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |hook, entity| hook.entity_tick(entity),
+        // Vanilla `FishingHook.remove`: the player stops fishing with it.
+        on_removal: |hook, _| {
+            if let Some(owner) = hook.projectile().owner()
+                && let Some(player) = owner.as_player()
+            {
+                player.clear_fishing_hook(hook);
+            }
+        },
         movement_emission: |_| EntityMovementEmission::None,
         can_use_portal: |_, _| false,
         // The client needs the owner to draw the line; an ownerless hook

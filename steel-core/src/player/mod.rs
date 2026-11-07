@@ -59,6 +59,7 @@ pub use session::PlayerSession;
 pub(crate) use session::PlayerSessionId;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
+use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use std::sync::{Arc, LazyLock, Weak};
@@ -1126,22 +1127,24 @@ impl Player {
     }
 
     /// The hook this player is fishing with (vanilla `Player.fishing`).
-    /// A removed hook no longer counts, as vanilla clears the field on removal.
     pub fn fishing_hook(&self) -> Option<Arc<FishingHookEntity>> {
-        let mut fishing = self.fishing.lock();
-        let hook = fishing
-            .as_ref()
-            .and_then(Weak::upgrade)
-            .filter(|hook| !hook.is_removed());
-        if hook.is_none() {
-            *fishing = None;
-        }
-        hook
+        self.fishing.lock().as_ref().and_then(Weak::upgrade)
     }
 
     /// Records the hook this player now fishes with.
     pub fn set_fishing_hook(&self, hook: &Arc<FishingHookEntity>) {
         *self.fishing.lock() = Some(Arc::downgrade(hook));
+    }
+
+    /// Stops fishing with `hook`, if it is this player's hook.
+    pub fn clear_fishing_hook(&self, hook: &FishingHookEntity) {
+        let mut fishing = self.fishing.lock();
+        if fishing
+            .as_ref()
+            .is_some_and(|active| ptr::eq(active.as_ptr(), hook))
+        {
+            *fishing = None;
+        }
     }
 
     /// Registers a thrown ender pearl so it persists with this player and
@@ -1158,12 +1161,13 @@ impl Player {
         self.remove_pending_ender_pearl(uuid);
     }
 
-    /// Deregisters a thrown ender pearl once it hits, teleports, or is discarded
-    /// (vanilla `ServerPlayer.deregisterEnderPearl`).
-    pub fn deregister_ender_pearl(&self, uuid: Uuid) {
-        self.ender_pearls
-            .lock()
-            .retain(|weak| weak.upgrade().is_some_and(|p| p.uuid() != uuid));
+    /// Deregisters `pearl` (vanilla `ServerPlayer.deregisterEnderPearl`).
+    /// Matches the pearl itself rather than its UUID: a pearl that changed
+    /// dimension keeps its UUID, and its new copy stays registered.
+    pub fn deregister_ender_pearl(&self, pearl: &dyn Entity) {
+        self.ender_pearls.lock().retain(|weak| {
+            weak.upgrade().is_some() && !ptr::addr_eq(weak.as_ptr(), ptr::from_ref(pearl))
+        });
     }
 
     /// Returns this player's live, in-flight ender pearls, pruning dead entries.

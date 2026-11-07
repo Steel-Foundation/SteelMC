@@ -998,8 +998,9 @@ impl EntityBase {
 
     /// Marks the entity as removed with the given reason.
     ///
-    /// Notifies the level callback on first removal.
-    pub fn set_removed(&self, reason: RemovalReason) {
+    /// Notifies the level callback on first removal, and returns whether this
+    /// was the first removal.
+    pub fn set_removed(&self, reason: RemovalReason) -> bool {
         let (callback, released) = {
             let mut lifecycle = self.lifecycle.lock();
             if lifecycle.removal_reason.is_some() {
@@ -1015,11 +1016,13 @@ impl EntityBase {
         };
         drop(released);
 
-        if let Some(callback) = callback {
-            self.detach_from_relationships(reason);
-            callback.on_remove(reason);
-            *self.level_callback.lock() = Arc::new(NullEntityCallback);
-        }
+        let Some(callback) = callback else {
+            return false;
+        };
+        self.detach_from_relationships(reason);
+        callback.on_remove(reason);
+        *self.level_callback.lock() = Arc::new(NullEntityCallback);
+        true
     }
 
     fn detach_from_relationships(&self, reason: RemovalReason) {

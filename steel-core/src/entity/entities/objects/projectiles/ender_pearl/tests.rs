@@ -73,3 +73,36 @@ fn bubble_columns_move_pearls_like_other_entities() {
         );
     }
 }
+
+#[test]
+fn removing_a_pearl_keeps_a_same_uuid_copy_registered() {
+    init_vanilla_registry();
+    let world_fixture = fresh_test_world("ender_pearl_removal_identity");
+    let world = &world_fixture.world;
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Owner", 900_011).build();
+    let owner: SharedEntity = Arc::<Player>::clone(&player);
+    let uuid = uuid::Uuid::from_u128(7);
+    let pearl = |id| {
+        let pearl = EnderPearlEntity::from_base(
+            EntityBase::with_uuid(
+                id,
+                uuid,
+                DVec3::ZERO,
+                vanilla_entities::ENDER_PEARL.dimensions,
+                Arc::downgrade(world),
+            ),
+            &vanilla_entities::ENDER_PEARL,
+        );
+        pearl.projectile().set_owner(Some(&owner));
+        Arc::new(pearl)
+    };
+    let old = pearl(900_012);
+    let new = pearl(900_013);
+    player.register_ender_pearl(&(Arc::clone(&new) as SharedEntity));
+
+    old.set_removed(RemovalReason::ChangedWorld);
+    assert_eq!(player.ender_pearls().len(), 1, "the copy stays registered");
+
+    new.set_removed(RemovalReason::Discarded);
+    assert!(player.ender_pearls().is_empty());
+}

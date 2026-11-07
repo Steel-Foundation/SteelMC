@@ -65,6 +65,12 @@ unsafe impl DowncastType for EnderPearlEntity {
 impl EnderPearlEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |pearl, entity| pearl.entity_tick(entity),
+        on_removal: |pearl, reason| {
+            // Pearls saved with their player stay registered for the next login.
+            if reason != RemovalReason::StoredWithPlayer {
+                pearl.deregister_from_owner();
+            }
+        },
         // Unlike other projectiles, pearls move through bubble columns like
         // any entity.
         on_above_bubble_column: |pearl, drag_down, pos| {
@@ -127,7 +133,7 @@ impl EnderPearlEntity {
         if let Some(owner) = self.owner_player()
             && let Some(player) = owner.as_player()
         {
-            player.deregister_ender_pearl(self.uuid());
+            player.deregister_ender_pearl(self);
         }
     }
 
@@ -148,7 +154,6 @@ impl EnderPearlEntity {
                 && !player.has_won_game()
                 && world.get_game_rule(&ENDER_PEARLS_VANISH_ON_DEATH)
         }) {
-            self.deregister_from_owner();
             self.set_removed(RemovalReason::Discarded);
         } else {
             throwable::tick(&projectile, entity);
@@ -193,7 +198,6 @@ impl EnderPearlEntity {
                 None => Self::teleport_entity(&world, &owner, teleport_pos),
             }
         }
-        self.deregister_from_owner();
         self.set_removed(RemovalReason::Discarded);
     }
 

@@ -484,8 +484,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Marks the entity as removed with the given reason.
     final fn set_removed(&self, reason: RemovalReason) {
-        self.base().set_removed(reason);
+        if self.base().set_removed(reason) {
+            self.on_removal(reason);
+        }
     }
+
+    /// Default for [`Entity::on_removal`].
+    final fn on_removal_default(&self, _reason: RemovalReason) {}
 
     /// Emits a vanilla game event from this entity's exact position with an explicit source entity.
     final fn game_event_with_source_entity(
