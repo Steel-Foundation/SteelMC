@@ -160,7 +160,7 @@ impl<T: Entity> EntityEventSource for T {
 ///     #[entity(component)]
 ///     living_base: LivingEntityBase,
 ///     #[entity(synced)]
-///     entity_data: SyncMutex<MyEntityData>,
+///     entity_data: CheckedMutex<MyEntityData>,
 /// }
 ///
 /// impl MyEntity {

@@ -80,7 +80,7 @@ mod tests {
 
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
-    use steel_utils::locks::SyncMutex;
+    use steel_utils::locks::CheckedMutex;
 
     use super::*;
 
@@ -98,7 +98,7 @@ mod tests {
         base: EntityBase,
         living_base: LivingEntityBase,
         mob_base: MobBase,
-        entity_data: SyncMutex<MobEntityData>,
+        entity_data: CheckedMutex<MobEntityData>,
     }
 
     impl TestPathfinderMob {
@@ -116,7 +116,7 @@ mod tests {
                     &TestPathfinderMob::LIVING,
                 ),
                 mob_base: MobBase::new(&TestPathfinderMob::MOB, TestPathfinderMob::definition()),
-                entity_data: SyncMutex::new(synced_with_health(MobEntityData::new(), 10.0)),
+                entity_data: CheckedMutex::new(synced_with_health(MobEntityData::new(), 10.0)),
             }
         }
     }

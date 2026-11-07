@@ -89,7 +89,7 @@ use tick_state::PlayerTickState;
 use uuid::Uuid;
 
 use arc_swap::ArcSwap;
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::{CheckedMutex, SyncMutex};
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
@@ -211,7 +211,7 @@ pub struct Player {
 
     /// Synchronized entity data (health, pose, flags, etc.) for network sync.
     #[entity(synced)]
-    entity_data: SyncMutex<PlayerEntityData>,
+    entity_data: CheckedMutex<PlayerEntityData>,
 
     /// The last chunk position of the player.
     pub last_chunk_pos: SyncMutex<ChunkPos>,
@@ -621,7 +621,7 @@ impl Player {
             ),
             lifecycle: SyncMutex::new(PlayerLifecycleState::default()),
             movement: SyncMutex::new(MovementState::new()),
-            entity_data: SyncMutex::new({
+            entity_data: CheckedMutex::new({
                 let mut data = PlayerEntityData::new();
                 living_base.initialize_synced_data(&mut data);
                 Self::apply_client_information_to_entity_data(&mut data, &client_information);

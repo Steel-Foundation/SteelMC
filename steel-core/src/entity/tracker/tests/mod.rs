@@ -9,6 +9,7 @@ use steel_registry::vanilla_entity_data::LivingEntityData;
 use steel_utils::DowncastType as _;
 use steel_utils::DowncastTypeKey;
 use steel_utils::ErasedType;
+use steel_utils::locks::CheckedMutex;
 
 use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem};
 use steel_registry::item_stack::ItemStack;
@@ -25,7 +26,7 @@ struct PairingTestEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     living_base: LivingEntityBase,
-    entity_data: SyncMutex<LivingEntityData>,
+    entity_data: CheckedMutex<LivingEntityData>,
     attributes: Vec<AttributeSnapshot>,
     dirty_attributes: SyncMutex<Vec<AttributeSnapshot>>,
     equipment: SyncMutex<Vec<EquipmentSlotItem>>,
@@ -46,7 +47,7 @@ impl PairingTestEntity {
             base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
             entity_type,
             living_base: LivingEntityBase::new(&vanilla_entities::PIG, &PairingTestEntity::LIVING),
-            entity_data: SyncMutex::new(LivingEntityData::new()),
+            entity_data: CheckedMutex::new(LivingEntityData::new()),
             attributes,
             dirty_attributes: SyncMutex::new(Vec::new()),
             equipment: SyncMutex::new(Vec::new()),

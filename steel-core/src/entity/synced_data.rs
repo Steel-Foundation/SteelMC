@@ -1,10 +1,9 @@
 use bitflags::bitflags;
-use parking_lot::{MappedMutexGuard, MutexGuard};
 use steel_registry::{
     entity_data::{DataValue, EntityPose},
     vanilla_entity_data::VanillaEntityData,
 };
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::{CheckedMutex, CheckedMutexGuard, MappedCheckedMutexGuard};
 use text_components::TextComponent;
 
 bitflags! {
@@ -43,7 +42,7 @@ pub trait EntitySyncedData: Send + Sync {
 
     /// Locks the generated data so layer code can reach its own fields
     /// through the `*_layer` accessors without naming the concrete struct.
-    fn lock_data(&self) -> MappedMutexGuard<'_, dyn VanillaEntityData>;
+    fn lock_data(&self) -> MappedCheckedMutexGuard<'_, dyn VanillaEntityData>;
 
     /// Returns whether this entity ignores gravity, synced to clients.
     fn is_no_gravity(&self) -> bool;
@@ -100,7 +99,7 @@ pub trait EntitySyncedData: Send + Sync {
     fn set_base_ticks_frozen(&self, ticks_frozen: i32);
 }
 
-impl<T> EntitySyncedData for SyncMutex<T>
+impl<T> EntitySyncedData for CheckedMutex<T>
 where
     T: VanillaEntityData + Send + Sync + 'static,
 {
@@ -112,8 +111,8 @@ where
         VanillaEntityData::pack_all(&*self.lock())
     }
 
-    fn lock_data(&self) -> MappedMutexGuard<'_, dyn VanillaEntityData> {
-        MutexGuard::map(self.lock(), |data| data as &mut dyn VanillaEntityData)
+    fn lock_data(&self) -> MappedCheckedMutexGuard<'_, dyn VanillaEntityData> {
+        CheckedMutexGuard::map(self.lock(), |data| data as &mut dyn VanillaEntityData)
     }
 
     fn is_no_gravity(&self) -> bool {
@@ -216,7 +215,7 @@ trait SharedFlagSetter {
     fn set_shared_flag(&self, flag: EntitySharedFlags, value: bool);
 }
 
-impl<T> SharedFlagSetter for SyncMutex<T>
+impl<T> SharedFlagSetter for CheckedMutex<T>
 where
     T: VanillaEntityData + Send + Sync,
 {
@@ -241,7 +240,7 @@ mod tests {
 
     #[test]
     fn synced_data_reads_no_gravity_from_generated_base_layer() {
-        let data = SyncMutex::new(ItemEntityData::new());
+        let data = CheckedMutex::new(ItemEntityData::new());
         assert!(!EntitySyncedData::is_no_gravity(&data));
 
         EntitySyncedData::set_no_gravity(&data, true);
@@ -259,7 +258,7 @@ mod tests {
 
     #[test]
     fn synced_data_reads_shift_key_down_from_generated_base_layer() {
-        let data = SyncMutex::new(ItemEntityData::new());
+        let data = CheckedMutex::new(ItemEntityData::new());
         assert!(!EntitySyncedData::is_shift_key_down(&data));
 
         data.lock()
@@ -272,7 +271,7 @@ mod tests {
 
     #[test]
     fn synced_data_reads_swimming_from_generated_base_layer() {
-        let data = SyncMutex::new(ItemEntityData::new());
+        let data = CheckedMutex::new(ItemEntityData::new());
         assert!(!EntitySyncedData::is_swimming(&data));
 
         data.lock()
@@ -285,7 +284,7 @@ mod tests {
 
     #[test]
     fn synced_data_reads_invisible_from_generated_base_layer() {
-        let data = SyncMutex::new(ItemEntityData::new());
+        let data = CheckedMutex::new(ItemEntityData::new());
         assert!(!EntitySyncedData::is_base_invisible_flag(&data));
 
         EntitySyncedData::set_base_invisible_flag(&data, true);
@@ -295,7 +294,7 @@ mod tests {
 
     #[test]
     fn synced_data_writes_individual_shared_flags_without_stomping() {
-        let data = SyncMutex::new(ItemEntityData::new());
+        let data = CheckedMutex::new(ItemEntityData::new());
 
         EntitySyncedData::set_shift_key_down(&data, true);
         EntitySyncedData::set_swimming(&data, true);
@@ -319,7 +318,7 @@ mod tests {
 
     #[test]
     fn synced_data_writes_fire_and_freeze_base_layer() {
-        let data = SyncMutex::new(ItemEntityData::new());
+        let data = CheckedMutex::new(ItemEntityData::new());
 
         data.set_base_on_fire_flag(true);
         data.set_base_ticks_frozen(12);
@@ -335,7 +334,7 @@ mod tests {
 
     #[test]
     fn synced_data_writes_shared_save_base_layer() {
-        let data = SyncMutex::new(ItemEntityData::new());
+        let data = CheckedMutex::new(ItemEntityData::new());
 
         data.set_air_supply(42);
         data.set_custom_name(Some(TextComponent::plain("Steel")));
@@ -368,7 +367,7 @@ mod tests {
     }
 
     fn set_living_sleeping_pos(
-        data: &SyncMutex<PlayerEntityData>,
+        data: &CheckedMutex<PlayerEntityData>,
         pos: Option<steel_utils::BlockPos>,
     ) {
         let mut data = EntitySyncedData::lock_data(data);
@@ -380,7 +379,7 @@ mod tests {
 
     #[test]
     fn living_synced_data_writes_sleeping_pos_layer() {
-        let data = SyncMutex::new(PlayerEntityData::new());
+        let data = CheckedMutex::new(PlayerEntityData::new());
         let bed_pos = steel_utils::BlockPos::new(1, 64, 2);
 
         set_living_sleeping_pos(&data, Some(bed_pos));

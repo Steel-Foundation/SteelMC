@@ -22,7 +22,7 @@ use steel_registry::vanilla_loot_tables;
 use steel_registry::{
     REGISTRY, RegistryExt, RegistryReference, TaggedRegistryExt, sound_events, vanilla_game_events,
 };
-use steel_utils::locks::{CheckedMutex, SyncMutex};
+use steel_utils::locks::CheckedMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{
     BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, Identifier,
@@ -137,7 +137,7 @@ pub struct ChickenEntity {
     breeding: Breeding,
     chicken_state: CheckedMutex<ChickenState>,
     #[entity(synced)]
-    entity_data: SyncMutex<ChickenEntityData>,
+    entity_data: CheckedMutex<ChickenEntityData>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `ChickenEntity`.
@@ -264,7 +264,7 @@ impl ChickenEntity {
             age: Age::new(&Self::AGEABLE),
             breeding: Breeding::new(&Self::BREEDING),
             chicken_state: CheckedMutex::new(chicken_state),
-            entity_data: SyncMutex::new(entity_data),
+            entity_data: CheckedMutex::new(entity_data),
         }
     }
 

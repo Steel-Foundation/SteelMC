@@ -15,7 +15,7 @@ use steel_registry::vanilla_entity_data::ItemEntityData;
 use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_registry::{vanilla_custom_stats, vanilla_damage_types};
 use steel_utils::UuidExt;
-use steel_utils::locks::{CheckedMutex, SyncMutex};
+use steel_utils::locks::CheckedMutex;
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
@@ -116,7 +116,7 @@ pub struct ItemEntity {
 
     /// Entity data containing the `ItemStack`.
     #[entity(synced)]
-    entity_data: SyncMutex<ItemEntityData>,
+    entity_data: CheckedMutex<ItemEntityData>,
 
     /// Item-specific mutable state.
     item_state: CheckedMutex<ItemEntityState>,
@@ -187,7 +187,7 @@ impl ItemEntity {
                 world,
             ),
             entity_type,
-            entity_data: SyncMutex::new(entity_data),
+            entity_data: CheckedMutex::new(entity_data),
             item_state: CheckedMutex::new(ItemEntityState::new()),
         }
     }
@@ -209,7 +209,7 @@ impl ItemEntity {
         Self {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
-            entity_data: SyncMutex::new(ItemEntityData::new()),
+            entity_data: CheckedMutex::new(ItemEntityData::new()),
             item_state: CheckedMutex::new(ItemEntityState::new()),
         }
     }

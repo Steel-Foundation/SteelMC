@@ -11,7 +11,7 @@ use std::ptr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use parking_lot::MutexGuard;
+use parking_lot::{MappedMutexGuard, MutexGuard};
 use tokio::sync::{Mutex, RwLock};
 
 /// A synchronous mutex.
@@ -97,7 +97,7 @@ impl<T: ?Sized> CheckedMutex<T> {
         let guard = self.inner.lock();
         self.owner.store(token, Ordering::Relaxed);
         CheckedMutexGuard {
-            owner: &self.owner,
+            owner: OwnerReset(&self.owner),
             guard,
         }
     }
@@ -118,16 +118,34 @@ impl<T: Debug> Debug for CheckedMutex<T> {
     }
 }
 
+/// Clears a [`CheckedMutex`]'s owning thread when dropped.
+struct OwnerReset<'a>(&'a AtomicUsize);
+
+impl Drop for OwnerReset<'_> {
+    fn drop(&mut self) {
+        self.0.store(0, Ordering::Relaxed);
+    }
+}
+
 /// Guard of a [`CheckedMutex`]; unlocking clears the owning thread.
 pub struct CheckedMutexGuard<'a, T: ?Sized> {
-    owner: &'a AtomicUsize,
+    // Declared first so it drops first: the owner is cleared before `guard`
+    // unlocks, so the next owner's store wins.
+    owner: OwnerReset<'a>,
     guard: MutexGuard<'a, T>,
 }
 
-impl<T: ?Sized> Drop for CheckedMutexGuard<'_, T> {
-    fn drop(&mut self) {
-        // Cleared before `guard` unlocks, so the next owner's store wins.
-        self.owner.store(0, Ordering::Relaxed);
+impl<'a, T: ?Sized> CheckedMutexGuard<'a, T> {
+    /// Narrows the guard to a part of the locked value, keeping the lock held.
+    pub fn map<U: ?Sized>(
+        this: Self,
+        f: impl FnOnce(&mut T) -> &mut U,
+    ) -> MappedCheckedMutexGuard<'a, U> {
+        let Self { owner, guard } = this;
+        MappedCheckedMutexGuard {
+            _owner: owner,
+            guard: MutexGuard::map(guard, f),
+        }
     }
 }
 
@@ -145,12 +163,33 @@ impl<T: ?Sized> DerefMut for CheckedMutexGuard<'_, T> {
     }
 }
 
+/// A [`CheckedMutexGuard`] narrowed with [`CheckedMutexGuard::map`].
+pub struct MappedCheckedMutexGuard<'a, T: ?Sized> {
+    // Only dropped; declared first for the same unlock order as the guard.
+    _owner: OwnerReset<'a>,
+    guard: MappedMutexGuard<'a, T>,
+}
+
+impl<T: ?Sized> Deref for MappedCheckedMutexGuard<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.guard
+    }
+}
+
+impl<T: ?Sized> DerefMut for MappedCheckedMutexGuard<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.guard
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
     use std::thread;
 
-    use super::CheckedMutex;
+    use super::{CheckedMutex, CheckedMutexGuard};
 
     #[test]
     #[should_panic(expected = "`i32` is already locked by this thread")]
@@ -177,6 +216,13 @@ mod tests {
             worker.join().expect("worker thread should not panic");
         }
         assert_eq!(*mutex.lock(), 4000);
+    }
+
+    #[test]
+    fn dropping_a_mapped_guard_unlocks() {
+        let mutex = CheckedMutex::new((1, 2));
+        *CheckedMutexGuard::map(mutex.lock(), |pair| &mut pair.1) += 1;
+        assert_eq!(*mutex.lock(), (1, 3));
     }
 
     #[test]

@@ -20,7 +20,7 @@ use steel_registry::vanilla_game_rules::ENTITY_DROPS;
 use steel_registry::{
     REGISTRY, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_fluids,
 };
-use steel_utils::locks::{CheckedMutex, SyncMutex};
+use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, types::UpdateFlags};
 
 use crate::behavior::blocks::{AnvilBlock, FallingBlock};
@@ -79,7 +79,7 @@ pub struct FallingBlockEntity {
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
     #[entity(synced)]
-    entity_data: SyncMutex<FallingBlockEntityData>,
+    entity_data: CheckedMutex<FallingBlockEntityData>,
     state: CheckedMutex<FallingBlockState>,
 }
 
@@ -95,7 +95,7 @@ impl FallingBlockEntity {
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
-            entity_data: SyncMutex::new(FallingBlockEntityData::new()),
+            entity_data: CheckedMutex::new(FallingBlockEntityData::new()),
             state: CheckedMutex::new(FallingBlockState::new(vanilla_blocks::SAND.default_state())),
         }
     }
@@ -116,7 +116,7 @@ impl FallingBlockEntity {
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
-            entity_data: SyncMutex::new(entity_data),
+            entity_data: CheckedMutex::new(entity_data),
             state: CheckedMutex::new(FallingBlockState::new(block_state)),
         }
     }
@@ -127,7 +127,7 @@ impl FallingBlockEntity {
         Self {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
-            entity_data: SyncMutex::new(FallingBlockEntityData::new()),
+            entity_data: CheckedMutex::new(FallingBlockEntityData::new()),
             state: CheckedMutex::new(FallingBlockState::new(vanilla_blocks::SAND.default_state())),
         }
     }

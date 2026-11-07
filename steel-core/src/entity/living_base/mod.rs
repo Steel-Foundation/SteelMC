@@ -23,7 +23,7 @@ use steel_registry::mob_effect_instance::INFINITE_EFFECT_DURATION;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
 use steel_registry::vanilla_mob_effects;
-use steel_utils::locks::{CheckedMutex, IntoShared, Shared, SyncMutex};
+use steel_utils::locks::{CheckedMutex, IntoShared, Shared};
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, Identifier};
 use uuid::Uuid;
@@ -1840,11 +1840,11 @@ mod tests;
 /// `None` when there was nothing to publish.
 pub fn sync_dirty_mob_effects<T>(
     living_base: &LivingEntityBase,
-    entity_data: &SyncMutex<T>,
+    entity_data: &CheckedMutex<T>,
 ) -> Option<MobEffectDisplayState>
 where
     T: VanillaLivingEntityData + Send + Sync,
-    SyncMutex<T>: EntitySyncedData,
+    CheckedMutex<T>: EntitySyncedData,
 {
     if !living_base.take_effects_dirty() {
         return None;
