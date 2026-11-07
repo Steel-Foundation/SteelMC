@@ -1771,6 +1771,30 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
+    /// `Entity.getRandomX`: X up to `spread` bounding-box widths either side of the center.
+    final fn get_random_x(&self, spread: f64) -> f64 {
+        let width = f64::from(self.base().dimensions().width);
+        self.position().x + width * (2.0 * rng().random::<f64>() - 1.0) * spread
+    }
+
+    /// `Entity.getRandomY()`: Y anywhere within the bounding box height.
+    final fn get_random_y(&self) -> f64 {
+        let height = f64::from(self.base().dimensions().height);
+        self.position().y + height * rng().random::<f64>()
+    }
+
+    /// `Entity.getRandomY(spread)`: Y up to `spread` bounding-box heights either side of the feet.
+    final fn get_random_y_spread(&self, spread: f64) -> f64 {
+        let height = f64::from(self.base().dimensions().height);
+        self.position().y + height * (2.0 * rng().random::<f64>() - 1.0) * spread
+    }
+
+    /// `Entity.getRandomZ`: Z up to `spread` bounding-box widths either side of the center.
+    final fn get_random_z(&self, spread: f64) -> f64 {
+        let width = f64::from(self.base().dimensions().width);
+        self.position().z + width * (2.0 * rng().random::<f64>() - 1.0) * spread
+    }
+
     /// Gets the Y coordinate of the entity's eyes.
     final fn get_eye_y(&self) -> f64 {
         self.position().y + self.get_eye_height()

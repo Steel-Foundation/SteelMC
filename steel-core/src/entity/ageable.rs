@@ -7,12 +7,17 @@
 
 use std::sync::Arc;
 
+use glam::DVec3;
+
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::SoundSource;
+use steel_registry::particle_type::ParticleData;
 use steel_registry::vanilla_entity_data::AgeableMobEntityData;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
-use steel_registry::{REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
+use steel_registry::{
+    REGISTRY, TaggedRegistryExt, sound_events, vanilla_items, vanilla_particle_types,
+};
 use steel_utils::locks::CheckedMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
@@ -249,23 +254,79 @@ impl<'a> Ageable<'a> {
         )
     }
 
-    /// `AgeableMob.aiStep` after `super`: natural growth and the age-lock cooldown.
+    /// `AgeableMob.aiStep` after `super`: forced-growth particles, natural growth
+    /// and the age-lock particles.
     pub fn tick(&self) {
-        if !self.entity.is_alive() {
-            return;
+        let world = self.entity.level();
+        let forced_age_particle = {
+            let mut state = self.age.state.lock();
+            let send = state.forced_age_timer > 0 && state.forced_age_timer % 4 == 0;
+            if state.forced_age_timer > 0 {
+                state.forced_age_timer -= 1;
+            }
+            send
+        };
+        if forced_age_particle && let Some(world) = &world {
+            let entity = self.entity;
+            world.send_particles(
+                ParticleData::simple(&vanilla_particle_types::HAPPY_VILLAGER),
+                DVec3::new(
+                    entity.get_random_x(1.0),
+                    entity.get_random_y() + 0.5,
+                    entity.get_random_z(1.0),
+                ),
+                1,
+                DVec3::ZERO,
+                0.0,
+            );
         }
 
-        let age = self.age();
-        if self.can_age_up() {
-            self.set_age(age + 1);
-        } else if age > 0 {
-            self.set_age(age - 1);
+        if self.entity.is_alive() {
+            let age = self.age();
+            if self.can_age_up() {
+                self.set_age(age + 1);
+            } else if age > 0 {
+                self.set_age(age - 1);
+            }
         }
 
-        let mut state = self.age.state.lock();
-        if state.age_lock_particle_timer > 0 {
-            state.age_lock_particle_timer -= 1;
+        let age_lock_particle = {
+            let mut state = self.age.state.lock();
+            let send = state.age_lock_particle_timer > 0 && state.age_lock_particle_timer % 2 == 0;
+            if state.age_lock_particle_timer > 0 {
+                state.age_lock_particle_timer -= 1;
+            }
+            send
+        };
+        if age_lock_particle && let Some(world) = &world {
+            self.send_age_lock_particle(world);
         }
+    }
+
+    /// One `AgeableMob.makeAgeLockedParticle` burst above the head.
+    fn send_age_lock_particle(&self, world: &World) {
+        let entity = self.entity;
+        let age_locked = self.is_age_locked();
+        let (particle, y_offset) = if age_locked {
+            (
+                &vanilla_particle_types::PAUSE_MOB_GROWTH,
+                f64::from(0.2_f32),
+            )
+        } else {
+            (&vanilla_particle_types::RESET_MOB_GROWTH, 0.0)
+        };
+        let height = f64::from(entity.base().dimensions().height);
+        world.send_particles(
+            ParticleData::simple(particle),
+            DVec3::new(
+                entity.get_random_x(1.0),
+                entity.get_random_y_spread(0.2) + height + y_offset,
+                entity.get_random_z(1.0),
+            ),
+            1,
+            DVec3::ZERO,
+            0.0,
+        );
     }
 }
 
