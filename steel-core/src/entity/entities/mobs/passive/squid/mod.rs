@@ -27,8 +27,9 @@ use crate::entity::damage::DamageSource;
 use crate::entity::mob::{self, Parts as _};
 use crate::entity::prelude::*;
 use crate::entity::{
-    EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps, LivingEntityBase,
-    LivingParts as _, LivingProps, MobBase, MobProps, SharedEntity, next_entity_id,
+    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps,
+    LivingEntityBase, LivingParts as _, LivingProps, MobBase, MobProps, SharedEntity,
+    next_entity_id,
 };
 use crate::physics::MoverType;
 use crate::world::World;
@@ -92,6 +93,13 @@ impl SquidEntity {
         },
     };
     const LIVING: LivingProps<Self> = LivingProps {
+        default_dimensions: |mob, _| {
+            if mob.living().is_baby() {
+                BABY_DIMENSIONS
+            } else {
+                mob.entity_type.dimensions
+            }
+        },
         sound_volume: |_| 0.4,
         hurt_sound: |_, _| Some(&sound_events::ENTITY_SQUID_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_SQUID_DEATH),
@@ -118,16 +126,6 @@ impl SquidEntity {
         movement_emission: |_| EntityMovementEmission::Events,
         // `AgeableWaterCreature.isPushedByFluid`.
         is_pushed_by_fluid: |_| false,
-        dimensions_for_pose: |squid, _| {
-            let scale = squid.living().scale();
-            if squid.living().is_baby() {
-                BABY_DIMENSIONS.scale(scale)
-            } else if squid.entity_type.fixed {
-                squid.entity_type.dimensions
-            } else {
-                squid.entity_type.dimensions.scale(scale)
-            }
-        },
         ..mob::entity_props()
     };
     const GOALS: StageId = StageId("squid.goals");
@@ -338,6 +336,8 @@ impl SquidEntity {
         }
     }
 }
+
+impl DefaultEntityPush for SquidEntity {}
 
 #[cfg(test)]
 mod tests;

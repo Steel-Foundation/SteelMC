@@ -44,7 +44,7 @@ use crate::entity::entities::mobs::passive::cow::abstract_cow;
 use crate::entity::mob::Parts as _;
 use crate::entity::shearable::{self, Shearable};
 use crate::entity::{
-    ConversionParams, DefaultEntityPush, EntityBase, EntityBaseLoad, EntityPose, EntityProps,
+    ConversionParams, DefaultEntityPush, EntityBase, EntityBaseLoad, EntityProps,
     EntitySpawnReason, LivingEntityBase, LivingProps, Mob, MobBase, MobProps, SharedEntity,
     SpawnRule, next_entity_id,
 };
@@ -111,6 +111,13 @@ impl MushroomCowEntity {
     };
     const BREEDING: BreedingProps = BreedingProps::new(abstract_cow::is_food);
     const LIVING: LivingProps<Self> = LivingProps {
+        default_dimensions: |mob, _| {
+            if mob.living().is_baby() {
+                MOOSHROOM_BABY_DIMENSIONS
+            } else {
+                mob.entity_type.dimensions
+            }
+        },
         ..abstract_cow::living_props()
     };
     const MOB: MobProps<Self> = MobProps {
@@ -412,20 +419,8 @@ impl MushroomCowEntity {
                 mooshroom.set_variant(*variant);
             }
         },
-        dimensions_for_pose: Self::entity_dimensions_for_pose,
         ..abstract_cow::entity_props()
     };
-
-    fn entity_dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
-        let scale = self.living().scale();
-        if self.animal().ageable().is_baby() {
-            MOOSHROOM_BABY_DIMENSIONS.scale(scale)
-        } else if self.entity_type.fixed {
-            self.entity_type.dimensions
-        } else {
-            self.entity_type.dimensions.scale(scale)
-        }
-    }
 
     fn save_mooshroom(&self, nbt: &mut NbtCompound) {
         nbt.insert("Type", self.variant().serialized_name());

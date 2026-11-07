@@ -8,7 +8,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
-use steel_registry::vanilla_entity_data::ThrowableItemProjectileEntityData;
+use steel_registry::vanilla_entity_data::{ThrowableItemProjectileEntityData, VanillaEntityData};
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::entity::Entity;
@@ -21,13 +21,18 @@ pub struct ThrownItem {
 }
 
 impl ThrownItem {
-    /// A throwable shown as `default_item` unless given another item.
+    /// A throwable shown as `default_item` unless given another item; starts
+    /// `entity_data` showing it (vanilla `defineSynchedData`).
     #[must_use]
-    pub const fn new(default_item: ItemRef) -> Self {
-        Self { default_item }
+    pub fn new(default_item: ItemRef, entity_data: &mut dyn VanillaEntityData) -> Self {
+        let thrown_item = Self { default_item };
+        if let Some(layer) = entity_data.throwable_item_projectile_layer_mut() {
+            layer.item_stack.set(thrown_item.default_stack());
+        }
+        thrown_item
     }
 
-    /// The synced item a new throwable of this type starts with.
+    /// The item a new throwable of this type starts with.
     #[must_use]
     pub fn default_stack(&self) -> ItemStack {
         ItemStack::new(self.default_item)

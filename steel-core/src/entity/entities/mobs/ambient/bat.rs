@@ -106,7 +106,6 @@ impl BatEntity {
             }
             living.hurt_server(world, source, amount)
         },
-        is_hard_collision_relevant: |_| false,
         movement_emission: |_| EntityMovementEmission::Events,
         check_fall_damage: |_, _, _, _, _, _, _| {},
         is_flapping: |bat| !bat.is_resting() && bat.tick_count() % 10 == 0,

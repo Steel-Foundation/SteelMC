@@ -86,7 +86,6 @@ impl EndermiteEntity {
             endermite.set_rotation((y_body_rot, endermite.rotation().1));
             endermite.living().set_y_body_rot(y_body_rot);
         },
-        is_hard_collision_relevant: |_| false,
         movement_emission: |_| EntityMovementEmission::Events,
         play_step_sound: |endermite, _, _| {
             endermite.play_sound(&sound_events::ENTITY_ENDERMITE_STEP, 0.15, 1.0);

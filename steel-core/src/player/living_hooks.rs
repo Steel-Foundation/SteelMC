@@ -5,6 +5,7 @@ use crate::entity::prelude::*;
 
 impl Player {
     pub(super) const LIVING: LivingProps<Self> = LivingProps {
+        default_dimensions: |_, pose| Player::dimensions_for_pose(pose),
         hurt_sound: |_, source| Some(source.damage_type.effects.sound()),
         voice_pitch: |_| 1.0,
         does_emit_equip_event: |_, slot| slot.slot_type() == EquipmentSlotType::HumanoidArmor,

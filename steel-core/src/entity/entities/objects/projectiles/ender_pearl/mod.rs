@@ -104,12 +104,8 @@ impl EnderPearlEntity {
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
-        let thrown_item = ThrownItem::new(&vanilla_items::ENDER_PEARL);
         let mut entity_data = EnderPearlEntityData::new();
-        entity_data
-            .throwable_item_projectile
-            .item_stack
-            .set(thrown_item.default_stack());
+        let thrown_item = ThrownItem::new(&vanilla_items::ENDER_PEARL, &mut entity_data);
         Self {
             base,
             entity_type,

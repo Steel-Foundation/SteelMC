@@ -30,6 +30,8 @@ mod sleeping;
 mod travel;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
+/// `LivingEntity.SLEEPING_DIMENSIONS`.
+const SLEEPING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2, 0.2);
 
 entity_props! {
     /// Per-type properties of a vanilla `LivingEntity`.
@@ -125,6 +127,9 @@ entity_props! {
         fn sound_volume() -> f32 = sound_volume_default;
         /// Runs vanilla `LivingEntity.handleKillingBlow`.
         fn handle_killing_blow() = handle_killing_blow_default;
+        /// `LivingEntity.getDefaultDimensions`: the size in `pose` before
+        /// the scale attribute applies.
+        fn default_dimensions(pose: EntityPose) -> EntityDimensions = default_dimensions_default;
         /// `LivingEntity.pushEntities`: pushes nearby colliding entities away.
         fn push_entities() = push_entities_default;
         /// `LivingEntity.shouldDropLoot`.
@@ -240,17 +245,10 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
                 .get_value(vanilla_attributes::STEP_HEIGHT)
                 .unwrap_or(0.6) as f32
         },
-        dimensions_for_pose: |living, _| {
-            let entity_type = living.entity_type();
-            if entity_type.fixed {
-                entity_type.dimensions
-            } else {
-                let living = living.living();
-                entity_type
-                    .dimensions
-                    .scale(living.age_scale() * living.scale())
-            }
-        },
+        dimensions_for_pose: |living, pose| living.living().dimensions(pose),
+        // Living entities are never hard colliders; a type that overrides
+        // `can_be_collided_with` (a shulker) must set this back to `true`.
+        is_hard_collision_relevant: |_| false,
         check_fall_damage: |living, entity, vertical_movement, on_ground, on_state, pos, world| {
             living.living().check_living_fall_damage(
                 entity,
@@ -771,6 +769,33 @@ impl<'a> Living<'a> {
     /// Plays vanilla's death sound for this living entity.
     pub fn play_death_sound(&self) {
         self.make_sound(self.death_sound());
+    }
+
+    /// `LivingEntity.getDimensions`: the default size for `pose`, scaled by
+    /// the scale attribute, or a small fixed box while sleeping.
+    #[must_use]
+    pub fn dimensions(&self, pose: EntityPose) -> EntityDimensions {
+        if pose == EntityPose::Sleeping {
+            return SLEEPING_DIMENSIONS;
+        }
+        let dimensions = self.default_dimensions(pose);
+        if self.entity_type().fixed {
+            dimensions
+        } else {
+            dimensions.scale(self.scale())
+        }
+    }
+
+    /// Default for [`LivingProps::default_dimensions`]: the type's size,
+    /// halved for babies.
+    #[must_use]
+    pub fn default_dimensions_default(&self, _pose: EntityPose) -> EntityDimensions {
+        let entity_type = self.entity_type();
+        if entity_type.fixed {
+            entity_type.dimensions
+        } else {
+            entity_type.dimensions.scale(self.age_scale())
+        }
     }
 
     /// Returns the render scale from age: 0.5 for babies, 1.0 for adults.

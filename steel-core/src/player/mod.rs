@@ -72,7 +72,6 @@ use steel_protocol::packets::game::{
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::{EntityPose, HumanoidArm};
-use steel_registry::entity_type::EntityDimensions;
 use steel_registry::game_rules::GameRuleRef;
 use steel_registry::particle_type::{BlockParticleOption, ParticleData};
 use steel_registry::sound_event::SoundEventRef;

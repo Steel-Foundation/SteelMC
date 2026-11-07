@@ -35,8 +35,8 @@ use crate::entity::item_based_steering::ItemBasedSteering;
 use crate::entity::mob::Parts as _;
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
-    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityPose, EntityProps, ItemSteerable,
-    LivingEntityBase, LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, mob,
+    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityProps, ItemSteerable, LivingEntityBase,
+    LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, mob,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
@@ -100,6 +100,13 @@ impl PigEntity {
         ..BreedingProps::new(Self::is_food)
     };
     const LIVING: LivingProps<Self> = LivingProps {
+        default_dimensions: |mob, _| {
+            if mob.living().is_baby() {
+                PIG_BABY_DIMENSIONS
+            } else {
+                mob.entity_type.dimensions
+            }
+        },
         hurt_sound: |pig, _| Some(pig.sound_set().hurt_sound),
         death_sound: |pig| Some(pig.sound_set().death_sound),
         can_use_slot: |pig, slot| {
@@ -339,9 +346,7 @@ impl DefaultEntityPush for PigEntity {}
 
 impl PigEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        is_hard_collision_relevant: |_| false,
         apply_implicit_item_components: Self::entity_apply_implicit_item_components,
-        dimensions_for_pose: Self::entity_dimensions_for_pose,
         play_step_sound: Self::entity_play_step_sound,
         controlling_passenger: Self::entity_controlling_passenger,
         ..mob::entity_props()
@@ -353,17 +358,6 @@ impl PigEntity {
         }
         if let Some(sound_variant) = item_stack.get(PIG_SOUND_VARIANT) {
             self.set_sound_variant(sound_variant.value());
-        }
-    }
-
-    fn entity_dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
-        let scale = self.living().scale();
-        if self.animal().ageable().is_baby() {
-            PIG_BABY_DIMENSIONS.scale(scale)
-        } else if self.entity_type.fixed {
-            self.entity_type.dimensions
-        } else {
-            self.entity_type.dimensions.scale(scale)
         }
     }
 

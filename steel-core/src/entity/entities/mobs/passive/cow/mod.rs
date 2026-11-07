@@ -21,12 +21,12 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::entity::ageable::{self, Age, AgeableProps};
-use crate::entity::animal::{self, Breeding, BreedingProps, Parts as _};
+use crate::entity::animal::{self, Breeding, BreedingProps};
 use crate::entity::component::definition::MobDefinition;
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
-    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityPose, EntityProps, LivingEntityBase,
-    LivingProps, MobBase, MobProps, SpawnRule,
+    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityProps, LivingEntityBase, LivingProps,
+    MobBase, MobProps, SpawnRule,
 };
 use crate::world::World;
 
@@ -78,6 +78,13 @@ impl CowEntity {
     };
     const BREEDING: BreedingProps = BreedingProps::new(abstract_cow::is_food);
     const LIVING: LivingProps<Self> = LivingProps {
+        default_dimensions: |mob, _| {
+            if mob.living().is_baby() {
+                COW_BABY_DIMENSIONS
+            } else {
+                mob.entity_type.dimensions
+            }
+        },
         hurt_sound: |cow, _| Some(cow.sound_variant().hurt_sound),
         death_sound: |cow| Some(cow.sound_variant().death_sound),
         ..abstract_cow::living_props()
@@ -176,7 +183,6 @@ impl DefaultEntityPush for CowEntity {}
 impl CowEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         apply_implicit_item_components: Self::entity_apply_implicit_item_components,
-        dimensions_for_pose: Self::entity_dimensions_for_pose,
         play_step_sound: Self::entity_play_step_sound,
         ..abstract_cow::entity_props()
     };
@@ -187,17 +193,6 @@ impl CowEntity {
         }
         if let Some(sound_variant) = item_stack.get(COW_SOUND_VARIANT) {
             self.set_sound_variant(sound_variant.value());
-        }
-    }
-
-    fn entity_dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
-        let scale = self.living().scale();
-        if self.animal().ageable().is_baby() {
-            COW_BABY_DIMENSIONS.scale(scale)
-        } else if self.entity_type.fixed {
-            self.entity_type.dimensions
-        } else {
-            self.entity_type.dimensions.scale(scale)
         }
     }
 

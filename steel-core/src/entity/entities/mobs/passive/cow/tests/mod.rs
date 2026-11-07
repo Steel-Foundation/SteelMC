@@ -2,6 +2,8 @@ use std::io::Cursor;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
+
+use crate::entity::animal::Parts as _;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::RegistryExt as _;

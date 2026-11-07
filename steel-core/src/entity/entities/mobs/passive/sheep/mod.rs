@@ -38,8 +38,8 @@ use crate::entity::component::entries::{FinalizeSpawnCtx, MobInteractCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::shearable::{self, Shearable};
 use crate::entity::{
-    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityPose, EntityProps, LivingEntityBase,
-    LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, mob,
+    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityProps, LivingEntityBase, LivingProps,
+    MobBase, MobProps, SharedEntity, SpawnRule, mob,
 };
 use crate::inventory::recipe_manager;
 use crate::world::World;
@@ -97,6 +97,13 @@ impl SheepEntity {
     };
     const BREEDING: BreedingProps = BreedingProps::new(Self::is_food);
     const LIVING: LivingProps<Self> = LivingProps {
+        default_dimensions: |mob, _| {
+            if mob.living().is_baby() {
+                SHEEP_BABY_DIMENSIONS
+            } else {
+                mob.entity_type.dimensions
+            }
+        },
         hurt_sound: |_, _| Some(&sound_events::ENTITY_SHEEP_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_SHEEP_DEATH),
         sheep_loot_state: |sheep| Some((sheep.color(), sheep.is_sheared())),
@@ -363,29 +370,16 @@ impl DefaultEntityPush for SheepEntity {}
 
 impl SheepEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        is_hard_collision_relevant: |_| false,
         apply_implicit_item_components: |sheep, item_stack| {
             if let Some(color) = item_stack.get(SHEEP_COLOR) {
                 sheep.set_color(*color);
             }
         },
-        dimensions_for_pose: Self::entity_dimensions_for_pose,
         play_step_sound: |sheep, _, _| {
             sheep.play_sound(&sound_events::ENTITY_SHEEP_STEP, 0.15, 1.0);
         },
         ..mob::entity_props()
     };
-
-    fn entity_dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
-        let scale = self.living().scale();
-        if self.animal().ageable().is_baby() {
-            SHEEP_BABY_DIMENSIONS.scale(scale)
-        } else if self.entity_type.fixed {
-            self.entity_type.dimensions
-        } else {
-            self.entity_type.dimensions.scale(scale)
-        }
-    }
 
     fn save_sheep(&self, nbt: &mut NbtCompound) {
         nbt.insert("Sheared", i8::from(self.is_sheared()));

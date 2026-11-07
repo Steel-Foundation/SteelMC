@@ -73,12 +73,8 @@ impl SplashPotionEntity {
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
-        let thrown_item = ThrownItem::new(&vanilla_items::SPLASH_POTION);
         let mut entity_data = SplashPotionEntityData::new();
-        entity_data
-            .throwable_item_projectile
-            .item_stack
-            .set(thrown_item.default_stack());
+        let thrown_item = ThrownItem::new(&vanilla_items::SPLASH_POTION, &mut entity_data);
         Self {
             base,
             entity_type,

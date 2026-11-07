@@ -38,8 +38,8 @@ use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
-    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose, LivingEntityBase,
-    LivingProps, MobBase, MobProps, SpawnRule, position_rider_default,
+    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, LivingEntityBase, LivingProps, MobBase,
+    MobProps, SpawnRule, position_rider_default,
 };
 use crate::entity::{EntityProps, mob};
 use crate::world::World;
@@ -154,6 +154,13 @@ impl ChickenEntity {
     };
     const BREEDING: BreedingProps = BreedingProps::new(Self::is_food);
     const LIVING: LivingProps<Self> = LivingProps {
+        default_dimensions: |mob, _| {
+            if mob.living().is_baby() {
+                CHICKEN_BABY_DIMENSIONS
+            } else {
+                mob.entity_type.dimensions
+            }
+        },
         hurt_sound: |chicken, _| Some(chicken.current_sound_set().hurt_sound),
         death_sound: |chicken| Some(chicken.current_sound_set().death_sound),
         chicken_loot_variant: |chicken| Some(&chicken.variant().key),
@@ -413,9 +420,7 @@ impl DefaultEntityPush for ChickenEntity {}
 
 impl ChickenEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        is_hard_collision_relevant: |_| false,
         apply_implicit_item_components: Self::entity_apply_implicit_item_components,
-        dimensions_for_pose: Self::entity_dimensions_for_pose,
         play_step_sound: Self::entity_play_step_sound,
         is_flapping: Self::entity_is_flapping,
         on_flap: Self::entity_on_flap,
@@ -429,17 +434,6 @@ impl ChickenEntity {
         }
         if let Some(sound_variant) = item_stack.get(CHICKEN_SOUND_VARIANT) {
             self.set_sound_variant(sound_variant.value());
-        }
-    }
-
-    fn entity_dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
-        let scale = self.living().scale();
-        if self.animal().ageable().is_baby() {
-            CHICKEN_BABY_DIMENSIONS.scale(scale)
-        } else if self.entity_type.fixed {
-            self.entity_type.dimensions
-        } else {
-            self.entity_type.dimensions.scale(scale)
         }
     }
 

@@ -5,7 +5,6 @@ use crate::entity::prelude::*;
 
 impl Player {
     pub(super) const ENTITY: EntityProps<Self> = EntityProps {
-        is_hard_collision_relevant: |_| false,
         dimension_changing_delay: |_| 10,
         check_fall_damage: Self::entity_check_fall_damage,
         on_explosion_hit: |player, explosion_source| {
@@ -74,7 +73,6 @@ impl Player {
         play_step_sound: Self::entity_play_step_sound,
         movement_emission: Self::entity_movement_emission,
         on_below_world: Self::entity_on_below_world,
-        dimensions_for_pose: Self::entity_dimensions_for_pose,
         hurt: Self::entity_hurt,
         killed_entity: Self::entity_killed_entity,
         award_kill_score: Self::entity_award_kill_score,
@@ -375,15 +373,6 @@ impl Player {
             &DamageSource::environment(&vanilla_damage_types::OUT_OF_WORLD),
             4.0,
         );
-    }
-
-    fn entity_dimensions_for_pose(&self, pose: EntityPose) -> EntityDimensions {
-        let dimensions = Player::dimensions_for_pose(pose);
-        if pose == EntityPose::Sleeping || self.entity_type().fixed {
-            dimensions
-        } else {
-            dimensions.scale(self.living().scale())
-        }
     }
 
     fn entity_hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {

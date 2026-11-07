@@ -287,3 +287,23 @@ fn living_entities_sync_effect_visibility_without_a_type_override() {
     };
     assert!(synced.is_base_invisible_flag());
 }
+
+#[test]
+fn living_dimensions_use_the_sleeping_box_and_the_type_default_size() {
+    init_vanilla_registry();
+    let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+
+    let sleeping = chicken.dimensions_for_pose(EntityPose::Sleeping);
+    assert_eq!((sleeping.width, sleeping.height), (0.2, 0.2));
+
+    let adult = chicken.dimensions_for_pose(EntityPose::Standing);
+    crate::entity::ageable::Ageable::of(&chicken)
+        .expect("chickens age")
+        .set_baby(true);
+    let baby = chicken.dimensions_for_pose(EntityPose::Standing);
+    assert_eq!(adult.width, vanilla_entities::CHICKEN.dimensions.width);
+    assert!(
+        baby.width < adult.width,
+        "babies use their own default size"
+    );
+}

@@ -67,7 +67,6 @@ pub const fn mob_props<E: Parts>() -> MobProps<E> {
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        is_hard_collision_relevant: |_| false,
         play_step_sound: |cow, _, _| cow.play_sound(CLASSIC_SOUNDS.step_sound, 0.15, 1.0),
         ..mob::entity_props()
     }
