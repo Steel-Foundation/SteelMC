@@ -504,9 +504,7 @@ impl FallingBlockEntity {
         }
         false
     }
-}
 
-impl FallingBlockEntity {
     fn save_falling_block(&self, nbt: &mut NbtCompound) {
         let state = self.state.lock();
         nbt.insert(

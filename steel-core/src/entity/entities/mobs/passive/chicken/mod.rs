@@ -519,9 +519,7 @@ impl ChickenEntity {
             living.set_y_body_rot(self.living().y_body_rot());
         }
     }
-}
 
-impl ChickenEntity {
     fn save_chicken(&self, nbt: &mut NbtCompound) {
         nbt.insert("IsChickenJockey", i8::from(self.is_chicken_jockey()));
         nbt.insert("EggLayTime", self.egg_time());

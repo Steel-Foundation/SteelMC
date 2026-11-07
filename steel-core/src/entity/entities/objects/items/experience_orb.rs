@@ -505,9 +505,7 @@ impl ExperienceOrbEntity {
         }
         true
     }
-}
 
-impl ExperienceOrbEntity {
     fn save_orb(&self, nbt: &mut NbtCompound) {
         let state = self.state.lock();
         nbt.insert("Health", state.health as i16);

@@ -327,9 +327,7 @@ impl PrimedTntEntity {
     fn entity_on_teleported(&self) {
         self.state.lock().used_portal = true;
     }
-}
 
-impl PrimedTntEntity {
     fn save_tnt(&self, nbt: &mut NbtCompound) {
         nbt.insert("fuse", self.fuse() as i16);
         nbt.insert("block_state", block_state_nbt::save(self.block_state()));

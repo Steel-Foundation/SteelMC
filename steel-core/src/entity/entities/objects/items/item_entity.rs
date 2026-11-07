@@ -744,9 +744,7 @@ impl ItemEntity {
         }
         true
     }
-}
 
-impl ItemEntity {
     fn save_item(&self, nbt: &mut NbtCompound) {
         // Match vanilla's ItemEntity.addAdditionalSaveData
         let state = self.state.lock();
