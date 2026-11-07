@@ -5,6 +5,7 @@
 //! The `aiStep`, `finalizeSpawn` and `mobInteract` layers are pipeline stages
 //! in this module.
 
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use glam::DVec3;

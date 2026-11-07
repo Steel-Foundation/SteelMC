@@ -1,5 +1,6 @@
 //! Food-on-a-stick item behavior implementation.
 
+use crate::entity::prelude::*;
 use steel_macros::item_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -7,7 +8,6 @@ use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_items;
 
 use crate::behavior::{InteractionResult, ItemBehavior, UseItemContext};
-use crate::entity::Entity as _;
 use crate::player::Player;
 
 /// Food on a stick item behavior.

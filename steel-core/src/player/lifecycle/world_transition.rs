@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::prelude::*;
 
 impl Player {
     fn apply_post_teleport_transition(&self, post_transition: &TeleportPostTransition) {

@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use std::iter::once;
 use std::sync::{
     Arc, Weak,

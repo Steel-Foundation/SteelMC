@@ -1,5 +1,6 @@
 //! Vanilla moving-piston block entity.
 
+use crate::entity::prelude::*;
 use std::cell::Cell;
 use std::sync::{Arc, Weak};
 

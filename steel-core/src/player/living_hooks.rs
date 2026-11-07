@@ -1,6 +1,7 @@
 //! `ServerPlayer`'s overrides of the living hooks.
 
 use super::*;
+use crate::entity::prelude::*;
 
 impl Player {
     pub(super) const LIVING: LivingProps<Self> = LivingProps {

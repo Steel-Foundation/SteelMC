@@ -1,6 +1,7 @@
 //! Experience orb entity implementation.
 
 use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;

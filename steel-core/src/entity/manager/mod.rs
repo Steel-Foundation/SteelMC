@@ -5,6 +5,7 @@
 //! of chunk load state; chunks are still the persistence boundary, and only
 //! full simulated chunks tick entities.
 
+use crate::entity::prelude::*;
 use std::{collections::BTreeMap, error::Error, fmt, iter::FusedIterator, mem, slice, sync::Arc};
 
 use glam::DVec3;

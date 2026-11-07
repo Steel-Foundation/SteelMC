@@ -32,6 +32,7 @@ mod tick_state;
 mod title;
 
 use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use crate::player::player_inventory::Prediction;
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
 use chat::ChatState;

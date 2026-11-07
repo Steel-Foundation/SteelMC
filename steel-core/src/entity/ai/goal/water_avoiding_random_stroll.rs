@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use glam::DVec3;
 
 use super::random_pos::{default_random_pos, land_random_pos};

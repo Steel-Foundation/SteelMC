@@ -2,6 +2,7 @@
 //! slow-fall, and periodic egg-laying behavior.
 
 use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock, Weak};
 

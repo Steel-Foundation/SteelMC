@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use std::{collections::BTreeSet, io::Cursor, sync::Arc};
 
 use glam::DVec3;
@@ -525,6 +526,7 @@ impl AgeableMobGroupData {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::prelude::*;
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;

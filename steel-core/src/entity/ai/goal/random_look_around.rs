@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use std::f64::consts::TAU;
 
 use glam::DVec3;
@@ -72,6 +73,7 @@ impl Goal for RandomLookAroundGoal {
 
 #[cfg(test)]
 mod tests {
+
     use crate::entity::LivingProps;
     use crate::test_support::synced_with_health;
     use std::sync::Arc;

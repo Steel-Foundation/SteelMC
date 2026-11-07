@@ -10,6 +10,7 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::entity::Entity;
 use crate::entity::ai::path::PathComputationType;
+use crate::entity::prelude::*;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ScheduledTickAccess, SignalGetter as _, World};

@@ -813,9 +813,20 @@ pub(crate) use entity::apply_entity_look_at;
 pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
-    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityDefaults,
-    EntityEventSource, EntityHooks, EntityProps,
+    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityBlockContact, EntityBody,
+    EntityCombat, EntityDefaults, EntityEventSource, EntityFireAndFreeze, EntityFluids,
+    EntityHooks, EntityInteraction, EntityMotion, EntityPersistence, EntityPortals, EntityProps,
+    EntityRiding, EntitySounds,
 };
+
+/// [`Entity`] and the traits that extend it, for `use crate::entity::prelude::*`.
+pub mod prelude {
+    pub use super::{
+        Entity, EntityBlockContact, EntityBody, EntityCombat, EntityFireAndFreeze, EntityFluids,
+        EntityInteraction, EntityMotion, EntityPersistence, EntityPortals, EntityRiding,
+        EntitySounds,
+    };
+}
 pub use fluid_contact::EntityFluidContact;
 pub use identity::EntityGeneration;
 pub use inside_block_effects::{

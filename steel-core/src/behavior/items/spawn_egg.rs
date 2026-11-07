@@ -1,5 +1,6 @@
 //! Data-driven vanilla spawn-egg behavior.
 
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use steel_macros::item_behavior;

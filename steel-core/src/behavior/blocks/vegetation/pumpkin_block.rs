@@ -2,7 +2,7 @@ use crate::behavior::block::drop_from_block_interact_loot_table;
 use crate::behavior::{
     BlockBehavior, BlockPlaceContext, BlockRef, InteractionResult, InventoryAccess,
 };
-use crate::entity::Entity;
+use crate::entity::prelude::*;
 use crate::player::Player;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;

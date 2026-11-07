@@ -6,6 +6,7 @@ use super::{
     RemovalReason, SectionPos, SharedEntity, SharedGameEventListener, SyncMutex, World, WorldAabb,
     WorldChangeRequest, block_entity_ticker, mem, vanilla_entities,
 };
+use crate::entity::prelude::*;
 
 use crate::entity::{EntityCollisionCandidates, selector::EntitySelector};
 

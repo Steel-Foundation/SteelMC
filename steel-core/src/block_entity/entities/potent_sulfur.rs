@@ -1,5 +1,6 @@
 //! `PotentSulfurBlockEntity` for geyser eruption
 
+use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};

@@ -4,6 +4,7 @@
 //! the server only needs the frame size from each scan.
 
 use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;

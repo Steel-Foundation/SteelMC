@@ -1,5 +1,6 @@
 //! Vanilla entity exposure sampling and Steel's collision-ray reuse.
 
+use crate::entity::prelude::*;
 use glam::DVec3;
 use steel_registry::vanilla_entities;
 use steel_utils::{BlockPos, WorldAabb};

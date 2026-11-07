@@ -1,4 +1,5 @@
 use super::{BlockPos, FluidState, Mob, PathType, PathfindingMalus, WorldAabb, fast_floor};
+use crate::entity::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct MobPathSettings {

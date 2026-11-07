@@ -1049,6 +1049,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::entity::LivingParts as _;
+    use crate::entity::prelude::*;
     use std::{
         sync::{Arc, Weak, mpsc},
         thread,
@@ -1059,7 +1060,6 @@ mod tests {
     use tokio::time::timeout;
 
     use crate::{
-        entity::Entity as _,
         player::{ClientInformation, Player, connection::ScheduledPlayPacket},
         test_support::{TestPlayerBuilder, fresh_test_world},
     };

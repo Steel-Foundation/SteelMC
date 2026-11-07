@@ -1,4 +1,5 @@
 use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use super::{

@@ -1,4 +1,5 @@
 use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use glam::DVec3;
 use std::ptr;
 use std::thread;

@@ -13,6 +13,7 @@ mod throwable;
 mod throwable_item;
 mod thrown_potion;
 
+use crate::entity::prelude::*;
 use std::mem;
 use std::sync::{Arc, Weak};
 

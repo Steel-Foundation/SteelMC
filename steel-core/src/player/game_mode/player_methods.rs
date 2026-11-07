@@ -8,6 +8,7 @@ use super::{
 };
 use crate::behavior::blocks::PowderSnowBlock;
 use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use steel_protocol::packets::game::SPunch;
 use steel_utils::types::InteractionHand;
 

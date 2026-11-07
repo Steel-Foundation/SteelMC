@@ -3,6 +3,7 @@
 //! This module defines the data format for saving and loading player state.
 
 use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use rustc_hash::FxHashSet;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::stat::Stat;

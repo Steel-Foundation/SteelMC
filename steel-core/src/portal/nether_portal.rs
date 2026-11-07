@@ -1,5 +1,6 @@
 //! Nether portal destination calculation.
 
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use glam::DVec3;

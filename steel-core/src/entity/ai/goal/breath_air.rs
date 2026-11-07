@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -134,6 +135,7 @@ fn gives_air(level: &World, pos: BlockPos) -> bool {
 
 #[cfg(test)]
 mod tests {
+
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
@@ -142,9 +144,9 @@ mod tests {
     use super::*;
 
     use crate::entity::LivingParts as _;
+    use crate::entity::LivingTravelInput;
     use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
-    use crate::entity::{Entity, LivingTravelInput};
 
     #[test]
     fn breath_air_goal_uses_move_and_look_controls() {

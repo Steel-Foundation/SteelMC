@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use steel_registry::entity_type::EntityTypeRef;
@@ -257,6 +258,7 @@ fn copy_position(from: &dyn Entity, to: &dyn Entity) {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::prelude::*;
     use std::cell::Cell;
     use std::sync::Arc;
 

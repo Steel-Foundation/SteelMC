@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use glam::DVec3;
 use steel_math::fast_floor;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -101,13 +102,14 @@ fn first_matching_pos_in_closed_box(
 
 #[cfg(test)]
 mod tests {
+
     use std::sync::Weak;
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::Entity;
+
     use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
 

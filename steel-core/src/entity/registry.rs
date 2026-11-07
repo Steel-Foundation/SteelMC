@@ -1,5 +1,6 @@
 //! Entity registry for creating entity instances.
 
+use crate::entity::prelude::*;
 use std::ops::Deref;
 use std::sync::{OnceLock, Weak};
 

@@ -8,6 +8,7 @@ use super::{
     portal_entity_still_valid,
 };
 use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use crate::world::player_spawn_finder::PlayerSpawnSearch;
 
 impl Server {

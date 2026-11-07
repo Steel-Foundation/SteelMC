@@ -2,6 +2,7 @@
 //!
 //! Implements `FluidBehavior` and `FlowingFluid` for sharing base spread logic.
 
+use crate::entity::EntityFireAndFreeze;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -155,7 +156,7 @@ impl FluidBehavior for LavaFluid {
         effect_collector.apply(InsideBlockEffectType::LavaIgnite);
         effect_collector.run_after(
             InsideBlockEffectType::LavaIgnite,
-            Box::new(Entity::lava_hurt),
+            Box::new(EntityFireAndFreeze::lava_hurt),
         );
     }
 

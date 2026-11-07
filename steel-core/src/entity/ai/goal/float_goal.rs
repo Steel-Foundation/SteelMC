@@ -1,4 +1,5 @@
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
+use crate::entity::prelude::*;
 use crate::entity::{Mob, MobBase, SharedEntity};
 
 const FLOAT_JUMP_CHANCE: f32 = 0.8;

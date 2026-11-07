@@ -1,5 +1,6 @@
 //! Shared vanilla entity tick helpers.
 
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use smallvec::SmallVec;

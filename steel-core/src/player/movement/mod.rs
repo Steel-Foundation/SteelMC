@@ -7,6 +7,7 @@ mod input;
 mod state;
 mod teleport;
 
+use crate::entity::prelude::*;
 pub use input::PlayerInput;
 pub(super) use state::MovementState;
 pub(super) use teleport::TeleportState;

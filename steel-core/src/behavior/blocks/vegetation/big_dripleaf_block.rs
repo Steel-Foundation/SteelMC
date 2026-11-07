@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use rand::{Rng, RngExt};
 use std::sync::Arc;
 use steel_macros::block_behavior;
@@ -350,6 +351,7 @@ impl Bonemealable for BigDripleafBlock {
 
 #[cfg(test)]
 mod tests {
+
     use std::sync::Arc;
 
     use glam::DVec3;

@@ -4,6 +4,7 @@
 //! block breaking, including progress tracking and validation.
 
 use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use steel_protocol::packets::game::CBlockUpdate;

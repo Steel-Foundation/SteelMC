@@ -153,6 +153,7 @@ impl Fallable for BrushableBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::prelude::*;
     use steel_registry::blocks::BlockRef;
     use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::types::UpdateFlags;

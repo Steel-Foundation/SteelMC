@@ -1,5 +1,6 @@
 //! Nether portal block behavior.
 
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use crate::behavior::block::BlockBehavior;

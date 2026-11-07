@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::{TaggedRegistryExt as _, vanilla_blocks, vanilla_entity_type_tags};
 

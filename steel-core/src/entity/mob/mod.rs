@@ -7,6 +7,7 @@ use crate::entity::component::definition::MobEntries;
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::leash::{LeashData, Leashable};
+use crate::entity::prelude::*;
 use crate::entity::{Ageable, EntityProps};
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]

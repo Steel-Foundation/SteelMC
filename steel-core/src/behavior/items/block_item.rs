@@ -1,5 +1,6 @@
 //! Block item behavior implementation.
 
+use crate::entity::prelude::*;
 use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt, shapes::OffsetVoxelShape},

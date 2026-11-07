@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use glam::DVec3;
 
 use super::reduced_tick_delay;
@@ -80,6 +81,7 @@ impl Goal for LeapAtTargetGoal {
 
 #[cfg(test)]
 mod tests {
+
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;

@@ -19,6 +19,7 @@ mod swamp_hut;
 mod template_piece;
 mod template_processors;
 
+use crate::entity::prelude::*;
 use std::sync::Weak;
 
 use glam::DVec3;

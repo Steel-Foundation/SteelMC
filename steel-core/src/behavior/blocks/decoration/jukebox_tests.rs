@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
 

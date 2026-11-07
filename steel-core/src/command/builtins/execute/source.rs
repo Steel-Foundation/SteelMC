@@ -1,5 +1,6 @@
 //! `/execute` operations that transform or fork the command source.
 
+use crate::entity::prelude::*;
 use steel_utils::translations;
 use text_components::TextComponent;
 

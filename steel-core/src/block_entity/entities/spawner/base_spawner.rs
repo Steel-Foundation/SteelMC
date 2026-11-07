@@ -1,5 +1,6 @@
 //! Shared spawn-cycle state and ticking used by spawner block entities.
 
+use crate::entity::prelude::*;
 use std::mem;
 use std::sync::Arc;
 

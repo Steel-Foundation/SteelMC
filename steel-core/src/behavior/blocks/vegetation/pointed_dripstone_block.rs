@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use rand::RngExt;
@@ -908,6 +909,7 @@ pub fn get_cauldron_fill_fluid_type(
 
 #[cfg(test)]
 mod tests {
+
     use crate::test_support::advance_test_game_time_to;
     use std::sync::Weak;
 

@@ -1,6 +1,7 @@
 //! `Player`'s overrides of the entity hooks.
 
 use super::*;
+use crate::entity::prelude::*;
 
 impl Player {
     pub(super) const ENTITY: EntityProps<Self> = EntityProps {

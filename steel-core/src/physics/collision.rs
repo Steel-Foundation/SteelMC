@@ -1,5 +1,6 @@
 //! World collision queries for physics simulation.
 
+use crate::entity::prelude::*;
 use std::{ops::ControlFlow, sync::Arc};
 
 use glam::DVec3;

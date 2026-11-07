@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use steel_utils::translations;
 
 use super::{

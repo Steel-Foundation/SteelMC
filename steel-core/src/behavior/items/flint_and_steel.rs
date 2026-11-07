@@ -3,6 +3,7 @@
 use crate::behavior::blocks::FireBlock;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::item::ItemBehavior;
+use crate::entity::prelude::*;
 use steel_macros::item_behavior;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;

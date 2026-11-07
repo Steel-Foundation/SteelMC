@@ -1,5 +1,6 @@
 //! Shared impact and water interaction logic for thrown potions
 
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;

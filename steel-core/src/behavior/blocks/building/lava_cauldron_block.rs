@@ -1,3 +1,4 @@
+use crate::entity::EntityFireAndFreeze;
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -91,7 +92,7 @@ impl BlockBehavior for LavaCauldronBlock {
         effect_collector.apply(InsideBlockEffectType::LavaIgnite);
         effect_collector.run_after(
             InsideBlockEffectType::LavaIgnite,
-            Box::new(Entity::lava_hurt),
+            Box::new(EntityFireAndFreeze::lava_hurt),
         );
     }
 }

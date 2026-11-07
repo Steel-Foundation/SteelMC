@@ -1,5 +1,6 @@
 //! Server-side explosion calculation and application.
 
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use glam::DVec3;

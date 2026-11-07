@@ -1,6 +1,7 @@
 use crate::entity::LivingParts as _;
 use crate::entity::LivingProps;
 use crate::entity::MobParts as _;
+use crate::entity::prelude::*;
 use crate::test_support::synced_with_health;
 use std::sync::{Arc, Weak};
 use steel_registry::vanilla_entity_data::LivingEntityData;

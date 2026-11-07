@@ -3,6 +3,7 @@
 //! Groups player pose and shared-flag helpers.
 
 use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::{EntityAttachmentPoint, EntityAttachments, EntityDimensions};
 use steel_utils::WorldAabb;

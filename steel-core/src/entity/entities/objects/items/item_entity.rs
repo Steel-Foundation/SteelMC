@@ -4,6 +4,7 @@
 //! (gravity, friction), despawns after 5 minutes, and can be picked up
 //! by players after a short delay.
 
+use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -804,6 +805,7 @@ impl ItemEntity {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::prelude::*;
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;

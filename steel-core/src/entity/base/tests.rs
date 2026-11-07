@@ -4,6 +4,7 @@ use super::{
     EntityMovementFlags, EntityMovementProgress, EntityPhysicsStateInput, EntityPistonMovement,
     EntityVerticalMovementStateUpdate, MAX_ENTITY_TAGS,
 };
+use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;

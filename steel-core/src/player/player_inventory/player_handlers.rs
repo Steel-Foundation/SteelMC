@@ -1,4 +1,5 @@
 use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use std::{f32::consts::TAU, mem, sync::Arc};
 
 use crate::{

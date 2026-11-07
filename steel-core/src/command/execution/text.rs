@@ -1,5 +1,6 @@
 //! Resolution of command-context text components.
 
+use crate::entity::prelude::*;
 use simdnbt::owned::NbtTag;
 use steel_utils::{Identifier, nbt::parse_nbt_path, text::command_nbt_component, translations};
 use text_components::{

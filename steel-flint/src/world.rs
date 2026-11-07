@@ -12,6 +12,7 @@ use std::sync::{
 };
 use std::thread;
 use std::time::{Duration, Instant};
+use steel_core::entity::prelude::*;
 
 use crate::convert::{
     flint_block_to_state_id, flint_gamerule_value, flint_pos_to_steel, state_id_to_block,

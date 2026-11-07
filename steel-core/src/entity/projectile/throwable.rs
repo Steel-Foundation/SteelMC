@@ -1,4 +1,5 @@
 //! Vanilla `ThrowableProjectile` — the gravity/drag movement loop.
+use crate::entity::prelude::*;
 use std::sync::Arc;
 use steel_registry::{blocks::block_state_ext::BlockStateExt as _, vanilla_blocks};
 use steel_utils::{BlockPos, axis::Axis};

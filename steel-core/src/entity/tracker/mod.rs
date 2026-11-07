@@ -4,6 +4,7 @@
 //! entity tracking range as client chunks, multiplies it by 16, caps it by the
 //! player's view distance, and then checks horizontal squared distance.
 
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use glam::DVec3;

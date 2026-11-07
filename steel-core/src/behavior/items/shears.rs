@@ -69,6 +69,7 @@ impl ItemBehavior for ShearsItem {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::prelude::*;
     use std::io::Cursor;
     use std::sync::Arc;
 
@@ -92,7 +93,7 @@ mod tests {
     use crate::behavior::{BlockHitResult, InteractionResult, ItemBehavior, UseOnContext};
     use crate::bootstrap::init_globals;
     use crate::chunk::chunk_holder::ChunkHolder;
-    use crate::entity::Entity;
+
     use crate::player::connection::NetworkConnection;
     use crate::player::{Player, PlayerConnection, ResetReason};
     use crate::test_support::{

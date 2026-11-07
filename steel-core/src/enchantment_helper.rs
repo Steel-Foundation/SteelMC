@@ -1,5 +1,6 @@
 mod item_in_use;
 
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use item_in_use::EnchantedItemInUse;
@@ -1006,6 +1007,7 @@ fn damage_source_predicate_matches(
 
 #[cfg(test)]
 mod tests {
+
     use crate::entity::EntitySyncedData;
     use crate::entity::LivingProps;
     use crate::entity::component::Has;

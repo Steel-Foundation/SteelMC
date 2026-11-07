@@ -1,5 +1,6 @@
 //! `/execute if` and `/execute unless` conditions.
 
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use simdnbt::owned::NbtTag;

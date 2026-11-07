@@ -1,3 +1,4 @@
+use crate::entity::prelude::*;
 use std::sync::{
     Arc, Weak,
     atomic::{AtomicI32, Ordering},

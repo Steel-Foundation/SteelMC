@@ -5,6 +5,7 @@ use super::{
     InteractionResult, InventoryTickContext, ItemRef, ItemStack, Living, Player, SoundEventRef,
     equipment_items_to_packet_items, vanilla_game_events,
 };
+use crate::entity::prelude::*;
 
 impl Living<'_> {
     /// Checks if the entity is currently using an item.

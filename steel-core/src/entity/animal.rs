@@ -5,6 +5,7 @@
 //! and `mobInteract` layers are pipeline stages in this module, and
 //! [`ai_step`] / [`mob_interact`] build an animal's whole vanilla chain.
 
+use crate::entity::prelude::*;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 

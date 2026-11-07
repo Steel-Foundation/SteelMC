@@ -1,5 +1,6 @@
 //! `TeleportRandomlyConsumeEffect` behavior (chorus fruit).
 
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use steel_protocol::packets::game::SoundSource;

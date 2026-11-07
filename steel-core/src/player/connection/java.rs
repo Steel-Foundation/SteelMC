@@ -990,12 +990,10 @@ impl NetworkConnection for JavaConnection {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::prelude::*;
     use std::array;
 
-    use crate::{
-        entity::Entity as _,
-        test_support::{TestPlayerBuilder, fresh_test_world},
-    };
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world};
     use rustc_hash::FxHashMap;
     use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
     use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};

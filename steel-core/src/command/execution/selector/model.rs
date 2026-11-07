@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::prelude::*;
 use crate::server::Server;
 
 #[derive(Clone, Copy)]

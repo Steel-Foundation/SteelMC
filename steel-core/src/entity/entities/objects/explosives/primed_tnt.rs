@@ -1,5 +1,6 @@
 //! Primed TNT entity behavior.
 
+use crate::entity::prelude::*;
 use std::{
     f32::consts::TAU,
     sync::{Arc, Weak},
