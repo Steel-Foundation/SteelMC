@@ -4,6 +4,8 @@ use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 use crate::RegistryTags;
+use crate::sound_event::SoundEventRef;
+use crate::sound_events;
 
 /// Represents a damage type definition from a data pack JSON file.
 #[derive(Debug)]
@@ -33,6 +35,20 @@ pub enum DamageEffects {
     Burning,
     Poking,
     Freezing,
+}
+
+impl DamageEffects {
+    /// The sound a player makes when hurt with these effects.
+    #[must_use]
+    pub const fn sound(self) -> SoundEventRef {
+        match self {
+            Self::Hurt | Self::Thorns => &sound_events::ENTITY_PLAYER_HURT,
+            Self::Drowning => &sound_events::ENTITY_PLAYER_HURT_DROWN,
+            Self::Burning => &sound_events::ENTITY_PLAYER_HURT_ON_FIRE,
+            Self::Poking => &sound_events::ENTITY_PLAYER_HURT_SWEET_BERRY_BUSH,
+            Self::Freezing => &sound_events::ENTITY_PLAYER_HURT_FREEZE,
+        }
+    }
 }
 
 /// How the death message is formatted.

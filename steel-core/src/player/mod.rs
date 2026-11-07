@@ -56,7 +56,8 @@ pub use session::PlayerSession;
 pub(crate) use session::PlayerSessionId;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
 use steel_math::RAD_TO_DEG_F64;
@@ -70,6 +71,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::game_rules::GameRuleRef;
+use steel_registry::particle_type::{BlockParticleOption, ParticleData};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
@@ -77,6 +79,7 @@ use steel_registry::vanilla_game_rules::{
     DROWNING_DAMAGE, FALL_DAMAGE, FIRE_DAMAGE, FREEZE_DAMAGE, IMMEDIATE_RESPAWN, KEEP_INVENTORY,
     SHOW_DEATH_MESSAGES,
 };
+use steel_registry::vanilla_particle_types;
 use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags,
     vanilla_entities, vanilla_game_events,
@@ -280,6 +283,8 @@ pub struct Player {
 
     /// Whether the player has completed the vanilla End credits flow.
     seen_credits: SyncMutex<bool>,
+    /// Set by a mace smash on a grounded target; the next landing sends a block burst.
+    spawn_extra_particles_on_fall: AtomicBool,
 
     /// Vanilla `ServerPlayer.wonGame`; transient while the End credits screen is open.
     won_game: SyncMutex<bool>,
@@ -642,6 +647,7 @@ impl Player {
             experience: SyncMutex::new(Experience::default()),
             permissions: SyncMutex::new(PlayerPermissionState::default()),
             seen_credits: SyncMutex::new(false),
+            spawn_extra_particles_on_fall: AtomicBool::new(false),
             won_game: SyncMutex::new(false),
             chunk_send_epoch: SyncMutex::new(0),
             residence: SyncMutex::new(PlayerResidenceState::new()),
@@ -1323,6 +1329,14 @@ impl Player {
     const ENTITY: EntityProps<Self> = EntityProps {
         is_hard_collision_relevant: |_| false,
         dimension_changing_delay: |_| 10,
+        check_fall_damage: Self::entity_check_fall_damage,
+        on_explosion_hit: |player, explosion_source| {
+            let from_wind_charge = explosion_source
+                .is_some_and(|source| source.entity_type() == &vanilla_entities::WIND_CHARGE);
+            player
+                .living()
+                .set_ignore_fall_damage_from_current_impulse(from_wind_charge, player.position());
+        },
         block_speed_factor: |player| {
             if player.abilities.lock().flying || player.living().is_fall_flying() {
                 1.0
@@ -1394,6 +1408,59 @@ impl Player {
         if !self.is_spectator() {
             self.do_water_splash_effect_default();
         }
+    }
+
+    /// `ServerPlayer.checkFallDamage`: the mace smash burst on landing, then the living step.
+    fn entity_check_fall_damage(
+        &self,
+        entity: &SharedEntity,
+        vertical_movement: f64,
+        on_ground: bool,
+        on_state: BlockStateId,
+        pos: BlockPos,
+        world: &Arc<World>,
+    ) {
+        let fall_distance = self.fall_distance();
+        if on_ground && fall_distance > 0.0 && self.spawn_extra_particles_on_fall() {
+            let count = (50.0 * fall_distance).clamp(0.0, 200.0) as i32;
+            let spread = f64::from(0.3_f32);
+            world.send_particles(
+                ParticleData::new(
+                    &vanilla_particle_types::BLOCK,
+                    BlockParticleOption::new(on_state),
+                ),
+                DVec3::new(
+                    f64::from(pos.x()) + 0.5,
+                    f64::from(pos.y()) + 1.0,
+                    f64::from(pos.z()) + 0.5,
+                ),
+                count,
+                DVec3::splat(spread),
+                f64::from(0.15_f32),
+            );
+            self.set_spawn_extra_particles_on_fall(false);
+        }
+
+        self.living().check_living_fall_damage(
+            entity,
+            vertical_movement,
+            on_ground,
+            on_state,
+            pos,
+            world,
+        );
+    }
+
+    /// Whether the next landing sends the mace smash burst.
+    #[must_use]
+    pub fn spawn_extra_particles_on_fall(&self) -> bool {
+        self.spawn_extra_particles_on_fall.load(Ordering::Relaxed)
+    }
+
+    /// Sets whether the next landing sends the mace smash burst.
+    pub fn set_spawn_extra_particles_on_fall(&self, spawn: bool) {
+        self.spawn_extra_particles_on_fall
+            .store(spawn, Ordering::Relaxed);
     }
 
     fn entity_display_name(&self) -> TextComponent {
@@ -1687,6 +1754,8 @@ const fn protocol_look_at_anchor(anchor: EntityAnchor) -> LookAtAnchor {
 /// `ServerPlayer`'s overrides of the living hooks.
 impl Player {
     const LIVING: LivingProps<Self> = LivingProps {
+        hurt_sound: |_, source| Some(source.damage_type.effects.sound()),
+        death_sound: |_| Some(&sound_events::ENTITY_PLAYER_DEATH),
         indicate_damage: Self::living_indicate_damage,
         tick_living_entity: Self::living_tick_living_entity,
         is_using_item: Self::living_is_using_item,

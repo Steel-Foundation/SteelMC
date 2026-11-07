@@ -69,6 +69,7 @@ fn sample_player_file(data_version: i32) -> PlayerDataFile {
         enchantment_seed: 1234,
         score: 9,
         seen_credits: true,
+        spawn_extra_particles_on_fall: false,
         root_vehicle: None,
         respawn_config: None,
         ender_pearls: Vec::new(),

@@ -27,7 +27,7 @@ use crate::{
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
-pub const PLAYER_DATA_VERSION: i32 = 7;
+pub const PLAYER_DATA_VERSION: i32 = 8;
 
 /// Persistent player data saved by Steel's storage backend.
 ///
@@ -118,6 +118,9 @@ pub struct PersistentPlayerData {
 
     /// Whether this player has already seen the End credits screen.
     pub seen_credits: bool,
+
+    /// Whether the next landing sends the mace smash burst.
+    pub spawn_extra_particles_on_fall: bool,
 
     /// Vanilla one-player root vehicle tree stored with the player instead of chunk data.
     pub root_vehicle: Option<PersistentRootVehicle>,
@@ -290,6 +293,7 @@ impl PersistentPlayerData {
             enchantment_seed,
             score,
             seen_credits: player.has_seen_credits(),
+            spawn_extra_particles_on_fall: player.spawn_extra_particles_on_fall(),
             root_vehicle,
             respawn_config: player.respawn_config(),
 
@@ -528,6 +532,7 @@ impl PersistentPlayerData {
         }
         player.set_score(self.score);
         player.set_seen_credits(self.seen_credits);
+        player.set_spawn_extra_particles_on_fall(self.spawn_extra_particles_on_fall);
 
         // Statistics
         {

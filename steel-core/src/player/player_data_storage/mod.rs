@@ -89,6 +89,7 @@ struct PlayerDataFile {
     enchantment_seed: i32,
     score: i32,
     seen_credits: bool,
+    spawn_extra_particles_on_fall: bool,
     root_vehicle: Option<RootVehicleFile>,
     respawn_config: Option<RespawnConfigFile>,
     ender_pearls: Vec<EnderPearlFile>,
@@ -344,6 +345,7 @@ impl PlayerDataFile {
             enchantment_seed: data.enchantment_seed,
             score: data.score,
             seen_credits: data.seen_credits,
+            spawn_extra_particles_on_fall: data.spawn_extra_particles_on_fall,
             root_vehicle: data
                 .root_vehicle
                 .clone()
@@ -430,6 +432,7 @@ impl PlayerDataFile {
             enchantment_seed: self.enchantment_seed,
             score: self.score,
             seen_credits: self.seen_credits,
+            spawn_extra_particles_on_fall: self.spawn_extra_particles_on_fall,
             root_vehicle: self.root_vehicle.map(|root_vehicle| PersistentRootVehicle {
                 attach: root_vehicle.attach,
                 entity: root_vehicle.entity,

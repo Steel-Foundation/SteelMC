@@ -187,6 +187,11 @@ impl ItemBehavior for MaceItem {
             player.send_packet(CSetEntityMotion::new(attacker.id(), attacker.velocity()));
         }
 
+        if target.on_ground()
+            && let Some(player) = attacker.as_player()
+        {
+            player.set_spawn_extra_particles_on_fall(true);
+        }
         if let Some(world) = attacker.level() {
             world.play_sound_at(
                 Self::smash_sound(target, attacker),

@@ -1820,3 +1820,23 @@ fn sword_does_not_destroy_blocks_in_creative() {
         "swords should not destroy blocks when player is in creative mode."
     );
 }
+
+#[test]
+fn mace_landing_burst_waits_for_a_landing_with_fall_distance() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("mace_landing_burst");
+    let world = &world_fixture.world;
+    let player = test_player(Arc::clone(world));
+    let entity: SharedEntity = Arc::<Player>::clone(&player);
+    let state = vanilla_blocks::STONE.default_state();
+    let pos = BlockPos::new(0, 63, 0);
+    player.set_spawn_extra_particles_on_fall(true);
+
+    Arc::clone(&entity).check_fall_damage(0.0, true, state, pos, world);
+    assert!(player.spawn_extra_particles_on_fall());
+
+    player.set_fall_distance(3.0);
+    Arc::clone(&entity).check_fall_damage(0.0, true, state, pos, world);
+    assert!(!player.spawn_extra_particles_on_fall());
+}
