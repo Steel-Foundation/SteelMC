@@ -7,7 +7,6 @@ use proc_macro2::{Ident, Literal, TokenStream};
 use quote::{format_ident, quote};
 
 use super::TranspilerInput;
-use super::analyze::CLIMATE_ROUTERS;
 use super::context::TranspileContext;
 use super::naming::{
     grid_field_ident, named_fn_field_ident, named_fn_ident, noise_field_ident,
@@ -19,8 +18,6 @@ struct CachedValue {
     active: Ident,
     grid: Ident,
     compute: TokenStream,
-    /// Whether a climate router reads it.
-    climate: bool,
 }
 
 impl TranspileContext {
@@ -169,7 +166,6 @@ impl TranspileContext {
     /// all flat-cached values are pre-computed for the chunk's quart grid.
     /// `ensure()` then does O(1) grid lookups for in-bounds positions and
     /// falls back to on-the-fly computation for out-of-bounds positions.
-    #[expect(clippy::too_many_lines, reason = "splitting would hurt readability")]
     pub(super) fn gen_column_cache(&mut self, input: &TranspilerInput) -> TokenStream {
         // Grid dimensions: (16 / cell_width + 1)² entries, known at compile time.
         let grid_side = 16 / input.cell_width + 1;
@@ -178,61 +174,24 @@ impl TranspileContext {
         let grid_total_lit = Literal::usize_unsuffixed(grid_total);
 
         let values = self.column_cache_values();
-        let climate: Vec<&CachedValue> = values.iter().filter(|v| v.climate).collect();
-
         let active_fields = values.iter().map(|v| &v.active);
         let grid_fields = values.iter().map(|v| &v.grid);
         let active_defaults = active_fields.clone();
         let grid_defaults = grid_fields.clone();
-
-        let compute = |values: &[&CachedValue]| -> Vec<TokenStream> {
-            values
-                .iter()
-                .map(
-                    |CachedValue {
-                         active, compute, ..
-                     }| quote! { self.#active = #compute; },
-                )
-                .collect()
-        };
-        let load = |values: &[&CachedValue]| -> Vec<TokenStream> {
-            values
-                .iter()
-                .map(|CachedValue { active, grid, .. }| quote! { self.#active = self.#grid[idx]; })
-                .collect()
-        };
-        // Computes each grid point in topological order, so dependent values read the
-        // active fields, then stores them into the grid.
-        let fill_grid = |values: &[&CachedValue]| {
-            let compute = compute(values);
-            let store = values
-                .iter()
-                .map(|CachedValue { active, grid, .. }| quote! { self.#grid[idx] = self.#active; });
-            quote! {
-                self.grid_first_quart_x = chunk_block_x >> 2;
-                self.grid_first_quart_z = chunk_block_z >> 2;
-                self.has_grid = true;
-                self.valid = false;
-                self.climate_valid = false;
-                for rel_z in 0..Self::GRID_SIDE {
-                    for rel_x in 0..Self::GRID_SIDE {
-                        let x = ((self.grid_first_quart_x + rel_x) << 2) as f64;
-                        let z = ((self.grid_first_quart_z + rel_z) << 2) as f64;
-                        let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
-                        #(#compute)*
-                        #(#store)*
-                    }
-                }
-            }
-        };
-
-        let all: Vec<&CachedValue> = values.iter().collect();
-        let fill_grid_all = fill_grid(&all);
-        let fill_grid_climate = fill_grid(&climate);
-        let compute_all = compute(&all);
-        let compute_climate = compute(&climate);
-        let load_all = load(&all);
-        let load_climate = load(&climate);
+        let compute = values.iter().map(
+            |CachedValue {
+                 active, compute, ..
+             }| {
+                quote! { self.#active = #compute; }
+            },
+        );
+        let compute_at_grid = compute.clone();
+        let load = values
+            .iter()
+            .map(|CachedValue { active, grid, .. }| quote! { self.#active = self.#grid[idx]; });
+        let store = values
+            .iter()
+            .map(|CachedValue { active, grid, .. }| quote! { self.#grid[idx] = self.#active; });
 
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
@@ -256,14 +215,10 @@ impl TranspileContext {
                 /// Z coordinate used to evaluate the cached values.
                 qz: i32,
                 valid: bool,
-                /// Whether the climate fields hold `qx`/`qz` (also true when `valid`).
-                climate_valid: bool,
                 // ── Grid backing store ──
                 grid_first_quart_x: i32,
                 grid_first_quart_z: i32,
                 has_grid: bool,
-                /// Whether the grid holds every field, not only the climate ones.
-                grid_is_full: bool,
                 // Active value fields (read by compute functions)
                 #(pub #active_fields: f32,)*
                 // Grid arrays (SoA layout, fixed-size per dimension)
@@ -283,11 +238,9 @@ impl TranspileContext {
                         qx: i32::MIN,
                         qz: i32::MIN,
                         valid: false,
-                        climate_valid: false,
                         grid_first_quart_x: 0,
                         grid_first_quart_z: 0,
                         has_grid: false,
-                        grid_is_full: false,
                         #(#active_defaults: 0.0,)*
                         #(#grid_defaults: [0.0; #grid_total_lit],)*
                     }
@@ -311,8 +264,21 @@ impl TranspileContext {
                 /// coordinates.
                 pub fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32,
                                  noises: &#noises) {
-                    self.grid_is_full = true;
-                    #fill_grid_all
+                    self.grid_first_quart_x = chunk_block_x >> 2;
+                    self.grid_first_quart_z = chunk_block_z >> 2;
+                    self.has_grid = true;
+                    self.valid = false;
+                    // Compute in topological order, so dependent values read the active
+                    // fields, then store them into the grid.
+                    for rel_z in 0..Self::GRID_SIDE {
+                        for rel_x in 0..Self::GRID_SIDE {
+                            let x = ((self.grid_first_quart_x + rel_x) << 2) as f64;
+                            let z = ((self.grid_first_quart_z + rel_z) << 2) as f64;
+                            let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
+                            #(#compute_at_grid)*
+                            #(#store)*
+                        }
+                    }
                 }
 
                 /// Ensure the cache is populated for the given `(x, z)` block coordinates.
@@ -328,43 +294,13 @@ impl TranspileContext {
                     self.qx = x;
                     self.qz = z;
                     self.valid = true;
-                    self.climate_valid = true;
-                    if self.grid_is_full && let Some(idx) = self.grid_index(x, z) {
-                        #(#load_all)*
-                        return;
-                    }
-                    let x = x as f64;
-                    let z = z as f64;
-                    #(#compute_all)*
-                }
-
-                /// [`Self::init_grid`] for the climate fields only. A later [`Self::ensure`]
-                /// recomputes the other fields instead of reading the partial grid.
-                pub fn init_grid_climate(&mut self, chunk_block_x: i32, chunk_block_z: i32,
-                                         noises: &#noises) {
-                    self.grid_is_full = false;
-                    #fill_grid_climate
-                }
-
-                /// [`Self::ensure`] for the fields the climate routers read. Leaves the other
-                /// fields stale, so it clears `valid`.
-                pub fn ensure_climate(&mut self, x: i32, z: i32, noises: &#noises) {
-                    self.x = x;
-                    self.z = z;
-                    if self.climate_valid && self.qx == x && self.qz == z {
-                        return;
-                    }
-                    self.qx = x;
-                    self.qz = z;
-                    self.valid = false;
-                    self.climate_valid = true;
                     if let Some(idx) = self.grid_index(x, z) {
-                        #(#load_climate)*
+                        #(#load)*
                         return;
                     }
                     let x = x as f64;
                     let z = z as f64;
-                    #(#compute_climate)*
+                    #(#compute)*
                 }
             }
         }
@@ -383,7 +319,6 @@ impl TranspileContext {
                     active: named_fn_field_ident(name),
                     grid: grid_field_ident(name),
                     compute: quote! { #compute_fn(noises, &*self, x, z) },
-                    climate: self.climate_names.contains(name),
                 }
             });
         let routers = self.flat_routers.iter().map(|name| {
@@ -392,7 +327,6 @@ impl TranspileContext {
                 active: router_cache_field_ident(name),
                 grid: router_grid_field_ident(name),
                 compute: quote! { #compute_fn(noises, &*self, x, z) },
-                climate: CLIMATE_ROUTERS.contains(&name.as_str()),
             }
         });
         let inline_noises = self
@@ -406,7 +340,6 @@ impl TranspileContext {
                     grid: format_ident!("grid_inline_noise_{}", idx),
                     // Only the chunk fill reads these, so they use vanilla's bulk order.
                     compute: quote! { noises.#noise_field.get_value_xz_bulk(x, z, #scale) },
-                    climate: false,
                 }
             });
         functions.chain(routers).chain(inline_noises).collect()

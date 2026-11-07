@@ -69,7 +69,7 @@ impl NetherClimateSampler {
         chunk_block_x: i32,
         chunk_block_z: i32,
     ) {
-        cache.init_grid_climate(chunk_block_x, chunk_block_z, &self.noises);
+        cache.init_grid(chunk_block_x, chunk_block_z, &self.noises);
     }
 
     /// Sample climate at a quart position.
@@ -87,7 +87,7 @@ impl NetherClimateSampler {
         let block_y = quart_y << 2;
         let block_z = quart_z << 2;
 
-        cache.ensure_climate(block_x, block_z, &self.noises);
+        cache.ensure(block_x, block_z, &self.noises);
 
         let block_x = f64::from(block_x);
         let block_y = f64::from(block_y);
