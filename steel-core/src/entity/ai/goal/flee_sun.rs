@@ -79,7 +79,7 @@ fn get_hide_pos(mob: &Mob<'_>, level: &World) -> Option<DVec3> {
     get_hide_pos_with(
         mob,
         |pos| level.can_see_sky(pos),
-        |pos| mob.get_walk_target_value(pos),
+        |pos| mob.walk_target_value(pos),
     )
 }
 

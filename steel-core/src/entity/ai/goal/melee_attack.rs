@@ -215,7 +215,7 @@ impl Goal for MeleeAttackGoal {
 
         let target_position = target.position();
         mob.mob_base().controls().lock().look_control.set_look_at(
-            DVec3::new(target_position.x, target.get_eye_y(), target_position.z),
+            DVec3::new(target_position.x, target.eye_y(), target_position.z),
             30.0,
             30.0,
         );

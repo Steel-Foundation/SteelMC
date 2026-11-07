@@ -39,12 +39,12 @@ fn living_armor_cover_counts_non_empty_humanoid_armor_slots() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
-    assert_f32_close(entity.living().get_armor_cover_percentage(), 0.0);
+    assert_f32_close(entity.living().armor_cover_percentage(), 0.0);
 
     entity.equip(EquipmentSlot::Head, ItemStack::new(&vanilla_items::STONE));
     entity.equip(EquipmentSlot::Feet, ItemStack::new(&vanilla_items::STONE));
 
-    assert_f32_close(entity.living().get_armor_cover_percentage(), 0.5);
+    assert_f32_close(entity.living().armor_cover_percentage(), 0.5);
 }
 
 #[test]
@@ -52,20 +52,20 @@ fn living_visibility_percent_uses_discrete_and_invisible_scaling() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
-    assert_f64_close(entity.living().get_visibility_percent(None), 1.0);
+    assert_f64_close(entity.living().visibility_percent(None), 1.0);
 
     EntitySyncedData::set_base_invisible_flag(&entity.entity_data, true);
 
     let invisible_without_armor = 0.7 * f64::from(0.1_f32);
     assert_f64_close(
-        entity.living().get_visibility_percent(None),
+        entity.living().visibility_percent(None),
         invisible_without_armor,
     );
 
     entity.set_shared_shift_key_down(true);
 
     assert_f64_close(
-        entity.living().get_visibility_percent(None),
+        entity.living().visibility_percent(None),
         0.8 * invisible_without_armor,
     );
 }
@@ -82,7 +82,7 @@ fn living_visibility_percent_uses_matching_mob_head_disguise() {
         ItemStack::new(&vanilla_items::SKELETON_SKULL),
     );
 
-    assert_f64_close(entity.living().get_visibility_percent(Some(&skeleton)), 0.5);
+    assert_f64_close(entity.living().visibility_percent(Some(&skeleton)), 0.5);
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn living_freezing_damages_fully_frozen_entities_on_frequency() {
 
     entity.living().tick_freezing();
 
-    assert_f32_close(entity.living().get_health(), 19.0);
+    assert_f32_close(entity.living().health(), 19.0);
 }
 
 #[test]
@@ -233,7 +233,7 @@ fn default_ai_step_ticks_freezing_after_travel() {
         entity.damage_type_keys(),
         vec![vanilla_damage_types::FREEZE.key.clone()]
     );
-    assert_f32_close(entity.living().get_health(), 19.0);
+    assert_f32_close(entity.living().health(), 19.0);
 }
 
 #[test]
@@ -257,7 +257,7 @@ fn freezing_damage_hurts_extra_tagged_entity_types() {
         1.0,
     ));
 
-    assert_f32_close(entity.living().get_health(), 15.0);
+    assert_f32_close(entity.living().health(), 15.0);
 }
 
 #[test]

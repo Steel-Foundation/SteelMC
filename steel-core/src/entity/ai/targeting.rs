@@ -98,7 +98,7 @@ impl TargetingConditions {
 
         if self.range > 0.0 {
             let modifier = if self.test_invisible {
-                target.get_visibility_percent(Some(targeter.entity()))
+                target.visibility_percent(Some(targeter.entity()))
             } else {
                 1.0
             };

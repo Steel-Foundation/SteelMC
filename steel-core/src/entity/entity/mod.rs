@@ -525,7 +525,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Default for [`Self::explosion_damage_origin`].
     final fn explosion_damage_origin_default(&self) -> DVec3 {
         let position = self.position();
-        DVec3::new(position.x, self.get_eye_y(), position.z)
+        DVec3::new(position.x, self.eye_y(), position.z)
     }
 
     /// Default for [`Self::ignore_explosion`].
@@ -922,8 +922,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         )
     }
 
-    /// Default for [`Self::get_relative_portal_position`].
-    final fn get_relative_portal_position_default(
+    /// Default for [`Self::relative_portal_position`].
+    final fn relative_portal_position_default(
         &self,
         axis: Axis,
         portal_area: FoundRectangle,
@@ -1757,47 +1757,43 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Default implementation returns the eye height from the entity type dimensions.
     /// Override for entities with pose-dependent eye heights (e.g., players).
-    final fn get_eye_height(&self) -> f64 {
+    final fn eye_height(&self) -> f64 {
         f64::from(self.base().dimensions().eye_height)
     }
 
     /// Returns the fluid-surface height threshold used for fluid-jump
     /// physics: 0.0 for entities with eye height under 0.4, otherwise 0.4.
-    final fn get_fluid_jump_threshold(&self) -> f64 {
-        if self.get_eye_height() < 0.4 {
-            0.0
-        } else {
-            0.4
-        }
+    final fn fluid_jump_threshold(&self) -> f64 {
+        if self.eye_height() < 0.4 { 0.0 } else { 0.4 }
     }
 
     /// `Entity.getRandomX`: X up to `spread` bounding-box widths either side of the center.
-    final fn get_random_x(&self, spread: f64) -> f64 {
+    final fn random_x(&self, spread: f64) -> f64 {
         let width = f64::from(self.base().dimensions().width);
         self.position().x + width * (2.0 * rng().random::<f64>() - 1.0) * spread
     }
 
     /// `Entity.getRandomY()`: Y anywhere within the bounding box height.
-    final fn get_random_y(&self) -> f64 {
+    final fn random_y(&self) -> f64 {
         let height = f64::from(self.base().dimensions().height);
         self.position().y + height * rng().random::<f64>()
     }
 
     /// `Entity.getRandomY(spread)`: Y up to `spread` bounding-box heights either side of the feet.
-    final fn get_random_y_spread(&self, spread: f64) -> f64 {
+    final fn random_y_spread(&self, spread: f64) -> f64 {
         let height = f64::from(self.base().dimensions().height);
         self.position().y + height * (2.0 * rng().random::<f64>() - 1.0) * spread
     }
 
     /// `Entity.getRandomZ`: Z up to `spread` bounding-box widths either side of the center.
-    final fn get_random_z(&self, spread: f64) -> f64 {
+    final fn random_z(&self, spread: f64) -> f64 {
         let width = f64::from(self.base().dimensions().width);
         self.position().z + width * (2.0 * rng().random::<f64>() - 1.0) * spread
     }
 
     /// Gets the Y coordinate of the entity's eyes.
-    final fn get_eye_y(&self) -> f64 {
-        self.position().y + self.get_eye_height()
+    final fn eye_y(&self) -> f64 {
+        self.position().y + self.eye_height()
     }
 
     /// Default for [`Self::is_in_wall`].
@@ -1813,7 +1809,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let position = self.position();
         let check_width = f64::from(self.base().dimensions().width * 0.8);
         let eye_box = entity_eye_suffocation_box(
-            DVec3::new(position.x, self.get_eye_y(), position.z),
+            DVec3::new(position.x, self.eye_y(), position.z),
             check_width,
         );
 
@@ -2222,17 +2218,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             EntityFluidContact::scan_with_currents(
                 &world,
                 self.position(),
-                self.get_eye_y(),
+                self.eye_y(),
                 self.bounding_box(),
                 self.is_pushed_by_fluid(),
             )
         } else {
-            EntityFluidContact::scan(
-                &world,
-                self.position(),
-                self.get_eye_y(),
-                self.bounding_box(),
-            )
+            EntityFluidContact::scan(&world, self.position(), self.eye_y(), self.bounding_box())
         };
         if advance_eye_water_history {
             self.base().set_fluid_interaction(contact);
@@ -3255,8 +3246,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     // These mirror vanilla's Entity class methods.
 
-    /// Default for [`Self::get_default_gravity`].
-    final fn get_default_gravity_default(&self) -> f64 {
+    /// Default for [`Self::default_gravity`].
+    final fn default_gravity_default(&self) -> f64 {
         0.0
     }
 
@@ -3285,28 +3276,28 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Gets the current gravity value.
     ///
-    /// Returns 0 if `no_gravity` is set, otherwise returns `get_default_gravity()`.
-    final fn get_gravity(&self) -> f64 {
+    /// Returns 0 if `no_gravity` is set, otherwise returns `default_gravity()`.
+    final fn gravity(&self) -> f64 {
         if self.is_no_gravity() {
             0.0
         } else {
-            self.get_default_gravity()
+            self.default_gravity()
         }
     }
 
-    /// Default for [`Self::get_air_drag`].
-    final fn get_air_drag_default(&self) -> f64 {
+    /// Default for [`Self::air_drag`].
+    final fn air_drag_default(&self) -> f64 {
         DEFAULT_AIR_DRAG
     }
 
-    /// Default for [`Self::get_effective_gravity`].
-    final fn get_effective_gravity_default(&self) -> f64 {
-        self.get_gravity()
+    /// Default for [`Self::effective_gravity`].
+    final fn effective_gravity_default(&self) -> f64 {
+        self.gravity()
     }
 
     /// Applies gravity to the entity's velocity.
     final fn apply_gravity(&self) {
-        let gravity = self.get_gravity();
+        let gravity = self.gravity();
         if gravity != 0.0 {
             let mut vel = self.velocity();
             vel.y -= gravity;
@@ -3447,8 +3438,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 result.actual_movement.y,
                 self.is_living_entity(),
                 self.is_suppressing_bounce(),
-                self.get_effective_gravity(),
-                self.get_air_drag(),
+                self.effective_gravity(),
+                self.air_drag(),
             );
 
             let next_velocity =

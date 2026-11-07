@@ -487,7 +487,7 @@ impl ChickenEntity {
     }
 
     fn entity_dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
-        let scale = self.living().get_scale();
+        let scale = self.living().scale();
         if self.animal().ageable().is_baby() {
             CHICKEN_BABY_DIMENSIONS.scale(scale)
         } else if self.entity_type.fixed {

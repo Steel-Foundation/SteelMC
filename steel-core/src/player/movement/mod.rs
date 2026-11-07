@@ -734,7 +734,7 @@ impl Player {
 
     /// Returns how long vanilla permits unsupported floating for this player's gravity.
     pub(super) fn maximum_flying_ticks(&self) -> i32 {
-        Self::maximum_flying_ticks_for_gravity(self.get_gravity())
+        Self::maximum_flying_ticks_for_gravity(self.gravity())
     }
 
     /// Returns how long vanilla permits unsupported floating for an entity gravity value.
@@ -787,7 +787,7 @@ impl Player {
             return false;
         }
 
-        let maximum_flying_ticks = Self::maximum_flying_ticks_for_gravity(vehicle.get_gravity());
+        let maximum_flying_ticks = Self::maximum_flying_ticks_for_gravity(vehicle.gravity());
         let should_disconnect = self
             .movement
             .lock()

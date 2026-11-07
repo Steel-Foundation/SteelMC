@@ -337,7 +337,7 @@ impl ExperienceOrbEntity {
         let player_pos = player.position();
         let delta = DVec3::new(
             player_pos.x - self.position().x,
-            player_pos.y + player.get_eye_height() / 2.0 - self.position().y,
+            player_pos.y + player.eye_height() / 2.0 - self.position().y,
             player_pos.z - self.position().z,
         );
         let length_sqr = delta.length_squared();
@@ -363,7 +363,7 @@ impl ExperienceOrbEntity {
         };
 
         let mut velocity = self.velocity() * friction;
-        if self.vertical_collision_below() && fall_speed < -self.get_gravity() {
+        if self.vertical_collision_below() && fall_speed < -self.gravity() {
             velocity.y = -fall_speed * BOUNCE_SCALE;
         }
         self.set_velocity(velocity);
@@ -414,7 +414,7 @@ impl ExperienceOrbEntity {
         do_water_splash_effect: |_| {},
         movement_emission: |_| EntityMovementEmission::None,
         tick: Self::entity_tick,
-        get_default_gravity: |_| DEFAULT_GRAVITY,
+        default_gravity: |_| DEFAULT_GRAVITY,
         block_pos_below_that_affects_movement: |entity| entity.on_pos(0.999_999),
         attackable: |_| false,
         sound_source: |_| SoundSource::Ambient,

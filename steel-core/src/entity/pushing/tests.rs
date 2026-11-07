@@ -137,12 +137,12 @@ fn pushes_match_sequential_contacts_at_the_cramming_boundary() {
                     actual
                         .as_living_entity()
                         .expect("actual living")
-                        .get_health()
+                        .health()
                         .to_bits(),
                     expected
                         .as_living_entity()
                         .expect("reference living")
-                        .get_health()
+                        .health()
                         .to_bits()
                 );
             }

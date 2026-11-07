@@ -860,10 +860,10 @@ fn hurt_uses_explicit_world_difficulty() {
 
     assert_eq!(player.get_world().difficulty(), Difficulty::Normal);
     assert_eq!(damage_world.difficulty(), Difficulty::Hard);
-    assert_eq!(player.living().get_health().to_bits(), 20.0_f32.to_bits());
+    assert_eq!(player.living().health().to_bits(), 20.0_f32.to_bits());
 
     assert!(player.hurt(damage_world, &source, 4.0));
-    assert_eq!(player.living().get_health().to_bits(), 14.0_f32.to_bits());
+    assert_eq!(player.living().health().to_bits(), 14.0_f32.to_bits());
 }
 
 #[test]
@@ -883,7 +883,7 @@ fn conditional_damage_does_not_scale_without_a_living_non_player_cause() {
         }
         let target = test_player(Arc::clone(world));
         assert!(target.hurt(world, &source, 4.0));
-        assert_eq!(target.living().get_health().to_bits(), 16.0_f32.to_bits());
+        assert_eq!(target.living().health().to_bits(), 16.0_f32.to_bits());
     }
 }
 
@@ -902,9 +902,9 @@ fn player_damage_applies_armor_and_absorption() {
 
     assert!(player.hurt(&world, &source, 10.0));
 
-    assert_eq!(player.living().get_health().to_bits(), 19.0_f32.to_bits());
+    assert_eq!(player.living().health().to_bits(), 19.0_f32.to_bits());
     assert_eq!(
-        player.living().get_absorption_amount().to_bits(),
+        player.living().absorption_amount().to_bits(),
         0.0_f32.to_bits()
     );
 }
@@ -921,13 +921,13 @@ fn player_absorption_amount_clamps_to_attribute_range() {
 
     player.living().set_absorption_amount(10.0);
     assert_eq!(
-        player.living().get_absorption_amount().to_bits(),
+        player.living().absorption_amount().to_bits(),
         4.0_f32.to_bits()
     );
 
     player.living().set_absorption_amount(-1.0);
     assert_eq!(
-        player.living().get_absorption_amount().to_bits(),
+        player.living().absorption_amount().to_bits(),
         0.0_f32.to_bits()
     );
 }
@@ -980,14 +980,14 @@ fn player_attack_applies_thorns_damage_and_breaks_enchanted_armor() {
         .set(EquipmentSlot::Chest, chestplate);
     attacker.living().detect_equipment_updates();
     victim.living().detect_equipment_updates();
-    let attacker_health = attacker.living().get_health();
-    let victim_health = victim.living().get_health();
+    let attacker_health = attacker.living().health();
+    let victim_health = victim.living().health();
     let target: SharedEntity = Arc::<Player>::clone(&victim);
 
     assert!(attacker.attack(&target));
 
-    assert!(victim.living().get_health() < victim_health);
-    assert!(attacker.living().get_health() < attacker_health);
+    assert!(victim.living().health() < victim_health);
+    assert!(attacker.living().health() < attacker_health);
     let retaliation = attacker
         .living()
         .last_damage_source()

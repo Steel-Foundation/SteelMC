@@ -237,7 +237,7 @@ impl Fixture {
         for (index, entity) in self.entities.iter().enumerate() {
             if let Some(living) = entity.as_living_entity() {
                 living.clear_sleeping_pos();
-                living.set_health(living.get_max_health());
+                living.set_health(living.max_health());
             }
 
             entity.set_no_physics(false);
@@ -298,10 +298,10 @@ impl Fixture {
             assert_eq!(
                 actual
                     .as_living_entity()
-                    .map(|living| living.get_health().to_bits()),
+                    .map(|living| living.health().to_bits()),
                 expected
                     .as_living_entity()
-                    .map(|living| living.get_health().to_bits()),
+                    .map(|living| living.health().to_bits()),
                 "{label}/{case}: health"
             );
             assert_eq!(

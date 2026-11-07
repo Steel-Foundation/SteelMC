@@ -9,7 +9,7 @@ fn chicken_initializes_vanilla_living_attributes_and_health() {
 
     let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-    assert_eq!(chicken.living().get_health().to_bits(), 4.0_f32.to_bits());
+    assert_eq!(chicken.living().health().to_bits(), 4.0_f32.to_bits());
     let attributes = chicken.living().attributes().lock();
     assert_eq!(
         attributes

@@ -20,7 +20,7 @@ impl MobEffectBehavior for PoisonBehavior {
     }
 
     fn apply_effect_tick(&self, world: &World, user: &Living<'_>, _amplifier: i32) -> bool {
-        if user.get_health() > 1.0 {
+        if user.health() > 1.0 {
             user.hurt(
                 world,
                 &DamageSource::environment(&vanilla_damage_types::MAGIC),

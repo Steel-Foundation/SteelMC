@@ -123,7 +123,7 @@ impl Goal for LookAtPlayerGoal {
         };
 
         let position = mob.position();
-        let origin = DVec3::new(position.x, mob.get_eye_y(), position.z);
+        let origin = DVec3::new(position.x, mob.eye_y(), position.z);
         self.look_at = match &self.look_at_type {
             LookAtTargetType::Player => world
                 .nearest_player(origin, self.look_distance, |player| {
@@ -189,9 +189,9 @@ impl Goal for LookAtPlayerGoal {
 
         let position = look_at.position();
         let target_y = if self.only_horizontal {
-            mob.get_eye_y()
+            mob.eye_y()
         } else {
-            look_at.get_eye_y()
+            look_at.eye_y()
         };
         mob.mob_base().controls().lock().look_control.set_look_at(
             DVec3::new(position.x, target_y, position.z),

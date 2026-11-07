@@ -100,7 +100,7 @@ impl Goal for FollowMobGoal {
 
     fn start(&mut self, mob: &Mob<'_>) {
         self.time_to_recalc_path = 0;
-        self.old_water_cost = mob.get_pathfinding_malus(PathType::Water);
+        self.old_water_cost = mob.pathfinding_malus(PathType::Water);
         mob.set_pathfinding_malus(PathType::Water, 0.0);
     }
 
@@ -122,7 +122,7 @@ impl Goal for FollowMobGoal {
         mob.mob_base().controls().lock().look_control.set_look_at(
             DVec3::new(
                 following_position.x,
-                following_mob.get_eye_y(),
+                following_mob.eye_y(),
                 following_position.z,
             ),
             10.0,
@@ -195,14 +195,14 @@ mod tests {
         goal.start(&mob.mob());
 
         assert_eq!(
-            mob.mob().get_pathfinding_malus(PathType::Water).to_bits(),
+            mob.mob().pathfinding_malus(PathType::Water).to_bits(),
             0.0_f32.to_bits()
         );
 
         goal.stop(&mob.mob());
 
         assert_eq!(
-            mob.mob().get_pathfinding_malus(PathType::Water).to_bits(),
+            mob.mob().pathfinding_malus(PathType::Water).to_bits(),
             4.0_f32.to_bits()
         );
     }
@@ -251,10 +251,7 @@ mod tests {
             .look_control
             .wanted_position();
         assert_eq!(wanted_position.x.to_bits(), 4.0_f64.to_bits());
-        assert_eq!(
-            wanted_position.y.to_bits(),
-            following_mob.get_eye_y().to_bits()
-        );
+        assert_eq!(wanted_position.y.to_bits(), following_mob.eye_y().to_bits());
         assert_eq!(wanted_position.z.to_bits(), 0.0_f64.to_bits());
     }
 }

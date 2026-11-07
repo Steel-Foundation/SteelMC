@@ -56,7 +56,7 @@ pub const fn mob_props<E: Parts>() -> MobProps<E> {
         ambient_sound_interval: |_| 120,
         remove_when_far_away: |_, _| false,
         is_pathfinder: |_| true,
-        get_walk_target_value: |animal, pos| walk_target_value(animal, pos),
+        walk_target_value: |animal, pos| walk_target_value(animal, pos),
         ..MobProps::new()
     }
 }

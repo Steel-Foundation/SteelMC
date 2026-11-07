@@ -265,7 +265,7 @@ impl PersistentPlayerData {
             is_in_powder_snow: fire_freeze.is_in_powder_snow(),
             was_in_powder_snow: fire_freeze.was_in_powder_snow(),
             has_visual_fire: fire_freeze.has_visual_fire(),
-            health: player.living().get_health(),
+            health: player.living().health(),
             game_mode: player.game_mode() as i32,
             prev_game_mode: player
                 .previous_game_mode()
@@ -361,7 +361,7 @@ impl Player {
         self.base()
             .set_fire_freeze_state(EntityFireFreezeState::new());
         self.sync_base_fire_freeze_entity_data();
-        self.living().set_health(self.living().get_max_health());
+        self.living().set_health(self.living().max_health());
         *self.abilities.lock() = Abilities::default();
         *self.inventory.lock() = PlayerInventory::new();
         *self.ender_chest_inventory.lock() = PlayerEnderChestContainer::new();

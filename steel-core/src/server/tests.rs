@@ -331,7 +331,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
         assert_eq!(mismatch_player.position(), mismatch_spawn.position);
         assert_eq!(mismatch_player.velocity(), DVec3::ZERO);
         assert_eq!(
-            mismatch_player.living().get_health().to_bits(),
+            mismatch_player.living().health().to_bits(),
             7.0_f32.to_bits()
         );
         let restores = server.prepare_domain_restores(&mismatch_player, &mismatch_state, true);
@@ -380,7 +380,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
         assert_eq!(matching_player.position(), saved_position);
         assert_eq!(matching_player.velocity(), saved_velocity);
         assert_eq!(
-            matching_player.living().get_health().to_bits(),
+            matching_player.living().health().to_bits(),
             7.0_f32.to_bits()
         );
         assert_eq!(
@@ -1274,7 +1274,7 @@ fn assert_default_domain_data(player: &Player) {
     assert!(!target_data.has_visual_fire);
     assert_eq!(
         target_data.health.to_bits(),
-        player.living().get_max_health().to_bits()
+        player.living().max_health().to_bits()
     );
     assert_eq!(
         target_data.abilities.flying_speed.to_bits(),
@@ -2524,7 +2524,7 @@ fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
                 WorldEntry::Exact(DESTINATION),
                 Box::new(|saved| saved.health = 0.0),
                 // As at login, the saved health carries over: the player arrives dead.
-                Box::new(|player, _| assert!(player.living().get_health() <= 0.0)),
+                Box::new(|player, _| assert!(player.living().health() <= 0.0)),
             ),
             (
                 "a saved ground and glide state that differ from the player",
@@ -3631,8 +3631,8 @@ fn death_respawn_replaces_the_live_player_incarnation() {
             1
         );
         assert_eq!(
-            replacement.living().get_health(),
-            replacement.living().get_max_health()
+            replacement.living().health(),
+            replacement.living().max_health()
         );
         assert!(replacement.living().last_damage_source().is_none());
         assert!(old_player.living().last_damage_source().is_some());

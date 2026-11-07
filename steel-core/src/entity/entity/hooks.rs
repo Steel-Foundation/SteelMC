@@ -270,7 +270,7 @@ macro_rules! entity_hook_list {
                 /// Gets the default gravity for this entity type.
                 ///
                 /// Vanilla values: `ItemEntity` = 0.04, `LivingEntity` = 0.08
-                fn get_default_gravity() -> f64 = get_default_gravity_default;
+                fn default_gravity() -> f64 = default_gravity_default;
                 /// Applies entity-specific implicit components carried by an item stack.
                 ///
                 /// Mirrors the overridable part of vanilla's `Entity.applyImplicitComponents`.
@@ -307,10 +307,10 @@ macro_rules! entity_hook_list {
                 /// Returns the portal cooldown, in ticks, applied after changing dimension.
                 fn dimension_changing_delay() -> i32 = dimension_changing_delay_default;
                 /// Returns this entity's position relative to the portal, in portal-local space.
-                fn get_relative_portal_position(
+                fn relative_portal_position(
                     axis: Axis,
                     portal_area: FoundRectangle,
-                ) -> DVec3 = get_relative_portal_position_default;
+                ) -> DVec3 = relative_portal_position_default;
                 /// Returns this entity's head yaw.
                 fn y_head_rot() -> f32 = y_head_rot_default;
                 /// Sets this entity's head yaw.
@@ -322,9 +322,9 @@ macro_rules! entity_hook_list {
                 /// Returns the block speed factor applied after movement.
                 fn block_speed_factor() -> f32 = block_speed_factor_default;
                 /// Returns the horizontal air drag applied after movement.
-                fn get_air_drag() -> f64 = get_air_drag_default;
+                fn air_drag() -> f64 = air_drag_default;
                 /// Returns the gravity applied this tick.
-                fn get_effective_gravity() -> f64 = get_effective_gravity_default;
+                fn effective_gravity() -> f64 = effective_gravity_default;
             }
             shared {
                 /// Called every game tick when the entity is in a ticked chunk.

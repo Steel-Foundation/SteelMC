@@ -912,7 +912,7 @@ impl EntityAnchor {
         let position = entity.position();
         match self {
             Self::Feet => position,
-            Self::Eyes => DVec3::new(position.x, entity.get_eye_y(), position.z),
+            Self::Eyes => DVec3::new(position.x, entity.eye_y(), position.z),
         }
     }
 }

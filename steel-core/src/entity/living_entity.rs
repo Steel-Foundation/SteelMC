@@ -28,7 +28,7 @@ entity_props! {
     pub struct LivingProps<E>: LivingHooks for Living
     where E: Parts => living {
         /// Current absorption hearts.
-        fn get_absorption_amount() -> f32 = get_absorption_amount_default;
+        fn absorption_amount() -> f32 = absorption_amount_default;
         /// Sets the absorption hearts.
         fn set_absorption_amount(amount: f32) = set_absorption_amount_default;
         /// Reacts to an equipped item breaking.
@@ -46,7 +46,7 @@ entity_props! {
         /// `LivingEntity.isUsingItem`.
         fn is_using_item() -> bool = is_using_item_default;
         /// `LivingEntity.getLuck`.
-        fn get_luck() -> f32 = get_luck_default;
+        fn luck() -> f32 = luck_default;
         /// `LivingEntity.isInvulnerableTo`.
         fn is_invulnerable_to(world: &World, source: &DamageSource) -> bool = is_invulnerable_to_default;
         /// `LivingEntity.hurtArmor`.
@@ -86,7 +86,7 @@ entity_props! {
         /// `LivingEntity.travel`.
         fn travel(entity: &SharedEntity, input: DVec3) -> Option<MoveResult> = travel_default;
         /// `LivingEntity.getFlyingSpeed`.
-        fn get_flying_speed() -> f32 = get_flying_speed_default;
+        fn flying_speed() -> f32 = flying_speed_default;
         /// `LivingEntity.getHurtSound`.
         fn hurt_sound(source: &DamageSource) -> Option<SoundEventRef> = hurt_sound_default;
         /// `LivingEntity.getDeathSound`.
@@ -134,7 +134,7 @@ entity_props! {
         /// Transforms the rider's raw input into this entity's movement input while ridden.
         fn ridden_input(controller: &Player, self_input: DVec3) -> DVec3 = ridden_input_default;
         /// Returns the water-movement slowdown multiplier.
-        fn get_water_slow_down() -> f32 = get_water_slow_down_default;
+        fn water_slow_down() -> f32 = water_slow_down_default;
         /// Returns the vertical friction used by `travelInAir`.
         fn air_travel_vertical_friction(horizontal_friction: f32) -> f32 = air_travel_vertical_friction_default;
     }
@@ -208,12 +208,12 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
                 .living()
                 .cause_living_fall_damage(fall_distance, damage_modifier, source)
         },
-        is_alive: |living| !living.is_removed() && living.living().get_health() > 0.0,
+        is_alive: |living| !living.is_removed() && living.living().health() > 0.0,
         update_data_before_sync: |living| living.living().sync_mob_effect_data(),
         is_pickable: |living| !living.is_removed(),
         is_pushable: |living| living.is_alive() && !living.is_spectator() && !living.on_climbable(),
         can_freeze: |living| living.living().default_living_can_freeze(),
-        get_default_gravity: |living| living.living().get_attribute_gravity(),
+        default_gravity: |living| living.living().attribute_gravity(),
         max_up_step: |living| {
             living
                 .living()
@@ -230,7 +230,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
                 let living = living.living();
                 entity_type
                     .dimensions
-                    .scale(living.get_age_scale() * living.get_scale())
+                    .scale(living.age_scale() * living.scale())
             }
         },
         check_fall_damage: |living, entity, vertical_movement, on_ground, on_state, pos, world| {
@@ -258,9 +258,9 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         can_use_portal: |living, ignore_passenger| {
             living.can_use_portal_default(ignore_passenger) && !living.living().is_sleeping()
         },
-        get_relative_portal_position: |living, axis, portal_area| {
+        relative_portal_position: |living, axis, portal_area| {
             reset_forward_direction_of_relative_portal_position(
-                living.get_relative_portal_position_default(axis, portal_area),
+                living.relative_portal_position_default(axis, portal_area),
             )
         },
         y_head_rot: |living| living.living().y_head_rot(),
@@ -268,7 +268,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         set_y_body_rot: |living, y_body_rot| living.living().set_y_body_rot(y_body_rot),
         is_in_wall: |living| !living.living().is_sleeping() && living.is_in_wall_default(),
         block_speed_factor: |living| living.living().living_block_speed_factor(),
-        get_air_drag: |living| {
+        air_drag: |living| {
             compute_modified_friction(
                 DEFAULT_AIR_DRAG,
                 living
@@ -278,7 +278,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
                     .required_value(vanilla_attributes::AIR_DRAG_MODIFIER),
             )
         },
-        get_effective_gravity: |living| living.living().get_effective_gravity(),
+        effective_gravity: |living| living.living().effective_gravity(),
         with_weapon_item: |living, visitor| {
             living
                 .living()
@@ -458,7 +458,7 @@ impl<'a> Living<'a> {
         clippy::unused_self,
         reason = "vanilla's base body; entity types override it through `LivingProps`"
     )]
-    pub const fn get_luck_default(&self) -> f32 {
+    pub const fn luck_default(&self) -> f32 {
         0.0
     }
 
@@ -533,7 +533,7 @@ impl<'a> Living<'a> {
 
     /// Appends vanilla-shaped living state used by command NBT predicates.
     pub fn save_command_nbt(&self, nbt: &mut NbtCompound) {
-        nbt.insert("Health", self.get_health());
+        nbt.insert("Health", self.health());
         nbt.insert(
             "HurtTime",
             NbtTag::Short(self.living_base().hurt_time() as i16),
@@ -542,7 +542,7 @@ impl<'a> Living<'a> {
             "DeathTime",
             NbtTag::Short(self.living_base().death_time() as i16),
         );
-        nbt.insert("AbsorptionAmount", self.get_absorption_amount());
+        nbt.insert("AbsorptionAmount", self.absorption_amount());
         nbt.insert(
             "current_impulse_context_reset_grace_time",
             self.living_base()
@@ -606,19 +606,19 @@ impl<'a> Living<'a> {
 
     /// Gets the current health of the entity.
     #[must_use]
-    pub fn get_health(&self) -> f32 {
+    pub fn health(&self) -> f32 {
         self.with_synced(|data| *data.health.get()).unwrap_or(0.0)
     }
 
     /// Sets the health of the entity, clamped between 0 and max health.
     pub fn set_health(&self, health: f32) {
-        let health = health.clamp(0.0, self.get_max_health());
+        let health = health.clamp(0.0, self.max_health());
         self.with_synced(|data| data.health.set(health));
     }
 
     /// Gets the maximum health from the attribute system.
     #[must_use]
-    pub fn get_max_health(&self) -> f32 {
+    pub fn max_health(&self) -> f32 {
         self.attributes()
             .lock()
             .required_value(vanilla_attributes::MAX_HEALTH) as f32
@@ -642,7 +642,7 @@ impl<'a> Living<'a> {
 
     /// Heals the entity by the specified amount.
     pub fn heal(&self, amount: f32) {
-        let current_health = self.get_health();
+        let current_health = self.health();
         if current_health > 0.0 {
             self.set_health(current_health + amount);
         }
@@ -651,7 +651,7 @@ impl<'a> Living<'a> {
     /// Returns true if the entity is dead or dying (health <= 0).
     #[must_use]
     pub fn is_dead_or_dying(&self) -> bool {
-        self.get_health() <= 0.0
+        self.health() <= 0.0
     }
 
     /// Returns whether this entity is currently a baby.
@@ -757,13 +757,13 @@ impl<'a> Living<'a> {
 
     /// Returns the render scale from age: 0.5 for babies, 1.0 for adults.
     #[must_use]
-    pub fn get_age_scale(&self) -> f32 {
+    pub fn age_scale(&self) -> f32 {
         if self.is_baby() { 0.5 } else { 1.0 }
     }
 
     /// Returns this entity's overall render scale, from the scale attribute.
     #[must_use]
-    pub fn get_scale(&self) -> f32 {
+    pub fn scale(&self) -> f32 {
         self.attributes()
             .lock()
             .get_value(vanilla_attributes::SCALE)
@@ -779,7 +779,7 @@ impl<'a> Living<'a> {
     /// Returns the fraction of armor slots that currently have equipment,
     /// used for armor-tint rendering.
     #[must_use]
-    pub fn get_armor_cover_percentage(&self) -> f32 {
+    pub fn armor_cover_percentage(&self) -> f32 {
         let mut covered_slots = 0;
         for slot in EquipmentSlot::ARMOR_SLOTS {
             self.with_equipment_slot(slot, &mut |item_stack| {
@@ -795,14 +795,14 @@ impl<'a> Living<'a> {
     /// Returns how visible this entity is, from 0.0 to 1.0: reduced while
     /// sneaking, invisible, or disguised with a matching mob head.
     #[must_use]
-    pub fn get_visibility_percent(&self, targeting_entity: Option<&dyn Entity>) -> f64 {
+    pub fn visibility_percent(&self, targeting_entity: Option<&dyn Entity>) -> f64 {
         let mut visibility_percent = 1.0;
         if self.is_discrete() {
             visibility_percent *= 0.8;
         }
 
         if self.is_invisible() {
-            visibility_percent *= 0.7 * f64::from(self.get_armor_cover_percentage().max(0.1));
+            visibility_percent *= 0.7 * f64::from(self.armor_cover_percentage().max(0.1));
         }
 
         if self.disguise_head_matches_targeting_entity(targeting_entity) {
@@ -1001,7 +1001,7 @@ impl<'a> Living<'a> {
             target,
             ClipBlockShape::Collider,
             ClipFluid::None,
-            target.get_eye_y(),
+            target.eye_y(),
         )
     }
 
@@ -1025,7 +1025,7 @@ impl<'a> Living<'a> {
 
         let position = self.position();
         let target_position = target.position();
-        let start = DVec3::new(position.x, self.get_eye_y(), position.z);
+        let start = DVec3::new(position.x, self.eye_y(), position.z);
         let end = DVec3::new(target_position.x, target_eye_y, target_position.z);
         if start.distance_squared(end) > 128.0 * 128.0 {
             return false;
@@ -1196,7 +1196,7 @@ impl<'a> Living<'a> {
 
     /// Reduces damage by the entity's armor value and toughness, unless the source bypasses armor.
     #[must_use]
-    pub fn get_damage_after_armor_absorb(&self, source: &DamageSource, mut damage: f32) -> f32 {
+    pub fn damage_after_armor_absorb(&self, source: &DamageSource, mut damage: f32) -> f32 {
         if !source.is(&vanilla_damage_type_tags::DamageTypeTag::BYPASSES_ARMOR) {
             self.hurt_armor(source, damage);
             let armor_toughness =
@@ -1207,7 +1207,7 @@ impl<'a> Living<'a> {
                 self,
                 damage,
                 source,
-                self.get_armor_value() as f32,
+                self.armor_value() as f32,
                 armor_toughness,
             );
         }
@@ -1216,7 +1216,7 @@ impl<'a> Living<'a> {
 
     /// Reduces damage based on the resistance effect, unless the source bypasses it or effects entirely.
     #[must_use]
-    pub fn get_damage_after_magic_absorb(&self, source: &DamageSource, mut damage: f32) -> f32 {
+    pub fn damage_after_magic_absorb(&self, source: &DamageSource, mut damage: f32) -> f32 {
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::BYPASSES_EFFECTS) {
             return damage;
         }
@@ -1256,7 +1256,7 @@ impl<'a> Living<'a> {
 
         let enchantment_armor = enchantment_helper::get_damage_protection(self, source);
         if enchantment_armor > 0.0 {
-            damage = combat_rules::get_damage_after_magic_absorb(damage, enchantment_armor);
+            damage = combat_rules::damage_after_magic_absorb(damage, enchantment_armor);
         }
         damage
     }
@@ -1267,11 +1267,11 @@ impl<'a> Living<'a> {
             return;
         }
 
-        let damage = self.get_damage_after_armor_absorb(source, amount);
-        let damage = self.get_damage_after_magic_absorb(source, damage);
+        let damage = self.damage_after_armor_absorb(source, amount);
+        let damage = self.damage_after_magic_absorb(source, damage);
         let original_damage = damage;
-        let damage = (damage - self.get_absorption_amount()).max(0.0);
-        self.set_absorption_amount(self.get_absorption_amount() - (original_damage - damage));
+        let damage = (damage - self.absorption_amount()).max(0.0);
+        self.set_absorption_amount(self.absorption_amount() - (original_damage - damage));
 
         let absorbed_damage = original_damage - damage;
         if (0.0..f32::MAX).contains(&absorbed_damage)
@@ -1285,8 +1285,8 @@ impl<'a> Living<'a> {
         }
 
         if damage != 0.0 {
-            self.set_health(self.get_health() - damage);
-            self.set_absorption_amount(self.get_absorption_amount() - damage);
+            self.set_health(self.health() - damage);
+            self.set_absorption_amount(self.absorption_amount() - damage);
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
         }
     }
@@ -1660,7 +1660,7 @@ impl<'a> Living<'a> {
 
     /// Gets the absorption amount (extra health from effects like absorption).
     #[must_use]
-    pub fn get_absorption_amount_default(&self) -> f32 {
+    pub fn absorption_amount_default(&self) -> f32 {
         self.living_base().absorption_amount()
     }
 
@@ -1872,7 +1872,7 @@ impl<'a> Living<'a> {
 
     /// Gets the entity's armor value from the attribute system.
     #[must_use]
-    pub fn get_armor_value(&self) -> i32 {
+    pub fn armor_value(&self) -> i32 {
         self.attributes()
             .lock()
             .get_value(vanilla_attributes::ARMOR)
@@ -1881,7 +1881,7 @@ impl<'a> Living<'a> {
 
     /// Gets the gravity value from the attribute system.
     #[must_use]
-    pub fn get_attribute_gravity(&self) -> f64 {
+    pub fn attribute_gravity(&self) -> f64 {
         self.attributes()
             .lock()
             .required_value(vanilla_attributes::GRAVITY)
@@ -1889,8 +1889,8 @@ impl<'a> Living<'a> {
 
     /// Returns this entity's gravity, reduced while falling under Slow Falling.
     #[must_use]
-    pub fn get_effective_gravity(&self) -> f64 {
-        let gravity = self.get_gravity();
+    pub fn effective_gravity(&self) -> f64 {
+        let gravity = self.gravity();
         if self.velocity().y <= 0.0 && self.has_mob_effect(vanilla_mob_effects::SLOW_FALLING) {
             gravity.min(0.01)
         } else {
@@ -2087,7 +2087,7 @@ impl<'a> Living<'a> {
         world
             .get_block_state(BlockPos::new(
                 self.position().x.floor() as i32,
-                self.get_eye_y().floor() as i32,
+                self.eye_y().floor() as i32,
                 self.position().z.floor() as i32,
             ))
             .get_block()
@@ -2924,7 +2924,7 @@ impl<'a> Living<'a> {
 
     /// Returns the jump-height bonus from the Jump Boost effect, scaling with amplifier.
     #[must_use]
-    pub fn get_jump_boost_power(&self) -> f32 {
+    pub fn jump_boost_power(&self) -> f32 {
         self.mob_effect(vanilla_mob_effects::JUMP_BOOST)
             .map_or(0.0, |effect| 0.1 * (effect.amplifier() as f32 + 1.0))
     }
@@ -2932,24 +2932,24 @@ impl<'a> Living<'a> {
     /// Returns jump velocity from the jump-strength attribute, scaled by
     /// `multiplier`, the standing block's jump factor, and Jump Boost.
     #[must_use]
-    pub fn get_jump_power_with_multiplier(&self, multiplier: f32) -> f32 {
+    pub fn jump_power_with_multiplier(&self, multiplier: f32) -> f32 {
         let jump_strength =
             self.attributes()
                 .lock()
                 .get_value(vanilla_attributes::JUMP_STRENGTH)
                 .unwrap_or(vanilla_attributes::JUMP_STRENGTH.default_value) as f32;
-        jump_strength * multiplier * self.block_jump_factor() + self.get_jump_boost_power()
+        jump_strength * multiplier * self.block_jump_factor() + self.jump_boost_power()
     }
 
     /// Returns this entity's jump power at the default multiplier.
     #[must_use]
-    pub fn get_jump_power(&self) -> f32 {
-        self.get_jump_power_with_multiplier(1.0)
+    pub fn jump_power(&self) -> f32 {
+        self.jump_power_with_multiplier(1.0)
     }
 
     /// Applies this entity's jump velocity, unless jump power is negligible.
     pub fn default_jump_from_ground(&self) {
-        let jump_power = self.get_jump_power();
+        let jump_power = self.jump_power();
         if jump_power <= 1.0E-5 {
             return;
         }
@@ -3004,7 +3004,7 @@ impl<'a> Living<'a> {
             self.fluid_contact().water_height()
         };
         let in_water_and_has_fluid_height = self.is_in_water() && fluid_height > 0.0;
-        let fluid_jump_threshold = self.get_fluid_jump_threshold();
+        let fluid_jump_threshold = self.fluid_jump_threshold();
         if !in_water_and_has_fluid_height
             || self.on_ground() && fluid_height <= fluid_jump_threshold
         {
@@ -3042,7 +3042,7 @@ impl<'a> Living<'a> {
 
     /// Returns the movement speed to use while being ridden.
     pub fn ridden_speed(&self, _controller: &Player) -> f32 {
-        self.get_speed()
+        self.speed()
     }
 
     /// Handles movement while this entity is being ridden and steered by a controlling player.
@@ -3190,7 +3190,7 @@ impl<'a> Living<'a> {
         clippy::unused_self,
         reason = "vanilla's base body; entity types override it through `LivingProps`"
     )]
-    pub const fn get_water_slow_down_default(&self) -> f32 {
+    pub const fn water_slow_down_default(&self) -> f32 {
         0.8
     }
 
@@ -3212,12 +3212,12 @@ impl<'a> Living<'a> {
     /// Returns airborne movement speed: scaled from this entity's speed when
     /// ridden by a player, otherwise a small constant.
     #[must_use]
-    pub fn get_flying_speed_default(&self) -> f32 {
+    pub fn flying_speed_default(&self) -> f32 {
         if self
             .controlling_passenger()
             .is_some_and(|passenger| passenger.entity_type() == &vanilla_entities::PLAYER)
         {
-            self.get_speed() * 0.1
+            self.speed() * 0.1
         } else {
             0.02
         }
@@ -3226,11 +3226,11 @@ impl<'a> Living<'a> {
     /// Returns movement speed adjusted by ground friction; airborne entities
     /// use flying speed instead.
     #[must_use]
-    pub fn get_friction_influenced_speed(&self, block_friction: f32) -> f32 {
+    pub fn friction_influenced_speed(&self, block_friction: f32) -> f32 {
         if self.on_ground() {
-            self.get_speed() * (0.216_000_02 / (block_friction * block_friction * block_friction))
+            self.speed() * (0.216_000_02 / (block_friction * block_friction * block_friction))
         } else {
-            self.get_flying_speed()
+            self.flying_speed()
         }
     }
 
@@ -3277,7 +3277,7 @@ impl<'a> Living<'a> {
 
     /// Applies gravity using vanilla living-entity effective gravity.
     pub fn apply_living_travel_gravity(&self) {
-        let gravity = self.get_effective_gravity();
+        let gravity = self.effective_gravity();
         if gravity != 0.0 {
             let mut velocity = self.velocity();
             velocity.y -= gravity;
@@ -3292,7 +3292,7 @@ impl<'a> Living<'a> {
         input: DVec3,
         block_friction: f32,
     ) -> Option<(DVec3, MoveResult)> {
-        self.move_relative(self.get_friction_influenced_speed(block_friction), input);
+        self.move_relative(self.friction_influenced_speed(block_friction), input);
         self.set_velocity(self.handle_on_climbable(self.velocity()));
         let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())?;
         let mut movement = self.velocity();
@@ -3322,7 +3322,7 @@ impl<'a> Living<'a> {
         let movement_y = if let Some(levitation_y) = self.levitation_travel_y_delta(movement.y) {
             movement.y + levitation_y
         } else {
-            movement.y - self.get_effective_gravity()
+            movement.y - self.effective_gravity()
         };
 
         if self.should_discard_friction() {
@@ -3341,7 +3341,7 @@ impl<'a> Living<'a> {
 
     /// Adjusts vertical movement while falling through a fluid to smooth the fall speed.
     #[must_use]
-    pub fn get_fluid_falling_adjusted_movement(
+    pub fn fluid_falling_adjusted_movement(
         &self,
         base_gravity: f64,
         is_falling: bool,
@@ -3388,8 +3388,7 @@ impl<'a> Living<'a> {
         {
             return;
         }
-        if !self.is_vehicle()
-            || self.fluid_contact().water_height() <= self.get_fluid_jump_threshold()
+        if !self.is_vehicle() || self.fluid_contact().water_height() <= self.fluid_jump_threshold()
         {
             return;
         }
@@ -3409,7 +3408,7 @@ impl<'a> Living<'a> {
         let mut slow_down = if self.is_sprinting() {
             0.9
         } else {
-            self.get_water_slow_down()
+            self.water_slow_down()
         };
         let mut speed = 0.02;
         let mut water_movement_efficiency = self.water_movement_efficiency();
@@ -3419,7 +3418,7 @@ impl<'a> Living<'a> {
 
         if water_movement_efficiency > 0.0 {
             slow_down += (0.546_000_06 - slow_down) * water_movement_efficiency;
-            speed += (self.get_speed() - speed) * water_movement_efficiency;
+            speed += (self.speed() - speed) * water_movement_efficiency;
         }
 
         if self.has_dolphins_grace() {
@@ -3438,11 +3437,7 @@ impl<'a> Living<'a> {
             movement.y * f64::from(0.8_f32),
             movement.z * f64::from(slow_down),
         );
-        self.set_velocity(self.get_fluid_falling_adjusted_movement(
-            base_gravity,
-            is_falling,
-            movement,
-        ));
+        self.set_velocity(self.fluid_falling_adjusted_movement(base_gravity, is_falling, movement));
         self.jump_out_of_fluid(old_y);
 
         Some(result)
@@ -3459,14 +3454,14 @@ impl<'a> Living<'a> {
     ) -> Option<MoveResult> {
         self.move_relative(0.02, input);
         let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())?;
-        if self.fluid_contact().lava_height() <= self.get_fluid_jump_threshold() {
+        if self.fluid_contact().lava_height() <= self.fluid_jump_threshold() {
             let movement = self.velocity();
             self.set_velocity(DVec3::new(
                 movement.x * 0.5,
                 movement.y * f64::from(0.8_f32),
                 movement.z * 0.5,
             ));
-            self.set_velocity(self.get_fluid_falling_adjusted_movement(
+            self.set_velocity(self.fluid_falling_adjusted_movement(
                 base_gravity,
                 is_falling,
                 self.velocity(),
@@ -3488,7 +3483,7 @@ impl<'a> Living<'a> {
     pub fn travel_in_fluid(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         let is_falling = self.velocity().y <= 0.0;
         let old_y = self.position().y;
-        let base_gravity = self.get_effective_gravity();
+        let base_gravity = self.effective_gravity();
         if self.is_in_water() {
             let result = self.travel_in_water(entity, input, base_gravity, is_falling, old_y);
             self.float_in_water_while_ridden();
@@ -3522,7 +3517,7 @@ impl<'a> Living<'a> {
         let pitch_radians = self.rotation().1.to_radians();
         let look_horizontal_length = horizontal_distance(look_angle);
         let move_horizontal_length = horizontal_distance(movement);
-        let gravity = self.get_effective_gravity();
+        let gravity = self.effective_gravity();
         let lift_force = f64::from(pitch_radians).cos().powi(2);
         movement.y += gravity * (-1.0 + lift_force * 0.75);
 
@@ -3767,7 +3762,7 @@ impl<'a> Living<'a> {
 
     /// Gets the entity's cached movement speed.
     #[must_use]
-    pub fn get_speed(&self) -> f32 {
+    pub fn speed(&self) -> f32 {
         self.living_base().speed()
     }
 
@@ -3834,8 +3829,8 @@ impl<'a> Living<'a> {
         let dirty = self.attributes().lock().drain_dirty_updates();
         for attr in dirty {
             if attr.key == vanilla_attributes::MAX_HEALTH.key {
-                let max = self.get_max_health();
-                if self.get_health() > max {
+                let max = self.max_health();
+                if self.health() > max {
                     self.set_health(max);
                 }
             } else if attr.key == vanilla_attributes::MAX_ABSORPTION.key {
@@ -3844,7 +3839,7 @@ impl<'a> Living<'a> {
                     .lock()
                     .get_value(vanilla_attributes::MAX_ABSORPTION)
                     .unwrap_or(0.0) as f32;
-                if self.get_absorption_amount() > max {
+                if self.absorption_amount() > max {
                     self.set_absorption_amount(max);
                 }
             } else if attr.key == vanilla_attributes::SCALE.key {

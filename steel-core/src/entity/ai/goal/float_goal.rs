@@ -19,7 +19,7 @@ impl Goal for FloatGoal {
     }
 
     fn can_use(&mut self, mob: &Mob<'_>) -> bool {
-        mob.is_in_water() && mob.fluid_contact().water_height() > mob.get_fluid_jump_threshold()
+        mob.is_in_water() && mob.fluid_contact().water_height() > mob.fluid_jump_threshold()
             || mob.is_in_lava()
     }
 

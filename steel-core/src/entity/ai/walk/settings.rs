@@ -26,7 +26,7 @@ impl MobPathSettings {
         let bounding_box = mob.bounding_box();
         let mut malus = [0.0; PathType::COUNT];
         for path_type in PathType::ALL {
-            malus[path_type.index()] = mob.get_pathfinding_malus(path_type);
+            malus[path_type.index()] = mob.pathfinding_malus(path_type);
         }
 
         let navigation = mob.mob_base().navigation().lock();

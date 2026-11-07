@@ -358,7 +358,7 @@ impl Player {
         if !self.lifecycle.lock().take_deferred_death_respawn() {
             return;
         }
-        if self.connection.closed() || self.living().get_health() > 0.0 {
+        if self.connection.closed() || self.living().health() > 0.0 {
             return;
         }
         self.respawn();
@@ -383,7 +383,7 @@ impl Player {
         handshake_packet: bool,
         perform_respawn: bool,
     ) -> bool {
-        let defer_death_respawn = perform_respawn && self.living().get_health() <= 0.0;
+        let defer_death_respawn = perform_respawn && self.living().health() <= 0.0;
         self.lifecycle
             .lock()
             .gate_domain_switch_packet(handshake_packet, defer_death_respawn)

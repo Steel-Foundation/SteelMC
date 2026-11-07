@@ -387,7 +387,7 @@ fn kill_uses_vanilla_living_and_non_living_paths() {
         living.damage_world_keys(),
         vec![source_world.key.to_string()]
     );
-    assert_f32_close(living.living().get_health(), 0.0);
+    assert_f32_close(living.living().health(), 0.0);
     assert_eq!(living.pose(), EntityPose::Dying);
     let Some(last_damage_source) = living.living().last_damage_source() else {
         panic!("kill damage should be timestamped in the victim world");
@@ -995,7 +995,7 @@ fn wither_rose_effect_ticks_vanilla_wither_damage() {
 
     entity.living().tick_mob_effects();
 
-    assert_f32_close(entity.living().get_health(), 19.0);
+    assert_f32_close(entity.living().health(), 19.0);
     assert_eq!(
         entity.damage_type_keys(),
         vec![vanilla_damage_types::WITHER.key.clone()]
@@ -1027,7 +1027,7 @@ fn wither_effect_only_damages_on_its_vanilla_interval() {
 
     entity.living().tick_mob_effects();
 
-    assert_f32_close(entity.living().get_health(), 20.0);
+    assert_f32_close(entity.living().health(), 20.0);
     assert_eq!(entity.damage_type_keys().len(), 0);
     assert_eq!(
         entity
@@ -1146,7 +1146,7 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
         .with_health(10.0);
     HealOrHarmBehavior { is_harm: false }.apply_effect_tick(world, &living.living(), 0);
     assert_eq!(
-        living.living().get_health(),
+        living.living().health(),
         14.0,
         "instant health heals a living mob"
     );
@@ -1156,7 +1156,7 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
         .with_health(10.0);
     HealOrHarmBehavior { is_harm: false }.apply_effect_tick(world, &zombie.living(), 0);
     assert_eq!(
-        zombie.living().get_health(),
+        zombie.living().health(),
         4.0,
         "instant health hurts an inverted (undead) mob"
     );
@@ -1166,7 +1166,7 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
         .with_health(10.0);
     HealOrHarmBehavior { is_harm: true }.apply_effect_tick(world, &living.living(), 0);
     assert_eq!(
-        living.living().get_health(),
+        living.living().health(),
         4.0,
         "instant damage hurts a living mob"
     );
@@ -1176,7 +1176,7 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
         .with_health(10.0);
     HealOrHarmBehavior { is_harm: true }.apply_effect_tick(world, &zombie.living(), 0);
     assert_eq!(
-        zombie.living().get_health(),
+        zombie.living().health(),
         14.0,
         "instant damage heals an inverted (undead) mob"
     );
@@ -1190,7 +1190,7 @@ fn adding_absorption_effect_grants_absorption_hearts() {
     init_behaviors();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    assert_eq!(entity.living().get_absorption_amount(), 0.0);
+    assert_eq!(entity.living().absorption_amount(), 0.0);
 
     entity
         .living()
@@ -1200,7 +1200,7 @@ fn adding_absorption_effect_grants_absorption_hearts() {
             0,
         ));
     assert_eq!(
-        entity.living().get_absorption_amount(),
+        entity.living().absorption_amount(),
         4.0,
         "amplifier 0 grants 4 absorption hearts, clamped against the effect's own MAX_ABSORPTION bump"
     );
@@ -1213,7 +1213,7 @@ fn adding_absorption_effect_grants_absorption_hearts() {
             2400,
             0,
         ));
-    assert_eq!(entity.living().get_absorption_amount(), 4.0);
+    assert_eq!(entity.living().absorption_amount(), 4.0);
 
     // A higher amplifier raises the max, matching vanilla's `Math.max`.
     entity
@@ -1223,7 +1223,7 @@ fn adding_absorption_effect_grants_absorption_hearts() {
             2400,
             1,
         ));
-    assert_eq!(entity.living().get_absorption_amount(), 8.0);
+    assert_eq!(entity.living().absorption_amount(), 8.0);
 }
 
 struct ControlledVehicleTestEntity {
@@ -1329,7 +1329,7 @@ fn living_relative_portal_position_resets_forward_offset() {
     let dimensions = entity.dimensions_for_pose(entity.pose());
 
     assert_vec3_close(
-        entity.get_relative_portal_position(Axis::X, portal_area),
+        entity.relative_portal_position(Axis::X, portal_area),
         DVec3::new(
             0.5,
             2.0 / (f64::from(portal_area.axis2_size) - f64::from(dimensions.height)),

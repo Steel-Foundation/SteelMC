@@ -253,7 +253,7 @@ impl Player {
     }
 
     fn entity_is_pushable(&self) -> bool {
-        self.living().get_health() > 0.0 && !self.is_spectator() && !self.on_climbable()
+        self.living().health() > 0.0 && !self.is_spectator() && !self.on_climbable()
     }
 
     fn entity_can_freeze(&self) -> bool {
@@ -273,7 +273,7 @@ impl Player {
     }
 
     fn entity_can_be_hit_by_projectile(&self) -> bool {
-        self.living().get_health() > 0.0 && self.is_pickable()
+        self.living().health() > 0.0 && self.is_pickable()
     }
 
     fn entity_known_movement(&self) -> DVec3 {
@@ -381,7 +381,7 @@ impl Player {
         if pose == EntityPose::Sleeping || self.entity_type().fixed {
             dimensions
         } else {
-            dimensions.scale(self.living().get_scale())
+            dimensions.scale(self.living().scale())
         }
     }
 

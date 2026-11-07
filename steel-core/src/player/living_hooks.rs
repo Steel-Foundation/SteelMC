@@ -16,7 +16,7 @@ impl Player {
         indicate_damage: Self::living_indicate_damage,
         tick_living_entity: Self::living_tick_living_entity,
         is_using_item: Self::living_is_using_item,
-        get_luck: Self::living_get_luck,
+        luck: Self::living_get_luck,
         can_be_seen_as_enemy: Self::living_can_be_seen_as_enemy,
         is_invulnerable_to: Self::living_is_invulnerable_to,
         hurt_armor: Self::living_hurt_armor,
@@ -29,7 +29,7 @@ impl Player {
         interact_living_entity_with_equippable: Self::living_interact_living_entity_with_equippable,
         has_infinite_materials: Self::living_has_infinite_materials,
         handle_extra_items_created_on_use: Self::living_handle_extra_items_created_on_use,
-        get_absorption_amount: Self::living_get_absorption_amount,
+        absorption_amount: Self::living_get_absorption_amount,
         set_absorption_amount: Self::living_set_absorption_amount,
         is_affected_by_fluids: Self::living_is_affected_by_fluids,
         can_glide: Self::living_can_glide,
@@ -38,7 +38,7 @@ impl Player {
         jump_from_ground: Self::living_jump_from_ground,
         ai_step: Self::living_ai_step,
         travel: Self::living_travel,
-        get_flying_speed: Self::living_get_flying_speed,
+        flying_speed: Self::living_get_flying_speed,
         on_equipped_item_broken: Self::living_on_equipped_item_broken,
         ..LivingProps::new()
     };
@@ -112,7 +112,7 @@ impl Player {
         // TODO: Tick stats even when the player has been dead for more than 20 ticks.
         self.tick_stats();
 
-        if self.living().get_health() <= 0.0 {
+        if self.living().health() <= 0.0 {
             self.tick_death();
         } else {
             let world = self.get_world();
@@ -143,7 +143,7 @@ impl Player {
         self.update_pose();
 
         {
-            let health = self.living().get_health();
+            let health = self.living().health();
             let (food, saturation) = {
                 let food_data = self.food_data.lock();
                 (food_data.food_level, food_data.saturation_level)
@@ -399,7 +399,7 @@ impl Player {
         self.living().set_y_head_rot(self.rotation().0);
         // Pickup uses the simulated position; `tick_living_entity` restores the
         // authoritative tick position after this returns.
-        if self.living().get_health() > 0.0 {
+        if self.living().health() > 0.0 {
             self.touch_nearby_items();
         }
         result

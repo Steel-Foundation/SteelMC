@@ -16,7 +16,7 @@ impl MobEffectBehavior for RegenerationBehavior {
     }
 
     fn apply_effect_tick(&self, _world: &World, user: &Living<'_>, _amplifier: i32) -> bool {
-        if user.get_health() < user.get_max_health() {
+        if user.health() < user.max_health() {
             user.heal(1.0);
         }
         true

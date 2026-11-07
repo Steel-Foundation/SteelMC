@@ -106,7 +106,7 @@ impl Goal for BreedGoal {
 
         let partner_position = partner.position();
         mob.mob_base().controls().lock().look_control.set_look_at(
-            DVec3::new(partner_position.x, partner.get_eye_y(), partner_position.z),
+            DVec3::new(partner_position.x, partner.eye_y(), partner_position.z),
             10.0,
             mob.max_head_x_rot(),
         );

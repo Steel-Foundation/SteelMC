@@ -222,13 +222,13 @@ fn jump_boost_power_uses_active_effect_amplifier() {
     init_behaviors();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
-    assert!(entity.living().get_jump_boost_power().abs() < f32::EPSILON);
+    assert!(entity.living().jump_boost_power().abs() < f32::EPSILON);
 
     entity
         .living()
         .set_mob_effect(vanilla_mob_effects::JUMP_BOOST, 2);
 
-    assert!((entity.living().get_jump_boost_power() - 0.3).abs() < f32::EPSILON);
+    assert!((entity.living().jump_boost_power() - 0.3).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -264,11 +264,11 @@ fn slow_falling_caps_effective_gravity_only_while_falling() {
         .set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
     entity.set_velocity(DVec3::new(0.0, -0.1, 0.0));
 
-    assert!((entity.living().get_effective_gravity() - 0.01).abs() < f64::EPSILON);
+    assert!((entity.living().effective_gravity() - 0.01).abs() < f64::EPSILON);
 
     entity.set_velocity(DVec3::new(0.0, 0.1, 0.0));
 
-    assert!((entity.living().get_effective_gravity() - entity.get_gravity()).abs() < f64::EPSILON);
+    assert!((entity.living().effective_gravity() - entity.gravity()).abs() < f64::EPSILON);
 }
 
 #[test]

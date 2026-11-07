@@ -228,7 +228,7 @@ impl BrushableBlockEntity {
                 // TODO: Trigger CriteriaTriggers.GENERATE_LOOT once criteria triggers exist.
                 let equipment = living_loot_equipment(&player.living());
                 let mut ctx = LootContext::new(rng)
-                    .with_luck(player.living().get_luck())
+                    .with_luck(player.living().luck())
                     .with_tool(brush)
                     .with_origin(
                         f64::from(self.get_block_pos().x()) + 0.5,

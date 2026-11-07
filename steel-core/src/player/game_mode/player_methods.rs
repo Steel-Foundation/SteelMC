@@ -241,7 +241,7 @@ impl Player {
         buffer: f64,
     ) -> bool {
         let player_pos = self.position();
-        let eye_y = player_pos.y + self.get_eye_height();
+        let eye_y = player_pos.y + self.eye_height();
 
         let min_x = f64::from(pos.x());
         let min_y = f64::from(pos.y());
@@ -264,7 +264,7 @@ impl Player {
     #[must_use]
     pub fn is_within_entity_interaction_range(&self, aabb: WorldAabb, buffer: f64) -> bool {
         let player_pos = self.position();
-        let eye_y = player_pos.y + self.get_eye_height();
+        let eye_y = player_pos.y + self.eye_height();
 
         let dx = f64::max(
             f64::max(aabb.min_x() - player_pos.x, player_pos.x - aabb.max_x()),

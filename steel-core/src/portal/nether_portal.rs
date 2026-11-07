@@ -147,7 +147,7 @@ fn dimension_transition_from_exit(
             PORTAL_RECTANGLE_SCAN_LIMIT,
             |pos| source_world.get_block_state(pos) == source_portal_state,
         );
-        (axis, entity.get_relative_portal_position(axis, portal_area))
+        (axis, entity.relative_portal_position(axis, portal_area))
     } else {
         (Axis::X, DVec3::new(0.5, 0.0, 0.0))
     };

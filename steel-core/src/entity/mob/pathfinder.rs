@@ -33,7 +33,7 @@ pub(super) fn tick_path_navigation_target(
             ground_mob_position,
             mob_position: mob.position(),
             mob_bounding_box_width: mob.bounding_box().width(),
-            mob_speed: mob.get_speed(),
+            mob_speed: mob.speed(),
             game_time,
         };
         let next_target = if can_update_path {

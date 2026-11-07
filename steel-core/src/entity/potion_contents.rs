@@ -106,6 +106,6 @@ mod tests {
         );
 
         // 4 << 32 wraps to 4 << (32 % 32) == 4 << 0 == 4, matching Java.
-        assert_eq!(player.living().get_health(), 5.0);
+        assert_eq!(player.living().health(), 5.0);
     }
 }

@@ -8,7 +8,7 @@ fn generic_living_hurt_applies_health_damage() {
 
     assert!(entity.hurt(test_world(), &source, 4.0));
 
-    assert_f32_close(entity.living().get_health(), 16.0);
+    assert_f32_close(entity.living().health(), 16.0);
 }
 
 #[test]
@@ -23,7 +23,7 @@ fn generic_living_hurt_ignores_fire_damage_with_fire_resistance() {
 
     assert!(!entity.hurt(test_world(), &source, 4.0));
 
-    assert_f32_close(entity.living().get_health(), 20.0);
+    assert_f32_close(entity.living().health(), 20.0);
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn generic_living_hurt_processes_default_death_once() {
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
     assert!(entity.hurt(test_world(), &source, 4.0));
-    assert_f32_close(entity.living().get_health(), 0.0);
+    assert_f32_close(entity.living().health(), 0.0);
     assert_eq!(entity.pose(), EntityPose::Dying);
     assert!(!entity.hurt(test_world(), &source, 1.0));
 }
@@ -52,8 +52,8 @@ fn generic_living_hurt_applies_armor_and_absorption() {
 
     assert!(entity.hurt(test_world(), &source, 10.0));
 
-    assert_f32_close(entity.living().get_health(), 19.0);
-    assert_f32_close(entity.living().get_absorption_amount(), 0.0);
+    assert_f32_close(entity.living().health(), 19.0);
+    assert_f32_close(entity.living().absorption_amount(), 0.0);
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn generic_living_hurt_applies_resistance() {
 
     assert!(entity.hurt(test_world(), &source, 10.0));
 
-    assert_f32_close(entity.living().get_health(), 12.0);
+    assert_f32_close(entity.living().health(), 12.0);
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn damage_reductions_use_the_retained_attacker_after_removal() {
     assert!(removed.is_some());
     attacker.set_removed(RemovalReason::Discarded);
     let damage_applied = victim.hurt(explicit_world, &source, 10.0);
-    let health = victim.living().get_health();
+    let health = victim.living().health();
 
     assert!(damage_applied);
     assert_f32_close(health, 10.0);
@@ -132,7 +132,7 @@ fn generic_living_hurt_applies_damage_protection_enchantments() {
 
     let expected_health = 20.0_f32 - 10.0_f32 * (1.0 - 4.0_f32 / 25.0);
     assert_eq!(
-        entity.living().get_health().to_bits(),
+        entity.living().health().to_bits(),
         expected_health.to_bits()
     );
 }
@@ -182,7 +182,7 @@ fn try_as_dyn_exposes_living_entity_behavior() {
         panic!("living test entity did not expose LivingEntity behavior");
     };
 
-    assert_f32_close(living.get_health(), 20.0);
+    assert_f32_close(living.health(), 20.0);
 
     let non_living = PushableTestEntity::shared(2, DVec3::ZERO);
     assert!(non_living.as_living_entity().is_none());
@@ -390,7 +390,7 @@ fn lethal_hurts_consume_main_hand_totem_then_off_hand_totem() {
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
     assert!(entity.hurt(test_world(), &source, 4.0));
-    assert_f32_close(entity.living().get_health(), 1.0);
+    assert_f32_close(entity.living().health(), 1.0);
     assert!(!entity.living().has_item_in_slot(EquipmentSlot::MainHand));
     assert!(entity.living().has_item_in_slot(EquipmentSlot::OffHand));
     assert!(
@@ -402,9 +402,9 @@ fn lethal_hurts_consume_main_hand_totem_then_off_hand_totem() {
     for _ in 0..10 {
         entity.living().living_base().decrement_invulnerable_time();
     }
-    let absorbed_and_lethal = entity.living().get_absorption_amount() + 4.0;
+    let absorbed_and_lethal = entity.living().absorption_amount() + 4.0;
     assert!(entity.hurt(test_world(), &source, absorbed_and_lethal));
-    assert_f32_close(entity.living().get_health(), 1.0);
+    assert_f32_close(entity.living().health(), 1.0);
     assert!(!entity.living().has_item_in_slot(EquipmentSlot::OffHand));
     assert_ne!(entity.pose(), EntityPose::Dying);
 }
@@ -417,7 +417,7 @@ fn worn_helmet_cuts_helmet_damaging_hurts_by_a_quarter() {
 
     let bare = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     assert!(bare.hurt(test_world(), &source, 4.0));
-    assert_f32_close(bare.living().get_health(), 16.0);
+    assert_f32_close(bare.living().health(), 16.0);
 
     let helmeted = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     helmeted
@@ -426,5 +426,5 @@ fn worn_helmet_cuts_helmet_damaging_hurts_by_a_quarter() {
             *stack = ItemStack::new(&vanilla_items::CARVED_PUMPKIN);
         });
     assert!(helmeted.hurt(test_world(), &source, 4.0));
-    assert_f32_close(helmeted.living().get_health(), 17.0);
+    assert_f32_close(helmeted.living().health(), 17.0);
 }

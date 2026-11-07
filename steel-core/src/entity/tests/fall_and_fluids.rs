@@ -31,7 +31,7 @@ fn living_fall_damage_uses_shared_damage_path_from_entity_dispatch() {
         &DamageSource::environment(&vanilla_damage_types::FALL),
     ));
 
-    assert_f32_close(entity.living().get_health(), 15.0);
+    assert_f32_close(entity.living().health(), 15.0);
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn living_fall_damage_caps_distance_from_current_impulse() {
         &DamageSource::environment(&vanilla_damage_types::FALL),
     ));
 
-    assert_f32_close(entity.living().get_health(), 19.0);
+    assert_f32_close(entity.living().health(), 19.0);
     assert!(
         !entity
             .living()
@@ -77,7 +77,7 @@ fn living_fall_damage_resets_current_impulse_when_landing_above_impact() {
         &DamageSource::environment(&vanilla_damage_types::FALL),
     ));
 
-    assert_f32_close(entity.living().get_health(), 20.0);
+    assert_f32_close(entity.living().health(), 20.0);
     assert!(
         !entity
             .living()
@@ -135,7 +135,7 @@ fn fluid_falling_adjustment_matches_vanilla_special_falling_case() {
     let movement =
         entity
             .living()
-            .get_fluid_falling_adjusted_movement(0.16, true, DVec3::new(1.0, 0.01, 1.0));
+            .fluid_falling_adjusted_movement(0.16, true, DVec3::new(1.0, 0.01, 1.0));
 
     assert_vec3_close(movement, DVec3::new(1.0, -0.003, 1.0));
 }
@@ -149,7 +149,7 @@ fn fluid_falling_adjustment_is_skipped_while_sprinting() {
     let movement =
         entity
             .living()
-            .get_fluid_falling_adjusted_movement(0.16, true, DVec3::new(1.0, 0.01, 1.0));
+            .fluid_falling_adjusted_movement(0.16, true, DVec3::new(1.0, 0.01, 1.0));
 
     assert_vec3_close(movement, DVec3::new(1.0, 0.01, 1.0));
 }
@@ -279,7 +279,7 @@ fn living_air_supply_drowning_damage_resets_air() {
     entity.living().tick_living_air_supply();
 
     assert_eq!(entity.air_supply(), 0);
-    assert_f32_close(entity.living().get_health(), 18.0);
+    assert_f32_close(entity.living().health(), 18.0);
 }
 
 #[test]
@@ -310,7 +310,7 @@ fn breath_of_the_nautilus_prevents_drowning_without_refilling_air() {
     entity.living().tick_living_air_supply();
 
     assert_eq!(entity.air_supply(), entity.max_air_supply() - 8);
-    assert_f32_close(entity.living().get_health(), 20.0);
+    assert_f32_close(entity.living().health(), 20.0);
 }
 
 #[test]
@@ -345,7 +345,7 @@ fn living_base_tick_damages_entities_in_wall() {
 
     entity.living().base_tick_living_entity();
 
-    assert_f32_close(entity.living().get_health(), 19.0);
+    assert_f32_close(entity.living().health(), 19.0);
 }
 
 #[test]
@@ -375,5 +375,5 @@ fn living_base_tick_skips_in_wall_damage_while_sleeping() {
 
     entity.living().base_tick_living_entity();
 
-    assert_f32_close(entity.living().get_health(), 20.0);
+    assert_f32_close(entity.living().health(), 20.0);
 }

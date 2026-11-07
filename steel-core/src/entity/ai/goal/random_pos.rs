@@ -102,7 +102,7 @@ fn generate_random_pos(
         let Some(pos) = pos_supplier() else {
             continue;
         };
-        let value = mob.get_walk_target_value(pos);
+        let value = mob.walk_target_value(pos);
         if value > best_weight {
             best_weight = value;
             best_pos = Some(pos);
@@ -265,7 +265,7 @@ fn has_malus(mob: &Mob<'_>, pos: BlockPos) -> bool {
     };
     let mut context = PathfindingContext::new(world.as_ref(), mob.block_position());
     let path_type = WalkPathEvaluator::path_type_static(&mut context, pos);
-    mob.get_pathfinding_malus(path_type) != 0.0
+    mob.pathfinding_malus(path_type) != 0.0
 }
 
 fn is_solid(mob: &Mob<'_>, pos: BlockPos) -> bool {

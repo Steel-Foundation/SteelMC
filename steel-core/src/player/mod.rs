@@ -550,7 +550,7 @@ impl Player {
     /// Computes the start (eye position) and end positions for a raytrace.
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
-        let start_pos = DVec3::new(pos.x, self.get_eye_y(), pos.z);
+        let start_pos = DVec3::new(pos.x, self.eye_y(), pos.z);
         let block_interaction_range = self.block_interaction_range();
         let direction = self.look_angle() * block_interaction_range;
 
@@ -786,7 +786,7 @@ impl Player {
         }
 
         // TODO: reset player noActionTime and remove shoulder entities.
-        if self.living().get_health() <= 0.0 {
+        if self.living().health() <= 0.0 {
             return false;
         }
 
@@ -835,13 +835,12 @@ impl Player {
             return;
         }
 
-        let damage = self.living().get_damage_after_armor_absorb(source, amount);
-        let damage = self.living().get_damage_after_magic_absorb(source, damage);
+        let damage = self.living().damage_after_armor_absorb(source, amount);
+        let damage = self.living().damage_after_magic_absorb(source, damage);
         let original_damage = damage;
-        let damage = (damage - self.living().get_absorption_amount()).max(0.0);
-        self.living().set_absorption_amount(
-            self.living().get_absorption_amount() - (original_damage - damage),
-        );
+        let damage = (damage - self.living().absorption_amount()).max(0.0);
+        self.living()
+            .set_absorption_amount(self.living().absorption_amount() - (original_damage - damage));
 
         let absorbed_damage = original_damage - damage;
         if (0.0..f32::MAX).contains(&absorbed_damage) {
@@ -854,8 +853,7 @@ impl Player {
         // TODO: combat tracker (getCombatTracker().recordDamage)
         if damage != 0.0 {
             self.cause_food_exhaustion(source.damage_type.exhaustion);
-            self.living()
-                .set_health(self.living().get_health() - damage);
+            self.living().set_health(self.living().health() - damage);
             if damage < f32::MAX {
                 self.award_custom_stat_with_count(
                     &vanilla_custom_stats::DAMAGE_TAKEN,

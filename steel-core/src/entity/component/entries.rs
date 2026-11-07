@@ -13,7 +13,7 @@ use crate::player::Player;
 use crate::world::World;
 
 /// The vanilla constructor chain of a mob, `Mob.registerGoals` included. Runs on
-/// the fresh [`MobBase`](crate::entity::MobBase) before the entity exists.
+/// the fresh `MobBase` before the entity exists.
 pub struct Construct;
 
 impl Entry for Construct {

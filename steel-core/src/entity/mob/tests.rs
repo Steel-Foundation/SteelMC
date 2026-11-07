@@ -231,7 +231,7 @@ impl DespawnTestMob {
     const MOB: MobProps<Self> = MobProps {
         is_pathfinder: |_| true,
         remove_when_far_away: |mob, _| mob.remove_when_far_away,
-        get_preferred_weapon_type: |mob| mob.preferred_weapon_type.lock().clone(),
+        preferred_weapon_type: |mob| mob.preferred_weapon_type.lock().clone(),
         mob_can_be_leashed: |mob| *mob.can_be_leashed.lock(),
         ..MobProps::new()
     };
@@ -717,7 +717,7 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
             .do_hurt_target(&mob_entity, test_world(), &target_entity)
     );
 
-    assert_eq!(target.living().get_health().to_bits(), 6.0_f32.to_bits());
+    assert_eq!(target.living().health().to_bits(), 6.0_f32.to_bits());
     let stored_target = mob
         .living()
         .last_hurt_mob()
@@ -777,7 +777,7 @@ fn mob_look_control_rotates_head_yaw_without_turning_body_yaw() {
         .lock()
         .look_control
         .set_look_at(
-            DVec3::new(position.x + 1.0, mob.get_eye_y(), position.z),
+            DVec3::new(position.x + 1.0, mob.eye_y(), position.z),
             DEFAULT_LOOK_Y_MAX_ROT_SPEED,
             DEFAULT_LOOK_X_MAX_ROT_ANGLE,
         );

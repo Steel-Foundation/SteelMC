@@ -421,7 +421,7 @@ impl CommandSource {
         {
             return DVec3::new(
                 self.position.x,
-                self.position.y + entity.get_eye_height(),
+                self.position.y + entity.eye_height(),
                 self.position.z,
             );
         }

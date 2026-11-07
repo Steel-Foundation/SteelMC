@@ -268,9 +268,9 @@ impl<'a> Ageable<'a> {
             world.send_particles(
                 ParticleData::simple(&vanilla_particle_types::HAPPY_VILLAGER),
                 DVec3::new(
-                    entity.get_random_x(1.0),
-                    entity.get_random_y() + 0.5,
-                    entity.get_random_z(1.0),
+                    entity.random_x(1.0),
+                    entity.random_y() + 0.5,
+                    entity.random_z(1.0),
                 ),
                 1,
                 DVec3::ZERO,
@@ -316,9 +316,9 @@ impl<'a> Ageable<'a> {
         world.send_particles(
             ParticleData::simple(particle),
             DVec3::new(
-                entity.get_random_x(1.0),
-                entity.get_random_y_spread(0.2) + height + y_offset,
-                entity.get_random_z(1.0),
+                entity.random_x(1.0),
+                entity.random_y_spread(0.2) + height + y_offset,
+                entity.random_z(1.0),
             ),
             1,
             DVec3::ZERO,

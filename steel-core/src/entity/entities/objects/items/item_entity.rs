@@ -544,7 +544,7 @@ impl ItemEntity {
         ignore_explosion: |_, explosion| !explosion.should_affect_blocklike_entities(),
         movement_emission: |_| EntityMovementEmission::None,
         tick: Self::entity_tick,
-        get_default_gravity: |_| DEFAULT_GRAVITY,
+        default_gravity: |_| DEFAULT_GRAVITY,
         block_pos_below_that_affects_movement: |entity| entity.on_pos(0.999_999),
         attackable: |_| false,
         should_play_lava_hurt_sound: Self::entity_should_play_lava_hurt_sound,

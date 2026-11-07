@@ -397,7 +397,7 @@ impl FallingBlockEntity {
     // (`wall_torch` -> `block.minecraft.torch`), so they can't be derived from the key.
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: Self::entity_tick,
-        get_default_gravity: |_| DEFAULT_GRAVITY,
+        default_gravity: |_| DEFAULT_GRAVITY,
         spawn_data: |entity| i32::from(entity.block_state().0),
         blocks_building: |_| true,
         is_pickable: |entity| !entity.is_removed(),

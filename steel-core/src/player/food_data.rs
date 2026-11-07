@@ -300,8 +300,8 @@ impl Player {
         let world = self.get_world();
         let difficulty = world.level_data.read().data().difficulty;
         let natural_regen = world.get_game_rule(&NATURAL_HEALTH_REGENERATION);
-        let current_health = self.living().get_health();
-        let max_health = self.living().get_max_health();
+        let current_health = self.living().health();
+        let max_health = self.living().max_health();
 
         let mut food = self.food_data.lock();
         let result = food.tick(difficulty, natural_regen, current_health, max_health);
@@ -335,8 +335,8 @@ impl Player {
 
     /// Returns `true` if the player is alive but below max health.
     pub fn is_hurt(&self) -> bool {
-        let health = self.living().get_health();
-        health > 0.0 && health < self.living().get_max_health()
+        let health = self.living().health();
+        health > 0.0 && health < self.living().max_health()
     }
 }
 

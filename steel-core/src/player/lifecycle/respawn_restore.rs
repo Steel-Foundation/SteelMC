@@ -90,7 +90,7 @@ impl Player {
         if restore_all {
             self.restore_all_respawn_state_from(old_player);
         } else {
-            self.living().set_health(self.living().get_max_health());
+            self.living().set_health(self.living().max_health());
             if transfer_inventory {
                 self.restore_inventory_experience_and_score_from(old_player);
             }
@@ -102,7 +102,7 @@ impl Player {
     }
 
     fn restore_all_respawn_state_from(&self, old_player: &Self) {
-        self.living().set_health(old_player.living().get_health());
+        self.living().set_health(old_player.living().health());
         *self.food_data.lock() = old_player.food_data.lock().clone();
 
         for effect in old_player.living_base.active_mob_effects() {
@@ -353,12 +353,9 @@ mod tests {
         assert!(abilities.flying);
         assert_eq!(abilities.walking_speed, 0.1);
         drop(abilities);
+        assert_eq!(replacement.living().health().to_bits(), 12.0_f32.to_bits());
         assert_eq!(
-            replacement.living().get_health().to_bits(),
-            12.0_f32.to_bits()
-        );
-        assert_eq!(
-            replacement.living().get_max_health().to_bits(),
+            replacement.living().max_health().to_bits(),
             35.0_f32.to_bits()
         );
         assert!(
@@ -472,7 +469,7 @@ mod tests {
         let transferred =
             old_player.new_respawn_replacement(Arc::clone(target_world), false, true, true);
 
-        assert_eq!(fresh.living().get_health().to_bits(), 30.0_f32.to_bits());
+        assert_eq!(fresh.living().health().to_bits(), 30.0_f32.to_bits());
         assert!(
             !fresh
                 .living()
@@ -488,10 +485,7 @@ mod tests {
         assert_eq!(fresh.base.portal_process(), None);
         assert_eq!(fresh.respawn_config(), None);
 
-        assert_eq!(
-            transferred.living().get_health().to_bits(),
-            30.0_f32.to_bits()
-        );
+        assert_eq!(transferred.living().health().to_bits(), 30.0_f32.to_bits());
         assert_eq!(transferred.inventory.lock().get_item(0).count(), 3);
         assert_eq!(transferred.experience.lock().level(), 4);
         assert_eq!(transferred.experience.lock().total_points(), 36);
@@ -499,10 +493,7 @@ mod tests {
         assert_eq!(transferred.score(), 11);
         assert_eq!(transferred.respawn_config(), old_player.respawn_config());
 
-        assert_eq!(
-            old_player.living().get_health().to_bits(),
-            0.0_f32.to_bits()
-        );
+        assert_eq!(old_player.living().health().to_bits(), 0.0_f32.to_bits());
         assert_eq!(old_player.inventory.lock().get_item(0).count(), 3);
         assert_eq!(old_player.experience.lock().total_points(), 36);
         assert!(

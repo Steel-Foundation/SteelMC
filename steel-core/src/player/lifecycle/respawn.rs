@@ -180,7 +180,7 @@ impl PlayerRespawnJob {
             && match self.kind {
                 RespawnRequestKind::Death => {
                     self.source_world.contains_player(&self.player)
-                        && Player::should_process_respawn(self.player.living().get_health())
+                        && Player::should_process_respawn(self.player.living().health())
                 }
                 RespawnRequestKind::EndCredits => {
                     Arc::ptr_eq(&self.player.get_world(), &self.source_world)
@@ -450,7 +450,7 @@ impl Player {
 
     /// Schedules a vanilla death respawn for this player.
     pub fn respawn(&self) {
-        let health = self.living().get_health();
+        let health = self.living().health();
         if !Self::should_process_respawn(health) {
             return;
         }
@@ -551,7 +551,7 @@ impl Player {
         let valid_source = match kind {
             RespawnRequestKind::Death => {
                 source_world.contains_player(self)
-                    && Self::should_process_respawn(self.living().get_health())
+                    && Self::should_process_respawn(self.living().health())
             }
             RespawnRequestKind::EndCredits => {
                 !source_world.contains_player(self)

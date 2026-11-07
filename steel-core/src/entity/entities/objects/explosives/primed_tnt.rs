@@ -286,7 +286,7 @@ impl PrimedTntEntity {
         is_pickable: |entity| !entity.is_removed(),
         is_hard_collision_relevant: |_| false,
         movement_emission: |_| EntityMovementEmission::None,
-        get_default_gravity: |_| GRAVITY,
+        default_gravity: |_| GRAVITY,
         explosion_indirect_source: |entity| entity.owner(),
         explosion_damage_origin: |entity| entity.position(),
         on_teleported: Self::entity_on_teleported,

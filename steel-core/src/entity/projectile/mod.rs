@@ -692,7 +692,7 @@ where
     let player_pos = player.position();
     let spawn_pos = DVec3::new(
         player_pos.x,
-        player.get_eye_y() - THROWN_ITEM_SPAWN_EYE_OFFSET,
+        player.eye_y() - THROWN_ITEM_SPAWN_EYE_OFFSET,
         player_pos.z,
     );
 
@@ -748,7 +748,7 @@ pub fn get_hit_result_on_view_vector(
     matching: impl Fn(&dyn Entity) -> bool,
 ) -> ViewVectorHitResult {
     let position = source.position();
-    let from = DVec3::new(position.x, source.get_eye_y(), position.z);
+    let from = DVec3::new(position.x, source.eye_y(), position.z);
     let delta = source.look_angle() * distance;
     let to = from + delta;
 

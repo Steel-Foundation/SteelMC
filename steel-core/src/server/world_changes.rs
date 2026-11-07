@@ -379,7 +379,7 @@ impl Server {
         if player.connection.closed() {
             return Err("player is disconnecting".to_owned());
         }
-        if player.living().get_health() <= 0.0 {
+        if player.living().health() <= 0.0 {
             return Err("cannot change worlds while dead".to_owned());
         }
         if player.has_won_game() {
@@ -528,7 +528,7 @@ impl Server {
         if current_domain == target_domain {
             return Err(format!("already in domain {target_domain}"));
         }
-        if player.living().get_health() <= 0.0 {
+        if player.living().health() <= 0.0 {
             return Err("player died before the domain switch started".to_owned());
         }
         if player.has_won_game() {

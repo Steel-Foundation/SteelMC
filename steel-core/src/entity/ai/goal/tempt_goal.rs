@@ -158,7 +158,7 @@ impl Goal for TemptGoal {
 
         let player_position = player.position();
         mob.mob_base().controls().lock().look_control.set_look_at(
-            DVec3::new(player_position.x, player.get_eye_y(), player_position.z),
+            DVec3::new(player_position.x, player.eye_y(), player_position.z),
             mob.max_head_y_rot() + 20.0,
             mob.max_head_x_rot(),
         );

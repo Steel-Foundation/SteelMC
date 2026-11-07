@@ -373,11 +373,11 @@ entity_props! {
         /// `Mob.canBeLeashed`, before the leash state is considered.
         fn mob_can_be_leashed() -> bool = mob_can_be_leashed_default;
         /// `Mob.getPreferredWeaponType`: the item tag this mob favors when picking up weapons.
-        fn get_preferred_weapon_type() -> Option<Identifier> = get_preferred_weapon_type_default;
+        fn preferred_weapon_type() -> Option<Identifier> = preferred_weapon_type_default;
         /// `Mob.checkSpawnRules`: the type's own spawn predicate.
         fn check_spawn_rules(world: &Arc<World>, reason: EntitySpawnReason) -> bool = check_spawn_rules_default;
         /// `Mob.getPickupReach`: how far the item-pickup search box is inflated.
-        fn get_pickup_reach() -> DVec3 = get_pickup_reach_default;
+        fn pickup_reach() -> DVec3 = pickup_reach_default;
         /// `Mob.canHoldItem`: whether this mob is willing to hold the item.
         fn can_hold_item(item_stack: &ItemStack) -> bool = can_hold_item_default;
         /// `Mob.getMaxFallDistance`: blocks fallen before taking damage.
@@ -397,7 +397,7 @@ entity_props! {
         /// Whether the type is a vanilla `PathfinderMob`, which changes leash behavior and passes `instanceof PathfinderMob` checks.
         fn is_pathfinder() -> bool = is_pathfinder_default;
         /// `PathfinderMob.getWalkTargetValue`: how attractive a position is to wander to.
-        fn get_walk_target_value(pos: BlockPos) -> f32 = get_walk_target_value_default;
+        fn walk_target_value(pos: BlockPos) -> f32 = walk_target_value_default;
     }
 }
 
@@ -542,7 +542,7 @@ impl Mob<'_> {
         clippy::unused_self,
         reason = "vanilla's base body; mob types override it through `MobProps`"
     )]
-    const fn get_preferred_weapon_type_default(&self) -> Option<Identifier> {
+    const fn preferred_weapon_type_default(&self) -> Option<Identifier> {
         None
     }
 
@@ -562,7 +562,7 @@ impl Mob<'_> {
         clippy::unused_self,
         reason = "vanilla's base body; mob types override it through `MobProps`"
     )]
-    const fn get_pickup_reach_default(&self) -> DVec3 {
+    const fn pickup_reach_default(&self) -> DVec3 {
         ITEM_PICKUP_REACH
     }
 
@@ -640,7 +640,7 @@ impl Mob<'_> {
         clippy::unused_self,
         reason = "vanilla's base body; mob types override it through `MobProps`"
     )]
-    const fn get_walk_target_value_default(&self, _pos: BlockPos) -> f32 {
+    const fn walk_target_value_default(&self, _pos: BlockPos) -> f32 {
         0.0
     }
 }
@@ -1092,7 +1092,7 @@ impl<'a> Mob<'a> {
     /// drop chance. Returns the stack that was equipped, or empty when nothing
     /// was taken.
     pub fn equip_item_if_possible(&self, mut item_stack: ItemStack) -> ItemStack {
-        let mut slot = self.get_equipment_slot_for_item(&item_stack);
+        let mut slot = self.equipment_slot_for_item(&item_stack);
         if !self.is_equippable_in_slot(&item_stack, slot) {
             return ItemStack::empty();
         }
@@ -1129,7 +1129,7 @@ impl<'a> Mob<'a> {
     /// Vanilla `LivingEntity.getEquipmentSlotForItem`: the slot an item wants to
     /// occupy, falling back to the main hand when it is not equippable or the mob
     /// cannot use that slot.
-    pub fn get_equipment_slot_for_item(&self, item_stack: &ItemStack) -> EquipmentSlot {
+    pub fn equipment_slot_for_item(&self, item_stack: &ItemStack) -> EquipmentSlot {
         match item_stack.get_equippable() {
             Some(equippable) if self.can_use_slot(equippable.slot) => equippable.slot,
             _ => EquipmentSlot::MainHand,
@@ -1218,7 +1218,7 @@ impl<'a> Mob<'a> {
         current_item_stack: &ItemStack,
         slot: EquipmentSlot,
     ) -> bool {
-        if let Some(preferred_weapon_type) = self.get_preferred_weapon_type() {
+        if let Some(preferred_weapon_type) = self.preferred_weapon_type() {
             let current_is_preferred = REGISTRY
                 .items
                 .is_in_tag(current_item_stack.item(), &preferred_weapon_type);
@@ -1310,7 +1310,7 @@ impl<'a> Mob<'a> {
             return;
         }
 
-        let reach = self.get_pickup_reach();
+        let reach = self.pickup_reach();
         let search_box = self.bounding_box().inflate_xyz(reach.x, reach.y, reach.z);
         for entity in world.get_entities_in_aabb(&search_box) {
             let Some(item_entity) = entity.downcast_ref::<ItemEntity>() else {
@@ -1580,7 +1580,7 @@ impl<'a> Mob<'a> {
         Some(first_passenger)
     }
 
-    pub fn get_pathfinding_malus(&self, path_type: PathType) -> f32 {
+    pub fn pathfinding_malus(&self, path_type: PathType) -> f32 {
         self.mob_base().pathfinding_malus().lock().get(path_type)
     }
 
@@ -1653,7 +1653,7 @@ impl<'a> Mob<'a> {
         if was_hurt {
             self.cause_extra_knockback(
                 target.as_ref(),
-                self.get_attack_knockback(target.as_ref(), &weapon_item, &damage_source),
+                self.attack_knockback(target.as_ref(), &weapon_item, &damage_source),
                 old_movement,
             );
             self.with_equipment_slot_mut(EquipmentSlot::MainHand, &mut |stack| {
@@ -1707,7 +1707,7 @@ impl<'a> Mob<'a> {
 
     /// Computes attack knockback strength from the attack-knockback attribute
     /// and the weapon's knockback enchantments.
-    pub fn get_attack_knockback(
+    pub fn attack_knockback(
         &self,
         target: &dyn Entity,
         weapon_item: &ItemStack,
@@ -1868,7 +1868,7 @@ impl<'a> Mob<'a> {
 
         let eye_pos = BlockPos::new(
             fast_floor(self.position().x),
-            fast_floor(self.get_eye_y()),
+            fast_floor(self.eye_y()),
             fast_floor(self.position().z),
         );
         let brightness = world.light_level_dependent_magic_value(eye_pos);
@@ -2100,7 +2100,7 @@ impl<'a> Mob<'a> {
             let position = self.position();
             let wanted_position = look_control.wanted_position();
             let xd = wanted_position.x - position.x;
-            let yd = wanted_position.y - self.get_eye_y();
+            let yd = wanted_position.y - self.eye_y();
             let zd = wanted_position.z - position.z;
             let horizontal = xd.hypot(zd);
             if horizontal.abs() > 1.0e-5 || yd.abs() > 1.0e-5 {

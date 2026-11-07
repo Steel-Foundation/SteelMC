@@ -38,7 +38,7 @@ impl Player {
 
     fn eye_position(&self) -> DVec3 {
         let position = self.position();
-        DVec3::new(position.x, self.get_eye_y(), position.z)
+        DVec3::new(position.x, self.eye_y(), position.z)
     }
 
     fn damage_source_for_attack_type(
@@ -445,7 +445,7 @@ impl Player {
 
         let old_entity_living_health = entity
             .as_living_entity()
-            .map_or(0.0, |living| living.get_health());
+            .map_or(0.0, |living| living.health());
 
         // TODO: Apply crits, sweep attacks, and sounds.
         let old_movement = entity.velocity();
@@ -709,7 +709,7 @@ impl Player {
         const PARTICLE_SPEED: f64 = 0.2;
 
         if let Some(entity) = entity.as_living_entity() {
-            let actual_damage = old_entity_living_health - entity.get_health();
+            let actual_damage = old_entity_living_health - entity.health();
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_DEALT,
                 (actual_damage * 10.0).round() as i32,

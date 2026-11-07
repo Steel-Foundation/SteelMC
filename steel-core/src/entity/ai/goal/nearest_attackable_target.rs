@@ -96,7 +96,7 @@ impl NearestAttackableTargetGoal {
 
         let follow = follow_distance(mob);
         let position = mob.position();
-        let origin = DVec3::new(position.x, mob.get_eye_y(), position.z);
+        let origin = DVec3::new(position.x, mob.eye_y(), position.z);
         let target_conditions = self.target_conditions.clone().range(follow);
         let level = world.as_ref();
 

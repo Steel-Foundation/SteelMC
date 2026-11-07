@@ -1110,7 +1110,7 @@ mod tests {
 
     impl TestLivingEntity {
         const LIVING: LivingProps<Self> = LivingProps {
-            get_absorption_amount: Self::living_get_absorption_amount,
+            absorption_amount: Self::living_get_absorption_amount,
             set_absorption_amount: Self::living_set_absorption_amount,
             on_equipped_item_broken: Self::living_on_equipped_item_broken,
             ..LivingProps::new()

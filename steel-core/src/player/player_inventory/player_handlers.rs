@@ -289,7 +289,7 @@ impl Player {
     /// This is the common implementation shared between inventory menu and
     /// external menus (crafting table, chest, etc.).
     fn process_container_click(&self, menu: &mut Menu, packet: SContainerClick) {
-        if self.game_mode() == GameType::Spectator || self.living().get_health() <= 0.0 {
+        if self.game_mode() == GameType::Spectator || self.living().health() <= 0.0 {
             menu.behavior_mut()
                 .send_all_data_to_remote(&self.connection);
             return;
@@ -1055,7 +1055,7 @@ impl Player {
         let pos = self.position();
         let (yaw, pitch) = self.rotation();
 
-        let spawn_y = self.get_eye_y() - 0.3;
+        let spawn_y = self.eye_y() - 0.3;
 
         let velocity = if throw_randomly {
             let power = rand::random_range(0.0..0.5);
@@ -1138,9 +1138,7 @@ impl Player {
     fn default_menu_item_disposition(&self) -> MenuItemDisposition {
         let removed_outside_world_change =
             self.is_removed() && self.removal_reason() != Some(RemovalReason::ChangedWorld);
-        if removed_outside_world_change
-            || self.connection.closed()
-            || self.living().get_health() <= 0.0
+        if removed_outside_world_change || self.connection.closed() || self.living().health() <= 0.0
         {
             MenuItemDisposition::Drop
         } else {

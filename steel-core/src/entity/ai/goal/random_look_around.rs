@@ -61,7 +61,7 @@ impl Goal for RandomLookAroundGoal {
         mob.mob_base().controls().lock().look_control.set_look_at(
             DVec3::new(
                 position.x + self.rel_x,
-                mob.get_eye_y(),
+                mob.eye_y(),
                 position.z + self.rel_z,
             ),
             DEFAULT_LOOK_Y_MAX_ROT_SPEED,
@@ -199,7 +199,7 @@ mod tests {
         assert!(look_control.is_looking_at_target());
         assert_eq!(
             look_control.wanted_position().y.to_bits(),
-            mob.get_eye_y().to_bits()
+            mob.eye_y().to_bits()
         );
     }
 }

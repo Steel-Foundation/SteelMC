@@ -247,7 +247,7 @@ impl WorldSpawnTeleportJob {
         };
         !self.entity.is_removed()
             && !player.connection.closed()
-            && player.living().get_health() > 0.0
+            && player.living().health() > 0.0
             && !player.has_won_game()
             && self
                 .entity
