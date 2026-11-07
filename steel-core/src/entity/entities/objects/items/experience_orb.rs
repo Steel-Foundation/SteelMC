@@ -14,7 +14,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ExperienceOrbEntityData;
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::{CheckedMutex, SyncMutex};
 use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::entity::EntityProps;
@@ -72,7 +72,7 @@ pub struct ExperienceOrbEntity {
     entity_type: EntityTypeRef,
     #[entity(synced)]
     entity_data: SyncMutex<ExperienceOrbEntityData>,
-    state: SyncMutex<ExperienceOrbState>,
+    state: CheckedMutex<ExperienceOrbState>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `ExperienceOrbEntity`.
@@ -88,7 +88,7 @@ impl ExperienceOrbEntity {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             entity_data: SyncMutex::new(ExperienceOrbEntityData::new()),
-            state: SyncMutex::new(ExperienceOrbState::new()),
+            state: CheckedMutex::new("ExperienceOrbState", ExperienceOrbState::new()),
         }
     }
 
@@ -114,7 +114,7 @@ impl ExperienceOrbEntity {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             entity_data: SyncMutex::new(ExperienceOrbEntityData::new()),
-            state: SyncMutex::new(ExperienceOrbState::new()),
+            state: CheckedMutex::new("ExperienceOrbState", ExperienceOrbState::new()),
         }
     }
 

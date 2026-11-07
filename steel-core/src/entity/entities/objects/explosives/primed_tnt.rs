@@ -15,7 +15,7 @@ use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_data::PrimedTntEntityData;
 use steel_registry::vanilla_game_rules::TNT_EXPLODES;
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::{CheckedMutex, SyncMutex};
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::block_entity::block_state_nbt;
@@ -139,7 +139,7 @@ pub struct PrimedTntEntity {
     entity_type: EntityTypeRef,
     #[entity(synced)]
     entity_data: SyncMutex<PrimedTntEntityData>,
-    state: SyncMutex<PrimedTntState>,
+    state: CheckedMutex<PrimedTntState>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `PrimedTntEntity`.
@@ -158,7 +158,7 @@ impl PrimedTntEntity {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             entity_data: SyncMutex::new(PrimedTntEntityData::new()),
-            state: SyncMutex::new(PrimedTntState::new()),
+            state: CheckedMutex::new("PrimedTntState", PrimedTntState::new()),
         }
     }
 
@@ -194,7 +194,7 @@ impl PrimedTntEntity {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             entity_data: SyncMutex::new(PrimedTntEntityData::new()),
-            state: SyncMutex::new(PrimedTntState::new()),
+            state: CheckedMutex::new("PrimedTntState", PrimedTntState::new()),
         }
     }
 

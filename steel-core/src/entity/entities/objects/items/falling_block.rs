@@ -20,7 +20,7 @@ use steel_registry::vanilla_game_rules::ENTITY_DROPS;
 use steel_registry::{
     REGISTRY, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_fluids,
 };
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::{CheckedMutex, SyncMutex};
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, types::UpdateFlags};
 
 use crate::behavior::blocks::{AnvilBlock, FallingBlock};
@@ -80,7 +80,7 @@ pub struct FallingBlockEntity {
     entity_type: EntityTypeRef,
     #[entity(synced)]
     entity_data: SyncMutex<FallingBlockEntityData>,
-    state: SyncMutex<FallingBlockState>,
+    state: CheckedMutex<FallingBlockState>,
 }
 
 // SAFETY: This Steel-owned key uniquely identifies `FallingBlockEntity`.
@@ -96,7 +96,10 @@ impl FallingBlockEntity {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             entity_data: SyncMutex::new(FallingBlockEntityData::new()),
-            state: SyncMutex::new(FallingBlockState::new(vanilla_blocks::SAND.default_state())),
+            state: CheckedMutex::new(
+                "FallingBlockState",
+                FallingBlockState::new(vanilla_blocks::SAND.default_state()),
+            ),
         }
     }
 
@@ -117,7 +120,7 @@ impl FallingBlockEntity {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             entity_data: SyncMutex::new(entity_data),
-            state: SyncMutex::new(FallingBlockState::new(block_state)),
+            state: CheckedMutex::new("FallingBlockState", FallingBlockState::new(block_state)),
         }
     }
 
@@ -128,7 +131,10 @@ impl FallingBlockEntity {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             entity_data: SyncMutex::new(FallingBlockEntityData::new()),
-            state: SyncMutex::new(FallingBlockState::new(vanilla_blocks::SAND.default_state())),
+            state: CheckedMutex::new(
+                "FallingBlockState",
+                FallingBlockState::new(vanilla_blocks::SAND.default_state()),
+            ),
         }
     }
 
