@@ -126,8 +126,8 @@ pub trait EntityRiding: Entity {
         self.passengers().is_empty()
     }
 
-    /// Returns whether this entity can accept any passenger.
-    fn could_accept_passenger(&self) -> bool {
+    /// Default for [`Entity::could_accept_passenger`].
+    fn could_accept_passenger_default(&self) -> bool {
         true
     }
 

@@ -7,5 +7,7 @@ pub mod mobs;
 pub mod objects;
 
 pub use mobs::passive::{ChickenEntity, CowEntity, MushroomCowEntity, PigEntity, SheepEntity};
+pub use objects::display_ui::BlockDisplayEntity;
 pub use objects::explosives::PrimedTntEntity;
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
+pub use objects::technical::{InteractionEntity, MarkerEntity};

@@ -1,6 +1,5 @@
 //! Shared vanilla pressure-plate behavior.
 
-use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use steel_registry::blocks::BlockRef;

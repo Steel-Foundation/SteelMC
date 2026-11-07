@@ -325,8 +325,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         false
     }
 
-    /// Returns how vanilla lets this entity respond to piston movement.
-    final fn piston_push_reaction(&self) -> PushReaction {
+    /// Default for [`Entity::piston_push_reaction`].
+    final fn piston_push_reaction_default(&self) -> PushReaction {
         if self.is_marker_armor_stand() {
             PushReaction::IgnoreEntity
         } else {

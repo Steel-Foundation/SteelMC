@@ -291,6 +291,16 @@ macro_rules! entity_hook_list {
                     victim: &dyn Entity,
                     killing_blow: &DamageSource,
                 ) = award_kill_score_default;
+                /// Returns whether this entity is excluded from pressure plates and tripwires.
+                ///
+                /// Display-like entities and marker entities override this capability.
+                fn is_ignoring_block_triggers() -> bool = is_ignoring_block_triggers_default;
+                /// Returns how vanilla lets this entity respond to piston movement.
+                fn piston_push_reaction() -> PushReaction = piston_push_reaction_default;
+                /// Returns whether this entity can accept any passenger.
+                fn could_accept_passenger() -> bool = could_accept_passenger_default;
+                /// Returns whether this entity handles and consumes an attack before normal damage.
+                fn skip_attack_interaction(source: &SharedEntity) -> bool = skip_attack_interaction_default;
                 /// Called when a player touches this entity during nearby pickup processing.
                 fn player_touch(player: &Arc<Player>) = player_touch_default;
                 /// Kills this entity. `world` is vanilla's explicit `ServerLevel`

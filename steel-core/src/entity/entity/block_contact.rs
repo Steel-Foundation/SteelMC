@@ -7,10 +7,8 @@ use super::*;
 /// Implemented for every [`Entity`]; entity types change behavior through
 /// [`EntityHooks`], never by implementing this trait.
 pub trait EntityBlockContact: Entity {
-    /// Returns whether this entity is excluded from pressure plates and tripwires.
-    ///
-    /// Display-like entities and marker entities override this capability.
-    fn is_ignoring_block_triggers(&self) -> bool {
+    /// Default for [`Entity::is_ignoring_block_triggers`].
+    fn is_ignoring_block_triggers_default(&self) -> bool {
         false
     }
 

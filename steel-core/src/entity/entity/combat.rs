@@ -12,8 +12,8 @@ pub trait EntityCombat: Entity {
         true
     }
 
-    /// Returns whether this entity handles and consumes an attack before normal damage.
-    fn skip_attack_interaction(&self, _source: &SharedEntity) -> bool {
+    /// Default for [`Entity::skip_attack_interaction`].
+    fn skip_attack_interaction_default(&self, _source: &SharedEntity) -> bool {
         false
     }
 

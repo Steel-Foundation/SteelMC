@@ -1,6 +1,5 @@
 //! Vanilla tripwire sensing, line updates, and shears disarming.
 
-use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
