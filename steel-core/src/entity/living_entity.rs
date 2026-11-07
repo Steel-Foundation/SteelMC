@@ -1681,6 +1681,26 @@ impl<'a> Living<'a> {
         );
     }
 
+    /// `LivingEntity.dropFromGiftLootTable`: rolls `loot_table` with the gift
+    /// context (origin and this entity) and drops each item here. Returns
+    /// whether anything dropped.
+    #[must_use]
+    pub fn drop_from_gift_loot_table(&self, loot_table: LootTableRef) -> bool {
+        let position = self.position();
+        let mut rng = rand::rng();
+        let equipment = living_loot_equipment(self);
+        let mut context = LootContext::new(&mut rng)
+            .with_origin(position.x, position.y, position.z)
+            .with_this_entity(entity_loot_ref(self.entity(), Some(&equipment)));
+
+        let items = loot_table.get_random_items(&mut context);
+        let dropped_any = !items.is_empty();
+        for item in items {
+            self.spawn_at_location(item, 0.0);
+        }
+        dropped_any
+    }
+
     /// `LivingEntity.checkFallDamage`: refreshes fluid contact and sends the
     /// landing burst before the entity fall-damage step.
     pub fn check_living_fall_damage(

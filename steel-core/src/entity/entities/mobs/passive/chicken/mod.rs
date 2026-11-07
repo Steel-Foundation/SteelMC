@@ -16,7 +16,6 @@ use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
 use steel_registry::item_stack::ItemStack;
-use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::vanilla_entity_data::ChickenEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_loot_tables;
@@ -41,8 +40,8 @@ use crate::entity::component::entries::FinalizeSpawnCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySyncedData,
-    LivingEntityBase, LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, entity_loot_ref,
-    living_loot_equipment, position_rider_default, sync_dirty_mob_effects,
+    LivingEntityBase, LivingProps, MobBase, MobProps, SharedEntity, SpawnRule,
+    position_rider_default, sync_dirty_mob_effects,
 };
 use crate::entity::{EntityProps, mob};
 use crate::world::World;
@@ -88,8 +87,6 @@ const EGG_LAY_SOUND_BASE_PITCH: f32 = 1.0;
 /// Pitch jitter around the base egg-lay sound pitch.
 const EGG_LAY_SOUND_PITCH_JITTER: f32 = 0.2;
 /// Offset at which laid eggs spawn above the chicken's feet.
-const EGG_LAY_SPAWN_Y_OFFSET: f64 = 0.0;
-
 /// Experience rewarded for a chicken jockey (vanilla `Chicken.getBaseExperienceReward`).
 const CHICKEN_JOCKEY_EXPERIENCE_REWARD: i32 = 10;
 
@@ -413,7 +410,10 @@ impl ChickenEntity {
         };
 
         if should_lay_egg {
-            if self.drop_gift_loot_table(&vanilla_loot_tables::GAMEPLAY_CHICKEN_LAY) {
+            if self
+                .living()
+                .drop_from_gift_loot_table(&vanilla_loot_tables::GAMEPLAY_CHICKEN_LAY)
+            {
                 let pitch = EGG_LAY_SOUND_BASE_PITCH
                     + (rand::random::<f32>() - rand::random::<f32>()) * EGG_LAY_SOUND_PITCH_JITTER;
                 self.play_sound(
@@ -470,27 +470,6 @@ impl ChickenEntity {
             self.set_sound_variant(sound_variant);
         }
         Flow::Continue
-    }
-
-    /// Rolls a gift loot table at this entity's position and drops each result.
-    ///
-    /// Mirrors vanilla `LivingEntity.dropFromGiftLootTable` for the
-    /// `gameplay/chicken_lay` table, returning whether any item was dropped.
-    fn drop_gift_loot_table(&self, loot_table: LootTableRef) -> bool {
-        let position = self.position();
-        let mut rng = rand::rng();
-        let equipment = living_loot_equipment(&self.living());
-        // Vanilla `LootContextParamSets.GIFT` carries only ORIGIN and THIS_ENTITY.
-        let mut context = LootContext::new(&mut rng)
-            .with_origin(position.x, position.y, position.z)
-            .with_this_entity(entity_loot_ref(self, Some(&equipment)));
-
-        let items = loot_table.get_random_items(&mut context);
-        let dropped_any = !items.is_empty();
-        for item in items {
-            self.spawn_at_location(item, EGG_LAY_SPAWN_Y_OFFSET);
-        }
-        dropped_any
     }
 }
 
