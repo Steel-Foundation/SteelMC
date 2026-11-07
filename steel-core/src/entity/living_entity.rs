@@ -49,6 +49,12 @@ entity_props! {
         fn is_invulnerable_to(world: &World, source: &DamageSource) -> bool = is_invulnerable_to_default;
         /// `LivingEntity.hurtArmor`.
         fn hurt_armor(source: &DamageSource, damage: f32) = hurt_armor_default;
+        /// `LivingEntity.hurtHelmet`, for damage that hits a worn helmet.
+        fn hurt_helmet(source: &DamageSource, damage: f32) = hurt_helmet_default;
+        /// `LivingEntity.getVoicePitch`.
+        fn voice_pitch() -> f32 = voice_pitch_default;
+        /// `LivingEntity.doesEmitEquipEvent`.
+        fn does_emit_equip_event(slot: EquipmentSlot) -> bool = does_emit_equip_event_default;
         /// `LivingEntity.actuallyHurt`.
         fn actually_hurt(world: &World, source: &DamageSource, amount: f32) = actually_hurt_default;
         /// The chunk whose viewers receive this entity's hurt animation.
@@ -690,13 +696,7 @@ impl<'a> Living<'a> {
 
     /// Returns the pitch used for this entity's sounds; babies get a randomized higher pitch.
     #[must_use]
-    pub fn voice_pitch(&self) -> f32 {
-        self.default_voice_pitch()
-    }
-
-    /// Returns the base voice pitch before entity-specific adjustments.
-    #[must_use]
-    pub fn default_voice_pitch(&self) -> f32 {
+    pub fn voice_pitch_default(&self) -> f32 {
         if self.is_baby() {
             (rand::random::<f32>() - rand::random::<f32>()) * 0.2 + 1.5
         } else {
@@ -1087,7 +1087,16 @@ impl<'a> Living<'a> {
         {
             damage *= 5.0;
         }
-        // TODO: apply helmet damage once those equipment hooks exist.
+        if source.is(&vanilla_damage_type_tags::DamageTypeTag::DAMAGES_HELMET) {
+            let mut wears_helmet = false;
+            self.with_equipment_slot(EquipmentSlot::Head, &mut |item| {
+                wears_helmet = !item.is_empty();
+            });
+            if wears_helmet {
+                self.hurt_helmet(source, damage);
+                damage *= 0.75;
+            }
+        }
         if !damage.is_finite() {
             damage = f32::MAX;
         }
@@ -1145,6 +1154,13 @@ impl<'a> Living<'a> {
         reason = "vanilla's base body; entity types override it through `LivingProps`"
     )]
     pub const fn hurt_armor_default(&self, _source: &DamageSource, _damage: f32) {}
+
+    /// Damages a worn helmet; base living entities do not.
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    pub const fn hurt_helmet_default(&self, _source: &DamageSource, _damage: f32) {}
 
     /// Damages equipped items in the given slots that are eligible to absorb this damage source.
     pub fn do_hurt_equipment(&self, source: &DamageSource, damage: f32, slots: &[EquipmentSlot]) {
@@ -2341,7 +2357,17 @@ impl<'a> Living<'a> {
             .flatten()
     }
 
-    /// Applies the sound portion of vanilla's equipment-change hook.
+    /// Whether changing `slot` emits the equip game event; every slot does by default.
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `LivingProps`"
+    )]
+    #[must_use]
+    pub const fn does_emit_equip_event_default(&self, _slot: EquipmentSlot) -> bool {
+        true
+    }
+
+    /// `LivingEntity.onEquipItem`: the equip sound and the equip game event.
     pub fn on_equip_item(&self, slot: EquipmentSlot, previous: &ItemStack, stack: &ItemStack) {
         if self.is_spectator()
             || self.is_first_tick()
@@ -2350,14 +2376,20 @@ impl<'a> Living<'a> {
             return;
         }
 
-        let Some(sound) = self.equip_sound(slot, stack) else {
-            return;
-        };
-        if self.is_silent() {
-            return;
-        }
-        if let Some(world) = self.level() {
+        if !self.is_silent()
+            && let Some(sound) = self.equip_sound(slot, stack)
+            && let Some(world) = self.level()
+        {
             world.play_sound_at(sound, self.sound_source(), self.position(), 1.0, 1.0, None);
+        }
+
+        if self.does_emit_equip_event(slot) {
+            let event = if stack.get_equippable().is_some() {
+                &vanilla_game_events::EQUIP
+            } else {
+                &vanilla_game_events::UNEQUIP
+            };
+            self.game_event(event);
         }
     }
 

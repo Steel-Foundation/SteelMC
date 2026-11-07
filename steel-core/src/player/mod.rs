@@ -117,7 +117,7 @@ use crate::entity::{
     get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
-use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
+use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, EquipmentSlotType};
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::Menu;
 use crate::inventory::menu::kinds::inventory_menu;
@@ -504,6 +504,10 @@ impl Player {
         };
         let use_on_release = behavior.use_on_release(&item);
         if active.remaining_ticks() == 0 && !use_on_release && !item.is_empty() {
+            self.send_packet(CEntityEvent {
+                entity_id: self.id(),
+                event: EntityStatus::UseItemComplete,
+            });
             let stack_before_finish = item.clone();
             item = behavior.finish_using(&mut item, &world, user);
             self.apply_item_use_cooldown(&stack_before_finish);
@@ -1755,6 +1759,13 @@ const fn protocol_look_at_anchor(anchor: EntityAnchor) -> LookAtAnchor {
 impl Player {
     const LIVING: LivingProps<Self> = LivingProps {
         hurt_sound: |_, source| Some(source.damage_type.effects.sound()),
+        voice_pitch: |_| 1.0,
+        does_emit_equip_event: |_, slot| slot.slot_type() == EquipmentSlotType::HumanoidArmor,
+        hurt_helmet: |player, source, damage| {
+            player
+                .living()
+                .do_hurt_equipment(source, damage, &[EquipmentSlot::Head]);
+        },
         death_sound: |_| Some(&sound_events::ENTITY_PLAYER_DEATH),
         indicate_damage: Self::living_indicate_damage,
         tick_living_entity: Self::living_tick_living_entity,

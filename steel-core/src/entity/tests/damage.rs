@@ -408,3 +408,23 @@ fn lethal_hurts_consume_main_hand_totem_then_off_hand_totem() {
     assert!(!entity.living().has_item_in_slot(EquipmentSlot::OffHand));
     assert_ne!(entity.pose(), EntityPose::Dying);
 }
+
+#[test]
+fn worn_helmet_cuts_helmet_damaging_hurts_by_a_quarter() {
+    init_vanilla_registry();
+    init_behaviors();
+    let source = DamageSource::environment(&vanilla_damage_types::FALLING_ANVIL);
+
+    let bare = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
+    assert!(bare.hurt(test_world(), &source, 4.0));
+    assert_f32_close(bare.living().get_health(), 16.0);
+
+    let helmeted = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
+    helmeted
+        .living()
+        .with_equipment_slot_mut(EquipmentSlot::Head, &mut |stack| {
+            *stack = ItemStack::new(&vanilla_items::CARVED_PUMPKIN);
+        });
+    assert!(helmeted.hurt(test_world(), &source, 4.0));
+    assert_f32_close(helmeted.living().get_health(), 17.0);
+}
