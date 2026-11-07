@@ -877,7 +877,7 @@ fn pathfinder_leash_attach_pins_home_restriction_to_holder() {
 
     assert!(mob.mob().has_home());
     assert_eq!(mob.mob().home_radius(), LEASH_ELASTIC_DISTANCE as i32 - 1);
-    let home = *mob.mob().mob_base().home_restriction().lock();
+    let home = mob.mob().mob_base().state.lock().home_restriction;
     assert_eq!(home.position, BlockPos::new(5, 64, 0));
 }
 

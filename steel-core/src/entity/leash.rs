@@ -10,7 +10,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_game_rules::ENTITY_DROPS;
 use steel_registry::{sound_events, vanilla_items};
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, UuidExt as _};
 use uuid::Uuid;
 
@@ -32,7 +32,7 @@ pub const LEASH_LIQUID_ANGULAR_FRICTION: f64 = 0.8;
 /// Leashable entities can be leashed to an entity holding a lead, or a fence holding a lead.
 pub trait Leashable: Entity {
     /// Returns the shared leash data (if any).
-    fn leash_data(&self) -> &SyncMutex<Option<LeashData>>;
+    fn leash_data(&self) -> &CheckedMutex<Option<LeashData>>;
 
     /// Returns whether this entity is leashed.
     fn is_leashed(&self) -> bool {

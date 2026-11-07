@@ -38,7 +38,7 @@ use steel_registry::{
     vanilla_entities, vanilla_entity_type_tags::EntityTypeTag, vanilla_game_events,
     vanilla_game_rules, vanilla_items,
 };
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::CheckedMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{
     BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, Identifier, TICKS_PER_SECOND,
@@ -171,24 +171,29 @@ impl DropChances {
 }
 
 pub struct MobBase {
-    goal_selector: SyncMutex<GoalSelector>,
-    target_selector: SyncMutex<GoalSelector>,
-    target: SyncMutex<Option<WeakEntity>>,
-    sensing: SyncMutex<Sensing>,
-    controls: SyncMutex<MobControls>,
-    navigation: SyncMutex<PathNavigation>,
-    pathfinding_malus: SyncMutex<PathfindingMalus>,
-    persistence_required: SyncMutex<bool>,
-    can_pick_up_loot: SyncMutex<bool>,
-    drop_chances: SyncMutex<DropChances>,
-    home_restriction: SyncMutex<MobHomeRestriction>,
-    death_loot_table: SyncMutex<Option<Identifier>>,
-    death_loot_table_seed: SyncMutex<i64>,
-    leash_data: SyncMutex<Option<LeashData>>,
-    ambient_sound_time: SyncMutex<i32>,
-    xp_reward: SyncMutex<i32>,
+    goal_selector: CheckedMutex<GoalSelector>,
+    target_selector: CheckedMutex<GoalSelector>,
+    target: CheckedMutex<Option<WeakEntity>>,
+    sensing: CheckedMutex<Sensing>,
+    controls: CheckedMutex<MobControls>,
+    navigation: CheckedMutex<PathNavigation>,
+    pathfinding_malus: CheckedMutex<PathfindingMalus>,
+    state: CheckedMutex<MobState>,
+    leash_data: CheckedMutex<Option<LeashData>>,
     hooks: &'static dyn MobHooks,
     definition: &'static dyn MobEntries,
+}
+
+/// A mob's plain per-instance values: persistence, loot, home and timers.
+struct MobState {
+    persistence_required: bool,
+    can_pick_up_loot: bool,
+    drop_chances: DropChances,
+    home_restriction: MobHomeRestriction,
+    death_loot_table: Option<Identifier>,
+    death_loot_table_seed: i64,
+    ambient_sound_time: i32,
+    xp_reward: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,39 +215,41 @@ impl MobBase {
     #[must_use]
     pub fn new(hooks: &'static dyn MobHooks, definition: &'static dyn MobEntries) -> Self {
         Self {
-            goal_selector: SyncMutex::new(GoalSelector::new()),
-            target_selector: SyncMutex::new(GoalSelector::new()),
-            target: SyncMutex::new(None),
-            sensing: SyncMutex::new(Sensing::new()),
-            controls: SyncMutex::new(MobControls::new()),
-            navigation: SyncMutex::new(PathNavigation::new()),
-            pathfinding_malus: SyncMutex::new(PathfindingMalus::new()),
-            persistence_required: SyncMutex::new(false),
-            can_pick_up_loot: SyncMutex::new(false),
-            drop_chances: SyncMutex::new(DropChances::DEFAULT),
-            home_restriction: SyncMutex::new(MobHomeRestriction::none()),
-            death_loot_table: SyncMutex::new(None),
-            death_loot_table_seed: SyncMutex::new(0),
-            leash_data: SyncMutex::new(None),
-            ambient_sound_time: SyncMutex::new(0),
-            xp_reward: SyncMutex::new(0),
+            goal_selector: CheckedMutex::new(GoalSelector::new()),
+            target_selector: CheckedMutex::new(GoalSelector::new()),
+            target: CheckedMutex::new(None),
+            sensing: CheckedMutex::new(Sensing::new()),
+            controls: CheckedMutex::new(MobControls::new()),
+            navigation: CheckedMutex::new(PathNavigation::new()),
+            pathfinding_malus: CheckedMutex::new(PathfindingMalus::new()),
+            state: CheckedMutex::new(MobState {
+                persistence_required: false,
+                can_pick_up_loot: false,
+                drop_chances: DropChances::DEFAULT,
+                home_restriction: MobHomeRestriction::none(),
+                death_loot_table: None,
+                death_loot_table_seed: 0,
+                ambient_sound_time: 0,
+                xp_reward: 0,
+            }),
+            leash_data: CheckedMutex::new(None),
             hooks,
             definition,
         }
     }
 
     #[must_use]
-    pub const fn goal_selector(&self) -> &SyncMutex<GoalSelector> {
+    pub const fn goal_selector(&self) -> &CheckedMutex<GoalSelector> {
         &self.goal_selector
     }
 
     #[must_use]
-    pub const fn target_selector(&self) -> &SyncMutex<GoalSelector> {
+    pub const fn target_selector(&self) -> &CheckedMutex<GoalSelector> {
         &self.target_selector
     }
 
     #[must_use]
-    pub(crate) const fn sensing(&self) -> &SyncMutex<Sensing> {
+    pub(crate) const fn sensing(&self) -> &CheckedMutex<Sensing> {
         &self.sensing
     }
 
@@ -285,72 +292,47 @@ impl MobBase {
     }
 
     #[must_use]
-    pub const fn controls(&self) -> &SyncMutex<MobControls> {
+    pub const fn controls(&self) -> &CheckedMutex<MobControls> {
         &self.controls
     }
 
     #[must_use]
-    pub const fn navigation(&self) -> &SyncMutex<PathNavigation> {
+    pub const fn navigation(&self) -> &CheckedMutex<PathNavigation> {
         &self.navigation
     }
 
     #[must_use]
-    pub const fn pathfinding_malus(&self) -> &SyncMutex<PathfindingMalus> {
+    pub const fn pathfinding_malus(&self) -> &CheckedMutex<PathfindingMalus> {
         &self.pathfinding_malus
     }
 
-    #[must_use]
-    pub const fn persistence_required(&self) -> &SyncMutex<bool> {
-        &self.persistence_required
-    }
-
-    pub const fn can_pick_up_loot(&self) -> &SyncMutex<bool> {
-        &self.can_pick_up_loot
-    }
-
-    const fn drop_chances(&self) -> &SyncMutex<DropChances> {
-        &self.drop_chances
-    }
-
-    const fn home_restriction(&self) -> &SyncMutex<MobHomeRestriction> {
-        &self.home_restriction
-    }
-
-    const fn death_loot_table(&self) -> &SyncMutex<Option<Identifier>> {
-        &self.death_loot_table
-    }
-
-    const fn death_loot_table_seed(&self) -> &SyncMutex<i64> {
-        &self.death_loot_table_seed
-    }
-
-    const fn leash_data(&self) -> &SyncMutex<Option<LeashData>> {
+    const fn leash_data(&self) -> &CheckedMutex<Option<LeashData>> {
         &self.leash_data
     }
 
     #[must_use]
     pub fn ambient_sound_time(&self) -> i32 {
-        *self.ambient_sound_time.lock()
+        self.state.lock().ambient_sound_time
     }
 
     pub fn set_ambient_sound_time(&self, ambient_sound_time: i32) {
-        *self.ambient_sound_time.lock() = ambient_sound_time;
+        self.state.lock().ambient_sound_time = ambient_sound_time;
     }
 
     fn get_and_increment_ambient_sound_time(&self) -> i32 {
-        let mut ambient_sound_time = self.ambient_sound_time.lock();
-        let previous = *ambient_sound_time;
-        *ambient_sound_time += 1;
+        let mut state = self.state.lock();
+        let previous = state.ambient_sound_time;
+        state.ambient_sound_time += 1;
         previous
     }
 
     #[must_use]
     pub fn xp_reward(&self) -> i32 {
-        *self.xp_reward.lock()
+        self.state.lock().xp_reward
     }
 
     pub fn set_xp_reward(&self, xp_reward: i32) {
-        *self.xp_reward.lock() = xp_reward;
+        self.state.lock().xp_reward = xp_reward;
     }
 }
 
@@ -1023,41 +1005,43 @@ impl<'a> Mob<'a> {
     }
 
     pub fn is_persistence_required(&self) -> bool {
-        *self.mob_base().persistence_required().lock()
+        self.mob_base().state.lock().persistence_required
     }
 
     pub fn set_persistence_required(&self) {
-        *self.mob_base().persistence_required().lock() = true;
+        self.mob_base().state.lock().persistence_required = true;
     }
 
     /// Returns whether this mob is allowed to pick up dropped items.
     pub fn can_pick_up_loot(&self) -> bool {
-        *self.mob_base().can_pick_up_loot().lock()
+        self.mob_base().state.lock().can_pick_up_loot
     }
 
     pub fn set_can_pick_up_loot(&self, can_pick_up_loot: bool) {
-        *self.mob_base().can_pick_up_loot().lock() = can_pick_up_loot;
+        self.mob_base().state.lock().can_pick_up_loot = can_pick_up_loot;
     }
 
     pub fn equipment_drop_chance(&self, slot: EquipmentSlot) -> f32 {
-        self.mob_base().drop_chances().lock().by_equipment(slot)
+        self.mob_base().state.lock().drop_chances.by_equipment(slot)
     }
 
     pub fn set_equipment_drop_chance(&self, slot: EquipmentSlot, chance: f32) {
         self.mob_base()
-            .drop_chances()
+            .state
             .lock()
+            .drop_chances
             .set_equipment_chance(slot, chance);
     }
 
     pub fn is_equipment_drop_preserved(&self, slot: EquipmentSlot) -> bool {
-        self.mob_base().drop_chances().lock().is_preserved(slot)
+        self.mob_base().state.lock().drop_chances.is_preserved(slot)
     }
 
     pub fn set_guaranteed_drop(&self, slot: EquipmentSlot) {
         self.mob_base()
-            .drop_chances()
+            .state
             .lock()
+            .drop_chances
             .set_guaranteed_drop(slot);
     }
 
@@ -1402,13 +1386,13 @@ impl<'a> Mob<'a> {
             "PersistenceRequired",
             i8::from(self.is_persistence_required()),
         );
-        self.mob_base().drop_chances().lock().save(nbt);
+        self.mob_base().state.lock().drop_chances.save(nbt);
         if let Some(leash_data) = self.mob_base().leash_data().lock().as_ref() {
             leash_data.save(nbt);
         }
 
         if self.has_home() {
-            let home = *self.mob_base().home_restriction().lock();
+            let home = self.mob_base().state.lock().home_restriction;
             nbt.insert("home_radius", home.radius);
             nbt.insert(
                 "home_pos",
@@ -1421,10 +1405,10 @@ impl<'a> Mob<'a> {
         }
 
         nbt.insert("LeftHanded", i8::from(self.is_left_handed()));
-        if let Some(loot_table) = self.mob_base().death_loot_table().lock().as_ref() {
+        if let Some(loot_table) = self.mob_base().state.lock().death_loot_table.as_ref() {
             nbt.insert("DeathLootTable", loot_table.to_string());
         }
-        let loot_table_seed = *self.mob_base().death_loot_table_seed().lock();
+        let loot_table_seed = self.mob_base().state.lock().death_loot_table_seed;
         if loot_table_seed != 0 {
             nbt.insert("DeathLootTableSeed", loot_table_seed);
         }
@@ -1436,10 +1420,10 @@ impl<'a> Mob<'a> {
     pub fn load_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_equipment(nbt);
         self.set_can_pick_up_loot(nbt.byte("CanPickUpLoot").is_some_and(|value| value != 0));
-        *self.mob_base().persistence_required().lock() = nbt
+        self.mob_base().state.lock().persistence_required = nbt
             .byte("PersistenceRequired")
             .is_some_and(|value| value != 0);
-        *self.mob_base().drop_chances().lock() = DropChances::load(nbt);
+        self.mob_base().state.lock().drop_chances = DropChances::load(nbt);
         *self.mob_base().leash_data().lock() = LeashData::load(nbt);
         let home_radius = nbt.int("home_radius").unwrap_or(-1);
         if home_radius >= 0 {
@@ -1458,38 +1442,39 @@ impl<'a> Mob<'a> {
         let death_loot_table = nbt
             .string("DeathLootTable")
             .and_then(|loot_table| loot_table.to_str().as_ref().parse().ok());
-        *self.mob_base().death_loot_table().lock() = death_loot_table;
-        *self.mob_base().death_loot_table_seed().lock() =
+        self.mob_base().state.lock().death_loot_table = death_loot_table;
+        self.mob_base().state.lock().death_loot_table_seed =
             nbt.long("DeathLootTableSeed").unwrap_or(0);
         self.set_no_ai(nbt.byte("NoAI").is_some_and(|value| value != 0));
     }
 
     pub fn set_death_loot_table(&self, loot_table: Option<Identifier>) {
-        *self.mob_base().death_loot_table().lock() = loot_table;
+        self.mob_base().state.lock().death_loot_table = loot_table;
     }
 
     pub fn set_death_loot_table_seed(&self, seed: i64) {
-        *self.mob_base().death_loot_table_seed().lock() = seed;
+        self.mob_base().state.lock().death_loot_table_seed = seed;
     }
 
     pub fn custom_death_loot_table(&self) -> Option<LootTableRef> {
         self.mob_base()
-            .death_loot_table()
+            .state
             .lock()
+            .death_loot_table
             .as_ref()
             .and_then(|key| REGISTRY.loot_tables.by_key(key))
     }
 
     pub fn has_custom_death_loot_table(&self) -> bool {
-        self.mob_base().death_loot_table().lock().is_some()
+        self.mob_base().state.lock().death_loot_table.is_some()
     }
 
     pub fn death_loot_table_seed(&self) -> i64 {
-        *self.mob_base().death_loot_table_seed().lock()
+        self.mob_base().state.lock().death_loot_table_seed
     }
 
     pub fn clear_custom_death_loot_table(&self) {
-        *self.mob_base().death_loot_table().lock() = None;
+        self.mob_base().state.lock().death_loot_table = None;
     }
 
     pub fn is_within_home(&self) -> bool {
@@ -1497,31 +1482,31 @@ impl<'a> Mob<'a> {
     }
 
     pub fn is_within_home_pos(&self, pos: BlockPos) -> bool {
-        let home = *self.mob_base().home_restriction().lock();
+        let home = self.mob_base().state.lock().home_restriction;
         home.radius == -1
             || block_pos_distance_sqr(home.position, pos) < home_radius_sqr(home.radius)
     }
 
     pub fn is_within_home_vec(&self, pos: DVec3) -> bool {
-        let home = *self.mob_base().home_restriction().lock();
+        let home = self.mob_base().state.lock().home_restriction;
         home.radius == -1
             || block_center_distance_sqr(home.position, pos) < home_radius_sqr(home.radius)
     }
 
     pub fn set_home_to(&self, position: BlockPos, radius: i32) {
-        *self.mob_base().home_restriction().lock() = MobHomeRestriction { position, radius };
+        self.mob_base().state.lock().home_restriction = MobHomeRestriction { position, radius };
     }
 
     pub fn home_position(&self) -> BlockPos {
-        self.mob_base().home_restriction().lock().position
+        self.mob_base().state.lock().home_restriction.position
     }
 
     pub fn home_radius(&self) -> i32 {
-        self.mob_base().home_restriction().lock().radius
+        self.mob_base().state.lock().home_restriction.radius
     }
 
     pub fn clear_home(&self) {
-        self.mob_base().home_restriction().lock().radius = -1;
+        self.mob_base().state.lock().home_restriction.radius = -1;
     }
 
     pub fn has_home(&self) -> bool {
@@ -2196,7 +2181,7 @@ impl<'a> Mob<'a> {
 
 // Every mob is `Leashable`.
 impl<T: LivingParts + Has<MobBase>> Leashable for T {
-    fn leash_data(&self) -> &SyncMutex<Option<LeashData>> {
+    fn leash_data(&self) -> &CheckedMutex<Option<LeashData>> {
         self.get::<MobBase>().leash_data()
     }
 
