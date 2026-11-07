@@ -247,6 +247,7 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::entity::EntityBase;
+    use crate::entity::{EntityHooks, EntityProps};
     use crate::test_support::TestLevel;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -280,6 +281,26 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(RecordingEntity);
 
+    impl RecordingEntity {
+        const ENTITY: EntityProps<Self> = EntityProps {
+            on_above_bubble_column: Self::entity_on_above_bubble_column,
+            on_inside_bubble_column: Self::entity_on_inside_bubble_column,
+            ..EntityProps::new()
+        };
+
+        fn entity_on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
+            self.calls
+                .lock()
+                .push(BubbleColumnCall::Above { drag_down, pos });
+        }
+
+        fn entity_on_inside_bubble_column(&self, drag_down: bool) {
+            self.calls
+                .lock()
+                .push(BubbleColumnCall::Inside { drag_down });
+        }
+    }
+
     impl Entity for RecordingEntity {
         fn base(&self) -> &EntityBase {
             &self.base
@@ -289,16 +310,8 @@ mod tests {
             &vanilla_entities::ITEM
         }
 
-        fn on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
-            self.calls
-                .lock()
-                .push(BubbleColumnCall::Above { drag_down, pos });
-        }
-
-        fn on_inside_bubble_column(&self, drag_down: bool) {
-            self.calls
-                .lock()
-                .push(BubbleColumnCall::Inside { drag_down });
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &Self::ENTITY
         }
     }
 

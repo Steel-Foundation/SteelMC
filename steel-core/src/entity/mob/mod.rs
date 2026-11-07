@@ -3,11 +3,11 @@
 mod pathfinder;
 pub(crate) mod stages;
 
-use crate::entity::Ageable;
 use crate::entity::component::definition::MobEntries;
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::leash::{LeashData, Leashable};
+use crate::entity::{Ageable, EntityProps};
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
 use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target};
@@ -60,6 +60,7 @@ use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::conversion::{AfterConversion, convert_to as convert_mob};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
+use crate::entity::living_entity;
 use crate::entity::{
     ConversionParams, Entity, EntitySpawnReason, Living, LivingParts, LivingProps,
     LivingTravelInput, RemovalReason, SharedEntity, SpawnGroupData, WeakEntity,
@@ -489,6 +490,18 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
         server_ai_step: |mob, entity| mob.mob().mob_server_ai_step(entity),
         base_experience_reward: |mob| mob.mob().base_experience_reward_mob(),
         ..LivingProps::new()
+    }
+}
+
+/// `Mob`'s overrides of entity hooks, on top of
+/// [`living_entity::entity_props`](crate::entity::living_entity::entity_props).
+#[must_use]
+pub const fn entity_props<E: Parts>() -> EntityProps<E> {
+    EntityProps {
+        base_tick: |mob| mob.mob().base_tick_mob(),
+        check_despawn: |mob| mob.mob().check_mob_despawn(),
+        is_effective_ai: |mob| mob.is_server_driven_movement() && !mob.mob().is_no_ai(),
+        ..living_entity::entity_props()
     }
 }
 

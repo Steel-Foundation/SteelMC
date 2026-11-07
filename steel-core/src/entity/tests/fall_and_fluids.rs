@@ -157,9 +157,12 @@ fn fluid_falling_adjustment_is_skipped_while_sprinting() {
 #[test]
 fn water_float_while_ridden_uses_vanilla_entity_type_tag_and_threshold() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.5, 0.0, true)
-        .with_entity_type(&vanilla_entities::HORSE)
-        .with_vehicle();
+    let entity = Arc::new(
+        LivingFluidTestEntity::new(0.5, 0.0, true).with_entity_type(&vanilla_entities::HORSE),
+    );
+    let vehicle: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
+    let passenger: SharedEntity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
+    EntityBase::restore_passenger_relationship(&vehicle, &passenger);
 
     entity.living().float_in_water_while_ridden();
 

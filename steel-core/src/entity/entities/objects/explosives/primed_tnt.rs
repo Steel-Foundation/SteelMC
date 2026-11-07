@@ -19,11 +19,11 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::block_entity::block_state_nbt;
-use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityReference, EntitySyncedData,
     RemovalReason, SharedEntity,
 };
+use crate::entity::{EntityHooks, EntityProps};
 use crate::physics::MoverType;
 use crate::world::{
     DefaultExplosionDamageCalculator, Explosion, ExplosionBlockReader, ExplosionDamageCalculator,
@@ -241,7 +241,7 @@ impl PrimedTntEntity {
             .filter(|owner| owner.is_living_entity())
     }
 
-    fn explode(self: &Arc<Self>, world: &Arc<World>) {
+    fn explode(&self, entity: &SharedEntity, world: &Arc<World>) {
         if !world.get_game_rule(&TNT_EXPLODES) {
             return;
         }
@@ -258,7 +258,7 @@ impl PrimedTntEntity {
             (state.explosion_power, state.used_portal)
         };
         let mut options = ExplosionOptions::new(center, explosion_power, ExplosionInteraction::Tnt);
-        options.source = Some(Arc::clone(self) as SharedEntity);
+        options.source = Some(Arc::clone(entity));
         if used_portal {
             options.damage_calculator = Some(&USED_PORTAL_DAMAGE_CALCULATOR);
             options.immutable_block_calculator = Some(&USED_PORTAL_DAMAGE_CALCULATOR);
@@ -269,19 +269,25 @@ impl PrimedTntEntity {
     }
 }
 
-impl Entity for PrimedTntEntity {
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
+impl PrimedTntEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        tick: Self::entity_tick,
+        blocks_building: |_| true,
+        is_pickable: |entity| !entity.is_removed(),
+        is_hard_collision_relevant: |_| false,
+        movement_emission: |_| EntityMovementEmission::None,
+        get_default_gravity: |_| GRAVITY,
+        explosion_indirect_source: |entity| entity.owner(),
+        explosion_damage_origin: |entity| entity.position(),
+        on_teleported: Self::entity_on_teleported,
+        hurt: |_, _, _, _| false,
+        ..EntityProps::new()
+    };
 
-    fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
-    }
-
-    fn tick(self: Arc<Self>) {
+    fn entity_tick(&self, entity: &SharedEntity) {
         self.handle_portal();
         self.apply_gravity();
-        Arc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity());
+        Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
         let mut velocity = self.velocity() * f64::from(AIR_DRAG);
         if self.on_ground() {
@@ -297,7 +303,7 @@ impl Entity for PrimedTntEntity {
         if fuse <= 0 {
             self.set_removed(RemovalReason::Discarded);
             if let Some(world) = self.level() {
-                self.explode(&world);
+                self.explode(entity, &world);
             }
         } else {
             self.update_fluid_interaction();
@@ -308,40 +314,26 @@ impl Entity for PrimedTntEntity {
         );
     }
 
-    fn blocks_building(&self) -> bool {
-        true
+    fn entity_on_teleported(&self) {
+        self.state.lock().used_portal = true;
+    }
+}
+
+impl Entity for PrimedTntEntity {
+    fn base(&self) -> &EntityBase {
+        &self.base
     }
 
-    fn is_pickable(&self) -> bool {
-        !self.is_removed()
+    fn entity_type(&self) -> EntityTypeRef {
+        self.entity_type
     }
 
-    fn is_hard_collision_relevant(&self) -> bool {
-        false
-    }
-
-    fn movement_emission(&self) -> EntityMovementEmission {
-        EntityMovementEmission::None
-    }
-
-    fn get_default_gravity(&self) -> f64 {
-        GRAVITY
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
-    }
-
-    fn explosion_indirect_source(&self) -> Option<SharedEntity> {
-        self.owner()
-    }
-
-    fn explosion_damage_origin(&self) -> DVec3 {
-        self.position()
-    }
-
-    fn on_teleported(&self) {
-        self.state.lock().used_portal = true;
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -371,10 +363,6 @@ impl Entity for PrimedTntEntity {
             .unwrap_or(DEFAULT_EXPLOSION_POWER)
             .clamp(0.0, MAX_EXPLOSION_POWER);
         state.owner = EntityReference::read(&nbt, "owner");
-    }
-
-    fn hurt(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
-        false
     }
 }
 

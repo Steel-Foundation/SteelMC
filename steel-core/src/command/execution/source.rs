@@ -903,12 +903,20 @@ mod tests {
     };
 
     use super::{CommandAuthorizationContext, admin_broadcast_source_name, normalize_rotation};
+    use crate::entity::{EntityHooks, EntityProps};
 
     struct NamedTestEntity {
         base: EntityBase,
     }
 
     crate::entity::impl_test_downcast_type!(NamedTestEntity);
+
+    impl NamedTestEntity {
+        const ENTITY: EntityProps<Self> = EntityProps {
+            plain_text_name: |_| "Executor".to_owned(),
+            ..EntityProps::new()
+        };
+    }
 
     impl Entity for NamedTestEntity {
         fn base(&self) -> &EntityBase {
@@ -919,8 +927,8 @@ mod tests {
             &vanilla_entities::ITEM
         }
 
-        fn plain_text_name(&self) -> String {
-            "Executor".to_owned()
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &Self::ENTITY
         }
     }
 

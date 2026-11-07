@@ -47,6 +47,7 @@ use steel_utils::ChunkPos;
 mod connection;
 mod player;
 
+use crate::entity::{EntityDefaults, EntityHooks};
 pub(crate) use connection::TestConnection;
 pub(crate) use player::{TestPlayerBuilder, test_runtime_config};
 
@@ -90,6 +91,10 @@ impl Entity for TestEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &EntityDefaults
     }
 }
 

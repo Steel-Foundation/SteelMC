@@ -258,13 +258,16 @@ mod tests {
     use steel_utils::locks::SyncMutex;
 
     use super::*;
-    use crate::entity::EntityBase;
+    use crate::entity::{EntityBase, LivingEntityBase};
+    use crate::entity::{EntityHooks, EntityProps};
+    use crate::test_support::DEFAULT_LIVING_HOOKS;
     use crate::test_support::test_world;
+    use steel_utils::{DowncastType as _, DowncastTypeKey, ErasedType};
 
     struct TestEntity {
         base: EntityBase,
         entity_type: EntityTypeRef,
-        is_living: bool,
+        living_base: Option<LivingEntityBase>,
         uses_client_movement_packets: bool,
         known_movement: DVec3,
         damage: SyncMutex<Vec<(String, f32)>>,
@@ -272,10 +275,22 @@ mod tests {
 
     impl TestEntity {
         fn living(entity_type: EntityTypeRef) -> Self {
+            init_vanilla_registry();
+            Self::new(
+                entity_type,
+                Some(LivingEntityBase::new(entity_type, &DEFAULT_LIVING_HOOKS)),
+            )
+        }
+
+        fn non_living(entity_type: EntityTypeRef) -> Self {
+            Self::new(entity_type, None)
+        }
+
+        fn new(entity_type: EntityTypeRef, living_base: Option<LivingEntityBase>) -> Self {
             Self {
                 base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::<World>::new()),
                 entity_type,
-                is_living: true,
+                living_base,
                 uses_client_movement_packets: false,
                 known_movement: DVec3::ZERO,
                 damage: SyncMutex::new(Vec::new()),
@@ -298,17 +313,28 @@ mod tests {
             self
         }
 
-        fn non_living(mut self) -> Self {
-            self.is_living = false;
-            self
-        }
-
         fn damage_events(&self) -> Vec<(String, f32)> {
             self.damage.lock().clone()
         }
     }
 
     crate::entity::impl_test_downcast_type!(TestEntity);
+
+    impl TestEntity {
+        const ENTITY: EntityProps<Self> = EntityProps {
+            uses_client_movement_packets: |entity| entity.uses_client_movement_packets,
+            known_movement: |entity| entity.known_movement,
+            hurt: Self::entity_hurt,
+            ..EntityProps::new()
+        };
+
+        fn entity_hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
+            self.damage
+                .lock()
+                .push((source.damage_type.key.path.as_ref().to_owned(), amount));
+            true
+        }
+    }
 
     impl Entity for TestEntity {
         fn base(&self) -> &EntityBase {
@@ -319,23 +345,14 @@ mod tests {
             self.entity_type
         }
 
-        fn is_living_entity(&self) -> bool {
-            self.is_living
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &Self::ENTITY
         }
 
-        fn uses_client_movement_packets(&self) -> bool {
-            self.uses_client_movement_packets
-        }
-
-        fn known_movement(&self) -> DVec3 {
-            self.known_movement
-        }
-
-        fn hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
-            self.damage
-                .lock()
-                .push((source.damage_type.key.path.as_ref().to_owned(), amount));
-            true
+        fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+            (key == LivingEntityBase::TYPE_KEY)
+                .then_some(self.living_base.as_ref()?)
+                .map(|base| base as &dyn ErasedType)
         }
     }
 
@@ -401,7 +418,7 @@ mod tests {
     fn foxes_bees_and_non_living_entities_are_immune_to_sweet_berry_bush_effects() {
         let fox = TestEntity::living(&vanilla_entities::FOX);
         let bee = TestEntity::living(&vanilla_entities::BEE);
-        let item = TestEntity::living(&vanilla_entities::ITEM).non_living();
+        let item = TestEntity::non_living(&vanilla_entities::ITEM);
 
         assert!(!SweetBerryBushBlock::applies_contact_effects(&fox));
         assert!(!SweetBerryBushBlock::applies_contact_effects(&bee));

@@ -771,10 +771,10 @@ mod item_based_steering;
 mod item_frame;
 mod leash;
 mod living_base;
-mod living_entity;
+pub(crate) mod living_entity;
 mod living_reference;
 mod manager;
-mod mob;
+pub(crate) mod mob;
 pub mod mob_effect;
 mod monster;
 mod movement_sync;
@@ -813,7 +813,8 @@ pub(crate) use entity::apply_entity_look_at;
 pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
-    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
+    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityDefaults,
+    EntityEventSource, EntityHooks, EntityProps,
 };
 pub use fluid_contact::EntityFluidContact;
 pub use identity::EntityGeneration;

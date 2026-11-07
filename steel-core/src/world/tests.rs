@@ -16,6 +16,7 @@ use uuid::Uuid;
 use crate::behavior::init_behaviors;
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use crate::entity::{EntityBase, entities::ChickenEntity};
+use crate::entity::{EntityDefaults, EntityHooks};
 use crate::player::ResetReason;
 use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world,
@@ -236,6 +237,10 @@ impl Entity for TrackerTestEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &EntityDefaults
     }
 }
 

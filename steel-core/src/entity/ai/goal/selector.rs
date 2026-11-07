@@ -376,6 +376,7 @@ mod tests {
     use crate::entity::component::Has;
     use crate::entity::component::definition::MobDefinition;
     use crate::entity::{Entity, EntityBase, LivingEntityBase, Mob, MobBase};
+    use crate::entity::{EntityHooks, EntityProps};
     use crate::entity::{EntitySyncedData, MobProps, mob};
     use std::sync::LazyLock;
     use steel_registry::vanilla_entity_data::MobEntityData;
@@ -423,6 +424,12 @@ mod tests {
         }
     }
 
+    impl TestPathfinderMob {
+        const ENTITY: EntityProps<Self> = EntityProps {
+            ..mob::entity_props()
+        };
+    }
+
     impl Entity for TestPathfinderMob {
         fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
             match key {
@@ -442,6 +449,10 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::PIG
+        }
+
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &Self::ENTITY
         }
     }
 

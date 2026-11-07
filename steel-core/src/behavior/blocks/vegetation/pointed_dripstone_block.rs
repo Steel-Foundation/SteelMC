@@ -919,6 +919,7 @@ mod tests {
         entity_type::EntityTypeRef, init_vanilla_registry, vanilla_blocks, vanilla_damage_types,
     };
 
+    use crate::entity::{EntityDefaults, EntityHooks};
     use crate::{
         behavior::init_behaviors,
         entity::{Entity, EntityBase, projectile::ProjectileBase},
@@ -952,6 +953,10 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             self.entity_type
+        }
+
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &EntityDefaults
         }
     }
 

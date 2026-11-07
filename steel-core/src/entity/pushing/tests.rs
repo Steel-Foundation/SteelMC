@@ -1,16 +1,14 @@
 use std::iter::once;
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::vanilla_game_rules::MAX_ENTITY_CRAMMING;
 use steel_utils::ChunkPos;
 
 use super::EntityPush;
-use super::test_fixtures::{
-    CustomContact, DEFAULT_ENTITIES, Factory, Fixture, LIVING_FIXTURES, player,
-};
+use super::test_fixtures::{DEFAULT_ENTITIES, Factory, Fixture, LIVING_FIXTURES, player};
 use crate::bootstrap::init_globals;
-use crate::entity::{Entity, next_entity_id};
+use crate::entity::next_entity_id;
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
 #[test]
@@ -199,12 +197,6 @@ fn default_impulses_preserve_bits_and_custom_velocity_accessors() {
             }
         }
     }
-
-    let custom = CustomContact::new(Arc::downgrade(&world.world));
-    custom.push_impulse(DVec3::X);
-    assert_eq!(custom.velocity_writes.load(Ordering::Relaxed), 1);
-    assert_eq!(custom.sync_writes.load(Ordering::Relaxed), 1);
-    assert_eq!(custom.velocity(), DVec3::X);
 }
 
 // Expected values come from vanilla 26.3 `Entity.push` on Java 25 and are compared bit for bit.

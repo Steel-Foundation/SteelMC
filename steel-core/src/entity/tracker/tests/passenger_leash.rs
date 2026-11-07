@@ -44,8 +44,7 @@ fn spawn_pairing_for_passenger_omits_untracked_vehicle_packet() {
     let passenger_typed = PairingTestEntity::new(2, Vec::new());
     let passenger: SharedEntity = Arc::<PairingTestEntity>::clone(&passenger_typed);
     vehicle_typed.add_passenger(&passenger);
-    let vehicle: SharedEntity = vehicle_typed;
-    passenger_typed.set_vehicle(&vehicle);
+    let _vehicle: SharedEntity = vehicle_typed;
 
     let pairing = tracker.spawn_pairing(&passenger, 99);
 
@@ -62,7 +61,6 @@ fn spawn_pairing_for_passenger_includes_tracked_vehicle_passenger_packet() {
     let passenger: SharedEntity = Arc::<PairingTestEntity>::clone(&passenger_typed);
     vehicle_typed.add_passenger(&passenger);
     let vehicle: SharedEntity = vehicle_typed;
-    passenger_typed.set_vehicle(&vehicle);
     track_entity_for_player(&tracker, &vehicle, 99);
     track_entity_for_player(&tracker, &passenger, 99);
 

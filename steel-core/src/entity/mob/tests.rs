@@ -36,6 +36,7 @@ use crate::entity::leash::{LEASH_ELASTIC_DISTANCE, LEASH_SNAP_DISTANCE, Leashabl
 use crate::entity::mob::pathfinder::LEASH_CLOSE_RANGE_WANTED_DISTANCE;
 use crate::entity::mob::{Mob, MobBase};
 use crate::entity::{Entity, EntityBase, LivingEntityBase, SharedEntity, next_entity_id};
+use crate::entity::{EntityDefaults, EntityHooks, EntityProps, living_entity};
 use crate::entity::{EntitySyncedData, MobProps, mob};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::ResetReason;
@@ -239,6 +240,13 @@ impl DespawnTestMob {
     }
 }
 
+impl DespawnTestMob {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        controlling_passenger: |entity| entity.controlling_passenger.lock().clone(),
+        ..mob::entity_props()
+    };
+}
+
 impl Entity for DespawnTestMob {
     fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
         match key {
@@ -260,12 +268,8 @@ impl Entity for DespawnTestMob {
         self.entity_type
     }
 
-    fn controlling_passenger(&self) -> Option<SharedEntity> {
-        self.controlling_passenger.lock().clone()
-    }
-
-    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        self.living().hurt_server(world, source, amount)
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
@@ -307,6 +311,12 @@ impl HiddenTarget {
 
 crate::entity::impl_test_downcast_type!(HiddenTarget);
 
+impl HiddenTarget {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        ..living_entity::entity_props()
+    };
+}
+
 impl Entity for HiddenTarget {
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
@@ -322,6 +332,10 @@ impl Entity for HiddenTarget {
 
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::PIG
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
@@ -375,6 +389,10 @@ impl Entity for MobControlVehicleEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &EntityDefaults
     }
 }
 

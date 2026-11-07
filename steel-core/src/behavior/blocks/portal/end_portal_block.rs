@@ -220,6 +220,7 @@ mod tests {
     };
 
     use super::{EndGatewayBlock, EndPortalBlock};
+    use crate::entity::{EntityDefaults, EntityHooks};
     use steel_registry::vanilla_entities;
     use steel_utils::{BlockPos, Downcast as _};
 
@@ -272,6 +273,10 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM
+        }
+
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &EntityDefaults
         }
     }
 

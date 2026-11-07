@@ -25,6 +25,7 @@ use super::{
     EntitySelector, IntRange, SelectorFilter, SelectorKind, SelectorParseErrorKind, SelectorType,
     parse_entity_selector, suggest_entity_selector,
 };
+use crate::entity::{EntityDefaults, EntityHooks};
 
 struct SelectorTestEntity {
     base: EntityBase,
@@ -52,6 +53,10 @@ impl Entity for SelectorTestEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &EntityDefaults
     }
 }
 

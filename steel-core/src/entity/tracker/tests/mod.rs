@@ -18,6 +18,7 @@ use steel_registry::{
 
 use super::*;
 use crate::entity::{EntityBase, LivingEntityBase, entities::ChickenEntity};
+use crate::entity::{EntityHooks, EntityProps, living_entity};
 use crate::inventory::equipment::EquipmentSlot;
 
 struct PairingTestEntity {
@@ -29,8 +30,6 @@ struct PairingTestEntity {
     dirty_attributes: SyncMutex<Vec<AttributeSnapshot>>,
     equipment: SyncMutex<Vec<EquipmentSlotItem>>,
     dirty_equipment: SyncMutex<Vec<EquipmentSlotItem>>,
-    passengers: SyncMutex<Vec<WeakEntity>>,
-    vehicle: SyncMutex<Option<WeakEntity>>,
 }
 
 impl PairingTestEntity {
@@ -52,8 +51,6 @@ impl PairingTestEntity {
             dirty_attributes: SyncMutex::new(Vec::new()),
             equipment: SyncMutex::new(Vec::new()),
             dirty_equipment: SyncMutex::new(Vec::new()),
-            passengers: SyncMutex::new(Vec::new()),
-            vehicle: SyncMutex::new(None),
         })
     }
 
@@ -61,16 +58,15 @@ impl PairingTestEntity {
         Self::new(1, attributes)
     }
 
-    fn add_passenger(&self, passenger: &SharedEntity) {
-        self.passengers.lock().push(Arc::downgrade(passenger));
+    fn add_passenger(self: &Arc<Self>, passenger: &SharedEntity) {
+        let vehicle: SharedEntity = Arc::<Self>::clone(self);
+        EntityBase::restore_passenger_relationship(&vehicle, passenger);
     }
 
     fn clear_passengers(&self) {
-        self.passengers.lock().clear();
-    }
-
-    fn set_vehicle(&self, vehicle: &SharedEntity) {
-        *self.vehicle.lock() = Some(Arc::downgrade(vehicle));
+        for passenger in self.base.passengers() {
+            passenger.base().stop_riding();
+        }
     }
 
     fn set_dirty_attributes(&self, attributes: Vec<AttributeSnapshot>) {
@@ -87,6 +83,12 @@ impl PairingTestEntity {
 }
 
 crate::entity::impl_test_downcast_type!(PairingTestEntity);
+
+impl PairingTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        ..living_entity::entity_props()
+    };
+}
 
 impl Entity for PairingTestEntity {
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
@@ -105,20 +107,8 @@ impl Entity for PairingTestEntity {
         self.entity_type
     }
 
-    fn vehicle(&self) -> Option<SharedEntity> {
-        self.vehicle.lock().as_ref().and_then(Weak::upgrade)
-    }
-
-    fn passengers(&self) -> Vec<SharedEntity> {
-        let mut live_passengers = Vec::new();
-        self.passengers.lock().retain(|passenger| {
-            let Some(entity) = passenger.upgrade() else {
-                return false;
-            };
-            live_passengers.push(entity);
-            true
-        });
-        live_passengers
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 

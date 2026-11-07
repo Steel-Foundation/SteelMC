@@ -40,12 +40,12 @@ use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::entries::FinalizeSpawnCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::component::{Component as _, Has};
-use crate::entity::mob::Parts as _;
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySyncedData,
     LivingEntityBase, LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, entity_loot_ref,
     living_loot_equipment, position_rider_default, sync_dirty_mob_effects,
 };
+use crate::entity::{EntityHooks, EntityProps, mob};
 use crate::world::World;
 
 const CHICKEN_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
@@ -488,11 +488,67 @@ impl ChickenEntity {
 
 impl DefaultEntityPush for ChickenEntity {}
 
-impl Entity for ChickenEntity {
-    fn is_hard_collision_relevant(&self) -> bool {
-        false
+impl ChickenEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        is_hard_collision_relevant: |_| false,
+        apply_implicit_item_components: Self::entity_apply_implicit_item_components,
+        dimensions_for_pose: Self::entity_dimensions_for_pose,
+        update_data_before_sync: Self::entity_update_data_before_sync,
+        play_step_sound: Self::entity_play_step_sound,
+        is_flapping: Self::entity_is_flapping,
+        on_flap: Self::entity_on_flap,
+        position_rider: Self::entity_position_rider,
+        ..mob::entity_props()
+    };
+
+    fn entity_apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(variant) = item_stack.get(CHICKEN_VARIANT) {
+            self.set_variant(variant.value());
+        }
+        if let Some(sound_variant) = item_stack.get(CHICKEN_SOUND_VARIANT) {
+            self.set_sound_variant(sound_variant.value());
+        }
     }
 
+    fn entity_dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
+        let scale = self.living().get_scale();
+        if self.animal().ageable().is_baby() {
+            CHICKEN_BABY_DIMENSIONS.scale(scale)
+        } else if self.entity_type.fixed {
+            self.entity_type.dimensions
+        } else {
+            self.entity_type.dimensions.scale(scale)
+        }
+    }
+
+    fn entity_update_data_before_sync(&self) {
+        self.update_dirty_mob_effect_entity_data();
+    }
+
+    fn entity_play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {
+        self.play_sound(self.current_sound_set().step_sound, 0.15, 1.0);
+    }
+
+    fn entity_is_flapping(&self) -> bool {
+        let fly_dist = self.base().movement_progress().fly_dist();
+        fly_dist > self.chicken_state.lock().next_flap
+    }
+
+    fn entity_on_flap(&self) {
+        let fly_dist = self.base().movement_progress().fly_dist();
+        let mut state = self.chicken_state.lock();
+        state.next_flap = fly_dist + state.flap_speed / NEXT_FLAP_SPEED_DIVISOR;
+    }
+
+    fn entity_position_rider(&self, passenger: &dyn Entity) {
+        position_rider_default(self, passenger);
+        if let Some(living) = passenger.as_living_entity() {
+            living.set_y_body_rot(self.living().y_body_rot());
+        }
+    }
+}
+
+impl Entity for ChickenEntity {
     fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
         Some(self)
     }
@@ -505,58 +561,12 @@ impl Entity for ChickenEntity {
         self.entity_type
     }
 
-    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
-        if let Some(variant) = item_stack.get(CHICKEN_VARIANT) {
-            self.set_variant(variant.value());
-        }
-        if let Some(sound_variant) = item_stack.get(CHICKEN_SOUND_VARIANT) {
-            self.set_sound_variant(sound_variant.value());
-        }
-    }
-
-    fn base_tick(&self) {
-        self.mob().base_tick_mob();
-    }
-
-    fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
-        let scale = self.living().get_scale();
-        if self.animal().ageable().is_baby() {
-            CHICKEN_BABY_DIMENSIONS.scale(scale)
-        } else if self.entity_type.fixed {
-            self.entity_type.dimensions
-        } else {
-            self.entity_type.dimensions.scale(scale)
-        }
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
-    }
-
-    fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
-    }
-
-    fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {
-        self.play_sound(self.current_sound_set().step_sound, 0.15, 1.0);
-    }
-
-    fn is_flapping(&self) -> bool {
-        let fly_dist = self.base().movement_progress().fly_dist();
-        fly_dist > self.chicken_state.lock().next_flap
-    }
-
-    fn on_flap(&self) {
-        let fly_dist = self.base().movement_progress().fly_dist();
-        let mut state = self.chicken_state.lock();
-        state.next_flap = fly_dist + state.flap_speed / NEXT_FLAP_SPEED_DIVISOR;
-    }
-
-    fn position_rider(&self, passenger: &dyn Entity) {
-        position_rider_default(self, passenger);
-        if let Some(living) = passenger.as_living_entity() {
-            living.set_y_body_rot(self.living().y_body_rot());
-        }
     }
 
     fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {

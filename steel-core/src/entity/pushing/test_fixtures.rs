@@ -13,6 +13,7 @@ use steel_utils::{BlockPos, ChunkPos};
 use crate::bootstrap::init_globals;
 use crate::entity::entities::{ChickenEntity, ExperienceOrbEntity, ItemEntity};
 use crate::entity::{Entity, EntityBase, SharedEntity, next_entity_id};
+use crate::entity::{EntityHooks, EntityProps};
 use crate::test_support::{
     TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
 };
@@ -113,8 +114,6 @@ pub(super) fn player(world: &Arc<World>, id: i32, position: DVec3) -> SharedEnti
 pub(super) struct CustomContact {
     base: EntityBase,
     contacts: AtomicUsize,
-    pub(super) velocity_writes: AtomicUsize,
-    pub(super) sync_writes: AtomicUsize,
 }
 
 impl CustomContact {
@@ -127,31 +126,27 @@ impl CustomContact {
                 world,
             ),
             contacts: AtomicUsize::new(0),
-            velocity_writes: AtomicUsize::new(0),
-            sync_writes: AtomicUsize::new(0),
         })
     }
 }
 
 crate::entity::impl_test_downcast_type!(CustomContact);
 
-impl Entity for CustomContact {
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
+impl CustomContact {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        is_pushable: Self::entity_is_pushable,
+        push_entity: Self::entity_push_entity,
+        ..EntityProps::new()
+    };
 
-    fn entity_type(&self) -> EntityTypeRef {
-        &vanilla_entities::ITEM
-    }
-
-    fn is_pushable(&self) -> bool {
+    fn entity_is_pushable(&self) -> bool {
         let world = self.level().expect("custom contact world");
         assert!(world.entity_manager().get_by_id(self.id()).is_some());
 
         true
     }
 
-    fn push_entity(&self, target: &dyn Entity) {
+    fn entity_push_entity(&self, target: &dyn Entity) {
         self.contacts.fetch_add(1, Ordering::Relaxed);
         target
             .try_set_position(DVec3::new(-0.5, 64.0, 0.75))
@@ -162,15 +157,19 @@ impl Entity for CustomContact {
             .set_health(0.0);
         target.push_impulse(DVec3::new(0.25, 0.0, -0.125));
     }
+}
 
-    fn set_velocity(&self, velocity: DVec3) {
-        self.velocity_writes.fetch_add(1, Ordering::Relaxed);
-        self.base.set_velocity(velocity);
+impl Entity for CustomContact {
+    fn base(&self) -> &EntityBase {
+        &self.base
     }
 
-    fn mark_velocity_sync(&self) {
-        self.sync_writes.fetch_add(1, Ordering::Relaxed);
-        self.base.mark_velocity_sync();
+    fn entity_type(&self) -> EntityTypeRef {
+        &vanilla_entities::ITEM
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 

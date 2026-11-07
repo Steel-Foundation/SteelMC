@@ -89,6 +89,7 @@ mod tests {
 
     use super::*;
     use crate::entity::EntityBase;
+    use crate::entity::{EntityDefaults, EntityHooks};
 
     struct TestEntity {
         base: EntityBase,
@@ -116,6 +117,10 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM
+        }
+
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &EntityDefaults
         }
     }
 

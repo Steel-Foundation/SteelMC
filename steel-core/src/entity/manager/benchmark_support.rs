@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::entity::{Entity, EntityBase, SharedEntity};
 
 use super::{EntityOwnership, EntityVisibility, WorldEntityManager};
+use crate::entity::{EntityDefaults, EntityHooks};
 
 const CHUNK_WIDTH: i32 = 16;
 const ENTITY_Y: f64 = 64.0;
@@ -47,6 +48,10 @@ impl Entity for BenchEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &EntityDefaults
     }
 }
 

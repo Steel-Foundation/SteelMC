@@ -49,6 +49,7 @@ use crate::world::game_event::{GameEventListener, SharedGameEventListener};
 use crate::world::{LevelReader, World};
 
 use super::*;
+use crate::entity::{EntityHooks, EntityProps, living_entity};
 
 struct PushableTestEntity {
     base: EntityBase,
@@ -64,6 +65,13 @@ impl PushableTestEntity {
 
 impl_test_downcast_type!(PushableTestEntity);
 
+impl PushableTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        is_pushable: |_| true,
+        ..EntityProps::new()
+    };
+}
+
 impl Entity for PushableTestEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -73,8 +81,8 @@ impl Entity for PushableTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn is_pushable(&self) -> bool {
-        true
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
@@ -109,6 +117,13 @@ impl TypedTestEntity {
 
 crate::entity::impl_test_downcast_type!(TypedTestEntity);
 
+impl TypedTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        projectile_owner_uuid: |entity| entity.projectile_owner_uuid,
+        ..EntityProps::new()
+    };
+}
+
 impl Entity for TypedTestEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -118,8 +133,8 @@ impl Entity for TypedTestEntity {
         self.entity_type
     }
 
-    fn projectile_owner_uuid(&self) -> Option<Uuid> {
-        self.projectile_owner_uuid
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
@@ -616,6 +631,22 @@ impl LeashNotificationTestEntity {
 
 crate::entity::impl_test_downcast_type!(LeashNotificationTestEntity);
 
+impl LeashNotificationTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        notify_leash_holder: Self::entity_notify_leash_holder,
+        notify_leashee_removed: Self::entity_notify_leashee_removed,
+        ..EntityProps::new()
+    };
+
+    fn entity_notify_leash_holder(&self, leashable: &dyn Entity) {
+        self.holder_notifications.lock().push(leashable.id());
+    }
+
+    fn entity_notify_leashee_removed(&self, leashable: &dyn Entity) {
+        self.removed_notifications.lock().push(leashable.id());
+    }
+}
+
 impl Entity for LeashNotificationTestEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -625,12 +656,8 @@ impl Entity for LeashNotificationTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn notify_leash_holder(&self, leashable: &dyn Entity) {
-        self.holder_notifications.lock().push(leashable.id());
-    }
-
-    fn notify_leashee_removed(&self, leashable: &dyn Entity) {
-        self.removed_notifications.lock().push(leashable.id());
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
@@ -653,6 +680,13 @@ impl MultiPassengerTestEntity {
 
 crate::entity::impl_test_downcast_type!(MultiPassengerTestEntity);
 
+impl MultiPassengerTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        can_add_passenger: |_, _| true,
+        ..EntityProps::new()
+    };
+}
+
 impl Entity for MultiPassengerTestEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -662,8 +696,8 @@ impl Entity for MultiPassengerTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn can_add_passenger(&self, _passenger: &dyn Entity) -> bool {
-        true
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
@@ -712,6 +746,15 @@ impl KnownMovementTestEntity {
 
 crate::entity::impl_test_downcast_type!(KnownMovementTestEntity);
 
+impl KnownMovementTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        known_movement: |entity| entity.known_movement,
+        known_speed: |entity| entity.known_speed,
+        uses_client_movement_packets: |entity| entity.uses_client_movement_packets,
+        ..EntityProps::new()
+    };
+}
+
 impl Entity for KnownMovementTestEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -721,16 +764,8 @@ impl Entity for KnownMovementTestEntity {
         self.entity_type
     }
 
-    fn known_movement(&self) -> DVec3 {
-        self.known_movement
-    }
-
-    fn known_speed(&self) -> DVec3 {
-        self.known_speed
-    }
-
-    fn uses_client_movement_packets(&self) -> bool {
-        self.uses_client_movement_packets
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
@@ -743,7 +778,6 @@ struct LivingFluidTestEntity {
     entity_type: EntityTypeRef,
     affected_by_fluids: bool,
     can_stand_on_fluid: bool,
-    vehicle: bool,
     on_non_air_block_for_frost: bool,
     in_wall_for_base_tick: bool,
     flying_player: bool,
@@ -776,7 +810,6 @@ impl LivingFluidTestEntity {
             entity_type: &vanilla_entities::PLAYER,
             affected_by_fluids,
             can_stand_on_fluid: false,
-            vehicle: false,
             on_non_air_block_for_frost: false,
             in_wall_for_base_tick: false,
             flying_player: false,
@@ -802,11 +835,6 @@ impl LivingFluidTestEntity {
 
     const fn with_entity_type(mut self, entity_type: EntityTypeRef) -> Self {
         self.entity_type = entity_type;
-        self
-    }
-
-    const fn with_vehicle(mut self) -> Self {
-        self.vehicle = true;
         self
     }
 
@@ -861,6 +889,22 @@ impl LivingFluidTestEntity {
 
 crate::entity::impl_test_downcast_type!(LivingFluidTestEntity);
 
+impl LivingFluidTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        hurt: Self::entity_hurt,
+        is_flying_player: |entity| entity.flying_player,
+        ..living_entity::entity_props()
+    };
+
+    fn entity_hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        self.damage_types
+            .lock()
+            .push(source.damage_type.key.clone());
+        self.damage_world_keys.lock().push(world.key.to_string());
+        self.living().hurt_server(world, source, amount)
+    }
+}
+
 impl Entity for LivingFluidTestEntity {
     fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
         (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
@@ -874,28 +918,12 @@ impl Entity for LivingFluidTestEntity {
         self.entity_type
     }
 
-    fn is_vehicle(&self) -> bool {
-        self.vehicle
-    }
-
-    fn get_default_gravity(&self) -> f64 {
-        self.living().get_attribute_gravity()
-    }
-
-    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        self.damage_types
-            .lock()
-            .push(source.damage_type.key.clone());
-        self.damage_world_keys.lock().push(world.key.to_string());
-        self.living().hurt_server(world, source, amount)
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
-    }
-
-    fn is_flying_player(&self) -> bool {
-        self.flying_player
     }
 }
 
@@ -1244,6 +1272,13 @@ impl ControlledVehicleTestEntity {
 
 crate::entity::impl_test_downcast_type!(ControlledVehicleTestEntity);
 
+impl ControlledVehicleTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        controlling_passenger: |entity| entity.controller.clone(),
+        ..EntityProps::new()
+    };
+}
+
 impl Entity for ControlledVehicleTestEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -1253,8 +1288,8 @@ impl Entity for ControlledVehicleTestEntity {
         &vanilla_entities::ACACIA_BOAT
     }
 
-    fn controlling_passenger(&self) -> Option<SharedEntity> {
-        self.controller.clone()
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 

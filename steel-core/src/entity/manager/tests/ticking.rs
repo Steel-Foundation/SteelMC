@@ -1,6 +1,7 @@
 use std::mem;
 
 use super::*;
+use crate::entity::{EntityHooks, EntityProps};
 
 #[derive(Default)]
 enum RelationshipTickAction {
@@ -45,6 +46,24 @@ impl RelationshipTickTestEntity {
 
 crate::entity::impl_test_downcast_type!(RelationshipTickTestEntity);
 
+impl RelationshipTickTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        tick: Self::entity_tick,
+        ride_tick: Self::entity_ride_tick,
+        ..EntityProps::new()
+    };
+
+    fn entity_tick(&self, _entity: &SharedEntity) {
+        self.events.lock().push((self.id(), "tick"));
+        self.run_action();
+    }
+
+    fn entity_ride_tick(&self, _entity: &SharedEntity) {
+        self.events.lock().push((self.id(), "ride_tick"));
+        self.run_action();
+    }
+}
+
 impl Entity for RelationshipTickTestEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -54,14 +73,8 @@ impl Entity for RelationshipTickTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn tick(self: Arc<Self>) {
-        self.events.lock().push((self.id(), "tick"));
-        self.run_action();
-    }
-
-    fn ride_tick(self: Arc<Self>) {
-        self.events.lock().push((self.id(), "ride_tick"));
-        self.run_action();
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 

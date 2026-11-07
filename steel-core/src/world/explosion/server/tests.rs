@@ -25,6 +25,7 @@ use crate::block_entity::{
 };
 use crate::entity::entities::{ItemEntity, PrimedTntEntity};
 use crate::entity::{EntityBase, next_entity_id};
+use crate::entity::{EntityHooks, EntityProps};
 use crate::player::ResetReason;
 use crate::test_support::{
     TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
@@ -51,16 +52,14 @@ unsafe impl DowncastType for VetoExplosionSource {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:test/explosion_veto_source");
 }
 
-impl Entity for VetoExplosionSource {
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
+impl VetoExplosionSource {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        block_explosion_resistance: Self::entity_block_explosion_resistance,
+        should_block_explode: Self::entity_should_block_explode,
+        ..EntityProps::new()
+    };
 
-    fn entity_type(&self) -> EntityTypeRef {
-        &vanilla_entities::ITEM
-    }
-
-    fn block_explosion_resistance(
+    fn entity_block_explosion_resistance(
         &self,
         _explosion: &dyn Explosion,
         _world: &World,
@@ -73,7 +72,7 @@ impl Entity for VetoExplosionSource {
         resistance
     }
 
-    fn should_block_explode(
+    fn entity_should_block_explode(
         &self,
         _explosion: &dyn Explosion,
         _world: &World,
@@ -83,6 +82,20 @@ impl Entity for VetoExplosionSource {
     ) -> bool {
         self.decision_calls.fetch_add(1, Ordering::Relaxed);
         false
+    }
+}
+
+impl Entity for VetoExplosionSource {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        &vanilla_entities::ITEM
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
@@ -129,16 +142,13 @@ unsafe impl DowncastType for BlockMutatingExposureEntity {
         DowncastTypeKey::new("steel:test/block_mutating_exposure_entity");
 }
 
-impl Entity for BlockMutatingExposureEntity {
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
+impl BlockMutatingExposureEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        on_explosion_hit: Self::entity_on_explosion_hit,
+        ..EntityProps::new()
+    };
 
-    fn entity_type(&self) -> EntityTypeRef {
-        &vanilla_entities::ITEM
-    }
-
-    fn on_explosion_hit(&self, _explosion_source: Option<&dyn Entity>) {
+    fn entity_on_explosion_hit(&self, _explosion_source: Option<&dyn Entity>) {
         if self.place_wall_on_hit
             && let Some(world) = self.level()
         {
@@ -148,6 +158,20 @@ impl Entity for BlockMutatingExposureEntity {
                 UpdateFlags::UPDATE_NONE,
             );
         }
+    }
+}
+
+impl Entity for BlockMutatingExposureEntity {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        &vanilla_entities::ITEM
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 

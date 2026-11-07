@@ -150,6 +150,7 @@ mod tests {
     use crate::entity::{Entity, EntityBase};
 
     use super::{InsideBlockEffectCollector, InsideBlockEffectType};
+    use crate::entity::{EntityHooks, EntityProps};
 
     struct EffectTestEntity {
         base: EntityBase,
@@ -177,6 +178,24 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(EffectTestEntity);
 
+    impl EffectTestEntity {
+        const ENTITY: EntityProps<Self> = EntityProps {
+            is_alive: |entity| !entity.is_removed() && *entity.alive.lock(),
+            apply_inside_block_effect: Self::entity_apply_inside_block_effect,
+            ..EntityProps::new()
+        };
+
+        fn entity_apply_inside_block_effect(&self, effect_type: InsideBlockEffectType) {
+            self.calls.lock().push(match effect_type {
+                InsideBlockEffectType::Freeze => "freeze",
+                InsideBlockEffectType::ClearFreeze => "clear_freeze",
+                InsideBlockEffectType::FireIgnite => "fire_ignite",
+                InsideBlockEffectType::LavaIgnite => "lava_ignite",
+                InsideBlockEffectType::Extinguish => "extinguish",
+            });
+        }
+    }
+
     impl Entity for EffectTestEntity {
         fn base(&self) -> &EntityBase {
             &self.base
@@ -186,18 +205,8 @@ mod tests {
             &vanilla_entities::ITEM
         }
 
-        fn is_alive(&self) -> bool {
-            !self.is_removed() && *self.alive.lock()
-        }
-
-        fn apply_inside_block_effect(&self, effect_type: InsideBlockEffectType) {
-            self.calls.lock().push(match effect_type {
-                InsideBlockEffectType::Freeze => "freeze",
-                InsideBlockEffectType::ClearFreeze => "clear_freeze",
-                InsideBlockEffectType::FireIgnite => "fire_ignite",
-                InsideBlockEffectType::LavaIgnite => "lava_ignite",
-                InsideBlockEffectType::Extinguish => "extinguish",
-            });
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &Self::ENTITY
         }
     }
 

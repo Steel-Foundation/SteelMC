@@ -6,6 +6,7 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{ChunkPos, Identifier};
 
 use super::*;
+use crate::entity::SharedEntity;
 
 use crate::behavior::init_behaviors;
 use crate::entity::LivingParts as _;
@@ -218,7 +219,8 @@ fn teleported_tnt_preserves_nether_portal_but_explodes_other_blocks() {
     let entity = primed_tnt(world, test_tnt_position());
 
     entity.on_teleported();
-    entity.explode(world);
+    let shared: SharedEntity = Arc::<PrimedTntEntity>::clone(&entity);
+    entity.explode(&shared, world);
 
     assert_eq!(
         world.get_block_state(portal_pos).get_block(),

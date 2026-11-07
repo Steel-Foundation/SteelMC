@@ -9,6 +9,7 @@ use steel_registry::vanilla_entity_data::LivingEntityData;
 
 use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
+use crate::entity::EntityProps;
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Components as _, Has};
 use crate::entity::consume_effect::apply_consume_effect;
@@ -178,6 +179,56 @@ impl Deref for Living<'_> {
 
     fn deref(&self) -> &Self::Target {
         self.entity
+    }
+}
+
+/// `LivingEntity`'s overrides of entity hooks; living entity types build their
+/// [`EntityProps`] on this.
+#[must_use]
+pub const fn entity_props<E: Parts>() -> EntityProps<E> {
+    EntityProps {
+        tick: |living, entity| living.living().tick_living_entity(entity),
+        ride_tick: |living, entity| {
+            Arc::clone(entity).ride_tick_default();
+            living.reset_fall_distance();
+        },
+        base_tick: |living| living.living().base_tick_living_entity(),
+        hurt: |living, world, source, amount| living.living().hurt_server(world, source, amount),
+        cause_fall_damage: |living, _, fall_distance, damage_modifier, source| {
+            living
+                .living()
+                .cause_living_fall_damage(fall_distance, damage_modifier, source)
+        },
+        is_alive: |living| !living.is_removed() && living.living().get_health() > 0.0,
+        is_pickable: |living| !living.is_removed(),
+        is_pushable: |living| living.is_alive() && !living.is_spectator() && !living.on_climbable(),
+        can_freeze: |living| living.living().default_living_can_freeze(),
+        get_default_gravity: |living| living.living().get_attribute_gravity(),
+        max_up_step: |living| {
+            living
+                .living()
+                .attributes()
+                .lock()
+                .get_value(vanilla_attributes::STEP_HEIGHT)
+                .unwrap_or(0.6) as f32
+        },
+        dimensions_for_pose: |living, _| {
+            let entity_type = living.entity_type();
+            if entity_type.fixed {
+                entity_type.dimensions
+            } else {
+                let living = living.living();
+                entity_type
+                    .dimensions
+                    .scale(living.get_age_scale() * living.get_scale())
+            }
+        },
+        with_weapon_item: |living, visitor| {
+            living
+                .living()
+                .with_equipment_slot(EquipmentSlot::MainHand, &mut |item| visitor(Some(item)));
+        },
+        ..EntityProps::new()
     }
 }
 
@@ -2345,7 +2396,7 @@ impl<'a> Living<'a> {
             }
         }
 
-        self.default_can_freeze()
+        self.can_freeze_default()
     }
 
     /// Returns whether the block this entity is standing on is non-air,
@@ -2414,7 +2465,7 @@ impl<'a> Living<'a> {
     ///
     /// The default `Entity::tick` dispatches living entities here.
     pub fn tick_living_entity_default(&self, entity: &SharedEntity) {
-        self.default_tick();
+        self.tick_default();
         self.living_base().decrement_invulnerable_time();
 
         if self.is_dead_or_dying() {

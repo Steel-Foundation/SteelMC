@@ -150,6 +150,7 @@ mod tests {
     use crate::entity::component::Has;
     use crate::entity::component::definition::MobDefinition;
     use crate::entity::{Entity, EntityBase, LivingEntityBase, MobBase};
+    use crate::entity::{EntityHooks, EntityProps};
     use crate::entity::{EntitySyncedData, MobProps, mob};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
     use crate::world::World;
@@ -191,6 +192,12 @@ mod tests {
         }
     }
 
+    impl HoveringTestMob {
+        const ENTITY: EntityProps<Self> = EntityProps {
+            ..mob::entity_props()
+        };
+    }
+
     impl Entity for HoveringTestMob {
         fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
             match key {
@@ -210,6 +217,10 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::PIG
+        }
+
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &Self::ENTITY
         }
     }
 

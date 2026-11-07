@@ -365,29 +365,8 @@ impl EntityBaseState {
 
 /// Common fields and methods shared by all entities.
 ///
-/// Entities embed this struct to avoid duplicating core identity, position,
-/// and lifecycle management code. The `Entity` trait implementation can then
-/// delegate to `EntityBase` methods for common functionality.
-///
-/// # Example
-///
-/// ```ignore
-/// pub struct MyEntity {
-///     base: EntityBase,
-///     // Entity-specific fields...
-/// }
-///
-/// impl Entity for MyEntity {
-///     fn id(&self) -> i32 { self.base.id() }
-///     fn uuid(&self) -> Uuid { self.base.uuid() }
-///     fn position(&self) -> DVec3 { self.base.position() }
-///     // ... delegate other common methods ...
-///
-///     // Entity-specific implementations:
-///     fn entity_type(&self) -> EntityTypeRef { vanilla_entities::MY_ENTITY }
-///     fn tick(&self) { /* custom tick logic */ }
-/// }
-/// ```
+/// Entities embed this struct for core identity, position, and lifecycle
+/// state, and expose it through `Entity::base`.
 pub struct EntityBase {
     damage_history: DamageHistoryBinding,
     /// Generation counter for this runtime construction of the entity.

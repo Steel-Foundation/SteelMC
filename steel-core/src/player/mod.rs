@@ -169,6 +169,7 @@ static INTENTIONAL_GAME_DESIGN_STYLE: LazyLock<Interactivity> = LazyLock::new(||
 });
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
+use crate::entity::{EntityHooks, EntityProps, living_entity};
 use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
 use crate::player::advancement::PlayerAdvancement;
 use crate::player::chunk_sender::ChunkSender;
@@ -1315,50 +1316,76 @@ impl Player {
     }
 }
 
-impl Entity for Player {
-    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-        (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
-    }
+impl Player {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        is_hard_collision_relevant: |_| false,
+        do_water_splash_effect: Self::entity_do_water_splash_effect,
+        swim_splash_sound: |_| &sound_events::ENTITY_PLAYER_SPLASH,
+        swim_high_speed_splash_sound: |_| &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED,
+        scoreboard_name: |entity| entity.gameprofile.name().to_owned(),
+        name: |entity| TextComponent::plain(entity.gameprofile.name().to_owned()),
+        display_name: Self::entity_display_name,
+        plain_text_name: |entity| entity.gameprofile.name().to_owned(),
+        look_at: Self::entity_look_at,
+        look_at_entity: Self::entity_look_at_entity,
+        is_always_ticking: |_| true,
+        update_swimming: Self::entity_update_swimming,
+        ride_tick: Self::entity_ride_tick,
+        stop_riding: Self::entity_stop_riding,
+        teleport_to: Self::entity_teleport_to,
+        start_riding: Self::entity_start_riding,
+        broadcast_to_player: Self::entity_broadcast_to_player,
+        fall_sounds: |_| {
+            (
+                &sound_events::ENTITY_PLAYER_SMALL_FALL,
+                &sound_events::ENTITY_PLAYER_BIG_FALL,
+            )
+        },
+        blocks_building: |_| true,
+        is_pickable: |entity| !entity.is_spectator() && !entity.is_removed(),
+        is_pushable: Self::entity_is_pushable,
+        on_climbable: Self::on_climbable,
+        is_spectator: |entity| entity.game_mode() == GameType::Spectator,
+        is_flying_player: |entity| entity.is_flying(),
+        fire_immune_ticks: |_| 20,
+        remaining_fire_ticks_cap: |entity| entity.abilities.lock().invulnerable.then_some(1),
+        fire_ignite_extra_ticks: |_| rand::random_range(1..=2),
+        can_freeze: Self::entity_can_freeze,
+        make_stuck_in_block: Self::entity_make_stuck_in_block,
+        can_be_hit_by_projectile: Self::entity_can_be_hit_by_projectile,
+        uses_client_movement_packets: |_| true,
+        can_simulate_movement: |_| true,
+        is_effective_ai: |_| true,
+        known_movement: Self::entity_known_movement,
+        known_speed: Self::entity_known_speed,
+        is_suppressing_bounce: |entity| entity.is_crouching(),
+        cause_fall_damage: Self::entity_cause_fall_damage,
+        update_data_before_sync: Self::entity_update_data_before_sync,
+        backs_off_from_edge: |entity| entity.is_crouching() && !entity.is_flying(),
+        is_pushed_by_fluid: |entity| !entity.is_flying(),
+        is_crouching: Self::is_crouching,
+        may_interact: |entity, world, pos| world.may_interact(entity, pos),
+        is_swimming: Self::is_swimming,
+        sound_source: |_| SoundSource::Players,
+        play_sound: Self::entity_play_sound,
+        swim_sound: |_| &sound_events::ENTITY_PLAYER_SWIM,
+        play_step_sound: Self::entity_play_step_sound,
+        movement_emission: Self::entity_movement_emission,
+        on_below_world: Self::entity_on_below_world,
+        dimensions_for_pose: Self::entity_dimensions_for_pose,
+        hurt: Self::entity_hurt,
+        killed_entity: Self::entity_killed_entity,
+        award_kill_score: Self::entity_award_kill_score,
+        ..living_entity::entity_props()
+    };
 
-    fn is_hard_collision_relevant(&self) -> bool {
-        false
-    }
-
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        &vanilla_entities::PLAYER
-    }
-
-    fn base_tick(&self) {
-        self.living().base_tick_living_entity();
-    }
-
-    fn do_water_splash_effect(&self) {
+    fn entity_do_water_splash_effect(&self) {
         if !self.is_spectator() {
-            self.default_do_water_splash_effect();
+            self.do_water_splash_effect_default();
         }
     }
 
-    fn swim_splash_sound(&self) -> SoundEventRef {
-        &sound_events::ENTITY_PLAYER_SPLASH
-    }
-
-    fn swim_high_speed_splash_sound(&self) -> SoundEventRef {
-        &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED
-    }
-
-    fn scoreboard_name(&self) -> String {
-        self.gameprofile.name().to_owned()
-    }
-
-    fn name(&self) -> TextComponent {
-        TextComponent::plain(self.gameprofile.name().to_owned())
-    }
-
-    fn display_name(&self) -> TextComponent {
+    fn entity_display_name(&self) -> TextComponent {
         self.name()
             .click_event(ClickEvent::suggest_command(format!(
                 "/tell {} ",
@@ -1372,11 +1399,7 @@ impl Entity for Player {
             .insertion(self.gameprofile.name().to_owned())
     }
 
-    fn plain_text_name(&self) -> String {
-        self.gameprofile.name().to_owned()
-    }
-
-    fn look_at(&self, from_anchor: EntityAnchor, target: DVec3) {
+    fn entity_look_at(&self, from_anchor: EntityAnchor, target: DVec3) {
         apply_entity_look_at(self, from_anchor, target);
         self.send_packet(CPlayerLookAt::position(
             protocol_look_at_anchor(from_anchor),
@@ -1384,7 +1407,7 @@ impl Entity for Player {
         ));
     }
 
-    fn look_at_entity(
+    fn entity_look_at_entity(
         &self,
         from_anchor: EntityAnchor,
         target: &dyn Entity,
@@ -1400,30 +1423,26 @@ impl Entity for Player {
         ));
     }
 
-    fn is_always_ticking(&self) -> bool {
-        true
-    }
-
-    fn update_swimming(&self) {
+    fn entity_update_swimming(&self) {
         if self.is_flying() {
             self.set_shared_swimming(false);
         } else {
-            self.default_update_swimming();
+            self.update_swimming_default();
         }
     }
 
-    fn ride_tick(self: Arc<Self>) {
+    fn entity_ride_tick(&self, entity: &SharedEntity) {
         let pre = self.position();
         if self.wants_to_stop_riding() && self.is_passenger() {
             self.stop_riding();
         } else {
-            Arc::clone(&self).default_ride_tick();
+            Arc::clone(entity).ride_tick_default();
             self.reset_fall_distance();
         }
         self.check_riding_statistics(self.position() - pre);
     }
 
-    fn stop_riding(&self) {
+    fn entity_stop_riding(&self) {
         let old_vehicle = self.vehicle();
         self.base().stop_riding();
         self.base.set_boarding_cooldown(0);
@@ -1438,12 +1457,12 @@ impl Entity for Player {
         ));
     }
 
-    fn teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+    fn entity_teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         let (yaw, pitch) = self.rotation();
         self.teleport(pos, yaw, pitch)
     }
 
-    fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
+    fn entity_start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
         let Some(world) = self.level() else {
             return false;
         };
@@ -1471,7 +1490,7 @@ impl Entity for Player {
         true
     }
 
-    fn broadcast_to_player(&self, player: &Player) -> bool {
+    fn entity_broadcast_to_player(&self, player: &Player) -> bool {
         if player.is_spectator() {
             true
         } else {
@@ -1479,58 +1498,11 @@ impl Entity for Player {
         }
     }
 
-    fn fall_sounds(&self) -> (SoundEventRef, SoundEventRef) {
-        (
-            &sound_events::ENTITY_PLAYER_SMALL_FALL,
-            &sound_events::ENTITY_PLAYER_BIG_FALL,
-        )
-    }
-
-    fn is_alive(&self) -> bool {
-        !self.is_removed() && self.living().get_health() > 0.0
-    }
-
-    fn blocks_building(&self) -> bool {
-        true
-    }
-
-    fn is_pickable(&self) -> bool {
-        !self.is_spectator() && !self.is_removed()
-    }
-
-    fn is_pushable(&self) -> bool {
+    fn entity_is_pushable(&self) -> bool {
         self.living().get_health() > 0.0 && !self.is_spectator() && !self.on_climbable()
     }
 
-    fn on_climbable(&self) -> bool {
-        Player::on_climbable(self)
-    }
-
-    fn is_spectator(&self) -> bool {
-        self.game_mode() == GameType::Spectator
-    }
-
-    fn is_flying_player(&self) -> bool {
-        self.is_flying()
-    }
-
-    fn fire_immune_ticks(&self) -> i32 {
-        20
-    }
-
-    fn remaining_fire_ticks_cap(&self) -> Option<i32> {
-        self.abilities.lock().invulnerable.then_some(1)
-    }
-
-    fn get_default_gravity(&self) -> f64 {
-        self.living().get_attribute_gravity()
-    }
-
-    fn fire_ignite_extra_ticks(&self) -> i32 {
-        rand::random_range(1..=2)
-    }
-
-    fn can_freeze(&self) -> bool {
+    fn entity_can_freeze(&self) -> bool {
         if self.is_spectator() {
             return false;
         }
@@ -1538,31 +1510,19 @@ impl Entity for Player {
         self.living().default_living_can_freeze()
     }
 
-    fn make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
+    fn entity_make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
         if !self.is_flying() {
-            self.default_make_stuck_in_block(state, speed_multiplier);
+            self.make_stuck_in_block_default(state, speed_multiplier);
         }
 
         // TODO: Reset current impulse context once vehicle/player impulse contexts exist.
     }
 
-    fn can_be_hit_by_projectile(&self) -> bool {
+    fn entity_can_be_hit_by_projectile(&self) -> bool {
         self.living().get_health() > 0.0 && self.is_pickable()
     }
 
-    fn uses_client_movement_packets(&self) -> bool {
-        true
-    }
-
-    fn can_simulate_movement(&self) -> bool {
-        true
-    }
-
-    fn is_effective_ai(&self) -> bool {
-        true
-    }
-
-    fn known_movement(&self) -> DVec3 {
+    fn entity_known_movement(&self) -> DVec3 {
         if let Some(vehicle) = self.vehicle()
             && vehicle
                 .controlling_passenger()
@@ -1574,7 +1534,7 @@ impl Entity for Player {
         self.movement.lock().last_known_client_movement()
     }
 
-    fn known_speed(&self) -> DVec3 {
+    fn entity_known_speed(&self) -> DVec3 {
         if let Some(vehicle) = self.vehicle()
             && vehicle
                 .controlling_passenger()
@@ -1586,12 +1546,9 @@ impl Entity for Player {
         self.movement.lock().last_known_client_movement()
     }
 
-    fn is_suppressing_bounce(&self) -> bool {
-        self.is_crouching()
-    }
-
-    fn cause_fall_damage(
-        self: Arc<Self>,
+    fn entity_cause_fall_damage(
+        &self,
+        _entity: &SharedEntity,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
@@ -1611,48 +1568,12 @@ impl Entity for Player {
             .cause_living_fall_damage(fall_distance, damage_modifier, source)
     }
 
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
-    }
-
-    fn update_data_before_sync(&self) {
+    fn entity_update_data_before_sync(&self) {
         self.update_dirty_mob_effect_entity_data();
     }
 
-    fn max_up_step(&self) -> f32 {
-        self.living()
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::STEP_HEIGHT)
-            .unwrap_or(0.6) as f32
-    }
-
-    fn backs_off_from_edge(&self) -> bool {
-        self.is_crouching() && !self.is_flying()
-    }
-
-    fn is_pushed_by_fluid(&self) -> bool {
-        !self.is_flying()
-    }
-
-    fn is_crouching(&self) -> bool {
-        Player::is_crouching(self)
-    }
-
-    fn may_interact(&self, world: &World, pos: BlockPos) -> bool {
-        world.may_interact(self, pos)
-    }
-
-    fn is_swimming(&self) -> bool {
-        Player::is_swimming(self)
-    }
-
-    fn sound_source(&self) -> SoundSource {
-        SoundSource::Players
-    }
-
     /// Matches vanilla `Player.playSound`, which excludes the source player.
-    fn play_sound(&self, sound: SoundEventRef, volume: f32, pitch: f32) {
+    fn entity_play_sound(&self, sound: SoundEventRef, volume: f32, pitch: f32) {
         if let Some(world) = self.level() {
             world.play_sound_at(
                 sound,
@@ -1665,11 +1586,7 @@ impl Entity for Player {
         }
     }
 
-    fn swim_sound(&self) -> SoundEventRef {
-        &sound_events::ENTITY_PLAYER_SWIM
-    }
-
-    fn play_step_sound(&self, on_pos: BlockPos, on_state: BlockStateId) {
+    fn entity_play_step_sound(&self, on_pos: BlockPos, on_state: BlockStateId) {
         if self.is_in_water() {
             self.water_swim_sound();
             self.play_muffled_step_sound(on_state);
@@ -1692,7 +1609,7 @@ impl Entity for Player {
         }
     }
 
-    fn movement_emission(&self) -> EntityMovementEmission {
+    fn entity_movement_emission(&self) -> EntityMovementEmission {
         if self.is_flying() || self.on_ground() && self.is_discrete() {
             EntityMovementEmission::None
         } else {
@@ -1700,7 +1617,7 @@ impl Entity for Player {
         }
     }
 
-    fn on_below_world(&self) {
+    fn entity_on_below_world(&self) {
         let world = self.get_world();
         self.hurt(
             &world,
@@ -1709,7 +1626,7 @@ impl Entity for Player {
         );
     }
 
-    fn dimensions_for_pose(&self, pose: EntityPose) -> EntityDimensions {
+    fn entity_dimensions_for_pose(&self, pose: EntityPose) -> EntityDimensions {
         let dimensions = Player::dimensions_for_pose(pose);
         if pose == EntityPose::Sleeping || self.entity_type().fixed {
             dimensions
@@ -1718,19 +1635,24 @@ impl Entity for Player {
         }
     }
 
-    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+    fn entity_hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         // Delegates to Player's inherent hurt method which handles
         // player-specific prechecks before the shared living hurt path.
         Player::hurt(self, world, source, amount)
     }
 
-    fn killed_entity(&self, _world: &World, entity: &Living<'_>, _source: &DamageSource) -> bool {
+    fn entity_killed_entity(
+        &self,
+        _world: &World,
+        entity: &Living<'_>,
+        _source: &DamageSource,
+    ) -> bool {
         log::debug!("1");
         self.award_stat(&vanilla_stat_types::ENTITY_KILLED, entity.entity_type());
         true
     }
 
-    fn award_kill_score(&self, victim: &dyn Entity, _killing_blow: &DamageSource) {
+    fn entity_award_kill_score(&self, victim: &dyn Entity, _killing_blow: &DamageSource) {
         if self.id() != victim.id() {
             // TODO: Trigger advancement criteria.
             // TODO: Increment the score of some objectives of this player.
@@ -1741,6 +1663,28 @@ impl Entity for Player {
             });
             // TODO: Handle team kill
         }
+    }
+}
+
+impl Entity for Player {
+    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+        (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+    }
+
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        &vanilla_entities::PLAYER
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 }
 
@@ -1832,7 +1776,7 @@ impl Player {
         self.set_old_position_to_current();
         self.reset_vehicle_movement_for_tick();
 
-        self.default_tick();
+        self.tick_default();
         self.living().detect_equipment_updates();
         let _movement = self.living().ai_step(entity);
 

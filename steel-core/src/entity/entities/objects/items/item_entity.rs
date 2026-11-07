@@ -19,6 +19,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
+use crate::entity::SharedEntity;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEFAULT_AIR_DRAG, DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityBaseState,
@@ -27,8 +28,9 @@ use crate::entity::{
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
 use crate::player::Player;
-use crate::world::{Explosion, World};
+use crate::world::World;
 
+use crate::entity::{EntityHooks, EntityProps};
 use simdnbt::ToNbtTag;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -36,7 +38,6 @@ use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_item_tags::ItemTag;
-use steel_utils::BlockPos;
 
 /// Maximum age in ticks before despawn (5 minutes = 6000 ticks).
 const LIFETIME: i32 = 6000;
@@ -526,39 +527,30 @@ impl ItemEntity {
 
 impl DefaultEntityPush for ItemEntity {}
 
-impl Entity for ItemEntity {
-    fn is_hard_collision_relevant(&self) -> bool {
-        false
-    }
+impl ItemEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        is_hard_collision_relevant: |_| false,
+        ignore_explosion: |_, explosion| !explosion.should_affect_blocklike_entities(),
+        movement_emission: |_| EntityMovementEmission::None,
+        tick: Self::entity_tick,
+        get_default_gravity: |_| DEFAULT_GRAVITY,
+        block_pos_below_that_affects_movement: |entity| entity.on_pos(0.999_999),
+        attackable: |_| false,
+        should_play_lava_hurt_sound: Self::entity_should_play_lava_hurt_sound,
+        fire_immune: Self::entity_fire_immune,
+        player_touch: Self::entity_player_touch,
+        hurt: Self::entity_hurt,
+        ..EntityProps::new()
+    };
 
-    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
-        Some(self)
-    }
-
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
-    }
-
-    fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
-        !explosion.should_affect_blocklike_entities()
-    }
-
-    fn movement_emission(&self) -> EntityMovementEmission {
-        EntityMovementEmission::None
-    }
-
-    fn tick(self: Arc<Self>) {
+    fn entity_tick(&self, entity: &SharedEntity) {
         // Check if item is empty
         if self.get_item().is_empty() {
             self.set_removed(RemovalReason::Discarded);
             return;
         }
 
-        self.default_tick();
+        self.tick_default();
 
         {
             let mut state = self.item_state.lock();
@@ -593,7 +585,7 @@ impl Entity for ItemEntity {
         if should_move {
             // Move with collision detection; movement handles velocity zeroing on collision.
             if let Some(result) =
-                Arc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity())
+                Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())
             {
                 self.apply_effects_from_blocks();
                 if self.is_removed() {
@@ -686,38 +678,22 @@ impl Entity for ItemEntity {
         }
     }
 
-    fn get_default_gravity(&self) -> f64 {
-        DEFAULT_GRAVITY
-    }
-
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
-    }
-
-    fn block_pos_below_that_affects_movement(&self) -> Option<BlockPos> {
-        self.on_pos(0.999_999)
-    }
-
-    fn attackable(&self) -> bool {
-        false
-    }
-
-    fn should_play_lava_hurt_sound(&self) -> bool {
+    fn entity_should_play_lava_hurt_sound(&self) -> bool {
         self.get_health() <= 0 || self.tick_count() % 10 == 0
     }
 
-    fn fire_immune(&self) -> bool {
+    fn entity_fire_immune(&self) -> bool {
         !self
             .get_item()
             .can_be_hurt_by(&vanilla_damage_types::IN_FIRE)
             || self.entity_type().fire_immune
     }
 
-    fn player_touch(self: Arc<Self>, player: &Arc<Player>) {
+    fn entity_player_touch(&self, player: &Arc<Player>) {
         self.try_pickup(player);
     }
 
-    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+    fn entity_hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         // TODO: Check isInvulnerableToBase once the shared non-living entity hook is ported.
         if !world.get_game_rule(&MOB_GRIEFING)
             && source
@@ -739,6 +715,28 @@ impl Entity for ItemEntity {
             self.set_removed(RemovalReason::Killed);
         }
         true
+    }
+}
+
+impl Entity for ItemEntity {
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        self.entity_type
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

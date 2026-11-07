@@ -20,6 +20,7 @@ use crate::entity::damage::{DamageHistory, DamageSource};
 use crate::entity::{
     Entity, EntityLevelCallback, InsideBlockEffectType, RemovalReason, SharedEntity,
 };
+use crate::entity::{EntityDefaults, EntityHooks, EntityProps};
 use crate::portal::PortalKind;
 use crate::test_support::{TestEntity, fresh_test_world};
 use crate::world::World;
@@ -89,6 +90,26 @@ fn generation_distinguishes_reconstructed_entity_identity() {
 
 crate::entity::impl_test_downcast_type!(FallDamageTestEntity);
 
+impl FallDamageTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        cause_fall_damage: Self::entity_cause_fall_damage,
+        ..EntityProps::new()
+    };
+
+    fn entity_cause_fall_damage(
+        &self,
+        _entity: &SharedEntity,
+        fall_distance: f64,
+        damage_modifier: f32,
+        _source: &DamageSource,
+    ) -> bool {
+        self.fall_damage_calls
+            .lock()
+            .push((fall_distance, damage_modifier));
+        true
+    }
+}
+
 impl Entity for FallDamageTestEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -98,16 +119,8 @@ impl Entity for FallDamageTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn cause_fall_damage(
-        self: Arc<Self>,
-        fall_distance: f64,
-        damage_modifier: f32,
-        _source: &DamageSource,
-    ) -> bool {
-        self.fall_damage_calls
-            .lock()
-            .push((fall_distance, damage_modifier));
-        true
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
@@ -317,6 +330,10 @@ fn removal_unlocks_lifecycle_before_destroying_retained_sources() {
 
         fn entity_type(&self) -> EntityTypeRef {
             self.entity.entity_type()
+        }
+
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &EntityDefaults
         }
     }
 

@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::entity::{Entity, EntityBase, EntityLevelCallback, InactiveEntityCallback};
 
 use super::*;
+use crate::entity::{EntityHooks, EntityProps};
 
 struct ManagerTestEntity {
     base: EntityBase,
@@ -127,6 +128,21 @@ impl MovingTickTestEntity {
 
 crate::entity::impl_test_downcast_type!(MovingTickTestEntity);
 
+impl MovingTickTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        tick: Self::entity_tick,
+        ..EntityProps::new()
+    };
+
+    fn entity_tick(&self, _entity: &SharedEntity) {
+        self.tick_default();
+        if let Err(error) = self.try_set_position(self.tick_position) {
+            panic!("moving tick test entity failed to move during tick: {error}");
+        }
+        self.set_rotation(self.tick_rotation);
+    }
+}
+
 impl Entity for MovingTickTestEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -136,12 +152,8 @@ impl Entity for MovingTickTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn tick(self: Arc<Self>) {
-        self.default_tick();
-        if let Err(error) = self.try_set_position(self.tick_position) {
-            panic!("moving tick test entity failed to move during tick: {error}");
-        }
-        self.set_rotation(self.tick_rotation);
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
@@ -175,17 +187,14 @@ impl AddDuringTickTestEntity {
 
 crate::entity::impl_test_downcast_type!(AddDuringTickTestEntity);
 
-impl Entity for AddDuringTickTestEntity {
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
+impl AddDuringTickTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        tick: Self::entity_tick,
+        ..EntityProps::new()
+    };
 
-    fn entity_type(&self) -> EntityTypeRef {
-        &vanilla_entities::ITEM
-    }
-
-    fn tick(self: Arc<Self>) {
-        self.default_tick();
+    fn entity_tick(&self, _entity: &SharedEntity) {
+        self.tick_default();
         let Some(entity) = self.entity_to_add.lock().take() else {
             return;
         };
@@ -195,6 +204,20 @@ impl Entity for AddDuringTickTestEntity {
         {
             panic!("add-during-tick test entity failed to add live entity: {error}");
         }
+    }
+}
+
+impl Entity for AddDuringTickTestEntity {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        &vanilla_entities::ITEM
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
@@ -218,6 +241,17 @@ impl DespawnOnCheckTestEntity {
 
 crate::entity::impl_test_downcast_type!(DespawnOnCheckTestEntity);
 
+impl DespawnOnCheckTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        check_despawn: Self::entity_check_despawn,
+        ..EntityProps::new()
+    };
+
+    fn entity_check_despawn(&self) {
+        self.set_removed(RemovalReason::Discarded);
+    }
+}
+
 impl Entity for DespawnOnCheckTestEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -227,12 +261,20 @@ impl Entity for DespawnOnCheckTestEntity {
         &vanilla_entities::ITEM
     }
 
-    fn check_despawn(&self) {
-        self.set_removed(RemovalReason::Discarded);
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
 crate::entity::impl_test_downcast_type!(ManagerTestEntity);
+
+impl ManagerTestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        is_always_ticking: |entity| entity.always_ticking,
+        is_hard_collision_relevant: |entity| entity.hard_collision_relevant,
+        ..EntityProps::new()
+    };
+}
 
 impl Entity for ManagerTestEntity {
     fn base(&self) -> &EntityBase {
@@ -243,12 +285,8 @@ impl Entity for ManagerTestEntity {
         self.entity_type
     }
 
-    fn is_always_ticking(&self) -> bool {
-        self.always_ticking
-    }
-
-    fn is_hard_collision_relevant(&self) -> bool {
-        self.hard_collision_relevant
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 

@@ -395,6 +395,7 @@ mod tests {
 
     use super::*;
     use crate::entity::{EntityBase, SharedEntity};
+    use crate::entity::{EntityDefaults, EntityHooks};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     struct TestItemFrame {
@@ -412,6 +413,10 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM_FRAME
+        }
+
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &EntityDefaults
         }
     }
 

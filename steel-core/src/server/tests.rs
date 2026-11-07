@@ -87,6 +87,7 @@ use super::{
     offline_uuid, portal_entity_still_valid, test_server_with_worlds_and_config,
     validate_player_permission_group_update,
 };
+use crate::entity::{EntityHooks, EntityProps};
 
 struct TestConnection {
     sent_packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
@@ -3678,6 +3679,13 @@ fn permission_key(value: &str) -> PermissionKey {
 
 crate::entity::impl_test_downcast_type!(TestEntity);
 
+impl TestEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        projectile_owner_uuid: |entity| entity.projectile_owner_uuid,
+        ..EntityProps::new()
+    };
+}
+
 impl Entity for TestEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -3687,8 +3695,8 @@ impl Entity for TestEntity {
         self.entity_type
     }
 
-    fn projectile_owner_uuid(&self) -> Option<Uuid> {
-        self.projectile_owner_uuid
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 

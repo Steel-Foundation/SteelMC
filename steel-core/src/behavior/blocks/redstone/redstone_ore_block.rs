@@ -128,6 +128,7 @@ mod tests {
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
     use crate::entity::EntityBase;
+    use crate::entity::{EntityHooks, EntityProps};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     struct StepEntity {
@@ -151,6 +152,13 @@ mod tests {
         }
     }
 
+    impl StepEntity {
+        const ENTITY: EntityProps<Self> = EntityProps {
+            is_stepping_carefully: |entity| entity.careful,
+            ..EntityProps::new()
+        };
+    }
+
     impl Entity for StepEntity {
         fn base(&self) -> &EntityBase {
             &self.base
@@ -160,8 +168,8 @@ mod tests {
             &vanilla_entities::PIG
         }
 
-        fn is_stepping_carefully(&self) -> bool {
-            self.careful
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &Self::ENTITY
         }
     }
 

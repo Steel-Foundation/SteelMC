@@ -226,6 +226,7 @@ mod tests {
 
     use super::super::create_dispatcher;
     use super::{EnchantTargetResult, enchant_main_hand};
+    use crate::entity::{EntityHooks, EntityProps, living_entity};
     use crate::{
         command::{
             brigadier::{ArgumentType, CommandDispatcher, NodeId},
@@ -338,6 +339,12 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(TestLivingEntity);
 
+    impl TestLivingEntity {
+        const ENTITY: EntityProps<Self> = EntityProps {
+            ..living_entity::entity_props()
+        };
+    }
+
     impl Entity for TestLivingEntity {
         fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
             Some(&self.entity_data)
@@ -353,6 +360,10 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             self.entity_type
+        }
+
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &Self::ENTITY
         }
     }
 

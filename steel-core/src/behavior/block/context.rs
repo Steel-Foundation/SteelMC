@@ -7,6 +7,7 @@ use super::{
     vanilla_entities,
 };
 
+use crate::entity::SharedEntity;
 use crate::entity::entities::FallingBlockEntity;
 
 pub struct PickupResult {
@@ -81,11 +82,8 @@ pub trait Fallable: Send + Sync {
     }
 
     /// Returns the damage source used when this falling block hurts entities.
-    fn get_fall_damage_source(&self, entity: &Arc<FallingBlockEntity>) -> DamageSource {
-        DamageSource::direct(
-            &vanilla_damage_types::FALLING_BLOCK,
-            Arc::<FallingBlockEntity>::clone(entity),
-        )
+    fn get_fall_damage_source(&self, entity: &SharedEntity) -> DamageSource {
+        DamageSource::direct(&vanilla_damage_types::FALLING_BLOCK, Arc::clone(entity))
     }
 
     /// Returns whether this behavior is in vanilla's `ConcretePowderBlock` hierarchy.

@@ -15,13 +15,14 @@ use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ExperienceOrbEntityData;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
+use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission,
     EntitySyncedData, RemovalReason, SharedEntity, next_entity_id,
 };
+use crate::entity::{EntityHooks, EntityProps};
 use crate::fluid::get_fluid_state;
 use crate::physics::{MoverType, WorldCollisionProvider};
 use crate::player::Player;
@@ -396,32 +397,24 @@ impl ExperienceOrbEntity {
 
 impl DefaultEntityPush for ExperienceOrbEntity {}
 
-impl Entity for ExperienceOrbEntity {
-    fn is_hard_collision_relevant(&self) -> bool {
-        false
-    }
+impl ExperienceOrbEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        is_hard_collision_relevant: |_| false,
+        // Vanilla `ExperienceOrb` overrides this with an empty body.
+        do_water_splash_effect: |_| {},
+        movement_emission: |_| EntityMovementEmission::None,
+        tick: Self::entity_tick,
+        get_default_gravity: |_| DEFAULT_GRAVITY,
+        block_pos_below_that_affects_movement: |entity| entity.on_pos(0.999_999),
+        attackable: |_| false,
+        sound_source: |_| SoundSource::Ambient,
+        player_touch: Self::entity_player_touch,
+        hurt: Self::entity_hurt,
+        ..EntityProps::new()
+    };
 
-    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
-        Some(self)
-    }
-
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
-    }
-
-    // Vanilla `ExperienceOrb` overrides this with an empty body.
-    fn do_water_splash_effect(&self) {}
-
-    fn movement_emission(&self) -> EntityMovementEmission {
-        EntityMovementEmission::None
-    }
-
-    fn tick(self: Arc<Self>) {
-        self.default_tick();
+    fn entity_tick(&self, entity: &SharedEntity) {
+        self.tick_default();
         self.set_old_position_to_current();
 
         let Some(world) = self.level() else {
@@ -460,7 +453,7 @@ impl Entity for ExperienceOrbEntity {
         }
 
         let fall_speed = self.velocity().y;
-        if Arc::clone(&self)
+        if Arc::clone(entity)
             .move_entity(MoverType::SelfMovement, self.velocity())
             .is_some()
         {
@@ -482,31 +475,11 @@ impl Entity for ExperienceOrbEntity {
         }
     }
 
-    fn get_default_gravity(&self) -> f64 {
-        DEFAULT_GRAVITY
-    }
-
-    fn block_pos_below_that_affects_movement(&self) -> Option<BlockPos> {
-        self.on_pos(0.999_999)
-    }
-
-    fn attackable(&self) -> bool {
-        false
-    }
-
-    fn sound_source(&self) -> SoundSource {
-        SoundSource::Ambient
-    }
-
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
-    }
-
-    fn player_touch(self: Arc<Self>, player: &Arc<Player>) {
+    fn entity_player_touch(&self, player: &Arc<Player>) {
         self.try_pickup(player);
     }
 
-    fn hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
+    fn entity_hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
         if self.is_invulnerable_to_base(source) {
             return false;
         }
@@ -521,6 +494,28 @@ impl Entity for ExperienceOrbEntity {
             self.set_removed(RemovalReason::Discarded);
         }
         true
+    }
+}
+
+impl Entity for ExperienceOrbEntity {
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        self.entity_type
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

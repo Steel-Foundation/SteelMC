@@ -1,6 +1,7 @@
 use std::{sync::atomic::AtomicUsize, thread};
 
 use super::*;
+use crate::entity::{EntityHooks, EntityProps};
 
 // Models Vanilla targets such as Happy Ghasts whose collision eligibility depends on the source.
 struct SourceSelectiveHardCollisionTarget {
@@ -25,6 +26,17 @@ impl SourceSelectiveHardCollisionTarget {
 
 crate::entity::impl_test_downcast_type!(SourceSelectiveHardCollisionTarget);
 
+impl SourceSelectiveHardCollisionTarget {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        can_be_collided_with: Self::entity_can_be_collided_with,
+        ..EntityProps::new()
+    };
+
+    fn entity_can_be_collided_with(&self, other: Option<&dyn Entity>) -> bool {
+        other.is_some_and(|source| source.id() == self.accepted_source_id)
+    }
+}
+
 impl Entity for SourceSelectiveHardCollisionTarget {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -34,8 +46,8 @@ impl Entity for SourceSelectiveHardCollisionTarget {
         &vanilla_entities::ITEM
     }
 
-    fn can_be_collided_with(&self, other: Option<&dyn Entity>) -> bool {
-        other.is_some_and(|source| source.id() == self.accepted_source_id)
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 
@@ -61,6 +73,13 @@ impl BroadCollisionSourceEntity {
 
 crate::entity::impl_test_downcast_type!(BroadCollisionSourceEntity);
 
+impl BroadCollisionSourceEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        can_collide_with: |entity, other| other.id() == entity.accepted_target_id,
+        ..EntityProps::new()
+    };
+}
+
 impl Entity for BroadCollisionSourceEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -70,8 +89,8 @@ impl Entity for BroadCollisionSourceEntity {
         &vanilla_entities::ITEM
     }
 
-    fn can_collide_with(&self, other: &dyn Entity) -> bool {
-        other.id() == self.accepted_target_id
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
     }
 }
 

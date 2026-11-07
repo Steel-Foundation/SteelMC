@@ -27,11 +27,13 @@ use crate::behavior::blocks::{AnvilBlock, FallingBlock};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockPlaceContext, Fallable};
 use crate::block_entity::block_state_nbt;
 use crate::entity::DEFAULT_AIR_DRAG;
+use crate::entity::SharedEntity;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData, RemovalReason,
     next_entity_id,
 };
+use crate::entity::{EntityHooks, EntityProps};
 use crate::fluid::fluid_state_to_block;
 use crate::physics::MoverType;
 use crate::world::{ClipBlockShape, ClipFluid, World};
@@ -381,16 +383,21 @@ impl FallingBlockEntity {
     }
 }
 
-impl Entity for FallingBlockEntity {
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
+impl FallingBlockEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        tick: Self::entity_tick,
+        get_default_gravity: |_| DEFAULT_GRAVITY,
+        spawn_data: |entity| i32::from(entity.block_state().0),
+        blocks_building: |_| true,
+        is_pickable: |entity| !entity.is_removed(),
+        attackable: |_| false,
+        movement_emission: |_| EntityMovementEmission::None,
+        hurt: Self::entity_hurt,
+        cause_fall_damage: Self::entity_cause_fall_damage,
+        ..EntityProps::new()
+    };
 
-    fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
-    }
-
-    fn tick(self: Arc<Self>) {
+    fn entity_tick(&self, entity: &SharedEntity) {
         let block_state = self.block_state();
         if block_state.is_air() {
             self.set_removed(RemovalReason::Discarded);
@@ -403,7 +410,7 @@ impl Entity for FallingBlockEntity {
             state.time = state.time.wrapping_add(1);
         }
         self.apply_gravity();
-        let _ = Arc::clone(&self).move_entity(MoverType::SelfMovement, self.velocity());
+        let _ = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
         self.handle_portal();
         if let Some(world) = self.level()
@@ -417,43 +424,16 @@ impl Entity for FallingBlockEntity {
         );
     }
 
-    fn get_default_gravity(&self) -> f64 {
-        DEFAULT_GRAVITY
-    }
-
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
-    }
-
-    fn spawn_data(&self) -> i32 {
-        i32::from(self.block_state().0)
-    }
-
-    fn blocks_building(&self) -> bool {
-        true
-    }
-
-    fn is_pickable(&self) -> bool {
-        !self.is_removed()
-    }
-
-    fn attackable(&self) -> bool {
-        false
-    }
-
-    fn movement_emission(&self) -> EntityMovementEmission {
-        EntityMovementEmission::None
-    }
-
-    fn hurt(&self, _world: &World, source: &DamageSource, _amount: f32) -> bool {
+    fn entity_hurt(&self, _world: &World, source: &DamageSource, _amount: f32) -> bool {
         if !self.is_invulnerable_to_base(source) {
             self.mark_hurt();
         }
         false
     }
 
-    fn cause_fall_damage(
-        self: Arc<Self>,
+    fn entity_cause_fall_damage(
+        &self,
+        entity: &SharedEntity,
         fall_distance: f64,
         _damage_modifier: f32,
         _source: &DamageSource,
@@ -479,13 +459,8 @@ impl Entity for FallingBlockEntity {
             .get_behavior(self.block_state().get_block())
             .as_fallable()
             .map_or_else(
-                || {
-                    DamageSource::direct(
-                        &vanilla_damage_types::FALLING_BLOCK,
-                        Arc::<FallingBlockEntity>::clone(&self),
-                    )
-                },
-                |fallable| fallable.get_fall_damage_source(&self),
+                || DamageSource::direct(&vanilla_damage_types::FALLING_BLOCK, Arc::clone(entity)),
+                |fallable| fallable.get_fall_damage_source(entity),
             );
         let damage = (fall_distance as f32 * damage_per_distance)
             .floor()
@@ -517,6 +492,24 @@ impl Entity for FallingBlockEntity {
             }
         }
         false
+    }
+}
+
+impl Entity for FallingBlockEntity {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        self.entity_type
+    }
+
+    fn entity_hooks(&self) -> &'static dyn EntityHooks {
+        &Self::ENTITY
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

@@ -642,7 +642,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
             self.set_has_been_shot(true);
         }
         self.check_left_owner();
-        self.default_tick();
+        self.tick_default();
         self.reset_left_owner_checked();
     }
 
@@ -871,6 +871,7 @@ mod tests {
     use super::*;
     use steel_registry::{entity_type::EntityTypeRef, init_vanilla_registry, vanilla_entities};
 
+    use crate::entity::{EntityDefaults, EntityHooks, EntityProps};
     use crate::{entity::EntityBase, test_support::test_world};
 
     struct OwnerCollisionProjectile {
@@ -901,6 +902,10 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ENDER_PEARL
+        }
+
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &EntityDefaults
         }
     }
 
@@ -942,6 +947,13 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(OwnerCollisionTestEntity);
 
+    impl OwnerCollisionTestEntity {
+        const ENTITY: EntityProps<Self> = EntityProps {
+            is_pickable: |entity| entity.pickable && !entity.is_removed(),
+            ..EntityProps::new()
+        };
+    }
+
     impl Entity for OwnerCollisionTestEntity {
         fn base(&self) -> &EntityBase {
             &self.base
@@ -951,8 +963,8 @@ mod tests {
             self.entity_type
         }
 
-        fn is_pickable(&self) -> bool {
-            self.pickable && !self.is_removed()
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &Self::ENTITY
         }
     }
 

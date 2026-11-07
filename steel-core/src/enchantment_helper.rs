@@ -1031,6 +1031,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::entity::LivingParts as _;
     use crate::entity::{EntityBase, LivingEntityBase};
+    use crate::entity::{EntityHooks, EntityProps, living_entity};
     use crate::test_support::{enchanted_item, test_world};
 
     struct TestLivingEntity {
@@ -1068,6 +1069,20 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(TestLivingEntity);
 
+    impl TestLivingEntity {
+        const ENTITY: EntityProps<Self> = EntityProps {
+            with_weapon_item: Self::entity_with_weapon_item,
+            ..living_entity::entity_props()
+        };
+
+        fn entity_with_weapon_item(&self, visitor: &mut dyn FnMut(Option<&ItemStack>)) {
+            let equipment = self.living_base.equipment().try_lock().expect(
+                "entity effects must release equipment locks before inspecting source weapons",
+            );
+            visitor(Some(equipment.get_ref(EquipmentSlot::MainHand)));
+        }
+    }
+
     impl Entity for TestLivingEntity {
         fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
             Some(&self.entity_data)
@@ -1085,11 +1100,8 @@ mod tests {
             self.entity_type
         }
 
-        fn with_weapon_item(&self, visitor: &mut dyn FnMut(Option<&ItemStack>)) {
-            let equipment = self.living_base.equipment().try_lock().expect(
-                "entity effects must release equipment locks before inspecting source weapons",
-            );
-            visitor(Some(equipment.get_ref(EquipmentSlot::MainHand)));
+        fn entity_hooks(&self) -> &'static dyn EntityHooks {
+            &Self::ENTITY
         }
     }
 
