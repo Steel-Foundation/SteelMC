@@ -26,7 +26,7 @@ use crate::entity::component::definition::MobDefinition;
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityBaseLoad, EntityPose, EntityProps, LivingEntityBase,
-    LivingProps, MobBase, MobProps, SpawnRule, mob,
+    LivingProps, MobBase, MobProps, SpawnRule,
 };
 use crate::world::World;
 
@@ -84,7 +84,7 @@ impl CowEntity {
     };
     const MOB: MobProps<Self> = MobProps {
         ambient_sound: |cow| Some(cow.sound_variant().ambient_sound),
-        ..animal::mob_props()
+        ..abstract_cow::mob_props()
     };
     /// Vanilla `Cow`: the `AbstractCow` chains plus variant selection before
     /// `AgeableMob.finalizeSpawn`.
@@ -175,11 +175,10 @@ impl DefaultEntityPush for CowEntity {}
 
 impl CowEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        is_hard_collision_relevant: |_| false,
         apply_implicit_item_components: Self::entity_apply_implicit_item_components,
         dimensions_for_pose: Self::entity_dimensions_for_pose,
         play_step_sound: Self::entity_play_step_sound,
-        ..mob::entity_props()
+        ..abstract_cow::entity_props()
     };
 
     fn entity_apply_implicit_item_components(&self, item_stack: &ItemStack) {

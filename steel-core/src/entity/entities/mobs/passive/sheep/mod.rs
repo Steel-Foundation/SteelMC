@@ -26,6 +26,7 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 
+use crate::behavior::InteractionResult;
 use crate::entity::ageable::{self, Age, Ageable, AgeableProps};
 use crate::entity::ai::goal::{
     BreedGoal, EatBlockGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal,
@@ -236,7 +237,12 @@ impl SheepEntity {
         if !holds_shears {
             return Flow::Continue;
         }
-        ctx.result = shearable::shear_with_player(self, ctx.player, ctx.hand);
+        ctx.result = if self.ready_for_shearing() {
+            shearable::shear_by_player(self, ctx.player, ctx.hand);
+            InteractionResult::SuccessServer
+        } else {
+            InteractionResult::Consume
+        };
         Flow::Stop
     }
 

@@ -112,7 +112,7 @@ impl World {
         spread: DVec3,
         speed: f64,
     ) -> i32 {
-        let packet = CLevelParticles {
+        self.broadcast_particles(CLevelParticles {
             override_limiter,
             always_show,
             x: position.x,
@@ -127,7 +127,41 @@ impl World {
             count,
             particle,
             randomization_type: RandomizationType::default(),
-        };
+        })
+    }
+
+    /// `ServerLevel.sendParticles` with a speed per axis and a randomization type.
+    pub fn send_particles_with_motion(
+        &self,
+        particle: ParticleData,
+        position: DVec3,
+        count: i32,
+        spread: DVec3,
+        speed: DVec3,
+        randomization_type: RandomizationType,
+    ) -> i32 {
+        self.broadcast_particles(CLevelParticles {
+            override_limiter: false,
+            always_show: false,
+            x: position.x,
+            y: position.y,
+            z: position.z,
+            x_dist: spread.x as f32,
+            y_dist: spread.y as f32,
+            z_dist: spread.z as f32,
+            x_max_speed: speed.x as f32,
+            y_max_speed: speed.y as f32,
+            z_max_speed: speed.z as f32,
+            count,
+            particle,
+            randomization_type,
+        })
+    }
+
+    /// Sends `packet` to every player in recipient range, returning how many got it.
+    fn broadcast_particles(&self, packet: CLevelParticles) -> i32 {
+        let position = DVec3::new(packet.x, packet.y, packet.z);
+        let override_limiter = packet.override_limiter;
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {

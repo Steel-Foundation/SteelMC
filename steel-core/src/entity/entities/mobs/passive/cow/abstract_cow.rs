@@ -1,8 +1,11 @@
 //! Vanilla `AbstractCow`: what cows and mooshrooms share on top of `Animal`.
 
+use steel_registry::cow_sound_variant::CowSoundVariant;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_item_tags::ItemTag;
-use steel_registry::{REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
+use steel_registry::{
+    REGISTRY, TaggedRegistryExt, sound_events, vanilla_cow_sound_variants, vanilla_items,
+};
 
 use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
 use crate::entity::ai::goal::{
@@ -14,7 +17,7 @@ use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::entries::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
-use crate::entity::{LivingParts as _, LivingProps, MobBase};
+use crate::entity::{EntityProps, LivingParts as _, LivingProps, MobBase, MobProps, mob};
 use crate::player::player_inventory::Prediction;
 
 /// Stage registering the cow goals.
@@ -37,12 +40,36 @@ pub fn definition<E: Parts>() -> MobDefinition<E> {
     definition
 }
 
+/// `AbstractCow.getSoundSet`: the classic cow sounds, unless a type picks others.
+const CLASSIC_SOUNDS: &CowSoundVariant = &vanilla_cow_sound_variants::CLASSIC;
+
 /// `AbstractCow`'s changes to the animal living defaults.
 #[must_use]
 pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
         sound_volume: |_| 0.4,
+        hurt_sound: |_, _| Some(CLASSIC_SOUNDS.hurt_sound),
+        death_sound: |_| Some(CLASSIC_SOUNDS.death_sound),
         ..animal::living_props()
+    }
+}
+
+/// `AbstractCow`'s changes to the animal mob defaults.
+#[must_use]
+pub const fn mob_props<E: Parts>() -> MobProps<E> {
+    MobProps {
+        ambient_sound: |_| Some(CLASSIC_SOUNDS.ambient_sound),
+        ..animal::mob_props()
+    }
+}
+
+/// `AbstractCow`'s changes to the mob entity hooks.
+#[must_use]
+pub const fn entity_props<E: Parts>() -> EntityProps<E> {
+    EntityProps {
+        is_hard_collision_relevant: |_| false,
+        play_step_sound: |cow, _, _| cow.play_sound(CLASSIC_SOUNDS.step_sound, 0.15, 1.0),
+        ..mob::entity_props()
     }
 }
 

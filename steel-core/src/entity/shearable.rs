@@ -5,7 +5,6 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_game_events;
 use steel_utils::types::InteractionHand;
 
-use crate::behavior::InteractionResult;
 use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use crate::player::Player;
@@ -20,19 +19,11 @@ pub trait Shearable: Entity {
     fn ready_for_shearing(&self) -> bool;
 }
 
-/// The shears branch of `mobInteract` shearable mobs share: shear when ready
-/// (a `SHEAR` game event from the player, one point of durability), otherwise
-/// swallow the click.
-pub fn shear_with_player<E: Shearable + ?Sized>(
-    entity: &E,
-    player: &Player,
-    hand: InteractionHand,
-) -> InteractionResult {
-    if !entity.ready_for_shearing() {
-        return InteractionResult::Consume;
-    }
+/// What shearable mobs do when a ready one is sheared by a player in
+/// `mobInteract`: shear it, emit `SHEAR` from the player, and wear the shears.
+pub fn shear_by_player<E: Shearable + ?Sized>(entity: &E, player: &Player, hand: InteractionHand) {
     let Some(world) = entity.level() else {
-        return InteractionResult::Consume;
+        return;
     };
     let tool = player.inventory.lock().get_item_in_hand(hand).clone();
     entity.shear(&world, SoundSource::Players, &tool);
@@ -42,5 +33,4 @@ pub fn shear_with_player<E: Shearable + ?Sized>(
         .inventory
         .lock()
         .hurt_item_in_hand(hand, 1, has_infinite_materials);
-    InteractionResult::SuccessServer
 }
