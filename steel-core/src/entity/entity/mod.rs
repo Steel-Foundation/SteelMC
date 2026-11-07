@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
 
 use super::*;
-use crate::entity::leash::Leashable;
+use crate::entity::{
+    entities::objects::vehicles::AbstractMinecart, leash::Leashable, pushing::EntityPush,
+};
 use rand::{RngExt, rng};
 use steel_math::DEGREE_90;
 use steel_utils::nbt::NbtValueInput as _;
@@ -688,6 +690,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().stop_riding();
     }
 
+    /// Dismounts every passenger from this entity.
+    fn eject_passengers(&self) {
+        for passenger in self.passengers().into_iter().rev() {
+            passenger.stop_riding();
+        }
+    }
+
     /// Starts riding `entity_to_ride` if vanilla boarding rules allow it.
     fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
         let Some(world) = self.level() else {
@@ -804,10 +813,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         )
     }
 
-    /// Returns this vehicle's passenger attachment point.
-    ///
-    /// Mirrors vanilla `Entity.getPassengerAttachmentPoint` for the base entity class.
-    fn passenger_attachment_point(&self, passenger: &dyn Entity) -> DVec3 {
+    /// Returns this vehicle's passenger attachment point for this entity's dimensions and
+    /// seat index, rotated by the vehicle's yaw.
+    fn default_passenger_attachment_point(&self, passenger: &dyn Entity) -> DVec3 {
         let dimensions = self.base().dimensions();
         let passenger_index = self.passenger_index(passenger).unwrap_or_default();
         dimensions.attachments.get_clamped(
@@ -816,6 +824,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             self.rotation().0,
             dimensions,
         )
+    }
+
+    /// Returns the vehicle-relative position where this passenger attaches to.
+    fn passenger_attachment_point(&self, passenger: &dyn Entity) -> DVec3 {
+        self.default_passenger_attachment_point(passenger)
     }
 
     /// Returns the world position where `passenger` should ride this vehicle.
@@ -884,8 +897,20 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             && !self.is_passenger_of_same_vehicle(other)
     }
 
+    /// Opts this entity into the [`DefaultEntityPush`] fast path. It is read under the
+    /// entity manager lock, so it must give the same answer for the entity's whole
+    /// lifetime and have no side effects.
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        None
+    }
+
     /// Adds an impulse to this entity's velocity and marks velocity for sync.
     fn push_impulse(&self, impulse: DVec3) {
+        if self.as_default_entity_push().is_some() {
+            self.base().push_impulse(impulse);
+            return;
+        }
+
         if !impulse.is_finite() {
             return;
         }
@@ -896,29 +921,30 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Applies vanilla entity-to-entity push separation.
     fn push_entity(&self, entity: &dyn Entity) {
+        if self
+            .as_living_entity()
+            .is_some_and(LivingEntity::is_sleeping)
+        {
+            return;
+        }
+
         if self.is_passenger_of_same_vehicle(entity) || entity.no_physics() || self.no_physics() {
             return;
         }
 
-        let mut x = entity.position().x - self.position().x;
-        let mut z = entity.position().z - self.position().z;
-        let mut distance = x.abs().max(z.abs());
-        if distance < 0.01 {
-            return;
-        }
+        let other_position = entity.position();
+        let position = self.position();
 
-        distance = distance.sqrt();
-        x /= distance;
-        z /= distance;
-        let scale = (1.0 / distance).min(1.0) * 0.05;
-        x *= scale;
-        z *= scale;
+        let Some(impulse) = EntityPush::impulse(position, other_position) else {
+            return;
+        };
 
         if !self.is_vehicle() && self.is_pushable() {
-            self.push_impulse(DVec3::new(-x, 0.0, -z));
+            self.push_impulse(DVec3::new(-impulse.x, 0.0, -impulse.z));
         }
+
         if !entity.is_vehicle() && entity.is_pushable() {
-            entity.push_impulse(DVec3::new(x, 0.0, z));
+            entity.push_impulse(impulse);
         }
     }
 
@@ -1609,6 +1635,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn Leashable>(self)
     }
 
+    /// Returns this entity as an `AbstractMinecart` if it has `AbstractMinecart` behavior.
+    fn as_abstract_minecart(&self) -> Option<&dyn AbstractMinecart> {
+        try_as_dyn::<Self, dyn AbstractMinecart>(self)
+    }
+
     /// Returns true for entities that implement vanilla animal behavior.
     fn is_animal(&self) -> bool {
         self.as_animal().is_some()
@@ -1779,8 +1810,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         false
     }
 
-    /// Returns the movement vector vanilla exposes for block-contact logic.
-    fn known_movement(&self) -> DVec3 {
+    /// Returns vanilla's base known movement before entity-specific adjustments.
+    fn default_known_movement(&self) -> DVec3 {
         if let Some(controller) = self.controlling_passenger()
             && !self.is_removed()
             && controller.entity_type() == &vanilla_entities::PLAYER
@@ -1789,6 +1820,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         self.velocity()
+    }
+
+    /// Returns the movement vector vanilla exposes for block-contact logic.
+    fn known_movement(&self) -> DVec3 {
+        self.default_known_movement()
     }
 
     /// Returns the base-tick displacement vanilla exposes as `getKnownSpeed`.
@@ -1847,6 +1883,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn direction_yaw(&self) -> Direction {
         let (yaw, _) = self.rotation();
         Direction::from_yaw(yaw)
+    }
+
+    /// Returns the horizontal direction used for movement-dependent behavior.
+    fn motion_direction(&self) -> Direction {
+        self.direction_yaw()
     }
 
     /// Rotates this entity to face a fixed position.
@@ -2094,6 +2135,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns whether vanilla should play this entity's lava hurt sound.
     fn should_play_lava_hurt_sound(&self) -> bool {
         true
+    }
+
+    /// Ignites this entity in lava.
+    fn lava_ignite(&self) {
+        self.apply_inside_block_effect(InsideBlockEffectType::LavaIgnite);
     }
 
     /// Applies vanilla lava-contact damage after lava ignition effects.
@@ -2710,7 +2756,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         clippy::float_cmp,
         reason = "intentional: vanilla checks static block speed factors against 1.0"
     )]
-    fn block_speed_factor(&self) -> f32 {
+    fn default_block_speed_factor(&self) -> f32 {
         let Some(world) = self.level() else {
             return 1.0;
         };
@@ -2741,6 +2787,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             .get_block()
             .config
             .speed_factor
+    }
+
+    /// Returns the block speed factor applied after movement.
+    fn block_speed_factor(&self) -> f32 {
+        self.default_block_speed_factor()
     }
 
     /// Returns the jump-height multiplier from the block at this entity's
@@ -3494,7 +3545,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         clippy::too_many_lines,
         reason = "keeps vanilla movement phases in order"
     )]
-    fn move_entity(self: Arc<Self>, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
+    fn default_move_entity(
+        self: Arc<Self>,
+        mover_type: MoverType,
+        delta: DVec3,
+    ) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
             return self.move_without_physics(delta);
@@ -3629,6 +3684,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         ));
 
         Some(result)
+    }
+
+    /// Moves the entity with collision detection.
+    fn move_entity(self: Arc<Self>, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
+        self.default_move_entity(mover_type, delta)
     }
 
     /// Applies vanilla fall-distance bookkeeping after accepted movement.
