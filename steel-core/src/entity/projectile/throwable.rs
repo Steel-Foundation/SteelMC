@@ -26,7 +26,8 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
 
 /// `ThrowableProjectile.tick`: applies gravity and drag, moves to the first
 /// hit on the move vector, runs the `Projectile` tick, then resolves the hit.
-fn tick(projectile: &Projectile<'_>, entity: &SharedEntity) {
+/// Types that wrap their tick call this as `super.tick()`.
+pub fn tick(projectile: &Projectile<'_>, entity: &SharedEntity) {
     // Vanilla's level stores the old position and rotation before ticking;
     // `onHit` (teleports) and `updateRotation` read them.
     projectile.set_old_position_to_current();

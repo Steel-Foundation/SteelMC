@@ -1,4 +1,19 @@
-// Moved from entity/projectile/owner_tests.rs with the entities it depends on.
+use std::io::Cursor;
+use std::sync::Arc;
+
+use glam::DVec3;
+use simdnbt::borrow::read_compound;
+use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_registry::vanilla_entities;
+use steel_utils::{ChunkPos, UuidExt as _};
+
+use super::{Parts as _, ProjectileDeflection};
+use crate::entity::entities::{ChickenEntity, EnderPearlEntity};
+use crate::entity::prelude::*;
+use crate::entity::{EntityReference, LivingParts as _, RemovalReason, SharedEntity};
+use crate::server::worlds::WorldMap;
+use crate::test_support::{TestPlayerBuilder, insert_ready_full_chunk, test_domain};
+use crate::world::World;
 
 fn pearl(world: &Arc<World>) -> EnderPearlEntity {
     EnderPearlEntity::new(
@@ -9,30 +24,13 @@ fn pearl(world: &Arc<World>) -> EnderPearlEntity {
     )
 }
 
+/// Loads `nbt` as the pearl's saved data.
 fn load_projectile(pearl: &EnderPearlEntity, nbt: &NbtCompound) {
     let mut bytes = Vec::new();
     nbt.write(&mut bytes);
     let borrowed = read_compound(&mut Cursor::new(&bytes)).expect("borrow test NBT");
-    pearl.load_projectile((&borrowed).into());
+    pearl.load_additional((&borrowed).into());
 }
-// Moved from src/entity/projectile/owner_tests.rs
-use std::io::Cursor;
-use std::sync::Arc;
-
-use glam::DVec3;
-use simdnbt::borrow::read_compound;
-use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_registry::vanilla_entities;
-use steel_utils::{ChunkPos, UuidExt as _};
-
-use crate::entity::{
-    Entity as _, EntityReference, LivingEntity as _, Projectile, RemovalReason, SharedEntity,
-    entities::{ChickenEntity},
-};
-use crate::server::worlds::WorldMap;
-use crate::test_support::{TestPlayerBuilder, insert_ready_full_chunk, test_domain};
-use crate::world::World;
-
 
 #[test]
 fn cached_dead_owner_takes_precedence_until_cache_expires() {
@@ -40,7 +38,7 @@ fn cached_dead_owner_takes_precedence_until_cache_expires() {
     let worlds: Vec<_> = domain.values().collect();
     let owner: SharedEntity = TestPlayerBuilder::new(Arc::clone(worlds[0]), "Owner", 1).build();
     let pearl = pearl(worlds[1]);
-    pearl.set_owner_entity(Some(&owner));
+    pearl.projectile().set_owner(Some(&owner));
     insert_ready_full_chunk(worlds[1], ChunkPos::new(0, 0));
     let duplicate: SharedEntity = TestPlayerBuilder::new(Arc::clone(worlds[1]), "Duplicate", 2)
         .uuid(owner.uuid())
@@ -49,14 +47,17 @@ fn cached_dead_owner_takes_precedence_until_cache_expires() {
         .try_add_entity(Arc::clone(&duplicate))
         .expect("register duplicate UUID");
 
-    owner.as_player().expect("player").set_health(0.0);
+    owner.as_player().expect("player").living().set_health(0.0);
     assert!(Arc::ptr_eq(
-        &pearl.get_owner().expect("cached dead player"),
+        &pearl.projectile().owner().expect("cached dead player"),
         &owner
     ));
     drop(owner);
     assert!(Arc::ptr_eq(
-        &pearl.get_owner().expect("expired cache UUID fallback"),
+        &pearl
+            .projectile()
+            .owner()
+            .expect("expired cache UUID fallback"),
         &duplicate
     ));
 }
@@ -78,10 +79,10 @@ fn owner_lookup_isolated_by_domain_for_uuid_and_cache() {
         .try_add_entity(Arc::clone(&foreign))
         .expect("foreign owner");
     let pearl = pearl(local_world);
-    pearl.set_owner_uuid(Some(foreign.uuid()));
-    assert!(pearl.get_owner().is_none());
-    pearl.set_owner_entity(Some(&foreign));
-    assert!(pearl.get_owner().is_none());
+    pearl.projectile().set_owner_uuid(Some(foreign.uuid()));
+    assert!(pearl.projectile().owner().is_none());
+    pearl.projectile().set_owner(Some(&foreign));
+    assert!(pearl.projectile().owner().is_none());
 
     insert_ready_full_chunk(local_world, ChunkPos::new(0, 0));
     let local: SharedEntity = TestPlayerBuilder::new(Arc::clone(local_world), "Local", 2)
@@ -91,7 +92,7 @@ fn owner_lookup_isolated_by_domain_for_uuid_and_cache() {
         .try_add_entity(Arc::clone(&local))
         .expect("local owner");
     assert!(Arc::ptr_eq(
-        &pearl.get_owner().expect("same-domain fallback"),
+        &pearl.projectile().owner().expect("same-domain fallback"),
         &local
     ));
 }
@@ -103,25 +104,27 @@ fn owner_cache_rejects_mismatched_uuid_and_deflection_updates_owner() {
     let owner: SharedEntity = TestPlayerBuilder::new(Arc::clone(world), "Owner", 1).build();
     let other: SharedEntity = TestPlayerBuilder::new(Arc::clone(world), "Other", 2).build();
     let pearl = pearl(world);
-    pearl.set_owner_uuid(Some(owner.uuid()));
-    pearl.cache_owner_entity(&other);
-    assert!(pearl.get_owner().is_none());
-    pearl.cache_owner_entity(&owner);
-    pearl.deflect(
-        super::ProjectileDeflection::None,
+    pearl.projectile().set_owner_uuid(Some(owner.uuid()));
+    pearl.projectile().cache_owner(&other);
+    assert!(pearl.projectile().owner().is_none());
+    pearl.projectile().cache_owner(&owner);
+    pearl.projectile().deflect(
+        ProjectileDeflection::None,
         None,
         Some(EntityReference::from_uuid(other.uuid())),
         false,
     );
-    assert!(pearl.get_owner().is_none());
-    pearl.cache_owner_entity(&other);
+    assert!(pearl.projectile().owner().is_none());
+    pearl.projectile().cache_owner(&other);
     assert!(Arc::ptr_eq(
-        &pearl.get_owner().expect("deflected owner"),
+        &pearl.projectile().owner().expect("deflected owner"),
         &other
     ));
 
-    pearl.deflect(super::ProjectileDeflection::None, None, None, false);
-    assert!(pearl.owner_uuid().is_none());
+    pearl
+        .projectile()
+        .deflect(ProjectileDeflection::None, None, None, false);
+    assert!(pearl.projectile().owner_uuid().is_none());
 }
 
 #[test]
@@ -135,9 +138,9 @@ fn removed_owner_is_not_resolved_from_world_index() {
         .try_add_entity(Arc::clone(&original))
         .expect("original owner");
     let pearl = pearl(worlds[1]);
-    pearl.set_owner_entity(Some(&original));
+    pearl.projectile().set_owner(Some(&original));
     original.set_removed(RemovalReason::Killed);
-    assert!(pearl.get_owner().is_none());
+    assert!(pearl.projectile().owner().is_none());
 }
 
 #[test]
@@ -152,7 +155,7 @@ fn uuid_owner_is_attributed_on_projectile_entity_hit() {
         .try_add_entity(Arc::clone(&owner))
         .expect("register owner");
     let projectile = Arc::new(pearl(worlds[1]));
-    projectile.set_owner_uuid(Some(owner.uuid()));
+    projectile.projectile().set_owner_uuid(Some(owner.uuid()));
     let victim = Arc::new(ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         2,
@@ -163,8 +166,14 @@ fn uuid_owner_is_attributed_on_projectile_entity_hit() {
     worlds[1]
         .try_add_entity(Arc::clone(&target))
         .expect("register victim");
-    Arc::clone(&projectile).on_hit_entity(&target, DVec3::ZERO);
-    let source = victim.last_damage_source().expect("projectile hit source");
+    let projectile_entity: SharedEntity = Arc::<EnderPearlEntity>::clone(&projectile);
+    projectile
+        .projectile()
+        .on_hit_entity(&projectile_entity, &target, DVec3::ZERO);
+    let source = victim
+        .living()
+        .last_damage_source()
+        .expect("projectile hit source");
     assert!(Arc::ptr_eq(
         source.causing_entity().expect("cross-dimension shooter"),
         &owner
@@ -178,7 +187,6 @@ fn uuid_owner_is_attributed_on_projectile_entity_hit() {
     );
 }
 
-
 #[test]
 fn serialized_owner_resolves_by_uuid_and_loading_clears_old_cache() {
     let domain = test_domain("serialized_owner", &["overworld", "the_nether"]);
@@ -189,9 +197,9 @@ fn serialized_owner_resolves_by_uuid_and_loading_clears_old_cache() {
         .try_add_entity(Arc::clone(&owner))
         .expect("register owner");
     let original = pearl(worlds[1]);
-    original.set_owner_entity(Some(&owner));
+    original.projectile().set_owner(Some(&owner));
     let mut nbt = NbtCompound::new();
-    original.save_projectile(&mut nbt);
+    original.save_additional(&mut nbt);
     assert_eq!(
         nbt.int_array("Owner"),
         Some(owner.uuid().to_int_array().as_slice())
@@ -199,7 +207,7 @@ fn serialized_owner_resolves_by_uuid_and_loading_clears_old_cache() {
     let loaded = pearl(worlds[1]);
     load_projectile(&loaded, &nbt);
     assert!(Arc::ptr_eq(
-        &loaded.get_owner().expect("loaded UUID owner"),
+        &loaded.projectile().owner().expect("loaded UUID owner"),
         &owner
     ));
 
@@ -208,12 +216,12 @@ fn serialized_owner_resolves_by_uuid_and_loading_clears_old_cache() {
         Some(NbtTag::IntArray(vec![1, 2, 3])),
         Some(NbtTag::String("invalid".into())),
     ] {
-        loaded.set_owner_entity(Some(&owner));
+        loaded.projectile().set_owner(Some(&owner));
         let mut nbt = NbtCompound::new();
         if let Some(tag) = owner_tag {
             nbt.insert("Owner", tag);
         }
         load_projectile(&loaded, &nbt);
-        assert!(loaded.get_owner().is_none());
+        assert!(loaded.projectile().owner().is_none());
     }
 }

@@ -1,6 +1,15 @@
-// Moved from server/tests/projectile_owners.rs with the entities it depends on.
+use super::*;
+
+use crate::chunk::chunk_holder::TickingReadiness;
+use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
+use crate::level_data::GameTimeSource;
+use crate::test_support::create_test_world_with_time_source;
+use steel_registry::packets::play::C_PLAYER_POSITION;
+use steel_registry::vanilla_game_rules;
+use steel_utils::{Identifier, types::Difficulty};
 
 fn assert_pearl_impact(owner_in_nether: bool, pearl_in_nether: bool, cached: bool) {
+    init_vanilla_registry();
     init_behaviors();
     init_entities();
     let overworld_fixture = fresh_test_world_in_domain("pearl_impact", "overworld");
@@ -59,9 +68,9 @@ fn assert_pearl_impact(owner_in_nether: bool, pearl_in_nether: bool, cached: boo
         ));
         if cached {
             let owner: SharedEntity = Arc::<Player>::clone(&player);
-            pearl.set_owner_entity(Some(&owner));
+            pearl.projectile().set_owner(Some(&owner));
         } else {
-            pearl.set_owner_uuid(Some(player.uuid()));
+            pearl.projectile().set_owner_uuid(Some(player.uuid()));
         }
         pearl.set_velocity(DVec3::new(0.0, -1.0, 0.0));
         let shared_pearl: SharedEntity = Arc::<EnderPearlEntity>::clone(&pearl);
@@ -75,7 +84,7 @@ fn assert_pearl_impact(owner_in_nether: bool, pearl_in_nether: bool, cached: boo
         assert!(pearl.is_removed());
         assert!(Arc::ptr_eq(&player.get_world(), pearl_world));
         assert_eq!(player.position(), DVec3::new(0.5, 65.25, 0.5));
-        assert_eq!(player.get_health(), 15.0);
+        assert_eq!(player.living().health(), 15.0);
         assert!(
             packets
                 .lock()
@@ -92,17 +101,6 @@ fn assert_pearl_impact(owner_in_nether: bool, pearl_in_nether: bool, cached: boo
         }
     });
 }
-
-// Remaining contents of src/server/tests/projectile_owners.rs
-use super::*;
-
-use crate::chunk::chunk_holder::TickingReadiness;
-use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use crate::level_data::GameTimeSource;
-use crate::test_support::create_test_world_with_time_source;
-use steel_registry::packets::play::C_PLAYER_POSITION;
-use steel_registry::vanilla_game_rules;
-use steel_utils::{Identifier, types::Difficulty};
 
 #[test]
 fn uuid_pearl_impact_overworld_to_nether() {
@@ -125,4 +123,3 @@ fn cached_owner_pearl_impact_between_dimensions() {
     assert_pearl_impact(false, true, true);
     assert_pearl_impact(true, false, true);
 }
-

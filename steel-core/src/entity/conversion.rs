@@ -270,6 +270,7 @@ mod tests {
     };
     use steel_utils::Downcast as _;
 
+    use steel_utils::types::Difficulty;
     use steel_utils::{ChunkPos, Identifier};
     use text_components::TextComponent;
 
@@ -720,5 +721,49 @@ mod tests {
             "the after-conversion callback runs on the new mob"
         );
         assert_eq!(cow.entity_type(), &vanilla_entities::CHICKEN);
+    }
+
+    #[test]
+    fn convert_to_refuses_hostile_types_on_peaceful_difficulty() {
+        init_vanilla_registry();
+        init_entities();
+        let world_fixture = conversion_world();
+        let world = &world_fixture.world;
+
+        world.set_difficulty(Difficulty::Peaceful);
+        let pig = add_pig(world);
+        let pig_mob = pig.as_mob().expect("pig is a mob");
+        assert!(
+            pig.downcast_ref::<ChickenEntity>()
+                .expect("pig is concrete")
+                .mob()
+                .convert_to(
+                    &vanilla_entities::ENDERMITE,
+                    ConversionParams::single(true, true),
+                    None,
+                )
+                .is_none(),
+            "hostile conversions are refused on peaceful"
+        );
+        assert!(
+            !pig_mob.is_removed(),
+            "refused conversions leave the source untouched"
+        );
+
+        world.set_difficulty(Difficulty::Normal);
+        let other_pig = add_pig(world);
+        assert!(
+            other_pig
+                .downcast_ref::<ChickenEntity>()
+                .expect("pig is concrete")
+                .mob()
+                .convert_to(
+                    &vanilla_entities::ENDERMITE,
+                    ConversionParams::single(true, true),
+                    None,
+                )
+                .is_some(),
+            "hostile conversions are allowed on non-peaceful difficulties"
+        );
     }
 }

@@ -962,6 +962,9 @@ fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
 }
 
 #[cfg(test)]
+mod owner_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use steel_registry::{entity_type::EntityTypeRef, init_vanilla_registry, vanilla_entities};
