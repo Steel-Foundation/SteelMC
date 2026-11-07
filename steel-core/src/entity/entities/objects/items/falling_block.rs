@@ -394,6 +394,9 @@ impl FallingBlockEntity {
 }
 
 impl FallingBlockEntity {
+    // TODO: vanilla names falling blocks `entity.minecraft.falling_block_type` with the
+    // block's name. Needs extracted block description ids: wall variants override theirs
+    // (`wall_torch` -> `block.minecraft.torch`), so they can't be derived from the key.
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: Self::entity_tick,
         get_default_gravity: |_| DEFAULT_GRAVITY,
