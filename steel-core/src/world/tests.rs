@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use crate::entity::{EntityBase, LivingEntity as _, entities::PigEntity};
+use crate::entity::{EntityBase, LivingEntity as _, entities::PigEntity, next_entity_id};
 use crate::player::ResetReason;
 use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world,
@@ -94,6 +94,55 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
     assert!(world.remove_respawned_player(&replacement));
     assert!(world.players.get_by_uuid(&uuid).is_none());
     assert!(world.get_entity_by_id(replacement.id()).is_none());
+}
+
+#[test]
+// Vanilla removes the whole mount tree on disconnect and keeps it in the player's
+// `RootVehicle` data. The mount disappearing is expected, not a lost entity.
+// https://feedback.minecraft.net/hc/en-us/community/posts/18425696179213-Dismount-on-Disconnect-Gamerule
+fn disconnect_while_riding_removes_the_vehicle_like_vanilla() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("disconnect_riding_vehicle");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+
+    let vehicle: SharedEntity = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(1.0, 64.0, 1.0),
+        Arc::downgrade(world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&vehicle))
+        .expect("the test vehicle should attach to the loaded chunk");
+
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Rider", next_entity_id()).build();
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    assert!(player.start_riding(&vehicle));
+    assert_eq!(
+        player.root_vehicle().map(|root| root.id()),
+        Some(vehicle.id())
+    );
+
+    let (player, _domain, saved) = world.detach_player_for_disconnect(Arc::clone(&player));
+
+    assert!(vehicle.is_removed());
+    assert_eq!(
+        vehicle.removal_reason(),
+        Some(RemovalReason::StoredWithPlayer),
+        "vanilla removes the mount with UNLOADED_WITH_PLAYER"
+    );
+    assert!(
+        world.get_entity_by_id(vehicle.id()).is_none(),
+        "the mount disappears from the world when its rider disconnects"
+    );
+    assert!(player.vehicle().is_none());
+    assert_eq!(
+        saved.root_vehicle.as_ref().map(|root| root.entity.uuid),
+        Some(*vehicle.uuid().as_bytes()),
+        "the mount is carried in the player's saved data"
+    );
 }
 
 fn advance_scheduling_until(world: &Arc<World>, mut ready: impl FnMut() -> bool) {
