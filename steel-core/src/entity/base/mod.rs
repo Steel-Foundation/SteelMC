@@ -26,7 +26,7 @@ use steel_math::{DEGREE_90, DEGREE_360};
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::vanilla_entities;
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 use text_components::TextComponent;
 use uuid::Uuid;
@@ -376,21 +376,21 @@ pub struct EntityBase {
     /// Persistent UUID for this entity.
     uuid: Uuid,
     /// The world this entity is in.
-    world: SyncMutex<Weak<World>>,
+    world: CheckedMutex<Weak<World>>,
     /// Current vanilla movement state.
-    state: SyncMutex<EntityBaseState>,
+    state: CheckedMutex<EntityBaseState>,
     /// Shared vanilla save data outside the movement snapshot.
-    save_data: SyncMutex<EntityBaseSaveData>,
+    save_data: CheckedMutex<EntityBaseSaveData>,
     /// Per-tick movement segments used by vanilla block-contact effects.
-    movement_trace: SyncMutex<EntityMovementTrace>,
+    movement_trace: CheckedMutex<EntityMovementTrace>,
     /// Removal and tick bookkeeping.
-    lifecycle: SyncMutex<EntityLifecycleState>,
+    lifecycle: CheckedMutex<EntityLifecycleState>,
     /// Passenger, vehicle, and boarding-cooldown state.
-    relationships: SyncMutex<EntityRelationshipState>,
+    relationships: CheckedMutex<EntityRelationshipState>,
     /// Active vanilla portal timing state.
-    portal_process: SyncMutex<Option<PortalProcessor>>,
+    portal_process: CheckedMutex<Option<PortalProcessor>>,
     /// Callback for entity lifecycle events.
-    level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
+    level_callback: CheckedMutex<Arc<dyn EntityLevelCallback>>,
 }
 
 impl EntityBase {
@@ -444,14 +444,14 @@ impl EntityBase {
             generation: EntityGeneration::next(),
             id,
             uuid,
-            world: SyncMutex::new(world),
-            state: SyncMutex::new(state),
-            save_data: SyncMutex::new(EntityBaseSaveData::new()),
-            movement_trace: SyncMutex::new(EntityMovementTrace::default()),
-            lifecycle: SyncMutex::new(EntityLifecycleState::new()),
-            relationships: SyncMutex::new(EntityRelationshipState::default()),
-            portal_process: SyncMutex::new(None),
-            level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
+            world: CheckedMutex::new("EntityBase.world", world),
+            state: CheckedMutex::new("EntityBase.state", state),
+            save_data: CheckedMutex::new("EntityBase.save_data", EntityBaseSaveData::new()),
+            movement_trace: CheckedMutex::new("EntityBase.movement_trace", EntityMovementTrace::default()),
+            lifecycle: CheckedMutex::new("EntityBase.lifecycle", EntityLifecycleState::new()),
+            relationships: CheckedMutex::new("EntityBase.relationships", EntityRelationshipState::default()),
+            portal_process: CheckedMutex::new("EntityBase.portal_process", None),
+            level_callback: CheckedMutex::new("EntityBase.level_callback", Arc::new(NullEntityCallback)),
         }
     }
 

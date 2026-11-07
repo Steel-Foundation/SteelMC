@@ -340,10 +340,8 @@ fn removal_unlocks_lifecycle_before_destroying_retained_sources() {
     impl Drop for RemovalSourceEntity {
         fn drop(&mut self) {
             let victim = self.victim.upgrade().expect("victim outlives source");
-            assert!(
-                victim.base().lifecycle.try_lock().is_some(),
-                "release the lifecycle mutex before destroying a retained source"
-            );
+            // Panics if the lifecycle lock is still held while the source is destroyed.
+            drop(victim.base().lifecycle.lock());
         }
     }
 
