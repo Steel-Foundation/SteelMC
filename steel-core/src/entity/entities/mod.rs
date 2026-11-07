@@ -7,7 +7,9 @@ pub mod mobs;
 pub mod objects;
 
 pub use mobs::hostile::EndermiteEntity;
-pub use mobs::passive::{ChickenEntity, CowEntity, MushroomCowEntity, PigEntity, SheepEntity};
+pub use mobs::passive::{
+    ChickenEntity, CowEntity, MushroomCowEntity, PigEntity, SheepEntity, SquidEntity,
+};
 pub use objects::display_ui::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
 pub use objects::effects::AreaEffectCloudEntity;
 pub use objects::explosives::{EndCrystalEntity, PrimedTntEntity};
