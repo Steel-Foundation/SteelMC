@@ -64,11 +64,9 @@ const THIRTY_SECONDS: i32 = 600;
 const ONE_MINUTE: i32 = 1200;
 
 /// A fishing hook.
-// TODO: vanilla saves nothing for a hook (its type is never saved either);
-// the projectile component still writes its owner for data commands.
 #[entity_behavior(class = "FishingHook")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY)]
+#[entity(hooks = Self::ENTITY, no_save_data)]
 pub struct FishingHookEntity {
     #[entity(base)]
     base: EntityBase,

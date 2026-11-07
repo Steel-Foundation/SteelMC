@@ -10,6 +10,9 @@ struct StructOptions {
     entity_type: Option<Expr>,
     save: Option<Path>,
     load: Option<Path>,
+    /// Vanilla saves nothing for the type beyond the base entity data, even
+    /// for its components (an empty `addAdditionalSaveData`).
+    no_save_data: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -162,7 +165,9 @@ fn erased_component_tokens(components: &[&RoleField]) -> Option<TokenStream> {
 }
 
 fn persistence_tokens(options: &StructOptions, components: &[&RoleField]) -> Option<TokenStream> {
-    if components.is_empty() && options.save.is_none() && options.load.is_none() {
+    if options.no_save_data
+        || components.is_empty() && options.save.is_none() && options.load.is_none()
+    {
         return None;
     }
     let idents: Vec<&Ident> = components.iter().map(|field| &field.ident).collect();
@@ -207,11 +212,21 @@ fn struct_options(input: &DeriveInput) -> syn::Result<StructOptions> {
                 options.save = Some(meta.value()?.parse()?);
             } else if meta.path.is_ident("load") {
                 options.load = Some(meta.value()?.parse()?);
+            } else if meta.path.is_ident("no_save_data") {
+                options.no_save_data = true;
             } else {
-                return Err(meta.error("expected `hooks`, `entity_type`, `save` or `load`"));
+                return Err(
+                    meta.error("expected `hooks`, `entity_type`, `save`, `load` or `no_save_data`")
+                );
             }
             Ok(())
         })?;
+    }
+    if options.no_save_data && (options.save.is_some() || options.load.is_some()) {
+        return Err(syn::Error::new(
+            input.ident.span(),
+            "`no_save_data` cannot be combined with `save` or `load`",
+        ));
     }
     Ok(options)
 }

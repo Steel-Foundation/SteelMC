@@ -27,7 +27,7 @@ use crate::world::World;
 /// position and recreate the knot on load.
 #[entity_behavior(class = "LeashFenceKnotEntity")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY)]
+#[entity(hooks = Self::ENTITY, no_save_data)]
 pub struct LeashFenceKnotEntity {
     #[entity(base)]
     base: EntityBase,
@@ -83,7 +83,7 @@ impl LeashFenceKnotEntity {
                 world,
             ),
             entity_type,
-            attachment: BlockAttachment::unsaved(block_pos),
+            attachment: BlockAttachment::new(block_pos),
         }
     }
 
@@ -94,7 +94,7 @@ impl LeashFenceKnotEntity {
         Self {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
-            attachment: BlockAttachment::unsaved(BlockPos::containing(
+            attachment: BlockAttachment::new(BlockPos::containing(
                 position.x, position.y, position.z,
             )),
         }

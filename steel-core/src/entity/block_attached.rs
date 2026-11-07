@@ -34,11 +34,10 @@ struct AttachmentState {
 /// The block a vanilla `BlockAttachedEntity` hangs on.
 pub struct BlockAttachment {
     state: CheckedMutex<AttachmentState>,
-    saves_pos: bool,
 }
 
 impl BlockAttachment {
-    /// Attached to `pos`, saving it as `block_pos`.
+    /// Attached to `pos`.
     #[must_use]
     pub const fn new(pos: BlockPos) -> Self {
         Self {
@@ -46,17 +45,6 @@ impl BlockAttachment {
                 ticks_since_last_check: 0,
                 pos,
             }),
-            saves_pos: true,
-        }
-    }
-
-    /// Attached to `pos` without saving it, for types that rebuild the block
-    /// from their position on load (vanilla `LeashFenceKnotEntity`).
-    #[must_use]
-    pub const fn unsaved(pos: BlockPos) -> Self {
-        Self {
-            saves_pos: false,
-            ..Self::new(pos)
         }
     }
 
@@ -91,9 +79,6 @@ unsafe impl DowncastType for BlockAttachment {
 
 impl Component for BlockAttachment {
     fn save(&self, _owner: &dyn Entity, nbt: &mut NbtCompound) {
-        if !self.saves_pos {
-            return;
-        }
         let pos = self.pos();
         nbt.insert(
             "block_pos",
@@ -102,9 +87,6 @@ impl Component for BlockAttachment {
     }
 
     fn load(&self, owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        if !self.saves_pos {
-            return;
-        }
         let stored = nbt
             .int_array("block_pos")
             .filter(|pos| pos.len() == 3)
