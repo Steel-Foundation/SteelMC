@@ -335,10 +335,10 @@ pub fn get_spread(
 #[cfg(test)]
 mod tests {
     use crate::behavior::init_behaviors;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::fresh_loaded_test_world;
     use steel_registry::blocks::properties::BlockStateProperties;
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_fluids};
-    use steel_utils::ChunkPos;
+
     use steel_utils::types::UpdateFlags;
 
     use super::*;
@@ -380,9 +380,8 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world_fixture = fresh_test_world("fluid_spread_closest_slope");
+        let world_fixture = fresh_loaded_test_world("fluid_spread_closest_slope");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let origin = BlockPos::new(8, 64, 8);
         let source_water = vanilla_blocks::WATER.default_state();
         let thin_lava = vanilla_blocks::LAVA

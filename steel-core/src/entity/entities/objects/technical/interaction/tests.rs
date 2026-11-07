@@ -1,11 +1,11 @@
-use std::io::Cursor;
 use std::sync::Arc;
 
-use simdnbt::borrow::read_compound;
 use steel_registry::vanilla_entities;
 use steel_utils::types::InteractionHand;
 
 use super::*;
+
+use crate::test_support::load_additional;
 use crate::test_support::{TestPlayerBuilder, fresh_test_world, tick_test_world};
 
 const POSITION: DVec3 = DVec3::new(-8.0, 128.0, 4.0);
@@ -86,10 +86,6 @@ fn resizing_updates_the_box_including_on_load() {
 
     let mut nbt = NbtCompound::new();
     nbt.insert("width", 2.0_f32);
-    let mut bytes = Vec::new();
-    nbt.write(&mut bytes);
-    let borrowed = read_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
-    interaction.load_additional((&borrowed).into());
+    load_additional(&interaction, &nbt);
     assert_size(2.0, DEFAULT_HEIGHT);
 }

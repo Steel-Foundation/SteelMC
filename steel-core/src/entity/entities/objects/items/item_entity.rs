@@ -814,13 +814,13 @@ mod tests {
         init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_damage_types,
         vanilla_entities, vanilla_items,
     };
-    use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
+    use steel_utils::{BlockPos, types::UpdateFlags};
 
     use steel_registry::data_components::vanilla_components::ITEM_NAME;
 
     use crate::behavior::init_behaviors;
     use crate::entity::{Entity, damage::DamageSource};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
+    use crate::test_support::{fresh_loaded_test_world, test_world};
     use crate::world::World;
 
     use super::ItemEntity;
@@ -901,9 +901,8 @@ mod tests {
     fn item_tick_refreshes_fluid_after_movement() {
         init_vanilla_registry();
         init_behaviors();
-        let fixture = fresh_test_world("item_post_move_fluid_update");
+        let fixture = fresh_loaded_test_world("item_post_move_fluid_update");
         let world = &fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         assert!(world.set_block(
             BlockPos::new(8, 64, 8),
             vanilla_blocks::WATER.default_state(),

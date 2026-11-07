@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::load_additional;
 use steel_registry::init_vanilla_registry;
 
 #[test]
@@ -39,13 +40,8 @@ fn chicken_loads_vanilla_state_and_variant_data() {
     nbt.insert("variant", "minecraft:cold");
     nbt.insert("sound_variant", "minecraft:picky");
 
-    let mut bytes = Vec::new();
-    nbt.write(&mut bytes);
-    let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
-
     let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    chicken.load_additional((&borrowed).into());
+    load_additional(&chicken, &nbt);
 
     assert_eq!(chicken.animal().ageable().age(), -24_000);
     assert!(chicken.is_chicken_jockey());
@@ -65,13 +61,8 @@ fn chicken_load_defaults_jockey_and_keeps_random_egg_time_when_absent() {
     nbt.insert("variant", "minecraft:temperate");
     nbt.insert("sound_variant", "minecraft:classic");
 
-    let mut bytes = Vec::new();
-    nbt.write(&mut bytes);
-    let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
-
     let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    chicken.load_additional((&borrowed).into());
+    load_additional(&chicken, &nbt);
 
     assert!(!chicken.is_chicken_jockey());
     assert!(

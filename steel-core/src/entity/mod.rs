@@ -137,7 +137,13 @@ fn remove_entity_name_actions(mut component: TextComponent) -> TextComponent {
 ///
 /// Each new entity increments this counter to get a unique network ID. Starts
 /// at 1 (0 is reserved).
-static ENTITY_COUNTER: LazyLock<SyncMutex<i32>> = LazyLock::new(|| SyncMutex::new(1));
+static ENTITY_COUNTER: LazyLock<SyncMutex<i32>> = LazyLock::new(|| SyncMutex::new(FIRST_ENTITY_ID));
+#[cfg(not(test))]
+const FIRST_ENTITY_ID: i32 = 1;
+/// Tests also build entities with small literal ids; allocating far above them
+/// keeps the two from colliding in one world.
+#[cfg(test)]
+const FIRST_ENTITY_ID: i32 = 1 << 24;
 const MOVEMENT_RECORD_EPSILON: f64 = 1.0e-7;
 const NO_PHYSICS_COLLISION_EPSILON: f64 = 1.0e-7;
 const IN_WALL_EYE_BOX_HEIGHT: f64 = 1.0e-6;

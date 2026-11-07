@@ -111,12 +111,12 @@ mod tests {
     use steel_registry::{item_stack::ItemStack, vanilla_items};
     use steel_utils::locks::SyncMutex;
     use steel_utils::types::InteractionHand;
-    use steel_utils::{BlockPos, ChunkPos, SectionPos};
+    use steel_utils::{BlockPos, SectionPos};
     use uuid::Uuid;
 
     use super::*;
     use crate::behavior::UseItemContext;
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestPlayerBuilder, fresh_loaded_test_world, fresh_test_world};
     use crate::world::World;
     use crate::world::game_event::{GameEventContext, GameEventListener};
 
@@ -184,9 +184,8 @@ mod tests {
 
     #[test]
     fn use_emits_vanilla_interact_vibrations() {
-        let world_fixture = fresh_test_world("fishing_rod_vibrations");
+        let world_fixture = fresh_loaded_test_world("fishing_rod_vibrations");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 11)
             .uuid(Uuid::from_u128(3))
             .build();
@@ -236,9 +235,8 @@ mod tests {
 
     #[test]
     fn casting_fishing_rod_spawns_and_links_hook() {
-        let world_fixture = fresh_test_world("fishing_rod_cast");
+        let world_fixture = fresh_loaded_test_world("fishing_rod_cast");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(world), "Player", 10)
             .uuid(Uuid::from_u128(2))
             .build();

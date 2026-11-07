@@ -1,4 +1,6 @@
 use super::*;
+use crate::test_support::fresh_loaded_test_world;
+use crate::test_support::load_additional;
 
 #[test]
 fn an_adult_fills_a_bowl_with_mushroom_stew_and_a_calf_does_not() {
@@ -85,9 +87,8 @@ fn a_red_mooshroom_ignores_flowers() {
 #[test]
 fn shearing_turns_a_mooshroom_into_a_cow_and_drops_its_mushrooms() {
     init_globals();
-    let world_fixture = fresh_test_world("mooshroom_shear");
+    let world_fixture = fresh_loaded_test_world("mooshroom_shear");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let mooshroom = Arc::new(MushroomCowEntity::new(
         &vanilla_entities::MOOSHROOM,
         800_000,
@@ -153,13 +154,9 @@ fn mooshroom_saves_and_loads_its_variant_and_stew() {
 
     let mut nbt = NbtCompound::new();
     mooshroom.save_additional(&mut nbt);
-    let mut bytes = Vec::new();
-    nbt.write(&mut bytes);
-    let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
 
     let loaded = self::mooshroom(2);
-    loaded.load_additional((&borrowed).into());
+    load_additional(&loaded, &nbt);
     assert_eq!(loaded.variant(), MooshroomVariant::Brown);
     assert_eq!(loaded.stew_effects(), mooshroom.stew_effects());
 }

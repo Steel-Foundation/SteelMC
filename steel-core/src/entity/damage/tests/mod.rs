@@ -16,7 +16,8 @@ use crate::level_data::GameTimeSource;
 use crate::player::Player;
 use crate::test_support::{
     TestEntity, TestPlayerBuilder, advance_test_game_time_to,
-    create_test_world_with_damage_history, fresh_test_world, insert_ready_full_chunk,
+    create_test_world_with_damage_history, fresh_loaded_test_world, fresh_test_world,
+    insert_ready_full_chunk,
 };
 use crate::world::World;
 
@@ -192,9 +193,8 @@ fn successful_damage_uses_the_victims_clock_instead_of_the_supplied_world() {
 #[test]
 fn removed_sources_keep_exact_entities_when_the_world_reuses_their_ids() {
     init_vanilla_registry();
-    let world_fixture = fresh_test_world("damage_source_identity");
+    let world_fixture = fresh_loaded_test_world("damage_source_identity");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, steel_utils::ChunkPos::new(0, 0));
     let attacker: SharedEntity = Arc::new(ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         1,

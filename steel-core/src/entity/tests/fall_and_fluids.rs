@@ -101,9 +101,8 @@ fn lava_contact_is_ignored_until_after_first_tick() {
     init_vanilla_registry();
     init_behaviors();
 
-    let world_fixture = fresh_test_world("first_tick_lava_contact");
+    let world_fixture = fresh_loaded_test_world("first_tick_lava_contact");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let block_pos = BlockPos::new(8, 80, 8);
     assert!(world.set_block(

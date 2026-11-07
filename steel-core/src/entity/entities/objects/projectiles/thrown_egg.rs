@@ -147,7 +147,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{fresh_loaded_test_world, fresh_test_world, insert_ready_full_chunk};
 
     fn egg(world: &Arc<World>, pos: DVec3) -> ThrownEggEntity {
         ThrownEggEntity::new(
@@ -196,9 +196,8 @@ mod tests {
     fn chick_enclosed_in_a_block_does_not_hatch() {
         init_vanilla_registry();
         init_behaviors();
-        let world_fixture = fresh_test_world("thrown_egg_enclosed");
+        let world_fixture = fresh_loaded_test_world("thrown_egg_enclosed");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         assert!(world.set_block(
             BlockPos::new(0, 80, 0),
             vanilla_blocks::STONE.default_state(),

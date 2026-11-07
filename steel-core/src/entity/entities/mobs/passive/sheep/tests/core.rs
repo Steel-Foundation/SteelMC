@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::load_additional;
 
 #[test]
 fn sheep_initializes_vanilla_living_attributes_and_health() {
@@ -93,13 +94,9 @@ fn sheep_saves_and_loads_wool() {
     let mut nbt = NbtCompound::new();
     sheep.save_additional(&mut nbt);
     assert_eq!(nbt.byte("Color"), Some(DyeColor::Lime.id() as i8));
-    let mut bytes = Vec::new();
-    nbt.write(&mut bytes);
-    let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
 
     let loaded = self::sheep(2);
-    loaded.load_additional((&borrowed).into());
+    load_additional(&loaded, &nbt);
     assert_eq!(loaded.color(), DyeColor::Lime);
     assert!(loaded.is_sheared());
 }

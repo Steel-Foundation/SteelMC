@@ -193,23 +193,21 @@ impl EndermiteEntity {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
     use std::sync::Arc;
 
-    use simdnbt::borrow::read_compound;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
-    use steel_utils::ChunkPos;
 
     use super::*;
+
     use crate::entity::{SharedEntity, next_entity_id};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::fresh_loaded_test_world;
+    use crate::test_support::load_additional;
 
     #[test]
     fn endermite_disappears_at_the_end_of_its_life_unless_persistent() {
         init_vanilla_registry();
-        let world_fixture = fresh_test_world("endermite_lifetime");
+        let world_fixture = fresh_loaded_test_world("endermite_lifetime");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         let spawn = |x| {
             let endermite = Arc::new(EndermiteEntity::new(
@@ -250,13 +248,9 @@ mod tests {
         endermite.save_additional(&mut nbt);
         assert_eq!(nbt.int("Lifetime"), Some(1234));
 
-        let mut bytes = Vec::new();
-        nbt.write(&mut bytes);
-        let borrowed = read_compound(&mut Cursor::new(&bytes))
-            .unwrap_or_else(|error| panic!("reborrow failed: {error}"));
         let loaded =
             EndermiteEntity::new(&vanilla_entities::ENDERMITE, 2, DVec3::ZERO, Weak::new());
-        loaded.load_additional((&borrowed).into());
+        load_additional(&loaded, &nbt);
         assert_eq!(*loaded.life.lock(), 1234);
     }
 }

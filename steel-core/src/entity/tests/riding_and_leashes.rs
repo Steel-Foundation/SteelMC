@@ -54,9 +54,8 @@ fn start_riding_entities_links_passenger_and_vehicle() {
 fn failed_save_restore_drops_leash_but_keeps_home_restriction() {
     // Failed save restoration bypasses `onLeashRemoved`, preserving home state.
     init_vanilla_registry();
-    let world_fixture = fresh_test_world("leash_save_restore_failure");
+    let world_fixture = fresh_loaded_test_world("leash_save_restore_failure");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(ChickenEntity::new(
         &vanilla_entities::CHICKEN,

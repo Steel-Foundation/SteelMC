@@ -2,11 +2,14 @@ use crate::config::ResolvedDomainConfig;
 use crate::entity::damage::DamageHistory;
 use crate::server::worlds::WorldMap;
 use std::cell::{Cell, RefCell};
+use std::io::Cursor;
 use std::ops::Deref;
 use std::slice;
 use std::sync::{Arc, OnceLock, Weak};
 
 use glam::DVec3;
+use simdnbt::borrow::read_compound;
+use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
 use steel_registry::data_components::vanilla_components::ENCHANTMENTS;
 use steel_registry::dimension_type::DimensionTypeRef;
@@ -135,6 +138,14 @@ pub(crate) fn fresh_test_world(key: &'static str) -> TestWorld {
     create_test_world(key)
 }
 
+/// A fresh test world with the full chunk at (0, 0) ready, where most
+/// entity tests place their entities.
+pub(crate) fn fresh_loaded_test_world(key: &'static str) -> TestWorld {
+    let fixture = fresh_test_world(key);
+    insert_ready_full_chunk(&fixture.world, ChunkPos::new(0, 0));
+    fixture
+}
+
 pub(crate) fn fresh_test_world_in_domain(domain: &'static str, key: &'static str) -> TestWorld {
     create_test_world_with_key(Identifier::new_static(domain, key), Difficulty::Normal)
 }
@@ -149,6 +160,16 @@ pub(crate) fn fresh_test_world_with_dimension_type(
         Difficulty::Normal,
         dimension_type,
     )
+}
+
+/// Loads `nbt` into `entity` as its saved additional data, through the
+/// borrowed NBT view a chunk load reads.
+pub(crate) fn load_additional(entity: &dyn Entity, nbt: &NbtCompound) {
+    let mut bytes = Vec::new();
+    nbt.write(&mut bytes);
+    let borrowed = read_compound(&mut Cursor::new(&bytes))
+        .unwrap_or_else(|error| panic!("test NBT should reborrow: {error}"));
+    entity.load_additional((&borrowed).into());
 }
 
 pub(crate) fn insert_ready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<ChunkHolder> {

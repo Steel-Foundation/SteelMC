@@ -32,8 +32,8 @@ use crate::inventory::{
 use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
 use crate::player::game_mode::PlayerGameModeState;
 use crate::test_support::{
-    TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, hard_damage_test_world,
-    insert_ready_full_chunk, test_world,
+    TestPlayerBuilder, fresh_loaded_test_world, fresh_test_world, fresh_test_world_in_domain,
+    hard_damage_test_world, insert_ready_full_chunk, test_world,
 };
 use crate::world::World;
 use glam::DVec3;
@@ -495,9 +495,8 @@ fn end_credits_respawn_keeps_vanilla_attribute_data_only() {
 )]
 fn death_keeps_menu_items_until_entity_removal() {
     init_vanilla_registry();
-    let world_fixture = fresh_test_world("death_menu_cleanup");
+    let world_fixture = fresh_loaded_test_world("death_menu_cleanup");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     assert!(world.set_game_rule(&vanilla_game_rules::KEEP_INVENTORY, true));
     let player = test_player(Arc::clone(world));
     let kept_item = ItemStack::new(&vanilla_items::DIAMOND);
@@ -659,9 +658,8 @@ fn death_removes_tracked_entities_from_dead_players_client() {
 #[test]
 fn death_respawn_cleanup_drops_menu_items_before_fresh_player_construction() {
     init_vanilla_registry();
-    let world_fixture = fresh_test_world("death_respawn_menu_cleanup");
+    let world_fixture = fresh_loaded_test_world("death_respawn_menu_cleanup");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(world));
     let transient = SimpleContainer::new(9).into_shared();
     transient
@@ -1585,9 +1583,9 @@ fn creative_drop_throttle_survives_respawn_replacement() {
     init_vanilla_registry();
 
     for restore_all in [false, true] {
-        let world_fixture = fresh_test_world("creative_drop_throttle_survives_respawn_replacement");
+        let world_fixture =
+            fresh_loaded_test_world("creative_drop_throttle_survives_respawn_replacement");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let player = test_player(Arc::clone(world));
         *player.game_modes.lock() = PlayerGameModeState::new(GameType::Creative);
 
@@ -1614,9 +1612,8 @@ fn creative_drop_throttle_survives_respawn_replacement() {
 #[test]
 fn extra_items_created_on_use_fill_inventory_when_there_is_room() {
     init_vanilla_registry();
-    let world_fixture = fresh_test_world("extra_items_created_on_use_has_room");
+    let world_fixture = fresh_loaded_test_world("extra_items_created_on_use_has_room");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(world));
 
     player
@@ -1641,9 +1638,8 @@ fn extra_items_created_on_use_fill_inventory_when_there_is_room() {
 #[test]
 fn extra_items_created_on_use_are_dropped_when_inventory_is_full() {
     init_vanilla_registry();
-    let world_fixture = fresh_test_world("extra_items_created_on_use_full");
+    let world_fixture = fresh_loaded_test_world("extra_items_created_on_use_full");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(world));
 
     {
@@ -1683,9 +1679,8 @@ fn extra_items_created_on_use_are_dropped_when_inventory_is_full() {
 fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tick_loop() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("drink_honey_bottle_tick_loop_full_inventory");
+    let world_fixture = fresh_loaded_test_world("drink_honey_bottle_tick_loop_full_inventory");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(world));
     let player_entity: SharedEntity = Arc::<Player>::clone(&player);
 
@@ -1734,9 +1729,9 @@ fn throttle_player_dropping_items_from_creative_menu() {
         item_stack: ItemStack::new(item),
     };
 
-    let world_fixture = fresh_test_world("throttle_player_dropping_items_from_creative_menu");
+    let world_fixture =
+        fresh_loaded_test_world("throttle_player_dropping_items_from_creative_menu");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(world));
 
     let check_drop_count = |expected_count: i32| {
@@ -1851,9 +1846,8 @@ const NIGHT_TIME: i64 = 18_000;
 fn monster_prevents_rest_blocks_sleeping_near_a_bed() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("monster_prevents_rest");
+    let world_fixture = fresh_loaded_test_world("monster_prevents_rest");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     world.set_clock_total_ticks(&vanilla_world_clocks::OVERWORLD, NIGHT_TIME);
     let bed_pos = BlockPos::new(8, 65, 8);
     assert!(world.set_block(

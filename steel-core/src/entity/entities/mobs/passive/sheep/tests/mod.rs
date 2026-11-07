@@ -1,8 +1,6 @@
-use std::io::Cursor;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
-use simdnbt::borrow::read_compound as read_borrowed_compound;
 use steel_registry::{init_vanilla_registry, vanilla_attributes, vanilla_entities};
 use steel_utils::ChunkPos;
 use steel_utils::types::InteractionHand;

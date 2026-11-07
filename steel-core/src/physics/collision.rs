@@ -878,6 +878,8 @@ mod tests {
     use std::iter;
 
     use super::*;
+
+    use crate::test_support::fresh_loaded_test_world;
     use steel_registry::{
         blocks::{Block, behavior::BlockConfig},
         init_vanilla_registry,
@@ -885,10 +887,7 @@ mod tests {
     use steel_utils::{ChunkPos, Identifier, types::UpdateFlags};
 
     use crate::physics::block_may_expand_collision_cursor;
-    use crate::{
-        behavior::init_behaviors,
-        test_support::{fresh_test_world, insert_ready_full_chunk},
-    };
+    use crate::{behavior::init_behaviors, test_support::insert_ready_full_chunk};
 
     struct TestCollisionWorld {
         block_collisions: Vec<WorldAabb>,
@@ -1025,9 +1024,8 @@ mod tests {
     fn live_block_collisions_use_bounded_region_reads() {
         init_vanilla_registry();
         init_behaviors();
-        let world_fixture = fresh_test_world("bounded_collision_reads");
+        let world_fixture = fresh_loaded_test_world("bounded_collision_reads");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let block_pos = BlockPos::new(0, 64, 0);
         assert!(world.set_block(
             block_pos,
@@ -1049,9 +1047,8 @@ mod tests {
     fn prefetched_candidates_use_full_cursor_only_for_special_sections() {
         init_vanilla_registry();
         init_behaviors();
-        let fixture = fresh_test_world("special_collision_section_scan");
+        let fixture = fresh_loaded_test_world("special_collision_section_scan");
         let world = &fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let bounds = BlockCollisionSearchBounds {
             min_x: 1,
             min_y: 64,
@@ -1173,9 +1170,8 @@ mod tests {
     fn prefetched_callbacks_match_full_cursor_across_chunk_section_and_missing_data() {
         init_vanilla_registry();
         init_behaviors();
-        let fixture = fresh_test_world("cross_boundary_collision_reads");
+        let fixture = fresh_loaded_test_world("cross_boundary_collision_reads");
         let world = &fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         insert_ready_full_chunk(world, ChunkPos::new(1, 0));
 
         let bounds = BlockCollisionSearchBounds {

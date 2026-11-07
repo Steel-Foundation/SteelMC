@@ -531,14 +531,14 @@ impl ExperienceOrbEntity {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
 
-    use simdnbt::borrow::read_compound as read_borrowed_compound;
     use steel_registry::{init_vanilla_registry, vanilla_damage_types};
 
     use crate::test_support::test_world;
 
     use super::*;
+
+    use crate::test_support::load_additional;
 
     #[test]
     fn experience_value_buckets_match_vanilla() {
@@ -644,18 +644,13 @@ mod tests {
         let mut nbt = NbtCompound::new();
         orb.save_additional(&mut nbt);
 
-        let mut bytes = Vec::new();
-        nbt.write(&mut bytes);
-        let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
-            .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
-
         let loaded = ExperienceOrbEntity::new(
             &vanilla_entities::EXPERIENCE_ORB,
             2,
             DVec3::ZERO,
             Weak::new(),
         );
-        loaded.load_additional((&borrowed).into());
+        load_additional(&loaded, &nbt);
 
         assert_eq!(loaded.value(), 17);
         assert_eq!(loaded.age(), 42);

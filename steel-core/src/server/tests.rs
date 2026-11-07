@@ -66,8 +66,8 @@ use crate::player::player_data::PersistentSlot;
 use crate::player::{Player, PlayerConnection, ResetReason};
 use crate::portal::{WorldChangeRequest, WorldSelection};
 use crate::test_support::{
-    TestPlayerBuilder, fresh_test_derived_world, fresh_test_world, fresh_test_world_in_domain,
-    insert_ready_full_chunk,
+    TestPlayerBuilder, fresh_loaded_test_world, fresh_test_derived_world, fresh_test_world,
+    fresh_test_world_in_domain, insert_ready_full_chunk,
 };
 use crate::world::World;
 use steel_registry::vanilla_damage_types;
@@ -4228,9 +4228,8 @@ fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
     init_vanilla_registry();
     init_behaviors();
     init_block_entities();
-    let world_fixture = fresh_test_world("setblock-command");
+    let world_fixture = fresh_loaded_test_world("setblock-command");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");

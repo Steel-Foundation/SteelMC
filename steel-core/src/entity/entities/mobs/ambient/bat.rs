@@ -313,13 +313,13 @@ impl BatEntity {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
 
-    use simdnbt::borrow::read_compound;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+
     use crate::entity::leash::Leashable;
+    use crate::test_support::load_additional;
 
     #[test]
     fn bat_starts_resting_and_saves_its_flags() {
@@ -334,11 +334,7 @@ mod tests {
         assert_eq!(nbt.byte("BatFlags"), Some(0));
 
         let loaded = BatEntity::new(&vanilla_entities::BAT, 2, DVec3::ZERO, Weak::new());
-        let mut bytes = Vec::new();
-        nbt.write(&mut bytes);
-        let borrowed = read_compound(&mut Cursor::new(&bytes))
-            .unwrap_or_else(|error| panic!("reborrow failed: {error}"));
-        loaded.load_additional((&borrowed).into());
+        load_additional(&loaded, &nbt);
         assert!(!loaded.is_resting());
     }
 

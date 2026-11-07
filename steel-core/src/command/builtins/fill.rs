@@ -249,6 +249,7 @@ mod tests {
 
     use super::super::create_dispatcher;
     use super::*;
+    use crate::test_support::fresh_loaded_test_world;
     use crate::{
         behavior::init_behaviors,
         block_entity::init_block_entities,
@@ -509,9 +510,8 @@ mod tests {
         );
         assert!(unavailable.get_block_state(pos).is_air());
 
-        let ready_fixture = fresh_test_world("fill_ready_halo");
+        let ready_fixture = fresh_loaded_test_world("fill_ready_halo");
         let ready = &ready_fixture.world;
-        insert_ready_full_chunk(ready, ChunkPos::new(0, 0));
         insert_ready_full_chunk(ready, ChunkPos::new(1, 0));
         assert!(ready.set_block(
             pos.east(),

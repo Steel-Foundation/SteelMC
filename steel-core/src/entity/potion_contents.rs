@@ -73,14 +73,13 @@ mod tests {
     use steel_registry::{
         MobEffectInstance as RegistryMobEffectInstance, init_vanilla_registry, vanilla_mob_effects,
     };
-    use steel_utils::ChunkPos;
 
     use super::apply_potion_contents;
     use super::{to_runtime_instance, to_runtime_instance_icon_from_visibility};
     use crate::behavior::init_behaviors;
     use crate::entity::{LivingEntityRef, SharedEntity};
     use crate::player::Player;
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestPlayerBuilder, fresh_loaded_test_world};
 
     /// Vanilla's `int` shift is masked to the low 5 bits (Java `<<` never
     /// throws), so an Instant Health/Instant Damage amplifier of 32 or more
@@ -90,9 +89,8 @@ mod tests {
     fn instant_health_amplifier_at_shift_width_does_not_panic_and_wraps_like_vanilla() {
         init_vanilla_registry();
         init_behaviors();
-        let world_fixture = fresh_test_world("instant_health_high_amplifier");
+        let world_fixture = fresh_loaded_test_world("instant_health_high_amplifier");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(world), "Test", 1).build();
         let player_entity: SharedEntity = Arc::<Player>::clone(&player);
         player.living().set_health(1.0);

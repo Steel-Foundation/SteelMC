@@ -1150,13 +1150,10 @@ mod tests {
 
     #[test]
     fn sprinting_charges_food_exhaustion_once_per_move() {
-        use steel_utils::ChunkPos;
+        use crate::test_support::{TestPlayerBuilder, fresh_loaded_test_world};
 
-        use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
-
-        let world_fixture = fresh_test_world("sprint_exhaustion_single_charge");
+        let world_fixture = fresh_loaded_test_world("sprint_exhaustion_single_charge");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         let player = TestPlayerBuilder::new(Arc::clone(world), "SprintTester", 1).build();
         player.set_client_loaded(true);

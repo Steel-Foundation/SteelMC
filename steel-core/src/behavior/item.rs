@@ -473,13 +473,13 @@ mod tests {
     use steel_registry::stat::vanilla_stat_types;
     use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items, vanilla_potions};
     use steel_utils::types::InteractionHand;
-    use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
+    use steel_utils::{Downcast as _, WorldAabb};
 
     use super::finish_consuming_stack;
     use crate::behavior::{ITEM_BEHAVIORS, InteractionResult, UseItemContext, init_behaviors};
     use crate::entity::entities::ItemEntity;
     use crate::inventory::container::Container as _;
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestPlayerBuilder, fresh_loaded_test_world};
 
     #[test]
     fn potion_items_default_to_their_vanilla_base_potion() {
@@ -524,9 +524,8 @@ mod tests {
     fn honey_bottle_stack_keeps_remaining_bottles_and_hands_off_the_remainder() {
         init_vanilla_registry();
         init_behaviors();
-        let world_fixture = fresh_test_world("finish_consuming_honey_bottle_stack");
+        let world_fixture = fresh_loaded_test_world("finish_consuming_honey_bottle_stack");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(world), "Test", 1).build();
         player.set_client_loaded(true);
 
@@ -568,9 +567,8 @@ mod tests {
     fn instant_consumable_with_use_remainder_finishes_without_deadlocking() {
         init_vanilla_registry();
         init_behaviors();
-        let world_fixture = fresh_test_world("instant_consumable_no_deadlock");
+        let world_fixture = fresh_loaded_test_world("instant_consumable_no_deadlock");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(world), "Test", 1).build();
         player.set_client_loaded(true);
 
@@ -635,9 +633,8 @@ mod tests {
     #[test]
     fn eating_food_applies_its_nutrition_and_saturation() {
         init_vanilla_registry();
-        let world_fixture = fresh_test_world("finish_consuming_food_applies_nutrition");
+        let world_fixture = fresh_loaded_test_world("finish_consuming_food_applies_nutrition");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(world), "Test", 1).build();
         player.set_client_loaded(true);
         {
@@ -660,9 +657,8 @@ mod tests {
     #[test]
     fn consuming_an_item_awards_the_item_used_stat() {
         init_vanilla_registry();
-        let world_fixture = fresh_test_world("finish_consuming_awards_item_used_stat");
+        let world_fixture = fresh_loaded_test_world("finish_consuming_awards_item_used_stat");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(world), "Test", 1).build();
         player.set_client_loaded(true);
 

@@ -109,14 +109,14 @@ impl BlockDisplayEntity {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
     use std::sync::Arc;
 
-    use simdnbt::borrow::read_compound as read_borrowed_compound;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+
     use crate::entity::{RemovalReason, SharedEntity};
+    use crate::test_support::load_additional;
 
     #[test]
     fn block_display_saves_its_block_state_by_name() {
@@ -138,10 +138,6 @@ mod tests {
                 .map(ToString::to_string),
             Some("minecraft:oak_stairs".to_owned())
         );
-        let mut bytes = Vec::new();
-        nbt.write(&mut bytes);
-        let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
-            .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
 
         let loaded = BlockDisplayEntity::new(
             &vanilla_entities::BLOCK_DISPLAY,
@@ -149,7 +145,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         );
-        loaded.load_additional((&borrowed).into());
+        load_additional(&loaded, &nbt);
         assert_eq!(loaded.block_state(), state);
     }
 

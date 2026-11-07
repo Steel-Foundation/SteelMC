@@ -119,24 +119,23 @@ mod tests {
         block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
     };
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities};
+    use steel_utils::BlockPos;
     use steel_utils::types::UpdateFlags;
-    use steel_utils::{BlockPos, ChunkPos};
 
     use super::handle_first_tick_bubble_column;
     use crate::behavior::init_behaviors;
     use crate::entity::SharedEntity;
     use crate::entity::entities::SnowballEntity;
     use crate::entity::prelude::*;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::fresh_loaded_test_world;
 
     #[test]
     fn bubble_column_affects_throwable_projectile_before_its_first_movement() {
         init_vanilla_registry();
         init_behaviors();
 
-        let world_fixture = fresh_test_world("throwable_first_tick_bubble_column");
+        let world_fixture = fresh_loaded_test_world("throwable_first_tick_bubble_column");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         let bubble_pos = BlockPos::new(8, 65, 8);
         let initial_position = DVec3::new(8.5, 65.0, 8.5);
@@ -184,9 +183,8 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world_fixture = fresh_test_world("throwable_first_tick_bubble_column_velocity");
+        let world_fixture = fresh_loaded_test_world("throwable_first_tick_bubble_column_velocity");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         let bubble_pos = BlockPos::new(8, 65, 8);
         let initial_position = DVec3::new(8.5, 65.0, 8.5);

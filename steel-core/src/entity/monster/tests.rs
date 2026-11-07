@@ -12,17 +12,16 @@ use crate::entity::entities::{ChickenEntity, EndermiteEntity};
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, RemovalReason, SharedEntity, next_entity_id};
 use crate::test_support::{
-    TestPlayerBuilder, fresh_test_world, fresh_test_world_with_dimension_type,
-    insert_ready_full_chunk,
+    TestPlayerBuilder, fresh_loaded_test_world, fresh_test_world,
+    fresh_test_world_with_dimension_type, insert_ready_full_chunk,
 };
 
 #[test]
 fn monster_ai_step_grows_no_action_time_by_vanilla_light_rate() {
     init_vanilla_registry();
     init_behaviors();
-    let bright_world_fixture = fresh_test_world("monster_ai_step_bright");
+    let bright_world_fixture = fresh_loaded_test_world("monster_ai_step_bright");
     let bright_world = &bright_world_fixture.world;
-    insert_ready_full_chunk(bright_world, ChunkPos::new(0, 0));
     let bright_mob = Arc::new(EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),
@@ -66,9 +65,8 @@ fn monster_ai_step_grows_no_action_time_by_vanilla_light_rate() {
 fn monster_check_spawn_obstruction_rejects_liquids_without_checking_blocks() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("monster_spawn_obstruction");
+    let world_fixture = fresh_loaded_test_world("monster_spawn_obstruction");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let mob = EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),
@@ -114,9 +112,8 @@ fn monster_check_spawn_obstruction_rejects_liquids_without_checking_blocks() {
 fn monster_spawn_obstruction_checks_entities_and_excludes_spectators_and_shared_vehicles() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("monster_spawn_entity_obstruction");
+    let world_fixture = fresh_loaded_test_world("monster_spawn_entity_obstruction");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let position = DVec3::new(8.0, 65.0, 8.0);
     let mob = Arc::new(EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,

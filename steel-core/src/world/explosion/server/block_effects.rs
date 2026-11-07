@@ -91,21 +91,20 @@ mod tests {
     use glam::DVec3;
     use steel_registry::item_stack::ItemStack;
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
+    use steel_utils::BlockPos;
     use steel_utils::types::UpdateFlags;
-    use steel_utils::{BlockPos, ChunkPos};
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::fresh_loaded_test_world;
     use crate::world::explosion::BlockInteraction;
 
     #[test]
     fn fire_creation_draws_before_testing_air_and_support() {
         init_vanilla_registry();
         init_behaviors();
-        let fixture = fresh_test_world("explosion_fire_order");
+        let fixture = fresh_loaded_test_world("explosion_fire_order");
         let world = &fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let supported = BlockPos::new(1, 64, 1);
         let unsupported = supported.east();
         let occupied = unsupported.east();

@@ -261,8 +261,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use steel_registry::{init_vanilla_registry, sound_events, vanilla_fluids};
 
-    use crate::test_support::{TestLevel, fresh_test_world, insert_ready_full_chunk};
-    use steel_utils::ChunkPos;
+    use crate::test_support::{TestLevel, fresh_loaded_test_world};
 
     use super::*;
 
@@ -367,9 +366,8 @@ mod tests {
     fn pickup_returns_the_fluid_bucket_and_sound_from_sources_only() {
         init_vanilla_registry();
         init_behaviors();
-        let fixture = fresh_test_world("liquid_pickup");
+        let fixture = fresh_loaded_test_world("liquid_pickup");
         let world = &fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let pos = BlockPos::new(1, 64, 1);
         let cases = [
             (

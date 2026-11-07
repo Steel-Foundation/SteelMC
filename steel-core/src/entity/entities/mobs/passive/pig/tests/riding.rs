@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::fresh_loaded_test_world;
 
 #[test]
 fn saddled_pig_is_steered_by_a_rider_holding_a_carrot_on_a_stick() {
@@ -77,9 +78,8 @@ fn ridden_pig_faces_where_the_rider_looks() {
 #[test]
 fn player_without_food_mounts_a_saddled_pig() {
     init_globals();
-    let world_fixture = fresh_test_world("pig_mount");
+    let world_fixture = fresh_loaded_test_world("pig_mount");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let pig = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         1,

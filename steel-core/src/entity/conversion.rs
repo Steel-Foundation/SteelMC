@@ -270,8 +270,8 @@ mod tests {
     };
     use steel_utils::Downcast as _;
 
+    use steel_utils::Identifier;
     use steel_utils::types::Difficulty;
-    use steel_utils::{ChunkPos, Identifier};
     use text_components::TextComponent;
 
     use super::{ConversionParams, ConversionType};
@@ -283,13 +283,12 @@ mod tests {
         Ageable, Mob, MobEffectInstance, SharedEntity, init_entities, next_entity_id,
     };
     use crate::inventory::equipment::EquipmentSlot;
-    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_loaded_test_world};
     use crate::world::World;
 
     fn conversion_world() -> TestWorld {
-        let world_fixture = fresh_test_world("conversion");
-        let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let world_fixture = fresh_loaded_test_world("conversion");
+        let _world = &world_fixture.world;
         world_fixture
     }
 

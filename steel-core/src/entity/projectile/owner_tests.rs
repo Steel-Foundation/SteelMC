@@ -1,8 +1,7 @@
-use std::io::Cursor;
+use crate::test_support::load_additional;
 use std::sync::Arc;
 
 use glam::DVec3;
-use simdnbt::borrow::read_compound;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::vanilla_entities;
 use steel_utils::{ChunkPos, UuidExt as _};
@@ -22,14 +21,6 @@ fn pearl(world: &Arc<World>) -> EnderPearlEntity {
         DVec3::ZERO,
         Arc::downgrade(world),
     )
-}
-
-/// Loads `nbt` as the pearl's saved data.
-fn load_projectile(pearl: &EnderPearlEntity, nbt: &NbtCompound) {
-    let mut bytes = Vec::new();
-    nbt.write(&mut bytes);
-    let borrowed = read_compound(&mut Cursor::new(&bytes)).expect("borrow test NBT");
-    pearl.load_additional((&borrowed).into());
 }
 
 #[test]
@@ -205,7 +196,7 @@ fn serialized_owner_resolves_by_uuid_and_loading_clears_old_cache() {
         Some(owner.uuid().to_int_array().as_slice())
     );
     let loaded = pearl(worlds[1]);
-    load_projectile(&loaded, &nbt);
+    load_additional(&loaded, &nbt);
     assert!(Arc::ptr_eq(
         &loaded.projectile().owner().expect("loaded UUID owner"),
         &owner
@@ -221,7 +212,7 @@ fn serialized_owner_resolves_by_uuid_and_loading_clears_old_cache() {
         if let Some(tag) = owner_tag {
             nbt.insert("Owner", tag);
         }
-        load_projectile(&loaded, &nbt);
+        load_additional(&loaded, &nbt);
         assert!(loaded.projectile().owner().is_none());
     }
 }

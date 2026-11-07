@@ -305,7 +305,7 @@ mod tests {
     };
     use steel_utils::locks::SyncMutex;
     use steel_utils::types::UpdateFlags;
-    use steel_utils::{BlockPos, ChunkPos, Downcast as _};
+    use steel_utils::{BlockPos, Downcast as _};
 
     use crate::behavior::init_behaviors;
     use crate::block_entity::entities::{BeaconBlockEntity, BeaconState};
@@ -315,7 +315,7 @@ mod tests {
     use crate::inventory::lock::ContainerId;
     use crate::inventory::prelude::Menu;
     use crate::player::Player;
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestPlayerBuilder, fresh_loaded_test_world};
     use crate::world::World;
 
     use super::{BeaconKind, beacon};
@@ -373,9 +373,8 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
         init_block_entities();
-        let world_fixture = fresh_test_world("beacon_menu_iron_payment");
+        let world_fixture = fresh_loaded_test_world("beacon_menu_iron_payment");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(world), "BeaconTester", 1).build();
 
         let (mut menu, state) = open_test_beacon(world, &player, BlockPos::new(8, 64, 8));
@@ -434,9 +433,8 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
         init_block_entities();
-        let world_fixture = fresh_test_world("beacon_menu_occupied_payment");
+        let world_fixture = fresh_loaded_test_world("beacon_menu_occupied_payment");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(world), "BeaconShift", 1).build();
 
         let (mut menu, _) = open_test_beacon(world, &player, BlockPos::new(8, 64, 8));
@@ -488,9 +486,8 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
         init_block_entities();
-        let world_fixture = fresh_test_world("beacon_menu_drops_payment");
+        let world_fixture = fresh_loaded_test_world("beacon_menu_drops_payment");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(Arc::clone(world), "BeaconClose", 1).build();
 
         let (mut menu, _) = open_test_beacon(world, &player, BlockPos::new(8, 64, 8));

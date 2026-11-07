@@ -4,14 +4,13 @@ use steel_registry::init_vanilla_registry;
 use steel_utils::BlockPos;
 
 use super::*;
-use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{TestPlayerBuilder, fresh_loaded_test_world, fresh_test_world};
 
 #[test]
 fn ticket_renewal_registers_the_pearl_with_its_player_owner() {
     init_vanilla_registry();
-    let world_fixture = fresh_test_world("ender_pearl_ticket_owner");
+    let world_fixture = fresh_loaded_test_world("ender_pearl_ticket_owner");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let player = TestPlayerBuilder::new(Arc::clone(world), "Owner", 900_001).build();
     let owner: SharedEntity = Arc::<Player>::clone(&player);
     let pearl = Arc::new(EnderPearlEntity::new(

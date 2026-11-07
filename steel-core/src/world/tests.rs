@@ -19,7 +19,7 @@ use crate::entity::{EntityBase, entities::ChickenEntity};
 use crate::entity::{EntityDefaults, EntityHooks};
 use crate::player::ResetReason;
 use crate::test_support::{
-    TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world,
+    TestPlayerBuilder, fresh_loaded_test_world, fresh_test_world, test_world,
 };
 
 const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
@@ -122,9 +122,8 @@ fn sound_range_uses_event_range_and_strict_vanilla_boundary() {
 #[test]
 fn face_directed_item_drops_respect_block_drops_game_rule() {
     init_vanilla_registry();
-    let world_fixture = fresh_test_world("face_drop_game_rule");
+    let world_fixture = fresh_loaded_test_world("face_drop_game_rule");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     assert!(world.set_game_rule(&vanilla_game_rules::BLOCK_DROPS, false));
 
     let dropped = world.pop_resource_from_face(
@@ -140,9 +139,8 @@ fn face_directed_item_drops_respect_block_drops_game_rule() {
 fn generic_shape_update_does_not_schedule_non_source_fluid() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("shape_update_fluid_ownership");
+    let world_fixture = fresh_loaded_test_world("shape_update_fluid_ownership");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let pos = BlockPos::new(0, 64, 0);
     let flowing_water = vanilla_blocks::WATER
         .default_state()
@@ -689,9 +687,8 @@ fn clip_local_aabb_supports_runtime_fluid_heights() {
 fn can_see_sky_requires_full_sky_light_like_vanilla_26_2() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("can_see_sky_light");
+    let world_fixture = fresh_loaded_test_world("can_see_sky_light");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let pos = BlockPos::new(8, 65, 8);
 
     // Open sky has full sky light regardless of time of day.
@@ -711,9 +708,8 @@ fn can_see_sky_requires_full_sky_light_like_vanilla_26_2() {
 fn precipitation_sky_exposure_requires_light_and_heightmap_gates() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("precipitation_sky_exposure");
+    let world_fixture = fresh_loaded_test_world("precipitation_sky_exposure");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let pos = BlockPos::new(8, 65, 8);
 
     assert!(world.can_see_sky_for_precipitation(pos));

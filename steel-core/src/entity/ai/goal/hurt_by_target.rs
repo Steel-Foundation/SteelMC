@@ -178,16 +178,14 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::entity::Entity;
     use crate::entity::entities::ChickenEntity;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
-    use steel_utils::ChunkPos;
+    use crate::test_support::fresh_loaded_test_world;
 
     #[test]
     fn targets_attacker_and_alerts_unassigned_same_type_mobs() {
         init_vanilla_registry();
         init_behaviors();
-        let world_fixture = fresh_test_world("hurt_by_target_goal");
+        let world_fixture = fresh_loaded_test_world("hurt_by_target_goal");
         let world = &world_fixture.world;
-        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
         let hunter = Arc::new(ChickenEntity::new(
             &vanilla_entities::CHICKEN,

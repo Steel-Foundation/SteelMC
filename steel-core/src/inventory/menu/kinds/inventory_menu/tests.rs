@@ -1,3 +1,4 @@
+use crate::test_support::fresh_loaded_test_world;
 use std::sync::Arc;
 
 use super::{InventoryKind, inventory_menu};
@@ -8,21 +9,20 @@ use crate::{
         click::{Click, MouseButton},
         container::Container as _,
     },
-    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
+    test_support::TestPlayerBuilder,
 };
 use glam::DVec3;
 use steel_registry::{
     init_vanilla_registry, item_stack::ItemStack, vanilla_entities, vanilla_items,
 };
-use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
+use steel_utils::{Downcast as _, WorldAabb};
 
 #[test]
 fn partial_result_overflow_has_no_thrower() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("inventory_menu_partial_result_overflow");
+    let world_fixture = fresh_loaded_test_world("inventory_menu_partial_result_overflow");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let player = TestPlayerBuilder::new(Arc::clone(world), "Crafter", 1).build();
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
     let mut menu = inventory_menu(Arc::clone(&player.inventory));

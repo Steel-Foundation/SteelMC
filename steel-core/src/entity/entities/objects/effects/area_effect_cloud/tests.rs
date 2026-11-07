@@ -1,21 +1,19 @@
-use std::io::Cursor;
+use crate::test_support::load_additional;
 use std::sync::Arc;
 
 use glam::DVec3;
-use simdnbt::borrow::read_compound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::data_components::PotionContents;
 use steel_registry::{
     init_vanilla_registry, vanilla_entities, vanilla_mob_effects, vanilla_potions,
 };
-use steel_utils::ChunkPos;
 
 use super::AreaEffectCloudEntity;
 use crate::behavior::init_behaviors;
 use crate::entity::SharedEntity;
 use crate::entity::entities::PigEntity;
 use crate::entity::prelude::*;
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{fresh_loaded_test_world, fresh_test_world};
 use crate::world::World;
 
 const POSITION: DVec3 = DVec3::new(8.0, 64.0, 8.0);
@@ -67,9 +65,8 @@ fn lingering_cloud_shrinks_away_before_its_duration_ends() {
 fn affects_living_entities_once_per_reapplication_delay() {
     init_vanilla_registry();
     init_behaviors();
-    let fixture = fresh_test_world("area_effect_cloud_affects_pig");
+    let fixture = fresh_loaded_test_world("area_effect_cloud_affects_pig");
     let world = &fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let pig = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         2,
@@ -108,9 +105,8 @@ fn affects_living_entities_once_per_reapplication_delay() {
 fn extreme_saved_timings_wrap_like_vanilla_int_arithmetic() {
     init_vanilla_registry();
     init_behaviors();
-    let fixture = fresh_test_world("area_effect_cloud_wrapping");
+    let fixture = fresh_loaded_test_world("area_effect_cloud_wrapping");
     let world = &fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let pig = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
         2,
@@ -127,11 +123,7 @@ fn extreme_saved_timings_wrap_like_vanilla_int_arithmetic() {
     saved.insert("DurationOnUse", i32::MAX);
     saved.insert("WaitTime", i32::MIN);
     saved.insert("ReapplicationDelay", i32::MAX);
-    let mut bytes = Vec::new();
-    saved.write(&mut bytes);
-    let borrowed = read_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
-    cloud.load_additional((&borrowed).into());
+    load_additional(cloud.as_ref(), &saved);
     cloud.set_potion_contents(PotionContents::of(&vanilla_potions::POISON));
 
     // At age 10 the effect pass runs and every timing sum overflows
@@ -153,11 +145,7 @@ fn load_restores_age_and_resizes_to_saved_radius() {
     let mut saved = NbtCompound::new();
     saved.insert("Age", 42);
     saved.insert("Radius", 1.0f32);
-    let mut bytes = Vec::new();
-    saved.write(&mut bytes);
-    let borrowed = read_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
-    cloud.load_additional((&borrowed).into());
+    load_additional(cloud.as_ref(), &saved);
 
     assert_eq!(cloud.tick_count(), 42);
     assert_eq!(cloud.bounding_box().width(), 2.0);

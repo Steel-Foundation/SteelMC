@@ -40,8 +40,8 @@ use crate::entity::{EntitySyncedData, MobProps, mob};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::ResetReason;
 use crate::test_support::{
-    TestPlayerBuilder, TestWorld, fresh_test_world, fresh_test_world_with_dimension_type,
-    insert_ready_full_chunk, test_world,
+    TestPlayerBuilder, TestWorld, fresh_loaded_test_world, fresh_test_world,
+    fresh_test_world_with_dimension_type, insert_ready_full_chunk, test_world,
 };
 use crate::world::{LevelReader, World};
 use std::sync::LazyLock;
@@ -1111,9 +1111,8 @@ fn mob_home_restriction_uses_vanilla_radius() {
 fn looting_collects_nearby_item_into_main_hand() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("mob_looting_pickup");
+    let world_fixture = fresh_loaded_test_world("mob_looting_pickup");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(ChickenEntity::new(
         &vanilla_entities::CHICKEN,
@@ -1171,9 +1170,8 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
     // regressing behind the `isEffectiveAi` gate that skips the goal ticks.
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("mob_looting_no_ai");
+    let world_fixture = fresh_loaded_test_world("mob_looting_no_ai");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(ChickenEntity::new(
         &vanilla_entities::CHICKEN,
@@ -1228,9 +1226,8 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
 fn looting_skips_when_mob_cannot_pick_up_loot() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("mob_looting_disabled");
+    let world_fixture = fresh_loaded_test_world("mob_looting_disabled");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     // A mob leaves `canPickUpLoot` off by default, so it should ignore the item.
     let mob = Arc::new(ChickenEntity::new(
@@ -1336,9 +1333,8 @@ fn equip_routes_armor_to_its_armor_slot() {
 fn equip_replaces_worse_armor_and_drops_the_old_piece() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("mob_equip_upgrade");
+    let world_fixture = fresh_loaded_test_world("mob_equip_upgrade");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(ChickenEntity::new(
         &vanilla_entities::CHICKEN,
@@ -1495,9 +1491,8 @@ fn equip_respects_prevent_armor_change_on_worn_gear() {
 fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("mob_equip_partial");
+    let world_fixture = fresh_loaded_test_world("mob_equip_partial");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let mob = Arc::new(ChickenEntity::new(
         &vanilla_entities::CHICKEN,

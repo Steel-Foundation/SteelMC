@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::load_additional;
 
 #[test]
 fn pig_initializes_vanilla_living_attributes_and_health() {
@@ -79,13 +80,9 @@ fn pig_saves_and_loads_its_saddle_and_variants() {
 
     let mut nbt = NbtCompound::new();
     pig.save_additional(&mut nbt);
-    let mut bytes = Vec::new();
-    nbt.write(&mut bytes);
-    let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
 
     let loaded = self::pig(2);
-    loaded.load_additional((&borrowed).into());
+    load_additional(&loaded, &nbt);
     assert!(loaded.mob().is_saddled());
     assert_eq!(loaded.variant().key, vanilla_pig_variants::COLD.key);
     assert_eq!(

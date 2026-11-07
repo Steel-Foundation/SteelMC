@@ -41,8 +41,8 @@ use crate::entity::entities::ChickenEntity;
 use crate::inventory::equipment::EquipmentSlot;
 use crate::portal::PortalKind;
 use crate::test_support::{
-    TestEntity, cross_world_damage_test_world, fresh_test_world, insert_ready_full_chunk,
-    test_world,
+    TestEntity, cross_world_damage_test_world, fresh_loaded_test_world, fresh_test_world,
+    insert_ready_full_chunk, test_world,
 };
 use crate::world::game_event::GameEventContext;
 use crate::world::game_event::{GameEventListener, SharedGameEventListener};
@@ -474,9 +474,8 @@ impl GameEventListener for RecordingGameEventListener {
 fn water_entry_emits_splash_only_on_transition() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("water_entry_splash");
+    let world_fixture = fresh_loaded_test_world("water_entry_splash");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let entity = TestEntity::new(
         1,
@@ -540,9 +539,8 @@ fn water_entry_emits_splash_only_on_transition() {
 fn experience_orb_water_entry_emits_no_splash() {
     init_vanilla_registry();
     init_behaviors();
-    let world_fixture = fresh_test_world("experience_orb_water_entry");
+    let world_fixture = fresh_loaded_test_world("experience_orb_water_entry");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let orb = ExperienceOrbEntity::new(
         &vanilla_entities::EXPERIENCE_ORB,
@@ -1115,9 +1113,8 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
     use crate::entity::mob_effect::{HealOrHarmBehavior, MobEffectBehavior};
 
     init_vanilla_registry();
-    let world_fixture = fresh_test_world("heal_or_harm_inversion");
+    let world_fixture = fresh_loaded_test_world("heal_or_harm_inversion");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let living = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world)
         .with_entity_type(&vanilla_entities::PIG)

@@ -3,8 +3,10 @@ use steel_utils::ChunkPos;
 use uuid::Uuid;
 
 use super::*;
+
 use crate::behavior::init_behaviors;
 use crate::entity::{EntityBaseSaveData, EntityFireFreezeState};
+use crate::test_support::load_additional;
 use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
 fn falling_test_world(key: &'static str) -> TestWorld {
@@ -142,11 +144,6 @@ fn falling_block_persistence_and_spawn_data_preserve_the_carried_state() {
 
     let mut saved = NbtCompound::new();
     entity.save_additional(&mut saved);
-    let mut bytes = Vec::new();
-    saved.write(&mut bytes);
-    let Ok(borrowed) = read_compound(&mut Cursor::new(bytes.as_slice())) else {
-        panic!("saved falling block NBT should reborrow");
-    };
     let loaded = FallingBlockEntity::from_saved(
         &vanilla_entities::FALLING_BLOCK,
         EntityBaseLoad {
@@ -162,7 +159,7 @@ fn falling_block_persistence_and_spawn_data_preserve_the_carried_state() {
             world: Weak::new(),
         },
     );
-    loaded.load_additional((&borrowed).into());
+    load_additional(&loaded, &saved);
 
     let loaded_state = loaded.state.lock();
     assert_eq!(loaded_state.block_state, block_state);

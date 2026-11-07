@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::*;
 use crate::behavior::init_behaviors;
-use crate::test_support::{TestPlayerBuilder, fresh_test_world};
+use crate::test_support::{TestPlayerBuilder, fresh_loaded_test_world, fresh_test_world};
 
 fn test_hook(world: &Arc<World>, id: i32) -> Arc<FishingHookEntity> {
     Arc::new(FishingHookEntity::new(
@@ -176,16 +176,13 @@ fn grounded_hook_does_not_hook_owner_when_player_stands_on_it() {
 
 #[test]
 fn submerged_hook_in_water_experiences_upward_buoyancy() {
-    use crate::test_support::insert_ready_full_chunk;
-    use steel_utils::ChunkPos;
     use steel_utils::types::UpdateFlags;
 
     steel_registry::init_vanilla_registry();
     init_behaviors();
 
-    let world_fixture = fresh_test_world("fishing_hook_buoyancy");
+    let world_fixture = fresh_loaded_test_world("fishing_hook_buoyancy");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let water = vanilla_blocks::WATER.default_state();
     let pos_submerged = BlockPos::new(0, 60, 0);
@@ -224,16 +221,13 @@ fn submerged_hook_in_water_experiences_upward_buoyancy() {
 
 #[test]
 fn open_water_calculation_identifies_open_lake_and_shallow_puddle() {
-    use crate::test_support::insert_ready_full_chunk;
-    use steel_utils::ChunkPos;
     use steel_utils::types::UpdateFlags;
 
     steel_registry::init_vanilla_registry();
     init_behaviors();
 
-    let world_fixture = fresh_test_world("fishing_hook_open_water");
+    let world_fixture = fresh_loaded_test_world("fishing_hook_open_water");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     let water = vanilla_blocks::WATER.default_state();
     let air = vanilla_blocks::AIR.default_state();

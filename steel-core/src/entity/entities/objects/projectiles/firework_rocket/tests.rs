@@ -1,13 +1,12 @@
-use std::io::Cursor;
-
-use simdnbt::borrow::read_compound;
 use steel_registry::data_components::components::{FireworkExplosion, Fireworks};
 use steel_registry::{init_vanilla_registry, vanilla_entities};
 use steel_utils::ChunkPos;
 
 use super::*;
+
 use crate::entity::entities::PigEntity;
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::load_additional;
+use crate::test_support::{fresh_loaded_test_world, fresh_test_world, insert_ready_full_chunk};
 
 fn rocket_item(flight_duration: i32, explosions: usize) -> ItemStack {
     let mut item = ItemStack::new(&vanilla_items::FIREWORK_ROCKET);
@@ -94,9 +93,8 @@ fn attached_rocket_keeps_its_target_when_world_ids_are_reused() {
 #[test]
 fn explosion_damages_an_entity_reusing_the_attached_id() {
     init_vanilla_registry();
-    let world_fixture = fresh_test_world("firework_explosion_identity");
+    let world_fixture = fresh_loaded_test_world("firework_explosion_identity");
     let world = &world_fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let position = DVec3::new(8.0, 64.0, 8.0);
     let original: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
@@ -161,17 +159,13 @@ fn rocket_saves_and_loads_its_flight() {
     assert_eq!(nbt.int("LifeTime"), Some(29));
     assert_eq!(nbt.byte("ShotAtAngle"), Some(1));
 
-    let mut bytes = Vec::new();
-    nbt.write(&mut bytes);
-    let borrowed = read_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test NBT should reborrow: {error}"));
     let loaded = FireworkRocketEntity::new(
         &vanilla_entities::FIREWORK_ROCKET,
         2,
         DVec3::ZERO,
         Weak::new(),
     );
-    loaded.load_additional((&borrowed).into());
+    load_additional(&loaded, &nbt);
 
     {
         let flight = loaded.flight.lock();

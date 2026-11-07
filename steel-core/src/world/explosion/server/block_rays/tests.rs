@@ -15,7 +15,7 @@ use super::cache::{
 };
 use super::*;
 use crate::behavior::init_behaviors;
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{fresh_loaded_test_world, fresh_test_world, insert_ready_full_chunk};
 use crate::world::explosion::default_block_explosion_resistance;
 use crate::world::{BlockInteraction, DefaultExplosionDamageCalculator};
 
@@ -155,9 +155,8 @@ fn calculate_cached_immutable_rays<R: ExplosionBlockReader, const USE_BOUNDED_FL
 fn deterministic_empty_world_rays_match_the_java_hash_set_fixture() {
     init_vanilla_registry();
     init_behaviors();
-    let fixture = fresh_test_world("explosion_java_hash_set_fixture");
+    let fixture = fresh_loaded_test_world("explosion_java_hash_set_fixture");
     let world = &fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let explosion = ServerExplosion::new(
         world,
         None,
@@ -252,9 +251,8 @@ fn maximum_radius_air_rays_match_the_java_membership_fixture() {
 fn unusual_radii_retain_vanilla_ray_sampling_and_bounds_behavior() {
     init_vanilla_registry();
     init_behaviors();
-    let fixture = fresh_test_world("explosion_unusual_radii");
+    let fixture = fresh_loaded_test_world("explosion_unusual_radii");
     let world = &fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
     for radius in [f32::NEG_INFINITY, -1.0, -0.0, 0.0, f32::NAN] {
         let explosion = ServerExplosion::new(
@@ -411,9 +409,8 @@ fn cached_ray_decisions_keep_uncached_order_at_already_affected_positions() {
     }
 
     init_vanilla_registry();
-    let fixture = fresh_test_world("cached_ray_callback_order");
+    let fixture = fresh_loaded_test_world("cached_ray_callback_order");
     let world = &fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let context = ExplosionRayContext {
         center: DVec3::new(8.5, 64.5, 8.5),
         bounds: ExplosionWorldBounds::from_world(world),
@@ -502,9 +499,8 @@ fn bounded_floor_matches_rust_floor_cast_across_i32_domain() {
 fn incomplete_bounded_region_falls_back_before_calculator_hooks() {
     init_vanilla_registry();
     init_behaviors();
-    let fixture = fresh_test_world("immutable_explosion_incomplete_region");
+    let fixture = fresh_loaded_test_world("immutable_explosion_incomplete_region");
     let world = &fixture.world;
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
     let center = DVec3::new(15.5, 64.5, 8.5);
     let actual_calculator = CountingImmutableCalculator {
         bounded_read_radius: Some(0),

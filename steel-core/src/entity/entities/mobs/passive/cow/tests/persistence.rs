@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::load_additional;
 use steel_registry::init_vanilla_registry;
 
 #[test]
@@ -33,13 +34,9 @@ fn cow_loads_vanilla_age_and_variant_data() {
     nbt.insert("AgeLocked", 1_i8);
     nbt.insert("variant", "minecraft:cold");
     nbt.insert("sound_variant", "minecraft:moody");
-    let mut bytes = Vec::new();
-    nbt.write(&mut bytes);
-    let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
-        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
 
     let cow = CowEntity::new(&vanilla_entities::COW, 1, DVec3::ZERO, Weak::new());
-    cow.load_additional((&borrowed).into());
+    load_additional(&cow, &nbt);
 
     assert_eq!(cow.animal().ageable().age(), -24_000);
     assert!(cow.animal().ageable().is_age_locked());
