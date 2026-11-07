@@ -97,9 +97,10 @@ fn respawn_world_handoff_requires_the_exact_old_player() {
 }
 
 #[test]
+// Vanilla removes the whole mount tree on disconnect and keeps it in the player's
+// `RootVehicle` data. The mount disappearing is expected, not a lost entity.
+// https://feedback.minecraft.net/hc/en-us/community/posts/18425696179213-Dismount-on-Disconnect-Gamerule
 fn disconnect_while_riding_removes_the_vehicle_like_vanilla() {
-    // Vanilla removes the whole mount tree on disconnect and keeps it in the player's
-    // `RootVehicle` data. The mount disappearing is expected, not a lost entity.
     init_vanilla_registry();
     init_behaviors();
     let world_fixture = fresh_test_world("disconnect_riding_vehicle");
