@@ -2,6 +2,7 @@
 
 use crate::item_stack::ItemStack;
 use steel_utils::entity_events::EntityStatus;
+use steel_utils::types::InteractionHand;
 
 /// Equipment slot types for categorization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -37,6 +38,15 @@ pub enum EquipmentSlot {
     Body,
     /// The saddle slot (for rideable animals).
     Saddle,
+}
+
+impl From<InteractionHand> for EquipmentSlot {
+    fn from(hand: InteractionHand) -> Self {
+        match hand {
+            InteractionHand::MainHand => Self::MainHand,
+            InteractionHand::OffHand => Self::OffHand,
+        }
+    }
 }
 
 impl EquipmentSlot {
