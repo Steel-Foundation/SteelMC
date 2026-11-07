@@ -6,6 +6,7 @@ use crate::entity::{
 };
 use rand::{RngExt, rng};
 use steel_math::DEGREE_90;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::nbt::{NbtNumeric, nbt_collection_values};
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
@@ -3955,12 +3956,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// is loaded. Keeping that merge at the entity boundary preserves defaults
     /// and entity-specific state when the component only overrides one field.
     fn apply_spawn_data(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        let read_int = |key: &str| {
-            nbt.int(key)
-                .or_else(|| nbt.short(key).map(i32::from))
-                .or_else(|| nbt.byte(key).map(i32::from))
-        };
-
         if let Some(position) = read_nbt_dvec3(&nbt, "Pos")
             && position.is_finite()
         {
@@ -3981,27 +3976,27 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         if let Some(fall_distance) = nbt
-            .double("fall_distance")
-            .or_else(|| nbt.double("FallDistance"))
+            .double_value("fall_distance")
+            .or_else(|| nbt.double_value("FallDistance"))
         {
             self.set_fall_distance(fall_distance);
         }
 
-        if let Some(on_ground) = nbt.byte("OnGround") {
+        if let Some(on_ground) = nbt.byte_value("OnGround") {
             self.set_on_ground(on_ground != 0);
         }
 
         let mut save_data = self.base().save_data();
-        if let Some(air_supply) = read_int("Air") {
+        if let Some(air_supply) = nbt.int_value("Air") {
             save_data.air_supply = air_supply;
         }
-        if let Some(portal_cooldown) = read_int("PortalCooldown") {
+        if let Some(portal_cooldown) = nbt.int_value("PortalCooldown") {
             save_data.portal_cooldown = portal_cooldown;
         }
-        if let Some(no_gravity) = nbt.byte("NoGravity") {
+        if let Some(no_gravity) = nbt.byte_value("NoGravity") {
             save_data.no_gravity = no_gravity != 0;
         }
-        if let Some(invulnerable) = nbt.byte("Invulnerable") {
+        if let Some(invulnerable) = nbt.byte_value("Invulnerable") {
             save_data.invulnerable = invulnerable != 0;
         }
         if let Some(custom_name) = nbt
@@ -4010,13 +4005,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         {
             save_data.custom_name = Some(custom_name);
         }
-        if let Some(custom_name_visible) = nbt.byte("CustomNameVisible") {
+        if let Some(custom_name_visible) = nbt.byte_value("CustomNameVisible") {
             save_data.custom_name_visible = custom_name_visible != 0;
         }
-        if let Some(silent) = nbt.byte("Silent") {
+        if let Some(silent) = nbt.byte_value("Silent") {
             save_data.silent = silent != 0;
         }
-        if let Some(glowing) = nbt.byte("Glowing") {
+        if let Some(glowing) = nbt.byte_value("Glowing") {
             save_data.glowing = glowing != 0;
         }
         if let Some(tags) = nbt.list("Tags").and_then(|list| list.strings()) {
@@ -4031,13 +4026,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
         self.base().replace_save_data(save_data);
 
-        if let Some(remaining_fire_ticks) = read_int("Fire") {
-            self.set_remaining_fire_ticks(remaining_fire_ticks);
+        if let Some(remaining_fire_ticks) = nbt.short_value("Fire") {
+            self.set_remaining_fire_ticks(i32::from(remaining_fire_ticks));
         }
-        if let Some(ticks_frozen) = read_int("TicksFrozen") {
+        if let Some(ticks_frozen) = nbt.int_value("TicksFrozen") {
             self.set_ticks_frozen(ticks_frozen);
         }
-        if let Some(has_visual_fire) = nbt.byte("HasVisualFire") {
+        if let Some(has_visual_fire) = nbt.byte_value("HasVisualFire") {
             self.base().set_visual_fire(has_visual_fire != 0);
         }
 

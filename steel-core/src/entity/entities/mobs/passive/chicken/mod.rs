@@ -24,6 +24,7 @@ use steel_registry::{
     REGISTRY, RegistryExt, RegistryReference, TaggedRegistryExt, sound_events, vanilla_game_events,
 };
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier};
@@ -479,8 +480,11 @@ impl Entity for ChickenEntity {
         self.load_ageable_mob(nbt);
         self.load_animal(nbt);
 
-        self.set_chicken_jockey(nbt.byte("IsChickenJockey").is_some_and(|value| value != 0));
-        if let Some(egg_time) = nbt.int("EggLayTime") {
+        self.set_chicken_jockey(
+            nbt.byte_value("IsChickenJockey")
+                .is_some_and(|value| value != 0),
+        );
+        if let Some(egg_time) = nbt.int_value("EggLayTime") {
             self.set_egg_time(egg_time);
         }
         if let Some(variant) = nbt.string("variant")

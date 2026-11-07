@@ -162,3 +162,22 @@ fn load_restores_age_and_resizes_to_saved_radius() {
     assert_eq!(cloud.bounding_box().width(), 2.0);
     assert_eq!(cloud.duration(), -1, "a missing duration never expires");
 }
+
+#[test]
+fn load_accepts_any_numeric_tag() {
+    init_vanilla_registry();
+    let fixture = fresh_test_world("area_effect_cloud_load_numeric");
+    let cloud = lingering_cloud(&fixture.world);
+
+    let mut saved = NbtCompound::new();
+    saved.insert("Radius", 1);
+    saved.insert("Duration", 200i16);
+    let mut bytes = Vec::new();
+    saved.write(&mut bytes);
+    let borrowed = read_compound(&mut Cursor::new(&bytes))
+        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
+    cloud.load_additional((&borrowed).into());
+
+    assert_eq!(cloud.radius(), 1.0);
+    assert_eq!(cloud.duration(), 200);
+}
