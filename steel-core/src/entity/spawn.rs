@@ -535,20 +535,21 @@ mod tests {
     use steel_registry::data_components::CustomData;
     use steel_registry::data_components::components::EntityData;
     use steel_registry::data_components::vanilla_components::{
-        CHICKEN_SOUND_VARIANT, CHICKEN_VARIANT, ENTITY_DATA,
+        CHICKEN_SOUND_VARIANT, CHICKEN_VARIANT, COW_SOUND_VARIANT, COW_VARIANT, ENTITY_DATA,
+        SHEEP_COLOR,
     };
     use steel_registry::init_vanilla_registry;
     use steel_registry::item_stack::ItemStack;
     use steel_registry::{
-        RegistryReference, vanilla_chicken_sound_variants, vanilla_chicken_variants,
-        vanilla_entities, vanilla_items,
+        DyeColor, RegistryReference, vanilla_chicken_sound_variants, vanilla_chicken_variants,
+        vanilla_cow_sound_variants, vanilla_cow_variants, vanilla_entities, vanilla_items,
     };
     use steel_utils::types::Difficulty;
     use text_components::TextComponent;
 
     use crate::entity::ageable::BABY_START_AGE;
     use crate::entity::animal::Parts as _;
-    use crate::entity::entities::ChickenEntity;
+    use crate::entity::entities::{ChickenEntity, CowEntity, SheepEntity};
     use crate::entity::{
         Entity, EntitySpawnReason, SharedEntity, init_entities, load_entity_recursive_owned,
     };
@@ -776,6 +777,59 @@ mod tests {
         assert_eq!(
             chicken.sound_variant().key,
             vanilla_chicken_sound_variants::PICKY.key
+        );
+    }
+
+    #[test]
+    fn item_sheep_color_overrides_spawn_state() {
+        init_vanilla_registry();
+
+        let sheep = Arc::new(SheepEntity::new(
+            &vanilla_entities::SHEEP,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let entity: SharedEntity = Arc::<SheepEntity>::clone(&sheep);
+
+        let mut spawn_egg = ItemStack::new(&vanilla_items::SHEEP_SPAWN_EGG);
+        spawn_egg.set(SHEEP_COLOR, DyeColor::Pink);
+
+        apply_item_stack_components(&entity, &spawn_egg, false)
+            .expect("valid sheep color should apply");
+
+        assert_eq!(sheep.color(), DyeColor::Pink);
+    }
+
+    #[test]
+    fn item_cow_components_override_spawn_state() {
+        init_vanilla_registry();
+
+        let cow = Arc::new(CowEntity::new(
+            &vanilla_entities::COW,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let entity: SharedEntity = Arc::<CowEntity>::clone(&cow);
+
+        let mut spawn_egg = ItemStack::new(&vanilla_items::COW_SPAWN_EGG);
+        spawn_egg.set(
+            COW_VARIANT,
+            RegistryReference::new(&vanilla_cow_variants::COLD),
+        );
+        spawn_egg.set(
+            COW_SOUND_VARIANT,
+            RegistryReference::new(&vanilla_cow_sound_variants::MOODY),
+        );
+
+        apply_item_stack_components(&entity, &spawn_egg, false)
+            .expect("valid cow components should apply");
+
+        assert_eq!(cow.variant().key, vanilla_cow_variants::COLD.key);
+        assert_eq!(
+            cow.sound_variant().key,
+            vanilla_cow_sound_variants::MOODY.key
         );
     }
 }
