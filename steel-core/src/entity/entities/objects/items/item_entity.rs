@@ -19,6 +19,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
+use crate::behavior::ITEM_BEHAVIORS;
 use crate::entity::SharedEntity;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
@@ -29,6 +30,7 @@ use crate::inventory::container::Container;
 use crate::physics::MoverType;
 use crate::player::Player;
 use crate::world::World;
+use text_components::TextComponent;
 
 use crate::entity::EntityProps;
 use simdnbt::ToNbtTag;
@@ -545,8 +547,25 @@ impl ItemEntity {
         fire_immune: Self::entity_fire_immune,
         player_touch: Self::entity_player_touch,
         hurt: Self::entity_hurt,
+        name: Self::entity_name,
+        on_teleported: |item| {
+            if let Some(world) = item.level() {
+                item.merge_with_neighbors(&world);
+            }
+        },
         ..EntityProps::new()
     };
+
+    /// Unlike other entities, the custom name keeps its click and hover actions.
+    fn entity_name(&self) -> TextComponent {
+        self.custom_name().unwrap_or_else(|| {
+            let item = self.get_item();
+            ITEM_BEHAVIORS
+                .get_behavior(item.item())
+                .get_name(&item)
+                .into_owned()
+        })
+    }
 
     fn entity_tick(&self, entity: &SharedEntity) {
         // Check if item is empty
@@ -795,6 +814,8 @@ mod tests {
     };
     use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 
+    use steel_registry::data_components::vanilla_components::ITEM_NAME;
+
     use crate::behavior::init_behaviors;
     use crate::entity::{Entity, damage::DamageSource};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
@@ -812,6 +833,25 @@ mod tests {
         );
 
         assert!(!item.blocks_building());
+    }
+
+    #[test]
+    fn unnamed_item_entity_is_named_after_its_stack() {
+        init_vanilla_registry();
+        init_behaviors();
+        let item = ItemEntity::new(
+            &vanilla_entities::ITEM,
+            1,
+            DVec3::ZERO,
+            Weak::<World>::new(),
+        );
+        let stack = ItemStack::new(&vanilla_items::DIAMOND);
+        let Some(item_name) = stack.get(ITEM_NAME).cloned() else {
+            panic!("diamond should have an item name");
+        };
+        item.set_item(stack);
+
+        assert_eq!(item.name(), item_name);
     }
 
     #[test]
