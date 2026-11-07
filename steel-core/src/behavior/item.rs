@@ -83,8 +83,8 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Called when this item is used (e.g. right click in air).
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
-        // TODO: Mirror Item.use for BLOCKS_ATTACKS and KINETIC_WEAPON so
-        // specialized behaviors inherit the complete Vanilla base path.
+        // TODO: Mirror Item.use for KINETIC_WEAPON so specialized behaviors
+        // inherit the complete Vanilla base path.
         let (consume_ticks, can_eat) = context.inv.with_item(|item| {
             let can_eat = item
                 .get(FOOD)
@@ -110,11 +110,23 @@ pub trait ItemBehavior: Send + Sync {
             return InteractionResult::Consume;
         }
 
-        let Some(equippable) = context.inv.with_item(|item| item.get_equippable().cloned()) else {
+        let (equippable, blocks_attacks) = context.inv.with_item(|item| {
+            (
+                item.get_equippable()
+                    .filter(|equippable| equippable.swappable)
+                    .cloned(),
+                item.has(BLOCKS_ATTACKS),
+            )
+        });
+        let Some(equippable) = equippable else {
+            if blocks_attacks {
+                context.player.start_using_item(context.hand);
+                return InteractionResult::Consume;
+            }
             return InteractionResult::Pass;
         };
 
-        if !equippable.swappable || !equippable.can_be_equipped_by(context.player.entity_type()) {
+        if !equippable.can_be_equipped_by(context.player.entity_type()) {
             return InteractionResult::Pass;
         }
 
