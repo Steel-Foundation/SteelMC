@@ -231,13 +231,13 @@ impl BlockBehavior for TntBlock {
         _state: BlockStateId,
         world: &Arc<World>,
         hit: &ClipHitResult,
-        projectile: &dyn Projectile,
+        projectile: &Projectile<'_>,
     ) {
-        if !projectile.is_on_fire() || !projectile.projectile_may_interact(world, hit.block_pos) {
+        if !projectile.is_on_fire() || !projectile.may_interact(world, hit.block_pos) {
             return;
         }
 
-        let owner = projectile.get_owner();
+        let owner = projectile.owner();
         let living_owner = owner.as_deref().filter(|owner| owner.is_living_entity());
         // TODO: Check an arrow's pickup stack once arrows exist. Other projectiles use an empty
         // stack, which never permits Adventure-mode breaking.

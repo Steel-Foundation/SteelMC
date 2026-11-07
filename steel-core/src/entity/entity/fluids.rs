@@ -14,16 +14,6 @@ pub trait EntityFluids: Entity {
 
     /// Default for [`Entity::on_above_bubble_column`].
     fn on_above_bubble_column_default(&self, drag_down: bool, pos: BlockPos) {
-        if let Some(projectile) = self.as_projectile() {
-            projectile.on_above_bubble_column_projectile(drag_down, pos);
-            return;
-        }
-
-        self.default_on_above_bubble_column(drag_down, pos);
-    }
-
-    /// Applies the base entity's clamped bubble-column surface movement.
-    fn default_on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
         if self.is_flying_player() {
             return;
         }
@@ -43,16 +33,6 @@ pub trait EntityFluids: Entity {
 
     /// Default for [`Entity::on_inside_bubble_column`].
     fn on_inside_bubble_column_default(&self, drag_down: bool) {
-        if let Some(projectile) = self.as_projectile() {
-            projectile.on_inside_bubble_column_projectile(drag_down);
-            return;
-        }
-
-        self.default_on_inside_bubble_column(drag_down);
-    }
-
-    /// Applies the base entity's clamped movement inside a bubble-column.
-    fn default_on_inside_bubble_column(&self, drag_down: bool) {
         if self.is_flying_player() {
             return;
         }

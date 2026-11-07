@@ -92,9 +92,9 @@ impl BlockBehavior for TargetBlock {
         state: BlockStateId,
         world: &Arc<World>,
         hit: &ClipHitResult,
-        projectile: &dyn Projectile,
+        projectile: &Projectile<'_>,
     ) {
-        let _strength = self.update_redstone_output(world, state, hit, projectile);
+        let _strength = self.update_redstone_output(world, state, hit, projectile.entity());
         if let Some(owner) = projectile.projectile_owner()
             && let Some(player) = owner.as_player()
         {

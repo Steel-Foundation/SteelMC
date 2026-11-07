@@ -162,7 +162,7 @@ impl BlockBehavior for CandleBlock {
         state: steel_utils::BlockStateId,
         world: &Arc<World>,
         hit: &ClipHitResult,
-        projectile: &dyn Projectile,
+        projectile: &Projectile<'_>,
     ) {
         let Some(lit_state) = Self::projectile_lit_state(state, projectile.is_on_fire()) else {
             return;

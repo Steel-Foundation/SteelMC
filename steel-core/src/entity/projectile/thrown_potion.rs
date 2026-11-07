@@ -1,4 +1,4 @@
-//! Shared impact and water interaction logic for thrown potions
+//! Vanilla `AbstractThrownPotion`: what splash and lingering potions share.
 
 use crate::entity::prelude::*;
 use std::sync::Arc;
@@ -16,8 +16,9 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::behavior::blocks::{CampfireBlock, CandleBlock};
 use crate::entity::damage::DamageSource;
-use crate::entity::projectile::ThrowableItemProjectile;
-use crate::entity::{Living, ProjectileHit, RemovalReason, SharedEntity};
+use crate::entity::projectile::throwable_item;
+use crate::entity::projectile::{Projectile, ProjectileProps, throwable};
+use crate::entity::{EntityProps, ProjectileHit, RemovalReason, SharedEntity};
 use crate::world::ClipHitResult;
 use crate::world::World;
 
@@ -27,154 +28,172 @@ pub const SPLASH_RANGE_SQ: f64 = 16.0;
 pub const SPLASH_HORIZONTAL_REACH: f64 = 4.0;
 /// How far the splash search box extends past the potion's box on the Y axis.
 pub const SPLASH_VERTICAL_REACH: f64 = 2.0;
-/// Gravity of a thrown potion.
 const DEFAULT_GRAVITY: f64 = 0.05;
 
-/// Shared behavior for splash and lingering potion projectiles
-pub trait AbstractThrownPotion: ThrowableItemProjectile {
-    /// Returns the gravity of thrown potions (default is 0.05)
-    fn thrown_potion_default_gravity(&self) -> f64 {
-        DEFAULT_GRAVITY
-    }
-
-    /// The effect-specific area-of-effect (splash) or cloud-spawning (lingering) behavior.
+/// A concrete vanilla `AbstractThrownPotion` type.
+pub trait Parts: throwable_item::Parts {
+    /// Applies the potion's effects where it landed: a splash or a cloud.
     fn on_hit_as_potion(
-        self: &Arc<Self>,
+        &self,
+        entity: &SharedEntity,
         world: &Arc<World>,
         potion_item: &ItemStack,
         hit: &ProjectileHit,
     );
+}
 
-    /// Returns the horizontal direction from the potion to the hurt entity
-    fn thrown_potion_knockback_direction(&self, hurt_entity: &Living<'_>) -> (f64, f64) {
-        let delta = hurt_entity.position() - self.position();
-        (delta.x, delta.z)
+/// `AbstractThrownPotion`'s overrides of the entity hooks.
+#[must_use]
+pub const fn entity_props<E: Parts>() -> EntityProps<E> {
+    EntityProps {
+        default_gravity: |_| DEFAULT_GRAVITY,
+        ..throwable::entity_props()
+    }
+}
+
+/// `AbstractThrownPotion`'s overrides of the projectile hooks.
+#[must_use]
+pub const fn projectile_props<E: Parts>() -> ProjectileProps<E> {
+    ProjectileProps {
+        on_hit: on_hit::<E>,
+        on_hit_block: on_hit_block::<E>,
+        horizontal_hurt_knockback_direction: |potion, hurt_entity, _| {
+            let delta = hurt_entity.position() - potion.position();
+            (delta.x, delta.z)
+        },
+        ..ProjectileProps::new()
+    }
+}
+
+/// `AbstractThrownPotion.onHit`: affects water-sensitive and burning
+/// entities, applies the potion, then breaks with its particles and sound.
+fn on_hit<E: Parts>(potion: &E, entity: &SharedEntity, hit: &ProjectileHit) {
+    potion.projectile().on_hit_default(entity, hit);
+    let Some(world) = potion.level() else {
+        return;
+    };
+
+    let potion_item = potion.throwable_item().item();
+    let contents =
+        potion_item.get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
+    affect_entities_around(&potion.projectile(), entity, &world, &contents);
+    if contents.has_effects() {
+        potion.on_hit_as_potion(entity, &world, &potion_item, hit);
     }
 
-    /// Handles impact effects emits the break event and discards the potion
-    fn thrown_potion_on_hit(self: Arc<Self>, hit: &ProjectileHit)
-    where
-        Self: Sized + 'static,
-    {
-        Arc::clone(&self).projectile_on_hit(hit);
-        let Some(world) = self.level() else {
-            return;
-        };
+    let has_instant_effects = contents
+        .potion()
+        .is_some_and(|potion| potion_has_instant_effects(potion.value()));
+    let (event_type, sound_event) = if has_instant_effects {
+        (
+            level_events::PARTICLES_INSTANT_POTION_SPLASH,
+            level_events::SOUND_INSTANT_POTION_SPLASH,
+        )
+    } else {
+        (
+            level_events::PARTICLES_SPELL_POTION_SPLASH,
+            level_events::SOUND_SPELL_POTION_SPLASH,
+        )
+    };
+    world.level_event(
+        event_type,
+        potion.block_position(),
+        contents.get_color(),
+        None,
+    );
+    if !potion.is_silent() {
+        world.level_event(sound_event, potion.block_position(), 0, None);
+    }
+    potion.set_removed(RemovalReason::Discarded);
+}
 
-        let potion_item = self.get_item();
-        let contents = potion_item
-            .get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
-        self.affect_entities_around(&world, &contents);
-        if contents.has_effects() {
-            self.on_hit_as_potion(&world, &potion_item, hit);
-        }
-
-        let has_instant_effects = contents
-            .potion()
-            .is_some_and(|potion| potion_has_instant_effects(potion.value()));
-        let (event_type, sound_event) = if has_instant_effects {
-            (
-                level_events::PARTICLES_INSTANT_POTION_SPLASH,
-                level_events::SOUND_INSTANT_POTION_SPLASH,
-            )
-        } else {
-            (
-                level_events::PARTICLES_SPELL_POTION_SPLASH,
-                level_events::SOUND_SPELL_POTION_SPLASH,
-            )
-        };
-        world.level_event(
-            event_type,
-            self.block_position(),
-            contents.get_color(),
-            None,
-        );
-        if !self.is_silent() {
-            world.level_event(sound_event, self.block_position(), 0, None);
-        }
-        self.set_removed(RemovalReason::Discarded);
+/// Hurts water-sensitive entities in range and extinguishes burning ones, as
+/// the potion's tags allow.
+fn affect_entities_around(
+    potion: &Projectile<'_>,
+    entity: &SharedEntity,
+    world: &Arc<World>,
+    contents: &PotionContents,
+) {
+    let hurts_water_sensitive = contents.is_in_tag(&PotionTag::HURTS_WATER_SENSITIVE_ENTITIES);
+    let extinguishes = contents.is_in_tag(&PotionTag::EXTINGUISHES_ENTITIES);
+    // TODO: rehydrate nearby axolotls for `REHYDRATES_AXOLOTLS` once axolotls exist.
+    if !hurts_water_sensitive && !extinguishes {
+        return;
     }
 
-    /// Hurts water-sensitive entities in range and extinguishes burning ones,
-    /// as allowed by the potion's tags.
-    fn affect_entities_around(self: &Arc<Self>, world: &Arc<World>, contents: &PotionContents)
-    where
-        Self: Sized + 'static,
-    {
-        let hurts_water_sensitive = contents.is_in_tag(&PotionTag::HURTS_WATER_SENSITIVE_ENTITIES);
-        let extinguishes = contents.is_in_tag(&PotionTag::EXTINGUISHES_ENTITIES);
-        // TODO: rehydrate nearby Axolotl entities for `REHYDRATES_AXOLOTLS` once
-        // Axolotl is implemented.
-        if !hurts_water_sensitive && !extinguishes {
-            return;
+    let aabb = potion.bounding_box().inflate_xyz(
+        SPLASH_HORIZONTAL_REACH,
+        SPLASH_VERTICAL_REACH,
+        SPLASH_HORIZONTAL_REACH,
+    );
+    let potion_pos = potion.position();
+
+    for target in world.get_entities_in_aabb(&aabb) {
+        if target.as_living_entity().is_none() {
+            continue;
+        }
+        let sensitive_to_water = target.entity_type().flags.is_sensitive_to_water;
+        if !sensitive_to_water && !target.is_on_fire() {
+            continue;
+        }
+        if potion_pos.distance_squared(target.position()) >= SPLASH_RANGE_SQ {
+            continue;
         }
 
-        let aabb = self.bounding_box().inflate_xyz(
-            SPLASH_HORIZONTAL_REACH,
-            SPLASH_VERTICAL_REACH,
-            SPLASH_HORIZONTAL_REACH,
-        );
-        let potion_pos = self.position();
+        if hurts_water_sensitive && sensitive_to_water {
+            let mut damage = DamageSource::environment(&vanilla_damage_types::INDIRECT_MAGIC)
+                .with_direct_entity(Arc::clone(entity));
+            if let Some(owner) = potion.owner() {
+                damage = damage.with_causing_entity(owner);
+            }
+            target.hurt(world, &damage, 1.0);
+        }
 
-        for entity in world.get_entities_in_aabb(&aabb) {
-            if entity.as_living_entity().is_none() {
-                continue;
-            }
-            let sensitive_to_water = entity.entity_type().flags.is_sensitive_to_water;
-            if !sensitive_to_water && !entity.is_on_fire() {
-                continue;
-            }
-            if potion_pos.distance_squared(entity.position()) >= SPLASH_RANGE_SQ {
-                continue;
-            }
-
-            if hurts_water_sensitive && sensitive_to_water {
-                let mut damage = DamageSource::environment(&vanilla_damage_types::INDIRECT_MAGIC)
-                    .with_direct_entity(Arc::<Self>::clone(self));
-                if let Some(owner) = self.get_owner() {
-                    damage = damage.with_causing_entity(owner);
-                }
-                entity.hurt(world, &damage, 1.0);
-            }
-
-            if extinguishes && entity.is_on_fire() && entity.is_alive() {
-                entity.extinguish_fire();
-            }
+        if extinguishes && target.is_on_fire() && target.is_alive() {
+            target.extinguish_fire();
         }
     }
+}
 
-    /// Handles block impact and douses nearby fire for `DOUSES_FIRE` potions.
-    fn thrown_potion_on_hit_block(&self, hit: &ClipHitResult) {
-        self.projectile_on_hit_block(hit);
-        let Some(world) = self.level() else {
-            return;
-        };
+/// `AbstractThrownPotion.onHitBlock`: `DOUSES_FIRE` potions put out fire
+/// around the hit face.
+fn on_hit_block<E: Parts>(potion: &E, entity: &SharedEntity, hit: &ClipHitResult) {
+    let projectile = potion.projectile();
+    projectile.on_hit_block_default(entity, hit);
+    let Some(world) = potion.level() else {
+        return;
+    };
 
-        let contents = self
-            .get_item()
-            .get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
-        if !contents.is_in_tag(&PotionTag::DOUSES_FIRE) {
-            return;
-        }
-
-        let block_effect_pos = hit.direction.relative(hit.block_pos);
-        self.douse_fire(&world, block_effect_pos);
-        self.douse_fire(&world, hit.direction.opposite().relative(block_effect_pos));
-        for direction in Direction::HORIZONTAL {
-            self.douse_fire(&world, direction.relative(block_effect_pos));
-        }
+    let contents = potion
+        .throwable_item()
+        .item()
+        .get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
+    if !contents.is_in_tag(&PotionTag::DOUSES_FIRE) {
+        return;
     }
 
-    /// Puts out fire, lit campfires and lit candles at `pos`.
-    fn douse_fire(&self, world: &Arc<World>, pos: BlockPos) {
-        let state = world.get_block_state(pos);
-        if state.get_block().has_tag(&BlockTag::FIRE) {
-            world.destroy_block_by_entity(pos, false, self.as_entity_event_source());
-        } else if CandleBlock::is_lit(state) {
-            CandleBlock::extinguish(None, state, world, pos);
-        } else if CampfireBlock::is_lit_campfire(state) {
-            douse_lit_campfire(world, pos, state, self.get_owner());
-        }
+    let block_effect_pos = hit.direction.relative(hit.block_pos);
+    douse_fire(&projectile, &world, block_effect_pos);
+    douse_fire(
+        &projectile,
+        &world,
+        hit.direction.opposite().relative(block_effect_pos),
+    );
+    for direction in Direction::HORIZONTAL {
+        douse_fire(&projectile, &world, direction.relative(block_effect_pos));
+    }
+}
+
+/// Puts out fire, lit campfires and lit candles at `pos`.
+fn douse_fire(potion: &Projectile<'_>, world: &Arc<World>, pos: BlockPos) {
+    let state = world.get_block_state(pos);
+    if state.get_block().has_tag(&BlockTag::FIRE) {
+        world.destroy_block_by_entity(pos, false, potion.entity());
+    } else if CandleBlock::is_lit(state) {
+        CandleBlock::extinguish(None, state, world, pos);
+    } else if CampfireBlock::is_lit_campfire(state) {
+        douse_lit_campfire(world, pos, state, potion.owner());
     }
 }
 

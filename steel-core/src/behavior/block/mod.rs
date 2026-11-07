@@ -971,7 +971,7 @@ pub trait BlockBehavior: Send + Sync {
         _state: BlockStateId,
         _world: &Arc<World>,
         _hit: &ClipHitResult,
-        _projectile: &dyn Projectile,
+        _projectile: &Projectile<'_>,
     ) {
     }
 

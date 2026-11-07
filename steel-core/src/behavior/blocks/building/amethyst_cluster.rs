@@ -75,7 +75,7 @@ impl BlockBehavior for AmethystClusterBlock {
         _state: BlockStateId,
         world: &Arc<World>,
         hit: &ClipHitResult,
-        _projectile: &dyn Projectile,
+        _projectile: &Projectile<'_>,
     ) {
         AmethystBlock::play_projectile_hit_sound(world, hit.block_pos);
     }

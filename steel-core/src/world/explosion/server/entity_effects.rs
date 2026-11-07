@@ -116,7 +116,7 @@ impl ServerExplosion<'_> {
                 &EntityTypeTag::REDIRECTABLE_PROJECTILE,
             ) {
                 if let Some(projectile) = entity.as_projectile() {
-                    projectile.set_owner_entity(self.damage_source.causing_entity());
+                    projectile.set_owner(self.damage_source.causing_entity());
                 }
             } else if let Some(player) = entity.as_player()
                 && !player.is_spectator()

@@ -208,11 +208,11 @@ fn set_as_inside_portal_starts_portal_process_when_not_on_cooldown() {
 
 #[test]
 fn set_as_inside_portal_resets_cooldown_without_starting_process() {
-    let entity = TypedTestEntity::new(1, &vanilla_entities::ARROW);
+    let entity = TypedTestEntity::new(1, &vanilla_entities::ITEM);
     entity.set_portal_cooldown(1);
 
     entity.set_as_inside_portal(PortalKind::Nether, BlockPos::new(2, 64, 2));
 
-    assert_eq!(entity.portal_cooldown(), 2);
+    assert_eq!(entity.portal_cooldown(), 300);
     assert_eq!(entity.base().portal_process(), None);
 }

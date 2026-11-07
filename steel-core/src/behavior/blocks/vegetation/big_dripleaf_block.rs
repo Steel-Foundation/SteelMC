@@ -248,7 +248,7 @@ impl BlockBehavior for BigDripleafBlock {
         state: BlockStateId,
         world: &Arc<World>,
         hit: &ClipHitResult,
-        _projectile: &dyn Projectile,
+        _projectile: &Projectile<'_>,
     ) {
         self.set_tilt_and_schedule_tick(
             state,

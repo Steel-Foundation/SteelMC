@@ -45,8 +45,8 @@ impl ChorusFlowerBlock {
         Self { block, plant }
     }
 
-    fn projectile_can_break(projectile: &dyn Projectile, world: &World, pos: BlockPos) -> bool {
-        projectile.projectile_may_interact(world, pos) && projectile.may_break(world)
+    fn projectile_can_break(projectile: &Projectile<'_>, world: &World, pos: BlockPos) -> bool {
+        projectile.may_interact(world, pos) && projectile.may_break(world)
     }
 
     fn all_neighbors_empty(
@@ -242,7 +242,7 @@ impl BlockBehavior for ChorusFlowerBlock {
         _state: BlockStateId,
         world: &Arc<World>,
         hit: &ClipHitResult,
-        projectile: &dyn Projectile,
+        projectile: &Projectile<'_>,
     ) {
         if Self::projectile_can_break(projectile, world, hit.block_pos) {
             world.destroy_block_by_entity(hit.block_pos, true, projectile.as_entity_event_source());

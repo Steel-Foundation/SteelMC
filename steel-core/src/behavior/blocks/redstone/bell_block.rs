@@ -263,14 +263,14 @@ impl BlockBehavior for BellBlock {
         state: BlockStateId,
         world: &Arc<World>,
         hit: &ClipHitResult,
-        projectile: &dyn Projectile,
+        projectile: &Projectile<'_>,
     ) {
         let height = hit.location.y - f64::from(hit.block_pos.y());
         if !Self::is_proper_hit(state, hit.direction, height) {
             return;
         }
 
-        let owner = projectile.get_owner();
+        let owner = projectile.owner();
         let source = owner
             .as_deref()
             .filter(|entity| entity.as_player().is_some());

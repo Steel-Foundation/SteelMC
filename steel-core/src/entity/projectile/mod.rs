@@ -1,20 +1,21 @@
-//! Vanilla `Projectile` class hierarchy, mirrored as Rust traits + base structs.
+//! Vanilla `Projectile`: entities with an owner that resolve hits along
+//! their movement.
 //!
-//! Mirrors `net.minecraft.world.entity.projectile`:
-//! `Entity → Projectile → ThrowableProjectile → ThrowableItemProjectile`.
-//! Concrete projectiles embed [`ProjectileBase`] (owner / left-owner / shot state)
-//! and implement the trait stack; the per-layer tick logic chains explicitly via
-//! [`Projectile::projectile_base_tick`] and
-//! [`ThrowableProjectile::throwable_projectile_tick`] (vanilla `super.tick()`).
+//! State lives in the [`ProjectileBase`] component and behavior on the
+//! [`Projectile`] view; per-type hooks are [`ProjectileProps`]. The
+//! `ThrowableProjectile`, `ThrowableItemProjectile` and
+//! `AbstractThrownPotion` layers are the [`throwable`], [`throwable_item`] and
+//! [`thrown_potion`] modules.
 //!
 //! The block + entity move-vector raycast mirrors `ProjectileUtil`.
 
-mod throwable;
-mod throwable_item;
-mod thrown_potion;
+pub mod throwable;
+pub mod throwable_item;
+pub mod thrown_potion;
 
 use crate::entity::prelude::*;
 use std::mem;
+use std::ops::Deref;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -27,14 +28,16 @@ use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLOCKS};
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
 use steel_utils::axis::Axis;
-use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, WorldAabb};
+use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
+use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, WorldAabb};
 use uuid::Uuid;
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::enchantment_helper;
+use crate::entity::component::props::entity_props;
+use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, EntityReference, Living, SharedEntity};
+use crate::entity::{Entity, EntityProps, EntityReference, Living, SharedEntity};
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
@@ -44,11 +47,7 @@ use super::{
     BUBBLE_COLUMN_INSIDE_UP_ACCELERATION,
 };
 
-pub use throwable::ThrowableProjectile;
-pub use throwable_item::ThrowableItemProjectile;
-pub use thrown_potion::{
-    AbstractThrownPotion, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH,
-};
+pub use thrown_potion::{SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH};
 
 /// Vanilla `Projectile.shoot` per-axis spread scale (`0.0172275 * uncertainty`).
 const SHOOT_INACCURACY_SCALE: f64 = 0.0172_275;
@@ -110,7 +109,7 @@ pub enum ProjectileDeflection {
 }
 
 impl ProjectileDeflection {
-    fn apply(self, projectile: &dyn Projectile, deflecting_entity: Option<&dyn Entity>) {
+    fn apply(self, projectile: &Projectile<'_>, deflecting_entity: Option<&dyn Entity>) {
         match self {
             Self::None => {}
             Self::Reverse => {
@@ -157,124 +156,210 @@ struct ProjectileState {
     last_deflected_by: Option<Weak<dyn Entity>>,
 }
 
-/// Runtime fields shared by vanilla projectiles (vanilla `Projectile` fields).
+/// State of a vanilla `Projectile`: its owner and whether it has been shot
+/// and has left its owner.
 pub struct ProjectileBase {
-    state: SyncMutex<ProjectileState>,
+    state: CheckedMutex<ProjectileState>,
+    hooks: &'static dyn ProjectileHooks,
 }
 
 impl ProjectileBase {
-    /// Creates default projectile runtime state.
+    /// A projectile with no owner that has not been shot, with `hooks`
+    /// describing its type.
     #[must_use]
-    pub const fn new() -> Self {
+    pub const fn new(hooks: &'static dyn ProjectileHooks) -> Self {
         Self {
-            state: SyncMutex::new(ProjectileState {
+            state: CheckedMutex::new(ProjectileState {
                 owner: None,
                 left_owner: false,
                 left_owner_checked: false,
                 has_been_shot: false,
                 last_deflected_by: None,
             }),
+            hooks,
         }
     }
 }
 
-impl Default for ProjectileBase {
-    fn default() -> Self {
-        Self::new()
+// SAFETY: This key is owned by Steel and uniquely identifies `ProjectileBase`.
+unsafe impl DowncastType for ProjectileBase {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity_component/projectile");
+}
+
+impl Component for ProjectileBase {
+    fn save(&self, _owner: &dyn Entity, nbt: &mut NbtCompound) {
+        let state = self.state.lock();
+        if let Some(owner) = &state.owner {
+            owner.store(nbt, "Owner");
+        }
+        if state.left_owner {
+            nbt.insert("LeftOwner", 1i8);
+        }
+        nbt.insert("HasBeenShot", i8::from(state.has_been_shot));
+    }
+
+    fn load(&self, _owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        let mut state = self.state.lock();
+        state.owner = EntityReference::read(&nbt, "Owner");
+        state.left_owner = nbt.byte("LeftOwner").is_some_and(|value| value != 0);
+        state.has_been_shot = nbt.byte("HasBeenShot").is_some_and(|value| value != 0);
     }
 }
 
-/// Object-safe access to a projectile trait object from default [`Projectile`] methods.
-pub trait ProjectileEventSource {
+entity_props! {
+    /// Per-type properties of a vanilla `Projectile`.
+    pub struct ProjectileProps<E>: ProjectileHooks for Projectile
+    where E: Parts => projectile {
+        /// `Projectile.onHit`: resolves a hit that was not deflected.
+        fn on_hit(entity: &SharedEntity, hit: &ProjectileHit) = on_hit_default;
+        /// `Projectile.onHitEntity`.
+        fn on_hit_entity(entity: &SharedEntity, target: &SharedEntity, location: DVec3) = on_hit_entity_default;
+        /// `Projectile.onHitBlock`.
+        fn on_hit_block(entity: &SharedEntity, hit: &ClipHitResult) = on_hit_block_default;
+        /// `Projectile.canHitEntity`.
+        fn can_hit_entity(target: &dyn Entity) -> bool = can_hit_entity_default;
+        /// `Projectile.onDeflection`.
+        fn on_deflection(by_attack: bool) = on_deflection_default;
+        /// `Projectile.shouldBounceOnWorldBorder`.
+        fn should_bounce_on_world_border() -> bool = should_bounce_on_world_border_default;
+        /// `Projectile.calculateHorizontalHurtKnockbackDirection`.
+        fn horizontal_hurt_knockback_direction(hurt_entity: &Living<'_>, source: &DamageSource) -> (f64, f64) = horizontal_hurt_knockback_direction_default;
+    }
+}
+
+/// An entity seen as a vanilla `Projectile`.
+#[derive(Clone, Copy)]
+pub struct Projectile<'a> {
+    entity: &'a (dyn Entity + 'static),
+    base: &'a ProjectileBase,
+}
+
+impl<'a> Projectile<'a> {
+    /// Pairs a concrete projectile with its state.
+    #[must_use]
+    pub fn new<E: Entity + Has<ProjectileBase>>(entity: &'a E) -> Self {
+        Self {
+            entity,
+            base: entity.get::<ProjectileBase>(),
+        }
+    }
+
+    /// Returns `entity` as a projectile, if it is one.
+    #[must_use]
+    pub fn of(entity: &'a (dyn Entity + 'static)) -> Option<Self> {
+        Some(Self {
+            entity,
+            base: entity.query::<ProjectileBase>()?,
+        })
+    }
+
+    /// Returns the entity this view belongs to.
+    #[must_use]
+    pub const fn entity(&self) -> &'a (dyn Entity + 'static) {
+        self.entity
+    }
+
+    fn hooks(&self) -> &'static dyn ProjectileHooks {
+        self.base.hooks
+    }
+}
+
+impl Deref for Projectile<'_> {
+    type Target = dyn Entity;
+
+    fn deref(&self) -> &Self::Target {
+        self.entity
+    }
+}
+
+/// A concrete vanilla `Projectile` type.
+pub trait Parts: Entity + Has<ProjectileBase> {
     /// Returns this entity as a projectile.
-    fn as_projectile_event_source(&self) -> &dyn Projectile;
+    fn projectile(&self) -> Projectile<'_>;
 }
 
-impl<T: Projectile> ProjectileEventSource for T {
-    fn as_projectile_event_source(&self) -> &dyn Projectile {
-        self
+impl<E: Entity + Has<ProjectileBase>> Parts for E {
+    fn projectile(&self) -> Projectile<'_> {
+        Projectile::new(self)
     }
 }
 
-/// Vanilla-shaped behavior shared by entities that extend `Projectile`.
-pub trait Projectile: Entity + ProjectileEventSource {
-    /// Returns shared projectile runtime state.
-    fn projectile_base(&self) -> &ProjectileBase;
+/// `Projectile`'s overrides of the entity hooks.
+#[must_use]
+pub const fn entity_props<E: Parts>() -> EntityProps<E> {
+    EntityProps {
+        tick: |projectile, _| projectile.projectile().tick(),
+        hurt: |projectile, _, source, _| projectile.projectile().hurt_server(source),
+        is_pickable: |projectile| {
+            REGISTRY.entity_types.is_in_tag(
+                projectile.entity_type(),
+                &EntityTypeTag::REDIRECTABLE_PROJECTILE,
+            )
+        },
+        dimension_changing_delay: |_| 2,
+        may_interact: |projectile, world, pos| projectile.projectile().may_interact(world, pos),
+        on_above_bubble_column: |projectile, drag_down, pos| {
+            projectile
+                .projectile()
+                .on_above_bubble_column(drag_down, pos);
+        },
+        on_inside_bubble_column: |projectile, drag_down| {
+            projectile.projectile().on_inside_bubble_column(drag_down);
+        },
+        spawn_data: |projectile| {
+            projectile
+                .projectile()
+                .owner()
+                .map_or(0, |owner| owner.id())
+        },
+        projectile_owner_uuid: |projectile| projectile.projectile().owner_uuid(),
+        restore_owner_reference: |projectile, owner| projectile.projectile().cache_owner(owner),
+        ..EntityProps::new()
+    }
+}
 
-    /// Returns the horizontal hurt-knockback vector used for this projectile.
-    fn calculate_horizontal_hurt_knockback_direction(
-        &self,
-        _hurt_entity: &Living<'_>,
-        _damage_source: &DamageSource,
-    ) -> (f64, f64) {
-        let movement = self.velocity();
-        (movement.x, movement.z)
+impl<'a> Projectile<'a> {
+    fn state(&self) -> CheckedMutexGuard<'a, ProjectileState> {
+        self.base.state.lock()
     }
 
-    /// Applies bubble-column surface acceleration without clamping velocity.
-    fn on_above_bubble_column_projectile(&self, drag_down: bool, pos: BlockPos) {
-        let acceleration = if drag_down {
-            -BUBBLE_COLUMN_DOWN_ACCELERATION
-        } else {
-            BUBBLE_COLUMN_ABOVE_UP_ACCELERATION
-        };
-        self.set_velocity(self.velocity() + DVec3::new(0.0, acceleration, 0.0));
-
-        if let Some(world) = self.level() {
-            world.send_bubble_column_particles(pos);
-        }
+    /// Sets the owner from a saved UUID, clearing any cached live owner.
+    pub fn set_owner_uuid(&self, owner: Option<Uuid>) {
+        self.state().owner = owner.map(EntityReference::from_uuid);
     }
 
-    /// Applies inside-bubble-column acceleration without clamping velocity.
-    fn on_inside_bubble_column_projectile(&self, drag_down: bool) {
-        let acceleration = if drag_down {
-            -BUBBLE_COLUMN_DOWN_ACCELERATION
-        } else {
-            BUBBLE_COLUMN_INSIDE_UP_ACCELERATION
-        };
-        self.set_velocity(self.velocity() + DVec3::new(0.0, acceleration, 0.0));
-        self.reset_fall_distance();
+    /// Sets the owning entity.
+    pub fn set_owner(&self, owner: Option<&SharedEntity>) {
+        self.state().owner = owner.map(EntityReference::from_entity);
     }
 
-    /// Sets the persisted owner UUID and clears the live owner cache.
-    fn set_owner_uuid(&self, owner: Option<Uuid>) {
-        self.projectile_base().state.lock().owner = owner.map(EntityReference::from_uuid);
-    }
-
-    /// Sets the owning entity and caches its live reference.
-    fn set_owner_entity(&self, owner: Option<&SharedEntity>) {
-        self.projectile_base().state.lock().owner = owner.map(EntityReference::from_entity);
-    }
-
-    /// Caches a live owner reference when it matches the saved owner UUID.
-    fn cache_owner_entity(&self, owner: &SharedEntity) {
-        if let Some(reference) = &self.projectile_base().state.lock().owner {
+    /// Caches a live owner when it matches the saved owner UUID.
+    pub fn cache_owner(&self, owner: &SharedEntity) {
+        if let Some(reference) = &self.state().owner {
             reference.cache_entity(owner);
         }
     }
 
-    /// Returns the owner UUID, if any.
-    fn owner_uuid(&self) -> Option<Uuid> {
-        self.projectile_base()
-            .state
-            .lock()
-            .owner
-            .as_ref()
-            .map(EntityReference::uuid)
+    /// The owner's UUID, if any.
+    #[must_use]
+    pub fn owner_uuid(&self) -> Option<Uuid> {
+        self.state().owner.as_ref().map(EntityReference::uuid)
     }
 
-    /// Resolves the cached owner, then looks up its UUID in the current domain.
-    fn get_owner(&self) -> Option<SharedEntity> {
+    /// The live owner: the cached entity, or the owner UUID looked up in the
+    /// current domain.
+    #[must_use]
+    pub fn owner(&self) -> Option<SharedEntity> {
         let world = self.level()?;
-        let owner = self.projectile_base().state.lock().owner.clone()?;
+        let owner = self.state().owner.clone()?;
         owner.get_entity(&world)
     }
 
-    /// Returns whether this projectile may interact with the block at `pos`:
-    /// defers to the owning player's build permission, or the mobGriefing
-    /// rule for a non-player owner.
-    fn projectile_may_interact(&self, world: &World, pos: steel_utils::BlockPos) -> bool {
-        let Some(owner) = self.get_owner() else {
+    /// `Projectile.mayInteract`: the owning player's build permission, or the
+    /// mobGriefing rule for a non-player owner.
+    #[must_use]
+    pub fn may_interact(&self, world: &World, pos: BlockPos) -> bool {
+        let Some(owner) = self.owner() else {
             return true;
         };
         if owner.as_player().is_some() {
@@ -283,9 +368,10 @@ pub trait Projectile: Entity + ProjectileEventSource {
         world.get_game_rule(&MOB_GRIEFING)
     }
 
-    /// Returns whether this projectile type is allowed to break the blocks
-    /// it hits, per the mobGriefing-gated `projectilesCanBreakBlocks` game rule.
-    fn may_break(&self, world: &World) -> bool {
+    /// Whether this projectile may break the blocks it hits.
+    // TODO: check the `can_break` component (`canBreakBlockInAdventureMode`).
+    #[must_use]
+    pub fn may_break(&self, world: &World) -> bool {
         REGISTRY
             .entity_types
             .is_in_tag(self.entity_type(), &EntityTypeTag::IMPACT_PROJECTILES)
@@ -293,48 +379,41 @@ pub trait Projectile: Entity + ProjectileEventSource {
     }
 
     /// Returns whether `entity` is this projectile's owner.
-    fn owned_by(&self, entity: &dyn Entity) -> bool {
+    #[must_use]
+    pub fn owned_by(&self, entity: &dyn Entity) -> bool {
         self.owner_uuid() == Some(entity.uuid())
     }
 
-    /// Returns whether this projectile has been shot, as opposed to just spawned.
-    fn has_been_shot(&self) -> bool {
-        self.projectile_base().state.lock().has_been_shot
+    /// Whether this projectile has been shot, as opposed to just spawned.
+    #[must_use]
+    pub fn has_been_shot(&self) -> bool {
+        self.state().has_been_shot
     }
 
-    /// Marks whether this projectile has been shot.
-    fn set_has_been_shot(&self, value: bool) {
-        self.projectile_base().state.lock().has_been_shot = value;
+    /// Whether this projectile has moved out of its owner's collision range.
+    #[must_use]
+    pub fn left_owner(&self) -> bool {
+        self.state().left_owner
     }
 
-    /// Returns whether this projectile has moved outside its owner's collision range.
-    fn left_owner(&self) -> bool {
-        self.projectile_base().state.lock().left_owner
-    }
-
-    /// Updates whether this projectile has left its owner's collision range,
-    /// but only the first time it's called each tick.
+    /// Updates [`Self::left_owner`], at most once per tick.
     fn check_left_owner(&self) {
-        let mut state = self.projectile_base().state.lock();
-        if state.left_owner || state.left_owner_checked {
-            return;
+        {
+            let mut state = self.state();
+            if state.left_owner || state.left_owner_checked {
+                return;
+            }
+            state.left_owner_checked = true;
         }
-        state.left_owner_checked = true;
-        drop(state);
-
         let left = self.is_outside_owner_collision_range();
-        self.projectile_base().state.lock().left_owner = left;
-    }
-
-    /// Resets the per-tick left-owner check flag (vanilla clears it after `tick`).
-    fn reset_left_owner_checked(&self) {
-        self.projectile_base().state.lock().left_owner_checked = false;
+        self.state().left_owner = left;
     }
 
     /// Returns whether this projectile's expanded bounding box no longer
     /// overlaps its owner or any entity riding the same vehicle tree.
-    fn is_outside_owner_collision_range(&self) -> bool {
-        let Some(owner) = self.get_owner() else {
+    #[must_use]
+    pub fn is_outside_owner_collision_range(&self) -> bool {
+        let Some(owner) = self.owner() else {
             return true;
         };
         let aabb = self
@@ -361,27 +440,44 @@ pub trait Projectile: Entity + ProjectileEventSource {
         true
     }
 
-    /// Returns vanilla `Projectile.canHitEntity`.
-    /// Use this if you don't need to override.
-    fn can_hit_entity(&self, entity: &dyn Entity) -> bool {
-        self.base_can_hit_entity(entity)
+    fn horizontal_hurt_knockback_direction_default(
+        &self,
+        _hurt_entity: &Living<'_>,
+        _source: &DamageSource,
+    ) -> (f64, f64) {
+        let movement = self.velocity();
+        (movement.x, movement.z)
     }
 
-    /// Returns vanilla `Projectile.canHitEntity`.
-    /// We had to split this up, because Rust doesn't allow for calling super trait fns (without causing unbounded recursion) for overrides, so otherwise vanilla behavior would not be achievable.
-    fn base_can_hit_entity(&self, entity: &dyn Entity) -> bool {
-        if !entity.can_be_hit_by_projectile() {
+    /// Default for [`ProjectileProps::can_hit_entity`].
+    pub fn can_hit_entity_default(&self, target: &dyn Entity) -> bool {
+        if !target.can_be_hit_by_projectile() {
             return false;
         }
-        let Some(owner) = self.get_owner() else {
+        let Some(owner) = self.owner() else {
             return true;
         };
-        self.left_owner() || !owner.is_passenger_of_same_vehicle(entity)
+        self.left_owner() || !owner.is_passenger_of_same_vehicle(target)
     }
 
-    /// Returns the velocity vector for shooting toward `direction` at `power`,
-    /// with random spread scaled by `uncertainty`.
-    fn get_movement_to_shoot(&self, direction: DVec3, power: f32, uncertainty: f32) -> DVec3 {
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `ProjectileProps`"
+    )]
+    const fn on_deflection_default(&self, _by_attack: bool) {}
+
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `ProjectileProps`"
+    )]
+    const fn should_bounce_on_world_border_default(&self) -> bool {
+        false
+    }
+
+    /// The velocity for shooting toward `direction` at `power`, with random
+    /// spread scaled by `uncertainty`.
+    #[must_use]
+    pub fn movement_to_shoot(direction: DVec3, power: f32, uncertainty: f32) -> DVec3 {
         let deviation = SHOOT_INACCURACY_SCALE * f64::from(uncertainty);
         let jitter = DVec3::new(
             triangle_random(0.0, deviation),
@@ -391,10 +487,10 @@ pub trait Projectile: Entity + ProjectileEventSource {
         (direction.normalize_or_zero() + jitter) * f64::from(power)
     }
 
-    /// Sets this projectile's velocity and facing rotation toward `direction`
-    /// at `power`, with random spread scaled by `uncertainty`.
-    fn shoot(&self, direction: DVec3, power: f32, uncertainty: f32) {
-        let movement = self.get_movement_to_shoot(direction, power, uncertainty);
+    /// Sets this projectile's velocity and facing toward `direction` at
+    /// `power`, with random spread scaled by `uncertainty`.
+    pub fn shoot(&self, direction: DVec3, power: f32, uncertainty: f32) {
+        let movement = Self::movement_to_shoot(direction, power, uncertainty);
         self.set_velocity(movement);
         self.mark_velocity_sync();
 
@@ -407,7 +503,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
 
     /// Shoots this projectile from `source`'s rotation (offset by `y_offset`),
     /// adding the source's own movement on top.
-    fn shoot_from_rotation(
+    pub fn shoot_from_rotation(
         &self,
         source: &dyn Entity,
         x_rot: f32,
@@ -437,8 +533,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         );
     }
 
-    /// Runs vanilla `Projectile.updateRotation` (lerped toward the movement vector).
-    fn update_rotation(&self) {
+    /// `Projectile.updateRotation`: lerps the rotation toward the movement.
+    pub fn update_rotation(&self) {
         let movement = self.velocity();
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
         let (yaw_old, pitch_old) = self.base().old_rotation();
@@ -447,31 +543,23 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.set_rotation((yaw, pitch));
     }
 
-    /// Applies a Vanilla projectile deflection.
-    fn deflect(
+    /// Deflects this projectile and hands it to `new_owner`.
+    pub fn deflect(
         &self,
         deflection: ProjectileDeflection,
         deflecting_entity: Option<&dyn Entity>,
         new_owner: Option<EntityReference>,
         by_attack: bool,
-    ) -> bool {
-        deflection.apply(self.as_projectile_event_source(), deflecting_entity);
-        self.projectile_base().state.lock().owner = new_owner;
+    ) {
+        deflection.apply(self, deflecting_entity);
+        self.state().owner = new_owner;
         self.on_deflection(by_attack);
-        true
     }
 
-    /// Called after a successful Vanilla projectile deflection.
-    fn on_deflection(&self, _by_attack: bool) {}
-
-    /// Returns whether this projectile bounces from the world border.
-    fn should_bounce_on_world_border(&self) -> bool {
-        false
-    }
-
-    /// Casts the move vector and returns the nearest block/entity hit (vanilla
-    /// `ProjectileUtil.getHitResultOnMoveVector` with `this::canHitEntity`).
-    fn get_hit_result_on_move_vector(&self) -> Option<ProjectileHit> {
+    /// `ProjectileUtil.getHitResultOnMoveVector` with this projectile's
+    /// `canHitEntity`: the nearest block or entity on the move vector.
+    #[must_use]
+    pub fn hit_result_on_move_vector(&self) -> Option<ProjectileHit> {
         const EPSILON: f64 = 1.0e-12;
         let world = self.level()?;
         let from = self.position();
@@ -509,28 +597,26 @@ pub trait Projectile: Entity + ProjectileEventSource {
         None
     }
 
-    /// Handles a projectile hit, deflecting it off an entity or the world
-    /// border instead of resolving the hit when deflection applies.
-    fn hit_target_or_deflect_self(self: Arc<Self>, hit: &ProjectileHit) -> ProjectileDeflection {
+    /// `Projectile.hitTargetOrDeflectSelf`: deflects this projectile off an
+    /// entity or the world border, or resolves the hit.
+    pub fn hit_target_or_deflect_self(
+        &self,
+        entity: &SharedEntity,
+        hit: &ProjectileHit,
+    ) -> ProjectileDeflection {
         if let ProjectileHit::Entity(entity_hit) = hit {
-            let deflection = entity_hit
-                .entity
-                .deflection(self.as_projectile_event_source());
+            let deflection = entity_hit.entity.deflection(self);
             if deflection != ProjectileDeflection::None {
                 let already_deflected = self
-                    .projectile_base()
-                    .state
-                    .lock()
+                    .state()
                     .last_deflected_by
                     .as_ref()
                     .and_then(Weak::upgrade)
                     .is_some_and(|last| Arc::ptr_eq(&last, &entity_hit.entity));
-                let owner = self.projectile_base().state.lock().owner.clone();
-                if !already_deflected
-                    && self.deflect(deflection, Some(entity_hit.entity.as_ref()), owner, false)
-                {
-                    self.projectile_base().state.lock().last_deflected_by =
-                        Some(Arc::downgrade(&entity_hit.entity));
+                let owner = self.state().owner.clone();
+                if !already_deflected {
+                    self.deflect(deflection, Some(entity_hit.entity.as_ref()), owner, false);
+                    self.state().last_deflected_by = Some(Arc::downgrade(&entity_hit.entity));
                 }
                 return deflection;
             }
@@ -539,132 +625,130 @@ pub trait Projectile: Entity + ProjectileEventSource {
             && hit.world_border_hit
         {
             let deflection = ProjectileDeflection::Reverse;
-            let owner = self.projectile_base().state.lock().owner.clone();
-            if self.deflect(deflection, None, owner, false) {
-                self.set_velocity(self.velocity() * 0.2);
-                return deflection;
-            }
+            let owner = self.state().owner.clone();
+            self.deflect(deflection, None, owner, false);
+            self.set_velocity(self.velocity() * 0.2);
+            return deflection;
         }
 
-        self.on_hit(hit);
+        self.on_hit(entity, hit);
         ProjectileDeflection::None
     }
 
-    /// Vanilla `Projectile.onHit`. Subclasses override this and call
-    /// [`Projectile::projectile_on_hit`] for the base dispatch (`super.onHit()`).
-    fn on_hit(self: Arc<Self>, hit: &ProjectileHit) {
-        self.projectile_on_hit(hit);
-    }
-
-    /// The base `Projectile.onHit` dispatch to block/entity handlers. Not meant to
-    /// be overridden — override [`Projectile::on_hit`] and delegate here instead.
-    fn projectile_on_hit(self: Arc<Self>, hit: &ProjectileHit) {
+    /// Default for [`ProjectileProps::on_hit`].
+    pub fn on_hit_default(&self, entity: &SharedEntity, hit: &ProjectileHit) {
         let world = self.level();
         match hit {
             ProjectileHit::Entity(entity_hit) => {
                 if REGISTRY.entity_types.is_in_tag(
                     entity_hit.entity.entity_type(),
                     &EntityTypeTag::REDIRECTABLE_PROJECTILE,
-                ) && let Some(projectile) = entity_hit.entity.as_projectile()
+                ) && let Some(target) = Projectile::of(entity_hit.entity.as_ref())
                 {
-                    let owner_entity = self.get_owner();
-                    let owner = self.projectile_base().state.lock().owner.clone();
-                    projectile.deflect(
+                    let owner_entity = self.owner();
+                    let owner = self.state().owner.clone();
+                    target.deflect(
                         ProjectileDeflection::AimDeflect,
                         owner_entity.as_deref(),
                         owner,
                         true,
                     );
                 }
-                Arc::clone(&self).on_hit_entity(&entity_hit.entity, entity_hit.location);
+                self.on_hit_entity(entity, &entity_hit.entity, entity_hit.location);
                 if let Some(world) = world {
                     world.game_event_at(
                         &vanilla_game_events::PROJECTILE_LAND,
                         entity_hit.location,
-                        &GameEventContext::new(Some(self.as_entity_event_source()), None),
+                        &GameEventContext::new(Some(self.entity), None),
                     );
                 }
             }
             ProjectileHit::Block { hit, .. } => {
-                Arc::clone(&self).on_hit_block(hit);
+                self.on_hit_block(entity, hit);
                 if let Some(world) = world {
                     let state = world.get_block_state(hit.block_pos);
                     world.game_event(
                         &vanilla_game_events::PROJECTILE_LAND,
                         hit.block_pos,
-                        &GameEventContext::new(Some(self.as_entity_event_source()), Some(state)),
+                        &GameEventContext::new(Some(self.entity), Some(state)),
                     );
                 }
             }
         }
     }
 
-    /// Vanilla `Projectile.onHitEntity` (no-op by default).
-    fn on_hit_entity(self: Arc<Self>, _entity: &SharedEntity, _location: DVec3) {}
-
-    /// Default block-hit hook; concrete projectiles override this and call
-    /// [`Projectile::projectile_on_hit_block`] to preserve the base dispatch.
-    fn on_hit_block(self: Arc<Self>, hit: &ClipHitResult) {
-        self.projectile_on_hit_block(hit);
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; entity types override it through `ProjectileProps`"
+    )]
+    const fn on_hit_entity_default(
+        &self,
+        _entity: &SharedEntity,
+        _target: &SharedEntity,
+        _location: DVec3,
+    ) {
     }
 
-    /// The base `Projectile.onHitBlock` implementation. Concrete projectiles
-    /// that override the hook call this to preserve the Java `super` dispatch.
-    fn projectile_on_hit_block(&self, hit: &ClipHitResult) {
+    /// Default for [`ProjectileProps::on_hit_block`].
+    pub fn on_hit_block_default(&self, _entity: &SharedEntity, hit: &ClipHitResult) {
         let Some(world) = self.level() else {
-            return;
-        };
-        let Some(projectile) = self.as_projectile() else {
             return;
         };
         let state = world.get_block_state(hit.block_pos);
         BLOCK_BEHAVIORS
             .get_behavior(state.get_block())
-            .on_projectile_hit(state, &world, hit, projectile);
+            .on_projectile_hit(state, &world, hit, self);
     }
 
-    /// Vanilla `Projectile.hurtServer`: marks hurt unless invulnerable to the
-    /// base checks, but never takes damage.
-    fn hurt(&self, _world: &World, source: &DamageSource, _amount: f32) -> bool {
+    /// `Projectile.hurtServer`: marks hurt unless invulnerable to the base
+    /// checks, but never takes damage.
+    fn hurt_server(&self, source: &DamageSource) -> bool {
         if !self.is_invulnerable_to_base(source) {
             self.mark_hurt();
         }
         false
     }
 
-    /// Vanilla `Projectile.tick` (the `super.tick()` reached from subclasses).
-    fn projectile_base_tick(&self) {
+    /// `Projectile.onAboveBubbleColumn`: unlike other entities, projectiles
+    /// accelerate without a speed cap.
+    fn on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
+        let acceleration = if drag_down {
+            -BUBBLE_COLUMN_DOWN_ACCELERATION
+        } else {
+            BUBBLE_COLUMN_ABOVE_UP_ACCELERATION
+        };
+        self.set_velocity(self.velocity() + DVec3::new(0.0, acceleration, 0.0));
+
+        if let Some(world) = self.level() {
+            world.send_bubble_column_particles(pos);
+        }
+    }
+
+    /// `Projectile.onInsideBubbleColumn`: accelerates without a speed cap.
+    fn on_inside_bubble_column(&self, drag_down: bool) {
+        let acceleration = if drag_down {
+            -BUBBLE_COLUMN_DOWN_ACCELERATION
+        } else {
+            BUBBLE_COLUMN_INSIDE_UP_ACCELERATION
+        };
+        self.set_velocity(self.velocity() + DVec3::new(0.0, acceleration, 0.0));
+        self.reset_fall_distance();
+    }
+
+    /// `Projectile.tick`: announces the shot once, tracks leaving the owner,
+    /// and runs the entity tick.
+    pub fn tick(&self) {
         if !self.has_been_shot() {
-            let owner = self.get_owner();
+            let owner = self.owner();
             self.game_event_with_source_entity(
                 &vanilla_game_events::PROJECTILE_SHOOT,
                 owner.as_deref(),
             );
-            self.set_has_been_shot(true);
+            self.state().has_been_shot = true;
         }
         self.check_left_owner();
         self.tick_default();
-        self.reset_left_owner_checked();
-    }
-
-    /// Saves vanilla `Projectile` fields (`Owner`, `LeftOwner`, `HasBeenShot`).
-    fn save_projectile(&self, nbt: &mut NbtCompound) {
-        let state = self.projectile_base().state.lock();
-        if let Some(owner) = &state.owner {
-            owner.store(nbt, "Owner");
-        }
-        if state.left_owner {
-            nbt.insert("LeftOwner", 1i8);
-        }
-        nbt.insert("HasBeenShot", i8::from(state.has_been_shot));
-    }
-
-    /// Loads vanilla `Projectile` fields (`Owner`, `LeftOwner`, `HasBeenShot`).
-    fn load_projectile(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        let mut state = self.projectile_base().state.lock();
-        state.owner = EntityReference::read(&nbt, "Owner");
-        state.left_owner = nbt.byte("LeftOwner").is_some_and(|value| value != 0);
-        state.has_been_shot = nbt.byte("HasBeenShot").is_some_and(|value| value != 0);
+        self.state().left_owner_checked = false;
     }
 }
 
@@ -672,13 +756,13 @@ pub trait Projectile: Entity + ProjectileEventSource {
 /// direction and registers it in the world.
 ///
 /// Mirrors vanilla `Projectile.spawnProjectileFromRotation` + `spawnProjectile`:
-/// create the projectile at the eye minus 0.1, set its owner, shoot it with
-/// `shootFromRotation`, add it to the world, then run `applyOnProjectileSpawned`
-/// (the `minecraft:projectile_spawned` enchantment effects). `create` receives
-/// the spawn position and must return the concrete projectile type. Returns
-/// `None` when the world rejects the projectile so the caller can fail the use.
+/// create the projectile at the eye minus 0.1, set its owner and item, shoot it
+/// with `shootFromRotation`, add it to the world, then run
+/// `applyOnProjectileSpawned` (the `minecraft:projectile_spawned` enchantment
+/// effects). Returns `None` when the world rejects the projectile so the caller
+/// can fail the use.
 #[must_use]
-pub fn spawn_throwable_item_projectile<E>(
+pub fn spawn_throwable_item_projectile<E: throwable_item::Parts>(
     world: &Arc<World>,
     player: &Arc<Player>,
     item_stack: &mut ItemStack,
@@ -686,10 +770,7 @@ pub fn spawn_throwable_item_projectile<E>(
     power: f32,
     uncertainty: f32,
     create: impl FnOnce(DVec3) -> E,
-) -> Option<SharedEntity>
-where
-    E: Projectile + ThrowableItemProjectile + Entity + 'static,
-{
+) -> Option<SharedEntity> {
     let player_pos = player.position();
     let spawn_pos = DVec3::new(
         player_pos.x,
@@ -699,11 +780,12 @@ where
 
     let entity = create(spawn_pos);
     let owner: SharedEntity = Arc::<Player>::clone(player);
-    entity.set_owner_entity(Some(&owner));
-    entity.set_item_clamped(item_stack.clone());
+    let projectile = entity.projectile();
+    projectile.set_owner(Some(&owner));
+    entity.throwable_item().set_item(item_stack);
 
     let (yaw, player_pitch) = player.rotation();
-    entity.shoot_from_rotation(
+    projectile.shoot_from_rotation(
         player.as_ref(),
         player_pitch,
         yaw,
@@ -881,6 +963,8 @@ mod tests {
     }
 
     impl OwnerCollisionProjectile {
+        const PROJECTILE: ProjectileProps<Self> = ProjectileProps::new();
+
         fn new(id: i32, position: DVec3) -> Self {
             Self {
                 base: EntityBase::new(
@@ -889,12 +973,18 @@ mod tests {
                     vanilla_entities::ENDER_PEARL.dimensions,
                     Arc::downgrade(test_world()),
                 ),
-                projectile_base: ProjectileBase::new(),
+                projectile_base: ProjectileBase::new(&Self::PROJECTILE),
             }
         }
     }
 
     crate::entity::impl_test_downcast_type!(OwnerCollisionProjectile);
+
+    impl Has<ProjectileBase> for OwnerCollisionProjectile {
+        fn component(&self) -> &ProjectileBase {
+            &self.projectile_base
+        }
+    }
 
     impl Entity for OwnerCollisionProjectile {
         fn base(&self) -> &EntityBase {
@@ -907,12 +997,6 @@ mod tests {
 
         fn entity_hooks(&self) -> &'static dyn EntityHooks {
             &EntityDefaults
-        }
-    }
-
-    impl Projectile for OwnerCollisionProjectile {
-        fn projectile_base(&self) -> &ProjectileBase {
-            &self.projectile_base
         }
     }
 
@@ -1010,9 +1094,9 @@ mod tests {
         EntityBase::restore_passenger_relationship(&vehicle, &owner);
         EntityBase::restore_passenger_relationship(&vehicle, &passenger);
 
-        projectile.set_owner_entity(Some(&owner));
+        projectile.projectile().set_owner(Some(&owner));
 
-        assert!(!projectile.is_outside_owner_collision_range());
+        assert!(!projectile.projectile().is_outside_owner_collision_range());
     }
 
     #[test]
@@ -1026,8 +1110,8 @@ mod tests {
         EntityBase::restore_passenger_relationship(&vehicle, &owner);
         EntityBase::restore_passenger_relationship(&vehicle, &passenger);
 
-        projectile.set_owner_entity(Some(&owner));
+        projectile.projectile().set_owner(Some(&owner));
 
-        assert!(projectile.is_outside_owner_collision_range());
+        assert!(projectile.projectile().is_outside_owner_collision_range());
     }
 }

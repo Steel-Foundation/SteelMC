@@ -461,8 +461,7 @@ impl Living<'_> {
             && let Some(projectile) = direct_entity.as_projectile()
             && let Some(hurt_entity) = self.as_living_entity()
         {
-            let (xd, zd) =
-                projectile.calculate_horizontal_hurt_knockback_direction(&hurt_entity, source);
+            let (xd, zd) = projectile.horizontal_hurt_knockback_direction(&hurt_entity, source);
             return (-xd, -zd);
         }
 

@@ -362,9 +362,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         None
     }
 
-    /// Returns the live vanilla `Projectile` owner when this entity exposes one.
+    /// Returns the live owner when this entity is a projectile.
     final fn projectile_owner(&self) -> Option<SharedEntity> {
-        None
+        self.as_projectile()?.owner()
     }
 
     /// Opts this entity into the [`DefaultEntityPush`] fast path. It is read under the
@@ -527,9 +527,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.entity_type().is_abstract_arrow
     }
 
-    /// Returns this entity as a projectile when it has projectile behavior.
-    fn as_projectile(&self) -> Option<&dyn Projectile> {
-        try_as_dyn::<Self, dyn Projectile>(self)
+    /// Returns this entity as a projectile, if it is one.
+    final fn as_projectile(&self) -> Option<Projectile<'_>> {
+        Projectile::of(self.as_entity_event_source())
     }
 
     /// Returns this entity as a living entity when it has living behavior.

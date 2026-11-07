@@ -188,12 +188,12 @@ impl BlockBehavior for CampfireBlock {
         state: BlockStateId,
         world: &Arc<World>,
         hit: &ClipHitResult,
-        projectile: &dyn Projectile,
+        projectile: &Projectile<'_>,
     ) {
         let Some(lit_state) = Self::projectile_lit_state(
             state,
             projectile.is_on_fire(),
-            projectile.projectile_may_interact(world, hit.block_pos),
+            projectile.may_interact(world, hit.block_pos),
         ) else {
             return;
         };

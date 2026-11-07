@@ -73,7 +73,7 @@ pub trait EntityCombat: Entity {
     }
 
     /// Returns this entity's Vanilla projectile deflection behavior.
-    fn deflection(&self, _projectile: &dyn Projectile) -> ProjectileDeflection {
+    fn deflection(&self, _projectile: &Projectile<'_>) -> ProjectileDeflection {
         if REGISTRY
             .entity_types
             .is_in_tag(self.entity_type(), &EntityTypeTag::DEFLECTS_PROJECTILES)
@@ -103,11 +103,7 @@ pub trait EntityCombat: Entity {
     }
 
     /// Default for [`Entity::hurt`].
-    fn hurt_default(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        // Vanilla `Projectile.hurtServer` overrides the entity default.
-        if let Some(projectile) = self.as_projectile() {
-            return Projectile::hurt(projectile, world, source, amount);
-        }
+    fn hurt_default(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
         false
     }
 

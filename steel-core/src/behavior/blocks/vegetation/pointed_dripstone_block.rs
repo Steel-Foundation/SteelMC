@@ -121,7 +121,7 @@ impl BlockBehavior for PointedDripstoneBlock {
         _state: BlockStateId,
         world: &Arc<World>,
         hit: &ClipHitResult,
-        projectile: &dyn Projectile,
+        projectile: &Projectile<'_>,
     ) {
         SpeleothemBlockBehavior::on_projectile_hit(world, hit.block_pos, projectile);
     }
@@ -183,7 +183,7 @@ impl BlockBehavior for SulfurSpikeBlock {
         _state: BlockStateId,
         world: &Arc<World>,
         hit: &ClipHitResult,
-        projectile: &dyn Projectile,
+        projectile: &Projectile<'_>,
     ) {
         SpeleothemBlockBehavior::on_projectile_hit(world, hit.block_pos, projectile);
     }
@@ -219,14 +219,14 @@ struct FluidInfo {
 }
 
 impl SpeleothemBlockBehavior {
-    fn projectile_can_break(projectile: &dyn Projectile, world: &World, pos: BlockPos) -> bool {
-        projectile.projectile_may_interact(world, pos)
+    fn projectile_can_break(projectile: &Projectile<'_>, world: &World, pos: BlockPos) -> bool {
+        projectile.may_interact(world, pos)
             && projectile.may_break(world)
             && projectile.entity_type() == &vanilla_entities::TRIDENT
             && projectile.velocity().length() > 0.6
     }
 
-    fn on_projectile_hit(world: &Arc<World>, pos: BlockPos, projectile: &dyn Projectile) {
+    fn on_projectile_hit(world: &Arc<World>, pos: BlockPos, projectile: &Projectile<'_>) {
         if Self::projectile_can_break(projectile, world, pos) {
             world.destroy_block(pos, true);
         }
@@ -924,7 +924,9 @@ mod tests {
     use crate::entity::{EntityDefaults, EntityHooks};
     use crate::{
         behavior::init_behaviors,
-        entity::{Entity, EntityBase, projectile::ProjectileBase},
+        entity::component::Has,
+        entity::projectile::{ProjectileBase, ProjectileProps},
+        entity::{Entity, EntityBase},
         test_support::{fresh_test_world, insert_ready_full_chunk, test_world},
     };
 
@@ -935,10 +937,12 @@ mod tests {
     }
 
     impl TestProjectile {
+        const PROJECTILE: ProjectileProps<Self> = ProjectileProps::new();
+
         fn new(entity_type: EntityTypeRef, velocity: DVec3) -> Self {
             let projectile = Self {
                 base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::new()),
-                projectile_base: ProjectileBase::new(),
+                projectile_base: ProjectileBase::new(&Self::PROJECTILE),
                 entity_type,
             };
             projectile.set_velocity(velocity);
@@ -962,8 +966,8 @@ mod tests {
         }
     }
 
-    impl Projectile for TestProjectile {
-        fn projectile_base(&self) -> &ProjectileBase {
+    impl Has<ProjectileBase> for TestProjectile {
+        fn component(&self) -> &ProjectileBase {
             &self.projectile_base
         }
     }
@@ -1016,17 +1020,17 @@ mod tests {
         let firework = TestProjectile::new(&vanilla_entities::FIREWORK_ROCKET, DVec3::X);
 
         assert!(SpeleothemBlockBehavior::projectile_can_break(
-            &fast_trident,
+            &Projectile::new(&fast_trident),
             test_world(),
             pos,
         ));
         assert!(!SpeleothemBlockBehavior::projectile_can_break(
-            &threshold_trident,
+            &Projectile::new(&threshold_trident),
             test_world(),
             pos,
         ));
         assert!(!SpeleothemBlockBehavior::projectile_can_break(
-            &firework,
+            &Projectile::new(&firework),
             test_world(),
             pos,
         ));

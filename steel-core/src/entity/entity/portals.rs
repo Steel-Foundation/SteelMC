@@ -103,10 +103,6 @@ pub trait EntityPortals: Entity {
 
     /// Default for [`Entity::dimension_changing_delay`].
     fn dimension_changing_delay_default(&self) -> i32 {
-        // TODO: move to the projectile preset once projectiles are ported.
-        if self.entity_type().is_projectile {
-            return 2;
-        }
         if let Some(first_passenger) = self.first_passenger()
             && first_passenger.as_player().is_some()
         {
