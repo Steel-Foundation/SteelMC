@@ -41,16 +41,6 @@ fn static_vanilla_portal_overrides_reject_special_entities() {
 }
 
 #[test]
-fn projectile_owner_uuid_reports_projectile_owner_identity() {
-    let owner_uuid = Uuid::from_u128(42);
-    let pearl = TypedTestEntity::projectile_with_owner_uuid(1, owner_uuid);
-    let no_player_owner = TypedTestEntity::new(3, &vanilla_entities::ENDER_PEARL);
-
-    assert_eq!(pearl.projectile_owner_uuid(), Some(owner_uuid));
-    assert_eq!(no_player_owner.projectile_owner_uuid(), None);
-}
-
-#[test]
 fn can_use_portal_respects_passenger_gate() {
     init_vanilla_registry();
 

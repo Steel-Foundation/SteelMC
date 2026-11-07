@@ -357,9 +357,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         false
     }
 
-    /// Default for [`Self::projectile_owner_uuid`].
-    final fn projectile_owner_uuid_default(&self) -> Option<Uuid> {
-        None
+    /// Returns the owner UUID when this entity is a projectile.
+    final fn projectile_owner_uuid(&self) -> Option<Uuid> {
+        self.as_projectile()?.owner_uuid()
     }
 
     /// Returns the live owner when this entity is a projectile.

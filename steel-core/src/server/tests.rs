@@ -53,11 +53,10 @@ use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::config::{ResolvedDomainConfig, RuntimeConfig, WorldsConfig};
 
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::EnderPearlEntity;
+use crate::entity::entities::{EnderPearlEntity, SnowballEntity};
 use crate::entity::projectile::Parts as _;
 use crate::entity::{
-    DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, RemovalReason, SharedEntity, init_entities,
-    next_entity_id,
+    DEFAULT_MAX_AIR_SUPPLY, Entity, RemovalReason, SharedEntity, init_entities, next_entity_id,
 };
 use crate::permission::{
     OP_GROUP, PermissionEntry, PermissionExpr, PermissionGroupConfig, PermissionGroupManager,
@@ -92,7 +91,6 @@ use super::{
     offline_uuid, portal_entity_still_valid, test_server_with_worlds_and_config,
     validate_player_permission_group_update,
 };
-use crate::entity::{EntityHooks, EntityProps};
 
 struct TestConnection {
     sent_packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
@@ -3659,49 +3657,10 @@ fn death_respawn_replaces_the_live_player_incarnation() {
     });
 }
 
-struct TestEntity {
-    base: EntityBase,
-    entity_type: EntityTypeRef,
-    projectile_owner_uuid: Option<Uuid>,
-}
-
-impl TestEntity {
-    fn new(entity_type: EntityTypeRef, projectile_owner_uuid: Option<Uuid>) -> Self {
-        Self {
-            base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::new()),
-            entity_type,
-            projectile_owner_uuid,
-        }
-    }
-}
-
 fn permission_key(value: &str) -> PermissionKey {
     match PermissionKey::parse(value) {
         Ok(key) => key,
         Err(error) => panic!("test permission key should parse: {error}"),
-    }
-}
-
-crate::entity::impl_test_downcast_type!(TestEntity);
-
-impl TestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps {
-        projectile_owner_uuid: |entity| entity.projectile_owner_uuid,
-        ..EntityProps::new()
-    };
-}
-
-impl Entity for TestEntity {
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
-    }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
     }
 }
 
@@ -4025,11 +3984,19 @@ fn ender_pearl_end_return_requires_owner_seen_credits_when_owner_is_player() {
     let blocked_owner = Uuid::from_u128(1);
     let allowed_owner = Uuid::from_u128(2);
     let unknown_owner = Uuid::from_u128(3);
-    let blocked_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(blocked_owner));
-    let allowed_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(allowed_owner));
-    let unknown_owner_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, Some(unknown_owner));
-    let no_player_owner_pearl = TestEntity::new(&vanilla_entities::ENDER_PEARL, None);
-    let item = TestEntity::new(&vanilla_entities::ITEM, Some(blocked_owner));
+    init_vanilla_registry();
+    let pearl = |owner: Option<Uuid>| {
+        let pearl =
+            EnderPearlEntity::new(&vanilla_entities::ENDER_PEARL, 1, DVec3::ZERO, Weak::new());
+        pearl.projectile().set_owner_uuid(owner);
+        pearl
+    };
+    let blocked_pearl = pearl(Some(blocked_owner));
+    let allowed_pearl = pearl(Some(allowed_owner));
+    let unknown_owner_pearl = pearl(Some(unknown_owner));
+    let no_player_owner_pearl = pearl(None);
+    let item = SnowballEntity::new(&vanilla_entities::SNOWBALL, 2, DVec3::ZERO, Weak::new());
+    item.projectile().set_owner_uuid(Some(blocked_owner));
     let owner_seen_credits = |uuid: &Uuid| match *uuid {
         uuid if uuid == blocked_owner => Some(false),
         uuid if uuid == allowed_owner => Some(true),

@@ -312,7 +312,6 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
                 .owner()
                 .map_or(0, |owner| owner.id())
         },
-        projectile_owner_uuid: |projectile| projectile.projectile().owner_uuid(),
         restore_owner_reference: |projectile, owner| projectile.projectile().cache_owner(owner),
         ..EntityProps::new()
     }

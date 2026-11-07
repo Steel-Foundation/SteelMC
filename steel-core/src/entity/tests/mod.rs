@@ -49,7 +49,7 @@ use crate::world::game_event::{GameEventListener, SharedGameEventListener};
 use crate::world::{LevelReader, World};
 
 use super::*;
-use crate::entity::{EntityHooks, EntityProps, living_entity};
+use crate::entity::{EntityDefaults, EntityHooks, EntityProps, living_entity};
 
 struct PushableTestEntity {
     base: EntityBase,
@@ -89,7 +89,6 @@ impl Entity for PushableTestEntity {
 struct TypedTestEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
-    projectile_owner_uuid: Option<Uuid>,
 }
 
 impl TypedTestEntity {
@@ -97,32 +96,11 @@ impl TypedTestEntity {
         Self {
             base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
             entity_type,
-            projectile_owner_uuid: None,
-        }
-    }
-
-    fn projectile_with_owner_uuid(id: i32, owner_uuid: Uuid) -> Self {
-        Self {
-            base: EntityBase::new(
-                id,
-                DVec3::ZERO,
-                vanilla_entities::ENDER_PEARL.dimensions,
-                Weak::new(),
-            ),
-            entity_type: &vanilla_entities::ENDER_PEARL,
-            projectile_owner_uuid: Some(owner_uuid),
         }
     }
 }
 
 crate::entity::impl_test_downcast_type!(TypedTestEntity);
-
-impl TypedTestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps {
-        projectile_owner_uuid: |entity| entity.projectile_owner_uuid,
-        ..EntityProps::new()
-    };
-}
 
 impl Entity for TypedTestEntity {
     fn base(&self) -> &EntityBase {
@@ -134,7 +112,7 @@ impl Entity for TypedTestEntity {
     }
 
     fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
+        &EntityDefaults
     }
 }
 

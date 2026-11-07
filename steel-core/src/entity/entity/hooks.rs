@@ -107,8 +107,6 @@ macro_rules! entity_hook_list {
                 fn on_explosion_hit(
                     explosion_source: Option<&dyn Entity>,
                 ) = on_explosion_hit_default;
-                /// Returns the vanilla `Projectile` owner UUID when this entity exposes one.
-                fn projectile_owner_uuid() -> Option<Uuid> = projectile_owner_uuid_default;
                 /// Returns true for vanilla players whose abilities have `flying` set.
                 fn is_flying_player() -> bool = is_flying_player_default;
                 /// Returns whether `other` can collide with this entity.
