@@ -68,7 +68,7 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
+use steel_registry::entity_data::{EntityPose, HumanoidArm};
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::game_rules::GameRuleRef;
 use steel_registry::particle_type::{BlockParticleOption, ParticleData};
@@ -112,9 +112,9 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
     ActiveItemUseState, DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource,
-    EntityMoveError, EntityMovementEmission, EntitySyncedData, Living, LivingEntityBase,
-    MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at,
-    get_kill_credit, start_riding_entities,
+    EntityMoveError, EntityMovementEmission, Living, LivingEntityBase, MobEffectSyncChange,
+    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, get_kill_credit,
+    start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, EquipmentSlotType};
@@ -757,29 +757,6 @@ impl Player {
         }
     }
 
-    fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
-        }
-
-        let mut display = self.living_base.mob_effect_display_state();
-        if self.game_mode() == GameType::Spectator {
-            display.particles = ParticleList::default();
-            display.invisible = true;
-        }
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
-        self.entity_data
-            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
-    }
-
     /// Handles a custom payload packet.
     #[expect(clippy::unused_self, reason = "this is an api function")]
     pub fn handle_custom_payload(&self, _packet: SCustomPayload) {}
@@ -1389,7 +1366,6 @@ impl Player {
         known_speed: Self::entity_known_speed,
         is_suppressing_bounce: |entity| entity.is_crouching(),
         cause_fall_damage: Self::entity_cause_fall_damage,
-        update_data_before_sync: Self::entity_update_data_before_sync,
         backs_off_from_edge: |entity| entity.is_crouching() && !entity.is_flying(),
         is_pushed_by_fluid: |entity| !entity.is_flying(),
         is_crouching: Self::is_crouching,
@@ -1648,10 +1624,6 @@ impl Player {
 
         self.living()
             .cause_living_fall_damage(fall_distance, damage_modifier, source)
-    }
-
-    fn entity_update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
     }
 
     /// Matches vanilla `Player.playSound`, which excludes the source player.

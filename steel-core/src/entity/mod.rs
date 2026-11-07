@@ -827,7 +827,6 @@ pub use living_base::{
     ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION,
     HURT_DURATION_TICKS, LivingEntityBase, LivingRotationState, LivingSwingState,
     LivingTravelInput, MobEffectInstance, MobEffectSyncChange, MobEffectSyncPacket,
-    sync_dirty_mob_effects,
 };
 pub use living_entity::{Living, LivingHooks, LivingProps, Parts as LivingParts};
 pub(crate) use manager::EntityCollisionCandidates;

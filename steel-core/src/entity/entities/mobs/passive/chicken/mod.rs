@@ -39,9 +39,8 @@ use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::entries::FinalizeSpawnCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::{
-    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySyncedData,
-    LivingEntityBase, LivingProps, MobBase, MobProps, SharedEntity, SpawnRule,
-    position_rider_default, sync_dirty_mob_effects,
+    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose, LivingEntityBase,
+    LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, position_rider_default,
 };
 use crate::entity::{EntityProps, mob};
 use crate::world::World;
@@ -320,13 +319,6 @@ impl ChickenEntity {
         }
     }
 
-    fn update_dirty_mob_effect_entity_data(&self) {
-        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
-            self.entity_data
-                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
-        }
-    }
-
     /// Returns whether an item stack matches the vanilla chicken food tag.
     #[must_use]
     pub fn is_food(item_stack: &ItemStack) -> bool {
@@ -480,7 +472,6 @@ impl ChickenEntity {
         is_hard_collision_relevant: |_| false,
         apply_implicit_item_components: Self::entity_apply_implicit_item_components,
         dimensions_for_pose: Self::entity_dimensions_for_pose,
-        update_data_before_sync: Self::entity_update_data_before_sync,
         play_step_sound: Self::entity_play_step_sound,
         is_flapping: Self::entity_is_flapping,
         on_flap: Self::entity_on_flap,
@@ -506,10 +497,6 @@ impl ChickenEntity {
         } else {
             self.entity_type.dimensions.scale(scale)
         }
-    }
-
-    fn entity_update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
     }
 
     fn entity_play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {

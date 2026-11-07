@@ -31,7 +31,6 @@ use uuid::Uuid;
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 use crate::entity::component::Component;
-use crate::entity::synced_data::EntitySyncedData;
 use crate::entity::{Living, LivingHooks, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
 use crate::world::World;
@@ -1831,32 +1830,3 @@ fn living_is_dead(entity: &SharedEntity) -> bool {
 
 #[cfg(test)]
 mod tests;
-
-/// Pushes newly dirty mob-effect state into a living entity's synced data.
-///
-/// Every mob does this before its data is sent, so it lives here rather than being
-/// restated per species. Returns the resolved display state when something was dirty,
-/// so a caller that syncs further flags from it need not repeat the dirty check, and
-/// `None` when there was nothing to publish.
-pub fn sync_dirty_mob_effects<T>(
-    living_base: &LivingEntityBase,
-    entity_data: &CheckedMutex<T>,
-) -> Option<MobEffectDisplayState>
-where
-    T: VanillaLivingEntityData + Send + Sync,
-    CheckedMutex<T>: EntitySyncedData,
-{
-    if !living_base.take_effects_dirty() {
-        return None;
-    }
-
-    let display = living_base.mob_effect_display_state();
-    {
-        let mut entity_data = entity_data.lock();
-        let living = entity_data.living_entity_mut();
-        living.effect_particles.set(display.particles.clone());
-        living.effect_ambience.set(display.ambient);
-    }
-    entity_data.set_base_invisible_flag(display.invisible);
-    Some(display)
-}

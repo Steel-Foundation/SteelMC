@@ -266,3 +266,24 @@ fn closest_open_space_direction_skips_full_collision_neighbors() {
         Direction::Up
     );
 }
+
+#[test]
+fn living_entities_sync_effect_visibility_without_a_type_override() {
+    init_vanilla_registry();
+    init_behaviors();
+    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+
+    entity
+        .living()
+        .add_mob_effect(ActiveMobEffect::with_duration(
+            vanilla_mob_effects::INVISIBILITY,
+            200,
+            0,
+        ));
+    entity.update_data_before_sync();
+
+    let Some(synced) = entity.synced_data() else {
+        panic!("living test entities have synced data");
+    };
+    assert!(synced.is_base_invisible_flag());
+}

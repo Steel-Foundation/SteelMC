@@ -1438,12 +1438,12 @@ fn effect_visibility_refresh_preserves_spectator_invisibility() {
 
     player.restore_game_modes(GameType::Spectator, Some(GameType::Survival));
     player.living_base.mark_effects_dirty();
-    player.update_dirty_mob_effect_entity_data();
+    player.living().sync_mob_effect_data();
     assert!(player.entity_data.is_base_invisible_flag());
 
     player.restore_game_modes(GameType::Survival, Some(GameType::Spectator));
     player.living_base.mark_effects_dirty();
-    player.update_dirty_mob_effect_entity_data();
+    player.living().sync_mob_effect_data();
     assert!(!player.entity_data.is_base_invisible_flag());
 }
 

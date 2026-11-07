@@ -1,5 +1,6 @@
 use steel_math::{DEGREE_90, trig};
 use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
+use steel_registry::entity_data::ParticleList;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 use steel_utils::locks::CheckedMutex;
@@ -208,6 +209,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
                 .cause_living_fall_damage(fall_distance, damage_modifier, source)
         },
         is_alive: |living| !living.is_removed() && living.living().get_health() > 0.0,
+        update_data_before_sync: |living| living.living().sync_mob_effect_data(),
         is_pickable: |living| !living.is_removed(),
         is_pushable: |living| living.is_alive() && !living.is_spectator() && !living.on_climbable(),
         can_freeze: |living| living.living().default_living_can_freeze(),
@@ -1696,6 +1698,31 @@ impl<'a> Living<'a> {
             sound_type.volume * 0.5,
             sound_type.pitch * 0.75,
         );
+    }
+
+    /// `LivingEntity.updateInvisibilityStatus` and `updateGlowingStatus` once effects
+    /// changed: effect particles, ambience, invisibility and glowing go to synced data.
+    /// Spectators (`ServerPlayer`'s override) stay invisible without particles.
+    pub fn sync_mob_effect_data(&self) {
+        if !self.living_base().take_effects_dirty() {
+            return;
+        }
+
+        let mut display = self.living_base().mob_effect_display_state();
+        if self.is_spectator() {
+            display.particles = ParticleList::default();
+            display.invisible = true;
+        }
+        let (particles, ambient) = (display.particles, display.ambient);
+        self.with_synced(move |living| {
+            living.effect_particles.set(particles);
+            living.effect_ambience.set(ambient);
+        });
+        let Some(synced) = self.synced_data() else {
+            return;
+        };
+        synced.set_base_invisible_flag(display.invisible);
+        synced.set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
     /// `LivingEntity.dropFromGiftLootTable`: rolls `loot_table` with the gift
