@@ -20,14 +20,14 @@ const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
 
 const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
 
-fn landing_particle_count(fall_distance: f64, safe_fall_distance: f64) -> Option<i32> {
+pub(super) fn landing_particle_count(fall_distance: f64, safe_fall_distance: f64) -> Option<i32> {
     let power = (fall_distance + 1.0e-6 - safe_fall_distance)
         .floor()
         .max(0.0);
     (power > 0.0).then(|| (150.0 * (f64::from(0.2_f32) + power / 15.0).min(2.5)) as i32)
 }
 
-fn landing_particle_position(entity_position: DVec3, landing_pos: BlockPos) -> DVec3 {
+pub(super) fn landing_particle_position(entity_position: DVec3, landing_pos: BlockPos) -> DVec3 {
     let entity_pos = BlockPos::new(
         entity_position.x.floor() as i32,
         entity_position.y.floor() as i32,
@@ -882,13 +882,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Default for [`Self::push_entity`].
     final fn push_entity_default(&self, entity: &dyn Entity) {
-        if self
-            .as_living_entity()
-            .is_some_and(|living| living.is_sleeping())
-        {
-            return;
-        }
-
         if self.is_passenger_of_same_vehicle(entity) || entity.no_physics() || self.no_physics() {
             return;
         }
@@ -921,20 +914,18 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         )
     }
 
-    /// Returns this entity's position relative to the portal, in portal-local
-    /// space; living entities have their forward-axis offset reset to zero.
-    final fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
-        let offsets = PortalShape::get_relative_position(
+    /// Default for [`Self::get_relative_portal_position`].
+    final fn get_relative_portal_position_default(
+        &self,
+        axis: Axis,
+        portal_area: FoundRectangle,
+    ) -> DVec3 {
+        PortalShape::get_relative_position(
             portal_area,
             axis,
             self.position(),
             self.dimensions_for_pose(self.pose()),
-        );
-        if self.as_living_entity().is_some() {
-            reset_forward_direction_of_relative_portal_position(offsets)
-        } else {
-            offsets
-        }
+        )
     }
 
     /// Default for [`Self::tick`]: vanilla `Entity.tick`, which only runs
@@ -1138,11 +1129,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().is_world_change_token_pending(token)
     }
 
-    /// Returns whether this entity may enter a portal.
-    ///
-    /// Mirrors vanilla `Entity.canUsePortal`, including `LivingEntity` sleeping
-    /// suppression.
-    final fn can_use_portal(&self, ignore_passenger: bool) -> bool {
+    /// Default for [`Self::can_use_portal`].
+    final fn can_use_portal_default(&self, ignore_passenger: bool) -> bool {
         let entity_type = self.entity_type();
         if entity_type == &vanilla_entities::FISHING_BOBBER
             || entity_type == &vanilla_entities::ENDER_DRAGON
@@ -1151,24 +1139,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return false;
         }
 
-        (ignore_passenger || !self.is_passenger())
-            && self.is_alive()
-            && !self
-                .as_living_entity()
-                .is_some_and(|living| living.is_sleeping())
+        (ignore_passenger || !self.is_passenger()) && self.is_alive()
     }
 
-    /// Returns vanilla's dimension-changing portal cooldown delay in ticks.
-    ///
-    /// Mirrors vanilla `getDimensionChangingDelay` overrides for players,
-    /// projectiles, and base entities with a player passenger. Concrete vehicle
-    /// implementations override this method directly.
-    final fn dimension_changing_delay(&self) -> i32 {
-        let entity_type = self.entity_type();
-        if self.as_player().is_some() {
-            return 10;
-        }
-        if entity_type.is_projectile {
+    /// Default for [`Self::dimension_changing_delay`].
+    final fn dimension_changing_delay_default(&self) -> i32 {
+        // TODO: move to the projectile preset once projectiles are ported.
+        if self.entity_type().is_projectile {
             return 2;
         }
         if let Some(first_passenger) = self.first_passenger()
@@ -1211,21 +1188,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.game_event_with_source_entity(event, Some(self.as_entity_event_source()));
     }
 
-    /// Kills this entity using vanilla's living/non-living class split.
-    ///
-    /// `world` is vanilla's explicit `ServerLevel` argument. Living entities
-    /// use it for damage processing, while death game events use the entity's
-    /// attached world.
-    final fn kill(&self, world: &World) {
-        if self.is_living_entity() {
-            self.hurt(
-                world,
-                &DamageSource::environment(&vanilla_damage_types::GENERIC_KILL),
-                f32::MAX,
-            );
-            return;
-        }
-
+    /// Default for [`Self::kill`].
+    final fn kill_default(&self, _world: &World) {
         self.set_removed(RemovalReason::Killed);
         self.game_event(&vanilla_game_events::ENTITY_DIE);
     }
@@ -1388,22 +1352,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         false
     }
 
-    /// Handles vanilla entity right-click interaction.
-    final fn interact(
-        &self,
-        player: &Player,
-        hand: InteractionHand,
-        location: DVec3,
-    ) -> InteractionResult {
-        if let Some(mob) = self.as_mob() {
-            return mob.interact_mob(player, hand, location);
-        }
-        self.interact_entity(player, hand, location)
-    }
-
-    /// Shared right-click interaction for mobs: leashing/unleashing, cutting
-    /// leash connections, or shearing equipment with shears.
-    final fn interact_entity(
+    /// Default for [`Self::interact`]: leashing/unleashing, cutting leash
+    /// connections, or shearing equipment with shears.
+    final fn interact_default(
         &self,
         player: &Player,
         hand: InteractionHand,
@@ -1778,11 +1729,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.look_at(from_anchor, target_anchor.position(target));
     }
 
-    /// Returns this entity's head yaw; 0.0 for non-living entities.
-    final fn head_yaw(&self) -> f32 {
-        self.as_living_entity()
-            .map_or(0.0, |living| living.y_head_rot())
+    /// Default for [`Self::y_head_rot`].
+    final fn y_head_rot_default(&self) -> f32 {
+        0.0
     }
+
+    /// Default for [`Self::set_y_head_rot`].
+    final fn set_y_head_rot_default(&self, _y_head_rot: f32) {}
+
+    /// Default for [`Self::set_y_body_rot`].
+    final fn set_y_body_rot_default(&self, _y_body_rot: f32) {}
 
     /// Default for [`Self::spawn_data`].
     final fn spawn_data_default(&self) -> i32 {
@@ -1812,8 +1768,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.position().y + self.get_eye_height()
     }
 
-    /// Returns whether the entity is currently suffocating inside a solid block.
-    final fn is_in_wall(&self) -> bool {
+    /// Default for [`Self::is_in_wall`].
+    final fn is_in_wall_default(&self) -> bool {
         if self.no_physics() {
             return false;
         }
@@ -2603,12 +2559,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.on_pos(0.2)
     }
 
-    /// Returns the vanilla block speed factor applied after movement.
+    /// Default for [`Self::block_speed_factor`].
     #[expect(
         clippy::float_cmp,
         reason = "intentional: vanilla checks static block speed factors against 1.0"
     )]
-    final fn block_speed_factor(&self) -> f32 {
+    final fn block_speed_factor_default(&self) -> f32 {
         let Some(world) = self.level() else {
             return 1.0;
         };
@@ -3306,18 +3262,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
-    /// get the air drag value of the entity
-    final fn get_air_drag(&self) -> f64 {
-        let Some(entity) = self.as_living_entity() else {
-            return DEFAULT_AIR_DRAG;
-        };
-        compute_modified_friction(
-            DEFAULT_AIR_DRAG,
-            entity
-                .attributes()
-                .lock()
-                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER),
-        )
+    /// Default for [`Self::get_air_drag`].
+    final fn get_air_drag_default(&self) -> f64 {
+        DEFAULT_AIR_DRAG
+    }
+
+    /// Default for [`Self::get_effective_gravity`].
+    final fn get_effective_gravity_default(&self) -> f64 {
+        self.get_gravity()
     }
 
     /// Applies gravity to the entity's velocity.
@@ -3463,10 +3415,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 result.actual_movement.y,
                 self.is_living_entity(),
                 self.is_suppressing_bounce(),
-                self.as_living_entity().map_or_else(
-                    || self.get_gravity(),
-                    |living| living.get_effective_gravity(),
-                ),
+                self.get_effective_gravity(),
                 self.get_air_drag(),
             );
 
@@ -3565,38 +3514,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().set_ground_contact(ground_contact);
     }
 
-    /// Sends the vanilla landing burst for living entities with enough fall power.
-    final fn send_landing_particles(&self, world: &World, on_state: BlockStateId, pos: BlockPos) {
-        let Some(living) = self.as_living_entity() else {
-            return;
-        };
-        if on_state.is_air() {
-            return;
-        }
-
-        let safe_fall_distance = living
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::SAFE_FALL_DISTANCE)
-            .unwrap_or(vanilla_attributes::SAFE_FALL_DISTANCE.default_value);
-        let Some(count) = landing_particle_count(self.fall_distance(), safe_fall_distance) else {
-            return;
-        };
-
-        world.send_particles(
-            ParticleData::new(
-                &vanilla_particle_types::BLOCK,
-                BlockParticleOption::new(on_state),
-            ),
-            landing_particle_position(self.position(), pos),
-            count,
-            DVec3::ZERO,
-            f64::from(0.15_f32),
-        );
-    }
-
-    /// Accumulates fall distance, applies landing damage from the block fallen on, and resets it.
-    final fn check_fall_damage(
+    /// Default for [`Self::check_fall_damage`].
+    final fn check_fall_damage_default(
         self: Arc<Self>,
         vertical_movement: f64,
         on_ground: bool,
@@ -3604,17 +3523,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         pos: BlockPos,
         world: &Arc<World>,
     ) {
-        // Vanilla `LivingEntity.checkFallDamage` refreshes its fluid interaction
-        // when the cached state is not already water. Steel refreshes contact
-        // during movement, so the last interaction result is the vanilla check.
-        if self.is_living_entity() && !self.base().was_touching_water() {
-            self.update_fluid_interaction();
-        }
-
-        if on_ground && self.fall_distance() > 0.0 {
-            self.send_landing_particles(world, on_state, pos);
-        }
-
         if !self.is_in_water() && vertical_movement < 0.0 {
             self.base().accumulate_fall_distance(vertical_movement);
         }
@@ -3793,10 +3701,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
         if let Some((yaw, pitch)) = read_nbt_rotation(&nbt, "Rotation") {
             self.set_rotation((yaw, pitch));
-            if let Some(living) = self.as_living_entity() {
-                living.set_y_head_rot(yaw);
-                living.set_y_body_rot(yaw);
-            }
+            self.set_y_head_rot(yaw);
+            self.set_y_body_rot(yaw);
         }
 
         if let Some(fall_distance) = nbt
@@ -3930,7 +3836,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 }
 
-fn compute_modified_friction(friction: f64, modifier: f64) -> f64 {
+pub(super) fn compute_modified_friction(friction: f64, modifier: f64) -> f64 {
     (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
 }
 
@@ -3958,9 +3864,7 @@ pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAncho
     let rotation = look_at_rotation(from_anchor.position(entity), target);
     entity.set_rotation(rotation);
     let rotation = entity.rotation();
-    if let Some(living) = entity.as_living_entity() {
-        living.set_y_head_rot(rotation.0);
-    }
+    entity.set_y_head_rot(rotation.0);
     entity.base().set_old_rotation_to_current();
 }
 

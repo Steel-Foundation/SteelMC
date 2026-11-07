@@ -293,6 +293,38 @@ macro_rules! entity_hook_list {
                 ) = award_kill_score_default;
                 /// Called when a player touches this entity during nearby pickup processing.
                 fn player_touch(player: &Arc<Player>) = player_touch_default;
+                /// Kills this entity. `world` is vanilla's explicit `ServerLevel`
+                /// argument; death game events use the entity's attached world.
+                fn kill(world: &World) = kill_default;
+                /// Handles vanilla entity right-click interaction.
+                fn interact(
+                    player: &Player,
+                    hand: InteractionHand,
+                    location: DVec3,
+                ) -> InteractionResult = interact_default;
+                /// Returns whether this entity may enter a portal.
+                fn can_use_portal(ignore_passenger: bool) -> bool = can_use_portal_default;
+                /// Returns the portal cooldown, in ticks, applied after changing dimension.
+                fn dimension_changing_delay() -> i32 = dimension_changing_delay_default;
+                /// Returns this entity's position relative to the portal, in portal-local space.
+                fn get_relative_portal_position(
+                    axis: Axis,
+                    portal_area: FoundRectangle,
+                ) -> DVec3 = get_relative_portal_position_default;
+                /// Returns this entity's head yaw.
+                fn y_head_rot() -> f32 = y_head_rot_default;
+                /// Sets this entity's head yaw.
+                fn set_y_head_rot(y_head_rot: f32) = set_y_head_rot_default;
+                /// Sets this entity's body yaw.
+                fn set_y_body_rot(y_body_rot: f32) = set_y_body_rot_default;
+                /// Returns whether the entity is currently suffocating inside a solid block.
+                fn is_in_wall() -> bool = is_in_wall_default;
+                /// Returns the block speed factor applied after movement.
+                fn block_speed_factor() -> f32 = block_speed_factor_default;
+                /// Returns the horizontal air drag applied after movement.
+                fn get_air_drag() -> f64 = get_air_drag_default;
+                /// Returns the gravity applied this tick.
+                fn get_effective_gravity() -> f64 = get_effective_gravity_default;
             }
             shared {
                 /// Called every game tick when the entity is in a ticked chunk.
@@ -308,6 +340,15 @@ macro_rules! entity_hook_list {
                     damage_modifier: f32,
                     source: &DamageSource,
                 ) -> bool = cause_fall_damage_default;
+                /// Accumulates fall distance, applies landing damage from the block
+                /// fallen on, and resets it.
+                fn check_fall_damage(
+                    vertical_movement: f64,
+                    on_ground: bool,
+                    on_state: BlockStateId,
+                    pos: BlockPos,
+                    world: &Arc<World>,
+                ) = check_fall_damage_default;
             }
         }
     };

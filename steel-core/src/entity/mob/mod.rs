@@ -501,6 +501,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         base_tick: |mob| mob.mob().base_tick_mob(),
         check_despawn: |mob| mob.mob().check_mob_despawn(),
         is_effective_ai: |mob| mob.is_server_driven_movement() && !mob.mob().is_no_ai(),
+        interact: |mob, player, hand, location| mob.mob().interact_mob(player, hand, location),
         ..living_entity::entity_props()
     }
 }
@@ -935,7 +936,7 @@ impl<'a> Mob<'a> {
             return important_interaction;
         }
 
-        let interaction_result = self.interact_entity(player, hand, location);
+        let interaction_result = self.interact_default(player, hand, location);
         if interaction_result != InteractionResult::Pass {
             return interaction_result;
         }

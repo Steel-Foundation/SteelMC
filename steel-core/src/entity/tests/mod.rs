@@ -893,6 +893,10 @@ impl LivingFluidTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         hurt: Self::entity_hurt,
         is_flying_player: |entity| entity.flying_player,
+        is_in_wall: |entity| {
+            !entity.living().is_sleeping()
+                && (entity.in_wall_for_base_tick || entity.is_in_wall_default())
+        },
         ..living_entity::entity_props()
     };
 
@@ -933,7 +937,6 @@ impl LivingFluidTestEntity {
         is_affected_by_fluids: Self::living_is_affected_by_fluids,
         can_stand_on_fluid: Self::living_can_stand_on_fluid,
         is_on_non_air_block_for_frost: Self::living_is_on_non_air_block_for_frost,
-        is_in_wall: Self::living_is_in_wall,
         ..LivingProps::new()
     };
 
@@ -954,10 +957,6 @@ impl LivingFluidTestEntity {
 
     fn living_is_on_non_air_block_for_frost(&self) -> bool {
         self.on_non_air_block_for_frost
-    }
-
-    fn living_is_in_wall(&self) -> bool {
-        !self.living().is_sleeping() && (self.in_wall_for_base_tick || Entity::is_in_wall(self))
     }
 }
 

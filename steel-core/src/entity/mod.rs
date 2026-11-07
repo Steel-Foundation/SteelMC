@@ -1255,9 +1255,7 @@ fn teleport_set_position(
         TeleportPositionCommit::Local => entity.base().set_position_local(position),
     }
     entity.set_rotation(rotation);
-    if let Some(living) = entity.as_living_entity() {
-        living.set_y_head_rot(rotation.0);
-    }
+    entity.set_y_head_rot(rotation.0);
     entity.set_old_position_to_current();
     entity.base().set_old_rotation_to_current();
     entity.set_velocity(velocity);

@@ -1319,6 +1319,14 @@ impl Player {
 impl Player {
     const ENTITY: EntityProps<Self> = EntityProps {
         is_hard_collision_relevant: |_| false,
+        dimension_changing_delay: |_| 10,
+        block_speed_factor: |player| {
+            if player.abilities.lock().flying || player.living().is_fall_flying() {
+                1.0
+            } else {
+                player.living().living_block_speed_factor()
+            }
+        },
         do_water_splash_effect: Self::entity_do_water_splash_effect,
         swim_splash_sound: |_| &sound_events::ENTITY_PLAYER_SPLASH,
         swim_high_speed_splash_sound: |_| &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED,

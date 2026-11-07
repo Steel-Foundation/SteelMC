@@ -14,6 +14,9 @@ use crate::entity::component::props::entity_props;
 use crate::entity::component::{Components as _, Has};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::RecentDamageSource;
+use crate::entity::entity::{
+    compute_modified_friction, landing_particle_count, landing_particle_position,
+};
 use crate::entity::pushing::EntityPush;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
@@ -92,8 +95,6 @@ entity_props! {
         fn can_stand_on_fluid(fluid_state: FluidState) -> bool = can_stand_on_fluid_default;
         /// Whether Frost Walker may act under this entity.
         fn is_on_non_air_block_for_frost() -> bool = is_on_non_air_block_for_frost_default;
-        /// `LivingEntity.isInWall`.
-        fn is_in_wall() -> bool = is_in_wall_default;
         /// All attributes clients see, for spawning.
         fn pack_syncable_attributes() -> Vec<AttributeSnapshot> = pack_syncable_attributes_default;
         /// Changed attributes clients see.
@@ -223,6 +224,52 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
                     .scale(living.get_age_scale() * living.get_scale())
             }
         },
+        check_fall_damage: |living, entity, vertical_movement, on_ground, on_state, pos, world| {
+            living.living().check_living_fall_damage(
+                entity,
+                vertical_movement,
+                on_ground,
+                on_state,
+                pos,
+                world,
+            );
+        },
+        kill: |living, world| {
+            living.hurt(
+                world,
+                &DamageSource::environment(&vanilla_damage_types::GENERIC_KILL),
+                f32::MAX,
+            );
+        },
+        push_entity: |living, entity| {
+            if !living.living().is_sleeping() {
+                living.push_entity_default(entity);
+            }
+        },
+        can_use_portal: |living, ignore_passenger| {
+            living.can_use_portal_default(ignore_passenger) && !living.living().is_sleeping()
+        },
+        get_relative_portal_position: |living, axis, portal_area| {
+            reset_forward_direction_of_relative_portal_position(
+                living.get_relative_portal_position_default(axis, portal_area),
+            )
+        },
+        y_head_rot: |living| living.living().y_head_rot(),
+        set_y_head_rot: |living, y_head_rot| living.living().set_y_head_rot(y_head_rot),
+        set_y_body_rot: |living, y_body_rot| living.living().set_y_body_rot(y_body_rot),
+        is_in_wall: |living| !living.living().is_sleeping() && living.is_in_wall_default(),
+        block_speed_factor: |living| living.living().living_block_speed_factor(),
+        get_air_drag: |living| {
+            compute_modified_friction(
+                DEFAULT_AIR_DRAG,
+                living
+                    .living()
+                    .attributes()
+                    .lock()
+                    .required_value(vanilla_attributes::AIR_DRAG_MODIFIER),
+            )
+        },
+        get_effective_gravity: |living| living.living().get_effective_gravity(),
         with_weapon_item: |living, visitor| {
             living
                 .living()
@@ -1634,6 +1681,76 @@ impl<'a> Living<'a> {
         );
     }
 
+    /// `LivingEntity.checkFallDamage`: refreshes fluid contact and sends the
+    /// landing burst before the entity fall-damage step.
+    pub fn check_living_fall_damage(
+        &self,
+        entity: &SharedEntity,
+        vertical_movement: f64,
+        on_ground: bool,
+        on_state: BlockStateId,
+        pos: BlockPos,
+        world: &Arc<World>,
+    ) {
+        // Vanilla refreshes its fluid interaction when the cached state is not
+        // already water. Steel refreshes contact during movement, so the last
+        // interaction result is the vanilla check.
+        if !self.base().was_touching_water() {
+            self.update_fluid_interaction();
+        }
+
+        if on_ground && self.fall_distance() > 0.0 {
+            self.send_landing_particles(world, on_state, pos);
+        }
+
+        Arc::clone(entity).check_fall_damage_default(
+            vertical_movement,
+            on_ground,
+            on_state,
+            pos,
+            world,
+        );
+    }
+
+    /// Sends the vanilla landing burst when the fall was powerful enough.
+    fn send_landing_particles(&self, world: &World, on_state: BlockStateId, pos: BlockPos) {
+        if on_state.is_air() {
+            return;
+        }
+
+        let safe_fall_distance = self
+            .attributes()
+            .lock()
+            .get_value(vanilla_attributes::SAFE_FALL_DISTANCE)
+            .unwrap_or(vanilla_attributes::SAFE_FALL_DISTANCE.default_value);
+        let Some(count) = landing_particle_count(self.fall_distance(), safe_fall_distance) else {
+            return;
+        };
+
+        world.send_particles(
+            ParticleData::new(
+                &vanilla_particle_types::BLOCK,
+                BlockParticleOption::new(on_state),
+            ),
+            landing_particle_position(self.position(), pos),
+            count,
+            DVec3::ZERO,
+            f64::from(0.15_f32),
+        );
+    }
+
+    /// `LivingEntity.getBlockSpeedFactor`: Movement Efficiency moves the block
+    /// factor towards 1.
+    #[must_use]
+    pub fn living_block_speed_factor(&self) -> f32 {
+        let efficiency =
+            self.attributes()
+                .lock()
+                .required_value(vanilla_attributes::MOVEMENT_EFFICIENCY) as f32;
+        let block_factor = self.block_speed_factor_default();
+        block_factor + efficiency * (1.0 - block_factor)
+    }
+
     /// Applies fall damage to a living entity, factoring in effects that reduce or negate it.
     #[must_use]
     pub fn cause_living_fall_damage(
@@ -1979,12 +2096,6 @@ impl<'a> Living<'a> {
         if self.air_supply() < self.max_air_supply() {
             self.set_air_supply(self.increase_air_supply(self.air_supply()));
         }
-    }
-
-    /// Returns whether the entity is suffocating in a wall, ignoring the check while sleeping.
-    #[must_use]
-    pub fn is_in_wall_default(&self) -> bool {
-        !self.is_sleeping() && Entity::is_in_wall(self.entity())
     }
 
     /// Applies vanilla living in-wall damage from `baseTick`.

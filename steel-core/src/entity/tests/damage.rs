@@ -195,11 +195,11 @@ fn head_yaw_uses_living_head_rotation_only() {
     living.set_rotation((35.0, 0.0));
     living.living().set_y_head_rot(120.0);
 
-    assert_f32_close(Entity::head_yaw(&living), 120.0);
+    assert_f32_close(Entity::y_head_rot(&living), 120.0);
 
     let non_living = PushableTestEntity::shared(2, DVec3::ZERO);
     non_living.set_rotation((35.0, 0.0));
-    assert_f32_close(non_living.head_yaw(), 0.0);
+    assert_f32_close(non_living.y_head_rot(), 0.0);
 }
 
 #[test]

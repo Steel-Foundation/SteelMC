@@ -155,7 +155,7 @@ fn track_entity_for_player(tracker: &EntityTracker, entity: &SharedEntity, playe
             entity.velocity(),
             entity.on_ground(),
             entity.rotation(),
-            entity.head_yaw(),
+            entity.y_head_rot(),
             entity.entity_type().update_interval,
             entity.entity_type().track_deltas,
         )),

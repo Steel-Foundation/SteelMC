@@ -102,10 +102,8 @@ pub struct EntityRegistry {
 impl EntityRegistry {
     fn finish_registered_load_view(entity: &SharedEntity, nbt: &BorrowedNbtCompoundView<'_, '_>) {
         let yaw = entity.rotation().0;
-        if let Some(living) = entity.as_living_entity() {
-            living.set_y_head_rot(yaw);
-            living.set_y_body_rot(yaw);
-        }
+        entity.set_y_head_rot(yaw);
+        entity.set_y_body_rot(yaw);
 
         entity.load_additional(*nbt);
         entity.set_old_position_to_current();
