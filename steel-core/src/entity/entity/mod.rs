@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::*;
+use crate::entity::shearable::Shearable;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use rand::{RngExt, rng};
 use steel_math::DEGREE_90;
@@ -574,6 +575,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns this entity as a mob when it has mob behavior.
     final fn as_mob(&self) -> Option<Mob<'_>> {
         Mob::of(self.as_entity_event_source())
+    }
+
+    /// Returns this entity as [`Shearable`] when shears act on it.
+    fn as_shearable(&self) -> Option<&dyn Shearable> {
+        try_as_dyn::<Self, dyn Shearable>(self)
     }
 
     /// Returns this entity as a `Leashable` if it has [`Leashable`] behavior.

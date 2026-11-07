@@ -821,6 +821,23 @@ impl Living<'_> {
         self.living_base().set_absorption_amount(amount);
     }
 
+    /// `LivingEntity.dropFromShearingLootTable` without the drop: rolls
+    /// `loot_table` with the shearing context (origin, this entity and `tool`).
+    #[must_use]
+    pub fn shearing_loot(&self, loot_table: LootTableRef, tool: &ItemStack) -> Vec<ItemStack> {
+        let position = self.position();
+        let mut rng = rand::rng();
+        let equipment = living_loot_equipment(self);
+        let mut context = LootContext::new(&mut rng)
+            .with_origin(position.x, position.y, position.z)
+            .with_this_entity(entity_loot_ref(self.entity(), Some(&equipment)))
+            .with_tool(tool);
+        if let Some(world) = self.level() {
+            context = context.with_game_time(world.game_time());
+        }
+        loot_table.get_random_items(&mut context)
+    }
+
     /// `LivingEntity.dropFromGiftLootTable`: rolls `loot_table` with the gift
     /// context (origin and this entity) and drops each item here. Returns
     /// whether anything dropped.

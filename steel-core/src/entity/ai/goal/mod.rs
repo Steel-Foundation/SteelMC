@@ -33,6 +33,7 @@ mod try_find_water;
 mod water_avoiding_random_stroll;
 
 pub(crate) use breed_goal::BreedGoal;
+pub(crate) use eat_block_goal::EatBlockGoal;
 pub(crate) use float_goal::FloatGoal;
 pub(crate) use follow_parent::FollowParentGoal;
 pub(crate) use look_at_player::LookAtPlayerGoal;

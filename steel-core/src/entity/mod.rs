@@ -784,6 +784,7 @@ pub(crate) mod pushing;
 mod reference;
 mod registry;
 pub(crate) mod selector;
+pub(crate) mod shearable;
 mod spawn;
 mod spawn_placements;
 mod storage;

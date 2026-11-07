@@ -10,8 +10,11 @@ use steel_utils::types::{InteractionHand, SignTextSlot};
 use crate::behavior::{InteractionResult, ItemBehavior, SignApplicator};
 use crate::block_entity::{BlockEntity as _, entities::SignBlockEntity};
 use crate::entity::Living;
+use crate::entity::entities::SheepEntity;
+use crate::entity::prelude::*;
 use crate::player::Player;
 use crate::world::World;
+use steel_utils::Downcast as _;
 
 /// Behavior for the sixteen dye items (`DyeItem`).
 ///
@@ -28,14 +31,25 @@ impl ItemBehavior for DyeItem {
 
     fn interact_living_entity(
         &self,
-        _stack: &mut ItemStack,
+        stack: &mut ItemStack,
         _player: &Player,
-        _target: &Living<'_>,
+        target: &Living<'_>,
         _hand: InteractionHand,
     ) -> InteractionResult {
-        // TODO(entity components): dye sheep again once `SheepEntity` is ported out of
-        // `steel-core/legacy_entities/`.
-        InteractionResult::Pass
+        let Some(dye_color) = stack.get(DYE).copied() else {
+            return InteractionResult::Pass;
+        };
+        let Some(sheep) = target.downcast_ref::<SheepEntity>() else {
+            return InteractionResult::Pass;
+        };
+        if !Entity::is_alive(sheep) || sheep.is_sheared() || sheep.color() == dye_color {
+            return InteractionResult::Pass;
+        }
+
+        sheep.play_sound(&ITEM_DYE_USE, 1.0, 1.0);
+        sheep.set_color(dye_color);
+        stack.shrink_one();
+        InteractionResult::Success
     }
 }
 
