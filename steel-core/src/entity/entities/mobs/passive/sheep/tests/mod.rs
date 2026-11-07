@@ -9,7 +9,6 @@ use steel_utils::types::InteractionHand;
 
 use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
 use crate::bootstrap::init_globals;
-use crate::entity::MobParts as _;
 use crate::player::{Player, ResetReason};
 use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 

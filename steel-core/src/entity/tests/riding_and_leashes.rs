@@ -1,6 +1,7 @@
 use super::*;
 use crate::entity::leash::{DELAYED_LEASH_DROP_TICKS, LeashAttachment};
 use crate::entity::next_entity_id;
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 #[test]

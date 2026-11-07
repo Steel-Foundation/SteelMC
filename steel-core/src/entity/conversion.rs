@@ -276,7 +276,6 @@ mod tests {
 
     use super::{ConversionParams, ConversionType};
     use crate::behavior::init_behaviors;
-    use crate::entity::MobParts as _;
     use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
     use crate::entity::entities::ChickenEntity;
     use crate::entity::mob_effect::ABSORPTION_PER_LEVEL;

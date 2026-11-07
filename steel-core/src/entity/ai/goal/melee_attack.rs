@@ -241,7 +241,6 @@ mod tests {
 
     use super::*;
 
-    use crate::entity::MobParts as _;
     use crate::entity::ai::goal::selector::Goal;
     use crate::entity::entities::ChickenEntity;
 

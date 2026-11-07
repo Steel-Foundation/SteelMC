@@ -3,7 +3,6 @@
 //! Vanilla's client-only `effectBlocks` list, `tickCount` and `activeRotation` are not kept;
 //! the server only needs the frame size from each scan.
 
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 

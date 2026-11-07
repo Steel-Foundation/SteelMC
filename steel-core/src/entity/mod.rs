@@ -829,6 +829,15 @@ pub mod prelude {
         EntityInteraction, EntityMotion, EntityPersistence, EntityPortals, EntityRiding,
         EntitySounds,
     };
+    // The layers' `Parts` traits give `.living()`, `.mob()`, `.animal()`,
+    // `.projectile()`, ... on concrete entity types.
+    pub use super::animal::Parts as _;
+    pub use super::block_attached::Parts as _;
+    pub use super::living_entity::Parts as _;
+    pub use super::mob::Parts as _;
+    pub use super::projectile::Parts as _;
+    pub use super::projectile::throwable_item::Parts as _;
+    pub use super::projectile::thrown_potion::Parts as _;
 }
 pub use fluid_contact::EntityFluidContact;
 pub use identity::EntityGeneration;
@@ -850,8 +859,6 @@ pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
 };
-#[cfg(test)]
-pub(crate) use mob::Parts as MobParts;
 pub(crate) use mob::{Mob, MobBase, MobProps};
 pub(crate) use monster::Enemy;
 pub use movement_sync::{

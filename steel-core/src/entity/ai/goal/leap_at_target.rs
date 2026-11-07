@@ -89,7 +89,6 @@ mod tests {
 
     use super::*;
 
-    use crate::entity::MobParts as _;
     use crate::entity::{Entity, entities::ChickenEntity};
 
     fn pig(id: i32, position: DVec3) -> ChickenEntity {

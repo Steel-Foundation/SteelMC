@@ -11,9 +11,10 @@ use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
+use crate::entity::prelude::*;
 use crate::entity::projectile::throwable;
 use crate::entity::projectile::throwable_item::ThrownItem;
-use crate::entity::projectile::{Parts as _, ProjectileBase, ProjectileHit, ProjectileProps};
+use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps};
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityProps, RemovalReason, SharedEntity};
 use crate::world::World;
 
@@ -107,8 +108,6 @@ mod tests {
 
     use super::*;
     use crate::entity::damage::DamageSource;
-    use crate::entity::prelude::*;
-    use crate::entity::projectile::throwable_item::Parts as _;
     use crate::test_support::test_world;
     use crate::world::ClipHitResult;
 

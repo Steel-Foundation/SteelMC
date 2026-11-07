@@ -7,10 +7,10 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::vanilla_entities;
 use steel_utils::{ChunkPos, UuidExt as _};
 
-use super::{Parts as _, ProjectileDeflection};
+use super::ProjectileDeflection;
 use crate::entity::entities::{ChickenEntity, EnderPearlEntity};
 use crate::entity::prelude::*;
-use crate::entity::{EntityReference, LivingParts as _, RemovalReason, SharedEntity};
+use crate::entity::{EntityReference, RemovalReason, SharedEntity};
 use crate::server::worlds::WorldMap;
 use crate::test_support::{TestPlayerBuilder, insert_ready_full_chunk, test_domain};
 use crate::world::World;

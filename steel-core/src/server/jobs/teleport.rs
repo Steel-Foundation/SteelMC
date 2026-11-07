@@ -8,7 +8,6 @@ use super::super::{
     vanilla_entities,
 };
 use super::{JobPoll, ServerJob, ServerJobContext};
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use crate::world::player_spawn_finder::POLL_TIME_BUDGET;
 

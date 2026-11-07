@@ -25,7 +25,7 @@ use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::damage::DamageSource;
 use crate::entity::prelude::*;
 use crate::entity::projectile::{
-    self, Parts as _, ProjectileBase, ProjectileHit, ProjectileProps, triangle_random,
+    self, ProjectileBase, ProjectileHit, ProjectileProps, triangle_random,
 };
 use crate::entity::{
     EntityBase, EntityBaseLoad, EntityProps, InsideBlockEffectCollector, RemovalReason,

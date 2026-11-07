@@ -13,12 +13,11 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::entity::ageable::BABY_START_AGE;
-use crate::entity::animal::Parts as _;
 use crate::entity::entities::ChickenEntity;
 use crate::entity::prelude::*;
 use crate::entity::projectile::throwable;
-use crate::entity::projectile::throwable_item::{Parts as _, ThrownItem};
-use crate::entity::projectile::{Parts as _, ProjectileBase, ProjectileHit, ProjectileProps};
+use crate::entity::projectile::throwable_item::ThrownItem;
+use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps};
 use crate::entity::variant::Variants as _;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityProps, RemovalReason, SharedEntity, next_entity_id,

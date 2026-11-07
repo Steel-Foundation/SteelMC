@@ -60,8 +60,8 @@ mod tests {
     use steel_utils::BlockPos;
 
     use super::*;
-    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
+    use crate::entity::prelude::*;
 
     #[test]
     fn move_towards_restriction_goal_uses_move_control() {

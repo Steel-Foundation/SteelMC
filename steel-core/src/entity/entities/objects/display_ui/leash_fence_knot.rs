@@ -14,7 +14,7 @@ use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::behavior::InteractionResult;
-use crate::entity::block_attached::{self, BlockAttachment, Parts as _};
+use crate::entity::block_attached::{self, BlockAttachment};
 use crate::entity::prelude::*;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMoveError, EntityProps,

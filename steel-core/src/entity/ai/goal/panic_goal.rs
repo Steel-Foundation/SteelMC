@@ -122,9 +122,6 @@ mod tests {
 
     use super::*;
 
-    use crate::entity::LivingParts as _;
-
-    use crate::entity::MobParts as _;
     use crate::entity::damage::DamageSource;
     use crate::entity::entities::ChickenEntity;
     use crate::test_support::test_world;

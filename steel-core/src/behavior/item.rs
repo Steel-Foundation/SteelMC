@@ -1,6 +1,6 @@
 //! Item behavior trait and registry.
 
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use crate::player::player_inventory::Prediction;
 use std::sync::Arc;
 
@@ -465,7 +465,7 @@ impl Default for ItemBehaviorRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::entity::LivingParts as _;
+    use crate::entity::prelude::*;
     use std::sync::Arc;
 
     use steel_registry::data_components::{Consumable, vanilla_components};

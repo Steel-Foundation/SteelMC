@@ -24,12 +24,11 @@ use crate::entity::ai::path::PathType;
 use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::pipeline::{Pipeline, Stage, StageId};
 use crate::entity::damage::DamageSource;
-use crate::entity::mob::{self, Parts as _};
+use crate::entity::mob::{self};
 use crate::entity::prelude::*;
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps,
-    LivingEntityBase, LivingParts as _, LivingProps, MobBase, MobProps, SharedEntity,
-    next_entity_id,
+    LivingEntityBase, LivingProps, MobBase, MobProps, SharedEntity, next_entity_id,
 };
 use crate::physics::MoverType;
 use crate::world::World;

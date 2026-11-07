@@ -1,5 +1,5 @@
 use super::{InteractionHand, InteractionResult, Player, SwingAnimation};
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 
 impl Player {
     /// sends the animation to tracking players and returns whether a swing started

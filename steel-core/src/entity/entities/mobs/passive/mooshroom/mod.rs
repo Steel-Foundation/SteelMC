@@ -1,7 +1,6 @@
 //! Vanilla Mooshroom (`MushroomCow`): mushroom stew, suspicious stew from fed
 //! flowers, and shearing into a cow.
 
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use std::sync::{Arc, LazyLock, Weak};
 
@@ -35,13 +34,12 @@ use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey};
 
 use crate::behavior::InteractionResult;
 use crate::entity::ageable::{Age, Ageable, AgeableProps};
-use crate::entity::animal::{self, Breeding, BreedingProps, Parts as _};
+use crate::entity::animal::{self, Breeding, BreedingProps};
 use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::entries::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::entities::ItemEntity;
 use crate::entity::entities::mobs::passive::cow::abstract_cow;
-use crate::entity::mob::Parts as _;
 use crate::entity::shearable::{self, Shearable};
 use crate::entity::{
     ConversionParams, DefaultEntityPush, EntityBase, EntityBaseLoad, EntityProps,

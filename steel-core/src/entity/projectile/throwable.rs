@@ -127,7 +127,6 @@ mod tests {
     use crate::entity::SharedEntity;
     use crate::entity::entities::SnowballEntity;
     use crate::entity::prelude::*;
-    use crate::entity::projectile::Parts as _;
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     #[test]

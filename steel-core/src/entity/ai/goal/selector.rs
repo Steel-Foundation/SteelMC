@@ -372,9 +372,9 @@ mod tests {
 
     use super::*;
 
-    use crate::entity::MobParts as _;
     use crate::entity::component::Has;
     use crate::entity::component::definition::MobDefinition;
+    use crate::entity::prelude::*;
     use crate::entity::{Entity, EntityBase, LivingEntityBase, Mob, MobBase};
     use crate::entity::{EntityHooks, EntityProps};
     use crate::entity::{EntitySyncedData, MobProps, mob};

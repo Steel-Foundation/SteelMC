@@ -1008,8 +1008,6 @@ mod tests {
 
     use super::*;
 
-    use crate::entity::LivingParts as _;
-
     fn decode(packet: RawPacket) -> DecodedPlayPacket {
         let Ok(decoded) = JavaConnection::decode_play_packet(packet) else {
             panic!("test play packet should decode");

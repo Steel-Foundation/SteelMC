@@ -1,6 +1,6 @@
 //! use to manage rewards
 
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use crate::entity::{Entity, entity_loot_ref, living_loot_equipment};
 use crate::player::Player;
 use steel_registry::advancement::AdvancementRewards;

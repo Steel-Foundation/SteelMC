@@ -3,7 +3,7 @@ use super::{
     InteractionResult, InventoryAccess, Player, REGISTRY, SUseItem, UseOnContext, World,
     adventure_mode, wrap_degrees,
 };
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use steel_registry::data_components::vanilla_components::USE_REMAINDER;
 use steel_registry::stat::vanilla_stat_types;
 

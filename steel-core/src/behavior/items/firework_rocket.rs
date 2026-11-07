@@ -19,7 +19,6 @@ use crate::behavior::item::ItemBehavior;
 use crate::enchantment_helper;
 use crate::entity::entities::FireworkRocketEntity;
 use crate::entity::prelude::*;
-use crate::entity::projectile::Parts as _;
 use crate::entity::{SharedEntity, next_entity_id};
 use crate::world::World;
 

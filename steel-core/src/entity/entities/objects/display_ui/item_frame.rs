@@ -15,7 +15,7 @@ use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, Direction, DowncastType, DowncastTypeKey, WorldAabb, axis::Axis};
 
-use crate::entity::block_attached::{self, BlockAttachment, Parts as _};
+use crate::entity::block_attached::{self, BlockAttachment};
 use crate::entity::prelude::*;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMoveError, EntityProps, ItemFrame,

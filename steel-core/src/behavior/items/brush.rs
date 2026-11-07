@@ -1,6 +1,6 @@
 //! Brush item behavior for continuous archaeology brushing.
 
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use steel_macros::item_behavior;

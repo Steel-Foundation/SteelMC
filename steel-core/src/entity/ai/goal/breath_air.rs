@@ -143,9 +143,7 @@ mod tests {
 
     use super::*;
 
-    use crate::entity::LivingParts as _;
     use crate::entity::LivingTravelInput;
-    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
 
     #[test]

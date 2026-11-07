@@ -6,7 +6,6 @@ use steel_registry::{init_vanilla_registry, vanilla_entities};
 use steel_utils::ChunkPos;
 
 use super::*;
-use crate::entity::LivingParts as _;
 use crate::entity::entities::PigEntity;
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 

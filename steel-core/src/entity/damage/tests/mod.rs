@@ -1,4 +1,4 @@
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -10,7 +10,6 @@ use steel_utils::{Identifier, types::Difficulty};
 use super::{DamageHistory, DamageSource};
 use crate::entity::SharedEntity;
 use crate::entity::entities::{ChickenEntity, SnowballEntity};
-use crate::entity::projectile::Parts as _;
 use crate::entity::{Entity, RemovalReason};
 
 use crate::level_data::GameTimeSource;

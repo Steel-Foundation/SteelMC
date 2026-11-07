@@ -18,12 +18,11 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::pipeline::{Stage, StageId};
-use crate::entity::mob::Parts as _;
 use crate::entity::monster::{self, Enemy};
 use crate::entity::prelude::*;
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps,
-    LivingEntityBase, LivingParts as _, LivingProps, MobBase, MobProps, RemovalReason, SpawnRule,
+    LivingEntityBase, LivingProps, MobBase, MobProps, RemovalReason, SpawnRule,
 };
 use crate::world::World;
 

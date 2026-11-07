@@ -1,4 +1,3 @@
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use glam::DVec3;
 
@@ -163,7 +162,6 @@ mod tests {
     use super::*;
 
     use crate::behavior::init_behaviors;
-    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
     use crate::entity::{Animal, Entity};
     use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};

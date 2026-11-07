@@ -2,7 +2,6 @@
 
 pub mod abstract_cow;
 
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use std::sync::{LazyLock, Weak};
 

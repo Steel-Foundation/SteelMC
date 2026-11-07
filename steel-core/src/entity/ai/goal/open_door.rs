@@ -64,8 +64,8 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
+    use crate::entity::prelude::*;
 
     fn pig() -> ChickenEntity {
         ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new())

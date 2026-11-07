@@ -1,5 +1,6 @@
 use super::*;
 use crate::entity::get_kill_credit;
+use crate::entity::prelude::*;
 use crate::test_support::TestPlayerBuilder;
 use std::sync::{Arc, Weak};
 use steel_registry::data_components::vanilla_components::SwingAnimation;

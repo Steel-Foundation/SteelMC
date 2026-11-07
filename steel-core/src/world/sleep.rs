@@ -1,4 +1,4 @@
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use steel_protocol::packets::game::CSystemChat;
 use steel_registry::vanilla_game_rules::{
     ADVANCE_TIME, ADVANCE_WEATHER, PLAYERS_SLEEPING_PERCENTAGE,

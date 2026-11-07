@@ -207,9 +207,9 @@ fn enchantment_display_name(enchantment: EnchantmentRef, level: u32) -> TextComp
 #[cfg(test)]
 mod tests {
     use crate::entity::EntitySyncedData;
-    use crate::entity::LivingParts as _;
     use crate::entity::LivingProps;
     use crate::entity::component::Has;
+    use crate::entity::prelude::*;
     use crate::test_support::synced_with_health;
     use std::sync::Weak;
     use steel_registry::vanilla_entity_data::LivingEntityData;

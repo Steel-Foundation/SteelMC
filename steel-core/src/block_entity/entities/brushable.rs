@@ -1,6 +1,6 @@
 //! Brushable block entity for archaeology brush progress and delayed loot.
 
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use std::str::FromStr as _;
 use std::sync::{Arc, Weak};
 

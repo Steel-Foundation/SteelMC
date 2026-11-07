@@ -1,5 +1,6 @@
 //! Vanilla `ThrownSplashPotion`.
 
+use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -16,9 +17,7 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::potion_contents::to_runtime_instance_icon_from_visibility;
 use crate::entity::projectile::throwable_item::ThrownItem;
-use crate::entity::projectile::{
-    Parts as _, ProjectileBase, ProjectileHit, ProjectileProps, thrown_potion,
-};
+use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps, thrown_potion};
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityProps, Living, SPLASH_HORIZONTAL_REACH,
     SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH, SharedEntity, compute_margin,

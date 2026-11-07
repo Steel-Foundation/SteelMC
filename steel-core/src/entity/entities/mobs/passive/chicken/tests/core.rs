@@ -1,6 +1,5 @@
 use super::*;
 use crate::bootstrap::init_globals;
-use crate::entity::MobParts as _;
 use steel_registry::init_vanilla_registry;
 
 #[test]

@@ -1032,7 +1032,6 @@ mod tests {
     use super::*;
 
     use crate::behavior::init_behaviors;
-    use crate::entity::LivingParts as _;
     use crate::entity::{EntityBase, LivingEntityBase};
     use crate::entity::{EntityHooks, EntityProps, living_entity};
     use crate::test_support::{enchanted_item, test_world};

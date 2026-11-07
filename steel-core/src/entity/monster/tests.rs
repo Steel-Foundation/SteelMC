@@ -9,9 +9,8 @@ use steel_utils::types::{GameType, UpdateFlags};
 
 use crate::behavior::init_behaviors;
 use crate::entity::entities::{ChickenEntity, EndermiteEntity};
-use crate::entity::mob::Parts as _;
 use crate::entity::prelude::*;
-use crate::entity::{EntityBase, LivingParts as _, RemovalReason, SharedEntity, next_entity_id};
+use crate::entity::{EntityBase, RemovalReason, SharedEntity, next_entity_id};
 use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, fresh_test_world_with_dimension_type,
     insert_ready_full_chunk,

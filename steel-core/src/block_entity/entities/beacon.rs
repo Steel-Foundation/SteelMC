@@ -5,7 +5,7 @@
 //! supporting pyramid is re-checked and the configured status effects are applied to nearby
 //! players while the beam is unobstructed.
 
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use std::{
     mem,
     str::FromStr as _,

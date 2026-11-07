@@ -1,4 +1,3 @@
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use glam::DVec3;
 
@@ -209,7 +208,6 @@ mod tests {
 
     use super::*;
 
-    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};

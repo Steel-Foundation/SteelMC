@@ -1,4 +1,4 @@
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 
 use crate::world::World;
@@ -135,7 +135,7 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
-    use crate::entity::LivingParts as _;
+    use crate::entity::prelude::*;
     use std::sync::Arc;
 
     use glam::DVec3;
@@ -148,7 +148,7 @@ mod tests {
     use crate::{
         behavior::init_behaviors,
         entity::{
-            Entity as _, MobEffectInstance,
+            MobEffectInstance,
             attribute::{AttributeModifier, AttributeModifierOperation},
         },
         inventory::container::Container as _,

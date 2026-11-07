@@ -17,7 +17,7 @@ use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::entries::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
-use crate::entity::{EntityProps, LivingParts as _, LivingProps, MobBase, MobProps, mob};
+use crate::entity::{EntityProps, LivingProps, MobBase, MobProps, mob};
 use crate::player::player_inventory::Prediction;
 
 /// Stage registering the cow goals.

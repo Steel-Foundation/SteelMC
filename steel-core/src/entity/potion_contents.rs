@@ -66,7 +66,7 @@ pub(crate) const fn to_runtime_instance_icon_from_visibility(
 
 #[cfg(test)]
 mod tests {
-    use crate::entity::LivingParts as _;
+    use crate::entity::prelude::*;
     use std::sync::Arc;
 
     use steel_registry::data_components::PotionContents;

@@ -47,7 +47,6 @@ mod tests {
     use steel_utils::locks::CheckedMutex;
 
     use super::*;
-    use crate::entity::MobParts as _;
     use crate::entity::component::Has;
     use crate::entity::component::definition::MobDefinition;
     use crate::entity::{Entity, EntityBase, EntityFluidContact, LivingEntityBase};

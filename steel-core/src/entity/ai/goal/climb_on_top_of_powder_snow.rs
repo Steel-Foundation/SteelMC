@@ -74,7 +74,6 @@ mod tests {
 
     use super::*;
 
-    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
     use crate::entity::{Entity as _, InsideBlockEffectType};
 

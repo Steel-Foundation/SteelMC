@@ -7,7 +7,6 @@ use super::{
     is_allowed_to_enter_portal, is_nether_dimension_type, mem, nether_portal,
     portal_entity_still_valid,
 };
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use crate::world::player_spawn_finder::PlayerSpawnSearch;
 

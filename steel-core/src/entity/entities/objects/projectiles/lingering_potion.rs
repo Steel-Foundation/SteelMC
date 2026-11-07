@@ -1,5 +1,6 @@
 //! Vanilla `ThrownLingeringPotion`.
 
+use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -13,9 +14,7 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::entity::entities::AreaEffectCloudEntity;
 use crate::entity::projectile::throwable_item::ThrownItem;
-use crate::entity::projectile::{
-    Parts as _, ProjectileBase, ProjectileHit, ProjectileProps, thrown_potion,
-};
+use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps, thrown_potion};
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityProps, SharedEntity,
     apply_implicit_item_stack_components, next_entity_id,

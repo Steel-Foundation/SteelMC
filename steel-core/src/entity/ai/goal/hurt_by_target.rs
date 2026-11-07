@@ -173,11 +173,10 @@ mod tests {
 
     use super::*;
 
-    use crate::entity::LivingParts as _;
+    use crate::entity::prelude::*;
 
     use crate::behavior::init_behaviors;
     use crate::entity::Entity;
-    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
     use steel_utils::ChunkPos;

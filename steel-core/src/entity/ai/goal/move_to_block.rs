@@ -253,8 +253,8 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
+    use crate::entity::prelude::*;
 
     #[test]
     fn move_to_block_goal_uses_move_and_jump_controls() {

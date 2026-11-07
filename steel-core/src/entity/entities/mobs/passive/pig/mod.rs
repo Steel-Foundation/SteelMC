@@ -1,6 +1,5 @@
 //! Vanilla Pig entity: variants, saddles and carrot-on-a-stick steering.
 
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use std::sync::{LazyLock, Weak};
 
@@ -27,12 +26,11 @@ use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
     TemptGoal, WaterAvoidingRandomStrollGoal,
 };
-use crate::entity::animal::{self, Breeding, BreedingProps, Parts as _};
+use crate::entity::animal::{self, Breeding, BreedingProps};
 use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::entries::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::item_based_steering::ItemBasedSteering;
-use crate::entity::mob::Parts as _;
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityBaseLoad, EntityProps, ItemSteerable, LivingEntityBase,

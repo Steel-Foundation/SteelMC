@@ -1,7 +1,6 @@
 //! Vanilla Chicken entity with variant + sound-variant parity, wing-flap
 //! slow-fall, and periodic egg-laying behavior.
 
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use std::sync::{LazyLock, Weak};
 
@@ -33,7 +32,7 @@ use crate::entity::ai::goal::{
     TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::ai::path::PathType;
-use crate::entity::animal::{self, Animal, Breeding, BreedingProps, Parts as _};
+use crate::entity::animal::{self, Animal, Breeding, BreedingProps};
 use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::variant::{self, Variants};

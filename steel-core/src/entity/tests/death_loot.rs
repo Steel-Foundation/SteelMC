@@ -7,6 +7,7 @@ use crate::test_support::{
 };
 
 use super::*;
+use crate::entity::prelude::*;
 
 const PIG_POSITION: DVec3 = DVec3::new(8.5, 64.0, 8.5);
 

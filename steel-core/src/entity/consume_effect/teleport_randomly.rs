@@ -79,7 +79,7 @@ fn teleport_randomly(effect: TeleportRandomlyConsumeEffect, world: &Arc<World>, 
 
 #[cfg(test)]
 mod tests {
-    use crate::entity::LivingParts as _;
+    use crate::entity::prelude::*;
     use std::sync::Arc;
 
     use steel_registry::consume_effect::TeleportRandomlyConsumeEffect;

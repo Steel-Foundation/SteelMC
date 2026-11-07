@@ -9,7 +9,6 @@ use super::*;
 use crate::entity::SharedEntity;
 
 use crate::behavior::init_behaviors;
-use crate::entity::LivingParts as _;
 use crate::entity::entities::ChickenEntity;
 use crate::entity::{change_entity_world, init_entities, next_entity_id};
 use crate::player::ResetReason;

@@ -26,8 +26,7 @@ use crate::entity::mob;
 use crate::entity::prelude::*;
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps,
-    LivingEntityBase, LivingParts as _, LivingProps, LivingTravelInput, Mob, MobBase, MobProps,
-    SpawnRule,
+    LivingEntityBase, LivingProps, LivingTravelInput, Mob, MobBase, MobProps, SpawnRule,
 };
 use crate::world::{World, is_redstone_conductor};
 

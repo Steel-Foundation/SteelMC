@@ -548,7 +548,6 @@ mod tests {
     use text_components::TextComponent;
 
     use crate::entity::ageable::BABY_START_AGE;
-    use crate::entity::animal::Parts as _;
     use crate::entity::entities::{ChickenEntity, CowEntity, SheepEntity};
     use crate::entity::{
         Entity, EntitySpawnReason, SharedEntity, init_entities, load_entity_recursive_owned,

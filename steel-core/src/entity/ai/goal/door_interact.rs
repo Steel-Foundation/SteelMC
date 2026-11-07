@@ -197,7 +197,6 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::MobParts as _;
     use crate::entity::ai::node::Node;
     use crate::entity::entities::ChickenEntity;
     use crate::entity::{Entity, EntityGroundContact, EntityMovementFlags};

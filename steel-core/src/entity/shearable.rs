@@ -5,7 +5,6 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_game_events;
 use steel_utils::types::InteractionHand;
 
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use crate::player::Player;
 use crate::world::World;

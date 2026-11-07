@@ -7,7 +7,7 @@ mod kind;
 pub mod kinds;
 mod layout;
 
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use crate::player::player_inventory::Prediction;
 use std::sync::Arc;
 

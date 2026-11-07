@@ -3,7 +3,7 @@
 //! Manages food level, saturation, and exhaustion — the three values that
 //! control natural health regeneration and starvation damage.
 
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_game_rules::NATURAL_HEALTH_REGENERATION;
 use steel_utils::types::Difficulty;

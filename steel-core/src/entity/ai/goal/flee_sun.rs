@@ -116,7 +116,6 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::entity::MobParts as _;
     use crate::entity::entities::ChickenEntity;
 
     fn pig() -> ChickenEntity {

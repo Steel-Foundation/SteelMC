@@ -1,5 +1,5 @@
 use super::{block_breaking::BlockBreakAction, *};
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 
 impl Player {
     /// Sends block update packets for a position and its neighbor.

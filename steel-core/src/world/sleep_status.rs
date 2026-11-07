@@ -1,4 +1,4 @@
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use crate::{entity::Entity, player::Player};
 
 #[derive(Debug, Clone, Copy, Default)]

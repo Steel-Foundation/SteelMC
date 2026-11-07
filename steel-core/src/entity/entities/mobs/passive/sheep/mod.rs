@@ -2,7 +2,6 @@
 
 mod color_spawn_rules;
 
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use std::sync::{Arc, LazyLock, Weak};
 
@@ -32,7 +31,7 @@ use crate::entity::ai::goal::{
     BreedGoal, EatBlockGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal,
     RandomLookAroundGoal, TemptGoal, WaterAvoidingRandomStrollGoal,
 };
-use crate::entity::animal::{self, Breeding, BreedingProps, Parts as _};
+use crate::entity::animal::{self, Breeding, BreedingProps};
 use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::entries::{FinalizeSpawnCtx, MobInteractCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};

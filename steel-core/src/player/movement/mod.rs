@@ -12,7 +12,6 @@ pub use input::PlayerInput;
 pub(super) use state::MovementState;
 pub(super) use teleport::TeleportState;
 
-use crate::entity::LivingParts as _;
 use glam::{DVec3, Vec3Swizzles};
 use std::sync::Arc;
 use steel_math::wrap_degrees;

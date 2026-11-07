@@ -1048,7 +1048,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::entity::LivingParts as _;
     use crate::entity::prelude::*;
     use std::{
         sync::{Arc, Weak, mpsc},

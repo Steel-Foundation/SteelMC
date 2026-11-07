@@ -1,7 +1,6 @@
 use crate::entity::prelude::*;
 use std::sync::Arc;
 
-use crate::entity::block_attached::Parts as _;
 use crate::entity::entities::LeashFenceKnotEntity;
 use crate::entity::{Entity, SharedEntity, WeakEntity};
 use glam::DVec3;

@@ -1,4 +1,4 @@
-use crate::entity::LivingParts as _;
+use crate::entity::prelude::*;
 use glam::DVec3;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::block_transformer::{

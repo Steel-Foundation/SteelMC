@@ -23,9 +23,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::EndermiteEntity;
 use crate::entity::prelude::*;
 use crate::entity::projectile::throwable_item::ThrownItem;
-use crate::entity::projectile::{
-    Parts as _, ProjectileBase, ProjectileHit, ProjectileProps, throwable,
-};
+use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps, throwable};
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityProps, RemovalReason, SharedEntity,
     change_entity_world, next_entity_id,

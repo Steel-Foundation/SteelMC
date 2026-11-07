@@ -143,10 +143,9 @@ mod tests {
 
     use super::*;
 
-    use crate::entity::LivingParts as _;
+    use crate::entity::prelude::*;
 
     use crate::behavior::init_behaviors;
-    use crate::entity::MobParts as _;
     use crate::entity::component::Has;
     use crate::entity::component::definition::MobDefinition;
     use crate::entity::{Entity, EntityBase, LivingEntityBase, MobBase};

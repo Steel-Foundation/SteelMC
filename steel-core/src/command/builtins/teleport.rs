@@ -1,6 +1,5 @@
 //! Vanilla entity teleport command.
 
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use std::{slice, sync::Arc};
 

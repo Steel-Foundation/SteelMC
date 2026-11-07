@@ -154,9 +154,9 @@ mod tests {
 
     use super::*;
 
-    use crate::entity::MobParts as _;
     use crate::entity::ai::targeting::TargetingConditions;
     use crate::entity::entities::ChickenEntity;
+    use crate::entity::prelude::*;
 
     fn pig(id: i32, position: DVec3) -> Arc<ChickenEntity> {
         Arc::new(ChickenEntity::new(

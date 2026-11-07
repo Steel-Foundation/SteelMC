@@ -1,4 +1,4 @@
-use crate::entity::MobParts as _;
+use crate::entity::prelude::*;
 use std::sync::Weak;
 
 use glam::DVec3;

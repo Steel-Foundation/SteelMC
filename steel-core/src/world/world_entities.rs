@@ -1,5 +1,4 @@
 //! This module contains the implementation of the world's entity-related methods.
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use std::{ptr, sync::Arc};
 

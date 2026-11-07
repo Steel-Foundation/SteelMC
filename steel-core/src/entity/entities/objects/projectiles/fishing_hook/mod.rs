@@ -32,12 +32,10 @@ use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey};
 
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
 use crate::entity::prelude::*;
-use crate::entity::projectile::{
-    self, Parts as _, ProjectileBase, ProjectileProps, triangle_random,
-};
+use crate::entity::projectile::{self, ProjectileBase, ProjectileProps, triangle_random};
 use crate::entity::{
-    EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps, LivingParts as _,
-    RemovalReason, SharedEntity, entity_loot_ref, next_entity_id,
+    EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps, RemovalReason, SharedEntity,
+    entity_loot_ref, next_entity_id,
 };
 use crate::fluid::get_height;
 use crate::physics::MoverType;

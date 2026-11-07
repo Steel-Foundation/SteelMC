@@ -3,7 +3,6 @@
 //! This module implements the logic from Java's `ServerPlayerGameMode` for handling
 //! block breaking, including progress tracking and validation.
 
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use std::sync::Arc;
 

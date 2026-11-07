@@ -1,4 +1,3 @@
-use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
 use glam::DVec3;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -54,7 +53,6 @@ use crate::config::{ResolvedDomainConfig, RuntimeConfig, WorldsConfig};
 
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::{EnderPearlEntity, SnowballEntity};
-use crate::entity::projectile::Parts as _;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, RemovalReason, SharedEntity, init_entities, next_entity_id,
 };

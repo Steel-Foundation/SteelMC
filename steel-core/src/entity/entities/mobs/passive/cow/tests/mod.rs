@@ -3,7 +3,6 @@ use std::sync::{Arc, Weak};
 
 use glam::DVec3;
 
-use crate::entity::animal::Parts as _;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::RegistryExt as _;
@@ -15,8 +14,8 @@ use steel_utils::Downcast as _;
 use steel_utils::types::InteractionHand;
 
 use crate::behavior::InteractionResult;
+use crate::entity::EntitySpawnReason;
 use crate::entity::damage::DamageSource;
-use crate::entity::{EntitySpawnReason, MobParts as _};
 use crate::test_support::{TestPlayerBuilder, fresh_test_world};
 
 use super::*;

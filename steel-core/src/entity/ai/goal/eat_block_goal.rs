@@ -137,7 +137,7 @@ mod tests {
     use steel_registry::init_vanilla_registry;
 
     use super::*;
-    use crate::entity::MobParts as _;
+    use crate::entity::prelude::*;
 
     use std::sync::Arc;
 
