@@ -91,8 +91,7 @@ pub trait EntityPortals: Entity {
     /// Default for [`Entity::can_use_portal`].
     fn can_use_portal_default(&self, ignore_passenger: bool) -> bool {
         let entity_type = self.entity_type();
-        if entity_type == &vanilla_entities::FISHING_BOBBER
-            || entity_type == &vanilla_entities::ENDER_DRAGON
+        if entity_type == &vanilla_entities::ENDER_DRAGON
             || entity_type == &vanilla_entities::WITHER
         {
             return false;

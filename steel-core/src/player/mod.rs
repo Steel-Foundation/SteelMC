@@ -112,7 +112,7 @@ use crate::enchantment_helper;
 use crate::entity::LivingEntityRef;
 use crate::entity::LivingProps;
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::ExperienceOrbEntity;
+use crate::entity::entities::{ExperienceOrbEntity, FishingHookEntity};
 use crate::entity::{
     ActiveItemUseState, DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource,
     EntityMoveError, EntityMovementEmission, Living, LivingEntityBase, MobEffectSyncChange,
@@ -302,8 +302,8 @@ pub struct Player {
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
     ender_pearls: CheckedMutex<Vec<Weak<dyn Entity>>>,
 
-    // TODO(entity components): the active fishing hook returns with `FishingHookEntity`
-    // from `steel-core/legacy_entities/`.
+    /// Active fishing hook, kept weakly because the world owns live entities.
+    fishing: CheckedMutex<Option<Weak<FishingHookEntity>>>,
     /// The counter keeping track of this player's statistics.
     stats: CheckedMutex<StatsCounter>,
 
@@ -660,6 +660,7 @@ impl Player {
             chunk_send_epoch: CheckedMutex::new(0),
             residence: CheckedMutex::new(PlayerResidenceState::new()),
             ender_pearls: CheckedMutex::new(Vec::new()),
+            fishing: CheckedMutex::new(None),
             stats: CheckedMutex::new(StatsCounter::new()),
             last_action_time: CheckedMutex::new(Instant::now()),
             advancements: CheckedMutex::new(PlayerAdvancement::default()), // TODO save the advancement
@@ -1123,6 +1124,25 @@ impl Player {
             pearl.world == world_key && Uuid::from_bytes(pearl.entity.uuid) == uuid
         })?;
         Some(residence.pending_ender_pearls.remove(index))
+    }
+
+    /// The hook this player is fishing with (vanilla `Player.fishing`).
+    /// A removed hook no longer counts, as vanilla clears the field on removal.
+    pub fn fishing_hook(&self) -> Option<Arc<FishingHookEntity>> {
+        let mut fishing = self.fishing.lock();
+        let hook = fishing
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .filter(|hook| !hook.is_removed());
+        if hook.is_none() {
+            *fishing = None;
+        }
+        hook
+    }
+
+    /// Records the hook this player now fishes with.
+    pub fn set_fishing_hook(&self, hook: &Arc<FishingHookEntity>) {
+        *self.fishing.lock() = Some(Arc::downgrade(hook));
     }
 
     /// Registers a thrown ender pearl so it persists with this player and

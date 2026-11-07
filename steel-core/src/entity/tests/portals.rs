@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::entities::FishingHookEntity;
 
 #[test]
 fn default_tick_runs_vanilla_entity_base_tick() {
@@ -24,7 +25,13 @@ fn can_use_portal_requires_alive_entity() {
 
 #[test]
 fn static_vanilla_portal_overrides_reject_special_entities() {
-    let fishing_hook = TypedTestEntity::new(1, &vanilla_entities::FISHING_BOBBER);
+    init_vanilla_registry();
+    let fishing_hook = FishingHookEntity::new(
+        &vanilla_entities::FISHING_BOBBER,
+        1,
+        DVec3::ZERO,
+        Weak::new(),
+    );
     let dragon = TypedTestEntity::new(2, &vanilla_entities::ENDER_DRAGON);
     let wither = TypedTestEntity::new(3, &vanilla_entities::WITHER);
 

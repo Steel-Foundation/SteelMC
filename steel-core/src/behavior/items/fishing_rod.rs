@@ -1,6 +1,7 @@
 use crate::behavior::{InteractionResult, ItemBehavior, UseItemContext};
-use crate::entity::entities::objects::projectiles::FishingHookEntity;
-use crate::entity::{Entity, RemovalReason, SharedEntity, next_entity_id};
+use crate::entity::entities::FishingHookEntity;
+use crate::entity::prelude::*;
+use crate::entity::{RemovalReason, SharedEntity, next_entity_id};
 use glam::DVec3;
 use rand::{RngExt, rng};
 use std::sync::Arc;
@@ -68,7 +69,7 @@ impl ItemBehavior for FishingRodItem {
             );
 
             let player_pos = player.position();
-            let spawn_pos = DVec3::new(player_pos.x, player.get_eye_y() - 0.1, player_pos.z);
+            let spawn_pos = DVec3::new(player_pos.x, player.eye_y() - 0.1, player_pos.z);
 
             let luck = item.apply_unconditional_enchantment_value_effects(
                 EnchantmentEffectComponent::FishingLuckBonus,
@@ -87,12 +88,7 @@ impl ItemBehavior for FishingRodItem {
                 Arc::downgrade(world),
             ));
 
-            let player_arc = world
-                .players
-                .get_by_uuid(&player.gameprofile.id())
-                .expect("Failed to obtain `player_arc` for launching fishing hook: `player` must be registered in the world.");
-
-            hook.shoot_from_player(&player_arc, luck as i32, lure_speed as i32);
+            hook.shoot_from_player(player, luck as i32, lure_speed as i32);
 
             let entity: SharedEntity = hook;
 
