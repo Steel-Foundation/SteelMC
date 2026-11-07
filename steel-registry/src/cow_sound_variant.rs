@@ -50,9 +50,10 @@ impl CowSoundVariantRegistry {
             allows_registering: true,
         }
     }
+}
 
-    #[must_use]
-    pub fn pick_random(&self, random: &mut impl Random) -> Option<CowSoundVariantRef> {
+impl crate::SoundVariantRegistry for CowSoundVariantRegistry {
+    fn pick_random(&self, random: &mut impl Random) -> Option<&'static Self::Entry> {
         // Vanilla picks a random sound-set holder from the cow sound variant registry.
         let bound = i32::try_from(self.len()).ok()?;
         if bound == 0 {

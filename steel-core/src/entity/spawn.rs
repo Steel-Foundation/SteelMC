@@ -527,6 +527,7 @@ impl AgeableMobGroupData {
 #[cfg(test)]
 mod tests {
     use crate::entity::prelude::*;
+    use crate::entity::variant::Variants as _;
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;

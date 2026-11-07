@@ -3,15 +3,16 @@
 
 use crate::entity::LivingParts as _;
 use crate::entity::prelude::*;
-use std::str::FromStr;
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::{LazyLock, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
-use steel_registry::chicken_sound_variant::{ChickenAge, ChickenSoundVariantRef};
-use steel_registry::chicken_variant::ChickenVariantRef;
+use steel_registry::chicken_sound_variant::{
+    ChickenAge, ChickenSoundVariantRef, ChickenSoundVariantRegistry,
+};
+use steel_registry::chicken_variant::{ChickenVariantRef, ChickenVariantRegistry};
 use steel_registry::data_components::vanilla_components::{CHICKEN_SOUND_VARIANT, CHICKEN_VARIANT};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
@@ -21,15 +22,12 @@ use steel_registry::vanilla_entity_data::ChickenEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_loot_tables;
 use steel_registry::{
-    REGISTRY, RegistryExt, RegistryReference, TaggedRegistryExt, sound_events, vanilla_game_events,
+    REGISTRY, RegistryReference, TaggedRegistryExt, sound_events, vanilla_game_events,
 };
 use steel_utils::locks::CheckedMutex;
-use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::{
-    BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, Identifier,
-};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
-use crate::entity::ageable::{self, Age, Ageable, AgeableProps};
+use crate::entity::ageable::{self, Age, AgeableProps};
 use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
     TemptGoal, WaterAvoidingRandomStrollGoal,
@@ -37,11 +35,11 @@ use crate::entity::ai::goal::{
 use crate::entity::ai::path::PathType;
 use crate::entity::animal::{self, Animal, Breeding, BreedingProps, Parts as _};
 use crate::entity::component::definition::MobDefinition;
-use crate::entity::component::entries::FinalizeSpawnCtx;
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
+use crate::entity::component::pipeline::{Stage, StageId};
+use crate::entity::variant::{self, Variants};
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose, LivingEntityBase,
-    LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, position_rider_default,
+    LivingProps, MobBase, MobProps, SpawnRule, position_rider_default,
 };
 use crate::entity::{EntityProps, mob};
 use crate::world::World;
@@ -152,7 +150,7 @@ impl ChickenEntity {
     };
 
     const AGEABLE: AgeableProps = AgeableProps {
-        breed_offspring: Self::breed_offspring,
+        breed_offspring: variant::breed_offspring::<Self>,
     };
     const BREEDING: BreedingProps = BreedingProps::new(Self::is_food);
     const LIVING: LivingProps<Self> = LivingProps {
@@ -178,7 +176,6 @@ impl ChickenEntity {
     const WATER_MALUS: StageId = StageId("chicken.water_malus");
     const FLAP: StageId = StageId("chicken.flap");
     const LAY_EGG: StageId = StageId("chicken.lay_egg");
-    const PICK_VARIANTS: StageId = StageId("chicken.pick_variants");
 
     /// Vanilla `Chicken`: the animal chains plus flapping and egg laying
     /// after `Animal.aiStep`, and variant selection before
@@ -205,7 +202,7 @@ impl ChickenEntity {
         ]);
         definition.finalize_spawn = definition.finalize_spawn.before(
             ageable::FINALIZE_SPAWN,
-            [Stage::new(Self::PICK_VARIANTS, Self::pick_spawn_variants)],
+            [variant::pick_spawn_variants::<Self>()],
         );
         definition
     }
@@ -264,48 +261,6 @@ impl ChickenEntity {
         goal_selector.add_goal(5, WaterAvoidingRandomStrollGoal::new(1.0));
         goal_selector.add_goal(6, LookAtPlayerGoal::new(6.0));
         goal_selector.add_goal(7, RandomLookAroundGoal::new());
-    }
-
-    /// Sets the active chicken variant by registry entry.
-    pub fn set_variant(&self, variant: ChickenVariantRef) {
-        self.entity_data
-            .lock()
-            .variant
-            .set(RegistryReference::new(variant));
-    }
-
-    /// Returns the active chicken variant, falling back to temperate when invalid.
-    #[must_use]
-    pub fn variant(&self) -> ChickenVariantRef {
-        self.entity_data.lock().variant.get().value()
-    }
-
-    /// Sets the active chicken sound variant by registry entry.
-    pub fn set_sound_variant(&self, sound_variant: ChickenSoundVariantRef) {
-        self.entity_data
-            .lock()
-            .sound_variant
-            .set(RegistryReference::new(sound_variant));
-    }
-
-    /// Returns the active chicken sound variant, falling back to classic when invalid.
-    #[must_use]
-    pub fn sound_variant(&self) -> ChickenSoundVariantRef {
-        self.entity_data.lock().sound_variant.get().value()
-    }
-
-    fn set_variant_by_key(&self, key: &Identifier) -> bool {
-        let Some(variant) = REGISTRY.chicken_variants.by_key(key) else {
-            return false;
-        };
-        self.set_variant(variant);
-        true
-    }
-
-    fn set_sound_variant_by_key(&self, key: &Identifier) {
-        if let Some(sound_variant) = REGISTRY.chicken_sound_variants.by_key(key) {
-            self.set_sound_variant(sound_variant);
-        }
     }
 
     /// Returns the sound set for this chicken's current age (vanilla `Chicken.getSoundSet`).
@@ -417,50 +372,40 @@ impl ChickenEntity {
             self.set_egg_time(Self::roll_egg_lay_time());
         }
     }
+}
 
-    /// `Chicken.getBreedOffspring`: a baby chicken with either parent's variant.
-    fn breed_offspring(
-        parent: &Ageable<'_>,
-        world: &Arc<World>,
-        partner: &Ageable<'_>,
-    ) -> Option<SharedEntity> {
-        let offspring = parent.create_offspring(world)?;
-        let inherited = if rand::random::<bool>() {
-            parent
-        } else {
-            partner
-        };
-        if let (Some(source), Some(chicken)) = (
-            inherited.entity().downcast_ref::<Self>(),
-            offspring.downcast_ref::<Self>(),
-        ) {
-            chicken.set_variant(source.variant());
-        }
-        Some(offspring)
+impl Variants for ChickenEntity {
+    type VariantRegistry = ChickenVariantRegistry;
+    type SoundVariantRegistry = ChickenSoundVariantRegistry;
+
+    fn variant_registry() -> &'static ChickenVariantRegistry {
+        &REGISTRY.chicken_variants
     }
 
-    /// `Chicken.finalizeSpawn` before `super`: biome variant and random sound variant.
-    fn pick_spawn_variants(&self, ctx: &mut FinalizeSpawnCtx<'_>) -> Flow {
-        let biome = ctx.world.biome_at(self.block_position());
-        // Mirrors the cow/pig convention.
-        let (variant, sound_variant) = {
-            let mut random = LegacyRandom::from_seed(rand::random());
-            let variant = biome.and_then(|biome| {
-                REGISTRY
-                    .chicken_variants
-                    .select_spawn_variant(biome, &mut random)
-            });
-            let sound_variant = REGISTRY.chicken_sound_variants.pick_random(&mut random);
-            (variant, sound_variant)
-        };
+    fn sound_variant_registry() -> &'static ChickenSoundVariantRegistry {
+        &REGISTRY.chicken_sound_variants
+    }
 
-        if let Some(variant) = variant {
-            self.set_variant(variant);
-        }
-        if let Some(sound_variant) = sound_variant {
-            self.set_sound_variant(sound_variant);
-        }
-        Flow::Continue
+    fn variant(&self) -> ChickenVariantRef {
+        self.entity_data.lock().variant.get().value()
+    }
+
+    fn set_variant(&self, variant: ChickenVariantRef) {
+        self.entity_data
+            .lock()
+            .variant
+            .set(RegistryReference::new(variant));
+    }
+
+    fn sound_variant(&self) -> ChickenSoundVariantRef {
+        self.entity_data.lock().sound_variant.get().value()
+    }
+
+    fn set_sound_variant(&self, sound_variant: ChickenSoundVariantRef) {
+        self.entity_data
+            .lock()
+            .sound_variant
+            .set(RegistryReference::new(sound_variant));
     }
 }
 
@@ -523,8 +468,7 @@ impl ChickenEntity {
     fn save_chicken(&self, nbt: &mut NbtCompound) {
         nbt.insert("IsChickenJockey", i8::from(self.is_chicken_jockey()));
         nbt.insert("EggLayTime", self.egg_time());
-        nbt.insert("variant", self.variant().key.to_string());
-        nbt.insert("sound_variant", self.sound_variant().key.to_string());
+        variant::save(self, nbt);
     }
 
     fn load_chicken(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
@@ -532,16 +476,7 @@ impl ChickenEntity {
         if let Some(egg_time) = nbt.int("EggLayTime") {
             self.set_egg_time(egg_time);
         }
-        if let Some(variant) = nbt.string("variant")
-            && let Ok(key) = Identifier::from_str(variant.to_str().as_ref())
-        {
-            self.set_variant_by_key(&key);
-        }
-        if let Some(sound_variant) = nbt.string("sound_variant")
-            && let Ok(key) = Identifier::from_str(sound_variant.to_str().as_ref())
-        {
-            self.set_sound_variant_by_key(&key);
-        }
+        variant::load(self, nbt);
     }
 }
 

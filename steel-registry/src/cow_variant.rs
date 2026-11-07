@@ -63,13 +63,14 @@ impl CowVariantRegistry {
             allows_registering: true,
         }
     }
+}
 
-    #[must_use]
-    pub fn select_spawn_variant(
+impl crate::SpawnVariantRegistry for CowVariantRegistry {
+    fn select_spawn_variant(
         &self,
         biome: BiomeRef,
         random: &mut impl Random,
-    ) -> Option<CowVariantRef> {
+    ) -> Option<&'static Self::Entry> {
         // Mirrors vanilla conditioned variant selection against the spawn biome.
         pick_spawn_conditioned_entry(
             self.iter().map(|(_, variant)| variant),

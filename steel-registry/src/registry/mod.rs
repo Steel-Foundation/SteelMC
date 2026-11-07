@@ -167,6 +167,26 @@ pub trait RegistryExt {
     fn is_empty(&self) -> bool;
 }
 
+/// Registries of mob variants chosen by spawn conditions, such as the biome
+/// (vanilla `VariantUtils.selectVariantToSpawn`).
+pub trait SpawnVariantRegistry: RegistryExt {
+    /// Picks the variant for a mob spawning in `biome`.
+    fn select_spawn_variant(
+        &self,
+        biome: crate::biome::BiomeRef,
+        random: &mut impl steel_utils::random::Random,
+    ) -> Option<&'static Self::Entry>;
+}
+
+/// Registries of mob sound variants picked at random when the mob spawns.
+pub trait SoundVariantRegistry: RegistryExt {
+    /// Picks a random sound variant.
+    fn pick_random(
+        &self,
+        random: &mut impl steel_utils::random::Random,
+    ) -> Option<&'static Self::Entry>;
+}
+
 /// Trait for registries that support tagging entries.
 pub trait TaggedRegistryExt: RegistryExt {
     fn register_tag(&mut self, tag: Identifier, keys: &[&'static str]);

@@ -790,6 +790,7 @@ mod storage;
 mod synced_data;
 mod ticking;
 mod tracker;
+pub(crate) mod variant;
 
 use crate::portal::{
     PortalKind, PortalProcessResult, PortalProcessor, PortalTicketTarget, TeleportPostAction,

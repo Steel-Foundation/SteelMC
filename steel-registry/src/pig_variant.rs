@@ -62,13 +62,14 @@ impl PigVariantRegistry {
             allows_registering: true,
         }
     }
+}
 
-    #[must_use]
-    pub fn select_spawn_variant(
+impl crate::SpawnVariantRegistry for PigVariantRegistry {
+    fn select_spawn_variant(
         &self,
         biome: BiomeRef,
         random: &mut impl Random,
-    ) -> Option<PigVariantRef> {
+    ) -> Option<&'static Self::Entry> {
         pick_spawn_conditioned_entry(
             self.iter().map(|(_, variant)| variant),
             |variant| variant.spawn_conditions,
@@ -98,7 +99,10 @@ crate::impl_registry!(
 mod tests {
     use steel_utils::random::legacy_random::LegacyRandom;
 
-    use crate::{REGISTRY, init_vanilla_registry, vanilla_biomes, vanilla_pig_variants};
+    use crate::{
+        REGISTRY, SpawnVariantRegistry as _, init_vanilla_registry, vanilla_biomes,
+        vanilla_pig_variants,
+    };
 
     #[test]
     fn select_spawn_variant_uses_highest_matching_biome_priority() {

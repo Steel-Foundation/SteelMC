@@ -66,9 +66,10 @@ impl PigSoundVariantRegistry {
             allows_registering: true,
         }
     }
+}
 
-    #[must_use]
-    pub fn pick_random(&self, random: &mut impl Random) -> Option<PigSoundVariantRef> {
+impl crate::SoundVariantRegistry for PigSoundVariantRegistry {
+    fn pick_random(&self, random: &mut impl Random) -> Option<&'static Self::Entry> {
         let bound = i32::try_from(self.len()).ok()?;
         if bound == 0 {
             return None;

@@ -65,9 +65,10 @@ impl ChickenSoundVariantRegistry {
             allows_registering: true,
         }
     }
+}
 
-    #[must_use]
-    pub fn pick_random(&self, random: &mut impl Random) -> Option<ChickenSoundVariantRef> {
+impl crate::SoundVariantRegistry for ChickenSoundVariantRegistry {
+    fn pick_random(&self, random: &mut impl Random) -> Option<&'static Self::Entry> {
         // Vanilla picks a random sound-set holder from the chicken sound variant registry.
         let bound = i32::try_from(self.len()).ok()?;
         if bound == 0 {
