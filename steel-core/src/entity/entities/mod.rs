@@ -17,3 +17,4 @@ pub use objects::projectiles::{
     LingeringPotionEntity, SnowballEntity, SplashPotionEntity, ThrownEggEntity,
 };
 pub use objects::technical::{InteractionEntity, MarkerEntity};
+pub use objects::vehicles::ChestMinecartEntity;

@@ -25,7 +25,10 @@ use crate::behavior::{BlockCollisionContext, init_behaviors};
 use crate::block_entity::{
     SharedBlockEntity, entities::PistonMovingBlockEntity, init_block_entities,
 };
-use crate::entity::entities::{ItemEntity, ItemFrameEntity, LeashFenceKnotEntity, PrimedTntEntity};
+use crate::entity::entities::{
+    ChestMinecartEntity, ItemEntity, ItemFrameEntity, LeashFenceKnotEntity, PigEntity,
+    PrimedTntEntity,
+};
 use crate::entity::{EntityBase, EntityFluidContact, next_entity_id};
 use crate::entity::{EntityHooks, EntityProps};
 use crate::player::ResetReason;
@@ -600,6 +603,38 @@ fn non_destructive_explosion_ignores_blocklike_entities_without_mob_griefing() {
     assert_eq!(item.velocity(), DVec3::ZERO);
     assert_eq!(item_frame.velocity(), DVec3::ZERO);
     assert_eq!(leash_knot.velocity(), DVec3::ZERO);
+}
+
+#[test]
+fn mob_explosion_does_not_push_vehicles_when_mob_griefing_is_disabled() {
+    let fixture = ready_world("explosion_ignores_vehicles_without_mob_griefing");
+    let world = &fixture.world;
+    assert!(world.set_game_rule(&MOB_GRIEFING, false));
+    let minecart = add_entity(
+        world,
+        ChestMinecartEntity::new(
+            &vanilla_entities::CHEST_MINECART,
+            next_entity_id(),
+            TEST_BLOCK_BOTTOM_CENTER + DVec3::X,
+            Arc::downgrade(world),
+        ),
+    );
+    let pig: SharedEntity = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        TEST_BLOCK_BOTTOM_CENTER,
+        Arc::downgrade(world),
+    ));
+    let mut options = ExplosionOptions::new(
+        TEST_BLOCK_BOTTOM_CENTER,
+        ENTITY_EFFECT_TEST_RADIUS,
+        ExplosionInteraction::Mob,
+    );
+    options.source = Some(pig);
+
+    world.explode(options);
+
+    assert_eq!(minecart.velocity(), DVec3::ZERO);
 }
 
 #[test]

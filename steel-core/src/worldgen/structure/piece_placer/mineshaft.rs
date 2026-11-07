@@ -1,21 +1,26 @@
+use std::sync::Arc;
+
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
 use steel_registry::blocks::shapes::SupportType;
 use steel_registry::vanilla_biome_tags::BiomeTag;
-use steel_registry::{Registry, RegistryExt, vanilla_blocks};
+use steel_registry::{Registry, RegistryExt, vanilla_blocks, vanilla_entities};
 use steel_utils::axis::Axis;
 use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
-use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Identifier, types::UpdateFlags};
 
 use super::StructurePiecePlacer;
 use crate::chunk::heightmap::HeightmapType;
+use crate::entity::{entities::ChestMinecartEntity, next_entity_id};
 use crate::worldgen::generator::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::region::WorldGenRegion;
 use steel_worldgen::structure::mineshaft::{
     MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
 };
 
+const ABANDONED_MINESHAFT_LOOT: Identifier =
+    Identifier::new_static("minecraft", "chests/abandoned_mineshaft");
 const CAVE_SPIDER_ENTITY: &str = "minecraft:cave_spider";
 
 impl StructurePiecePlacer {
@@ -595,10 +600,15 @@ impl MineshaftPlacer<'_, '_> {
         };
         let rail = Self::rail().set_value(&BlockStateProperties::RAIL_SHAPE, shape);
         self.place_block(rail, x, y, z);
-        // Keeps vanilla's worldgen random sequence while the minecart cannot spawn.
-        let _loot_seed = random.next_i64();
-        // TODO(entity components): re-enable once `ChestMinecartEntity` is ported out of `steel-core/legacy_entities/`
-        // (loot table `minecraft:chests/abandoned_mineshaft`, seeded with the value above).
+        let loot_seed = random.next_i64();
+        let chest = Arc::new(ChestMinecartEntity::new(
+            &vanilla_entities::CHEST_MINECART,
+            next_entity_id(),
+            pos.get_center().into(),
+            self.region.weak_world(),
+        ));
+        chest.set_loot_table(ABANDONED_MINESHAFT_LOOT, loot_seed);
+        let _ = self.region.add_fresh_entity(chest);
         true
     }
 

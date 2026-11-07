@@ -1,4 +1,4 @@
-//! Vehicle entity implementations.
+//! Vehicle entities.
 
 mod chest_minecart;
 

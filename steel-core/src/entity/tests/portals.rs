@@ -1,5 +1,5 @@
 use super::*;
-use crate::entity::entities::FishingHookEntity;
+use crate::entity::entities::{ChestMinecartEntity, FishingHookEntity, SnowballEntity};
 
 #[test]
 fn default_tick_runs_vanilla_entity_base_tick() {
@@ -222,4 +222,22 @@ fn set_as_inside_portal_resets_cooldown_without_starting_process() {
 
     assert_eq!(entity.portal_cooldown(), 300);
     assert_eq!(entity.base().portal_process(), None);
+}
+
+#[test]
+fn dimension_changing_delay_uses_vanilla_class_overrides() {
+    init_vanilla_registry();
+    let base = TypedTestEntity::new(1, &vanilla_entities::ITEM);
+    assert_eq!(base.dimension_changing_delay(), 300);
+
+    let minecart = ChestMinecartEntity::new(
+        &vanilla_entities::CHEST_MINECART,
+        3,
+        DVec3::ZERO,
+        Weak::new(),
+    );
+    assert_eq!(minecart.dimension_changing_delay(), 10);
+
+    let projectile = SnowballEntity::new(&vanilla_entities::SNOWBALL, 4, DVec3::ZERO, Weak::new());
+    assert_eq!(projectile.dimension_changing_delay(), 2);
 }

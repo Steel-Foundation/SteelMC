@@ -6,3 +6,4 @@ pub mod explosives;
 pub mod items;
 pub mod projectiles;
 pub mod technical;
+pub mod vehicles;
