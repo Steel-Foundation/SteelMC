@@ -4,6 +4,7 @@ use crate::behavior::init_behaviors;
 use crate::chunk::chunk_holder::TickingReadiness;
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
 use steel_registry::init_vanilla_registry;
+use steel_utils::locks::SyncMutex;
 use text_components::TextComponent;
 
 // CChunkBatchStart and CChunkBatchFinished wrap every nonempty batch.
@@ -286,7 +287,7 @@ fn chunk_batch_ack_updates_pacing_at_the_next_prepare_boundary() {
     );
     assert_eq!(sender.pacing.batch_quota.to_bits(), 0.0_f32.to_bits());
 
-    let epoch = SyncMutex::new(0);
+    let epoch = CheckedMutex::new(0);
     assert!(
         sender
             .prepare_batch(test_world(), ChunkPos::new(0, 0), &epoch)
@@ -327,7 +328,7 @@ fn ack_between_prepare_and_commit_cannot_overwrite_the_current_batch() {
         ..ChunkSender::default()
     };
     sender.pending_chunks.extend(positions);
-    let epoch = SyncMutex::new(0);
+    let epoch = CheckedMutex::new(0);
     let batch = sender
         .prepare_batch(world, positions[0], &epoch)
         .expect("two ready chunks should prepare");
@@ -492,7 +493,7 @@ fn filtered_commit_charges_only_sent_chunks_and_keeps_feedback_until_next_prepar
         let connection = PlayerConnection::Other(Box::new(RecordingConnection {
             packets: Arc::clone(&packets),
         }));
-        let sent = sender.commit_batch(&batch, encoded, &connection, &SyncMutex::new(0));
+        let sent = sender.commit_batch(&batch, encoded, &connection, &CheckedMutex::new(0));
 
         assert_eq!(sent, positions[..retained]);
         assert_eq!(
@@ -545,7 +546,7 @@ fn invalidated_epoch_discards_batch_without_consuming_quota_or_accepted_feedback
             &batch,
             encoded,
             &connection,
-            &SyncMutex::new(batch.epoch_snapshot.wrapping_add(1))
+            &CheckedMutex::new(batch.epoch_snapshot.wrapping_add(1))
         ),
         Vec::<ChunkPos>::new()
     );

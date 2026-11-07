@@ -74,7 +74,7 @@ impl Player {
             self.stats.lock().stats.clone_from(&old_stats.stats);
         }
         *self.advancements.lock() = old_player.advancements.lock().clone();
-        *self.seen_credits.lock() = *old_player.seen_credits.lock();
+        self.set_seen_credits(old_player.has_seen_credits());
         let residence = old_player.residence.lock().clone();
         *self.residence.lock() = residence;
 
@@ -329,8 +329,8 @@ mod tests {
             .groups
             .push("builders".to_owned());
         old_player.permissions.lock().version = 7;
-        *old_player.seen_credits.lock() = true;
-        *old_player.won_game.lock() = true;
+        old_player.set_seen_credits(true);
+        old_player.set_won_game(true);
         old_player.base.add_tag("credits-return".to_owned());
         let respawn_config = PlayerRespawnConfig::new(
             RespawnData::of(target_world.key.clone(), BlockPos::new(4, 70, 6), 90.0, 0.0),
@@ -390,12 +390,12 @@ mod tests {
         assert_eq!(replacement.stats(), old_player.stats());
         assert_eq!(replacement.permissions.lock().groups, ["builders"]);
         assert_eq!(replacement.permissions.lock().version, 7);
-        assert!(*replacement.seen_credits.lock());
+        assert!(replacement.has_seen_credits());
         assert_eq!(replacement.respawn_config(), Some(respawn_config));
         assert_eq!(replacement.tags(), ["credits-return"]);
         assert_eq!(replacement.position(), DVec3::ZERO);
         assert!(!replacement.has_joined_world());
-        assert!(!*replacement.won_game.lock());
+        assert!(!replacement.has_won_game());
 
         replacement.inventory.lock().clear_content();
         replacement.food_data.lock().food_level = 2;

@@ -1,4 +1,5 @@
 use std::ptr;
+use std::sync::atomic::Ordering;
 
 use super::*;
 use crate::entity::PendingWorldChangeToken;
@@ -715,21 +716,21 @@ impl Player {
     /// Returns whether this player has already seen the End credits screen.
     #[must_use]
     pub fn has_seen_credits(&self) -> bool {
-        *self.seen_credits.lock()
+        self.seen_credits.load(Ordering::Relaxed)
     }
 
     /// Sets whether this player has seen the End credits screen.
     pub fn set_seen_credits(&self, seen_credits: bool) {
-        *self.seen_credits.lock() = seen_credits;
+        self.seen_credits.store(seen_credits, Ordering::Relaxed);
     }
 
     #[must_use]
     pub(crate) fn has_won_game(&self) -> bool {
-        *self.won_game.lock()
+        self.won_game.load(Ordering::Relaxed)
     }
 
-    fn set_won_game(&self, won_game: bool) {
-        *self.won_game.lock() = won_game;
+    pub(crate) fn set_won_game(&self, won_game: bool) {
+        self.won_game.store(won_game, Ordering::Relaxed);
     }
 
     /// Starts the vanilla End credits flow.

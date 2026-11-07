@@ -204,65 +204,65 @@ pub struct Player {
     base: EntityBase,
 
     /// Client lifecycle flags.
-    lifecycle: SyncMutex<PlayerLifecycleState>,
+    lifecycle: CheckedMutex<PlayerLifecycleState>,
 
     /// Movement tracking state
-    pub(crate) movement: SyncMutex<MovementState>,
+    pub(crate) movement: CheckedMutex<MovementState>,
 
     /// Synchronized entity data (health, pose, flags, etc.) for network sync.
     #[entity(synced)]
     entity_data: CheckedMutex<PlayerEntityData>,
 
     /// The last chunk position of the player.
-    pub last_chunk_pos: SyncMutex<ChunkPos>,
+    pub last_chunk_pos: CheckedMutex<ChunkPos>,
     /// The last chunk tracking view of the player.
-    pub last_tracking_view: SyncMutex<Option<PlayerChunkView>>,
+    pub last_tracking_view: CheckedMutex<Option<PlayerChunkView>>,
     /// The client's settings/information (language, view distance, chat visibility, etc.).
     /// Updated when the client sends `SClientInformation` during config or play phase.
-    client_information: SyncMutex<ClientInformation>,
+    client_information: CheckedMutex<ClientInformation>,
 
     /// Current and previous game mode.
-    game_modes: SyncMutex<PlayerGameModeState>,
+    game_modes: CheckedMutex<PlayerGameModeState>,
 
     /// The player's inventory container (shared with `inventory_menu`).
     pub inventory: Shared<PlayerInventory>,
 
     /// Logical inventory slots that must be resent directly to this player's client.
-    inventory_sync: SyncMutex<PlayerInventorySyncState>,
+    inventory_sync: CheckedMutex<PlayerInventorySyncState>,
 
     /// The player's ender chest inventory.
     pub ender_chest_inventory: SyncPlayerEnderChest,
 
     /// Last main-hand stack used for vanilla attack-strength reset checks.
-    last_item_in_main_hand: SyncMutex<ItemStack>,
+    last_item_in_main_hand: CheckedMutex<ItemStack>,
 
     /// The player's inventory menu (always open, even when `container_id` is 0).
-    inventory_menu: SyncMutex<Menu>,
+    inventory_menu: CheckedMutex<Menu>,
 
     /// The currently open menu (None if player inventory is open).
     /// This is separate from `inventory_menu` which is always present.
-    open_menu: SyncMutex<player_inventory::OpenMenuState>,
+    open_menu: CheckedMutex<player_inventory::OpenMenuState>,
 
     /// Counter for generating container IDs (1-100, wraps around).
-    container_counter: SyncMutex<ContainerCounter>,
+    container_counter: CheckedMutex<ContainerCounter>,
 
     /// Pending server-initiated teleport state (ID, position, timeout).
-    teleport_state: SyncMutex<TeleportState>,
+    teleport_state: CheckedMutex<TeleportState>,
     /// Vanilla item use cooldown groups.
-    item_cooldowns: SyncMutex<ItemCooldowns>,
+    item_cooldowns: CheckedMutex<ItemCooldowns>,
 
     /// Local tick and once-per-tick packet state.
-    tick_state: SyncMutex<PlayerTickState>,
+    tick_state: CheckedMutex<PlayerTickState>,
     /// Vanilla sleep/wake animation counter.
-    sleep_state: SyncMutex<PlayerSleepState>,
+    sleep_state: CheckedMutex<PlayerSleepState>,
     /// Persisted personal bed or respawn-anchor target.
-    respawn_config: SyncMutex<Option<PlayerRespawnConfig>>,
+    respawn_config: CheckedMutex<Option<PlayerRespawnConfig>>,
 
     /// Player abilities (flight, invulnerability, build permissions, speeds, etc.)
-    pub abilities: SyncMutex<Abilities>,
+    pub abilities: CheckedMutex<Abilities>,
 
     /// Block breaking state machine.
-    pub block_breaking: SyncMutex<BlockBreakingManager>,
+    pub block_breaking: CheckedMutex<BlockBreakingManager>,
 
     /// Shared living-entity runtime fields (attributes, speed, damage/death state).
     /// Vanilla: `LivingEntity` (L230-232) + `Entity.invulnerableTime` (L256).
@@ -270,45 +270,45 @@ pub struct Player {
     living_base: LivingEntityBase,
 
     /// Player food/hunger state (food level, saturation, exhaustion).
-    pub food_data: SyncMutex<FoodData>,
+    pub food_data: CheckedMutex<FoodData>,
 
     /// Delta-tracking state for `CSetHealth` deduplication.
-    health_sync: SyncMutex<HealthSyncState>,
+    health_sync: CheckedMutex<HealthSyncState>,
 
     /// The Player's Experience
-    pub experience: SyncMutex<Experience>,
+    pub experience: CheckedMutex<Experience>,
 
     /// Assigned groups, direct overrides, and the effective permission set.
-    permissions: SyncMutex<PlayerPermissionState>,
+    permissions: CheckedMutex<PlayerPermissionState>,
 
     /// Whether the player has completed the vanilla End credits flow.
-    seen_credits: SyncMutex<bool>,
+    seen_credits: AtomicBool,
     /// Set by a mace smash on a grounded target; the next landing sends a block burst.
     spawn_extra_particles_on_fall: AtomicBool,
 
     /// Vanilla `ServerPlayer.wonGame`; transient while the End credits screen is open.
-    won_game: SyncMutex<bool>,
+    won_game: AtomicBool,
 
     /// Monotonic counter bumped on world teleport/reset. The chunk sending tick
     /// snapshots this before encoding and compares after to detect stale batches.
-    pub chunk_send_epoch: SyncMutex<u32>,
+    pub chunk_send_epoch: CheckedMutex<u32>,
 
     /// Domain-residence identity and persisted entities awaiting restoration.
-    residence: SyncMutex<PlayerResidenceState>,
+    residence: CheckedMutex<PlayerResidenceState>,
     /// In-flight ender pearls thrown by this player, kept weakly so they persist
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
-    ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
+    ender_pearls: CheckedMutex<Vec<Weak<dyn Entity>>>,
 
     // TODO(entity components): the active fishing hook returns with `FishingHookEntity`
     // from `steel-core/legacy_entities/`.
     /// The counter keeping track of this player's statistics.
-    stats: SyncMutex<StatsCounter>,
+    stats: CheckedMutex<StatsCounter>,
 
     /// The last action time of this player.
-    last_action_time: SyncMutex<Instant>,
+    last_action_time: CheckedMutex<Instant>,
 
     /// Manage the advancements of the player
-    pub advancements: SyncMutex<PlayerAdvancement>,
+    pub advancements: CheckedMutex<PlayerAdvancement>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -619,46 +619,46 @@ impl Player {
                 Self::dimensions_for_pose(EntityPose::Standing),
                 world_ref,
             ),
-            lifecycle: SyncMutex::new(PlayerLifecycleState::default()),
-            movement: SyncMutex::new(MovementState::new()),
+            lifecycle: CheckedMutex::new(PlayerLifecycleState::default()),
+            movement: CheckedMutex::new(MovementState::new()),
             entity_data: CheckedMutex::new({
                 let mut data = PlayerEntityData::new();
                 living_base.initialize_synced_data(&mut data);
                 Self::apply_client_information_to_entity_data(&mut data, &client_information);
                 data
             }),
-            last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
-            last_tracking_view: SyncMutex::new(None),
-            client_information: SyncMutex::new(client_information),
-            game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
+            last_chunk_pos: CheckedMutex::new(ChunkPos::new(0, 0)),
+            last_tracking_view: CheckedMutex::new(None),
+            client_information: CheckedMutex::new(client_information),
+            game_modes: CheckedMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: Arc::clone(&inventory),
-            inventory_sync: SyncMutex::new(PlayerInventorySyncState::new()),
+            inventory_sync: CheckedMutex::new(PlayerInventorySyncState::new()),
             ender_chest_inventory,
-            last_item_in_main_hand: SyncMutex::new(ItemStack::empty()),
-            inventory_menu: SyncMutex::new(inventory_menu(inventory)),
-            open_menu: SyncMutex::new(player_inventory::OpenMenuState::new()),
-            container_counter: SyncMutex::new(ContainerCounter::new()),
-            teleport_state: SyncMutex::new(TeleportState::new()),
-            item_cooldowns: SyncMutex::new(ItemCooldowns::default()),
-            tick_state: SyncMutex::new(PlayerTickState::new()),
-            sleep_state: SyncMutex::new(PlayerSleepState::new()),
-            respawn_config: SyncMutex::new(None),
-            abilities: SyncMutex::new(Abilities::default()),
-            block_breaking: SyncMutex::new(BlockBreakingManager::new()),
+            last_item_in_main_hand: CheckedMutex::new(ItemStack::empty()),
+            inventory_menu: CheckedMutex::new(inventory_menu(inventory)),
+            open_menu: CheckedMutex::new(player_inventory::OpenMenuState::new()),
+            container_counter: CheckedMutex::new(ContainerCounter::new()),
+            teleport_state: CheckedMutex::new(TeleportState::new()),
+            item_cooldowns: CheckedMutex::new(ItemCooldowns::default()),
+            tick_state: CheckedMutex::new(PlayerTickState::new()),
+            sleep_state: CheckedMutex::new(PlayerSleepState::new()),
+            respawn_config: CheckedMutex::new(None),
+            abilities: CheckedMutex::new(Abilities::default()),
+            block_breaking: CheckedMutex::new(BlockBreakingManager::new()),
             living_base,
-            food_data: SyncMutex::new(FoodData::new()),
-            health_sync: SyncMutex::new(HealthSyncState::new()),
-            experience: SyncMutex::new(Experience::default()),
-            permissions: SyncMutex::new(PlayerPermissionState::default()),
-            seen_credits: SyncMutex::new(false),
+            food_data: CheckedMutex::new(FoodData::new()),
+            health_sync: CheckedMutex::new(HealthSyncState::new()),
+            experience: CheckedMutex::new(Experience::default()),
+            permissions: CheckedMutex::new(PlayerPermissionState::default()),
+            seen_credits: AtomicBool::new(false),
             spawn_extra_particles_on_fall: AtomicBool::new(false),
-            won_game: SyncMutex::new(false),
-            chunk_send_epoch: SyncMutex::new(0),
-            residence: SyncMutex::new(PlayerResidenceState::new()),
-            ender_pearls: SyncMutex::new(Vec::new()),
-            stats: SyncMutex::new(StatsCounter::new()),
-            last_action_time: SyncMutex::new(Instant::now()),
-            advancements: SyncMutex::new(PlayerAdvancement::default()), // TODO save the advancement
+            won_game: AtomicBool::new(false),
+            chunk_send_epoch: CheckedMutex::new(0),
+            residence: CheckedMutex::new(PlayerResidenceState::new()),
+            ender_pearls: CheckedMutex::new(Vec::new()),
+            stats: CheckedMutex::new(StatsCounter::new()),
+            last_action_time: CheckedMutex::new(Instant::now()),
+            advancements: CheckedMutex::new(PlayerAdvancement::default()), // TODO save the advancement
         }
     }
 
