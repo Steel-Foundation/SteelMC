@@ -1,8 +1,5 @@
 //! Vanilla `Endermite`.
 
-use std::sync::{LazyLock, Weak};
-
-use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
@@ -10,7 +7,6 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::sound_events;
 use steel_registry::vanilla_entity_data::EndermiteEntityData;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::entity::ai::goal::{
     ClimbOnTopOfPowderSnowGoal, FloatGoal, HurtByTargetGoal, LookAtPlayerGoal, MeleeAttackGoal,
@@ -21,10 +17,9 @@ use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::monster::{self, Enemy};
 use crate::entity::prelude::*;
 use crate::entity::{
-    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps,
-    LivingEntityBase, LivingProps, MobBase, MobProps, RemovalReason, SpawnRule,
+    DefaultEntityPush, EntityBase, EntityMovementEmission, EntityProps, LivingEntityBase,
+    LivingProps, MobBase, MobProps, RemovalReason, SpawnRule,
 };
-use crate::world::World;
 
 /// Ticks an endermite lives unless it is persistent.
 const MAX_LIFE: i32 = 2400;
@@ -34,6 +29,7 @@ const XP_REWARD: i32 = 3;
 #[entity_behavior(class = "Endermite", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_life, load = Self::load_life)]
+#[entity(key = "steel:entity/endermite", constructors, definition = Self::define)]
 pub struct EndermiteEntity {
     #[entity(base)]
     base: EntityBase,
@@ -46,11 +42,6 @@ pub struct EndermiteEntity {
     life: CheckedMutex<i32>,
     #[entity(synced)]
     entity_data: CheckedMutex<EndermiteEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `EndermiteEntity`.
-unsafe impl DowncastType for EndermiteEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/endermite");
 }
 
 impl Enemy for EndermiteEntity {}
@@ -108,30 +99,6 @@ impl EndermiteEntity {
             .ai_step
             .then([Stage::effect(Self::LIFE, Self::age)]);
         definition
-    }
-
-    fn definition() -> &'static MobDefinition<Self> {
-        static DEFINITION: LazyLock<MobDefinition<EndermiteEntity>> =
-            LazyLock::new(EndermiteEntity::define);
-        &DEFINITION
-    }
-
-    /// Creates an endermite.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs an endermite from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
@@ -198,6 +165,8 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use glam::DVec3;
+    use std::sync::Weak;
 
     use crate::entity::{SharedEntity, next_entity_id};
     use crate::test_support::fresh_loaded_test_world;

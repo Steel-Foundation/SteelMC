@@ -1,8 +1,5 @@
 //! Lingering cloud that applies its potion effects to living entities standing inside it.
 
-use std::sync::Weak;
-
-use glam::DVec3;
 use rustc_hash::FxHashMap;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
@@ -15,14 +12,14 @@ use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::particle_type::{ColorParticleOption, ParticleData};
 use steel_registry::vanilla_entity_data::AreaEffectCloudEntityData;
 use steel_registry::vanilla_particle_types;
+use steel_utils::RgbColor;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{DowncastType, DowncastTypeKey, RgbColor};
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::potion_contents::to_runtime_instance;
 use crate::entity::prelude::*;
 use crate::entity::{
-    EntityBase, EntityBaseLoad, EntityProps, EntityReference, Living, RemovalReason, SharedEntity,
+    EntityBase, EntityProps, EntityReference, Living, RemovalReason, SharedEntity,
 };
 use crate::world::World;
 
@@ -80,6 +77,7 @@ impl AreaEffectCloudState {
 #[entity_behavior(class = "AreaEffectCloud")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_cloud, load = Self::load_cloud)]
+#[entity(key = "steel:entity/area_effect_cloud", constructors)]
 pub struct AreaEffectCloudEntity {
     #[entity(base)]
     base: EntityBase,
@@ -88,11 +86,6 @@ pub struct AreaEffectCloudEntity {
     state: CheckedMutex<AreaEffectCloudState>,
     #[entity(synced)]
     entity_data: CheckedMutex<AreaEffectCloudEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `AreaEffectCloudEntity`.
-unsafe impl DowncastType for AreaEffectCloudEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/area_effect_cloud");
 }
 
 impl AreaEffectCloudEntity {
@@ -125,24 +118,6 @@ impl AreaEffectCloudEntity {
         },
         ..EntityProps::new()
     };
-
-    /// Creates a new area effect cloud with vanilla defaults.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Creates an area effect cloud from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
-    }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         base.set_no_physics(true);

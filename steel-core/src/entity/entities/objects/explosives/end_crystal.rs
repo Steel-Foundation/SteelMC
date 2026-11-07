@@ -1,18 +1,14 @@
 //! Vanilla `EndCrystal`, as far as End spike worldgen and saving need it.
 
-use std::sync::Weak;
-
-use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
+use steel_utils::BlockPos;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps};
-use crate::world::World;
+use crate::entity::{Entity, EntityBase, EntityMovementEmission, EntityProps};
 
 /// An End crystal.
 // TODO: the fire it keeps lit in the End, exploding when hurt, and the dragon
@@ -20,6 +16,7 @@ use crate::world::World;
 #[entity_behavior(class = "EndCrystal")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_crystal, load = Self::load_crystal)]
+#[entity(key = "steel:entity/end_crystal", constructors)]
 pub struct EndCrystalEntity {
     #[entity(base)]
     base: EntityBase,
@@ -27,11 +24,6 @@ pub struct EndCrystalEntity {
     entity_type: EntityTypeRef,
     #[entity(synced)]
     entity_data: CheckedMutex<EndCrystalEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `EndCrystalEntity`.
-unsafe impl DowncastType for EndCrystalEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/end_crystal");
 }
 
 impl EndCrystalEntity {
@@ -42,24 +34,6 @@ impl EndCrystalEntity {
         blocks_building: |_| true,
         ..EntityProps::new()
     };
-
-    /// Creates a new End crystal.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs an End crystal from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
-    }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {

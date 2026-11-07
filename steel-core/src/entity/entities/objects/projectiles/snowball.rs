@@ -1,22 +1,17 @@
 //! Vanilla `Snowball`.
 
-use std::sync::Weak;
-
-use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entity_data::SnowballEntityData;
 use steel_registry::{vanilla_entities, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::entity::prelude::*;
 use crate::entity::projectile::throwable;
 use crate::entity::projectile::throwable_item::ThrownItem;
 use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps};
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityProps, RemovalReason, SharedEntity};
-use crate::world::World;
+use crate::entity::{Entity, EntityBase, EntityProps, RemovalReason, SharedEntity};
 
 /// Thrown damage a snowball deals to a blaze; other entities take none.
 const BLAZE_HIT_DAMAGE: f32 = 3.0;
@@ -25,6 +20,7 @@ const BLAZE_HIT_DAMAGE: f32 = 3.0;
 #[entity_behavior(class = "Snowball")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
+#[entity(key = "steel:entity/snowball", constructors)]
 pub struct SnowballEntity {
     #[entity(base)]
     base: EntityBase,
@@ -36,11 +32,6 @@ pub struct SnowballEntity {
     thrown_item: ThrownItem,
     #[entity(synced)]
     entity_data: CheckedMutex<SnowballEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `SnowballEntity`.
-unsafe impl DowncastType for SnowballEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/snowball");
 }
 
 impl SnowballEntity {
@@ -59,24 +50,6 @@ impl SnowballEntity {
         },
         ..ProjectileProps::new()
     };
-
-    /// Creates a snowball with no owner.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a snowball from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
-    }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = SnowballEntityData::new();
@@ -110,6 +83,7 @@ mod tests {
     use crate::entity::damage::DamageSource;
     use crate::test_support::test_world;
     use crate::world::ClipHitResult;
+    use glam::DVec3;
 
     fn snowball() -> Arc<SnowballEntity> {
         Arc::new(SnowballEntity::new(

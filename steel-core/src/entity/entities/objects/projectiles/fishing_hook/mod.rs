@@ -4,7 +4,7 @@
 //! hook is removed.
 
 use std::f32::consts::PI;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use glam::DVec3;
 use rand::{RngExt, rng};
@@ -28,14 +28,14 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, Downcast as _};
 
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
 use crate::entity::prelude::*;
 use crate::entity::projectile::{self, ProjectileBase, ProjectileProps, triangle_random};
 use crate::entity::{
-    EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps, RemovalReason, SharedEntity,
-    entity_loot_ref, next_entity_id,
+    EntityBase, EntityMovementEmission, EntityProps, RemovalReason, SharedEntity, entity_loot_ref,
+    next_entity_id,
 };
 use crate::fluid::get_height;
 use crate::physics::MoverType;
@@ -64,6 +64,7 @@ const ONE_MINUTE: i32 = 1200;
 #[entity_behavior(class = "FishingHook")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, no_save_data)]
+#[entity(key = "steel:entity/fishing_hook", constructors)]
 pub struct FishingHookEntity {
     #[entity(base)]
     base: EntityBase,
@@ -113,11 +114,6 @@ impl FishingHookState {
     }
 }
 
-// SAFETY: This key is owned by Steel and uniquely identifies `FishingHookEntity`.
-unsafe impl DowncastType for FishingHookEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/fishing_hook");
-}
-
 impl FishingHookEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |hook, entity| hook.entity_tick(entity),
@@ -148,24 +144,6 @@ impl FishingHookEntity {
         on_hit_entity: |hook, _, target, _| hook.set_hooked_entity(Some(Arc::clone(target))),
         ..ProjectileProps::new()
     };
-
-    /// Creates a hook for the entity factory, before it is cast.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a hook from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
-    }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {

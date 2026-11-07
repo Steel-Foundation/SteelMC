@@ -152,9 +152,7 @@ use steel_registry::damage_type::DeathMessageType;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
-use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, Identifier, UuidExt as _,
-};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier, UuidExt as _};
 
 use crate::inventory::container::Container;
 
@@ -185,6 +183,7 @@ use crate::world::World;
 /// A struct representing a player.
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, entity_type = &vanilla_entities::PLAYER)]
+#[entity(key = "steel:entity/player")]
 pub struct Player {
     /// The player's game profile.
     pub gameprofile: GameProfile,
@@ -311,11 +310,6 @@ pub struct Player {
 
     /// Manage the advancements of the player
     pub advancements: CheckedMutex<PlayerAdvancement>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `Player`.
-unsafe impl DowncastType for Player {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/player");
 }
 
 #[derive(Clone)]

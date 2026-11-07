@@ -11,7 +11,6 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_utils::Identifier;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::entity::prelude::*;
 use crate::entity::{
@@ -28,17 +27,13 @@ use crate::world::World;
 #[entity_behavior(class = "MinecartChest")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_chest, load = Self::load_chest)]
+#[entity(key = "steel:entity/chest_minecart")]
 pub struct ChestMinecartEntity {
     #[entity(base)]
     base: EntityBase,
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
     state: CheckedMutex<ChestMinecartState>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `ChestMinecartEntity`.
-unsafe impl DowncastType for ChestMinecartEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/chest_minecart");
 }
 
 struct ChestMinecartState {

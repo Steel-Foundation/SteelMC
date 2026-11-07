@@ -3,6 +3,7 @@ use steel_utils::ChunkPos;
 use uuid::Uuid;
 
 use super::*;
+use crate::entity::EntityBaseLoad;
 
 use crate::behavior::init_behaviors;
 use crate::entity::{EntityBaseSaveData, EntityFireFreezeState};

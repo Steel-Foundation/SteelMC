@@ -2,7 +2,7 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Data, DeriveInput, Expr, Fields, Ident, Path, Type, parse2, spanned::Spanned};
+use syn::{Data, DeriveInput, Expr, Fields, Ident, LitStr, Path, Type, parse2, spanned::Spanned};
 
 #[derive(Default)]
 struct StructOptions {
@@ -13,6 +13,12 @@ struct StructOptions {
     /// Vanilla saves nothing for the type beyond the base entity data, even
     /// for its components (an empty `addAdditionalSaveData`).
     no_save_data: bool,
+    /// The owner-scoped downcast key; generates the `DowncastType` impl.
+    key: Option<LitStr>,
+    /// Generates `new` and `from_saved` around the type's `from_base`.
+    constructors: bool,
+    /// The mob definition builder; generates a cached `definition()`.
+    definition: Option<Expr>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -98,7 +104,11 @@ fn expand(input: TokenStream) -> syn::Result<TokenStream> {
         }
     });
 
+    let extra = extra_tokens(&input, &options)?;
+
     Ok(quote! {
+        #extra
+
         impl #impl_generics crate::entity::Entity for #name #ty_generics #where_clause {
             fn base(&self) -> &crate::entity::EntityBase {
                 &self.#base_ident
@@ -119,6 +129,104 @@ fn expand(input: TokenStream) -> syn::Result<TokenStream> {
 
         #(#has_impls)*
     })
+}
+
+/// The downcast impl, constructors and cached definition the struct options ask for.
+fn extra_tokens(input: &DeriveInput, options: &StructOptions) -> syn::Result<TokenStream> {
+    let name = &input.ident;
+    if (options.key.is_some() || options.constructors || options.definition.is_some())
+        && !input.generics.params.is_empty()
+    {
+        return Err(syn::Error::new(
+            name.span(),
+            "`key`, `constructors` and `definition` need a non-generic entity type",
+        ));
+    }
+
+    let downcast = options.key.as_ref().map(|key| {
+        quote! {
+            // SAFETY: The key is owned by Steel and unique to this entity type.
+            unsafe impl ::steel_utils::DowncastType for #name {
+                const TYPE_KEY: ::steel_utils::DowncastTypeKey =
+                    ::steel_utils::DowncastTypeKey::new(#key);
+            }
+        }
+    });
+
+    let constructors = options.constructors.then(|| {
+        quote! {
+            /// Creates an entity of this type at `position`.
+            #[must_use]
+            pub fn new(
+                entity_type: ::steel_registry::entity_type::EntityTypeRef,
+                id: i32,
+                position: ::glam::DVec3,
+                world: ::std::sync::Weak<crate::world::World>,
+            ) -> Self {
+                Self::from_base(
+                    crate::entity::EntityBase::new(id, position, entity_type.dimensions, world),
+                    entity_type,
+                )
+            }
+
+            /// Reconstructs an entity of this type from saved base data.
+            #[must_use]
+            pub fn from_saved(
+                entity_type: ::steel_registry::entity_type::EntityTypeRef,
+                load: crate::entity::EntityBaseLoad,
+            ) -> Self {
+                Self::from_base(
+                    crate::entity::EntityBase::from_load(load, entity_type.dimensions),
+                    entity_type,
+                )
+            }
+        }
+    });
+
+    let definition = options.definition.as_ref().map(|define| {
+        // A nested `static` cannot name `Self`.
+        let define = replace_self(quote! { #define }, name);
+        quote! {
+            fn definition() -> &'static crate::entity::component::definition::MobDefinition<Self> {
+                static DEFINITION: ::std::sync::LazyLock<
+                    crate::entity::component::definition::MobDefinition<#name>,
+                > = ::std::sync::LazyLock::new(#define);
+                &DEFINITION
+            }
+        }
+    });
+
+    let inherent = (constructors.is_some() || definition.is_some()).then(|| {
+        quote! {
+            impl #name {
+                #constructors
+                #definition
+            }
+        }
+    });
+
+    Ok(quote! {
+        #downcast
+        #inherent
+    })
+}
+
+/// Replaces every `Self` in `tokens` with `name`.
+fn replace_self(tokens: TokenStream, name: &Ident) -> TokenStream {
+    use proc_macro2::{Group, TokenTree};
+    tokens
+        .into_iter()
+        .map(|token| match token {
+            TokenTree::Ident(ident) if ident == "Self" => TokenTree::Ident(name.clone()),
+            TokenTree::Group(group) => {
+                let mut replaced =
+                    Group::new(group.delimiter(), replace_self(group.stream(), name));
+                replaced.set_span(group.span());
+                TokenTree::Group(replaced)
+            }
+            other => other,
+        })
+        .collect()
 }
 
 fn entity_type_tokens(
@@ -214,10 +322,17 @@ fn struct_options(input: &DeriveInput) -> syn::Result<StructOptions> {
                 options.load = Some(meta.value()?.parse()?);
             } else if meta.path.is_ident("no_save_data") {
                 options.no_save_data = true;
+            } else if meta.path.is_ident("key") {
+                options.key = Some(meta.value()?.parse()?);
+            } else if meta.path.is_ident("constructors") {
+                options.constructors = true;
+            } else if meta.path.is_ident("definition") {
+                options.definition = Some(meta.value()?.parse()?);
             } else {
-                return Err(
-                    meta.error("expected `hooks`, `entity_type`, `save`, `load` or `no_save_data`")
-                );
+                return Err(meta.error(
+                    "expected `hooks`, `entity_type`, `save`, `load`, `no_save_data`, `key`, \
+                     `constructors` or `definition`",
+                ));
             }
             Ok(())
         })?;

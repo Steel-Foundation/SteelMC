@@ -2,6 +2,7 @@ use steel_registry::init_vanilla_registry;
 
 use super::*;
 use crate::entity::EntityFluidContact;
+use std::sync::Weak;
 
 fn squid() -> SquidEntity {
     init_vanilla_registry();

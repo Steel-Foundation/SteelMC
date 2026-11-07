@@ -1,10 +1,7 @@
 //! Primed TNT entity behavior.
 
 use crate::entity::prelude::*;
-use std::{
-    f32::consts::TAU,
-    sync::{Arc, Weak},
-};
+use std::{f32::consts::TAU, sync::Arc};
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -17,13 +14,12 @@ use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_data::PrimedTntEntityData;
 use steel_registry::vanilla_game_rules::TNT_EXPLODES;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::block_entity::block_state_nbt;
 use crate::entity::EntityProps;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityReference, RemovalReason,
-    SharedEntity,
+    Entity, EntityBase, EntityMovementEmission, EntityReference, RemovalReason, SharedEntity,
 };
 use crate::physics::MoverType;
 use crate::world::{
@@ -133,6 +129,7 @@ static USED_PORTAL_DAMAGE_CALCULATOR: NetherPortalPreservingExplosionDamageCalcu
 #[entity_behavior(class = "PrimedTnt")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_tnt, load = Self::load_tnt)]
+#[entity(key = "steel:entity/primed_tnt", constructors)]
 pub struct PrimedTntEntity {
     #[entity(base)]
     base: EntityBase,
@@ -143,23 +140,9 @@ pub struct PrimedTntEntity {
     state: CheckedMutex<PrimedTntState>,
 }
 
-// SAFETY: This key is owned by Steel and uniquely identifies `PrimedTntEntity`.
-unsafe impl DowncastType for PrimedTntEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/primed_tnt");
-}
-
 impl PrimedTntEntity {
     /// Default fuse duration in ticks.
     pub const DEFAULT_FUSE_TIME: i32 = 80;
-
-    /// Creates an unprimed TNT entity for the entity factory.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
 
     /// Creates a normally primed TNT entity with Vanilla's randomized launch motion.
     #[must_use]
@@ -183,15 +166,6 @@ impl PrimedTntEntity {
             -angle.sin() * INITIAL_HORIZONTAL_SPEED,
             f64::from(INITIAL_VERTICAL_SPEED),
             -angle.cos() * INITIAL_HORIZONTAL_SPEED,
-        )
-    }
-
-    /// Creates a primed TNT entity from saved data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
         )
     }
 

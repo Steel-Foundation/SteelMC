@@ -1,8 +1,5 @@
 //! Vanilla `Display.BlockDisplay`: renders a block state without collision.
 
-use std::sync::Weak;
-
-use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
@@ -10,13 +7,12 @@ use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_data::BlockDisplayEntityData;
+use steel_utils::BlockStateId;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::block_entity::block_state_nbt;
 use crate::entity::prelude::*;
-use crate::entity::{EntityBase, EntityBaseLoad, EntityProps};
-use crate::world::World;
+use crate::entity::{EntityBase, EntityProps};
 
 /// A block display.
 // TODO: persist the shared `Display` state (transformation, billboard,
@@ -24,6 +20,7 @@ use crate::world::World;
 #[entity_behavior(class = "BlockDisplay")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_block_display, load = Self::load_block_display)]
+#[entity(key = "steel:entity/block_display", constructors)]
 pub struct BlockDisplayEntity {
     #[entity(base)]
     base: EntityBase,
@@ -33,11 +30,6 @@ pub struct BlockDisplayEntity {
     entity_data: CheckedMutex<BlockDisplayEntityData>,
 }
 
-// SAFETY: This key is owned by Steel and uniquely identifies `BlockDisplayEntity`.
-unsafe impl DowncastType for BlockDisplayEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/block_display");
-}
-
 impl BlockDisplayEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |display, _| display.tick_display(),
@@ -45,24 +37,6 @@ impl BlockDisplayEntity {
         is_ignoring_block_triggers: |_| true,
         ..EntityProps::new()
     };
-
-    /// Creates a new block display.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a block display from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
-    }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {
@@ -114,6 +88,8 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use glam::DVec3;
+    use std::sync::Weak;
 
     use crate::entity::{RemovalReason, SharedEntity};
     use crate::test_support::load_additional;

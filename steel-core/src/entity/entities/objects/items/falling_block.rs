@@ -22,7 +22,7 @@ use steel_registry::{
     REGISTRY, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_fluids,
 };
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::blocks::{AnvilBlock, FallingBlock};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockPlaceContext, Fallable};
@@ -31,9 +31,7 @@ use crate::entity::DEFAULT_AIR_DRAG;
 use crate::entity::EntityProps;
 use crate::entity::SharedEntity;
 use crate::entity::damage::DamageSource;
-use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, RemovalReason, next_entity_id,
-};
+use crate::entity::{Entity, EntityBase, EntityMovementEmission, RemovalReason, next_entity_id};
 use crate::fluid::fluid_state_to_block;
 use crate::physics::MoverType;
 use crate::world::{ClipBlockShape, ClipFluid, World};
@@ -74,6 +72,7 @@ impl FallingBlockState {
 #[entity_behavior(class = "FallingBlockEntity")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_falling_block, load = Self::load_falling_block)]
+#[entity(key = "steel:entity/falling_block", constructors)]
 pub struct FallingBlockEntity {
     #[entity(base)]
     base: EntityBase,
@@ -84,21 +83,7 @@ pub struct FallingBlockEntity {
     state: CheckedMutex<FallingBlockState>,
 }
 
-// SAFETY: This Steel-owned key uniquely identifies `FallingBlockEntity`.
-unsafe impl DowncastType for FallingBlockEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/falling_block");
-}
-
 impl FallingBlockEntity {
-    /// Creates the default sand-backed entity used by vanilla entity factories.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
     fn with_block_state(
         entity_type: EntityTypeRef,
         id: i32,
@@ -117,15 +102,6 @@ impl FallingBlockEntity {
         ));
         entity.state.get_mut().block_state = block_state;
         entity
-    }
-
-    /// Creates a falling block from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {

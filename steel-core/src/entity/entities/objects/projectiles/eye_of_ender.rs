@@ -3,7 +3,7 @@
 //! Despite its package, vanilla's eye is a plain entity that steers itself,
 //! not a projectile.
 
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use glam::DVec3;
 use simdnbt::ToNbtTag;
@@ -15,15 +15,12 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::EyeOfEnderEntityData;
 use steel_registry::{level_events, sound_events, vanilla_entities, vanilla_items};
+use steel_utils::BlockPos;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
 
 use crate::entity::entities::ItemEntity;
 use crate::entity::prelude::*;
-use crate::entity::{
-    EntityBase, EntityBaseLoad, EntityProps, RemovalReason, SharedEntity, next_entity_id,
-};
-use crate::world::World;
+use crate::entity::{EntityBase, EntityProps, RemovalReason, SharedEntity, next_entity_id};
 
 const LIFE_TICKS: u32 = 80;
 /// Targets further than this horizontally are replaced by a point this far
@@ -42,6 +39,7 @@ struct Flight {
 #[entity_behavior(class = "EyeOfEnder")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_item, load = Self::load_item)]
+#[entity(key = "steel:entity/eye_of_ender", constructors)]
 pub struct EyeOfEnderEntity {
     #[entity(base)]
     base: EntityBase,
@@ -52,35 +50,12 @@ pub struct EyeOfEnderEntity {
     entity_data: CheckedMutex<EyeOfEnderEntityData>,
 }
 
-// SAFETY: This key is owned by Steel and uniquely identifies `EyeOfEnderEntity`.
-unsafe impl DowncastType for EyeOfEnderEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/eye_of_ender");
-}
-
 impl EyeOfEnderEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |eye, entity| eye.entity_tick(entity),
         attackable: |_| false,
         ..EntityProps::new()
     };
-
-    /// Creates an eye showing a plain ender eye.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs an eye from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
-    }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = EyeOfEnderEntityData::new();

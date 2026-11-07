@@ -11,7 +11,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events::BLOCK_ATTACH;
 use steel_registry::{sound_events, vanilla_entities, vanilla_items};
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
+use steel_utils::{BlockPos, Downcast as _, WorldAabb};
 
 use crate::behavior::InteractionResult;
 use crate::entity::block_attached::{self, BlockAttachment};
@@ -28,6 +28,7 @@ use crate::world::World;
 #[entity_behavior(class = "LeashFenceKnotEntity")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, no_save_data)]
+#[entity(key = "steel:entity/leash_fence_knot")]
 pub struct LeashFenceKnotEntity {
     #[entity(base)]
     base: EntityBase,
@@ -35,11 +36,6 @@ pub struct LeashFenceKnotEntity {
     entity_type: EntityTypeRef,
     #[entity(component)]
     attachment: BlockAttachment,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `LeashFenceKnotEntity`.
-unsafe impl DowncastType for LeashFenceKnotEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/leash_fence_knot");
 }
 
 impl LeashFenceKnotEntity {

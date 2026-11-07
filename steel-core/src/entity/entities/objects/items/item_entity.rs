@@ -15,9 +15,9 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ItemEntityData;
 use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_registry::{vanilla_custom_stats, vanilla_damage_types};
+use steel_utils::Downcast as _;
 use steel_utils::UuidExt;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
 use crate::behavior::ITEM_BEHAVIORS;
@@ -106,6 +106,7 @@ impl ItemEntityState {
 #[entity_behavior]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_item, load = Self::load_item)]
+#[entity(key = "steel:entity/item")]
 pub struct ItemEntity {
     /// Common entity fields (id, uuid, position, etc.).
     #[entity(base)]
@@ -121,11 +122,6 @@ pub struct ItemEntity {
 
     /// Item-specific mutable state.
     state: CheckedMutex<ItemEntityState>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `ItemEntity`.
-unsafe impl DowncastType for ItemEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/item");
 }
 
 impl ItemEntity {

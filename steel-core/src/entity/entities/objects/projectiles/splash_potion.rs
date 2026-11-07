@@ -1,9 +1,8 @@
 //! Vanilla `ThrownSplashPotion`.
 
 use crate::entity::prelude::*;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
-use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_registry::MobEffectInstance as RegistryMobEffectInstance;
 use steel_registry::data_components::{PotionContents, vanilla_components};
@@ -12,15 +11,14 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::SplashPotionEntityData;
 use steel_registry::vanilla_items;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::potion_contents::to_runtime_instance_icon_from_visibility;
 use crate::entity::projectile::throwable_item::ThrownItem;
 use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps, thrown_potion};
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityProps, Living, SPLASH_HORIZONTAL_REACH,
-    SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH, SharedEntity, compute_margin,
+    Entity, EntityBase, EntityProps, Living, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ,
+    SPLASH_VERTICAL_REACH, SharedEntity, compute_margin,
 };
 use crate::world::World;
 
@@ -31,6 +29,7 @@ const MIN_REMAINING_TICKS: i32 = 20;
 #[entity_behavior(class = "ThrownSplashPotion")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
+#[entity(key = "steel:entity/splash_potion", constructors)]
 pub struct SplashPotionEntity {
     #[entity(base)]
     base: EntityBase,
@@ -44,32 +43,9 @@ pub struct SplashPotionEntity {
     entity_data: CheckedMutex<SplashPotionEntityData>,
 }
 
-// SAFETY: This key is owned by Steel and uniquely identifies `SplashPotionEntity`.
-unsafe impl DowncastType for SplashPotionEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/splash_potion");
-}
-
 impl SplashPotionEntity {
     const ENTITY: EntityProps<Self> = thrown_potion::entity_props();
     const PROJECTILE: ProjectileProps<Self> = thrown_potion::projectile_props();
-
-    /// Creates a splash potion with no owner.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a splash potion from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
-    }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = SplashPotionEntityData::new();
@@ -186,6 +162,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::test_support::test_world;
     use crate::world::ClipHitResult;
+    use glam::DVec3;
 
     #[test]
     fn hitting_a_block_discards_the_splash_potion() {

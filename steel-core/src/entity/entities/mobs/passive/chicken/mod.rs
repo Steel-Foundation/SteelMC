@@ -2,7 +2,6 @@
 //! slow-fall, and periodic egg-laying behavior.
 
 use crate::entity::prelude::*;
-use std::sync::{LazyLock, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -24,7 +23,7 @@ use steel_registry::{
     REGISTRY, RegistryReference, TaggedRegistryExt, sound_events, vanilla_game_events,
 };
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::entity::ageable::{self, Age, AgeableProps};
 use crate::entity::ai::goal::{
@@ -37,11 +36,10 @@ use crate::entity::component::definition::MobDefinition;
 use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
-    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, LivingEntityBase, LivingProps, MobBase,
-    MobProps, SpawnRule, position_rider_default,
+    DefaultEntityPush, Entity, EntityBase, LivingEntityBase, LivingProps, MobBase, MobProps,
+    SpawnRule, position_rider_default,
 };
 use crate::entity::{EntityProps, mob};
-use crate::world::World;
 
 const CHICKEN_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.375, 0.0)];
@@ -119,6 +117,7 @@ impl ChickenState {
 #[entity_behavior(class = "Chicken", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_chicken, load = Self::load_chicken)]
+#[entity(key = "steel:entity/chicken", constructors, definition = Self::define)]
 pub struct ChickenEntity {
     #[entity(base)]
     base: EntityBase,
@@ -135,11 +134,6 @@ pub struct ChickenEntity {
     state: CheckedMutex<ChickenState>,
     #[entity(synced)]
     entity_data: CheckedMutex<ChickenEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `ChickenEntity`.
-unsafe impl DowncastType for ChickenEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/chicken");
 }
 
 impl ChickenEntity {
@@ -211,30 +205,6 @@ impl ChickenEntity {
             [variant::pick_spawn_variants::<Self>()],
         );
         definition
-    }
-
-    fn definition() -> &'static MobDefinition<Self> {
-        static DEFINITION: LazyLock<MobDefinition<ChickenEntity>> =
-            LazyLock::new(ChickenEntity::define);
-        &DEFINITION
-    }
-
-    /// Creates a new chicken at runtime.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a chicken from persisted base entity state.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {

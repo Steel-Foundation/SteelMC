@@ -13,7 +13,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{BlockPos, Direction, DowncastType, DowncastTypeKey, WorldAabb, axis::Axis};
+use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
 
 use crate::entity::block_attached::{self, BlockAttachment};
 use crate::entity::prelude::*;
@@ -29,6 +29,7 @@ use crate::world::World;
 #[entity_behavior(class = "ItemFrame")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_item_frame, load = Self::load_item_frame)]
+#[entity(key = "steel:entity/item_frame")]
 pub struct ItemFrameEntity {
     #[entity(base)]
     base: EntityBase,
@@ -38,11 +39,6 @@ pub struct ItemFrameEntity {
     attachment: BlockAttachment,
     #[entity(synced)]
     entity_data: CheckedMutex<ItemFrameEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `ItemFrameEntity`.
-unsafe impl DowncastType for ItemFrameEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/item_frame");
 }
 
 impl ItemFrameEntity {

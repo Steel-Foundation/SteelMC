@@ -19,7 +19,6 @@ use steel_registry::vanilla_entity_data::FireworkRocketEntityData;
 use steel_registry::{sound_events, vanilla_damage_types, vanilla_game_events, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::damage::DamageSource;
@@ -28,8 +27,7 @@ use crate::entity::projectile::{
     self, ProjectileBase, ProjectileHit, ProjectileProps, triangle_random,
 };
 use crate::entity::{
-    EntityBase, EntityBaseLoad, EntityProps, InsideBlockEffectCollector, RemovalReason,
-    SharedEntity,
+    EntityBase, EntityProps, InsideBlockEffectCollector, RemovalReason, SharedEntity,
 };
 use crate::physics::MoverType;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
@@ -54,6 +52,7 @@ struct Flight {
 #[entity_behavior(class = "FireworkRocketEntity")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_rocket, load = Self::load_rocket)]
+#[entity(key = "steel:entity/firework_rocket", constructors)]
 pub struct FireworkRocketEntity {
     #[entity(base)]
     base: EntityBase,
@@ -64,11 +63,6 @@ pub struct FireworkRocketEntity {
     flight: CheckedMutex<Flight>,
     #[entity(synced)]
     entity_data: CheckedMutex<FireworkRocketEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `FireworkRocketEntity`.
-unsafe impl DowncastType for FireworkRocketEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/firework_rocket");
 }
 
 impl FireworkRocketEntity {
@@ -90,24 +84,6 @@ impl FireworkRocketEntity {
         },
         ..ProjectileProps::new()
     };
-
-    /// Creates a rocket for the entity factory, before it is launched.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a rocket from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
-    }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = FireworkRocketEntityData::new();

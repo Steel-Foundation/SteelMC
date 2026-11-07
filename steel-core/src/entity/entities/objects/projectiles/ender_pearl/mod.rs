@@ -3,7 +3,7 @@
 //! The pearl keeps its chunk loaded with a timed ticket while it flies and is
 //! registered on its owning player, so it is saved and respawned with them.
 
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use glam::DVec3;
 use steel_macros::entity_behavior;
@@ -14,9 +14,9 @@ use steel_registry::vanilla_game_rules::{
     ENDER_PEARLS_VANISH_ON_DEATH, SPAWN_MOBS, SPAWN_MONSTERS,
 };
 use steel_registry::{sound_events, vanilla_damage_types, vanilla_entities, vanilla_items};
+use steel_utils::ChunkPos;
 use steel_utils::locks::CheckedMutex;
 use steel_utils::types::Difficulty;
-use steel_utils::{ChunkPos, DowncastType, DowncastTypeKey};
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
 use crate::entity::damage::DamageSource;
@@ -25,8 +25,8 @@ use crate::entity::prelude::*;
 use crate::entity::projectile::throwable_item::ThrownItem;
 use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps, throwable};
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityProps, RemovalReason, SharedEntity,
-    change_entity_world, next_entity_id,
+    Entity, EntityBase, EntityProps, RemovalReason, SharedEntity, change_entity_world,
+    next_entity_id,
 };
 use crate::player::Player;
 use crate::portal::{TeleportPostTransition, TeleportTransition};
@@ -40,6 +40,7 @@ const ENDERMITE_CHANCE: f32 = 0.05;
 #[entity_behavior(class = "ThrownEnderpearl")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
+#[entity(key = "steel:entity/ender_pearl", constructors)]
 pub struct EnderPearlEntity {
     #[entity(base)]
     base: EntityBase,
@@ -53,11 +54,6 @@ pub struct EnderPearlEntity {
     ticket_timer: CheckedMutex<i64>,
     #[entity(synced)]
     entity_data: CheckedMutex<EnderPearlEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `EnderPearlEntity`.
-unsafe impl DowncastType for EnderPearlEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/ender_pearl");
 }
 
 impl EnderPearlEntity {
@@ -88,24 +84,6 @@ impl EnderPearlEntity {
         },
         ..ProjectileProps::new()
     };
-
-    /// Creates a pearl with no owner.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a pearl from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
-    }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = EnderPearlEntityData::new();

@@ -5,6 +5,7 @@ use steel_utils::BlockPos;
 
 use super::*;
 use crate::test_support::{TestPlayerBuilder, fresh_loaded_test_world, fresh_test_world};
+use std::sync::Weak;
 
 #[test]
 fn ticket_renewal_registers_the_pearl_with_its_player_owner() {

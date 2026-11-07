@@ -15,13 +15,13 @@ use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ExperienceOrbEntityData;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
+use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
 
 use crate::entity::EntityProps;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, RemovalReason,
-    SharedEntity, next_entity_id,
+    DefaultEntityPush, Entity, EntityBase, EntityMovementEmission, RemovalReason, SharedEntity,
+    next_entity_id,
 };
 use crate::fluid::get_fluid_state;
 use crate::physics::{MoverType, WorldCollisionProvider};
@@ -65,6 +65,7 @@ impl ExperienceOrbState {
 #[entity_behavior(class = "ExperienceOrb")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_orb, load = Self::load_orb)]
+#[entity(key = "steel:entity/experience_orb", constructors)]
 pub struct ExperienceOrbEntity {
     #[entity(base)]
     base: EntityBase,
@@ -75,21 +76,7 @@ pub struct ExperienceOrbEntity {
     state: CheckedMutex<ExperienceOrbState>,
 }
 
-// SAFETY: This key is owned by Steel and uniquely identifies `ExperienceOrbEntity`.
-unsafe impl DowncastType for ExperienceOrbEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/experience_orb");
-}
-
 impl ExperienceOrbEntity {
-    /// Creates a new experience orb with value 0.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
     /// Creates a new experience orb with a value and vanilla spawn motion.
     #[must_use]
     pub fn with_value(
@@ -103,15 +90,6 @@ impl ExperienceOrbEntity {
         entity.set_value(value);
         entity.initialize_spawn_movement();
         entity
-    }
-
-    /// Creates an experience orb from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {

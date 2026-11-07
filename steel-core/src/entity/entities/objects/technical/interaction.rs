@@ -10,8 +10,8 @@ use steel_macros::entity_behavior;
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::vanilla_entity_data::InteractionEntityData;
+use steel_utils::UuidExt;
 use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
-use steel_utils::{DowncastType, DowncastTypeKey, UuidExt};
 use uuid::Uuid;
 
 use crate::behavior::InteractionResult;
@@ -30,6 +30,7 @@ const DEFAULT_DIMENSIONS: EntityDimensions =
 #[entity_behavior(class = "Interaction")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_interaction, load = Self::load_interaction)]
+#[entity(key = "steel:entity/interaction")]
 pub struct InteractionEntity {
     #[entity(base)]
     base: EntityBase,
@@ -44,11 +45,6 @@ pub struct InteractionEntity {
 struct RecordedActions {
     attack: Option<PlayerAction>,
     interaction: Option<PlayerAction>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `InteractionEntity`.
-unsafe impl DowncastType for InteractionEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/interaction");
 }
 
 impl InteractionEntity {

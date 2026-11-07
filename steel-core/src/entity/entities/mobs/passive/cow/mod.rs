@@ -3,9 +3,7 @@
 pub mod abstract_cow;
 
 use crate::entity::prelude::*;
-use std::sync::{LazyLock, Weak};
 
-use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_registry::cow_sound_variant::{CowSoundVariantRef, CowSoundVariantRegistry};
 use steel_registry::cow_variant::{CowVariantRef, CowVariantRegistry};
@@ -17,17 +15,16 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::CowEntityData;
 use steel_registry::{REGISTRY, RegistryReference};
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::entity::ageable::{self, Age, AgeableProps};
 use crate::entity::animal::{self, Breeding, BreedingProps};
 use crate::entity::component::definition::MobDefinition;
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
-    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityProps, LivingEntityBase, LivingProps,
-    MobBase, MobProps, SpawnRule,
+    DefaultEntityPush, EntityBase, EntityProps, LivingEntityBase, LivingProps, MobBase, MobProps,
+    SpawnRule,
 };
-use crate::world::World;
 
 const COW_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.75, 0.0)];
@@ -44,6 +41,7 @@ const COW_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachm
 #[entity_behavior(class = "Cow", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = variant::save, load = variant::load)]
+#[entity(key = "steel:entity/cow", constructors, definition = Self::define)]
 pub struct CowEntity {
     #[entity(base)]
     base: EntityBase,
@@ -59,11 +57,6 @@ pub struct CowEntity {
     breeding: Breeding,
     #[entity(synced)]
     entity_data: CheckedMutex<CowEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `CowEntity`.
-unsafe impl DowncastType for CowEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/cow");
 }
 
 impl CowEntity {
@@ -101,29 +94,6 @@ impl CowEntity {
             [variant::pick_spawn_variants::<Self>()],
         );
         definition
-    }
-
-    fn definition() -> &'static MobDefinition<Self> {
-        static DEFINITION: LazyLock<MobDefinition<CowEntity>> = LazyLock::new(CowEntity::define);
-        &DEFINITION
-    }
-
-    /// Creates a new cow at runtime.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a cow from persisted base entity state.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {

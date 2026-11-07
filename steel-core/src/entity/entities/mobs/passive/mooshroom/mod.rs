@@ -2,7 +2,7 @@
 //! flowers, and shearing into a cow.
 
 use crate::entity::prelude::*;
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::Arc;
 
 use glam::DVec3;
 use rand::RngExt as _;
@@ -30,7 +30,7 @@ use steel_registry::{
 };
 use steel_utils::color::RgbColor;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, Downcast as _};
 
 use crate::behavior::InteractionResult;
 use crate::entity::ageable::{Age, Ageable, AgeableProps};
@@ -42,9 +42,8 @@ use crate::entity::entities::ItemEntity;
 use crate::entity::entities::mobs::passive::cow::abstract_cow;
 use crate::entity::shearable::{self, Shearable};
 use crate::entity::{
-    ConversionParams, DefaultEntityPush, EntityBase, EntityBaseLoad, EntityProps,
-    EntitySpawnReason, LivingEntityBase, LivingProps, Mob, MobBase, MobProps, SharedEntity,
-    SpawnRule, next_entity_id,
+    ConversionParams, DefaultEntityPush, EntityBase, EntityProps, EntitySpawnReason,
+    LivingEntityBase, LivingProps, Mob, MobBase, MobProps, SharedEntity, SpawnRule, next_entity_id,
 };
 use crate::player::player_inventory::Prediction;
 use crate::world::{LevelReader, World};
@@ -68,6 +67,7 @@ const MUTATE_CHANCE: u32 = 1024;
 #[entity_behavior(class = "MushroomCow", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_mooshroom, load = Self::load_mooshroom)]
+#[entity(key = "steel:entity/mooshroom", constructors, definition = Self::define)]
 pub struct MushroomCowEntity {
     #[entity(base)]
     base: EntityBase,
@@ -85,11 +85,6 @@ pub struct MushroomCowEntity {
     stew_effects: CheckedMutex<Option<SuspiciousStewEffects>>,
     #[entity(synced)]
     entity_data: CheckedMutex<MooshroomEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `MushroomCowEntity`.
-unsafe impl DowncastType for MushroomCowEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/mooshroom");
 }
 
 impl MushroomCowEntity {
@@ -139,30 +134,6 @@ impl MushroomCowEntity {
             ],
         );
         definition
-    }
-
-    fn definition() -> &'static MobDefinition<Self> {
-        static DEFINITION: LazyLock<MobDefinition<MushroomCowEntity>> =
-            LazyLock::new(MushroomCowEntity::define);
-        &DEFINITION
-    }
-
-    /// Creates a new mooshroom at runtime.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a mooshroom from persisted base entity state.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {

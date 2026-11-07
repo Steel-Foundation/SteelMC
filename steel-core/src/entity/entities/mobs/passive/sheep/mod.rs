@@ -3,7 +3,7 @@
 mod color_spawn_rules;
 
 use crate::entity::prelude::*;
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::Arc;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -21,9 +21,9 @@ use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     DyeColor, REGISTRY, TaggedRegistryExt, sound_events, vanilla_items, vanilla_loot_tables,
 };
+use steel_utils::Downcast as _;
 use steel_utils::locks::CheckedMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 
 use crate::behavior::InteractionResult;
 use crate::entity::ageable::{self, Age, Ageable, AgeableProps};
@@ -37,8 +37,8 @@ use crate::entity::component::entries::{FinalizeSpawnCtx, MobInteractCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::shearable::{self, Shearable};
 use crate::entity::{
-    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityProps, LivingEntityBase, LivingProps,
-    MobBase, MobProps, SharedEntity, SpawnRule, mob,
+    DefaultEntityPush, EntityBase, EntityProps, LivingEntityBase, LivingProps, MobBase, MobProps,
+    SharedEntity, SpawnRule, mob,
 };
 use crate::inventory::recipe_manager;
 use crate::world::World;
@@ -63,6 +63,7 @@ const SHEARED_BIT: i8 = 0x10;
 #[entity_behavior(class = "Sheep", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_sheep, load = Self::load_sheep)]
+#[entity(key = "steel:entity/sheep", constructors, definition = Self::define)]
 pub struct SheepEntity {
     #[entity(base)]
     base: EntityBase,
@@ -78,11 +79,6 @@ pub struct SheepEntity {
     breeding: Breeding,
     #[entity(synced)]
     entity_data: CheckedMutex<SheepEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `SheepEntity`.
-unsafe impl DowncastType for SheepEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/sheep");
 }
 
 impl SheepEntity {
@@ -135,30 +131,6 @@ impl SheepEntity {
             [Stage::new(Self::PICK_COLOR, Self::pick_spawn_color)],
         );
         definition
-    }
-
-    fn definition() -> &'static MobDefinition<Self> {
-        static DEFINITION: LazyLock<MobDefinition<SheepEntity>> =
-            LazyLock::new(SheepEntity::define);
-        &DEFINITION
-    }
-
-    /// Creates a new sheep at runtime.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a sheep from persisted base entity state.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {

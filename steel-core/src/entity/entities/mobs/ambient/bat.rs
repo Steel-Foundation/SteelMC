@@ -1,7 +1,6 @@
 //! Vanilla `Bat`: rests on cave ceilings and flutters through the dark.
 
 use std::f32::consts::PI;
-use std::sync::{LazyLock, Weak};
 
 use glam::DVec3;
 use rand::RngExt as _;
@@ -14,8 +13,8 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::BatEntityData;
 use steel_registry::{level_events, sound_events};
+use steel_utils::BlockPos;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
 
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::SharedEntity;
@@ -25,8 +24,8 @@ use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::mob;
 use crate::entity::prelude::*;
 use crate::entity::{
-    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps,
-    LivingEntityBase, LivingProps, LivingTravelInput, Mob, MobBase, MobProps, SpawnRule,
+    DefaultEntityPush, EntityBase, EntityMovementEmission, EntityProps, LivingEntityBase,
+    LivingProps, LivingTravelInput, Mob, MobBase, MobProps, SpawnRule,
 };
 use crate::world::{World, is_redstone_conductor};
 
@@ -37,6 +36,7 @@ const RESTING_TARGETING_RANGE: f64 = 4.0;
 #[entity_behavior(class = "Bat", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_flags, load = Self::load_flags)]
+#[entity(key = "steel:entity/bat", constructors, definition = Self::define)]
 pub struct BatEntity {
     #[entity(base)]
     base: EntityBase,
@@ -49,11 +49,6 @@ pub struct BatEntity {
     target_position: CheckedMutex<Option<BlockPos>>,
     #[entity(synced)]
     entity_data: CheckedMutex<BatEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `BatEntity`.
-unsafe impl DowncastType for BatEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/bat");
 }
 
 impl DefaultEntityPush for BatEntity {}
@@ -122,29 +117,6 @@ impl BatEntity {
             .custom_server_ai_step
             .then([Stage::effect(Self::FLY, Self::fly)]);
         definition
-    }
-
-    fn definition() -> &'static MobDefinition<Self> {
-        static DEFINITION: LazyLock<MobDefinition<BatEntity>> = LazyLock::new(BatEntity::define);
-        &DEFINITION
-    }
-
-    /// Creates a bat, resting.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a bat from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
@@ -317,6 +289,7 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
+    use std::sync::Weak;
 
     use crate::entity::leash::Leashable;
     use crate::test_support::load_additional;

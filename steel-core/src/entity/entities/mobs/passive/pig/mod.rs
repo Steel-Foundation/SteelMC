@@ -1,7 +1,6 @@
 //! Vanilla Pig entity: variants, saddles and carrot-on-a-stick steering.
 
 use crate::entity::prelude::*;
-use std::sync::{LazyLock, Weak};
 
 use glam::DVec3;
 use steel_macros::entity_behavior;
@@ -18,7 +17,7 @@ use steel_registry::{
     REGISTRY, RegistryReference, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_items,
 };
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::InteractionResult;
 use crate::entity::ageable::{self, Age, AgeableProps};
@@ -33,12 +32,11 @@ use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::item_based_steering::ItemBasedSteering;
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
-    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityProps, ItemSteerable, LivingEntityBase,
-    LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, mob,
+    DefaultEntityPush, EntityBase, EntityProps, ItemSteerable, LivingEntityBase, LivingProps,
+    MobBase, MobProps, SharedEntity, SpawnRule, mob,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
-use crate::world::World;
 
 const PIG_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.5, 0.0)];
@@ -57,6 +55,7 @@ const PIG_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachm
 #[entity_behavior(class = "Pig", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = variant::save, load = variant::load)]
+#[entity(key = "steel:entity/pig", constructors, definition = Self::define)]
 pub struct PigEntity {
     #[entity(base)]
     base: EntityBase,
@@ -73,11 +72,6 @@ pub struct PigEntity {
     steering: CheckedMutex<ItemBasedSteering>,
     #[entity(synced)]
     entity_data: CheckedMutex<PigEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `PigEntity`.
-unsafe impl DowncastType for PigEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/pig");
 }
 
 impl PigEntity {
@@ -159,29 +153,6 @@ impl PigEntity {
             [variant::pick_spawn_variants::<Self>()],
         );
         definition
-    }
-
-    fn definition() -> &'static MobDefinition<Self> {
-        static DEFINITION: LazyLock<MobDefinition<PigEntity>> = LazyLock::new(PigEntity::define);
-        &DEFINITION
-    }
-
-    /// Creates a new pig at runtime.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a pig from persisted base entity state.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {

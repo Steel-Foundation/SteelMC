@@ -3,7 +3,7 @@
 mod goals;
 
 use std::f32::consts::{PI, TAU};
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::Arc;
 
 use glam::DVec3;
 use steel_macros::entity_behavior;
@@ -17,7 +17,6 @@ use steel_registry::{
 };
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::entity::ageable::{self, Age, AgeableProps};
 use crate::entity::ai::path::PathType;
@@ -27,8 +26,8 @@ use crate::entity::damage::DamageSource;
 use crate::entity::mob::{self};
 use crate::entity::prelude::*;
 use crate::entity::{
-    DefaultEntityPush, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps,
-    LivingEntityBase, LivingProps, MobBase, MobProps, SharedEntity, next_entity_id,
+    DefaultEntityPush, EntityBase, EntityMovementEmission, EntityProps, LivingEntityBase,
+    LivingProps, MobBase, MobProps, SharedEntity, next_entity_id,
 };
 use crate::physics::MoverType;
 use crate::world::World;
@@ -58,6 +57,7 @@ struct Swimming {
 #[entity_behavior(class = "Squid")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
+#[entity(key = "steel:entity/squid", constructors, definition = Self::define)]
 pub struct SquidEntity {
     #[entity(base)]
     base: EntityBase,
@@ -72,11 +72,6 @@ pub struct SquidEntity {
     swimming: CheckedMutex<Swimming>,
     #[entity(synced)]
     entity_data: CheckedMutex<SquidEntityData>,
-}
-
-// SAFETY: This key is owned by Steel and uniquely identifies `SquidEntity`.
-unsafe impl DowncastType for SquidEntity {
-    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/squid");
 }
 
 impl SquidEntity {
@@ -156,30 +151,6 @@ impl SquidEntity {
                 mob::stages::finalize_spawn::<Self>(),
             ]),
         }
-    }
-
-    fn definition() -> &'static MobDefinition<Self> {
-        static DEFINITION: LazyLock<MobDefinition<SquidEntity>> =
-            LazyLock::new(SquidEntity::define);
-        &DEFINITION
-    }
-
-    /// Creates a squid.
-    #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        )
-    }
-
-    /// Reconstructs a squid from saved base data.
-    #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
