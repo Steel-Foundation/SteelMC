@@ -1,0 +1,16 @@
+changelog:
+  categories:
+    - title: Blocks
+      labels: [Block]
+    - title: Items
+      labels: [Item]
+    - title: Commands
+      labels: [Command]
+    - title: Entities
+      labels: [Entity, Mob]
+    - title: Performance
+      labels: [Performance]
+    - title: Features
+      labels: ["*"]
+    - title: Bugs
+      labels: [Bug]

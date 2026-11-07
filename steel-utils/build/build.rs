@@ -252,16 +252,15 @@ fn get_server_archive(jar_data: Vec<u8>) -> zip::ZipArchive<Cursor<Vec<u8>>> {
 
     let mut nested_entry_name = None;
     for i in 0..outer_archive.len() {
-        if let Ok(file) = outer_archive.by_index(i) {
-            let name = file.name();
-            if name.starts_with("META-INF/versions/")
-                && Path::new(name)
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"))
-            {
-                nested_entry_name = Some(name.to_string());
-                break;
-            }
+        if let Ok(file) = outer_archive.by_index(i)
+            && let Ok(name) = file.name()
+            && name.starts_with("META-INF/versions/")
+            && Path::new(&*name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"))
+        {
+            nested_entry_name = Some(name.into_owned());
+            break;
         }
     }
 
@@ -353,7 +352,7 @@ fn download_and_extract_assets(manifest_dir: &str) {
         let mut file = archive
             .by_index(i)
             .expect("Failed to read file in server jar");
-        let name = file.name();
+        let name = file.name().expect("Failed to read file name in server jar");
 
         if name.starts_with("data/minecraft/") {
             let rel_path = name
