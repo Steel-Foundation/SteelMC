@@ -1,6 +1,8 @@
 use crate::entity::prelude::*;
 use std::sync::Arc;
 
+use crate::entity::block_attached::Parts as _;
+use crate::entity::entities::LeashFenceKnotEntity;
 use crate::entity::{Entity, SharedEntity, WeakEntity};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -12,7 +14,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_game_rules::ENTITY_DROPS;
 use steel_registry::{sound_events, vanilla_items};
 use steel_utils::locks::CheckedMutex;
-use steel_utils::{BlockPos, UuidExt as _};
+use steel_utils::{BlockPos, Downcast as _, UuidExt as _};
 use uuid::Uuid;
 
 pub const LEASH_SNAP_DISTANCE: f64 = 12.0;
@@ -241,9 +243,11 @@ pub trait Leashable: Entity {
                         return;
                     }
                 }
-                LeashAttachment::FenceKnot(_pos) => {
-                    // TODO(entity components): restore fence knots once `LeashFenceKnotEntity`
-                    // is ported out of `steel-core/legacy_entities/`.
+                LeashAttachment::FenceKnot(pos) => {
+                    if let Some(holder) = LeashFenceKnotEntity::get_or_create_knot(&world, pos) {
+                        let _ = self.set_leashed_to(&holder);
+                        return;
+                    }
                 }
             }
 
@@ -406,10 +410,12 @@ impl LeashData {
     pub(super) fn saved_attachment(&self) -> Option<LeashAttachment> {
         match &self.holder {
             LeashHolder::Entity(holder) => {
-                // TODO(entity components): save fence knots as positions once
-                // `LeashFenceKnotEntity` is ported out of `steel-core/legacy_entities/`.
                 let upgraded = holder.upgrade()?;
-                Some(LeashAttachment::Entity(upgraded.uuid()))
+                if let Some(knot) = upgraded.downcast_ref::<LeashFenceKnotEntity>() {
+                    Some(LeashAttachment::FenceKnot(knot.block_pos()))
+                } else {
+                    Some(LeashAttachment::Entity(upgraded.uuid()))
+                }
             }
             LeashHolder::Delayed(attachment) => Some(*attachment),
         }

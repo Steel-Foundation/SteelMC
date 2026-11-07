@@ -271,12 +271,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().position()
     }
 
-    /// Gets the position to send in this entity's add-entity packet.
-    ///
-    /// Mirrors vanilla `Entity.getAddEntityPacket()` overloads. Most entities
-    /// spawn at their current position; block-attached entities can override
-    /// this with the backing block position used by the vanilla packet.
-    final fn spawn_position(&self) -> DVec3 {
+    /// Default for [`Entity::spawn_position`].
+    final fn spawn_position_default(&self) -> DVec3 {
         self.position()
     }
 

@@ -7,9 +7,10 @@ use std::sync::{
 use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, PistonType};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::{
     entity_type::EntityTypeRef, fluid::FluidState, init_vanilla_registry, vanilla_blocks,
-    vanilla_entities, vanilla_items,
+    vanilla_entities, vanilla_game_rules::MOB_GRIEFING, vanilla_items,
 };
 use steel_utils::types::{GameType, UpdateFlags};
 use steel_utils::{
@@ -24,8 +25,8 @@ use crate::behavior::{BlockCollisionContext, init_behaviors};
 use crate::block_entity::{
     SharedBlockEntity, entities::PistonMovingBlockEntity, init_block_entities,
 };
-use crate::entity::entities::{ItemEntity, PrimedTntEntity};
-use crate::entity::{EntityBase, next_entity_id};
+use crate::entity::entities::{ItemEntity, ItemFrameEntity, LeashFenceKnotEntity, PrimedTntEntity};
+use crate::entity::{EntityBase, EntityFluidContact, next_entity_id};
 use crate::entity::{EntityHooks, EntityProps};
 use crate::player::ResetReason;
 use crate::test_support::{
@@ -199,6 +200,31 @@ fn add_entity<E: Entity>(world: &Arc<World>, entity: E) -> Arc<E> {
         panic!("test entity must be added to its loaded chunk");
     };
     entity
+}
+
+fn add_block_attached_targets(
+    world: &Arc<World>,
+) -> (Arc<ItemFrameEntity>, Arc<LeashFenceKnotEntity>) {
+    let item_frame = add_entity(
+        world,
+        ItemFrameEntity::new_attached(
+            &vanilla_entities::ITEM_FRAME,
+            next_entity_id(),
+            TEST_WALL_POS,
+            Direction::West,
+            Arc::downgrade(world),
+        ),
+    );
+    let leash_knot = add_entity(
+        world,
+        LeashFenceKnotEntity::new_attached(
+            &vanilla_entities::LEASH_KNOT,
+            next_entity_id(),
+            BlockPos::new(0, 64, 1),
+            Arc::downgrade(world),
+        ),
+    );
+    (item_frame, leash_knot)
 }
 
 fn assert_exposure_matches_seen_percent(world: &World, center: DVec3, entity: &dyn Entity) {
@@ -552,6 +578,51 @@ fn moving_piston_exposure_uses_live_block_entities() {
             .to_bits(),
         live.to_bits()
     );
+}
+
+#[test]
+fn non_destructive_explosion_ignores_blocklike_entities_without_mob_griefing() {
+    let fixture = ready_world("explosion_ignores_blocklike_entities");
+    let world = &fixture.world;
+    assert!(world.set_game_rule(&MOB_GRIEFING, false));
+    let item = item_entity(world, TEST_BLOCK_BOTTOM_CENTER + DVec3::X);
+    item.set_item(ItemStack::new(&vanilla_items::STONE));
+    let item = add_entity(world, item);
+    let (item_frame, leash_knot) = add_block_attached_targets(world);
+
+    world.explode(ExplosionOptions::new(
+        TEST_BLOCK_BOTTOM_CENTER,
+        ENTITY_EFFECT_TEST_RADIUS,
+        ExplosionInteraction::None,
+    ));
+
+    assert!(!item.is_removed());
+    assert_eq!(item.velocity(), DVec3::ZERO);
+    assert_eq!(item_frame.velocity(), DVec3::ZERO);
+    assert_eq!(leash_knot.velocity(), DVec3::ZERO);
+}
+
+#[test]
+fn submerged_source_explosion_does_not_push_block_attached_entities() {
+    let fixture = ready_world("submerged_explosion_ignores_block_attached_entities");
+    let world = &fixture.world;
+    let source = item_entity(world, TEST_BLOCK_BOTTOM_CENTER);
+    source
+        .base()
+        .set_fluid_contact(EntityFluidContact::from_parts(1.0, 0.0, false, false));
+    assert!(source.is_in_water());
+    let (item_frame, leash_knot) = add_block_attached_targets(world);
+    let mut options = ExplosionOptions::new(
+        TEST_BLOCK_BOTTOM_CENTER,
+        ENTITY_EFFECT_TEST_RADIUS,
+        ExplosionInteraction::Block,
+    );
+    options.source = Some(Arc::new(source) as SharedEntity);
+
+    world.explode(options);
+
+    assert_eq!(item_frame.velocity(), DVec3::ZERO);
+    assert_eq!(leash_knot.velocity(), DVec3::ZERO);
 }
 
 #[test]

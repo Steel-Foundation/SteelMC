@@ -178,8 +178,8 @@ pub trait EntityBody: Entity {
         self.entity_type().dimensions
     }
 
-    /// Refreshes dimensions for the current physical pose.
-    fn refresh_dimensions(&self) {
+    /// Default for [`Entity::refresh_dimensions`].
+    fn refresh_dimensions_default(&self) {
         let pose = self.pose();
         let old_dimensions = self.base().dimensions();
         let new_dimensions = self.dimensions_for_pose(pose);

@@ -2,7 +2,6 @@ use super::{
     Arc, Axis, BLOCK_BEHAVIORS, BlockCollisionContext, BlockPos, BlockStateExt, BlockStateId,
     BooleanOp, DVec3, World, WorldAabb, collide, join_unoptimized_boxes,
 };
-use crate::entity::prelude::*;
 
 /// Vanilla `Block.pushEntitiesUp` for block-state replacements that add collision.
 ///

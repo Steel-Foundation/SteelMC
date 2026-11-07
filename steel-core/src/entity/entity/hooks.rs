@@ -304,6 +304,20 @@ macro_rules! entity_hook_list {
                 /// Caches a live owner reference after restoring persisted owner-linked
                 /// entities. Most entities do not store owner references.
                 fn restore_owner_reference(owner: &SharedEntity) = restore_owner_reference_default;
+                /// Gets the position to send in this entity's add-entity packet.
+                ///
+                /// Mirrors vanilla `Entity.getAddEntityPacket()` overloads. Most entities
+                /// spawn at their current position; block-attached entities can override
+                /// this with the backing block position used by the vanilla packet.
+                fn spawn_position() -> DVec3 = spawn_position_default;
+                /// Refreshes dimensions for the current physical pose.
+                fn refresh_dimensions() = refresh_dimensions_default;
+                /// Adds an impulse to this entity's velocity and marks velocity for sync.
+                fn push_impulse(impulse: DVec3) = push_impulse_default;
+                /// Attempts to set the entity's position through world lifecycle validation.
+                ///
+                /// For the base method, see [`Self::try_set_position_base`]
+                fn try_set_position(pos: DVec3) -> Result<(), EntityMoveError> = try_set_position_default;
                 /// Called when a player touches this entity during nearby pickup processing.
                 fn player_touch(player: &Arc<Player>) = player_touch_default;
                 /// Kills this entity. `world` is vanilla's explicit `ServerLevel`
@@ -362,6 +376,8 @@ macro_rules! entity_hook_list {
                     pos: BlockPos,
                     world: &Arc<World>,
                 ) = check_fall_damage_default;
+                /// Moves this entity by `delta`, resolving collisions.
+                fn move_entity(mover_type: MoverType, delta: DVec3) -> Option<MoveResult> = move_entity_default;
             }
         }
     };

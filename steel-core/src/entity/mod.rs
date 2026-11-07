@@ -745,6 +745,7 @@ pub(crate) mod ai;
 pub(crate) mod animal;
 pub mod attribute;
 mod base;
+pub(crate) mod block_attached;
 mod block_effects;
 mod callback;
 mod combat_rules;

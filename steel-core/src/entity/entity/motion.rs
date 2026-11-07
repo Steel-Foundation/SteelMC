@@ -48,8 +48,8 @@ pub trait EntityMotion: Entity {
             && !self.is_passenger_of_same_vehicle(other)
     }
 
-    /// Adds an impulse to this entity's velocity and marks velocity for sync.
-    fn push_impulse(&self, impulse: DVec3) {
+    /// Default for [`Entity::push_impulse`].
+    fn push_impulse_default(&self, impulse: DVec3) {
         self.base().push_impulse(impulse);
     }
 
@@ -428,11 +428,8 @@ pub trait EntityMotion: Entity {
         self.default_apply_accepted_client_movement(world, accepted)
     }
 
-    /// Attempts to set the entity's position through world lifecycle validation.
-    ///
-    /// For the base method, see [`Self::try_set_position_base`]
-    #[must_use = "movement commits can fail when world entity state rejects the update"]
-    fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+    /// Default for [`Entity::try_set_position`].
+    fn try_set_position_default(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         self.try_set_position_base(pos)
     }
 
@@ -564,7 +561,12 @@ pub trait EntityMotion: Entity {
         clippy::too_many_lines,
         reason = "keeps vanilla movement phases in order"
     )]
-    fn move_entity(self: Arc<Self>, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
+    /// Default for [`Entity::move_entity`].
+    fn move_entity_default(
+        self: Arc<Self>,
+        mover_type: MoverType,
+        delta: DVec3,
+    ) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
             return self.move_without_physics(delta);

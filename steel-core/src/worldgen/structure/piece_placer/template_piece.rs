@@ -1,16 +1,22 @@
+use std::sync::Arc;
+
 use glam::{DVec3, IVec3};
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::{Registry, vanilla_block_entity_types, vanilla_blocks, vanilla_entities};
+use steel_registry::{
+    Registry, vanilla_block_entity_types, vanilla_blocks, vanilla_entities, vanilla_items,
+};
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Rotation, types::UpdateFlags};
 
 use crate::chunk::heightmap::HeightmapType;
+use crate::entity::{entities::ItemFrameEntity, next_entity_id};
 use crate::fluid::FluidStateExt as _;
 use crate::world::World;
 use crate::worldgen::region::WorldGenRegion;
@@ -510,12 +516,20 @@ impl StructurePiecePlacer {
         let _ = region.add_fresh_entity(entity);
     }
 
-    const fn spawn_end_city_elytra_frame(
-        _region: &mut WorldGenRegion<'_>,
-        _pos: BlockPos,
-        _direction: Direction,
+    fn spawn_end_city_elytra_frame(
+        region: &mut WorldGenRegion<'_>,
+        pos: BlockPos,
+        direction: Direction,
     ) {
-        // TODO(entity components): re-enable once `ItemFrameEntity` is ported out of `steel-core/legacy_entities/`.
+        let entity = Arc::new(ItemFrameEntity::new_attached(
+            &vanilla_entities::ITEM_FRAME,
+            next_entity_id(),
+            pos,
+            direction,
+            region.weak_world(),
+        ));
+        entity.set_item_with_update(ItemStack::new(&vanilla_items::ELYTRA), false);
+        let _ = region.add_fresh_entity(entity);
     }
 
     fn handle_mansion_marker(
