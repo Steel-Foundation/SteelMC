@@ -636,8 +636,8 @@ impl Living<'_> {
         self.default_ai_step(entity)
     }
 
-    /// Pushes nearby colliding entities away from this one.
-    pub fn push_entities(&self) {
+    /// Default for [`LivingProps::push_entities`].
+    pub(crate) fn push_entities_default(&self) {
         EntityPush::push_entities(self);
     }
 

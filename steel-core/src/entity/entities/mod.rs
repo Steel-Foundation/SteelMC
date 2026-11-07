@@ -6,6 +6,7 @@
 pub mod mobs;
 pub mod objects;
 
+pub use mobs::ambient::BatEntity;
 pub use mobs::hostile::EndermiteEntity;
 pub use mobs::passive::{
     ChickenEntity, CowEntity, MushroomCowEntity, PigEntity, SheepEntity, SquidEntity,

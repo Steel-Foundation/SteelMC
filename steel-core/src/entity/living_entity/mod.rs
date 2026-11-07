@@ -125,6 +125,8 @@ entity_props! {
         fn sound_volume() -> f32 = sound_volume_default;
         /// Runs vanilla `LivingEntity.handleKillingBlow`.
         fn handle_killing_blow() = handle_killing_blow_default;
+        /// `LivingEntity.pushEntities`: pushes nearby colliding entities away.
+        fn push_entities() = push_entities_default;
         /// `LivingEntity.shouldDropLoot`.
         fn should_drop_loot(world: &World) -> bool = should_drop_loot_default;
         /// `LivingEntity.shouldDropExperience`.

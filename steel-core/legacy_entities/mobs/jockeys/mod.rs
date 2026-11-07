@@ -1,1 +1,0 @@
-//! Jockey mob implementations.
