@@ -23,7 +23,7 @@ use steel_registry::mob_effect_instance::INFINITE_EFFECT_DURATION;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
 use steel_registry::vanilla_mob_effects;
-use steel_utils::locks::{IntoShared, Shared, SyncMutex};
+use steel_utils::locks::{CheckedMutex, IntoShared, Shared, SyncMutex};
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, Identifier};
 use uuid::Uuid;
@@ -720,16 +720,29 @@ impl LivingEntityState {
 /// death side effects. Health remains the source of truth for dead-or-dying
 /// checks such as client respawn requests.
 pub struct LivingEntityBase {
-    state: SyncMutex<LivingEntityState>,
-    attributes: SyncMutex<AttributeMap>,
-    active_mob_effects: SyncMutex<FxHashMap<MobEffectRef, ActiveMobEffect>>,
-    dirty_mob_effects: SyncMutex<Vec<MobEffectSyncChange>>,
+    state: CheckedMutex<LivingEntityState>,
+    attributes: CheckedMutex<AttributeMap>,
+    effects: CheckedMutex<ActiveEffects>,
     equipment: Shared<dyn EntityEquipment>,
-    last_equipment_items: SyncMutex<[ItemStack; EquipmentSlot::ALL.len()]>,
-    pending_equipment_changes: SyncMutex<[Option<ItemStack>; EquipmentSlot::ALL.len()]>,
-    equipment_attribute_modifiers:
-        SyncMutex<[Vec<EquipmentAttributeModifierKey>; EquipmentSlot::ALL.len()]>,
+    equipment_tracking: CheckedMutex<EquipmentTracking>,
     hooks: &'static dyn LivingHooks,
+}
+
+/// Active mob effects and the changes clients have not been sent yet.
+#[derive(Default)]
+struct ActiveEffects {
+    active: FxHashMap<MobEffectRef, ActiveMobEffect>,
+    pending_sync: Vec<MobEffectSyncChange>,
+}
+
+/// What the server last saw in each equipment slot, and what that drives.
+struct EquipmentTracking {
+    /// Vanilla's previous-tick snapshot, for change detection.
+    last_items: [ItemStack; EquipmentSlot::ALL.len()],
+    /// Changes waiting for entity tracking to send.
+    pending_changes: [Option<ItemStack>; EquipmentSlot::ALL.len()],
+    /// Attribute modifiers installed from each slot's item.
+    attribute_modifiers: [Vec<EquipmentAttributeModifierKey>; EquipmentSlot::ALL.len()],
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `LivingEntityBase`.
@@ -781,14 +794,15 @@ impl LivingEntityBase {
         let speed = attributes.required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
 
         Self {
-            state: SyncMutex::new(LivingEntityState::new(speed)),
-            attributes: SyncMutex::new(attributes),
-            active_mob_effects: SyncMutex::new(FxHashMap::default()),
-            dirty_mob_effects: SyncMutex::new(Vec::new()),
+            state: CheckedMutex::new(LivingEntityState::new(speed)),
+            attributes: CheckedMutex::new(attributes),
+            effects: CheckedMutex::new(ActiveEffects::default()),
             equipment,
-            last_equipment_items: SyncMutex::new(array::from_fn(|_| ItemStack::empty())),
-            pending_equipment_changes: SyncMutex::new(array::from_fn(|_| None)),
-            equipment_attribute_modifiers: SyncMutex::new(array::from_fn(|_| Vec::new())),
+            equipment_tracking: CheckedMutex::new(EquipmentTracking {
+                last_items: array::from_fn(|_| ItemStack::empty()),
+                pending_changes: array::from_fn(|_| None),
+                attribute_modifiers: array::from_fn(|_| Vec::new()),
+            }),
             hooks,
         }
     }
@@ -801,7 +815,7 @@ impl LivingEntityBase {
 
     /// Returns this entity's attribute map.
     #[inline]
-    pub const fn attributes(&self) -> &SyncMutex<AttributeMap> {
+    pub const fn attributes(&self) -> &CheckedMutex<AttributeMap> {
         &self.attributes
     }
 
@@ -826,7 +840,8 @@ impl LivingEntityBase {
     /// Collects equipment changes against Vanilla's previous-tick snapshots.
     pub fn collect_equipment_changes(&self) -> Vec<(EquipmentSlot, ItemStack, ItemStack)> {
         let current_items = self.equipment.lock().snapshot();
-        let mut last_items = self.last_equipment_items.lock();
+        let mut tracking = self.equipment_tracking.lock();
+        let last_items = &mut tracking.last_items;
         let mut changes = Vec::new();
 
         for slot in EquipmentSlot::ALL {
@@ -845,18 +860,22 @@ impl LivingEntityBase {
         &self,
         changes: impl IntoIterator<Item = (EquipmentSlot, ItemStack)>,
     ) {
-        let mut pending = self.pending_equipment_changes.lock();
+        let mut tracking = self.equipment_tracking.lock();
         for (slot, item_stack) in changes {
-            pending[slot.index()] = Some(item_stack);
+            tracking.pending_changes[slot.index()] = Some(item_stack);
         }
     }
 
     /// Drains equipment changes detected by the living tick.
     pub fn drain_equipment_changes(&self) -> Vec<(EquipmentSlot, ItemStack)> {
-        let mut pending = self.pending_equipment_changes.lock();
+        let mut tracking = self.equipment_tracking.lock();
         EquipmentSlot::ALL
             .into_iter()
-            .filter_map(|slot| pending[slot.index()].take().map(|item| (slot, item)))
+            .filter_map(|slot| {
+                tracking.pending_changes[slot.index()]
+                    .take()
+                    .map(|item| (slot, item))
+            })
             .collect()
     }
 
@@ -1040,7 +1059,8 @@ impl LivingEntityBase {
     ) {
         let slot_index = slot.index();
         let mut attributes = self.attributes.lock();
-        let mut installed_modifiers = self.equipment_attribute_modifiers.lock();
+        let mut tracking = self.equipment_tracking.lock();
+        let installed_modifiers = &mut tracking.attribute_modifiers;
 
         #[expect(
             clippy::iter_with_drain,
@@ -1087,19 +1107,19 @@ impl LivingEntityBase {
     /// Returns whether this living entity has an active vanilla mob effect.
     #[must_use]
     pub fn has_mob_effect(&self, effect: MobEffectRef) -> bool {
-        self.active_mob_effects.lock().contains_key(&effect)
+        self.effects.lock().active.contains_key(&effect)
     }
 
     /// Returns active vanilla mob-effect state.
     #[must_use]
     pub fn mob_effect(&self, effect: MobEffectRef) -> Option<ActiveMobEffect> {
-        self.active_mob_effects.lock().get(&effect).cloned()
+        self.effects.lock().active.get(&effect).cloned()
     }
 
     /// Returns all active vanilla mob effects.
     #[must_use]
     pub fn active_mob_effects(&self) -> Vec<ActiveMobEffect> {
-        self.active_mob_effects.lock().values().cloned().collect()
+        self.effects.lock().active.values().cloned().collect()
     }
 
     /// Adds or updates active vanilla mob-effect state.
@@ -1108,7 +1128,8 @@ impl LivingEntityBase {
         let mut existing_effect = None;
         let mut changed_effect = None;
         {
-            let mut effects = self.active_mob_effects.lock();
+            let mut effects = self.effects.lock();
+            let effects = &mut effects.active;
             if let Some(current) = effects.get_mut(&effect_key) {
                 if current.update(effect) {
                     changed_effect = Some(current.clone());
@@ -1158,7 +1179,7 @@ impl LivingEntityBase {
 
     /// Removes active vanilla mob-effect state.
     pub fn remove_mob_effect(&self, effect: MobEffectRef) -> bool {
-        let removed = self.active_mob_effects.lock().remove(&effect);
+        let removed = self.effects.lock().active.remove(&effect);
         let Some(removed) = removed else {
             return false;
         };
@@ -1172,7 +1193,8 @@ impl LivingEntityBase {
     /// Ticks one active mob-effect duration after its server behavior has run.
     pub(super) fn tick_mob_effect_duration(&self, effect_key: MobEffectRef) {
         let (updated, removed) = {
-            let mut effects = self.active_mob_effects.lock();
+            let mut effects = self.effects.lock();
+            let effects = &mut effects.active;
             let Some(effect) = effects.get_mut(&effect_key) else {
                 return;
             };
@@ -1206,7 +1228,7 @@ impl LivingEntityBase {
 
     /// Drains pending mob-effect packet changes.
     pub fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
-        self.dirty_mob_effects.lock().drain(..).collect()
+        mem::take(&mut self.effects.lock().pending_sync)
     }
 
     /// Returns whether synchronized effect entity data should be recomputed.
@@ -1220,8 +1242,9 @@ impl LivingEntityBase {
     /// Builds the synchronized living effect particle/glow/invisibility state.
     pub fn mob_effect_display_state(&self) -> MobEffectDisplayState {
         let mut effects = self
-            .active_mob_effects
+            .effects
             .lock()
+            .active
             .values()
             .cloned()
             .collect::<Vec<_>>();
@@ -1274,7 +1297,7 @@ impl LivingEntityBase {
     }
 
     fn queue_mob_effect_sync(&self, change: MobEffectSyncChange) {
-        self.dirty_mob_effects.lock().push(change);
+        self.effects.lock().pending_sync.push(change);
     }
 
     /// Marks synchronized effect visibility data for recomputation.

@@ -263,7 +263,7 @@ impl ChickenEntity {
             mob_base,
             age: Age::new(&Self::AGEABLE),
             breeding: Breeding::new(&Self::BREEDING),
-            chicken_state: CheckedMutex::new("ChickenState", chicken_state),
+            chicken_state: CheckedMutex::new(chicken_state),
             entity_data: SyncMutex::new(entity_data),
         }
     }

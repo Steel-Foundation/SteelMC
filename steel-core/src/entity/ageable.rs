@@ -64,15 +64,12 @@ impl Age {
     #[must_use]
     pub const fn new(props: &'static AgeableProps) -> Self {
         Self {
-            state: CheckedMutex::new(
-                "Age",
-                AgeState {
-                    age: 0,
-                    forced_age: 0,
-                    forced_age_timer: 0,
-                    age_lock_particle_timer: 0,
-                },
-            ),
+            state: CheckedMutex::new(AgeState {
+                age: 0,
+                forced_age: 0,
+                forced_age_timer: 0,
+                age_lock_particle_timer: 0,
+            }),
             props,
         }
     }

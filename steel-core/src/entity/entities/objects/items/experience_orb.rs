@@ -88,7 +88,7 @@ impl ExperienceOrbEntity {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             entity_data: SyncMutex::new(ExperienceOrbEntityData::new()),
-            state: CheckedMutex::new("ExperienceOrbState", ExperienceOrbState::new()),
+            state: CheckedMutex::new(ExperienceOrbState::new()),
         }
     }
 
@@ -114,7 +114,7 @@ impl ExperienceOrbEntity {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             entity_data: SyncMutex::new(ExperienceOrbEntityData::new()),
-            state: CheckedMutex::new("ExperienceOrbState", ExperienceOrbState::new()),
+            state: CheckedMutex::new(ExperienceOrbState::new()),
         }
     }
 

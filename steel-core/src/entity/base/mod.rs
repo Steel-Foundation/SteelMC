@@ -444,14 +444,14 @@ impl EntityBase {
             generation: EntityGeneration::next(),
             id,
             uuid,
-            world: CheckedMutex::new("EntityBase.world", world),
-            state: CheckedMutex::new("EntityBase.state", state),
-            save_data: CheckedMutex::new("EntityBase.save_data", EntityBaseSaveData::new()),
-            movement_trace: CheckedMutex::new("EntityBase.movement_trace", EntityMovementTrace::default()),
-            lifecycle: CheckedMutex::new("EntityBase.lifecycle", EntityLifecycleState::new()),
-            relationships: CheckedMutex::new("EntityBase.relationships", EntityRelationshipState::default()),
-            portal_process: CheckedMutex::new("EntityBase.portal_process", None),
-            level_callback: CheckedMutex::new("EntityBase.level_callback", Arc::new(NullEntityCallback)),
+            world: CheckedMutex::new(world),
+            state: CheckedMutex::new(state),
+            save_data: CheckedMutex::new(EntityBaseSaveData::new()),
+            movement_trace: CheckedMutex::new(EntityMovementTrace::default()),
+            lifecycle: CheckedMutex::new(EntityLifecycleState::new()),
+            relationships: CheckedMutex::new(EntityRelationshipState::default()),
+            portal_process: CheckedMutex::new(None),
+            level_callback: CheckedMutex::new(Arc::new(NullEntityCallback)),
         }
     }
 

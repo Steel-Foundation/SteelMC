@@ -188,7 +188,7 @@ impl ItemEntity {
             ),
             entity_type,
             entity_data: SyncMutex::new(entity_data),
-            item_state: CheckedMutex::new("ItemEntityState", ItemEntityState::new()),
+            item_state: CheckedMutex::new(ItemEntityState::new()),
         }
     }
 
@@ -210,7 +210,7 @@ impl ItemEntity {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             entity_data: SyncMutex::new(ItemEntityData::new()),
-            item_state: CheckedMutex::new("ItemEntityState", ItemEntityState::new()),
+            item_state: CheckedMutex::new(ItemEntityState::new()),
         }
     }
 

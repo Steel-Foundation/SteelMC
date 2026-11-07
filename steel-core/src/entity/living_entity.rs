@@ -2,6 +2,7 @@ use steel_math::{DEGREE_90, trig};
 use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
+use steel_utils::locks::CheckedMutex;
 
 use std::ops::Deref;
 
@@ -445,7 +446,7 @@ impl<'a> Living<'a> {
 
     /// Returns a reference to this entity's attribute map.
     #[must_use]
-    pub const fn attributes(&self) -> &'a SyncMutex<AttributeMap> {
+    pub const fn attributes(&self) -> &'a CheckedMutex<AttributeMap> {
         self.living_base().attributes()
     }
 

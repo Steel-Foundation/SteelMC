@@ -4,6 +4,7 @@
 )]
 //! Lock wrappers for debug checks and deadlock prevention.
 
+use std::any::type_name;
 use std::fmt::{self, Debug, Formatter};
 use std::ops::{Deref, DerefMut};
 use std::ptr;
@@ -53,20 +54,19 @@ fn thread_token() -> usize {
 /// A [`SyncMutex`] that panics when the thread holding it locks it again.
 ///
 /// Other threads block as usual. A same-thread re-lock would deadlock a plain
-/// mutex; this turns it into a panic naming the lock, which is how re-entrant
+/// mutex; this turns it into a panic naming the locked type and the second
+/// `lock` call site, which is how re-entrant
 /// game logic (an entity hurting another that hurts it back) surfaces a guard
 /// held across a call out.
 pub struct CheckedMutex<T: ?Sized> {
-    name: &'static str,
     owner: AtomicUsize,
     inner: SyncMutex<T>,
 }
 
 impl<T> CheckedMutex<T> {
-    /// Creates an unlocked mutex reported as `name` in re-entrancy panics.
-    pub const fn new(name: &'static str, value: T) -> Self {
+    /// Creates an unlocked mutex.
+    pub const fn new(value: T) -> Self {
         Self {
-            name,
             owner: AtomicUsize::new(0),
             inner: SyncMutex::new(value),
         }
@@ -92,7 +92,7 @@ impl<T: ?Sized> CheckedMutex<T> {
         assert!(
             self.owner.load(Ordering::Relaxed) != token,
             "`{}` is already locked by this thread (re-entrant access)",
-            self.name
+            type_name::<T>()
         );
         let guard = self.inner.lock();
         self.owner.store(token, Ordering::Relaxed);
@@ -112,7 +112,7 @@ impl<T: Debug> Debug for CheckedMutex<T> {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("CheckedMutex")
-            .field("name", &self.name)
+            .field("type", &type_name::<T>())
             .field("inner", &self.inner)
             .finish_non_exhaustive()
     }
@@ -153,16 +153,16 @@ mod tests {
     use super::CheckedMutex;
 
     #[test]
-    #[should_panic(expected = "`age` is already locked by this thread")]
+    #[should_panic(expected = "`i32` is already locked by this thread")]
     fn relocking_on_the_same_thread_panics_instead_of_deadlocking() {
-        let mutex = CheckedMutex::new("age", 0);
+        let mutex = CheckedMutex::new(0);
         let _held = mutex.lock();
         let _again = mutex.lock();
     }
 
     #[test]
     fn other_threads_wait_for_the_holder() {
-        let mutex = Arc::new(CheckedMutex::new("count", 0));
+        let mutex = Arc::new(CheckedMutex::new(0));
         let workers: Vec<_> = (0..4)
             .map(|_| {
                 let mutex = Arc::clone(&mutex);
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn unlocking_allows_the_same_thread_to_lock_again() {
-        let mutex = CheckedMutex::new("flap", 1);
+        let mutex = CheckedMutex::new(1);
         *mutex.lock() += 1;
         assert_eq!(*mutex.lock(), 2);
     }

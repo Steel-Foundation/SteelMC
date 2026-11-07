@@ -158,7 +158,7 @@ impl PrimedTntEntity {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             entity_data: SyncMutex::new(PrimedTntEntityData::new()),
-            state: CheckedMutex::new("PrimedTntState", PrimedTntState::new()),
+            state: CheckedMutex::new(PrimedTntState::new()),
         }
     }
 
@@ -194,7 +194,7 @@ impl PrimedTntEntity {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             entity_data: SyncMutex::new(PrimedTntEntityData::new()),
-            state: CheckedMutex::new("PrimedTntState", PrimedTntState::new()),
+            state: CheckedMutex::new(PrimedTntState::new()),
         }
     }
 

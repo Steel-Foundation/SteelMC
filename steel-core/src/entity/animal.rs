@@ -98,13 +98,10 @@ impl Breeding {
     #[must_use]
     pub const fn new(props: &'static BreedingProps) -> Self {
         Self {
-            state: CheckedMutex::new(
-                "Breeding",
-                LoveState {
-                    in_love: 0,
-                    love_cause: None,
-                },
-            ),
+            state: CheckedMutex::new(LoveState {
+                in_love: 0,
+                love_cause: None,
+            }),
             props,
         }
     }

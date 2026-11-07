@@ -96,10 +96,7 @@ impl FallingBlockEntity {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             entity_data: SyncMutex::new(FallingBlockEntityData::new()),
-            state: CheckedMutex::new(
-                "FallingBlockState",
-                FallingBlockState::new(vanilla_blocks::SAND.default_state()),
-            ),
+            state: CheckedMutex::new(FallingBlockState::new(vanilla_blocks::SAND.default_state())),
         }
     }
 
@@ -120,7 +117,7 @@ impl FallingBlockEntity {
             base: EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
             entity_data: SyncMutex::new(entity_data),
-            state: CheckedMutex::new("FallingBlockState", FallingBlockState::new(block_state)),
+            state: CheckedMutex::new(FallingBlockState::new(block_state)),
         }
     }
 
@@ -131,10 +128,7 @@ impl FallingBlockEntity {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
             entity_data: SyncMutex::new(FallingBlockEntityData::new()),
-            state: CheckedMutex::new(
-                "FallingBlockState",
-                FallingBlockState::new(vanilla_blocks::SAND.default_state()),
-            ),
+            state: CheckedMutex::new(FallingBlockState::new(vanilla_blocks::SAND.default_state())),
         }
     }
 
