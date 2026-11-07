@@ -1,6 +1,6 @@
 //! Lingering cloud that applies its potion effects to living entities standing inside it.
 
-use std::sync::{Arc, Weak};
+use std::sync::Weak;
 
 use glam::DVec3;
 use rustc_hash::FxHashMap;
@@ -11,21 +11,18 @@ use steel_macros::entity_behavior;
 use steel_registry::MobEffectInstance as RegistryMobEffectInstance;
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::data_components::{PotionContents, vanilla_components};
-use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
-use steel_registry::item_stack::ItemStack;
 use steel_registry::particle_type::{ColorParticleOption, ParticleData};
 use steel_registry::vanilla_entity_data::AreaEffectCloudEntityData;
 use steel_registry::vanilla_particle_types;
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::CheckedMutex;
 use steel_utils::{DowncastType, DowncastTypeKey, RgbColor};
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
-use crate::entity::damage::DamageSource;
 use crate::entity::potion_contents::to_runtime_instance;
+use crate::entity::prelude::*;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityReference, EntitySyncedData, LivingEntity,
-    RemovalReason, SharedEntity,
+    EntityBase, EntityBaseLoad, EntityProps, EntityReference, Living, RemovalReason, SharedEntity,
 };
 use crate::world::World;
 
@@ -81,11 +78,16 @@ impl AreaEffectCloudState {
 // only sets it for dragon breath and commands; potion clouds always derive their
 // particle from the potion color.
 #[entity_behavior(class = "AreaEffectCloud")]
+#[derive(Entity)]
+#[entity(hooks = Self::ENTITY, save = Self::save_cloud, load = Self::load_cloud)]
 pub struct AreaEffectCloudEntity {
+    #[entity(base)]
     base: EntityBase,
+    #[entity(entity_type)]
     entity_type: EntityTypeRef,
-    entity_data: SyncMutex<AreaEffectCloudEntityData>,
-    state: SyncMutex<AreaEffectCloudState>,
+    state: CheckedMutex<AreaEffectCloudState>,
+    #[entity(synced)]
+    entity_data: CheckedMutex<AreaEffectCloudEntityData>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `AreaEffectCloudEntity`.
@@ -94,25 +96,61 @@ unsafe impl DowncastType for AreaEffectCloudEntity {
 }
 
 impl AreaEffectCloudEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        tick: |cloud, entity| {
+            cloud.tick_default();
+            // Clients draw the particles from the synced radius, waiting flag
+            // and particle; only the server tick runs here.
+            if let Some(world) = cloud.level() {
+                cloud.server_tick(entity, &world);
+            }
+        },
+        piston_push_reaction: |_| PushReaction::IgnoreEntity,
+        dimensions_for_pose: |cloud, _| {
+            EntityDimensions::with_default_eye_height(cloud.radius() * 2.0, HEIGHT)
+        },
+        hurt: |_, _, _, _| false,
+        restore_owner_reference: |cloud, owner| {
+            if let Some(reference) = &cloud.state.lock().owner {
+                reference.cache_entity(owner);
+            }
+        },
+        apply_implicit_item_components: |cloud, item_stack| {
+            if let Some(contents) = item_stack.get(vanilla_components::POTION_CONTENTS) {
+                cloud.set_potion_contents(contents.clone());
+            }
+            if let Some(scale) = item_stack.get(vanilla_components::POTION_DURATION_SCALE) {
+                cloud.set_potion_duration_scale(*scale);
+            }
+        },
+        ..EntityProps::new()
+    };
+
     /// Creates a new area effect cloud with vanilla defaults.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self {
-            base: EntityBase::new(id, position, entity_type.dimensions, world),
+        Self::from_base(
+            EntityBase::new(id, position, entity_type.dimensions, world),
             entity_type,
-            entity_data: SyncMutex::new(AreaEffectCloudEntityData::new()),
-            state: SyncMutex::new(AreaEffectCloudState::new()),
-        }
+        )
     }
 
     /// Creates an area effect cloud from saved base data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self {
-            base: EntityBase::from_load(load, entity_type.dimensions),
+        Self::from_base(
+            EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
-            entity_data: SyncMutex::new(AreaEffectCloudEntityData::new()),
-            state: SyncMutex::new(AreaEffectCloudState::new()),
+        )
+    }
+
+    fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
+        base.set_no_physics(true);
+        Self {
+            base,
+            entity_type,
+            state: CheckedMutex::new(AreaEffectCloudState::new()),
+            entity_data: CheckedMutex::new(AreaEffectCloudEntityData::new()),
         }
     }
 
@@ -196,7 +234,7 @@ impl AreaEffectCloudEntity {
 
     /// Resolves the owner, if it is a loaded living entity.
     #[must_use]
-    pub fn get_owner(&self) -> Option<SharedEntity> {
+    pub fn owner(&self) -> Option<SharedEntity> {
         let world = self.level()?;
         let owner = self.state.lock().owner.clone()?;
         owner
@@ -204,7 +242,7 @@ impl AreaEffectCloudEntity {
             .filter(|owner| owner.as_living_entity().is_some())
     }
 
-    fn server_tick(self: &Arc<Self>, world: &World) {
+    fn server_tick(&self, entity: &SharedEntity, world: &World) {
         let tick_count = self.tick_count();
         let (duration, wait_time, radius_per_tick) = {
             let state = self.state.lock();
@@ -234,12 +272,12 @@ impl AreaEffectCloudEntity {
         }
 
         if tick_count % TIME_BETWEEN_APPLICATIONS == 0 {
-            self.apply_effects(world, tick_count, radius);
+            self.apply_effects(entity, world, tick_count, radius);
         }
     }
 
     /// Applies the cloud's effects to every eligible living entity inside it.
-    fn apply_effects(self: &Arc<Self>, world: &World, tick_count: i32, mut radius: f32) {
+    fn apply_effects(&self, this: &SharedEntity, world: &World, tick_count: i32, mut radius: f32) {
         let (effects, reapplication_delay) = {
             let mut state = self.state.lock();
             state.victims.retain(|_, until| tick_count < *until);
@@ -264,8 +302,7 @@ impl AreaEffectCloudEntity {
             return;
         }
 
-        let this: SharedEntity = Arc::<Self>::clone(self);
-        let owner = self.get_owner();
+        let owner = self.owner();
         let position = self.position();
 
         for entity in entities {
@@ -296,7 +333,7 @@ impl AreaEffectCloudEntity {
             };
 
             for effect in &effects {
-                self.apply_effect(world, living, effect, &this, owner.as_ref());
+                self.apply_effect(world, &living, effect, this, owner.as_ref());
             }
 
             if radius_on_use != 0.0 {
@@ -318,7 +355,7 @@ impl AreaEffectCloudEntity {
     fn apply_effect(
         &self,
         world: &World,
-        living: &dyn LivingEntity,
+        living: &Living<'_>,
         effect: &RegistryMobEffectInstance,
         this: &SharedEntity,
         owner: Option<&SharedEntity>,
@@ -352,60 +389,8 @@ impl AreaEffectCloudEntity {
     }
 }
 
-impl Entity for AreaEffectCloudEntity {
-    fn base(&self) -> &EntityBase {
-        &self.base
-    }
-
-    fn entity_type(&self) -> EntityTypeRef {
-        self.entity_type
-    }
-
-    fn tick(self: Arc<Self>) {
-        self.default_tick();
-        // Client-side particle rendering is driven by the synced radius, waiting
-        // flag and particle, so only the server tick runs here.
-        if let Some(world) = self.level() {
-            self.server_tick(&world);
-        }
-    }
-
-    fn no_physics(&self) -> bool {
-        true
-    }
-
-    fn piston_push_reaction(&self) -> PushReaction {
-        PushReaction::IgnoreEntity
-    }
-
-    fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
-        EntityDimensions::with_default_eye_height(self.radius() * 2.0, HEIGHT)
-    }
-
-    fn hurt(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
-        false
-    }
-
-    fn restore_owner_reference(&self, owner: &SharedEntity) {
-        if let Some(reference) = &self.state.lock().owner {
-            reference.cache_entity(owner);
-        }
-    }
-
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
-    }
-
-    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
-        if let Some(contents) = item_stack.get(vanilla_components::POTION_CONTENTS) {
-            self.set_potion_contents(contents.clone());
-        }
-        if let Some(scale) = item_stack.get(vanilla_components::POTION_DURATION_SCALE) {
-            self.set_potion_duration_scale(*scale);
-        }
-    }
-
-    fn save_additional(&self, nbt: &mut NbtCompound) {
+impl AreaEffectCloudEntity {
+    fn save_cloud(&self, nbt: &mut NbtCompound) {
         nbt.insert("Age", self.tick_count());
         let state = self.state.lock();
         nbt.insert("Duration", state.duration);
@@ -429,7 +414,7 @@ impl Entity for AreaEffectCloudEntity {
         }
     }
 
-    fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+    fn load_cloud(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.base.set_tick_count(nbt.int("Age").unwrap_or(0));
         {
             let mut state = self.state.lock();

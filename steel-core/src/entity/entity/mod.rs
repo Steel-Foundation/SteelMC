@@ -513,9 +513,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.game_event_with_source_entity(event, Some(self.as_entity_event_source()));
     }
 
-    /// Caches a live owner reference after restoring persisted owner-linked
-    /// entities. Most entities do not store owner references.
-    final fn restore_owner_reference(&self, _owner: &SharedEntity) {}
+    /// Default for [`Entity::restore_owner_reference`].
+    final fn restore_owner_reference_default(&self, _owner: &SharedEntity) {}
 
     /// Sets the level callback for lifecycle events (movement, removal).
     final fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {

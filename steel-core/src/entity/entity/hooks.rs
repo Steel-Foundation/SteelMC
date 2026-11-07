@@ -301,6 +301,9 @@ macro_rules! entity_hook_list {
                 fn could_accept_passenger() -> bool = could_accept_passenger_default;
                 /// Returns whether this entity handles and consumes an attack before normal damage.
                 fn skip_attack_interaction(source: &SharedEntity) -> bool = skip_attack_interaction_default;
+                /// Caches a live owner reference after restoring persisted owner-linked
+                /// entities. Most entities do not store owner references.
+                fn restore_owner_reference(owner: &SharedEntity) = restore_owner_reference_default;
                 /// Called when a player touches this entity during nearby pickup processing.
                 fn player_touch(player: &Arc<Player>) = player_touch_default;
                 /// Kills this entity. `world` is vanilla's explicit `ServerLevel`

@@ -13,7 +13,8 @@ use steel_utils::ChunkPos;
 use super::AreaEffectCloudEntity;
 use crate::behavior::init_behaviors;
 use crate::entity::entities::PigEntity;
-use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::entity::prelude::*;
+use crate::entity::{LivingParts as _, SharedEntity};
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 use crate::world::World;
 
@@ -82,25 +83,25 @@ fn affects_living_entities_once_per_reapplication_delay() {
     for _ in 0..9 {
         tick(&cloud);
     }
-    assert!(!pig.has_mob_effect(vanilla_mob_effects::POISON));
+    assert!(!pig.living().has_mob_effect(vanilla_mob_effects::POISON));
 
     tick(&cloud);
-    assert!(pig.has_mob_effect(vanilla_mob_effects::POISON));
+    assert!(pig.living().has_mob_effect(vanilla_mob_effects::POISON));
     assert!(
         cloud.radius() < 2.5,
         "each affected entity shrinks the cloud by 0.5"
     );
 
-    pig.remove_mob_effect(vanilla_mob_effects::POISON);
+    pig.living().remove_mob_effect(vanilla_mob_effects::POISON);
     for _ in 0..19 {
         tick(&cloud);
     }
     assert!(
-        !pig.has_mob_effect(vanilla_mob_effects::POISON),
+        !pig.living().has_mob_effect(vanilla_mob_effects::POISON),
         "victims wait for the reapplication delay"
     );
     tick(&cloud);
-    assert!(pig.has_mob_effect(vanilla_mob_effects::POISON));
+    assert!(pig.living().has_mob_effect(vanilla_mob_effects::POISON));
 }
 
 #[test]
@@ -136,7 +137,7 @@ fn extreme_saved_timings_wrap_like_vanilla_int_arithmetic() {
     // At age 10 the effect pass runs and every timing sum overflows
     // (`10 - MIN`, `10 + MAX`, `MAX + MAX`); Java wraps these silently.
     tick(&cloud);
-    assert!(pig.has_mob_effect(vanilla_mob_effects::POISON));
+    assert!(pig.living().has_mob_effect(vanilla_mob_effects::POISON));
     assert!(
         cloud.is_removed(),
         "the wrapped duration drops to zero or below"

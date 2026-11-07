@@ -1,10 +1,14 @@
 use std::f64::consts::PI;
+use std::sync::Arc;
 
 use glam::DVec3;
 use steel_math::DEGREE_360;
+use steel_registry::vanilla_entities;
 
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use crate::entity::prelude::*;
+use crate::entity::{entities::EndCrystalEntity, next_entity_id};
 
 const END_SPIKE_COUNT: usize = 10;
 const END_SPIKE_DISTANCE: f64 = 42.0;
@@ -166,7 +170,7 @@ impl FeatureDecorationRunner {
     fn place_end_spike_crystal(
         region: &mut WorldGenRegion<'_>,
         random: &mut WorldgenRandom,
-        _config: &EndSpikeConfiguration,
+        config: &EndSpikeConfiguration,
         spike: &EndSpike,
     ) {
         let position = DVec3::new(
@@ -174,9 +178,16 @@ impl FeatureDecorationRunner {
             f64::from(spike.height + 1),
             f64::from(spike.center_z) + 0.5,
         );
-        // Keeps vanilla's worldgen random sequence while the crystal cannot spawn.
-        let _rotation = random.next_f32() * DEGREE_360;
-        // TODO(entity components): re-enable once `EndCrystalEntity` is ported out of `steel-core/legacy_entities/`.
+        let crystal = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
+            next_entity_id(),
+            position,
+            region.weak_world(),
+        ));
+        crystal.set_beam_target(config.crystal_beam_target.map(BlockPos));
+        crystal.set_invulnerable(config.crystal_invulnerable);
+        crystal.snap_to(position, random.next_f32() * DEGREE_360, 0.0);
+        let _ = region.add_fresh_entity(crystal);
 
         let crystal_pos = BlockPos::from(position);
         let bedrock = REGISTRY
