@@ -1127,3 +1127,56 @@ impl FeatureDecorationRunner {
             .unwrap_or(false)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spread_blocks_index_every_cube_position_once() {
+        let origin = BlockPos::new(10, -3, -7);
+        let blocks = SculkSpreadBlocks::new(origin);
+        let mut seen = [false; 27];
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    let index = blocks
+                        .index(origin.offset(dx, dy, dz))
+                        .expect("cube position has an index");
+                    assert!(!seen[index], "index {index} used twice");
+                    seen[index] = true;
+                }
+            }
+        }
+        assert!(seen.iter().all(|&used| used));
+        assert_eq!(blocks.index(origin.offset(2, 0, 0)), None);
+        assert_eq!(blocks.index(origin.offset(0, -2, 0)), None);
+        assert_eq!(blocks.index(origin.offset(1, 1, -2)), None);
+    }
+
+    #[test]
+    fn spread_reads_stay_inside_the_cached_cube() {
+        let origin = BlockPos::new(0, 0, 0);
+        let blocks = SculkSpreadBlocks::new(origin);
+        let in_cube = |pos: BlockPos| blocks.index(pos).is_some();
+        for starting_face in FeatureDecorationRunner::VANILLA_DIRECTION_VALUES {
+            for spread_direction in FeatureDecorationRunner::VANILLA_DIRECTION_VALUES {
+                if spread_direction.axis() == starting_face.axis() {
+                    continue;
+                }
+                for spread_type in SCULK_DEFAULT_SPREAD_TYPES {
+                    let spread_pos = FeatureDecorationRunner::sculk_vein_spread_pos(
+                        origin,
+                        spread_direction,
+                        starting_face,
+                        spread_type,
+                    );
+                    // Existing state, the block it attaches against, and the distance-2 check.
+                    assert!(in_cube(spread_pos.pos));
+                    assert!(in_cube(spread_pos.pos.relative(spread_pos.face)));
+                    assert!(in_cube(origin.relative(spread_pos.face.opposite())));
+                }
+            }
+        }
+    }
+}
