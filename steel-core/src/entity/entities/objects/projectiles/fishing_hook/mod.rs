@@ -668,10 +668,10 @@ impl FishingHookEntity {
                     self.hook_state.lock().bobber_state = BobberState::Flying;
                     return false;
                 };
-                let same_dimension = hooked.level().is_some_and(|hooked_world| {
-                    world.dimension_type == hooked_world.dimension_type
-                });
-                if !hooked.is_removed() && hooked.can_interact_with_level() && same_dimension {
+                let same_world = hooked
+                    .level()
+                    .is_some_and(|hooked_world| world.key == hooked_world.key);
+                if !hooked.is_removed() && hooked.can_interact_with_level() && same_world {
                     let position = hooked.position()
                         + DVec3::new(0.0, hooked.bounding_box().height() * 0.8, 0.0);
                     if let Err(error) = self.try_set_position(position) {
@@ -689,7 +689,8 @@ impl FishingHookEntity {
                 let velocity = self.velocity();
                 let mut force =
                     self.position().y + velocity.y - f64::from(pos.y()) - f64::from(liquid_height);
-                if force.abs() < 0.01 {
+                // `Math.signum(0)` is 0, unlike Rust's.
+                if force.abs() < 0.01 && force != 0.0 {
                     force += force.signum() * 0.1;
                 }
                 self.set_velocity(DVec3::new(
@@ -724,11 +725,11 @@ impl FishingHookEntity {
         }
     }
 
-    /// A hook lying on the ground for a minute disappears.
-    fn tick_life(&self) {
+    /// A hook lying on the ground for a minute disappears; returns whether it did.
+    fn tick_life(&self) -> bool {
         if !self.on_ground() {
             self.hook_state.lock().life = 0;
-            return;
+            return false;
         }
         let expired = {
             let mut state = self.hook_state.lock();
@@ -738,6 +739,7 @@ impl FishingHookEntity {
         if expired {
             self.set_removed(RemovalReason::Discarded);
         }
+        expired
     }
 
     /// `FishingHook.tick` before `super.tick()`: reseeds the random the
@@ -758,10 +760,9 @@ impl FishingHookEntity {
         let Some(player) = owner.as_player() else {
             return;
         };
-        if self.should_stop_fishing(player) {
+        if self.should_stop_fishing(player) || self.tick_life() {
             return;
         }
-        self.tick_life();
 
         let Some(world) = self.level() else {
             return;

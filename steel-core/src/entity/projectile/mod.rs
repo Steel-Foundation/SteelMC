@@ -132,7 +132,7 @@ impl ProjectileDeflection {
                 let Some(entity) = deflecting_entity else {
                     return;
                 };
-                let movement = entity.velocity();
+                let movement = entity.known_speed();
                 let length = movement.length();
                 let normalized = if length < 1.0e-5 {
                     DVec3::ZERO
