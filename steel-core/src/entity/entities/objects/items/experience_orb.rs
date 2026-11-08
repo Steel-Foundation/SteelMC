@@ -7,7 +7,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
-use steel_math::DEGREE_360;
+use steel_math::{DEGREE_360, vector};
 use steel_protocol::packets::game::{CTakeItemEntity, SoundSource};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
@@ -343,14 +343,8 @@ impl ExperienceOrbEntity {
             player_pos.y + player.eye_height() / 2.0 - self.position().y,
             player_pos.z - self.position().z,
         );
-        let length = delta.length();
-        // Vanilla `Vec3.normalize` yields zero below this length.
-        if length < 1.0e-5 {
-            return;
-        }
-
-        let power = 1.0 - length / MAX_FOLLOW_DIST;
-        self.set_velocity(self.velocity() + delta.normalize() * (power * power * 0.1));
+        let power = 1.0 - delta.length_squared().sqrt() / MAX_FOLLOW_DIST;
+        self.set_velocity(self.velocity() + vector::normalize(delta) * (power * power * 0.1));
     }
 
     fn apply_friction_and_bounce(&self, world: &Arc<World>, fall_speed: f64) {

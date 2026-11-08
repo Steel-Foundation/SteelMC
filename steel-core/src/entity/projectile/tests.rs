@@ -132,11 +132,12 @@ fn clip_segment_hits_box_in_path() {
 }
 
 #[test]
-fn clip_segment_returns_start_when_inside() {
+fn clip_segment_misses_when_starting_inside() {
     let aabb = WorldAabb::new(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
-    let hit = clip_segment(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0))
-        .expect("a ray starting inside the box hits at its origin");
-    assert_eq!(hit, DVec3::ZERO);
+    assert_eq!(
+        clip_segment(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0)),
+        None
+    );
 }
 
 #[test]

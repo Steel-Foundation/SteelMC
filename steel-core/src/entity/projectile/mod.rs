@@ -14,7 +14,6 @@ pub mod throwable_item;
 pub mod thrown_potion;
 
 use crate::entity::prelude::*;
-use std::mem;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
 
@@ -775,7 +774,11 @@ pub fn spawn_throwable_item_projectile<E: throwable_item::Parts>(
     create: impl FnOnce(DVec3) -> E,
 ) -> Option<SharedEntity> {
     let player_pos = player.position();
-    let spawn_pos = DVec3::new(player_pos.x, player.eye_y() - 0.1, player_pos.z);
+    let spawn_pos = DVec3::new(
+        player_pos.x,
+        player.eye_y() - f64::from(0.1_f32),
+        player_pos.z,
+    );
 
     let entity = create(spawn_pos);
     let owner: SharedEntity = Arc::<Player>::clone(player);
@@ -888,53 +891,53 @@ fn get_entity_hit_result(
     nearest
 }
 
-/// Clips the segment `from -> to` against `aabb`, returning the entry point.
-///
-/// Returns `from` when the segment starts inside the box and `None` when it never
-/// intersects. Mirrors vanilla `AABB.clip` using the slab method.
+/// Vanilla `AABB.clip`: where the segment `from -> to` enters `aabb` through a
+/// face. A segment that starts inside the box enters no face and misses.
 fn clip_segment(aabb: WorldAabb, from: DVec3, to: DVec3) -> Option<DVec3> {
     const EPSILON: f64 = 1.0e-7;
 
-    let direction = to - from;
-    let mut t_min = 0.0_f64;
-    let mut t_max = 1.0_f64;
-
-    for axis in [Axis::X, Axis::Y, Axis::Z] {
-        let start = axis_component(from, axis);
-        let delta = axis_component(direction, axis);
-        let axis_min = aabb.min(axis);
-        let axis_max = aabb.max(axis);
-
-        if delta.abs() < EPSILON {
-            if start < axis_min || start > axis_max {
-                return None;
-            }
-            continue;
+    let delta = to - from;
+    let mut scale = 1.0;
+    let mut hit = false;
+    // `AABB.clipPoint` for the face at `point` on axis `a`, bounded on `b` and `c`.
+    let mut clip_point = |[da, db, dc]: [f64; 3],
+                          point: f64,
+                          [min_b, max_b]: [f64; 2],
+                          [min_c, max_c]: [f64; 2],
+                          [from_a, from_b, from_c]: [f64; 3]| {
+        let s = (point - from_a) / da;
+        let pb = from_b + s * db;
+        let pc = from_c + s * dc;
+        if 0.0 < s
+            && s < scale
+            && min_b - EPSILON < pb
+            && pb < max_b + EPSILON
+            && min_c - EPSILON < pc
+            && pc < max_c + EPSILON
+        {
+            scale = s;
+            hit = true;
         }
+    };
 
-        let inv_delta = 1.0 / delta;
-        let mut low = (axis_min - start) * inv_delta;
-        let mut high = (axis_max - start) * inv_delta;
-        if low > high {
-            mem::swap(&mut low, &mut high);
-        }
-
-        t_min = t_min.max(low);
-        t_max = t_max.min(high);
-        if t_min > t_max {
-            return None;
-        }
+    let x = [aabb.min(Axis::X), aabb.max(Axis::X)];
+    let y = [aabb.min(Axis::Y), aabb.max(Axis::Y)];
+    let z = [aabb.min(Axis::Z), aabb.max(Axis::Z)];
+    let (dx, dy, dz) = (delta.x, delta.y, delta.z);
+    if dx.abs() > EPSILON {
+        let plane = if dx > 0.0 { x[0] } else { x[1] };
+        clip_point([dx, dy, dz], plane, y, z, [from.x, from.y, from.z]);
+    }
+    if dy.abs() > EPSILON {
+        let plane = if dy > 0.0 { y[0] } else { y[1] };
+        clip_point([dy, dz, dx], plane, z, x, [from.y, from.z, from.x]);
+    }
+    if dz.abs() > EPSILON {
+        let plane = if dz > 0.0 { z[0] } else { z[1] };
+        clip_point([dz, dx, dy], plane, x, y, [from.z, from.x, from.y]);
     }
 
-    Some(from + direction * t_min)
-}
-
-const fn axis_component(vec: DVec3, axis: Axis) -> f64 {
-    match axis {
-        Axis::X => vec.x,
-        Axis::Y => vec.y,
-        Axis::Z => vec.z,
-    }
+    hit.then(|| from + DVec3::new(scale * dx, scale * dy, scale * dz))
 }
 
 /// Vanilla `Mth.lerp(0.2, rotO, rot)` after wrapping the old angle into range.

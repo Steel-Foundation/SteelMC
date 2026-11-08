@@ -9,7 +9,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use rand::{RngExt, rng};
 use steel_macros::entity_behavior;
-use steel_math::{DEG_TO_RAD, DEGREE_360, trig};
+use steel_math::{DEG_TO_RAD, DEGREE_360, trig, vector};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidStateExt;
@@ -114,6 +114,7 @@ impl FishingHookEntity {
         },
         movement_emission: |_| EntityMovementEmission::None,
         can_use_portal: |_, _| false,
+        default_gravity: |_| f64::from(0.03_f32),
         // The client needs the owner to draw the line; an ownerless hook
         // sends its own id.
         spawn_data: |hook| {
@@ -129,6 +130,13 @@ impl FishingHookEntity {
                 || (target.is_alive() && target.is::<ItemEntity>())
         },
         on_hit_entity: |hook, _, target, _| hook.set_hooked_entity(Some(Arc::clone(target))),
+        on_hit_block: |hook, entity, hit| {
+            hook.projectile().on_hit_block_default(entity, hit);
+            // Vanilla scales by `HitResult.distanceTo`, which is the squared distance.
+            let distance_sqr = hit.location.distance_squared(hook.position());
+            hook.set_velocity(vector::normalize(hook.velocity()) * distance_sqr);
+        },
+        should_bounce_on_world_border: |_| true,
         ..ProjectileProps::new()
     };
 
@@ -222,6 +230,23 @@ impl FishingHookEntity {
     }
 
     /// Stores the hooked entity, synced as its id plus one (zero for none).
+    /// Sets `DATA_BITING`; like vanilla `onSyncedDataUpdated`, a new bite
+    /// yanks the hook down.
+    fn set_biting(&self, biting: bool) {
+        let changed = {
+            let mut data = self.entity_data.lock();
+            let changed = *data.fishing_hook.biting.get() != biting;
+            data.fishing_hook.biting.set(biting);
+            changed
+        };
+        if changed && biting {
+            // `Mth.nextFloat(syncronizedRandom, 0.6F, 1.0F)`.
+            let roll = self.synchronized_random.lock().next_f32() * (1.0 - 0.6) + 0.6;
+            let velocity = self.velocity();
+            self.set_velocity(DVec3::new(velocity.x, f64::from(-0.4 * roll), velocity.z));
+        }
+    }
+
     fn set_hooked_entity(&self, hooked: Option<SharedEntity>) {
         let hooked_entity_id = hooked.as_ref().map_or(0, |entity| entity.id() + 1);
         self.hook_state.lock().hooked_entity = hooked;
@@ -260,7 +285,7 @@ impl FishingHookEntity {
             if state.nibble <= 0 {
                 state.time_until_lured = 0;
                 state.time_until_hooked = 0;
-                self.entity_data.lock().fishing_hook.biting.set(false);
+                self.set_biting(false);
             }
         } else if state.time_until_hooked > 0 {
             state.time_until_hooked -= fishing_speed;
@@ -348,23 +373,18 @@ impl FishingHookEntity {
                 );
 
                 state.nibble = rng().random_range(20..=40);
-                self.entity_data.lock().fishing_hook.biting.set(true);
+                self.set_biting(true);
             }
         } else if state.time_until_lured > 0 {
             state.time_until_lured -= fishing_speed;
             let mut tease_chance: f32 = 0.15;
 
-            match state.time_until_lured {
-                0..20 => {
-                    tease_chance += (20 - state.time_until_lured) as f32 * 0.05;
-                }
-                20..40 => {
-                    tease_chance += (40 - state.time_until_lured) as f32 * 0.02;
-                }
-                40..60 => {
-                    tease_chance += (60 - state.time_until_lured) as f32 * 0.01;
-                }
-                _ => {}
+            if state.time_until_lured < 20 {
+                tease_chance += (20 - state.time_until_lured) as f32 * 0.05;
+            } else if state.time_until_lured < 40 {
+                tease_chance += (40 - state.time_until_lured) as f32 * 0.02;
+            } else if state.time_until_lured < 60 {
+                tease_chance += (60 - state.time_until_lured) as f32 * 0.01;
             }
 
             if rng().random::<f32>() < tease_chance {
@@ -510,17 +530,6 @@ impl FishingHookEntity {
                 let items = vanilla_loot_tables::GAMEPLAY_FISHING.get_random_items(&mut loot_ctx);
                 // TODO: trigger FISHING_ROD_HOOKED once advancement criteria exist.
                 self.spawn_catch(items, &world, player);
-
-                let orb = ExperienceOrbEntity::new(
-                    &vanilla_entities::EXPERIENCE_ORB,
-                    next_entity_id(),
-                    player.position() + DVec3::new(0.0, 0.5, 0.5),
-                    Arc::downgrade(&world),
-                );
-                orb.set_value(rand::random_range(1..=6));
-                if let Err(error) = world.try_add_entity(Arc::new(orb)) {
-                    log::error!("Failed to spawn experience orb: {error}");
-                }
                 damage = 1;
             }
         }
@@ -534,13 +543,16 @@ impl FishingHookEntity {
 
     /// `FishingHook.pullEntity`: pulls `entity` a tenth of the way to the owner.
     fn pull_entity(&self, entity: &SharedEntity) {
-        if let Some(owner) = self.projectile().owner() {
+        if let Some(owner) = self.projectile().owner()
+            && entity.can_simulate_movement()
+        {
             let delta = (owner.position() - self.position()) * 0.1;
             entity.set_velocity(entity.velocity() + delta);
         }
     }
 
-    /// Throws the caught items toward `player` and counts caught fish.
+    /// Throws each caught item toward `player` with an experience orb, and
+    /// counts caught fish.
     fn spawn_catch(&self, items: Vec<ItemStack>, world: &Arc<World>, player: &Player) {
         const SPEED: f64 = 0.1;
         for item_stack in items {
@@ -552,6 +564,16 @@ impl FishingHookEntity {
             );
             let is_fish = item_stack.item().has_tag(&ItemTag::FISHES);
             world.spawn_item_with_velocity(self.position(), item_stack, velocity);
+            let orb: SharedEntity = Arc::new(ExperienceOrbEntity::with_value(
+                &vanilla_entities::EXPERIENCE_ORB,
+                next_entity_id(),
+                player.position() + DVec3::new(0.0, 0.5, 0.5),
+                rand::random_range(1..=6),
+                Arc::downgrade(world),
+            ));
+            if let Err(error) = world.try_add_entity(orb) {
+                log::error!("Failed to spawn experience orb: {error}");
+            }
             if is_fish {
                 player.award_custom_stat(&vanilla_custom_stats::FISH_CAUGHT);
             }
@@ -645,8 +667,9 @@ impl FishingHookEntity {
                     state.out_of_water_time = (state.out_of_water_time - 1).max(0);
                     if *self.entity_data.lock().fishing_hook.biting.get() {
                         let mut random = self.synchronized_random.lock();
-                        let pull = -0.1 * random.next_f32() * random.next_f32();
-                        self.set_velocity(self.velocity() + DVec3::new(0.0, f64::from(pull), 0.0));
+                        let pull =
+                            -0.1 * f64::from(random.next_f32()) * f64::from(random.next_f32());
+                        self.set_velocity(self.velocity() + DVec3::new(0.0, pull, 0.0));
                     }
                     self.catching_fish(pos, &mut state);
                 } else {
@@ -712,7 +735,7 @@ impl FishingHookEntity {
             && !self.on_ground()
             && self.hook_state.lock().hooked_entity.is_none()
         {
-            self.set_velocity(self.velocity() + DVec3::new(0.0, -0.03, 0.0));
+            self.set_velocity(self.velocity() + DVec3::new(0.0, -self.default_gravity(), 0.0));
         }
         Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
