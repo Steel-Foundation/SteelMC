@@ -8,7 +8,7 @@ use steel_registry::{vanilla_attributes, vanilla_blocks};
 use steel_utils::{BlockPos, ChunkPos};
 
 use super::{Mob, TARGET_REACH_DISTANCE_SQR};
-use crate::entity::ai::goal::{Goal, GoalControl};
+use crate::entity::ai::goal::{Goal, GoalControl, GoalSelector};
 use crate::entity::ai::navigation::{
     NavigationPathRequest, NavigationRecomputeRequest, NavigationTickContext,
 };
@@ -281,10 +281,7 @@ impl Mob<'_> {
     where
         Self: Sized,
     {
-        self.mob_base()
-            .goal_selector()
-            .lock()
-            .remove_all_goals(self, predicate);
+        GoalSelector::remove_all_goals(self.mob_base().goal_selector(), self, predicate);
     }
 
     pub fn remove_free_will(&self)

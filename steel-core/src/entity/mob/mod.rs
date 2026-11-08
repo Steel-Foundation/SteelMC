@@ -712,14 +712,14 @@ impl<'a> Mob<'a> {
     /// running goals tick.
     pub fn tick_goal_selectors(&self, entity: &SharedEntity) {
         let id_based_tick_count = self.tick_count().wrapping_add(self.id());
-        let mut target_selector = self.mob_base().target_selector().lock();
-        let mut goal_selector = self.mob_base().goal_selector().lock();
+        let target_selector = self.mob_base().target_selector();
+        let goal_selector = self.mob_base().goal_selector();
         if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
-            target_selector.tick_running_goals(self, entity, false);
-            goal_selector.tick_running_goals(self, entity, false);
+            GoalSelector::tick_running_goals(target_selector, self, entity, false);
+            GoalSelector::tick_running_goals(goal_selector, self, entity, false);
         } else {
-            target_selector.tick(self, entity);
-            goal_selector.tick(self, entity);
+            GoalSelector::tick(target_selector, self, entity);
+            GoalSelector::tick(goal_selector, self, entity);
         }
     }
 

@@ -25,7 +25,7 @@ use super::{
 };
 use crate::behavior::init_behaviors;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
-use crate::entity::ai::goal::{Goal, GoalControl, GoalControls};
+use crate::entity::ai::goal::{Goal, GoalControl, GoalControls, GoalSelector};
 use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
 use crate::entity::component::Has;
@@ -1023,11 +1023,11 @@ fn pathfinder_close_range_leash_skips_following_while_panicking() {
         .lock()
         .add_goal(1, TestPanicGoal);
     let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
-    mob.mob()
-        .mob_base()
-        .goal_selector()
-        .lock()
-        .tick(&mob.mob(), &mob_entity);
+    GoalSelector::tick(
+        mob.mob().mob_base().goal_selector(),
+        &mob.mob(),
+        &mob_entity,
+    );
     assert!(mob.mob().is_panicking());
 
     mob.mob()
