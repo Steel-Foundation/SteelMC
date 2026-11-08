@@ -132,6 +132,15 @@ impl<T: Entity> EntityEventSource for T {
     }
 }
 
+/// Position setter used when repositioning a rider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RiderMove {
+    /// Keeps the old position so the move is interpolated.
+    SetPosition,
+    /// Resets the old position so the move is not interpolated.
+    Snap,
+}
+
 /// A trait for entities.
 ///
 /// This trait provides the core functionality for entities.
@@ -837,8 +846,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Repositions a direct passenger from this vehicle's attachment point.
-    fn position_rider(&self, passenger: &dyn Entity) {
-        position_rider_default(self, passenger);
+    fn position_rider(&self, passenger: &dyn Entity, move_fn: RiderMove) {
+        position_rider_default(self, passenger, move_fn);
     }
 
     /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.
@@ -1010,7 +1019,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.set_velocity(DVec3::ZERO);
         Arc::clone(&self).tick();
         if let Some(vehicle) = self.vehicle() {
-            vehicle.position_rider(self.as_entity_event_source());
+            vehicle.position_rider(self.as_entity_event_source(), RiderMove::SetPosition);
         }
     }
 
@@ -2686,11 +2695,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Moves this entity to `pos`, keeping its current rotation.
-    // TODO: Recursively reposition this entity's passengers (vanilla
-    // `Entity.teleportPassengers`, via `getSelfAndPassengers`)
     #[must_use = "movement commits can fail when world entity state rejects the update"]
     fn teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
-        self.try_set_position(pos)
+        self.try_set_position(pos)?;
+        self.set_old_position_to_current();
+        self.base().set_old_rotation_to_current();
+        teleport_passengers(self.as_entity_event_source());
+        Ok(())
     }
 
     /// Sets the vanilla movement-trace old position to the current position.
@@ -4118,7 +4129,11 @@ fn compute_modified_friction(friction: f64, modifier: f64) -> f64 {
 ///
 /// Shared between the [`Entity::position_rider`] default and entity overrides that
 /// extend it (e.g. `Chicken` mirroring the rider's body yaw).
-pub(crate) fn position_rider_default<E: Entity + ?Sized>(entity: &E, passenger: &dyn Entity) {
+pub(crate) fn position_rider_default<E: Entity + ?Sized>(
+    entity: &E,
+    passenger: &dyn Entity,
+    move_fn: RiderMove,
+) {
     if !entity.has_passenger(passenger) {
         return;
     }
@@ -4131,6 +4146,22 @@ pub(crate) fn position_rider_default<E: Entity + ?Sized>(entity: &E, passenger: 
             passenger.id(),
             entity.id()
         );
+        return;
+    }
+    if move_fn == RiderMove::Snap {
+        passenger.set_old_position_to_current();
+        passenger.base().set_old_rotation_to_current();
+    }
+}
+
+/// Positions direct passengers before recursing so nested riders land on the moved seat.
+fn teleport_passengers(vehicle: &dyn Entity) {
+    let passengers = vehicle.passengers();
+    for passenger in &passengers {
+        vehicle.position_rider(passenger.as_ref(), RiderMove::Snap);
+    }
+    for passenger in passengers {
+        teleport_passengers(passenger.as_ref());
     }
 }
 

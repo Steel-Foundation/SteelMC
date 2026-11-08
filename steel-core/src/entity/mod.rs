@@ -813,7 +813,7 @@ pub(crate) use entity::apply_entity_look_at;
 pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
-    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
+    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource, RiderMove,
 };
 pub use fluid_contact::EntityFluidContact;
 pub use identity::EntityGeneration;
