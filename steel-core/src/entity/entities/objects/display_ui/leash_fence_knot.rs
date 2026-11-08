@@ -6,7 +6,6 @@ use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events::BLOCK_ATTACH;
 use steel_registry::{sound_events, vanilla_entities, vanilla_items};
@@ -252,14 +251,8 @@ impl block_attached::Parts for LeashFenceKnotEntity {
     }
 
     fn drop_item(&self, _world: &World, _caused_by: Option<&dyn Entity>) {
+        // The leashed mobs drop their leads from their own leash tick.
         self.play_sound(&sound_events::ITEM_LEAD_UNTIED, 1.0, 1.0);
-
-        // Vanilla drops the leads from the leashed mobs' leash tick once the
-        // knot is gone, but Steel's holder `Weak` is already dead by then, so
-        // the leads are dropped here instead.
-        for entity in self.leashables_leashed_to() {
-            entity.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
-        }
     }
 
     fn recalculate_bounding_box(&self) -> Result<(), EntityMoveError> {
