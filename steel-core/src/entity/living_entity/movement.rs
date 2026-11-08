@@ -100,12 +100,16 @@ impl Living<'_> {
     }
 
     /// Applies fall damage to a living entity, factoring in effects that reduce or negate it.
+    ///
+    /// `Entity`'s chain runs through `super_cause_fall_damage` with the
+    /// effective fall distance.
     #[must_use]
     pub fn cause_living_fall_damage(
         &self,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
+        super_cause_fall_damage: impl FnOnce(f64) -> bool,
     ) -> bool {
         let effective_fall_distance =
             if let Some(impact_pos) = self.living_base().current_impulse_impact_pos() {
@@ -120,11 +124,8 @@ impl Living<'_> {
                 fall_distance
             };
 
-        if self.is_fall_damage_immune() {
-            return false;
-        }
-
-        self.propagate_fall_to_passengers(effective_fall_distance, damage_modifier, source);
+        // Vanilla ignores `super`'s result.
+        super_cause_fall_damage(effective_fall_distance);
 
         let attributes = self.attributes().lock();
         let safe_fall_distance = attributes

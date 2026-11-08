@@ -5,9 +5,9 @@ use crate::entity::component::definition::{
 };
 use crate::entity::component::definition::{
     BaseExperienceRewardCtx, BaseTick, BaseTickCtx, BlockSpeedFactor, BlockSpeedFactorCtx,
-    CanDispenserEquipIntoSlotCtx, CanFreeze, CanFreezeCtx, CanUseSlotCtx, CauseFallDamageCtx,
-    CheckFallDamage, CheckFallDamageCtx, Definition, EquipSoundCtx, HurtCtx, SetYBodyRotCtx,
-    StopRiding, StopRidingCtx, TickCtx, VoicePitchCtx,
+    CanDispenserEquipIntoSlotCtx, CanFreeze, CanFreezeCtx, CanUseSlotCtx, CauseFallDamage,
+    CauseFallDamageCtx, CheckFallDamage, CheckFallDamageCtx, Definition, EquipSoundCtx, HurtCtx,
+    SetYBodyRotCtx, StopRiding, StopRidingCtx, TickCtx, VoicePitchCtx,
 };
 use crate::entity::component::pipeline::StageId;
 use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage};
@@ -28,7 +28,7 @@ pub const STOP_RIDING: StageId = StageId("living_entity.stop_riding");
 pub const RIDE_TICK: StageId = StageId("living_entity.ride_tick");
 /// The `LivingEntity.checkFallDamage` stage, around `Entity`'s.
 pub const CHECK_FALL_DAMAGE: StageId = StageId("living_entity.check_fall_damage");
-/// The `LivingEntity.causeFallDamage` stage, which replaces `Entity`'s.
+/// The `LivingEntity.causeFallDamage` stage, around `Entity`'s.
 pub const CAUSE_FALL_DAMAGE: StageId = StageId("living_entity.cause_fall_damage");
 /// The `LivingEntity.canFreeze` stage, around `Entity`'s.
 pub const CAN_FREEZE: StageId = StageId("living_entity.can_freeze");
@@ -81,7 +81,9 @@ pub fn definition<E: Parts>() -> Definition<E> {
         check_fall_damage: definition
             .check_fall_damage
             .around(CHECK_FALL_DAMAGE, check_fall_damage::<E>),
-        cause_fall_damage: Pipeline::new([Stage::new(CAUSE_FALL_DAMAGE, cause_fall_damage::<E>)]),
+        cause_fall_damage: definition
+            .cause_fall_damage
+            .around(CAUSE_FALL_DAMAGE, cause_fall_damage::<E>),
         can_freeze: definition.can_freeze.around(CAN_FREEZE, can_freeze::<E>),
         block_speed_factor: definition
             .block_speed_factor
@@ -205,12 +207,24 @@ fn check_fall_damage<E: Parts>(
     Flow::Continue
 }
 
-fn cause_fall_damage<E: Parts>(living: &E, ctx: &mut CauseFallDamageCtx<'_>) -> Flow {
-    ctx.result = living.living().cause_living_fall_damage(
-        ctx.fall_distance,
-        ctx.damage_modifier,
-        ctx.source,
+fn cause_fall_damage<E: Parts>(
+    living: &E,
+    ctx: &mut CauseFallDamageCtx<'_>,
+    inner: Inner<'_, E, CauseFallDamage>,
+) -> Flow {
+    let (fall_distance, damage_modifier, source) =
+        (ctx.fall_distance, ctx.damage_modifier, ctx.source);
+    let result = living.living().cause_living_fall_damage(
+        fall_distance,
+        damage_modifier,
+        source,
+        |effective_fall_distance| {
+            ctx.fall_distance = effective_fall_distance;
+            inner(living, ctx);
+            ctx.result
+        },
     );
+    ctx.result = result;
     Flow::Continue
 }
 

@@ -123,20 +123,20 @@ macro_rules! definition_chains {
         }
     };
     (@trait $name:ident ($($lt:lifetime)?) ($($arg:ident: $ty:ty),*) ()) => {
-        #[doc = concat!("Runs `", stringify!($name), "` for `entity`.")]
-        fn $name $(<$lt>)? (&self, entity: &dyn Entity $(, $arg: $ty)*);
+        #[doc = concat!("Runs `", stringify!($name), "` for `target`.")]
+        fn $name $(<$lt>)? (&self, target: &dyn Entity $(, $arg: $ty)*);
     };
     (@trait $name:ident ($($lt:lifetime)?) ($($arg:ident: $ty:ty),*) ($ret:ty = $init:expr)) => {
-        #[doc = concat!("Runs `", stringify!($name), "` for `entity`.")]
-        fn $name $(<$lt>)? (&self, entity: &dyn Entity $(, $arg: $ty)*) -> $ret;
+        #[doc = concat!("Runs `", stringify!($name), "` for `target`.")]
+        fn $name $(<$lt>)? (&self, target: &dyn Entity $(, $arg: $ty)*) -> $ret;
     };
     (@trait $name:ident ($($lt:lifetime)?) ($($arg:ident: $ty:ty),*) ($ret:ty)) => {
-        #[doc = concat!("Runs `", stringify!($name), "` for `entity`, starting from `initial`.")]
-        fn $name $(<$lt>)? (&self, entity: &dyn Entity $(, $arg: $ty)*, initial: $ret) -> $ret;
+        #[doc = concat!("Runs `", stringify!($name), "` for `target`, starting from `initial`.")]
+        fn $name $(<$lt>)? (&self, target: &dyn Entity $(, $arg: $ty)*, initial: $ret) -> $ret;
     };
     (@impl $name:ident $ctx:ident ($($lt:lifetime)?) ($($arg:ident: $ty:ty),*) ()) => {
-        fn $name $(<$lt>)? (&self, entity: &dyn Entity $(, $arg: $ty)*) {
-            if let Some(typed) = E::typed(entity) {
+        fn $name $(<$lt>)? (&self, target: &dyn Entity $(, $arg: $ty)*) {
+            if let Some(typed) = E::typed(target) {
                 let mut ctx = $ctx {
                     $($arg,)*
                     _marker: PhantomData,
@@ -146,8 +146,8 @@ macro_rules! definition_chains {
         }
     };
     (@impl $name:ident $ctx:ident ($($lt:lifetime)?) ($($arg:ident: $ty:ty),*) ($ret:ty = $init:expr)) => {
-        fn $name $(<$lt>)? (&self, entity: &dyn Entity $(, $arg: $ty)*) -> $ret {
-            match E::typed(entity) {
+        fn $name $(<$lt>)? (&self, target: &dyn Entity $(, $arg: $ty)*) -> $ret {
+            match E::typed(target) {
                 Some(typed) => {
                     let mut ctx = $ctx {
                         $($arg,)*
@@ -162,8 +162,8 @@ macro_rules! definition_chains {
         }
     };
     (@impl $name:ident $ctx:ident ($($lt:lifetime)?) ($($arg:ident: $ty:ty),*) ($ret:ty)) => {
-        fn $name $(<$lt>)? (&self, entity: &dyn Entity $(, $arg: $ty)*, initial: $ret) -> $ret {
-            match E::typed(entity) {
+        fn $name $(<$lt>)? (&self, target: &dyn Entity $(, $arg: $ty)*, initial: $ret) -> $ret {
+            match E::typed(target) {
                 Some(typed) => {
                     let mut ctx = $ctx {
                         $($arg,)*
