@@ -1,4 +1,4 @@
-//! Ticket types hardcoded by vanilla 26.2 in `TicketType.java`.
+//! Ticket types hardcoded by vanilla  in `TicketType.java`.
 
 use steel_utils::Identifier;
 

@@ -27,6 +27,7 @@ use steel_utils::{TICKS_PER_SECOND, translations};
 
 use crate::entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityMoveError, LivingEntity,
+    get_input_vector,
 };
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
@@ -617,7 +618,6 @@ impl Player {
                     vehicle.id()
                 );
             }
-            vehicle.refresh_fluid_contact();
             vehicle.set_rotation((target_yaw, target_pitch));
             self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
             vehicle.remove_latest_movement_recording();
@@ -649,7 +649,6 @@ impl Player {
                         vehicle.id()
                     );
                 }
-                vehicle.refresh_fluid_contact();
                 vehicle.set_rotation((target_yaw, target_pitch));
                 self.send_packet(Self::move_vehicle_packet_from_entity(vehicle.as_ref()));
                 vehicle.remove_latest_movement_recording();
@@ -937,6 +936,16 @@ impl Player {
     #[must_use]
     pub fn last_client_input(&self) -> PlayerInput {
         self.movement.lock().last_client_input()
+    }
+
+    /// Returns the latest client movement intent.
+    #[must_use]
+    pub fn last_client_move_intent(&self) -> DVec3 {
+        get_input_vector(
+            self.last_client_input().movement_input(),
+            1.0,
+            self.rotation().0,
+        )
     }
 
     /// Handles a player input packet (movement keys, sneaking, sprinting).

@@ -3,6 +3,7 @@
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
+use rand::Rng;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use simdnbt::{FromNbtTag as _, ToNbtTag as _};
@@ -43,9 +44,10 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::CowEntity;
 use crate::entity::living_entity::shearing_loot_items_with_rng;
 use crate::entity::{
-    AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
-    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, RemovalReason, SharedEntity, SpawnGroupData, next_entity_id,
+    AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
+    EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
+    LivingEntityBase, Mob, MobBase, PathfinderMob, RemovalReason, SharedEntity, SpawnGroupData,
+    SpawnRule, next_entity_id,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -75,7 +77,7 @@ const MUTATE_CHANCE: u32 = 1024;
 const MYCELIUM_WALK_TARGET_VALUE: f32 = 10.0;
 
 /// Vanilla Mooshroom entity.
-#[entity_behavior(class = "MushroomCow")]
+#[entity_behavior(class = "MushroomCow", spawn_rule)]
 pub struct MushroomCowEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -94,6 +96,23 @@ unsafe impl DowncastType for MushroomCowEntity {
 }
 
 impl MushroomCowEntity {
+    pub(crate) const SPAWN_RULE: SpawnRule = Self::check_mushroom_spawn_rules;
+
+    /// Unlike `check_animal_spawn_rules`, light is required for every spawn reason.
+    pub(crate) fn check_mushroom_spawn_rules(
+        _entity_type: EntityTypeRef,
+        level: &dyn LevelReader,
+        _spawn_reason: EntitySpawnReason,
+        pos: BlockPos,
+        _random: &mut dyn Rng,
+    ) -> bool {
+        level
+            .get_block_state(pos.below())
+            .get_block()
+            .has_tag(&BlockTag::MOOSHROOMS_SPAWNABLE_ON)
+            && <Self as Animal>::is_bright_enough_to_spawn(level, pos)
+    }
+
     /// Creates a new mooshroom at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
@@ -410,7 +429,17 @@ impl MushroomCowEntity {
     }
 }
 
+impl DefaultEntityPush for MushroomCowEntity {}
+
 impl Entity for MushroomCowEntity {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -605,21 +634,6 @@ impl Animal for MushroomCowEntity {
         } else {
             world.pathfinding_cost_from_light_levels(pos)
         }
-    }
-
-    fn check_animal_spawn_rules(
-        level: &dyn LevelReader,
-        _spawn_reason: EntitySpawnReason,
-        pos: BlockPos,
-    ) -> bool
-    where
-        Self: Sized,
-    {
-        level
-            .get_block_state(pos.below())
-            .get_block()
-            .has_tag(&BlockTag::MOOSHROOMS_SPAWNABLE_ON)
-            && Self::is_bright_enough_to_spawn(level, pos)
     }
 }
 

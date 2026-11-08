@@ -2,6 +2,7 @@ use crate::biomes::ChunkBiomeSampler;
 use crate::density::traits::{ColumnCache, NoiseSettings};
 use crate::noise::AquiferResult;
 use crate::noise::LazyAquifer;
+use crate::noise::PreliminarySurfaceStore;
 use crate::structure::StructurePiece;
 use crate::utils::column_base_height;
 use crate::utils::column_interpolated_density;
@@ -10,6 +11,7 @@ use crate::utils::iterate_noise_column_with_aquifer;
 use crate::{density::DimensionNoises, noise::Aquifer};
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
+use std::sync::Arc;
 use steel_registry::biome::BiomeRef;
 use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_utils::Identifier;
@@ -60,6 +62,8 @@ where
     noises: &'src N,
     /// Positional splitter for per-chunk RNG.
     splitter: &'src RandomSplitter,
+    /// Generator-wide preliminary surface level memo, shared by probe aquifers.
+    preliminary_surface: &'src Arc<PreliminarySurfaceStore>,
     /// Template pool registry for jigsaw assembly.
     template_pools: &'src FxHashMap<Identifier, TemplatePoolData>,
     /// Template data registry for jigsaw assembly.
@@ -86,7 +90,13 @@ pub struct TerrainProbe<N: DimensionNoises> {
 }
 
 impl<N: DimensionNoises> TerrainProbe<N> {
-    fn new(chunk_min_x: i32, chunk_min_z: i32, splitter: &RandomSplitter, noises: &N) -> Self {
+    fn new(
+        chunk_min_x: i32,
+        chunk_min_z: i32,
+        splitter: &RandomSplitter,
+        noises: &N,
+        preliminary_surface: &Arc<PreliminarySurfaceStore>,
+    ) -> Self {
         let mut cache = N::ColumnCache::default();
         cache.init_grid(chunk_min_x, chunk_min_z, noises);
         let aquifer = Aquifer::<N>::new(
@@ -96,6 +106,7 @@ impl<N: DimensionNoises> TerrainProbe<N> {
             N::Settings::HEIGHT,
             splitter,
             noises,
+            preliminary_surface,
             cache.clone(),
         );
         Self { cache, aquifer }
@@ -199,6 +210,7 @@ where
         sea_level: i32,
         noises: &'src N,
         splitter: &'src RandomSplitter,
+        preliminary_surface: &'src Arc<PreliminarySurfaceStore>,
         template_pools: &'src FxHashMap<Identifier, TemplatePoolData>,
         templates: &'src FxHashMap<Identifier, TemplateData>,
         biome_sampler: &'ctx mut ChunkBiomeSampler<'src>,
@@ -222,6 +234,7 @@ where
             height_cache_grid_ready,
             noises,
             splitter,
+            preliminary_surface,
             template_pools,
             templates,
             biome_sampler,
@@ -419,7 +432,13 @@ impl<N: DimensionNoises> StructureGenerationContext for GenerationContext<'_, '_
         let height = {
             let mut probes = self.terrain_probes.borrow_mut();
             let probe = probes.entry((aq_chunk_x, aq_chunk_z)).or_insert_with(|| {
-                TerrainProbe::<N>::new(aq_chunk_x, aq_chunk_z, self.splitter, self.noises)
+                TerrainProbe::<N>::new(
+                    aq_chunk_x,
+                    aq_chunk_z,
+                    self.splitter,
+                    self.noises,
+                    self.preliminary_surface,
+                )
             });
             iterate_noise_column_with_aquifer::<N>(
                 &mut probe.cache,
@@ -455,7 +474,13 @@ impl<N: DimensionNoises> StructureGenerationContext for GenerationContext<'_, '_
         let opaque = {
             let mut probes = self.terrain_probes.borrow_mut();
             let probe = probes.entry((aq_chunk_x, aq_chunk_z)).or_insert_with(|| {
-                TerrainProbe::<N>::new(aq_chunk_x, aq_chunk_z, self.splitter, self.noises)
+                TerrainProbe::<N>::new(
+                    aq_chunk_x,
+                    aq_chunk_z,
+                    self.splitter,
+                    self.noises,
+                    self.preliminary_surface,
+                )
             });
             let density = column_interpolated_density::<N>(
                 &mut probe.cache,

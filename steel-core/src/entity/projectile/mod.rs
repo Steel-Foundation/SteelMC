@@ -30,6 +30,7 @@ use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLO
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, WorldAabb};
 use uuid::Uuid;
 
@@ -418,9 +419,9 @@ pub trait Projectile: Entity + ProjectileEventSource {
         power: f32,
         uncertainty: f32,
     ) {
-        let yaw = f64::from(y_rot * DEG_TO_RAD);
-        let pitch = f64::from(x_rot * DEG_TO_RAD);
-        let pitch_offset = f64::from((x_rot + y_offset) * DEG_TO_RAD);
+        let yaw = y_rot * DEG_TO_RAD;
+        let pitch = x_rot * DEG_TO_RAD;
+        let pitch_offset = (x_rot + y_offset) * DEG_TO_RAD;
         let direction = DVec3::new(
             f64::from(-trig::sin(yaw) * trig::cos(pitch)),
             f64::from(-trig::sin(pitch_offset)),
@@ -665,8 +666,10 @@ pub trait Projectile: Entity + ProjectileEventSource {
     fn load_projectile(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.projectile_base().state.lock();
         state.owner = EntityReference::read(&nbt, "Owner");
-        state.left_owner = nbt.byte("LeftOwner").is_some_and(|value| value != 0);
-        state.has_been_shot = nbt.byte("HasBeenShot").is_some_and(|value| value != 0);
+        state.left_owner = nbt.byte_value("LeftOwner").is_some_and(|value| value != 0);
+        state.has_been_shot = nbt
+            .byte_value("HasBeenShot")
+            .is_some_and(|value| value != 0);
     }
 }
 

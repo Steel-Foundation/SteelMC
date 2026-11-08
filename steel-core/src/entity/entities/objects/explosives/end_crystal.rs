@@ -9,10 +9,11 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, locks::SyncMutex};
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData};
 use crate::world::World;
 
 /// End Crystal entity state needed by worldgen and persistence.
@@ -89,6 +90,10 @@ impl Entity for EndCrystalEntity {
         self.entity_type
     }
 
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::None
+    }
+
     fn tick(self: Arc<Self>) {
         // TODO: Implement portal handling, fire refresh, dragon fight callbacks, and explosion behavior.
     }
@@ -123,7 +128,7 @@ impl Entity for EndCrystalEntity {
             self.set_beam_target(Some(BlockPos::new(target[0], target[1], target[2])));
         }
 
-        if let Some(show_bottom) = nbt.byte("ShowBottom") {
+        if let Some(show_bottom) = nbt.byte_value("ShowBottom") {
             self.set_show_bottom(show_bottom != 0);
         }
     }

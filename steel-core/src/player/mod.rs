@@ -57,7 +57,7 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
 use std::ptr;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
 use steel_math::RAD_TO_DEG_F64;
 use steel_protocol::packets::game::{
@@ -92,7 +92,7 @@ use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
 use text_components::{
     Modifier as _, TextComponent,
-    interactivity::{ClickEvent, HoverEvent},
+    interactivity::{ClickEvent, HoverEvent, Interactivity},
 };
 use text_components::{content::Resolvable, custom::CustomData};
 
@@ -132,7 +132,9 @@ use crate::server::{
     PlayerPacketTransition, Server,
     jobs::{JobPoll, ServerJob, ServerJobContext},
 };
-use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
+use crate::world::player_spawn_finder::{
+    POLL_TIME_BUDGET, PlayerSpawnSearch, PlayerSpawnSearchPoll,
+};
 use steel_registry::vanilla_damage_types;
 
 use steel_protocol::packets::{
@@ -140,6 +142,7 @@ use steel_protocol::packets::{
     game::{CContainerClose, CGameEvent, CSystemChat, GameEventType},
 };
 use steel_registry::RegistryEntry;
+use steel_registry::damage_type::DeathMessageType;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
@@ -149,11 +152,18 @@ use steel_utils::{
 
 use crate::inventory::container::Container;
 
-const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
 const DROP_SPAM_THROTTLER_INCREMENT_STEP: i32 = 20;
 const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
+
+static INTENTIONAL_GAME_DESIGN_STYLE: LazyLock<Interactivity> = LazyLock::new(|| Interactivity {
+    click: Some(ClickEvent::open_url(
+        "https://bugs.mojang.com/browse/MCPE-28723",
+    )),
+    hover: Some(HoverEvent::show_text("MCPE-28723")),
+    ..Interactivity::new()
+});
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::entities::objects::projectiles::FishingHookEntity;
@@ -885,6 +895,41 @@ impl Player {
         }
     }
 
+    fn get_death_message(&self, source: &DamageSource) -> TextComponent {
+        let death_key = format!("death.attack.{}", source.damage_type.message_id);
+        match source.damage_type.death_message_type {
+            DeathMessageType::IntentionalGameDesign => {
+                let mut link = translations::CHAT_SQUARE_BRACKETS
+                    .message([TranslatedMessage {
+                        key: format!("{death_key}.link").into(),
+                        fallback: None,
+                        args: None,
+                    }
+                    .component()])
+                    .component();
+                link.interactions = INTENTIONAL_GAME_DESIGN_STYLE.clone();
+
+                TranslatedMessage {
+                    key: format!("{death_key}.message").into(),
+                    fallback: None,
+                    args: Some(Box::new([self.display_name(), link])),
+                }
+                .component()
+            }
+            DeathMessageType::Default | DeathMessageType::FallVariants => {
+                // TODO: use CombatTracker for killer name items and fall variants
+                TranslatedMessage {
+                    key: death_key.into(),
+                    fallback: None,
+                    args: Some(Box::new([TextComponent::plain(
+                        self.gameprofile.name().to_owned(),
+                    )])),
+                }
+                .component()
+            }
+        }
+    }
+
     /// Vanilla: `ServerPlayer.die()` (does NOT call `super.die()`).
     fn die(&self, source: &DamageSource) {
         if self.is_removed() {
@@ -917,16 +962,7 @@ impl Player {
 
         let show_death_messages = world.get_game_rule(&SHOW_DEATH_MESSAGES);
 
-        // TODO: use CombatTracker for multi-arg messages (killer name, item, etc.)
-        let death_key = format!("death.attack.{}", source.damage_type.message_id);
-        let death_message = TranslatedMessage {
-            key: death_key.into(),
-            fallback: None,
-            args: Some(Box::new([TextComponent::plain(
-                self.gameprofile.name().to_owned(),
-            )])),
-        }
-        .component();
+        let death_message = self.get_death_message(source);
 
         self.send_packet(CPlayerCombatKill {
             player_id: self.id(),
@@ -1173,6 +1209,7 @@ impl Player {
             nbt.insert("XpP", experience.progress());
             nbt.insert("XpLevel", experience.level());
             nbt.insert("XpTotal", experience.total_points());
+            nbt.insert("XpSeed", experience.enchantment_seed());
         }
         nbt.insert("Score", self.score());
 
@@ -1302,6 +1339,10 @@ impl Player {
 }
 
 impl Entity for Player {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -1312,6 +1353,20 @@ impl Entity for Player {
 
     fn base_tick(&self) {
         LivingEntity::base_tick_living_entity(self);
+    }
+
+    fn do_water_splash_effect(&self) {
+        if !self.is_spectator() {
+            self.default_do_water_splash_effect();
+        }
+    }
+
+    fn swim_splash_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_PLAYER_SPLASH
+    }
+
+    fn swim_high_speed_splash_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED
     }
 
     fn scoreboard_name(&self) -> String {
@@ -1797,7 +1852,6 @@ impl LivingEntity for Player {
             self.tick_death();
         } else {
             let world = self.get_world();
-            self.touch_nearby_items();
             self.block_breaking.lock().tick(self, &world);
 
             self.update_player_attributes();
@@ -2028,9 +2082,7 @@ impl LivingEntity for Player {
             self.inventory.lock().set_changed();
         }
 
-        if let Some(sound) = self.equip_sound(slot, &equipped) {
-            self.play_sound(sound, 1.0, 1.0);
-        }
+        self.on_equip_item(slot, &ItemStack::empty(), &equipped);
         // TODO: Emit EQUIP game event once game-event dispatch is implemented.
         InteractionResult::Success
     }
@@ -2097,6 +2149,11 @@ impl LivingEntity for Player {
 
         let result = self.default_ai_step(entity);
         self.set_y_head_rot(self.rotation().0);
+        // Pickup uses the simulated position; `tick_living_entity` restores the
+        // authoritative tick position after this returns.
+        if self.get_health() > 0.0 {
+            self.touch_nearby_items();
+        }
         result
     }
 

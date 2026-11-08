@@ -15,6 +15,7 @@ use crate::{
     player::{Player, connection::NetworkConnection as _},
 };
 use glam::DVec3;
+use steel_math::trig;
 use steel_protocol::packets::game::SSeenAdvancement::Opened;
 use steel_protocol::packets::game::{
     CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
@@ -239,20 +240,29 @@ impl Player {
         self.finish_open_menu_callback(menu);
     }
 
-    /// Handles a container button click packet (e.g., enchanting table buttons).
+    /// Dispatches a container button click to the open menu.
     pub fn handle_container_button_click(&self, packet: SContainerButtonClick) {
-        log::debug!(
-            "Player {} clicked button {} in container {}",
-            self.gameprofile.name(),
-            packet.button_id,
-            packet.container_id
-        );
-        // TODO: Implement container button click handling
-        // This is used for things like:
-        // - Enchanting table level selection
-        // - Stonecutter recipe selection
-        // - Loom pattern selection
-        // - Lectern page turning
+        self.reset_last_action_time();
+        match self.take_open_menu_for_callback(Some(packet.container_id)) {
+            Ok(mut menu) => {
+                if self.game_mode() == GameType::Spectator {
+                    // Spectator button clicks are ignored without resynchronizing the menu.
+                } else if !menu.still_valid(self) {
+                    log::debug!(
+                        "Player {} interacted with invalid menu {}",
+                        self.gameprofile.name(),
+                        packet.container_id
+                    );
+                } else if menu.click_menu_button(packet.button_id, self) {
+                    menu.behavior_mut().broadcast_changes(&self.connection);
+                }
+                self.finish_open_menu_callback(menu);
+            }
+            Err(OpenMenuUnavailable::Closed) => {
+                log::debug!("container button click without an open menu");
+            }
+            Err(OpenMenuUnavailable::Unavailable) => {}
+        }
     }
 
     /// Handles a container click packet (slot interaction).
@@ -453,13 +463,7 @@ impl Player {
             let mut menu = self.inventory_menu.lock();
             let slot_index = packet.slot_num as usize;
 
-            {
-                let mut guard = menu.behavior().lock_all_containers();
-                if let Some(slot) = menu.behavior().slots().get(slot_index) {
-                    let previous = slot.get_item(&guard).clone();
-                    slot.set_by_player(&mut guard, item_stack.clone(), &previous);
-                }
-            }
+            menu.set_slot_by_player(slot_index, item_stack.clone(), self);
             if (1..=4).contains(&slot_index) {
                 menu.update_crafting_result();
             }
@@ -1056,18 +1060,18 @@ impl Player {
             let power = rand::random_range(0.0..0.5);
             let angle = rand::random_range(0.0..TAU);
             DVec3::new(
-                f64::from(-angle.sin() * power),
+                f64::from(-trig::sin(angle) * power),
                 0.2,
-                f64::from(angle.cos() * power),
+                f64::from(trig::cos(angle) * power),
             )
         } else {
             let pitch_rad = pitch.to_radians();
             let yaw_rad = yaw.to_radians();
 
-            let sin_pitch = pitch_rad.sin();
-            let cos_pitch = pitch_rad.cos();
-            let sin_yaw = yaw_rad.sin();
-            let cos_yaw = yaw_rad.cos();
+            let sin_pitch = trig::sin(pitch_rad);
+            let cos_pitch = trig::cos(pitch_rad);
+            let sin_yaw = trig::sin(yaw_rad);
+            let cos_yaw = trig::cos(yaw_rad);
 
             let angle_offset = rand::random_range(0.0..TAU);
             let power_offset = rand::random_range(0.0..0.02);

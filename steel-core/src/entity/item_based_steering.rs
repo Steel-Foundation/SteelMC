@@ -2,6 +2,7 @@
 
 use std::f32::consts::PI;
 
+use steel_math::trig;
 use steel_utils::locks::SyncMutex;
 
 use crate::entity::Entity;
@@ -67,7 +68,8 @@ impl ItemBasedSteering {
             return 1.0;
         }
 
-        1.0 + BOOST_FACTOR_SCALE * ((self.boost_time as f32 / boost_time_total as f32) * PI).sin()
+        let angle = (self.boost_time as f32 / boost_time_total as f32) * PI;
+        1.0 + BOOST_FACTOR_SCALE * trig::sin(angle)
     }
 
     /// Returns whether a boost is currently active.

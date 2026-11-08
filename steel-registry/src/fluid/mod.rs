@@ -1,14 +1,10 @@
 //! Fluid registry for Minecraft fluids.
 
 use crate::{
-    RegistryExt, RegistryTags, TaggedRegistryExt,
-    blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
-    vanilla_blocks,
-    vanilla_fluid_tags::FluidTag,
-    vanilla_fluids,
+    RegistryExt, RegistryTags, TaggedRegistryExt, vanilla_fluid_tags::FluidTag, vanilla_fluids,
 };
 use rustc_hash::FxHashMap;
-use steel_utils::{BlockStateId, Identifier};
+use steel_utils::Identifier;
 
 /// A fluid type definition (e.g., water, lava, empty).
 #[derive(Debug)]
@@ -23,8 +19,6 @@ pub struct Fluid {
     pub is_randomly_ticking: bool,
     /// The block this fluid places.
     pub block: Identifier,
-    /// The bucket item for this fluid.
-    pub bucket_item: Identifier,
     /// The source fluid identifier (for flowing fluids).
     pub source_fluid: Option<Identifier>,
     /// The flowing fluid identifier (for source fluids).
@@ -93,10 +87,6 @@ pub struct FluidState {
     /// Whether the fluid is falling (flows downward faster).
     pub falling: bool,
 }
-
-const LEGACY_SOURCE_LEVEL: u8 = 0;
-const LEGACY_MAX_LEVEL: u8 = 8;
-const LEGACY_FALLING_OFFSET: u8 = 8;
 
 impl FluidState {
     /// The empty fluid state.
@@ -207,26 +197,6 @@ impl FluidState {
             // amount 7 -> level 1, amount 1 -> level 7
             8 - self.amount
         }
-    }
-
-    pub fn create_legacy_block(self) -> BlockStateId {
-        vanilla_blocks::WATER
-            .default_state()
-            .set_value(&BlockStateProperties::LEVEL, Self::get_legacy_level(self))
-    }
-
-    const fn get_legacy_level(self) -> u8 {
-        if self.is_source() {
-            return LEGACY_SOURCE_LEVEL;
-        }
-
-        let falling_offset = if self.falling {
-            LEGACY_FALLING_OFFSET
-        } else {
-            0
-        };
-
-        LEGACY_MAX_LEVEL - self.amount.min(LEGACY_MAX_LEVEL) + falling_offset
     }
 }
 
