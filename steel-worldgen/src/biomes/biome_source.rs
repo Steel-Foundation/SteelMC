@@ -35,7 +35,8 @@ use steel_worldgen::noise::EndIslands;
 
 /// A generator's biome source.
 ///
-/// Each variant holds its shared state and creates per-chunk samplers via [`chunk_sampler`](BiomeSourceKind::chunk_sampler).
+/// Each variant holds its shared state and creates per-chunk samplers via
+/// [`chunk_sampler`](BiomeSourceKind::chunk_sampler).
 #[non_exhaustive]
 pub enum BiomeSourceKind {
     /// Overworld biome source (multi-noise climate matching).

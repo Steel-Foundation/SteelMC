@@ -71,11 +71,14 @@ pub trait VanillaPostNoiseStateType: DimensionNoises + 'static {
 }
 
 /// Where a dimension's spawn search starts: vanilla's `NoiseBasedChunkGenerator.getOrigin`,
-/// which reads the noise settings' spawn target rather than the biome source. Only the
-/// overworld settings have one; the others start at the origin.
+/// which reads the noise settings' spawn target rather than the biome source.
 pub trait NoiseSpawnTarget {
-    /// The spawn search origin for this dimension's noise settings.
-    fn initial_spawn_search_origin(biome_source: &BiomeSourceKind, seed: u64) -> BlockPos;
+    /// The spawn search origin for this dimension's noise settings. Settings without a
+    /// spawn target start at the origin.
+    #[must_use]
+    fn initial_spawn_search_origin(_biome_source: &BiomeSourceKind, _seed: u64) -> BlockPos {
+        BlockPos::new(0, 0, 0)
+    }
 }
 
 impl NoiseSpawnTarget for OverworldNoises {
@@ -88,17 +91,9 @@ impl NoiseSpawnTarget for OverworldNoises {
     }
 }
 
-impl NoiseSpawnTarget for NetherNoises {
-    fn initial_spawn_search_origin(_: &BiomeSourceKind, _: u64) -> BlockPos {
-        BlockPos::new(0, 0, 0)
-    }
-}
+impl NoiseSpawnTarget for NetherNoises {}
 
-impl NoiseSpawnTarget for EndNoises {
-    fn initial_spawn_search_origin(_: &BiomeSourceKind, _: u64) -> BlockPos {
-        BlockPos::new(0, 0, 0)
-    }
-}
+impl NoiseSpawnTarget for EndNoises {}
 
 /// Steel-owned post-Noise state for the built-in dimensions.
 #[doc(hidden)]
