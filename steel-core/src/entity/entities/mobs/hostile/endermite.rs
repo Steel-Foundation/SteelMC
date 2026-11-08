@@ -70,7 +70,7 @@ impl EndermiteEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |endermite, entity| {
             endermite.living().set_y_body_rot(endermite.rotation().0);
-            endermite.living().tick_living_entity(entity);
+            endermite.mob().tick_mob(entity);
         },
         set_y_body_rot: |endermite, y_body_rot| {
             endermite.set_rotation((y_body_rot, endermite.rotation().1));

@@ -475,6 +475,7 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
+        tick: |mob, entity| mob.mob().tick_mob(entity),
         base_tick: |mob| mob.mob().base_tick_mob(),
         check_despawn: |mob| mob.mob().check_mob_despawn(),
         is_effective_ai: |mob| mob.is_server_driven_movement() && !mob.mob().is_no_ai(),
@@ -1844,9 +1845,6 @@ impl<'a> Mob<'a> {
     pub fn mob_server_ai_step(&self, entity: &SharedEntity) {
         self.increment_no_action_time();
         self.mob_base().sensing().lock().tick();
-        if self.tick_count() % 5 == 0 {
-            self.update_control_flags();
-        }
         self.tick_goal_selectors(entity);
         self.tick_path_navigation();
         self.custom_server_ai_step();
@@ -2134,6 +2132,15 @@ impl<'a> Mob<'a> {
     pub fn tick_jump_control(&self) {
         let jumping = self.mob_base().controls().lock().jump_control.tick();
         self.set_jumping(jumping);
+    }
+
+    /// `Mob.tick`: the living tick, then the goal control flags every 5 ticks
+    /// whether or not the AI runs.
+    pub fn tick_mob(&self, entity: &SharedEntity) {
+        self.living.tick_living_entity(entity);
+        if self.tick_count() % 5 == 0 {
+            self.update_control_flags();
+        }
     }
 
     pub fn update_control_flags(&self) {
