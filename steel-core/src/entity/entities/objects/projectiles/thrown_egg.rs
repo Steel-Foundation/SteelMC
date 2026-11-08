@@ -11,13 +11,16 @@ use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 
 use crate::entity::ageable::BABY_START_AGE;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::OnHitEntityCtx;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::entities::ChickenEntity;
 use crate::entity::prelude::*;
 use crate::entity::projectile::throwable;
 use crate::entity::projectile::throwable_item::ThrownItem;
-use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps};
+use crate::entity::projectile::{ProjectileBase, ProjectileProps};
 use crate::entity::variant::Variants as _;
-use crate::entity::{Entity, EntityBase, EntityProps, RemovalReason, SharedEntity, next_entity_id};
+use crate::entity::{Entity, EntityBase, EntityProps, RemovalReason, next_entity_id};
 use crate::world::World;
 
 /// The size a hatched chick grows from when it is fitted into the world.
@@ -28,6 +31,7 @@ const ZERO_SIZED_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.0, 0.0, 
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/thrown_egg", constructors)]
+#[entity(definition = Self::define)]
 pub struct ThrownEggEntity {
     #[entity(base)]
     base: EntityBase,
@@ -43,13 +47,30 @@ pub struct ThrownEggEntity {
 
 impl ThrownEggEntity {
     const ENTITY: EntityProps<Self> = throwable::entity_props();
+    const ON_HIT: StageId = StageId("thrown_egg.on_hit");
+    const ON_HIT_ENTITY: StageId = StageId("thrown_egg.on_hit_entity");
+
+    fn define() -> Definition<Self> {
+        let definition = throwable::definition();
+        Definition {
+            on_hit: definition
+                .on_hit
+                .then([Stage::effect(Self::ON_HIT, Self::on_hit_after_super)]),
+            on_hit_entity: definition.on_hit_entity.then([Stage::new(
+                Self::ON_HIT_ENTITY,
+                |egg: &Self, ctx: &mut OnHitEntityCtx<'_>| {
+                    let (entity, target) = (ctx.entity, ctx.target);
+                    if let Some(world) = target.level() {
+                        target.hurt(&world, &egg.projectile().thrown_damage(entity), 0.0);
+                    }
+                    Flow::Continue
+                },
+            )]),
+            ..definition
+        }
+    }
+
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        on_hit: Self::projectile_on_hit,
-        on_hit_entity: |egg, entity, target, _| {
-            if let Some(world) = target.level() {
-                target.hurt(&world, &egg.projectile().thrown_damage(entity), 0.0);
-            }
-        },
         ..ProjectileProps::new()
     };
 
@@ -67,8 +88,7 @@ impl ThrownEggEntity {
 
     /// `ThrownEgg.onHit`: one in eight eggs hatch a chick, one in 32 of those
     /// hatch four; then the egg breaks.
-    fn projectile_on_hit(&self, entity: &SharedEntity, hit: &ProjectileHit) {
-        self.projectile().on_hit_default(entity, hit);
+    fn on_hit_after_super(&self) {
         let Some(world) = self.level() else {
             return;
         };
@@ -121,6 +141,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
+    use crate::entity::SharedEntity;
     use crate::test_support::{fresh_loaded_test_world, fresh_test_world, insert_ready_full_chunk};
     use glam::DVec3;
 

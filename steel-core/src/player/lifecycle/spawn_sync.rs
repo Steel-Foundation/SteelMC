@@ -70,7 +70,11 @@ impl Player {
             old_world.chunk_map.remove_player(self);
         }
 
-        self.set_client_loaded(false);
+        // Vanilla restarts the client-load timer on join and respawn only; a
+        // world change keeps the client loaded.
+        if reason != ResetReason::WorldChange {
+            self.set_client_loaded(false);
+        }
         self.set_velocity(DVec3::ZERO);
         self.movement.lock().reset_last_known_client_movement();
         self.set_on_ground(false);

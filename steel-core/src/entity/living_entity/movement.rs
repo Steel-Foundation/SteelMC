@@ -36,14 +36,13 @@ impl Living<'_> {
 
     /// `LivingEntity.checkFallDamage`: refreshes fluid contact and sends the
     /// landing burst before the entity fall-damage step.
-    pub fn check_living_fall_damage(
+    pub(super) fn check_fall_damage_around(
         &self,
-        entity: &SharedEntity,
-        vertical_movement: f64,
         on_ground: bool,
         on_state: BlockStateId,
         pos: BlockPos,
         world: &Arc<World>,
+        super_check: impl FnOnce(),
     ) {
         // Vanilla refreshes its fluid interaction when the cached state is not
         // already water. Steel refreshes contact during movement, so the last
@@ -56,13 +55,7 @@ impl Living<'_> {
             self.send_landing_particles(world, on_state, pos);
         }
 
-        Arc::clone(entity).check_fall_damage_default(
-            vertical_movement,
-            on_ground,
-            on_state,
-            pos,
-            world,
-        );
+        super_check();
     }
 
     /// Sends the vanilla landing burst when the fall was powerful enough.
@@ -95,22 +88,28 @@ impl Living<'_> {
     /// `LivingEntity.getBlockSpeedFactor`: Movement Efficiency moves the block
     /// factor towards 1.
     #[must_use]
-    pub fn living_block_speed_factor(&self) -> f32 {
+    /// `LivingEntity.getBlockSpeedFactor` around `super`: movement
+    /// efficiency pulls the block's factor toward 1.
+    pub(super) fn block_speed_factor_around(&self, super_factor: impl FnOnce() -> f32) -> f32 {
         let efficiency =
             self.attributes()
                 .lock()
                 .required_value(vanilla_attributes::MOVEMENT_EFFICIENCY) as f32;
-        let block_factor = self.block_speed_factor_default();
+        let block_factor = super_factor();
         block_factor + efficiency * (1.0 - block_factor)
     }
 
     /// Applies fall damage to a living entity, factoring in effects that reduce or negate it.
+    ///
+    /// `Entity`'s chain runs through `super_cause_fall_damage` with the
+    /// effective fall distance.
     #[must_use]
     pub fn cause_living_fall_damage(
         &self,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
+        super_cause_fall_damage: impl FnOnce(f64) -> bool,
     ) -> bool {
         let effective_fall_distance =
             if let Some(impact_pos) = self.living_base().current_impulse_impact_pos() {
@@ -125,11 +124,8 @@ impl Living<'_> {
                 fall_distance
             };
 
-        if self.is_fall_damage_immune() {
-            return false;
-        }
-
-        self.propagate_fall_to_passengers(effective_fall_distance, damage_modifier, source);
+        // Vanilla ignores `super`'s result.
+        super_cause_fall_damage(effective_fall_distance);
 
         let attributes = self.attributes().lock();
         let safe_fall_distance = attributes
@@ -262,12 +258,6 @@ impl Living<'_> {
                 .any(|&slot| self.can_glide_using_equipment_slot(slot))
     }
 
-    /// Returns whether the entity currently meets the conditions to glide with an elytra.
-    #[must_use]
-    pub fn can_glide_default(&self) -> bool {
-        self.default_can_glide()
-    }
-
     /// Puts the entity into the fall-flying (elytra gliding) state.
     pub fn start_fall_flying(&self) {
         self.set_fall_flying(true);
@@ -392,12 +382,6 @@ impl Living<'_> {
         self.is_dead_or_dying()
     }
 
-    /// Returns whether this entity is currently immobile.
-    #[must_use]
-    pub fn is_immobile_default(&self) -> bool {
-        self.default_is_immobile()
-    }
-
     /// Zeroes out velocity components too small to matter, using a stricter
     /// horizontal threshold for players than other entities.
     pub fn apply_living_velocity_thresholds(&self) {
@@ -407,7 +391,7 @@ impl Living<'_> {
         let mut dz = movement.z;
 
         if self.entity_type() == &vanilla_entities::PLAYER {
-            if movement.x.mul_add(movement.x, movement.z * movement.z) < 9.0E-6 {
+            if movement.x * movement.x + movement.z * movement.z < 9.0E-6 {
                 dx = 0.0;
                 dz = 0.0;
             }
@@ -487,11 +471,6 @@ impl Living<'_> {
         self.mark_velocity_sync();
     }
 
-    /// Applies the entity's jump velocity.
-    pub fn jump_from_ground_default(&self) {
-        self.default_jump_from_ground();
-    }
-
     /// Applies downward velocity while submerged and not jumping out of a liquid.
     pub fn go_down_in_water(&self) {
         self.set_velocity(self.velocity() + DVec3::new(0.0, f64::from(-0.04_f32), 0.0));
@@ -535,13 +514,6 @@ impl Living<'_> {
             self.jump_in_liquid(&vanilla_fluid_tags::FluidTag::WATER);
         }
     }
-
-    /// Ticks side effects of a rider controlling this entity, such as steering-based input.
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn tick_ridden_default(&self, _controller: &Player, _ridden_input: DVec3) {}
 
     /// Transforms the rider's raw input into this entity's movement input while ridden.
     #[expect(
@@ -628,12 +600,17 @@ impl Living<'_> {
         self.apply_effects_from_blocks();
         self.tick_freezing();
         self.push_entities();
+        if self.entity_type().flags.is_sensitive_to_water
+            && self.is_in_water_or_rain()
+            && let Some(world) = self.level()
+        {
+            self.hurt(
+                &world,
+                &DamageSource::environment(&vanilla_damage_types::DROWN),
+                1.0,
+            );
+        }
         result
-    }
-
-    /// Runs one AI-driven movement and effect tick for the entity.
-    pub fn ai_step_default(&self, entity: &SharedEntity) -> Option<MoveResult> {
-        self.default_ai_step(entity)
     }
 
     /// Default for [`LivingProps::push_entities`].

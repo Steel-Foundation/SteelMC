@@ -27,6 +27,7 @@ use crate::world::World;
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/splash_potion", constructors)]
+#[entity(definition = thrown_potion::definition)]
 pub struct SplashPotionEntity {
     #[entity(base)]
     base: EntityBase,

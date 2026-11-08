@@ -9,7 +9,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use rand::{RngExt, rng};
 use steel_macros::entity_behavior;
-use steel_math::{DEG_TO_RAD, DEGREE_360, trig};
+use steel_math::{DEG_TO_RAD, DEGREE_360, trig, vector};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidStateExt;
@@ -30,6 +30,10 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Downcast as _};
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::TickCtx;
+use crate::entity::component::definition::{CanHitEntityCtx, OnHitBlockCtx, OnHitEntityCtx};
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
 use crate::entity::prelude::*;
 use crate::entity::projectile::{self, ProjectileBase, ProjectileProps, triangle_random};
@@ -51,7 +55,7 @@ const MAX_DISTANCE_SQR: f64 = 32.0 * 32.0;
 #[entity_behavior(class = "FishingHook")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, no_save_data)]
-#[entity(key = "steel:entity/fishing_hook", constructors)]
+#[entity(key = "steel:entity/fishing_hook", constructors, definition = Self::define)]
 pub struct FishingHookEntity {
     #[entity(base)]
     base: EntityBase,
@@ -102,8 +106,58 @@ impl FishingHookState {
 }
 
 impl FishingHookEntity {
+    const SEED: StageId = StageId("fishing_hook.seed");
+    const TICK: StageId = StageId("fishing_hook.tick");
+    const CAN_HIT_ENTITY: StageId = StageId("fishing_hook.can_hit_entity");
+    const ON_HIT_ENTITY: StageId = StageId("fishing_hook.on_hit_entity");
+    const ON_HIT_BLOCK: StageId = StageId("fishing_hook.on_hit_block");
+
+    fn define() -> Definition<Self> {
+        let definition = projectile::definition();
+        Definition {
+            can_hit_entity: definition.can_hit_entity.then([Stage::new(
+                Self::CAN_HIT_ENTITY,
+                |_: &Self, ctx: &mut CanHitEntityCtx<'_>| {
+                    ctx.result |= ctx.target.is_alive() && ctx.target.is::<ItemEntity>();
+                    Flow::Continue
+                },
+            )]),
+            on_hit_entity: definition.on_hit_entity.then([Stage::new(
+                Self::ON_HIT_ENTITY,
+                |hook: &Self, ctx: &mut OnHitEntityCtx<'_>| {
+                    hook.set_hooked_entity(Some(Arc::clone(ctx.target)));
+                    Flow::Continue
+                },
+            )]),
+            on_hit_block: definition.on_hit_block.then([Stage::new(
+                Self::ON_HIT_BLOCK,
+                |hook: &Self, ctx: &mut OnHitBlockCtx<'_>| {
+                    // Vanilla scales by `HitResult.distanceTo`, which is the
+                    // squared distance.
+                    let distance_sqr = ctx.hit.location.distance_squared(hook.position());
+                    hook.set_velocity(vector::normalize(hook.velocity()) * distance_sqr);
+                    Flow::Continue
+                },
+            )]),
+            tick: definition
+                .tick
+                .before(
+                    projectile::TICK,
+                    [Stage::effect(Self::SEED, Self::seed_synchronized_random)],
+                )
+                .then([Stage::new(
+                    Self::TICK,
+                    |hook: &Self, ctx: &mut TickCtx<'_>| {
+                        let entity = ctx.entity;
+                        hook.entity_tick(entity);
+                        Flow::Continue
+                    },
+                )]),
+            ..definition
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |hook, entity| hook.entity_tick(entity),
         // Vanilla `FishingHook.remove`: the player stops fishing with it.
         on_removal: |hook, _| {
             if let Some(owner) = hook.projectile().owner()
@@ -114,6 +168,7 @@ impl FishingHookEntity {
         },
         movement_emission: |_| EntityMovementEmission::None,
         can_use_portal: |_, _| false,
+        default_gravity: |_| f64::from(0.03_f32),
         // The client needs the owner to draw the line; an ownerless hook
         // sends its own id.
         spawn_data: |hook| {
@@ -124,11 +179,7 @@ impl FishingHookEntity {
         ..projectile::entity_props()
     };
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        can_hit_entity: |hook, target| {
-            hook.projectile().can_hit_entity_default(target)
-                || (target.is_alive() && target.is::<ItemEntity>())
-        },
-        on_hit_entity: |hook, _, target, _| hook.set_hooked_entity(Some(Arc::clone(target))),
+        should_bounce_on_world_border: |_| true,
         ..ProjectileProps::new()
     };
 
@@ -222,6 +273,23 @@ impl FishingHookEntity {
     }
 
     /// Stores the hooked entity, synced as its id plus one (zero for none).
+    /// Sets `DATA_BITING`; like vanilla `onSyncedDataUpdated`, a new bite
+    /// yanks the hook down.
+    fn set_biting(&self, biting: bool) {
+        let changed = {
+            let mut data = self.entity_data.lock();
+            let changed = *data.fishing_hook.biting.get() != biting;
+            data.fishing_hook.biting.set(biting);
+            changed
+        };
+        if changed && biting {
+            // `Mth.nextFloat` on the synchronized random, between 0.6 and 1.0.
+            let roll = self.synchronized_random.lock().next_f32() * (1.0 - 0.6) + 0.6;
+            let velocity = self.velocity();
+            self.set_velocity(DVec3::new(velocity.x, f64::from(-0.4 * roll), velocity.z));
+        }
+    }
+
     fn set_hooked_entity(&self, hooked: Option<SharedEntity>) {
         let hooked_entity_id = hooked.as_ref().map_or(0, |entity| entity.id() + 1);
         self.hook_state.lock().hooked_entity = hooked;
@@ -260,7 +328,7 @@ impl FishingHookEntity {
             if state.nibble <= 0 {
                 state.time_until_lured = 0;
                 state.time_until_hooked = 0;
-                self.entity_data.lock().fishing_hook.biting.set(false);
+                self.set_biting(false);
             }
         } else if state.time_until_hooked > 0 {
             state.time_until_hooked -= fishing_speed;
@@ -348,23 +416,18 @@ impl FishingHookEntity {
                 );
 
                 state.nibble = rng().random_range(20..=40);
-                self.entity_data.lock().fishing_hook.biting.set(true);
+                self.set_biting(true);
             }
         } else if state.time_until_lured > 0 {
             state.time_until_lured -= fishing_speed;
             let mut tease_chance: f32 = 0.15;
 
-            match state.time_until_lured {
-                0..20 => {
-                    tease_chance += (20 - state.time_until_lured) as f32 * 0.05;
-                }
-                20..40 => {
-                    tease_chance += (40 - state.time_until_lured) as f32 * 0.02;
-                }
-                40..60 => {
-                    tease_chance += (60 - state.time_until_lured) as f32 * 0.01;
-                }
-                _ => {}
+            if state.time_until_lured < 20 {
+                tease_chance += (20 - state.time_until_lured) as f32 * 0.05;
+            } else if state.time_until_lured < 40 {
+                tease_chance += (40 - state.time_until_lured) as f32 * 0.02;
+            } else if state.time_until_lured < 60 {
+                tease_chance += (60 - state.time_until_lured) as f32 * 0.01;
             }
 
             if rng().random::<f32>() < tease_chance {
@@ -510,17 +573,6 @@ impl FishingHookEntity {
                 let items = vanilla_loot_tables::GAMEPLAY_FISHING.get_random_items(&mut loot_ctx);
                 // TODO: trigger FISHING_ROD_HOOKED once advancement criteria exist.
                 self.spawn_catch(items, &world, player);
-
-                let orb = ExperienceOrbEntity::new(
-                    &vanilla_entities::EXPERIENCE_ORB,
-                    next_entity_id(),
-                    player.position() + DVec3::new(0.0, 0.5, 0.5),
-                    Arc::downgrade(&world),
-                );
-                orb.set_value(rand::random_range(1..=6));
-                if let Err(error) = world.try_add_entity(Arc::new(orb)) {
-                    log::error!("Failed to spawn experience orb: {error}");
-                }
                 damage = 1;
             }
         }
@@ -534,13 +586,16 @@ impl FishingHookEntity {
 
     /// `FishingHook.pullEntity`: pulls `entity` a tenth of the way to the owner.
     fn pull_entity(&self, entity: &SharedEntity) {
-        if let Some(owner) = self.projectile().owner() {
+        if let Some(owner) = self.projectile().owner()
+            && entity.can_simulate_movement()
+        {
             let delta = (owner.position() - self.position()) * 0.1;
             entity.set_velocity(entity.velocity() + delta);
         }
     }
 
-    /// Throws the caught items toward `player` and counts caught fish.
+    /// Throws each caught item toward `player` with an experience orb, and
+    /// counts caught fish.
     fn spawn_catch(&self, items: Vec<ItemStack>, world: &Arc<World>, player: &Player) {
         const SPEED: f64 = 0.1;
         for item_stack in items {
@@ -552,6 +607,16 @@ impl FishingHookEntity {
             );
             let is_fish = item_stack.item().has_tag(&ItemTag::FISHES);
             world.spawn_item_with_velocity(self.position(), item_stack, velocity);
+            let orb: SharedEntity = Arc::new(ExperienceOrbEntity::with_value(
+                &vanilla_entities::EXPERIENCE_ORB,
+                next_entity_id(),
+                player.position() + DVec3::new(0.0, 0.5, 0.5),
+                rand::random_range(1..=6),
+                Arc::downgrade(world),
+            ));
+            if let Err(error) = world.try_add_entity(orb) {
+                log::error!("Failed to spawn experience orb: {error}");
+            }
             if is_fish {
                 player.award_custom_stat(&vanilla_custom_stats::FISH_CAUGHT);
             }
@@ -603,10 +668,10 @@ impl FishingHookEntity {
                     self.hook_state.lock().bobber_state = BobberState::Flying;
                     return false;
                 };
-                let same_dimension = hooked.level().is_some_and(|hooked_world| {
-                    world.dimension_type == hooked_world.dimension_type
-                });
-                if !hooked.is_removed() && hooked.can_interact_with_level() && same_dimension {
+                let same_world = hooked
+                    .level()
+                    .is_some_and(|hooked_world| world.key == hooked_world.key);
+                if !hooked.is_removed() && hooked.can_interact_with_level() && same_world {
                     let position = hooked.position()
                         + DVec3::new(0.0, hooked.bounding_box().height() * 0.8, 0.0);
                     if let Err(error) = self.try_set_position(position) {
@@ -624,7 +689,8 @@ impl FishingHookEntity {
                 let velocity = self.velocity();
                 let mut force =
                     self.position().y + velocity.y - f64::from(pos.y()) - f64::from(liquid_height);
-                if force.abs() < 0.01 {
+                // `Math.signum(0)` is 0, unlike Rust's.
+                if force.abs() < 0.01 && force != 0.0 {
                     force += force.signum() * 0.1;
                 }
                 self.set_velocity(DVec3::new(
@@ -645,8 +711,9 @@ impl FishingHookEntity {
                     state.out_of_water_time = (state.out_of_water_time - 1).max(0);
                     if *self.entity_data.lock().fishing_hook.biting.get() {
                         let mut random = self.synchronized_random.lock();
-                        let pull = -0.1 * random.next_f32() * random.next_f32();
-                        self.set_velocity(self.velocity() + DVec3::new(0.0, f64::from(pull), 0.0));
+                        let pull =
+                            -0.1 * f64::from(random.next_f32()) * f64::from(random.next_f32());
+                        self.set_velocity(self.velocity() + DVec3::new(0.0, pull, 0.0));
                     }
                     self.catching_fish(pos, &mut state);
                 } else {
@@ -658,11 +725,11 @@ impl FishingHookEntity {
         }
     }
 
-    /// A hook lying on the ground for a minute disappears.
-    fn tick_life(&self) {
+    /// A hook lying on the ground for a minute disappears; returns whether it did.
+    fn tick_life(&self) -> bool {
         if !self.on_ground() {
             self.hook_state.lock().life = 0;
-            return;
+            return false;
         }
         let expired = {
             let mut state = self.hook_state.lock();
@@ -672,16 +739,20 @@ impl FishingHookEntity {
         if expired {
             self.set_removed(RemovalReason::Discarded);
         }
+        expired
     }
 
-    /// `FishingHook.tick`.
-    fn entity_tick(&self, entity: &SharedEntity) {
+    /// `FishingHook.tick` before `super.tick()`: reseeds the random the
+    /// client mirrors.
+    fn seed_synchronized_random(&self) {
         if let Some(world) = self.level() {
             let seed = self.uuid().as_u64_pair().1 as i64 ^ world.game_time();
             self.synchronized_random.lock().set_seed(seed);
         }
-        self.projectile().tick();
+    }
 
+    /// `FishingHook.tick` after `super.tick()`.
+    fn entity_tick(&self, entity: &SharedEntity) {
         let Some(owner) = self.player_owner() else {
             self.set_removed(RemovalReason::Discarded);
             return;
@@ -689,10 +760,9 @@ impl FishingHookEntity {
         let Some(player) = owner.as_player() else {
             return;
         };
-        if self.should_stop_fishing(player) {
+        if self.should_stop_fishing(player) || self.tick_life() {
             return;
         }
-        self.tick_life();
 
         let Some(world) = self.level() else {
             return;
@@ -712,7 +782,7 @@ impl FishingHookEntity {
             && !self.on_ground()
             && self.hook_state.lock().hooked_entity.is_none()
         {
-            self.set_velocity(self.velocity() + DVec3::new(0.0, -0.03, 0.0));
+            self.set_velocity(self.velocity() + DVec3::new(0.0, -self.default_gravity(), 0.0));
         }
         Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();

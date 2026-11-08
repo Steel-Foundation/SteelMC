@@ -5,6 +5,7 @@
 //! item and entity event 17.
 
 use std::sync::{Arc, Weak};
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -21,6 +22,10 @@ use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::TickCtx;
+use crate::entity::component::definition::{OnHitBlockCtx, OnHitEntityCtx};
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::prelude::*;
 use crate::entity::projectile::{
@@ -46,7 +51,7 @@ struct Flight {
 #[entity_behavior(class = "FireworkRocketEntity")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_rocket, load = Self::load_rocket)]
-#[entity(key = "steel:entity/firework_rocket", constructors)]
+#[entity(key = "steel:entity/firework_rocket", constructors, definition = Self::define)]
 pub struct FireworkRocketEntity {
     #[entity(base)]
     base: EntityBase,
@@ -60,18 +65,49 @@ pub struct FireworkRocketEntity {
 }
 
 impl FireworkRocketEntity {
+    const TICK: StageId = StageId("firework_rocket.tick");
+    const ON_HIT_ENTITY: StageId = StageId("firework_rocket.on_hit_entity");
+    const ON_HIT_BLOCK: StageId = StageId("firework_rocket.on_hit_block");
+
+    fn define() -> Definition<Self> {
+        let definition = projectile::definition();
+        Definition {
+            on_hit_entity: definition.on_hit_entity.then([Stage::new(
+                Self::ON_HIT_ENTITY,
+                |rocket: &Self, ctx: &mut OnHitEntityCtx<'_>| {
+                    if let Some(world) = rocket.level() {
+                        rocket.explode(ctx.entity, &world);
+                    }
+                    Flow::Continue
+                },
+            )]),
+            on_hit_block: definition.on_hit_block.before(
+                projectile::ON_HIT_BLOCK,
+                [Stage::new(
+                    Self::ON_HIT_BLOCK,
+                    |rocket: &Self, ctx: &mut OnHitBlockCtx<'_>| {
+                        rocket.on_hit_block_before_super(ctx.entity, ctx.hit);
+                        Flow::Continue
+                    },
+                )],
+            ),
+            tick: definition.tick.then([Stage::new(
+                Self::TICK,
+                |rocket: &Self, ctx: &mut TickCtx<'_>| {
+                    let entity = ctx.entity;
+                    rocket.entity_tick(entity);
+                    Flow::Continue
+                },
+            )]),
+            ..definition
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |rocket, entity| rocket.entity_tick(entity),
         attackable: |_| false,
         ..projectile::entity_props()
     };
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        on_hit_entity: |rocket, entity, _, _| {
-            if let Some(world) = rocket.level() {
-                rocket.explode(entity, &world);
-            }
-        },
-        on_hit_block: Self::projectile_on_hit_block,
         horizontal_hurt_knockback_direction: |rocket, hurt_entity, _| {
             let delta = hurt_entity.position() - rocket.position();
             (delta.x, delta.z)
@@ -176,10 +212,9 @@ impl FireworkRocketEntity {
         Some(attached)
     }
 
-    /// `FireworkRocketEntity.tick`.
+    /// `FireworkRocketEntity.tick` after `super.tick()`.
     fn entity_tick(&self, entity: &SharedEntity) {
         let projectile = self.projectile();
-        projectile.tick();
         let Some(world) = self.level() else {
             return;
         };
@@ -341,7 +376,8 @@ impl FireworkRocketEntity {
 
     /// `FireworkRocketEntity.onHitBlock`: the block reacts as if the rocket
     /// were inside it, and a rocket with explosions explodes.
-    fn projectile_on_hit_block(&self, entity: &SharedEntity, hit: &ClipHitResult) {
+    /// `FireworkRocketEntity.onHitBlock` before `super`.
+    fn on_hit_block_before_super(&self, entity: &SharedEntity, hit: &ClipHitResult) {
         if let Some(world) = self.level() {
             let state = world.get_block_state(hit.block_pos);
             let mut ignored_effects = InsideBlockEffectCollector::new();
@@ -359,7 +395,6 @@ impl FireworkRocketEntity {
                 self.explode(entity, &world);
             }
         }
-        self.projectile().on_hit_block_default(entity, hit);
     }
 
     fn save_rocket(&self, nbt: &mut NbtCompound) {
@@ -375,15 +410,18 @@ impl FireworkRocketEntity {
     fn load_rocket(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         {
             let mut flight = self.flight.lock();
-            flight.life = nbt.int("Life").unwrap_or(0);
-            flight.lifetime = nbt.int("LifeTime").unwrap_or(0);
+            flight.life = nbt.int_value("Life").unwrap_or(0);
+            flight.lifetime = nbt.int_value("LifeTime").unwrap_or(0);
         }
         let item = nbt
             .compound("FireworksItem")
             .and_then(|item| ItemStack::from_borrowed_compound(&item))
             .unwrap_or_else(|| ItemStack::new(&vanilla_items::FIREWORK_ROCKET));
         self.entity_data.lock().id_fireworks_item.set(item);
-        self.set_shot_at_angle(nbt.byte("ShotAtAngle").is_some_and(|value| value != 0));
+        self.set_shot_at_angle(
+            nbt.byte_value("ShotAtAngle")
+                .is_some_and(|value| value != 0),
+        );
     }
 }
 

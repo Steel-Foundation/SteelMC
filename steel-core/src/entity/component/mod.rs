@@ -17,7 +17,6 @@
 //! entity with its components and carry the layer's behavior.
 
 pub mod definition;
-pub mod entries;
 pub mod pipeline;
 pub(crate) mod props;
 

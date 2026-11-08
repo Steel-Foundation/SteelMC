@@ -184,8 +184,8 @@ impl ConduitBlockEntity {
                 1.0,
                 None,
             );
-            if let Some(living) = target.as_living_entity() {
-                living.hurt_server(
+            if target.is_living_entity() {
+                target.hurt(
                     world,
                     &DamageSource::environment(&vanilla_damage_types::MAGIC),
                     ATTACK_DAMAGE,

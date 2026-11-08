@@ -7,6 +7,7 @@
 
 use crate::entity::prelude::*;
 use std::sync::Arc;
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 
@@ -23,7 +24,7 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::behavior::InteractionResult;
-use crate::entity::component::entries::{
+use crate::entity::component::definition::{
     AiStep, FinalizeSpawn, FinalizeSpawnCtx, MobInteract, MobInteractCtx,
 };
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
@@ -91,9 +92,9 @@ impl Component for Age {
 
     fn load(&self, owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let ageable = Ageable::new(owner, self);
-        ageable.set_age(nbt.int("Age").unwrap_or(0));
-        self.state.lock().forced_age = nbt.int("ForcedAge").unwrap_or(0);
-        ageable.set_age_locked(nbt.byte("AgeLocked").is_some_and(|value| value != 0));
+        ageable.set_age(nbt.int_value("Age").unwrap_or(0));
+        self.state.lock().forced_age = nbt.int_value("ForcedAge").unwrap_or(0);
+        ageable.set_age_locked(nbt.byte_value("AgeLocked").is_some_and(|value| value != 0));
     }
 }
 
@@ -346,14 +347,14 @@ pub fn ai_step<E: Entity + Has<Age>>() -> Stage<E, AiStep> {
 /// The `AgeableMob.finalizeSpawn` stage, before `Mob.finalizeSpawn`.
 pub fn finalize_spawn<E: Entity + Has<Age>>() -> Stage<E, FinalizeSpawn> {
     fn run<E: Entity + Has<Age>>(entity: &E, ctx: &mut FinalizeSpawnCtx<'_>) -> Flow {
-        let mut group_data = match ctx.group_data.take() {
+        let mut group_data = match ctx.result.take() {
             Some(SpawnGroupData::AgeableMob(group_data)) => group_data,
             None => AgeableMobGroupData::with_should_spawn_baby(true),
         };
         if group_data.finalize_ageable_spawn(rand::random::<f32>) {
             Ageable::new(entity, entity.get::<Age>()).set_age(BABY_START_AGE);
         }
-        ctx.group_data = Some(SpawnGroupData::AgeableMob(group_data));
+        ctx.result = Some(SpawnGroupData::AgeableMob(group_data));
         Flow::Continue
     }
     Stage::new(FINALIZE_SPAWN, run::<E>)

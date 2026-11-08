@@ -305,12 +305,6 @@ pub(crate) fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> b
     })
 }
 
-enum BlockEffectSegmentResult {
-    Complete(i32),
-    IterationLimit,
-    Removed,
-}
-
 #[derive(Debug, Clone, Copy)]
 struct BlockEffectFireSnapshot {
     was_on_fire: bool,
@@ -439,12 +433,12 @@ pub(crate) fn get_input_vector(input: DVec3, speed: f32, yaw_degrees: f32) -> DV
         input
     } * f64::from(speed);
     let yaw = yaw_degrees.to_radians();
-    let sin = trig::sin(yaw);
-    let cos = trig::cos(yaw);
+    let sin = f64::from(trig::sin(yaw));
+    let cos = f64::from(trig::cos(yaw));
     DVec3::new(
-        movement.x * f64::from(cos) - movement.z * f64::from(sin),
+        movement.x * cos - movement.z * sin,
         movement.y,
-        movement.z * f64::from(cos) + movement.x * f64::from(sin),
+        movement.z * cos + movement.x * sin,
     )
 }
 
@@ -508,79 +502,59 @@ fn apply_block_effect_segment(
     max_iterations: i32,
     effect_collector: &mut InsideBlockEffectCollector,
     visited_blocks: &mut block_effects::VisitedBlockPositions,
-) -> BlockEffectSegmentResult {
-    let aabb = entity.make_bounding_box_at(to).deflate(1.0E-5);
-    if aabb.is_empty() {
-        return BlockEffectSegmentResult::Complete(0);
-    }
-
-    let mut hit_iteration_limit = false;
-    let Some(iterations) =
-        block_effects::for_each_block_intersected_between(from, to, aabb, |pos, iteration| {
-            if entity.is_removed() {
-                return false;
-            }
-            if iteration >= max_iterations {
-                hit_iteration_limit = true;
-                return false;
-            }
-
-            let state = world.get_block_state(pos);
-            if state.is_air() {
-                return true;
-            }
-
-            let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-            let fluid_state = state.get_fluid_state();
-            let entity_inside_shape =
-                behavior.get_entity_inside_collision_shape(state, world.as_ref(), pos, entity);
-            let inside_block = block_effects::collided_with_shape_moving_from(
-                entity.make_bounding_box_at(from),
-                from,
-                to,
-                pos,
-                entity_inside_shape,
-            );
-            let inside_fluid = collided_with_fluid(world, fluid_state, pos, from, to, entity);
-
-            if !(inside_block || inside_fluid) || !visited_blocks.insert(pos) {
-                return true;
-            }
-
-            if inside_block {
-                let moved_far = from.distance_squared(to) > 0.999_990_000_000_252_6_f64.powi(2);
-                let is_precise = moved_far || aabb.intersects_block(pos);
-                effect_collector.advance_step(iteration);
-                behavior.entity_inside(state, world, pos, entity, effect_collector, is_precise);
-                if entity.is_removed() {
-                    return false;
-                }
-            }
-
-            if inside_fluid {
-                effect_collector.advance_step(iteration);
-                FLUID_BEHAVIORS
-                    .get_behavior(fluid_state.fluid_id)
-                    .entity_inside(world, pos, entity, effect_collector);
-            }
-            !entity.is_removed()
-        })
-    else {
-        if entity.is_removed() {
-            return BlockEffectSegmentResult::Removed;
+) -> i32 {
+    let aabb = entity
+        .make_bounding_box_at(to)
+        .deflate(f64::from(1.0e-5_f32));
+    // The last iteration that visited a block, as vanilla's `iterations`.
+    let mut last_iteration = 0;
+    block_effects::for_each_block_intersected_between(from, to, aabb, |pos, iteration| {
+        if !entity.is_alive() {
+            return false;
         }
-        return if hit_iteration_limit {
-            BlockEffectSegmentResult::IterationLimit
-        } else {
-            BlockEffectSegmentResult::Complete(0)
-        };
-    };
+        if iteration >= max_iterations {
+            return false;
+        }
+        last_iteration = iteration;
 
-    if entity.is_removed() {
-        BlockEffectSegmentResult::Removed
-    } else {
-        BlockEffectSegmentResult::Complete(iterations)
-    }
+        let state = world.get_block_state(pos);
+        if state.is_air() {
+            return true;
+        }
+
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+        let fluid_state = state.get_fluid_state();
+        let entity_inside_shape =
+            behavior.get_entity_inside_collision_shape(state, world.as_ref(), pos, entity);
+        let inside_block = block_effects::collided_with_shape_moving_from(
+            entity.make_bounding_box_at(from),
+            from,
+            to,
+            pos,
+            entity_inside_shape,
+        );
+        let inside_fluid = collided_with_fluid(world, fluid_state, pos, from, to, entity);
+
+        if !(inside_block || inside_fluid) || !visited_blocks.insert(pos) {
+            return true;
+        }
+
+        if inside_block {
+            let moved_far = from.distance_squared(to) > 0.999_990_000_000_252_6_f64.powi(2);
+            let is_precise = moved_far || aabb.intersects_block(pos);
+            effect_collector.advance_step(iteration);
+            behavior.entity_inside(state, world, pos, entity, effect_collector, is_precise);
+        }
+
+        if inside_fluid {
+            effect_collector.advance_step(iteration);
+            FLUID_BEHAVIORS
+                .get_behavior(fluid_state.fluid_id)
+                .entity_inside(world, pos, entity, effect_collector);
+        }
+        true
+    });
+    last_iteration + 1
 }
 
 fn relative_on_axis(position: DVec3, axis: Axis, amount: f64) -> DVec3 {
@@ -629,10 +603,6 @@ fn apply_step_on_block(entity: &dyn Entity, world: &Arc<World>) {
     behavior.step_on(effect_state, world, effect_pos, entity);
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "vanilla movement block-effect traversal is easier to audit when kept in one sweep"
-)]
 fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMovement]) {
     if !entity.is_affected_by_blocks() {
         return;
@@ -651,94 +621,35 @@ fn apply_effects_from_block_movements(entity: &dyn Entity, movements: &[EntityMo
     for movement in movements.iter().copied() {
         let mut remaining_iterations = 16;
         let delta = movement.to() - movement.from();
+        let mut segment = |from, to, max_iterations| {
+            apply_block_effect_segment(
+                entity,
+                &world,
+                from,
+                to,
+                max_iterations,
+                &mut effect_collector,
+                &mut visited_blocks,
+            )
+        };
         if let Some(original_movement) = movement.axis_dependent_original_movement()
             && delta.length_squared() > 0.0
         {
             let mut segment_from = movement.from();
             for axis in block_effects::axis_step_order(original_movement) {
                 let axis_move = block_effects::component(delta, axis);
-                if axis_move == 0.0 {
-                    continue;
+                if axis_move != 0.0 {
+                    let segment_to = relative_on_axis(segment_from, axis, axis_move);
+                    remaining_iterations -= segment(segment_from, segment_to, remaining_iterations);
+                    segment_from = segment_to;
                 }
-
-                let segment_to = relative_on_axis(segment_from, axis, axis_move);
-                match apply_block_effect_segment(
-                    entity,
-                    &world,
-                    segment_from,
-                    segment_to,
-                    remaining_iterations,
-                    &mut effect_collector,
-                    &mut visited_blocks,
-                ) {
-                    BlockEffectSegmentResult::Complete(iterations) => {
-                        remaining_iterations -= iterations;
-                    }
-                    BlockEffectSegmentResult::IterationLimit => {
-                        apply_block_effect_segment(
-                            entity,
-                            &world,
-                            movement.to(),
-                            movement.to(),
-                            1,
-                            &mut effect_collector,
-                            &mut visited_blocks,
-                        );
-                        finish_inside_block_effects(entity, &mut effect_collector, before_effects);
-                        return;
-                    }
-                    BlockEffectSegmentResult::Removed => {
-                        finish_inside_block_effects(entity, &mut effect_collector, before_effects);
-                        return;
-                    }
-                }
-                segment_from = segment_to;
             }
         } else {
-            match apply_block_effect_segment(
-                entity,
-                &world,
-                movement.from(),
-                movement.to(),
-                remaining_iterations,
-                &mut effect_collector,
-                &mut visited_blocks,
-            ) {
-                BlockEffectSegmentResult::Complete(iterations) => {
-                    remaining_iterations -= iterations;
-                }
-                BlockEffectSegmentResult::IterationLimit => {
-                    apply_block_effect_segment(
-                        entity,
-                        &world,
-                        movement.to(),
-                        movement.to(),
-                        1,
-                        &mut effect_collector,
-                        &mut visited_blocks,
-                    );
-                    finish_inside_block_effects(entity, &mut effect_collector, before_effects);
-                    return;
-                }
-                BlockEffectSegmentResult::Removed => {
-                    finish_inside_block_effects(entity, &mut effect_collector, before_effects);
-                    return;
-                }
-            }
+            remaining_iterations -= segment(movement.from(), movement.to(), 16);
         }
 
         if remaining_iterations <= 0 {
-            apply_block_effect_segment(
-                entity,
-                &world,
-                movement.to(),
-                movement.to(),
-                1,
-                &mut effect_collector,
-                &mut visited_blocks,
-            );
-            finish_inside_block_effects(entity, &mut effect_collector, before_effects);
-            return;
+            segment(movement.to(), movement.to(), 1);
         }
     }
 
@@ -885,9 +796,9 @@ pub use reference::EntityReference;
 pub(crate) use registry::SpawnRule;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
-    AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest,
-    SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
-    create_entity_instance, load_entity_recursive_owned, spawn_entity,
+    AgeableMobGroupData, EntitySpawnError, EntitySpawnPlacement, EntitySpawnReason,
+    EntitySpawnRequest, SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
+    apply_item_stack_components, create_entity_instance, load_entity_recursive_owned, spawn_entity,
 };
 pub(crate) use spawn_placements::SpawnPlacements;
 /// `#[derive(Entity)]`; see [`steel_macros::Entity`].

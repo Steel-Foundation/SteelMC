@@ -3,7 +3,7 @@
 //! A [`Pipeline`] is one entity type's behavior for one entry point, as an
 //! ordered list of stages. Layer presets build the shared chain; entity types
 //! adjust it with [`Pipeline::after`], [`Pipeline::before`],
-//! [`Pipeline::without`] and [`Pipeline::wrap`].
+//! [`Pipeline::without`], [`Pipeline::wrap`] and [`Pipeline::around`].
 //!
 //! Stages return [`Flow::Stop`] to end the chain early, which covers vanilla
 //! guards (`if (...) return false;` before `super`) and chain-of-responsibility
@@ -44,19 +44,20 @@ pub type Inner<'s, E, K> = &'s dyn for<'a, 'b> Fn(&'b E, &'b mut <K as Entry>::C
 type WrapFn<E, K> =
     for<'a, 'b, 's> fn(&'b E, &'b mut <K as Entry>::Ctx<'a>, Inner<'s, E, K>) -> Flow;
 
-enum Run<E: 'static, K: Entry> {
+enum Run<E: ?Sized + 'static, K: Entry> {
     Plain(StageFn<E, K>),
     Effect(fn(&E)),
     Wrap(WrapFn<E, K>, Box<Stage<E, K>>),
+    Chain(Vec<Stage<E, K>>),
 }
 
 /// One step of a pipeline.
-pub struct Stage<E: 'static, K: Entry> {
+pub struct Stage<E: ?Sized + 'static, K: Entry> {
     id: StageId,
     run: Run<E, K>,
 }
 
-impl<E: 'static, K: Entry> Stage<E, K> {
+impl<E: ?Sized + 'static, K: Entry> Stage<E, K> {
     /// A stage that reads and writes the call's context and decides whether
     /// the pipeline continues.
     #[must_use]
@@ -92,16 +93,30 @@ impl<E: 'static, K: Entry> Stage<E, K> {
             Run::Wrap(wrapper, inner) => {
                 wrapper(entity, ctx, &|entity, ctx| inner.call(entity, ctx))
             }
+            Run::Chain(stages) => run_stages(stages, entity, ctx),
         }
     }
 }
 
+fn run_stages<E: ?Sized + 'static, K: Entry>(
+    stages: &[Stage<E, K>],
+    entity: &E,
+    ctx: &mut K::Ctx<'_>,
+) -> Flow {
+    for stage in stages {
+        if stage.call(entity, ctx) == Flow::Stop {
+            return Flow::Stop;
+        }
+    }
+    Flow::Continue
+}
+
 /// The ordered stages one entity type runs for one entry point.
-pub struct Pipeline<E: 'static, K: Entry> {
+pub struct Pipeline<E: ?Sized + 'static, K: Entry> {
     stages: Vec<Stage<E, K>>,
 }
 
-impl<E: 'static, K: Entry> Pipeline<E, K> {
+impl<E: ?Sized + 'static, K: Entry> Pipeline<E, K> {
     /// A pipeline running `stages` in order.
     #[must_use]
     pub fn new(stages: impl IntoIterator<Item = Stage<E, K>>) -> Self {
@@ -188,13 +203,27 @@ impl<E: 'static, K: Entry> Pipeline<E, K> {
         self
     }
 
+    /// Wraps the whole pipeline in stage `id`: `wrapper` runs every current
+    /// stage through its `inner`, like a vanilla override that calls `super`
+    /// in its middle. The wrapped stages can no longer be positioned against;
+    /// later stages go around `id`.
+    #[must_use]
+    pub fn around(self, id: StageId, wrapper: WrapFn<E, K>) -> Self {
+        let chain = Stage {
+            id,
+            run: Run::Chain(self.stages),
+        };
+        Self {
+            stages: vec![Stage {
+                id,
+                run: Run::Wrap(wrapper, Box::new(chain)),
+            }],
+        }
+    }
+
     /// Runs the stages in order until one returns [`Flow::Stop`].
     pub fn run(&self, entity: &E, ctx: &mut K::Ctx<'_>) {
-        for stage in &self.stages {
-            if stage.call(entity, ctx) == Flow::Stop {
-                return;
-            }
-        }
+        run_stages(&self.stages, entity, ctx);
     }
 }
 
@@ -272,6 +301,27 @@ mod tests {
         }
         let pipeline = preset().wrap(BASE, around);
         assert_eq!(run(&pipeline), ["before", "base", "after", "middle"]);
+    }
+
+    #[test]
+    fn around_runs_the_whole_chain_where_the_wrapper_calls_it() {
+        fn around(
+            entity: &Probe,
+            log: &mut Vec<&'static str>,
+            inner: Inner<'_, Probe, Log>,
+        ) -> Flow {
+            log.push("before");
+            let flow = inner(entity, log);
+            log.push("after");
+            flow
+        }
+        let pipeline = preset()
+            .around(LEAF, around)
+            .then([Stage::new(MIDDLE, middle)]);
+        assert_eq!(
+            run(&pipeline),
+            ["before", "base", "middle", "after", "middle"]
+        );
     }
 
     #[test]

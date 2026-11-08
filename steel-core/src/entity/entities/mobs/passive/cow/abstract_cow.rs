@@ -13,11 +13,11 @@ use crate::entity::ai::goal::{
     TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::animal::{self, Parts};
-use crate::entity::component::definition::MobDefinition;
-use crate::entity::component::entries::MobInteractCtx;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
-use crate::entity::{EntityProps, LivingProps, MobBase, MobProps, mob};
+use crate::entity::{EntityProps, LivingProps, MobBase, MobProps};
 use crate::player::player_inventory::Prediction;
 
 /// Stage registering the cow goals.
@@ -27,7 +27,7 @@ pub const MILK: StageId = StageId("abstract_cow.milk");
 
 /// `AbstractCow`'s chains: the animal chains with cow goals and milking.
 #[must_use]
-pub fn definition<E: Parts>() -> MobDefinition<E> {
+pub fn definition<E: Parts>() -> Definition<E> {
     let mut definition = animal::definition::<E>();
     // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
     definition.construct = definition.construct.before(
@@ -68,7 +68,7 @@ pub const fn mob_props<E: Parts>() -> MobProps<E> {
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
         play_step_sound: |cow, _, _| cow.play_sound(CLASSIC_SOUNDS.step_sound, 0.15, 1.0),
-        ..mob::entity_props()
+        ..animal::entity_props()
     }
 }
 

@@ -102,11 +102,6 @@ pub trait EntityCombat: Entity {
                 && self.is_fall_damage_immune()
     }
 
-    /// Default for [`Entity::hurt`].
-    fn hurt_default(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
-        false
-    }
-
     /// Default for [`Entity::killed_entity`].
     fn killed_entity_default(
         &self,

@@ -250,7 +250,7 @@ impl EntityRegistry {
     }
 
     /// Get all entity types with a registered factory.
-    #[cfg(feature = "test-framework")]
+    #[cfg(any(test, feature = "test-framework"))]
     pub fn get_implemented(&self) -> impl Iterator<Item = EntityTypeRef> + '_ {
         REGISTRY
             .entity_types
@@ -362,6 +362,22 @@ mod tests {
         assert_eq!(living_rotation.y_body_rot().to_bits(), 135.0_f32.to_bits());
         assert_eq!(living_rotation.y_head_rot_o().to_bits(), 0.0_f32.to_bits());
         assert_eq!(living_rotation.y_body_rot_o().to_bits(), 0.0_f32.to_bits());
+    }
+
+    /// Definitions are built lazily, so a stage positioned against a missing
+    /// `StageId` would otherwise only panic when that type first spawns.
+    #[test]
+    fn every_implemented_entity_builds_its_definition() {
+        init_vanilla_registry();
+        let mut registry = EntityRegistry::new();
+        register_entity_factories(&mut registry);
+
+        for entity_type in registry.get_implemented() {
+            let Some(entity) = registry.create(entity_type, 1, DVec3::ZERO, Weak::new()) else {
+                panic!("{} has a factory", entity_type.key);
+            };
+            let _ = entity.entity_definition();
+        }
     }
 
     #[test]

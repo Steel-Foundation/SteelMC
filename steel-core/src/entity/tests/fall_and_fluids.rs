@@ -342,7 +342,7 @@ fn living_base_tick_damages_entities_in_wall() {
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world())
         .with_in_wall_for_base_tick();
 
-    entity.living().base_tick_living_entity();
+    entity.base_tick();
 
     assert_f32_close(entity.living().health(), 19.0);
 }
@@ -372,7 +372,7 @@ fn living_base_tick_skips_in_wall_damage_while_sleeping() {
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_in_wall_for_base_tick();
     entity.living().set_sleeping_pos(BlockPos::ZERO);
 
-    entity.living().base_tick_living_entity();
+    entity.base_tick();
 
     assert_f32_close(entity.living().health(), 20.0);
 }

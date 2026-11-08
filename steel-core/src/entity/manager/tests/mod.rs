@@ -1,5 +1,5 @@
 use std::sync::{
-    Arc, Barrier, Weak,
+    Arc, Barrier, LazyLock, Weak,
     atomic::{AtomicUsize, Ordering},
 };
 
@@ -11,6 +11,8 @@ use uuid::Uuid;
 use crate::entity::{Entity, EntityBase, EntityLevelCallback, InactiveEntityCallback};
 
 use super::*;
+use crate::entity::component::definition::{Definition, DefinitionEntries};
+use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::{EntityHooks, EntityProps};
 
 struct ManagerTestEntity {
@@ -129,13 +131,24 @@ impl MovingTickTestEntity {
 crate::entity::impl_test_downcast_type!(MovingTickTestEntity);
 
 impl MovingTickTestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps {
-        tick: Self::entity_tick,
-        ..EntityProps::new()
-    };
+    const ENTITY: EntityProps<Self> = EntityProps::new();
+    const TICK: StageId = StageId("test.tick");
 
-    fn entity_tick(&self, _entity: &SharedEntity) {
-        self.tick_default();
+    fn definition() -> &'static Definition<Self> {
+        static DEFINITION: LazyLock<Definition<MovingTickTestEntity>> = LazyLock::new(|| {
+            let definition = Definition::new();
+            Definition {
+                tick: definition.tick.then([Stage::effect(
+                    MovingTickTestEntity::TICK,
+                    MovingTickTestEntity::entity_tick,
+                )]),
+                ..definition
+            }
+        });
+        &DEFINITION
+    }
+
+    fn entity_tick(&self) {
         if let Err(error) = self.try_set_position(self.tick_position) {
             panic!("moving tick test entity failed to move during tick: {error}");
         }
@@ -154,6 +167,10 @@ impl Entity for MovingTickTestEntity {
 
     fn entity_hooks(&self) -> &'static dyn EntityHooks {
         &Self::ENTITY
+    }
+
+    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+        Self::definition()
     }
 }
 
@@ -188,13 +205,24 @@ impl AddDuringTickTestEntity {
 crate::entity::impl_test_downcast_type!(AddDuringTickTestEntity);
 
 impl AddDuringTickTestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps {
-        tick: Self::entity_tick,
-        ..EntityProps::new()
-    };
+    const ENTITY: EntityProps<Self> = EntityProps::new();
+    const TICK: StageId = StageId("test.tick");
 
-    fn entity_tick(&self, _entity: &SharedEntity) {
-        self.tick_default();
+    fn definition() -> &'static Definition<Self> {
+        static DEFINITION: LazyLock<Definition<AddDuringTickTestEntity>> = LazyLock::new(|| {
+            let definition = Definition::new();
+            Definition {
+                tick: definition.tick.then([Stage::effect(
+                    AddDuringTickTestEntity::TICK,
+                    AddDuringTickTestEntity::entity_tick,
+                )]),
+                ..definition
+            }
+        });
+        &DEFINITION
+    }
+
+    fn entity_tick(&self) {
         let Some(entity) = self.entity_to_add.lock().take() else {
             return;
         };
@@ -218,6 +246,10 @@ impl Entity for AddDuringTickTestEntity {
 
     fn entity_hooks(&self) -> &'static dyn EntityHooks {
         &Self::ENTITY
+    }
+
+    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+        Self::definition()
     }
 }
 

@@ -1,4 +1,6 @@
 use crate::entity::LivingProps;
+use crate::entity::component::definition::ControllingPassengerCtx;
+use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::prelude::*;
 use crate::test_support::synced_with_health;
 use std::sync::{Arc, Weak};
@@ -23,11 +25,11 @@ use super::{
 };
 use crate::behavior::init_behaviors;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
-use crate::entity::ai::goal::{Goal, GoalControl, GoalControls};
+use crate::entity::ai::goal::{Goal, GoalControl, GoalControls, GoalSelector};
 use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
 use crate::entity::component::Has;
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::{Definition, DefinitionEntries};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ChickenEntity;
 use crate::entity::entities::objects::items::ItemEntity;
@@ -235,16 +237,23 @@ impl DespawnTestMob {
         ..MobProps::new()
     };
 
-    fn definition() -> &'static MobDefinition<Self> {
-        static DEFINITION: LazyLock<MobDefinition<DespawnTestMob>> =
-            LazyLock::new(mob::stages::definition);
+    fn definition() -> &'static Definition<Self> {
+        static DEFINITION: LazyLock<Definition<DespawnTestMob>> = LazyLock::new(|| Definition {
+            controlling_passenger: Pipeline::new([Stage::new(
+                StageId("test.controller"),
+                |mob: &DespawnTestMob, ctx: &mut ControllingPassengerCtx<'_>| {
+                    ctx.result = mob.controlling_passenger.lock().clone();
+                    Flow::Continue
+                },
+            )]),
+            ..mob::stages::definition()
+        });
         &DEFINITION
     }
 }
 
 impl DespawnTestMob {
     const ENTITY: EntityProps<Self> = EntityProps {
-        controlling_passenger: |entity| entity.controlling_passenger.lock().clone(),
         ..mob::entity_props()
     };
 }
@@ -272,6 +281,10 @@ impl Entity for DespawnTestMob {
 
     fn entity_hooks(&self) -> &'static dyn EntityHooks {
         &Self::ENTITY
+    }
+
+    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+        Self::definition()
     }
 }
 
@@ -345,18 +358,7 @@ impl Entity for HiddenTarget {
 }
 
 impl HiddenTarget {
-    const LIVING: LivingProps<Self> = LivingProps {
-        can_be_seen_as_enemy: Self::living_can_be_seen_as_enemy,
-        ..LivingProps::new()
-    };
-
-    #[expect(
-        clippy::unused_self,
-        reason = "kept as a method of the view for callers; the body does not need the entity"
-    )]
-    fn living_can_be_seen_as_enemy(&self) -> bool {
-        false
-    }
+    const LIVING: LivingProps<Self> = LivingProps::new();
 }
 
 impl Has<LivingEntityBase> for HiddenTarget {
@@ -943,7 +945,7 @@ fn leashed_pair(
     ));
     // Keep the holder past the wanted distance but below the elastic boundary
     // so close-range following starts.
-    let holder_x = 8.0 + LEASH_CLOSE_RANGE_WANTED_DISTANCE + 1.0;
+    let holder_x = 8.0 + f64::from(LEASH_CLOSE_RANGE_WANTED_DISTANCE) + 1.0;
     let holder: SharedEntity = Arc::new(DespawnTestMob::with_world_and_entity_type(
         holder_id,
         DVec3::new(holder_x, 65.0, 8.0),
@@ -1021,11 +1023,11 @@ fn pathfinder_close_range_leash_skips_following_while_panicking() {
         .lock()
         .add_goal(1, TestPanicGoal);
     let mob_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&mob);
-    mob.mob()
-        .mob_base()
-        .goal_selector()
-        .lock()
-        .tick(&mob.mob(), &mob_entity);
+    GoalSelector::tick(
+        mob.mob().mob_base().goal_selector(),
+        &mob.mob(),
+        &mob_entity,
+    );
     assert!(mob.mob().is_panicking());
 
     mob.mob()
@@ -1079,7 +1081,7 @@ fn mob_despawn_discards_far_removable_mob() {
 }
 
 #[test]
-fn mob_persistence_resets_no_action_time_and_blocks_removal() {
+fn mob_persistence_blocks_removal_and_keeps_idle_time_far_from_players() {
     let mob = DespawnTestMob::new(Some(129.0 * 129.0), true);
 
     mob.living().set_no_action_time(42);
@@ -1087,7 +1089,7 @@ fn mob_persistence_resets_no_action_time_and_blocks_removal() {
     mob.mob()
         .check_mob_despawn_with(mob.nearest_player_distance_sqr);
 
-    assert_eq!(mob.living().no_action_time(), 0);
+    assert_eq!(mob.living().no_action_time(), 42);
     assert!(!mob.is_removed());
 }
 
@@ -1205,7 +1207,7 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
             .expect("test entity should attach to the loaded chunk");
     }
 
-    Mob::mob_ai_step(&mob.mob(), &mob_entity);
+    let _ = mob.living().ai_step(&mob_entity);
 
     assert!(
         item.is_removed(),
@@ -1767,7 +1769,7 @@ fn mob_ai_step_gates_daylight_burning_on_burn_in_daylight_tag() {
     let zombie = daylit_mob(world, &vanilla_entities::ZOMBIE);
     let zombie_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&zombie);
     for _ in 0..BURN_ROLL_ATTEMPTS {
-        Mob::mob_ai_step(&zombie.mob(), &zombie_entity);
+        let _ = zombie.living().ai_step(&zombie_entity);
         if zombie.is_on_fire() {
             break;
         }
@@ -1779,7 +1781,7 @@ fn mob_ai_step_gates_daylight_burning_on_burn_in_daylight_tag() {
 
     let pig = daylit_mob(world, &vanilla_entities::PIG);
     let pig_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&pig);
-    Mob::mob_ai_step(&pig.mob(), &pig_entity);
+    let _ = pig.living().ai_step(&pig_entity);
     assert!(
         !pig.is_on_fire(),
         "aiStep must not burn a mob outside the burn_in_daylight tag"

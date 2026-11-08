@@ -122,6 +122,12 @@ fn expand(input: TokenStream) -> syn::Result<TokenStream> {
                 #hooks
             }
 
+            fn entity_definition(
+                &self,
+            ) -> &'static dyn crate::entity::component::definition::DefinitionEntries {
+                Self::definition()
+            }
+
             #synced_data
             #erased_component
             #persistence
@@ -134,12 +140,10 @@ fn expand(input: TokenStream) -> syn::Result<TokenStream> {
 /// The downcast impl, constructors and cached definition the struct options ask for.
 fn extra_tokens(input: &DeriveInput, options: &StructOptions) -> syn::Result<TokenStream> {
     let name = &input.ident;
-    if (options.key.is_some() || options.constructors || options.definition.is_some())
-        && !input.generics.params.is_empty()
-    {
+    if !input.generics.params.is_empty() {
         return Err(syn::Error::new(
             name.span(),
-            "`key`, `constructors` and `definition` need a non-generic entity type",
+            "`#[derive(Entity)]` needs a non-generic entity type",
         ));
     }
 
@@ -183,27 +187,31 @@ fn extra_tokens(input: &DeriveInput, options: &StructOptions) -> syn::Result<Tok
         }
     });
 
-    let definition = options.definition.as_ref().map(|define| {
-        // A nested `static` cannot name `Self`.
-        let define = replace_self(quote! { #define }, name);
-        quote! {
-            fn definition() -> &'static crate::entity::component::definition::MobDefinition<Self> {
-                static DEFINITION: ::std::sync::LazyLock<
-                    crate::entity::component::definition::MobDefinition<#name>,
-                > = ::std::sync::LazyLock::new(#define);
-                &DEFINITION
-            }
+    let Some(define) = options.definition.as_ref() else {
+        return Err(syn::Error::new(
+            name.span(),
+            "missing `#[entity(definition = ..)]`: name the type's `define` or the \
+             layer definition it uses unchanged, such as `Definition::new`",
+        ));
+    };
+    // A nested `static` cannot name `Self`.
+    let define = replace_self(quote! { #define }, name);
+    let definition = quote! {
+        /// This type's pipelines, built once.
+        fn definition() -> &'static crate::entity::component::definition::Definition<Self> {
+            static DEFINITION: ::std::sync::LazyLock<
+                crate::entity::component::definition::Definition<#name>,
+            > = ::std::sync::LazyLock::new(#define);
+            &DEFINITION
         }
-    });
+    };
 
-    let inherent = (constructors.is_some() || definition.is_some()).then(|| {
-        quote! {
-            impl #name {
-                #constructors
-                #definition
-            }
+    let inherent = quote! {
+        impl #name {
+            #constructors
+            #definition
         }
-    });
+    };
 
     Ok(quote! {
         #downcast

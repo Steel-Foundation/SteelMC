@@ -12,6 +12,7 @@ use steel_registry::vanilla_entity_data::LivingEntityData;
 use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::EntityProps;
+use crate::entity::component::pipeline::Flow;
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Components as _, Has};
 use crate::entity::consume_effect::apply_consume_effect;
@@ -22,11 +23,13 @@ use crate::entity::entity::{
 use crate::entity::pushing::EntityPush;
 
 mod damage;
+mod dismount;
 mod effects;
 mod environment;
 mod equipment;
 mod movement;
 mod sleeping;
+mod stages;
 mod travel;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
@@ -43,28 +46,18 @@ entity_props! {
         fn set_absorption_amount(amount: f32) = set_absorption_amount_default;
         /// Reacts to an equipped item breaking.
         fn on_equipped_item_broken(item: ItemRef, slot: EquipmentSlot) = on_equipped_item_broken_default;
-        /// `LivingEntity.canBeSeenAsEnemy`.
-        fn can_be_seen_as_enemy() -> bool = can_be_seen_as_enemy_default;
         /// `LivingEntity.isAffectedByFluids`.
         fn is_affected_by_fluids() -> bool = is_affected_by_fluids_default;
-        /// `LivingEntity.aiStep`.
-        fn ai_step(entity: &SharedEntity) -> Option<MoveResult> = ai_step_default;
         /// `LivingEntity.indicateDamage`.
         fn indicate_damage(xd: f64, zd: f64) = indicate_damage_default;
-        /// `LivingEntity.tick`.
-        fn tick_living_entity(entity: &SharedEntity) = tick_living_entity_default;
         /// `LivingEntity.isUsingItem`.
         fn is_using_item() -> bool = is_using_item_default;
         /// `LivingEntity.getLuck`.
         fn luck() -> f32 = luck_default;
-        /// `LivingEntity.isInvulnerableTo`.
-        fn is_invulnerable_to(world: &World, source: &DamageSource) -> bool = is_invulnerable_to_default;
         /// `LivingEntity.hurtArmor`.
         fn hurt_armor(source: &DamageSource, damage: f32) = hurt_armor_default;
         /// `LivingEntity.hurtHelmet`, for damage that hits a worn helmet.
         fn hurt_helmet(source: &DamageSource, damage: f32) = hurt_helmet_default;
-        /// `LivingEntity.getVoicePitch`.
-        fn voice_pitch() -> f32 = voice_pitch_default;
         /// `LivingEntity.doesEmitEquipEvent`.
         fn does_emit_equip_event(slot: EquipmentSlot) -> bool = does_emit_equip_event_default;
         /// `LivingEntity.actuallyHurt`.
@@ -85,16 +78,11 @@ entity_props! {
         fn has_infinite_materials() -> bool = has_infinite_materials_default;
         /// `LivingEntity.handleExtraItemsCreatedOnUse`.
         fn handle_extra_items_created_on_use(extra: ItemStack) = handle_extra_items_created_on_use_default;
-        /// `LivingEntity.canGlide`.
-        fn can_glide() -> bool = can_glide_default;
-        /// `LivingEntity.isImmobile`.
-        fn is_immobile() -> bool = is_immobile_default;
+        /// `LivingEntity.getDismountPoses`: the poses tried, in order, when
+        /// leaving a vehicle.
+        fn dismount_poses() -> &'static [EntityPose] = dismount_poses_default;
         /// `LivingEntity.stopSleeping`.
         fn stop_sleeping() = stop_sleeping_default;
-        /// `LivingEntity.jumpFromGround`.
-        fn jump_from_ground() = jump_from_ground_default;
-        /// `LivingEntity.travel`.
-        fn travel(entity: &SharedEntity, input: DVec3) -> Option<MoveResult> = travel_default;
         /// `LivingEntity.getFlyingSpeed`.
         fn flying_speed() -> f32 = flying_speed_default;
         /// `LivingEntity.getHurtSound`.
@@ -103,8 +91,6 @@ entity_props! {
         fn death_sound() -> Option<SoundEventRef> = death_sound_default;
         /// The chicken variant key for loot predicates, when this is a chicken.
         fn chicken_loot_variant() -> Option<&'static Identifier> = chicken_loot_variant_default;
-        /// `LivingEntity.getBaseExperienceReward`.
-        fn base_experience_reward() -> i32 = base_experience_reward_default;
         /// `LivingEntity.serverAiStep`.
         fn server_ai_step(entity: &SharedEntity) = server_ai_step_default;
         /// `LivingEntity.canBeAffected`.
@@ -142,20 +128,12 @@ entity_props! {
         fn drop_custom_death_loot(source: &DamageSource, killed_by_player: bool) = drop_custom_death_loot_default;
         /// Checks if the entity is blocking with a shield or similar item.
         fn is_blocking() -> bool = is_blocking_default;
-        /// Returns whether vanilla allows this entity to use `slot`.
-        fn can_use_slot(slot: EquipmentSlot) -> bool = can_use_slot_default;
-        /// Returns the equip sound Steel can currently resolve for this entity.
-        fn equip_sound(slot: EquipmentSlot, stack: &ItemStack) -> Option<SoundEventRef> = equip_sound_default;
         /// Returns whether the given item in the given slot allows elytra-style gliding.
         fn can_glide_using(item_stack: &ItemStack, slot: EquipmentSlot) -> bool = can_glide_using_default;
-        /// Ticks side effects of a rider controlling this entity, such as steering-based input.
-        fn tick_ridden(controller: &Player, ridden_input: DVec3) = tick_ridden_default;
         /// Transforms the rider's raw input into this entity's movement input while ridden.
         fn ridden_input(controller: &Player, self_input: DVec3) -> DVec3 = ridden_input_default;
         /// `LivingEntity.getRiddenSpeed`.
         fn ridden_speed(controller: &Player) -> f32 = ridden_speed_default;
-        /// `LivingEntity.canDispenserEquipIntoSlot`.
-        fn can_dispenser_equip_into_slot(slot: EquipmentSlot) -> bool = can_dispenser_equip_into_slot_default;
         /// Returns the water-movement slowdown multiplier.
         fn water_slow_down() -> f32 = water_slow_down_default;
         /// Returns the vertical friction used by `travelInAir`.
@@ -214,28 +192,26 @@ impl Deref for Living<'_> {
     }
 }
 
+pub use stages::*;
+
 /// `LivingEntity`'s overrides of entity hooks; living entity types build their
 /// [`EntityProps`] on this.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        tick: |living, entity| living.living().tick_living_entity(entity),
-        ride_tick: |living, entity| {
-            Arc::clone(entity).ride_tick_default();
-            living.reset_fall_distance();
-        },
-        base_tick: |living| living.living().base_tick_living_entity(),
-        hurt: |living, world, source, amount| living.living().hurt_server(world, source, amount),
-        cause_fall_damage: |living, _, fall_distance, damage_modifier, source| {
-            living
-                .living()
-                .cause_living_fall_damage(fall_distance, damage_modifier, source)
+        on_below_world: |living| {
+            if let Some(world) = living.level() {
+                living.hurt(
+                    &world,
+                    &DamageSource::environment(&vanilla_damage_types::OUT_OF_WORLD),
+                    4.0,
+                );
+            }
         },
         is_alive: |living| !living.is_removed() && living.living().health() > 0.0,
         update_data_before_sync: |living| living.living().sync_mob_effect_data(),
         is_pickable: |living| !living.is_removed(),
         is_pushable: |living| living.is_alive() && !living.is_spectator() && !living.on_climbable(),
-        can_freeze: |living| living.living().default_living_can_freeze(),
         default_gravity: |living| living.living().attribute_gravity(),
         max_up_step: |living| {
             living
@@ -249,16 +225,6 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         // Living entities are never hard colliders; a type that overrides
         // `can_be_collided_with` (a shulker) must set this back to `true`.
         is_hard_collision_relevant: |_| false,
-        check_fall_damage: |living, entity, vertical_movement, on_ground, on_state, pos, world| {
-            living.living().check_living_fall_damage(
-                entity,
-                vertical_movement,
-                on_ground,
-                on_state,
-                pos,
-                world,
-            );
-        },
         kill: |living, world| {
             living.hurt(
                 world,
@@ -281,9 +247,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         },
         y_head_rot: |living| living.living().y_head_rot(),
         set_y_head_rot: |living, y_head_rot| living.living().set_y_head_rot(y_head_rot),
-        set_y_body_rot: |living, y_body_rot| living.living().set_y_body_rot(y_body_rot),
         is_in_wall: |living| !living.living().is_sleeping() && living.is_in_wall_default(),
-        block_speed_factor: |living| living.living().living_block_speed_factor(),
         air_drag: |living| {
             compute_modified_friction(
                 DEFAULT_AIR_DRAG,
@@ -361,15 +325,17 @@ impl<'a> Living<'a> {
     /// snapshots, base entity tick, environmental damage, the hurt timer, and
     /// combat memory expiry. Memory must expire before mob effects tick, so a
     /// lethal effect tick sees the same kill credit as vanilla.
-    pub fn base_tick_living_entity(&self) {
+    /// `LivingEntity.baseTick` around its `super.baseTick()`.
+    fn base_tick_around(&self, super_base_tick: impl FnOnce() -> Flow) -> Flow {
         self.advance_living_rotation_for_base_tick();
         self.living_base().tick_swing_state();
-        self.entity_base_tick();
+        let flow = super_base_tick();
         self.tick_living_environmental_damage();
         self.living_base().decrement_hurt_time();
         self.living_base().tick_last_hurt_by_player_memory();
         self.living_base()
             .tick_living_combat_memory(self.tick_count());
+        flow
     }
 
     /// Returns vanilla arm-swing animation state.
@@ -715,12 +681,105 @@ impl<'a> Living<'a> {
 
     /// Returns the pitch used for this entity's sounds; babies get a randomized higher pitch.
     #[must_use]
-    pub fn voice_pitch_default(&self) -> f32 {
+    fn voice_pitch_base(&self) -> f32 {
         if self.is_baby() {
             (rand::random::<f32>() - rand::random::<f32>()) * 0.2 + 1.5
         } else {
             (rand::random::<f32>() - rand::random::<f32>()) * 0.2 + 1.0
         }
+    }
+
+    /// Vanilla `LivingEntity.aiStep`: runs this type's pipeline, returning
+    /// the movement it performed.
+    pub fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        self.entity.entity_definition().ai_step(self.entity, entity)
+    }
+
+    /// Vanilla `LivingEntity.travel`: runs this type's pipeline.
+    pub fn travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+        self.entity
+            .entity_definition()
+            .travel(self.entity, entity, input)
+    }
+
+    /// Vanilla `LivingEntity.jumpFromGround`: runs this type's pipeline.
+    pub fn jump_from_ground(&self) {
+        self.entity
+            .entity_definition()
+            .jump_from_ground(self.entity);
+    }
+
+    /// Vanilla `LivingEntity.isImmobile`: runs this type's pipeline.
+    #[must_use]
+    pub fn is_immobile(&self) -> bool {
+        self.entity.entity_definition().is_immobile(self.entity)
+    }
+
+    /// Vanilla `LivingEntity.canGlide`: runs this type's pipeline.
+    #[must_use]
+    pub fn can_glide(&self) -> bool {
+        self.entity.entity_definition().can_glide(self.entity)
+    }
+
+    /// Vanilla `LivingEntity.isInvulnerableTo`: runs this type's pipeline.
+    #[must_use]
+    pub fn is_invulnerable_to(&self, world: &World, source: &DamageSource) -> bool {
+        self.entity
+            .entity_definition()
+            .is_invulnerable_to(self.entity, world, source)
+    }
+
+    /// Vanilla `LivingEntity.canBeSeenAsEnemy`: runs this type's pipeline.
+    #[must_use]
+    pub fn can_be_seen_as_enemy(&self) -> bool {
+        self.entity
+            .entity_definition()
+            .can_be_seen_as_enemy(self.entity)
+    }
+
+    /// Vanilla `LivingEntity.getVoicePitch`: runs this type's pipeline.
+    #[must_use]
+    pub fn voice_pitch(&self) -> f32 {
+        self.entity.entity_definition().voice_pitch(self.entity)
+    }
+
+    /// Vanilla `LivingEntity.getBaseExperienceReward`: runs this type's pipeline.
+    #[must_use]
+    pub fn base_experience_reward(&self) -> i32 {
+        self.entity
+            .entity_definition()
+            .base_experience_reward(self.entity)
+    }
+
+    /// Vanilla `LivingEntity.canUseSlot`: runs this type's pipeline.
+    #[must_use]
+    pub fn can_use_slot(&self, slot: EquipmentSlot) -> bool {
+        self.entity
+            .entity_definition()
+            .can_use_slot(self.entity, slot)
+    }
+
+    /// Vanilla `LivingEntity.canDispenserEquipIntoSlot`: runs this type's pipeline.
+    #[must_use]
+    pub fn can_dispenser_equip_into_slot(&self, slot: EquipmentSlot) -> bool {
+        self.entity
+            .entity_definition()
+            .can_dispenser_equip_into_slot(self.entity, slot)
+    }
+
+    /// Vanilla `LivingEntity.getEquipSound`: runs this type's pipeline.
+    #[must_use]
+    pub fn equip_sound(&self, slot: EquipmentSlot, stack: &ItemStack) -> Option<SoundEventRef> {
+        self.entity
+            .entity_definition()
+            .equip_sound(self.entity, slot, stack)
+    }
+
+    /// Vanilla `LivingEntity.tickRidden`: runs this type's pipeline.
+    pub fn tick_ridden(&self, controller: &Player, ridden_input: DVec3) {
+        self.entity
+            .entity_definition()
+            .tick_ridden(self.entity, controller, ridden_input);
     }
 
     /// Returns the sound played when this entity is hurt.
@@ -896,15 +955,12 @@ impl<'a> Living<'a> {
 
     /// Returns whether this entity can be targeted as an enemy: visible and not invulnerable.
     #[must_use]
-    pub fn can_be_seen_as_enemy_default(&self) -> bool {
+    fn can_be_seen_as_enemy_base(&self) -> bool {
         !self.is_invulnerable() && self.can_be_seen_by_anyone()
     }
 
-    /// Runs vanilla `LivingEntity.tick`.
-    ///
-    /// The default `Entity::tick` dispatches living entities here.
-    pub fn tick_living_entity_default(&self, entity: &SharedEntity) {
-        self.tick_default();
+    /// `LivingEntity.tick` after its `super.tick()`.
+    fn tick_living(&self, entity: &SharedEntity) {
         self.living_base().decrement_invulnerable_time();
 
         if self.is_dead_or_dying() {

@@ -6,7 +6,6 @@ use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events::BLOCK_ATTACH;
 use steel_registry::{sound_events, vanilla_entities, vanilla_items};
@@ -15,6 +14,8 @@ use steel_utils::{BlockPos, Downcast as _, WorldAabb};
 
 use crate::behavior::InteractionResult;
 use crate::entity::block_attached::{self, BlockAttachment};
+use crate::entity::component::definition::{Definition, InteractCtx};
+use crate::entity::component::pipeline::{Flow, StageId};
 use crate::entity::prelude::*;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMoveError, EntityProps,
@@ -28,7 +29,7 @@ use crate::world::World;
 #[entity_behavior(class = "LeashFenceKnotEntity")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, no_save_data)]
-#[entity(key = "steel:entity/leash_fence_knot")]
+#[entity(key = "steel:entity/leash_fence_knot", definition = Self::define)]
 pub struct LeashFenceKnotEntity {
     #[entity(base)]
     base: EntityBase,
@@ -39,8 +40,28 @@ pub struct LeashFenceKnotEntity {
 }
 
 impl LeashFenceKnotEntity {
+    const INTERACT: StageId = StageId("leash_fence_knot.interact");
+
+    fn define() -> Definition<Self> {
+        let definition = block_attached::definition();
+        Definition {
+            interact: definition.interact.around(
+                Self::INTERACT,
+                |knot: &Self, ctx: &mut InteractCtx<'_>, inner| {
+                    let (player, hand) = (ctx.player, ctx.hand);
+                    let result = knot.interact_around(player, hand, || {
+                        inner(knot, ctx);
+                        ctx.result
+                    });
+                    ctx.result = result;
+                    Flow::Continue
+                },
+            ),
+            ..definition
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        interact: Self::entity_interact,
         notify_leashee_removed: |knot, _| {
             if knot.leashables_leashed_to().is_empty() {
                 knot.set_removed(RemovalReason::Discarded);
@@ -157,11 +178,13 @@ impl LeashFenceKnotEntity {
 
     /// `LeashFenceKnotEntity.interact`: ties the player's leashed mobs to this
     /// fence, or hands the knot's mobs to the player.
-    fn entity_interact(
+    /// `LeashFenceKnotEntity.interact`: shears may cut the leashes first
+    /// (`super`); then leashes move to or from the knot, or `super` runs.
+    fn interact_around(
         &self,
         player: &Player,
         hand: InteractionHand,
-        location: DVec3,
+        mut super_interact: impl FnMut() -> InteractionResult,
     ) -> InteractionResult {
         let Some(world) = self.level() else {
             return InteractionResult::Pass;
@@ -173,7 +196,7 @@ impl LeashFenceKnotEntity {
             .get_item_in_hand(hand)
             .is(&vanilla_items::SHEARS);
         if holding_shears {
-            let result = self.interact_default(player, hand, location);
+            let result = super_interact();
             if result == InteractionResult::Success {
                 return result;
             }
@@ -208,7 +231,7 @@ impl LeashFenceKnotEntity {
         }
 
         if !attached_mob && !any_dropped {
-            return self.interact_default(player, hand, location);
+            return super_interact();
         }
 
         self.game_event_with_source_entity(&BLOCK_ATTACH, Some(player));
@@ -228,14 +251,8 @@ impl block_attached::Parts for LeashFenceKnotEntity {
     }
 
     fn drop_item(&self, _world: &World, _caused_by: Option<&dyn Entity>) {
+        // The leashed mobs drop their leads from their own leash tick.
         self.play_sound(&sound_events::ITEM_LEAD_UNTIED, 1.0, 1.0);
-
-        // Vanilla drops the leads from the leashed mobs' leash tick once the
-        // knot is gone, but Steel's holder `Weak` is already dead by then, so
-        // the leads are dropped here instead.
-        for entity in self.leashables_leashed_to() {
-            entity.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
-        }
     }
 
     fn recalculate_bounding_box(&self) -> Result<(), EntityMoveError> {

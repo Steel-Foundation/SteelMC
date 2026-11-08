@@ -1,13 +1,20 @@
 //! Experience orb entity implementation.
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::HurtCtx;
+use crate::entity::component::definition::TickCtx;
+use crate::entity::component::pipeline::Pipeline;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
-use steel_math::DEGREE_360;
+use steel_math::{DEGREE_360, vector};
 use steel_protocol::packets::game::{CTakeItemEntity, SoundSource};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
@@ -24,7 +31,7 @@ use crate::entity::{
     next_entity_id,
 };
 use crate::fluid::get_fluid_state;
-use crate::physics::{MoverType, WorldCollisionProvider};
+use crate::physics::{MoverType, WorldCollisionProvider, has_collision};
 use crate::player::Player;
 use crate::world::World;
 
@@ -35,7 +42,6 @@ const MAX_FOLLOW_DIST_SQR: f64 = MAX_FOLLOW_DIST * MAX_FOLLOW_DIST;
 const ORB_GROUPS_PER_AREA: i32 = 40;
 const ORB_MERGE_DISTANCE: f64 = 0.5;
 const DEFAULT_HEALTH: i32 = 5;
-const UNDERWATER_DRAG: f64 = 0.99;
 
 struct ExperienceOrbState {
     age: i32,
@@ -59,7 +65,7 @@ impl ExperienceOrbState {
 #[entity_behavior(class = "ExperienceOrb")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_orb, load = Self::load_orb)]
-#[entity(key = "steel:entity/experience_orb", constructors)]
+#[entity(key = "steel:entity/experience_orb", constructors, definition = Self::define)]
 pub struct ExperienceOrbEntity {
     #[entity(base)]
     base: EntityBase,
@@ -83,7 +89,37 @@ impl ExperienceOrbEntity {
         let entity = Self::new(entity_type, id, position, world);
         entity.set_value(value);
         entity.initialize_spawn_movement();
+        entity.unstuck_if_possible();
         entity
+    }
+
+    /// The end of the vanilla constructor: an orb spawned inside a collision is
+    /// moved to the nearest free position within its own size.
+    fn unstuck_if_possible(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        let provider = WorldCollisionProvider::for_entity(&world, self);
+        if !has_collision(&WorldCollisionProvider::new(&world), self.bounding_box()) {
+            return;
+        }
+        let size = self.bounding_box().size();
+        let dimensions = self.base.dimensions();
+        let half_height = f64::from(dimensions.height) / 2.0;
+        let center = self.position() + DVec3::new(0.0, half_height, 0.0);
+        let allowed_centers = [WorldAabb::of_size(center, size, size, size)];
+        let width = f64::from(dimensions.width);
+        if let Some(free_center) = provider.find_free_position(
+            &allowed_centers,
+            center,
+            width,
+            f64::from(dimensions.height),
+            width,
+        ) && let Err(error) =
+            self.try_set_position(free_center - DVec3::new(0.0, half_height, 0.0))
+        {
+            log::debug!("failed to unstick experience orb {}: {error}", self.id());
+        }
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
@@ -255,9 +291,9 @@ impl ExperienceOrbEntity {
     fn set_underwater_movement(&self) {
         let velocity = self.velocity();
         self.set_velocity(DVec3::new(
-            velocity.x * UNDERWATER_DRAG,
-            (velocity.y + 5.0e-4).min(0.06),
-            velocity.z * UNDERWATER_DRAG,
+            velocity.x * f64::from(0.99_f32),
+            (velocity.y + f64::from(5.0e-4_f32)).min(f64::from(0.06_f32)),
+            velocity.z * f64::from(0.99_f32),
         ));
     }
 
@@ -267,9 +303,9 @@ impl ExperienceOrbEntity {
         }
 
         let velocity = DVec3::new(
-            f64::from(rand::random::<f32>() - rand::random::<f32>()) * 0.2,
-            0.2,
-            f64::from(rand::random::<f32>() - rand::random::<f32>()) * 0.2,
+            f64::from((rand::random::<f32>() - rand::random::<f32>()) * 0.2),
+            f64::from(0.2_f32),
+            f64::from((rand::random::<f32>() - rand::random::<f32>()) * 0.2),
         );
         self.set_velocity(velocity);
     }
@@ -288,14 +324,16 @@ impl ExperienceOrbEntity {
 
         let should_refresh = current.as_ref().is_none_or(|player| {
             player.is_spectator()
-                || player.living().is_dead_or_dying()
                 || player.position().distance_squared(self.position()) > MAX_FOLLOW_DIST_SQR
         });
 
         let following = if should_refresh {
-            let nearest = world.nearest_player(self.position(), MAX_FOLLOW_DIST, |player| {
-                !player.is_spectator() && !player.living().is_dead_or_dying()
-            });
+            // A dead nearest player stops the orb rather than passing it on.
+            let nearest = world
+                .nearest_player(self.position(), MAX_FOLLOW_DIST, |player| {
+                    !player.is_spectator()
+                })
+                .filter(|player| !player.living().is_dead_or_dying());
             self.state.lock().following_player_id = nearest.as_ref().map(|player| player.id());
             nearest
         } else {
@@ -312,13 +350,8 @@ impl ExperienceOrbEntity {
             player_pos.y + player.eye_height() / 2.0 - self.position().y,
             player_pos.z - self.position().z,
         );
-        let length_sqr = delta.length_squared();
-        if length_sqr <= f64::EPSILON {
-            return;
-        }
-
-        let power = 1.0 - length_sqr.sqrt() / MAX_FOLLOW_DIST;
-        self.set_velocity(self.velocity() + delta.normalize() * (power * power * 0.1));
+        let power = 1.0 - delta.length_squared().sqrt() / MAX_FOLLOW_DIST;
+        self.set_velocity(self.velocity() + vector::normalize(delta) * (power * power * 0.1));
     }
 
     fn apply_friction_and_bounce(&self, world: &Arc<World>, fall_speed: f64) {
@@ -375,23 +408,48 @@ impl ExperienceOrbEntity {
 impl DefaultEntityPush for ExperienceOrbEntity {}
 
 impl ExperienceOrbEntity {
+    const TICK: StageId = StageId("experience_orb.tick");
+
+    const HURT: StageId = StageId("experience_orb.hurt");
+
+    fn define() -> Definition<Self> {
+        let definition = Definition::new();
+        Definition {
+            // `ExperienceOrb.doWaterSplashEffect` does nothing.
+            do_water_splash_effect: Pipeline::new([]),
+            tick: definition.tick.then([Stage::new(
+                Self::TICK,
+                |orb: &Self, ctx: &mut TickCtx<'_>| {
+                    let entity = ctx.entity;
+                    orb.entity_tick(entity);
+                    Flow::Continue
+                },
+            )]),
+            hurt: Pipeline::new([Stage::new(
+                Self::HURT,
+                |orb: &Self, ctx: &mut HurtCtx<'_>| {
+                    ctx.result = orb.entity_hurt(ctx.world, ctx.source, ctx.amount);
+                    Flow::Continue
+                },
+            )]),
+            ..definition
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
         is_hard_collision_relevant: |_| false,
         // Vanilla `ExperienceOrb` overrides this with an empty body.
-        do_water_splash_effect: |_| {},
         movement_emission: |_| EntityMovementEmission::None,
-        tick: Self::entity_tick,
         default_gravity: |_| 0.03,
         block_pos_below_that_affects_movement: |entity| entity.on_pos(0.999_999),
         attackable: |_| false,
         sound_source: |_| SoundSource::Ambient,
         player_touch: Self::entity_player_touch,
-        hurt: Self::entity_hurt,
         ..EntityProps::new()
     };
 
+    /// `ExperienceOrb.tick` after `super.tick()`.
     fn entity_tick(&self, entity: &SharedEntity) {
-        self.tick_default();
         self.set_old_position_to_current();
 
         let Some(world) = self.level() else {
@@ -483,16 +541,16 @@ impl ExperienceOrbEntity {
 
     fn load_orb(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.state.lock();
-        state.health = i32::from(nbt.short("Health").unwrap_or(DEFAULT_HEALTH as i16));
-        state.age = i32::from(nbt.short("Age").unwrap_or(0));
-        if let Some(count) = nbt.int("Count")
+        state.health = i32::from(nbt.short_value("Health").unwrap_or(DEFAULT_HEALTH as i16));
+        state.age = i32::from(nbt.short_value("Age").unwrap_or(0));
+        if let Some(count) = nbt.get("Count").and_then(|tag| tag.codec_i32())
             && count > 0
         {
             state.count = count;
         }
         drop(state);
 
-        self.set_value(i32::from(nbt.short("Value").unwrap_or(0)));
+        self.set_value(i32::from(nbt.short_value("Value").unwrap_or(0)));
     }
 }
 

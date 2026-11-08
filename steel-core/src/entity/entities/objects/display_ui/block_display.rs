@@ -11,6 +11,8 @@ use steel_utils::BlockStateId;
 use steel_utils::locks::CheckedMutex;
 
 use crate::block_entity::block_state_nbt;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityProps};
 
@@ -20,7 +22,7 @@ use crate::entity::{EntityBase, EntityProps};
 #[entity_behavior(class = "BlockDisplay")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_block_display, load = Self::load_block_display)]
-#[entity(key = "steel:entity/block_display", constructors)]
+#[entity(key = "steel:entity/block_display", constructors, definition = Self::define)]
 pub struct BlockDisplayEntity {
     #[entity(base)]
     base: EntityBase,
@@ -31,8 +33,14 @@ pub struct BlockDisplayEntity {
 }
 
 impl BlockDisplayEntity {
+    const TICK: StageId = StageId("display.tick");
+
+    /// `Display.tick` never calls `super`.
+    fn define() -> Definition<Self> {
+        Definition::replacing_tick([Stage::effect(Self::TICK, Self::tick_display)])
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |display, _| display.tick_display(),
         piston_push_reaction: |_| PushReaction::IgnoreEntity,
         is_ignoring_block_triggers: |_| true,
         ..EntityProps::new()

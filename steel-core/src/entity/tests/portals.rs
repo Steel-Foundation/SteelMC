@@ -7,7 +7,7 @@ fn default_tick_runs_vanilla_entity_base_tick() {
     entity.base().set_boarding_cooldown(2);
     entity.base().set_portal_cooldown(2);
 
-    entity.tick_default();
+    Arc::clone(&entity).tick();
 
     assert_eq!(entity.base().boarding_cooldown(), 1);
     assert_eq!(entity.base().portal_cooldown(), 1);

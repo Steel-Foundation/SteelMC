@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::*;
+use crate::entity::component::definition::{DefinitionEntries, ENTITY_DEFINITION};
 use crate::entity::shearable::Shearable;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use rand::{RngExt, rng};
@@ -198,6 +199,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// This entity type's hooks, usually its [`EntityProps`].
     fn entity_hooks(&self) -> &'static dyn EntityHooks;
 
+    /// This entity type's pipelines, usually its [`Definition`]. Entities
+    /// written without `#[derive(Entity)]` get vanilla `Entity`'s.
+    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+        &*ENTITY_DEFINITION
+    }
+
     entity_hook_list!(entity_hook_dispatch);
 
     /// Returns this entity's component whose downcast key is `key`; see
@@ -369,15 +376,150 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn DefaultEntityPush>(self)
     }
 
-    /// Default for [`Self::tick`]: vanilla `Entity.tick`, which only runs
-    /// [`Self::base_tick`].
-    fn tick_default(&self) {
-        self.base_tick();
+    /// Called every game tick when the entity is in a ticked chunk: runs this
+    /// type's `tick` pipeline. The caller handles post-tick dirty data sync.
+    fn tick(self: Arc<Self>) {
+        let entity = self.into_shared_entity();
+        entity.entity_definition().tick(entity.as_ref(), &entity);
     }
 
-    /// Default for [`Self::base_tick`].
-    fn base_tick_default(&self) {
-        self.entity_base_tick();
+    /// Vanilla `Entity.rideTick`: a passenger's tick, through this type's
+    /// `ride_tick` pipeline.
+    fn ride_tick(self: Arc<Self>) {
+        let entity = self.into_shared_entity();
+        entity
+            .entity_definition()
+            .ride_tick(entity.as_ref(), &entity);
+    }
+
+    /// Vanilla `Entity.checkFallDamage`: accumulates fall distance, lands on
+    /// the block fallen on and resets it, through this type's pipeline.
+    fn check_fall_damage(
+        self: Arc<Self>,
+        vertical_movement: f64,
+        on_ground: bool,
+        on_state: BlockStateId,
+        pos: BlockPos,
+        world: &Arc<World>,
+    ) {
+        let entity = self.into_shared_entity();
+        entity.entity_definition().check_fall_damage(
+            entity.as_ref(),
+            &entity,
+            vertical_movement,
+            on_ground,
+            on_state,
+            pos,
+            world,
+        );
+    }
+
+    /// Vanilla `Entity.causeFallDamage`, through this type's pipeline.
+    fn cause_fall_damage(
+        self: Arc<Self>,
+        fall_distance: f64,
+        damage_modifier: f32,
+        source: &DamageSource,
+    ) -> bool {
+        let entity = self.into_shared_entity();
+        entity.entity_definition().cause_fall_damage(
+            entity.as_ref(),
+            &entity,
+            fall_distance,
+            damage_modifier,
+            source,
+        )
+    }
+
+    /// Vanilla `Entity.stopRiding`, through this type's pipeline.
+    fn stop_riding(&self) {
+        self.entity_definition()
+            .stop_riding(self.as_entity_event_source());
+    }
+
+    /// Vanilla `Entity.removeVehicle`, through this type's pipeline.
+    fn remove_vehicle(&self) {
+        self.entity_definition()
+            .remove_vehicle(self.as_entity_event_source());
+    }
+
+    /// Vanilla `Entity.canFreeze`, through this type's pipeline.
+    fn can_freeze(&self) -> bool {
+        self.entity_definition()
+            .can_freeze(self.as_entity_event_source())
+    }
+
+    /// Vanilla `Entity.makeStuckInBlock`, through this type's pipeline.
+    fn make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
+        self.entity_definition().make_stuck_in_block(
+            self.as_entity_event_source(),
+            state,
+            speed_multiplier,
+        );
+    }
+
+    /// Vanilla `Entity.doWaterSplashEffect`, through this type's pipeline.
+    fn do_water_splash_effect(&self) {
+        self.entity_definition()
+            .do_water_splash_effect(self.as_entity_event_source());
+    }
+
+    /// Vanilla `Entity.updateSwimming`, through this type's pipeline.
+    fn update_swimming(&self) {
+        self.entity_definition()
+            .update_swimming(self.as_entity_event_source());
+    }
+
+    /// Vanilla `Entity.getBlockSpeedFactor`, through this type's pipeline.
+    fn block_speed_factor(&self) -> f32 {
+        self.entity_definition()
+            .block_speed_factor(self.as_entity_event_source())
+    }
+
+    /// Vanilla `Entity.interact`: runs this type's `interact` pipeline.
+    fn interact(
+        &self,
+        player: &Player,
+        hand: InteractionHand,
+        location: DVec3,
+    ) -> InteractionResult {
+        self.entity_definition()
+            .interact(self.as_entity_event_source(), player, hand, location)
+    }
+
+    /// Vanilla `Entity.setYBodyRot`: runs this type's `set_y_body_rot` pipeline.
+    fn set_y_body_rot(&self, y_body_rot: f32) {
+        self.entity_definition()
+            .set_y_body_rot(self.as_entity_event_source(), y_body_rot);
+    }
+
+    /// Vanilla `Entity.positionRider`: places `passenger` on this vehicle
+    /// through this type's `position_rider` pipeline.
+    fn position_rider(&self, passenger: &dyn Entity) {
+        self.entity_definition()
+            .position_rider(self.as_entity_event_source(), passenger);
+    }
+
+    /// Vanilla `Entity.getControllingPassenger`: the passenger steering this
+    /// entity, through this type's `controlling_passenger` pipeline.
+    fn controlling_passenger(&self) -> Option<SharedEntity> {
+        self.entity_definition()
+            .controlling_passenger(self.as_entity_event_source())
+    }
+
+    /// Vanilla `Entity.hurtServer`: applies damage through this type's
+    /// `hurt` pipeline, returning whether it was taken.
+    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        self.entity_definition()
+            .hurt(self.as_entity_event_source(), world, source, amount)
+    }
+
+    /// Vanilla `Entity.baseTick`: runs this type's `base_tick` pipeline. It
+    /// stays separate from [`Self::tick`] because several vanilla subclasses
+    /// override `tick` without calling `super.tick()`.
+    fn base_tick(&self) {
+        self.entity_definition()
+            .base_tick(self.as_entity_event_source());
     }
 
     /// Runs only vanilla `Entity.baseTick` behavior.
@@ -478,10 +620,22 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Marks the entity as removed with the given reason.
+    ///
+    /// Only the first removal takes effect. Like vanilla, the entity leaves
+    /// its vehicle when destroyed and its passengers dismount through their
+    /// own `stop_riding` chains before the world learns of the removal.
     fn set_removed(&self, reason: RemovalReason) {
-        if self.base().set_removed(reason) {
-            self.on_removal(reason);
+        let Some(callback) = self.base().mark_removed(reason) else {
+            return;
+        };
+        if reason.should_destroy() {
+            self.stop_riding();
         }
+        for passenger in self.passengers() {
+            passenger.stop_riding();
+        }
+        self.base().finish_removal(callback, reason);
+        self.on_removal(reason);
     }
 
     /// Default for [`Entity::on_removal`].
@@ -646,9 +800,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Default for [`Self::set_y_head_rot`].
     fn set_y_head_rot_default(&self, _y_head_rot: f32) {}
-
-    /// Default for [`Self::set_y_body_rot`].
-    fn set_y_body_rot_default(&self, _y_body_rot: f32) {}
 
     /// Default for [`Self::spawn_data`].
     fn spawn_data_default(&self) -> i32 {

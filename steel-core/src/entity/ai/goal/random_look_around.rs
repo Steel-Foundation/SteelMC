@@ -85,7 +85,7 @@ mod tests {
     use super::*;
 
     use crate::entity::component::Has;
-    use crate::entity::component::definition::MobDefinition;
+    use crate::entity::component::definition::{Definition, DefinitionEntries};
     use crate::entity::{Entity, EntityBase, LivingEntityBase, MobBase};
     use crate::entity::{EntityHooks, EntityProps};
     use crate::entity::{EntitySyncedData, MobProps, mob};
@@ -128,8 +128,8 @@ mod tests {
             ..MobProps::new()
         };
 
-        fn definition() -> &'static MobDefinition<Self> {
-            static DEFINITION: LazyLock<MobDefinition<TestPathfinderMob>> =
+        fn definition() -> &'static Definition<Self> {
+            static DEFINITION: LazyLock<Definition<TestPathfinderMob>> =
                 LazyLock::new(mob::stages::definition);
             &DEFINITION
         }
@@ -164,6 +164,10 @@ mod tests {
 
         fn entity_hooks(&self) -> &'static dyn EntityHooks {
             &Self::ENTITY
+        }
+
+        fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+            Self::definition()
         }
     }
 

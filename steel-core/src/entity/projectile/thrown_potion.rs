@@ -15,6 +15,9 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::behavior::blocks::{CampfireBlock, CandleBlock};
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::{OnHitBlockCtx, OnHitCtx};
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::projectile::throwable_item;
 use crate::entity::projectile::{Projectile, ProjectileProps, throwable};
@@ -50,12 +53,38 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     }
 }
 
+/// The `AbstractThrownPotion.onHit` stage, after `Projectile`'s.
+pub const ON_HIT: StageId = StageId("thrown_potion.on_hit");
+/// The `AbstractThrownPotion.onHitBlock` stage, after `Projectile`'s.
+pub const ON_HIT_BLOCK: StageId = StageId("thrown_potion.on_hit_block");
+
+/// Vanilla `AbstractThrownPotion`'s chains, on `ThrowableProjectile`'s.
+#[must_use]
+pub fn definition<E: Parts>() -> Definition<E> {
+    fn on_hit_stage<E: Parts>(potion: &E, ctx: &mut OnHitCtx<'_>) -> Flow {
+        on_hit(potion, ctx.entity, ctx.hit);
+        Flow::Continue
+    }
+    fn on_hit_block_stage<E: Parts>(potion: &E, ctx: &mut OnHitBlockCtx<'_>) -> Flow {
+        on_hit_block(potion, ctx.hit);
+        Flow::Continue
+    }
+    let definition = throwable::definition();
+    Definition {
+        on_hit: definition
+            .on_hit
+            .then([Stage::new(ON_HIT, on_hit_stage::<E>)]),
+        on_hit_block: definition
+            .on_hit_block
+            .then([Stage::new(ON_HIT_BLOCK, on_hit_block_stage::<E>)]),
+        ..definition
+    }
+}
+
 /// `AbstractThrownPotion`'s overrides of the projectile hooks.
 #[must_use]
 pub const fn projectile_props<E: Parts>() -> ProjectileProps<E> {
     ProjectileProps {
-        on_hit: on_hit::<E>,
-        on_hit_block: on_hit_block::<E>,
         horizontal_hurt_knockback_direction: |potion, hurt_entity, _| {
             let delta = hurt_entity.position() - potion.position();
             (delta.x, delta.z)
@@ -64,10 +93,10 @@ pub const fn projectile_props<E: Parts>() -> ProjectileProps<E> {
     }
 }
 
-/// `AbstractThrownPotion.onHit`: affects water-sensitive and burning
-/// entities, applies the potion, then breaks with its particles and sound.
+/// `AbstractThrownPotion.onHit` after `super`: affects water-sensitive and
+/// burning entities, applies the potion, then breaks with its particles and
+/// sound.
 fn on_hit<E: Parts>(potion: &E, entity: &SharedEntity, hit: &ProjectileHit) {
-    potion.projectile().on_hit_default(entity, hit);
     let Some(world) = potion.level() else {
         return;
     };
@@ -155,11 +184,10 @@ fn affect_entities_around(
     }
 }
 
-/// `AbstractThrownPotion.onHitBlock`: `DOUSES_FIRE` potions put out fire
+/// `AbstractThrownPotion.onHitBlock` after `super`: `DOUSES_FIRE` potions put out fire
 /// around the hit face.
-fn on_hit_block<E: Parts>(potion: &E, entity: &SharedEntity, hit: &ClipHitResult) {
+fn on_hit_block<E: Parts>(potion: &E, hit: &ClipHitResult) {
     let projectile = potion.projectile();
-    projectile.on_hit_block_default(entity, hit);
     let Some(world) = potion.level() else {
         return;
     };

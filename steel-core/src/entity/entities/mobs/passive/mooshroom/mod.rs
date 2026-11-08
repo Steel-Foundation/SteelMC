@@ -33,8 +33,8 @@ use steel_utils::{BlockPos, Downcast as _};
 use crate::behavior::InteractionResult;
 use crate::entity::ageable::{Age, Ageable, AgeableProps};
 use crate::entity::animal::{self, Breeding, BreedingProps};
-use crate::entity::component::definition::MobDefinition;
-use crate::entity::component::entries::MobInteractCtx;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::entities::ItemEntity;
 use crate::entity::entities::mobs::passive::cow::abstract_cow;
@@ -103,7 +103,7 @@ impl MushroomCowEntity {
 
     /// Vanilla `MushroomCow`: the `AbstractCow` chains with stew, shearing and
     /// flower feeding ahead of the milk bucket.
-    fn define() -> MobDefinition<Self> {
+    fn define() -> Definition<Self> {
         let mut definition = abstract_cow::definition::<Self>();
         definition.mob_interact = definition.mob_interact.before(
             abstract_cow::MILK,

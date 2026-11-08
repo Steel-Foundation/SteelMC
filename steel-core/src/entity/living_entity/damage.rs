@@ -193,7 +193,7 @@ impl Living<'_> {
     }
 
     /// Returns whether this living entity ignores a damage source.
-    pub fn is_invulnerable_to_default(&self, _world: &World, source: &DamageSource) -> bool {
+    pub(super) fn is_invulnerable_to_living(&self, source: &DamageSource) -> bool {
         self.default_is_invulnerable_to(source)
             || enchantment_helper::is_immune_to_damage(self, source)
     }
@@ -659,17 +659,6 @@ impl Living<'_> {
     #[must_use]
     pub fn was_experience_consumed(&self) -> bool {
         self.living_base().was_experience_consumed()
-    }
-
-    /// Returns the base experience reward for killing this entity, using the
-    /// animal-specific reward when applicable.
-    #[must_use]
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn base_experience_reward_default(&self) -> i32 {
-        0
     }
 
     /// Returns the experience reward for this entity's death; currently

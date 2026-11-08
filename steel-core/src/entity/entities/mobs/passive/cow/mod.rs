@@ -17,7 +17,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::entity::ageable::{self, Age, AgeableProps};
 use crate::entity::animal::{self, Breeding, BreedingProps};
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::Definition;
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityProps, LivingEntityBase, LivingProps, MobBase, MobProps,
@@ -67,7 +67,7 @@ impl CowEntity {
     };
     /// Vanilla `Cow`: the `AbstractCow` chains plus variant selection before
     /// `AgeableMob.finalizeSpawn`.
-    fn define() -> MobDefinition<Self> {
+    fn define() -> Definition<Self> {
         let mut definition = abstract_cow::definition::<Self>();
         definition.finalize_spawn = definition.finalize_spawn.before(
             ageable::FINALIZE_SPAWN,

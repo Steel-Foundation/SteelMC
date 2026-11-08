@@ -147,7 +147,7 @@ mod tests {
 
     use crate::behavior::init_behaviors;
     use crate::entity::component::Has;
-    use crate::entity::component::definition::MobDefinition;
+    use crate::entity::component::definition::{Definition, DefinitionEntries};
     use crate::entity::{Entity, EntityBase, LivingEntityBase, MobBase};
     use crate::entity::{EntityHooks, EntityProps};
     use crate::entity::{EntitySyncedData, MobProps, mob};
@@ -184,8 +184,8 @@ mod tests {
     impl HoveringTestMob {
         const MOB: MobProps<Self> = MobProps::new();
 
-        fn definition() -> &'static MobDefinition<Self> {
-            static DEFINITION: LazyLock<MobDefinition<HoveringTestMob>> =
+        fn definition() -> &'static Definition<Self> {
+            static DEFINITION: LazyLock<Definition<HoveringTestMob>> =
                 LazyLock::new(mob::stages::definition);
             &DEFINITION
         }
@@ -220,6 +220,10 @@ mod tests {
 
         fn entity_hooks(&self) -> &'static dyn EntityHooks {
             &Self::ENTITY
+        }
+
+        fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+            Self::definition()
         }
     }
 

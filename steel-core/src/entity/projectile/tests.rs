@@ -132,11 +132,12 @@ fn clip_segment_hits_box_in_path() {
 }
 
 #[test]
-fn clip_segment_returns_start_when_inside() {
+fn clip_segment_misses_when_starting_inside() {
     let aabb = WorldAabb::new(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
-    let hit = clip_segment(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0))
-        .expect("a ray starting inside the box hits at its origin");
-    assert_eq!(hit, DVec3::ZERO);
+    assert_eq!(
+        clip_segment(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0)),
+        None
+    );
 }
 
 #[test]
@@ -306,19 +307,15 @@ fn base_block_hit_dispatches_vanilla_block_callbacks() {
                 DVec3::new(1_136.5, 64.5, 1_136.5),
                 Arc::downgrade(&world),
             ));
-            let firework_entity: SharedEntity = Arc::<FireworkRocketEntity>::clone(&firework);
             let hit_block = |block_pos| {
-                firework.projectile().on_hit_block_default(
-                    &firework_entity,
-                    &ClipHitResult {
-                        location: firework.position(),
-                        direction: Direction::Up,
-                        block_pos,
-                        miss: false,
-                        inside: false,
-                        world_border_hit: false,
-                    },
-                );
+                firework.projectile().on_hit_block_base(&ClipHitResult {
+                    location: firework.position(),
+                    direction: Direction::Up,
+                    block_pos,
+                    miss: false,
+                    inside: false,
+                    world_border_hit: false,
+                });
             };
             firework.set_remaining_fire_ticks(1);
             hit_block(pos);

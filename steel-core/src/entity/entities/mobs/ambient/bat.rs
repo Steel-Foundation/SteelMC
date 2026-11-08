@@ -1,6 +1,7 @@
 //! Vanilla `Bat`: rests on cave ceilings and flutters through the dark.
 
 use std::f32::consts::PI;
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use rand::RngExt as _;
@@ -17,16 +18,19 @@ use steel_utils::BlockPos;
 use steel_utils::locks::CheckedMutex;
 
 use crate::chunk::heightmap::HeightmapType;
-use crate::entity::SharedEntity;
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::HurtCtx;
+use crate::entity::component::definition::VoicePitchCtx;
+use crate::entity::component::pipeline::Flow;
+use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Stage, StageId};
-use crate::entity::mob;
 use crate::entity::prelude::*;
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityMovementEmission, EntityProps, LivingEntityBase,
     LivingProps, LivingTravelInput, Mob, MobBase, MobProps, SpawnRule,
 };
+use crate::entity::{living_entity, mob};
 use crate::world::{World, is_redstone_conductor};
 
 const FLAG_RESTING: i8 = 1;
@@ -73,7 +77,6 @@ impl BatEntity {
 
     const LIVING: LivingProps<Self> = LivingProps {
         sound_volume: |_| 0.1,
-        voice_pitch: |bat| bat.living().voice_pitch_default() * 0.95,
         hurt_sound: |_, _| Some(&sound_events::ENTITY_BAT_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_BAT_DEATH),
         push_entities: |_| {},
@@ -92,16 +95,7 @@ impl BatEntity {
         ..MobProps::new()
     };
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: Self::entity_tick,
-        hurt: |bat, world, source, amount| {
-            let living = bat.living();
-            if !living.is_invulnerable_to(world, source) && bat.is_resting() {
-                bat.set_resting(false);
-            }
-            living.hurt_server(world, source, amount)
-        },
         movement_emission: |_| EntityMovementEmission::Events,
-        check_fall_damage: |_, _, _, _, _, _, _| {},
         is_flapping: |bat| !bat.is_resting() && bat.tick_count() % 10 == 0,
         is_pushable: |_| false,
         is_ignoring_block_triggers: |_| true,
@@ -109,13 +103,47 @@ impl BatEntity {
         ..mob::entity_props()
     };
     const FLY: StageId = StageId("bat.fly");
+    const HANG: StageId = StageId("bat.hang");
+    const WAKE: StageId = StageId("bat.wake");
+    const PITCH: StageId = StageId("bat.pitch");
 
     /// Vanilla `Bat`: the mob chains with its resting and flying.
-    fn define() -> MobDefinition<Self> {
+    fn define() -> Definition<Self> {
         let mut definition = mob::stages::definition::<Self>();
         definition.custom_server_ai_step = definition
             .custom_server_ai_step
             .then([Stage::effect(Self::FLY, Self::fly)]);
+        definition.tick = definition
+            .tick
+            .then([Stage::effect(Self::HANG, Self::tick_hang)]);
+        // `Bat.checkFallDamage` does nothing.
+        definition.check_fall_damage = Pipeline::new([]);
+        // `Bat.getVoicePitch`: `super`'s pitch lowered.
+        definition.voice_pitch = definition.voice_pitch.then([Stage::new(
+            Self::PITCH,
+            |_: &Self, ctx: &mut VoicePitchCtx<'_>| {
+                ctx.result *= 0.95;
+                Flow::Continue
+            },
+        )]);
+        // `Bat.hurtServer` before `super`: invulnerable bats ignore the hit;
+        // others wake up.
+        definition.hurt = definition.hurt.before(
+            living_entity::HURT,
+            [Stage::new(
+                Self::WAKE,
+                |bat: &Self, ctx: &mut HurtCtx<'_>| {
+                    if bat.living().is_invulnerable_to(ctx.world, ctx.source) {
+                        ctx.result = false;
+                        return Flow::Stop;
+                    }
+                    if bat.is_resting() {
+                        bat.set_resting(false);
+                    }
+                    Flow::Continue
+                },
+            )],
+        );
         definition
     }
 
@@ -150,10 +178,9 @@ impl BatEntity {
         });
     }
 
-    /// `Bat.tick`: a resting bat hangs still under its block; a flying one
-    /// loses most of its vertical speed.
-    fn entity_tick(&self, entity: &SharedEntity) {
-        self.living().tick_living_entity(entity);
+    /// `Bat.tick` after `super.tick()`: a resting bat hangs still under its
+    /// block; a flying one loses most of its vertical speed.
+    fn tick_hang(&self) {
         if self.is_resting() {
             self.set_velocity(DVec3::ZERO);
             let height = f64::from(self.base().dimensions().height);
@@ -237,9 +264,9 @@ impl BatEntity {
         let movement = self.velocity();
         let new_movement = movement
             + DVec3::new(
-                (delta.x.signum() * 0.5 - movement.x) * 0.1,
-                (delta.y.signum() * f64::from(0.7_f32) - movement.y) * 0.1,
-                (delta.z.signum() * 0.5 - movement.z) * 0.1,
+                (java_signum(delta.x) * 0.5 - movement.x) * f64::from(0.1_f32),
+                (java_signum(delta.y) * f64::from(0.7_f32) - movement.y) * f64::from(0.1_f32),
+                (java_signum(delta.z) * 0.5 - movement.z) * f64::from(0.1_f32),
             );
         self.set_velocity(new_movement);
 
@@ -279,8 +306,13 @@ impl BatEntity {
         self.entity_data
             .lock()
             .id_flags
-            .set(nbt.byte("BatFlags").unwrap_or(0));
+            .set(nbt.byte_value("BatFlags").unwrap_or(0));
     }
+}
+
+/// Java `Math.signum`: zero stays zero, where Rust's `signum` returns ±1.
+fn java_signum(value: f64) -> f64 {
+    if value == 0.0 { value } else { value.signum() }
 }
 
 #[cfg(test)]

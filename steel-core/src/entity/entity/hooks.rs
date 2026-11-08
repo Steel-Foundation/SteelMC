@@ -123,28 +123,14 @@ macro_rules! entity_hook_list {
                 fn is_hard_collision_relevant() -> bool = is_hard_collision_relevant_default;
                 /// Returns whether projectile collision may interact with this entity.
                 fn can_be_hit_by_projectile() -> bool = can_be_hit_by_projectile_default;
-                /// Stops riding the current vehicle, if any.
-                fn stop_riding() = stop_riding_default;
                 /// Starts riding `entity_to_ride` if vanilla boarding rules allow it.
                 fn start_riding(entity_to_ride: &SharedEntity) -> bool = start_riding_default;
-                /// Returns the living passenger currently controlling this entity, if any.
-                ///
-                /// Base entities have no controller; controllable vehicles override this
-                /// based on their own rules.
-                fn controlling_passenger() -> Option<SharedEntity> = controlling_passenger_default;
                 /// Returns whether this entity can accept `passenger` as a direct passenger.
                 fn can_add_passenger(passenger: &dyn Entity) -> bool = can_add_passenger_default;
-                /// Repositions a direct passenger from this vehicle's attachment point.
-                fn position_rider(passenger: &dyn Entity) = position_rider_default;
                 /// Returns whether this entity can collide with `other`.
                 fn can_collide_with(other: &dyn Entity) -> bool = can_collide_with_default;
                 /// Applies vanilla entity-to-entity push separation.
                 fn push_entity(entity: &dyn Entity) = push_entity_default;
-                /// Runs vanilla `Entity.baseTick` pieces Steel currently implements.
-                ///
-                /// This intentionally stays separate from `tick()` because several vanilla
-                /// subclasses override tick without calling `super.tick()`.
-                fn base_tick() = base_tick_default;
                 /// Runs entity-specific behavior after falling below the world.
                 fn on_below_world() = on_below_world_default;
                 /// Runs vanilla pre-tick despawn checks.
@@ -179,8 +165,6 @@ macro_rules! entity_hook_list {
                 /// Returns true when vanilla block step-on hooks should treat this entity as
                 /// careful.
                 fn is_stepping_carefully() -> bool = is_stepping_carefully_default;
-                /// Updates the vanilla swimming shared flag.
-                fn update_swimming() = update_swimming_default;
                 /// Returns true if vanilla rules consider this entity to be on a climbable block.
                 fn on_climbable() -> bool = on_climbable_default;
                 /// Returns the movement vector vanilla exposes for block-contact logic.
@@ -210,13 +194,6 @@ macro_rules! entity_hook_list {
                 fn remaining_fire_ticks_cap() -> Option<i32> = remaining_fire_ticks_cap_default;
                 /// Returns extra ticks added by fire-block ignition before 8-second ignition.
                 fn fire_ignite_extra_ticks() -> i32 = fire_ignite_extra_ticks_default;
-                /// Returns whether this entity may accumulate frozen ticks.
-                fn can_freeze() -> bool = can_freeze_default;
-                /// Applies vanilla stuck-in-block movement for the next movement pass.
-                fn make_stuck_in_block(
-                    state: BlockStateId,
-                    speed_multiplier: DVec3,
-                ) = make_stuck_in_block_default;
                 /// Moves this entity to `pos`, keeping its current rotation.
                 fn teleport_to(pos: DVec3) -> Result<(), EntityMoveError> = teleport_to_default;
                 /// Returns the block position used for movement-affecting block properties.
@@ -250,8 +227,6 @@ macro_rules! entity_hook_list {
                 fn swim_high_speed_splash_sound(
                     ,
                 ) -> SoundEventRef = swim_high_speed_splash_sound_default;
-                /// Plays the vanilla water-entry splash sound and emits `SPLASH`.
-                fn do_water_splash_effect() = do_water_splash_effect_default;
                 /// Plays the base vanilla step sound for a block.
                 fn play_step_sound(
                     pos: BlockPos,
@@ -275,8 +250,6 @@ macro_rules! entity_hook_list {
                 fn apply_implicit_item_components(
                     item_stack: &ItemStack,
                 ) = apply_implicit_item_components_default;
-                /// Applies damage to this entity.
-                fn hurt(world: &World, source: &DamageSource, amount: f32) -> bool = hurt_default;
                 /// Runs when this entity causes another entity to die.
                 /// The entity provided is the entity who was killed.
                 fn killed_entity(
@@ -323,12 +296,6 @@ macro_rules! entity_hook_list {
                 /// Kills this entity. `world` is vanilla's explicit `ServerLevel`
                 /// argument; death game events use the entity's attached world.
                 fn kill(world: &World) = kill_default;
-                /// Handles vanilla entity right-click interaction.
-                fn interact(
-                    player: &Player,
-                    hand: InteractionHand,
-                    location: DVec3,
-                ) -> InteractionResult = interact_default;
                 /// Returns whether this entity may enter a portal.
                 fn can_use_portal(ignore_passenger: bool) -> bool = can_use_portal_default;
                 /// Returns the portal cooldown, in ticks, applied after changing dimension.
@@ -342,40 +309,23 @@ macro_rules! entity_hook_list {
                 fn y_head_rot() -> f32 = y_head_rot_default;
                 /// Sets this entity's head yaw.
                 fn set_y_head_rot(y_head_rot: f32) = set_y_head_rot_default;
-                /// Sets this entity's body yaw.
-                fn set_y_body_rot(y_body_rot: f32) = set_y_body_rot_default;
                 /// Returns whether the entity is currently suffocating inside a solid block.
                 fn is_in_wall() -> bool = is_in_wall_default;
-                /// Returns the block speed factor applied after movement.
-                fn block_speed_factor() -> f32 = block_speed_factor_default;
                 /// Returns the horizontal air drag applied after movement.
                 fn air_drag() -> f32 = air_drag_default;
                 /// Returns the gravity applied this tick.
                 fn effective_gravity() -> f64 = effective_gravity_default;
+                /// Returns whether this entity rides on rails, for movement emission.
+                fn is_on_rails() -> bool = is_on_rails_default;
+                /// Returns the horizontal direction this entity moves in.
+                fn motion_direction() -> Direction = motion_direction_default;
+                /// Returns the vehicle-relative point where `passenger` attaches.
+                fn passenger_attachment_point(passenger: &dyn Entity) -> DVec3 = passenger_attachment_point_default;
+                /// Where `passenger` stands after leaving this vehicle; may set
+                /// the passenger's pose to the one that fits there.
+                fn dismount_location_for_passenger(passenger: &Living<'_>) -> DVec3 = dismount_location_for_passenger_default;
             }
             shared {
-                /// Called every game tick when the entity is in a ticked chunk.
-                ///
-                /// The caller handles post-tick dirty data sync.
-                fn tick() = tick_default;
-                /// Called every game tick while this entity is riding another entity.
-                fn ride_tick() = ride_tick_default;
-                /// Applies vanilla fall damage; base entities only propagate it to
-                /// passengers and return `false`.
-                fn cause_fall_damage(
-                    fall_distance: f64,
-                    damage_modifier: f32,
-                    source: &DamageSource,
-                ) -> bool = cause_fall_damage_default;
-                /// Accumulates fall distance, applies landing damage from the block
-                /// fallen on, and resets it.
-                fn check_fall_damage(
-                    vertical_movement: f64,
-                    on_ground: bool,
-                    on_state: BlockStateId,
-                    pos: BlockPos,
-                    world: &Arc<World>,
-                ) = check_fall_damage_default;
                 /// Moves this entity by `delta`, resolving collisions.
                 fn move_entity(mover_type: MoverType, delta: DVec3) -> Option<MoveResult> = move_entity_default;
             }

@@ -15,6 +15,9 @@ use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::HurtCtx;
+use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::component::{Component, Has};
 use crate::entity::damage::DamageSource;
 use crate::entity::prelude::*;
@@ -116,14 +119,30 @@ pub trait Parts: Entity + Has<BlockAttachment> {
     }
 }
 
+/// The `BlockAttachedEntity.tick` stage, which replaces `Entity`'s.
+pub const TICK: StageId = StageId("block_attached.tick");
+/// The `BlockAttachedEntity.hurtServer` stage; `Entity`'s is abstract.
+pub const HURT: StageId = StageId("block_attached.hurt");
+
+/// Vanilla `BlockAttachedEntity`'s chains: its tick never calls `super`.
+#[must_use]
+pub fn definition<E: Parts>() -> Definition<E> {
+    Definition {
+        tick: Pipeline::new([Stage::effect(TICK, tick::<E>)]),
+        hurt: Pipeline::new([Stage::new(HURT, |entity: &E, ctx: &mut HurtCtx<'_>| {
+            ctx.result = hurt(entity, ctx.world, ctx.source);
+            Flow::Continue
+        })]),
+        ..Definition::new()
+    }
+}
+
 /// The `BlockAttachedEntity` overrides of the entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        tick: |entity, _| tick(entity),
         is_pickable: |_| true,
         skip_attack_interaction: skip_attack_interaction::<E>,
-        hurt: hurt::<E>,
         ignore_explosion: |_, explosion| ignore_explosion(explosion),
         move_entity: |entity, _, _, delta| {
             pop_off_if_moved(entity, delta);
@@ -161,7 +180,7 @@ fn skip_attack_interaction<E: Parts>(entity: &E, source: &SharedEntity) -> bool 
     !world.may_interact(player, entity.block_pos()) || entity.hurt(&world, &damage_source, 0.0)
 }
 
-fn hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource, _amount: f32) -> bool {
+fn hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource) -> bool {
     if entity.is_invulnerable_to_base(source) {
         return false;
     }

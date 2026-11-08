@@ -4,6 +4,8 @@ mod color_spawn_rules;
 
 use crate::entity::prelude::*;
 use std::sync::Arc;
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -30,13 +32,13 @@ use crate::entity::ai::goal::{
     RandomLookAroundGoal, TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::animal::{self, Breeding, BreedingProps};
-use crate::entity::component::definition::MobDefinition;
-use crate::entity::component::entries::{FinalizeSpawnCtx, MobInteractCtx};
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::{FinalizeSpawnCtx, MobInteractCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::shearable::{self, Shearable};
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityProps, LivingEntityBase, LivingProps, MobBase, MobProps,
-    SharedEntity, SpawnRule, mob,
+    SharedEntity, SpawnRule,
 };
 use crate::inventory::recipe_manager;
 use crate::world::World;
@@ -86,16 +88,16 @@ impl SheepEntity {
     };
     const MOB: MobProps<Self> = MobProps {
         ambient_sound: |_| Some(&sound_events::ENTITY_SHEEP_AMBIENT),
-        ate: Self::mob_ate,
         ..animal::mob_props()
     };
     const GOALS: StageId = StageId("sheep.goals");
     const SHEAR: StageId = StageId("sheep.shear");
     const PICK_COLOR: StageId = StageId("sheep.pick_color");
+    const ATE: StageId = StageId("sheep.ate");
 
     /// Vanilla `Sheep`: the animal chains with sheep goals, shearing before
     /// feeding, and the spawn wool color before `AgeableMob.finalizeSpawn`.
-    fn define() -> MobDefinition<Self> {
+    fn define() -> Definition<Self> {
         let mut definition = animal::definition::<Self>();
         // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
         definition.construct = definition.construct.before(
@@ -110,6 +112,9 @@ impl SheepEntity {
             ageable::FINALIZE_SPAWN,
             [Stage::new(Self::PICK_COLOR, Self::pick_spawn_color)],
         );
+        definition.ate = definition
+            .ate
+            .then([Stage::effect(Self::ATE, Self::mob_ate)]);
         definition
     }
 
@@ -329,7 +334,7 @@ impl SheepEntity {
         play_step_sound: |sheep, _, _| {
             sheep.play_sound(&sound_events::ENTITY_SHEEP_STEP, 0.15, 1.0);
         },
-        ..mob::entity_props()
+        ..animal::entity_props()
     };
 
     fn save_sheep(&self, nbt: &mut NbtCompound) {
@@ -339,8 +344,10 @@ impl SheepEntity {
     }
 
     fn load_sheep(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.set_sheared(nbt.byte("Sheared").is_some_and(|value| value != 0));
-        self.set_color(DyeColor::by_id(i32::from(nbt.byte("Color").unwrap_or(0))));
+        self.set_sheared(nbt.byte_value("Sheared").is_some_and(|value| value != 0));
+        self.set_color(DyeColor::by_id(i32::from(
+            nbt.get("Color").and_then(|tag| tag.codec_i8()).unwrap_or(0),
+        )));
     }
 }
 

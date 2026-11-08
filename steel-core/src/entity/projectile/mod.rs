@@ -13,10 +13,11 @@ pub mod throwable;
 pub mod throwable_item;
 pub mod thrown_potion;
 
+use crate::entity::component::definition::TickCtx;
 use crate::entity::prelude::*;
-use std::mem;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -34,6 +35,11 @@ use uuid::Uuid;
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::enchantment_helper;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::{
+    CanHitEntityCtx, HurtCtx, OnHitBlockCtx, OnHitCtx, Tick,
+};
+use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage, StageId};
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::damage::DamageSource;
@@ -126,7 +132,7 @@ impl ProjectileDeflection {
                 let Some(entity) = deflecting_entity else {
                     return;
                 };
-                let movement = entity.velocity();
+                let movement = entity.known_speed();
                 let length = movement.length();
                 let normalized = if length < 1.0e-5 {
                     DVec3::ZERO
@@ -193,8 +199,10 @@ impl Component for ProjectileBase {
     fn load(&self, _owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.state.lock();
         state.owner = EntityReference::read(&nbt, "Owner");
-        state.left_owner = nbt.byte("LeftOwner").is_some_and(|value| value != 0);
-        state.has_been_shot = nbt.byte("HasBeenShot").is_some_and(|value| value != 0);
+        state.left_owner = nbt.byte_value("LeftOwner").is_some_and(|value| value != 0);
+        state.has_been_shot = nbt
+            .byte_value("HasBeenShot")
+            .is_some_and(|value| value != 0);
     }
 }
 
@@ -202,14 +210,6 @@ entity_props! {
     /// Per-type properties of a vanilla `Projectile`.
     pub struct ProjectileProps<E>: ProjectileHooks for Projectile
     where E: Parts => projectile {
-        /// `Projectile.onHit`: resolves a hit that was not deflected.
-        fn on_hit(entity: &SharedEntity, hit: &ProjectileHit) = on_hit_default;
-        /// `Projectile.onHitEntity`.
-        fn on_hit_entity(entity: &SharedEntity, target: &SharedEntity, location: DVec3) = on_hit_entity_default;
-        /// `Projectile.onHitBlock`.
-        fn on_hit_block(entity: &SharedEntity, hit: &ClipHitResult) = on_hit_block_default;
-        /// `Projectile.canHitEntity`.
-        fn can_hit_entity(target: &dyn Entity) -> bool = can_hit_entity_default;
         /// `Projectile.onDeflection`.
         fn on_deflection(by_attack: bool) = on_deflection_default;
         /// `Projectile.shouldBounceOnWorldBorder`.
@@ -276,12 +276,57 @@ impl<E: Entity + Has<ProjectileBase>> Parts for E {
     }
 }
 
+/// The `Projectile.tick` stage, around `Entity`'s.
+pub const TICK: StageId = StageId("projectile.tick");
+/// The `Projectile.onHit` stage: dispatches to the entity or block hit.
+pub const ON_HIT: StageId = StageId("projectile.on_hit");
+/// The `Projectile.onHitBlock` stage: the block's projectile reaction.
+pub const ON_HIT_BLOCK: StageId = StageId("projectile.on_hit_block");
+/// The `Projectile.hurtServer` stage; `Entity`'s is abstract.
+pub const HURT: StageId = StageId("projectile.hurt");
+/// The `Projectile.canHitEntity` stage.
+pub const CAN_HIT_ENTITY: StageId = StageId("projectile.can_hit_entity");
+
+/// Vanilla `Projectile`'s chains, on `Entity`'s.
+#[must_use]
+pub fn definition<E: Parts>() -> Definition<E> {
+    fn tick<E: Parts>(projectile: &E, ctx: &mut TickCtx<'_>, inner: Inner<'_, E, Tick>) -> Flow {
+        projectile
+            .projectile()
+            .tick_around(|| inner(projectile, ctx))
+    }
+    fn on_hit<E: Parts>(projectile: &E, ctx: &mut OnHitCtx<'_>) -> Flow {
+        projectile.projectile().on_hit_base(ctx.entity, ctx.hit);
+        Flow::Continue
+    }
+    fn on_hit_block<E: Parts>(projectile: &E, ctx: &mut OnHitBlockCtx<'_>) -> Flow {
+        projectile.projectile().on_hit_block_base(ctx.hit);
+        Flow::Continue
+    }
+    fn can_hit_entity<E: Parts>(projectile: &E, ctx: &mut CanHitEntityCtx<'_>) -> Flow {
+        ctx.result = projectile.projectile().can_hit_entity_base(ctx.target);
+        Flow::Continue
+    }
+    let definition = Definition::new();
+    Definition {
+        tick: definition.tick.around(TICK, tick::<E>),
+        on_hit: Pipeline::new([Stage::new(ON_HIT, on_hit::<E>)]),
+        // Vanilla's `Projectile.onHitEntity` does nothing.
+        on_hit_entity: Pipeline::new([]),
+        on_hit_block: Pipeline::new([Stage::new(ON_HIT_BLOCK, on_hit_block::<E>)]),
+        can_hit_entity: Pipeline::new([Stage::new(CAN_HIT_ENTITY, can_hit_entity::<E>)]),
+        hurt: Pipeline::new([Stage::new(HURT, |projectile: &E, ctx: &mut HurtCtx<'_>| {
+            ctx.result = projectile.projectile().hurt_server(ctx.source);
+            Flow::Continue
+        })]),
+        ..definition
+    }
+}
+
 /// `Projectile`'s overrides of the entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        tick: |projectile, _| projectile.projectile().tick(),
-        hurt: |projectile, _, source, _| projectile.projectile().hurt_server(source),
         is_pickable: |projectile| {
             REGISTRY.entity_types.is_in_tag(
                 projectile.entity_type(),
@@ -452,8 +497,37 @@ impl<'a> Projectile<'a> {
         (movement.x, movement.z)
     }
 
-    /// Default for [`ProjectileProps::can_hit_entity`].
-    pub fn can_hit_entity_default(&self, target: &dyn Entity) -> bool {
+    /// `Projectile.canHitEntity`: runs this type's pipeline.
+    #[must_use]
+    pub fn can_hit_entity(&self, target: &dyn Entity) -> bool {
+        self.entity
+            .entity_definition()
+            .can_hit_entity(self.entity, target)
+    }
+
+    /// `Projectile.onHit`: runs this type's pipeline.
+    pub fn on_hit(&self, entity: &SharedEntity, hit: &ProjectileHit) {
+        self.entity
+            .entity_definition()
+            .on_hit(self.entity, entity, hit);
+    }
+
+    /// `Projectile.onHitEntity`: runs this type's pipeline.
+    pub fn on_hit_entity(&self, entity: &SharedEntity, target: &SharedEntity, location: DVec3) {
+        self.entity
+            .entity_definition()
+            .on_hit_entity(self.entity, entity, target, location);
+    }
+
+    /// `Projectile.onHitBlock`: runs this type's pipeline.
+    pub fn on_hit_block(&self, entity: &SharedEntity, hit: &ClipHitResult) {
+        self.entity
+            .entity_definition()
+            .on_hit_block(self.entity, entity, hit);
+    }
+
+    /// The `Projectile.canHitEntity` base stage.
+    fn can_hit_entity_base(&self, target: &dyn Entity) -> bool {
         if !target.can_be_hit_by_projectile() {
             return false;
         }
@@ -638,8 +712,8 @@ impl<'a> Projectile<'a> {
         ProjectileDeflection::None
     }
 
-    /// Default for [`ProjectileProps::on_hit`].
-    pub fn on_hit_default(&self, entity: &SharedEntity, hit: &ProjectileHit) {
+    /// The `Projectile.onHit` base stage.
+    fn on_hit_base(&self, entity: &SharedEntity, hit: &ProjectileHit) {
         let world = self.level();
         match hit {
             ProjectileHit::Entity(entity_hit) => {
@@ -680,20 +754,8 @@ impl<'a> Projectile<'a> {
         }
     }
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `ProjectileProps`"
-    )]
-    const fn on_hit_entity_default(
-        &self,
-        _entity: &SharedEntity,
-        _target: &SharedEntity,
-        _location: DVec3,
-    ) {
-    }
-
-    /// Default for [`ProjectileProps::on_hit_block`].
-    pub fn on_hit_block_default(&self, _entity: &SharedEntity, hit: &ClipHitResult) {
+    /// The `Projectile.onHitBlock` base stage.
+    fn on_hit_block_base(&self, hit: &ClipHitResult) {
         let Some(world) = self.level() else {
             return;
         };
@@ -738,9 +800,9 @@ impl<'a> Projectile<'a> {
         self.reset_fall_distance();
     }
 
-    /// `Projectile.tick`: announces the shot once, tracks leaving the owner,
-    /// and runs the entity tick.
-    pub fn tick(&self) {
+    /// `Projectile.tick` around its `super.tick()`: announces the shot once
+    /// and tracks leaving the owner.
+    fn tick_around(&self, base_tick: impl FnOnce() -> Flow) -> Flow {
         if !self.has_been_shot() {
             let owner = self.owner();
             self.game_event_with_source_entity(
@@ -750,8 +812,9 @@ impl<'a> Projectile<'a> {
             self.state().has_been_shot = true;
         }
         self.check_left_owner();
-        self.tick_default();
+        let flow = base_tick();
         self.state().left_owner_checked = false;
+        flow
     }
 }
 
@@ -775,7 +838,11 @@ pub fn spawn_throwable_item_projectile<E: throwable_item::Parts>(
     create: impl FnOnce(DVec3) -> E,
 ) -> Option<SharedEntity> {
     let player_pos = player.position();
-    let spawn_pos = DVec3::new(player_pos.x, player.eye_y() - 0.1, player_pos.z);
+    let spawn_pos = DVec3::new(
+        player_pos.x,
+        player.eye_y() - f64::from(0.1_f32),
+        player_pos.z,
+    );
 
     let entity = create(spawn_pos);
     let owner: SharedEntity = Arc::<Player>::clone(player);
@@ -888,53 +955,53 @@ fn get_entity_hit_result(
     nearest
 }
 
-/// Clips the segment `from -> to` against `aabb`, returning the entry point.
-///
-/// Returns `from` when the segment starts inside the box and `None` when it never
-/// intersects. Mirrors vanilla `AABB.clip` using the slab method.
+/// Vanilla `AABB.clip`: where the segment `from -> to` enters `aabb` through a
+/// face. A segment that starts inside the box enters no face and misses.
 fn clip_segment(aabb: WorldAabb, from: DVec3, to: DVec3) -> Option<DVec3> {
     const EPSILON: f64 = 1.0e-7;
 
-    let direction = to - from;
-    let mut t_min = 0.0_f64;
-    let mut t_max = 1.0_f64;
-
-    for axis in [Axis::X, Axis::Y, Axis::Z] {
-        let start = axis_component(from, axis);
-        let delta = axis_component(direction, axis);
-        let axis_min = aabb.min(axis);
-        let axis_max = aabb.max(axis);
-
-        if delta.abs() < EPSILON {
-            if start < axis_min || start > axis_max {
-                return None;
-            }
-            continue;
+    let delta = to - from;
+    let mut scale = 1.0;
+    let mut hit = false;
+    // `AABB.clipPoint` for the face at `point` on axis `a`, bounded on `b` and `c`.
+    let mut clip_point = |[da, db, dc]: [f64; 3],
+                          point: f64,
+                          [min_b, max_b]: [f64; 2],
+                          [min_c, max_c]: [f64; 2],
+                          [from_a, from_b, from_c]: [f64; 3]| {
+        let s = (point - from_a) / da;
+        let pb = from_b + s * db;
+        let pc = from_c + s * dc;
+        if 0.0 < s
+            && s < scale
+            && min_b - EPSILON < pb
+            && pb < max_b + EPSILON
+            && min_c - EPSILON < pc
+            && pc < max_c + EPSILON
+        {
+            scale = s;
+            hit = true;
         }
+    };
 
-        let inv_delta = 1.0 / delta;
-        let mut low = (axis_min - start) * inv_delta;
-        let mut high = (axis_max - start) * inv_delta;
-        if low > high {
-            mem::swap(&mut low, &mut high);
-        }
-
-        t_min = t_min.max(low);
-        t_max = t_max.min(high);
-        if t_min > t_max {
-            return None;
-        }
+    let x = [aabb.min(Axis::X), aabb.max(Axis::X)];
+    let y = [aabb.min(Axis::Y), aabb.max(Axis::Y)];
+    let z = [aabb.min(Axis::Z), aabb.max(Axis::Z)];
+    let (dx, dy, dz) = (delta.x, delta.y, delta.z);
+    if dx.abs() > EPSILON {
+        let plane = if dx > 0.0 { x[0] } else { x[1] };
+        clip_point([dx, dy, dz], plane, y, z, [from.x, from.y, from.z]);
+    }
+    if dy.abs() > EPSILON {
+        let plane = if dy > 0.0 { y[0] } else { y[1] };
+        clip_point([dy, dz, dx], plane, z, x, [from.y, from.z, from.x]);
+    }
+    if dz.abs() > EPSILON {
+        let plane = if dz > 0.0 { z[0] } else { z[1] };
+        clip_point([dz, dx, dy], plane, x, y, [from.z, from.x, from.y]);
     }
 
-    Some(from + direction * t_min)
-}
-
-const fn axis_component(vec: DVec3, axis: Axis) -> f64 {
-    match axis {
-        Axis::X => vec.x,
-        Axis::Y => vec.y,
-        Axis::Z => vec.z,
-    }
+    hit.then(|| from + DVec3::new(scale * dx, scale * dy, scale * dz))
 }
 
 /// Vanilla `Mth.lerp(0.2, rotO, rot)` after wrapping the old angle into range.

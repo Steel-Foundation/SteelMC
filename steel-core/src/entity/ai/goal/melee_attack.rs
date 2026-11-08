@@ -2,7 +2,6 @@ use crate::entity::prelude::*;
 use glam::DVec3;
 use steel_utils::types::InteractionHand;
 
-use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::ai::path::Path;
 use crate::entity::entity_selector;
@@ -54,8 +53,8 @@ impl MeleeAttackGoal {
         }
     }
 
-    const fn reset_attack_cooldown(&mut self) {
-        self.ticks_until_next_attack = Self::attack_interval();
+    fn reset_attack_cooldown(&mut self) {
+        self.ticks_until_next_attack = self.attack_interval();
     }
 
     const fn is_time_to_attack(&self) -> bool {
@@ -72,8 +71,8 @@ impl MeleeAttackGoal {
         self.ticks_until_next_attack
     }
 
-    const fn attack_interval() -> i32 {
-        reduced_tick_delay(20)
+    fn attack_interval(&self) -> i32 {
+        self.adjusted_tick_delay(20)
     }
 
     fn has_no_pathed_target(&self) -> bool {
@@ -114,12 +113,12 @@ impl MeleeAttackGoal {
             self.ticks_until_next_path_recalculation += 5;
         }
 
-        if !mob.move_to_pos(target.position(), self.speed_modifier) {
+        if !mob.move_to_pos_with_reach(target.position(), 0, self.speed_modifier) {
             self.ticks_until_next_path_recalculation += 15;
         }
 
         self.ticks_until_next_path_recalculation =
-            reduced_tick_delay(self.ticks_until_next_path_recalculation);
+            self.adjusted_tick_delay(self.ticks_until_next_path_recalculation);
     }
 }
 

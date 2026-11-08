@@ -1,7 +1,11 @@
 //! Primed TNT entity behavior.
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::TickCtx;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::{f32::consts::TAU, sync::Arc};
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -124,7 +128,7 @@ static USED_PORTAL_DAMAGE_CALCULATOR: NetherPortalPreservingExplosionDamageCalcu
 #[entity_behavior(class = "PrimedTnt")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_tnt, load = Self::load_tnt)]
-#[entity(key = "steel:entity/primed_tnt", constructors)]
+#[entity(key = "steel:entity/primed_tnt", constructors, definition = Self::define)]
 pub struct PrimedTntEntity {
     #[entity(base)]
     base: EntityBase,
@@ -249,8 +253,21 @@ impl PrimedTntEntity {
 }
 
 impl PrimedTntEntity {
+    const TICK: StageId = StageId("primed_tnt.tick");
+
+    /// `PrimedTnt.tick` never calls `super`.
+    fn define() -> Definition<Self> {
+        Definition::replacing_tick([Stage::new(
+            Self::TICK,
+            |tnt: &Self, ctx: &mut TickCtx<'_>| {
+                let entity = ctx.entity;
+                tnt.entity_tick(entity);
+                Flow::Continue
+            },
+        )])
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: Self::entity_tick,
         blocks_building: |_| true,
         is_pickable: |entity| !entity.is_removed(),
         is_hard_collision_relevant: |_| false,
@@ -259,7 +276,6 @@ impl PrimedTntEntity {
         explosion_indirect_source: |entity| entity.owner(),
         explosion_damage_origin: |entity| entity.position(),
         on_teleported: Self::entity_on_teleported,
-        hurt: |_, _, _, _| false,
         ..EntityProps::new()
     };
 
@@ -311,7 +327,8 @@ impl PrimedTntEntity {
 
     fn load_tnt(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.set_fuse(i32::from(
-            nbt.short("fuse").unwrap_or(Self::DEFAULT_FUSE_TIME as i16),
+            nbt.short_value("fuse")
+                .unwrap_or(Self::DEFAULT_FUSE_TIME as i16),
         ));
         self.set_block_state(
             nbt.compound("block_state")
@@ -320,7 +337,7 @@ impl PrimedTntEntity {
         );
         let mut state = self.state.lock();
         state.explosion_power = nbt
-            .float("explosion_power")
+            .float_value("explosion_power")
             .unwrap_or(DEFAULT_EXPLOSION_POWER)
             .clamp(0.0, 128.0);
         state.owner = EntityReference::read(&nbt, "owner");

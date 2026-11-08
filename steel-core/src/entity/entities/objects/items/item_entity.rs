@@ -4,8 +4,13 @@
 //! (gravity, friction), despawns after 5 minutes, and can be picked up
 //! by players after a short delay.
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::HurtCtx;
+use crate::entity::component::pipeline::{Flow, StageId};
+use crate::entity::component::pipeline::{Pipeline, Stage};
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use steel_macros::entity_behavior;
@@ -14,7 +19,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ItemEntityData;
 use steel_registry::vanilla_game_rules::MOB_GRIEFING;
-use steel_registry::{vanilla_custom_stats, vanilla_damage_types};
+use steel_registry::{vanilla_damage_types, vanilla_game_events};
 use steel_utils::Downcast as _;
 use steel_utils::UuidExt;
 use steel_utils::locks::CheckedMutex;
@@ -40,7 +45,6 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::vanilla_item_tags::ItemTag;
 
 /// Maximum age in ticks before despawn (5 minutes = 6000 ticks).
 const LIFETIME: i32 = 6000;
@@ -58,7 +62,7 @@ const INFINITE_LIFETIME: i32 = -32768;
 /// Default health (damage resistance).
 const DEFAULT_HEALTH: i32 = 5;
 
-const ITEM_FLUID_HEIGHT_THRESHOLD: f64 = 0.1;
+const FLOAT_HEIGHT: f32 = 0.1;
 
 /// Mutable item-specific state that changes during item ticks, pickup, damage,
 /// merging, and save/load.
@@ -98,7 +102,7 @@ impl ItemEntityState {
 #[entity_behavior]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_item, load = Self::load_item)]
-#[entity(key = "steel:entity/item")]
+#[entity(key = "steel:entity/item", definition = Self::define)]
 pub struct ItemEntity {
     /// Common entity fields (id, uuid, position, etc.).
     #[entity(base)]
@@ -306,65 +310,44 @@ impl ItemEntity {
     /// Returns `true` if the item was fully picked up (and the entity should be removed),
     /// `false` if pickup failed or was only partial.
     pub fn try_pickup(&self, player: &Arc<Player>) -> bool {
-        // Check pickup delay
-        if self.has_pickup_delay() {
+        // Vanilla requires exactly 0, so a negative loaded delay blocks pickup.
+        if self.state.lock().pickup_delay != 0 {
             return false;
         }
 
-        // Check owner restriction
         if let Some(owner_uuid) = self.owner()
             && owner_uuid != player.gameprofile.id()
         {
             return false;
         }
 
-        // Get the item and try to add to inventory
         let mut item = self.item();
         let original_count = item.count();
-
-        // Try to add to player's inventory
-        let added = player.inventory.lock().add(&mut item);
-
-        // If nothing was added, bail out
+        // `Inventory.add` is true whenever anything fit; Steel's is true only
+        // once the stack is empty, so a partial pickup is detected by count.
+        let fully_added = player.inventory.lock().add(&mut item);
         if item.count() == original_count {
             return false;
         }
 
-        // Calculate how many items were picked up
-        let picked_up_count = original_count - item.count();
-
-        // Vanilla uses the stack's count to award the stat that many items picked up, which is
-        // wrong if not all the items get picked up by the player. This could be considered
-        // buggy, but it's possible that people depend on this behavior.
-        player.award_stat_with_count(
-            &vanilla_stat_types::ITEM_PICKED_UP,
-            item.item,
-            original_count,
-        );
-
-        if item.item.has_tag(&ItemTag::FISHES) {
-            player.award_custom_stat(&vanilla_custom_stats::FISH_CAUGHT);
-        }
-
-        // Send the take animation packet to nearby players
+        // Vanilla animates and counts the whole stack even when only part of it fit.
         if let Some(world) = self.level() {
-            let pos = self.position();
-            let chunk_pos = steel_utils::ChunkPos::from_entity_pos(pos);
-
-            let take_packet = CTakeItemEntity::new(self.id(), player.id(), picked_up_count);
+            let chunk_pos = steel_utils::ChunkPos::from_entity_pos(self.position());
+            let take_packet = CTakeItemEntity::new(self.id(), player.id(), original_count);
             world.broadcast_to_nearby(chunk_pos, take_packet, None);
         }
-
-        // Update or remove the item entity
-        if added {
-            // Fully picked up - mark for removal
+        let picked_item = item.item;
+        if fully_added {
             self.set_removed(RemovalReason::Discarded);
-            true
         } else {
-            // Partial pickup - update the remaining item
             self.set_item(item);
-            false
         }
+        player.award_stat_with_count(
+            &vanilla_stat_types::ITEM_PICKED_UP,
+            picked_item,
+            original_count,
+        );
+        fully_added
     }
 
     /// Returns true if this item entity can be merged with others.
@@ -431,13 +414,10 @@ impl ItemEntity {
         from_item: &Self,
         from_stack: &ItemStack,
     ) {
-        // Calculate how many items to transfer
-        let max_count = to_stack.max_stack_size().min(64);
-        if to_stack.count() >= max_count {
-            return;
-        }
-        let space_available = max_count - to_stack.count();
-        let transfer_count = space_available.min(from_stack.count());
+        // Vanilla `ItemEntity.merge`: negative when `to_stack` is already above 64,
+        // which moves items back to `from_stack`.
+        let transfer_count =
+            (to_stack.max_stack_size().min(64) - to_stack.count()).min(from_stack.count());
 
         // Create new stacks
         let new_to_stack = to_stack.copy_with_count(to_stack.count() + transfer_count);
@@ -501,21 +481,27 @@ impl ItemEntity {
 
     fn apply_fluid_movement_or_gravity(&self) {
         let contact = self.fluid_contact();
-        if contact.water_height() > ITEM_FLUID_HEIGHT_THRESHOLD {
+        if contact.water_height() > f64::from(FLOAT_HEIGHT) {
             self.apply_fluid_movement(0.99);
-        } else if contact.lava_height() > ITEM_FLUID_HEIGHT_THRESHOLD {
+        } else if contact.lava_height() > f64::from(FLOAT_HEIGHT) {
             self.apply_fluid_movement(0.95);
         } else {
             self.apply_gravity();
         }
     }
 
-    fn apply_fluid_movement(&self, horizontal_drag: f64) {
+    fn apply_fluid_movement(&self, multiplier: f32) {
         let movement = self.velocity();
+        let multiplier = f64::from(multiplier);
+        let lift = if movement.y < f64::from(0.06_f32) {
+            f64::from(5.0e-4_f32)
+        } else {
+            0.0
+        };
         self.set_velocity(DVec3::new(
-            movement.x * horizontal_drag,
-            movement.y + if movement.y < 0.06 { 5.0e-4 } else { 0.0 },
-            movement.z * horizontal_drag,
+            movement.x * multiplier,
+            movement.y + lift,
+            movement.z * multiplier,
         ));
     }
 }
@@ -523,18 +509,41 @@ impl ItemEntity {
 impl DefaultEntityPush for ItemEntity {}
 
 impl ItemEntity {
+    const TICK: StageId = StageId("item.tick");
+
+    const HURT: StageId = StageId("item.hurt");
+
+    fn define() -> Definition<Self> {
+        let definition = Definition::new();
+        Definition {
+            tick: definition.tick.around(Self::TICK, |item, entity, inner| {
+                let shared = entity.entity;
+                item.entity_tick(shared, || {
+                    inner(item, entity);
+                });
+                Flow::Continue
+            }),
+            hurt: Pipeline::new([Stage::new(
+                Self::HURT,
+                |item: &Self, ctx: &mut HurtCtx<'_>| {
+                    ctx.result = item.entity_hurt(ctx.world, ctx.source, ctx.amount);
+                    Flow::Continue
+                },
+            )]),
+            ..definition
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
         is_hard_collision_relevant: |_| false,
         ignore_explosion: |_, explosion| !explosion.should_affect_blocklike_entities(),
         movement_emission: |_| EntityMovementEmission::None,
-        tick: Self::entity_tick,
         default_gravity: |_| 0.04,
         block_pos_below_that_affects_movement: |entity| entity.on_pos(0.999_999),
         attackable: |_| false,
         should_play_lava_hurt_sound: Self::entity_should_play_lava_hurt_sound,
         fire_immune: Self::entity_fire_immune,
         player_touch: Self::entity_player_touch,
-        hurt: Self::entity_hurt,
         name: Self::entity_name,
         on_teleported: |item| {
             if let Some(world) = item.level() {
@@ -555,14 +564,14 @@ impl ItemEntity {
         })
     }
 
-    fn entity_tick(&self, entity: &SharedEntity) {
-        // Check if item is empty
+    /// `ItemEntity.tick`: an empty stack is discarded instead of ticking.
+    fn entity_tick(&self, entity: &SharedEntity, super_tick: impl FnOnce()) {
         if self.item().is_empty() {
             self.set_removed(RemovalReason::Discarded);
             return;
         }
 
-        self.tick_default();
+        super_tick();
 
         {
             let mut state = self.state.lock();
@@ -591,7 +600,7 @@ impl ItemEntity {
         let vel = self.velocity();
         let horizontal_movement_sq = vel.x * vel.x + vel.z * vel.z;
         let should_move = !self.on_ground()
-            || horizontal_movement_sq > 1.0e-5
+            || horizontal_movement_sq > f64::from(1.0e-5_f32)
             || (self.tick_count() + self.id()) % 4 == 0;
 
         if should_move {
@@ -704,7 +713,9 @@ impl ItemEntity {
     }
 
     fn entity_hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        // TODO: Check isInvulnerableToBase once the shared non-living entity hook is ported.
+        if self.is_invulnerable_to_base(source) {
+            return false;
+        }
         if !world.get_game_rule(&MOB_GRIEFING)
             && source
                 .causing_entity()
@@ -715,14 +726,19 @@ impl ItemEntity {
         if !self.item().can_be_hurt_by(source.damage_type) {
             return false;
         }
+        self.mark_hurt();
         let new_health = {
             let mut state = self.state.lock();
             state.health = (state.health as f32 - amount) as i32;
             state.health
         };
+        self.game_event_with_source_entity(
+            &vanilla_game_events::ENTITY_DAMAGE,
+            source.causing_entity().as_ref().map(AsRef::as_ref),
+        );
         if new_health <= 0 {
             // TODO: Call item.onDestroyed() when implemented
-            self.set_removed(RemovalReason::Killed);
+            self.set_removed(RemovalReason::Discarded);
         }
         true
     }
@@ -751,13 +767,13 @@ impl ItemEntity {
     fn load_item(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         // Match vanilla's ItemEntity.readAdditionalSaveData
         let mut state = self.state.lock();
-        if let Some(health) = nbt.short("Health") {
+        if let Some(health) = nbt.short_value("Health") {
             state.health = i32::from(health);
         }
-        if let Some(age) = nbt.short("Age") {
+        if let Some(age) = nbt.short_value("Age") {
             state.age = i32::from(age);
         }
-        if let Some(pickup_delay) = nbt.short("PickupDelay") {
+        if let Some(pickup_delay) = nbt.short_value("PickupDelay") {
             state.pickup_delay = i32::from(pickup_delay);
         }
 

@@ -306,7 +306,7 @@ impl NodePoint {
         let xd = (other.x - self.x) as f32;
         let yd = (other.y - self.y) as f32;
         let zd = (other.z - self.z) as f32;
-        xd.mul_add(xd, yd.mul_add(yd, zd * zd)).sqrt()
+        (xd * xd + yd * yd + zd * zd).sqrt()
     }
 
     fn manhattan_to_node(self, other: &Node) -> f32 {

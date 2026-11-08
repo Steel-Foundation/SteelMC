@@ -1,5 +1,9 @@
 //! Vanilla Pig entity: variants, saddles and carrot-on-a-stick steering.
 
+use crate::entity::component::definition::ControllingPassengerCtx;
+use crate::entity::component::definition::{
+    CanDispenserEquipIntoSlotCtx, CanUseSlotCtx, EquipSoundCtx, TickRiddenCtx,
+};
 use crate::entity::prelude::*;
 
 use glam::DVec3;
@@ -24,17 +28,17 @@ use crate::entity::ai::goal::{
     TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::animal::{self, Breeding, BreedingProps};
-use crate::entity::component::definition::MobDefinition;
-use crate::entity::component::entries::MobInteractCtx;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::item_based_steering::ItemBasedSteering;
+use crate::entity::living_entity;
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityProps, ItemSteerable, LivingEntityBase, LivingProps,
-    MobBase, MobProps, SharedEntity, SpawnRule, mob,
+    MobBase, MobProps, SpawnRule, mob,
 };
 use crate::inventory::equipment::EquipmentSlot;
-use crate::player::Player;
 
 /// Vanilla pig entity.
 // TODO: `Pig.thunderHit` turns pigs into zombified piglins once lightning bolts and
@@ -81,21 +85,6 @@ impl PigEntity {
     const LIVING: LivingProps<Self> = LivingProps {
         hurt_sound: |pig, _| Some(pig.sound_set().hurt_sound),
         death_sound: |pig| Some(pig.sound_set().death_sound),
-        can_use_slot: |pig, slot| {
-            slot != EquipmentSlot::Saddle
-                || (Entity::is_alive(pig) && !pig.animal().ageable().is_baby())
-        },
-        can_dispenser_equip_into_slot: |pig, slot| {
-            slot == EquipmentSlot::Saddle || pig.mob().can_pick_up_loot()
-        },
-        equip_sound: |pig, slot, stack| {
-            if slot == EquipmentSlot::Saddle {
-                Some(&sound_events::ENTITY_PIG_SADDLE)
-            } else {
-                pig.living().equip_sound_default(slot, stack)
-            }
-        },
-        tick_ridden: Self::living_tick_ridden,
         ridden_input: |_, _, _| DVec3::new(0.0, 0.0, 1.0),
         ridden_speed: |pig, _| {
             let movement_speed = pig
@@ -115,10 +104,61 @@ impl PigEntity {
     const RIDE: StageId = StageId("pig.ride");
     const SADDLE: StageId = StageId("pig.saddle");
 
+    const CARROT_RIDER: StageId = StageId("pig.carrot_rider");
+    const SADDLE_SLOT: StageId = StageId("pig.saddle_slot");
+    const TICK_RIDDEN: StageId = StageId("pig.tick_ridden");
+
     /// Vanilla `Pig`: the animal chains with pig goals, mounting a saddled pig
     /// before feeding, saddling after it, and variant selection on spawn.
-    fn define() -> MobDefinition<Self> {
+    fn define() -> Definition<Self> {
         let mut definition = animal::definition::<Self>();
+        // The saddle slot is the pig's own; other slots fall to `super`.
+        definition.can_use_slot = definition.can_use_slot.before(
+            living_entity::CAN_USE_SLOT,
+            [Stage::new(
+                Self::SADDLE_SLOT,
+                |pig: &Self, ctx: &mut CanUseSlotCtx<'_>| {
+                    if ctx.slot == EquipmentSlot::Saddle {
+                        ctx.result = Entity::is_alive(pig) && !pig.animal().ageable().is_baby();
+                        return Flow::Stop;
+                    }
+                    Flow::Continue
+                },
+            )],
+        );
+        definition.can_dispenser_equip_into_slot = definition.can_dispenser_equip_into_slot.before(
+            mob::stages::CAN_DISPENSER_EQUIP_INTO_SLOT,
+            [Stage::new(
+                Self::SADDLE_SLOT,
+                |_: &Self, ctx: &mut CanDispenserEquipIntoSlotCtx<'_>| {
+                    if ctx.slot == EquipmentSlot::Saddle {
+                        ctx.result = true;
+                        return Flow::Stop;
+                    }
+                    Flow::Continue
+                },
+            )],
+        );
+        definition.equip_sound = definition.equip_sound.before(
+            living_entity::EQUIP_SOUND,
+            [Stage::new(
+                Self::SADDLE_SLOT,
+                |_: &Self, ctx: &mut EquipSoundCtx<'_>| {
+                    if ctx.slot == EquipmentSlot::Saddle {
+                        ctx.result = Some(&sound_events::ENTITY_PIG_SADDLE);
+                        return Flow::Stop;
+                    }
+                    Flow::Continue
+                },
+            )],
+        );
+        definition.tick_ridden = definition
+            .tick_ridden
+            .then([Stage::new(Self::TICK_RIDDEN, Self::tick_ridden_after_super)]);
+        definition.controlling_passenger = definition.controlling_passenger.before(
+            mob::stages::CONTROLLING_PASSENGER,
+            [Stage::new(Self::CARROT_RIDER, Self::rider_with_carrot)],
+        );
         // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
         definition.construct = definition.construct.before(
             animal::PATHFINDING_MALUS,
@@ -231,14 +271,17 @@ impl PigEntity {
     }
 
     /// `Pig.tickRidden`: face where the rider looks and run the boost.
-    fn living_tick_ridden(&self, controller: &Player, _ridden_input: DVec3) {
-        let (yaw, pitch) = controller.rotation();
+    /// `Pig.tickRidden` after `super`: faces where the rider looks and ticks
+    /// the boost.
+    fn tick_ridden_after_super(&self, ctx: &mut TickRiddenCtx<'_>) -> Flow {
+        let (yaw, pitch) = ctx.controller.rotation();
         self.set_rotation((yaw, pitch * 0.5));
         self.base.set_old_yaw_to_current();
         let yaw = self.rotation().0;
         self.set_y_body_rot(yaw);
         self.set_y_head_rot(yaw);
         self.tick_boost();
+        Flow::Continue
     }
 }
 
@@ -297,8 +340,7 @@ impl PigEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         apply_implicit_item_components: Self::entity_apply_implicit_item_components,
         play_step_sound: Self::entity_play_step_sound,
-        controlling_passenger: Self::entity_controlling_passenger,
-        ..mob::entity_props()
+        ..animal::entity_props()
     };
 
     fn entity_apply_implicit_item_components(&self, item_stack: &ItemStack) {
@@ -314,9 +356,9 @@ impl PigEntity {
         self.play_sound(self.sound_set().step_sound, 0.15, 1.0);
     }
 
-    /// `Pig.getControllingPassenger`: a rider holding a carrot on a stick steers
-    /// a saddled pig.
-    fn entity_controlling_passenger(&self) -> Option<SharedEntity> {
+    /// `Pig.getControllingPassenger` before `super`: a rider holding a carrot
+    /// on a stick steers a saddled pig.
+    fn rider_with_carrot(&self, ctx: &mut ControllingPassengerCtx<'_>) -> Flow {
         if self.mob().is_saddled()
             && let Some(passenger) = self.first_passenger()
             && passenger.as_player().is_some_and(|player| {
@@ -325,9 +367,10 @@ impl PigEntity {
                 })
             })
         {
-            return Some(passenger);
+            ctx.result = Some(passenger);
+            return Flow::Stop;
         }
-        self.mob().controlling_passenger_mob()
+        Flow::Continue
     }
 }
 

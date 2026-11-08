@@ -31,9 +31,37 @@ pub trait EntityRiding: Entity {
         !self.is_discrete() && self.base().boarding_cooldown() <= 0
     }
 
-    /// Default for [`Entity::stop_riding`].
-    fn stop_riding_default(&self) {
+    /// Default for [`Entity::remove_vehicle`].
+    fn remove_vehicle_default(&self) {
+        let Some(old_vehicle) = self.vehicle() else {
+            return;
+        };
         self.base().stop_riding();
+        if self
+            .removal_reason()
+            .is_none_or(RemovalReason::should_destroy)
+            && let Some(world) = self.level()
+        {
+            world.game_event_at(
+                &vanilla_game_events::ENTITY_DISMOUNT,
+                old_vehicle.position(),
+                &GameEventContext::new(Some(self.as_entity_event_source()), None),
+            );
+        }
+    }
+
+    /// Default for [`Entity::dismount_location_for_passenger`]: on top of
+    /// this vehicle.
+    fn dismount_location_for_passenger_default(&self, _passenger: &Living<'_>) -> DVec3 {
+        let position = self.position();
+        DVec3::new(position.x, self.bounding_box().max_y(), position.z)
+    }
+
+    /// Dismounts every passenger from this entity.
+    fn eject_passengers(&self) {
+        for passenger in self.passengers().into_iter().rev() {
+            passenger.stop_riding();
+        }
     }
 
     /// Default for [`Entity::start_riding`].
@@ -84,11 +112,6 @@ pub trait EntityRiding: Entity {
     /// Gets this entity's first direct passenger.
     fn first_passenger(&self) -> Option<SharedEntity> {
         self.base().first_passenger()
-    }
-
-    /// Default for [`Entity::controlling_passenger`].
-    fn controlling_passenger_default(&self) -> Option<SharedEntity> {
-        None
     }
 
     /// Returns whether this entity can control a vehicle it is riding.
@@ -149,10 +172,8 @@ pub trait EntityRiding: Entity {
         )
     }
 
-    /// Returns this vehicle's passenger attachment point.
-    ///
-    /// Mirrors vanilla `Entity.getPassengerAttachmentPoint` for the base entity class.
-    fn passenger_attachment_point(&self, passenger: &dyn Entity) -> DVec3 {
+    /// Default for [`Entity::passenger_attachment_point`].
+    fn passenger_attachment_point_default(&self, passenger: &dyn Entity) -> DVec3 {
         let dimensions = self.base().dimensions();
         let passenger_index = self.passenger_index(passenger).unwrap_or_default();
         dimensions.attachments.get_clamped(
@@ -166,11 +187,6 @@ pub trait EntityRiding: Entity {
     /// Returns the world position where `passenger` should ride this vehicle.
     fn passenger_riding_position(&self, passenger: &dyn Entity) -> DVec3 {
         self.position() + self.passenger_attachment_point(passenger)
-    }
-
-    /// Default for [`Entity::position_rider`].
-    fn position_rider_default(&self, passenger: &dyn Entity) {
-        position_rider_default(self, passenger);
     }
 
     /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.

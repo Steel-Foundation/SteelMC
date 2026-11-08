@@ -1,7 +1,7 @@
-//! Rotation helpers for `DVec3` using Steel trig lookup table.
+//! `DVec3` helpers with vanilla `net.minecraft.world.phys.Vec3` semantics.
 //!
-//! Port of `net.minecraft.world.phys.Vec3`'s axis rotations, with X and Z using
-//! a different rotation direction than `glam`'s builtin methods.
+//! The axis rotations use Steel's trig lookup table, with X and Z rotating in
+//! a different direction than `glam`'s builtin methods.
 
 use glam::DVec3;
 
@@ -47,6 +47,19 @@ pub fn z_rot(vector: DVec3, radians: f32) -> DVec3 {
         vector.y * cos - vector.x * sin,
         vector.z,
     )
+}
+
+/// Vanilla `Vec3.normalize`: the zero vector below a length of `1.0E-5F`, where
+/// `glam`'s `normalize` would return NaN for zero.
+#[inline]
+#[must_use]
+pub fn normalize(vector: DVec3) -> DVec3 {
+    let length = vector.length();
+    if length < f64::from(1.0e-5_f32) {
+        DVec3::ZERO
+    } else {
+        vector / length
+    }
 }
 
 #[cfg(test)]

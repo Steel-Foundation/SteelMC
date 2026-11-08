@@ -1,7 +1,11 @@
 //! Vanilla Chicken entity with variant + sound-variant parity, wing-flap
 //! slow-fall, and periodic egg-laying behavior.
 
+use crate::entity::component::definition::BaseExperienceRewardCtx;
+use crate::entity::component::definition::PositionRiderCtx;
+use crate::entity::component::pipeline::Flow;
 use crate::entity::prelude::*;
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -23,21 +27,21 @@ use steel_registry::{
 use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::entity::EntityProps;
 use crate::entity::ageable::{self, Age, AgeableProps};
 use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
     TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::ai::path::PathType;
-use crate::entity::animal::{self, Animal, Breeding, BreedingProps};
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::animal::{self, Breeding, BreedingProps};
+use crate::entity::component::definition::Definition;
 use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, LivingEntityBase, LivingProps, MobBase, MobProps,
-    SpawnRule, position_rider_default,
+    SpawnRule,
 };
-use crate::entity::{EntityProps, mob};
 
 /// Runtime state unique to chickens: wing-flap animation, egg timer, and jockey flag.
 #[derive(Debug, Clone, Copy)]
@@ -104,13 +108,6 @@ impl ChickenEntity {
         hurt_sound: |chicken, _| Some(chicken.current_sound_set().hurt_sound),
         death_sound: |chicken| Some(chicken.current_sound_set().death_sound),
         chicken_loot_variant: |chicken| Some(&chicken.variant().key),
-        base_experience_reward: |chicken| {
-            if chicken.is_chicken_jockey() {
-                10
-            } else {
-                Animal::base_experience_reward()
-            }
-        },
         ..animal::living_props()
     };
     const MOB: MobProps<Self> = MobProps {
@@ -124,11 +121,32 @@ impl ChickenEntity {
     const FLAP: StageId = StageId("chicken.flap");
     const LAY_EGG: StageId = StageId("chicken.lay_egg");
 
+    const RIDER_FACING: StageId = StageId("chicken.rider_facing");
+    const JOCKEY_XP: StageId = StageId("chicken.jockey_xp");
+
     /// Vanilla `Chicken`: the animal chains plus flapping and egg laying
     /// after `Animal.aiStep`, and variant selection before
     /// `AgeableMob.finalizeSpawn`.
-    fn define() -> MobDefinition<Self> {
+    fn define() -> Definition<Self> {
         let mut definition = animal::definition::<Self>();
+        // `Chicken.getBaseExperienceReward`: jockeys give 10 instead of `super`.
+        definition.base_experience_reward = definition.base_experience_reward.before(
+            animal::BASE_EXPERIENCE_REWARD,
+            [Stage::new(
+                Self::JOCKEY_XP,
+                |chicken: &Self, ctx: &mut BaseExperienceRewardCtx<'_>| {
+                    if chicken.is_chicken_jockey() {
+                        ctx.result = 10;
+                        return Flow::Stop;
+                    }
+                    Flow::Continue
+                },
+            )],
+        );
+        definition.position_rider = definition.position_rider.then([Stage::new(
+            Self::RIDER_FACING,
+            Self::position_rider_after_super,
+        )]);
         // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
         definition.construct = definition
             .construct
@@ -326,8 +344,7 @@ impl ChickenEntity {
         play_step_sound: Self::entity_play_step_sound,
         is_flapping: Self::entity_is_flapping,
         on_flap: Self::entity_on_flap,
-        position_rider: Self::entity_position_rider,
-        ..mob::entity_props()
+        ..animal::entity_props()
     };
 
     fn entity_apply_implicit_item_components(&self, item_stack: &ItemStack) {
@@ -354,11 +371,12 @@ impl ChickenEntity {
         state.next_flap = fly_dist + state.flap_speed / 2.0;
     }
 
-    fn entity_position_rider(&self, passenger: &dyn Entity) {
-        position_rider_default(self, passenger);
-        if let Some(living) = passenger.as_living_entity() {
+    /// `Chicken.positionRider` after `super`: the rider faces the chicken's way.
+    fn position_rider_after_super(&self, ctx: &mut PositionRiderCtx<'_>) -> Flow {
+        if let Some(living) = ctx.passenger.as_living_entity() {
             living.set_y_body_rot(self.living().y_body_rot());
         }
+        Flow::Continue
     }
 
     fn save_chicken(&self, nbt: &mut NbtCompound) {
@@ -368,8 +386,11 @@ impl ChickenEntity {
     }
 
     fn load_chicken(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.set_chicken_jockey(nbt.byte("IsChickenJockey").is_some_and(|value| value != 0));
-        if let Some(egg_time) = nbt.int("EggLayTime") {
+        self.set_chicken_jockey(
+            nbt.byte_value("IsChickenJockey")
+                .is_some_and(|value| value != 0),
+        );
+        if let Some(egg_time) = nbt.int_value("EggLayTime") {
             self.set_egg_time(egg_time);
         }
         variant::load(self, nbt);

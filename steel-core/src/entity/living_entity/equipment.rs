@@ -82,26 +82,6 @@ impl Living<'_> {
         has_item
     }
 
-    /// Returns whether vanilla allows this entity to use `slot`.
-    #[must_use]
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn can_use_slot_default(&self, _slot: EquipmentSlot) -> bool {
-        true
-    }
-
-    /// Default for [`Self::can_dispenser_equip_into_slot`]: any slot.
-    #[must_use]
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn can_dispenser_equip_into_slot_default(&self, _slot: EquipmentSlot) -> bool {
-        true
-    }
-
     /// Returns whether a dispenser may auto-equip this item onto this entity:
     /// alive, not a spectator, and the item is dispensable equipment for an
     /// open, usable slot this entity's type accepts.
@@ -144,7 +124,7 @@ impl Living<'_> {
         clippy::unused_self,
         reason = "vanilla's base body; entity types override it through `LivingProps`"
     )]
-    pub fn equip_sound_default(
+    pub(super) fn equip_sound_base(
         &self,
         slot: EquipmentSlot,
         stack: &ItemStack,

@@ -36,9 +36,19 @@ pub trait Leashable: Entity {
     /// Returns the shared leash data (if any).
     fn leash_data(&self) -> &CheckedMutex<Option<LeashData>>;
 
-    /// Returns whether this entity is leashed.
+    /// Returns whether this entity is leashed to an entity, even one that has
+    /// since been dropped; vanilla checks the holder field, not its liveness.
     fn is_leashed(&self) -> bool {
-        self.leash_holder().is_some()
+        self.leash_data()
+            .lock()
+            .as_ref()
+            .is_some_and(LeashData::has_entity_holder)
+    }
+
+    /// Whether the holder entity has been dropped before the leash was
+    /// released: as unreachable as vanilla's removed holder.
+    fn leash_holder_dropped(&self) -> bool {
+        self.is_leashed() && self.leash_holder().is_none()
     }
 
     /// Whether leash data exists, including pending save restoration.
@@ -261,58 +271,62 @@ pub trait Leashable: Entity {
     fn tick_leash(&self) {
         self.restore_leash_from_save();
 
-        if let Some(holder) = self.leash_holder() {
-            if !self.can_interact_with_level() || !holder.can_interact_with_level() {
-                if let Some(world) = self.level()
-                    && world.get_game_rule(&ENTITY_DROPS)
-                {
-                    self.drop_leash();
-                } else {
-                    self.remove_leash();
-                }
-                return;
-            }
-            if let Some(holder) = self.leash_holder()
-                && holder.level().map(|level| level.key.clone())
-                    == self.level().map(|level| level.key.clone())
+        let holder = self.leash_holder();
+        let holder_unreachable = match &holder {
+            Some(holder) => !self.can_interact_with_level() || !holder.can_interact_with_level(),
+            None => self.leash_holder_dropped(),
+        };
+        if holder_unreachable {
+            if let Some(world) = self.level()
+                && world.get_game_rule(&ENTITY_DROPS)
             {
-                let distance_to = self.leash_distance_to(holder.as_ref());
-                self.when_leashed_to(holder.as_ref());
-                let angular_momentum_before_distance_action = self.leash_angular_momentum();
-                if distance_to > self.leash_snap_distance() {
-                    if let Some(world) = self.level() {
-                        world.play_sound_at(
-                            &sound_events::ITEM_LEAD_BREAK,
-                            SoundSource::Neutral,
-                            holder.position(),
-                            1.0,
-                            1.0,
-                            None,
-                        );
-                    }
-                    self.leash_too_far_behaviour();
-                } else if distance_to
-                    > self.leash_elastic_distance()
-                        - f64::from(holder.base().dimensions().width)
-                        - f64::from(self.base().dimensions().width)
-                    && self.check_elastic_interactions(holder.as_ref())
-                {
-                    self.on_elastic_leash_pull();
-                } else {
-                    self.close_range_leash_behaviour(holder.as_ref());
+                self.drop_leash();
+            } else {
+                self.remove_leash();
+            }
+            return;
+        }
+
+        if let Some(holder) = holder
+            && holder.level().map(|level| level.key.clone())
+                == self.level().map(|level| level.key.clone())
+        {
+            let distance_to = self.leash_distance_to(holder.as_ref());
+            self.when_leashed_to(holder.as_ref());
+            let angular_momentum_before_distance_action = self.leash_angular_momentum();
+            if distance_to > self.leash_snap_distance() {
+                if let Some(world) = self.level() {
+                    world.play_sound_at(
+                        &sound_events::ITEM_LEAD_BREAK,
+                        SoundSource::Neutral,
+                        holder.position(),
+                        1.0,
+                        1.0,
+                        None,
+                    );
                 }
-                if !self.apply_leash_angular_momentum()
-                    && let Some(angular_momentum) = angular_momentum_before_distance_action
-                {
-                    self.rotate_by_leash_angular_momentum(angular_momentum);
-                }
+                self.leash_too_far_behaviour();
+            } else if distance_to
+                > self.leash_elastic_distance()
+                    - f64::from(holder.base().dimensions().width)
+                    - f64::from(self.base().dimensions().width)
+                && self.check_elastic_interactions(holder.as_ref())
+            {
+                self.on_elastic_leash_pull();
+            } else {
+                self.close_range_leash_behaviour(holder.as_ref());
+            }
+            if !self.apply_leash_angular_momentum()
+                && let Some(angular_momentum) = angular_momentum_before_distance_action
+            {
+                self.rotate_by_leash_angular_momentum(angular_momentum);
             }
         }
     }
 
     /// Breaks the leash and drops a lead item.
     fn drop_leash(&self) {
-        if self.leash_holder().is_none() {
+        if !self.is_leashed() {
             return;
         }
 
@@ -326,10 +340,13 @@ pub trait Leashable: Entity {
 
     /// Removes the leash without dropping a lead item.
     fn remove_leash(&self) {
-        if self.leash_holder().is_some()
-            && let Some(holder) = self.remove_leash_state()
-        {
-            self.on_leash_removed();
+        if !self.is_leashed() {
+            return;
+        }
+
+        let holder = self.remove_leash_state();
+        self.on_leash_removed();
+        if let Some(holder) = holder {
             holder.notify_leashee_removed(self.as_entity_event_source());
         }
     }
@@ -397,6 +414,10 @@ impl LeashData {
             return None;
         };
         entity.upgrade()
+    }
+
+    pub(super) const fn has_entity_holder(&self) -> bool {
+        matches!(self.holder, LeashHolder::Entity(_))
     }
 
     pub(super) const fn attachment(&self) -> Option<LeashAttachment> {

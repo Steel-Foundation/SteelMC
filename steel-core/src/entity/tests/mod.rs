@@ -1,5 +1,10 @@
 use crate::entity::component::Has;
+use crate::entity::component::definition::ControllingPassengerCtx;
+use crate::entity::component::definition::{Definition, DefinitionEntries, HurtCtx};
+use crate::entity::component::pipeline::Pipeline;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::test_support::synced_with_health;
+use std::sync::LazyLock;
 use std::{
     io::Cursor,
     sync::{Arc, Weak},
@@ -867,7 +872,6 @@ crate::entity::impl_test_downcast_type!(LivingFluidTestEntity);
 
 impl LivingFluidTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        hurt: Self::entity_hurt,
         is_flying_player: |entity| entity.flying_player,
         is_in_wall: |entity| {
             !entity.living().is_sleeping()
@@ -876,18 +880,38 @@ impl LivingFluidTestEntity {
         ..living_entity::entity_props()
     };
 
-    fn entity_hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+    /// Records each hit before the living layer takes it.
+    fn record_hurt(&self, ctx: &mut HurtCtx<'_>) -> Flow {
         self.damage_types
             .lock()
-            .push(source.damage_type.key.clone());
-        self.damage_world_keys.lock().push(world.key.to_string());
-        self.living().hurt_server(world, source, amount)
+            .push(ctx.source.damage_type.key.clone());
+        self.damage_world_keys
+            .lock()
+            .push(ctx.world.key.to_string());
+        Flow::Continue
     }
 }
 
 impl Entity for LivingFluidTestEntity {
     fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
         (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+    }
+
+    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+        static DEFINITION: LazyLock<Definition<LivingFluidTestEntity>> = LazyLock::new(|| {
+            let living = living_entity::definition();
+            Definition {
+                hurt: living.hurt.before(
+                    living_entity::HURT,
+                    [Stage::new(
+                        StageId("test.record_hurt"),
+                        LivingFluidTestEntity::record_hurt,
+                    )],
+                ),
+                ..living
+            }
+        });
+        &*DEFINITION
     }
 
     fn base(&self) -> &EntityBase {
@@ -1247,10 +1271,7 @@ impl ControlledVehicleTestEntity {
 crate::entity::impl_test_downcast_type!(ControlledVehicleTestEntity);
 
 impl ControlledVehicleTestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps {
-        controlling_passenger: |entity| entity.controller.clone(),
-        ..EntityProps::new()
-    };
+    const ENTITY: EntityProps<Self> = EntityProps::new();
 }
 
 impl Entity for ControlledVehicleTestEntity {
@@ -1264,6 +1285,22 @@ impl Entity for ControlledVehicleTestEntity {
 
     fn entity_hooks(&self) -> &'static dyn EntityHooks {
         &Self::ENTITY
+    }
+
+    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+        static DEFINITION: LazyLock<Definition<ControlledVehicleTestEntity>> =
+            LazyLock::new(|| Definition {
+                controlling_passenger: Pipeline::new([Stage::new(
+                    StageId("test.controller"),
+                    |vehicle: &ControlledVehicleTestEntity,
+                     ctx: &mut ControllingPassengerCtx<'_>| {
+                        ctx.result = vehicle.controller.clone();
+                        Flow::Continue
+                    },
+                )]),
+                ..Definition::new()
+            });
+        &*DEFINITION
     }
 }
 

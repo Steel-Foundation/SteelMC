@@ -1,6 +1,8 @@
 //! Vanilla `Interaction`: an invisible box that records player clicks.
 
 use std::sync::Weak;
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -15,6 +17,9 @@ use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
 use uuid::Uuid;
 
 use crate::behavior::InteractionResult;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::InteractCtx;
+use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityBaseLoad, EntityProps, SharedEntity};
 use crate::player::Player;
@@ -30,7 +35,7 @@ const DEFAULT_DIMENSIONS: EntityDimensions =
 #[entity_behavior(class = "Interaction")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_interaction, load = Self::load_interaction)]
-#[entity(key = "steel:entity/interaction")]
+#[entity(key = "steel:entity/interaction", definition = Self::define)]
 pub struct InteractionEntity {
     #[entity(base)]
     base: EntityBase,
@@ -48,15 +53,28 @@ struct RecordedActions {
 }
 
 impl InteractionEntity {
+    const INTERACT: StageId = StageId("interaction.interact");
+
+    /// `Interaction.tick` and `Interaction.interact` never call `super`.
+    fn define() -> Definition<Self> {
+        Definition {
+            interact: Pipeline::new([Stage::new(
+                Self::INTERACT,
+                |interaction: &Self, ctx: &mut InteractCtx<'_>| {
+                    ctx.result = interaction.record_interaction(ctx.player);
+                    Flow::Continue
+                },
+            )]),
+            ..Definition::replacing_tick([])
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |_, _| {},
-        hurt: |_, _, _, _| false,
         is_pickable: |_| true,
         can_be_hit_by_projectile: |_| false,
         piston_push_reaction: |_| PushReaction::IgnoreEntity,
         is_ignoring_block_triggers: |_| true,
         skip_attack_interaction: Self::entity_skip_attack_interaction,
-        interact: |interaction, player, _, _| interaction.record_interaction(player),
         dimensions_for_pose: |interaction, _| {
             let data = interaction.entity_data.lock();
             EntityDimensions::with_default_eye_height(*data.width.get(), *data.height.get())
@@ -168,9 +186,9 @@ impl InteractionEntity {
 
     fn load_interaction(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.with_entity_data(|data| {
-            data.set_width(nbt.float("width").unwrap_or(DEFAULT_WIDTH));
-            data.set_height(nbt.float("height").unwrap_or(DEFAULT_HEIGHT));
-            data.set_response(nbt.byte("response").is_some_and(|value| value != 0));
+            data.set_width(nbt.float_value("width").unwrap_or(DEFAULT_WIDTH));
+            data.set_height(nbt.float_value("height").unwrap_or(DEFAULT_HEIGHT));
+            data.set_response(nbt.byte_value("response").is_some_and(|value| value != 0));
         });
         let mut actions = self.actions.lock();
         actions.attack = nbt.get("attack").and_then(PlayerAction::from_nbt_tag);
@@ -204,7 +222,7 @@ impl FromNbtTag for PlayerAction {
         let compound = tag.compound()?;
         Some(Self {
             player: Uuid::from_int_array(&compound.int_array("player")?)?,
-            timestamp: compound.long("timestamp")?,
+            timestamp: compound.get("timestamp")?.codec_i64()?,
         })
     }
 }

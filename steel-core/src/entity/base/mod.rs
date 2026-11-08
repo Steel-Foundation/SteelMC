@@ -993,8 +993,22 @@ impl EntityBase {
     /// Marks the entity as removed with the given reason.
     ///
     /// Notifies the level callback on first removal, and returns whether this
-    /// was the first removal.
+    /// was the first removal. [`Entity::set_removed`] runs the riding chains
+    /// between [`Self::mark_removed`] and [`Self::finish_removal`] instead.
     pub fn set_removed(&self, reason: RemovalReason) -> bool {
+        let Some(callback) = self.mark_removed(reason) else {
+            return false;
+        };
+        self.finish_removal(callback, reason);
+        true
+    }
+
+    /// Records the removal and returns the level callback to notify, or
+    /// `None` when the entity was already removed.
+    pub(crate) fn mark_removed(
+        &self,
+        reason: RemovalReason,
+    ) -> Option<Arc<dyn EntityLevelCallback>> {
         let (callback, released) = {
             let mut lifecycle = self.lifecycle.lock();
             if lifecycle.removal_reason.is_some() {
@@ -1009,14 +1023,19 @@ impl EntityBase {
             }
         };
         drop(released);
+        callback
+    }
 
-        let Some(callback) = callback else {
-            return false;
-        };
+    /// Drops whatever riding relationships are left, notifies `callback` and
+    /// disconnects the entity from its world.
+    pub(crate) fn finish_removal(
+        &self,
+        callback: Arc<dyn EntityLevelCallback>,
+        reason: RemovalReason,
+    ) {
         self.detach_from_relationships(reason);
         callback.on_remove(reason);
         *self.level_callback.lock() = Arc::new(NullEntityCallback);
-        true
     }
 
     fn detach_from_relationships(&self, reason: RemovalReason) {

@@ -10,8 +10,9 @@ use steel_registry::sound_events;
 use steel_registry::vanilla_game_rules::MOB_DROPS;
 use steel_utils::BlockPos;
 
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::Definition;
 use crate::entity::component::pipeline::{Stage, StageId};
+use crate::entity::living_entity;
 use crate::entity::mob::{self, LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE, Parts};
 use crate::entity::prelude::*;
 use crate::entity::{Entity, EntityProps, EntitySpawnReason, LivingProps, Mob, MobBase, MobProps};
@@ -28,15 +29,16 @@ pub const NO_ACTION_TIME: StageId = StageId("monster.no_action_time");
 
 /// Vanilla's chains for a monster type: `LivingEntity` → `Mob` → `Monster`.
 #[must_use]
-pub fn definition<E: Parts>() -> MobDefinition<E> {
+pub fn definition<E: Parts>() -> Definition<E> {
     let mut definition = mob::stages::definition::<E>();
     definition.construct = definition
         .construct
         .then([Stage::effect(XP, |mob_base: &MobBase| {
             mob_base.set_xp_reward(5);
         })]);
+    // `Monster.aiStep` updates the idle time before `super.aiStep()`.
     definition.ai_step = definition.ai_step.before(
-        mob::stages::AI_STEP,
+        living_entity::AI_STEP,
         [Stage::effect(NO_ACTION_TIME, |monster: &E| {
             update_no_action_time(monster);
         })],
@@ -60,14 +62,13 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
 #[must_use]
 pub const fn mob_props<E: Parts>() -> MobProps<E> {
     MobProps {
-        is_pathfinder: |_| true,
         walk_target_value: |monster, pos| {
             monster
                 .level()
                 .map_or(0.0, |world| -world.pathfinding_cost_from_light_levels(pos))
         },
         is_preventing_player_rest: |_, _, _| true,
-        ..MobProps::new()
+        ..mob::pathfinder_mob_props()
     }
 }
 

@@ -1,6 +1,9 @@
 use std::fmt;
 use std::ops::BitOr;
 
+use steel_utils::locks::CheckedMutex;
+
+use super::reduced_tick_delay;
 use crate::entity::{Mob, SharedEntity};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,21 +102,34 @@ pub trait Goal: Send {
         false
     }
 
+    /// `Goal.adjustedTickDelay`: goals ticked every tick keep the full delay.
+    fn adjusted_tick_delay(&self, ticks: i32) -> i32 {
+        if self.requires_update_every_tick() {
+            ticks
+        } else {
+            reduced_tick_delay(ticks)
+        }
+    }
+
     fn tick(&mut self, _mob: &Mob<'_>, _entity: &SharedEntity) {}
 }
 
 struct WrappedGoal {
     priority: i32,
-    goal: Box<dyn Goal>,
     running: bool,
+    /// Vanilla's `instanceof PanicGoal`, readable while the goal is checked out.
+    panic_goal: bool,
+    /// `None` while the goal runs a callback outside the selector's lock.
+    goal: Option<Box<dyn Goal>>,
 }
 
 impl WrappedGoal {
     fn new(priority: i32, goal: Box<dyn Goal>) -> Self {
         Self {
             priority,
-            goal,
             running: false,
+            panic_goal: goal.is_panic_goal(),
+            goal: Some(goal),
         }
     }
 
@@ -121,55 +137,38 @@ impl WrappedGoal {
         self.running
     }
 
+    /// Panics while the goal runs a callback: like vanilla's goal set, the
+    /// selector cannot be inspected or changed from inside its own goals.
     fn goal(&self) -> &dyn Goal {
-        self.goal.as_ref()
+        let Some(goal) = &self.goal else {
+            panic!("goal selector used from inside one of its goals");
+        };
+        goal.as_ref()
     }
 
     fn controls(&self) -> GoalControls {
-        self.goal.controls()
+        self.goal().controls()
     }
 
     fn can_be_replaced_by(&self, candidate_priority: i32) -> bool {
-        self.goal.is_interruptable() && candidate_priority < self.priority
-    }
-
-    fn can_use(&mut self, mob: &Mob<'_>) -> bool {
-        self.goal.can_use(mob)
-    }
-
-    fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
-        self.goal.can_continue_to_use(mob)
-    }
-
-    fn start(&mut self, mob: &Mob<'_>) {
-        if self.running {
-            return;
-        }
-        self.running = true;
-        self.goal.start(mob);
-    }
-
-    fn stop(&mut self, mob: &Mob<'_>) {
-        if !self.running {
-            return;
-        }
-        self.running = false;
-        self.goal.stop(mob);
-    }
-
-    fn tick(&mut self, mob: &Mob<'_>, entity: &SharedEntity) {
-        self.goal.tick(mob, entity);
+        self.goal().is_interruptable() && candidate_priority < self.priority
     }
 
     fn requires_update_every_tick(&self) -> bool {
-        self.goal.requires_update_every_tick()
+        self.goal().requires_update_every_tick()
     }
 
-    fn is_panic_goal(&self) -> bool {
-        self.goal.is_panic_goal()
+    const fn is_panic_goal(&self) -> bool {
+        self.panic_goal
     }
 }
 
+/// Vanilla `GoalSelector`.
+///
+/// Goals run their callbacks checked out of the selector, with its
+/// [`CheckedMutex`] unlocked, so a goal may read its own mob's selector.
+/// Adding goals from a callback works; removing them panics, as vanilla's
+/// goal set would.
 pub struct GoalSelector {
     available_goals: Vec<WrappedGoal>,
     disabled_controls: GoalControls,
@@ -194,66 +193,122 @@ impl GoalSelector {
 
     /// Stops and removes matching goals. `mob` supplies the stop-hook context.
     pub fn remove_all_goals(
-        &mut self,
+        selector: &CheckedMutex<Self>,
         mob: &Mob<'_>,
         mut predicate: impl FnMut(&dyn Goal) -> bool,
     ) {
-        for wrapped in &mut self.available_goals {
-            if predicate(wrapped.goal()) && wrapped.is_running() {
-                wrapped.stop(mob);
-            }
+        let count = selector.lock().available_goals.len();
+        for index in 0..count {
+            let Some(mut goal) = Self::check_out(selector, index, |wrapped| {
+                wrapped.is_running() && predicate(wrapped.goal())
+            }) else {
+                continue;
+            };
+            goal.stop(mob);
+            Self::check_in(selector, index, goal, false);
         }
-        self.available_goals
+        selector
+            .lock()
+            .available_goals
             .retain(|wrapped| !predicate(wrapped.goal()));
     }
 
-    pub fn tick(&mut self, mob: &Mob<'_>, entity: &SharedEntity) {
-        for index in 0..self.available_goals.len() {
-            let should_stop = {
-                let disabled_controls = self.disabled_controls;
-                let goal = &mut self.available_goals[index];
-                goal.is_running()
-                    && (goal.controls().intersects(disabled_controls)
-                        || !goal.can_continue_to_use(mob))
+    /// Stops the running goals that cannot continue, starts the ones that
+    /// can, then ticks every running goal.
+    pub fn tick(selector: &CheckedMutex<Self>, mob: &Mob<'_>, entity: &SharedEntity) {
+        let (count, disabled_controls) = {
+            let selector = selector.lock();
+            (selector.available_goals.len(), selector.disabled_controls)
+        };
+
+        for index in 0..count {
+            let Some(mut goal) = Self::check_out(selector, index, WrappedGoal::is_running) else {
+                continue;
             };
-            if should_stop {
-                self.available_goals[index].stop(mob);
+            let keep =
+                !goal.controls().intersects(disabled_controls) && goal.can_continue_to_use(mob);
+            if !keep {
+                goal.stop(mob);
             }
+            Self::check_in(selector, index, goal, keep);
         }
 
-        for index in 0..self.available_goals.len() {
-            if !self.can_start_goal(index) {
+        for index in 0..count {
+            if !selector.lock().can_start_goal(index) {
                 continue;
             }
-            if !self.available_goals[index].can_use(mob) {
+            let Some(mut goal) = Self::check_out(selector, index, |_| true) else {
+                continue;
+            };
+            if !goal.can_use(mob) {
+                Self::check_in(selector, index, goal, false);
                 continue;
             }
 
-            let controls = self.available_goals[index].controls();
-            for control in controls.iter() {
-                if let Some(current_index) = self.running_goal_index_for(control) {
-                    self.available_goals[current_index].stop(mob);
-                }
+            for control in goal.controls().iter() {
+                // The checked-out goal is not running, so the search never
+                // needs its controls.
+                let Some(current_index) = selector.lock().running_goal_index_for(control) else {
+                    continue;
+                };
+                let Some(mut current) =
+                    Self::check_out(selector, current_index, WrappedGoal::is_running)
+                else {
+                    continue;
+                };
+                current.stop(mob);
+                Self::check_in(selector, current_index, current, false);
             }
-            self.available_goals[index].start(mob);
+            goal.start(mob);
+            Self::check_in(selector, index, goal, true);
         }
 
-        self.tick_running_goals(mob, entity, true);
+        Self::tick_running_goals(selector, mob, entity, true);
     }
 
     pub fn tick_running_goals(
-        &mut self,
+        selector: &CheckedMutex<Self>,
         mob: &Mob<'_>,
         entity: &SharedEntity,
         force_tick_all_running_goals: bool,
     ) {
-        for goal in &mut self.available_goals {
-            if goal.is_running()
-                && (force_tick_all_running_goals || goal.requires_update_every_tick())
-            {
-                goal.tick(mob, entity);
-            }
+        let count = selector.lock().available_goals.len();
+        for index in 0..count {
+            let Some(mut goal) = Self::check_out(selector, index, |wrapped| {
+                wrapped.is_running()
+                    && (force_tick_all_running_goals || wrapped.requires_update_every_tick())
+            }) else {
+                continue;
+            };
+            goal.tick(mob, entity);
+            Self::check_in(selector, index, goal, true);
         }
+    }
+
+    /// Takes the goal at `index` out of the selector when `select` accepts
+    /// it, so its callback can run with the selector unlocked.
+    fn check_out(
+        selector: &CheckedMutex<Self>,
+        index: usize,
+        select: impl FnOnce(&WrappedGoal) -> bool,
+    ) -> Option<Box<dyn Goal>> {
+        let mut selector = selector.lock();
+        let wrapped = selector.available_goals.get_mut(index)?;
+        if !select(wrapped) {
+            return None;
+        }
+        let Some(goal) = wrapped.goal.take() else {
+            panic!("goal selector ticked from inside one of its goals");
+        };
+        Some(goal)
+    }
+
+    /// Returns a checked-out goal with its new running state.
+    fn check_in(selector: &CheckedMutex<Self>, index: usize, goal: Box<dyn Goal>, running: bool) {
+        let mut selector = selector.lock();
+        let wrapped = &mut selector.available_goals[index];
+        wrapped.goal = Some(goal);
+        wrapped.running = running;
     }
 
     pub const fn disable_control(&mut self, control: GoalControl) {
@@ -373,7 +428,7 @@ mod tests {
     use super::*;
 
     use crate::entity::component::Has;
-    use crate::entity::component::definition::MobDefinition;
+    use crate::entity::component::definition::{Definition, DefinitionEntries};
     use crate::entity::prelude::*;
     use crate::entity::{Entity, EntityBase, LivingEntityBase, Mob, MobBase};
     use crate::entity::{EntityHooks, EntityProps};
@@ -417,8 +472,8 @@ mod tests {
             ..MobProps::new()
         };
 
-        fn definition() -> &'static MobDefinition<Self> {
-            static DEFINITION: LazyLock<MobDefinition<TestPathfinderMob>> =
+        fn definition() -> &'static Definition<Self> {
+            static DEFINITION: LazyLock<Definition<TestPathfinderMob>> =
                 LazyLock::new(mob::stages::definition);
             &DEFINITION
         }
@@ -454,6 +509,10 @@ mod tests {
         fn entity_hooks(&self) -> &'static dyn EntityHooks {
             &Self::ENTITY
         }
+
+        fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+            Self::definition()
+        }
     }
 
     impl TestPathfinderMob {
@@ -483,6 +542,7 @@ mod tests {
         tick_count: Option<&'static AtomicUsize>,
         can_use_once: bool,
         panic_goal: bool,
+        asserts_panicking: bool,
     }
 
     impl StaticGoal {
@@ -496,7 +556,13 @@ mod tests {
                 tick_count: None,
                 can_use_once: false,
                 panic_goal: false,
+                asserts_panicking: false,
             }
+        }
+
+        const fn asserting_panicking_while_ticking(mut self) -> Self {
+            self.asserts_panicking = true;
+            self
         }
 
         const fn non_interruptable(mut self) -> Self {
@@ -562,9 +628,12 @@ mod tests {
             self.requires_update_every_tick
         }
 
-        fn tick(&mut self, _mob: &Mob<'_>, _entity: &SharedEntity) {
+        fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
             if let Some(tick_count) = self.tick_count {
                 tick_count.fetch_add(1, Ordering::Relaxed);
+            }
+            if self.asserts_panicking {
+                assert!(mob.is_panicking(), "a panic goal runs beside this one");
             }
         }
     }
@@ -575,13 +644,18 @@ mod tests {
     fn lower_priority_goal_replaces_running_goal_for_same_control() {
         let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
-        let mut selector = GoalSelector::new();
-        selector.add_goal(5, StaticGoal::new(GoalControls::MOVE));
-        selector.tick(&mob.mob(), &mob_entity);
+        let selector = CheckedMutex::new(GoalSelector::new());
+        selector
+            .lock()
+            .add_goal(5, StaticGoal::new(GoalControls::MOVE));
+        GoalSelector::tick(&selector, &mob.mob(), &mob_entity);
 
-        selector.add_goal(3, StaticGoal::new(GoalControls::MOVE));
-        selector.tick(&mob.mob(), &mob_entity);
+        selector
+            .lock()
+            .add_goal(3, StaticGoal::new(GoalControls::MOVE));
+        GoalSelector::tick(&selector, &mob.mob(), &mob_entity);
 
+        let selector = selector.lock();
         assert_eq!(selector.running_goal_count(), 1);
         assert!(selector.is_priority_running(3));
     }
@@ -590,13 +664,18 @@ mod tests {
     fn non_interruptable_goal_blocks_replacement() {
         let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
-        let mut selector = GoalSelector::new();
-        selector.add_goal(5, StaticGoal::new(GoalControls::MOVE).non_interruptable());
-        selector.tick(&mob.mob(), &mob_entity);
+        let selector = CheckedMutex::new(GoalSelector::new());
+        selector
+            .lock()
+            .add_goal(5, StaticGoal::new(GoalControls::MOVE).non_interruptable());
+        GoalSelector::tick(&selector, &mob.mob(), &mob_entity);
 
-        selector.add_goal(3, StaticGoal::new(GoalControls::MOVE));
-        selector.tick(&mob.mob(), &mob_entity);
+        selector
+            .lock()
+            .add_goal(3, StaticGoal::new(GoalControls::MOVE));
+        GoalSelector::tick(&selector, &mob.mob(), &mob_entity);
 
+        let selector = selector.lock();
         assert_eq!(selector.running_goal_count(), 1);
         assert!(selector.is_priority_running(5));
     }
@@ -605,14 +684,16 @@ mod tests {
     fn disabled_control_stops_running_goal() {
         let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
-        let mut selector = GoalSelector::new();
-        selector.add_goal(5, StaticGoal::new(GoalControls::MOVE));
-        selector.tick(&mob.mob(), &mob_entity);
+        let selector = CheckedMutex::new(GoalSelector::new());
+        selector
+            .lock()
+            .add_goal(5, StaticGoal::new(GoalControls::MOVE));
+        GoalSelector::tick(&selector, &mob.mob(), &mob_entity);
 
-        selector.disable_control(GoalControl::Move);
-        selector.tick(&mob.mob(), &mob_entity);
+        selector.lock().disable_control(GoalControl::Move);
+        GoalSelector::tick(&selector, &mob.mob(), &mob_entity);
 
-        assert_eq!(selector.running_goal_count(), 0);
+        assert_eq!(selector.lock().running_goal_count(), 0);
     }
 
     #[test]
@@ -620,16 +701,16 @@ mod tests {
         RUNNING_TICK_COUNT.store(0, Ordering::Relaxed);
         let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
-        let mut selector = GoalSelector::new();
-        selector.add_goal(
+        let selector = CheckedMutex::new(GoalSelector::new());
+        selector.lock().add_goal(
             5,
             StaticGoal::new(GoalControls::MOVE)
                 .with_update_every_tick()
                 .with_tick_counter(&RUNNING_TICK_COUNT),
         );
-        selector.tick(&mob.mob(), &mob_entity);
+        GoalSelector::tick(&selector, &mob.mob(), &mob_entity);
 
-        selector.tick_running_goals(&mob.mob(), &mob_entity, false);
+        GoalSelector::tick_running_goals(&selector, &mob.mob(), &mob_entity, false);
 
         assert_eq!(RUNNING_TICK_COUNT.load(Ordering::Relaxed), 2);
     }
@@ -638,71 +719,91 @@ mod tests {
     fn cleanup_stops_goal_that_can_no_longer_continue() {
         let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
-        let mut selector = GoalSelector::new();
-        selector.add_goal(
+        let selector = CheckedMutex::new(GoalSelector::new());
+        selector.lock().add_goal(
             5,
             StaticGoal::new(GoalControls::MOVE)
                 .with_can_continue(false)
                 .with_can_use_once(),
         );
 
-        selector.tick(&mob.mob(), &mob_entity);
-        selector.tick(&mob.mob(), &mob_entity);
+        GoalSelector::tick(&selector, &mob.mob(), &mob_entity);
+        GoalSelector::tick(&selector, &mob.mob(), &mob_entity);
 
-        assert_eq!(selector.running_goal_count(), 0);
+        assert_eq!(selector.lock().running_goal_count(), 0);
     }
 
     #[test]
     fn running_panic_goal_is_visible_to_pathfinder_mob() {
         let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
-        mob.mob()
-            .mob_base()
-            .goal_selector()
+        let selector = mob.mob().mob_base().goal_selector();
+        selector
             .lock()
             .add_goal(1, StaticGoal::new(GoalControls::MOVE).with_panic_goal());
 
         assert!(!mob.mob().is_panicking());
 
-        mob.mob()
-            .mob_base()
-            .goal_selector()
-            .lock()
-            .tick(&mob.mob(), &mob_entity);
+        GoalSelector::tick(selector, &mob.mob(), &mob_entity);
 
-        assert!(
-            mob.mob()
-                .mob_base()
-                .goal_selector()
-                .lock()
-                .has_running_panic_goal()
-        );
+        assert!(selector.lock().has_running_panic_goal());
         assert!(mob.mob().is_panicking());
+    }
+
+    /// A goal reads its own mob's selector while it ticks, as vanilla goals
+    /// may; the selector is unlocked around every callback.
+    #[test]
+    fn goal_can_read_its_own_selector_while_ticking() {
+        let mob = Arc::new(TestPathfinderMob::new());
+        let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
+        let selector = mob.mob().mob_base().goal_selector();
+        {
+            let mut selector = selector.lock();
+            selector.add_goal(1, StaticGoal::new(GoalControls::MOVE).with_panic_goal());
+            selector.add_goal(
+                2,
+                StaticGoal::new(GoalControls::LOOK).asserting_panicking_while_ticking(),
+            );
+        }
+
+        GoalSelector::tick(selector, &mob.mob(), &mob_entity);
+        GoalSelector::tick_running_goals(selector, &mob.mob(), &mob_entity, true);
+
+        assert_eq!(selector.lock().running_goal_count(), 2);
     }
 
     #[test]
     fn remove_all_goals_stops_matching_running_goals_and_keeps_others() {
         let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
-        let mut selector = GoalSelector::new();
-        selector.add_goal(3, StaticGoal::new(GoalControls::MOVE));
-        selector.add_goal(7, StaticGoal::new(GoalControls::LOOK));
-        selector.tick(&mob.mob(), &mob_entity);
-        assert_eq!(selector.running_goal_count(), 2);
+        let selector = CheckedMutex::new(GoalSelector::new());
+        {
+            let mut selector = selector.lock();
+            selector.add_goal(3, StaticGoal::new(GoalControls::MOVE));
+            selector.add_goal(7, StaticGoal::new(GoalControls::LOOK));
+        }
+        GoalSelector::tick(&selector, &mob.mob(), &mob_entity);
+        assert_eq!(selector.lock().running_goal_count(), 2);
 
-        selector.remove_all_goals(&mob.mob(), |goal| goal.controls() == GoalControls::MOVE);
+        GoalSelector::remove_all_goals(&selector, &mob.mob(), |goal| {
+            goal.controls() == GoalControls::MOVE
+        });
 
-        assert_eq!(selector.available_goal_count(), 1);
-        assert!(
-            selector.is_priority_running(7),
-            "the non-matching goal must keep running through removal"
-        );
-        assert!(
-            !selector.is_priority_running(3),
-            "the removed goal must be gone entirely"
-        );
+        {
+            let selector = selector.lock();
+            assert_eq!(selector.available_goal_count(), 1);
+            assert!(
+                selector.is_priority_running(7),
+                "the non-matching goal must keep running through removal"
+            );
+            assert!(
+                !selector.is_priority_running(3),
+                "the removed goal must be gone entirely"
+            );
+        }
 
-        selector.tick(&mob.mob(), &mob_entity);
+        GoalSelector::tick(&selector, &mob.mob(), &mob_entity);
+        let selector = selector.lock();
         assert_eq!(selector.running_goal_count(), 1);
         assert!(selector.is_priority_running(7));
     }
@@ -711,17 +812,18 @@ mod tests {
     fn pathfinder_mob_remove_free_will_clears_all_goals() {
         let mob = Arc::new(TestPathfinderMob::new());
         let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
+        let selector = mob.mob().mob_base().goal_selector();
         {
-            let mut selector = mob.mob().mob_base().goal_selector().lock();
+            let mut selector = selector.lock();
             selector.add_goal(1, StaticGoal::new(GoalControls::MOVE));
             selector.add_goal(2, StaticGoal::new(GoalControls::LOOK));
-            selector.tick(&mob.mob(), &mob_entity);
-            assert_eq!(selector.running_goal_count(), 2);
         }
+        GoalSelector::tick(selector, &mob.mob(), &mob_entity);
+        assert_eq!(selector.lock().running_goal_count(), 2);
 
         mob.mob().remove_free_will();
 
-        let selector = mob.mob().mob_base().goal_selector().lock();
+        let selector = selector.lock();
         assert_eq!(selector.available_goal_count(), 0);
         assert_eq!(selector.running_goal_count(), 0);
     }

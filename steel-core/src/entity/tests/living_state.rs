@@ -25,7 +25,7 @@ fn living_base_tick_decrements_last_hurt_by_player_memory() {
     let player_uuid = Uuid::from_u128(42);
     entity.living().set_last_hurt_by_player(player_uuid, 1);
 
-    entity.living().base_tick_living_entity();
+    entity.base_tick();
 
     assert_eq!(
         entity.living().living_base().last_hurt_by_player_uuid(),
@@ -33,7 +33,7 @@ fn living_base_tick_decrements_last_hurt_by_player_memory() {
     );
     assert_eq!(entity.living().last_hurt_by_player_memory_time(), 0);
 
-    entity.living().base_tick_living_entity();
+    entity.base_tick();
 
     assert!(
         entity
@@ -103,7 +103,7 @@ fn living_base_tick_advances_swing_before_living_state() {
     );
     assert_eq!(entity.living().living_swing_state().swing_time(), 0);
 
-    entity.living().base_tick_living_entity();
+    entity.base_tick();
     entity.living().tick_living_state();
     assert!(
         !entity

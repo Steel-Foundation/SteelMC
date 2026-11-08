@@ -1,8 +1,15 @@
 //! Vanilla falling-block entity.
 
+use crate::entity::component::definition::CauseFallDamageCtx;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::HurtCtx;
+use crate::entity::component::definition::TickCtx;
+use crate::entity::component::pipeline::Pipeline;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::{NbtCompound as BorrowedNbtCompoundView, read_compound};
@@ -48,6 +55,9 @@ struct FallingBlockState {
     fall_damage_max: i32,
     fall_damage_per_distance: f32,
     block_data: Option<NbtCompound>,
+    /// Only blocks that start falling block building; summoned and loaded
+    /// ones do not.
+    blocks_building: bool,
 }
 
 impl FallingBlockState {
@@ -61,6 +71,7 @@ impl FallingBlockState {
             fall_damage_max: DEFAULT_MAX_FALL_DAMAGE,
             fall_damage_per_distance: DEFAULT_FALL_DAMAGE_PER_DISTANCE,
             block_data: None,
+            blocks_building: false,
         }
     }
 }
@@ -69,7 +80,7 @@ impl FallingBlockState {
 #[entity_behavior(class = "FallingBlockEntity")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_falling_block, load = Self::load_falling_block)]
-#[entity(key = "steel:entity/falling_block", constructors)]
+#[entity(key = "steel:entity/falling_block", constructors, definition = Self::define)]
 pub struct FallingBlockEntity {
     #[entity(base)]
     base: EntityBase,
@@ -132,6 +143,7 @@ impl FallingBlockEntity {
             carried_state,
             Arc::downgrade(world),
         ));
+        entity.state.lock().blocks_building = true;
 
         world.set_block(
             pos,
@@ -311,7 +323,10 @@ impl FallingBlockEntity {
         };
 
         if !world.set_block(pos, placed_state, UpdateFlags::UPDATE_ALL) {
-            self.break_after_failed_placement(world, pos, block);
+            // Vanilla keeps the entity when nothing would drop.
+            if self.should_drop_item(world) {
+                self.break_after_failed_placement(world, pos, block);
+            }
             return;
         }
 
@@ -369,16 +384,49 @@ impl FallingBlockEntity {
     // TODO: vanilla names falling blocks `entity.minecraft.falling_block_type` with the
     // block's name. Needs extracted block description ids: wall variants override theirs
     // (`wall_torch` -> `block.minecraft.torch`), so they can't be derived from the key.
+    const TICK: StageId = StageId("falling_block.tick");
+    const HURT: StageId = StageId("falling_block.hurt");
+    const FALL_DAMAGE: StageId = StageId("falling_block.fall_damage");
+
+    /// `FallingBlockEntity.tick` never calls `super`.
+    fn define() -> Definition<Self> {
+        Definition {
+            cause_fall_damage: Pipeline::new([Stage::new(
+                Self::FALL_DAMAGE,
+                |falling: &Self, ctx: &mut CauseFallDamageCtx<'_>| {
+                    ctx.result = falling.entity_cause_fall_damage(
+                        ctx.entity,
+                        ctx.fall_distance,
+                        ctx.damage_modifier,
+                        ctx.source,
+                    );
+                    Flow::Continue
+                },
+            )]),
+            hurt: Pipeline::new([Stage::new(
+                Self::HURT,
+                |falling: &Self, ctx: &mut HurtCtx<'_>| {
+                    ctx.result = falling.entity_hurt(ctx.world, ctx.source, ctx.amount);
+                    Flow::Continue
+                },
+            )]),
+            ..Definition::replacing_tick([Stage::new(
+                Self::TICK,
+                |falling: &Self, ctx: &mut TickCtx<'_>| {
+                    falling.entity_tick(ctx.entity);
+                    Flow::Continue
+                },
+            )])
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: Self::entity_tick,
         default_gravity: |_| 0.04,
         spawn_data: |entity| i32::from(entity.block_state().0),
-        blocks_building: |_| true,
+        blocks_building: |falling| falling.state.lock().blocks_building,
         is_pickable: |entity| !entity.is_removed(),
         attackable: |_| false,
         movement_emission: |_| EntityMovementEmission::None,
-        hurt: Self::entity_hurt,
-        cause_fall_damage: Self::entity_cause_fall_damage,
         ..EntityProps::new()
     };
 
@@ -503,18 +551,20 @@ impl FallingBlockEntity {
             .unwrap_or_else(|| vanilla_blocks::SAND.default_state());
         let mut state = self.state.lock();
         state.block_state = block_state;
-        state.time = nbt.int("Time").unwrap_or(0);
-        state.hurt_entities = nbt.byte("HurtEntities").map_or_else(
+        state.time = nbt.int_value("Time").unwrap_or(0);
+        state.hurt_entities = nbt.byte_value("HurtEntities").map_or_else(
             || block_state.get_block().has_tag(&BlockTag::ANVIL),
             |value| value != 0,
         );
         state.fall_damage_per_distance = nbt
-            .float("FallHurtAmount")
+            .float_value("FallHurtAmount")
             .unwrap_or(DEFAULT_FALL_DAMAGE_PER_DISTANCE);
-        state.fall_damage_max = nbt.int("FallHurtMax").unwrap_or(DEFAULT_MAX_FALL_DAMAGE);
-        state.drop_item = nbt.byte("DropItem").is_none_or(|value| value != 0);
+        state.fall_damage_max = nbt
+            .int_value("FallHurtMax")
+            .unwrap_or(DEFAULT_MAX_FALL_DAMAGE);
+        state.drop_item = nbt.byte_value("DropItem").is_none_or(|value| value != 0);
         state.block_data = nbt.compound("TileEntityData").map(|data| data.to_owned());
-        state.cancel_drop = nbt.byte("CancelDrop").is_some_and(|value| value != 0);
+        state.cancel_drop = nbt.byte_value("CancelDrop").is_some_and(|value| value != 0);
     }
 }
 

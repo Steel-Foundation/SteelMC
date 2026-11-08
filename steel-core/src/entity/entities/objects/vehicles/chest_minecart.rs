@@ -8,16 +8,14 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_utils::Identifier;
 use steel_utils::locks::CheckedMutex;
+use steel_utils::nbt::NbtValueInput as _;
 
+use super::{abstract_minecart, vehicle_entity};
+use crate::entity::component::definition::Definition;
 use crate::entity::prelude::*;
-use crate::entity::{
-    EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps,
-    reset_forward_direction_of_relative_portal_position,
-};
-use crate::portal::portal_shape::PortalShape;
+use crate::entity::{EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps};
 use crate::world::World;
 
 /// A chest minecart with its placement and loot table state.
@@ -27,7 +25,7 @@ use crate::world::World;
 #[entity_behavior(class = "MinecartChest")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_chest, load = Self::load_chest)]
-#[entity(key = "steel:entity/chest_minecart")]
+#[entity(key = "steel:entity/chest_minecart", definition = Definition::new)]
 pub struct ChestMinecartEntity {
     #[entity(base)]
     base: EntityBase,
@@ -48,20 +46,10 @@ impl ChestMinecartEntity {
         is_pickable: |minecart| !minecart.is_removed(),
         is_pushable: |_| true,
         blocks_building: |_| true,
-        ignore_explosion: |_, explosion| {
-            !explosion.world().get_game_rule(&MOB_GRIEFING)
-                && explosion
-                    .indirect_source_entity()
-                    .is_some_and(|entity| entity.as_mob().is_some())
-        },
-        dimension_changing_delay: |_| 10,
+        ignore_explosion: |_, explosion| vehicle_entity::ignore_explosion(explosion),
+        dimension_changing_delay: |_| vehicle_entity::DIMENSION_CHANGING_DELAY,
         relative_portal_position: |minecart, axis, portal_area| {
-            reset_forward_direction_of_relative_portal_position(PortalShape::get_relative_position(
-                portal_area,
-                axis,
-                minecart.position(),
-                minecart.dimensions_for_pose(minecart.pose()),
-            ))
+            abstract_minecart::relative_portal_position(minecart, axis, portal_area)
         },
         ..EntityProps::new()
     };
@@ -122,11 +110,9 @@ impl ChestMinecartEntity {
             .string("LootTable")
             .and_then(|value| Identifier::from_str(&value.to_string()).ok());
         let mut state = self.state.lock();
-        if let Some(first_tick) = nbt.byte("HasTicked") {
-            state.first_tick = first_tick != 0;
-        }
+        state.first_tick = nbt.byte_value("HasTicked").is_some_and(|value| value != 0);
         state.loot_table = loot_table;
-        state.loot_table_seed = nbt.long("LootTableSeed").unwrap_or(0);
+        state.loot_table_seed = nbt.long_value("LootTableSeed").unwrap_or(0);
     }
 }
 
@@ -159,6 +145,7 @@ mod tests {
         );
         assert_eq!(nbt.long("LootTableSeed"), Some(42));
         assert_eq!(nbt.byte("HasTicked"), Some(1));
+        assert_eq!(nbt.byte("FlippedRotation"), Some(0));
     }
 
     #[test]

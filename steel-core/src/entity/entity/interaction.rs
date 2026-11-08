@@ -166,17 +166,15 @@ pub trait EntityInteraction: Entity {
         hand: InteractionHand,
         _location: DVec3,
     ) -> InteractionResult {
-        let Some(mob) = self.as_mob() else {
-            return InteractionResult::Pass;
-        };
+        // Vanilla's `Leashable` is Steel's mob layer.
+        let mob = self.as_mob();
         let is_alive = self
             .as_living_entity()
             .is_none_or(|living| living.is_alive());
-        if !is_alive {
-            return InteractionResult::Pass;
-        }
 
-        if player.is_secondary_use_active()
+        if let Some(mob) = &mob
+            && is_alive
+            && player.is_secondary_use_active()
             && mob.leashable().can_be_leashed()
             && self
                 .as_living_entity()
@@ -208,6 +206,13 @@ pub trait EntityInteraction: Entity {
         }
         if holding_shears && self.attempt_to_shear_equipment(player, hand) {
             return InteractionResult::Success;
+        }
+
+        let Some(mob) = mob else {
+            return InteractionResult::Pass;
+        };
+        if !is_alive {
+            return InteractionResult::Pass;
         }
 
         if let Some(holder) = mob.leashable().leash_holder() {

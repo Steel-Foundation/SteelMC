@@ -429,6 +429,16 @@ impl<'a> WorldCollisionProvider<'a> {
         }
     }
 
+    /// Vanilla `CollisionContext.of(source)`: the source entity's normal
+    /// collision context, or an empty one without a source.
+    #[must_use]
+    pub fn source_collision_context(&self) -> BlockCollisionContext {
+        self.source
+            .map_or(BlockCollisionContext::empty(), |source| {
+                self.entity_collision_context(source.position().y, source.is_descending(), false)
+            })
+    }
+
     /// Returns whether an entity-context collision query intersects anything.
     ///
     /// Mirrors vanilla `Level.noCollision(entity, box)` callers by using the

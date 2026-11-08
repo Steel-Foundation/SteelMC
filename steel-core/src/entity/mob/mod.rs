@@ -3,7 +3,7 @@
 mod pathfinder;
 pub(crate) mod stages;
 
-use crate::entity::component::definition::MobEntries;
+use crate::entity::component::definition::DefinitionEntries;
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::leash::{LeashData, Leashable};
@@ -12,6 +12,8 @@ use crate::entity::{Ageable, EntityProps};
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
 use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target};
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -68,7 +70,6 @@ use crate::entity::{
     aabb_contains_any_liquid,
 };
 use crate::inventory::equipment::EquipmentSlot;
-use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
@@ -146,7 +147,10 @@ impl DropChances {
 
         let mut loaded = Self::DEFAULT;
         for slot in EquipmentSlot::ALL {
-            let Some(chance) = drop_chances.float(slot.name()) else {
+            let Some(chance) = drop_chances
+                .get(slot.name())
+                .and_then(|tag| tag.codec_f32())
+            else {
                 continue;
             };
             if !loaded.set_equipment_chance(slot, chance) {
@@ -169,7 +173,6 @@ pub struct MobBase {
     state: CheckedMutex<MobState>,
     leash_data: CheckedMutex<Option<LeashData>>,
     hooks: &'static dyn MobHooks,
-    definition: &'static dyn MobEntries,
 }
 
 /// A mob's plain per-instance values: persistence, loot, home and timers.
@@ -199,10 +202,10 @@ impl MobHomeRestriction {
 }
 
 impl MobBase {
-    /// Fresh mob state for a type with `hooks` and pipelines `definition`, after
-    /// the definition's constructor chain ran on it.
+    /// Fresh mob state for a type with `hooks`, after its `definition`'s
+    /// constructor chain ran on it.
     #[must_use]
-    pub fn new(hooks: &'static dyn MobHooks, definition: &'static dyn MobEntries) -> Self {
+    pub fn new(hooks: &'static dyn MobHooks, definition: &'static dyn DefinitionEntries) -> Self {
         let mob_base = Self {
             goal_selector: CheckedMutex::new(GoalSelector::new()),
             target_selector: CheckedMutex::new(GoalSelector::new()),
@@ -223,7 +226,6 @@ impl MobBase {
             }),
             leash_data: CheckedMutex::new(None),
             hooks,
-            definition,
         };
         definition.construct(&mob_base);
         mob_base
@@ -356,8 +358,6 @@ entity_props! {
         fn ambient_sound_interval() -> i32 = ambient_sound_interval_default;
         /// `Mob.removeWhenFarAway`, given the squared distance to the nearest player.
         fn remove_when_far_away(dist_sqr: f64) -> bool = remove_when_far_away_default;
-        /// `Mob.ate`, called after an eating goal consumes a block.
-        fn ate() = ate_default;
         /// `Mob.canBeLeashed`, before the leash state is considered.
         fn mob_can_be_leashed() -> bool = mob_can_be_leashed_default;
         /// `Mob.getPreferredWeaponType`: the item tag this mob favors when picking up weapons.
@@ -446,8 +446,8 @@ impl<'a> Mob<'a> {
         self.base.hooks
     }
 
-    fn definition(&self) -> &'static dyn MobEntries {
-        self.base.definition
+    fn definition(&self) -> &'static dyn DefinitionEntries {
+        self.entity().entity_definition()
     }
 
     fn with_synced<R>(&self, f: impl FnOnce(&mut MobEntityData) -> R) -> Option<R> {
@@ -462,11 +462,21 @@ impl<'a> Mob<'a> {
 #[must_use]
 pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
-        ai_step: |mob, entity| mob.mob().run_ai_step(entity),
         server_ai_step: |mob, entity| mob.mob().mob_server_ai_step(entity),
-        base_experience_reward: |mob| mob.mob().base_experience_reward_mob(),
-        can_dispenser_equip_into_slot: |mob, _| mob.mob().can_pick_up_loot(),
         ..LivingProps::new()
+    }
+}
+
+/// `PathfinderMob`'s changes to the mob defaults.
+#[must_use]
+pub const fn pathfinder_mob_props<E: Parts>() -> MobProps<E> {
+    MobProps {
+        is_pathfinder: |_| true,
+        check_spawn_rules: |mob, _, _| {
+            let mob = mob.mob();
+            mob.walk_target_value(mob.block_position()) >= 0.0
+        },
+        ..MobProps::new()
     }
 }
 
@@ -475,12 +485,8 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        tick: |mob, entity| mob.mob().tick_mob(entity),
-        base_tick: |mob| mob.mob().base_tick_mob(),
         check_despawn: |mob| mob.mob().check_mob_despawn(),
         is_effective_ai: |mob| mob.is_server_driven_movement() && !mob.mob().is_no_ai(),
-        interact: |mob, player, hand, location| mob.mob().interact_mob(player, hand, location),
-        controlling_passenger: |mob| mob.mob().controlling_passenger_mob(),
         ..living_entity::entity_props()
     }
 }
@@ -522,11 +528,10 @@ impl Mob<'_> {
         true
     }
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn ate_default(&self) {}
+    /// Runs this type's `Mob.ate` pipeline.
+    pub fn ate(&self) {
+        self.definition().ate(self.entity());
+    }
 
     fn mob_can_be_leashed_default(&self) -> bool {
         !self.is_enemy()
@@ -698,11 +703,6 @@ impl<'a> Mob<'a> {
             .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
     }
 
-    /// Runs this type's `aiStep` pipeline.
-    pub fn run_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
-        self.definition().ai_step(self.entity(), entity)
-    }
-
     /// Runs this type's `customServerAiStep` pipeline.
     pub fn custom_server_ai_step(&self) {
         self.definition().custom_server_ai_step(self.entity());
@@ -712,14 +712,14 @@ impl<'a> Mob<'a> {
     /// running goals tick.
     pub fn tick_goal_selectors(&self, entity: &SharedEntity) {
         let id_based_tick_count = self.tick_count().wrapping_add(self.id());
-        let mut target_selector = self.mob_base().target_selector().lock();
-        let mut goal_selector = self.mob_base().goal_selector().lock();
+        let target_selector = self.mob_base().target_selector();
+        let goal_selector = self.mob_base().goal_selector();
         if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
-            target_selector.tick_running_goals(self, entity, false);
-            goal_selector.tick_running_goals(self, entity, false);
+            GoalSelector::tick_running_goals(target_selector, self, entity, false);
+            GoalSelector::tick_running_goals(goal_selector, self, entity, false);
         } else {
-            target_selector.tick(self, entity);
-            goal_selector.tick(self, entity);
+            GoalSelector::tick(target_selector, self, entity);
+            GoalSelector::tick(goal_selector, self, entity);
         }
     }
 
@@ -795,11 +795,6 @@ impl<'a> Mob<'a> {
     }
 
     /// Runs the shared living-entity base tick, then mob-specific per-tick behavior.
-    pub fn base_tick_mob(&self) {
-        self.base_tick_living_entity();
-        self.mob_base_tick();
-    }
-
     /// Runs the mob-owned portion of vanilla `Mob.baseTick`.
     pub fn mob_base_tick(&self) {
         if !self.living.is_alive() {
@@ -901,11 +896,12 @@ impl<'a> Mob<'a> {
     }
 
     /// Dispatches held-item, entity, and mob-specific interactions in order.
-    pub fn interact_mob(
+    /// `Mob.interact` around its `super.interact()`.
+    pub(super) fn interact_around(
         &self,
         player: &Player,
         hand: InteractionHand,
-        location: DVec3,
+        super_interact: impl FnOnce() -> InteractionResult,
     ) -> InteractionResult {
         if !self.living.is_alive() {
             return InteractionResult::Pass;
@@ -923,7 +919,7 @@ impl<'a> Mob<'a> {
             return important_interaction;
         }
 
-        let interaction_result = self.interact_default(player, hand, location);
+        let interaction_result = super_interact();
         if interaction_result != InteractionResult::Pass {
             return interaction_result;
         }
@@ -1422,13 +1418,16 @@ impl<'a> Mob<'a> {
 
     pub fn load_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_equipment(nbt);
-        self.set_can_pick_up_loot(nbt.byte("CanPickUpLoot").is_some_and(|value| value != 0));
+        self.set_can_pick_up_loot(
+            nbt.byte_value("CanPickUpLoot")
+                .is_some_and(|value| value != 0),
+        );
         self.mob_base().state.lock().persistence_required = nbt
-            .byte("PersistenceRequired")
+            .byte_value("PersistenceRequired")
             .is_some_and(|value| value != 0);
         self.mob_base().state.lock().drop_chances = DropChances::load(nbt);
         *self.mob_base().leash_data().lock() = LeashData::load(nbt);
-        let home_radius = nbt.int("home_radius").unwrap_or(-1);
+        let home_radius = nbt.int_value("home_radius").unwrap_or(-1);
         if home_radius >= 0 {
             let home_position = nbt
                 .int_array("home_pos")
@@ -1441,14 +1440,14 @@ impl<'a> Mob<'a> {
             self.clear_home();
         }
 
-        self.set_left_handed(nbt.byte("LeftHanded").is_some_and(|value| value != 0));
+        self.set_left_handed(nbt.byte_value("LeftHanded").is_some_and(|value| value != 0));
         let death_loot_table = nbt
             .string("DeathLootTable")
             .and_then(|loot_table| loot_table.to_str().as_ref().parse().ok());
         self.mob_base().state.lock().death_loot_table = death_loot_table;
         self.mob_base().state.lock().death_loot_table_seed =
-            nbt.long("DeathLootTableSeed").unwrap_or(0);
-        self.set_no_ai(nbt.byte("NoAI").is_some_and(|value| value != 0));
+            nbt.long_value("DeathLootTableSeed").unwrap_or(0);
+        self.set_no_ai(nbt.byte_value("NoAI").is_some_and(|value| value != 0));
     }
 
     pub fn set_death_loot_table(&self, loot_table: Option<Identifier>) {
@@ -1532,11 +1531,7 @@ impl<'a> Mob<'a> {
             return;
         }
 
-        if self.is_persistence_required() || self.requires_custom_persistence() {
-            self.set_no_action_time(0);
-            return;
-        }
-
+        let is_persistent = self.is_persistence_required() || self.requires_custom_persistence();
         let Some(nearest_player_dist_sqr) = nearest_player_dist_sqr else {
             return;
         };
@@ -1544,7 +1539,8 @@ impl<'a> Mob<'a> {
         let mob_category = self.entity_type().mob_category;
         let despawn_distance = mob_category.despawn_distance();
         let despawn_distance_sqr = despawn_distance * despawn_distance;
-        if nearest_player_dist_sqr > f64::from(despawn_distance_sqr)
+        if !is_persistent
+            && nearest_player_dist_sqr > f64::from(despawn_distance_sqr)
             && self.remove_when_far_away(nearest_player_dist_sqr)
         {
             self.set_removed(RemovalReason::Discarded);
@@ -1553,7 +1549,8 @@ impl<'a> Mob<'a> {
 
         let no_despawn_distance = mob_category.no_despawn_distance();
         let no_despawn_distance_sqr = no_despawn_distance * no_despawn_distance;
-        if self.no_action_time() > 600
+        if !is_persistent
+            && self.no_action_time() > 600
             && nearest_player_dist_sqr > f64::from(no_despawn_distance_sqr)
             && self.remove_when_far_away(nearest_player_dist_sqr)
         {
@@ -1921,8 +1918,7 @@ impl<'a> Mob<'a> {
     ///
     /// Burning and pickup belong here, outside the `serverAiStep` AI gate,
     /// so mobs with `NoAI` still burn and collect loot as in vanilla.
-    pub fn mob_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
-        let result = self.default_ai_step(entity);
+    pub fn mob_ai_step_after_super(&self) {
         if REGISTRY
             .entity_types
             .is_in_tag(self.entity_type(), &EntityTypeTag::BURN_IN_DAYLIGHT)
@@ -1930,7 +1926,6 @@ impl<'a> Mob<'a> {
             self.tick_daylight_burning();
         }
         self.tick_looting();
-        result
     }
 
     pub fn tick_path_navigation(&self) {
@@ -2028,9 +2023,7 @@ impl<'a> Mob<'a> {
         let mut strafe_forward = forward;
         let mut strafe_right = right;
 
-        let mut distance = strafe_forward
-            .mul_add(strafe_forward, strafe_right * strafe_right)
-            .sqrt();
+        let mut distance = (strafe_forward * strafe_forward + strafe_right * strafe_right).sqrt();
         if distance < 1.0 {
             distance = 1.0;
         }
@@ -2040,8 +2033,8 @@ impl<'a> Mob<'a> {
         let yaw_radians = self.rotation().0 * DEG_TO_RAD;
         let sin = trig::sin(yaw_radians);
         let cos = trig::cos(yaw_radians);
-        let dx = xa.mul_add(cos, -(za * sin));
-        let dz = za.mul_add(cos, xa * sin);
+        let dx = xa * cos - za * sin;
+        let dz = za * cos + xa * sin;
         if !self.is_strafe_walkable(dx, dz) {
             strafe_forward = 1.0;
             strafe_right = 0.0;
@@ -2134,15 +2127,6 @@ impl<'a> Mob<'a> {
         self.set_jumping(jumping);
     }
 
-    /// `Mob.tick`: the living tick, then the goal control flags every 5 ticks
-    /// whether or not the AI runs.
-    pub fn tick_mob(&self, entity: &SharedEntity) {
-        self.living.tick_living_entity(entity);
-        if self.tick_count() % 5 == 0 {
-            self.update_control_flags();
-        }
-    }
-
     pub fn update_control_flags(&self) {
         let no_controller = self
             .controlling_passenger()
@@ -2160,7 +2144,7 @@ impl<'a> Mob<'a> {
     pub fn tick_body_rotation_control(&self) {
         let moving = {
             let delta = self.position() - self.old_position();
-            delta.x.mul_add(delta.x, delta.z * delta.z) > 2.500_000_3e-7
+            delta.x * delta.x + delta.z * delta.z > 2.500_000_3e-7
         };
         let carrying_mob_passenger = self
             .first_passenger()
@@ -2269,7 +2253,7 @@ pub fn block_pos_distance_sqr(a: BlockPos, b: BlockPos) -> f64 {
     let dx = f64::from(a.x() - b.x());
     let dy = f64::from(a.y() - b.y());
     let dz = f64::from(a.z() - b.z());
-    dx.mul_add(dx, dy.mul_add(dy, dz * dz))
+    dx * dx + dy * dy + dz * dz
 }
 
 pub fn block_center_distance_sqr(pos: BlockPos, target: DVec3) -> f64 {
