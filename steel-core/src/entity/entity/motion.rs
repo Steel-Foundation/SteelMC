@@ -504,7 +504,7 @@ pub trait EntityMotion: Entity {
     }
 
     /// Default for [`Entity::air_drag`].
-    fn air_drag_default(&self) -> f64 {
+    fn air_drag_default(&self) -> f32 {
         DEFAULT_AIR_DRAG
     }
 
@@ -658,7 +658,7 @@ pub trait EntityMotion: Entity {
                 self.is_living_entity(),
                 self.is_suppressing_bounce(),
                 self.effective_gravity(),
-                self.air_drag(),
+                f64::from(self.air_drag()),
             );
 
             let next_velocity =

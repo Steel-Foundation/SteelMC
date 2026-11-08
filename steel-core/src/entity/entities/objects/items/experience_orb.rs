@@ -35,7 +35,6 @@ const MAX_FOLLOW_DIST_SQR: f64 = MAX_FOLLOW_DIST * MAX_FOLLOW_DIST;
 const ORB_GROUPS_PER_AREA: i32 = 40;
 const ORB_MERGE_DISTANCE: f64 = 0.5;
 const DEFAULT_HEALTH: i32 = 5;
-const AIR_FRICTION: f64 = 0.98;
 const UNDERWATER_DRAG: f64 = 0.99;
 
 struct ExperienceOrbState {
@@ -323,17 +322,14 @@ impl ExperienceOrbEntity {
     }
 
     fn apply_friction_and_bounce(&self, world: &Arc<World>, fall_speed: f64) {
-        let friction = if self.on_ground() {
-            self.block_pos_below_that_affects_movement()
-                .map_or(AIR_FRICTION, |block_pos| {
-                    f64::from(world.get_block_state(block_pos).get_block().config.friction)
-                        * AIR_FRICTION
-                })
-        } else {
-            AIR_FRICTION
-        };
+        let mut friction = self.air_drag();
+        if self.on_ground()
+            && let Some(block_pos) = self.block_pos_below_that_affects_movement()
+        {
+            friction *= world.get_block_state(block_pos).get_block().config.friction;
+        }
 
-        let mut velocity = self.velocity() * friction;
+        let mut velocity = self.velocity() * f64::from(friction);
         if self.vertical_collision_below() && fall_speed < -self.gravity() {
             velocity.y = -fall_speed * 0.4;
         }

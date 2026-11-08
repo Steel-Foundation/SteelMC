@@ -284,7 +284,7 @@ impl SquidEntity {
                 Some(levitation) => 0.05 * f64::from(levitation.amplifier() + 1),
                 None => self.velocity().y - self.gravity(),
             };
-            self.set_velocity(DVec3::new(0.0, y * self.air_drag(), 0.0));
+            self.set_velocity(DVec3::new(0.0, y * f64::from(self.air_drag()), 0.0));
             let mut swimming = self.swimming.lock();
             swimming.x_body_rot += (-DEGREE_90 - swimming.x_body_rot) * 0.02;
         }

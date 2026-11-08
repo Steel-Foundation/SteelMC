@@ -291,7 +291,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
                     .living()
                     .attributes()
                     .lock()
-                    .required_value(vanilla_attributes::AIR_DRAG_MODIFIER),
+                    .required_value(vanilla_attributes::AIR_DRAG_MODIFIER) as f32,
             )
         },
         effective_gravity: |living| living.living().effective_gravity(),

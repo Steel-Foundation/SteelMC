@@ -268,7 +268,7 @@ impl PrimedTntEntity {
         self.apply_gravity();
         Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
-        let mut velocity = self.velocity() * f64::from(0.98_f32);
+        let mut velocity = self.velocity() * f64::from(self.air_drag());
         if self.on_ground() {
             velocity = DVec3::new(
                 velocity.x * GROUND_HORIZONTAL_DRAG,

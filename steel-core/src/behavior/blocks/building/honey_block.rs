@@ -8,7 +8,6 @@ use steel_registry::{sound_events, vanilla_damage_types, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
 
-use crate::entity::DEFAULT_AIR_DRAG;
 use crate::{
     behavior::{
         BlockBehavior, BlockCollisionContext, BlockPlaceContext, EntityFallDamage,
@@ -44,12 +43,12 @@ impl HoneyBlock {
 
     #[must_use]
     fn old_delta_y(delta_y: f64) -> f64 {
-        delta_y / DEFAULT_AIR_DRAG + 0.08
+        delta_y / f64::from(0.98_f32) + 0.08
     }
 
     #[must_use]
     fn new_delta_y(delta_y: f64) -> f64 {
-        (delta_y - 0.08) * DEFAULT_AIR_DRAG
+        (delta_y - 0.08) * f64::from(0.98_f32)
     }
 
     #[must_use]

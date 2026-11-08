@@ -8,7 +8,7 @@ use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::projectile::{self, Parts, Projectile};
 use crate::entity::{EntityProps, InsideBlockEffectCollector, RemovalReason, SharedEntity};
 
-const WATER_INERTIA: f64 = 0.8;
+const WATER_INERTIA: f32 = 0.8;
 
 /// `ThrowableProjectile`'s overrides of the entity hooks.
 #[must_use]
@@ -16,7 +16,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
         tick: |projectile, entity| tick(&projectile.projectile(), entity),
         default_gravity: |_| 0.03,
-        air_drag: |_| f64::from(0.99_f32),
+        air_drag: |_| 0.99,
         can_use_portal: |_, _| true,
         ..projectile::entity_props()
     }
@@ -66,7 +66,7 @@ fn apply_inertia(projectile: &Projectile<'_>) {
     } else {
         projectile.air_drag()
     };
-    projectile.set_velocity(projectile.velocity() * inertia);
+    projectile.set_velocity(projectile.velocity() * f64::from(inertia));
 }
 
 /// Applies bubble columns the projectile starts in on its first tick.

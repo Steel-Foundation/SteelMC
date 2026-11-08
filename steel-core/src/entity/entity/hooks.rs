@@ -349,7 +349,7 @@ macro_rules! entity_hook_list {
                 /// Returns the block speed factor applied after movement.
                 fn block_speed_factor() -> f32 = block_speed_factor_default;
                 /// Returns the horizontal air drag applied after movement.
-                fn air_drag() -> f64 = air_drag_default;
+                fn air_drag() -> f32 = air_drag_default;
                 /// Returns the gravity applied this tick.
                 fn effective_gravity() -> f64 = effective_gravity_default;
             }
