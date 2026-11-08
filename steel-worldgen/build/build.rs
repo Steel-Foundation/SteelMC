@@ -29,7 +29,7 @@ pub fn main() {
 
     for (content, file_name) in generated_files {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
-        write_if_changed(&path, content.to_string());
+        write_if_changed(&path, content);
     }
 
     let df = density::build();
@@ -42,21 +42,24 @@ pub fn main() {
         (df.end, "end"),
     ] {
         let path = df_dir.join(format!("{name}.rs"));
-        write_if_changed(&path, content.to_string());
+        write_if_changed(&path, content);
     }
 
     let path = df_dir.join("mod.rs");
-    write_if_changed(&path, df.index.to_string());
+    write_if_changed(&path, df.index);
 }
 
-fn write_if_changed(path: &Path, content: String) {
+fn write_if_changed(path: &Path, tokens: proc_macro2::TokenStream) {
+    // Parse the tokens directly instead of printing them to a string and parsing that again.
     #[cfg(feature = "fmt")]
     let content = {
-        let syntax = syn::parse_file(&content).unwrap_or_else(|error| {
+        let syntax: syn::File = syn::parse2(tokens).unwrap_or_else(|error| {
             panic!("Failed to parse generated file {}: {error}", path.display())
         });
         prettyplease::unparse(&syntax)
     };
+    #[cfg(not(feature = "fmt"))]
+    let content = tokens.to_string();
     if fs::read_to_string(path).is_ok_and(|existing| existing == content) {
         return;
     }

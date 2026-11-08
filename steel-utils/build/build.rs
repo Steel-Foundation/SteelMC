@@ -478,16 +478,30 @@ pub fn main() {
         .expect("Translation output path is not valid UTF-8");
 
     let content = build_translations(processed_translations);
-    write_if_changed(format!("{OUT_DIR}/{IDS}.rs"), content.to_string());
+    write_tokens_if_changed(format!("{OUT_DIR}/{IDS}.rs"), content);
 
     let content = translations::build(processed_translations);
-    write_if_changed(format!("{OUT_DIR}/{REGISTRY}.rs"), content.to_string());
+    write_tokens_if_changed(format!("{OUT_DIR}/{REGISTRY}.rs"), content);
 
     let content = entity_events::build();
-    write_if_changed(format!("{OUT_DIR}/{ENTITY_EVENTS}.rs"), content.to_string());
+    write_tokens_if_changed(format!("{OUT_DIR}/{ENTITY_EVENTS}.rs"), content);
 
     let content = build_version_constants(&manifest_dir);
     write_if_changed(format!("{OUT_DIR}/{VERSION}.rs"), content);
+}
+
+fn write_tokens_if_changed(path: impl AsRef<Path>, tokens: proc_macro2::TokenStream) {
+    // Parse the tokens directly instead of printing them to a string and parsing that again.
+    #[cfg(feature = "fmt")]
+    {
+        let path = path.as_ref();
+        let syntax: syn::File = syn::parse2(tokens).unwrap_or_else(|error| {
+            panic!("Failed to parse generated file {}: {error}", path.display())
+        });
+        write_file_if_changed(path, prettyplease::unparse(&syntax));
+    }
+    #[cfg(not(feature = "fmt"))]
+    write_file_if_changed(path.as_ref(), tokens.to_string());
 }
 
 fn write_if_changed(path: impl AsRef<Path>, content: String) {
@@ -501,6 +515,10 @@ fn write_if_changed(path: impl AsRef<Path>, content: String) {
     } else {
         content
     };
+    write_file_if_changed(path, content);
+}
+
+fn write_file_if_changed(path: &Path, content: String) {
     if let Ok(existing) = fs::read_to_string(path)
         && existing == content
     {

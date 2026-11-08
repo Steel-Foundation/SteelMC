@@ -284,14 +284,16 @@ pub fn main() {
 
     for (content, file_name) in vanilla_builds {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
-        let content = content.to_string();
+        // Parse the tokens directly instead of printing them to a string and parsing that again.
         #[cfg(feature = "fmt")]
         let content = {
-            let syntax = syn::parse_file(&content).unwrap_or_else(|error| {
+            let syntax: syn::File = syn::parse2(content).unwrap_or_else(|error| {
                 panic!("Failed to parse generated file {}: {error}", path.display())
             });
             prettyplease::unparse(&syntax)
         };
+        #[cfg(not(feature = "fmt"))]
+        let content = content.to_string();
         generated_files.push(path.clone());
 
         // Only write if content changed
