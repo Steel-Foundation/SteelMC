@@ -39,12 +39,6 @@ fn start_reload(
             .map_err(|error| error.to_string());
         let _ = sender.send(result);
     });
-
-    // Vanilla acknowledges the reload before the new data is published.
-    source.send_success(
-        &TextComponent::from(&translations::COMMANDS_RELOAD_SUCCESS),
-        true,
-    );
     Ok(ReloadCommandSuspension {
         source,
         receiver,
@@ -67,6 +61,10 @@ impl CommandResultSuspension for ReloadCommandSuspension {
         match self.receiver.try_recv() {
             Ok(Ok(())) => {
                 self.task = None;
+                self.source.send_success(
+                    &TextComponent::from(&translations::COMMANDS_RELOAD_SUCCESS),
+                    true,
+                );
                 CommandResultSuspensionPoll::Ready(Ok(0))
             }
             Ok(Err(error)) => {
