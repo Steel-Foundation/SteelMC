@@ -73,8 +73,7 @@ pub trait VanillaPostNoiseStateType: DimensionNoises + 'static {
 /// Where a dimension's spawn search starts: vanilla's `NoiseBasedChunkGenerator.getOrigin`,
 /// which reads the noise settings' spawn target rather than the biome source.
 pub trait NoiseSpawnTarget {
-    /// The spawn search origin for this dimension's noise settings. Settings without a
-    /// spawn target start at the origin.
+    /// Defaults to the origin, for settings without a spawn target.
     #[must_use]
     fn initial_spawn_search_origin(_biome_source: &BiomeSourceKind, _seed: u64) -> BlockPos {
         BlockPos::new(0, 0, 0)

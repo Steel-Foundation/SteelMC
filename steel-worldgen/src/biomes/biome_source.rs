@@ -234,7 +234,8 @@ impl ChunkBiomeSampler<'_> {
     }
 }
 
-/// One biome everywhere: vanilla's `FixedBiomeSource`, used by the single-biome preset.
+/// One biome everywhere: vanilla's `FixedBiomeSource`, used by the single-biome preset and
+/// flat worlds.
 pub struct FixedBiomeSource {
     biome: BiomeRef,
 }
