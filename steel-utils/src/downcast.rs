@@ -71,6 +71,8 @@ impl_steel_downcast_type!((), "steel:rust_primitive/unit");
 impl_steel_downcast_type!(bool, "steel:rust_primitive/bool");
 impl_steel_downcast_type!(i32, "steel:rust_primitive/i32");
 impl_steel_downcast_type!(f32, "steel:rust_primitive/f32");
+impl_steel_downcast_type!(glam::Vec3, "steel:glam/vec3");
+impl_steel_downcast_type!(glam::Vec4, "steel:glam/vec4");
 impl_steel_downcast_type!(crate::Identifier, "steel:value/identifier");
 impl_steel_downcast_type!(text_components::TextComponent, "steel:value/text_component");
 

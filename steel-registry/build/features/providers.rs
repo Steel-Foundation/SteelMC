@@ -85,13 +85,13 @@ pub(super) fn generate_uniform_int_provider(provider: UniformIntProvider) -> Tok
     }
 }
 
-pub(super) fn generate_weighted_int_provider(provider: &WeightedIntProvider) -> TokenStream {
+pub(crate) fn generate_weighted_int_provider(provider: &WeightedIntProvider) -> TokenStream {
     let data = generate_int_provider(&provider.data);
     let weight = provider.weight;
     quote! { WeightedIntProvider { data: #data, weight: #weight } }
 }
 
-pub(super) fn generate_int_provider(provider: &IntProvider) -> TokenStream {
+pub(crate) fn generate_int_provider(provider: &IntProvider) -> TokenStream {
     match provider {
         IntProvider::Constant(value) => quote! { IntProvider::Constant(#value) },
         IntProvider::Uniform {

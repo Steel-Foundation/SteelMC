@@ -6,6 +6,7 @@
 use rustc_hash::FxHashMap;
 use std::fs;
 
+use crate::environment_attributes::SupportedAttributes;
 use crate::generator_functions::{
     generate_identifier, generate_option, generate_sound_event_ref, generate_vec,
 };
@@ -73,10 +74,6 @@ pub struct BiomeJson {
 
     #[serde(default)]
     creature_spawn_probability: f32,
-    #[serde(default)]
-    spawners: FxHashMap<String, Vec<SpawnerData>>,
-    #[serde(default)]
-    spawn_costs: FxHashMap<Identifier, SpawnCost>,
 
     carvers: VecOrSingle<Identifier>,
     features: Vec<Vec<Identifier>>,
@@ -149,23 +146,6 @@ impl From<BiomeEffectsJson> for BiomeEffects {
             particle: None,        // Will be populated from attributes
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SpawnerData {
-    #[serde(rename = "type")]
-    entity_type: Identifier,
-    weight: i32,
-    #[serde(rename = "minCount")]
-    min_count: i32,
-    #[serde(rename = "maxCount")]
-    max_count: i32,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SpawnCost {
-    energy_budget: f64,
-    charge: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -336,69 +316,6 @@ fn generate_grass_color_modifier(modifier: &GrassColorModifier) -> TokenStream {
     }
 }
 
-fn generate_hashmap_string<T, F>(map: &FxHashMap<String, T>, f: F) -> TokenStream
-where
-    F: Fn(&T) -> TokenStream,
-{
-    if map.is_empty() {
-        return quote! { rustc_hash::FxHashMap::default() };
-    }
-    let entries: Vec<_> = map
-        .iter()
-        .map(|(k, v)| {
-            let val = f(v);
-            quote! { (#k.to_string(), #val) }
-        })
-        .collect();
-    quote! { rustc_hash::FxHashMap::from_iter([#(#entries),*]) }
-}
-
-fn generate_hashmap_resource<T, F>(map: &FxHashMap<Identifier, T>, f: F) -> TokenStream
-where
-    F: Fn(&T) -> TokenStream,
-{
-    if map.is_empty() {
-        return quote! { rustc_hash::FxHashMap::default() };
-    }
-    let entries: Vec<_> = map
-        .iter()
-        .map(|(k, v)| {
-            let key = generate_identifier(k);
-            let val = f(v);
-            quote! { (#key, #val) }
-        })
-        .collect();
-    quote! { rustc_hash::FxHashMap::from_iter([#(#entries),*]) }
-}
-
-fn generate_spawner_data(data: &SpawnerData) -> TokenStream {
-    let entity_type = generate_identifier(&data.entity_type);
-    let weight = data.weight;
-    let min_count = data.min_count;
-    let max_count = data.max_count;
-
-    quote! {
-        SpawnerData {
-            entity_type: #entity_type,
-            weight: #weight,
-            min_count: #min_count,
-            max_count: #max_count,
-        }
-    }
-}
-
-fn generate_spawn_cost(cost: &SpawnCost) -> TokenStream {
-    let energy_budget = cost.energy_budget;
-    let charge = cost.charge;
-
-    quote! {
-        SpawnCost {
-            energy_budget: #energy_budget,
-            charge: #charge,
-        }
-    }
-}
-
 fn generate_particle(particle: &Particle) -> TokenStream {
     let particle_type = generate_identifier(&particle.options.particle_type);
     let probability = particle.probability;
@@ -526,12 +443,13 @@ pub(crate) fn build() -> TokenStream {
         }
     }
 
+    let supported_attributes = SupportedAttributes::load();
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
         use crate::biome::{
             Biome, BiomeEffects, BiomeRegistry, TemperatureModifier, GrassColorModifier,
-            SpawnerData, SpawnCost, WeightedMusic, Music, AdditionsSound, MoodSound,
+            WeightedMusic, Music, AdditionsSound, MoodSound,
             Particle, ParticleOptions,
         };
         use steel_utils::Identifier;
@@ -553,13 +471,11 @@ pub(crate) fn build() -> TokenStream {
         let temperature_modifier = generate_temperature_modifier(&biome.temperature_modifier);
         let effects = generate_biome_effects(&biome.effects);
         let creature_spawn_probability = biome.creature_spawn_probability;
-        let spawners =
-            generate_hashmap_string(&biome.spawners, |v| generate_vec(v, generate_spawner_data));
-        let spawn_costs = generate_hashmap_resource(&biome.spawn_costs, generate_spawn_cost);
         let carvers = generate_vec(&biome.carvers.clone().into_vec(), generate_identifier);
         let features = generate_vec(&biome.features, |inner_vec| {
             generate_vec(inner_vec, generate_identifier)
         });
+        let attributes = supported_attributes.quote_map(&biome.attributes);
 
         stream.extend(quote! {
             pub static #biome_ident: LazyLock<Biome> = LazyLock::new(|| Biome {
@@ -570,10 +486,9 @@ pub(crate) fn build() -> TokenStream {
                 temperature_modifier: #temperature_modifier,
                 effects: #effects,
                 creature_spawn_probability: #creature_spawn_probability,
-                spawners: #spawners,
-                spawn_costs: #spawn_costs,
                 carvers: #carvers,
                 features: #features,
+                attributes: #attributes,
                 id: OnceLock::new(),
             });
         });

@@ -1,45 +1,17 @@
+use std::str::FromStr as _;
+
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
-use text_components::TextComponent;
 
+use crate::environment_attribute::EnvironmentAttributeMap;
 use crate::sound_event::SoundEventRef;
+use crate::timeline::TimelineRef;
 use crate::world_clock::WorldClockRef;
+use crate::{REGISTRY, RegistryExt as _, TaggedRegistryExt as _};
 
-#[derive(Debug)]
-pub struct BedRule {
-    pub can_set_spawn: BedRuleValue,
-    pub can_sleep: BedRuleValue,
-    pub destroy_on_use: bool,
-    pub destroy_on_leave: bool,
-    pub error_message_key: Option<&'static str>,
-    pub error_message: Option<fn() -> TextComponent>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BedRuleValue {
-    Always,
-    WhenDark,
-    Never,
-}
-
-impl BedRuleValue {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Always => "always",
-            Self::WhenDark => "when_dark",
-            Self::Never => "never",
-        }
-    }
-}
-
-impl ToNbtTag for BedRuleValue {
-    fn to_nbt_tag(self) -> NbtTag {
-        self.as_str().to_nbt_tag()
-    }
-}
+pub use crate::environment_attribute::{BedRule, BedRuleValue};
 
 #[derive(Debug)]
 pub struct MoodSound {
@@ -98,7 +70,9 @@ pub struct DimensionType {
     pub fog_end_distance: Option<f32>,
     pub default_dripstone_particle: Option<&'static str>,
 
-    // Attributes: gameplay
+    // Attributes: gameplay. These flattened fields only feed registry sync;
+    // gameplay reads sample `attributes` through the world's environment
+    // attribute system so biome and timeline layers apply.
     pub respawn_anchor_works: bool,
     pub can_start_raid: bool,
     pub fast_lava: bool,
@@ -113,9 +87,30 @@ pub struct DimensionType {
     // Attributes: audio
     pub mood_sound: Option<MoodSound>,
     pub background_music: Option<BackgroundMusic>,
+
+    /// Constant environment attribute layer of this dimension.
+    pub attributes: EnvironmentAttributeMap,
 }
 
 impl DimensionType {
+    /// Resolves `timelines`, a timeline key or `#tag`, to the timelines it names.
+    #[must_use]
+    pub fn timelines(&self) -> Vec<TimelineRef> {
+        let Some(timelines) = self.timelines else {
+            return Vec::new();
+        };
+        if let Some(tag) = timelines.strip_prefix('#') {
+            let Ok(tag) = Identifier::from_str(tag) else {
+                return Vec::new();
+            };
+            return REGISTRY.timelines.iter_tag(&tag).collect();
+        }
+        let Ok(key) = Identifier::from_str(timelines) else {
+            return Vec::new();
+        };
+        REGISTRY.timelines.by_key(&key).into_iter().collect()
+    }
+
     #[must_use]
     pub fn get_teleportation_scale(last_dimension_type: &Self, new_dimension_type: &Self) -> f64 {
         last_dimension_type.coordinate_scale / new_dimension_type.coordinate_scale

@@ -13,11 +13,19 @@ pub struct Weather {
 use super::{
     ADVANCE_WEATHER, BiomeRef, BlockPos, CGameEvent, ChunkGenerator, ChunkPos, GameEventType,
     HeightmapType, LazyLock, LegacyRandom, LightLayer, PerlinSimplexNoise, REGISTRY, RandomSource,
-    RegistryEntry, RegistryExt, TemperatureModifier, World, environment, fuzzed_biome_at_block,
+    RegistryEntry, RegistryExt, TemperatureModifier, World, fuzzed_biome_at_block,
     obfuscate_biome_seed, vanilla_dimension_types,
 };
 
+use steel_registry::dimension_type::DimensionTypeRef;
+use steel_registry::vanilla_environment_attributes;
+
 use crate::chunk::light::MAX_LIGHT_LEVEL;
+
+/// Vanilla `Level.updateSkyBrightness`: `(int) (15.0F - skyLightLevel)`.
+fn sky_darkening(sky_light_level: f32) -> u8 {
+    (f32::from(MAX_LIGHT_LEVEL) - sky_light_level) as u8
+}
 
 static BIOME_TEMPERATURE_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
     let mut random = RandomSource::Legacy(LegacyRandom::from_seed(1234));
@@ -232,39 +240,14 @@ impl World {
     /// Returns this dimension's current sky light level, dimmed by rain and
     /// thunder when the dimension has weather.
     pub fn sky_light_level(&self) -> f32 {
-        let (rain_level, thunder_level) = if self.can_have_weather() {
-            let weather = self.weather.lock();
-            (weather.rain_level, weather.thunder_level)
-        } else {
-            (0.0, 0.0)
-        };
-
-        let level_data = self.level_data.read();
-        environment::sky_light_level(
-            self.dimension_type,
-            level_data.world_clocks(),
-            rain_level,
-            thunder_level,
-            self.can_have_weather(),
-        )
+        self.environment_attributes()
+            .get_dimension_value(&vanilla_environment_attributes::SKY_LIGHT_LEVEL)
     }
 
     /// Returns how much the sky light level is currently dimmed, rising as
     /// the sky light level drops from its daytime maximum.
     pub fn sky_darkening(&self) -> u8 {
-        environment::sky_darkening(self.sky_light_level())
-    }
-
-    /// Returns the current vanilla `SUN_ANGLE` environment attribute in degrees.
-    pub fn sun_angle_degrees(&self) -> f32 {
-        let level_data = self.level_data.read();
-        environment::sun_angle_degrees(self.dimension_type, level_data.world_clocks())
-    }
-
-    /// Whether the environment currently permits daylight burning.
-    pub fn monsters_burn(&self) -> bool {
-        let level_data = self.level_data.read();
-        environment::monsters_burn(self.dimension_type, level_data.world_clocks())
+        sky_darkening(self.sky_light_level())
     }
 
     /// Returns sky-layer light after the current sky darkening is subtracted.
@@ -293,9 +276,14 @@ impl World {
 
     /// Checks whether the world can have weather.
     pub fn can_have_weather(&self) -> bool {
-        self.dimension_type.has_skylight
-            && !self.dimension_type.has_ceiling
-            && self.dimension_type.key != vanilla_dimension_types::THE_END.key
+        Self::dimension_can_have_weather(self.dimension_type)
+    }
+
+    /// Vanilla `Level.canHaveWeather` for a dimension type.
+    pub(super) fn dimension_can_have_weather(dimension_type: DimensionTypeRef) -> bool {
+        dimension_type.has_skylight
+            && !dimension_type.has_ceiling
+            && dimension_type.key != vanilla_dimension_types::THE_END.key
     }
 
     /// Whether sky light is full, independent of time-of-day darkening.
@@ -416,5 +404,17 @@ impl World {
             f64::from(pos.z() as f32 / 8.0),
         ) * 8.0;
         modified_temp - (noise + pos.y() as f32 - snow_level as f32) * 0.05 / 40.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sky_darkening;
+
+    #[test]
+    fn sky_darkening_matches_vanilla_integer_cast() {
+        assert_eq!(sky_darkening(15.0), 0);
+        assert_eq!(sky_darkening(11.5625), 3);
+        assert_eq!(sky_darkening(4.0), 11);
     }
 }

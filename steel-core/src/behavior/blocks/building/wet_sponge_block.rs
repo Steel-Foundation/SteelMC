@@ -3,6 +3,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::BlockRef;
+use steel_registry::vanilla_environment_attributes;
 use steel_registry::{level_events, sound_events, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
@@ -36,7 +37,10 @@ impl BlockBehavior for WetSpongeBlock {
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
-        if !world.dimension_type.water_evaporates {
+        if !world
+            .environment_attributes()
+            .get_value(&vanilla_environment_attributes::WATER_EVAPORATES, pos)
+        {
             return;
         }
 

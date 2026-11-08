@@ -21,6 +21,32 @@ pub enum MobCategory {
 }
 
 impl MobCategory {
+    /// Every category in vanilla declaration order.
+    pub const ALL: [Self; 8] = [
+        Self::Monster,
+        Self::Creature,
+        Self::Ambient,
+        Self::Axolotls,
+        Self::UndergroundWaterCreature,
+        Self::WaterCreature,
+        Self::WaterAmbient,
+        Self::Misc,
+    ];
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Monster => "monster",
+            Self::Creature => "creature",
+            Self::Ambient => "ambient",
+            Self::Axolotls => "axolotls",
+            Self::UndergroundWaterCreature => "underground_water_creature",
+            Self::WaterCreature => "water_creature",
+            Self::WaterAmbient => "water_ambient",
+            Self::Misc => "misc",
+        }
+    }
+
     #[must_use]
     pub const fn despawn_distance(self) -> i32 {
         match self {

@@ -27,6 +27,7 @@ use steel_registry::items::ItemRef;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_environment_attributes;
 use steel_registry::{
     REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_attributes, vanilla_damage_types,
     vanilla_entities, vanilla_entity_type_tags::EntityTypeTag, vanilla_game_events,
@@ -1593,7 +1594,10 @@ pub trait Mob: LivingEntity + Leashable {
         let Some(world) = self.level() else {
             return false;
         };
-        if !world.monsters_burn() {
+        if !world.environment_attributes().get_value_at(
+            &vanilla_environment_attributes::MONSTERS_BURN,
+            self.position(),
+        ) {
             return false;
         }
 

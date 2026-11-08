@@ -3,7 +3,11 @@
 #![feature(portable_simd)]
 /// Shared angle constants.
 pub mod angle;
+/// Vanilla keyframe easing curves.
+pub mod easing;
 pub mod float_consts;
+/// Vanilla keyframe tracks and lerp functions.
+pub mod keyframe_track;
 /// Math utilities used by vanilla world generation noise.
 mod noise_math;
 mod rounding;

@@ -11,6 +11,8 @@ use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::environment_attributes::SupportedAttributes;
+
 #[derive(Deserialize, Debug)]
 pub struct TimelineJson {
     clock: String,
@@ -170,6 +172,7 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static timeline definitions
+    let supported_attributes = SupportedAttributes::load();
     let mut register_stream = TokenStream::new();
     for (timeline_name, timeline_data) in &timelines {
         let timeline_ident = Ident::new(&timeline_name.to_shouty_snake_case(), Span::call_site());
@@ -235,6 +238,8 @@ pub(crate) fn build() -> TokenStream {
             })
             .collect();
 
+        let attribute_tracks = supported_attributes.quote_tracks(&timeline_data.tracks);
+
         // Generate time_marker literals
         let marker_tokens: Vec<TokenStream> = timeline_data
             .time_markers
@@ -250,6 +255,7 @@ pub(crate) fn build() -> TokenStream {
                 tracks: &[
                     #(#track_tokens),*
                 ],
+                attribute_tracks: #attribute_tracks,
                 time_markers: &[
                     #(#marker_tokens),*
                 ],

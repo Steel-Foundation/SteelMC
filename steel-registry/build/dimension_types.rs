@@ -5,6 +5,7 @@
 
 use std::fs;
 
+use crate::environment_attributes::SupportedAttributes;
 use crate::generator_functions::{generate_option, generate_sound_event_ref};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -16,6 +17,9 @@ use steel_utils::Identifier;
 pub struct DimensionTypeJson {
     #[serde(default)]
     attributes: DimensionAttributes,
+    /// Every attribute entry, for the typed environment attribute map.
+    #[serde(skip)]
+    raw_attributes: serde_json::Map<String, serde_json::Value>,
 
     #[serde(default)]
     has_fixed_time: bool,
@@ -99,7 +103,7 @@ struct DimensionAttributes {
 }
 
 #[derive(Deserialize, Debug)]
-struct BedRuleJson {
+pub(crate) struct BedRuleJson {
     can_set_spawn: String,
     can_sleep: String,
     #[serde(default)]
@@ -198,7 +202,7 @@ fn generate_monster_spawn_light_level(level: &MonsterSpawnLightLevelJson) -> Tok
     }
 }
 
-fn generate_bed_rule(bed_rule: &BedRuleJson) -> TokenStream {
+pub(crate) fn generate_bed_rule(bed_rule: &BedRuleJson) -> TokenStream {
     let can_set_spawn = generate_bed_rule_value(&bed_rule.can_set_spawn);
     let can_sleep = generate_bed_rule_value(&bed_rule.can_sleep);
     let destroy_on_use = bed_rule.destroy_on_use;
@@ -218,7 +222,7 @@ fn generate_bed_rule(bed_rule: &BedRuleJson) -> TokenStream {
         },
     );
     quote! {
-        BedRule {
+        crate::environment_attribute::BedRule {
             can_set_spawn: #can_set_spawn,
             can_sleep: #can_sleep,
             destroy_on_use: #destroy_on_use,
@@ -231,9 +235,9 @@ fn generate_bed_rule(bed_rule: &BedRuleJson) -> TokenStream {
 
 fn generate_bed_rule_value(value: &str) -> TokenStream {
     match value {
-        "always" => quote! { BedRuleValue::Always },
-        "when_dark" => quote! { BedRuleValue::WhenDark },
-        "never" => quote! { BedRuleValue::Never },
+        "always" => quote! { crate::environment_attribute::BedRuleValue::Always },
+        "when_dark" => quote! { crate::environment_attribute::BedRuleValue::WhenDark },
+        "never" => quote! { crate::environment_attribute::BedRuleValue::Never },
         _ => panic!("Invalid bed rule value '{value}'"),
     }
 }
@@ -303,6 +307,11 @@ pub(crate) fn build() -> TokenStream {
             let content = fs::read_to_string(&path).unwrap();
             let mut dimension_type: DimensionTypeJson = serde_json::from_str(&content)
                 .unwrap_or_else(|e| panic!("Failed to parse {dimension_type_name}: {e}"));
+            let raw_json: serde_json::Value = serde_json::from_str(&content).unwrap();
+            dimension_type.raw_attributes = match raw_json.get("attributes") {
+                Some(serde_json::Value::Object(attributes)) => attributes.clone(),
+                _ => serde_json::Map::new(),
+            };
 
             // Extract fixed_time from attributes if has_fixed_time is true but fixed_time is None
             if dimension_type.has_fixed_time && dimension_type.fixed_time.is_none() {
@@ -332,8 +341,10 @@ pub(crate) fn build() -> TokenStream {
     });
 
     // Generate static dimension type definitions
+    let supported_attributes = SupportedAttributes::load();
     let mut register_stream = TokenStream::new();
     for (dimension_type_name, dimension_type) in &dimension_types {
+        let attributes = supported_attributes.quote_map(&dimension_type.raw_attributes);
         let dimension_type_ident = Ident::new(
             &dimension_type_name.to_shouty_snake_case(),
             Span::call_site(),
@@ -544,6 +555,7 @@ pub(crate) fn build() -> TokenStream {
                 straw_bed_rule: #straw_bed_rule,
                 mood_sound: #mood_sound,
                 background_music: #background_music,
+                attributes: #attributes,
             };
         });
 
