@@ -196,13 +196,14 @@ impl Player {
     }
 
     /// `Player.isInvulnerableTo` after `super`: damage types switched off by
-    /// game rules, and players whose client has not loaded.
+    /// game rules, then `ServerPlayer`'s players whose client has not loaded.
+    // TODO: `ServerPlayer` also protects a player changing dimension from
+    // everything but ender pearl damage; the player does not track that state yet.
     pub(super) fn is_invulnerable_to_after_super(&self, ctx: &mut IsInvulnerableToCtx<'_>) -> Flow {
         if !ctx.result {
-            ctx.result = match Self::disabled_damage_game_rule(ctx.source) {
-                Some(rule) => !ctx.world.get_game_rule(rule),
-                None => !self.has_client_loaded(),
-            };
+            let rule_disabled = Self::disabled_damage_game_rule(ctx.source)
+                .is_some_and(|rule| !ctx.world.get_game_rule(rule));
+            ctx.result = rule_disabled || !self.has_client_loaded();
         }
         Flow::Continue
     }

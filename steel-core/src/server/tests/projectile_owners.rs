@@ -55,6 +55,8 @@ fn assert_pearl_impact(owner_in_nether: bool, pearl_in_nether: bool, cached: boo
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(owner_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
+        // A player whose client has not loaded is invulnerable.
+        player.set_client_loaded(true);
         assert!(pearl_world.set_block(
             BlockPos::new(0, 64, 0),
             vanilla_blocks::STONE.default_state(),
