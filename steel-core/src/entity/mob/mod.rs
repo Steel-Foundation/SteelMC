@@ -460,8 +460,6 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
         ai_step: |mob, entity| mob.mob().run_ai_step(entity),
         server_ai_step: |mob, entity| mob.mob().mob_server_ai_step(entity),
-        base_experience_reward: |mob| mob.mob().base_experience_reward_mob(),
-        can_dispenser_equip_into_slot: |mob, _| mob.mob().can_pick_up_loot(),
         ..LivingProps::new()
     }
 }

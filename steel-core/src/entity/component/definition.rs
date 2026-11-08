@@ -29,9 +29,12 @@ use crate::entity::projectile::ProjectileHit;
 use crate::entity::{
     Entity, EntitySpawnReason, MobBase, SharedEntity, SpawnGroupData, position_rider_default,
 };
+use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{ClipHitResult, World};
+use steel_registry::item_stack::ItemStack;
+use steel_registry::sound_event::SoundEventRef;
 
 /// Declares the chains of [`Definition`]; see the [module docs](self).
 macro_rules! definition_chains {
@@ -199,6 +202,22 @@ definition_chains! {
     /// Vanilla `Entity.getControllingPassenger`.
     ControllingPassenger / ControllingPassengerCtx:
         fn controlling_passenger() -> Option<SharedEntity> = None;
+    /// Vanilla `LivingEntity.getVoicePitch`.
+    VoicePitch / VoicePitchCtx: fn voice_pitch() -> f32 = 1.0;
+    /// Vanilla `LivingEntity.getEquipSound`, as far as Steel resolves it.
+    EquipSound / EquipSoundCtx:
+        fn equip_sound<'a>(slot: EquipmentSlot, stack: &'a ItemStack)
+            -> Option<SoundEventRef> = None;
+    /// Vanilla `LivingEntity.getBaseExperienceReward`.
+    BaseExperienceReward / BaseExperienceRewardCtx: fn base_experience_reward() -> i32 = 0;
+    /// Vanilla `LivingEntity.canUseSlot`.
+    CanUseSlot / CanUseSlotCtx: fn can_use_slot(slot: EquipmentSlot) -> bool = true;
+    /// Vanilla `LivingEntity.canDispenserEquipIntoSlot`.
+    CanDispenserEquipIntoSlot / CanDispenserEquipIntoSlotCtx:
+        fn can_dispenser_equip_into_slot(slot: EquipmentSlot) -> bool = true;
+    /// Vanilla `LivingEntity.tickRidden`: side effects of a rider steering
+    /// this entity.
+    TickRidden / TickRiddenCtx: fn tick_ridden<'a>(controller: &'a Player, ridden_input: DVec3);
     /// Vanilla `Projectile.onHit`.
     OnHit / OnHitCtx: fn on_hit<'a>(entity: &'a SharedEntity, hit: &'a ProjectileHit);
     /// Vanilla `Projectile.onHitEntity`.

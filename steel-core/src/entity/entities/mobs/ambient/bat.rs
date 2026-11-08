@@ -20,6 +20,7 @@ use crate::chunk::heightmap::HeightmapType;
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::HurtCtx;
+use crate::entity::component::definition::VoicePitchCtx;
 use crate::entity::component::pipeline::Flow;
 use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::prelude::*;
@@ -74,7 +75,6 @@ impl BatEntity {
 
     const LIVING: LivingProps<Self> = LivingProps {
         sound_volume: |_| 0.1,
-        voice_pitch: |bat| bat.living().voice_pitch_default() * 0.95,
         hurt_sound: |_, _| Some(&sound_events::ENTITY_BAT_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_BAT_DEATH),
         push_entities: |_| {},
@@ -104,6 +104,7 @@ impl BatEntity {
     const FLY: StageId = StageId("bat.fly");
     const HANG: StageId = StageId("bat.hang");
     const WAKE: StageId = StageId("bat.wake");
+    const PITCH: StageId = StageId("bat.pitch");
 
     /// Vanilla `Bat`: the mob chains with its resting and flying.
     fn define() -> Definition<Self> {
@@ -114,6 +115,14 @@ impl BatEntity {
         definition.tick = definition
             .tick
             .then([Stage::effect(Self::HANG, Self::tick_hang)]);
+        // `Bat.getVoicePitch`: `super`'s pitch lowered.
+        definition.voice_pitch = definition.voice_pitch.then([Stage::new(
+            Self::PITCH,
+            |_: &Self, ctx: &mut VoicePitchCtx<'_>| {
+                ctx.result *= 0.95;
+                Flow::Continue
+            },
+        )]);
         // `Bat.hurtServer` before `super`: invulnerable bats ignore the hit;
         // others wake up.
         definition.hurt = definition.hurt.before(

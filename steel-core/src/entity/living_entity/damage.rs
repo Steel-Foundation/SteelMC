@@ -661,17 +661,6 @@ impl Living<'_> {
         self.living_base().was_experience_consumed()
     }
 
-    /// Returns the base experience reward for killing this entity, using the
-    /// animal-specific reward when applicable.
-    #[must_use]
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn base_experience_reward_default(&self) -> i32 {
-        0
-    }
-
     /// Returns the experience reward for this entity's death; currently
     /// equal to the base reward (see TODO).
     pub fn experience_reward(&self, _world: &World, _killer_entity: Option<&dyn Entity>) -> i32 {

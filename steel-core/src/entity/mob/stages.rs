@@ -4,6 +4,7 @@ use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::{
     AiStep, AiStepCtx, Ate, FinalizeSpawn, FinalizeSpawnCtx, Tick,
 };
+use crate::entity::component::definition::{BaseExperienceRewardCtx, CanDispenserEquipIntoSlotCtx};
 use crate::entity::component::definition::{ControllingPassengerCtx, Interact, InteractCtx};
 use crate::entity::component::pipeline::Inner;
 use crate::entity::component::pipeline::Pipeline;
@@ -22,6 +23,10 @@ pub const BASE_TICK: StageId = StageId("mob.base_tick");
 pub const INTERACT: StageId = StageId("mob.interact");
 /// Stage running `Mob.getControllingPassenger`, which replaces `Entity`'s.
 pub const CONTROLLING_PASSENGER: StageId = StageId("mob.controlling_passenger");
+/// Stage running `Mob.getBaseExperienceReward`, which replaces the living one.
+pub const BASE_EXPERIENCE_REWARD: StageId = StageId("mob.base_experience_reward");
+/// Stage running `Mob.canDispenserEquipIntoSlot`, which replaces the living one.
+pub const CAN_DISPENSER_EQUIP_INTO_SLOT: StageId = StageId("mob.can_dispenser_equip_into_slot");
 /// Stage running `Mob.tick` after the living tick.
 pub const TICK: StageId = StageId("mob.tick");
 /// Stage running `Mob.ate`.
@@ -85,6 +90,20 @@ pub fn definition<E: Parts>() -> Definition<E> {
     let living = living_entity::definition::<E>();
     Definition {
         interact: living.interact.around(INTERACT, interact::<E>),
+        base_experience_reward: Pipeline::new([Stage::new(
+            BASE_EXPERIENCE_REWARD,
+            |mob: &E, ctx: &mut BaseExperienceRewardCtx<'_>| {
+                ctx.result = mob.mob().base_experience_reward_mob();
+                Flow::Continue
+            },
+        )]),
+        can_dispenser_equip_into_slot: Pipeline::new([Stage::new(
+            CAN_DISPENSER_EQUIP_INTO_SLOT,
+            |mob: &E, ctx: &mut CanDispenserEquipIntoSlotCtx<'_>| {
+                ctx.result = mob.mob().can_pick_up_loot();
+                Flow::Continue
+            },
+        )]),
         controlling_passenger: Pipeline::new([Stage::new(
             CONTROLLING_PASSENGER,
             |mob: &E, ctx: &mut ControllingPassengerCtx<'_>| {

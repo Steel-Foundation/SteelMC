@@ -13,6 +13,10 @@ use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::EntityProps;
 use crate::entity::component::definition::SetYBodyRotCtx;
+use crate::entity::component::definition::{
+    BaseExperienceRewardCtx, CanDispenserEquipIntoSlotCtx, CanUseSlotCtx, EquipSoundCtx,
+    VoicePitchCtx,
+};
 use crate::entity::component::definition::{BaseTick, BaseTickCtx, Definition, HurtCtx, TickCtx};
 use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage, StageId};
 use crate::entity::component::props::entity_props;
@@ -64,8 +68,6 @@ entity_props! {
         fn hurt_armor(source: &DamageSource, damage: f32) = hurt_armor_default;
         /// `LivingEntity.hurtHelmet`, for damage that hits a worn helmet.
         fn hurt_helmet(source: &DamageSource, damage: f32) = hurt_helmet_default;
-        /// `LivingEntity.getVoicePitch`.
-        fn voice_pitch() -> f32 = voice_pitch_default;
         /// `LivingEntity.doesEmitEquipEvent`.
         fn does_emit_equip_event(slot: EquipmentSlot) -> bool = does_emit_equip_event_default;
         /// `LivingEntity.actuallyHurt`.
@@ -104,8 +106,6 @@ entity_props! {
         fn death_sound() -> Option<SoundEventRef> = death_sound_default;
         /// The chicken variant key for loot predicates, when this is a chicken.
         fn chicken_loot_variant() -> Option<&'static Identifier> = chicken_loot_variant_default;
-        /// `LivingEntity.getBaseExperienceReward`.
-        fn base_experience_reward() -> i32 = base_experience_reward_default;
         /// `LivingEntity.serverAiStep`.
         fn server_ai_step(entity: &SharedEntity) = server_ai_step_default;
         /// `LivingEntity.canBeAffected`.
@@ -143,20 +143,12 @@ entity_props! {
         fn drop_custom_death_loot(source: &DamageSource, killed_by_player: bool) = drop_custom_death_loot_default;
         /// Checks if the entity is blocking with a shield or similar item.
         fn is_blocking() -> bool = is_blocking_default;
-        /// Returns whether vanilla allows this entity to use `slot`.
-        fn can_use_slot(slot: EquipmentSlot) -> bool = can_use_slot_default;
-        /// Returns the equip sound Steel can currently resolve for this entity.
-        fn equip_sound(slot: EquipmentSlot, stack: &ItemStack) -> Option<SoundEventRef> = equip_sound_default;
         /// Returns whether the given item in the given slot allows elytra-style gliding.
         fn can_glide_using(item_stack: &ItemStack, slot: EquipmentSlot) -> bool = can_glide_using_default;
-        /// Ticks side effects of a rider controlling this entity, such as steering-based input.
-        fn tick_ridden(controller: &Player, ridden_input: DVec3) = tick_ridden_default;
         /// Transforms the rider's raw input into this entity's movement input while ridden.
         fn ridden_input(controller: &Player, self_input: DVec3) -> DVec3 = ridden_input_default;
         /// `LivingEntity.getRiddenSpeed`.
         fn ridden_speed(controller: &Player) -> f32 = ridden_speed_default;
-        /// `LivingEntity.canDispenserEquipIntoSlot`.
-        fn can_dispenser_equip_into_slot(slot: EquipmentSlot) -> bool = can_dispenser_equip_into_slot_default;
         /// Returns the water-movement slowdown multiplier.
         fn water_slow_down() -> f32 = water_slow_down_default;
         /// Returns the vertical friction used by `travelInAir`.
@@ -221,6 +213,17 @@ pub const TICK: StageId = StageId("living_entity.tick");
 pub const HURT: StageId = StageId("living_entity.hurt");
 /// The `LivingEntity.setYBodyRot` stage: stores the body yaw.
 pub const SET_Y_BODY_ROT: StageId = StageId("living_entity.set_y_body_rot");
+/// The `LivingEntity.getVoicePitch` stage.
+pub const VOICE_PITCH: StageId = StageId("living_entity.voice_pitch");
+/// The `LivingEntity.getEquipSound` stage.
+pub const EQUIP_SOUND: StageId = StageId("living_entity.equip_sound");
+/// The `LivingEntity.getBaseExperienceReward` stage: none.
+pub const BASE_EXPERIENCE_REWARD: StageId = StageId("living_entity.base_experience_reward");
+/// The `LivingEntity.canUseSlot` stage: any slot.
+pub const CAN_USE_SLOT: StageId = StageId("living_entity.can_use_slot");
+/// The `LivingEntity.canDispenserEquipIntoSlot` stage: any slot.
+pub const CAN_DISPENSER_EQUIP_INTO_SLOT: StageId =
+    StageId("living_entity.can_dispenser_equip_into_slot");
 /// The `LivingEntity.baseTick` stage, around `Entity`'s.
 pub const BASE_TICK: StageId = StageId("living_entity.base_tick");
 
@@ -249,6 +252,43 @@ pub fn definition<E: Parts>() -> Definition<E> {
                 Flow::Continue
             },
         )]),
+        voice_pitch: Pipeline::new([Stage::new(
+            VOICE_PITCH,
+            |living: &E, ctx: &mut VoicePitchCtx<'_>| {
+                ctx.result = living.living().voice_pitch_base();
+                Flow::Continue
+            },
+        )]),
+        equip_sound: Pipeline::new([Stage::new(
+            EQUIP_SOUND,
+            |living: &E, ctx: &mut EquipSoundCtx<'_>| {
+                ctx.result = living.living().equip_sound_base(ctx.slot, ctx.stack);
+                Flow::Continue
+            },
+        )]),
+        base_experience_reward: Pipeline::new([Stage::new(
+            BASE_EXPERIENCE_REWARD,
+            |_: &E, ctx: &mut BaseExperienceRewardCtx<'_>| {
+                ctx.result = 0;
+                Flow::Continue
+            },
+        )]),
+        can_use_slot: Pipeline::new([Stage::new(
+            CAN_USE_SLOT,
+            |_: &E, ctx: &mut CanUseSlotCtx<'_>| {
+                ctx.result = true;
+                Flow::Continue
+            },
+        )]),
+        can_dispenser_equip_into_slot: Pipeline::new([Stage::new(
+            CAN_DISPENSER_EQUIP_INTO_SLOT,
+            |_: &E, ctx: &mut CanDispenserEquipIntoSlotCtx<'_>| {
+                ctx.result = true;
+                Flow::Continue
+            },
+        )]),
+        // Vanilla's `LivingEntity.tickRidden` does nothing.
+        tick_ridden: Pipeline::new([]),
         hurt: Pipeline::new([Stage::new(HURT, |living: &E, ctx: &mut HurtCtx<'_>| {
             ctx.result = living
                 .living()
@@ -767,12 +807,57 @@ impl<'a> Living<'a> {
 
     /// Returns the pitch used for this entity's sounds; babies get a randomized higher pitch.
     #[must_use]
-    pub fn voice_pitch_default(&self) -> f32 {
+    fn voice_pitch_base(&self) -> f32 {
         if self.is_baby() {
             (rand::random::<f32>() - rand::random::<f32>()) * 0.2 + 1.5
         } else {
             (rand::random::<f32>() - rand::random::<f32>()) * 0.2 + 1.0
         }
+    }
+
+    /// Vanilla `LivingEntity.getVoicePitch`: runs this type's pipeline.
+    #[must_use]
+    pub fn voice_pitch(&self) -> f32 {
+        self.entity.entity_definition().voice_pitch(self.entity)
+    }
+
+    /// Vanilla `LivingEntity.getBaseExperienceReward`: runs this type's pipeline.
+    #[must_use]
+    pub fn base_experience_reward(&self) -> i32 {
+        self.entity
+            .entity_definition()
+            .base_experience_reward(self.entity)
+    }
+
+    /// Vanilla `LivingEntity.canUseSlot`: runs this type's pipeline.
+    #[must_use]
+    pub fn can_use_slot(&self, slot: EquipmentSlot) -> bool {
+        self.entity
+            .entity_definition()
+            .can_use_slot(self.entity, slot)
+    }
+
+    /// Vanilla `LivingEntity.canDispenserEquipIntoSlot`: runs this type's pipeline.
+    #[must_use]
+    pub fn can_dispenser_equip_into_slot(&self, slot: EquipmentSlot) -> bool {
+        self.entity
+            .entity_definition()
+            .can_dispenser_equip_into_slot(self.entity, slot)
+    }
+
+    /// Vanilla `LivingEntity.getEquipSound`: runs this type's pipeline.
+    #[must_use]
+    pub fn equip_sound(&self, slot: EquipmentSlot, stack: &ItemStack) -> Option<SoundEventRef> {
+        self.entity
+            .entity_definition()
+            .equip_sound(self.entity, slot, stack)
+    }
+
+    /// Vanilla `LivingEntity.tickRidden`: runs this type's pipeline.
+    pub fn tick_ridden(&self, controller: &Player, ridden_input: DVec3) {
+        self.entity
+            .entity_definition()
+            .tick_ridden(self.entity, controller, ridden_input);
     }
 
     /// Returns the sound played when this entity is hurt.

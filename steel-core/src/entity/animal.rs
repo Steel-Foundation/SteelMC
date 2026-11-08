@@ -5,6 +5,7 @@
 //! and `mobInteract` layers are pipeline stages in this module, and
 //! [`ai_step`] / [`mob_interact`] build an animal's whole vanilla chain.
 
+use crate::entity::component::definition::BaseExperienceRewardCtx;
 use crate::entity::prelude::*;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
@@ -46,7 +47,6 @@ const BREEDING_XP: RangeInclusive<i32> = 1..=7;
 #[must_use]
 pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
-        base_experience_reward: |_| Animal::base_experience_reward(),
         ..mob::living_props()
     }
 }
@@ -380,6 +380,8 @@ pub const PATHFINDING_MALUS: StageId = StageId("animal.pathfinding_malus");
 pub const CUSTOM_SERVER_AI_STEP: StageId = StageId("animal.custom_server_ai_step");
 /// Stage feeding the animal in `mobInteract`.
 pub const MOB_INTERACT: StageId = StageId("animal.mob_interact");
+/// Stage running `Animal.getBaseExperienceReward`, which replaces `Mob`'s.
+pub const BASE_EXPERIENCE_REWARD: StageId = StageId("animal.base_experience_reward");
 
 /// Vanilla's chains for an animal type: `LivingEntity` → `Mob` →
 /// `AgeableMob` → `Animal`, base first.
@@ -397,6 +399,13 @@ pub fn definition<E: Parts>() -> Definition<E> {
             ageable::finalize_spawn::<E>(),
             mob::stages::finalize_spawn::<E>(),
         ]),
+        base_experience_reward: Pipeline::new([Stage::new(
+            BASE_EXPERIENCE_REWARD,
+            |_: &E, ctx: &mut BaseExperienceRewardCtx<'_>| {
+                ctx.result = Animal::base_experience_reward();
+                Flow::Continue
+            },
+        )]),
         ..mob::stages::definition::<E>()
     }
 }

@@ -1,6 +1,7 @@
 //! Vanilla Chicken entity with variant + sound-variant parity, wing-flap
 //! slow-fall, and periodic egg-laying behavior.
 
+use crate::entity::component::definition::BaseExperienceRewardCtx;
 use crate::entity::component::definition::PositionRiderCtx;
 use crate::entity::component::pipeline::Flow;
 use crate::entity::prelude::*;
@@ -31,7 +32,7 @@ use crate::entity::ai::goal::{
     TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::ai::path::PathType;
-use crate::entity::animal::{self, Animal, Breeding, BreedingProps};
+use crate::entity::animal::{self, Breeding, BreedingProps};
 use crate::entity::component::definition::Definition;
 use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::variant::{self, Variants};
@@ -106,13 +107,6 @@ impl ChickenEntity {
         hurt_sound: |chicken, _| Some(chicken.current_sound_set().hurt_sound),
         death_sound: |chicken| Some(chicken.current_sound_set().death_sound),
         chicken_loot_variant: |chicken| Some(&chicken.variant().key),
-        base_experience_reward: |chicken| {
-            if chicken.is_chicken_jockey() {
-                10
-            } else {
-                Animal::base_experience_reward()
-            }
-        },
         ..animal::living_props()
     };
     const MOB: MobProps<Self> = MobProps {
@@ -127,12 +121,27 @@ impl ChickenEntity {
     const LAY_EGG: StageId = StageId("chicken.lay_egg");
 
     const RIDER_FACING: StageId = StageId("chicken.rider_facing");
+    const JOCKEY_XP: StageId = StageId("chicken.jockey_xp");
 
     /// Vanilla `Chicken`: the animal chains plus flapping and egg laying
     /// after `Animal.aiStep`, and variant selection before
     /// `AgeableMob.finalizeSpawn`.
     fn define() -> Definition<Self> {
         let mut definition = animal::definition::<Self>();
+        // `Chicken.getBaseExperienceReward`: jockeys give 10 instead of `super`.
+        definition.base_experience_reward = definition.base_experience_reward.before(
+            animal::BASE_EXPERIENCE_REWARD,
+            [Stage::new(
+                Self::JOCKEY_XP,
+                |chicken: &Self, ctx: &mut BaseExperienceRewardCtx<'_>| {
+                    if chicken.is_chicken_jockey() {
+                        ctx.result = 10;
+                        return Flow::Stop;
+                    }
+                    Flow::Continue
+                },
+            )],
+        );
         definition.position_rider = definition.position_rider.then([Stage::new(
             Self::RIDER_FACING,
             Self::position_rider_after_super,

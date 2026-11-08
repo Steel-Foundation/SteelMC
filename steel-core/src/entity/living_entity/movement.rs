@@ -536,13 +536,6 @@ impl Living<'_> {
         }
     }
 
-    /// Ticks side effects of a rider controlling this entity, such as steering-based input.
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn tick_ridden_default(&self, _controller: &Player, _ridden_input: DVec3) {}
-
     /// Transforms the rider's raw input into this entity's movement input while ridden.
     #[expect(
         clippy::unused_self,

@@ -3,6 +3,7 @@
 use super::*;
 use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::TickCtx;
+use crate::entity::component::definition::VoicePitchCtx;
 use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
@@ -11,7 +12,6 @@ impl Player {
     pub(super) const LIVING: LivingProps<Self> = LivingProps {
         default_dimensions: |_, pose| Player::dimensions_for_pose(pose),
         hurt_sound: |_, source| Some(source.damage_type.effects.sound()),
-        voice_pitch: |_| 1.0,
         does_emit_equip_event: |_, slot| slot.slot_type() == EquipmentSlotType::HumanoidArmor,
         hurt_helmet: |player, source, damage| {
             player
@@ -63,12 +63,21 @@ impl Player {
     pub(super) fn define() -> Definition<Self> {
         const TICK: StageId = StageId("player.tick");
         const HURT: StageId = StageId("player.hurt");
+        const VOICE_PITCH: StageId = StageId("player.voice_pitch");
         let living = living_entity::definition();
         Definition {
             tick: Pipeline::new([Stage::new(TICK, |player: &Self, ctx: &mut TickCtx<'_>| {
                 player.tick_player(ctx.entity);
                 Flow::Continue
             })]),
+            // `Player.getVoicePitch` never calls `super`.
+            voice_pitch: Pipeline::new([Stage::new(
+                VOICE_PITCH,
+                |_: &Self, ctx: &mut VoicePitchCtx<'_>| {
+                    ctx.result = 1.0;
+                    Flow::Continue
+                },
+            )]),
             hurt: living.hurt.before(
                 living_entity::HURT,
                 [Stage::new(HURT, Self::hurt_before_super)],

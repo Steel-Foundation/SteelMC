@@ -22,6 +22,7 @@ use steel_utils::locks::CheckedMutex;
 
 use crate::entity::ageable::{self, Age, AgeableProps};
 use crate::entity::ai::path::PathType;
+use crate::entity::component::definition::BaseExperienceRewardCtx;
 use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::HurtCtx;
 use crate::entity::component::pipeline::Flow;
@@ -96,8 +97,6 @@ impl SquidEntity {
         sound_volume: |_| 0.4,
         hurt_sound: |_, _| Some(&sound_events::ENTITY_SQUID_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_SQUID_DEATH),
-        // `AgeableWaterCreature.getBaseExperienceReward`.
-        base_experience_reward: |_| 1 + rand::random_range(0..3),
         travel: |squid, entity, _| {
             Arc::clone(entity).move_entity(MoverType::SelfMovement, squid.velocity())
         },
@@ -123,6 +122,7 @@ impl SquidEntity {
     const SWIM: StageId = StageId("squid.swim");
     const AIR: StageId = StageId("squid.air");
     const INK: StageId = StageId("squid.ink");
+    const XP: StageId = StageId("squid.xp");
 
     /// Vanilla `Squid`: the `AgeableMob` chains with the squid's goals, its
     /// water malus and its swimming.
@@ -157,6 +157,14 @@ impl SquidEntity {
                     Flow::Continue
                 },
             ),
+            // `AgeableWaterCreature.getBaseExperienceReward`, which replaces `Mob`'s.
+            base_experience_reward: Pipeline::new([Stage::new(
+                Self::XP,
+                |_: &Self, ctx: &mut BaseExperienceRewardCtx<'_>| {
+                    ctx.result = 1 + rand::random_range(0..3);
+                    Flow::Continue
+                },
+            )]),
             hurt: mob::stages::definition::<Self>()
                 .hurt
                 .then([Stage::new(Self::INK, Self::hurt_after_super)]),
