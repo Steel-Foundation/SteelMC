@@ -5,9 +5,9 @@
 //! - `TheEndBiomeSource` — The End (spatial + erosion threshold)
 //! - `FixedBiomeSource` — one biome everywhere (the single-biome world preset)
 //!
-//! Each dimension creates a different `BiomeSourceKind` variant. The chunk generator
-//! calls `chunk_sampler()` per chunk to get a `ChunkBiomeSampler` that holds per-chunk
-//! caches (column cache, R-tree warm-start index).
+//! Each generator picks a `BiomeSourceKind` variant: its dimension's own, or `Fixed`. The
+//! chunk generator calls `chunk_sampler()` per chunk to get a `ChunkBiomeSampler` that holds
+//! per-chunk caches (column cache, R-tree warm-start index).
 //!
 //! ## R-tree cache strategy
 //!
@@ -33,10 +33,9 @@ use steel_worldgen::multi_noise::{
 use super::{NetherClimateSampler, OverworldClimateSampler};
 use steel_worldgen::noise::EndIslands;
 
-/// Dimension-specific biome source.
+/// A generator's biome source.
 ///
-/// Each variant holds shared state (noise generators, parameter lists) and
-/// creates per-chunk samplers via [`chunk_sampler`](BiomeSourceKind::chunk_sampler).
+/// Each variant holds its shared state and creates per-chunk samplers via [`chunk_sampler`](BiomeSourceKind::chunk_sampler).
 #[non_exhaustive]
 pub enum BiomeSourceKind {
     /// Overworld biome source (multi-noise climate matching).
@@ -134,7 +133,8 @@ impl BiomeSourceKind {
     }
 
     /// Vanilla's `BiomeSource.findBiomeHorizontal(findClosest=false, skipSteps=1)`.
-    /// Reservoir-samples at y=0. Returns `Some((block_x, block_z))` if found.
+    /// Reservoir-samples at y=0, except for the fixed source, which picks a random point.
+    /// Returns `Some((block_x, block_z))` if found.
     #[must_use]
     pub fn find_biome_horizontal(
         &self,
@@ -502,7 +502,6 @@ impl EndChunkBiomeSampler<'_> {
 mod tests {
     use super::*;
 
-    /// Vanilla's fixed source picks a point with two draws, x then z, instead of scanning.
     #[test]
     fn fixed_source_search_draws_like_vanilla() {
         let source = BiomeSourceKind::fixed(&vanilla_biomes::PLAINS);

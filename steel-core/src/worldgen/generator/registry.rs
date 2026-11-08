@@ -204,7 +204,6 @@ struct FlatGeneratorConfig {
     structure_overrides: Vec<Identifier>,
 }
 
-/// Vanilla's `single_biome_surface` preset: overworld terrain with one biome everywhere.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SingleBiomeConfig {
