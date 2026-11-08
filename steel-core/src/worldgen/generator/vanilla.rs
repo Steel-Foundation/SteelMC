@@ -37,8 +37,8 @@ use crate::worldgen::generator::{
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::{StructureGenerator, create_structures};
 use crate::worldgen::surface::SurfaceSystem;
-use steel_worldgen::biomes::BiomeSourceKind;
 use steel_worldgen::biomes::obfuscate_biome_seed;
+use steel_worldgen::biomes::{BiomeSourceKind, OverworldClimateSampler};
 use steel_worldgen::noise::Beardifier;
 use steel_worldgen::noise::NoiseChunk;
 use steel_worldgen::noise::OreVeinifier;
@@ -68,6 +68,23 @@ pub trait VanillaPostNoiseStateType: DimensionNoises + 'static {
 
     /// dense ore values from `Settings::MIN_Y`, up to `material_ore_vein_value_height`
     fn material_ore_vein_values(state: &mut Self::State) -> Arc<[f32]>;
+
+    /// Where the spawn search starts: vanilla's `NoiseBasedChunkGenerator.getOrigin`.
+    fn initial_spawn_search_origin(biome_source: &BiomeSourceKind, seed: u64) -> BlockPos;
+}
+
+/// Vanilla takes the origin from the noise settings' spawn target, not the biome source, so
+/// a fixed-biome overworld still runs the climate search.
+fn overworld_spawn_search_origin(biome_source: &BiomeSourceKind, seed: u64) -> BlockPos {
+    match biome_source {
+        BiomeSourceKind::Overworld(source) => source.climate_sampler().find_spawn_position(),
+        _ => OverworldClimateSampler::new(seed).find_spawn_position(),
+    }
+}
+
+/// Noise settings without a spawn target start at the origin.
+const fn no_spawn_target(_: &BiomeSourceKind, _: u64) -> BlockPos {
+    BlockPos::new(0, 0, 0)
 }
 
 /// Steel-owned post-Noise state for the built-in dimensions.
@@ -95,7 +112,7 @@ unsafe impl DowncastType for SteelPostNoiseState<EndNoises> {
 }
 
 macro_rules! impl_post_noise_state_type {
-    ($noises:ty) => {
+    ($noises:ty, $spawn_search_origin:path) => {
         impl VanillaPostNoiseStateType for $noises {
             type State = SteelPostNoiseState<Self>;
 
@@ -116,13 +133,17 @@ macro_rules! impl_post_noise_state_type {
             fn material_ore_vein_values(state: &mut Self::State) -> Arc<[f32]> {
                 Arc::clone(&state.material_ore_vein_values)
             }
+
+            fn initial_spawn_search_origin(biome_source: &BiomeSourceKind, seed: u64) -> BlockPos {
+                $spawn_search_origin(biome_source, seed)
+            }
         }
     };
 }
 
-impl_post_noise_state_type!(OverworldNoises);
-impl_post_noise_state_type!(NetherNoises);
-impl_post_noise_state_type!(EndNoises);
+impl_post_noise_state_type!(OverworldNoises, overworld_spawn_search_origin);
+impl_post_noise_state_type!(NetherNoises, no_spawn_target);
+impl_post_noise_state_type!(EndNoises, no_spawn_target);
 
 /// A chunk generator for vanilla (normal) world generation.
 ///
@@ -323,8 +344,8 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
             .sample(quart_x, quart_y, quart_z)
     }
 
-    fn initial_spawn_search_origin(&self) -> steel_utils::BlockPos {
-        self.biome_source.initial_spawn_search_origin()
+    fn initial_spawn_search_origin(&self) -> BlockPos {
+        N::initial_spawn_search_origin(&self.biome_source, self.seed as u64)
     }
 
     fn structure_generator(&self) -> Option<&StructureGenerator> {
@@ -1202,6 +1223,22 @@ mod tests {
     use crate::worldgen::generator::{
         ChunkGenerator as _, GenerationChunk, TerrainPhase, context::OverworldGenerator,
     };
+
+    /// Vanilla takes the spawn origin from the noise settings, so a fixed biome keeps it.
+    #[test]
+    fn fixed_biome_overworld_keeps_climate_spawn_origin() {
+        use super::{OverworldNoises, VanillaPostNoiseStateType as _};
+        use steel_registry::vanilla_biomes;
+
+        let seed = 12_345;
+        assert_eq!(
+            OverworldNoises::initial_spawn_search_origin(
+                &BiomeSourceKind::fixed(&vanilla_biomes::LUSH_CAVES),
+                seed
+            ),
+            OverworldNoises::initial_spawn_search_origin(&BiomeSourceKind::overworld(seed), seed),
+        );
+    }
 
     fn make_overworld_chunk() -> Chunk {
         let dimension = &vanilla_dimension_types::OVERWORLD;

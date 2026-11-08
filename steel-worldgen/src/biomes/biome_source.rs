@@ -3,6 +3,7 @@
 //! Mirrors vanilla's `BiomeSource` hierarchy:
 //! - `MultiNoiseBiomeSource` — Overworld and Nether (climate parameter matching via `RTree`)
 //! - `TheEndBiomeSource` — The End (spatial + erosion threshold)
+//! - `FixedBiomeSource` — one biome everywhere (the single-biome world preset)
 //!
 //! Each dimension creates a different `BiomeSourceKind` variant. The chunk generator
 //! calls `chunk_sampler()` per chunk to get a `ChunkBiomeSampler` that holds per-chunk
@@ -19,9 +20,9 @@
 use rustc_hash::FxHashSet;
 use steel_registry::biome::BiomeRef;
 use steel_registry::vanilla_biomes;
+use steel_utils::Identifier;
 use steel_utils::random::Random as _;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::{BlockPos, Identifier};
 use steel_worldgen::density_functions::nether::NetherColumnCache;
 use steel_worldgen::density_functions::overworld::OverworldColumnCache;
 use steel_worldgen::multi_noise::{
@@ -47,6 +48,8 @@ pub enum BiomeSourceKind {
     /// Boxed because `EndIslands` is ~2KB (simplex noise permutation table),
     /// while the other variants are pointer-sized.
     End(Box<EndBiomeSource>),
+    /// One biome everywhere.
+    Fixed(FixedBiomeSource),
 }
 
 impl BiomeSourceKind {
@@ -66,6 +69,12 @@ impl BiomeSourceKind {
     #[must_use]
     pub fn end(seed: u64) -> Self {
         Self::End(Box::new(EndBiomeSource::new(seed)))
+    }
+
+    /// Create a biome source that returns `biome` everywhere.
+    #[must_use]
+    pub const fn fixed(biome: BiomeRef) -> Self {
+        Self::Fixed(FixedBiomeSource::new(biome))
     }
 
     /// Every biome this source can produce, preserving the source's parameter-list order.
@@ -94,6 +103,7 @@ impl BiomeSourceKind {
                 &vanilla_biomes::SMALL_END_ISLANDS,
                 &vanilla_biomes::END_BARRENS,
             ],
+            Self::Fixed(source) => vec![source.biome],
         };
 
         distinct_biome_refs(biomes)
@@ -119,6 +129,7 @@ impl BiomeSourceKind {
             Self::Overworld(source) => source.chunk_sampler(),
             Self::Nether(source) => source.chunk_sampler(),
             Self::End(source) => source.chunk_sampler(),
+            Self::Fixed(source) => ChunkBiomeSampler::Fixed(source.biome),
         }
     }
 
@@ -133,6 +144,9 @@ impl BiomeSourceKind {
         allowed: &(impl Fn(BiomeRef) -> bool + ?Sized),
         rng: &mut LegacyRandom,
     ) -> Option<(i32, i32)> {
+        if let Self::Fixed(source) = self {
+            return source.find_biome_horizontal(origin_x, origin_z, search_radius, allowed, rng);
+        }
         let mut sampler = self.chunk_sampler();
         // QuartPos.fromBlock; origin_y = 0 so noise_y = 0.
         let noise_center_x = origin_x >> 2;
@@ -155,15 +169,6 @@ impl BiomeSourceKind {
             }
         }
         result
-    }
-
-    /// Returns vanilla's climate-based initial spawn search origin for dimensions that define one.
-    #[must_use]
-    pub fn initial_spawn_search_origin(&self) -> BlockPos {
-        match self {
-            Self::Overworld(source) => source.climate_sampler().find_spawn_position(),
-            Self::Nether(_) | Self::End(_) => BlockPos::new(0, 0, 0),
-        }
     }
 }
 
@@ -195,6 +200,8 @@ pub enum ChunkBiomeSampler<'a> {
     Nether(Box<NetherChunkBiomeSampler<'a>>),
     /// End sampler (spatial distance thresholds).
     End(Box<EndChunkBiomeSampler<'a>>),
+    /// Fixed sampler (the same biome everywhere).
+    Fixed(BiomeRef),
 }
 
 impl ChunkBiomeSampler<'_> {
@@ -205,6 +212,7 @@ impl ChunkBiomeSampler<'_> {
             Self::Overworld(s) => s.sample(quart_x, quart_y, quart_z),
             Self::Nether(s) => s.sample(quart_x, quart_y, quart_z),
             Self::End(s) => s.sample(quart_x, quart_y, quart_z),
+            Self::Fixed(biome) => biome,
         }
     }
 
@@ -220,8 +228,45 @@ impl ChunkBiomeSampler<'_> {
         match self {
             Self::Overworld(s) => s.init_grid(chunk_block_x, chunk_block_z),
             Self::Nether(s) => s.init_grid(chunk_block_x, chunk_block_z),
-            Self::End(_) => {}
+            Self::End(_) | Self::Fixed(_) => {}
         }
+    }
+}
+
+/// One biome everywhere: vanilla's `FixedBiomeSource`, used by the single-biome preset.
+pub struct FixedBiomeSource {
+    biome: BiomeRef,
+}
+
+impl FixedBiomeSource {
+    /// Create a source that returns `biome` everywhere.
+    #[must_use]
+    pub const fn new(biome: BiomeRef) -> Self {
+        Self { biome }
+    }
+
+    /// The biome this source returns everywhere.
+    #[must_use]
+    pub const fn biome(&self) -> BiomeRef {
+        self.biome
+    }
+
+    /// Vanilla does not scan the square here: it picks a random point in it, drawing x
+    /// then z.
+    fn find_biome_horizontal(
+        &self,
+        origin_x: i32,
+        origin_z: i32,
+        search_radius: i32,
+        allowed: &(impl Fn(BiomeRef) -> bool + ?Sized),
+        rng: &mut LegacyRandom,
+    ) -> Option<(i32, i32)> {
+        if !allowed(self.biome) {
+            return None;
+        }
+        let x = origin_x - search_radius + rng.next_i32_bounded(search_radius * 2 + 1);
+        let z = origin_z - search_radius + rng.next_i32_bounded(search_radius * 2 + 1);
+        Some((x, z))
     }
 }
 
@@ -456,6 +501,27 @@ impl EndChunkBiomeSampler<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Vanilla's fixed source picks a point with two draws, x then z, instead of scanning.
+    #[test]
+    fn fixed_source_search_draws_like_vanilla() {
+        let source = BiomeSourceKind::fixed(&vanilla_biomes::PLAINS);
+        let mut rng = LegacyRandom::from_seed(42);
+        let mut expected = LegacyRandom::from_seed(42);
+        let x = 1000 - 112 + expected.next_i32_bounded(225);
+        let z = -500 - 112 + expected.next_i32_bounded(225);
+        assert_eq!(
+            source.find_biome_horizontal(1000, -500, 112, &|_| true, &mut rng),
+            Some((x, z))
+        );
+        assert_eq!(rng.next_i64(), expected.next_i64());
+
+        assert_eq!(
+            source.find_biome_horizontal(1000, -500, 112, &|_| false, &mut rng),
+            None
+        );
+        assert_eq!(rng.next_i64(), expected.next_i64());
+    }
 
     #[test]
     fn end_possible_biomes_follow_vanilla_order() {

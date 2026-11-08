@@ -117,6 +117,7 @@ impl StructureBiomeProvider for BiomeSourceKind {
                 format!("multi_noise/minecraft:the_nether/{}", source.seed())
             }
             Self::End(source) => format!("minecraft:the_end/{}", source.seed()),
+            Self::Fixed(source) => format!("minecraft:fixed/{}", source.biome().key),
         };
         Some(key)
     }
