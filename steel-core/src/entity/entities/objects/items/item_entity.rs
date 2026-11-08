@@ -323,27 +323,31 @@ impl ItemEntity {
 
         let mut item = self.item();
         let original_count = item.count();
-        if !player.inventory.lock().add(&mut item) {
-            // What fit is moved into the inventory; the rest stays on the ground
-            // without a take animation or stat.
-            if item.count() != original_count {
-                self.set_item(item);
-            }
+        // `Inventory.add` is true whenever anything fit; Steel's is true only
+        // once the stack is empty, so a partial pickup is detected by count.
+        let fully_added = player.inventory.lock().add(&mut item);
+        if item.count() == original_count {
             return false;
         }
 
+        // Vanilla animates and counts the whole stack even when only part of it fit.
         if let Some(world) = self.level() {
             let chunk_pos = steel_utils::ChunkPos::from_entity_pos(self.position());
             let take_packet = CTakeItemEntity::new(self.id(), player.id(), original_count);
             world.broadcast_to_nearby(chunk_pos, take_packet, None);
         }
-        self.set_removed(RemovalReason::Discarded);
+        let picked_item = item.item;
+        if fully_added {
+            self.set_removed(RemovalReason::Discarded);
+        } else {
+            self.set_item(item);
+        }
         player.award_stat_with_count(
             &vanilla_stat_types::ITEM_PICKED_UP,
-            item.item,
+            picked_item,
             original_count,
         );
-        true
+        fully_added
     }
 
     /// Returns true if this item entity can be merged with others.
