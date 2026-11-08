@@ -13,7 +13,7 @@ use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
 use toml::map::Map;
 
-use crate::worldgen::structure::{FixedStructureBiomeProvider, StructureGenerator};
+use crate::worldgen::structure::StructureGenerator;
 use crate::worldgen::{
     ChunkGeneratorType, EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator,
 };
@@ -458,7 +458,7 @@ fn create_flat(
             .into_iter()
             .filter(|(key, _)| parsed.structure_overrides.contains(key))
             .collect();
-        let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
+        let biome_provider = BiomeSourceKind::fixed(&vanilla_biomes::PLAINS);
         Some(StructureGenerator::vanilla_flat_with_structure_sets(
             seed,
             world_path,
