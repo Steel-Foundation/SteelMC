@@ -48,6 +48,9 @@ struct FallingBlockState {
     fall_damage_max: i32,
     fall_damage_per_distance: f32,
     block_data: Option<NbtCompound>,
+    /// Only blocks that start falling block building; summoned and loaded
+    /// ones do not.
+    blocks_building: bool,
 }
 
 impl FallingBlockState {
@@ -61,6 +64,7 @@ impl FallingBlockState {
             fall_damage_max: DEFAULT_MAX_FALL_DAMAGE,
             fall_damage_per_distance: DEFAULT_FALL_DAMAGE_PER_DISTANCE,
             block_data: None,
+            blocks_building: false,
         }
     }
 }
@@ -132,6 +136,7 @@ impl FallingBlockEntity {
             carried_state,
             Arc::downgrade(world),
         ));
+        entity.state.lock().blocks_building = true;
 
         world.set_block(
             pos,
@@ -311,7 +316,10 @@ impl FallingBlockEntity {
         };
 
         if !world.set_block(pos, placed_state, UpdateFlags::UPDATE_ALL) {
-            self.break_after_failed_placement(world, pos, block);
+            // Vanilla keeps the entity when nothing would drop.
+            if self.should_drop_item(world) {
+                self.break_after_failed_placement(world, pos, block);
+            }
             return;
         }
 
@@ -373,7 +381,7 @@ impl FallingBlockEntity {
         tick: Self::entity_tick,
         default_gravity: |_| 0.04,
         spawn_data: |entity| i32::from(entity.block_state().0),
-        blocks_building: |_| true,
+        blocks_building: |falling| falling.state.lock().blocks_building,
         is_pickable: |entity| !entity.is_removed(),
         attackable: |_| false,
         movement_emission: |_| EntityMovementEmission::None,

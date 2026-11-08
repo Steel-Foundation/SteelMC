@@ -1,5 +1,7 @@
 //! Vanilla `EndCrystal`, as far as End spike worldgen and saving need it.
 
+use crate::entity::prelude::*;
+
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
@@ -28,7 +30,10 @@ pub struct EndCrystalEntity {
 
 impl EndCrystalEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |_, _| {},
+        tick: |crystal, _| {
+            crystal.apply_effects_from_blocks();
+            crystal.handle_portal();
+        },
         movement_emission: |_| EntityMovementEmission::None,
         is_pickable: |_| true,
         blocks_building: |_| true,
