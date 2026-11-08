@@ -1,6 +1,7 @@
 //! Vanilla falling-block entity.
 
 use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::TickCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::io::Cursor;
@@ -385,7 +386,8 @@ impl FallingBlockEntity {
     fn define() -> Definition<Self> {
         Definition::replacing_tick([Stage::new(
             Self::TICK,
-            |falling: &Self, entity: &mut &SharedEntity| {
+            |falling: &Self, ctx: &mut TickCtx<'_>| {
+                let entity = ctx.entity;
                 falling.entity_tick(entity);
                 Flow::Continue
             },

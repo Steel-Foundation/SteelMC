@@ -31,7 +31,7 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::animal::{self, Breeding, BreedingProps};
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::{FinalizeSpawnCtx, MobInteractCtx};
+use crate::entity::component::definition::{FinalizeSpawnCtx, MobInteractCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::shearable::{self, Shearable};
 use crate::entity::{

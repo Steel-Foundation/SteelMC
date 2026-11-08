@@ -27,7 +27,9 @@ use crate::behavior::InteractionResult;
 use crate::entity::ageable::{self, Age, Ageable};
 use crate::entity::ai::path::PathType;
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::{AiStep, CustomServerAiStep, MobInteract, MobInteractCtx};
+use crate::entity::component::definition::{
+    AiStep, CustomServerAiStep, MobInteract, MobInteractCtx,
+};
 use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::entities::ExperienceOrbEntity;

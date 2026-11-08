@@ -22,7 +22,8 @@ use steel_utils::locks::CheckedMutex;
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::{OnHitBlockCtx, OnHitEntityCtx};
+use crate::entity::component::definition::TickCtx;
+use crate::entity::component::definition::{OnHitBlockCtx, OnHitEntityCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::prelude::*;
@@ -91,7 +92,8 @@ impl FireworkRocketEntity {
             ),
             tick: definition.tick.then([Stage::new(
                 Self::TICK,
-                |rocket: &Self, entity: &mut &SharedEntity| {
+                |rocket: &Self, ctx: &mut TickCtx<'_>| {
+                    let entity = ctx.entity;
                     rocket.entity_tick(entity);
                     Flow::Continue
                 },

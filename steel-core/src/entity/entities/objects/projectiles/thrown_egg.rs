@@ -12,7 +12,7 @@ use steel_utils::locks::CheckedMutex;
 
 use crate::entity::ageable::BABY_START_AGE;
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::OnHitEntityCtx;
+use crate::entity::component::definition::OnHitEntityCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::entities::ChickenEntity;
 use crate::entity::prelude::*;

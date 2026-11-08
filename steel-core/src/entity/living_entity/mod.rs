@@ -12,7 +12,7 @@ use steel_registry::vanilla_entity_data::LivingEntityData;
 use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::EntityProps;
-use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::{Definition, TickCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Components as _, Has};
@@ -220,8 +220,8 @@ pub const TICK: StageId = StageId("living_entity.tick");
 /// Vanilla `LivingEntity`'s chains, on `Entity`'s.
 #[must_use]
 pub fn definition<E: Parts>() -> Definition<E> {
-    fn tick<E: Parts>(living: &E, entity: &mut &SharedEntity) -> Flow {
-        living.living().tick_living(entity);
+    fn tick<E: Parts>(living: &E, ctx: &mut TickCtx<'_>) -> Flow {
+        living.living().tick_living(ctx.entity);
         Flow::Continue
     }
     let definition = Definition::new();

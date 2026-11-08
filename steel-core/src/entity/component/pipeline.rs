@@ -44,7 +44,7 @@ pub type Inner<'s, E, K> = &'s dyn for<'a, 'b> Fn(&'b E, &'b mut <K as Entry>::C
 type WrapFn<E, K> =
     for<'a, 'b, 's> fn(&'b E, &'b mut <K as Entry>::Ctx<'a>, Inner<'s, E, K>) -> Flow;
 
-enum Run<E: 'static, K: Entry> {
+enum Run<E: ?Sized + 'static, K: Entry> {
     Plain(StageFn<E, K>),
     Effect(fn(&E)),
     Wrap(WrapFn<E, K>, Box<Stage<E, K>>),
@@ -52,12 +52,12 @@ enum Run<E: 'static, K: Entry> {
 }
 
 /// One step of a pipeline.
-pub struct Stage<E: 'static, K: Entry> {
+pub struct Stage<E: ?Sized + 'static, K: Entry> {
     id: StageId,
     run: Run<E, K>,
 }
 
-impl<E: 'static, K: Entry> Stage<E, K> {
+impl<E: ?Sized + 'static, K: Entry> Stage<E, K> {
     /// A stage that reads and writes the call's context and decides whether
     /// the pipeline continues.
     #[must_use]
@@ -98,7 +98,11 @@ impl<E: 'static, K: Entry> Stage<E, K> {
     }
 }
 
-fn run_stages<E, K: Entry>(stages: &[Stage<E, K>], entity: &E, ctx: &mut K::Ctx<'_>) -> Flow {
+fn run_stages<E: ?Sized + 'static, K: Entry>(
+    stages: &[Stage<E, K>],
+    entity: &E,
+    ctx: &mut K::Ctx<'_>,
+) -> Flow {
     for stage in stages {
         if stage.call(entity, ctx) == Flow::Stop {
             return Flow::Stop;
@@ -108,11 +112,11 @@ fn run_stages<E, K: Entry>(stages: &[Stage<E, K>], entity: &E, ctx: &mut K::Ctx<
 }
 
 /// The ordered stages one entity type runs for one entry point.
-pub struct Pipeline<E: 'static, K: Entry> {
+pub struct Pipeline<E: ?Sized + 'static, K: Entry> {
     stages: Vec<Stage<E, K>>,
 }
 
-impl<E: 'static, K: Entry> Pipeline<E, K> {
+impl<E: ?Sized + 'static, K: Entry> Pipeline<E, K> {
     /// A pipeline running `stages` in order.
     #[must_use]
     pub fn new(stages: impl IntoIterator<Item = Stage<E, K>>) -> Self {

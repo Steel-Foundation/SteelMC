@@ -1,7 +1,7 @@
 //! `Mob`'s own layers of the pipelined vanilla methods.
 
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::{
+use crate::entity::component::definition::{
     AiStep, AiStepCtx, Ate, FinalizeSpawn, FinalizeSpawnCtx, Tick,
 };
 use crate::entity::component::pipeline::Pipeline;
@@ -22,7 +22,7 @@ pub const ATE: StageId = StageId("mob.ate");
 /// The `Mob.aiStep` stage, including the `LivingEntity` base it calls first.
 pub fn ai_step<E: Parts>() -> Stage<E, AiStep> {
     fn run<E: Parts>(entity: &E, ctx: &mut AiStepCtx<'_>) -> Flow {
-        ctx.movement = entity.mob().mob_ai_step(ctx.entity);
+        ctx.result = entity.mob().mob_ai_step(ctx.entity);
         Flow::Continue
     }
     Stage::new(AI_STEP, run::<E>)
@@ -39,10 +39,9 @@ pub fn ate<E: Parts>() -> Stage<E, Ate> {
 /// The `Mob.finalizeSpawn` stage: follow-range bonus and handedness.
 pub fn finalize_spawn<E: Parts>() -> Stage<E, FinalizeSpawn> {
     fn run<E: Parts>(entity: &E, ctx: &mut FinalizeSpawnCtx<'_>) -> Flow {
-        ctx.group_data =
-            entity
-                .mob()
-                .finalize_spawn_mob_base(ctx.world, ctx.reason, ctx.group_data.take());
+        ctx.result = entity
+            .mob()
+            .finalize_spawn_mob_base(ctx.world, ctx.reason, ctx.result.take());
         Flow::Continue
     }
     Stage::new(FINALIZE_SPAWN, run::<E>)

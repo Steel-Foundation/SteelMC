@@ -34,7 +34,7 @@ use crate::behavior::InteractionResult;
 use crate::entity::ageable::{Age, Ageable, AgeableProps};
 use crate::entity::animal::{self, Breeding, BreedingProps};
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::MobInteractCtx;
+use crate::entity::component::definition::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::entities::ItemEntity;
 use crate::entity::entities::mobs::passive::cow::abstract_cow;

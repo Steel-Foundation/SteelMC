@@ -14,7 +14,7 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::animal::{self, Parts};
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::MobInteractCtx;
+use crate::entity::component::definition::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use crate::entity::{EntityProps, LivingProps, MobBase, MobProps, mob};

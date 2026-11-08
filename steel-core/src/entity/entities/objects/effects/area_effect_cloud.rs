@@ -17,6 +17,7 @@ use steel_utils::locks::CheckedMutex;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::TickCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::potion_contents::to_runtime_instance;
 use crate::entity::prelude::*;
@@ -96,7 +97,8 @@ impl AreaEffectCloudEntity {
         Definition {
             tick: definition.tick.then([Stage::new(
                 Self::TICK,
-                |cloud: &Self, entity: &mut &SharedEntity| {
+                |cloud: &Self, ctx: &mut TickCtx<'_>| {
+                    let entity = ctx.entity;
                     // Clients draw the particles from the synced radius, waiting
                     // flag and particle; only the server tick runs here.
                     if let Some(world) = cloud.level() {

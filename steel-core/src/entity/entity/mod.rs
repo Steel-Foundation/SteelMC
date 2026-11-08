@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::*;
-use crate::entity::component::definition::{DefaultDefinition, DefinitionEntries};
+use crate::entity::component::definition::{DefinitionEntries, ENTITY_DEFINITION};
 use crate::entity::shearable::Shearable;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use rand::{RngExt, rng};
@@ -202,7 +202,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// This entity type's pipelines, usually its [`Definition`]. Entities
     /// written without `#[derive(Entity)]` get vanilla `Entity`'s.
     fn entity_definition(&self) -> &'static dyn DefinitionEntries {
-        &DefaultDefinition
+        &*ENTITY_DEFINITION
     }
 
     entity_hook_list!(entity_hook_dispatch);
@@ -380,7 +380,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// type's `tick` pipeline. The caller handles post-tick dirty data sync.
     fn tick(self: Arc<Self>) {
         let entity = self.into_shared_entity();
-        entity.entity_definition().tick(&entity);
+        entity.entity_definition().tick(entity.as_ref(), &entity);
     }
 
     /// Default for [`Self::base_tick`].

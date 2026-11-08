@@ -1,85 +1,228 @@
 //! Per-type definitions: the pipelines one entity type runs, built once.
 //!
-//! Every vanilla method that subclasses extend with `super` runs as a
-//! pipeline here, so an entity type adds stages to its layers' chain instead
-//! of calling the layer by hand. Methods overridden without `super` stay
-//! hooks in the layer's props.
+//! Every vanilla method that subclasses extend with `super` runs as a chain
+//! here, so an entity type adds stages to its layers' chain instead of calling
+//! the layer by hand. Methods overridden without `super` stay hooks in the
+//! layer's props.
+//!
+//! [`definition_chains!`] declares each chain once and generates its
+//! [`Entry`], the context its stages share, the [`Definition`] field and the
+//! [`DefinitionEntries`] dispatch. A chain returning a value carries it in the
+//! context's `result`, which starts at the declared default, or at a value the
+//! caller passes when the chain declares none.
 
-use std::sync::Arc;
+use std::marker::PhantomData;
+use std::sync::{Arc, LazyLock};
 
+use glam::DVec3;
 use steel_utils::types::InteractionHand;
 use steel_utils::{Downcast as _, DowncastType};
 
 use crate::behavior::InteractionResult;
-use crate::entity::component::entries::{
-    AiStep, AiStepCtx, Ate, CanHitEntity, CanHitEntityCtx, Construct, CustomServerAiStep,
-    FinalizeSpawn, FinalizeSpawnCtx, MobInteract, MobInteractCtx, OnHit, OnHitBlock, OnHitBlockCtx,
-    OnHitCtx, OnHitEntity, OnHitEntityCtx, Tick,
-};
-use crate::entity::component::pipeline::{Pipeline, Stage, StageId};
+use crate::entity::component::pipeline::{Entry, Pipeline, Stage, StageId};
 use crate::entity::projectile::ProjectileHit;
 use crate::entity::{Entity, EntitySpawnReason, MobBase, SharedEntity, SpawnGroupData};
 use crate::physics::MoveResult;
 use crate::player::Player;
-use crate::world::ClipHitResult;
-use crate::world::World;
-use glam::DVec3;
+use crate::world::{ClipHitResult, World};
+
+/// Declares the chains of [`Definition`]; see the [module docs](self).
+macro_rules! definition_chains {
+    (
+        $(
+            $(#[$meta:meta])*
+            $entry:ident / $ctx:ident:
+                fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty $(= $init:expr)?)?;
+        )*
+    ) => {
+        $(
+            $(#[$meta])*
+            pub struct $entry;
+
+            #[doc = concat!("Context of one [`", stringify!($entry), "`] call.")]
+            pub struct $ctx<'a> {
+                $(
+                    #[doc = concat!("The `", stringify!($arg), "` argument.")]
+                    pub $arg: $ty,
+                )*
+                $(
+                    /// The chain's result so far.
+                    pub result: $ret,
+                )?
+                _marker: PhantomData<&'a ()>,
+            }
+
+            impl Entry for $entry {
+                type Ctx<'a> = $ctx<'a>;
+            }
+        )*
+
+        /// Pipelines of one entity type, built from its layer presets.
+        ///
+        /// A layer's pipelines stay empty for entities without that layer.
+        pub struct Definition<E: ?Sized + 'static> {
+            /// The mob constructor chain, `Mob.registerGoals` included.
+            pub construct: Pipeline<MobBase, Construct>,
+            $(
+                $(#[$meta])*
+                pub $name: Pipeline<E, $entry>,
+            )*
+        }
+
+        impl<E: ?Sized + 'static> Definition<E> {
+            /// Every chain empty.
+            fn empty() -> Self {
+                Self {
+                    construct: Pipeline::new([]),
+                    $( $name: Pipeline::new([]), )*
+                }
+            }
+        }
+
+        /// A [`Definition`] reached from code that only holds `&dyn Entity`.
+        ///
+        /// Implemented once for every definition, so entity types never forward
+        /// entry points by hand.
+        pub trait DefinitionEntries: Send + Sync {
+            /// Runs the mob constructor chain on a fresh `mob_base`.
+            fn construct(&self, mob_base: &MobBase);
+
+            $(
+                definition_chains!(@trait $name ($($arg: $ty),*) ($($ret $(= $init)?)?));
+            )*
+        }
+
+        impl<E: DefinitionTarget + ?Sized> DefinitionEntries for Definition<E> {
+            fn construct(&self, mob_base: &MobBase) {
+                self.construct.run(mob_base, &mut ());
+            }
+
+            $(
+                definition_chains!(@impl $name $ctx ($($arg: $ty),*) ($($ret $(= $init)?)?));
+            )*
+        }
+    };
+    (@trait $name:ident () ()) => {
+        #[doc = concat!("Runs `", stringify!($name), "` for `entity`.")]
+        fn $name(&self, entity: &dyn Entity);
+    };
+    (@trait $name:ident ($($arg:ident: $ty:ty),*) ()) => {
+        #[doc = concat!("Runs `", stringify!($name), "` for `entity`.")]
+        fn $name<'a>(&self, entity: &dyn Entity, $($arg: $ty),*);
+    };
+    (@trait $name:ident ($($arg:ident: $ty:ty),*) ($ret:ty = $init:expr)) => {
+        #[doc = concat!("Runs `", stringify!($name), "` for `entity`.")]
+        fn $name<'a>(&self, entity: &dyn Entity, $($arg: $ty),*) -> $ret;
+    };
+    (@trait $name:ident ($($arg:ident: $ty:ty),*) ($ret:ty)) => {
+        #[doc = concat!("Runs `", stringify!($name), "` for `entity`, starting from `initial`.")]
+        fn $name<'a>(&self, entity: &dyn Entity, $($arg: $ty,)* initial: $ret) -> $ret;
+    };
+    (@impl $name:ident $ctx:ident () ()) => {
+        fn $name(&self, entity: &dyn Entity) {
+            if let Some(typed) = E::typed(entity) {
+                self.$name.run(typed, &mut $ctx { _marker: PhantomData });
+            }
+        }
+    };
+    (@impl $name:ident $ctx:ident ($($arg:ident: $ty:ty),*) ()) => {
+        fn $name<'a>(&self, entity: &dyn Entity, $($arg: $ty),*) {
+            let Some(typed) = E::typed(entity) else {
+                return;
+            };
+            let mut ctx = $ctx {
+                $($arg,)*
+                _marker: PhantomData,
+            };
+            self.$name.run(typed, &mut ctx);
+        }
+    };
+    (@impl $name:ident $ctx:ident ($($arg:ident: $ty:ty),*) ($ret:ty = $init:expr)) => {
+        fn $name<'a>(&self, entity: &dyn Entity, $($arg: $ty),*) -> $ret {
+            match E::typed(entity) {
+                Some(typed) => {
+                    let mut ctx = $ctx {
+                        $($arg,)*
+                        result: $init,
+                        _marker: PhantomData,
+                    };
+                    self.$name.run(typed, &mut ctx);
+                    ctx.result
+                }
+                None => $init,
+            }
+        }
+    };
+    (@impl $name:ident $ctx:ident ($($arg:ident: $ty:ty),*) ($ret:ty)) => {
+        fn $name<'a>(&self, entity: &dyn Entity, $($arg: $ty,)* initial: $ret) -> $ret {
+            let Some(typed) = E::typed(entity) else {
+                return initial;
+            };
+            let mut ctx = $ctx {
+                $($arg,)*
+                result: initial,
+                _marker: PhantomData,
+            };
+            self.$name.run(typed, &mut ctx);
+            ctx.result
+        }
+    };
+}
+
+/// The mob constructor chain, `Mob.registerGoals` included. Runs on the fresh
+/// `MobBase` before the entity exists.
+pub struct Construct;
+
+impl Entry for Construct {
+    type Ctx<'a> = ();
+}
+
+definition_chains! {
+    /// Vanilla `Entity.tick`.
+    Tick / TickCtx: fn tick(entity: &'a SharedEntity);
+    /// Vanilla `Projectile.onHit`.
+    OnHit / OnHitCtx: fn on_hit(entity: &'a SharedEntity, hit: &'a ProjectileHit);
+    /// Vanilla `Projectile.onHitEntity`.
+    OnHitEntity / OnHitEntityCtx:
+        fn on_hit_entity(entity: &'a SharedEntity, target: &'a SharedEntity, location: DVec3);
+    /// Vanilla `Projectile.onHitBlock`.
+    OnHitBlock / OnHitBlockCtx: fn on_hit_block(entity: &'a SharedEntity, hit: &'a ClipHitResult);
+    /// Vanilla `Projectile.canHitEntity`.
+    CanHitEntity / CanHitEntityCtx: fn can_hit_entity(target: &'a dyn Entity) -> bool = false;
+    /// Vanilla `LivingEntity.aiStep`, with the movement it performed.
+    AiStep / AiStepCtx: fn ai_step(entity: &'a SharedEntity) -> Option<MoveResult> = None;
+    /// Vanilla `Mob.customServerAiStep`.
+    CustomServerAiStep / CustomServerAiStepCtx: fn custom_server_ai_step();
+    /// Vanilla `Mob.ate`, run after an eating goal consumes a block.
+    Ate / AteCtx: fn ate();
+    /// Vanilla `Mob.mobInteract`: the first stage that handles the interaction
+    /// sets the result and stops.
+    MobInteract / MobInteractCtx:
+        fn mob_interact(player: &'a Player, hand: InteractionHand)
+            -> InteractionResult = InteractionResult::Pass;
+    /// Vanilla `Mob.finalizeSpawn`; the result is the group data for the next
+    /// group member, starting at the caller's.
+    FinalizeSpawn / FinalizeSpawnCtx:
+        fn finalize_spawn(world: &'a Arc<World>, reason: EntitySpawnReason)
+            -> Option<SpawnGroupData>;
+}
 
 /// The `Entity.tick` stage: vanilla's base entity tick, `Entity.baseTick`.
 pub const TICK: StageId = StageId("entity.tick");
 
-/// Pipelines of one entity type, built from its layer presets.
-///
-/// A layer's pipelines stay empty for entities without that layer.
-pub struct Definition<E: 'static> {
-    /// `Entity.tick`.
-    pub tick: Pipeline<E, Tick>,
-    /// `Projectile.onHit`.
-    pub on_hit: Pipeline<E, OnHit>,
-    /// `Projectile.onHitEntity`.
-    pub on_hit_entity: Pipeline<E, OnHitEntity>,
-    /// `Projectile.onHitBlock`.
-    pub on_hit_block: Pipeline<E, OnHitBlock>,
-    /// `Projectile.canHitEntity`.
-    pub can_hit_entity: Pipeline<E, CanHitEntity>,
-    /// The mob constructor chain, `Mob.registerGoals` included.
-    pub construct: Pipeline<MobBase, Construct>,
-    /// `LivingEntity.aiStep`.
-    pub ai_step: Pipeline<E, AiStep>,
-    /// `Mob.customServerAiStep`.
-    pub custom_server_ai_step: Pipeline<E, CustomServerAiStep>,
-    /// `Mob.mobInteract`.
-    pub mob_interact: Pipeline<E, MobInteract>,
-    /// `Mob.ate`.
-    pub ate: Pipeline<E, Ate>,
-    /// `Mob.finalizeSpawn`.
-    pub finalize_spawn: Pipeline<E, FinalizeSpawn>,
-}
-
-impl<E: Entity> Definition<E> {
+impl<E: Entity + ?Sized> Definition<E> {
     /// Vanilla `Entity`'s chains.
     #[must_use]
     pub fn new() -> Self {
-        fn tick<E: Entity>(entity: &E) {
+        fn tick<E: Entity + ?Sized>(entity: &E) {
             entity.base_tick();
         }
         Self {
             tick: Pipeline::new([Stage::effect(TICK, tick::<E>)]),
-            on_hit: Pipeline::new([]),
-            on_hit_entity: Pipeline::new([]),
-            on_hit_block: Pipeline::new([]),
-            can_hit_entity: Pipeline::new([]),
-            construct: Pipeline::new([]),
-            ai_step: Pipeline::new([]),
-            custom_server_ai_step: Pipeline::new([]),
-            mob_interact: Pipeline::new([]),
-            ate: Pipeline::new([]),
-            finalize_spawn: Pipeline::new([]),
+            ..Self::empty()
         }
     }
-}
 
-impl<E: Entity> Definition<E> {
     /// Vanilla `Entity`'s chains for a type whose `tick` never calls `super`.
     #[must_use]
     pub fn replacing_tick(stages: impl IntoIterator<Item = Stage<E, Tick>>) -> Self {
@@ -90,239 +233,41 @@ impl<E: Entity> Definition<E> {
     }
 }
 
-impl<E: Entity> Default for Definition<E> {
+impl<E: Entity + ?Sized> Default for Definition<E> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// A [`Definition`] reached from code that only holds `&dyn Entity`.
-///
-/// Implemented once for every definition, so entity types never forward
-/// entry points by hand.
-pub trait DefinitionEntries: Send + Sync {
-    /// Runs `tick` for `entity`.
-    fn tick(&self, entity: &SharedEntity);
-
-    /// Runs `onHit` for `projectile`.
-    fn on_hit(&self, projectile: &SharedEntity, hit: &ProjectileHit);
-
-    /// Runs `onHitEntity` for `projectile` hitting `target` at `location`.
-    fn on_hit_entity(&self, projectile: &SharedEntity, target: &SharedEntity, location: DVec3);
-
-    /// Runs `onHitBlock` for `projectile`.
-    fn on_hit_block(&self, projectile: &SharedEntity, hit: &ClipHitResult);
-
-    /// Runs `canHitEntity`: whether `projectile` can hit `target`.
-    fn can_hit_entity(&self, projectile: &dyn Entity, target: &dyn Entity) -> bool;
-
-    /// Runs the mob constructor chain on a fresh `mob_base`.
-    fn construct(&self, mob_base: &MobBase);
-
-    /// Runs `aiStep` for `mob`, returning the movement it performed.
-    fn ai_step(&self, mob: &dyn Entity, entity: &SharedEntity) -> Option<MoveResult>;
-
-    /// Runs `customServerAiStep` for `mob`.
-    fn custom_server_ai_step(&self, mob: &dyn Entity);
-
-    /// Runs `ate` for `mob`.
-    fn ate(&self, mob: &dyn Entity);
-
-    /// Runs `mobInteract` for `mob`.
-    fn mob_interact(
-        &self,
-        mob: &dyn Entity,
-        player: &Player,
-        hand: InteractionHand,
-    ) -> InteractionResult;
-
-    /// Runs `finalizeSpawn` for `mob`, returning the group data for the
-    /// next group member.
-    fn finalize_spawn(
-        &self,
-        mob: &dyn Entity,
-        world: &Arc<World>,
-        reason: EntitySpawnReason,
-        group_data: Option<SpawnGroupData>,
-    ) -> Option<SpawnGroupData>;
+/// An entity type a [`Definition`] runs on: a concrete type, or `dyn Entity`
+/// for vanilla `Entity`'s own chains.
+pub trait DefinitionTarget: 'static {
+    /// `entity` as this type, if it is one.
+    fn typed(entity: &dyn Entity) -> Option<&Self>;
 }
 
-impl<E: Entity + DowncastType> Definition<E> {
-    /// `entity` as this definition's entity type. An entity's definition
-    /// always comes from its own type, so a mismatch is a wiring bug.
-    fn typed(entity: &dyn Entity) -> Option<&E> {
-        let typed = entity.downcast_ref::<E>();
+impl<E: Entity + DowncastType> DefinitionTarget for E {
+    /// An entity's definition always comes from its own type, so a mismatch is
+    /// a wiring bug.
+    fn typed(entity: &dyn Entity) -> Option<&Self> {
+        let typed = entity.downcast_ref::<Self>();
         if typed.is_none() {
             log::error!(
                 "{} ran the definition of {}",
                 entity.entity_type().key,
-                E::TYPE_KEY
+                Self::TYPE_KEY
             );
         }
         typed
     }
 }
 
-impl<E: Entity + DowncastType> DefinitionEntries for Definition<E> {
-    fn tick(&self, entity: &SharedEntity) {
-        if let Some(typed) = Self::typed(entity.as_ref()) {
-            let mut ctx = entity;
-            self.tick.run(typed, &mut ctx);
-        }
-    }
-
-    fn on_hit(&self, projectile: &SharedEntity, hit: &ProjectileHit) {
-        if let Some(typed) = Self::typed(projectile.as_ref()) {
-            let mut ctx = OnHitCtx {
-                entity: projectile,
-                hit,
-            };
-            self.on_hit.run(typed, &mut ctx);
-        }
-    }
-
-    fn on_hit_entity(&self, projectile: &SharedEntity, target: &SharedEntity, location: DVec3) {
-        if let Some(typed) = Self::typed(projectile.as_ref()) {
-            let mut ctx = OnHitEntityCtx {
-                entity: projectile,
-                target,
-                location,
-            };
-            self.on_hit_entity.run(typed, &mut ctx);
-        }
-    }
-
-    fn on_hit_block(&self, projectile: &SharedEntity, hit: &ClipHitResult) {
-        if let Some(typed) = Self::typed(projectile.as_ref()) {
-            let mut ctx = OnHitBlockCtx {
-                entity: projectile,
-                hit,
-            };
-            self.on_hit_block.run(typed, &mut ctx);
-        }
-    }
-
-    fn can_hit_entity(&self, projectile: &dyn Entity, target: &dyn Entity) -> bool {
-        let Some(typed) = Self::typed(projectile) else {
-            return false;
-        };
-        let mut ctx = CanHitEntityCtx {
-            target,
-            result: false,
-        };
-        self.can_hit_entity.run(typed, &mut ctx);
-        ctx.result
-    }
-
-    fn construct(&self, mob_base: &MobBase) {
-        self.construct.run(mob_base, &mut ());
-    }
-
-    fn ai_step(&self, mob: &dyn Entity, entity: &SharedEntity) -> Option<MoveResult> {
-        let mob = Self::typed(mob)?;
-        let mut ctx = AiStepCtx {
-            entity,
-            movement: None,
-        };
-        self.ai_step.run(mob, &mut ctx);
-        ctx.movement
-    }
-
-    fn custom_server_ai_step(&self, mob: &dyn Entity) {
-        if let Some(mob) = Self::typed(mob) {
-            self.custom_server_ai_step.run(mob, &mut ());
-        }
-    }
-
-    fn ate(&self, mob: &dyn Entity) {
-        if let Some(mob) = Self::typed(mob) {
-            self.ate.run(mob, &mut ());
-        }
-    }
-
-    fn mob_interact(
-        &self,
-        mob: &dyn Entity,
-        player: &Player,
-        hand: InteractionHand,
-    ) -> InteractionResult {
-        let Some(mob) = Self::typed(mob) else {
-            return InteractionResult::Pass;
-        };
-        let mut ctx = MobInteractCtx {
-            player,
-            hand,
-            result: InteractionResult::Pass,
-        };
-        self.mob_interact.run(mob, &mut ctx);
-        ctx.result
-    }
-
-    fn finalize_spawn(
-        &self,
-        mob: &dyn Entity,
-        world: &Arc<World>,
-        reason: EntitySpawnReason,
-        group_data: Option<SpawnGroupData>,
-    ) -> Option<SpawnGroupData> {
-        let Some(mob) = Self::typed(mob) else {
-            return group_data;
-        };
-        let mut ctx = FinalizeSpawnCtx {
-            world,
-            reason,
-            group_data,
-        };
-        self.finalize_spawn.run(mob, &mut ctx);
-        ctx.group_data
+impl DefinitionTarget for dyn Entity {
+    fn typed(entity: &dyn Entity) -> Option<&Self> {
+        Some(entity)
     }
 }
 
-/// Vanilla `Entity`'s chains for entities implemented without
+/// Vanilla `Entity`'s chains, for entities implemented without
 /// `#[derive(Entity)]`, such as test fixtures.
-pub struct DefaultDefinition;
-
-impl DefinitionEntries for DefaultDefinition {
-    fn tick(&self, entity: &SharedEntity) {
-        entity.base_tick();
-    }
-
-    fn on_hit(&self, _projectile: &SharedEntity, _hit: &ProjectileHit) {}
-
-    fn on_hit_entity(&self, _projectile: &SharedEntity, _target: &SharedEntity, _location: DVec3) {}
-
-    fn on_hit_block(&self, _projectile: &SharedEntity, _hit: &ClipHitResult) {}
-
-    fn can_hit_entity(&self, _projectile: &dyn Entity, _target: &dyn Entity) -> bool {
-        false
-    }
-
-    fn construct(&self, _mob_base: &MobBase) {}
-
-    fn ai_step(&self, _mob: &dyn Entity, _entity: &SharedEntity) -> Option<MoveResult> {
-        None
-    }
-
-    fn custom_server_ai_step(&self, _mob: &dyn Entity) {}
-
-    fn ate(&self, _mob: &dyn Entity) {}
-
-    fn mob_interact(
-        &self,
-        _mob: &dyn Entity,
-        _player: &Player,
-        _hand: InteractionHand,
-    ) -> InteractionResult {
-        InteractionResult::Pass
-    }
-
-    fn finalize_spawn(
-        &self,
-        _mob: &dyn Entity,
-        _world: &Arc<World>,
-        _reason: EntitySpawnReason,
-        group_data: Option<SpawnGroupData>,
-    ) -> Option<SpawnGroupData> {
-        group_data
-    }
-}
+pub static ENTITY_DEFINITION: LazyLock<Definition<dyn Entity>> = LazyLock::new(Definition::new);

@@ -508,7 +508,7 @@ impl ItemEntity {
         let definition = Definition::new();
         Definition {
             tick: definition.tick.around(Self::TICK, |item, entity, inner| {
-                let shared = *entity;
+                let shared = entity.entity;
                 item.entity_tick(shared, || {
                     inner(item, entity);
                 });

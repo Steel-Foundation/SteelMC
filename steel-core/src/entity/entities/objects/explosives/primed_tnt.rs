@@ -1,6 +1,7 @@
 //! Primed TNT entity behavior.
 
 use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::TickCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::{f32::consts::TAU, sync::Arc};
@@ -257,7 +258,8 @@ impl PrimedTntEntity {
     fn define() -> Definition<Self> {
         Definition::replacing_tick([Stage::new(
             Self::TICK,
-            |tnt: &Self, entity: &mut &SharedEntity| {
+            |tnt: &Self, ctx: &mut TickCtx<'_>| {
+                let entity = ctx.entity;
                 tnt.entity_tick(entity);
                 Flow::Continue
             },

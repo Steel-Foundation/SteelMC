@@ -13,6 +13,7 @@ pub mod throwable;
 pub mod throwable_item;
 pub mod thrown_potion;
 
+use crate::entity::component::definition::TickCtx;
 use crate::entity::prelude::*;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
@@ -34,7 +35,7 @@ use uuid::Uuid;
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::enchantment_helper;
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::{CanHitEntityCtx, OnHitBlockCtx, OnHitCtx, Tick};
+use crate::entity::component::definition::{CanHitEntityCtx, OnHitBlockCtx, OnHitCtx, Tick};
 use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage, StageId};
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
@@ -282,14 +283,10 @@ pub const CAN_HIT_ENTITY: StageId = StageId("projectile.can_hit_entity");
 /// Vanilla `Projectile`'s chains, on `Entity`'s.
 #[must_use]
 pub fn definition<E: Parts>() -> Definition<E> {
-    fn tick<E: Parts>(
-        projectile: &E,
-        entity: &mut &SharedEntity,
-        inner: Inner<'_, E, Tick>,
-    ) -> Flow {
+    fn tick<E: Parts>(projectile: &E, ctx: &mut TickCtx<'_>, inner: Inner<'_, E, Tick>) -> Flow {
         projectile
             .projectile()
-            .tick_around(|| inner(projectile, entity))
+            .tick_around(|| inner(projectile, ctx))
     }
     fn on_hit<E: Parts>(projectile: &E, ctx: &mut OnHitCtx<'_>) -> Flow {
         projectile.projectile().on_hit_base(ctx.entity, ctx.hit);
@@ -500,19 +497,23 @@ impl<'a> Projectile<'a> {
 
     /// `Projectile.onHit`: runs this type's pipeline.
     pub fn on_hit(&self, entity: &SharedEntity, hit: &ProjectileHit) {
-        self.entity.entity_definition().on_hit(entity, hit);
+        self.entity
+            .entity_definition()
+            .on_hit(self.entity, entity, hit);
     }
 
     /// `Projectile.onHitEntity`: runs this type's pipeline.
     pub fn on_hit_entity(&self, entity: &SharedEntity, target: &SharedEntity, location: DVec3) {
         self.entity
             .entity_definition()
-            .on_hit_entity(entity, target, location);
+            .on_hit_entity(self.entity, entity, target, location);
     }
 
     /// `Projectile.onHitBlock`: runs this type's pipeline.
     pub fn on_hit_block(&self, entity: &SharedEntity, hit: &ClipHitResult) {
-        self.entity.entity_definition().on_hit_block(entity, hit);
+        self.entity
+            .entity_definition()
+            .on_hit_block(self.entity, entity, hit);
     }
 
     /// The `Projectile.canHitEntity` base stage.

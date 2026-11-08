@@ -12,7 +12,7 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{Downcast as _, DowncastType, Identifier};
 
 use crate::entity::ageable::Ageable;
-use crate::entity::component::entries::{FinalizeSpawn, FinalizeSpawnCtx};
+use crate::entity::component::definition::{FinalizeSpawn, FinalizeSpawnCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::{Entity, SharedEntity};
 use crate::world::World;

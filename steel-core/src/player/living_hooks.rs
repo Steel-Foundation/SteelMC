@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::TickCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 
@@ -59,13 +60,11 @@ impl Player {
     /// living tick's pieces itself, around the client-driven movement.
     pub(super) fn define() -> Definition<Self> {
         const TICK: StageId = StageId("player.tick");
-        Definition::replacing_tick([Stage::new(
-            TICK,
-            |player: &Self, entity: &mut &SharedEntity| {
-                player.tick_player(entity);
-                Flow::Continue
-            },
-        )])
+        Definition::replacing_tick([Stage::new(TICK, |player: &Self, ctx: &mut TickCtx<'_>| {
+            let entity = ctx.entity;
+            player.tick_player(entity);
+            Flow::Continue
+        })])
     }
 
     fn tick_player(&self, entity: &SharedEntity) {

@@ -16,7 +16,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::behavior::blocks::{CampfireBlock, CandleBlock};
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::{OnHitBlockCtx, OnHitCtx};
+use crate::entity::component::definition::{OnHitBlockCtx, OnHitCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::projectile::throwable_item;

@@ -20,7 +20,7 @@ use steel_utils::types::Difficulty;
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::OnHitEntityCtx;
+use crate::entity::component::definition::OnHitEntityCtx;
 use crate::entity::component::pipeline::Stage;
 use crate::entity::component::pipeline::{Flow, StageId};
 use crate::entity::damage::DamageSource;
@@ -63,7 +63,7 @@ impl EnderPearlEntity {
         let definition = Self::define_hits(throwable::definition());
         Definition {
             tick: definition.tick.around(Self::TICK, |pearl, entity, inner| {
-                let shared = *entity;
+                let shared = entity.entity;
                 pearl.entity_tick(shared, || {
                     inner(pearl, entity);
                 });

@@ -31,7 +31,8 @@ use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Downcast as _};
 
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::{CanHitEntityCtx, OnHitBlockCtx, OnHitEntityCtx};
+use crate::entity::component::definition::TickCtx;
+use crate::entity::component::definition::{CanHitEntityCtx, OnHitBlockCtx, OnHitEntityCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
 use crate::entity::prelude::*;
@@ -146,7 +147,8 @@ impl FishingHookEntity {
                 )
                 .then([Stage::new(
                     Self::TICK,
-                    |hook: &Self, entity: &mut &SharedEntity| {
+                    |hook: &Self, ctx: &mut TickCtx<'_>| {
+                        let entity = ctx.entity;
                         hook.entity_tick(entity);
                         Flow::Continue
                     },

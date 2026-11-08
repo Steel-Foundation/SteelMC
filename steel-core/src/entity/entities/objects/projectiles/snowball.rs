@@ -8,7 +8,7 @@ use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::OnHitEntityCtx;
+use crate::entity::component::definition::OnHitEntityCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use crate::entity::projectile::throwable;

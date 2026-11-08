@@ -1,12 +1,13 @@
 //! Vanilla `ThrowableProjectile`: projectiles moved by gravity and drag.
 
+use crate::entity::component::definition::TickCtx;
 use crate::entity::prelude::*;
 use steel_registry::{blocks::block_state_ext::BlockStateExt as _, vanilla_blocks};
 use steel_utils::{BlockPos, axis::Axis};
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::Tick;
+use crate::entity::component::definition::Tick;
 use crate::entity::component::pipeline::{Flow, Inner, StageId};
 use crate::entity::projectile::{self, Parts, Projectile};
 use crate::entity::{EntityProps, InsideBlockEffectCollector, RemovalReason, SharedEntity};
@@ -30,11 +31,9 @@ pub const TICK: StageId = StageId("throwable.tick");
 /// Vanilla `ThrowableProjectile`'s chains, on `Projectile`'s.
 #[must_use]
 pub fn definition<E: Parts>() -> Definition<E> {
-    fn run<E: Parts>(entity: &E, shared: &mut &SharedEntity, inner: Inner<'_, E, Tick>) -> Flow {
-        let shared_entity = *shared;
-        tick(&entity.projectile(), shared_entity, || {
-            inner(entity, shared)
-        })
+    fn run<E: Parts>(entity: &E, ctx: &mut TickCtx<'_>, inner: Inner<'_, E, Tick>) -> Flow {
+        let shared = ctx.entity;
+        tick(&entity.projectile(), shared, || inner(entity, ctx))
     }
     let definition = projectile::definition();
     Definition {

@@ -25,7 +25,7 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::animal::{self, Breeding, BreedingProps};
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::MobInteractCtx;
+use crate::entity::component::definition::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::item_based_steering::ItemBasedSteering;
 use crate::entity::variant::{self, Variants};
