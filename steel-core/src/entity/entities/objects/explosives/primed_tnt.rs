@@ -1,5 +1,7 @@
 //! Primed TNT entity behavior.
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::{f32::consts::TAU, sync::Arc};
 
@@ -124,7 +126,7 @@ static USED_PORTAL_DAMAGE_CALCULATOR: NetherPortalPreservingExplosionDamageCalcu
 #[entity_behavior(class = "PrimedTnt")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_tnt, load = Self::load_tnt)]
-#[entity(key = "steel:entity/primed_tnt", constructors)]
+#[entity(key = "steel:entity/primed_tnt", constructors, definition = Self::define)]
 pub struct PrimedTntEntity {
     #[entity(base)]
     base: EntityBase,
@@ -249,8 +251,20 @@ impl PrimedTntEntity {
 }
 
 impl PrimedTntEntity {
+    const TICK: StageId = StageId("primed_tnt.tick");
+
+    /// `PrimedTnt.tick` never calls `super`.
+    fn define() -> Definition<Self> {
+        Definition::replacing_tick([Stage::new(
+            Self::TICK,
+            |tnt: &Self, entity: &mut &SharedEntity| {
+                tnt.entity_tick(entity);
+                Flow::Continue
+            },
+        )])
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: Self::entity_tick,
         blocks_building: |_| true,
         is_pickable: |entity| !entity.is_removed(),
         is_hard_collision_relevant: |_| false,

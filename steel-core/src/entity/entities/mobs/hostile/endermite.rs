@@ -12,7 +12,7 @@ use crate::entity::ai::goal::{
     ClimbOnTopOfPowderSnowGoal, FloatGoal, HurtByTargetGoal, LookAtPlayerGoal, MeleeAttackGoal,
     NearestAttackableTargetGoal, RandomLookAroundGoal, WaterAvoidingRandomStrollGoal,
 };
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::{self, Definition};
 use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::monster::{self, Enemy};
 use crate::entity::prelude::*;
@@ -67,10 +67,6 @@ impl EndermiteEntity {
         ..monster::mob_props()
     };
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |endermite, entity| {
-            endermite.living().set_y_body_rot(endermite.rotation().0);
-            endermite.mob().tick_mob(entity);
-        },
         set_y_body_rot: |endermite, y_body_rot| {
             endermite.set_rotation((y_body_rot, endermite.rotation().1));
             endermite.living().set_y_body_rot(y_body_rot);
@@ -83,9 +79,10 @@ impl EndermiteEntity {
     };
     const GOALS: StageId = StageId("endermite.goals");
     const LIFE: StageId = StageId("endermite.life");
+    const BODY_ROT: StageId = StageId("endermite.body_rot");
 
     /// Vanilla `Endermite`: the monster chains with its goals and lifetime.
-    fn define() -> MobDefinition<Self> {
+    fn define() -> Definition<Self> {
         let mut definition = monster::definition::<Self>();
         definition.construct =
             definition
@@ -97,6 +94,13 @@ impl EndermiteEntity {
         definition.ai_step = definition
             .ai_step
             .then([Stage::effect(Self::LIFE, Self::age)]);
+        // `Endermite.tick` faces its body forward before `super.tick()`.
+        definition.tick = definition.tick.before(
+            definition::TICK,
+            [Stage::effect(Self::BODY_ROT, |endermite: &Self| {
+                endermite.living().set_y_body_rot(endermite.rotation().0);
+            })],
+        );
         definition
     }
 

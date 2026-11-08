@@ -15,6 +15,7 @@ use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
 use uuid::Uuid;
 
 use crate::behavior::InteractionResult;
+use crate::entity::component::definition::Definition;
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityBaseLoad, EntityProps, SharedEntity};
 use crate::player::Player;
@@ -30,7 +31,7 @@ const DEFAULT_DIMENSIONS: EntityDimensions =
 #[entity_behavior(class = "Interaction")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_interaction, load = Self::load_interaction)]
-#[entity(key = "steel:entity/interaction")]
+#[entity(key = "steel:entity/interaction", definition = || Definition::replacing_tick([]))]
 pub struct InteractionEntity {
     #[entity(base)]
     base: EntityBase,
@@ -49,7 +50,6 @@ struct RecordedActions {
 
 impl InteractionEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |_, _| {},
         hurt: |_, _, _, _| false,
         is_pickable: |_| true,
         can_be_hit_by_projectile: |_| false,

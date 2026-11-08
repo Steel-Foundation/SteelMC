@@ -1,5 +1,7 @@
 //! Vanilla falling-block entity.
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
@@ -73,7 +75,7 @@ impl FallingBlockState {
 #[entity_behavior(class = "FallingBlockEntity")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_falling_block, load = Self::load_falling_block)]
-#[entity(key = "steel:entity/falling_block", constructors)]
+#[entity(key = "steel:entity/falling_block", constructors, definition = Self::define)]
 pub struct FallingBlockEntity {
     #[entity(base)]
     base: EntityBase,
@@ -377,8 +379,20 @@ impl FallingBlockEntity {
     // TODO: vanilla names falling blocks `entity.minecraft.falling_block_type` with the
     // block's name. Needs extracted block description ids: wall variants override theirs
     // (`wall_torch` -> `block.minecraft.torch`), so they can't be derived from the key.
+    const TICK: StageId = StageId("falling_block.tick");
+
+    /// `FallingBlockEntity.tick` never calls `super`.
+    fn define() -> Definition<Self> {
+        Definition::replacing_tick([Stage::new(
+            Self::TICK,
+            |falling: &Self, entity: &mut &SharedEntity| {
+                falling.entity_tick(entity);
+                Flow::Continue
+            },
+        )])
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: Self::entity_tick,
         default_gravity: |_| 0.04,
         spawn_data: |entity| i32::from(entity.block_state().0),
         blocks_building: |falling| falling.state.lock().blocks_building,

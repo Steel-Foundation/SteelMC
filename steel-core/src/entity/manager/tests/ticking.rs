@@ -48,12 +48,22 @@ crate::entity::impl_test_downcast_type!(RelationshipTickTestEntity);
 
 impl RelationshipTickTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: Self::entity_tick,
         ride_tick: Self::entity_ride_tick,
         ..EntityProps::new()
     };
+    const TICK: StageId = StageId("test.tick");
 
-    fn entity_tick(&self, _entity: &SharedEntity) {
+    fn definition() -> &'static Definition<Self> {
+        static DEFINITION: LazyLock<Definition<RelationshipTickTestEntity>> = LazyLock::new(|| {
+            Definition::replacing_tick([Stage::effect(
+                RelationshipTickTestEntity::TICK,
+                RelationshipTickTestEntity::entity_tick,
+            )])
+        });
+        &DEFINITION
+    }
+
+    fn entity_tick(&self) {
         self.events.lock().push((self.id(), "tick"));
         self.run_action();
     }
@@ -75,6 +85,10 @@ impl Entity for RelationshipTickTestEntity {
 
     fn entity_hooks(&self) -> &'static dyn EntityHooks {
         &Self::ENTITY
+    }
+
+    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+        Self::definition()
     }
 }
 

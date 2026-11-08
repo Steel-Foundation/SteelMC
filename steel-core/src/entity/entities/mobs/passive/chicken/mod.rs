@@ -30,7 +30,7 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::ai::path::PathType;
 use crate::entity::animal::{self, Animal, Breeding, BreedingProps};
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::Definition;
 use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
@@ -127,7 +127,7 @@ impl ChickenEntity {
     /// Vanilla `Chicken`: the animal chains plus flapping and egg laying
     /// after `Animal.aiStep`, and variant selection before
     /// `AgeableMob.finalizeSpawn`.
-    fn define() -> MobDefinition<Self> {
+    fn define() -> Definition<Self> {
         let mut definition = animal::definition::<Self>();
         // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
         definition.construct = definition

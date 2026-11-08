@@ -3,7 +3,7 @@
 mod pathfinder;
 pub(crate) mod stages;
 
-use crate::entity::component::definition::MobEntries;
+use crate::entity::component::definition::DefinitionEntries;
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::leash::{LeashData, Leashable};
@@ -169,7 +169,6 @@ pub struct MobBase {
     state: CheckedMutex<MobState>,
     leash_data: CheckedMutex<Option<LeashData>>,
     hooks: &'static dyn MobHooks,
-    definition: &'static dyn MobEntries,
 }
 
 /// A mob's plain per-instance values: persistence, loot, home and timers.
@@ -199,10 +198,10 @@ impl MobHomeRestriction {
 }
 
 impl MobBase {
-    /// Fresh mob state for a type with `hooks` and pipelines `definition`, after
-    /// the definition's constructor chain ran on it.
+    /// Fresh mob state for a type with `hooks`, after its `definition`'s
+    /// constructor chain ran on it.
     #[must_use]
-    pub fn new(hooks: &'static dyn MobHooks, definition: &'static dyn MobEntries) -> Self {
+    pub fn new(hooks: &'static dyn MobHooks, definition: &'static dyn DefinitionEntries) -> Self {
         let mob_base = Self {
             goal_selector: CheckedMutex::new(GoalSelector::new()),
             target_selector: CheckedMutex::new(GoalSelector::new()),
@@ -223,7 +222,6 @@ impl MobBase {
             }),
             leash_data: CheckedMutex::new(None),
             hooks,
-            definition,
         };
         definition.construct(&mob_base);
         mob_base
@@ -444,8 +442,8 @@ impl<'a> Mob<'a> {
         self.base.hooks
     }
 
-    fn definition(&self) -> &'static dyn MobEntries {
-        self.base.definition
+    fn definition(&self) -> &'static dyn DefinitionEntries {
+        self.entity().entity_definition()
     }
 
     fn with_synced<R>(&self, f: impl FnOnce(&mut MobEntityData) -> R) -> Option<R> {
@@ -486,7 +484,6 @@ pub const fn pathfinder_mob_props<E: Parts>() -> MobProps<E> {
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        tick: |mob, entity| mob.mob().tick_mob(entity),
         base_tick: |mob| mob.mob().base_tick_mob(),
         check_despawn: |mob| mob.mob().check_mob_despawn(),
         is_effective_ai: |mob| mob.is_server_driven_movement() && !mob.mob().is_no_ai(),
@@ -2138,15 +2135,6 @@ impl<'a> Mob<'a> {
     pub fn tick_jump_control(&self) {
         let jumping = self.mob_base().controls().lock().jump_control.tick();
         self.set_jumping(jumping);
-    }
-
-    /// `Mob.tick`: the living tick, then the goal control flags every 5 ticks
-    /// whether or not the AI runs.
-    pub fn tick_mob(&self, entity: &SharedEntity) {
-        self.living.tick_living_entity(entity);
-        if self.tick_count() % 5 == 0 {
-            self.update_control_flags();
-        }
     }
 
     pub fn update_control_flags(&self) {

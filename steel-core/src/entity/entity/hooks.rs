@@ -354,10 +354,6 @@ macro_rules! entity_hook_list {
                 fn effective_gravity() -> f64 = effective_gravity_default;
             }
             shared {
-                /// Called every game tick when the entity is in a ticked chunk.
-                ///
-                /// The caller handles post-tick dirty data sync.
-                fn tick() = tick_default;
                 /// Called every game tick while this entity is riding another entity.
                 fn ride_tick() = ride_tick_default;
                 /// Applies vanilla fall damage; base entities only propagate it to

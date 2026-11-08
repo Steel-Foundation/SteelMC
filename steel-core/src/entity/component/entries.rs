@@ -12,6 +12,14 @@ use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
 
+/// Vanilla `Entity.tick`.
+pub struct Tick;
+
+impl Entry for Tick {
+    /// The shared handle of the entity being ticked.
+    type Ctx<'a> = &'a SharedEntity;
+}
+
 /// The vanilla constructor chain of a mob, `Mob.registerGoals` included. Runs on
 /// the fresh `MobBase` before the entity exists.
 pub struct Construct;

@@ -17,9 +17,8 @@ use steel_utils::BlockPos;
 use steel_utils::locks::CheckedMutex;
 
 use crate::chunk::heightmap::HeightmapType;
-use crate::entity::SharedEntity;
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::Definition;
 use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::mob;
 use crate::entity::prelude::*;
@@ -92,7 +91,6 @@ impl BatEntity {
         ..MobProps::new()
     };
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: Self::entity_tick,
         hurt: |bat, world, source, amount| {
             let living = bat.living();
             if !living.is_invulnerable_to(world, source) && bat.is_resting() {
@@ -109,13 +107,17 @@ impl BatEntity {
         ..mob::entity_props()
     };
     const FLY: StageId = StageId("bat.fly");
+    const HANG: StageId = StageId("bat.hang");
 
     /// Vanilla `Bat`: the mob chains with its resting and flying.
-    fn define() -> MobDefinition<Self> {
+    fn define() -> Definition<Self> {
         let mut definition = mob::stages::definition::<Self>();
         definition.custom_server_ai_step = definition
             .custom_server_ai_step
             .then([Stage::effect(Self::FLY, Self::fly)]);
+        definition.tick = definition
+            .tick
+            .then([Stage::effect(Self::HANG, Self::tick_hang)]);
         definition
     }
 
@@ -150,10 +152,9 @@ impl BatEntity {
         });
     }
 
-    /// `Bat.tick`: a resting bat hangs still under its block; a flying one
-    /// loses most of its vertical speed.
-    fn entity_tick(&self, entity: &SharedEntity) {
-        self.mob().tick_mob(entity);
+    /// `Bat.tick` after `super.tick()`: a resting bat hangs still under its
+    /// block; a flying one loses most of its vertical speed.
+    fn tick_hang(&self) {
         if self.is_resting() {
             self.set_velocity(DVec3::ZERO);
             let height = f64::from(self.base().dimensions().height);

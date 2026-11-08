@@ -10,7 +10,7 @@ use steel_registry::sound_events;
 use steel_registry::vanilla_game_rules::MOB_DROPS;
 use steel_utils::BlockPos;
 
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::Definition;
 use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::mob::{self, LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE, Parts};
 use crate::entity::prelude::*;
@@ -28,7 +28,7 @@ pub const NO_ACTION_TIME: StageId = StageId("monster.no_action_time");
 
 /// Vanilla's chains for a monster type: `LivingEntity` → `Mob` → `Monster`.
 #[must_use]
-pub fn definition<E: Parts>() -> MobDefinition<E> {
+pub fn definition<E: Parts>() -> Definition<E> {
     let mut definition = mob::stages::definition::<E>();
     definition.construct = definition
         .construct

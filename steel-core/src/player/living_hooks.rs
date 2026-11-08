@@ -1,6 +1,8 @@
 //! `ServerPlayer`'s overrides of the living hooks.
 
 use super::*;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 
 impl Player {
@@ -16,7 +18,6 @@ impl Player {
         },
         death_sound: |_| Some(&sound_events::ENTITY_PLAYER_DEATH),
         indicate_damage: Self::living_indicate_damage,
-        tick_living_entity: Self::living_tick_living_entity,
         is_using_item: Self::living_is_using_item,
         luck: Self::living_get_luck,
         can_be_seen_as_enemy: Self::living_can_be_seen_as_enemy,
@@ -54,7 +55,20 @@ impl Player {
         });
     }
 
-    fn living_tick_living_entity(&self, entity: &SharedEntity) {
+    /// Vanilla `ServerPlayer.tick` never calls `super`: the player runs the
+    /// living tick's pieces itself, around the client-driven movement.
+    pub(super) fn define() -> Definition<Self> {
+        const TICK: StageId = StageId("player.tick");
+        Definition::replacing_tick([Stage::new(
+            TICK,
+            |player: &Self, entity: &mut &SharedEntity| {
+                player.tick_player(entity);
+                Flow::Continue
+            },
+        )])
+    }
+
+    fn tick_player(&self, entity: &SharedEntity) {
         self.advance_tick();
         self.tick_item_cooldowns();
         self.tick_attack_strength();
@@ -93,7 +107,7 @@ impl Player {
         self.set_old_position_to_current();
         self.reset_vehicle_movement_for_tick();
 
-        self.tick_default();
+        self.base_tick();
         self.living().detect_equipment_updates();
         let _movement = self.living().ai_step(entity);
 

@@ -30,7 +30,7 @@ use crate::entity::ai::goal::{
     RandomLookAroundGoal, TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::animal::{self, Breeding, BreedingProps};
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::Definition;
 use crate::entity::component::entries::{FinalizeSpawnCtx, MobInteractCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::shearable::{self, Shearable};
@@ -95,7 +95,7 @@ impl SheepEntity {
 
     /// Vanilla `Sheep`: the animal chains with sheep goals, shearing before
     /// feeding, and the spawn wool color before `AgeableMob.finalizeSpawn`.
-    fn define() -> MobDefinition<Self> {
+    fn define() -> Definition<Self> {
         let mut definition = animal::definition::<Self>();
         // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
         definition.construct = definition.construct.before(

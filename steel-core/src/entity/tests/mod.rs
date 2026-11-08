@@ -1,5 +1,7 @@
 use crate::entity::component::Has;
+use crate::entity::component::definition::{Definition, DefinitionEntries};
 use crate::test_support::synced_with_health;
+use std::sync::LazyLock;
 use std::{
     io::Cursor,
     sync::{Arc, Weak},
@@ -888,6 +890,12 @@ impl LivingFluidTestEntity {
 impl Entity for LivingFluidTestEntity {
     fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
         (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+    }
+
+    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+        static DEFINITION: LazyLock<Definition<LivingFluidTestEntity>> =
+            LazyLock::new(living_entity::definition);
+        &*DEFINITION
     }
 
     fn base(&self) -> &EntityBase {

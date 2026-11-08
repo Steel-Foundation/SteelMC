@@ -13,7 +13,7 @@ use crate::entity::ai::goal::{
     TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::animal::{self, Parts};
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::Definition;
 use crate::entity::component::entries::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
@@ -27,7 +27,7 @@ pub const MILK: StageId = StageId("abstract_cow.milk");
 
 /// `AbstractCow`'s chains: the animal chains with cow goals and milking.
 #[must_use]
-pub fn definition<E: Parts>() -> MobDefinition<E> {
+pub fn definition<E: Parts>() -> Definition<E> {
     let mut definition = animal::definition::<E>();
     // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
     definition.construct = definition.construct.before(

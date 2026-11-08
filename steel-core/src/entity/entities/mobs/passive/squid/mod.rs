@@ -22,7 +22,7 @@ use steel_utils::locks::CheckedMutex;
 
 use crate::entity::ageable::{self, Age, AgeableProps};
 use crate::entity::ai::path::PathType;
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::Definition;
 use crate::entity::component::pipeline::{Pipeline, Stage, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::mob::{self};
@@ -125,8 +125,8 @@ impl SquidEntity {
 
     /// Vanilla `Squid`: the `AgeableMob` chains with the squid's goals, its
     /// water malus and its swimming.
-    fn define() -> MobDefinition<Self> {
-        MobDefinition {
+    fn define() -> Definition<Self> {
+        Definition {
             construct: Pipeline::new([
                 Stage::effect(Self::GOALS, Self::register_goals),
                 Stage::effect(Self::WATER_MALUS, |mob_base: &MobBase| {
@@ -143,11 +143,11 @@ impl SquidEntity {
             ]),
             custom_server_ai_step: Pipeline::new([]),
             mob_interact: Pipeline::new([ageable::mob_interact::<Self>()]),
-            ate: Pipeline::new([mob::stages::ate::<Self>()]),
             finalize_spawn: Pipeline::new([
                 ageable::finalize_spawn::<Self>(),
                 mob::stages::finalize_spawn::<Self>(),
             ]),
+            ..mob::stages::definition::<Self>()
         }
     }
 

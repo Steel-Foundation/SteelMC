@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::*;
+use crate::entity::component::definition::{DefaultDefinition, DefinitionEntries};
 use crate::entity::shearable::Shearable;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use rand::{RngExt, rng};
@@ -198,6 +199,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// This entity type's hooks, usually its [`EntityProps`].
     fn entity_hooks(&self) -> &'static dyn EntityHooks;
 
+    /// This entity type's pipelines, usually its [`Definition`]. Entities
+    /// written without `#[derive(Entity)]` get vanilla `Entity`'s.
+    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+        &DefaultDefinition
+    }
+
     entity_hook_list!(entity_hook_dispatch);
 
     /// Returns this entity's component whose downcast key is `key`; see
@@ -369,10 +376,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn DefaultEntityPush>(self)
     }
 
-    /// Default for [`Self::tick`]: vanilla `Entity.tick`, which only runs
-    /// [`Self::base_tick`].
-    fn tick_default(&self) {
-        self.base_tick();
+    /// Called every game tick when the entity is in a ticked chunk: runs this
+    /// type's `tick` pipeline. The caller handles post-tick dirty data sync.
+    fn tick(self: Arc<Self>) {
+        let entity = self.into_shared_entity();
+        entity.entity_definition().tick(&entity);
     }
 
     /// Default for [`Self::base_tick`].

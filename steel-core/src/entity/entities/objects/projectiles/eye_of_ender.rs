@@ -18,9 +18,11 @@ use steel_registry::{level_events, sound_events, vanilla_entities, vanilla_items
 use steel_utils::BlockPos;
 use steel_utils::locks::CheckedMutex;
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::entities::ItemEntity;
 use crate::entity::prelude::*;
-use crate::entity::{EntityBase, EntityProps, RemovalReason, SharedEntity, next_entity_id};
+use crate::entity::{EntityBase, EntityProps, RemovalReason, next_entity_id};
 
 /// Targets further than this horizontally are replaced by a point this far
 /// along the way and [`TOO_FAR_SIGNAL_HEIGHT`] up.
@@ -38,7 +40,7 @@ struct Flight {
 #[entity_behavior(class = "EyeOfEnder")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_item, load = Self::load_item)]
-#[entity(key = "steel:entity/eye_of_ender", constructors)]
+#[entity(key = "steel:entity/eye_of_ender", constructors, definition = Self::define)]
 pub struct EyeOfEnderEntity {
     #[entity(base)]
     base: EntityBase,
@@ -50,8 +52,19 @@ pub struct EyeOfEnderEntity {
 }
 
 impl EyeOfEnderEntity {
+    const TICK: StageId = StageId("eye_of_ender.tick");
+
+    fn define() -> Definition<Self> {
+        let definition = Definition::new();
+        Definition {
+            tick: definition
+                .tick
+                .then([Stage::effect(Self::TICK, Self::entity_tick)]),
+            ..definition
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |eye, entity| eye.entity_tick(entity),
         attackable: |_| false,
         ..EntityProps::new()
     };
@@ -110,10 +123,9 @@ impl EyeOfEnderEntity {
         flight.survive_after_death = rand::random_range(0..5) > 0;
     }
 
-    /// `EyeOfEnder.tick`: flies toward its target and, when its life ends,
-    /// drops as an item or shatters.
-    fn entity_tick(&self, entity: &SharedEntity) {
-        Arc::clone(entity).tick_default();
+    /// `EyeOfEnder.tick` after `super.tick()`: flies toward its target and,
+    /// when its life ends, drops as an item or shatters.
+    fn entity_tick(&self) {
         let new_position = self.position() + self.velocity();
         let target = self.flight.lock().target;
         if let Some(target) = target {

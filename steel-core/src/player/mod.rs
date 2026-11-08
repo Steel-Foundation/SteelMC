@@ -182,7 +182,7 @@ use crate::world::World;
 /// A struct representing a player.
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, entity_type = &vanilla_entities::PLAYER)]
-#[entity(key = "steel:entity/player")]
+#[entity(key = "steel:entity/player", definition = Self::define)]
 pub struct Player {
     /// The player's game profile.
     pub gameprofile: GameProfile,

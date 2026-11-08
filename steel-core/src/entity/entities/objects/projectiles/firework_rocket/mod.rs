@@ -21,6 +21,8 @@ use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::prelude::*;
 use crate::entity::projectile::{
@@ -46,7 +48,7 @@ struct Flight {
 #[entity_behavior(class = "FireworkRocketEntity")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_rocket, load = Self::load_rocket)]
-#[entity(key = "steel:entity/firework_rocket", constructors)]
+#[entity(key = "steel:entity/firework_rocket", constructors, definition = Self::define)]
 pub struct FireworkRocketEntity {
     #[entity(base)]
     base: EntityBase,
@@ -60,8 +62,23 @@ pub struct FireworkRocketEntity {
 }
 
 impl FireworkRocketEntity {
+    const TICK: StageId = StageId("firework_rocket.tick");
+
+    fn define() -> Definition<Self> {
+        let definition = projectile::definition();
+        Definition {
+            tick: definition.tick.then([Stage::new(
+                Self::TICK,
+                |rocket: &Self, entity: &mut &SharedEntity| {
+                    rocket.entity_tick(entity);
+                    Flow::Continue
+                },
+            )]),
+            ..definition
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |rocket, entity| rocket.entity_tick(entity),
         attackable: |_| false,
         ..projectile::entity_props()
     };
@@ -176,10 +193,9 @@ impl FireworkRocketEntity {
         Some(attached)
     }
 
-    /// `FireworkRocketEntity.tick`.
+    /// `FireworkRocketEntity.tick` after `super.tick()`.
     fn entity_tick(&self, entity: &SharedEntity) {
         let projectile = self.projectile();
-        projectile.tick();
         let Some(world) = self.level() else {
             return;
         };

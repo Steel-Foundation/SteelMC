@@ -28,6 +28,7 @@ const ZERO_SIZED_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.0, 0.0, 
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/thrown_egg", constructors)]
+#[entity(definition = throwable::definition)]
 pub struct ThrownEggEntity {
     #[entity(base)]
     base: EntityBase,

@@ -26,7 +26,7 @@ use uuid::Uuid;
 use crate::behavior::InteractionResult;
 use crate::entity::ageable::{self, Age, Ageable};
 use crate::entity::ai::path::PathType;
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::Definition;
 use crate::entity::component::entries::{AiStep, CustomServerAiStep, MobInteract, MobInteractCtx};
 use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::component::{Component, Components as _, Has};
@@ -382,8 +382,8 @@ pub const MOB_INTERACT: StageId = StageId("animal.mob_interact");
 /// Vanilla's chains for an animal type: `LivingEntity` → `Mob` →
 /// `AgeableMob` → `Animal`, base first.
 #[must_use]
-pub fn definition<E: Parts>() -> MobDefinition<E> {
-    MobDefinition {
+pub fn definition<E: Parts>() -> Definition<E> {
+    Definition {
         construct: Pipeline::new([Stage::effect(
             PATHFINDING_MALUS,
             Breeding::initialize_pathfinding_malus,
@@ -391,11 +391,11 @@ pub fn definition<E: Parts>() -> MobDefinition<E> {
         ai_step: ai_step(),
         custom_server_ai_step: custom_server_ai_step(),
         mob_interact: mob_interact(),
-        ate: Pipeline::new([mob::stages::ate::<E>()]),
         finalize_spawn: Pipeline::new([
             ageable::finalize_spawn::<E>(),
             mob::stages::finalize_spawn::<E>(),
         ]),
+        ..mob::stages::definition::<E>()
     }
 }
 

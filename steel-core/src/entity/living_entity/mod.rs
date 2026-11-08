@@ -12,6 +12,8 @@ use steel_registry::vanilla_entity_data::LivingEntityData;
 use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::EntityProps;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Components as _, Has};
 use crate::entity::consume_effect::apply_consume_effect;
@@ -51,8 +53,6 @@ entity_props! {
         fn ai_step(entity: &SharedEntity) -> Option<MoveResult> = ai_step_default;
         /// `LivingEntity.indicateDamage`.
         fn indicate_damage(xd: f64, zd: f64) = indicate_damage_default;
-        /// `LivingEntity.tick`.
-        fn tick_living_entity(entity: &SharedEntity) = tick_living_entity_default;
         /// `LivingEntity.isUsingItem`.
         fn is_using_item() -> bool = is_using_item_default;
         /// `LivingEntity.getLuck`.
@@ -214,12 +214,28 @@ impl Deref for Living<'_> {
     }
 }
 
+/// The `LivingEntity.tick` stage, after `Entity`'s.
+pub const TICK: StageId = StageId("living_entity.tick");
+
+/// Vanilla `LivingEntity`'s chains, on `Entity`'s.
+#[must_use]
+pub fn definition<E: Parts>() -> Definition<E> {
+    fn tick<E: Parts>(living: &E, entity: &mut &SharedEntity) -> Flow {
+        living.living().tick_living(entity);
+        Flow::Continue
+    }
+    let definition = Definition::new();
+    Definition {
+        tick: definition.tick.then([Stage::new(TICK, tick::<E>)]),
+        ..definition
+    }
+}
+
 /// `LivingEntity`'s overrides of entity hooks; living entity types build their
 /// [`EntityProps`] on this.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        tick: |living, entity| living.living().tick_living_entity(entity),
         ride_tick: |living, entity| {
             Arc::clone(entity).ride_tick_default();
             living.reset_fall_distance();
@@ -909,11 +925,8 @@ impl<'a> Living<'a> {
         !self.is_invulnerable() && self.can_be_seen_by_anyone()
     }
 
-    /// Runs vanilla `LivingEntity.tick`.
-    ///
-    /// The default `Entity::tick` dispatches living entities here.
-    pub fn tick_living_entity_default(&self, entity: &SharedEntity) {
-        self.tick_default();
+    /// `LivingEntity.tick` after its `super.tick()`.
+    fn tick_living(&self, entity: &SharedEntity) {
         self.living_base().decrement_invulnerable_time();
 
         if self.is_dead_or_dying() {

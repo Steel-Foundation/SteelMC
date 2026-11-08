@@ -27,7 +27,7 @@ use crate::entity::ai::goal::{Goal, GoalControl, GoalControls};
 use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
 use crate::entity::component::Has;
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::{Definition, DefinitionEntries};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ChickenEntity;
 use crate::entity::entities::objects::items::ItemEntity;
@@ -235,8 +235,8 @@ impl DespawnTestMob {
         ..MobProps::new()
     };
 
-    fn definition() -> &'static MobDefinition<Self> {
-        static DEFINITION: LazyLock<MobDefinition<DespawnTestMob>> =
+    fn definition() -> &'static Definition<Self> {
+        static DEFINITION: LazyLock<Definition<DespawnTestMob>> =
             LazyLock::new(mob::stages::definition);
         &DEFINITION
     }
@@ -272,6 +272,10 @@ impl Entity for DespawnTestMob {
 
     fn entity_hooks(&self) -> &'static dyn EntityHooks {
         &Self::ENTITY
+    }
+
+    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+        Self::definition()
     }
 }
 

@@ -1,5 +1,7 @@
 //! Vanilla `EndCrystal`, as far as End spike worldgen and saving need it.
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::prelude::*;
 
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -18,7 +20,7 @@ use crate::entity::{Entity, EntityBase, EntityMovementEmission, EntityProps};
 #[entity_behavior(class = "EndCrystal")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_crystal, load = Self::load_crystal)]
-#[entity(key = "steel:entity/end_crystal", constructors)]
+#[entity(key = "steel:entity/end_crystal", constructors, definition = Self::define)]
 pub struct EndCrystalEntity {
     #[entity(base)]
     base: EntityBase,
@@ -29,11 +31,17 @@ pub struct EndCrystalEntity {
 }
 
 impl EndCrystalEntity {
-    const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |crystal, _| {
+    const TICK: StageId = StageId("end_crystal.tick");
+
+    /// `EndCrystal.tick` never calls `super`.
+    fn define() -> Definition<Self> {
+        Definition::replacing_tick([Stage::effect(Self::TICK, |crystal: &Self| {
             crystal.apply_effects_from_blocks();
             crystal.handle_portal();
-        },
+        })])
+    }
+
+    const ENTITY: EntityProps<Self> = EntityProps {
         movement_emission: |_| EntityMovementEmission::None,
         is_pickable: |_| true,
         blocks_building: |_| true,

@@ -5,6 +5,9 @@ use steel_registry::{blocks::block_state_ext::BlockStateExt as _, vanilla_blocks
 use steel_utils::{BlockPos, axis::Axis};
 
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::entries::Tick;
+use crate::entity::component::pipeline::{Flow, Inner, StageId};
 use crate::entity::projectile::{self, Parts, Projectile};
 use crate::entity::{EntityProps, InsideBlockEffectCollector, RemovalReason, SharedEntity};
 
@@ -14,7 +17,6 @@ const WATER_INERTIA: f32 = 0.8;
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        tick: |projectile, entity| tick(&projectile.projectile(), entity),
         default_gravity: |_| 0.03,
         air_drag: |_| 0.99,
         can_use_portal: |_, _| true,
@@ -22,10 +24,32 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     }
 }
 
+/// The `ThrowableProjectile.tick` stage, around `Projectile`'s.
+pub const TICK: StageId = StageId("throwable.tick");
+
+/// Vanilla `ThrowableProjectile`'s chains, on `Projectile`'s.
+#[must_use]
+pub fn definition<E: Parts>() -> Definition<E> {
+    fn run<E: Parts>(entity: &E, shared: &mut &SharedEntity, inner: Inner<'_, E, Tick>) -> Flow {
+        let shared_entity = *shared;
+        tick(&entity.projectile(), shared_entity, || {
+            inner(entity, shared)
+        })
+    }
+    let definition = projectile::definition();
+    Definition {
+        tick: definition.tick.around(TICK, run::<E>),
+        ..definition
+    }
+}
+
 /// `ThrowableProjectile.tick`: applies gravity and drag, moves to the first
-/// hit on the move vector, runs the `Projectile` tick, then resolves the hit.
-/// Types that wrap their tick call this as `super.tick()`.
-pub fn tick(projectile: &Projectile<'_>, entity: &SharedEntity) {
+/// hit on the move vector, runs `super.tick()`, then resolves the hit.
+fn tick(
+    projectile: &Projectile<'_>,
+    entity: &SharedEntity,
+    super_tick: impl FnOnce() -> Flow,
+) -> Flow {
     // Vanilla's level stores the old position and rotation before ticking;
     // `onHit` (teleports) and `updateRotation` read them.
     projectile.set_old_position_to_current();
@@ -43,12 +67,14 @@ pub fn tick(projectile: &Projectile<'_>, entity: &SharedEntity) {
     if let Err(error) = projectile.try_set_position(new_position) {
         log::debug!("failed to advance projectile {}: {error}", projectile.id());
         projectile.set_removed(RemovalReason::Discarded);
-        return;
+        // Vanilla's `return` only leaves this layer; subclass code after
+        // `super.tick()` still runs.
+        return Flow::Continue;
     }
 
     projectile.update_rotation();
     projectile.apply_effects_from_blocks();
-    projectile.tick();
+    let flow = super_tick();
 
     if let Some(result) = hit
         && projectile.is_alive()
@@ -56,6 +82,7 @@ pub fn tick(projectile: &Projectile<'_>, entity: &SharedEntity) {
     {
         projectile.hit_target_or_deflect_self(entity, &result);
     }
+    flow
 }
 
 /// `ThrowableProjectile.applyInertia`: water or air drag.

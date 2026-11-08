@@ -24,7 +24,7 @@ use crate::entity::ai::goal::{
     TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::animal::{self, Breeding, BreedingProps};
-use crate::entity::component::definition::MobDefinition;
+use crate::entity::component::definition::Definition;
 use crate::entity::component::entries::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::item_based_steering::ItemBasedSteering;
@@ -117,7 +117,7 @@ impl PigEntity {
 
     /// Vanilla `Pig`: the animal chains with pig goals, mounting a saddled pig
     /// before feeding, saddling after it, and variant selection on spawn.
-    fn define() -> MobDefinition<Self> {
+    fn define() -> Definition<Self> {
         let mut definition = animal::definition::<Self>();
         // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
         definition.construct = definition.construct.before(

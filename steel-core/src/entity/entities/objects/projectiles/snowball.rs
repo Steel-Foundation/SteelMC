@@ -18,6 +18,7 @@ use crate::entity::{Entity, EntityBase, EntityProps, RemovalReason, SharedEntity
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/snowball", constructors)]
+#[entity(definition = throwable::definition)]
 pub struct SnowballEntity {
     #[entity(base)]
     base: EntityBase,

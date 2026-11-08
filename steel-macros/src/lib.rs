@@ -69,8 +69,10 @@ pub fn entity_behavior(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// - `key = "steel:entity/x"`: the owner-scoped `DowncastType` key.
 /// - `constructors`: `new` and `from_saved`, built on the type's
 ///   `fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self`.
-/// - `definition = Self::define`: a cached `fn definition()` returning the
-///   `&'static MobDefinition<Self>` that `define` builds.
+/// - `definition = Self::define` (required): a cached `fn definition()`
+///   returning the `&'static Definition<Self>` that `define` builds, and the
+///   `Entity::entity_definition` dispatch. Types that add no stages name their
+///   layer's definition, such as `living_entity::definition`.
 ///
 /// Expands to `crate::` paths, so it is only usable inside `steel-core`.
 #[proc_macro_derive(Entity, attributes(entity))]

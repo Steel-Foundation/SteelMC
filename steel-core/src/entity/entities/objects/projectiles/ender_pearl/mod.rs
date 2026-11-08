@@ -19,6 +19,8 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::types::Difficulty;
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Flow, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::EndermiteEntity;
 use crate::entity::prelude::*;
@@ -36,7 +38,7 @@ use crate::world::World;
 #[entity_behavior(class = "ThrownEnderpearl")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
-#[entity(key = "steel:entity/ender_pearl", constructors)]
+#[entity(key = "steel:entity/ender_pearl", constructors, definition = Self::define)]
 pub struct EnderPearlEntity {
     #[entity(base)]
     base: EntityBase,
@@ -53,8 +55,23 @@ pub struct EnderPearlEntity {
 }
 
 impl EnderPearlEntity {
+    const TICK: StageId = StageId("ender_pearl.tick");
+
+    fn define() -> Definition<Self> {
+        let definition = throwable::definition();
+        Definition {
+            tick: definition.tick.around(Self::TICK, |pearl, entity, inner| {
+                let shared = *entity;
+                pearl.entity_tick(shared, || {
+                    inner(pearl, entity);
+                });
+                Flow::Continue
+            }),
+            ..definition
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |pearl, entity| pearl.entity_tick(entity),
         on_removal: |pearl, reason| {
             // Pearls saved with their player stay registered for the next login.
             if reason != RemovalReason::StoredWithPlayer {
@@ -111,10 +128,9 @@ impl EnderPearlEntity {
 
     /// `ThrownEnderpearl.tick`: vanishes when its owner died (if the game
     /// rule says so), then flies and keeps its chunk loaded.
-    fn entity_tick(&self, entity: &SharedEntity) {
-        let projectile = self.projectile();
+    fn entity_tick(&self, entity: &SharedEntity, super_tick: impl FnOnce()) {
         let Some(world) = self.level() else {
-            throwable::tick(&projectile, entity);
+            super_tick();
             return;
         };
 
@@ -128,7 +144,7 @@ impl EnderPearlEntity {
         }) {
             self.set_removed(RemovalReason::Discarded);
         } else {
-            throwable::tick(&projectile, entity);
+            super_tick();
         }
 
         if !self.is_alive() {

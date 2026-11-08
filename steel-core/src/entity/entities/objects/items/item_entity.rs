@@ -4,6 +4,8 @@
 //! (gravity, friction), despawns after 5 minutes, and can be picked up
 //! by players after a short delay.
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Flow, StageId};
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 
@@ -97,7 +99,7 @@ impl ItemEntityState {
 #[entity_behavior]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_item, load = Self::load_item)]
-#[entity(key = "steel:entity/item")]
+#[entity(key = "steel:entity/item", definition = Self::define)]
 pub struct ItemEntity {
     /// Common entity fields (id, uuid, position, etc.).
     #[entity(base)]
@@ -500,11 +502,26 @@ impl ItemEntity {
 impl DefaultEntityPush for ItemEntity {}
 
 impl ItemEntity {
+    const TICK: StageId = StageId("item.tick");
+
+    fn define() -> Definition<Self> {
+        let definition = Definition::new();
+        Definition {
+            tick: definition.tick.around(Self::TICK, |item, entity, inner| {
+                let shared = *entity;
+                item.entity_tick(shared, || {
+                    inner(item, entity);
+                });
+                Flow::Continue
+            }),
+            ..definition
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
         is_hard_collision_relevant: |_| false,
         ignore_explosion: |_, explosion| !explosion.should_affect_blocklike_entities(),
         movement_emission: |_| EntityMovementEmission::None,
-        tick: Self::entity_tick,
         default_gravity: |_| 0.04,
         block_pos_below_that_affects_movement: |entity| entity.on_pos(0.999_999),
         attackable: |_| false,
@@ -532,14 +549,14 @@ impl ItemEntity {
         })
     }
 
-    fn entity_tick(&self, entity: &SharedEntity) {
-        // Check if item is empty
+    /// `ItemEntity.tick`: an empty stack is discarded instead of ticking.
+    fn entity_tick(&self, entity: &SharedEntity, super_tick: impl FnOnce()) {
         if self.item().is_empty() {
             self.set_removed(RemovalReason::Discarded);
             return;
         }
 
-        self.tick_default();
+        super_tick();
 
         {
             let mut state = self.state.lock();

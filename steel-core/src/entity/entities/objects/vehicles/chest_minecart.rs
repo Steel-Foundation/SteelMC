@@ -12,6 +12,7 @@ use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_utils::Identifier;
 use steel_utils::locks::CheckedMutex;
 
+use crate::entity::component::definition::Definition;
 use crate::entity::prelude::*;
 use crate::entity::{
     EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps,
@@ -27,7 +28,7 @@ use crate::world::World;
 #[entity_behavior(class = "MinecartChest")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_chest, load = Self::load_chest)]
-#[entity(key = "steel:entity/chest_minecart")]
+#[entity(key = "steel:entity/chest_minecart", definition = Definition::new)]
 pub struct ChestMinecartEntity {
     #[entity(base)]
     base: EntityBase,

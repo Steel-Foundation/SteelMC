@@ -1,5 +1,7 @@
 //! Experience orb entity implementation.
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 
@@ -58,7 +60,7 @@ impl ExperienceOrbState {
 #[entity_behavior(class = "ExperienceOrb")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_orb, load = Self::load_orb)]
-#[entity(key = "steel:entity/experience_orb", constructors)]
+#[entity(key = "steel:entity/experience_orb", constructors, definition = Self::define)]
 pub struct ExperienceOrbEntity {
     #[entity(base)]
     base: EntityBase,
@@ -401,12 +403,27 @@ impl ExperienceOrbEntity {
 impl DefaultEntityPush for ExperienceOrbEntity {}
 
 impl ExperienceOrbEntity {
+    const TICK: StageId = StageId("experience_orb.tick");
+
+    fn define() -> Definition<Self> {
+        let definition = Definition::new();
+        Definition {
+            tick: definition.tick.then([Stage::new(
+                Self::TICK,
+                |orb: &Self, entity: &mut &SharedEntity| {
+                    orb.entity_tick(entity);
+                    Flow::Continue
+                },
+            )]),
+            ..definition
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
         is_hard_collision_relevant: |_| false,
         // Vanilla `ExperienceOrb` overrides this with an empty body.
         do_water_splash_effect: |_| {},
         movement_emission: |_| EntityMovementEmission::None,
-        tick: Self::entity_tick,
         default_gravity: |_| 0.03,
         block_pos_below_that_affects_movement: |entity| entity.on_pos(0.999_999),
         attackable: |_| false,
@@ -416,8 +433,8 @@ impl ExperienceOrbEntity {
         ..EntityProps::new()
     };
 
+    /// `ExperienceOrb.tick` after `super.tick()`.
     fn entity_tick(&self, entity: &SharedEntity) {
-        self.tick_default();
         self.set_old_position_to_current();
 
         let Some(world) = self.level() else {

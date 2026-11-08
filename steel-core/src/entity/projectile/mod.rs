@@ -33,6 +33,9 @@ use uuid::Uuid;
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::enchantment_helper;
+use crate::entity::component::definition::Definition;
+use crate::entity::component::entries::Tick;
+use crate::entity::component::pipeline::{Flow, Inner, StageId};
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::damage::DamageSource;
@@ -275,11 +278,32 @@ impl<E: Entity + Has<ProjectileBase>> Parts for E {
     }
 }
 
+/// The `Projectile.tick` stage, around `Entity`'s.
+pub const TICK: StageId = StageId("projectile.tick");
+
+/// Vanilla `Projectile`'s chains, on `Entity`'s.
+#[must_use]
+pub fn definition<E: Parts>() -> Definition<E> {
+    fn tick<E: Parts>(
+        projectile: &E,
+        entity: &mut &SharedEntity,
+        inner: Inner<'_, E, Tick>,
+    ) -> Flow {
+        projectile
+            .projectile()
+            .tick_around(|| inner(projectile, entity))
+    }
+    let definition = Definition::new();
+    Definition {
+        tick: definition.tick.around(TICK, tick::<E>),
+        ..definition
+    }
+}
+
 /// `Projectile`'s overrides of the entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        tick: |projectile, _| projectile.projectile().tick(),
         hurt: |projectile, _, source, _| projectile.projectile().hurt_server(source),
         is_pickable: |projectile| {
             REGISTRY.entity_types.is_in_tag(
@@ -737,9 +761,9 @@ impl<'a> Projectile<'a> {
         self.reset_fall_distance();
     }
 
-    /// `Projectile.tick`: announces the shot once, tracks leaving the owner,
-    /// and runs the entity tick.
-    pub fn tick(&self) {
+    /// `Projectile.tick` around its `super.tick()`: announces the shot once
+    /// and tracks leaving the owner.
+    fn tick_around(&self, base_tick: impl FnOnce() -> Flow) -> Flow {
         if !self.has_been_shot() {
             let owner = self.owner();
             self.game_event_with_source_entity(
@@ -749,8 +773,9 @@ impl<'a> Projectile<'a> {
             self.state().has_been_shot = true;
         }
         self.check_left_owner();
-        self.tick_default();
+        let flow = base_tick();
         self.state().left_owner_checked = false;
+        flow
     }
 }
 

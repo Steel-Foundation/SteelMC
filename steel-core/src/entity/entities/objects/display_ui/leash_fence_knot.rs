@@ -28,7 +28,7 @@ use crate::world::World;
 #[entity_behavior(class = "LeashFenceKnotEntity")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, no_save_data)]
-#[entity(key = "steel:entity/leash_fence_knot")]
+#[entity(key = "steel:entity/leash_fence_knot", definition = block_attached::definition)]
 pub struct LeashFenceKnotEntity {
     #[entity(base)]
     base: EntityBase,

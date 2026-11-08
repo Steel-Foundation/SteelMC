@@ -30,6 +30,8 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Downcast as _};
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
 use crate::entity::prelude::*;
 use crate::entity::projectile::{self, ProjectileBase, ProjectileProps, triangle_random};
@@ -51,7 +53,7 @@ const MAX_DISTANCE_SQR: f64 = 32.0 * 32.0;
 #[entity_behavior(class = "FishingHook")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, no_save_data)]
-#[entity(key = "steel:entity/fishing_hook", constructors)]
+#[entity(key = "steel:entity/fishing_hook", constructors, definition = Self::define)]
 pub struct FishingHookEntity {
     #[entity(base)]
     base: EntityBase,
@@ -102,8 +104,30 @@ impl FishingHookState {
 }
 
 impl FishingHookEntity {
+    const SEED: StageId = StageId("fishing_hook.seed");
+    const TICK: StageId = StageId("fishing_hook.tick");
+
+    fn define() -> Definition<Self> {
+        let definition = projectile::definition();
+        Definition {
+            tick: definition
+                .tick
+                .before(
+                    projectile::TICK,
+                    [Stage::effect(Self::SEED, Self::seed_synchronized_random)],
+                )
+                .then([Stage::new(
+                    Self::TICK,
+                    |hook: &Self, entity: &mut &SharedEntity| {
+                        hook.entity_tick(entity);
+                        Flow::Continue
+                    },
+                )]),
+            ..definition
+        }
+    }
+
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |hook, entity| hook.entity_tick(entity),
         // Vanilla `FishingHook.remove`: the player stops fishing with it.
         on_removal: |hook, _| {
             if let Some(owner) = hook.projectile().owner()
@@ -697,14 +721,17 @@ impl FishingHookEntity {
         }
     }
 
-    /// `FishingHook.tick`.
-    fn entity_tick(&self, entity: &SharedEntity) {
+    /// `FishingHook.tick` before `super.tick()`: reseeds the random the
+    /// client mirrors.
+    fn seed_synchronized_random(&self) {
         if let Some(world) = self.level() {
             let seed = self.uuid().as_u64_pair().1 as i64 ^ world.game_time();
             self.synchronized_random.lock().set_seed(seed);
         }
-        self.projectile().tick();
+    }
 
+    /// `FishingHook.tick` after `super.tick()`.
+    fn entity_tick(&self, entity: &SharedEntity) {
         let Some(owner) = self.player_owner() else {
             self.set_removed(RemovalReason::Discarded);
             return;

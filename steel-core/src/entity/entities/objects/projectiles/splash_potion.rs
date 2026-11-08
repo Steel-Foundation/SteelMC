@@ -15,7 +15,9 @@ use steel_utils::locks::CheckedMutex;
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::potion_contents::to_runtime_instance_icon_from_visibility;
 use crate::entity::projectile::throwable_item::ThrownItem;
-use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps, thrown_potion};
+use crate::entity::projectile::{
+    ProjectileBase, ProjectileHit, ProjectileProps, throwable, thrown_potion,
+};
 use crate::entity::{
     Entity, EntityBase, EntityProps, Living, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ,
     SPLASH_VERTICAL_REACH, SharedEntity, compute_margin,
@@ -27,6 +29,7 @@ use crate::world::World;
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/splash_potion", constructors)]
+#[entity(definition = throwable::definition)]
 pub struct SplashPotionEntity {
     #[entity(base)]
     base: EntityBase,

@@ -1,9 +1,12 @@
 //! `Mob`'s own layers of the pipelined vanilla methods.
 
-use crate::entity::component::definition::MobDefinition;
-use crate::entity::component::entries::{AiStep, AiStepCtx, Ate, FinalizeSpawn, FinalizeSpawnCtx};
+use crate::entity::component::definition::Definition;
+use crate::entity::component::entries::{
+    AiStep, AiStepCtx, Ate, FinalizeSpawn, FinalizeSpawnCtx, Tick,
+};
 use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
+use crate::entity::living_entity;
 use crate::entity::mob::Parts;
 use steel_registry::vanilla_game_events;
 
@@ -11,6 +14,8 @@ use steel_registry::vanilla_game_events;
 pub const AI_STEP: StageId = StageId("mob.ai_step");
 /// Stage running `Mob.finalizeSpawn`.
 pub const FINALIZE_SPAWN: StageId = StageId("mob.finalize_spawn");
+/// Stage running `Mob.tick` after the living tick.
+pub const TICK: StageId = StageId("mob.tick");
 /// Stage running `Mob.ate`.
 pub const ATE: StageId = StageId("mob.ate");
 
@@ -43,15 +48,26 @@ pub fn finalize_spawn<E: Parts>() -> Stage<E, FinalizeSpawn> {
     Stage::new(FINALIZE_SPAWN, run::<E>)
 }
 
+/// The `Mob.tick` stage: the goal control flags every 5 ticks, whether or
+/// not the AI runs.
+pub fn tick<E: Parts>() -> Stage<E, Tick> {
+    fn run<E: Parts>(entity: &E) {
+        if entity.tick_count() % 5 == 0 {
+            entity.mob().update_control_flags();
+        }
+    }
+    Stage::effect(TICK, run::<E>)
+}
+
 /// Vanilla `Mob`'s own chains, for mobs without further layers.
 #[must_use]
-pub fn definition<E: Parts>() -> MobDefinition<E> {
-    MobDefinition {
-        construct: Pipeline::new([]),
+pub fn definition<E: Parts>() -> Definition<E> {
+    let living = living_entity::definition::<E>();
+    Definition {
+        tick: living.tick.then([tick::<E>()]),
         ai_step: Pipeline::new([ai_step::<E>()]),
-        custom_server_ai_step: Pipeline::new([]),
-        mob_interact: Pipeline::new([]),
         ate: Pipeline::new([ate::<E>()]),
         finalize_spawn: Pipeline::new([finalize_spawn::<E>()]),
+        ..living
     }
 }

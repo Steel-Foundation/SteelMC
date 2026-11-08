@@ -15,6 +15,8 @@ use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::pipeline::{Pipeline, Stage, StageId};
 use crate::entity::component::{Component, Has};
 use crate::entity::damage::DamageSource;
 use crate::entity::prelude::*;
@@ -116,11 +118,22 @@ pub trait Parts: Entity + Has<BlockAttachment> {
     }
 }
 
+/// The `BlockAttachedEntity.tick` stage, which replaces `Entity`'s.
+pub const TICK: StageId = StageId("block_attached.tick");
+
+/// Vanilla `BlockAttachedEntity`'s chains: its tick never calls `super`.
+#[must_use]
+pub fn definition<E: Parts>() -> Definition<E> {
+    Definition {
+        tick: Pipeline::new([Stage::effect(TICK, tick::<E>)]),
+        ..Definition::new()
+    }
+}
+
 /// The `BlockAttachedEntity` overrides of the entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        tick: |entity, _| tick(entity),
         is_pickable: |_| true,
         skip_attack_interaction: skip_attack_interaction::<E>,
         hurt: hurt::<E>,
