@@ -88,6 +88,7 @@ harness = false
 workspace = true
 
 [features]
+default = ["fmt"]
 fmt = ["dep:prettyplease", "dep:syn"]
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]

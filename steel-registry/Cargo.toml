@@ -61,6 +61,7 @@ simdnbt.workspace = true
 flate2.workspace = true
 
 [features]
+default = ["fmt"]
 fmt = ["dep:prettyplease", "dep:syn"]
 minecraft-src = []
 

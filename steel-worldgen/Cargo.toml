@@ -54,4 +54,5 @@ harness = false
 workspace = true
 
 [features]
+default = ["fmt"]
 fmt = ["dep:prettyplease", "dep:syn"]
