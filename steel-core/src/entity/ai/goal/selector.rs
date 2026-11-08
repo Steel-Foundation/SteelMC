@@ -1,6 +1,7 @@
 use std::fmt;
 use std::ops::BitOr;
 
+use super::reduced_tick_delay;
 use crate::entity::{Mob, SharedEntity};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +98,15 @@ pub trait Goal: Send {
 
     fn requires_update_every_tick(&self) -> bool {
         false
+    }
+
+    /// `Goal.adjustedTickDelay`: goals ticked every tick keep the full delay.
+    fn adjusted_tick_delay(&self, ticks: i32) -> i32 {
+        if self.requires_update_every_tick() {
+            ticks
+        } else {
+            reduced_tick_delay(ticks)
+        }
     }
 
     fn tick(&mut self, _mob: &Mob<'_>, _entity: &SharedEntity) {}

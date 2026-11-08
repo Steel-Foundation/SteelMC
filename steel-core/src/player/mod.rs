@@ -141,7 +141,6 @@ use crate::server::{
 use crate::world::player_spawn_finder::{
     POLL_TIME_BUDGET, PlayerSpawnSearch, PlayerSpawnSearchPoll,
 };
-use steel_registry::vanilla_damage_types;
 
 use steel_protocol::packets::{
     common::SCustomPayload,

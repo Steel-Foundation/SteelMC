@@ -225,6 +225,15 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
             living.reset_fall_distance();
         },
         base_tick: |living| living.living().base_tick_living_entity(),
+        on_below_world: |living| {
+            if let Some(world) = living.level() {
+                living.hurt(
+                    &world,
+                    &DamageSource::environment(&vanilla_damage_types::OUT_OF_WORLD),
+                    4.0,
+                );
+            }
+        },
         hurt: |living, world, source, amount| living.living().hurt_server(world, source, amount),
         cause_fall_damage: |living, _, fall_distance, damage_modifier, source| {
             living

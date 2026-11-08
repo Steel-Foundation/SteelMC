@@ -72,7 +72,6 @@ impl Player {
         swim_sound: |_| &sound_events::ENTITY_PLAYER_SWIM,
         play_step_sound: Self::entity_play_step_sound,
         movement_emission: Self::entity_movement_emission,
-        on_below_world: Self::entity_on_below_world,
         hurt: Self::entity_hurt,
         killed_entity: Self::entity_killed_entity,
         award_kill_score: Self::entity_award_kill_score,
@@ -364,15 +363,6 @@ impl Player {
         } else {
             EntityMovementEmission::All
         }
-    }
-
-    fn entity_on_below_world(&self) {
-        let world = self.get_world();
-        self.hurt(
-            &world,
-            &DamageSource::environment(&vanilla_damage_types::OUT_OF_WORLD),
-            4.0,
-        );
     }
 
     fn entity_hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
