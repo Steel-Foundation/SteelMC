@@ -44,6 +44,8 @@ pub struct SurfaceRuleContext<'a> {
     ore_vein_results: &'a [Option<BlockStateId>],
     /// Lazily computed temperature condition value.
     cold_enough_to_snow: Option<bool>,
+    /// Last 3D condition noise sampled at this block, as `(noise_index, value)`.
+    last_condition_noise_3d: Cell<Option<(usize, f64)>>,
 }
 
 impl<'a> SurfaceRuleContext<'a> {
@@ -87,6 +89,7 @@ impl<'a> SurfaceRuleContext<'a> {
             block_states,
             ore_vein_results: &[],
             cold_enough_to_snow: None,
+            last_condition_noise_3d: Cell::new(None),
         }
     }
 
@@ -104,11 +107,21 @@ impl<'a> SurfaceRuleContext<'a> {
             .get(noise_index, self.system, self.block_x, self.block_z)
     }
 
-    /// Returns an uncached surface condition noise value sampled at this block.
+    /// Returns a surface condition noise value sampled at this block.
+    ///
+    /// Remembers the last sample, since one rule can test several bands of the same noise.
     #[must_use]
     pub fn condition_noise_3d(&self, noise_index: usize) -> f64 {
-        self.system
-            .condition_noise_3d(noise_index, self.block_x, self.block_y, self.block_z)
+        if let Some((cached_index, value)) = self.last_condition_noise_3d.get()
+            && cached_index == noise_index
+        {
+            return value;
+        }
+        let value =
+            self.system
+                .condition_noise_3d(noise_index, self.block_x, self.block_y, self.block_z);
+        self.last_condition_noise_3d.set(Some((noise_index, value)));
+        value
     }
 
     /// Returns a pre-resolved block state emitted by the generated surface rule.
@@ -246,4 +259,82 @@ pub trait SurfaceNoiseProvider {
         true_at_and_below: i32,
         false_at_and_above: i32,
     ) -> bool;
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::{SurfaceConditionNoiseCache, SurfaceNoiseProvider, SurfaceRuleContext};
+    use crate::BlockStateId;
+
+    /// Counts 3D samples and returns a value unique to each noise index.
+    struct CountingNoise {
+        samples_3d: Cell<u32>,
+    }
+
+    impl SurfaceNoiseProvider for CountingNoise {
+        fn condition_noise(&self, _noise_index: usize, _x: i32, _z: i32) -> f64 {
+            0.0
+        }
+
+        fn condition_noise_3d(&self, noise_index: usize, x: i32, y: i32, z: i32) -> f64 {
+            self.samples_3d.set(self.samples_3d.get() + 1);
+            f64::from(x + y + z) + noise_index as f64 * 100.0
+        }
+
+        fn get_band(&self, _x: i32, _y: i32, _z: i32) -> BlockStateId {
+            BlockStateId(0)
+        }
+
+        fn cold_enough_to_snow(&self, _biome_id: u16, _x: i32, _y: i32, _z: i32) -> bool {
+            false
+        }
+
+        fn vertical_gradient(
+            &self,
+            _gradient_index: usize,
+            _x: i32,
+            _y: i32,
+            _z: i32,
+            _true_at_and_below: i32,
+            _false_at_and_above: i32,
+        ) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn condition_noise_3d_samples_once_per_noise_in_a_row() {
+        let noise = CountingNoise {
+            samples_3d: Cell::new(0),
+        };
+        let cache = SurfaceConditionNoiseCache::new(&[], &[]);
+        let ctx = SurfaceRuleContext::new(
+            1,
+            3,
+            0,
+            0.0,
+            0,
+            false,
+            2,
+            0,
+            0,
+            i32::MIN,
+            None,
+            None,
+            &noise,
+            &cache,
+            &[],
+        );
+
+        assert_eq!(ctx.condition_noise_3d(7), 706.0);
+        assert_eq!(ctx.condition_noise_3d(7), 706.0);
+        assert_eq!(ctx.condition_noise_3d(7), 706.0);
+        assert_eq!(noise.samples_3d.get(), 1);
+
+        assert_eq!(ctx.condition_noise_3d(2), 206.0);
+        assert_eq!(ctx.condition_noise_3d(7), 706.0);
+        assert_eq!(noise.samples_3d.get(), 3);
+    }
 }
