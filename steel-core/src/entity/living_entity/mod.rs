@@ -12,6 +12,7 @@ use steel_registry::vanilla_entity_data::LivingEntityData;
 use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::EntityProps;
+use crate::entity::component::definition::SetYBodyRotCtx;
 use crate::entity::component::definition::{BaseTick, BaseTickCtx, Definition, HurtCtx, TickCtx};
 use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage, StageId};
 use crate::entity::component::props::entity_props;
@@ -218,6 +219,8 @@ impl Deref for Living<'_> {
 pub const TICK: StageId = StageId("living_entity.tick");
 /// The `LivingEntity.hurtServer` stage; `Entity`'s is abstract.
 pub const HURT: StageId = StageId("living_entity.hurt");
+/// The `LivingEntity.setYBodyRot` stage: stores the body yaw.
+pub const SET_Y_BODY_ROT: StageId = StageId("living_entity.set_y_body_rot");
 /// The `LivingEntity.baseTick` stage, around `Entity`'s.
 pub const BASE_TICK: StageId = StageId("living_entity.base_tick");
 
@@ -239,6 +242,13 @@ pub fn definition<E: Parts>() -> Definition<E> {
     Definition {
         tick: definition.tick.then([Stage::new(TICK, tick::<E>)]),
         base_tick: definition.base_tick.around(BASE_TICK, base_tick::<E>),
+        set_y_body_rot: definition.set_y_body_rot.then([Stage::new(
+            SET_Y_BODY_ROT,
+            |living: &E, ctx: &mut SetYBodyRotCtx<'_>| {
+                living.living().set_y_body_rot(ctx.y_body_rot);
+                Flow::Continue
+            },
+        )]),
         hurt: Pipeline::new([Stage::new(HURT, |living: &E, ctx: &mut HurtCtx<'_>| {
             ctx.result = living
                 .living()
@@ -322,7 +332,6 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         },
         y_head_rot: |living| living.living().y_head_rot(),
         set_y_head_rot: |living, y_head_rot| living.living().set_y_head_rot(y_head_rot),
-        set_y_body_rot: |living, y_body_rot| living.living().set_y_body_rot(y_body_rot),
         is_in_wall: |living| !living.living().is_sleeping() && living.is_in_wall_default(),
         block_speed_factor: |living| living.living().living_block_speed_factor(),
         air_drag: |living| {

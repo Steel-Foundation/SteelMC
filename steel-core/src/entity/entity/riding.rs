@@ -86,11 +86,6 @@ pub trait EntityRiding: Entity {
         self.base().first_passenger()
     }
 
-    /// Default for [`Entity::controlling_passenger`].
-    fn controlling_passenger_default(&self) -> Option<SharedEntity> {
-        None
-    }
-
     /// Returns whether this entity can control a vehicle it is riding.
     fn can_control_vehicle(&self) -> bool {
         !REGISTRY
@@ -166,11 +161,6 @@ pub trait EntityRiding: Entity {
     /// Returns the world position where `passenger` should ride this vehicle.
     fn passenger_riding_position(&self, passenger: &dyn Entity) -> DVec3 {
         self.position() + self.passenger_attachment_point(passenger)
-    }
-
-    /// Default for [`Entity::position_rider`].
-    fn position_rider_default(&self, passenger: &dyn Entity) {
-        position_rider_default(self, passenger);
     }
 
     /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.

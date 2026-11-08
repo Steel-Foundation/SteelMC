@@ -127,15 +127,8 @@ macro_rules! entity_hook_list {
                 fn stop_riding() = stop_riding_default;
                 /// Starts riding `entity_to_ride` if vanilla boarding rules allow it.
                 fn start_riding(entity_to_ride: &SharedEntity) -> bool = start_riding_default;
-                /// Returns the living passenger currently controlling this entity, if any.
-                ///
-                /// Base entities have no controller; controllable vehicles override this
-                /// based on their own rules.
-                fn controlling_passenger() -> Option<SharedEntity> = controlling_passenger_default;
                 /// Returns whether this entity can accept `passenger` as a direct passenger.
                 fn can_add_passenger(passenger: &dyn Entity) -> bool = can_add_passenger_default;
-                /// Repositions a direct passenger from this vehicle's attachment point.
-                fn position_rider(passenger: &dyn Entity) = position_rider_default;
                 /// Returns whether this entity can collide with `other`.
                 fn can_collide_with(other: &dyn Entity) -> bool = can_collide_with_default;
                 /// Applies vanilla entity-to-entity push separation.
@@ -316,12 +309,6 @@ macro_rules! entity_hook_list {
                 /// Kills this entity. `world` is vanilla's explicit `ServerLevel`
                 /// argument; death game events use the entity's attached world.
                 fn kill(world: &World) = kill_default;
-                /// Handles vanilla entity right-click interaction.
-                fn interact(
-                    player: &Player,
-                    hand: InteractionHand,
-                    location: DVec3,
-                ) -> InteractionResult = interact_default;
                 /// Returns whether this entity may enter a portal.
                 fn can_use_portal(ignore_passenger: bool) -> bool = can_use_portal_default;
                 /// Returns the portal cooldown, in ticks, applied after changing dimension.
@@ -335,8 +322,6 @@ macro_rules! entity_hook_list {
                 fn y_head_rot() -> f32 = y_head_rot_default;
                 /// Sets this entity's head yaw.
                 fn set_y_head_rot(y_head_rot: f32) = set_y_head_rot_default;
-                /// Sets this entity's body yaw.
-                fn set_y_body_rot(y_body_rot: f32) = set_y_body_rot_default;
                 /// Returns whether the entity is currently suffocating inside a solid block.
                 fn is_in_wall() -> bool = is_in_wall_default;
                 /// Returns the block speed factor applied after movement.

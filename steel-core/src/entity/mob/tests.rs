@@ -1,4 +1,6 @@
 use crate::entity::LivingProps;
+use crate::entity::component::definition::ControllingPassengerCtx;
+use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::prelude::*;
 use crate::test_support::synced_with_health;
 use std::sync::{Arc, Weak};
@@ -236,15 +238,22 @@ impl DespawnTestMob {
     };
 
     fn definition() -> &'static Definition<Self> {
-        static DEFINITION: LazyLock<Definition<DespawnTestMob>> =
-            LazyLock::new(mob::stages::definition);
+        static DEFINITION: LazyLock<Definition<DespawnTestMob>> = LazyLock::new(|| Definition {
+            controlling_passenger: Pipeline::new([Stage::new(
+                StageId("test.controller"),
+                |mob: &DespawnTestMob, ctx: &mut ControllingPassengerCtx<'_>| {
+                    ctx.result = mob.controlling_passenger.lock().clone();
+                    Flow::Continue
+                },
+            )]),
+            ..mob::stages::definition()
+        });
         &DEFINITION
     }
 }
 
 impl DespawnTestMob {
     const ENTITY: EntityProps<Self> = EntityProps {
-        controlling_passenger: |entity| entity.controlling_passenger.lock().clone(),
         ..mob::entity_props()
     };
 }

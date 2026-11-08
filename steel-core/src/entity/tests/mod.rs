@@ -1,5 +1,7 @@
 use crate::entity::component::Has;
+use crate::entity::component::definition::ControllingPassengerCtx;
 use crate::entity::component::definition::{Definition, DefinitionEntries, HurtCtx};
+use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::test_support::synced_with_health;
 use std::sync::LazyLock;
@@ -1269,10 +1271,7 @@ impl ControlledVehicleTestEntity {
 crate::entity::impl_test_downcast_type!(ControlledVehicleTestEntity);
 
 impl ControlledVehicleTestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps {
-        controlling_passenger: |entity| entity.controller.clone(),
-        ..EntityProps::new()
-    };
+    const ENTITY: EntityProps<Self> = EntityProps::new();
 }
 
 impl Entity for ControlledVehicleTestEntity {
@@ -1286,6 +1285,22 @@ impl Entity for ControlledVehicleTestEntity {
 
     fn entity_hooks(&self) -> &'static dyn EntityHooks {
         &Self::ENTITY
+    }
+
+    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+        static DEFINITION: LazyLock<Definition<ControlledVehicleTestEntity>> =
+            LazyLock::new(|| Definition {
+                controlling_passenger: Pipeline::new([Stage::new(
+                    StageId("test.controller"),
+                    |vehicle: &ControlledVehicleTestEntity,
+                     ctx: &mut ControllingPassengerCtx<'_>| {
+                        ctx.result = vehicle.controller.clone();
+                        Flow::Continue
+                    },
+                )]),
+                ..Definition::new()
+            });
+        &*DEFINITION
     }
 }
 

@@ -1,4 +1,6 @@
 use super::*;
+use crate::entity::SharedEntity;
+
 use crate::test_support::fresh_loaded_test_world;
 
 #[test]

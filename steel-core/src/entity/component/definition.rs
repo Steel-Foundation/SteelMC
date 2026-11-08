@@ -10,6 +10,9 @@
 //! [`DefinitionEntries`] dispatch. A chain returning a value carries it in the
 //! context's `result`, which starts at the declared default, or at a value the
 //! caller passes when the chain declares none.
+//!
+//! Chains whose arguments borrow declare `<'a>`, the context's lifetime:
+//! `fn on_hit<'a>(entity: &'a SharedEntity, hit: &'a ProjectileHit);`.
 
 use std::marker::PhantomData;
 use std::sync::{Arc, LazyLock};
@@ -19,10 +22,13 @@ use steel_utils::types::InteractionHand;
 use steel_utils::{Downcast as _, DowncastType};
 
 use crate::behavior::InteractionResult;
-use crate::entity::component::pipeline::{Entry, Pipeline, Stage, StageId};
+use crate::entity::component::pipeline::{Entry, Flow, Pipeline, Stage, StageId};
 use crate::entity::damage::DamageSource;
+use crate::entity::prelude::*;
 use crate::entity::projectile::ProjectileHit;
-use crate::entity::{Entity, EntitySpawnReason, MobBase, SharedEntity, SpawnGroupData};
+use crate::entity::{
+    Entity, EntitySpawnReason, MobBase, SharedEntity, SpawnGroupData, position_rider_default,
+};
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{ClipHitResult, World};
@@ -33,7 +39,8 @@ macro_rules! definition_chains {
         $(
             $(#[$meta:meta])*
             $entry:ident / $ctx:ident:
-                fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty $(= $init:expr)?)?;
+                fn $name:ident $(<$lt:lifetime>)? ($($arg:ident: $ty:ty),* $(,)?)
+                    $(-> $ret:ty $(= $init:expr)?)?;
         )*
     ) => {
         $(
@@ -89,7 +96,9 @@ macro_rules! definition_chains {
             fn construct(&self, mob_base: &MobBase);
 
             $(
-                definition_chains!(@trait $name ($($arg: $ty),*) ($($ret $(= $init)?)?));
+                definition_chains!(
+                    @trait $name ($($lt)?) ($($arg: $ty),*) ($($ret $(= $init)?)?)
+                );
             )*
         }
 
@@ -99,47 +108,37 @@ macro_rules! definition_chains {
             }
 
             $(
-                definition_chains!(@impl $name $ctx ($($arg: $ty),*) ($($ret $(= $init)?)?));
+                definition_chains!(
+                    @impl $name $ctx ($($lt)?) ($($arg: $ty),*) ($($ret $(= $init)?)?)
+                );
             )*
         }
     };
-    (@trait $name:ident () ()) => {
+    (@trait $name:ident ($($lt:lifetime)?) ($($arg:ident: $ty:ty),*) ()) => {
         #[doc = concat!("Runs `", stringify!($name), "` for `entity`.")]
-        fn $name(&self, entity: &dyn Entity);
+        fn $name $(<$lt>)? (&self, entity: &dyn Entity $(, $arg: $ty)*);
     };
-    (@trait $name:ident ($($arg:ident: $ty:ty),*) ()) => {
+    (@trait $name:ident ($($lt:lifetime)?) ($($arg:ident: $ty:ty),*) ($ret:ty = $init:expr)) => {
         #[doc = concat!("Runs `", stringify!($name), "` for `entity`.")]
-        fn $name<'a>(&self, entity: &dyn Entity, $($arg: $ty),*);
+        fn $name $(<$lt>)? (&self, entity: &dyn Entity $(, $arg: $ty)*) -> $ret;
     };
-    (@trait $name:ident ($($arg:ident: $ty:ty),*) ($ret:ty = $init:expr)) => {
-        #[doc = concat!("Runs `", stringify!($name), "` for `entity`.")]
-        fn $name<'a>(&self, entity: &dyn Entity, $($arg: $ty),*) -> $ret;
-    };
-    (@trait $name:ident ($($arg:ident: $ty:ty),*) ($ret:ty)) => {
+    (@trait $name:ident ($($lt:lifetime)?) ($($arg:ident: $ty:ty),*) ($ret:ty)) => {
         #[doc = concat!("Runs `", stringify!($name), "` for `entity`, starting from `initial`.")]
-        fn $name<'a>(&self, entity: &dyn Entity, $($arg: $ty,)* initial: $ret) -> $ret;
+        fn $name $(<$lt>)? (&self, entity: &dyn Entity $(, $arg: $ty)*, initial: $ret) -> $ret;
     };
-    (@impl $name:ident $ctx:ident () ()) => {
-        fn $name(&self, entity: &dyn Entity) {
+    (@impl $name:ident $ctx:ident ($($lt:lifetime)?) ($($arg:ident: $ty:ty),*) ()) => {
+        fn $name $(<$lt>)? (&self, entity: &dyn Entity $(, $arg: $ty)*) {
             if let Some(typed) = E::typed(entity) {
-                self.$name.run(typed, &mut $ctx { _marker: PhantomData });
+                let mut ctx = $ctx {
+                    $($arg,)*
+                    _marker: PhantomData,
+                };
+                self.$name.run(typed, &mut ctx);
             }
         }
     };
-    (@impl $name:ident $ctx:ident ($($arg:ident: $ty:ty),*) ()) => {
-        fn $name<'a>(&self, entity: &dyn Entity, $($arg: $ty),*) {
-            let Some(typed) = E::typed(entity) else {
-                return;
-            };
-            let mut ctx = $ctx {
-                $($arg,)*
-                _marker: PhantomData,
-            };
-            self.$name.run(typed, &mut ctx);
-        }
-    };
-    (@impl $name:ident $ctx:ident ($($arg:ident: $ty:ty),*) ($ret:ty = $init:expr)) => {
-        fn $name<'a>(&self, entity: &dyn Entity, $($arg: $ty),*) -> $ret {
+    (@impl $name:ident $ctx:ident ($($lt:lifetime)?) ($($arg:ident: $ty:ty),*) ($ret:ty = $init:expr)) => {
+        fn $name $(<$lt>)? (&self, entity: &dyn Entity $(, $arg: $ty)*) -> $ret {
             match E::typed(entity) {
                 Some(typed) => {
                     let mut ctx = $ctx {
@@ -154,18 +153,20 @@ macro_rules! definition_chains {
             }
         }
     };
-    (@impl $name:ident $ctx:ident ($($arg:ident: $ty:ty),*) ($ret:ty)) => {
-        fn $name<'a>(&self, entity: &dyn Entity, $($arg: $ty,)* initial: $ret) -> $ret {
-            let Some(typed) = E::typed(entity) else {
-                return initial;
-            };
-            let mut ctx = $ctx {
-                $($arg,)*
-                result: initial,
-                _marker: PhantomData,
-            };
-            self.$name.run(typed, &mut ctx);
-            ctx.result
+    (@impl $name:ident $ctx:ident ($($lt:lifetime)?) ($($arg:ident: $ty:ty),*) ($ret:ty)) => {
+        fn $name $(<$lt>)? (&self, entity: &dyn Entity $(, $arg: $ty)*, initial: $ret) -> $ret {
+            match E::typed(entity) {
+                Some(typed) => {
+                    let mut ctx = $ctx {
+                        $($arg,)*
+                        result: initial,
+                        _marker: PhantomData,
+                    };
+                    self.$name.run(typed, &mut ctx);
+                    ctx.result
+                }
+                None => initial,
+            }
         }
     };
 }
@@ -180,24 +181,35 @@ impl Entry for Construct {
 
 definition_chains! {
     /// Vanilla `Entity.tick`.
-    Tick / TickCtx: fn tick(entity: &'a SharedEntity);
+    Tick / TickCtx: fn tick<'a>(entity: &'a SharedEntity);
     /// Vanilla `Entity.baseTick`.
     BaseTick / BaseTickCtx: fn base_tick();
     /// Vanilla `Entity.hurtServer`; stages may change `amount` for later ones.
     /// Vanilla `Entity`'s is abstract, so the chain starts empty.
     Hurt / HurtCtx:
-        fn hurt(world: &'a World, source: &'a DamageSource, amount: f32) -> bool = false;
+        fn hurt<'a>(world: &'a World, source: &'a DamageSource, amount: f32) -> bool = false;
+    /// Vanilla `Entity.interact`.
+    Interact / InteractCtx:
+        fn interact<'a>(player: &'a Player, hand: InteractionHand, location: DVec3)
+            -> InteractionResult = InteractionResult::Pass;
+    /// Vanilla `Entity.setYBodyRot`.
+    SetYBodyRot / SetYBodyRotCtx: fn set_y_body_rot(y_body_rot: f32);
+    /// Vanilla `Entity.positionRider`: places a direct passenger on this vehicle.
+    PositionRider / PositionRiderCtx: fn position_rider<'a>(passenger: &'a dyn Entity);
+    /// Vanilla `Entity.getControllingPassenger`.
+    ControllingPassenger / ControllingPassengerCtx:
+        fn controlling_passenger() -> Option<SharedEntity> = None;
     /// Vanilla `Projectile.onHit`.
-    OnHit / OnHitCtx: fn on_hit(entity: &'a SharedEntity, hit: &'a ProjectileHit);
+    OnHit / OnHitCtx: fn on_hit<'a>(entity: &'a SharedEntity, hit: &'a ProjectileHit);
     /// Vanilla `Projectile.onHitEntity`.
     OnHitEntity / OnHitEntityCtx:
-        fn on_hit_entity(entity: &'a SharedEntity, target: &'a SharedEntity, location: DVec3);
+        fn on_hit_entity<'a>(entity: &'a SharedEntity, target: &'a SharedEntity, location: DVec3);
     /// Vanilla `Projectile.onHitBlock`.
-    OnHitBlock / OnHitBlockCtx: fn on_hit_block(entity: &'a SharedEntity, hit: &'a ClipHitResult);
+    OnHitBlock / OnHitBlockCtx: fn on_hit_block<'a>(entity: &'a SharedEntity, hit: &'a ClipHitResult);
     /// Vanilla `Projectile.canHitEntity`.
-    CanHitEntity / CanHitEntityCtx: fn can_hit_entity(target: &'a dyn Entity) -> bool = false;
+    CanHitEntity / CanHitEntityCtx: fn can_hit_entity<'a>(target: &'a dyn Entity) -> bool = false;
     /// Vanilla `LivingEntity.aiStep`, with the movement it performed.
-    AiStep / AiStepCtx: fn ai_step(entity: &'a SharedEntity) -> Option<MoveResult> = None;
+    AiStep / AiStepCtx: fn ai_step<'a>(entity: &'a SharedEntity) -> Option<MoveResult> = None;
     /// Vanilla `Mob.customServerAiStep`.
     CustomServerAiStep / CustomServerAiStepCtx: fn custom_server_ai_step();
     /// Vanilla `Mob.ate`, run after an eating goal consumes a block.
@@ -205,12 +217,12 @@ definition_chains! {
     /// Vanilla `Mob.mobInteract`: the first stage that handles the interaction
     /// sets the result and stops.
     MobInteract / MobInteractCtx:
-        fn mob_interact(player: &'a Player, hand: InteractionHand)
+        fn mob_interact<'a>(player: &'a Player, hand: InteractionHand)
             -> InteractionResult = InteractionResult::Pass;
     /// Vanilla `Mob.finalizeSpawn`; the result is the group data for the next
     /// group member, starting at the caller's.
     FinalizeSpawn / FinalizeSpawnCtx:
-        fn finalize_spawn(world: &'a Arc<World>, reason: EntitySpawnReason)
+        fn finalize_spawn<'a>(world: &'a Arc<World>, reason: EntitySpawnReason)
             -> Option<SpawnGroupData>;
 }
 
@@ -218,6 +230,12 @@ definition_chains! {
 pub const TICK: StageId = StageId("entity.tick");
 /// The `Entity.baseTick` stage.
 pub const BASE_TICK: StageId = StageId("entity.base_tick");
+/// The `Entity.interact` stage: leashing and unleashing.
+pub const INTERACT: StageId = StageId("entity.interact");
+/// The `Entity.positionRider` stage.
+pub const POSITION_RIDER: StageId = StageId("entity.position_rider");
+/// The `Entity.getControllingPassenger` stage: entities have none.
+pub const CONTROLLING_PASSENGER: StageId = StageId("entity.controlling_passenger");
 
 impl<E: Entity + ?Sized> Definition<E> {
     /// Vanilla `Entity`'s chains.
@@ -229,9 +247,19 @@ impl<E: Entity + ?Sized> Definition<E> {
         fn base_tick<E: Entity + ?Sized>(entity: &E) {
             entity.entity_base_tick();
         }
+        fn interact<E: Entity + ?Sized>(entity: &E, ctx: &mut InteractCtx<'_>) -> Flow {
+            ctx.result = entity.interact_default(ctx.player, ctx.hand, ctx.location);
+            Flow::Continue
+        }
+        fn position_rider<E: Entity + ?Sized>(entity: &E, ctx: &mut PositionRiderCtx<'_>) -> Flow {
+            position_rider_default(entity, ctx.passenger);
+            Flow::Continue
+        }
         Self {
             tick: Pipeline::new([Stage::effect(TICK, tick::<E>)]),
             base_tick: Pipeline::new([Stage::effect(BASE_TICK, base_tick::<E>)]),
+            interact: Pipeline::new([Stage::new(INTERACT, interact::<E>)]),
+            position_rider: Pipeline::new([Stage::new(POSITION_RIDER, position_rider::<E>)]),
             ..Self::empty()
         }
     }

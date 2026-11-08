@@ -1,5 +1,6 @@
 //! Vanilla Pig entity: variants, saddles and carrot-on-a-stick steering.
 
+use crate::entity::component::definition::ControllingPassengerCtx;
 use crate::entity::prelude::*;
 
 use glam::DVec3;
@@ -31,7 +32,7 @@ use crate::entity::item_based_steering::ItemBasedSteering;
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityProps, ItemSteerable, LivingEntityBase, LivingProps,
-    MobBase, MobProps, SharedEntity, SpawnRule, mob,
+    MobBase, MobProps, SpawnRule, mob,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
@@ -117,8 +118,14 @@ impl PigEntity {
 
     /// Vanilla `Pig`: the animal chains with pig goals, mounting a saddled pig
     /// before feeding, saddling after it, and variant selection on spawn.
+    const CARROT_RIDER: StageId = StageId("pig.carrot_rider");
+
     fn define() -> Definition<Self> {
         let mut definition = animal::definition::<Self>();
+        definition.controlling_passenger = definition.controlling_passenger.before(
+            mob::stages::CONTROLLING_PASSENGER,
+            [Stage::new(Self::CARROT_RIDER, Self::rider_with_carrot)],
+        );
         // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
         definition.construct = definition.construct.before(
             animal::PATHFINDING_MALUS,
@@ -297,7 +304,6 @@ impl PigEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         apply_implicit_item_components: Self::entity_apply_implicit_item_components,
         play_step_sound: Self::entity_play_step_sound,
-        controlling_passenger: Self::entity_controlling_passenger,
         ..mob::entity_props()
     };
 
@@ -314,9 +320,9 @@ impl PigEntity {
         self.play_sound(self.sound_set().step_sound, 0.15, 1.0);
     }
 
-    /// `Pig.getControllingPassenger`: a rider holding a carrot on a stick steers
-    /// a saddled pig.
-    fn entity_controlling_passenger(&self) -> Option<SharedEntity> {
+    /// `Pig.getControllingPassenger` before `super`: a rider holding a carrot
+    /// on a stick steers a saddled pig.
+    fn rider_with_carrot(&self, ctx: &mut ControllingPassengerCtx<'_>) -> Flow {
         if self.mob().is_saddled()
             && let Some(passenger) = self.first_passenger()
             && passenger.as_player().is_some_and(|player| {
@@ -325,9 +331,10 @@ impl PigEntity {
                 })
             })
         {
-            return Some(passenger);
+            ctx.result = Some(passenger);
+            return Flow::Stop;
         }
-        self.mob().controlling_passenger_mob()
+        Flow::Continue
     }
 }
 

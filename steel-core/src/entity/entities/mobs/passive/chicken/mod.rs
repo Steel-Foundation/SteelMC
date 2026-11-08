@@ -1,6 +1,8 @@
 //! Vanilla Chicken entity with variant + sound-variant parity, wing-flap
 //! slow-fall, and periodic egg-laying behavior.
 
+use crate::entity::component::definition::PositionRiderCtx;
+use crate::entity::component::pipeline::Flow;
 use crate::entity::prelude::*;
 
 use glam::DVec3;
@@ -35,7 +37,7 @@ use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, LivingEntityBase, LivingProps, MobBase, MobProps,
-    SpawnRule, position_rider_default,
+    SpawnRule,
 };
 use crate::entity::{EntityProps, mob};
 
@@ -124,11 +126,17 @@ impl ChickenEntity {
     const FLAP: StageId = StageId("chicken.flap");
     const LAY_EGG: StageId = StageId("chicken.lay_egg");
 
+    const RIDER_FACING: StageId = StageId("chicken.rider_facing");
+
     /// Vanilla `Chicken`: the animal chains plus flapping and egg laying
     /// after `Animal.aiStep`, and variant selection before
     /// `AgeableMob.finalizeSpawn`.
     fn define() -> Definition<Self> {
         let mut definition = animal::definition::<Self>();
+        definition.position_rider = definition.position_rider.then([Stage::new(
+            Self::RIDER_FACING,
+            Self::position_rider_after_super,
+        )]);
         // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
         definition.construct = definition
             .construct
@@ -326,7 +334,6 @@ impl ChickenEntity {
         play_step_sound: Self::entity_play_step_sound,
         is_flapping: Self::entity_is_flapping,
         on_flap: Self::entity_on_flap,
-        position_rider: Self::entity_position_rider,
         ..mob::entity_props()
     };
 
@@ -354,11 +361,12 @@ impl ChickenEntity {
         state.next_flap = fly_dist + state.flap_speed / 2.0;
     }
 
-    fn entity_position_rider(&self, passenger: &dyn Entity) {
-        position_rider_default(self, passenger);
-        if let Some(living) = passenger.as_living_entity() {
+    /// `Chicken.positionRider` after `super`: the rider faces the chicken's way.
+    fn position_rider_after_super(&self, ctx: &mut PositionRiderCtx<'_>) -> Flow {
+        if let Some(living) = ctx.passenger.as_living_entity() {
             living.set_y_body_rot(self.living().y_body_rot());
         }
+        Flow::Continue
     }
 
     fn save_chicken(&self, nbt: &mut NbtCompound) {

@@ -383,6 +383,37 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         entity.entity_definition().tick(entity.as_ref(), &entity);
     }
 
+    /// Vanilla `Entity.interact`: runs this type's `interact` pipeline.
+    fn interact(
+        &self,
+        player: &Player,
+        hand: InteractionHand,
+        location: DVec3,
+    ) -> InteractionResult {
+        self.entity_definition()
+            .interact(self.as_entity_event_source(), player, hand, location)
+    }
+
+    /// Vanilla `Entity.setYBodyRot`: runs this type's `set_y_body_rot` pipeline.
+    fn set_y_body_rot(&self, y_body_rot: f32) {
+        self.entity_definition()
+            .set_y_body_rot(self.as_entity_event_source(), y_body_rot);
+    }
+
+    /// Vanilla `Entity.positionRider`: places `passenger` on this vehicle
+    /// through this type's `position_rider` pipeline.
+    fn position_rider(&self, passenger: &dyn Entity) {
+        self.entity_definition()
+            .position_rider(self.as_entity_event_source(), passenger);
+    }
+
+    /// Vanilla `Entity.getControllingPassenger`: the passenger steering this
+    /// entity, through this type's `controlling_passenger` pipeline.
+    fn controlling_passenger(&self) -> Option<SharedEntity> {
+        self.entity_definition()
+            .controlling_passenger(self.as_entity_event_source())
+    }
+
     /// Vanilla `Entity.hurtServer`: applies damage through this type's
     /// `hurt` pipeline, returning whether it was taken.
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
@@ -664,9 +695,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Default for [`Self::set_y_head_rot`].
     fn set_y_head_rot_default(&self, _y_head_rot: f32) {}
-
-    /// Default for [`Self::set_y_body_rot`].
-    fn set_y_body_rot_default(&self, _y_body_rot: f32) {}
 
     /// Default for [`Self::spawn_data`].
     fn spawn_data_default(&self) -> i32 {

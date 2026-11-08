@@ -486,8 +486,6 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
         check_despawn: |mob| mob.mob().check_mob_despawn(),
         is_effective_ai: |mob| mob.is_server_driven_movement() && !mob.mob().is_no_ai(),
-        interact: |mob, player, hand, location| mob.mob().interact_mob(player, hand, location),
-        controlling_passenger: |mob| mob.mob().controlling_passenger_mob(),
         ..living_entity::entity_props()
     }
 }
@@ -902,11 +900,12 @@ impl<'a> Mob<'a> {
     }
 
     /// Dispatches held-item, entity, and mob-specific interactions in order.
-    pub fn interact_mob(
+    /// `Mob.interact` around its `super.interact()`.
+    pub(super) fn interact_around(
         &self,
         player: &Player,
         hand: InteractionHand,
-        location: DVec3,
+        super_interact: impl FnOnce() -> InteractionResult,
     ) -> InteractionResult {
         if !self.living.is_alive() {
             return InteractionResult::Pass;
@@ -924,7 +923,7 @@ impl<'a> Mob<'a> {
             return important_interaction;
         }
 
-        let interaction_result = self.interact_default(player, hand, location);
+        let interaction_result = super_interact();
         if interaction_result != InteractionResult::Pass {
             return interaction_result;
         }

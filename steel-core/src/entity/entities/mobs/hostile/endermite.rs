@@ -12,8 +12,11 @@ use crate::entity::ai::goal::{
     ClimbOnTopOfPowderSnowGoal, FloatGoal, HurtByTargetGoal, LookAtPlayerGoal, MeleeAttackGoal,
     NearestAttackableTargetGoal, RandomLookAroundGoal, WaterAvoidingRandomStrollGoal,
 };
+use crate::entity::component::definition::SetYBodyRotCtx;
 use crate::entity::component::definition::{self, Definition};
+use crate::entity::component::pipeline::Flow;
 use crate::entity::component::pipeline::{Stage, StageId};
+use crate::entity::living_entity;
 use crate::entity::monster::{self, Enemy};
 use crate::entity::prelude::*;
 use crate::entity::{
@@ -67,10 +70,6 @@ impl EndermiteEntity {
         ..monster::mob_props()
     };
     const ENTITY: EntityProps<Self> = EntityProps {
-        set_y_body_rot: |endermite, y_body_rot| {
-            endermite.set_rotation((y_body_rot, endermite.rotation().1));
-            endermite.living().set_y_body_rot(y_body_rot);
-        },
         movement_emission: |_| EntityMovementEmission::Events,
         play_step_sound: |endermite, _, _| {
             endermite.play_sound(&sound_events::ENTITY_ENDERMITE_STEP, 0.15, 1.0);
@@ -80,6 +79,7 @@ impl EndermiteEntity {
     const GOALS: StageId = StageId("endermite.goals");
     const LIFE: StageId = StageId("endermite.life");
     const BODY_ROT: StageId = StageId("endermite.body_rot");
+    const FACE_BODY: StageId = StageId("endermite.face_body");
 
     /// Vanilla `Endermite`: the monster chains with its goals and lifetime.
     fn define() -> Definition<Self> {
@@ -94,6 +94,17 @@ impl EndermiteEntity {
         definition.ai_step = definition
             .ai_step
             .then([Stage::effect(Self::LIFE, Self::age)]);
+        // `Endermite.setYBodyRot` turns the whole endermite before `super`.
+        definition.set_y_body_rot = definition.set_y_body_rot.before(
+            living_entity::SET_Y_BODY_ROT,
+            [Stage::new(
+                Self::FACE_BODY,
+                |endermite: &Self, ctx: &mut SetYBodyRotCtx<'_>| {
+                    endermite.set_rotation((ctx.y_body_rot, endermite.rotation().1));
+                    Flow::Continue
+                },
+            )],
+        );
         // `Endermite.tick` faces its body forward before `super.tick()`.
         definition.tick = definition.tick.before(
             definition::TICK,

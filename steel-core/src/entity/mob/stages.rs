@@ -4,6 +4,8 @@ use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::{
     AiStep, AiStepCtx, Ate, FinalizeSpawn, FinalizeSpawnCtx, Tick,
 };
+use crate::entity::component::definition::{ControllingPassengerCtx, Interact, InteractCtx};
+use crate::entity::component::pipeline::Inner;
 use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::living_entity;
@@ -16,6 +18,10 @@ pub const AI_STEP: StageId = StageId("mob.ai_step");
 pub const FINALIZE_SPAWN: StageId = StageId("mob.finalize_spawn");
 /// Stage running `Mob.baseTick` after the living base tick.
 pub const BASE_TICK: StageId = StageId("mob.base_tick");
+/// Stage running `Mob.interact` around `Entity`'s.
+pub const INTERACT: StageId = StageId("mob.interact");
+/// Stage running `Mob.getControllingPassenger`, which replaces `Entity`'s.
+pub const CONTROLLING_PASSENGER: StageId = StageId("mob.controlling_passenger");
 /// Stage running `Mob.tick` after the living tick.
 pub const TICK: StageId = StageId("mob.tick");
 /// Stage running `Mob.ate`.
@@ -63,8 +69,29 @@ pub fn tick<E: Parts>() -> Stage<E, Tick> {
 /// Vanilla `Mob`'s own chains, for mobs without further layers.
 #[must_use]
 pub fn definition<E: Parts>() -> Definition<E> {
+    fn interact<E: Parts>(
+        mob: &E,
+        ctx: &mut InteractCtx<'_>,
+        inner: Inner<'_, E, Interact>,
+    ) -> Flow {
+        let (player, hand) = (ctx.player, ctx.hand);
+        let result = mob.mob().interact_around(player, hand, || {
+            inner(mob, ctx);
+            ctx.result
+        });
+        ctx.result = result;
+        Flow::Continue
+    }
     let living = living_entity::definition::<E>();
     Definition {
+        interact: living.interact.around(INTERACT, interact::<E>),
+        controlling_passenger: Pipeline::new([Stage::new(
+            CONTROLLING_PASSENGER,
+            |mob: &E, ctx: &mut ControllingPassengerCtx<'_>| {
+                ctx.result = mob.mob().controlling_passenger_mob();
+                Flow::Continue
+            },
+        )]),
         tick: living.tick.then([tick::<E>()]),
         base_tick: living.base_tick.then([Stage::effect(BASE_TICK, |mob: &E| {
             mob.mob().mob_base_tick();
