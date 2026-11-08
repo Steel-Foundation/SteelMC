@@ -1802,9 +1802,11 @@ impl LivingEntity for Player {
         self.tick_sleep_counter();
         if self.is_sleeping() {
             let world = self.get_world();
-            let state = self.sleeping_pos().map(|pos| world.get_block_state(pos));
-            if state.is_some_and(|state| {
-                !self.bed_rule_value_allows(Self::bed_rule_for(&world, state).can_sleep)
+            let bed = self
+                .sleeping_pos()
+                .map(|pos| (world.get_block_state(pos), pos));
+            if bed.is_some_and(|(state, pos)| {
+                !self.bed_rule_value_allows(Self::bed_rule_for(&world, state, pos).can_sleep)
             }) {
                 self.stop_sleep_in_bed(false, true);
             } else if !self.can_interact_with_level()

@@ -1865,7 +1865,7 @@ fn monster_prevents_rest_blocks_sleeping_near_a_bed() {
         player
             .start_sleep_in_bed(
                 bed_pos,
-                &world.dimension_type.bed_rule,
+                &Player::bed_rule_for(world, vanilla_blocks::WHITE_BED.default_state(), bed_pos),
                 &vanilla_custom_stats::SLEEP_IN_BED
             )
             .is_ok()
@@ -1885,7 +1885,7 @@ fn monster_prevents_rest_blocks_sleeping_near_a_bed() {
 
     let result = player.start_sleep_in_bed(
         bed_pos,
-        &world.dimension_type.bed_rule,
+        &Player::bed_rule_for(world, vanilla_blocks::WHITE_BED.default_state(), bed_pos),
         &vanilla_custom_stats::SLEEP_IN_BED,
     );
     assert!(

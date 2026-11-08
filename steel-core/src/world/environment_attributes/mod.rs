@@ -9,8 +9,23 @@
 //! - Layers read world state from an [`EnvironmentSampleContext`] snapshot
 //!   passed per read instead of capturing the level.
 //! - Leading constant layers are not baked into a base value and nothing is
-//!   cached per tick; every read recomputes from the layers. Vanilla
-//!   invalidates its cache whenever clocks change, so results match.
+//!   cached per tick; every read recomputes from the layers, so it always
+//!   sees the current clocks and weather.
+//!
+//!   Vanilla caches each sampled value until `invalidateTickCache`, which runs
+//!   at the start of `ServerLevel.tick` and on every `ServerClockManager`
+//!   clock change. A read therefore sees the state at the first read of the
+//!   tick. The results match only because nothing a layer depends on changes
+//!   between the first attribute read of a tick and the end of it:
+//!   - weather levels change only in `World::tick_weather`, which runs before
+//!     any read of the tick, as `advanceWeatherCycle` does in vanilla;
+//!   - clocks change only in `World::tick_time`, which also runs before any
+//!     read, or through clock commands and time markers, after which vanilla
+//!     invalidates too.
+//!
+//!   Code that adds a read before `tick_weather`/`tick_time` in
+//!   `World::tick_game`, or that changes rain or thunder levels mid-tick,
+//!   breaks this equivalence.
 //! - Spatial biome interpolation (`SpatialAttributeInterpolator`) is
 //!   client-side and not implemented; the server never passes one.
 

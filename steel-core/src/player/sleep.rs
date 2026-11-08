@@ -3,8 +3,9 @@ use steel_protocol::packets::game::{AnimateAction, CAnimate};
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt as _, properties::BlockStateProperties},
     dimension_type::{BedRule, BedRuleValue},
+    environment_attribute::EnvironmentAttribute,
     stat::custom::CustomStatRef,
-    vanilla_blocks, vanilla_custom_stats,
+    vanilla_blocks, vanilla_custom_stats, vanilla_environment_attributes,
 };
 use steel_utils::{BlockPos, Direction, WorldAabb, types::GameType};
 use text_components::{TextComponent, translation::TranslatedMessage};
@@ -61,12 +62,28 @@ impl Player {
 }
 
 impl Player {
-    pub(crate) fn bed_rule_for(world: &World, state: steel_utils::BlockStateId) -> &BedRule {
+    // TODO: move onto the block behavior once beds share an abstract bed
+    // behavior, so modded beds can name their own attribute.
+    #[must_use]
+    pub(crate) fn bed_rule_attribute(
+        state: steel_utils::BlockStateId,
+    ) -> &'static EnvironmentAttribute<BedRule> {
         if state.get_block() == &vanilla_blocks::STRAW_BED {
-            &world.dimension_type.straw_bed_rule
+            &vanilla_environment_attributes::STRAW_BED_RULE
         } else {
-            &world.dimension_type.bed_rule
+            &vanilla_environment_attributes::BED_RULE
         }
+    }
+
+    #[must_use]
+    pub(crate) fn bed_rule_for(
+        world: &World,
+        state: steel_utils::BlockStateId,
+        pos: BlockPos,
+    ) -> BedRule {
+        world
+            .environment_attributes()
+            .get_value(Self::bed_rule_attribute(state), pos)
     }
 
     pub(super) fn bed_rule_value_allows_in_world(world: &World, value: BedRuleValue) -> bool {
