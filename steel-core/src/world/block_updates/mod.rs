@@ -291,6 +291,7 @@ impl World {
             && self.chunk_map.is_block_ticking_full_chunk_loaded(chunk_pos)
         {
             self.chunk_map.block_changed(pos);
+            self.path_type_cache.lock().invalidate(pos);
             self.update_navigating_mobs_after_block_collision_change(pos, old_state, block_state);
         }
 
@@ -339,7 +340,10 @@ impl World {
         old_state: BlockStateId,
         new_state: BlockStateId,
     ) {
-        let collision_shape_changed = self.block_collision_shape_changed(pos, old_state, new_state);
+        if !self.block_collision_shape_changed(pos, old_state, new_state) {
+            return;
+        }
+
         let game_time = self.game_time();
         for entity_id in self.navigating_mob_ids() {
             let Some(entity) = self.entity_manager.get_by_id(entity_id) else {
@@ -350,13 +354,6 @@ impl World {
                 self.untrack_navigating_mob(entity_id);
                 continue;
             };
-            {
-                let mut navigation = pathfinder.mob_base().navigation().lock();
-                navigation.invalidate_path_type(pos);
-            }
-            if !collision_shape_changed {
-                continue;
-            }
             if !pathfinder.is_path_finding() {
                 continue;
             }
