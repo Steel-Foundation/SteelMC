@@ -7,12 +7,12 @@
 //!   `living_entity::entity_props()` override fields with struct-update syntax.
 //! - [`EntityHooks`]: the same hooks on `dyn Entity`, implemented once for every
 //!   `EntityProps<E>` and by [`EntityDefaults`].
-//! - `final` dispatch methods on [`Entity`], so callers never see the plumbing.
+//! - dispatch methods on [`Entity`], so callers never see the plumbing.
 //!
 //! `ref` hooks take `&self`. `shared` hooks take `self: Arc<Self>` on [`Entity`]
 //! and receive the [`SharedEntity`] handle next to the typed entity.
 //!
-//! Each hook names the `final` [`Entity`] method holding its default body.
+//! Each hook names the [`Entity`] method holding its default body.
 
 use super::*;
 use steel_utils::DowncastType;
@@ -477,7 +477,7 @@ macro_rules! entity_hook_items {
     };
 }
 
-/// Generates the `final` dispatch methods inside [`Entity`].
+/// Generates the dispatch methods inside [`Entity`].
 macro_rules! entity_hook_dispatch {
     (
         ref { $(
@@ -491,13 +491,13 @@ macro_rules! entity_hook_dispatch {
     ) => {
         $(
             $(#[$meta])*
-            final fn $name(&self $(, $arg: $ty)*) $(-> $ret)? {
+            fn $name(&self $(, $arg: $ty)*) $(-> $ret)? {
                 self.entity_hooks().$name(self.as_entity_event_source() $(, $arg)*)
             }
         )*
         $(
             $(#[$smeta])*
-            final fn $sname(self: Arc<Self> $(, $sarg: $sty)*) $(-> $sret)? {
+            fn $sname(self: Arc<Self> $(, $sarg: $sty)*) $(-> $sret)? {
                 let entity = self.into_shared_entity();
                 entity.entity_hooks().$sname(&entity $(, $sarg)*)
             }

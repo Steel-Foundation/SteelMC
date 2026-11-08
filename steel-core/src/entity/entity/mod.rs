@@ -158,8 +158,9 @@ impl<T: Entity> EntityEventSource for T {
 ///
 /// Entities expose [`EntityBase`] for the state every entity has, their
 /// components, and their [`EntityHooks`] for the methods entity types change
-/// (see [`EntityProps`]). Every other method is `final`. `#[derive(Entity)]`
-/// writes the impl.
+/// (see [`EntityProps`]). Implementations don't override the other methods;
+/// entity types change behavior through hooks. `#[derive(Entity)]` writes the
+/// impl.
 ///
 /// Behavior shared by every entity lives in extension traits per concern
 /// ([`EntityMotion`], [`EntityRiding`], [`EntityFluids`], ...), implemented for
@@ -206,37 +207,37 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Default for [`Self::is_always_ticking`].
-    final fn is_always_ticking_default(&self) -> bool {
+    fn is_always_ticking_default(&self) -> bool {
         false
     }
 
     /// Default for [`Self::broadcast_to_player`].
-    final fn broadcast_to_player_default(&self, _player: &Player) -> bool {
+    fn broadcast_to_player_default(&self, _player: &Player) -> bool {
         true
     }
 
     /// Gets the entity's unique network ID (session-local).
-    final fn id(&self) -> i32 {
+    fn id(&self) -> i32 {
         self.base().id()
     }
 
     /// Gets the generation counter of this runtime construction of the entity.
-    final fn generation(&self) -> EntityGeneration {
+    fn generation(&self) -> EntityGeneration {
         self.base().generation()
     }
 
     /// Gets the UUID of the entity (persistent identifier).
-    final fn uuid(&self) -> Uuid {
+    fn uuid(&self) -> Uuid {
         self.base().uuid()
     }
 
     /// Default for [`Self::scoreboard_name`].
-    final fn scoreboard_name_default(&self) -> String {
+    fn scoreboard_name_default(&self) -> String {
         self.uuid().to_string()
     }
 
     /// Default for [`Self::name`].
-    final fn name_default(&self) -> TextComponent {
+    fn name_default(&self) -> TextComponent {
         self.custom_name().map_or_else(
             || entity_type_name(self.entity_type()),
             remove_entity_name_actions,
@@ -244,7 +245,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Default for [`Self::display_name`].
-    final fn display_name_default(&self) -> TextComponent {
+    fn display_name_default(&self) -> TextComponent {
         let name = self.name();
         name.clone()
             .hover_event(HoverEvent::show_entity(
@@ -256,22 +257,22 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Default for [`Self::plain_text_name`].
-    final fn plain_text_name_default(&self) -> String {
+    fn plain_text_name_default(&self) -> String {
         self.name().to_plain(&DisplayResolutor)
     }
 
     /// Gets the entity's current position.
-    final fn position(&self) -> DVec3 {
+    fn position(&self) -> DVec3 {
         self.base().position()
     }
 
     /// Default for [`Entity::spawn_position`].
-    final fn spawn_position_default(&self) -> DVec3 {
+    fn spawn_position_default(&self) -> DVec3 {
         self.position()
     }
 
     /// Gets the entity's current block position.
-    final fn block_position(&self) -> BlockPos {
+    fn block_position(&self) -> BlockPos {
         let position = self.position();
         BlockPos::new(
             position.x.floor() as i32,
@@ -281,42 +282,42 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns the block state this entity's origin currently overlaps.
-    final fn in_block_state(&self, world: &World) -> BlockStateId {
+    fn in_block_state(&self, world: &World) -> BlockStateId {
         self.base().in_block_state(world)
     }
 
     /// Gets the entity position used by vanilla movement traces.
-    final fn old_position(&self) -> DVec3 {
+    fn old_position(&self) -> DVec3 {
         self.base().old_position()
     }
 
     /// Gets the entity's bounding box for collision queries.
-    final fn bounding_box(&self) -> WorldAabb {
+    fn bounding_box(&self) -> WorldAabb {
         self.base().bounding_box()
     }
 
     /// Default for [`Self::blocks_building`].
-    final fn blocks_building_default(&self) -> bool {
+    fn blocks_building_default(&self) -> bool {
         false
     }
 
     /// Default for [`Self::is_pickable`].
-    final fn is_pickable_default(&self) -> bool {
+    fn is_pickable_default(&self) -> bool {
         false
     }
 
     /// Default for [`Self::is_pushable`].
-    final fn is_pushable_default(&self) -> bool {
+    fn is_pushable_default(&self) -> bool {
         false
     }
 
     /// Default for [`Self::is_spectator`].
-    final fn is_spectator_default(&self) -> bool {
+    fn is_spectator_default(&self) -> bool {
         false
     }
 
     /// Default for [`Entity::piston_push_reaction`].
-    final fn piston_push_reaction_default(&self) -> PushReaction {
+    fn piston_push_reaction_default(&self) -> PushReaction {
         if self.is_marker_armor_stand() {
             PushReaction::IgnoreEntity
         } else {
@@ -325,39 +326,39 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether this entity is invisible, per its synced entity data.
-    final fn is_invisible(&self) -> bool {
+    fn is_invisible(&self) -> bool {
         self.synced_data()
             .is_some_and(EntitySyncedData::is_base_invisible_flag)
     }
 
     /// Returns whether this entity is sneaking (shift key down), per its synced entity data.
-    final fn is_discrete(&self) -> bool {
+    fn is_discrete(&self) -> bool {
         self.synced_data()
             .is_some_and(EntitySyncedData::is_shift_key_down)
     }
 
     /// Returns whether this entity is allied to `other`.
-    final fn is_allied_to(&self, _other: &dyn Entity) -> bool {
+    fn is_allied_to(&self, _other: &dyn Entity) -> bool {
         false
     }
 
     /// Returns whether this entity is a marker armor stand.
-    final fn is_marker_armor_stand(&self) -> bool {
+    fn is_marker_armor_stand(&self) -> bool {
         false
     }
 
     /// Returns whether this entity is a tameable animal owned by `owner`.
-    final fn is_tame_owned_by(&self, _owner: &Living<'_>) -> bool {
+    fn is_tame_owned_by(&self, _owner: &Living<'_>) -> bool {
         false
     }
 
     /// Returns the owner UUID when this entity is a projectile.
-    final fn projectile_owner_uuid(&self) -> Option<Uuid> {
+    fn projectile_owner_uuid(&self) -> Option<Uuid> {
         self.as_projectile()?.owner_uuid()
     }
 
     /// Returns the live owner when this entity is a projectile.
-    final fn projectile_owner(&self) -> Option<SharedEntity> {
+    fn projectile_owner(&self) -> Option<SharedEntity> {
         self.as_projectile()?.owner()
     }
 
@@ -370,19 +371,19 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Default for [`Self::tick`]: vanilla `Entity.tick`, which only runs
     /// [`Self::base_tick`].
-    final fn tick_default(&self) {
+    fn tick_default(&self) {
         self.base_tick();
     }
 
     /// Default for [`Self::base_tick`].
-    final fn base_tick_default(&self) {
+    fn base_tick_default(&self) {
         self.entity_base_tick();
     }
 
     /// Runs only vanilla `Entity.baseTick` behavior.
     ///
     /// Subtype base-tick chains call this from their owner trait.
-    final fn entity_base_tick(&self) {
+    fn entity_base_tick(&self) {
         self.base().advance_base_tick_state();
         self.handle_portal();
         self.base().advance_powder_snow_contact_for_base_tick();
@@ -412,7 +413,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Applies vanilla below-world handling.
-    final fn check_below_world(&self) {
+    fn check_below_world(&self) {
         let Some(world) = self.level() else {
             return;
         };
@@ -423,17 +424,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Default for [`Self::on_below_world`].
-    final fn on_below_world_default(&self) {
+    fn on_below_world_default(&self) {
         self.set_removed(RemovalReason::Discarded);
     }
 
     /// Default for [`Self::check_despawn`].
-    final fn check_despawn_default(&self) {}
+    fn check_despawn_default(&self) {}
 
     /// Gets the world this entity is in.
     ///
     /// Returns `None` if the entity is not in a world or the world was dropped.
-    final fn level(&self) -> Option<Arc<World>> {
+    fn level(&self) -> Option<Arc<World>> {
         self.base().level()
     }
 
@@ -441,14 +442,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Returns `Some(values)` if there are dirty values to sync, `None` otherwise.
     /// Clears the dirty flags after packing.
-    final fn pack_dirty_entity_data(&self) -> Option<Vec<DataValue>> {
+    fn pack_dirty_entity_data(&self) -> Option<Vec<DataValue>> {
         self.synced_data().and_then(EntitySyncedData::pack_dirty)
     }
 
     /// Packs all non-default entity data for initial spawn.
     ///
     /// Used when sending entity data to a player who just started tracking this entity.
-    final fn pack_all_entity_data(&self) -> Vec<DataValue> {
+    fn pack_all_entity_data(&self) -> Vec<DataValue> {
         self.synced_data()
             .map_or_else(Vec::new, EntitySyncedData::pack_all)
     }
@@ -459,35 +460,35 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Default for [`Self::update_data_before_sync`].
-    final fn update_data_before_sync_default(&self) {}
+    fn update_data_before_sync_default(&self) {}
 
     /// Returns true if the entity has been marked for removal.
-    final fn is_removed(&self) -> bool {
+    fn is_removed(&self) -> bool {
         self.base().is_removed()
     }
 
     /// Default for [`Self::is_alive`].
-    final fn is_alive_default(&self) -> bool {
+    fn is_alive_default(&self) -> bool {
         !self.is_removed()
     }
 
     /// Returns why this entity was removed, if it has been removed.
-    final fn removal_reason(&self) -> Option<RemovalReason> {
+    fn removal_reason(&self) -> Option<RemovalReason> {
         self.base().removal_reason()
     }
 
     /// Marks the entity as removed with the given reason.
-    final fn set_removed(&self, reason: RemovalReason) {
+    fn set_removed(&self, reason: RemovalReason) {
         if self.base().set_removed(reason) {
             self.on_removal(reason);
         }
     }
 
     /// Default for [`Entity::on_removal`].
-    final fn on_removal_default(&self, _reason: RemovalReason) {}
+    fn on_removal_default(&self, _reason: RemovalReason) {}
 
     /// Emits a vanilla game event from this entity's exact position with an explicit source entity.
-    final fn game_event_with_source_entity(
+    fn game_event_with_source_entity(
         &self,
         event: GameEventRef,
         source_entity: Option<&dyn Entity>,
@@ -504,35 +505,35 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Emits a vanilla game event from this entity's exact position.
-    final fn game_event(&self, event: GameEventRef) {
+    fn game_event(&self, event: GameEventRef) {
         self.game_event_with_source_entity(event, Some(self.as_entity_event_source()));
     }
 
     /// Default for [`Entity::restore_owner_reference`].
-    final fn restore_owner_reference_default(&self, _owner: &SharedEntity) {}
+    fn restore_owner_reference_default(&self, _owner: &SharedEntity) {}
 
     /// Sets the level callback for lifecycle events (movement, removal).
-    final fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
+    fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
         self.base().set_level_callback(callback);
     }
 
     /// Returns true for entities that implement vanilla living-entity behavior.
-    final fn is_living_entity(&self) -> bool {
+    fn is_living_entity(&self) -> bool {
         self.as_living_entity().is_some()
     }
 
     /// Returns whether this entity belongs to vanilla's `AbstractArrow` hierarchy.
-    final fn is_abstract_arrow(&self) -> bool {
+    fn is_abstract_arrow(&self) -> bool {
         self.entity_type().is_abstract_arrow
     }
 
     /// Returns this entity as a projectile, if it is one.
-    final fn as_projectile(&self) -> Option<Projectile<'_>> {
+    fn as_projectile(&self) -> Option<Projectile<'_>> {
         Projectile::of(self.as_entity_event_source())
     }
 
     /// Returns this entity as a living entity when it has living behavior.
-    final fn as_living_entity(&self) -> Option<Living<'_>> {
+    fn as_living_entity(&self) -> Option<Living<'_>> {
         Living::of(self.as_entity_event_source())
     }
 
@@ -542,32 +543,32 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this entity as a player when it is the concrete server player.
-    final fn as_player(&self) -> Option<&Player> {
+    fn as_player(&self) -> Option<&Player> {
         self.downcast_ref::<Player>()
     }
 
     /// Default for [`Self::with_weapon_item`].
-    final fn with_weapon_item_default(&self, visitor: &mut dyn FnMut(Option<&ItemStack>)) {
+    fn with_weapon_item_default(&self, visitor: &mut dyn FnMut(Option<&ItemStack>)) {
         visitor(None);
     }
 
     /// Returns true for mobs with pathfinding navigation.
-    final fn is_pathfinder_mob(&self) -> bool {
+    fn is_pathfinder_mob(&self) -> bool {
         self.as_pathfinder_mob().is_some()
     }
 
     /// Returns this entity as a pathfinder mob when it has pathfinding behavior.
-    final fn as_pathfinder_mob(&self) -> Option<Mob<'_>> {
+    fn as_pathfinder_mob(&self) -> Option<Mob<'_>> {
         self.as_mob().filter(Mob::is_pathfinder)
     }
 
     /// Returns true for entities that implement vanilla mob behavior.
-    final fn is_mob(&self) -> bool {
+    fn is_mob(&self) -> bool {
         self.as_mob().is_some()
     }
 
     /// Returns this entity as a mob when it has mob behavior.
-    final fn as_mob(&self) -> Option<Mob<'_>> {
+    fn as_mob(&self) -> Option<Mob<'_>> {
         Mob::of(self.as_entity_event_source())
     }
 
@@ -582,7 +583,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Whether this entity implements the `Enemy` marker.
-    final fn is_enemy(&self) -> bool {
+    fn is_enemy(&self) -> bool {
         self.as_enemy().is_some()
     }
 
@@ -592,7 +593,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns true for entities that implement vanilla item-steered boosts.
-    final fn is_item_steerable(&self) -> bool {
+    fn is_item_steerable(&self) -> bool {
         self.as_item_steerable().is_some()
     }
 
@@ -602,60 +603,60 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Default for [`Self::is_effective_ai`].
-    final fn is_effective_ai_default(&self) -> bool {
+    fn is_effective_ai_default(&self) -> bool {
         self.is_server_driven_movement()
     }
 
     /// Returns the number of ticks this entity has existed for.
-    final fn tick_count(&self) -> i32 {
+    fn tick_count(&self) -> i32 {
         self.base().tick_count()
     }
 
     /// Returns whether this entity has not completed its first tick.
-    final fn is_first_tick(&self) -> bool {
+    fn is_first_tick(&self) -> bool {
         self.base().is_first_tick()
     }
 
     /// Sets whether this entity has not completed its first tick.
-    final fn set_first_tick(&self, first_tick: bool) {
+    fn set_first_tick(&self, first_tick: bool) {
         self.base().set_first_tick(first_tick);
     }
 
     /// Advances this entity's tick counter by one.
-    final fn advance_tick_count(&self) {
+    fn advance_tick_count(&self) {
         self.base().advance_tick_count();
     }
 
     /// Gets the entity's rotation as (yaw, pitch) in degrees.
     ///
     /// Yaw is horizontal rotation (0-360), pitch is vertical (-90 to 90).
-    final fn rotation(&self) -> (f32, f32) {
+    fn rotation(&self) -> (f32, f32) {
         self.base().rotation()
     }
 
     /// Sets the entity's rotation as (yaw, pitch) in degrees.
-    final fn set_rotation(&self, rotation: (f32, f32)) {
+    fn set_rotation(&self, rotation: (f32, f32)) {
         self.base().set_rotation(rotation);
     }
 
     /// Default for [`Self::y_head_rot`].
-    final fn y_head_rot_default(&self) -> f32 {
+    fn y_head_rot_default(&self) -> f32 {
         0.0
     }
 
     /// Default for [`Self::set_y_head_rot`].
-    final fn set_y_head_rot_default(&self, _y_head_rot: f32) {}
+    fn set_y_head_rot_default(&self, _y_head_rot: f32) {}
 
     /// Default for [`Self::set_y_body_rot`].
-    final fn set_y_body_rot_default(&self, _y_body_rot: f32) {}
+    fn set_y_body_rot_default(&self, _y_body_rot: f32) {}
 
     /// Default for [`Self::spawn_data`].
-    final fn spawn_data_default(&self) -> i32 {
+    fn spawn_data_default(&self) -> i32 {
         0
     }
 
     /// Projects all base-owned synchronized fields into generated entity data.
-    final fn sync_base_entity_data(&self) {
+    fn sync_base_entity_data(&self) {
         let Some(synced_data) = self.synced_data() else {
             return;
         };
@@ -672,12 +673,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns this entity's optional vanilla custom name.
-    final fn custom_name(&self) -> Option<TextComponent> {
+    fn custom_name(&self) -> Option<TextComponent> {
         self.base().custom_name()
     }
 
     /// Sets this entity's optional vanilla custom name.
-    final fn set_custom_name(&self, custom_name: Option<TextComponent>) {
+    fn set_custom_name(&self, custom_name: Option<TextComponent>) {
         self.base().set_custom_name(custom_name.clone());
         if let Some(synced_data) = self.synced_data() {
             synced_data.set_custom_name(custom_name);
@@ -685,12 +686,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether vanilla renders this entity's custom name.
-    final fn is_custom_name_visible(&self) -> bool {
+    fn is_custom_name_visible(&self) -> bool {
         self.base().custom_name_visible()
     }
 
     /// Sets whether vanilla renders this entity's custom name.
-    final fn set_custom_name_visible(&self, visible: bool) {
+    fn set_custom_name_visible(&self, visible: bool) {
         self.base().set_custom_name_visible(visible);
         if let Some(synced_data) = self.synced_data() {
             synced_data.set_custom_name_visible(visible);
@@ -698,12 +699,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether this entity has the server-owned vanilla glowing tag.
-    final fn has_glowing_tag(&self) -> bool {
+    fn has_glowing_tag(&self) -> bool {
         self.base().glowing()
     }
 
     /// Sets this entity's server-owned vanilla glowing tag.
-    final fn set_glowing_tag(&self, glowing: bool) {
+    fn set_glowing_tag(&self, glowing: bool) {
         self.base().set_glowing(glowing);
         if let Some(synced_data) = self.synced_data() {
             synced_data.set_base_glowing_flag(glowing);
@@ -711,32 +712,32 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns a snapshot of this entity's vanilla scoreboard tags.
-    final fn tags(&self) -> Vec<String> {
+    fn tags(&self) -> Vec<String> {
         self.base().tags()
     }
 
     /// Adds a vanilla scoreboard tag.
-    final fn add_tag(&self, tag: String) -> bool {
+    fn add_tag(&self, tag: String) -> bool {
         self.base().add_tag(tag)
     }
 
     /// Removes a vanilla scoreboard tag.
-    final fn remove_tag(&self, tag: &str) -> bool {
+    fn remove_tag(&self, tag: &str) -> bool {
         self.base().remove_tag(tag)
     }
 
     /// Returns a snapshot of this entity's vanilla custom data.
-    final fn custom_data(&self) -> NbtCompound {
+    fn custom_data(&self) -> NbtCompound {
         self.base().custom_data()
     }
 
     /// Replaces this entity's vanilla custom data.
-    final fn set_custom_data(&self, custom_data: NbtCompound) {
+    fn set_custom_data(&self, custom_data: NbtCompound) {
         self.base().set_custom_data(custom_data);
     }
 
     /// Broadcasts a vanilla entity event/status packet near this entity.
-    final fn broadcast_entity_event(&self, event: EntityStatus) {
+    fn broadcast_entity_event(&self, event: EntityStatus) {
         let Some(world) = self.level() else {
             return;
         };
@@ -752,12 +753,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns whether this entity is invulnerable to non-bypassing damage.
-    final fn is_invulnerable(&self) -> bool {
+    fn is_invulnerable(&self) -> bool {
         self.base().invulnerable()
     }
 
     /// Sets whether this entity is invulnerable to non-bypassing damage.
-    final fn set_invulnerable(&self, invulnerable: bool) {
+    fn set_invulnerable(&self, invulnerable: bool) {
         self.base().set_invulnerable(invulnerable);
     }
 
@@ -778,7 +779,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     // This already exists for structures and AABB whatever that might be, but I also need it for entities, I hope this is the right spot to put it.
     /// Calculates the squared Euclidean distance from this entity's position to the given position.
-    final fn distance_to_sqr(&self, pos: DVec3) -> f64 {
+    fn distance_to_sqr(&self, pos: DVec3) -> f64 {
         let dx = self.position().x - pos.x;
         let dy = self.position().y - pos.y;
         let dz = self.position().z - pos.z;
