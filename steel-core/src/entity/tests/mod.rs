@@ -1,5 +1,6 @@
 use crate::entity::component::Has;
-use crate::entity::component::definition::{Definition, DefinitionEntries};
+use crate::entity::component::definition::{Definition, DefinitionEntries, HurtCtx};
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::test_support::synced_with_health;
 use std::sync::LazyLock;
 use std::{
@@ -869,7 +870,6 @@ crate::entity::impl_test_downcast_type!(LivingFluidTestEntity);
 
 impl LivingFluidTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        hurt: Self::entity_hurt,
         is_flying_player: |entity| entity.flying_player,
         is_in_wall: |entity| {
             !entity.living().is_sleeping()
@@ -878,12 +878,15 @@ impl LivingFluidTestEntity {
         ..living_entity::entity_props()
     };
 
-    fn entity_hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+    /// Records each hit before the living layer takes it.
+    fn record_hurt(&self, ctx: &mut HurtCtx<'_>) -> Flow {
         self.damage_types
             .lock()
-            .push(source.damage_type.key.clone());
-        self.damage_world_keys.lock().push(world.key.to_string());
-        self.living().hurt_server(world, source, amount)
+            .push(ctx.source.damage_type.key.clone());
+        self.damage_world_keys
+            .lock()
+            .push(ctx.world.key.to_string());
+        Flow::Continue
     }
 }
 
@@ -893,8 +896,19 @@ impl Entity for LivingFluidTestEntity {
     }
 
     fn entity_definition(&self) -> &'static dyn DefinitionEntries {
-        static DEFINITION: LazyLock<Definition<LivingFluidTestEntity>> =
-            LazyLock::new(living_entity::definition);
+        static DEFINITION: LazyLock<Definition<LivingFluidTestEntity>> = LazyLock::new(|| {
+            let living = living_entity::definition();
+            Definition {
+                hurt: living.hurt.before(
+                    living_entity::HURT,
+                    [Stage::new(
+                        StageId("test.record_hurt"),
+                        LivingFluidTestEntity::record_hurt,
+                    )],
+                ),
+                ..living
+            }
+        });
         &*DEFINITION
     }
 

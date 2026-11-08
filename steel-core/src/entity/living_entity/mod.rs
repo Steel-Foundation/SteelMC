@@ -12,8 +12,8 @@ use steel_registry::vanilla_entity_data::LivingEntityData;
 use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::EntityProps;
-use crate::entity::component::definition::{Definition, TickCtx};
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
+use crate::entity::component::definition::{BaseTick, BaseTickCtx, Definition, HurtCtx, TickCtx};
+use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage, StageId};
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Components as _, Has};
 use crate::entity::consume_effect::apply_consume_effect;
@@ -216,6 +216,10 @@ impl Deref for Living<'_> {
 
 /// The `LivingEntity.tick` stage, after `Entity`'s.
 pub const TICK: StageId = StageId("living_entity.tick");
+/// The `LivingEntity.hurtServer` stage; `Entity`'s is abstract.
+pub const HURT: StageId = StageId("living_entity.hurt");
+/// The `LivingEntity.baseTick` stage, around `Entity`'s.
+pub const BASE_TICK: StageId = StageId("living_entity.base_tick");
 
 /// Vanilla `LivingEntity`'s chains, on `Entity`'s.
 #[must_use]
@@ -224,9 +228,23 @@ pub fn definition<E: Parts>() -> Definition<E> {
         living.living().tick_living(ctx.entity);
         Flow::Continue
     }
+    fn base_tick<E: Parts>(
+        living: &E,
+        ctx: &mut BaseTickCtx<'_>,
+        inner: Inner<'_, E, BaseTick>,
+    ) -> Flow {
+        living.living().base_tick_around(|| inner(living, ctx))
+    }
     let definition = Definition::new();
     Definition {
         tick: definition.tick.then([Stage::new(TICK, tick::<E>)]),
+        base_tick: definition.base_tick.around(BASE_TICK, base_tick::<E>),
+        hurt: Pipeline::new([Stage::new(HURT, |living: &E, ctx: &mut HurtCtx<'_>| {
+            ctx.result = living
+                .living()
+                .hurt_server(ctx.world, ctx.source, ctx.amount);
+            Flow::Continue
+        })]),
         ..definition
     }
 }
@@ -240,7 +258,6 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
             Arc::clone(entity).ride_tick_default();
             living.reset_fall_distance();
         },
-        base_tick: |living| living.living().base_tick_living_entity(),
         on_below_world: |living| {
             if let Some(world) = living.level() {
                 living.hurt(
@@ -250,7 +267,6 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
                 );
             }
         },
-        hurt: |living, world, source, amount| living.living().hurt_server(world, source, amount),
         cause_fall_damage: |living, _, fall_distance, damage_modifier, source| {
             living
                 .living()
@@ -386,15 +402,17 @@ impl<'a> Living<'a> {
     /// snapshots, base entity tick, environmental damage, the hurt timer, and
     /// combat memory expiry. Memory must expire before mob effects tick, so a
     /// lethal effect tick sees the same kill credit as vanilla.
-    pub fn base_tick_living_entity(&self) {
+    /// `LivingEntity.baseTick` around its `super.baseTick()`.
+    fn base_tick_around(&self, super_base_tick: impl FnOnce() -> Flow) -> Flow {
         self.advance_living_rotation_for_base_tick();
         self.living_base().tick_swing_state();
-        self.entity_base_tick();
+        let flow = super_base_tick();
         self.tick_living_environmental_damage();
         self.living_base().decrement_hurt_time();
         self.living_base().tick_last_hurt_by_player_memory();
         self.living_base()
             .tick_living_combat_memory(self.tick_count());
+        flow
     }
 
     /// Returns vanilla arm-swing animation state.

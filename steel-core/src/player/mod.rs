@@ -31,6 +31,8 @@ pub mod stats_counter;
 mod tick_state;
 mod title;
 
+use crate::entity::component::definition::HurtCtx;
+use crate::entity::component::pipeline::Flow;
 use crate::entity::prelude::*;
 use crate::player::player_inventory::Prediction;
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
@@ -763,29 +765,31 @@ impl Player {
         self.movement.lock().finish_client_tick();
     }
 
-    /// Main entry point for dealing damage. Returns `true` if damage was applied.
-    ///
-    /// `world` is vanilla's explicit `ServerLevel` argument and controls
-    /// difficulty scaling and damage gamerules.
-    pub fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+    /// `Player.hurtServer` before `super`: player-specific guards and the
+    /// difficulty scaling of `amount`.
+    pub(super) fn hurt_before_super(&self, ctx: &mut HurtCtx<'_>) -> Flow {
+        let (world, source) = (ctx.world, ctx.source);
+        let mut amount = ctx.amount;
         if self.living().is_invulnerable_to(world, source) {
-            return false;
+            ctx.result = false;
+            return Flow::Stop;
         }
 
         {
             let abilities = self.abilities.lock();
             if abilities.invulnerable && !source.bypasses_invulnerability() {
-                return false;
+                ctx.result = false;
+                return Flow::Stop;
             }
         }
 
         // TODO: reset player noActionTime and remove shoulder entities.
         if self.living().health() <= 0.0 {
-            return false;
+            ctx.result = false;
+            return Flow::Stop;
         }
 
         // Difficulty scaling (vanilla: Player.hurtServer)
-        let mut amount = amount;
         if source.scales_with_difficulty() {
             let difficulty = world.level_data.read().data().difficulty;
             match difficulty {
@@ -803,10 +807,12 @@ impl Player {
         }
 
         if amount == 0.0 {
-            return false;
+            ctx.result = false;
+            return Flow::Stop;
         }
 
-        self.living().hurt_server(world, source, amount)
+        ctx.amount = amount;
+        Flow::Continue
     }
 
     fn disabled_damage_game_rule(source: &DamageSource) -> Option<GameRuleRef<bool>> {

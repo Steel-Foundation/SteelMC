@@ -484,7 +484,6 @@ pub const fn pathfinder_mob_props<E: Parts>() -> MobProps<E> {
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        base_tick: |mob| mob.mob().base_tick_mob(),
         check_despawn: |mob| mob.mob().check_mob_despawn(),
         is_effective_ai: |mob| mob.is_server_driven_movement() && !mob.mob().is_no_ai(),
         interact: |mob, player, hand, location| mob.mob().interact_mob(player, hand, location),
@@ -802,11 +801,6 @@ impl<'a> Mob<'a> {
     }
 
     /// Runs the shared living-entity base tick, then mob-specific per-tick behavior.
-    pub fn base_tick_mob(&self) {
-        self.base_tick_living_entity();
-        self.mob_base_tick();
-    }
-
     /// Runs the mob-owned portion of vanilla `Mob.baseTick`.
     pub fn mob_base_tick(&self) {
         if !self.living.is_alive() {

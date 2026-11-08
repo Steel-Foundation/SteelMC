@@ -5,7 +5,9 @@
 //! by players after a short delay.
 
 use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::HurtCtx;
 use crate::entity::component::pipeline::{Flow, StageId};
+use crate::entity::component::pipeline::{Pipeline, Stage};
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 
@@ -504,6 +506,8 @@ impl DefaultEntityPush for ItemEntity {}
 impl ItemEntity {
     const TICK: StageId = StageId("item.tick");
 
+    const HURT: StageId = StageId("item.hurt");
+
     fn define() -> Definition<Self> {
         let definition = Definition::new();
         Definition {
@@ -514,6 +518,13 @@ impl ItemEntity {
                 });
                 Flow::Continue
             }),
+            hurt: Pipeline::new([Stage::new(
+                Self::HURT,
+                |item: &Self, ctx: &mut HurtCtx<'_>| {
+                    ctx.result = item.entity_hurt(ctx.world, ctx.source, ctx.amount);
+                    Flow::Continue
+                },
+            )]),
             ..definition
         }
     }
@@ -528,7 +539,6 @@ impl ItemEntity {
         should_play_lava_hurt_sound: Self::entity_should_play_lava_hurt_sound,
         fire_immune: Self::entity_fire_immune,
         player_touch: Self::entity_player_touch,
-        hurt: Self::entity_hurt,
         name: Self::entity_name,
         on_teleported: |item| {
             if let Some(world) = item.level() {

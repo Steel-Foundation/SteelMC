@@ -116,7 +116,6 @@ impl AreaEffectCloudEntity {
         dimensions_for_pose: |cloud, _| {
             EntityDimensions::with_default_eye_height(cloud.radius() * 2.0, HEIGHT)
         },
-        hurt: |_, _, _, _| false,
         restore_owner_reference: |cloud, owner| {
             if let Some(reference) = &cloud.state.lock().owner {
                 reference.cache_entity(owner);

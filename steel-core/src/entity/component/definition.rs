@@ -20,6 +20,7 @@ use steel_utils::{Downcast as _, DowncastType};
 
 use crate::behavior::InteractionResult;
 use crate::entity::component::pipeline::{Entry, Pipeline, Stage, StageId};
+use crate::entity::damage::DamageSource;
 use crate::entity::projectile::ProjectileHit;
 use crate::entity::{Entity, EntitySpawnReason, MobBase, SharedEntity, SpawnGroupData};
 use crate::physics::MoveResult;
@@ -180,6 +181,12 @@ impl Entry for Construct {
 definition_chains! {
     /// Vanilla `Entity.tick`.
     Tick / TickCtx: fn tick(entity: &'a SharedEntity);
+    /// Vanilla `Entity.baseTick`.
+    BaseTick / BaseTickCtx: fn base_tick();
+    /// Vanilla `Entity.hurtServer`; stages may change `amount` for later ones.
+    /// Vanilla `Entity`'s is abstract, so the chain starts empty.
+    Hurt / HurtCtx:
+        fn hurt(world: &'a World, source: &'a DamageSource, amount: f32) -> bool = false;
     /// Vanilla `Projectile.onHit`.
     OnHit / OnHitCtx: fn on_hit(entity: &'a SharedEntity, hit: &'a ProjectileHit);
     /// Vanilla `Projectile.onHitEntity`.
@@ -209,6 +216,8 @@ definition_chains! {
 
 /// The `Entity.tick` stage: vanilla's base entity tick, `Entity.baseTick`.
 pub const TICK: StageId = StageId("entity.tick");
+/// The `Entity.baseTick` stage.
+pub const BASE_TICK: StageId = StageId("entity.base_tick");
 
 impl<E: Entity + ?Sized> Definition<E> {
     /// Vanilla `Entity`'s chains.
@@ -217,8 +226,12 @@ impl<E: Entity + ?Sized> Definition<E> {
         fn tick<E: Entity + ?Sized>(entity: &E) {
             entity.base_tick();
         }
+        fn base_tick<E: Entity + ?Sized>(entity: &E) {
+            entity.entity_base_tick();
+        }
         Self {
             tick: Pipeline::new([Stage::effect(TICK, tick::<E>)]),
+            base_tick: Pipeline::new([Stage::effect(BASE_TICK, base_tick::<E>)]),
             ..Self::empty()
         }
     }

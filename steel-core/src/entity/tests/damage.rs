@@ -324,14 +324,14 @@ fn hurt_time_counts_down_in_the_living_base_tick() {
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
     assert!(entity.hurt(test_world(), &source, 4.0));
 
-    // Players override `tick_living_entity` but still run the living base tick,
-    // like vanilla `LivingEntity.baseTick`.
+    // Players replace `tick` but still run the living base tick, like vanilla
+    // `LivingEntity.baseTick`.
     for _ in 0..HURT_DURATION_TICKS {
-        entity.living().base_tick_living_entity();
+        entity.base_tick();
     }
 
     assert_eq!(entity.living().hurt_time(), 0);
-    entity.living().base_tick_living_entity();
+    entity.base_tick();
     assert_eq!(
         entity.living().hurt_time(),
         0,

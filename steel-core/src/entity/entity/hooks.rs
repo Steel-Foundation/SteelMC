@@ -140,11 +140,6 @@ macro_rules! entity_hook_list {
                 fn can_collide_with(other: &dyn Entity) -> bool = can_collide_with_default;
                 /// Applies vanilla entity-to-entity push separation.
                 fn push_entity(entity: &dyn Entity) = push_entity_default;
-                /// Runs vanilla `Entity.baseTick` pieces Steel currently implements.
-                ///
-                /// This intentionally stays separate from `tick()` because several vanilla
-                /// subclasses override tick without calling `super.tick()`.
-                fn base_tick() = base_tick_default;
                 /// Runs entity-specific behavior after falling below the world.
                 fn on_below_world() = on_below_world_default;
                 /// Runs vanilla pre-tick despawn checks.
@@ -275,8 +270,6 @@ macro_rules! entity_hook_list {
                 fn apply_implicit_item_components(
                     item_stack: &ItemStack,
                 ) = apply_implicit_item_components_default;
-                /// Applies damage to this entity.
-                fn hurt(world: &World, source: &DamageSource, amount: f32) -> bool = hurt_default;
                 /// Runs when this entity causes another entity to die.
                 /// The entity provided is the entity who was killed.
                 fn killed_entity(

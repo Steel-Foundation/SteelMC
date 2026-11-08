@@ -3,6 +3,7 @@
 use super::*;
 use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::TickCtx;
+use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 
@@ -56,15 +57,24 @@ impl Player {
         });
     }
 
-    /// Vanilla `ServerPlayer.tick` never calls `super`: the player runs the
-    /// living tick's pieces itself, around the client-driven movement.
+    /// Vanilla `LivingEntity`'s chains, except that `ServerPlayer.tick` never
+    /// calls `super`: the player runs the living tick's pieces itself, around
+    /// the client-driven movement.
     pub(super) fn define() -> Definition<Self> {
         const TICK: StageId = StageId("player.tick");
-        Definition::replacing_tick([Stage::new(TICK, |player: &Self, ctx: &mut TickCtx<'_>| {
-            let entity = ctx.entity;
-            player.tick_player(entity);
-            Flow::Continue
-        })])
+        const HURT: StageId = StageId("player.hurt");
+        let living = living_entity::definition();
+        Definition {
+            tick: Pipeline::new([Stage::new(TICK, |player: &Self, ctx: &mut TickCtx<'_>| {
+                player.tick_player(ctx.entity);
+                Flow::Continue
+            })]),
+            hurt: living.hurt.before(
+                living_entity::HURT,
+                [Stage::new(HURT, Self::hurt_before_super)],
+            ),
+            ..living
+        }
     }
 
     fn tick_player(&self, entity: &SharedEntity) {

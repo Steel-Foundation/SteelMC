@@ -258,10 +258,13 @@ mod tests {
     use steel_utils::locks::SyncMutex;
 
     use super::*;
+    use crate::entity::component::definition::{Definition, DefinitionEntries, HurtCtx};
+    use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
     use crate::entity::{EntityBase, LivingEntityBase};
     use crate::entity::{EntityHooks, EntityProps};
     use crate::test_support::DEFAULT_LIVING_HOOKS;
     use crate::test_support::test_world;
+    use std::sync::LazyLock;
     use steel_utils::{DowncastType as _, DowncastTypeKey, ErasedType};
 
     struct TestEntity {
@@ -327,15 +330,16 @@ mod tests {
         const ENTITY: EntityProps<Self> = EntityProps {
             uses_client_movement_packets: |entity| entity.uses_client_movement_packets,
             known_movement: |entity| entity.known_movement,
-            hurt: Self::entity_hurt,
             ..EntityProps::new()
         };
 
-        fn entity_hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
-            self.damage
-                .lock()
-                .push((source.damage_type.key.path.as_ref().to_owned(), amount));
-            true
+        fn record_hurt(&self, ctx: &mut HurtCtx<'_>) -> Flow {
+            self.damage.lock().push((
+                ctx.source.damage_type.key.path.as_ref().to_owned(),
+                ctx.amount,
+            ));
+            ctx.result = true;
+            Flow::Continue
         }
     }
 
@@ -350,6 +354,14 @@ mod tests {
 
         fn entity_hooks(&self) -> &'static dyn EntityHooks {
             &Self::ENTITY
+        }
+
+        fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+            static DEFINITION: LazyLock<Definition<TestEntity>> = LazyLock::new(|| Definition {
+                hurt: Pipeline::new([Stage::new(StageId("test.hurt"), TestEntity::record_hurt)]),
+                ..Definition::new()
+            });
+            &*DEFINITION
         }
 
         fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {

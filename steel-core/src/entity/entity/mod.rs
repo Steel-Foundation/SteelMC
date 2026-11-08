@@ -383,9 +383,19 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         entity.entity_definition().tick(entity.as_ref(), &entity);
     }
 
-    /// Default for [`Self::base_tick`].
-    fn base_tick_default(&self) {
-        self.entity_base_tick();
+    /// Vanilla `Entity.hurtServer`: applies damage through this type's
+    /// `hurt` pipeline, returning whether it was taken.
+    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        self.entity_definition()
+            .hurt(self.as_entity_event_source(), world, source, amount)
+    }
+
+    /// Vanilla `Entity.baseTick`: runs this type's `base_tick` pipeline. It
+    /// stays separate from [`Self::tick`] because several vanilla subclasses
+    /// override `tick` without calling `super.tick()`.
+    fn base_tick(&self) {
+        self.entity_definition()
+            .base_tick(self.as_entity_event_source());
     }
 
     /// Runs only vanilla `Entity.baseTick` behavior.

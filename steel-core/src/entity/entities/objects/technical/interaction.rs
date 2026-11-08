@@ -50,7 +50,6 @@ struct RecordedActions {
 
 impl InteractionEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        hurt: |_, _, _, _| false,
         is_pickable: |_| true,
         can_be_hit_by_projectile: |_| false,
         piston_push_reaction: |_| PushReaction::IgnoreEntity,

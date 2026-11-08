@@ -19,13 +19,15 @@ use steel_utils::locks::CheckedMutex;
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::HurtCtx;
+use crate::entity::component::pipeline::Flow;
 use crate::entity::component::pipeline::{Stage, StageId};
-use crate::entity::mob;
 use crate::entity::prelude::*;
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityMovementEmission, EntityProps, LivingEntityBase,
     LivingProps, LivingTravelInput, Mob, MobBase, MobProps, SpawnRule,
 };
+use crate::entity::{living_entity, mob};
 use crate::world::{World, is_redstone_conductor};
 
 const FLAG_RESTING: i8 = 1;
@@ -91,13 +93,6 @@ impl BatEntity {
         ..MobProps::new()
     };
     const ENTITY: EntityProps<Self> = EntityProps {
-        hurt: |bat, world, source, amount| {
-            let living = bat.living();
-            if !living.is_invulnerable_to(world, source) && bat.is_resting() {
-                bat.set_resting(false);
-            }
-            living.hurt_server(world, source, amount)
-        },
         movement_emission: |_| EntityMovementEmission::Events,
         check_fall_damage: |_, _, _, _, _, _, _| {},
         is_flapping: |bat| !bat.is_resting() && bat.tick_count() % 10 == 0,
@@ -108,6 +103,7 @@ impl BatEntity {
     };
     const FLY: StageId = StageId("bat.fly");
     const HANG: StageId = StageId("bat.hang");
+    const WAKE: StageId = StageId("bat.wake");
 
     /// Vanilla `Bat`: the mob chains with its resting and flying.
     fn define() -> Definition<Self> {
@@ -118,6 +114,24 @@ impl BatEntity {
         definition.tick = definition
             .tick
             .then([Stage::effect(Self::HANG, Self::tick_hang)]);
+        // `Bat.hurtServer` before `super`: invulnerable bats ignore the hit;
+        // others wake up.
+        definition.hurt = definition.hurt.before(
+            living_entity::HURT,
+            [Stage::new(
+                Self::WAKE,
+                |bat: &Self, ctx: &mut HurtCtx<'_>| {
+                    if bat.living().is_invulnerable_to(ctx.world, ctx.source) {
+                        ctx.result = false;
+                        return Flow::Stop;
+                    }
+                    if bat.is_resting() {
+                        bat.set_resting(false);
+                    }
+                    Flow::Continue
+                },
+            )],
+        );
         definition
     }
 

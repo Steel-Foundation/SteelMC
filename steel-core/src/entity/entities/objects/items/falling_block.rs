@@ -1,7 +1,9 @@
 //! Vanilla falling-block entity.
 
 use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::HurtCtx;
 use crate::entity::component::definition::TickCtx;
+use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::io::Cursor;
@@ -381,17 +383,26 @@ impl FallingBlockEntity {
     // block's name. Needs extracted block description ids: wall variants override theirs
     // (`wall_torch` -> `block.minecraft.torch`), so they can't be derived from the key.
     const TICK: StageId = StageId("falling_block.tick");
+    const HURT: StageId = StageId("falling_block.hurt");
 
     /// `FallingBlockEntity.tick` never calls `super`.
     fn define() -> Definition<Self> {
-        Definition::replacing_tick([Stage::new(
-            Self::TICK,
-            |falling: &Self, ctx: &mut TickCtx<'_>| {
-                let entity = ctx.entity;
-                falling.entity_tick(entity);
-                Flow::Continue
-            },
-        )])
+        Definition {
+            hurt: Pipeline::new([Stage::new(
+                Self::HURT,
+                |falling: &Self, ctx: &mut HurtCtx<'_>| {
+                    ctx.result = falling.entity_hurt(ctx.world, ctx.source, ctx.amount);
+                    Flow::Continue
+                },
+            )]),
+            ..Definition::replacing_tick([Stage::new(
+                Self::TICK,
+                |falling: &Self, ctx: &mut TickCtx<'_>| {
+                    falling.entity_tick(ctx.entity);
+                    Flow::Continue
+                },
+            )])
+        }
     }
 
     const ENTITY: EntityProps<Self> = EntityProps {
@@ -401,7 +412,6 @@ impl FallingBlockEntity {
         is_pickable: |entity| !entity.is_removed(),
         attackable: |_| false,
         movement_emission: |_| EntityMovementEmission::None,
-        hurt: Self::entity_hurt,
         cause_fall_damage: Self::entity_cause_fall_damage,
         ..EntityProps::new()
     };

@@ -35,7 +35,9 @@ use uuid::Uuid;
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::enchantment_helper;
 use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::{CanHitEntityCtx, OnHitBlockCtx, OnHitCtx, Tick};
+use crate::entity::component::definition::{
+    CanHitEntityCtx, HurtCtx, OnHitBlockCtx, OnHitCtx, Tick,
+};
 use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage, StageId};
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
@@ -277,6 +279,8 @@ pub const TICK: StageId = StageId("projectile.tick");
 pub const ON_HIT: StageId = StageId("projectile.on_hit");
 /// The `Projectile.onHitBlock` stage: the block's projectile reaction.
 pub const ON_HIT_BLOCK: StageId = StageId("projectile.on_hit_block");
+/// The `Projectile.hurtServer` stage; `Entity`'s is abstract.
+pub const HURT: StageId = StageId("projectile.hurt");
 /// The `Projectile.canHitEntity` stage.
 pub const CAN_HIT_ENTITY: StageId = StageId("projectile.can_hit_entity");
 
@@ -308,6 +312,10 @@ pub fn definition<E: Parts>() -> Definition<E> {
         on_hit_entity: Pipeline::new([]),
         on_hit_block: Pipeline::new([Stage::new(ON_HIT_BLOCK, on_hit_block::<E>)]),
         can_hit_entity: Pipeline::new([Stage::new(CAN_HIT_ENTITY, can_hit_entity::<E>)]),
+        hurt: Pipeline::new([Stage::new(HURT, |projectile: &E, ctx: &mut HurtCtx<'_>| {
+            ctx.result = projectile.projectile().hurt_server(ctx.source);
+            Flow::Continue
+        })]),
         ..definition
     }
 }
@@ -316,7 +324,6 @@ pub fn definition<E: Parts>() -> Definition<E> {
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        hurt: |projectile, _, source, _| projectile.projectile().hurt_server(source),
         is_pickable: |projectile| {
             REGISTRY.entity_types.is_in_tag(
                 projectile.entity_type(),

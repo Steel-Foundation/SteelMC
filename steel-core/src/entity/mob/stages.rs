@@ -14,6 +14,8 @@ use steel_registry::vanilla_game_events;
 pub const AI_STEP: StageId = StageId("mob.ai_step");
 /// Stage running `Mob.finalizeSpawn`.
 pub const FINALIZE_SPAWN: StageId = StageId("mob.finalize_spawn");
+/// Stage running `Mob.baseTick` after the living base tick.
+pub const BASE_TICK: StageId = StageId("mob.base_tick");
 /// Stage running `Mob.tick` after the living tick.
 pub const TICK: StageId = StageId("mob.tick");
 /// Stage running `Mob.ate`.
@@ -64,6 +66,9 @@ pub fn definition<E: Parts>() -> Definition<E> {
     let living = living_entity::definition::<E>();
     Definition {
         tick: living.tick.then([tick::<E>()]),
+        base_tick: living.base_tick.then([Stage::effect(BASE_TICK, |mob: &E| {
+            mob.mob().mob_base_tick();
+        })]),
         ai_step: Pipeline::new([ai_step::<E>()]),
         ate: Pipeline::new([ate::<E>()]),
         finalize_spawn: Pipeline::new([finalize_spawn::<E>()]),

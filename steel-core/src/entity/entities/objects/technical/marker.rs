@@ -22,7 +22,6 @@ pub struct MarkerEntity {
 
 impl MarkerEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        hurt: |_, _, _, _| false,
         can_add_passenger: |_, _| false,
         could_accept_passenger: |_| false,
         piston_push_reaction: |_| PushReaction::IgnoreEntity,

@@ -72,7 +72,6 @@ impl Player {
         swim_sound: |_| &sound_events::ENTITY_PLAYER_SWIM,
         play_step_sound: Self::entity_play_step_sound,
         movement_emission: Self::entity_movement_emission,
-        hurt: Self::entity_hurt,
         killed_entity: Self::entity_killed_entity,
         award_kill_score: Self::entity_award_kill_score,
         ..living_entity::entity_props()
@@ -363,12 +362,6 @@ impl Player {
         } else {
             EntityMovementEmission::All
         }
-    }
-
-    fn entity_hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        // Delegates to Player's inherent hurt method which handles
-        // player-specific prechecks before the shared living hurt path.
-        Player::hurt(self, world, source, amount)
     }
 
     fn entity_killed_entity(

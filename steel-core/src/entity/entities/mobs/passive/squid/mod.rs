@@ -23,6 +23,8 @@ use steel_utils::locks::CheckedMutex;
 use crate::entity::ageable::{self, Age, AgeableProps};
 use crate::entity::ai::path::PathType;
 use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::HurtCtx;
+use crate::entity::component::pipeline::Flow;
 use crate::entity::component::pipeline::{Pipeline, Stage, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::mob::{self};
@@ -32,7 +34,6 @@ use crate::entity::{
     LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, next_entity_id,
 };
 use crate::physics::MoverType;
-use crate::world::World;
 use goals::{SquidFleeGoal, SquidRandomMovementGoal};
 
 /// The squid's swimming state.
@@ -111,8 +112,6 @@ impl SquidEntity {
         ..mob::pathfinder_mob_props()
     };
     const ENTITY: EntityProps<Self> = EntityProps {
-        base_tick: Self::entity_base_tick,
-        hurt: Self::entity_hurt,
         default_gravity: |_| 0.08,
         movement_emission: |_| EntityMovementEmission::Events,
         // `AgeableWaterCreature.isPushedByFluid`.
@@ -122,6 +121,8 @@ impl SquidEntity {
     const GOALS: StageId = StageId("squid.goals");
     const WATER_MALUS: StageId = StageId("squid.water_malus");
     const SWIM: StageId = StageId("squid.swim");
+    const AIR: StageId = StageId("squid.air");
+    const INK: StageId = StageId("squid.ink");
 
     /// Vanilla `Squid`: the `AgeableMob` chains with the squid's goals, its
     /// water malus and its swimming.
@@ -147,6 +148,18 @@ impl SquidEntity {
                 ageable::finalize_spawn::<Self>(),
                 mob::stages::finalize_spawn::<Self>(),
             ]),
+            base_tick: mob::stages::definition::<Self>().base_tick.around(
+                Self::AIR,
+                |squid: &Self, ctx, inner| {
+                    squid.base_tick_around(|| {
+                        inner(squid, ctx);
+                    });
+                    Flow::Continue
+                },
+            ),
+            hurt: mob::stages::definition::<Self>()
+                .hurt
+                .then([Stage::new(Self::INK, Self::hurt_after_super)]),
             ..mob::stages::definition::<Self>()
         }
     }
@@ -186,10 +199,11 @@ impl SquidEntity {
         self.swimming.lock().movement_vector = movement_vector;
     }
 
-    /// `AgeableWaterCreature.baseTick`: squids drown on land.
-    fn entity_base_tick(&self) {
+    /// `AgeableWaterCreature.baseTick` around `super.baseTick()`: squids
+    /// drown on land.
+    fn base_tick_around(&self, super_base_tick: impl FnOnce()) {
         let air_supply = self.air_supply();
-        self.mob().base_tick_mob();
+        super_base_tick();
         if self.is_alive() && !self.is_in_water() {
             self.set_air_supply(air_supply - 1);
             if self.living().should_take_drowning_damage() {
@@ -205,13 +219,14 @@ impl SquidEntity {
     }
 
     /// `Squid.hurtServer`: a squid hurt by a mob squirts ink.
-    fn entity_hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        let living = self.living();
-        if living.hurt_server(world, source, amount) && living.last_hurt_by_mob().is_some() {
+    /// `Squid.hurtServer` after `super`: a squid hurt by a mob squirts ink.
+    fn hurt_after_super(&self, ctx: &mut HurtCtx<'_>) -> Flow {
+        if ctx.result && self.living().last_hurt_by_mob().is_some() {
             self.spawn_ink();
-            return true;
+        } else {
+            ctx.result = false;
         }
-        false
+        Flow::Continue
     }
 
     /// `Squid.rotateVector`: from squid-local space into world space.

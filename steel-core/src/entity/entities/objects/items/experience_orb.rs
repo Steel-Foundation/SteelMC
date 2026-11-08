@@ -1,7 +1,9 @@
 //! Experience orb entity implementation.
 
 use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::HurtCtx;
 use crate::entity::component::definition::TickCtx;
+use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
@@ -406,6 +408,8 @@ impl DefaultEntityPush for ExperienceOrbEntity {}
 impl ExperienceOrbEntity {
     const TICK: StageId = StageId("experience_orb.tick");
 
+    const HURT: StageId = StageId("experience_orb.hurt");
+
     fn define() -> Definition<Self> {
         let definition = Definition::new();
         Definition {
@@ -414,6 +418,13 @@ impl ExperienceOrbEntity {
                 |orb: &Self, ctx: &mut TickCtx<'_>| {
                     let entity = ctx.entity;
                     orb.entity_tick(entity);
+                    Flow::Continue
+                },
+            )]),
+            hurt: Pipeline::new([Stage::new(
+                Self::HURT,
+                |orb: &Self, ctx: &mut HurtCtx<'_>| {
+                    ctx.result = orb.entity_hurt(ctx.world, ctx.source, ctx.amount);
                     Flow::Continue
                 },
             )]),
@@ -431,7 +442,6 @@ impl ExperienceOrbEntity {
         attackable: |_| false,
         sound_source: |_| SoundSource::Ambient,
         player_touch: Self::entity_player_touch,
-        hurt: Self::entity_hurt,
         ..EntityProps::new()
     };
 

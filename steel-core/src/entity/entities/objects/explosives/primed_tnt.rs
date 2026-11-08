@@ -275,7 +275,6 @@ impl PrimedTntEntity {
         explosion_indirect_source: |entity| entity.owner(),
         explosion_damage_origin: |entity| entity.position(),
         on_teleported: Self::entity_on_teleported,
-        hurt: |_, _, _, _| false,
         ..EntityProps::new()
     };
 
