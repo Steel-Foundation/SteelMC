@@ -207,7 +207,7 @@ impl SweetBerryBushBlock {
             entity.old_position() - entity.position()
         };
 
-        if movement.x.mul_add(movement.x, movement.z * movement.z) > 0.0
+        if movement.x * movement.x + movement.z * movement.z > 0.0
             && (movement.x.abs() >= DAMAGE_MOVEMENT_THRESHOLD
                 || movement.z.abs() >= DAMAGE_MOVEMENT_THRESHOLD)
         {

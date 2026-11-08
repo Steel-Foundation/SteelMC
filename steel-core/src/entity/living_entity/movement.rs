@@ -407,7 +407,7 @@ impl Living<'_> {
         let mut dz = movement.z;
 
         if self.entity_type() == &vanilla_entities::PLAYER {
-            if movement.x.mul_add(movement.x, movement.z * movement.z) < 9.0E-6 {
+            if movement.x * movement.x + movement.z * movement.z < 9.0E-6 {
                 dx = 0.0;
                 dz = 0.0;
             }

@@ -2036,9 +2036,7 @@ impl<'a> Mob<'a> {
         let mut strafe_forward = forward;
         let mut strafe_right = right;
 
-        let mut distance = strafe_forward
-            .mul_add(strafe_forward, strafe_right * strafe_right)
-            .sqrt();
+        let mut distance = (strafe_forward * strafe_forward + strafe_right * strafe_right).sqrt();
         if distance < 1.0 {
             distance = 1.0;
         }
@@ -2048,8 +2046,8 @@ impl<'a> Mob<'a> {
         let yaw_radians = self.rotation().0 * DEG_TO_RAD;
         let sin = trig::sin(yaw_radians);
         let cos = trig::cos(yaw_radians);
-        let dx = xa.mul_add(cos, -(za * sin));
-        let dz = za.mul_add(cos, xa * sin);
+        let dx = xa * cos - za * sin;
+        let dz = za * cos + xa * sin;
         if !self.is_strafe_walkable(dx, dz) {
             strafe_forward = 1.0;
             strafe_right = 0.0;
@@ -2168,7 +2166,7 @@ impl<'a> Mob<'a> {
     pub fn tick_body_rotation_control(&self) {
         let moving = {
             let delta = self.position() - self.old_position();
-            delta.x.mul_add(delta.x, delta.z * delta.z) > 2.500_000_3e-7
+            delta.x * delta.x + delta.z * delta.z > 2.500_000_3e-7
         };
         let carrying_mob_passenger = self
             .first_passenger()
@@ -2277,7 +2275,7 @@ pub fn block_pos_distance_sqr(a: BlockPos, b: BlockPos) -> f64 {
     let dx = f64::from(a.x() - b.x());
     let dy = f64::from(a.y() - b.y());
     let dz = f64::from(a.z() - b.z());
-    dx.mul_add(dx, dy.mul_add(dy, dz * dz))
+    dx * dx + dy * dy + dz * dz
 }
 
 pub fn block_center_distance_sqr(pos: BlockPos, target: DVec3) -> f64 {

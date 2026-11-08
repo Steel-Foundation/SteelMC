@@ -113,9 +113,7 @@ impl DoorInteractGoal {
     pub(super) fn tick(&mut self, mob: &Mob<'_>) {
         let new_door_dir_x = (f64::from(self.door_pos.x()) + 0.5 - mob.position().x) as f32;
         let new_door_dir_z = (f64::from(self.door_pos.z()) + 0.5 - mob.position().z) as f32;
-        let dot = self
-            .door_open_dir_x
-            .mul_add(new_door_dir_x, self.door_open_dir_z * new_door_dir_z);
+        let dot = self.door_open_dir_x * new_door_dir_x + self.door_open_dir_z * new_door_dir_z;
         if dot < 0.0 {
             self.passed = true;
         }
@@ -183,7 +181,7 @@ fn distance_to_door_sqr(mob: &Mob<'_>, door_pos: BlockPos) -> f64 {
     let position = mob.position();
     let dx = f64::from(door_pos.x()) - position.x;
     let dz = f64::from(door_pos.z()) - position.z;
-    dx.mul_add(dx, dz * dz)
+    dx * dx + dz * dz
 }
 
 #[cfg(test)]
