@@ -26,7 +26,6 @@ impl Player {
         look_at: Self::entity_look_at,
         look_at_entity: Self::entity_look_at_entity,
         is_always_ticking: |_| true,
-        stop_riding: Self::entity_stop_riding,
         teleport_to: Self::entity_teleport_to,
         start_riding: Self::entity_start_riding,
         broadcast_to_player: Self::entity_broadcast_to_player,
@@ -179,9 +178,10 @@ impl Player {
         self.check_riding_statistics(self.position() - pre);
     }
 
-    fn entity_stop_riding(&self) {
-        let old_vehicle = self.vehicle();
-        self.base().stop_riding();
+    /// `Player.removeVehicle` and `ServerPlayer.removeVehicle`, after
+    /// `Entity`'s: clears the boarding cooldown, the vehicle's effects and
+    /// tells the client the vehicle lost its passenger.
+    pub(super) fn after_remove_vehicle(&self, old_vehicle: Option<SharedEntity>) {
         self.base.set_boarding_cooldown(0);
         let Some(old_vehicle) = old_vehicle else {
             return;

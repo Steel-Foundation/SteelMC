@@ -11,6 +11,7 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 use steel_utils::nbt::NbtValueInput as _;
 
+use glam::DVec3;
 use rand::Rng;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -20,6 +21,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::MOB_DROPS;
 use steel_registry::{vanilla_blocks, vanilla_entities};
+use steel_utils::axis::Axis;
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, UuidExt};
@@ -34,10 +36,11 @@ use crate::entity::component::definition::{
 };
 use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::component::{Component, Components as _, Has};
+use crate::entity::dismount_helper;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    Entity, EntitySpawnReason, LivingProps, Mob, MobBase, MobProps, SharedEntity, mob,
-    next_entity_id,
+    Entity, EntityProps, EntitySpawnReason, Living, LivingProps, Mob, MobBase, MobProps,
+    SharedEntity, mob, next_entity_id,
 };
 use crate::player::Player;
 use crate::world::{LevelReader, World};
@@ -50,6 +53,47 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
         ..mob::living_props()
     }
+}
+
+/// `Animal`'s overrides of the entity hooks.
+#[must_use]
+pub const fn entity_props<E: Parts>() -> EntityProps<E> {
+    EntityProps {
+        dismount_location_for_passenger: |animal, passenger| {
+            dismount_location_for_passenger(animal, passenger)
+        },
+        ..mob::entity_props()
+    }
+}
+
+/// Vanilla `Animal.getDismountLocationForPassenger`: a floor beside the
+/// animal at its height, else on top of it.
+fn dismount_location_for_passenger(animal: &dyn Entity, passenger: &Living<'_>) -> DVec3 {
+    let forward = animal.motion_direction();
+    let Some(world) = animal.level() else {
+        return animal.dismount_location_for_passenger_default(passenger);
+    };
+    if forward.axis() == Axis::Y {
+        return animal.dismount_location_for_passenger_default(passenger);
+    }
+
+    let vehicle_pos = animal.block_position();
+    let offsets = dismount_helper::offsets_for_direction(forward);
+    for &pose in passenger.dismount_poses() {
+        for (offset_x, offset_z) in offsets {
+            let target = vehicle_pos.offset(offset_x, 0, offset_z);
+            let floor = dismount_helper::block_floor_height_at(&world, target);
+            if !dismount_helper::is_block_floor_valid(floor) {
+                continue;
+            }
+            let location = dismount_helper::up_from_bottom_center_of(target, floor);
+            if dismount_helper::can_dismount_to_pose(&world, location, passenger.entity(), pose) {
+                passenger.set_pose(pose);
+                return location;
+            }
+        }
+    }
+    animal.dismount_location_for_passenger_default(passenger)
 }
 
 /// `Animal`'s changes to the mob defaults.

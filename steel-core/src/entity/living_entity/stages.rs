@@ -7,7 +7,7 @@ use crate::entity::component::definition::{
     BaseExperienceRewardCtx, BaseTick, BaseTickCtx, BlockSpeedFactor, BlockSpeedFactorCtx,
     CanDispenserEquipIntoSlotCtx, CanFreeze, CanFreezeCtx, CanUseSlotCtx, CauseFallDamageCtx,
     CheckFallDamage, CheckFallDamageCtx, Definition, EquipSoundCtx, HurtCtx, SetYBodyRotCtx,
-    TickCtx, VoicePitchCtx,
+    StopRiding, StopRidingCtx, TickCtx, VoicePitchCtx,
 };
 use crate::entity::component::pipeline::StageId;
 use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage};
@@ -21,6 +21,9 @@ pub const TICK: StageId = StageId("living_entity.tick");
 pub const HURT: StageId = StageId("living_entity.hurt");
 /// The `LivingEntity.setYBodyRot` stage: stores the body yaw.
 pub const SET_Y_BODY_ROT: StageId = StageId("living_entity.set_y_body_rot");
+/// The `LivingEntity.stopRiding` stage: places the entity beside its old
+/// vehicle, around `Entity`'s.
+pub const STOP_RIDING: StageId = StageId("living_entity.stop_riding");
 /// The `LivingEntity.rideTick` stage, after `Entity`'s.
 pub const RIDE_TICK: StageId = StageId("living_entity.ride_tick");
 /// The `LivingEntity.checkFallDamage` stage, around `Entity`'s.
@@ -69,6 +72,7 @@ pub fn definition<E: Parts>() -> Definition<E> {
         set_y_body_rot: definition
             .set_y_body_rot
             .then([Stage::new(SET_Y_BODY_ROT, set_y_body_rot::<E>)]),
+        stop_riding: definition.stop_riding.around(STOP_RIDING, stop_riding::<E>),
         ride_tick: definition
             .ride_tick
             .then([Stage::effect(RIDE_TICK, |living: &E| {
@@ -165,6 +169,21 @@ fn base_tick<E: Parts>(
     inner: Inner<'_, E, BaseTick>,
 ) -> Flow {
     living.living().base_tick_around(|| inner(living, ctx))
+}
+
+fn stop_riding<E: Parts>(
+    living: &E,
+    ctx: &mut StopRidingCtx<'_>,
+    inner: Inner<'_, E, StopRiding>,
+) -> Flow {
+    let old_vehicle = living.vehicle();
+    let flow = inner(living, ctx);
+    if let Some(old_vehicle) = old_vehicle
+        && living.vehicle().map(|vehicle| vehicle.id()) != Some(old_vehicle.id())
+    {
+        living.living().dismount_vehicle(old_vehicle.as_ref());
+    }
+    flow
 }
 
 fn set_y_body_rot<E: Parts>(living: &E, ctx: &mut SetYBodyRotCtx<'_>) -> Flow {

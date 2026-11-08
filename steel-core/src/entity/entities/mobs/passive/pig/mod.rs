@@ -340,7 +340,7 @@ impl PigEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         apply_implicit_item_components: Self::entity_apply_implicit_item_components,
         play_step_sound: Self::entity_play_step_sound,
-        ..mob::entity_props()
+        ..animal::entity_props()
     };
 
     fn entity_apply_implicit_item_components(&self, item_stack: &ItemStack) {

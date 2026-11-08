@@ -38,7 +38,7 @@ use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::shearable::{self, Shearable};
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityProps, LivingEntityBase, LivingProps, MobBase, MobProps,
-    SharedEntity, SpawnRule, mob,
+    SharedEntity, SpawnRule,
 };
 use crate::inventory::recipe_manager;
 use crate::world::World;
@@ -334,7 +334,7 @@ impl SheepEntity {
         play_step_sound: |sheep, _, _| {
             sheep.play_sound(&sound_events::ENTITY_SHEEP_STEP, 0.15, 1.0);
         },
-        ..mob::entity_props()
+        ..animal::entity_props()
     };
 
     fn save_sheep(&self, nbt: &mut NbtCompound) {

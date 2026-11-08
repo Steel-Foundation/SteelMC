@@ -23,6 +23,7 @@ use crate::entity::entity::{
 use crate::entity::pushing::EntityPush;
 
 mod damage;
+mod dismount;
 mod effects;
 mod environment;
 mod equipment;
@@ -77,6 +78,9 @@ entity_props! {
         fn has_infinite_materials() -> bool = has_infinite_materials_default;
         /// `LivingEntity.handleExtraItemsCreatedOnUse`.
         fn handle_extra_items_created_on_use(extra: ItemStack) = handle_extra_items_created_on_use_default;
+        /// `LivingEntity.getDismountPoses`: the poses tried, in order, when
+        /// leaving a vehicle.
+        fn dismount_poses() -> &'static [EntityPose] = dismount_poses_default;
         /// `LivingEntity.stopSleeping`.
         fn stop_sleeping() = stop_sleeping_default;
         /// `LivingEntity.getFlyingSpeed`.

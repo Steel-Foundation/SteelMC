@@ -3,10 +3,12 @@
 
 use crate::entity::component::definition as definition_layer;
 use crate::entity::component::definition::{
-    AiStep, AiStepCtx, Definition, RideTick, RideTickCtx, TickCtx, Travel, TravelCtx, VoicePitchCtx,
+    AiStep, AiStepCtx, Definition, RemoveVehicle, RemoveVehicleCtx, RideTick, RideTickCtx, TickCtx,
+    Travel, TravelCtx, VoicePitchCtx,
 };
 use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage, StageId};
 use crate::entity::living_entity;
+use crate::entity::prelude::*;
 
 use super::Player;
 
@@ -28,6 +30,7 @@ const SLEEPING_IMMOBILE: StageId = StageId("player.sleeping_immobile");
 const JUMP_STATS: StageId = StageId("player.jump_stats");
 const AI_STEP: StageId = StageId("player.ai_step");
 const TRAVEL: StageId = StageId("player.travel");
+const REMOVE_VEHICLE: StageId = StageId("player.remove_vehicle");
 
 impl Player {
     /// Vanilla `LivingEntity`'s chains, except that `ServerPlayer.tick` never
@@ -37,6 +40,7 @@ impl Player {
         let living = living_entity::definition();
         Definition {
             tick: Pipeline::new([Stage::new(TICK, tick)]),
+            remove_vehicle: living.remove_vehicle.around(REMOVE_VEHICLE, remove_vehicle),
             // `Player.getVoicePitch` never calls `super`.
             voice_pitch: Pipeline::new([Stage::new(VOICE_PITCH, voice_pitch)]),
             check_fall_damage: living.check_fall_damage.before(
@@ -151,4 +155,15 @@ fn travel(player: &Player, ctx: &mut TravelCtx<'_>, inner: Inner<'_, Player, Tra
     });
     ctx.result = result;
     Flow::Continue
+}
+
+fn remove_vehicle(
+    player: &Player,
+    ctx: &mut RemoveVehicleCtx<'_>,
+    inner: Inner<'_, Player, RemoveVehicle>,
+) -> Flow {
+    let old_vehicle = player.vehicle();
+    let flow = inner(player, ctx);
+    player.after_remove_vehicle(old_vehicle);
+    flow
 }

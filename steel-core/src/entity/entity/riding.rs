@@ -32,8 +32,15 @@ pub trait EntityRiding: Entity {
     }
 
     /// Default for [`Entity::stop_riding`].
-    fn stop_riding_default(&self) {
+    fn remove_vehicle_default(&self) {
         self.base().stop_riding();
+    }
+
+    /// Default for [`Entity::dismount_location_for_passenger`]: on top of
+    /// this vehicle.
+    fn dismount_location_for_passenger_default(&self, _passenger: &Living<'_>) -> DVec3 {
+        let position = self.position();
+        DVec3::new(position.x, self.bounding_box().max_y(), position.z)
     }
 
     /// Dismounts every passenger from this entity.

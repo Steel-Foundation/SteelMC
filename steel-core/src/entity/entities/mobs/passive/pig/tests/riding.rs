@@ -1,5 +1,8 @@
+use steel_registry::vanilla_blocks;
+use steel_utils::types::UpdateFlags;
+
 use super::*;
-use crate::entity::SharedEntity;
+use crate::entity::{SharedEntity, next_entity_id};
 
 use crate::test_support::fresh_loaded_test_world;
 
@@ -100,4 +103,44 @@ fn player_without_food_mounts_a_saddled_pig() {
         InteractionResult::Success
     );
     assert_eq!(player.vehicle().map(|vehicle| vehicle.id()), Some(pig.id()));
+}
+
+#[test]
+fn rider_dismounts_onto_the_floor_right_of_the_pig() {
+    init_globals();
+    let world_fixture = fresh_loaded_test_world("pig_dismount_location");
+    let world = &world_fixture.world;
+    let flags = UpdateFlags::UPDATE_NONE | UpdateFlags::UPDATE_SKIP_ON_PLACE;
+    for x in 7..=9 {
+        for z in 7..=9 {
+            assert!(world.set_block(
+                BlockPos::new(x, 63, z),
+                vanilla_blocks::STONE.default_state(),
+                flags,
+            ));
+        }
+    }
+
+    let spawn = |id| -> SharedEntity {
+        let pig = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            id,
+            DVec3::new(8.5, 64.0, 8.5),
+            Arc::downgrade(world),
+        ));
+        world
+            .try_add_entity(Arc::clone(&pig) as SharedEntity)
+            .expect("pig should join the world");
+        pig
+    };
+    let vehicle = spawn(next_entity_id());
+    let passenger = spawn(next_entity_id());
+    // A pig facing south dismounts its rider to the west first.
+    vehicle.set_rotation((0.0, 0.0));
+    EntityBase::restore_passenger_relationship(&vehicle, &passenger);
+
+    passenger.stop_riding();
+
+    assert!(!passenger.is_passenger());
+    assert_eq!(passenger.position(), DVec3::new(7.5, 64.0, 8.5));
 }

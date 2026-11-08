@@ -13,6 +13,7 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_math::trig;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{Direction, RailShape};
+use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -22,7 +23,7 @@ use steel_utils::axis::Axis;
 use steel_utils::block_util::FoundRectangle;
 use steel_utils::locks::CheckedMutex;
 use steel_utils::nbt::NbtValueInput as _;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, WorldAabb};
 
 use super::minecart_behavior::MinecartBehavior;
 use super::vehicle_entity::{self, Vehicle};
@@ -33,9 +34,10 @@ use crate::entity::component::definition::{
 use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
+use crate::entity::dismount_helper;
 use crate::entity::prelude::*;
 use crate::entity::{
-    Entity, EntityMovementEmission, EntityProps, EntitySpawnError, SharedEntity,
+    Entity, EntityMovementEmission, EntityProps, EntitySpawnError, Living, SharedEntity,
     apply_item_stack_components, create_entity_instance,
     reset_forward_direction_of_relative_portal_position,
 };
@@ -57,6 +59,8 @@ const COLLISION_VELOCITY_RETENTION: f64 = 0.2;
 const COLLISION_PUSH_SCALE: f64 = 0.5;
 const FURNACE_COLLISION_VELOCITY_RETENTION: f64 = 0.95;
 const NON_MINECART_PUSH_DIVISOR: f64 = 4.0;
+/// The widest a passenger counts as when looking for a dismount spot.
+const MAX_DISMOUNT_REACH: f32 = 1.0;
 
 struct MinecartState {
     on_rails: bool,
@@ -291,6 +295,11 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
             result
         },
         is_on_rails: |minecart| minecart.abstract_minecart().on_rails(),
+        dismount_location_for_passenger: |minecart, passenger| {
+            minecart
+                .abstract_minecart()
+                .dismount_location_for_passenger(passenger)
+        },
         push_entity: |minecart, other| minecart.abstract_minecart().push_entity(other),
         ..vehicle_entity::entity_props()
     }
@@ -441,6 +450,73 @@ impl AbstractMinecart<'_> {
         let position = self.position();
         self.apply_effects_from_blocks_between(position, position);
         self.base().clear_movement_this_tick();
+    }
+
+    /// `AbstractMinecart.getDismountLocationForPassenger`: a floor beside the
+    /// minecart, else on top of it in the first pose that fits under the
+    /// ceiling.
+    #[must_use]
+    pub fn dismount_location_for_passenger(&self, passenger: &Living<'_>) -> DVec3 {
+        let forward = self.motion_direction();
+        let Some(world) = self.level() else {
+            return self.dismount_location_for_passenger_default(passenger);
+        };
+        if forward.axis() == Axis::Y {
+            return self.dismount_location_for_passenger_default(passenger);
+        }
+
+        let vehicle_pos = self.block_position();
+        let offsets = dismount_helper::offsets_for_direction(forward);
+        for &pose in passenger.dismount_poses() {
+            let dimensions = passenger.dimensions_for_pose(pose);
+            let reach = f64::from(dimensions.width.min(MAX_DISMOUNT_REACH) / 2.0);
+            for &offset_y in pose_dismount_heights(pose) {
+                for (offset_x, offset_z) in offsets {
+                    let target = vehicle_pos.offset(offset_x, offset_y, offset_z);
+                    let floor = dismount_helper::block_floor_height(
+                        dismount_helper::non_climbable_shape(&world, target),
+                        dismount_helper::non_climbable_shape(&world, target.below()),
+                    );
+                    if !dismount_helper::is_block_floor_valid(floor) {
+                        continue;
+                    }
+                    let location = dismount_helper::up_from_bottom_center_of(target, floor);
+                    let collision_box = WorldAabb::entity_box(
+                        location.x,
+                        location.y,
+                        location.z,
+                        reach,
+                        f64::from(dimensions.height),
+                    );
+                    if dismount_helper::can_passenger_dismount_to(
+                        &world,
+                        passenger.entity(),
+                        &collision_box,
+                    ) {
+                        passenger.set_pose(pose);
+                        return location;
+                    }
+                }
+            }
+        }
+
+        let vehicle_top = self.bounding_box().max_y();
+        let ceiling_from =
+            BlockPos::new(vehicle_pos.x(), vehicle_top.floor() as i32, vehicle_pos.z());
+        for &pose in passenger.dismount_poses() {
+            let pose_height = f64::from(passenger.dimensions_for_pose(pose).height);
+            let block_coverage = (vehicle_top - f64::from(ceiling_from.y()) + pose_height).ceil();
+            let ceiling =
+                dismount_helper::find_ceiling_from(ceiling_from, block_coverage as i32, |pos| {
+                    dismount_helper::collision_shape(&world, pos)
+                });
+            if vehicle_top + pose_height <= ceiling {
+                passenger.set_pose(pose);
+                break;
+            }
+        }
+
+        self.dismount_location_for_passenger_default(passenger)
     }
 
     /// `AbstractMinecart.tick`, which never calls `Entity`'s.
@@ -599,6 +675,15 @@ impl AbstractMinecart<'_> {
             other.set_velocity(other_movement * normal_scale);
             other.push_impulse(DVec3::new(xdd + xa, 0.0, zdd + za));
         }
+    }
+}
+
+/// The block heights tried above and below the minecart for each dismount pose.
+const fn pose_dismount_heights(pose: EntityPose) -> &'static [i32] {
+    match pose {
+        EntityPose::Standing | EntityPose::Sneaking => &[0, 1, -1],
+        EntityPose::Swimming => &[0, 1],
+        _ => &[],
     }
 }
 

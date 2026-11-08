@@ -18,6 +18,13 @@ impl Player {
                 .do_hurt_equipment(source, damage, &[EquipmentSlot::Head]);
         },
         death_sound: |_| Some(&sound_events::ENTITY_PLAYER_DEATH),
+        dismount_poses: |_| {
+            &[
+                EntityPose::Standing,
+                EntityPose::Sneaking,
+                EntityPose::Swimming,
+            ]
+        },
         indicate_damage: Self::living_indicate_damage,
         is_using_item: Self::living_is_using_item,
         luck: Self::living_get_luck,

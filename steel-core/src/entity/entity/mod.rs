@@ -431,6 +431,18 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         )
     }
 
+    /// Vanilla `Entity.stopRiding`, through this type's pipeline.
+    fn stop_riding(&self) {
+        self.entity_definition()
+            .stop_riding(self.as_entity_event_source());
+    }
+
+    /// Vanilla `Entity.removeVehicle`, through this type's pipeline.
+    fn remove_vehicle(&self) {
+        self.entity_definition()
+            .remove_vehicle(self.as_entity_event_source());
+    }
+
     /// Vanilla `Entity.canFreeze`, through this type's pipeline.
     fn can_freeze(&self) -> bool {
         self.entity_definition()

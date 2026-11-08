@@ -17,7 +17,7 @@ use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::MobInteractCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
-use crate::entity::{EntityProps, LivingProps, MobBase, MobProps, mob};
+use crate::entity::{EntityProps, LivingProps, MobBase, MobProps};
 use crate::player::player_inventory::Prediction;
 
 /// Stage registering the cow goals.
@@ -68,7 +68,7 @@ pub const fn mob_props<E: Parts>() -> MobProps<E> {
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
         play_step_sound: |cow, _, _| cow.play_sound(CLASSIC_SOUNDS.step_sound, 0.15, 1.0),
-        ..mob::entity_props()
+        ..animal::entity_props()
     }
 }
 

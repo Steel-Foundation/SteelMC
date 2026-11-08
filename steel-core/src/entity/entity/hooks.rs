@@ -123,8 +123,6 @@ macro_rules! entity_hook_list {
                 fn is_hard_collision_relevant() -> bool = is_hard_collision_relevant_default;
                 /// Returns whether projectile collision may interact with this entity.
                 fn can_be_hit_by_projectile() -> bool = can_be_hit_by_projectile_default;
-                /// Stops riding the current vehicle, if any.
-                fn stop_riding() = stop_riding_default;
                 /// Starts riding `entity_to_ride` if vanilla boarding rules allow it.
                 fn start_riding(entity_to_ride: &SharedEntity) -> bool = start_riding_default;
                 /// Returns whether this entity can accept `passenger` as a direct passenger.
@@ -323,6 +321,9 @@ macro_rules! entity_hook_list {
                 fn motion_direction() -> Direction = motion_direction_default;
                 /// Returns the vehicle-relative point where `passenger` attaches.
                 fn passenger_attachment_point(passenger: &dyn Entity) -> DVec3 = passenger_attachment_point_default;
+                /// Where `passenger` stands after leaving this vehicle; may set
+                /// the passenger's pose to the one that fits there.
+                fn dismount_location_for_passenger(passenger: &Living<'_>) -> DVec3 = dismount_location_for_passenger_default;
             }
             shared {
                 /// Moves this entity by `delta`, resolving collisions.

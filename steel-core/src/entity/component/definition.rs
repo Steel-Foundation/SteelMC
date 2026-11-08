@@ -225,6 +225,11 @@ definition_chains! {
     DoWaterSplashEffect / DoWaterSplashEffectCtx: fn do_water_splash_effect();
     /// Vanilla `Entity.updateSwimming`.
     UpdateSwimming / UpdateSwimmingCtx: fn update_swimming();
+    /// Vanilla `Entity.stopRiding`.
+    StopRiding / StopRidingCtx: fn stop_riding();
+    /// Vanilla `Entity.removeVehicle`: leaves the vehicle without placing
+    /// the entity.
+    RemoveVehicle / RemoveVehicleCtx: fn remove_vehicle();
     /// Vanilla `Entity.getBlockSpeedFactor`.
     BlockSpeedFactor / BlockSpeedFactorCtx: fn block_speed_factor() -> f32 = 1.0;
     /// Vanilla `Entity.interact`.
@@ -313,6 +318,10 @@ pub const MAKE_STUCK_IN_BLOCK: StageId = StageId("entity.make_stuck_in_block");
 pub const DO_WATER_SPLASH_EFFECT: StageId = StageId("entity.do_water_splash_effect");
 /// The `Entity.updateSwimming` stage.
 pub const UPDATE_SWIMMING: StageId = StageId("entity.update_swimming");
+/// The `Entity.stopRiding` stage: removes the vehicle.
+pub const STOP_RIDING: StageId = StageId("entity.stop_riding");
+/// The `Entity.removeVehicle` stage.
+pub const REMOVE_VEHICLE: StageId = StageId("entity.remove_vehicle");
 /// The `Entity.getBlockSpeedFactor` stage.
 pub const BLOCK_SPEED_FACTOR: StageId = StageId("entity.block_speed_factor");
 /// The `Entity.interact` stage: leashing and unleashing.
@@ -406,6 +415,12 @@ impl<E: Entity + ?Sized> Definition<E> {
                 BLOCK_SPEED_FACTOR,
                 block_speed_factor::<E>,
             )]),
+            stop_riding: Pipeline::new([Stage::effect(STOP_RIDING, |entity: &E| {
+                entity.remove_vehicle();
+            })]),
+            remove_vehicle: Pipeline::new([Stage::effect(REMOVE_VEHICLE, |entity: &E| {
+                entity.remove_vehicle_default();
+            })]),
             tick: Pipeline::new([Stage::effect(TICK, tick::<E>)]),
             base_tick: Pipeline::new([Stage::effect(BASE_TICK, base_tick::<E>)]),
             interact: Pipeline::new([Stage::new(INTERACT, interact::<E>)]),

@@ -19,11 +19,9 @@ use crate::entity::ai::walk::WalkPathEvaluator;
 use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::world::World;
 
+/// The block offsets a passenger tries, in order, when leaving a vehicle
+/// that faces `forward`.
 #[must_use]
-#[expect(
-    dead_code,
-    reason = "vanilla DismountHelper foundation; vehicle dismounts use this next"
-)]
 pub(crate) const fn offsets_for_direction(forward: steel_utils::Direction) -> [(i32, i32); 8] {
     let right = forward.rotate_y_clockwise();
     let left = right.opposite();
@@ -52,33 +50,47 @@ pub(crate) fn can_dismount_to(world: &Arc<World>, aabb: &WorldAabb) -> bool {
         && world.world_border_snapshot().is_within_bounds(*aabb)
 }
 
+/// Whether `passenger` fits in `aabb`, colliding with blocks as itself.
 #[must_use]
-#[expect(
-    dead_code,
-    reason = "vanilla DismountHelper foundation; vehicle dismounts use this next"
-)]
+pub(crate) fn can_passenger_dismount_to(
+    world: &Arc<World>,
+    passenger: &dyn Entity,
+    aabb: &WorldAabb,
+) -> bool {
+    let provider = WorldCollisionProvider::for_entity(world, passenger);
+    !provider.has_block_collision_with_context(aabb, provider.source_collision_context())
+        && world.world_border_snapshot().is_within_bounds(*aabb)
+}
+
+/// Whether `passenger` fits at `location` in `dismount_pose`.
+#[must_use]
 pub(crate) fn can_dismount_to_pose(
     world: &Arc<World>,
     location: DVec3,
     passenger: &dyn Entity,
     dismount_pose: EntityPose,
 ) -> bool {
-    let dimensions = passenger.dimensions_for_pose(dismount_pose);
-    let aabb = WorldAabb::entity_box(
+    can_passenger_dismount_to(
+        world,
+        passenger,
+        &local_bounds_for_pose(passenger, dismount_pose, location),
+    )
+}
+
+/// Vanilla `LivingEntity.getLocalBoundsForPose`, moved to `location`.
+fn local_bounds_for_pose(passenger: &dyn Entity, pose: EntityPose, location: DVec3) -> WorldAabb {
+    let dimensions = passenger.dimensions_for_pose(pose);
+    WorldAabb::entity_box(
         location.x,
         location.y,
         location.z,
         f64::from(dimensions.half_width()),
         f64::from(dimensions.height),
-    );
-    can_dismount_to(world, &aabb)
+    )
 }
 
+/// The lowest collision surface in the `blocks` blocks from `pos` upwards.
 #[must_use]
-#[expect(
-    dead_code,
-    reason = "vanilla DismountHelper foundation; vehicle dismounts use this next"
-)]
 pub(crate) fn find_ceiling_from(
     pos: BlockPos,
     blocks: i32,
@@ -123,11 +135,7 @@ pub(crate) fn find_safe_dismount_location(
         return None;
     }
 
-    let position = DVec3::new(
-        f64::from(block_pos.x()) + 0.5,
-        f64::from(block_pos.y()) + floor_height,
-        f64::from(block_pos.z()) + 0.5,
-    );
+    let position = up_from_bottom_center_of(block_pos, floor_height);
     let dimensions = entity.dimensions_for_pose(EntityPose::Standing);
     let aabb = WorldAabb::entity_box(
         position.x,
@@ -156,7 +164,9 @@ pub(crate) fn find_safe_dismount_location(
     Some(position)
 }
 
-fn non_climbable_shape(world: &Arc<World>, pos: BlockPos) -> OffsetVoxelShape {
+/// The block's collision shape, treating climbables and open trapdoors as
+/// empty.
+pub(crate) fn non_climbable_shape(world: &Arc<World>, pos: BlockPos) -> OffsetVoxelShape {
     let state = world.get_block_state(pos);
     let block = state.get_block();
     let is_open_trapdoor = block.has_tag(&BlockTag::TRAPDOORS)
@@ -165,7 +175,13 @@ fn non_climbable_shape(world: &Arc<World>, pos: BlockPos) -> OffsetVoxelShape {
     if block.has_tag(&BlockTag::CLIMBABLE) || is_open_trapdoor {
         return OffsetVoxelShape::without_offset(VoxelShape::EMPTY);
     }
+    collision_shape(world, pos)
+}
 
+/// The block's collision shape without an entity context.
+pub(crate) fn collision_shape(world: &Arc<World>, pos: BlockPos) -> OffsetVoxelShape {
+    let state = world.get_block_state(pos);
+    let block = state.get_block();
     let behavior = BLOCK_BEHAVIORS.get_behavior(block);
     let shape =
         behavior.get_collision_shape(state, world.as_ref(), pos, BlockCollisionContext::empty());
@@ -184,7 +200,21 @@ fn non_climbable_shape(world: &Arc<World>, pos: BlockPos) -> OffsetVoxelShape {
     )
 }
 
-fn block_floor_height(block_shape: OffsetVoxelShape, below_block_shape: OffsetVoxelShape) -> f64 {
+/// Vanilla `BlockGetter.getBlockFloorHeight(pos)`: the floor at `pos` from
+/// plain collision shapes.
+pub(crate) fn block_floor_height_at(world: &Arc<World>, pos: BlockPos) -> f64 {
+    block_floor_height(
+        collision_shape(world, pos),
+        collision_shape(world, pos.below()),
+    )
+}
+
+/// The height of the floor in a block, from the block's shape or, when
+/// empty, a full block below it.
+pub(crate) fn block_floor_height(
+    block_shape: OffsetVoxelShape,
+    below_block_shape: OffsetVoxelShape,
+) -> f64 {
     if !block_shape.is_empty() {
         return block_shape.max(Axis::Y);
     }
@@ -197,7 +227,19 @@ fn block_floor_height(block_shape: OffsetVoxelShape, below_block_shape: OffsetVo
     }
 }
 
-fn is_block_floor_valid(block_floor_height: f64) -> bool {
+/// Vanilla `Vec3.upFromBottomCenterOf`: `height` above the bottom center
+/// of `pos`.
+#[must_use]
+pub(crate) fn up_from_bottom_center_of(pos: BlockPos, height: f64) -> DVec3 {
+    DVec3::new(
+        f64::from(pos.x()) + 0.5,
+        f64::from(pos.y()) + height,
+        f64::from(pos.z()) + 0.5,
+    )
+}
+
+/// Whether a floor height lies within its block.
+pub(crate) fn is_block_floor_valid(block_floor_height: f64) -> bool {
     !block_floor_height.is_infinite() && block_floor_height < 1.0
 }
 

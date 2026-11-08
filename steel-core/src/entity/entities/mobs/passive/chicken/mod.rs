@@ -27,6 +27,7 @@ use steel_registry::{
 use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::entity::EntityProps;
 use crate::entity::ageable::{self, Age, AgeableProps};
 use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
@@ -41,7 +42,6 @@ use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, LivingEntityBase, LivingProps, MobBase, MobProps,
     SpawnRule,
 };
-use crate::entity::{EntityProps, mob};
 
 /// Runtime state unique to chickens: wing-flap animation, egg timer, and jockey flag.
 #[derive(Debug, Clone, Copy)]
@@ -344,7 +344,7 @@ impl ChickenEntity {
         play_step_sound: Self::entity_play_step_sound,
         is_flapping: Self::entity_is_flapping,
         on_flap: Self::entity_on_flap,
-        ..mob::entity_props()
+        ..animal::entity_props()
     };
 
     fn entity_apply_implicit_item_components(&self, item_stack: &ItemStack) {
