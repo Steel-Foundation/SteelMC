@@ -1,6 +1,7 @@
 use std::mem;
 
 use super::*;
+use crate::entity::component::pipeline::Pipeline;
 use crate::entity::{EntityHooks, EntityProps};
 
 #[derive(Default)]
@@ -47,19 +48,22 @@ impl RelationshipTickTestEntity {
 crate::entity::impl_test_downcast_type!(RelationshipTickTestEntity);
 
 impl RelationshipTickTestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps {
-        ride_tick: Self::entity_ride_tick,
-        ..EntityProps::new()
-    };
+    const ENTITY: EntityProps<Self> = EntityProps::new();
+    const RIDE_TICK: StageId = StageId("test.ride_tick");
     const TICK: StageId = StageId("test.tick");
 
     fn definition() -> &'static Definition<Self> {
-        static DEFINITION: LazyLock<Definition<RelationshipTickTestEntity>> = LazyLock::new(|| {
-            Definition::replacing_tick([Stage::effect(
-                RelationshipTickTestEntity::TICK,
-                RelationshipTickTestEntity::entity_tick,
-            )])
-        });
+        static DEFINITION: LazyLock<Definition<RelationshipTickTestEntity>> =
+            LazyLock::new(|| Definition {
+                ride_tick: Pipeline::new([Stage::effect(
+                    RelationshipTickTestEntity::RIDE_TICK,
+                    RelationshipTickTestEntity::entity_ride_tick,
+                )]),
+                ..Definition::replacing_tick([Stage::effect(
+                    RelationshipTickTestEntity::TICK,
+                    RelationshipTickTestEntity::entity_tick,
+                )])
+            });
         &DEFINITION
     }
 
@@ -68,7 +72,7 @@ impl RelationshipTickTestEntity {
         self.run_action();
     }
 
-    fn entity_ride_tick(&self, _entity: &SharedEntity) {
+    fn entity_ride_tick(&self) {
         self.events.lock().push((self.id(), "ride_tick"));
         self.run_action();
     }

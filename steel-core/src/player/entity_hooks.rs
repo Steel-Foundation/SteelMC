@@ -1,12 +1,15 @@
 //! `Player`'s overrides of the entity hooks.
 
 use super::*;
+use crate::entity::component::definition::{
+    BlockSpeedFactorCtx, CanFreezeCtx, CauseFallDamageCtx, CheckFallDamageCtx,
+    DoWaterSplashEffectCtx, MakeStuckInBlockCtx, UpdateSwimmingCtx,
+};
 use crate::entity::prelude::*;
 
 impl Player {
     pub(super) const ENTITY: EntityProps<Self> = EntityProps {
         dimension_changing_delay: |_| 10,
-        check_fall_damage: Self::entity_check_fall_damage,
         on_explosion_hit: |player, explosion_source| {
             let from_wind_charge = explosion_source
                 .is_some_and(|source| source.entity_type() == &vanilla_entities::WIND_CHARGE);
@@ -14,14 +17,6 @@ impl Player {
                 .living()
                 .set_ignore_fall_damage_from_current_impulse(from_wind_charge, player.position());
         },
-        block_speed_factor: |player| {
-            if player.abilities.lock().flying || player.living().is_fall_flying() {
-                1.0
-            } else {
-                player.living().living_block_speed_factor()
-            }
-        },
-        do_water_splash_effect: Self::entity_do_water_splash_effect,
         swim_splash_sound: |_| &sound_events::ENTITY_PLAYER_SPLASH,
         swim_high_speed_splash_sound: |_| &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED,
         scoreboard_name: |entity| entity.gameprofile.name().to_owned(),
@@ -31,8 +26,6 @@ impl Player {
         look_at: Self::entity_look_at,
         look_at_entity: Self::entity_look_at_entity,
         is_always_ticking: |_| true,
-        update_swimming: Self::entity_update_swimming,
-        ride_tick: Self::entity_ride_tick,
         stop_riding: Self::entity_stop_riding,
         teleport_to: Self::entity_teleport_to,
         start_riding: Self::entity_start_riding,
@@ -52,8 +45,6 @@ impl Player {
         fire_immune_ticks: |_| 20,
         remaining_fire_ticks_cap: |entity| entity.abilities.lock().invulnerable.then_some(1),
         fire_ignite_extra_ticks: |_| rand::random_range(1..=2),
-        can_freeze: Self::entity_can_freeze,
-        make_stuck_in_block: Self::entity_make_stuck_in_block,
         can_be_hit_by_projectile: Self::entity_can_be_hit_by_projectile,
         uses_client_movement_packets: |_| true,
         can_simulate_movement: |_| true,
@@ -61,7 +52,6 @@ impl Player {
         known_movement: Self::entity_known_movement,
         known_speed: Self::entity_known_speed,
         is_suppressing_bounce: |entity| entity.is_crouching(),
-        cause_fall_damage: Self::entity_cause_fall_damage,
         backs_off_from_edge: |entity| entity.is_crouching() && !entity.is_flying(),
         is_pushed_by_fluid: |entity| !entity.is_flying(),
         is_crouching: Self::is_crouching,
@@ -77,22 +67,22 @@ impl Player {
         ..living_entity::entity_props()
     };
 
-    fn entity_do_water_splash_effect(&self) {
-        if !self.is_spectator() {
-            self.do_water_splash_effect_default();
+    /// `Player.doWaterSplashEffect` before `super`: spectators make no splash.
+    pub(super) fn do_water_splash_effect_before_super(
+        &self,
+        _: &mut DoWaterSplashEffectCtx<'_>,
+    ) -> Flow {
+        if self.is_spectator() {
+            Flow::Stop
+        } else {
+            Flow::Continue
         }
     }
 
-    /// `ServerPlayer.checkFallDamage`: the mace smash burst on landing, then the living step.
-    fn entity_check_fall_damage(
-        &self,
-        entity: &SharedEntity,
-        vertical_movement: f64,
-        on_ground: bool,
-        on_state: BlockStateId,
-        pos: BlockPos,
-        world: &Arc<World>,
-    ) {
+    /// `ServerPlayer.checkFallDamage` before `super`: the mace smash burst on
+    /// landing.
+    pub(super) fn check_fall_damage_before_super(&self, ctx: &mut CheckFallDamageCtx<'_>) -> Flow {
+        let (on_ground, on_state, pos, world) = (ctx.on_ground, ctx.on_state, ctx.pos, ctx.world);
         let fall_distance = self.fall_distance();
         if on_ground && fall_distance > 0.0 && self.spawn_extra_particles_on_fall() {
             let count = (50.0 * fall_distance).clamp(0.0, 200.0) as i32;
@@ -114,14 +104,7 @@ impl Player {
             self.set_spawn_extra_particles_on_fall(false);
         }
 
-        self.living().check_living_fall_damage(
-            entity,
-            vertical_movement,
-            on_ground,
-            on_state,
-            pos,
-            world,
-        );
+        Flow::Continue
     }
 
     /// Whether the next landing sends the mace smash burst.
@@ -174,21 +157,24 @@ impl Player {
         ));
     }
 
-    fn entity_update_swimming(&self) {
+    /// `Player.updateSwimming` before `super`: flying players never swim.
+    pub(super) fn update_swimming_before_super(&self, _: &mut UpdateSwimmingCtx<'_>) -> Flow {
         if self.is_flying() {
             self.set_shared_swimming(false);
+            Flow::Stop
         } else {
-            self.update_swimming_default();
+            Flow::Continue
         }
     }
 
-    fn entity_ride_tick(&self, entity: &SharedEntity) {
+    /// `ServerPlayer.rideTick` around `super`: a player wanting off dismounts
+    /// instead, and riding statistics count the distance.
+    pub(super) fn ride_tick_around(&self, super_ride_tick: impl FnOnce()) {
         let pre = self.position();
         if self.wants_to_stop_riding() && self.is_passenger() {
             self.stop_riding();
         } else {
-            Arc::clone(entity).ride_tick_default();
-            self.reset_fall_distance();
+            super_ride_tick();
         }
         self.check_riding_statistics(self.position() - pre);
     }
@@ -253,20 +239,23 @@ impl Player {
         self.living().health() > 0.0 && !self.is_spectator() && !self.on_climbable()
     }
 
-    fn entity_can_freeze(&self) -> bool {
+    /// `Player.canFreeze` before `super`: spectators never freeze.
+    pub(super) fn can_freeze_before_super(&self, ctx: &mut CanFreezeCtx<'_>) -> Flow {
         if self.is_spectator() {
-            return false;
+            ctx.result = false;
+            return Flow::Stop;
         }
-
-        self.living().default_living_can_freeze()
+        Flow::Continue
     }
 
-    fn entity_make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
-        if !self.is_flying() {
-            self.make_stuck_in_block_default(state, speed_multiplier);
+    /// `Player.makeStuckInBlock` before `super`: flying players do not get stuck.
+    // TODO: Reset current impulse context once vehicle/player impulse contexts exist.
+    pub(super) fn make_stuck_in_block_before_super(&self, _: &mut MakeStuckInBlockCtx<'_>) -> Flow {
+        if self.is_flying() {
+            Flow::Stop
+        } else {
+            Flow::Continue
         }
-
-        // TODO: Reset current impulse context once vehicle/player impulse contexts exist.
     }
 
     fn entity_can_be_hit_by_projectile(&self) -> bool {
@@ -297,15 +286,25 @@ impl Player {
         self.movement.lock().last_known_client_movement()
     }
 
-    fn entity_cause_fall_damage(
+    /// `Player.getBlockSpeedFactor` before `super`: flying ignores the block.
+    pub(super) fn block_speed_factor_before_super(
         &self,
-        _entity: &SharedEntity,
-        fall_distance: f64,
-        damage_modifier: f32,
-        source: &DamageSource,
-    ) -> bool {
+        ctx: &mut BlockSpeedFactorCtx<'_>,
+    ) -> Flow {
+        if self.abilities.lock().flying || self.living().is_fall_flying() {
+            ctx.result = 1.0;
+            return Flow::Stop;
+        }
+        Flow::Continue
+    }
+
+    /// `Player.causeFallDamage` before `super`: players who may fly take no
+    /// fall damage; others count the distance fallen.
+    pub(super) fn cause_fall_damage_before_super(&self, ctx: &mut CauseFallDamageCtx<'_>) -> Flow {
+        let fall_distance = ctx.fall_distance;
         if self.abilities.lock().may_fly {
-            return false;
+            ctx.result = false;
+            return Flow::Stop;
         }
 
         if fall_distance >= 2.0 {
@@ -315,8 +314,7 @@ impl Player {
             );
         }
 
-        self.living()
-            .cause_living_fall_damage(fall_distance, damage_modifier, source)
+        Flow::Continue
     }
 
     /// Matches vanilla `Player.playSound`, which excludes the source player.

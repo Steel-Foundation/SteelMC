@@ -1,5 +1,6 @@
 //! Vanilla falling-block entity.
 
+use crate::entity::component::definition::CauseFallDamageCtx;
 use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::HurtCtx;
 use crate::entity::component::definition::TickCtx;
@@ -384,10 +385,23 @@ impl FallingBlockEntity {
     // (`wall_torch` -> `block.minecraft.torch`), so they can't be derived from the key.
     const TICK: StageId = StageId("falling_block.tick");
     const HURT: StageId = StageId("falling_block.hurt");
+    const FALL_DAMAGE: StageId = StageId("falling_block.fall_damage");
 
     /// `FallingBlockEntity.tick` never calls `super`.
     fn define() -> Definition<Self> {
         Definition {
+            cause_fall_damage: Pipeline::new([Stage::new(
+                Self::FALL_DAMAGE,
+                |falling: &Self, ctx: &mut CauseFallDamageCtx<'_>| {
+                    ctx.result = falling.entity_cause_fall_damage(
+                        ctx.entity,
+                        ctx.fall_distance,
+                        ctx.damage_modifier,
+                        ctx.source,
+                    );
+                    Flow::Continue
+                },
+            )]),
             hurt: Pipeline::new([Stage::new(
                 Self::HURT,
                 |falling: &Self, ctx: &mut HurtCtx<'_>| {
@@ -412,7 +426,6 @@ impl FallingBlockEntity {
         is_pickable: |entity| !entity.is_removed(),
         attackable: |_| false,
         movement_emission: |_| EntityMovementEmission::None,
-        cause_fall_damage: Self::entity_cause_fall_damage,
         ..EntityProps::new()
     };
 

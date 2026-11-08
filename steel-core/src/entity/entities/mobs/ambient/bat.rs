@@ -22,6 +22,7 @@ use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::HurtCtx;
 use crate::entity::component::definition::VoicePitchCtx;
 use crate::entity::component::pipeline::Flow;
+use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::prelude::*;
 use crate::entity::{
@@ -94,7 +95,6 @@ impl BatEntity {
     };
     const ENTITY: EntityProps<Self> = EntityProps {
         movement_emission: |_| EntityMovementEmission::Events,
-        check_fall_damage: |_, _, _, _, _, _, _| {},
         is_flapping: |bat| !bat.is_resting() && bat.tick_count() % 10 == 0,
         is_pushable: |_| false,
         is_ignoring_block_triggers: |_| true,
@@ -115,6 +115,8 @@ impl BatEntity {
         definition.tick = definition
             .tick
             .then([Stage::effect(Self::HANG, Self::tick_hang)]);
+        // `Bat.checkFallDamage` does nothing.
+        definition.check_fall_damage = Pipeline::new([]);
         // `Bat.getVoicePitch`: `super`'s pitch lowered.
         definition.voice_pitch = definition.voice_pitch.then([Stage::new(
             Self::PITCH,

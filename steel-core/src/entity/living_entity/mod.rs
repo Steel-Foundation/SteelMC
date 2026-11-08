@@ -12,13 +12,7 @@ use steel_registry::vanilla_entity_data::LivingEntityData;
 use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::EntityProps;
-use crate::entity::component::definition::SetYBodyRotCtx;
-use crate::entity::component::definition::{
-    BaseExperienceRewardCtx, CanDispenserEquipIntoSlotCtx, CanUseSlotCtx, EquipSoundCtx,
-    VoicePitchCtx,
-};
-use crate::entity::component::definition::{BaseTick, BaseTickCtx, Definition, HurtCtx, TickCtx};
-use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage, StageId};
+use crate::entity::component::pipeline::Flow;
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Components as _, Has};
 use crate::entity::consume_effect::apply_consume_effect;
@@ -34,6 +28,7 @@ mod environment;
 mod equipment;
 mod movement;
 mod sleeping;
+mod stages;
 mod travel;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
@@ -207,107 +202,13 @@ impl Deref for Living<'_> {
     }
 }
 
-/// The `LivingEntity.tick` stage, after `Entity`'s.
-pub const TICK: StageId = StageId("living_entity.tick");
-/// The `LivingEntity.hurtServer` stage; `Entity`'s is abstract.
-pub const HURT: StageId = StageId("living_entity.hurt");
-/// The `LivingEntity.setYBodyRot` stage: stores the body yaw.
-pub const SET_Y_BODY_ROT: StageId = StageId("living_entity.set_y_body_rot");
-/// The `LivingEntity.getVoicePitch` stage.
-pub const VOICE_PITCH: StageId = StageId("living_entity.voice_pitch");
-/// The `LivingEntity.getEquipSound` stage.
-pub const EQUIP_SOUND: StageId = StageId("living_entity.equip_sound");
-/// The `LivingEntity.getBaseExperienceReward` stage: none.
-pub const BASE_EXPERIENCE_REWARD: StageId = StageId("living_entity.base_experience_reward");
-/// The `LivingEntity.canUseSlot` stage: any slot.
-pub const CAN_USE_SLOT: StageId = StageId("living_entity.can_use_slot");
-/// The `LivingEntity.canDispenserEquipIntoSlot` stage: any slot.
-pub const CAN_DISPENSER_EQUIP_INTO_SLOT: StageId =
-    StageId("living_entity.can_dispenser_equip_into_slot");
-/// The `LivingEntity.baseTick` stage, around `Entity`'s.
-pub const BASE_TICK: StageId = StageId("living_entity.base_tick");
-
-/// Vanilla `LivingEntity`'s chains, on `Entity`'s.
-#[must_use]
-pub fn definition<E: Parts>() -> Definition<E> {
-    fn tick<E: Parts>(living: &E, ctx: &mut TickCtx<'_>) -> Flow {
-        living.living().tick_living(ctx.entity);
-        Flow::Continue
-    }
-    fn base_tick<E: Parts>(
-        living: &E,
-        ctx: &mut BaseTickCtx<'_>,
-        inner: Inner<'_, E, BaseTick>,
-    ) -> Flow {
-        living.living().base_tick_around(|| inner(living, ctx))
-    }
-    let definition = Definition::new();
-    Definition {
-        tick: definition.tick.then([Stage::new(TICK, tick::<E>)]),
-        base_tick: definition.base_tick.around(BASE_TICK, base_tick::<E>),
-        set_y_body_rot: definition.set_y_body_rot.then([Stage::new(
-            SET_Y_BODY_ROT,
-            |living: &E, ctx: &mut SetYBodyRotCtx<'_>| {
-                living.living().set_y_body_rot(ctx.y_body_rot);
-                Flow::Continue
-            },
-        )]),
-        voice_pitch: Pipeline::new([Stage::new(
-            VOICE_PITCH,
-            |living: &E, ctx: &mut VoicePitchCtx<'_>| {
-                ctx.result = living.living().voice_pitch_base();
-                Flow::Continue
-            },
-        )]),
-        equip_sound: Pipeline::new([Stage::new(
-            EQUIP_SOUND,
-            |living: &E, ctx: &mut EquipSoundCtx<'_>| {
-                ctx.result = living.living().equip_sound_base(ctx.slot, ctx.stack);
-                Flow::Continue
-            },
-        )]),
-        base_experience_reward: Pipeline::new([Stage::new(
-            BASE_EXPERIENCE_REWARD,
-            |_: &E, ctx: &mut BaseExperienceRewardCtx<'_>| {
-                ctx.result = 0;
-                Flow::Continue
-            },
-        )]),
-        can_use_slot: Pipeline::new([Stage::new(
-            CAN_USE_SLOT,
-            |_: &E, ctx: &mut CanUseSlotCtx<'_>| {
-                ctx.result = true;
-                Flow::Continue
-            },
-        )]),
-        can_dispenser_equip_into_slot: Pipeline::new([Stage::new(
-            CAN_DISPENSER_EQUIP_INTO_SLOT,
-            |_: &E, ctx: &mut CanDispenserEquipIntoSlotCtx<'_>| {
-                ctx.result = true;
-                Flow::Continue
-            },
-        )]),
-        // Vanilla's `LivingEntity.tickRidden` does nothing.
-        tick_ridden: Pipeline::new([]),
-        hurt: Pipeline::new([Stage::new(HURT, |living: &E, ctx: &mut HurtCtx<'_>| {
-            ctx.result = living
-                .living()
-                .hurt_server(ctx.world, ctx.source, ctx.amount);
-            Flow::Continue
-        })]),
-        ..definition
-    }
-}
+pub use stages::*;
 
 /// `LivingEntity`'s overrides of entity hooks; living entity types build their
 /// [`EntityProps`] on this.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        ride_tick: |living, entity| {
-            Arc::clone(entity).ride_tick_default();
-            living.reset_fall_distance();
-        },
         on_below_world: |living| {
             if let Some(world) = living.level() {
                 living.hurt(
@@ -317,16 +218,10 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
                 );
             }
         },
-        cause_fall_damage: |living, _, fall_distance, damage_modifier, source| {
-            living
-                .living()
-                .cause_living_fall_damage(fall_distance, damage_modifier, source)
-        },
         is_alive: |living| !living.is_removed() && living.living().health() > 0.0,
         update_data_before_sync: |living| living.living().sync_mob_effect_data(),
         is_pickable: |living| !living.is_removed(),
         is_pushable: |living| living.is_alive() && !living.is_spectator() && !living.on_climbable(),
-        can_freeze: |living| living.living().default_living_can_freeze(),
         default_gravity: |living| living.living().attribute_gravity(),
         max_up_step: |living| {
             living
@@ -340,16 +235,6 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         // Living entities are never hard colliders; a type that overrides
         // `can_be_collided_with` (a shulker) must set this back to `true`.
         is_hard_collision_relevant: |_| false,
-        check_fall_damage: |living, entity, vertical_movement, on_ground, on_state, pos, world| {
-            living.living().check_living_fall_damage(
-                entity,
-                vertical_movement,
-                on_ground,
-                on_state,
-                pos,
-                world,
-            );
-        },
         kill: |living, world| {
             living.hurt(
                 world,
@@ -373,7 +258,6 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         y_head_rot: |living| living.living().y_head_rot(),
         set_y_head_rot: |living, y_head_rot| living.living().set_y_head_rot(y_head_rot),
         is_in_wall: |living| !living.living().is_sleeping() && living.is_in_wall_default(),
-        block_speed_factor: |living| living.living().living_block_speed_factor(),
         air_drag: |living| {
             compute_modified_friction(
                 DEFAULT_AIR_DRAG,

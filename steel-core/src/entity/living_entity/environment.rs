@@ -190,7 +190,8 @@ impl Living<'_> {
     /// immunity on `LivingEntity`. Steel keeps this helper separate so concrete
     /// `Entity::can_freeze` implementations can delegate without downcasting.
     #[must_use]
-    pub fn default_living_can_freeze(&self) -> bool {
+    /// `LivingEntity.canFreeze` around `super`: freeze-immune armor blocks it.
+    pub(super) fn can_freeze_around(&self, super_can_freeze: impl FnOnce() -> bool) -> bool {
         for slot in EquipmentSlot::ALL {
             if !slot.is_armor() {
                 continue;
@@ -207,7 +208,7 @@ impl Living<'_> {
             }
         }
 
-        self.can_freeze_default()
+        super_can_freeze()
     }
 
     /// Returns whether the block this entity is standing on is non-air,

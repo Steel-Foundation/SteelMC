@@ -383,6 +383,87 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         entity.entity_definition().tick(entity.as_ref(), &entity);
     }
 
+    /// Vanilla `Entity.rideTick`: a passenger's tick, through this type's
+    /// `ride_tick` pipeline.
+    fn ride_tick(self: Arc<Self>) {
+        let entity = self.into_shared_entity();
+        entity
+            .entity_definition()
+            .ride_tick(entity.as_ref(), &entity);
+    }
+
+    /// Vanilla `Entity.checkFallDamage`: accumulates fall distance, lands on
+    /// the block fallen on and resets it, through this type's pipeline.
+    fn check_fall_damage(
+        self: Arc<Self>,
+        vertical_movement: f64,
+        on_ground: bool,
+        on_state: BlockStateId,
+        pos: BlockPos,
+        world: &Arc<World>,
+    ) {
+        let entity = self.into_shared_entity();
+        entity.entity_definition().check_fall_damage(
+            entity.as_ref(),
+            &entity,
+            vertical_movement,
+            on_ground,
+            on_state,
+            pos,
+            world,
+        );
+    }
+
+    /// Vanilla `Entity.causeFallDamage`, through this type's pipeline.
+    fn cause_fall_damage(
+        self: Arc<Self>,
+        fall_distance: f64,
+        damage_modifier: f32,
+        source: &DamageSource,
+    ) -> bool {
+        let entity = self.into_shared_entity();
+        entity.entity_definition().cause_fall_damage(
+            entity.as_ref(),
+            &entity,
+            fall_distance,
+            damage_modifier,
+            source,
+        )
+    }
+
+    /// Vanilla `Entity.canFreeze`, through this type's pipeline.
+    fn can_freeze(&self) -> bool {
+        self.entity_definition()
+            .can_freeze(self.as_entity_event_source())
+    }
+
+    /// Vanilla `Entity.makeStuckInBlock`, through this type's pipeline.
+    fn make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
+        self.entity_definition().make_stuck_in_block(
+            self.as_entity_event_source(),
+            state,
+            speed_multiplier,
+        );
+    }
+
+    /// Vanilla `Entity.doWaterSplashEffect`, through this type's pipeline.
+    fn do_water_splash_effect(&self) {
+        self.entity_definition()
+            .do_water_splash_effect(self.as_entity_event_source());
+    }
+
+    /// Vanilla `Entity.updateSwimming`, through this type's pipeline.
+    fn update_swimming(&self) {
+        self.entity_definition()
+            .update_swimming(self.as_entity_event_source());
+    }
+
+    /// Vanilla `Entity.getBlockSpeedFactor`, through this type's pipeline.
+    fn block_speed_factor(&self) -> f32 {
+        self.entity_definition()
+            .block_speed_factor(self.as_entity_event_source())
+    }
+
     /// Vanilla `Entity.interact`: runs this type's `interact` pipeline.
     fn interact(
         &self,

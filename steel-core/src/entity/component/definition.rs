@@ -35,6 +35,7 @@ use crate::player::Player;
 use crate::world::{ClipHitResult, World};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
+use steel_utils::{BlockPos, BlockStateId};
 
 /// Declares the chains of [`Definition`]; see the [module docs](self).
 macro_rules! definition_chains {
@@ -94,6 +95,10 @@ macro_rules! definition_chains {
         ///
         /// Implemented once for every definition, so entity types never forward
         /// entry points by hand.
+        #[expect(
+            clippy::too_many_arguments,
+            reason = "chains take vanilla's arguments plus the entity"
+        )]
         pub trait DefinitionEntries: Send + Sync {
             /// Runs the mob constructor chain on a fresh `mob_base`.
             fn construct(&self, mob_base: &MobBase);
@@ -191,6 +196,37 @@ definition_chains! {
     /// Vanilla `Entity`'s is abstract, so the chain starts empty.
     Hurt / HurtCtx:
         fn hurt<'a>(world: &'a World, source: &'a DamageSource, amount: f32) -> bool = false;
+    /// Vanilla `Entity.rideTick`: a passenger's tick.
+    RideTick / RideTickCtx: fn ride_tick<'a>(entity: &'a SharedEntity);
+    /// Vanilla `Entity.checkFallDamage`: accumulates fall distance and lands.
+    CheckFallDamage / CheckFallDamageCtx:
+        fn check_fall_damage<'a>(
+            entity: &'a SharedEntity,
+            vertical_movement: f64,
+            on_ground: bool,
+            on_state: BlockStateId,
+            pos: BlockPos,
+            world: &'a Arc<World>,
+        );
+    /// Vanilla `Entity.causeFallDamage`.
+    CauseFallDamage / CauseFallDamageCtx:
+        fn cause_fall_damage<'a>(
+            entity: &'a SharedEntity,
+            fall_distance: f64,
+            damage_modifier: f32,
+            source: &'a DamageSource,
+        ) -> bool = false;
+    /// Vanilla `Entity.canFreeze`.
+    CanFreeze / CanFreezeCtx: fn can_freeze() -> bool = false;
+    /// Vanilla `Entity.makeStuckInBlock`.
+    MakeStuckInBlock / MakeStuckInBlockCtx:
+        fn make_stuck_in_block(state: BlockStateId, speed_multiplier: DVec3);
+    /// Vanilla `Entity.doWaterSplashEffect`.
+    DoWaterSplashEffect / DoWaterSplashEffectCtx: fn do_water_splash_effect();
+    /// Vanilla `Entity.updateSwimming`.
+    UpdateSwimming / UpdateSwimmingCtx: fn update_swimming();
+    /// Vanilla `Entity.getBlockSpeedFactor`.
+    BlockSpeedFactor / BlockSpeedFactorCtx: fn block_speed_factor() -> f32 = 1.0;
     /// Vanilla `Entity.interact`.
     Interact / InteractCtx:
         fn interact<'a>(player: &'a Player, hand: InteractionHand, location: DVec3)
@@ -249,6 +285,22 @@ definition_chains! {
 pub const TICK: StageId = StageId("entity.tick");
 /// The `Entity.baseTick` stage.
 pub const BASE_TICK: StageId = StageId("entity.base_tick");
+/// The `Entity.rideTick` stage.
+pub const RIDE_TICK: StageId = StageId("entity.ride_tick");
+/// The `Entity.checkFallDamage` stage.
+pub const CHECK_FALL_DAMAGE: StageId = StageId("entity.check_fall_damage");
+/// The `Entity.causeFallDamage` stage.
+pub const CAUSE_FALL_DAMAGE: StageId = StageId("entity.cause_fall_damage");
+/// The `Entity.canFreeze` stage.
+pub const CAN_FREEZE: StageId = StageId("entity.can_freeze");
+/// The `Entity.makeStuckInBlock` stage.
+pub const MAKE_STUCK_IN_BLOCK: StageId = StageId("entity.make_stuck_in_block");
+/// The `Entity.doWaterSplashEffect` stage.
+pub const DO_WATER_SPLASH_EFFECT: StageId = StageId("entity.do_water_splash_effect");
+/// The `Entity.updateSwimming` stage.
+pub const UPDATE_SWIMMING: StageId = StageId("entity.update_swimming");
+/// The `Entity.getBlockSpeedFactor` stage.
+pub const BLOCK_SPEED_FACTOR: StageId = StageId("entity.block_speed_factor");
 /// The `Entity.interact` stage: leashing and unleashing.
 pub const INTERACT: StageId = StageId("entity.interact");
 /// The `Entity.positionRider` stage.
@@ -274,7 +326,72 @@ impl<E: Entity + ?Sized> Definition<E> {
             position_rider_default(entity, ctx.passenger);
             Flow::Continue
         }
+        fn ride_tick<E: Entity + ?Sized>(_: &E, ctx: &mut RideTickCtx<'_>) -> Flow {
+            Arc::clone(ctx.entity).ride_tick_default();
+            Flow::Continue
+        }
+        fn check_fall_damage<E: Entity + ?Sized>(_: &E, ctx: &mut CheckFallDamageCtx<'_>) -> Flow {
+            Arc::clone(ctx.entity).check_fall_damage_default(
+                ctx.vertical_movement,
+                ctx.on_ground,
+                ctx.on_state,
+                ctx.pos,
+                ctx.world,
+            );
+            Flow::Continue
+        }
+        fn cause_fall_damage<E: Entity + ?Sized>(_: &E, ctx: &mut CauseFallDamageCtx<'_>) -> Flow {
+            ctx.result = Arc::clone(ctx.entity).cause_fall_damage_default(
+                ctx.fall_distance,
+                ctx.damage_modifier,
+                ctx.source,
+            );
+            Flow::Continue
+        }
+        fn can_freeze<E: Entity + ?Sized>(entity: &E, ctx: &mut CanFreezeCtx<'_>) -> Flow {
+            ctx.result = entity.can_freeze_default();
+            Flow::Continue
+        }
+        fn make_stuck_in_block<E: Entity + ?Sized>(
+            entity: &E,
+            ctx: &mut MakeStuckInBlockCtx<'_>,
+        ) -> Flow {
+            entity.make_stuck_in_block_default(ctx.state, ctx.speed_multiplier);
+            Flow::Continue
+        }
+        fn block_speed_factor<E: Entity + ?Sized>(
+            entity: &E,
+            ctx: &mut BlockSpeedFactorCtx<'_>,
+        ) -> Flow {
+            ctx.result = entity.block_speed_factor_default();
+            Flow::Continue
+        }
         Self {
+            ride_tick: Pipeline::new([Stage::new(RIDE_TICK, ride_tick::<E>)]),
+            check_fall_damage: Pipeline::new([Stage::new(
+                CHECK_FALL_DAMAGE,
+                check_fall_damage::<E>,
+            )]),
+            cause_fall_damage: Pipeline::new([Stage::new(
+                CAUSE_FALL_DAMAGE,
+                cause_fall_damage::<E>,
+            )]),
+            can_freeze: Pipeline::new([Stage::new(CAN_FREEZE, can_freeze::<E>)]),
+            make_stuck_in_block: Pipeline::new([Stage::new(
+                MAKE_STUCK_IN_BLOCK,
+                make_stuck_in_block::<E>,
+            )]),
+            do_water_splash_effect: Pipeline::new([Stage::effect(
+                DO_WATER_SPLASH_EFFECT,
+                |entity: &E| entity.do_water_splash_effect_default(),
+            )]),
+            update_swimming: Pipeline::new([Stage::effect(UPDATE_SWIMMING, |entity: &E| {
+                entity.update_swimming_default();
+            })]),
+            block_speed_factor: Pipeline::new([Stage::new(
+                BLOCK_SPEED_FACTOR,
+                block_speed_factor::<E>,
+            )]),
             tick: Pipeline::new([Stage::effect(TICK, tick::<E>)]),
             base_tick: Pipeline::new([Stage::effect(BASE_TICK, base_tick::<E>)]),
             interact: Pipeline::new([Stage::new(INTERACT, interact::<E>)]),

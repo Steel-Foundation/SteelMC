@@ -4,8 +4,10 @@ use super::{
     EntityMovementFlags, EntityMovementProgress, EntityPhysicsStateInput, EntityPistonMovement,
     EntityVerticalMovementStateUpdate, MAX_ENTITY_TAGS,
 };
+use crate::entity::component::definition::{CauseFallDamageCtx, Definition, DefinitionEntries};
+use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::prelude::*;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 
 use glam::DVec3;
 use steel_registry::{
@@ -92,22 +94,26 @@ fn generation_distinguishes_reconstructed_entity_identity() {
 crate::entity::impl_test_downcast_type!(FallDamageTestEntity);
 
 impl FallDamageTestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps {
-        cause_fall_damage: Self::entity_cause_fall_damage,
-        ..EntityProps::new()
-    };
+    const ENTITY: EntityProps<Self> = EntityProps::new();
 
-    fn entity_cause_fall_damage(
-        &self,
-        _entity: &SharedEntity,
-        fall_distance: f64,
-        damage_modifier: f32,
-        _source: &DamageSource,
-    ) -> bool {
+    fn definition() -> &'static Definition<Self> {
+        static DEFINITION: LazyLock<Definition<FallDamageTestEntity>> =
+            LazyLock::new(|| Definition {
+                cause_fall_damage: Pipeline::new([Stage::new(
+                    StageId("test.fall_damage"),
+                    FallDamageTestEntity::record_fall_damage,
+                )]),
+                ..Definition::new()
+            });
+        &DEFINITION
+    }
+
+    fn record_fall_damage(&self, ctx: &mut CauseFallDamageCtx<'_>) -> Flow {
         self.fall_damage_calls
             .lock()
-            .push((fall_distance, damage_modifier));
-        true
+            .push((ctx.fall_distance, ctx.damage_modifier));
+        ctx.result = true;
+        Flow::Continue
     }
 }
 
@@ -122,6 +128,10 @@ impl Entity for FallDamageTestEntity {
 
     fn entity_hooks(&self) -> &'static dyn EntityHooks {
         &Self::ENTITY
+    }
+
+    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
+        Self::definition()
     }
 }
 

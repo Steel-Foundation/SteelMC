@@ -36,14 +36,13 @@ impl Living<'_> {
 
     /// `LivingEntity.checkFallDamage`: refreshes fluid contact and sends the
     /// landing burst before the entity fall-damage step.
-    pub fn check_living_fall_damage(
+    pub(super) fn check_fall_damage_around(
         &self,
-        entity: &SharedEntity,
-        vertical_movement: f64,
         on_ground: bool,
         on_state: BlockStateId,
         pos: BlockPos,
         world: &Arc<World>,
+        super_check: impl FnOnce(),
     ) {
         // Vanilla refreshes its fluid interaction when the cached state is not
         // already water. Steel refreshes contact during movement, so the last
@@ -56,13 +55,7 @@ impl Living<'_> {
             self.send_landing_particles(world, on_state, pos);
         }
 
-        Arc::clone(entity).check_fall_damage_default(
-            vertical_movement,
-            on_ground,
-            on_state,
-            pos,
-            world,
-        );
+        super_check();
     }
 
     /// Sends the vanilla landing burst when the fall was powerful enough.
@@ -95,12 +88,14 @@ impl Living<'_> {
     /// `LivingEntity.getBlockSpeedFactor`: Movement Efficiency moves the block
     /// factor towards 1.
     #[must_use]
-    pub fn living_block_speed_factor(&self) -> f32 {
+    /// `LivingEntity.getBlockSpeedFactor` around `super`: movement
+    /// efficiency pulls the block's factor toward 1.
+    pub(super) fn block_speed_factor_around(&self, super_factor: impl FnOnce() -> f32) -> f32 {
         let efficiency =
             self.attributes()
                 .lock()
                 .required_value(vanilla_attributes::MOVEMENT_EFFICIENCY) as f32;
-        let block_factor = self.block_speed_factor_default();
+        let block_factor = super_factor();
         block_factor + efficiency * (1.0 - block_factor)
     }
 

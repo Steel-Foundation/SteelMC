@@ -1,9 +1,10 @@
 //! `ServerPlayer`'s overrides of the living hooks.
 
 use super::*;
-use crate::entity::component::definition::Definition;
+use crate::entity::component::definition::RideTickCtx;
 use crate::entity::component::definition::TickCtx;
 use crate::entity::component::definition::VoicePitchCtx;
+use crate::entity::component::definition::{self, Definition};
 use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
@@ -64,6 +65,14 @@ impl Player {
         const TICK: StageId = StageId("player.tick");
         const HURT: StageId = StageId("player.hurt");
         const VOICE_PITCH: StageId = StageId("player.voice_pitch");
+        const MACE_BURST: StageId = StageId("player.mace_burst");
+        const FLIGHT_FALL: StageId = StageId("player.flight_fall");
+        const FLIGHT_SPEED: StageId = StageId("player.flight_speed");
+        const SPECTATOR_FREEZE: StageId = StageId("player.spectator_freeze");
+        const SPECTATOR_SPLASH: StageId = StageId("player.spectator_splash");
+        const FLIGHT_SWIM: StageId = StageId("player.flight_swim");
+        const FLIGHT_STUCK: StageId = StageId("player.flight_stuck");
+        const RIDE_TICK: StageId = StageId("player.ride_tick");
         let living = living_entity::definition();
         Definition {
             tick: Pipeline::new([Stage::new(TICK, |player: &Self, ctx: &mut TickCtx<'_>| {
@@ -78,6 +87,55 @@ impl Player {
                     Flow::Continue
                 },
             )]),
+            check_fall_damage: living.check_fall_damage.before(
+                living_entity::CHECK_FALL_DAMAGE,
+                [Stage::new(MACE_BURST, Self::check_fall_damage_before_super)],
+            ),
+            cause_fall_damage: living.cause_fall_damage.before(
+                living_entity::CAUSE_FALL_DAMAGE,
+                [Stage::new(
+                    FLIGHT_FALL,
+                    Self::cause_fall_damage_before_super,
+                )],
+            ),
+            block_speed_factor: living.block_speed_factor.before(
+                living_entity::BLOCK_SPEED_FACTOR,
+                [Stage::new(
+                    FLIGHT_SPEED,
+                    Self::block_speed_factor_before_super,
+                )],
+            ),
+            can_freeze: living.can_freeze.before(
+                living_entity::CAN_FREEZE,
+                [Stage::new(SPECTATOR_FREEZE, Self::can_freeze_before_super)],
+            ),
+            do_water_splash_effect: living.do_water_splash_effect.before(
+                definition::DO_WATER_SPLASH_EFFECT,
+                [Stage::new(
+                    SPECTATOR_SPLASH,
+                    Self::do_water_splash_effect_before_super,
+                )],
+            ),
+            update_swimming: living.update_swimming.before(
+                definition::UPDATE_SWIMMING,
+                [Stage::new(FLIGHT_SWIM, Self::update_swimming_before_super)],
+            ),
+            make_stuck_in_block: living.make_stuck_in_block.before(
+                definition::MAKE_STUCK_IN_BLOCK,
+                [Stage::new(
+                    FLIGHT_STUCK,
+                    Self::make_stuck_in_block_before_super,
+                )],
+            ),
+            ride_tick: living.ride_tick.around(
+                RIDE_TICK,
+                |player: &Self, ctx: &mut RideTickCtx<'_>, inner| {
+                    player.ride_tick_around(|| {
+                        inner(player, ctx);
+                    });
+                    Flow::Continue
+                },
+            ),
             hurt: living.hurt.before(
                 living_entity::HURT,
                 [Stage::new(HURT, Self::hurt_before_super)],

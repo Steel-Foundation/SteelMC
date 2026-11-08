@@ -90,14 +90,14 @@ fn living_freeze_immunity_uses_armor_equipment() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
-    assert!(entity.living().default_living_can_freeze());
+    assert!(entity.can_freeze());
 
     entity.equip(
         EquipmentSlot::Feet,
         ItemStack::new(&vanilla_items::LEATHER_BOOTS),
     );
 
-    assert!(!entity.living().default_living_can_freeze());
+    assert!(!entity.can_freeze());
 }
 
 #[test]
@@ -110,7 +110,7 @@ fn living_freeze_immunity_uses_body_armor_equipment() {
         ItemStack::new(&vanilla_items::LEATHER_HORSE_ARMOR),
     );
 
-    assert!(!entity.living().default_living_can_freeze());
+    assert!(!entity.can_freeze());
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn living_freeze_immunity_ignores_non_armor_equipment() {
         ItemStack::new(&vanilla_items::LEATHER_BOOTS),
     );
 
-    assert!(entity.living().default_living_can_freeze());
+    assert!(entity.can_freeze());
 }
 
 #[test]

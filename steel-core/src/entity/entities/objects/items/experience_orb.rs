@@ -413,6 +413,8 @@ impl ExperienceOrbEntity {
     fn define() -> Definition<Self> {
         let definition = Definition::new();
         Definition {
+            // `ExperienceOrb.doWaterSplashEffect` does nothing.
+            do_water_splash_effect: Pipeline::new([]),
             tick: definition.tick.then([Stage::new(
                 Self::TICK,
                 |orb: &Self, ctx: &mut TickCtx<'_>| {
@@ -435,7 +437,6 @@ impl ExperienceOrbEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         is_hard_collision_relevant: |_| false,
         // Vanilla `ExperienceOrb` overrides this with an empty body.
-        do_water_splash_effect: |_| {},
         movement_emission: |_| EntityMovementEmission::None,
         default_gravity: |_| 0.03,
         block_pos_below_that_affects_movement: |entity| entity.on_pos(0.999_999),
