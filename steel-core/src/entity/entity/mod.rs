@@ -620,10 +620,22 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Marks the entity as removed with the given reason.
+    ///
+    /// Only the first removal takes effect. Like vanilla, the entity leaves
+    /// its vehicle when destroyed and its passengers dismount through their
+    /// own `stop_riding` chains before the world learns of the removal.
     fn set_removed(&self, reason: RemovalReason) {
-        if self.base().set_removed(reason) {
-            self.on_removal(reason);
+        let Some(callback) = self.base().mark_removed(reason) else {
+            return;
+        };
+        if reason.should_destroy() {
+            self.stop_riding();
         }
+        for passenger in self.passengers() {
+            passenger.stop_riding();
+        }
+        self.base().finish_removal(callback, reason);
+        self.on_removal(reason);
     }
 
     /// Default for [`Entity::on_removal`].

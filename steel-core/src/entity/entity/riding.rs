@@ -31,9 +31,23 @@ pub trait EntityRiding: Entity {
         !self.is_discrete() && self.base().boarding_cooldown() <= 0
     }
 
-    /// Default for [`Entity::stop_riding`].
+    /// Default for [`Entity::remove_vehicle`].
     fn remove_vehicle_default(&self) {
+        let Some(old_vehicle) = self.vehicle() else {
+            return;
+        };
         self.base().stop_riding();
+        if self
+            .removal_reason()
+            .is_none_or(RemovalReason::should_destroy)
+            && let Some(world) = self.level()
+        {
+            world.game_event_at(
+                &vanilla_game_events::ENTITY_DISMOUNT,
+                old_vehicle.position(),
+                &GameEventContext::new(Some(self.as_entity_event_source()), None),
+            );
+        }
     }
 
     /// Default for [`Entity::dismount_location_for_passenger`]: on top of
