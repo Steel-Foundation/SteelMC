@@ -29,6 +29,75 @@ struct SculkSpreadPos {
     face: Direction,
 }
 
+/// Block states around one vein spread origin, read on first use.
+///
+/// Every block a vein spread reads or writes is within one block of its origin on each axis.
+struct SculkSpreadBlocks {
+    origin: BlockPos,
+    states: [Option<BlockStateId>; 27],
+}
+
+impl SculkSpreadBlocks {
+    const fn new(origin: BlockPos) -> Self {
+        Self {
+            origin,
+            states: [None; 27],
+        }
+    }
+
+    fn index(&self, pos: BlockPos) -> Option<usize> {
+        let dx = pos.x() - self.origin.x() + 1;
+        let dy = pos.y() - self.origin.y() + 1;
+        let dz = pos.z() - self.origin.z() + 1;
+        let in_range = |delta: i32| (0..3).contains(&delta);
+        (in_range(dx) && in_range(dy) && in_range(dz)).then(|| (dx * 9 + dy * 3 + dz) as usize)
+    }
+
+    fn get(&mut self, region: &WorldGenRegion<'_>, pos: BlockPos) -> BlockStateId {
+        match self.index(pos) {
+            Some(index) => *self.states[index].get_or_insert_with(|| region.block_state(pos)),
+            None => region.block_state(pos),
+        }
+    }
+
+    /// Drops a cached state after a write, so the next read sees what the region stored.
+    fn forget(&mut self, pos: BlockPos) {
+        if let Some(index) = self.index(pos) {
+            self.states[index] = None;
+        }
+    }
+}
+
+/// The state a vein spread starts from, with its vein faces looked up once.
+#[derive(Clone, Copy)]
+struct SculkSpreadSource {
+    is_vein: bool,
+    faces: [bool; 6],
+}
+
+impl SculkSpreadSource {
+    fn new(state: BlockStateId) -> Self {
+        let is_vein = state.get_block() == &vanilla_blocks::SCULK_VEIN;
+        let mut faces = [false; 6];
+        if is_vein {
+            for direction in FeatureDecorationRunner::VANILLA_DIRECTION_VALUES {
+                faces[direction as usize] =
+                    FeatureDecorationRunner::sculk_vein_has_face(state, direction);
+            }
+        }
+        Self { is_vein, faces }
+    }
+
+    const fn has_face(self, direction: Direction) -> bool {
+        self.faces[direction as usize]
+    }
+
+    /// Vanilla `MultifaceSpreader.SpreadConfig.canSpreadFrom` with the sculk vein config.
+    const fn can_spread_from(self, face: Direction) -> bool {
+        !self.is_vein || self.has_face(face)
+    }
+}
+
 #[derive(Clone, Copy)]
 enum SculkBehaviorKind {
     Default,
@@ -443,16 +512,19 @@ impl FeatureDecorationRunner {
         post_process: bool,
         same_space_only: bool,
     ) -> i64 {
+        let mut blocks = SculkSpreadBlocks::new(pos);
+        let source = SculkSpreadSource::new(state);
         let mut count = 0;
         for starting_face in Self::VANILLA_DIRECTION_VALUES {
-            if !Self::sculk_vein_can_spread_from(state, starting_face) {
+            if !source.can_spread_from(starting_face) {
                 continue;
             }
 
             for spread_direction in Self::VANILLA_DIRECTION_VALUES {
                 if Self::sculk_vein_spread_from_face_toward_direction(
                     region,
-                    state,
+                    &mut blocks,
+                    source,
                     pos,
                     starting_face,
                     spread_direction,
@@ -470,8 +542,8 @@ impl FeatureDecorationRunner {
 
     fn sculk_vein_spread_from_face_toward_direction(
         region: &mut WorldGenRegion<'_>,
-
-        state: BlockStateId,
+        blocks: &mut SculkSpreadBlocks,
+        source: SculkSpreadSource,
         pos: BlockPos,
         starting_face: Direction,
         spread_direction: Direction,
@@ -480,20 +552,22 @@ impl FeatureDecorationRunner {
     ) -> Option<SculkSpreadPos> {
         let spread_pos = Self::sculk_vein_get_spread_from_face_toward_direction(
             region,
-            state,
+            blocks,
+            source,
             pos,
             starting_face,
             spread_direction,
             same_space_only,
         );
-        spread_pos
-            .filter(|spread_pos| Self::sculk_vein_spread_to_face(region, spread_pos, post_process))
+        spread_pos.filter(|spread_pos| {
+            Self::sculk_vein_spread_to_face(region, blocks, spread_pos, post_process)
+        })
     }
 
     fn sculk_vein_get_spread_from_face_toward_direction(
         region: &WorldGenRegion<'_>,
-
-        state: BlockStateId,
+        blocks: &mut SculkSpreadBlocks,
+        source: SculkSpreadSource,
         pos: BlockPos,
         starting_face: Direction,
         spread_direction: Direction,
@@ -503,9 +577,7 @@ impl FeatureDecorationRunner {
             return None;
         }
 
-        if !Self::sculk_vein_is_other_block_valid_as_source(state)
-            && (!Self::sculk_vein_has_face(state, starting_face)
-                || Self::sculk_vein_has_face(state, spread_direction))
+        if source.is_vein && (!source.has_face(starting_face) || source.has_face(spread_direction))
         {
             return None;
         }
@@ -518,7 +590,7 @@ impl FeatureDecorationRunner {
         for spread_type in spread_types {
             let spread_pos =
                 Self::sculk_vein_spread_pos(pos, spread_direction, starting_face, *spread_type);
-            if Self::sculk_vein_can_spread_into(region, pos, &spread_pos) {
+            if Self::sculk_vein_can_spread_into(region, blocks, pos, &spread_pos) {
                 return Some(spread_pos);
             }
         }
@@ -528,13 +600,14 @@ impl FeatureDecorationRunner {
 
     fn sculk_vein_spread_to_face(
         region: &mut WorldGenRegion<'_>,
-
+        blocks: &mut SculkSpreadBlocks,
         spread_pos: &SculkSpreadPos,
         post_process: bool,
     ) -> bool {
-        let old_state = region.block_state(spread_pos.pos);
+        let old_state = blocks.get(region, spread_pos.pos);
         let Some(spread_state) = Self::sculk_vein_state_for_placement(
             region,
+            blocks,
             old_state,
             spread_pos.pos,
             spread_pos.face,
@@ -545,23 +618,29 @@ impl FeatureDecorationRunner {
         if post_process {
             region.mark_pos_for_postprocessing(spread_pos.pos);
         }
-        region.set_block_state(spread_pos.pos, spread_state, UpdateFlags::UPDATE_CLIENTS)
+        let placed =
+            region.set_block_state(spread_pos.pos, spread_state, UpdateFlags::UPDATE_CLIENTS);
+        blocks.forget(spread_pos.pos);
+        placed
     }
 
     fn sculk_vein_can_spread_into(
         region: &WorldGenRegion<'_>,
+        blocks: &mut SculkSpreadBlocks,
         source_pos: BlockPos,
         spread_pos: &SculkSpreadPos,
     ) -> bool {
-        let existing_state = region.block_state(spread_pos.pos);
+        let existing_state = blocks.get(region, spread_pos.pos);
         Self::sculk_patch_vein_state_can_be_replaced(
             region,
+            blocks,
             source_pos,
             spread_pos.pos,
             spread_pos.face,
             existing_state,
         ) && Self::sculk_vein_is_valid_state_for_placement(
             region,
+            blocks,
             existing_state,
             spread_pos.pos,
             spread_pos.face,
@@ -570,12 +649,13 @@ impl FeatureDecorationRunner {
 
     fn sculk_patch_vein_state_can_be_replaced(
         region: &WorldGenRegion<'_>,
+        blocks: &mut SculkSpreadBlocks,
         source_pos: BlockPos,
         placement_pos: BlockPos,
         placement_direction: Direction,
         existing_state: BlockStateId,
     ) -> bool {
-        let against_state = region.block_state(placement_pos.relative(placement_direction));
+        let against_state = blocks.get(region, placement_pos.relative(placement_direction));
         if against_state.get_block() == &vanilla_blocks::SCULK
             || against_state.get_block() == &vanilla_blocks::SCULK_CATALYST
             || against_state.get_block() == &vanilla_blocks::MOVING_PISTON
@@ -585,8 +665,8 @@ impl FeatureDecorationRunner {
 
         if Self::manhattan_distance(source_pos, placement_pos) == 2 {
             let neighbor_pos = source_pos.relative(placement_direction.opposite());
-            if region
-                .block_state(neighbor_pos)
+            if blocks
+                .get(region, neighbor_pos)
                 .is_face_sturdy_at(neighbor_pos, placement_direction)
             {
                 return false;
@@ -617,12 +697,14 @@ impl FeatureDecorationRunner {
 
     fn sculk_vein_state_for_placement(
         region: &WorldGenRegion<'_>,
+        blocks: &mut SculkSpreadBlocks,
         old_state: BlockStateId,
         placement_pos: BlockPos,
         placement_direction: Direction,
     ) -> Option<BlockStateId> {
         if !Self::sculk_vein_is_valid_state_for_placement(
             region,
+            blocks,
             old_state,
             placement_pos,
             placement_direction,
@@ -647,6 +729,7 @@ impl FeatureDecorationRunner {
 
     fn sculk_vein_is_valid_state_for_placement(
         region: &WorldGenRegion<'_>,
+        blocks: &mut SculkSpreadBlocks,
         old_state: BlockStateId,
         placement_pos: BlockPos,
         placement_direction: Direction,
@@ -657,7 +740,12 @@ impl FeatureDecorationRunner {
             return false;
         }
 
-        Self::can_attach_to_multiface(region, placement_pos, placement_direction)
+        let neighbor_pos = placement_pos.relative(placement_direction);
+        Self::can_attach_to_multiface_state(
+            blocks.get(region, neighbor_pos),
+            neighbor_pos,
+            placement_direction,
+        )
     }
 
     fn sculk_vein_regrow(
@@ -1003,15 +1091,6 @@ impl FeatureDecorationRunner {
             }
         }
         faces
-    }
-
-    fn sculk_vein_can_spread_from(state: BlockStateId, face: Direction) -> bool {
-        Self::sculk_vein_is_other_block_valid_as_source(state)
-            || Self::sculk_vein_has_face(state, face)
-    }
-
-    fn sculk_vein_is_other_block_valid_as_source(state: BlockStateId) -> bool {
-        state.get_block() != &vanilla_blocks::SCULK_VEIN
     }
 
     fn sculk_vein_spread_pos(
