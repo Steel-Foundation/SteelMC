@@ -439,6 +439,7 @@ impl Player {
             return false;
         }
 
+        // a full attack needs to be at least 90% of the attack strength scale
         let full_strength_attack = attack_strength_scale > 0.9;
         let knockback_attack = self.is_sprinting() && full_strength_attack;
         if knockback_attack {
