@@ -356,8 +356,6 @@ entity_props! {
         fn ambient_sound_interval() -> i32 = ambient_sound_interval_default;
         /// `Mob.removeWhenFarAway`, given the squared distance to the nearest player.
         fn remove_when_far_away(dist_sqr: f64) -> bool = remove_when_far_away_default;
-        /// `Mob.ate`, called after an eating goal consumes a block.
-        fn ate() = ate_default;
         /// `Mob.canBeLeashed`, before the leash state is considered.
         fn mob_can_be_leashed() -> bool = mob_can_be_leashed_default;
         /// `Mob.getPreferredWeaponType`: the item tag this mob favors when picking up weapons.
@@ -470,6 +468,19 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
     }
 }
 
+/// `PathfinderMob`'s changes to the mob defaults.
+#[must_use]
+pub const fn pathfinder_mob_props<E: Parts>() -> MobProps<E> {
+    MobProps {
+        is_pathfinder: |_| true,
+        check_spawn_rules: |mob, _, _| {
+            let mob = mob.mob();
+            mob.walk_target_value(mob.block_position()) >= 0.0
+        },
+        ..MobProps::new()
+    }
+}
+
 /// `Mob`'s overrides of entity hooks, on top of
 /// [`living_entity::entity_props`](crate::entity::living_entity::entity_props).
 #[must_use]
@@ -522,11 +533,10 @@ impl Mob<'_> {
         true
     }
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn ate_default(&self) {}
+    /// Runs this type's `Mob.ate` pipeline.
+    pub fn ate(&self) {
+        self.definition().ate(self.entity());
+    }
 
     fn mob_can_be_leashed_default(&self) -> bool {
         !self.is_enemy()

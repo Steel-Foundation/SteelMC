@@ -60,14 +60,13 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
 #[must_use]
 pub const fn mob_props<E: Parts>() -> MobProps<E> {
     MobProps {
-        is_pathfinder: |_| true,
         walk_target_value: |monster, pos| {
             monster
                 .level()
                 .map_or(0.0, |world| -world.pathfinding_cost_from_light_levels(pos))
         },
         is_preventing_player_rest: |_, _, _| true,
-        ..MobProps::new()
+        ..mob::pathfinder_mob_props()
     }
 }
 

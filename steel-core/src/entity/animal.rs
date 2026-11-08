@@ -55,9 +55,8 @@ pub const fn mob_props<E: Parts>() -> MobProps<E> {
     MobProps {
         ambient_sound_interval: |_| 120,
         remove_when_far_away: |_, _| false,
-        is_pathfinder: |_| true,
         walk_target_value: |animal, pos| walk_target_value(animal, pos),
-        ..MobProps::new()
+        ..mob::pathfinder_mob_props()
     }
 }
 
@@ -392,6 +391,7 @@ pub fn definition<E: Parts>() -> MobDefinition<E> {
         ai_step: ai_step(),
         custom_server_ai_step: custom_server_ai_step(),
         mob_interact: mob_interact(),
+        ate: Pipeline::new([mob::stages::ate::<E>()]),
         finalize_spawn: Pipeline::new([
             ageable::finalize_spawn::<E>(),
             mob::stages::finalize_spawn::<E>(),

@@ -8,12 +8,14 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_math::{DEGREE_90, vector};
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::ParticleData;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_entity_data::SquidEntityData;
 use steel_registry::vanilla_mob_effects::LEVITATION;
 use steel_registry::{
-    sound_events, vanilla_damage_types, vanilla_entities, vanilla_particle_types,
+    sound_events, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_particle_types,
 };
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
@@ -27,7 +29,7 @@ use crate::entity::mob::{self};
 use crate::entity::prelude::*;
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityMovementEmission, EntityProps, LivingEntityBase,
-    LivingProps, MobBase, MobProps, SharedEntity, next_entity_id,
+    LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, next_entity_id,
 };
 use crate::physics::MoverType;
 use crate::world::World;
@@ -45,7 +47,7 @@ struct Swimming {
 /// A squid.
 // TODO: `AgeableWaterCreature.checkSpawnObstruction` (`isUnobstructed`)
 // once `Mob.checkSpawnObstruction` is a mob hook.
-#[entity_behavior(class = "Squid")]
+#[entity_behavior(class = "Squid", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/squid", constructors, definition = Self::define)]
@@ -66,6 +68,18 @@ pub struct SquidEntity {
 }
 
 impl SquidEntity {
+    /// Vanilla `SpawnPlacements` predicate:
+    /// `AgeableWaterCreature.checkSurfaceAgeableWaterCreatureSpawnRules`.
+    pub(crate) const SPAWN_RULE: SpawnRule = |_, level, _, pos, _| {
+        let sea_level = level.sea_level();
+        (sea_level - 13..=sea_level).contains(&pos.y())
+            && level
+                .get_block_state(pos.below())
+                .get_fluid_state()
+                .is_water()
+            && level.get_block_state(pos.above()).get_block() == &vanilla_blocks::WATER
+    };
+
     const AGEABLE: AgeableProps = AgeableProps {
         breed_offspring: |parent, world, _| {
             let squid: SharedEntity = Arc::new(SquidEntity::new(
@@ -94,8 +108,7 @@ impl SquidEntity {
         ambient_sound_interval: |_| 120,
         // Squids, unlike other water creatures, can be leashed.
         mob_can_be_leashed: |_| true,
-        is_pathfinder: |_| true,
-        ..MobProps::new()
+        ..mob::pathfinder_mob_props()
     };
     const ENTITY: EntityProps<Self> = EntityProps {
         base_tick: Self::entity_base_tick,
@@ -130,6 +143,7 @@ impl SquidEntity {
             ]),
             custom_server_ai_step: Pipeline::new([]),
             mob_interact: Pipeline::new([ageable::mob_interact::<Self>()]),
+            ate: Pipeline::new([mob::stages::ate::<Self>()]),
             finalize_spawn: Pipeline::new([
                 ageable::finalize_spawn::<Self>(),
                 mob::stages::finalize_spawn::<Self>(),

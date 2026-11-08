@@ -943,7 +943,7 @@ fn leashed_pair(
     ));
     // Keep the holder past the wanted distance but below the elastic boundary
     // so close-range following starts.
-    let holder_x = 8.0 + LEASH_CLOSE_RANGE_WANTED_DISTANCE + 1.0;
+    let holder_x = 8.0 + f64::from(LEASH_CLOSE_RANGE_WANTED_DISTANCE) + 1.0;
     let holder: SharedEntity = Arc::new(DespawnTestMob::with_world_and_entity_type(
         holder_id,
         DVec3::new(holder_x, 65.0, 8.0),

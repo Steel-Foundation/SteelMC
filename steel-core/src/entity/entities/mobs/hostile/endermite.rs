@@ -58,7 +58,6 @@ impl EndermiteEntity {
     };
 
     const LIVING: LivingProps<Self> = LivingProps {
-        sound_volume: |_| 0.4,
         hurt_sound: |_, _| Some(&sound_events::ENTITY_ENDERMITE_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_ENDERMITE_DEATH),
         ..monster::living_props()

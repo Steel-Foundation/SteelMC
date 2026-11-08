@@ -2,7 +2,7 @@ use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use glam::DVec3;
-use steel_math::fast_floor;
+use steel_math::{fast_floor, vector};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::{vanilla_attributes, vanilla_blocks};
 use steel_utils::{BlockPos, ChunkPos};
@@ -18,7 +18,7 @@ use crate::entity::{Entity, Living, SharedEntity};
 use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
 
-pub(super) const LEASH_CLOSE_RANGE_WANTED_DISTANCE: f64 = 2.0;
+pub(super) const LEASH_CLOSE_RANGE_WANTED_DISTANCE: f32 = 2.0;
 
 pub(super) fn tick_path_navigation_target(
     mob: &Mob<'_>,
@@ -266,9 +266,12 @@ impl Mob<'_> {
             .goal_selector()
             .lock()
             .enable_control(GoalControl::Move);
-        let distance_to = (holder.position() - self.position()).length();
-        let delta = (holder.position() - self.position()).normalize_or_zero()
-            * (distance_to - LEASH_CLOSE_RANGE_WANTED_DISTANCE).max(0.0);
+        let offset = holder.position() - self.position();
+        // `Entity.distanceTo` works in floats.
+        let (xd, yd, zd) = (-offset.x as f32, -offset.y as f32, -offset.z as f32);
+        let distance_to = (xd * xd + yd * yd + zd * zd).sqrt();
+        let delta = vector::normalize(offset)
+            * f64::from((distance_to - LEASH_CLOSE_RANGE_WANTED_DISTANCE).max(0.0));
         self.move_to_pos(self.position() + delta, self.follow_leash_speed());
     }
 

@@ -153,7 +153,7 @@ impl BatEntity {
     /// `Bat.tick`: a resting bat hangs still under its block; a flying one
     /// loses most of its vertical speed.
     fn entity_tick(&self, entity: &SharedEntity) {
-        self.living().tick_living_entity(entity);
+        self.mob().tick_mob(entity);
         if self.is_resting() {
             self.set_velocity(DVec3::ZERO);
             let height = f64::from(self.base().dimensions().height);
@@ -237,9 +237,9 @@ impl BatEntity {
         let movement = self.velocity();
         let new_movement = movement
             + DVec3::new(
-                (delta.x.signum() * 0.5 - movement.x) * 0.1,
-                (delta.y.signum() * f64::from(0.7_f32) - movement.y) * 0.1,
-                (delta.z.signum() * 0.5 - movement.z) * 0.1,
+                (java_signum(delta.x) * 0.5 - movement.x) * f64::from(0.1_f32),
+                (java_signum(delta.y) * f64::from(0.7_f32) - movement.y) * f64::from(0.1_f32),
+                (java_signum(delta.z) * 0.5 - movement.z) * f64::from(0.1_f32),
             );
         self.set_velocity(new_movement);
 
@@ -281,6 +281,11 @@ impl BatEntity {
             .id_flags
             .set(nbt.byte("BatFlags").unwrap_or(0));
     }
+}
+
+/// Java `Math.signum`: zero stays zero, where Rust's `signum` returns ±1.
+fn java_signum(value: f64) -> f64 {
+    if value == 0.0 { value } else { value.signum() }
 }
 
 #[cfg(test)]

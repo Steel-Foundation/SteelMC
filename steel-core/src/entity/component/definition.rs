@@ -7,8 +7,8 @@ use steel_utils::{Downcast as _, DowncastType};
 
 use crate::behavior::InteractionResult;
 use crate::entity::component::entries::{
-    AiStep, AiStepCtx, Construct, CustomServerAiStep, FinalizeSpawn, FinalizeSpawnCtx, MobInteract,
-    MobInteractCtx,
+    AiStep, AiStepCtx, Ate, Construct, CustomServerAiStep, FinalizeSpawn, FinalizeSpawnCtx,
+    MobInteract, MobInteractCtx,
 };
 use crate::entity::component::pipeline::Pipeline;
 use crate::entity::{Entity, EntitySpawnReason, MobBase, SharedEntity, SpawnGroupData};
@@ -26,6 +26,8 @@ pub struct MobDefinition<E: 'static> {
     pub custom_server_ai_step: Pipeline<E, CustomServerAiStep>,
     /// `Mob.mobInteract`.
     pub mob_interact: Pipeline<E, MobInteract>,
+    /// `Mob.ate`.
+    pub ate: Pipeline<E, Ate>,
     /// `Mob.finalizeSpawn`.
     pub finalize_spawn: Pipeline<E, FinalizeSpawn>,
 }
@@ -43,6 +45,9 @@ pub trait MobEntries: Send + Sync {
 
     /// Runs `customServerAiStep` for `mob`.
     fn custom_server_ai_step(&self, mob: &dyn Entity);
+
+    /// Runs `ate` for `mob`.
+    fn ate(&self, mob: &dyn Entity);
 
     /// Runs `mobInteract` for `mob`.
     fn mob_interact(
@@ -97,6 +102,12 @@ impl<E: Entity + DowncastType> MobEntries for MobDefinition<E> {
     fn custom_server_ai_step(&self, mob: &dyn Entity) {
         if let Some(mob) = Self::typed(mob) {
             self.custom_server_ai_step.run(mob, &mut ());
+        }
+    }
+
+    fn ate(&self, mob: &dyn Entity) {
+        if let Some(mob) = Self::typed(mob) {
+            self.ate.run(mob, &mut ());
         }
     }
 

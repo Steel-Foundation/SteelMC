@@ -42,6 +42,13 @@ impl Entry for CustomServerAiStep {
     type Ctx<'a> = ();
 }
 
+/// Vanilla `Mob.ate`, run after an eating goal consumes a block.
+pub struct Ate;
+
+impl Entry for Ate {
+    type Ctx<'a> = ();
+}
+
 /// Vanilla `Mob.mobInteract`: the first stage that handles the interaction
 /// sets [`MobInteractCtx::result`] and stops.
 pub struct MobInteract;

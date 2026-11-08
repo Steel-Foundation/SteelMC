@@ -86,12 +86,12 @@ impl SheepEntity {
     };
     const MOB: MobProps<Self> = MobProps {
         ambient_sound: |_| Some(&sound_events::ENTITY_SHEEP_AMBIENT),
-        ate: Self::mob_ate,
         ..animal::mob_props()
     };
     const GOALS: StageId = StageId("sheep.goals");
     const SHEAR: StageId = StageId("sheep.shear");
     const PICK_COLOR: StageId = StageId("sheep.pick_color");
+    const ATE: StageId = StageId("sheep.ate");
 
     /// Vanilla `Sheep`: the animal chains with sheep goals, shearing before
     /// feeding, and the spawn wool color before `AgeableMob.finalizeSpawn`.
@@ -110,6 +110,9 @@ impl SheepEntity {
             ageable::FINALIZE_SPAWN,
             [Stage::new(Self::PICK_COLOR, Self::pick_spawn_color)],
         );
+        definition.ate = definition
+            .ate
+            .then([Stage::effect(Self::ATE, Self::mob_ate)]);
         definition
     }
 
