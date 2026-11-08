@@ -28,7 +28,6 @@ pub const SPLASH_RANGE_SQ: f64 = 16.0;
 pub const SPLASH_HORIZONTAL_REACH: f64 = 4.0;
 /// How far the splash search box extends past the potion's box on the Y axis.
 pub const SPLASH_VERTICAL_REACH: f64 = 2.0;
-const DEFAULT_GRAVITY: f64 = 0.05;
 
 /// A concrete vanilla `AbstractThrownPotion` type.
 pub trait Parts: throwable_item::Parts {
@@ -46,7 +45,7 @@ pub trait Parts: throwable_item::Parts {
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        default_gravity: |_| DEFAULT_GRAVITY,
+        default_gravity: |_| 0.05,
         ..throwable::entity_props()
     }
 }

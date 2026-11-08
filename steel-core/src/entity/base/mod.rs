@@ -43,11 +43,6 @@ use crate::world::World;
 
 const BOARDING_COOLDOWN: i32 = 60;
 const PISTON_MOVEMENT_LIMIT: f64 = 0.51;
-const PISTON_ZERO_MOVEMENT_EPSILON: f64 = 1.0e-7;
-const PISTON_APPLIED_MOVEMENT_EPSILON: f64 = 1.0e-5;
-const STUCK_SPEED_MULTIPLIER_EPSILON: f64 = 1.0e-7;
-const MOVEMENT_TRACE_LIMIT: usize = 100;
-const MOVEMENT_TRACE_POSITION_EPSILON_SQ: f64 = 9.999_999_4e-11;
 /// Default ticks of powder-snow exposure required before an entity starts
 /// taking freeze damage.
 pub const DEFAULT_TICKS_REQUIRED_TO_FREEZE: i32 = 140;
@@ -102,7 +97,7 @@ struct EntityMovementTrace {
 
 impl EntityMovementTrace {
     fn record(&mut self, movement: EntityMovement) {
-        if self.movement_this_tick.len() >= MOVEMENT_TRACE_LIMIT {
+        if self.movement_this_tick.len() >= 100 {
             let first = self.movement_this_tick.remove(0);
             let second = self.movement_this_tick.remove(0);
             self.movement_this_tick
@@ -131,8 +126,7 @@ impl EntityMovementTrace {
             .extend(self.movement_this_tick.drain(..));
 
         if let Some(last_movement) = self.final_movements_this_tick.last().copied() {
-            if (last_movement.to() - position).length_squared() > MOVEMENT_TRACE_POSITION_EPSILON_SQ
-            {
+            if (last_movement.to() - position).length_squared() > 9.999_999_4e-11 {
                 self.final_movements_this_tick
                     .push(EntityMovement::new(last_movement.to(), position));
             }
@@ -165,7 +159,7 @@ impl EntityPistonMovement {
     }
 
     fn limit_movement(&mut self, movement: DVec3, current_game_time: i64) -> DVec3 {
-        if movement.length_squared() <= PISTON_ZERO_MOVEMENT_EPSILON {
+        if movement.length_squared() <= 1.0e-7 {
             return movement;
         }
 
@@ -193,7 +187,7 @@ impl EntityPistonMovement {
         let applied = limited - self.deltas[axis];
         self.deltas[axis] = limited;
 
-        if applied.abs() <= PISTON_APPLIED_MOVEMENT_EPSILON {
+        if applied.abs() <= 1.0e-5 {
             DVec3::ZERO
         } else {
             unit * applied
@@ -1772,7 +1766,7 @@ impl EntityBase {
     #[must_use]
     pub fn consume_stuck_speed_multiplier(&self, movement: DVec3, apply_multiplier: bool) -> DVec3 {
         let mut state = self.state.lock();
-        if state.stuck_speed_multiplier.length_squared() <= STUCK_SPEED_MULTIPLIER_EPSILON {
+        if state.stuck_speed_multiplier.length_squared() <= 1.0e-7 {
             return movement;
         }
 

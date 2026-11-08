@@ -6,9 +6,6 @@ use glam::DVec3;
 
 use super::EntityPush;
 
-const MIN_PUSH_DISTANCE: f32 = 0.01;
-const PUSH_STRENGTH: f32 = 0.05;
-
 impl EntityPush {
     pub(crate) fn impulse(source: DVec3, target: DVec3) -> Option<DVec3> {
         let x = target.x - source.x;
@@ -16,7 +13,7 @@ impl EntityPush {
 
         let distance = x.abs().max(z.abs());
 
-        if distance < f64::from(MIN_PUSH_DISTANCE) {
+        if distance < f64::from(0.01_f32) {
             return None;
         }
 
@@ -25,7 +22,7 @@ impl EntityPush {
 
         let scale = if distance > 1.0 { 1.0 / distance } else { 1.0 };
         horizontal *= f64x2::splat(scale);
-        horizontal *= f64x2::splat(f64::from(PUSH_STRENGTH));
+        horizontal *= f64x2::splat(f64::from(0.05_f32));
         let [x, z] = horizontal.to_array();
 
         Some(DVec3::new(x, 0.0, z))

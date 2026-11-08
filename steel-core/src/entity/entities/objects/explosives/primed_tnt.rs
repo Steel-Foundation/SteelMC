@@ -28,14 +28,9 @@ use crate::world::{
 };
 
 const DEFAULT_EXPLOSION_POWER: f32 = 4.0;
-const MAX_EXPLOSION_POWER: f32 = 128.0;
 const GRAVITY: f64 = 0.04;
-const AIR_DRAG: f32 = 0.98;
 const INITIAL_HORIZONTAL_SPEED: f64 = 0.02;
-const INITIAL_VERTICAL_SPEED: f32 = 0.2;
-const EXPLOSION_HEIGHT_FRACTION: f32 = 0.0625;
 const GROUND_HORIZONTAL_DRAG: f64 = 0.7;
-const GROUND_VERTICAL_BOUNCE: f64 = -0.5;
 
 struct PrimedTntState {
     owner: Option<EntityReference>,
@@ -164,7 +159,7 @@ impl PrimedTntEntity {
         let angle = random * f64::from(TAU);
         DVec3::new(
             -angle.sin() * INITIAL_HORIZONTAL_SPEED,
-            f64::from(INITIAL_VERTICAL_SPEED),
+            f64::from(0.2_f32),
             -angle.cos() * INITIAL_HORIZONTAL_SPEED,
         )
     }
@@ -234,8 +229,7 @@ impl PrimedTntEntity {
         let position = self.position();
         let center = DVec3::new(
             position.x,
-            position.y
-                + f64::from(self.base.dimensions().height) * f64::from(EXPLOSION_HEIGHT_FRACTION),
+            position.y + f64::from(self.base.dimensions().height) * 0.0625,
             position.z,
         );
         let (explosion_power, used_portal) = {
@@ -274,11 +268,11 @@ impl PrimedTntEntity {
         self.apply_gravity();
         Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
-        let mut velocity = self.velocity() * f64::from(AIR_DRAG);
+        let mut velocity = self.velocity() * f64::from(0.98_f32);
         if self.on_ground() {
             velocity = DVec3::new(
                 velocity.x * GROUND_HORIZONTAL_DRAG,
-                velocity.y * GROUND_VERTICAL_BOUNCE,
+                velocity.y * -0.5,
                 velocity.z * GROUND_HORIZONTAL_DRAG,
             );
         }
@@ -328,7 +322,7 @@ impl PrimedTntEntity {
         state.explosion_power = nbt
             .float("explosion_power")
             .unwrap_or(DEFAULT_EXPLOSION_POWER)
-            .clamp(0.0, MAX_EXPLOSION_POWER);
+            .clamp(0.0, 128.0);
         state.owner = EntityReference::read(&nbt, "owner");
     }
 }

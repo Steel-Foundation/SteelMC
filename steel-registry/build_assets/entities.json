@@ -529,11 +529,6 @@
         "simple_name": "Allay"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.35,
-      "height": 0.6,
-      "eye_height": 0.36
-    },
     "mob_category": "CREATURE",
     "client_tracking_range": 8,
     "update_interval": 2,
@@ -1049,7 +1044,37 @@
     "baby_dimensions": {
       "width": 0.42000002,
       "height": 0.39000002,
-      "eye_height": 0.21875
+      "eye_height": 0.21875,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.3900000011920923,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.3900000011920923,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.19500000059604616,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -1955,7 +1980,37 @@
     "baby_dimensions": {
       "width": 0.375,
       "height": 0.21,
-      "eye_height": 0.09375
+      "eye_height": 0.09375,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.1875,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.20999999344348907,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.10499999672174454,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "AXOLOTLS",
     "client_tracking_range": 10,
@@ -2778,11 +2833,6 @@
         "simple_name": "Bat"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.5,
-      "height": 0.9,
-      "eye_height": 0.45
-    },
     "mob_category": "AMBIENT",
     "client_tracking_range": 5,
     "update_interval": 3,
@@ -3097,7 +3147,37 @@
     "baby_dimensions": {
       "width": 0.275,
       "height": 0.25,
-      "eye_height": 0.15
+      "eye_height": 0.15,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.25,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.25,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.125,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 8,
@@ -3917,11 +3997,6 @@
         "simple_name": "Blaze"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.8,
-      "eye_height": 1.53
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -4559,11 +4634,6 @@
         "simple_name": "Bogged"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.99,
-      "eye_height": 1.74
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -4880,11 +4950,6 @@
         "simple_name": "Breeze"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.77,
-      "eye_height": 1.3452
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -5373,7 +5438,37 @@
     "baby_dimensions": {
       "width": 0.95,
       "height": 1.4,
-      "eye_height": 1.38
+      "eye_height": 1.38,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 1.399999976158142,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 1.399999976158142,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.699999988079071,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -5751,11 +5846,6 @@
         "simple_name": "CamelHusk"
       }
     ],
-    "baby_dimensions": {
-      "width": 1.7,
-      "height": 2.375,
-      "eye_height": 2.275
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -6135,7 +6225,37 @@
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.35,
-      "eye_height": 0.34375
+      "eye_height": 0.34375,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.3125,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.3499999940395355,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.17499999701976776,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 8,
@@ -6540,11 +6660,6 @@
         "simple_name": "CaveSpider"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.7,
-      "height": 0.5,
-      "eye_height": 0.45
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -7571,7 +7686,37 @@
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.4,
-      "eye_height": 0.28125
+      "eye_height": 0.28125,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.375,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.4000000059604645,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.20000000298023224,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -7927,11 +8072,6 @@
         "simple_name": "Cod"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.5,
-      "height": 0.3,
-      "eye_height": 0.195
-    },
     "mob_category": "WATER_AMBIENT",
     "client_tracking_range": 4,
     "update_interval": 3,
@@ -8251,11 +8391,6 @@
         "simple_name": "CopperGolem"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.49,
-      "height": 0.98,
-      "eye_height": 0.8125
-    },
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -8833,7 +8968,37 @@
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.7,
-      "eye_height": 0.69
+      "eye_height": 0.69,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.75,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.699999988079071,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.3499999940395355,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -9185,11 +9350,6 @@
         "simple_name": "Creaking"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.9,
-      "height": 2.7,
-      "eye_height": 2.3
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -9528,11 +9688,6 @@
         "simple_name": "Creeper"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.7,
-      "eye_height": 1.445
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -10515,7 +10670,37 @@
     "baby_dimensions": {
       "width": 0.585,
       "height": 0.39000002,
-      "eye_height": 0.09375
+      "eye_height": 0.09375,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.3125,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.39000001549720764,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.19500000774860382,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "WATER_CREATURE",
     "client_tracking_range": 5,
@@ -10878,7 +11063,37 @@
     "baby_dimensions": {
       "width": 0.6982422,
       "height": 0.75,
-      "eye_height": 0.7125
+      "eye_height": 0.7125,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.765625,
+            "z": -0.15625
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.75,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.375,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -11418,7 +11633,37 @@
     "baby_dimensions": {
       "width": 0.49,
       "height": 0.98,
-      "eye_height": 0.775
+      "eye_height": 0.775,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.1875,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.49000000953674316,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -11953,11 +12198,6 @@
         "simple_name": "ElderGuardian"
       }
     ],
-    "baby_dimensions": {
-      "width": 1.9975,
-      "height": 1.9975,
-      "eye_height": 0.99875
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -12282,11 +12522,6 @@
         "simple_name": "Enderman"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 2.9,
-      "eye_height": 2.55
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -12617,11 +12852,6 @@
         "simple_name": "Endermite"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.4,
-      "height": 0.3,
-      "eye_height": 0.13
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -12912,11 +13142,6 @@
         "simple_name": "EnderDragon"
       }
     ],
-    "baby_dimensions": {
-      "width": 16.0,
-      "height": 8.0,
-      "eye_height": 6.8
-    },
     "parts": [
       {
         "name": "head",
@@ -13653,11 +13878,6 @@
         "simple_name": "Evoker"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.95,
-      "eye_height": 1.6575
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -15266,7 +15486,37 @@
     "baby_dimensions": {
       "width": 0.36,
       "height": 0.42000002,
-      "eye_height": 0.34375
+      "eye_height": 0.34375,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.375,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.42000001668930054,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.21000000834465027,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 8,
@@ -15639,11 +15889,6 @@
         "simple_name": "Frog"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.5,
-      "height": 0.5,
-      "eye_height": 0.425
-    },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -16224,11 +16469,6 @@
         "simple_name": "Ghast"
       }
     ],
-    "baby_dimensions": {
-      "width": 4.0,
-      "height": 4.0,
-      "eye_height": 2.6
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -16555,7 +16795,52 @@
     "baby_dimensions": {
       "width": 0.95,
       "height": 0.95,
-      "eye_height": 0.46875
+      "eye_height": 0.46875,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.949999988079071,
+            "z": 0.4037499949336052
+          },
+          {
+            "x": -0.4037499949336052,
+            "y": 0.949999988079071,
+            "z": 0.0
+          },
+          {
+            "x": 0.0,
+            "y": 0.949999988079071,
+            "z": -0.4037499949336052
+          },
+          {
+            "x": 0.4037499949336052,
+            "y": 0.949999988079071,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": -0.11874999850988388,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.949999988079071,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.4749999940395355,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -16904,11 +17189,6 @@
         "simple_name": "Giant"
       }
     ],
-    "baby_dimensions": {
-      "width": 3.6,
-      "height": 12.0,
-      "eye_height": 10.44
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -17433,7 +17713,37 @@
     "baby_dimensions": {
       "width": 0.5,
       "height": 0.5,
-      "eye_height": 0.37
+      "eye_height": 0.37,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.5,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.5,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.25,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "UNDERGROUND_WATER_CREATURE",
     "client_tracking_range": 10,
@@ -17783,7 +18093,37 @@
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.65,
-      "eye_height": 0.59375
+      "eye_height": 0.59375,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.53125,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.6499999761581421,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.32499998807907104,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -18140,11 +18480,6 @@
         "simple_name": "Guardian"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.85,
-      "height": 0.85,
-      "eye_height": 0.425
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -18472,7 +18807,37 @@
     "baby_dimensions": {
       "width": 0.75,
       "height": 0.85,
-      "eye_height": 0.625
+      "eye_height": 0.625,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.875,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.8500000238418579,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.42500001192092896,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -19056,7 +19421,37 @@
     "baby_dimensions": {
       "width": 0.97753906,
       "height": 1.12,
-      "eye_height": 1.064
+      "eye_height": 1.064,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 1.03249999910593,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 1.119999997615814,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.559999998807907,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -19421,7 +19816,37 @@
     "baby_dimensions": {
       "width": 0.49,
       "height": 0.98,
-      "eye_height": 0.825
+      "eye_height": 0.825,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.1875,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.49000000953674316,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -19772,11 +20197,6 @@
         "simple_name": "Illusioner"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.95,
-      "eye_height": 1.6575
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -20304,11 +20724,6 @@
         "simple_name": "IronGolem"
       }
     ],
-    "baby_dimensions": {
-      "width": 1.4,
-      "height": 2.7,
-      "eye_height": 2.295
-    },
     "mob_category": "MISC",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -22129,7 +22544,37 @@
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.935,
-      "eye_height": 0.88825
+      "eye_height": 0.88825,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.8100000023841858,
+            "z": -0.15000000596046448
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.9350000023841858,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.4675000011920929,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -22680,11 +23125,6 @@
         "simple_name": "MagmaCube"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.52,
-      "height": 0.52,
-      "eye_height": 0.325
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -24205,7 +24645,37 @@
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.7,
-      "eye_height": 0.69
+      "eye_height": 0.69,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.75,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.699999988079071,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.3499999940395355,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -24564,7 +25034,37 @@
     "baby_dimensions": {
       "width": 0.6982422,
       "height": 0.8,
-      "eye_height": 0.76
+      "eye_height": 0.76,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.815625011920929,
+            "z": -0.15625
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.800000011920929,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.4000000059604645,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 8,
@@ -24941,7 +25441,37 @@
     "baby_dimensions": {
       "width": 0.4375,
       "height": 0.475,
-      "eye_height": 0.13755
+      "eye_height": 0.13755,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.5,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.4749999940395355,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.23749999701976776,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "WATER_CREATURE",
     "client_tracking_range": 10,
@@ -25791,7 +26321,37 @@
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.35,
-      "eye_height": 0.34375
+      "eye_height": 0.34375,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.3125,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.3499999940395355,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.17499999701976776,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -26977,7 +27537,37 @@
     "baby_dimensions": {
       "width": 0.65,
       "height": 0.625,
-      "eye_height": 0.28125
+      "eye_height": 0.28125,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.5625,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.625,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.3125,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -27362,11 +27952,6 @@
         "simple_name": "Parched"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.99,
-      "eye_height": 1.74
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -27681,11 +28266,6 @@
         "simple_name": "Parrot"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.5,
-      "height": 0.9,
-      "eye_height": 0.54
-    },
     "mob_category": "CREATURE",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -28050,11 +28630,6 @@
         "simple_name": "Phantom"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.9,
-      "height": 0.5,
-      "eye_height": 0.175
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -28366,7 +28941,37 @@
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.45,
-      "eye_height": 0.40625
+      "eye_height": 0.40625,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.5,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.44999998807907104,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.22499999403953552,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -28729,7 +29334,37 @@
     "baby_dimensions": {
       "width": 0.49,
       "height": 0.98,
-      "eye_height": 0.78
+      "eye_height": 0.78,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.1875,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.49000000953674316,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -29081,11 +29716,6 @@
         "simple_name": "PiglinBrute"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.95,
-      "eye_height": 1.79
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -29414,11 +30044,6 @@
         "simple_name": "Pillager"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.95,
-      "eye_height": 1.6575
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -29764,7 +30389,37 @@
     "baby_dimensions": {
       "width": 0.7,
       "height": 0.7,
-      "eye_height": 0.34375
+      "eye_height": 0.34375,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.625,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.699999988079071,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.3499999940395355,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -30987,11 +31642,6 @@
         "simple_name": "Pufferfish"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.35,
-      "height": 0.35,
-      "eye_height": 0.2275
-    },
     "mob_category": "WATER_AMBIENT",
     "client_tracking_range": 4,
     "update_interval": 3,
@@ -31328,7 +31978,37 @@
     "baby_dimensions": {
       "width": 0.24,
       "height": 0.4,
-      "eye_height": 0.39
+      "eye_height": 0.39,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.4000000059604645,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.4000000059604645,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.20000000298023224,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 8,
@@ -31677,11 +32357,6 @@
         "simple_name": "Ravager"
       }
     ],
-    "baby_dimensions": {
-      "width": 1.95,
-      "height": 2.2,
-      "eye_height": 1.8700001
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -32010,11 +32685,6 @@
         "simple_name": "Salmon"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.7,
-      "height": 0.4,
-      "eye_height": 0.26
-    },
     "mob_category": "WATER_AMBIENT",
     "client_tracking_range": 4,
     "update_interval": 3,
@@ -32355,7 +33025,37 @@
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.65,
-      "eye_height": 0.65625
+      "eye_height": 0.65625,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.5625,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.6499999761581421,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.32499998807907104,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -32695,11 +33395,6 @@
         "simple_name": "Shulker"
       }
     ],
-    "baby_dimensions": {
-      "width": 1.0,
-      "height": 1.0,
-      "eye_height": 0.5
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -33190,11 +33885,6 @@
         "simple_name": "Silverfish"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.4,
-      "height": 0.3,
-      "eye_height": 0.13
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -33497,11 +34187,6 @@
         "simple_name": "Skeleton"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.99,
-      "eye_height": 1.74
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -33829,7 +34514,37 @@
     "baby_dimensions": {
       "width": 0.97753906,
       "height": 1.12,
-      "eye_height": 1.064
+      "eye_height": 1.064,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.9450000005960462,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 1.119999997615814,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.559999998807907,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -34177,11 +34892,6 @@
         "simple_name": "Slime"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.52,
-      "height": 0.52,
-      "eye_height": 0.325
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -34723,7 +35433,37 @@
     "baby_dimensions": {
       "width": 0.95,
       "height": 0.875,
-      "eye_height": 0.525
+      "eye_height": 0.525,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 1.046875,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 1.024999976158142,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.4375,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -35267,11 +36007,6 @@
         "simple_name": "SnowGolem"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.7,
-      "height": 1.9,
-      "eye_height": 1.7
-    },
     "mob_category": "MISC",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -36009,11 +36744,6 @@
         "simple_name": "Spider"
       }
     ],
-    "baby_dimensions": {
-      "width": 1.4,
-      "height": 0.9,
-      "eye_height": 0.65
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -36803,7 +37533,37 @@
     "baby_dimensions": {
       "width": 0.5,
       "height": 0.5,
-      "eye_height": 0.37
+      "eye_height": 0.37,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.5,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.5,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.25,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "WATER_CREATURE",
     "client_tracking_range": 8,
@@ -37132,11 +37892,6 @@
         "simple_name": "Stray"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.99,
-      "eye_height": 1.74
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -37446,7 +38201,37 @@
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.85,
-      "eye_height": 0.4375
+      "eye_height": 0.4375,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.65625,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.8500000238418579,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.42500001192092896,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -37801,7 +38586,37 @@
     "baby_dimensions": {
       "width": 0.49,
       "height": 0.49,
-      "eye_height": 0.175
+      "eye_height": 0.175,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.49000000953674316,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.49000000953674316,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.24500000476837158,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
@@ -38167,11 +38982,6 @@
         "simple_name": "Tadpole"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.4,
-      "height": 0.3,
-      "eye_height": 0.19500001
-    },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -39276,7 +40086,37 @@
     "baby_dimensions": {
       "width": 0.45,
       "height": 0.935,
-      "eye_height": 0.88825
+      "eye_height": 0.88825,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.8100000023841858,
+            "z": -0.15000000596046448
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.9350000023841858,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.4675000011920929,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -39895,11 +40735,6 @@
         "simple_name": "TropicalFish"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.5,
-      "height": 0.4,
-      "eye_height": 0.26
-    },
     "mob_category": "WATER_AMBIENT",
     "client_tracking_range": 4,
     "update_interval": 3,
@@ -40240,7 +41075,37 @@
     "baby_dimensions": {
       "width": 0.36,
       "height": 0.120000005,
-      "eye_height": 0.102000006
+      "eye_height": 0.102000006,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.120000006556511,
+            "z": -0.07500000298023224
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.120000006556511,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.0600000032782555,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -40588,11 +41453,6 @@
         "simple_name": "Vex"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.4,
-      "height": 0.8,
-      "eye_height": 0.51875
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -40912,7 +41772,37 @@
     "baby_dimensions": {
       "width": 0.49,
       "height": 0.98,
-      "eye_height": 0.63
+      "eye_height": 0.63,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.49000000953674316,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "MISC",
     "client_tracking_range": 10,
@@ -41289,11 +42179,6 @@
         "simple_name": "Vindicator"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.95,
-      "eye_height": 1.6575
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -41625,7 +42510,37 @@
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.975,
-      "eye_height": 0.81
+      "eye_height": 0.81,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.9750000238418579,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.9750000238418579,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.48750001192092896,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -41964,11 +42879,6 @@
         "simple_name": "Warden"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.9,
-      "height": 2.9,
-      "eye_height": 2.4650002
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 16,
     "update_interval": 3,
@@ -42468,11 +43378,6 @@
         "simple_name": "Witch"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.6,
-      "height": 1.95,
-      "eye_height": 1.62
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -42807,11 +43712,6 @@
         "simple_name": "WitherBoss"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.9,
-      "height": 3.5,
-      "eye_height": 2.9750001
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -43153,11 +44053,6 @@
         "simple_name": "WitherSkeleton"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.7,
-      "height": 2.4,
-      "eye_height": 2.1
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
     "update_interval": 3,
@@ -43656,7 +44551,37 @@
     "baby_dimensions": {
       "width": 0.3,
       "height": 0.425,
-      "eye_height": 0.34375
+      "eye_height": 0.34375,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.4375,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.42500001192092896,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.21250000596046448,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "CREATURE",
     "client_tracking_range": 10,
@@ -44060,7 +44985,37 @@
     "baby_dimensions": {
       "width": 0.75,
       "height": 0.85,
-      "eye_height": 0.625
+      "eye_height": 0.625,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.875,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.8500000238418579,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.42500001192092896,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -44377,7 +45332,37 @@
     "baby_dimensions": {
       "width": 0.49,
       "height": 0.98,
-      "eye_height": 0.775
+      "eye_height": 0.775,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.1875,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.49000000953674316,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -44719,7 +45704,37 @@
     "baby_dimensions": {
       "width": 0.97753906,
       "height": 1.12,
-      "eye_height": 1.064
+      "eye_height": 1.064,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.9450000005960462,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 1.119999997615814,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.559999998807907,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
@@ -45075,11 +46090,6 @@
         "simple_name": "ZombieNautilus"
       }
     ],
-    "baby_dimensions": {
-      "width": 0.875,
-      "height": 0.95,
-      "eye_height": 0.2751
-    },
     "mob_category": "MONSTER",
     "client_tracking_range": 10,
     "update_interval": 3,
@@ -45472,7 +46482,37 @@
     "baby_dimensions": {
       "width": 0.49,
       "height": 0.98,
-      "eye_height": 0.67
+      "eye_height": 0.67,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.125,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.49000000953674316,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,
@@ -45849,7 +46889,37 @@
     "baby_dimensions": {
       "width": 0.49,
       "height": 0.98,
-      "eye_height": 0.78
+      "eye_height": 0.78,
+      "attachments": {
+        "passenger": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "vehicle": [
+          {
+            "x": 0.0,
+            "y": 0.1875,
+            "z": 0.0
+          }
+        ],
+        "name_tag": [
+          {
+            "x": 0.0,
+            "y": 0.9800000190734863,
+            "z": 0.0
+          }
+        ],
+        "warden_chest": [
+          {
+            "x": 0.0,
+            "y": 0.49000000953674316,
+            "z": 0.0
+          }
+        ]
+      }
     },
     "mob_category": "MONSTER",
     "client_tracking_range": 8,

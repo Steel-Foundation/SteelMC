@@ -303,8 +303,10 @@ fn living_dimensions_use_the_sleeping_box_and_the_type_default_size() {
         .set_baby(true);
     let baby = chicken.dimensions_for_pose(EntityPose::Standing);
     assert_eq!(adult.width, vanilla_entities::CHICKEN.dimensions.width);
-    assert!(
-        baby.width < adult.width,
-        "babies use their own default size"
+    assert!(baby.width < adult.width);
+    assert_ne!(
+        baby.eye_height,
+        adult.eye_height * 0.5,
+        "chickens use their own baby size, not the halved adult size"
     );
 }

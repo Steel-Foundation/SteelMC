@@ -22,7 +22,6 @@ use crate::entity::entities::ItemEntity;
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityProps, RemovalReason, SharedEntity, next_entity_id};
 
-const LIFE_TICKS: u32 = 80;
 /// Targets further than this horizontally are replaced by a point this far
 /// along the way and [`TOO_FAR_SIGNAL_HEIGHT`] up.
 const TOO_FAR_DISTANCE: f64 = 12.0;
@@ -135,7 +134,7 @@ impl EyeOfEnderEntity {
             flight.life += 1;
             (flight.life, flight.survive_after_death)
         };
-        if life <= LIFE_TICKS {
+        if life <= 80 {
             return;
         }
         self.play_sound(&sound_events::ENTITY_ENDER_EYE_DEATH, 1.0, 1.0);

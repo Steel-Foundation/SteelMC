@@ -6,8 +6,6 @@ use super::random_stroll::RandomStrollGoal;
 use super::selector::{Goal, GoalControls};
 use crate::entity::Mob;
 
-const WATER_AVOIDING_RANDOM_STROLL_PROBABILITY: f32 = 0.001;
-
 pub struct WaterAvoidingRandomStrollGoal {
     stroll: RandomStrollGoal,
     probability: f32,
@@ -16,7 +14,7 @@ pub struct WaterAvoidingRandomStrollGoal {
 impl WaterAvoidingRandomStrollGoal {
     #[must_use]
     pub const fn new(speed_modifier: f64) -> Self {
-        Self::with_probability(speed_modifier, WATER_AVOIDING_RANDOM_STROLL_PROBABILITY)
+        Self::with_probability(speed_modifier, 0.001)
     }
 
     #[must_use]

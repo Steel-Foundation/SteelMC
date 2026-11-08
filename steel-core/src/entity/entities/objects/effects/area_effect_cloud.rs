@@ -35,8 +35,6 @@ const INFINITE_DURATION: i32 = -1;
 const DEFAULT_WAIT_TIME: i32 = 20;
 const DEFAULT_REAPPLICATION_DELAY: i32 = 20;
 const DEFAULT_POTION_DURATION_SCALE: f32 = 1.0;
-/// Scale passed to instantaneous effects (instant health/damage) applied by the cloud.
-const INSTANTANEOUS_EFFECT_SCALE: f64 = 0.5;
 
 /// Server-side cloud state that is persisted but not synced.
 struct AreaEffectCloudState {
@@ -343,7 +341,7 @@ impl AreaEffectCloudEntity {
                 effect.amplifier(),
                 Some(this),
                 owner,
-                INSTANTANEOUS_EFFECT_SCALE,
+                0.5,
             );
         } else {
             living.add_mob_effect_with_source(

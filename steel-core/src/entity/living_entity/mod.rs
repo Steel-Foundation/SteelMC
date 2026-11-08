@@ -786,11 +786,17 @@ impl<'a> Living<'a> {
         }
     }
 
-    /// Default for [`LivingProps::default_dimensions`]: the type's size,
-    /// halved for babies.
+    /// Default for [`LivingProps::default_dimensions`]: the type's size, or
+    /// its extracted baby size for babies. The extracted size covers both
+    /// vanilla's age scaling and types' own `BABY_DIMENSIONS`.
     #[must_use]
     pub fn default_dimensions_default(&self, _pose: EntityPose) -> EntityDimensions {
         let entity_type = self.entity_type();
+        if self.is_baby()
+            && let Some(baby_dimensions) = entity_type.baby_dimensions
+        {
+            return baby_dimensions;
+        }
         if entity_type.fixed {
             entity_type.dimensions
         } else {

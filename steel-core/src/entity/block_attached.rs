@@ -23,8 +23,6 @@ use crate::world::{Explosion, World};
 
 /// Ticks between two survival checks.
 const CHECK_INTERVAL: u32 = 100;
-/// A saved `block_pos` further than this from the entity is rejected.
-const VALID_READ_DISTANCE: f64 = 16.0;
 
 struct AttachmentState {
     ticks_since_last_check: u32,
@@ -92,7 +90,7 @@ impl Component for BlockAttachment {
             .filter(|pos| pos.len() == 3)
             .map(|pos| BlockPos::new(pos[0], pos[1], pos[2]));
         match stored {
-            Some(pos) if pos.closer_than(owner.block_position(), VALID_READ_DISTANCE) => {
+            Some(pos) if pos.closer_than(owner.block_position(), 16.0) => {
                 self.set_pos(pos);
             }
             _ => log::error!("Block-attached entity at invalid position: {stored:?}"),

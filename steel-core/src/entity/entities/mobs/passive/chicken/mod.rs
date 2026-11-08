@@ -12,9 +12,7 @@ use steel_registry::chicken_sound_variant::{
 };
 use steel_registry::chicken_variant::{ChickenVariantRef, ChickenVariantRegistry};
 use steel_registry::data_components::vanilla_components::{CHICKEN_SOUND_VARIANT, CHICKEN_VARIANT};
-use steel_registry::entity_type::{
-    EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
-};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ChickenEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
@@ -40,50 +38,6 @@ use crate::entity::{
     SpawnRule, position_rider_default,
 };
 use crate::entity::{EntityProps, mob};
-
-const CHICKEN_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
-    [EntityAttachmentPoint::new(0.0, 0.375, 0.0)];
-const CHICKEN_BABY_WIDTH: f32 = 0.3;
-const CHICKEN_BABY_HEIGHT: f32 = 0.4;
-const CHICKEN_BABY_EYE_HEIGHT: f32 = 0.28125;
-
-const CHICKEN_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments(
-    CHICKEN_BABY_WIDTH,
-    CHICKEN_BABY_HEIGHT,
-    CHICKEN_BABY_EYE_HEIGHT,
-    EntityAttachments::new(&CHICKEN_BABY_PASSENGER_ATTACHMENTS, &[], &[], &[]),
-);
-
-/// Flap speed gained per tick while airborne (vanilla `Chicken.aiStep`).
-const FLAP_SPEED_AIR_GAIN: f32 = 4.0;
-/// Flap speed lost per tick while grounded (vanilla `Chicken.aiStep`).
-const FLAP_SPEED_GROUND_LOSS: f32 = 1.0;
-/// Scales the per-tick flap-speed adjustment (vanilla `Chicken.aiStep`).
-const FLAP_SPEED_ADJUST_SCALE: f32 = 0.3;
-const FLAP_SPEED_MIN: f32 = 0.0;
-const FLAP_SPEED_MAX: f32 = 1.0;
-/// Flapping strength restored whenever the chicken is airborne.
-const MIN_FLAPPING_STRENGTH: f32 = 1.0;
-/// Multiplicative flapping-strength decay per tick.
-const FLAPPING_STRENGTH_DECAY: f32 = 0.9;
-/// Scales accumulated flap rotation (vanilla `Chicken.aiStep`).
-const FLAP_ROTATION_SCALE: f32 = 2.0;
-/// Downward velocity multiplier while airborne, producing the chicken slow-fall.
-const FALL_DRAG_Y: f32 = 0.6;
-/// Divisor converting flap speed into the next flap distance threshold.
-const NEXT_FLAP_SPEED_DIVISOR: f32 = 2.0;
-
-/// Minimum ticks between egg lays (vanilla `nextInt(6000) + 6000`).
-const EGG_LAY_MIN_DELAY_TICKS: i32 = 6000;
-/// Range of the randomized egg-lay delay in ticks.
-const EGG_LAY_RANDOM_RANGE_TICKS: i32 = 6000;
-const EGG_LAY_SOUND_VOLUME: f32 = 1.0;
-const EGG_LAY_SOUND_BASE_PITCH: f32 = 1.0;
-/// Pitch jitter around the base egg-lay sound pitch.
-const EGG_LAY_SOUND_PITCH_JITTER: f32 = 0.2;
-/// Offset at which laid eggs spawn above the chicken's feet.
-/// Experience rewarded for a chicken jockey (vanilla `Chicken.getBaseExperienceReward`).
-const CHICKEN_JOCKEY_EXPERIENCE_REWARD: i32 = 10;
 
 /// Runtime state unique to chickens: wing-flap animation, egg timer, and jockey flag.
 #[derive(Debug, Clone, Copy)]
@@ -147,19 +101,12 @@ impl ChickenEntity {
     };
     const BREEDING: BreedingProps = BreedingProps::new(Self::is_food);
     const LIVING: LivingProps<Self> = LivingProps {
-        default_dimensions: |mob, _| {
-            if mob.living().is_baby() {
-                CHICKEN_BABY_DIMENSIONS
-            } else {
-                mob.entity_type.dimensions
-            }
-        },
         hurt_sound: |chicken, _| Some(chicken.current_sound_set().hurt_sound),
         death_sound: |chicken| Some(chicken.current_sound_set().death_sound),
         chicken_loot_variant: |chicken| Some(&chicken.variant().key),
         base_experience_reward: |chicken| {
             if chicken.is_chicken_jockey() {
-                CHICKEN_JOCKEY_EXPERIENCE_REWARD
+                10
             } else {
                 Animal::base_experience_reward()
             }
@@ -280,7 +227,7 @@ impl ChickenEntity {
 
     /// Rolls the vanilla randomized delay before the next egg lay.
     fn roll_egg_lay_time() -> i32 {
-        EGG_LAY_MIN_DELAY_TICKS + rand::random_range(0..EGG_LAY_RANDOM_RANGE_TICKS)
+        6000 + rand::random_range(0..6000)
     }
 
     /// Runs vanilla `Chicken.aiStep` wing-flap and slow-fall side effects.
@@ -292,26 +239,17 @@ impl ChickenEntity {
             let mut state = self.state.lock();
             state.o_flap = state.flap;
             state.o_flap_speed = state.flap_speed;
-            let adjustment = if on_ground {
-                -FLAP_SPEED_GROUND_LOSS
-            } else {
-                FLAP_SPEED_AIR_GAIN
-            };
-            state.flap_speed = (state.flap_speed + adjustment * FLAP_SPEED_ADJUST_SCALE)
-                .clamp(FLAP_SPEED_MIN, FLAP_SPEED_MAX);
-            if !on_ground && state.flapping < MIN_FLAPPING_STRENGTH {
-                state.flapping = MIN_FLAPPING_STRENGTH;
+            let adjustment = if on_ground { -1.0 } else { 4.0 };
+            state.flap_speed = (state.flap_speed + adjustment * 0.3).clamp(0.0, 1.0);
+            if !on_ground && state.flapping < 1.0 {
+                state.flapping = 1.0;
             }
-            state.flapping *= FLAPPING_STRENGTH_DECAY;
-            state.flap += state.flapping * FLAP_ROTATION_SCALE;
+            state.flapping *= 0.9;
+            state.flap += state.flapping * 2.0;
         }
 
         if !on_ground && velocity.y < 0.0 {
-            self.set_velocity(DVec3::new(
-                velocity.x,
-                velocity.y * f64::from(FALL_DRAG_Y),
-                velocity.z,
-            ));
+            self.set_velocity(DVec3::new(velocity.x, velocity.y * 0.6, velocity.z));
         }
     }
 
@@ -336,13 +274,8 @@ impl ChickenEntity {
                 .living()
                 .drop_from_gift_loot_table(&vanilla_loot_tables::GAMEPLAY_CHICKEN_LAY)
             {
-                let pitch = EGG_LAY_SOUND_BASE_PITCH
-                    + (rand::random::<f32>() - rand::random::<f32>()) * EGG_LAY_SOUND_PITCH_JITTER;
-                self.play_sound(
-                    &sound_events::ENTITY_CHICKEN_EGG,
-                    EGG_LAY_SOUND_VOLUME,
-                    pitch,
-                );
+                let pitch = 1.0 + (rand::random::<f32>() - rand::random::<f32>()) * 0.2;
+                self.play_sound(&sound_events::ENTITY_CHICKEN_EGG, 1.0, pitch);
                 self.game_event(&vanilla_game_events::ENTITY_PLACE);
             }
             self.set_egg_time(Self::roll_egg_lay_time());
@@ -418,7 +351,7 @@ impl ChickenEntity {
     fn entity_on_flap(&self) {
         let fly_dist = self.base().movement_progress().fly_dist();
         let mut state = self.state.lock();
-        state.next_flap = fly_dist + state.flap_speed / NEXT_FLAP_SPEED_DIVISOR;
+        state.next_flap = fly_dist + state.flap_speed / 2.0;
     }
 
     fn entity_position_rider(&self, passenger: &dyn Entity) {

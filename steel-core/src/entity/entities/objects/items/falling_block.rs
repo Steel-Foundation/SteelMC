@@ -38,9 +38,7 @@ use crate::world::{ClipBlockShape, ClipFluid, World};
 
 const DEFAULT_FALL_DAMAGE_PER_DISTANCE: f32 = 0.0;
 const DEFAULT_MAX_FALL_DAMAGE: i32 = 40;
-const DEFAULT_GRAVITY: f64 = 0.04;
 const LANDED_HORIZONTAL_DRAG: f64 = 0.7;
-const LANDED_VERTICAL_BOUNCE: f64 = -0.5;
 
 struct FallingBlockState {
     block_state: BlockStateId,
@@ -352,7 +350,7 @@ impl FallingBlockEntity {
         let velocity = self.velocity();
         self.set_velocity(DVec3::new(
             velocity.x * LANDED_HORIZONTAL_DRAG,
-            velocity.y * LANDED_VERTICAL_BOUNCE,
+            velocity.y * -0.5,
             velocity.z * LANDED_HORIZONTAL_DRAG,
         ));
         if current_state.get_block() == &vanilla_blocks::MOVING_PISTON {
@@ -374,7 +372,7 @@ impl FallingBlockEntity {
     // (`wall_torch` -> `block.minecraft.torch`), so they can't be derived from the key.
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: Self::entity_tick,
-        default_gravity: |_| DEFAULT_GRAVITY,
+        default_gravity: |_| 0.04,
         spawn_data: |entity| i32::from(entity.block_state().0),
         blocks_building: |_| true,
         is_pickable: |entity| !entity.is_removed(),

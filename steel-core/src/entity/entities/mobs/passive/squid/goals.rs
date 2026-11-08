@@ -14,7 +14,6 @@ use crate::entity::prelude::*;
 use crate::entity::{Mob, SharedEntity};
 use crate::world::LevelReader as _;
 
-const FLEE_SPEED: f64 = 3.0;
 const FLEE_MIN_DISTANCE: f64 = 5.0;
 
 /// Swims in a random direction now and then, or keeps still when idle.
@@ -102,7 +101,7 @@ impl Goal for SquidFleeGoal {
         if distance > 0.0 {
             // Vanilla calls `fleeTo.normalize()` and drops the result, so the
             // vector stays unnormalized.
-            let mut avoid_speed = FLEE_SPEED;
+            let mut avoid_speed = 3.0;
             if distance > FLEE_MIN_DISTANCE {
                 avoid_speed -= (distance - FLEE_MIN_DISTANCE) / FLEE_MIN_DISTANCE;
             }

@@ -19,6 +19,8 @@ struct EntityTypeEntry {
     eye_height: f32,
     fixed: bool,
     attachments: AttachmentsEntry,
+    #[serde(default)]
+    baby_dimensions: Option<BabyDimensionsEntry>,
     mob_category: String,
     client_tracking_range: i32,
     update_interval: i32,
@@ -39,6 +41,14 @@ struct EntityTypeEntry {
 #[derive(Deserialize)]
 struct ClassHierarchyEntry {
     simple_name: String,
+}
+
+#[derive(Deserialize)]
+struct BabyDimensionsEntry {
+    width: f32,
+    height: f32,
+    eye_height: f32,
+    attachments: AttachmentsEntry,
 }
 
 #[derive(Deserialize)]
@@ -124,6 +134,34 @@ fn mob_category_variant(category: &str) -> TokenStream {
     }
 }
 
+fn dimensions_tokens(
+    width: f32,
+    height: f32,
+    eye_height: f32,
+    attachments: &AttachmentsEntry,
+) -> TokenStream {
+    let width = Literal::f32_suffixed(width);
+    let height = Literal::f32_suffixed(height);
+    let eye_height = Literal::f32_suffixed(eye_height);
+    let passenger = attachment_points(&attachments.passenger);
+    let vehicle = attachment_points(&attachments.vehicle);
+    let name_tag = attachment_points(&attachments.name_tag);
+    let warden_chest = attachment_points(&attachments.warden_chest);
+    quote! {
+        EntityDimensions::new_with_attachments(
+            #width,
+            #height,
+            #eye_height,
+            EntityAttachments::new(
+                &[#(#passenger),*],
+                &[#(#vehicle),*],
+                &[#(#name_tag),*],
+                &[#(#warden_chest),*],
+            ),
+        )
+    }
+}
+
 fn attachment_points(points: &[AttachmentPointEntry]) -> Vec<TokenStream> {
     points
         .iter()
@@ -165,14 +203,21 @@ pub(crate) fn build() -> TokenStream {
         let track_deltas = vanilla_track_deltas(entity_type_key);
 
         // Dimensions
-        let width = Literal::f32_suffixed(entity_type.width);
-        let height = Literal::f32_suffixed(entity_type.height);
-        let eye_height = Literal::f32_suffixed(entity_type.eye_height);
+        let dimensions = dimensions_tokens(
+            entity_type.width,
+            entity_type.height,
+            entity_type.eye_height,
+            &entity_type.attachments,
+        );
+        let baby_dimensions = entity_type.baby_dimensions.as_ref().map_or_else(
+            || quote! { None },
+            |baby| {
+                let dimensions =
+                    dimensions_tokens(baby.width, baby.height, baby.eye_height, &baby.attachments);
+                quote! { Some(#dimensions) }
+            },
+        );
         let fixed = entity_type.fixed;
-        let passenger_attachments = attachment_points(&entity_type.attachments.passenger);
-        let vehicle_attachments = attachment_points(&entity_type.attachments.vehicle);
-        let name_tag_attachments = attachment_points(&entity_type.attachments.name_tag);
-        let warden_chest_attachments = attachment_points(&entity_type.attachments.warden_chest);
 
         // Classification
         let mob_category = mob_category_variant(&entity_type.mob_category);
@@ -245,17 +290,8 @@ pub(crate) fn build() -> TokenStream {
                 client_tracking_range: #client_tracking_range,
                 update_interval: #update_interval,
                 track_deltas: #track_deltas,
-                dimensions: EntityDimensions::new_with_attachments(
-                    #width,
-                    #height,
-                    #eye_height,
-                    EntityAttachments::new(
-                        &[#(#passenger_attachments),*],
-                        &[#(#vehicle_attachments),*],
-                        &[#(#name_tag_attachments),*],
-                        &[#(#warden_chest_attachments),*],
-                    ),
-                ),
+                dimensions: #dimensions,
+                baby_dimensions: #baby_dimensions,
                 fixed: #fixed,
                 mob_category: #mob_category,
                 fire_immune: #fire_immune,

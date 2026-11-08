@@ -8,8 +8,6 @@ use steel_utils::locks::CheckedMutex;
 use crate::entity::Entity;
 
 const MIN_BOOST_TIME: i32 = 140;
-const BOOST_TIME_BOUND: i32 = 841;
-const BOOST_FACTOR_SCALE: f32 = 1.15;
 
 /// Runtime state for vanilla `ItemBasedSteering`.
 #[derive(Debug, Default)]
@@ -44,7 +42,7 @@ impl ItemBasedSteering {
 
         self.boosting = true;
         self.boost_time = 0;
-        Some(rand::random_range(0..BOOST_TIME_BOUND) + MIN_BOOST_TIME)
+        Some(rand::random_range(0..841) + MIN_BOOST_TIME)
     }
 
     /// Advances the active boost by one tick, ending it once past `boost_time_total`.
@@ -69,7 +67,7 @@ impl ItemBasedSteering {
         }
 
         let angle = (self.boost_time as f32 / boost_time_total as f32) * PI;
-        1.0 + BOOST_FACTOR_SCALE * trig::sin(angle)
+        1.0 + 1.15 * trig::sin(angle)
     }
 
     /// Returns whether a boost is currently active.

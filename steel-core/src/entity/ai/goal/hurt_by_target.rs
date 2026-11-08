@@ -6,7 +6,6 @@ use super::target_goal::{TargetGoalBase, follow_distance};
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::{Mob, SharedEntity};
 
-const HURT_BY_UNSEEN_MEMORY_TICKS: i32 = 300;
 const ALERT_RANGE_Y: f64 = 10.0;
 
 pub(crate) struct HurtByTargetGoal {
@@ -149,8 +148,7 @@ impl Goal for HurtByTargetGoal {
         let _ = mob.set_target(Some(&hurt_by_mob));
         self.target_goal.set_target_mob(mob.target());
         self.timestamp = mob.last_hurt_by_mob_timestamp();
-        self.target_goal
-            .set_unseen_memory_ticks(HURT_BY_UNSEEN_MEMORY_TICKS);
+        self.target_goal.set_unseen_memory_ticks(300);
 
         if self.alert_same_type {
             self.alert_others(mob, &hurt_by_mob);

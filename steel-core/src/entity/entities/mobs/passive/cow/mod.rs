@@ -8,9 +8,7 @@ use steel_macros::entity_behavior;
 use steel_registry::cow_sound_variant::{CowSoundVariantRef, CowSoundVariantRegistry};
 use steel_registry::cow_variant::{CowVariantRef, CowVariantRegistry};
 use steel_registry::data_components::vanilla_components::{COW_SOUND_VARIANT, COW_VARIANT};
-use steel_registry::entity_type::{
-    EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
-};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::CowEntityData;
 use steel_registry::{REGISTRY, RegistryReference};
@@ -25,17 +23,6 @@ use crate::entity::{
     DefaultEntityPush, EntityBase, EntityProps, LivingEntityBase, LivingProps, MobBase, MobProps,
     SpawnRule,
 };
-
-const COW_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
-    [EntityAttachmentPoint::new(0.0, 0.75, 0.0)];
-
-/// `Cow.BABY_DIMENSIONS`.
-const COW_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments(
-    0.45,
-    0.7,
-    0.69,
-    EntityAttachments::new(&COW_BABY_PASSENGER_ATTACHMENTS, &[], &[], &[]),
-);
 
 /// Vanilla cow entity.
 #[entity_behavior(class = "Cow", spawn_rule)]
@@ -70,13 +57,6 @@ impl CowEntity {
     };
     const BREEDING: BreedingProps = BreedingProps::new(abstract_cow::is_food);
     const LIVING: LivingProps<Self> = LivingProps {
-        default_dimensions: |mob, _| {
-            if mob.living().is_baby() {
-                COW_BABY_DIMENSIONS
-            } else {
-                mob.entity_type.dimensions
-            }
-        },
         hurt_sound: |cow, _| Some(cow.sound_variant().hurt_sound),
         death_sound: |cow| Some(cow.sound_variant().death_sound),
         ..abstract_cow::living_props()

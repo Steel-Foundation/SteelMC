@@ -22,9 +22,6 @@ use crate::entity::{
 };
 use crate::world::World;
 
-/// Effects that would last at most this many ticks are not applied.
-const MIN_REMAINING_TICKS: i32 = 20;
-
 /// A thrown splash potion.
 #[entity_behavior(class = "ThrownSplashPotion")]
 #[derive(Entity)]
@@ -86,7 +83,7 @@ impl SplashPotionEntity {
             (scale * f64::from(base_duration) * f64::from(duration_scale) + 0.5) as i32
         });
         let scaled_effect = to_runtime_instance_icon_from_visibility(effect, duration);
-        if scaled_effect.ends_within(MIN_REMAINING_TICKS) {
+        if scaled_effect.ends_within(20) {
             return;
         }
         let effect_source: &dyn Entity = owner.map_or(entity.as_ref(), AsRef::as_ref);

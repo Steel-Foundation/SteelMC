@@ -7,7 +7,6 @@ use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::{Animal, Mob, SharedEntity};
 
 const PARTNER_SEARCH_RANGE: f64 = 8.0;
-const BREED_DISTANCE_SQR: f64 = 9.0;
 const BREED_TIME: i32 = 60;
 
 pub struct BreedGoal {
@@ -115,7 +114,7 @@ impl Goal for BreedGoal {
 
         self.love_time += 1;
         if self.love_time < reduced_tick_delay(BREED_TIME)
-            || mob.position().distance_squared(partner_position) >= BREED_DISTANCE_SQR
+            || mob.position().distance_squared(partner_position) >= 9.0
         {
             return;
         }

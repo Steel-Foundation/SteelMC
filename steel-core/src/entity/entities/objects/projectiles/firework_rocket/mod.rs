@@ -32,13 +32,7 @@ use crate::entity::{
 use crate::physics::MoverType;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
 
-const INITIAL_VERTICAL_VELOCITY: f64 = 0.05;
 const INITIAL_HORIZONTAL_DEVIATION: f64 = 0.002_297;
-const HORIZONTAL_ACCELERATION: f64 = 1.15;
-const VERTICAL_ACCELERATION: f64 = 0.04;
-const ELYTRA_TARGET_SPEED: f64 = 1.5;
-const ELYTRA_POWER_ADD: f64 = 0.1;
-const ELYTRA_VELOCITY_BLEND: f64 = 0.5;
 const EXPLOSION_RADIUS: f64 = 5.0;
 
 #[derive(Default)]
@@ -116,7 +110,7 @@ impl FireworkRocketEntity {
         rocket.entity_data.lock().id_fireworks_item.set(source_item);
         rocket.set_velocity(DVec3::new(
             triangle_random(0.0, INITIAL_HORIZONTAL_DEVIATION),
-            INITIAL_VERTICAL_VELOCITY,
+            0.05,
             triangle_random(0.0, INITIAL_HORIZONTAL_DEVIATION),
         ));
         rocket.flight.lock().lifetime =
@@ -251,12 +245,12 @@ impl FireworkRocketEntity {
             let horizontal_acceleration = if self.horizontal_collision() {
                 1.0
             } else {
-                HORIZONTAL_ACCELERATION
+                1.15
             };
             let movement = self.velocity();
             self.set_velocity(DVec3::new(
                 movement.x * horizontal_acceleration,
-                movement.y + VERTICAL_ACCELERATION,
+                movement.y + 0.04,
                 movement.z * horizontal_acceleration,
             ));
         }
@@ -395,9 +389,7 @@ impl FireworkRocketEntity {
 
 /// The velocity a rocket gives a gliding entity looking along `look_angle`.
 fn elytra_boosted_velocity(movement: DVec3, look_angle: DVec3) -> DVec3 {
-    movement
-        + look_angle * ELYTRA_POWER_ADD
-        + (look_angle * ELYTRA_TARGET_SPEED - movement) * ELYTRA_VELOCITY_BLEND
+    movement + look_angle * 0.1 + (look_angle * 1.5 - movement) * 0.5
 }
 
 #[cfg(test)]

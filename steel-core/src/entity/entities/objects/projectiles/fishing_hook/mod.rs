@@ -47,19 +47,6 @@ use crate::world::{LevelReader, World};
 pub const MAX_OUT_OF_WATER_TIME: i32 = 10;
 const MAX_DISTANCE_SQR: f64 = 32.0 * 32.0;
 
-const DMG_DEFAULT: i32 = 5;
-const DMG_ITEM_ENTITY: i32 = 3;
-const DMG_ON_GROUND: i32 = 2;
-const DMG_CAUGHT: i32 = 1;
-
-const ONE_SECOND: i32 = 20;
-const TWO_SECONDS: i32 = 40;
-const THREE_SECONDS: i32 = 60;
-const FOUR_SECONDS: i32 = 80;
-const FIVE_SECONDS: i32 = 100;
-const THIRTY_SECONDS: i32 = 600;
-const ONE_MINUTE: i32 = 1200;
-
 /// A fishing hook.
 #[entity_behavior(class = "FishingHook")]
 #[derive(Entity)]
@@ -252,9 +239,6 @@ impl FishingHookEntity {
         reason = "Logic that belongs together is being kept together + X and Z movement components intentionally have similar names"
     )]
     fn catching_fish(&self, pos: BlockPos, state: &mut FishingHookState) {
-        const RAINING_BONUS_PROBABILITY: f64 = 0.25;
-        const SKY_OBSTRUCTION_NERF_PROBABILITY: f64 = 0.5;
-
         let mut fishing_speed = 1;
         let above = pos.above();
 
@@ -262,11 +246,11 @@ impl FishingHookEntity {
             return;
         };
 
-        if rng().random::<f64>() < RAINING_BONUS_PROBABILITY && world.is_raining_at(above) {
+        if rng().random::<f64>() < 0.25 && world.is_raining_at(above) {
             fishing_speed += 1;
         }
 
-        if rng().random::<f64>() < SKY_OBSTRUCTION_NERF_PROBABILITY && !world.can_see_sky(above) {
+        if rng().random::<f64>() < 0.5 && !world.can_see_sky(above) {
             fishing_speed -= 1;
         }
 
@@ -302,8 +286,7 @@ impl FishingHookEntity {
                     world.get_block_state(BlockPos::containing(fish_x, fish_y - 1.0, fish_z));
 
                 if splash_block_state.get_block() == &vanilla_blocks::WATER {
-                    const PARTICLE_SPAWN_PROBABILITY: f32 = 0.15;
-                    if rng().random::<f32>() < PARTICLE_SPAWN_PROBABILITY {
+                    if rng().random::<f32>() < 0.15 {
                         world.send_particles(
                             ParticleData::simple(&BUBBLE),
                             DVec3::new(fish_x, fish_y - 0.1, fish_z),
@@ -364,7 +347,7 @@ impl FishingHookEntity {
                     0.2,
                 );
 
-                state.nibble = rng().random_range(ONE_SECOND..=TWO_SECONDS);
+                state.nibble = rng().random_range(20..=40);
                 self.entity_data.lock().fishing_hook.biting.set(true);
             }
         } else if state.time_until_lured > 0 {
@@ -372,14 +355,14 @@ impl FishingHookEntity {
             let mut tease_chance: f32 = 0.15;
 
             match state.time_until_lured {
-                0..ONE_SECOND => {
-                    tease_chance += (ONE_SECOND - state.time_until_lured) as f32 * 0.05;
+                0..20 => {
+                    tease_chance += (20 - state.time_until_lured) as f32 * 0.05;
                 }
-                ONE_SECOND..TWO_SECONDS => {
-                    tease_chance += (TWO_SECONDS - state.time_until_lured) as f32 * 0.02;
+                20..40 => {
+                    tease_chance += (40 - state.time_until_lured) as f32 * 0.02;
                 }
-                TWO_SECONDS..THREE_SECONDS => {
-                    tease_chance += (THREE_SECONDS - state.time_until_lured) as f32 * 0.01;
+                40..60 => {
+                    tease_chance += (60 - state.time_until_lured) as f32 * 0.01;
                 }
                 _ => {}
             }
@@ -403,7 +386,7 @@ impl FishingHookEntity {
                     world.send_particles(
                         ParticleData::simple(&SPLASH),
                         DVec3::new(fish_x, fish_y, fish_z),
-                        2 + rng().random_range(0..=2),
+                        2 + rng().random_range(0..2),
                         DVec3::new(0.1, 0.0, 0.1),
                         0.0,
                     );
@@ -412,10 +395,10 @@ impl FishingHookEntity {
 
             if state.time_until_lured <= 0 {
                 state.fish_angle = rng().random_range(0.0..=DEGREE_360);
-                state.time_until_hooked = rng().random_range(ONE_SECOND..=FOUR_SECONDS);
+                state.time_until_hooked = rng().random_range(20..=80);
             }
         } else {
-            state.time_until_lured = rng().random_range(FIVE_SECONDS..=THIRTY_SECONDS);
+            state.time_until_lured = rng().random_range(100..=600);
             state.time_until_lured -= state.lure_speed;
         }
     }
@@ -508,11 +491,7 @@ impl FishingHookEntity {
             self.pull_entity(&hooked);
             // TODO: trigger FISHING_ROD_HOOKED once advancement criteria exist.
             self.broadcast_entity_event(EntityStatus::FishingRodReelIn);
-            damage = if hooked.is::<ItemEntity>() {
-                DMG_ITEM_ENTITY
-            } else {
-                DMG_DEFAULT
-            };
+            damage = if hooked.is::<ItemEntity>() { 3 } else { 5 };
         } else {
             let luck = {
                 let state = self.hook_state.lock();
@@ -542,12 +521,12 @@ impl FishingHookEntity {
                 if let Err(error) = world.try_add_entity(Arc::new(orb)) {
                     log::error!("Failed to spawn experience orb: {error}");
                 }
-                damage = DMG_CAUGHT;
+                damage = 1;
             }
         }
 
         if self.on_ground() {
-            damage = DMG_ON_GROUND;
+            damage = 2;
         }
         self.set_removed(RemovalReason::Discarded);
         damage
@@ -564,12 +543,11 @@ impl FishingHookEntity {
     /// Throws the caught items toward `player` and counts caught fish.
     fn spawn_catch(&self, items: Vec<ItemStack>, world: &Arc<World>, player: &Player) {
         const SPEED: f64 = 0.1;
-        const ARC: f64 = 0.08;
         for item_stack in items {
             let delta = player.position() - self.position();
             let velocity = DVec3::new(
                 delta.x * SPEED,
-                delta.y * SPEED + delta.length().sqrt() * ARC,
+                delta.y * SPEED + delta.length().sqrt() * 0.08,
                 delta.z * SPEED,
             );
             let is_fish = item_stack.item().has_tag(&ItemTag::FISHES);
@@ -689,7 +667,7 @@ impl FishingHookEntity {
         let expired = {
             let mut state = self.hook_state.lock();
             state.life += 1;
-            state.life >= ONE_MINUTE
+            state.life >= 1200
         };
         if expired {
             self.set_removed(RemovalReason::Discarded);

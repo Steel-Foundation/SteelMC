@@ -66,8 +66,7 @@ fn chicken_load_defaults_jockey_and_keeps_random_egg_time_when_absent() {
 
     assert!(!chicken.is_chicken_jockey());
     assert!(
-        (EGG_LAY_MIN_DELAY_TICKS..EGG_LAY_MIN_DELAY_TICKS + EGG_LAY_RANDOM_RANGE_TICKS)
-            .contains(&chicken.egg_time()),
+        (6000..12000).contains(&chicken.egg_time()),
         "constructor-initialized egg time should stay in the vanilla range"
     );
 }

@@ -10,7 +10,6 @@ use crate::entity::ai::path::PathComputationType;
 
 const RANDOM_SWIMMING_HORIZONTAL_RANGE: i32 = 10;
 const RANDOM_SWIMMING_VERTICAL_RANGE: i32 = 7;
-const RANDOM_SWIMMING_RETRIES: i32 = 10;
 
 pub struct RandomSwimmingGoal {
     stroll: RandomStrollGoal,
@@ -73,7 +72,7 @@ fn retry_random_swimmable_pos(
     let mut count = 0;
     loop {
         let pos = target_pos?;
-        if is_water_pathfindable(pos) || count >= RANDOM_SWIMMING_RETRIES {
+        if is_water_pathfindable(pos) || count >= 10 {
             return Some(pos);
         }
 

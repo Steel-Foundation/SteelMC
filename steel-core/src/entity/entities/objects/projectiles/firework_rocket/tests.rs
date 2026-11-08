@@ -31,10 +31,7 @@ fn launched_rocket_flies_for_its_flight_duration() {
     );
 
     assert!((40..=51).contains(&rocket.flight.lock().lifetime));
-    assert_eq!(
-        rocket.velocity().y.to_bits(),
-        INITIAL_VERTICAL_VELOCITY.to_bits()
-    );
+    assert_eq!(rocket.velocity().y.to_bits(), 0.05_f64.to_bits());
 }
 
 #[test]

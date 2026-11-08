@@ -32,10 +32,6 @@ use crate::player::Player;
 use crate::portal::{TeleportPostTransition, TeleportTransition};
 use crate::world::World;
 
-/// Damage the teleported player takes.
-const TELEPORT_DAMAGE: f32 = 5.0;
-const ENDERMITE_CHANCE: f32 = 0.05;
-
 /// A thrown ender pearl.
 #[entity_behavior(class = "ThrownEnderpearl")]
 #[derive(Entity)]
@@ -201,7 +197,7 @@ impl EnderPearlEntity {
     ) {
         // TODO: skip this while the player's connection is not accepting
         // messages (vanilla `connection.isAcceptingMessages`).
-        if rand::random::<f32>() < ENDERMITE_CHANCE
+        if rand::random::<f32>() < 0.05
             && world.get_game_rule(&SPAWN_MOBS)
             && world.get_game_rule(&SPAWN_MONSTERS)
             && world.difficulty() != Difficulty::Peaceful
@@ -237,7 +233,7 @@ impl EnderPearlEntity {
                 living.reset_current_impulse_context();
             }
             let damage = DamageSource::environment(&vanilla_damage_types::ENDER_PEARL);
-            new_owner.hurt(world, &damage, TELEPORT_DAMAGE);
+            new_owner.hurt(world, &damage, 5.0);
         }
         Self::play_teleport_sound(world, teleport_pos);
     }

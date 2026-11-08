@@ -76,21 +76,12 @@ use crate::world::{LevelReader, World};
 const MOB_FLAG_NO_AI: i8 = 1;
 const MOB_FLAG_LEFT_HANDED: i8 = 2;
 const MOB_FLAG_AGGRESSIVE: i8 = 4;
-const MOVE_CONTROL_MIN_SPEED_SQR: f64 = 2.500_000_3e-7;
 const MOVE_CONTROL_MAX_TURN: f32 = DEGREE_90;
 const DEFAULT_EQUIPMENT_DROP_CHANCE: f32 = 0.085;
-/// Vanilla bias subtracted from the roll before comparing against a slot's drop
-/// chance when a mob swaps out worn gear it picked something better up over.
-const REPLACED_EQUIPMENT_DROP_BIAS: f32 = 0.1;
 const PRESERVE_ITEM_DROP_CHANCE_THRESHOLD: f32 = 1.0;
 const PRESERVE_ITEM_DROP_CHANCE: f32 = 2.0;
-const BODY_ROTATION_MOVING_DISTANCE_SQR: f64 = 2.500_000_3e-7;
 const TARGET_REACH_DISTANCE_SQR: f64 = 2.25;
-const DEFAULT_ATTACK_REACH_BASE: f32 = 2.04;
-const DEFAULT_ATTACK_REACH_OFFSET: f32 = 0.6;
 const RANDOM_SPAWN_BONUS_ID: Identifier = Identifier::vanilla_static("random_spawn_bonus");
-const RANDOM_SPAWN_BONUS_SCALE: f64 = 0.114_850_000_000_000_01;
-const LEFT_HANDED_SPAWN_CHANCE: f32 = 0.05;
 /// Vanilla `Mob.ITEM_PICKUP_REACH`: the per-axis distance the item-pickup search
 /// box is inflated by when a mob looks for nearby dropped items to collect.
 const ITEM_PICKUP_REACH: DVec3 = DVec3::new(1.0, 0.0, 1.0);
@@ -98,10 +89,6 @@ const SUN_BURN_IGNITE_SECONDS: f32 = 8.0;
 const SUN_BURN_IGNITE_TICKS: i32 = (SUN_BURN_IGNITE_SECONDS * TICKS_PER_SECOND as f32) as i32;
 /// Brightness threshold shared by daylight burning and monster idle-time growth.
 pub(crate) const LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE: f32 = 0.5;
-const SUN_BURN_RANDOM_SCALE: f32 = 30.0;
-const SUN_BURN_LIGHT_OFFSET: f32 = 0.4;
-const SUN_BURN_LIGHT_GAIN: f32 = 2.0;
-const SUN_BURN_DURABILITY_ROLL_BOUND: i32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct DropChances {
@@ -846,8 +833,8 @@ impl<'a> Mob<'a> {
             .lock()
             .has_modifier(vanilla_attributes::FOLLOW_RANGE, &RANDOM_SPAWN_BONUS_ID);
         let random_spawn_bonus = needs_random_spawn_bonus
-            .then(|| RANDOM_SPAWN_BONUS_SCALE * (rand::random::<f64>() - rand::random::<f64>()));
-        let left_handed = rand::random::<f32>() < LEFT_HANDED_SPAWN_CHANCE;
+            .then(|| 0.114_850_000_000_000_01 * (rand::random::<f64>() - rand::random::<f64>()));
+        let left_handed = rand::random::<f32>() < 0.05;
 
         if let Some(amount) = random_spawn_bonus {
             self.attributes().lock().add_modifier(
@@ -1126,9 +1113,7 @@ impl<'a> Mob<'a> {
         }
 
         let drop_chance = self.equipment_drop_chance(slot);
-        if !current.is_empty()
-            && (rand::random::<f32>() - REPLACED_EQUIPMENT_DROP_BIAS).max(0.0) < drop_chance
-        {
+        if !current.is_empty() && (rand::random::<f32>() - 0.1).max(0.0) < drop_chance {
             self.spawn_at_location(current, 0.0);
         }
 
@@ -1897,8 +1882,7 @@ impl<'a> Mob<'a> {
         let in_non_burnable_block =
             self.is_in_water() || in_rain || self.is_in_powder_snow() || self.was_in_powder_snow();
         brightness > LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE
-            && rand::random::<f32>() * SUN_BURN_RANDOM_SCALE
-                < (brightness - SUN_BURN_LIGHT_OFFSET) * SUN_BURN_LIGHT_GAIN
+            && rand::random::<f32>() * 30.0 < (brightness - 0.4) * 2.0
             && !in_non_burnable_block
             && world.can_see_sky(eye_pos)
     }
@@ -1923,10 +1907,7 @@ impl<'a> Mob<'a> {
             if equipment.get_ref(slot).is_damageable_item() {
                 let item = equipment.get_ref(slot).item();
                 let sun_blocker = equipment.get_mut(slot);
-                if sun_blocker.hurt_and_break(
-                    rand::random_range(0..SUN_BURN_DURABILITY_ROLL_BOUND),
-                    has_infinite_materials,
-                ) {
+                if sun_blocker.hurt_and_break(rand::random_range(0..2), has_infinite_materials) {
                     broke_sun_blocker = Some(item);
                 }
             }
@@ -2012,7 +1993,7 @@ impl<'a> Mob<'a> {
         let yd = wanted_position.y - position.y;
         let zd = wanted_position.z - position.z;
         let dd = xd * xd + yd * yd + zd * zd;
-        if dd < MOVE_CONTROL_MIN_SPEED_SQR {
+        if dd < 2.500_000_3e-7 {
             let input = self.travel_input();
             self.set_travel_input(LivingTravelInput::new(
                 input.sideways(),
@@ -2172,7 +2153,7 @@ impl<'a> Mob<'a> {
     pub fn tick_body_rotation_control(&self) {
         let moving = {
             let delta = self.position() - self.old_position();
-            delta.x.mul_add(delta.x, delta.z * delta.z) > BODY_ROTATION_MOVING_DISTANCE_SQR
+            delta.x.mul_add(delta.x, delta.z * delta.z) > 2.500_000_3e-7
         };
         let carrying_mob_passenger = self
             .first_passenger()
@@ -2244,7 +2225,7 @@ fn can_attempt_equipment_drop(drop_chance: f32, preserve: bool, killed_by_player
 }
 
 fn default_attack_reach() -> f64 {
-    f64::from(DEFAULT_ATTACK_REACH_BASE).sqrt() - f64::from(DEFAULT_ATTACK_REACH_OFFSET)
+    f64::from(2.04_f32).sqrt() - f64::from(0.6_f32)
 }
 
 fn should_jump_to_wanted_position(mob: &Mob<'_>, xd: f64, yd: f64, zd: f64) -> bool {

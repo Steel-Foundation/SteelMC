@@ -35,13 +35,8 @@ const MAX_FOLLOW_DIST_SQR: f64 = MAX_FOLLOW_DIST * MAX_FOLLOW_DIST;
 const ORB_GROUPS_PER_AREA: i32 = 40;
 const ORB_MERGE_DISTANCE: f64 = 0.5;
 const DEFAULT_HEALTH: i32 = 5;
-const DEFAULT_GRAVITY: f64 = 0.03;
 const AIR_FRICTION: f64 = 0.98;
-const BOUNCE_SCALE: f64 = 0.4;
 const UNDERWATER_DRAG: f64 = 0.99;
-const UNDERWATER_VERTICAL_ACCEL: f64 = 5.0e-4;
-const UNDERWATER_MAX_Y: f64 = 0.06;
-const FOLLOW_ACCELERATION: f64 = 0.1;
 
 struct ExperienceOrbState {
     age: i32,
@@ -262,7 +257,7 @@ impl ExperienceOrbEntity {
         let velocity = self.velocity();
         self.set_velocity(DVec3::new(
             velocity.x * UNDERWATER_DRAG,
-            (velocity.y + UNDERWATER_VERTICAL_ACCEL).min(UNDERWATER_MAX_Y),
+            (velocity.y + 5.0e-4).min(0.06),
             velocity.z * UNDERWATER_DRAG,
         ));
     }
@@ -324,9 +319,7 @@ impl ExperienceOrbEntity {
         }
 
         let power = 1.0 - length_sqr.sqrt() / MAX_FOLLOW_DIST;
-        self.set_velocity(
-            self.velocity() + delta.normalize() * (power * power * FOLLOW_ACCELERATION),
-        );
+        self.set_velocity(self.velocity() + delta.normalize() * (power * power * 0.1));
     }
 
     fn apply_friction_and_bounce(&self, world: &Arc<World>, fall_speed: f64) {
@@ -342,7 +335,7 @@ impl ExperienceOrbEntity {
 
         let mut velocity = self.velocity() * friction;
         if self.vertical_collision_below() && fall_speed < -self.gravity() {
-            velocity.y = -fall_speed * BOUNCE_SCALE;
+            velocity.y = -fall_speed * 0.4;
         }
         self.set_velocity(velocity);
     }
@@ -392,7 +385,7 @@ impl ExperienceOrbEntity {
         do_water_splash_effect: |_| {},
         movement_emission: |_| EntityMovementEmission::None,
         tick: Self::entity_tick,
-        default_gravity: |_| DEFAULT_GRAVITY,
+        default_gravity: |_| 0.03,
         block_pos_below_that_affects_movement: |entity| entity.on_pos(0.999_999),
         attackable: |_| false,
         sound_source: |_| SoundSource::Ambient,

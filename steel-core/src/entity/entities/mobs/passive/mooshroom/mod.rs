@@ -16,9 +16,7 @@ use steel_registry::data_components::components::SuspiciousStewEffects;
 use steel_registry::data_components::vanilla_components::{
     MOOSHROOM_VARIANT, SUSPICIOUS_STEW_EFFECTS,
 };
-use steel_registry::entity_type::{
-    EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
-};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::entity_variant::MooshroomVariant;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::particle_type::{ParticleData, SpellParticleOption};
@@ -47,17 +45,6 @@ use crate::entity::{
 };
 use crate::player::player_inventory::Prediction;
 use crate::world::{LevelReader, World};
-
-const MOOSHROOM_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
-    [EntityAttachmentPoint::new(0.0, 0.75, 0.0)];
-
-/// `MushroomCow.BABY_DIMENSIONS`.
-const MOOSHROOM_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments(
-    0.45,
-    0.7,
-    0.69,
-    EntityAttachments::new(&MOOSHROOM_BABY_PASSENGER_ATTACHMENTS, &[], &[], &[]),
-);
 
 /// `MushroomCow.MUTATE_CHANCE`: one in this many same-variant calves flips variant.
 const MUTATE_CHANCE: u32 = 1024;
@@ -104,13 +91,6 @@ impl MushroomCowEntity {
     };
     const BREEDING: BreedingProps = BreedingProps::new(abstract_cow::is_food);
     const LIVING: LivingProps<Self> = LivingProps {
-        default_dimensions: |mob, _| {
-            if mob.living().is_baby() {
-                MOOSHROOM_BABY_DIMENSIONS
-            } else {
-                mob.entity_type.dimensions
-            }
-        },
         ..abstract_cow::living_props()
     };
     const MOB: MobProps<Self> = MobProps {

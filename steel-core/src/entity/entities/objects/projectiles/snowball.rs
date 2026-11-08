@@ -13,9 +13,6 @@ use crate::entity::projectile::throwable_item::ThrownItem;
 use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps};
 use crate::entity::{Entity, EntityBase, EntityProps, RemovalReason, SharedEntity};
 
-/// Thrown damage a snowball deals to a blaze; other entities take none.
-const BLAZE_HIT_DAMAGE: f32 = 3.0;
-
 /// A thrown snowball.
 #[entity_behavior(class = "Snowball")]
 #[derive(Entity)]
@@ -40,7 +37,7 @@ impl SnowballEntity {
         on_hit: Self::projectile_on_hit,
         on_hit_entity: |snowball, entity, target, _| {
             let damage = if target.entity_type() == &vanilla_entities::BLAZE {
-                BLAZE_HIT_DAMAGE
+                3.0
             } else {
                 0.0
             };

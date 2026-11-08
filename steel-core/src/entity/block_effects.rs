@@ -6,7 +6,6 @@ use smallvec::SmallVec;
 use steel_registry::blocks::shapes::VoxelShape;
 use steel_utils::{BlockPos, WorldAabb, axis::Axis};
 
-const SMALL_MOVEMENT_EPSILON_SQ: f64 = 9.999_999_4e-11;
 const CLIP_EPSILON: f64 = 1.0e-7;
 const CORNER_HIT_EPSILON: f64 = 1.0e-5;
 const ENTITY_INSIDE_SWEEP_INFLATE_EPSILON: f64 = 1.0e-7;
@@ -56,7 +55,7 @@ pub(super) fn for_each_block_intersected_between(
 ) -> Option<i32> {
     let mut last_iteration = 0;
     let travel = to - from;
-    if travel.length_squared() < SMALL_MOVEMENT_EPSILON_SQ {
+    if travel.length_squared() < 9.999_999_4e-11 {
         if !for_each_block_in_aabb(aabb_at_target, |pos| {
             last_iteration = 0;
             visitor(pos, 0)

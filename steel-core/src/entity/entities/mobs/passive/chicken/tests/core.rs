@@ -88,10 +88,7 @@ fn chicken_jockey_rewards_ten_experience() {
     );
 
     chicken.set_chicken_jockey(true);
-    assert_eq!(
-        chicken.living().base_experience_reward(),
-        CHICKEN_JOCKEY_EXPERIENCE_REWARD
-    );
+    assert_eq!(chicken.living().base_experience_reward(), 10);
 }
 
 #[test]
@@ -212,8 +209,7 @@ fn chicken_resets_egg_timer_within_vanilla_range_after_laying() {
 
     let egg_time = chicken.egg_time();
     assert!(
-        (EGG_LAY_MIN_DELAY_TICKS..EGG_LAY_MIN_DELAY_TICKS + EGG_LAY_RANDOM_RANGE_TICKS)
-            .contains(&egg_time),
+        (6000..12000).contains(&egg_time),
         "egg timer should reset to the vanilla delay range, got {egg_time}"
     );
 }
@@ -231,10 +227,7 @@ fn chicken_slow_fall_reduces_downward_velocity() {
 
     let velocity = chicken.velocity();
     assert_eq!(velocity.x.to_bits(), 1.0_f64.to_bits());
-    assert!(
-        (velocity.y - velocity_input.y * f64::from(FALL_DRAG_Y)).abs() < 1e-6,
-        "fall drag should scale the downward velocity by the vanilla constant"
-    );
+    assert_eq!(velocity.y.to_bits(), (velocity_input.y * 0.6).to_bits());
     assert_eq!(velocity.z.to_bits(), 3.0_f64.to_bits());
 }
 

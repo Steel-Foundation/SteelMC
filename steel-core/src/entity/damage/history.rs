@@ -17,9 +17,6 @@ use binding::DamageHistoryVictim;
 pub use source::RecentDamageSource;
 use source::WeakDamageSource;
 
-/// Maximum retained age from vanilla `LivingEntity.getLastDamageSource`.
-const MAX_DAMAGE_SOURCE_AGE_TICKS: i64 = 40;
-
 struct DamageRecord {
     victim_lifetime: Weak<DamageHistoryVictim>,
     // Gameplay membership can end while damage sources still retain the entity.
@@ -33,7 +30,7 @@ struct DamageRecord {
 impl DamageRecord {
     fn is_expired(&self) -> bool {
         self.victim_lifetime.strong_count() == 0
-            || self.clock.ticks().wrapping_sub(self.timestamp) > MAX_DAMAGE_SOURCE_AGE_TICKS
+            || self.clock.ticks().wrapping_sub(self.timestamp) > 40
     }
 }
 

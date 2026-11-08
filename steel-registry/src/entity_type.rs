@@ -279,6 +279,8 @@ pub struct EntityType {
 
     /// Default entity dimensions.
     pub dimensions: EntityDimensions,
+    /// Standing dimensions as a baby, for types that can be one.
+    pub baby_dimensions: Option<EntityDimensions>,
     /// If true, dimensions cannot be scaled.
     pub fixed: bool,
 

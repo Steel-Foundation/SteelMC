@@ -43,8 +43,6 @@ pub const HURT_DURATION_TICKS: i32 = 10;
 pub const DEFAULT_SWING_DURATION: i32 = 6;
 const MIN_EFFECT_AMPLIFIER: i32 = 0;
 const MAX_EFFECT_AMPLIFIER: i32 = 255;
-const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
-const POST_IMPULSE_GRACE_TICKS: i32 = 40;
 
 /// Runtime mob-effect state.
 ///
@@ -1359,9 +1357,8 @@ impl LivingEntityBase {
     ) {
         let mut state = self.state.lock();
         if ignore_fall_damage {
-            state.current_impulse_context_reset_grace_time = state
-                .current_impulse_context_reset_grace_time
-                .max(POST_IMPULSE_GRACE_TICKS);
+            state.current_impulse_context_reset_grace_time =
+                state.current_impulse_context_reset_grace_time.max(40);
             state.current_impulse_impact_pos = Some(new_impulse_impact_pos);
         } else {
             state.current_impulse_context_reset_grace_time = 0;
@@ -1460,7 +1457,7 @@ impl LivingEntityBase {
                 vanilla_attributes::MOVEMENT_SPEED,
                 AttributeModifier {
                     id: Identifier::vanilla_static("sprinting"),
-                    amount: SPRINT_SPEED_MODIFIER_AMOUNT,
+                    amount: 0.3,
                     operation: AttributeModifierOperation::AddMultipliedTotal,
                 },
                 false,

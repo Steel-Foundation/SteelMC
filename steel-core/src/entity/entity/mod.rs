@@ -36,8 +36,6 @@ const FUDGE_SMALL_DIMENSION_LIMIT: f32 = 4.0;
 /// Vanilla `Entity.fudgePositionAfterSizeChange` epsilon padding (vanilla `1.0E-6`).
 const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
 
-const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
-
 pub(super) fn landing_particle_count(fall_distance: f64, safe_fall_distance: f64) -> Option<i32> {
     let power = (fall_distance + 1.0e-6 - safe_fall_distance)
         .floor()
@@ -98,11 +96,7 @@ pub(crate) fn read_nbt_rotation(
 
 pub(crate) fn sanitize_nbt_motion(motion: DVec3) -> DVec3 {
     let sanitize = |value: f64| {
-        if value.abs() > MAX_ENTITY_MOTION_COMPONENT {
-            0.0
-        } else {
-            value
-        }
+        if value.abs() > 10.0 { 0.0 } else { value }
     };
     DVec3::new(sanitize(motion.x), sanitize(motion.y), sanitize(motion.z))
 }

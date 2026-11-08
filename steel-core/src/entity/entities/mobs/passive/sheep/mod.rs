@@ -11,9 +11,7 @@ use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::data_components::vanilla_components::{DYE, SHEEP_COLOR};
-use steel_registry::entity_type::{
-    EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
-};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::recipe::{CraftingInput, vanilla_recipe_types};
 use steel_registry::vanilla_entity_data::SheepEntityData;
@@ -42,17 +40,6 @@ use crate::entity::{
 };
 use crate::inventory::recipe_manager;
 use crate::world::World;
-
-const SHEEP_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
-    [EntityAttachmentPoint::new(0.0, 0.5625, 0.0)];
-
-/// `Sheep.BABY_DIMENSIONS`.
-const SHEEP_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments(
-    0.45,
-    0.65,
-    0.65625,
-    EntityAttachments::new(&SHEEP_BABY_PASSENGER_ATTACHMENTS, &[], &[], &[]),
-);
 
 /// Low 4 bits of the synced wool byte: the wool color id.
 const COLOR_ID_MASK: i8 = 0x0F;
@@ -92,13 +79,6 @@ impl SheepEntity {
     };
     const BREEDING: BreedingProps = BreedingProps::new(Self::is_food);
     const LIVING: LivingProps<Self> = LivingProps {
-        default_dimensions: |mob, _| {
-            if mob.living().is_baby() {
-                SHEEP_BABY_DIMENSIONS
-            } else {
-                mob.entity_type.dimensions
-            }
-        },
         hurt_sound: |_, _| Some(&sound_events::ENTITY_SHEEP_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_SHEEP_DEATH),
         sheep_loot_state: |sheep| Some((sheep.color(), sheep.is_sheared())),

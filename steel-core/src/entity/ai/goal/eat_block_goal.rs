@@ -17,12 +17,6 @@ use crate::world::LevelAccessor;
 /// Constant mirroring vanilla `EatBlockGoal.EAT_ANIMATION_TICKS`, the full animation
 /// length before the goal's tick reaches the block-eating step.
 const EAT_ANIMATION_TICKS: i32 = 40;
-/// Constant mirroring vanilla `EatBlockGoal`'s check point (`adjustedTickDelay(4)`).
-const EAT_BLOCK_TICK: i32 = 4;
-/// Vanilla `EatBlockGoal.canUse` rolls `nextInt(adjustedTickDelay(baby ? 50 : 1000))`;
-/// babies check far more often so they regrow wool quickly.
-const BABY_EAT_CHECK_TICKS: i32 = 50;
-const ADULT_EAT_CHECK_TICKS: i32 = 1000;
 
 /// A goal where a mob stands still and chews before eating an edible block.
 ///
@@ -57,9 +51,9 @@ impl Goal for EatBlockGoal {
         let interval = if Animal::of(mob.as_entity_event_source())
             .is_some_and(|animal| animal.ageable().is_baby())
         {
-            BABY_EAT_CHECK_TICKS
+            50
         } else {
-            ADULT_EAT_CHECK_TICKS
+            1000
         };
         let adjusted = reduced_tick_delay(interval);
         if rand::random_range(0..adjusted) != 0 {
@@ -93,7 +87,7 @@ impl Goal for EatBlockGoal {
 
     fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
         self.eat_animation_tick = (self.eat_animation_tick - 1).max(0);
-        if self.eat_animation_tick != reduced_tick_delay(EAT_BLOCK_TICK) {
+        if self.eat_animation_tick != reduced_tick_delay(4) {
             return;
         }
 

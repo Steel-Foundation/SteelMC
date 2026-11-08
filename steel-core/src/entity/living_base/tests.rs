@@ -15,7 +15,6 @@ use crate::inventory::equipment::EquipmentSlot;
 
 use super::{
     ActiveMobEffect, LivingEntityBase, LivingTravelInput, MobEffectInstance, MobEffectSyncChange,
-    POST_IMPULSE_GRACE_TICKS,
 };
 
 /// An infinite-duration effect never "ends within" anything, and the bound is inclusive.
@@ -177,7 +176,7 @@ fn current_impulse_context_resets_after_grace_window() {
     base.try_reset_current_impulse_context();
     assert!(base.is_ignoring_fall_damage_from_current_impulse());
 
-    for _ in 0..POST_IMPULSE_GRACE_TICKS {
+    for _ in 0..40 {
         base.tick_post_impulse_grace_time();
     }
     base.try_reset_current_impulse_context();

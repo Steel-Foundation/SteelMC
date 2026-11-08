@@ -17,9 +17,6 @@ use crate::entity::prelude::*;
 use crate::entity::{Entity, EntityProps, EntitySpawnReason, LivingProps, Mob, MobBase, MobProps};
 use crate::world::LevelReader;
 
-const XP_REWARD: i32 = 5;
-const BRIGHT_LIGHT_NO_ACTION_TIME_INCREMENT: i32 = 2;
-
 /// Marks hostile entities, including those outside the `Monster` hierarchy.
 /// Shared rules use this marker to reject leashing.
 pub trait Enemy {}
@@ -36,7 +33,7 @@ pub fn definition<E: Parts>() -> MobDefinition<E> {
     definition.construct = definition
         .construct
         .then([Stage::effect(XP, |mob_base: &MobBase| {
-            mob_base.set_xp_reward(XP_REWARD);
+            mob_base.set_xp_reward(5);
         })]);
     definition.ai_step = definition.ai_step.before(
         mob::stages::AI_STEP,
@@ -107,7 +104,7 @@ fn update_no_action_time(monster: &dyn Entity) {
         fast_floor(position.z),
     );
     if world.light_level_dependent_magic_value(eye_pos) > LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE {
-        living.set_no_action_time(living.no_action_time() + BRIGHT_LIGHT_NO_ACTION_TIME_INCREMENT);
+        living.set_no_action_time(living.no_action_time() + 2);
     }
 }
 

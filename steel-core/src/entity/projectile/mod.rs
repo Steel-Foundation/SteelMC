@@ -49,14 +49,6 @@ use super::{
 
 pub use thrown_potion::{SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH};
 
-/// Vanilla `Projectile.shoot` per-axis spread scale (`0.0172275 * uncertainty`).
-const SHOOT_INACCURACY_SCALE: f64 = 0.0172_275;
-
-const MAX_ENTITY_HIT_MARGIN: f32 = 0.3;
-
-/// Vanilla `ThrowableItemProjectile` spawn offset below the shooter's eye.
-const THROWN_ITEM_SPAWN_EYE_OFFSET: f64 = 0.1;
-
 /// Returns a triangle-distributed random value.
 #[must_use]
 pub fn triangle_random(mode: f64, deviation: f64) -> f64 {
@@ -489,7 +481,7 @@ impl<'a> Projectile<'a> {
     /// spread scaled by `uncertainty`.
     #[must_use]
     pub fn movement_to_shoot(direction: DVec3, power: f32, uncertainty: f32) -> DVec3 {
-        let deviation = SHOOT_INACCURACY_SCALE * f64::from(uncertainty);
+        let deviation = 0.0172_275 * f64::from(uncertainty);
         let jitter = DVec3::new(
             triangle_random(0.0, deviation),
             triangle_random(0.0, deviation),
@@ -783,11 +775,7 @@ pub fn spawn_throwable_item_projectile<E: throwable_item::Parts>(
     create: impl FnOnce(DVec3) -> E,
 ) -> Option<SharedEntity> {
     let player_pos = player.position();
-    let spawn_pos = DVec3::new(
-        player_pos.x,
-        player.eye_y() - THROWN_ITEM_SPAWN_EYE_OFFSET,
-        player_pos.z,
-    );
+    let spawn_pos = DVec3::new(player_pos.x, player.eye_y() - 0.1, player_pos.z);
 
     let entity = create(spawn_pos);
     let owner: SharedEntity = Arc::<Player>::clone(player);
@@ -819,7 +807,7 @@ pub fn spawn_throwable_item_projectile<E: throwable_item::Parts>(
 /// 0.3 over the first ticks of flight.
 #[must_use]
 pub fn compute_margin(tick_count: i32) -> f64 {
-    f64::from(((tick_count - 2) as f32 / 20.0).clamp(0.0, MAX_ENTITY_HIT_MARGIN))
+    f64::from(((tick_count - 2) as f32 / 20.0).clamp(0.0, 0.3))
 }
 
 /// Outcome of casting a projectile-style ray along an entity's view vector.

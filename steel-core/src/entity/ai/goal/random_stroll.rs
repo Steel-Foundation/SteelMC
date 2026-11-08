@@ -6,8 +6,6 @@ use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::Mob;
 
-const RANDOM_STROLL_DEFAULT_INTERVAL: i32 = 120;
-
 pub struct RandomStrollGoal {
     wanted_position: Option<DVec3>,
     speed_modifier: f64,
@@ -19,7 +17,7 @@ pub struct RandomStrollGoal {
 impl RandomStrollGoal {
     #[must_use]
     pub const fn new(speed_modifier: f64) -> Self {
-        Self::with_interval(speed_modifier, RANDOM_STROLL_DEFAULT_INTERVAL)
+        Self::with_interval(speed_modifier, 120)
     }
 
     #[must_use]

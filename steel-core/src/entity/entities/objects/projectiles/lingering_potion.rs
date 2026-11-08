@@ -19,11 +19,6 @@ use crate::entity::{
 };
 use crate::world::World;
 
-const CLOUD_RADIUS: f32 = 3.0;
-const CLOUD_RADIUS_ON_USE: f32 = -0.5;
-const CLOUD_DURATION: i32 = 600;
-const CLOUD_WAIT_TIME: i32 = 10;
-
 /// A thrown lingering potion, which leaves an effect cloud where it lands.
 #[entity_behavior(class = "ThrownLingeringPotion")]
 #[derive(Entity)]
@@ -80,10 +75,10 @@ impl thrown_potion::Parts for LingeringPotionEntity {
             Arc::downgrade(world),
         ));
         cloud.set_owner(self.projectile().owner().as_ref());
-        cloud.set_radius(CLOUD_RADIUS);
-        cloud.set_radius_on_use(CLOUD_RADIUS_ON_USE);
-        cloud.set_duration(CLOUD_DURATION);
-        cloud.set_wait_time(CLOUD_WAIT_TIME);
+        cloud.set_radius(3.0);
+        cloud.set_radius_on_use(-0.5);
+        cloud.set_duration(600);
+        cloud.set_wait_time(10);
         cloud.set_radius_per_tick(-cloud.radius() / cloud.duration() as f32);
 
         let cloud: SharedEntity = cloud;

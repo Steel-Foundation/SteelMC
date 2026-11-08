@@ -5,9 +5,7 @@ use crate::entity::prelude::*;
 use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_registry::data_components::vanilla_components::{PIG_SOUND_VARIANT, PIG_VARIANT};
-use steel_registry::entity_type::{
-    EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
-};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::pig_sound_variant::{PigAge, PigSoundVariantRef, PigSoundVariantRegistry};
 use steel_registry::pig_variant::{PigVariantRef, PigVariantRegistry};
@@ -37,17 +35,6 @@ use crate::entity::{
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
-
-const PIG_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
-    [EntityAttachmentPoint::new(0.0, 0.5, 0.0)];
-
-/// `Pig.BABY_DIMENSIONS`.
-const PIG_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments(
-    0.45,
-    0.45,
-    0.40625,
-    EntityAttachments::new(&PIG_BABY_PASSENGER_ATTACHMENTS, &[], &[], &[]),
-);
 
 /// Vanilla pig entity.
 // TODO: `Pig.thunderHit` turns pigs into zombified piglins once lightning bolts and
@@ -92,13 +79,6 @@ impl PigEntity {
         ..BreedingProps::new(Self::is_food)
     };
     const LIVING: LivingProps<Self> = LivingProps {
-        default_dimensions: |mob, _| {
-            if mob.living().is_baby() {
-                PIG_BABY_DIMENSIONS
-            } else {
-                mob.entity_type.dimensions
-            }
-        },
         hurt_sound: |pig, _| Some(pig.sound_set().hurt_sound),
         death_sound: |pig| Some(pig.sound_set().death_sound),
         can_use_slot: |pig, slot| {

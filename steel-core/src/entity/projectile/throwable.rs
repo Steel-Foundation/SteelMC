@@ -8,8 +8,6 @@ use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::projectile::{self, Parts, Projectile};
 use crate::entity::{EntityProps, InsideBlockEffectCollector, RemovalReason, SharedEntity};
 
-const DEFAULT_GRAVITY: f64 = 0.03;
-const AIR_DRAG: f32 = 0.99;
 const WATER_INERTIA: f64 = 0.8;
 
 /// `ThrowableProjectile`'s overrides of the entity hooks.
@@ -17,8 +15,8 @@ const WATER_INERTIA: f64 = 0.8;
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
         tick: |projectile, entity| tick(&projectile.projectile(), entity),
-        default_gravity: |_| DEFAULT_GRAVITY,
-        air_drag: |_| f64::from(AIR_DRAG),
+        default_gravity: |_| 0.03,
+        air_drag: |_| f64::from(0.99_f32),
         can_use_portal: |_, _| true,
         ..projectile::entity_props()
     }

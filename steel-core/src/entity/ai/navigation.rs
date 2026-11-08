@@ -11,10 +11,7 @@ use crate::entity::ai::pathfinder::{PathFinder, PathRequest};
 use crate::entity::ai::walk::{WalkNodeCollision, WalkNodeEvaluator};
 use crate::world::LevelReader;
 
-const DIRECT_TARGET_REACHED_DISTANCE_SQR: f64 = 2.500_000_3e-7;
-const DEFAULT_REQUIRED_PATH_LENGTH: f32 = 16.0;
 const MAX_TIME_RECOMPUTE: i64 = 20;
-const MAX_VISITED_NODES_SCALE: f32 = 16.0;
 const STUCK_CHECK_INTERVAL: i32 = 100;
 const STUCK_THRESHOLD_DISTANCE_FACTOR: f32 = 0.25;
 
@@ -84,7 +81,7 @@ impl PathNavigation {
             target_pos: None,
             speed_modifier: 0.0,
             max_visited_nodes_multiplier: 1.0,
-            required_path_length: DEFAULT_REQUIRED_PATH_LENGTH,
+            required_path_length: 16.0,
             reach_range: 0,
             tick: 0,
             last_stuck_check: 0,
@@ -239,9 +236,7 @@ impl PathNavigation {
     }
 
     pub fn update_pathfinder_max_visited_nodes(&mut self, follow_range: f64) {
-        let max_visited_nodes = fast_floor(f64::from(
-            self.max_path_length(follow_range) * MAX_VISITED_NODES_SCALE,
-        ));
+        let max_visited_nodes = fast_floor(f64::from(self.max_path_length(follow_range) * 16.0));
         self.path_finder.set_max_visited_nodes(max_visited_nodes);
     }
 
@@ -446,8 +441,7 @@ impl PathNavigation {
         }
 
         let target = self.direct_target?;
-        if target.distance_squared(context.ground_mob_position) < DIRECT_TARGET_REACHED_DISTANCE_SQR
-        {
+        if target.distance_squared(context.ground_mob_position) < 2.500_000_3e-7 {
             self.stop();
             return None;
         }

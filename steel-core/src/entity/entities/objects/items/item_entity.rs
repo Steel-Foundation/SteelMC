@@ -58,15 +58,7 @@ const INFINITE_LIFETIME: i32 = -32768;
 /// Default health (damage resistance).
 const DEFAULT_HEALTH: i32 = 5;
 
-/// Gravity applied per tick (blocks/tick^2).
-const DEFAULT_GRAVITY: f64 = 0.04;
-
-/// Air/vertical drag multiplier per tick.
-const FLUID_VERTICAL_NUDGE: f64 = 5.0e-4;
 const ITEM_FLUID_HEIGHT_THRESHOLD: f64 = 0.1;
-const ITEM_WATER_DRAG: f64 = 0.99;
-const ITEM_LAVA_DRAG: f64 = 0.95;
-const MERGE_MAX_STACK_SIZE: i32 = 64;
 
 /// Mutable item-specific state that changes during item ticks, pickup, damage,
 /// merging, and save/load.
@@ -440,7 +432,7 @@ impl ItemEntity {
         from_stack: &ItemStack,
     ) {
         // Calculate how many items to transfer
-        let max_count = to_stack.max_stack_size().min(MERGE_MAX_STACK_SIZE);
+        let max_count = to_stack.max_stack_size().min(64);
         if to_stack.count() >= max_count {
             return;
         }
@@ -510,9 +502,9 @@ impl ItemEntity {
     fn apply_fluid_movement_or_gravity(&self) {
         let contact = self.fluid_contact();
         if contact.water_height() > ITEM_FLUID_HEIGHT_THRESHOLD {
-            self.apply_fluid_movement(ITEM_WATER_DRAG);
+            self.apply_fluid_movement(0.99);
         } else if contact.lava_height() > ITEM_FLUID_HEIGHT_THRESHOLD {
-            self.apply_fluid_movement(ITEM_LAVA_DRAG);
+            self.apply_fluid_movement(0.95);
         } else {
             self.apply_gravity();
         }
@@ -522,12 +514,7 @@ impl ItemEntity {
         let movement = self.velocity();
         self.set_velocity(DVec3::new(
             movement.x * horizontal_drag,
-            movement.y
-                + if movement.y < 0.06 {
-                    FLUID_VERTICAL_NUDGE
-                } else {
-                    0.0
-                },
+            movement.y + if movement.y < 0.06 { 5.0e-4 } else { 0.0 },
             movement.z * horizontal_drag,
         ));
     }
@@ -541,7 +528,7 @@ impl ItemEntity {
         ignore_explosion: |_, explosion| !explosion.should_affect_blocklike_entities(),
         movement_emission: |_| EntityMovementEmission::None,
         tick: Self::entity_tick,
-        default_gravity: |_| DEFAULT_GRAVITY,
+        default_gravity: |_| 0.04,
         block_pos_below_that_affects_movement: |entity| entity.on_pos(0.999_999),
         attackable: |_| false,
         should_play_lava_hurt_sound: Self::entity_should_play_lava_hurt_sound,

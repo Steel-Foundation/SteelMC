@@ -8,9 +8,6 @@ use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::ai::path::Path;
 use crate::entity::{Mob, SharedEntity};
 
-const DOOR_REACH_DISTANCE_SQR: f64 = 2.25;
-const PATH_NODE_SCAN_AHEAD: usize = 2;
-
 pub(super) struct DoorInteractGoal {
     door_pos: BlockPos,
     has_door: bool,
@@ -132,14 +129,14 @@ impl DoorInteractGoal {
     ) -> bool {
         let limit = path
             .next_node_index()
-            .saturating_add(PATH_NODE_SCAN_AHEAD)
+            .saturating_add(2)
             .min(path.node_count());
         for index in 0..limit {
             let Some(node) = path.node(index) else {
                 continue;
             };
             let door_pos = BlockPos::new(node.x, node.y + 1, node.z);
-            if distance_to_door_sqr(mob, door_pos) > DOOR_REACH_DISTANCE_SQR {
+            if distance_to_door_sqr(mob, door_pos) > 2.25 {
                 continue;
             }
 

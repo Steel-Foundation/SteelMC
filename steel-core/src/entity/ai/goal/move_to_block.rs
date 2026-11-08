@@ -8,9 +8,6 @@ use steel_utils::BlockPos;
 const GIVE_UP_TICKS: i32 = 1200;
 const STAY_TICKS: i32 = 1200;
 const INTERVAL_TICKS: i32 = 200;
-const DEFAULT_VERTICAL_SEARCH_RANGE: i32 = 1;
-const DEFAULT_RECALCULATE_PATH_INTERVAL: i32 = 40;
-const DEFAULT_ACCEPTED_DISTANCE: f64 = 1.0;
 
 type ValidTargetPredicate = Box<dyn Fn(&World, BlockPos) -> bool + Send + Sync>;
 type MoveToTarget = Box<dyn Fn(BlockPos) -> BlockPos + Send + Sync>;
@@ -38,12 +35,7 @@ impl MoveToBlockGoal {
         search_range: i32,
         target_predicate: impl Fn(&World, BlockPos) -> bool + Send + Sync + 'static,
     ) -> Self {
-        Self::with_vertical_search_range(
-            speed_modifier,
-            search_range,
-            DEFAULT_VERTICAL_SEARCH_RANGE,
-            target_predicate,
-        )
+        Self::with_vertical_search_range(speed_modifier, search_range, 1, target_predicate)
     }
 
     #[must_use]
@@ -65,8 +57,8 @@ impl MoveToBlockGoal {
             search_range,
             vertical_search_range,
             vertical_search_start: 0,
-            accepted_distance: DEFAULT_ACCEPTED_DISTANCE,
-            recalculate_path_interval: DEFAULT_RECALCULATE_PATH_INTERVAL,
+            accepted_distance: 1.0,
+            recalculate_path_interval: 40,
         }
     }
 

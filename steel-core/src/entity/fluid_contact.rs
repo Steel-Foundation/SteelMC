@@ -9,8 +9,6 @@ use steel_utils::{BlockPos, ChunkPos, SectionPos, WorldAabb, axis::Axis};
 use crate::fluid::{get_flow, get_fluid_state, get_height};
 use crate::world::World;
 
-const FLUID_INTERACTION_MARGIN: f64 = 0.001;
-const MIN_CURRENT_LENGTH_SQUARED: f64 = 1.0e-5;
 const STILL_CURRENT_VELOCITY_THRESHOLD: f64 = 0.003;
 const MIN_STILL_CURRENT_IMPULSE: f64 = 0.004_500_000_000_000_000_5;
 const SHALLOW_CURRENT_HEIGHT: f64 = 0.4;
@@ -28,7 +26,7 @@ impl EntityFluidCurrent {
     }
 
     fn impulse(self, is_player: bool, old_velocity: DVec3, scale: f64) -> DVec3 {
-        if self.count == 0 || self.accumulated.length_squared() < MIN_CURRENT_LENGTH_SQUARED {
+        if self.count == 0 || self.accumulated.length_squared() < 1.0e-5 {
             return DVec3::ZERO;
         }
 
@@ -231,7 +229,7 @@ impl EntityFluidContact {
     }
 
     fn scan_bounds(bounding_box: WorldAabb) -> Option<FluidScanBounds> {
-        let interaction_box = bounding_box.deflate(FLUID_INTERACTION_MARGIN);
+        let interaction_box = bounding_box.deflate(0.001);
         if interaction_box.is_empty() {
             return None;
         }

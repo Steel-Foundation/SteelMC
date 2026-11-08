@@ -146,7 +146,6 @@ const FIRST_ENTITY_ID: i32 = 1;
 const FIRST_ENTITY_ID: i32 = 1 << 24;
 const MOVEMENT_RECORD_EPSILON: f64 = 1.0e-7;
 const NO_PHYSICS_COLLISION_EPSILON: f64 = 1.0e-7;
-const IN_WALL_EYE_BOX_HEIGHT: f64 = 1.0e-6;
 const WATER_ENTITY_FLOW_SCALE: f64 = 0.014;
 const BUBBLE_COLUMN_INSIDE_DOWN_MIN_SPEED: f64 = -0.3;
 const BUBBLE_COLUMN_INSIDE_UP_MAX_SPEED: f64 = 0.7;
@@ -250,7 +249,7 @@ fn fall_flying_collision_damage(previous_horizontal_speed: f64, new_horizontal_s
 
 fn entity_eye_suffocation_box(eye_pos: DVec3, width: f64) -> WorldAabb {
     let half_width = width * 0.5;
-    let half_height = IN_WALL_EYE_BOX_HEIGHT * 0.5;
+    let half_height = 1.0e-6 * 0.5;
     WorldAabb::new(
         eye_pos.x - half_width,
         eye_pos.y - half_height,

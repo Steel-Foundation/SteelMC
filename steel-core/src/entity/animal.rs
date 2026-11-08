@@ -39,7 +39,6 @@ use crate::player::Player;
 use crate::world::{LevelReader, World};
 
 const PARENT_AGE_AFTER_BREEDING: i32 = 6000;
-const IN_LOVE_TIME: i32 = 600;
 const BREEDING_XP: RangeInclusive<i32> = 1..=7;
 /// `Animal`'s changes to the living defaults.
 #[must_use]
@@ -216,7 +215,7 @@ impl<'a> Animal<'a> {
     pub fn set_in_love(&self, player: Option<&Player>) {
         {
             let mut state = self.breeding.state.lock();
-            state.in_love = IN_LOVE_TIME;
+            state.in_love = 600;
             if let Some(player) = player {
                 state.love_cause = Some(player.gameprofile.id());
             }

@@ -3,8 +3,6 @@ use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::{Living, Mob, SharedEntity};
 use steel_registry::vanilla_attributes;
 
-const DEFAULT_UNSEEN_MEMORY_TICKS: i32 = 60;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ReachCache {
     Empty,
@@ -32,7 +30,7 @@ impl TargetGoalBase {
             reach_cache_time: 0,
             unseen_ticks: 0,
             target_mob: None,
-            unseen_memory_ticks: DEFAULT_UNSEEN_MEMORY_TICKS,
+            unseen_memory_ticks: 60,
         }
     }
 

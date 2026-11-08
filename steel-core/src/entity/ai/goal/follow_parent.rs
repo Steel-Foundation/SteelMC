@@ -6,7 +6,6 @@ use super::reduced_tick_delay;
 const HORIZONTAL_SCAN_RANGE: f64 = 8.0;
 const VERTICAL_SCAN_RANGE: f64 = 4.0;
 const DONT_FOLLOW_IF_CLOSER_THAN_SQR: f64 = 9.0;
-const STOP_FOLLOW_IF_FARTHER_THAN_SQR: f64 = 256.0;
 
 pub struct FollowParentGoal {
     parent: Option<SharedEntity>,
@@ -78,8 +77,7 @@ impl Goal for FollowParentGoal {
         }
 
         let distance_sqr = mob.position().distance_squared(parent.position());
-        !(distance_sqr < DONT_FOLLOW_IF_CLOSER_THAN_SQR
-            || distance_sqr > STOP_FOLLOW_IF_FARTHER_THAN_SQR)
+        !(distance_sqr < DONT_FOLLOW_IF_CLOSER_THAN_SQR || distance_sqr > 256.0)
     }
 
     fn start(&mut self, _mob: &Mob<'_>) {

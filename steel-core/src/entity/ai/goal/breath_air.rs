@@ -17,8 +17,6 @@ use crate::world::World;
 const BREATH_AIR_THRESHOLD: i32 = 140;
 const AIR_SEARCH_HORIZONTAL_RADIUS: f64 = 1.0;
 const AIR_SEARCH_VERTICAL_ABOVE: f64 = 8.0;
-const BREATH_MOVE_SPEED: f32 = 0.02;
-const AIR_NAVIGATION_SPEED_MODIFIER: f64 = 1.0;
 
 pub struct BreathAirGoal;
 
@@ -55,7 +53,7 @@ impl Goal for BreathAirGoal {
         find_air_position(mob);
         let input = mob.travel_input();
         mob.move_relative(
-            BREATH_MOVE_SPEED,
+            0.02,
             DVec3::new(
                 f64::from(input.sideways()),
                 f64::from(input.vertical()),
@@ -85,7 +83,7 @@ fn find_air_position(mob: &Mob<'_>) {
             f64::from(destination_pos.y() + 1),
             f64::from(destination_pos.z()),
         ),
-        AIR_NAVIGATION_SPEED_MODIFIER,
+        1.0,
     );
 }
 

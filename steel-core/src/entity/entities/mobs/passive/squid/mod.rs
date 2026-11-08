@@ -9,7 +9,7 @@ use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_math::{DEGREE_90, vector};
 use steel_registry::entity_data::ParticleData;
-use steel_registry::entity_type::{EntityAttachments, EntityDimensions, EntityTypeRef};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entity_data::SquidEntityData;
 use steel_registry::vanilla_mob_effects::LEVITATION;
 use steel_registry::{
@@ -32,15 +32,6 @@ use crate::entity::{
 use crate::physics::MoverType;
 use crate::world::World;
 use goals::{SquidFleeGoal, SquidRandomMovementGoal};
-
-const BABY_DIMENSIONS: EntityDimensions =
-    EntityDimensions::new_with_attachments(0.5, 0.5, 0.37, EntityAttachments::fallback());
-const INK_PARTICLE_COUNT: u32 = 30;
-/// Squids above this squared speed are already moving somewhere.
-const MOVEMENT_THRESHOLD: f64 = 1.0e-5;
-/// The share of a stroke after which the tentacles push the squid.
-const STROKE_PUSH_START: f32 = 0.75;
-const AIR_SUPPLY: i32 = 300;
 
 /// The squid's swimming state.
 struct Swimming {
@@ -87,13 +78,6 @@ impl SquidEntity {
         },
     };
     const LIVING: LivingProps<Self> = LivingProps {
-        default_dimensions: |mob, _| {
-            if mob.living().is_baby() {
-                BABY_DIMENSIONS
-            } else {
-                mob.entity_type.dimensions
-            }
-        },
         sound_volume: |_| 0.4,
         hurt_sound: |_, _| Some(&sound_events::ENTITY_SQUID_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_SQUID_DEATH),
@@ -181,7 +165,7 @@ impl SquidEntity {
 
     /// Whether the squid is set to move somewhere.
     fn has_movement_vector(&self) -> bool {
-        self.swimming.lock().movement_vector.length_squared() > MOVEMENT_THRESHOLD
+        self.swimming.lock().movement_vector.length_squared() > 1.0e-5
     }
 
     fn set_movement_vector(&self, movement_vector: DVec3) {
@@ -202,7 +186,7 @@ impl SquidEntity {
                 }
             }
         } else {
-            self.set_air_supply(AIR_SUPPLY);
+            self.set_air_supply(300);
         }
     }
 
@@ -238,7 +222,7 @@ impl SquidEntity {
         let particle_position = position + DVec3::new(0.0, 0.5, 0.0);
         let particle = ParticleData::simple(&vanilla_particle_types::SQUID_INK);
         let position_scale = if self.living().is_baby() { 0.1 } else { 0.3 };
-        for _ in 0..INK_PARTICLE_COUNT {
+        for _ in 0..30 {
             let direction = self.rotate_vector(DVec3::new(
                 rand::random_range(-0.3..0.3),
                 -1.0,
@@ -277,7 +261,7 @@ impl SquidEntity {
         if self.is_in_water() {
             // VANILLA CLIENT-LOCAL: the tentacle angle and rotate speed.
             if tentacle_movement < PI {
-                if tentacle_movement / PI > STROKE_PUSH_START {
+                if tentacle_movement / PI > 0.75 {
                     self.set_velocity(movement_vector);
                 }
             } else {
