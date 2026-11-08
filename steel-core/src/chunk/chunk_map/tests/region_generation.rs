@@ -56,7 +56,7 @@ impl ChunkContents {
             for y in 0..16 {
                 for z in 0..16 {
                     for x in 0..16 {
-                        blocks.push(section.states.get(x, y, z).0);
+                        blocks.push(section.states().get(x, y, z).0);
                     }
                 }
             }
