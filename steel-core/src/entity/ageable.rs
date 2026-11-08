@@ -9,6 +9,7 @@ use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
 use steel_utils::Identifier;
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::InteractionHand;
 
 use crate::behavior::InteractionResult;
@@ -369,9 +370,9 @@ pub trait AgeableMob: Mob {
 
     /// Loads vanilla ageable mob fields.
     fn load_ageable_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.set_age(nbt.int("Age").unwrap_or(0));
-        self.set_forced_age(nbt.int("ForcedAge").unwrap_or(0));
-        self.set_age_locked(nbt.byte("AgeLocked").is_some_and(|value| value != 0));
+        self.set_age(nbt.int_value("Age").unwrap_or(0));
+        self.set_forced_age(nbt.int_value("ForcedAge").unwrap_or(0));
+        self.set_age_locked(nbt.byte_value("AgeLocked").is_some_and(|value| value != 0));
     }
 }
 

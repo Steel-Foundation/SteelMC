@@ -17,6 +17,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::inventory::container::Container;
+use crate::inventory::container::load_all_items;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
 use crate::world::World;
 
@@ -94,23 +95,7 @@ impl BlockEntity for BarrelBlockEntity {
         let mut container = self.container.lock();
         container.items.fill(ItemStack::empty());
 
-        // Load items from NBT using borrowed NBT for proper ItemStack parsing
-        if let Some(items_list) = nbt_view.list("Items")
-            && let Some(compounds) = items_list.compounds()
-        {
-            for compound in compounds {
-                // Each item has a "Slot" byte and item data
-                if let Some(slot) = compound.byte("Slot") {
-                    let slot = slot as usize;
-                    if slot < BARREL_SLOTS {
-                        // Parse item directly from the borrowed compound
-                        if let Some(item) = ItemStack::from_borrowed_compound(&compound) {
-                            container.items[slot] = item;
-                        }
-                    }
-                }
-            }
-        }
+        load_all_items(nbt_view, &mut container.items);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
