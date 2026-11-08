@@ -3,6 +3,7 @@
 use crate::entity::component::definition::Definition;
 use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::prelude::*;
+use steel_utils::nbt::NbtValueInput as _;
 
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -94,7 +95,7 @@ impl EndCrystalEntity {
         {
             self.set_beam_target(Some(BlockPos::new(x, y, z)));
         }
-        if let Some(show_bottom) = nbt.byte("ShowBottom") {
+        if let Some(show_bottom) = nbt.byte_value("ShowBottom") {
             self.set_show_bottom(show_bottom != 0);
         }
     }

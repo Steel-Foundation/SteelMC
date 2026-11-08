@@ -5,6 +5,7 @@
 //! item and entity event 17.
 
 use std::sync::{Arc, Weak};
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -409,15 +410,18 @@ impl FireworkRocketEntity {
     fn load_rocket(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         {
             let mut flight = self.flight.lock();
-            flight.life = nbt.int("Life").unwrap_or(0);
-            flight.lifetime = nbt.int("LifeTime").unwrap_or(0);
+            flight.life = nbt.int_value("Life").unwrap_or(0);
+            flight.lifetime = nbt.int_value("LifeTime").unwrap_or(0);
         }
         let item = nbt
             .compound("FireworksItem")
             .and_then(|item| ItemStack::from_borrowed_compound(&item))
             .unwrap_or_else(|| ItemStack::new(&vanilla_items::FIREWORK_ROCKET));
         self.entity_data.lock().id_fireworks_item.set(item);
-        self.set_shot_at_angle(nbt.byte("ShotAtAngle").is_some_and(|value| value != 0));
+        self.set_shot_at_angle(
+            nbt.byte_value("ShotAtAngle")
+                .is_some_and(|value| value != 0),
+        );
     }
 }
 

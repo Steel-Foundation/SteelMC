@@ -9,6 +9,7 @@ use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::{NbtCompound as BorrowedNbtCompoundView, read_compound};
@@ -550,18 +551,20 @@ impl FallingBlockEntity {
             .unwrap_or_else(|| vanilla_blocks::SAND.default_state());
         let mut state = self.state.lock();
         state.block_state = block_state;
-        state.time = nbt.int("Time").unwrap_or(0);
-        state.hurt_entities = nbt.byte("HurtEntities").map_or_else(
+        state.time = nbt.int_value("Time").unwrap_or(0);
+        state.hurt_entities = nbt.byte_value("HurtEntities").map_or_else(
             || block_state.get_block().has_tag(&BlockTag::ANVIL),
             |value| value != 0,
         );
         state.fall_damage_per_distance = nbt
-            .float("FallHurtAmount")
+            .float_value("FallHurtAmount")
             .unwrap_or(DEFAULT_FALL_DAMAGE_PER_DISTANCE);
-        state.fall_damage_max = nbt.int("FallHurtMax").unwrap_or(DEFAULT_MAX_FALL_DAMAGE);
-        state.drop_item = nbt.byte("DropItem").is_none_or(|value| value != 0);
+        state.fall_damage_max = nbt
+            .int_value("FallHurtMax")
+            .unwrap_or(DEFAULT_MAX_FALL_DAMAGE);
+        state.drop_item = nbt.byte_value("DropItem").is_none_or(|value| value != 0);
         state.block_data = nbt.compound("TileEntityData").map(|data| data.to_owned());
-        state.cancel_drop = nbt.byte("CancelDrop").is_some_and(|value| value != 0);
+        state.cancel_drop = nbt.byte_value("CancelDrop").is_some_and(|value| value != 0);
     }
 }
 

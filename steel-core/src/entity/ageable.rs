@@ -7,6 +7,7 @@
 
 use crate::entity::prelude::*;
 use std::sync::Arc;
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 
@@ -91,9 +92,9 @@ impl Component for Age {
 
     fn load(&self, owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let ageable = Ageable::new(owner, self);
-        ageable.set_age(nbt.int("Age").unwrap_or(0));
-        self.state.lock().forced_age = nbt.int("ForcedAge").unwrap_or(0);
-        ageable.set_age_locked(nbt.byte("AgeLocked").is_some_and(|value| value != 0));
+        ageable.set_age(nbt.int_value("Age").unwrap_or(0));
+        self.state.lock().forced_age = nbt.int_value("ForcedAge").unwrap_or(0);
+        ageable.set_age_locked(nbt.byte_value("AgeLocked").is_some_and(|value| value != 0));
     }
 }
 

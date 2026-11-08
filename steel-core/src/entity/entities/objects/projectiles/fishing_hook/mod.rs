@@ -283,7 +283,7 @@ impl FishingHookEntity {
             changed
         };
         if changed && biting {
-            // `Mth.nextFloat(syncronizedRandom, 0.6F, 1.0F)`.
+            // `Mth.nextFloat` on the synchronized random, between 0.6 and 1.0.
             let roll = self.synchronized_random.lock().next_f32() * (1.0 - 0.6) + 0.6;
             let velocity = self.velocity();
             self.set_velocity(DVec3::new(velocity.x, f64::from(-0.4 * roll), velocity.z));

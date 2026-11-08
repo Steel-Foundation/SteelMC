@@ -36,6 +36,13 @@ pub trait EntityRiding: Entity {
         self.base().stop_riding();
     }
 
+    /// Dismounts every passenger from this entity.
+    fn eject_passengers(&self) {
+        for passenger in self.passengers().into_iter().rev() {
+            passenger.stop_riding();
+        }
+    }
+
     /// Default for [`Entity::start_riding`].
     fn start_riding_default(&self, entity_to_ride: &SharedEntity) -> bool {
         let Some(world) = self.level() else {
@@ -144,10 +151,8 @@ pub trait EntityRiding: Entity {
         )
     }
 
-    /// Returns this vehicle's passenger attachment point.
-    ///
-    /// Mirrors vanilla `Entity.getPassengerAttachmentPoint` for the base entity class.
-    fn passenger_attachment_point(&self, passenger: &dyn Entity) -> DVec3 {
+    /// Default for [`Entity::passenger_attachment_point`].
+    fn passenger_attachment_point_default(&self, passenger: &dyn Entity) -> DVec3 {
         let dimensions = self.base().dimensions();
         let passenger_index = self.passenger_index(passenger).unwrap_or_default();
         dimensions.attachments.get_clamped(

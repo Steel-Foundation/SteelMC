@@ -13,6 +13,8 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::CheckedMutex;
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
 
 use crate::entity::block_attached::{self, BlockAttachment};
@@ -205,19 +207,20 @@ impl ItemFrameEntity {
         {
             self.set_item_with_update(item, false);
         }
-        if let Some(item_rotation) = nbt.byte("ItemRotation") {
+        if let Some(item_rotation) = nbt.byte_value("ItemRotation") {
+            // Java's `%` keeps the sign, so -1 stays -1.
             self.entity_data
                 .lock()
                 .rotation
-                .set(i32::from(item_rotation).rem_euclid(8));
+                .set(i32::from(item_rotation) % 8);
         }
         let facing = nbt
-            .byte("Facing")
-            .and_then(|value| direction_from_3d_data_value(i32::from(value)))
-            .or_else(|| nbt.int("Facing").and_then(direction_from_3d_data_value));
-        if let Some(direction) = facing {
-            self.set_direction(direction);
-        }
+            .get("Facing")
+            .and_then(|tag| tag.codec_i8())
+            .map_or(Direction::Down, |value| {
+                Direction::from_3d_data_value(i32::from(value))
+            });
+        self.set_direction(facing);
         self.recalculate_position_or_warn();
     }
 }
@@ -268,18 +271,6 @@ const fn direction_3d_data_value(direction: Direction) -> i32 {
     }
 }
 
-const fn direction_from_3d_data_value(value: i32) -> Option<Direction> {
-    match value {
-        0 => Some(Direction::Down),
-        1 => Some(Direction::Up),
-        2 => Some(Direction::North),
-        3 => Some(Direction::South),
-        4 => Some(Direction::West),
-        5 => Some(Direction::East),
-        _ => None,
-    }
-}
-
 const fn direction_2d_data_value(direction: Direction) -> u8 {
     match direction {
         Direction::South | Direction::Down | Direction::Up => 0,
@@ -294,6 +285,33 @@ mod tests {
     use steel_registry::{vanilla_entities, vanilla_items};
 
     use super::*;
+    use crate::test_support::load_additional;
+
+    fn frame_loaded_from(nbt: &NbtCompound) -> ItemFrameEntity {
+        let frame = frame();
+        load_additional(&frame, nbt);
+        frame
+    }
+
+    #[test]
+    fn load_wraps_facing_and_keeps_rotation_sign_like_java() {
+        let mut nbt = NbtCompound::new();
+        nbt.insert("Facing", 7_i8);
+        nbt.insert("ItemRotation", -1_i8);
+        let frame = frame_loaded_from(&nbt);
+
+        let entity_data = frame.entity_data.lock();
+        assert_eq!(*entity_data.hanging_entity.direction.get(), Direction::Up);
+        assert_eq!(*entity_data.rotation.get(), -1);
+    }
+
+    #[test]
+    fn load_defaults_missing_facing_to_down() {
+        let frame = frame_loaded_from(&NbtCompound::new());
+
+        let entity_data = frame.entity_data.lock();
+        assert_eq!(*entity_data.hanging_entity.direction.get(), Direction::Down);
+    }
 
     fn frame() -> ItemFrameEntity {
         ItemFrameEntity::new_attached(

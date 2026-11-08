@@ -317,6 +317,12 @@ macro_rules! entity_hook_list {
                 fn air_drag() -> f32 = air_drag_default;
                 /// Returns the gravity applied this tick.
                 fn effective_gravity() -> f64 = effective_gravity_default;
+                /// Returns whether this entity rides on rails, for movement emission.
+                fn is_on_rails() -> bool = is_on_rails_default;
+                /// Returns the horizontal direction this entity moves in.
+                fn motion_direction() -> Direction = motion_direction_default;
+                /// Returns the vehicle-relative point where `passenger` attaches.
+                fn passenger_attachment_point(passenger: &dyn Entity) -> DVec3 = passenger_attachment_point_default;
             }
             shared {
                 /// Moves this entity by `delta`, resolving collisions.

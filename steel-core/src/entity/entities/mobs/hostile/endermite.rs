@@ -7,6 +7,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::sound_events;
 use steel_registry::vanilla_entity_data::EndermiteEntityData;
 use steel_utils::locks::CheckedMutex;
+use steel_utils::nbt::NbtValueInput as _;
 
 use crate::entity::ai::goal::{
     ClimbOnTopOfPowderSnowGoal, FloatGoal, HurtByTargetGoal, LookAtPlayerGoal, MeleeAttackGoal,
@@ -168,7 +169,7 @@ impl EndermiteEntity {
     }
 
     fn load_life(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        *self.life.lock() = nbt.int("Lifetime").unwrap_or(0);
+        *self.life.lock() = nbt.int_value("Lifetime").unwrap_or(0);
     }
 }
 

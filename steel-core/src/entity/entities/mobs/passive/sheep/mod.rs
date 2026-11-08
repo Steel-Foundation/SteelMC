@@ -4,6 +4,8 @@ mod color_spawn_rules;
 
 use crate::entity::prelude::*;
 use std::sync::Arc;
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -342,8 +344,10 @@ impl SheepEntity {
     }
 
     fn load_sheep(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.set_sheared(nbt.byte("Sheared").is_some_and(|value| value != 0));
-        self.set_color(DyeColor::by_id(i32::from(nbt.byte("Color").unwrap_or(0))));
+        self.set_sheared(nbt.byte_value("Sheared").is_some_and(|value| value != 0));
+        self.set_color(DyeColor::by_id(i32::from(
+            nbt.get("Color").and_then(|tag| tag.codec_i8()).unwrap_or(0),
+        )));
     }
 }
 

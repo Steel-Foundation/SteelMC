@@ -1,6 +1,8 @@
 //! Vanilla `Interaction`: an invisible box that records player clicks.
 
 use std::sync::Weak;
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -184,9 +186,9 @@ impl InteractionEntity {
 
     fn load_interaction(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.with_entity_data(|data| {
-            data.set_width(nbt.float("width").unwrap_or(DEFAULT_WIDTH));
-            data.set_height(nbt.float("height").unwrap_or(DEFAULT_HEIGHT));
-            data.set_response(nbt.byte("response").is_some_and(|value| value != 0));
+            data.set_width(nbt.float_value("width").unwrap_or(DEFAULT_WIDTH));
+            data.set_height(nbt.float_value("height").unwrap_or(DEFAULT_HEIGHT));
+            data.set_response(nbt.byte_value("response").is_some_and(|value| value != 0));
         });
         let mut actions = self.actions.lock();
         actions.attack = nbt.get("attack").and_then(PlayerAction::from_nbt_tag);
@@ -220,7 +222,7 @@ impl FromNbtTag for PlayerAction {
         let compound = tag.compound()?;
         Some(Self {
             player: Uuid::from_int_array(&compound.int_array("player")?)?,
-            timestamp: compound.long("timestamp")?,
+            timestamp: compound.get("timestamp")?.codec_i64()?,
         })
     }
 }

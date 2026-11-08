@@ -10,6 +10,7 @@ use crate::entity::component::pipeline::{Flow, StageId};
 use crate::entity::component::pipeline::{Pipeline, Stage};
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use steel_macros::entity_behavior;
@@ -762,13 +763,13 @@ impl ItemEntity {
     fn load_item(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         // Match vanilla's ItemEntity.readAdditionalSaveData
         let mut state = self.state.lock();
-        if let Some(health) = nbt.short("Health") {
+        if let Some(health) = nbt.short_value("Health") {
             state.health = i32::from(health);
         }
-        if let Some(age) = nbt.short("Age") {
+        if let Some(age) = nbt.short_value("Age") {
             state.age = i32::from(age);
         }
-        if let Some(pickup_delay) = nbt.short("PickupDelay") {
+        if let Some(pickup_delay) = nbt.short_value("PickupDelay") {
             state.pickup_delay = i32::from(pickup_delay);
         }
 

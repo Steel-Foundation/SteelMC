@@ -64,6 +64,11 @@ pub trait EntityFireAndFreeze: Entity {
         true
     }
 
+    /// Ignites this entity in lava.
+    fn lava_ignite(&self) {
+        self.apply_inside_block_effect(InsideBlockEffectType::LavaIgnite);
+    }
+
     /// Applies vanilla lava-contact damage after lava ignition effects.
     fn lava_hurt(&self) {
         if self.fire_immune() {

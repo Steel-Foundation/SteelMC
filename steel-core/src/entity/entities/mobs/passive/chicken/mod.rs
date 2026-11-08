@@ -5,6 +5,7 @@ use crate::entity::component::definition::BaseExperienceRewardCtx;
 use crate::entity::component::definition::PositionRiderCtx;
 use crate::entity::component::pipeline::Flow;
 use crate::entity::prelude::*;
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -385,8 +386,11 @@ impl ChickenEntity {
     }
 
     fn load_chicken(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.set_chicken_jockey(nbt.byte("IsChickenJockey").is_some_and(|value| value != 0));
-        if let Some(egg_time) = nbt.int("EggLayTime") {
+        self.set_chicken_jockey(
+            nbt.byte_value("IsChickenJockey")
+                .is_some_and(|value| value != 0),
+        );
+        if let Some(egg_time) = nbt.int_value("EggLayTime") {
             self.set_egg_time(egg_time);
         }
         variant::load(self, nbt);

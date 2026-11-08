@@ -17,6 +17,7 @@ use crate::entity::component::definition::TickCtx;
 use crate::entity::prelude::*;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -198,8 +199,10 @@ impl Component for ProjectileBase {
     fn load(&self, _owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.state.lock();
         state.owner = EntityReference::read(&nbt, "Owner");
-        state.left_owner = nbt.byte("LeftOwner").is_some_and(|value| value != 0);
-        state.has_been_shot = nbt.byte("HasBeenShot").is_some_and(|value| value != 0);
+        state.left_owner = nbt.byte_value("LeftOwner").is_some_and(|value| value != 0);
+        state.has_been_shot = nbt
+            .byte_value("HasBeenShot")
+            .is_some_and(|value| value != 0);
     }
 }
 

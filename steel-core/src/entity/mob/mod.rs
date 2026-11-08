@@ -12,6 +12,8 @@ use crate::entity::{Ageable, EntityProps};
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
 use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target};
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -145,7 +147,10 @@ impl DropChances {
 
         let mut loaded = Self::DEFAULT;
         for slot in EquipmentSlot::ALL {
-            let Some(chance) = drop_chances.float(slot.name()) else {
+            let Some(chance) = drop_chances
+                .get(slot.name())
+                .and_then(|tag| tag.codec_f32())
+            else {
                 continue;
             };
             if !loaded.set_equipment_chance(slot, chance) {
@@ -1413,13 +1418,16 @@ impl<'a> Mob<'a> {
 
     pub fn load_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_equipment(nbt);
-        self.set_can_pick_up_loot(nbt.byte("CanPickUpLoot").is_some_and(|value| value != 0));
+        self.set_can_pick_up_loot(
+            nbt.byte_value("CanPickUpLoot")
+                .is_some_and(|value| value != 0),
+        );
         self.mob_base().state.lock().persistence_required = nbt
-            .byte("PersistenceRequired")
+            .byte_value("PersistenceRequired")
             .is_some_and(|value| value != 0);
         self.mob_base().state.lock().drop_chances = DropChances::load(nbt);
         *self.mob_base().leash_data().lock() = LeashData::load(nbt);
-        let home_radius = nbt.int("home_radius").unwrap_or(-1);
+        let home_radius = nbt.int_value("home_radius").unwrap_or(-1);
         if home_radius >= 0 {
             let home_position = nbt
                 .int_array("home_pos")
@@ -1432,14 +1440,14 @@ impl<'a> Mob<'a> {
             self.clear_home();
         }
 
-        self.set_left_handed(nbt.byte("LeftHanded").is_some_and(|value| value != 0));
+        self.set_left_handed(nbt.byte_value("LeftHanded").is_some_and(|value| value != 0));
         let death_loot_table = nbt
             .string("DeathLootTable")
             .and_then(|loot_table| loot_table.to_str().as_ref().parse().ok());
         self.mob_base().state.lock().death_loot_table = death_loot_table;
         self.mob_base().state.lock().death_loot_table_seed =
-            nbt.long("DeathLootTableSeed").unwrap_or(0);
-        self.set_no_ai(nbt.byte("NoAI").is_some_and(|value| value != 0));
+            nbt.long_value("DeathLootTableSeed").unwrap_or(0);
+        self.set_no_ai(nbt.byte_value("NoAI").is_some_and(|value| value != 0));
     }
 
     pub fn set_death_loot_table(&self, loot_table: Option<Identifier>) {

@@ -7,6 +7,8 @@ use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -539,16 +541,16 @@ impl ExperienceOrbEntity {
 
     fn load_orb(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.state.lock();
-        state.health = i32::from(nbt.short("Health").unwrap_or(DEFAULT_HEALTH as i16));
-        state.age = i32::from(nbt.short("Age").unwrap_or(0));
-        if let Some(count) = nbt.int("Count")
+        state.health = i32::from(nbt.short_value("Health").unwrap_or(DEFAULT_HEALTH as i16));
+        state.age = i32::from(nbt.short_value("Age").unwrap_or(0));
+        if let Some(count) = nbt.get("Count").and_then(|tag| tag.codec_i32())
             && count > 0
         {
             state.count = count;
         }
         drop(state);
 
-        self.set_value(i32::from(nbt.short("Value").unwrap_or(0)));
+        self.set_value(i32::from(nbt.short_value("Value").unwrap_or(0)));
     }
 }
 

@@ -5,6 +5,7 @@ use crate::entity::component::definition::TickCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::{f32::consts::TAU, sync::Arc};
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -326,7 +327,8 @@ impl PrimedTntEntity {
 
     fn load_tnt(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.set_fuse(i32::from(
-            nbt.short("fuse").unwrap_or(Self::DEFAULT_FUSE_TIME as i16),
+            nbt.short_value("fuse")
+                .unwrap_or(Self::DEFAULT_FUSE_TIME as i16),
         ));
         self.set_block_state(
             nbt.compound("block_state")
@@ -335,7 +337,7 @@ impl PrimedTntEntity {
         );
         let mut state = self.state.lock();
         state.explosion_power = nbt
-            .float("explosion_power")
+            .float_value("explosion_power")
             .unwrap_or(DEFAULT_EXPLOSION_POWER)
             .clamp(0.0, 128.0);
         state.owner = EntityReference::read(&nbt, "owner");

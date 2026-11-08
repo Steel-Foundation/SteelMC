@@ -38,6 +38,11 @@ pub trait EntityBody: Entity {
         Direction::from_yaw(yaw)
     }
 
+    /// Default for [`Entity::motion_direction`].
+    fn motion_direction_default(&self) -> Direction {
+        self.direction_yaw()
+    }
+
     /// Default for [`Entity::look_at`].
     fn look_at_default(&self, from_anchor: EntityAnchor, target: DVec3) {
         apply_entity_look_at(self.as_entity_event_source(), from_anchor, target);

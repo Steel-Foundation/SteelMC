@@ -1,6 +1,7 @@
 //! Vanilla `Bat`: rests on cave ceilings and flutters through the dark.
 
 use std::f32::consts::PI;
+use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
 use rand::RngExt as _;
@@ -305,7 +306,7 @@ impl BatEntity {
         self.entity_data
             .lock()
             .id_flags
-            .set(nbt.byte("BatFlags").unwrap_or(0));
+            .set(nbt.byte_value("BatFlags").unwrap_or(0));
     }
 }
 

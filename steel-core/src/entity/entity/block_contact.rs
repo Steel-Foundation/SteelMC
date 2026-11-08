@@ -187,8 +187,8 @@ pub trait EntityBlockContact: Entity {
             .jump_factor
     }
 
-    /// Returns whether this entity is on rails.
-    fn is_on_rails(&self) -> bool {
+    /// Default for [`Entity::is_on_rails`].
+    fn is_on_rails_default(&self) -> bool {
         false
     }
 

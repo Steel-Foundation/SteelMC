@@ -9,6 +9,7 @@ use crate::entity::component::definition::BaseExperienceRewardCtx;
 use crate::entity::prelude::*;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
+use steel_utils::nbt::NbtValueInput as _;
 
 use rand::Rng;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -134,7 +135,7 @@ impl Component for Breeding {
 
     fn load(&self, _owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.state.lock();
-        state.in_love = nbt.int("InLove").unwrap_or(0);
+        state.in_love = nbt.int_value("InLove").unwrap_or(0);
         if let Some(love_cause) = nbt.int_array("LoveCause")
             && let Some(uuid) = Uuid::from_int_array(&love_cause)
         {
