@@ -307,19 +307,15 @@ fn base_block_hit_dispatches_vanilla_block_callbacks() {
                 DVec3::new(1_136.5, 64.5, 1_136.5),
                 Arc::downgrade(&world),
             ));
-            let firework_entity: SharedEntity = Arc::<FireworkRocketEntity>::clone(&firework);
             let hit_block = |block_pos| {
-                firework.projectile().on_hit_block_default(
-                    &firework_entity,
-                    &ClipHitResult {
-                        location: firework.position(),
-                        direction: Direction::Up,
-                        block_pos,
-                        miss: false,
-                        inside: false,
-                        world_border_hit: false,
-                    },
-                );
+                firework.projectile().on_hit_block_base(&ClipHitResult {
+                    location: firework.position(),
+                    direction: Direction::Up,
+                    block_pos,
+                    miss: false,
+                    inside: false,
+                    world_border_hit: false,
+                });
             };
             firework.set_remaining_fire_ticks(1);
             hit_block(pos);

@@ -31,6 +31,7 @@ use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Downcast as _};
 
 use crate::entity::component::definition::Definition;
+use crate::entity::component::entries::{CanHitEntityCtx, OnHitBlockCtx, OnHitEntityCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
 use crate::entity::prelude::*;
@@ -106,10 +107,37 @@ impl FishingHookState {
 impl FishingHookEntity {
     const SEED: StageId = StageId("fishing_hook.seed");
     const TICK: StageId = StageId("fishing_hook.tick");
+    const CAN_HIT_ENTITY: StageId = StageId("fishing_hook.can_hit_entity");
+    const ON_HIT_ENTITY: StageId = StageId("fishing_hook.on_hit_entity");
+    const ON_HIT_BLOCK: StageId = StageId("fishing_hook.on_hit_block");
 
     fn define() -> Definition<Self> {
         let definition = projectile::definition();
         Definition {
+            can_hit_entity: definition.can_hit_entity.then([Stage::new(
+                Self::CAN_HIT_ENTITY,
+                |_: &Self, ctx: &mut CanHitEntityCtx<'_>| {
+                    ctx.result |= ctx.target.is_alive() && ctx.target.is::<ItemEntity>();
+                    Flow::Continue
+                },
+            )]),
+            on_hit_entity: definition.on_hit_entity.then([Stage::new(
+                Self::ON_HIT_ENTITY,
+                |hook: &Self, ctx: &mut OnHitEntityCtx<'_>| {
+                    hook.set_hooked_entity(Some(Arc::clone(ctx.target)));
+                    Flow::Continue
+                },
+            )]),
+            on_hit_block: definition.on_hit_block.then([Stage::new(
+                Self::ON_HIT_BLOCK,
+                |hook: &Self, ctx: &mut OnHitBlockCtx<'_>| {
+                    // Vanilla scales by `HitResult.distanceTo`, which is the
+                    // squared distance.
+                    let distance_sqr = ctx.hit.location.distance_squared(hook.position());
+                    hook.set_velocity(vector::normalize(hook.velocity()) * distance_sqr);
+                    Flow::Continue
+                },
+            )]),
             tick: definition
                 .tick
                 .before(
@@ -149,17 +177,6 @@ impl FishingHookEntity {
         ..projectile::entity_props()
     };
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        can_hit_entity: |hook, target| {
-            hook.projectile().can_hit_entity_default(target)
-                || (target.is_alive() && target.is::<ItemEntity>())
-        },
-        on_hit_entity: |hook, _, target, _| hook.set_hooked_entity(Some(Arc::clone(target))),
-        on_hit_block: |hook, entity, hit| {
-            hook.projectile().on_hit_block_default(entity, hit);
-            // Vanilla scales by `HitResult.distanceTo`, which is the squared distance.
-            let distance_sqr = hit.location.distance_squared(hook.position());
-            hook.set_velocity(vector::normalize(hook.velocity()) * distance_sqr);
-        },
         should_bounce_on_world_border: |_| true,
         ..ProjectileProps::new()
     };

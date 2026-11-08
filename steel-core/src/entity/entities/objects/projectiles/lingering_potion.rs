@@ -12,9 +12,7 @@ use steel_utils::locks::CheckedMutex;
 
 use crate::entity::entities::AreaEffectCloudEntity;
 use crate::entity::projectile::throwable_item::ThrownItem;
-use crate::entity::projectile::{
-    ProjectileBase, ProjectileHit, ProjectileProps, throwable, thrown_potion,
-};
+use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps, thrown_potion};
 use crate::entity::{
     Entity, EntityBase, EntityProps, SharedEntity, apply_implicit_item_stack_components,
     next_entity_id,
@@ -26,7 +24,7 @@ use crate::world::World;
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/lingering_potion", constructors)]
-#[entity(definition = throwable::definition)]
+#[entity(definition = thrown_potion::definition)]
 pub struct LingeringPotionEntity {
     #[entity(base)]
     base: EntityBase,

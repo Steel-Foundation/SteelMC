@@ -3,13 +3,17 @@
 
 use std::sync::Arc;
 
+use glam::DVec3;
+
 use steel_utils::types::InteractionHand;
 
 use crate::behavior::InteractionResult;
 use crate::entity::component::pipeline::Entry;
-use crate::entity::{EntitySpawnReason, SharedEntity, SpawnGroupData};
+use crate::entity::projectile::ProjectileHit;
+use crate::entity::{Entity, EntitySpawnReason, SharedEntity, SpawnGroupData};
 use crate::physics::MoveResult;
 use crate::player::Player;
+use crate::world::ClipHitResult;
 use crate::world::World;
 
 /// Vanilla `Entity.tick`.
@@ -18,6 +22,68 @@ pub struct Tick;
 impl Entry for Tick {
     /// The shared handle of the entity being ticked.
     type Ctx<'a> = &'a SharedEntity;
+}
+
+/// Vanilla `Projectile.onHit`.
+pub struct OnHit;
+
+/// Context of one [`OnHit`] call.
+pub struct OnHitCtx<'a> {
+    /// The shared handle of the projectile.
+    pub entity: &'a SharedEntity,
+    /// What the projectile hit.
+    pub hit: &'a ProjectileHit,
+}
+
+impl Entry for OnHit {
+    type Ctx<'a> = OnHitCtx<'a>;
+}
+
+/// Vanilla `Projectile.onHitEntity`.
+pub struct OnHitEntity;
+
+/// Context of one [`OnHitEntity`] call.
+pub struct OnHitEntityCtx<'a> {
+    /// The shared handle of the projectile.
+    pub entity: &'a SharedEntity,
+    /// The entity hit.
+    pub target: &'a SharedEntity,
+    /// Where the projectile hit `target`.
+    pub location: DVec3,
+}
+
+impl Entry for OnHitEntity {
+    type Ctx<'a> = OnHitEntityCtx<'a>;
+}
+
+/// Vanilla `Projectile.onHitBlock`.
+pub struct OnHitBlock;
+
+/// Context of one [`OnHitBlock`] call.
+pub struct OnHitBlockCtx<'a> {
+    /// The shared handle of the projectile.
+    pub entity: &'a SharedEntity,
+    /// The block hit.
+    pub hit: &'a ClipHitResult,
+}
+
+impl Entry for OnHitBlock {
+    type Ctx<'a> = OnHitBlockCtx<'a>;
+}
+
+/// Vanilla `Projectile.canHitEntity`: stages refine [`CanHitEntityCtx::result`].
+pub struct CanHitEntity;
+
+/// Context of one [`CanHitEntity`] call.
+pub struct CanHitEntityCtx<'a> {
+    /// The entity the projectile may hit.
+    pub target: &'a dyn Entity,
+    /// Whether the projectile can hit `target`.
+    pub result: bool,
+}
+
+impl Entry for CanHitEntity {
+    type Ctx<'a> = CanHitEntityCtx<'a>;
 }
 
 /// The vanilla constructor chain of a mob, `Mob.registerGoals` included. Runs on

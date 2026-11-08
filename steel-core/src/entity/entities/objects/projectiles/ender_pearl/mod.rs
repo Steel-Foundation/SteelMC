@@ -20,12 +20,14 @@ use steel_utils::types::Difficulty;
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
 use crate::entity::component::definition::Definition;
+use crate::entity::component::entries::OnHitEntityCtx;
+use crate::entity::component::pipeline::Stage;
 use crate::entity::component::pipeline::{Flow, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::EndermiteEntity;
 use crate::entity::prelude::*;
 use crate::entity::projectile::throwable_item::ThrownItem;
-use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps, throwable};
+use crate::entity::projectile::{ProjectileBase, ProjectileProps, throwable};
 use crate::entity::{
     Entity, EntityBase, EntityProps, RemovalReason, SharedEntity, change_entity_world,
     next_entity_id,
@@ -58,7 +60,7 @@ impl EnderPearlEntity {
     const TICK: StageId = StageId("ender_pearl.tick");
 
     fn define() -> Definition<Self> {
-        let definition = throwable::definition();
+        let definition = Self::define_hits(throwable::definition());
         Definition {
             tick: definition.tick.around(Self::TICK, |pearl, entity, inner| {
                 let shared = *entity;
@@ -88,13 +90,29 @@ impl EnderPearlEntity {
         },
         ..throwable::entity_props()
     };
+    const ON_HIT: StageId = StageId("ender_pearl.on_hit");
+    const ON_HIT_ENTITY: StageId = StageId("ender_pearl.on_hit_entity");
+
+    fn define_hits(definition: Definition<Self>) -> Definition<Self> {
+        Definition {
+            on_hit: definition
+                .on_hit
+                .then([Stage::effect(Self::ON_HIT, Self::on_hit_after_super)]),
+            on_hit_entity: definition.on_hit_entity.then([Stage::new(
+                Self::ON_HIT_ENTITY,
+                |pearl: &Self, ctx: &mut OnHitEntityCtx<'_>| {
+                    let (entity, target) = (ctx.entity, ctx.target);
+                    if let Some(world) = target.level() {
+                        target.hurt(&world, &pearl.projectile().thrown_damage(entity), 0.0);
+                    }
+                    Flow::Continue
+                },
+            )]),
+            ..definition
+        }
+    }
+
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        on_hit: Self::projectile_on_hit,
-        on_hit_entity: |pearl, entity, target, _| {
-            if let Some(world) = target.level() {
-                target.hurt(&world, &pearl.projectile().thrown_damage(entity), 0.0);
-            }
-        },
         ..ProjectileProps::new()
     };
 
@@ -166,9 +184,8 @@ impl EnderPearlEntity {
 
     /// `ThrownEnderpearl.onHit`: teleports the owner to where the pearl was
     /// before this tick's move, then disappears.
-    fn projectile_on_hit(&self, entity: &SharedEntity, hit: &ProjectileHit) {
+    fn on_hit_after_super(&self) {
         let projectile = self.projectile();
-        projectile.on_hit_default(entity, hit);
         // VANILLA CLIENT-LOCAL: the portal particles.
         let Some(world) = self.level() else {
             return;

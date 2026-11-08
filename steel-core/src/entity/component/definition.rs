@@ -12,24 +12,36 @@ use steel_utils::{Downcast as _, DowncastType};
 
 use crate::behavior::InteractionResult;
 use crate::entity::component::entries::{
-    AiStep, AiStepCtx, Ate, Construct, CustomServerAiStep, FinalizeSpawn, FinalizeSpawnCtx,
-    MobInteract, MobInteractCtx, Tick,
+    AiStep, AiStepCtx, Ate, CanHitEntity, CanHitEntityCtx, Construct, CustomServerAiStep,
+    FinalizeSpawn, FinalizeSpawnCtx, MobInteract, MobInteractCtx, OnHit, OnHitBlock, OnHitBlockCtx,
+    OnHitCtx, OnHitEntity, OnHitEntityCtx, Tick,
 };
 use crate::entity::component::pipeline::{Pipeline, Stage, StageId};
+use crate::entity::projectile::ProjectileHit;
 use crate::entity::{Entity, EntitySpawnReason, MobBase, SharedEntity, SpawnGroupData};
 use crate::physics::MoveResult;
 use crate::player::Player;
+use crate::world::ClipHitResult;
 use crate::world::World;
+use glam::DVec3;
 
 /// The `Entity.tick` stage: vanilla's base entity tick, `Entity.baseTick`.
 pub const TICK: StageId = StageId("entity.tick");
 
 /// Pipelines of one entity type, built from its layer presets.
 ///
-/// The mob pipelines stay empty for entities that are not mobs.
+/// A layer's pipelines stay empty for entities without that layer.
 pub struct Definition<E: 'static> {
     /// `Entity.tick`.
     pub tick: Pipeline<E, Tick>,
+    /// `Projectile.onHit`.
+    pub on_hit: Pipeline<E, OnHit>,
+    /// `Projectile.onHitEntity`.
+    pub on_hit_entity: Pipeline<E, OnHitEntity>,
+    /// `Projectile.onHitBlock`.
+    pub on_hit_block: Pipeline<E, OnHitBlock>,
+    /// `Projectile.canHitEntity`.
+    pub can_hit_entity: Pipeline<E, CanHitEntity>,
     /// The mob constructor chain, `Mob.registerGoals` included.
     pub construct: Pipeline<MobBase, Construct>,
     /// `LivingEntity.aiStep`.
@@ -53,6 +65,10 @@ impl<E: Entity> Definition<E> {
         }
         Self {
             tick: Pipeline::new([Stage::effect(TICK, tick::<E>)]),
+            on_hit: Pipeline::new([]),
+            on_hit_entity: Pipeline::new([]),
+            on_hit_block: Pipeline::new([]),
+            can_hit_entity: Pipeline::new([]),
             construct: Pipeline::new([]),
             ai_step: Pipeline::new([]),
             custom_server_ai_step: Pipeline::new([]),
@@ -87,6 +103,18 @@ impl<E: Entity> Default for Definition<E> {
 pub trait DefinitionEntries: Send + Sync {
     /// Runs `tick` for `entity`.
     fn tick(&self, entity: &SharedEntity);
+
+    /// Runs `onHit` for `projectile`.
+    fn on_hit(&self, projectile: &SharedEntity, hit: &ProjectileHit);
+
+    /// Runs `onHitEntity` for `projectile` hitting `target` at `location`.
+    fn on_hit_entity(&self, projectile: &SharedEntity, target: &SharedEntity, location: DVec3);
+
+    /// Runs `onHitBlock` for `projectile`.
+    fn on_hit_block(&self, projectile: &SharedEntity, hit: &ClipHitResult);
+
+    /// Runs `canHitEntity`: whether `projectile` can hit `target`.
+    fn can_hit_entity(&self, projectile: &dyn Entity, target: &dyn Entity) -> bool;
 
     /// Runs the mob constructor chain on a fresh `mob_base`.
     fn construct(&self, mob_base: &MobBase);
@@ -141,6 +169,49 @@ impl<E: Entity + DowncastType> DefinitionEntries for Definition<E> {
             let mut ctx = entity;
             self.tick.run(typed, &mut ctx);
         }
+    }
+
+    fn on_hit(&self, projectile: &SharedEntity, hit: &ProjectileHit) {
+        if let Some(typed) = Self::typed(projectile.as_ref()) {
+            let mut ctx = OnHitCtx {
+                entity: projectile,
+                hit,
+            };
+            self.on_hit.run(typed, &mut ctx);
+        }
+    }
+
+    fn on_hit_entity(&self, projectile: &SharedEntity, target: &SharedEntity, location: DVec3) {
+        if let Some(typed) = Self::typed(projectile.as_ref()) {
+            let mut ctx = OnHitEntityCtx {
+                entity: projectile,
+                target,
+                location,
+            };
+            self.on_hit_entity.run(typed, &mut ctx);
+        }
+    }
+
+    fn on_hit_block(&self, projectile: &SharedEntity, hit: &ClipHitResult) {
+        if let Some(typed) = Self::typed(projectile.as_ref()) {
+            let mut ctx = OnHitBlockCtx {
+                entity: projectile,
+                hit,
+            };
+            self.on_hit_block.run(typed, &mut ctx);
+        }
+    }
+
+    fn can_hit_entity(&self, projectile: &dyn Entity, target: &dyn Entity) -> bool {
+        let Some(typed) = Self::typed(projectile) else {
+            return false;
+        };
+        let mut ctx = CanHitEntityCtx {
+            target,
+            result: false,
+        };
+        self.can_hit_entity.run(typed, &mut ctx);
+        ctx.result
     }
 
     fn construct(&self, mob_base: &MobBase) {
@@ -214,6 +285,16 @@ pub struct DefaultDefinition;
 impl DefinitionEntries for DefaultDefinition {
     fn tick(&self, entity: &SharedEntity) {
         entity.base_tick();
+    }
+
+    fn on_hit(&self, _projectile: &SharedEntity, _hit: &ProjectileHit) {}
+
+    fn on_hit_entity(&self, _projectile: &SharedEntity, _target: &SharedEntity, _location: DVec3) {}
+
+    fn on_hit_block(&self, _projectile: &SharedEntity, _hit: &ClipHitResult) {}
+
+    fn can_hit_entity(&self, _projectile: &dyn Entity, _target: &dyn Entity) -> bool {
+        false
     }
 
     fn construct(&self, _mob_base: &MobBase) {}

@@ -22,6 +22,7 @@ use steel_utils::locks::CheckedMutex;
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::component::definition::Definition;
+use crate::entity::component::entries::{OnHitBlockCtx, OnHitEntityCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::prelude::*;
@@ -63,10 +64,31 @@ pub struct FireworkRocketEntity {
 
 impl FireworkRocketEntity {
     const TICK: StageId = StageId("firework_rocket.tick");
+    const ON_HIT_ENTITY: StageId = StageId("firework_rocket.on_hit_entity");
+    const ON_HIT_BLOCK: StageId = StageId("firework_rocket.on_hit_block");
 
     fn define() -> Definition<Self> {
         let definition = projectile::definition();
         Definition {
+            on_hit_entity: definition.on_hit_entity.then([Stage::new(
+                Self::ON_HIT_ENTITY,
+                |rocket: &Self, ctx: &mut OnHitEntityCtx<'_>| {
+                    if let Some(world) = rocket.level() {
+                        rocket.explode(ctx.entity, &world);
+                    }
+                    Flow::Continue
+                },
+            )]),
+            on_hit_block: definition.on_hit_block.before(
+                projectile::ON_HIT_BLOCK,
+                [Stage::new(
+                    Self::ON_HIT_BLOCK,
+                    |rocket: &Self, ctx: &mut OnHitBlockCtx<'_>| {
+                        rocket.on_hit_block_before_super(ctx.entity, ctx.hit);
+                        Flow::Continue
+                    },
+                )],
+            ),
             tick: definition.tick.then([Stage::new(
                 Self::TICK,
                 |rocket: &Self, entity: &mut &SharedEntity| {
@@ -83,12 +105,6 @@ impl FireworkRocketEntity {
         ..projectile::entity_props()
     };
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        on_hit_entity: |rocket, entity, _, _| {
-            if let Some(world) = rocket.level() {
-                rocket.explode(entity, &world);
-            }
-        },
-        on_hit_block: Self::projectile_on_hit_block,
         horizontal_hurt_knockback_direction: |rocket, hurt_entity, _| {
             let delta = hurt_entity.position() - rocket.position();
             (delta.x, delta.z)
@@ -357,7 +373,8 @@ impl FireworkRocketEntity {
 
     /// `FireworkRocketEntity.onHitBlock`: the block reacts as if the rocket
     /// were inside it, and a rocket with explosions explodes.
-    fn projectile_on_hit_block(&self, entity: &SharedEntity, hit: &ClipHitResult) {
+    /// `FireworkRocketEntity.onHitBlock` before `super`.
+    fn on_hit_block_before_super(&self, entity: &SharedEntity, hit: &ClipHitResult) {
         if let Some(world) = self.level() {
             let state = world.get_block_state(hit.block_pos);
             let mut ignored_effects = InsideBlockEffectCollector::new();
@@ -375,7 +392,6 @@ impl FireworkRocketEntity {
                 self.explode(entity, &world);
             }
         }
-        self.projectile().on_hit_block_default(entity, hit);
     }
 
     fn save_rocket(&self, nbt: &mut NbtCompound) {

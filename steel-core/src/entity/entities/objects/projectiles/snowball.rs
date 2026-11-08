@@ -7,18 +7,21 @@ use steel_registry::{vanilla_entities, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 
+use crate::entity::component::definition::Definition;
+use crate::entity::component::entries::OnHitEntityCtx;
+use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use crate::entity::projectile::throwable;
 use crate::entity::projectile::throwable_item::ThrownItem;
-use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps};
-use crate::entity::{Entity, EntityBase, EntityProps, RemovalReason, SharedEntity};
+use crate::entity::projectile::{ProjectileBase, ProjectileProps};
+use crate::entity::{Entity, EntityBase, EntityProps, RemovalReason};
 
 /// A thrown snowball.
 #[entity_behavior(class = "Snowball")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/snowball", constructors)]
-#[entity(definition = throwable::definition)]
+#[entity(definition = Self::define)]
 pub struct SnowballEntity {
     #[entity(base)]
     base: EntityBase,
@@ -34,18 +37,35 @@ pub struct SnowballEntity {
 
 impl SnowballEntity {
     const ENTITY: EntityProps<Self> = throwable::entity_props();
+    const ON_HIT: StageId = StageId("snowball.on_hit");
+    const ON_HIT_ENTITY: StageId = StageId("snowball.on_hit_entity");
+
+    fn define() -> Definition<Self> {
+        let definition = throwable::definition();
+        Definition {
+            on_hit: definition
+                .on_hit
+                .then([Stage::effect(Self::ON_HIT, Self::on_hit_after_super)]),
+            on_hit_entity: definition.on_hit_entity.then([Stage::new(
+                Self::ON_HIT_ENTITY,
+                |snowball: &Self, ctx: &mut OnHitEntityCtx<'_>| {
+                    let (entity, target) = (ctx.entity, ctx.target);
+                    let damage = if target.entity_type() == &vanilla_entities::BLAZE {
+                        3.0
+                    } else {
+                        0.0
+                    };
+                    if let Some(world) = target.level() {
+                        target.hurt(&world, &snowball.projectile().thrown_damage(entity), damage);
+                    }
+                    Flow::Continue
+                },
+            )]),
+            ..definition
+        }
+    }
+
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        on_hit: Self::projectile_on_hit,
-        on_hit_entity: |snowball, entity, target, _| {
-            let damage = if target.entity_type() == &vanilla_entities::BLAZE {
-                3.0
-            } else {
-                0.0
-            };
-            if let Some(world) = target.level() {
-                target.hurt(&world, &snowball.projectile().thrown_damage(entity), damage);
-            }
-        },
         ..ProjectileProps::new()
     };
 
@@ -62,8 +82,7 @@ impl SnowballEntity {
     }
 
     /// `Snowball.onHit`: breaks into particles on clients and disappears.
-    fn projectile_on_hit(&self, entity: &SharedEntity, hit: &ProjectileHit) {
-        self.projectile().on_hit_default(entity, hit);
+    fn on_hit_after_super(&self) {
         // VANILLA CLIENT-LOCAL: entity event 3 shows the break particles.
         self.broadcast_entity_event(EntityStatus::Death);
         self.set_removed(RemovalReason::Discarded);
@@ -78,7 +97,9 @@ mod tests {
     use steel_utils::{BlockPos, Direction};
 
     use super::*;
+    use crate::entity::SharedEntity;
     use crate::entity::damage::DamageSource;
+    use crate::entity::projectile::ProjectileHit;
     use crate::test_support::test_world;
     use crate::world::ClipHitResult;
     use glam::DVec3;

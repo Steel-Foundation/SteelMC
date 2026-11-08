@@ -34,8 +34,8 @@ use uuid::Uuid;
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::enchantment_helper;
 use crate::entity::component::definition::Definition;
-use crate::entity::component::entries::Tick;
-use crate::entity::component::pipeline::{Flow, Inner, StageId};
+use crate::entity::component::entries::{CanHitEntityCtx, OnHitBlockCtx, OnHitCtx, Tick};
+use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage, StageId};
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::damage::DamageSource;
@@ -204,14 +204,6 @@ entity_props! {
     /// Per-type properties of a vanilla `Projectile`.
     pub struct ProjectileProps<E>: ProjectileHooks for Projectile
     where E: Parts => projectile {
-        /// `Projectile.onHit`: resolves a hit that was not deflected.
-        fn on_hit(entity: &SharedEntity, hit: &ProjectileHit) = on_hit_default;
-        /// `Projectile.onHitEntity`.
-        fn on_hit_entity(entity: &SharedEntity, target: &SharedEntity, location: DVec3) = on_hit_entity_default;
-        /// `Projectile.onHitBlock`.
-        fn on_hit_block(entity: &SharedEntity, hit: &ClipHitResult) = on_hit_block_default;
-        /// `Projectile.canHitEntity`.
-        fn can_hit_entity(target: &dyn Entity) -> bool = can_hit_entity_default;
         /// `Projectile.onDeflection`.
         fn on_deflection(by_attack: bool) = on_deflection_default;
         /// `Projectile.shouldBounceOnWorldBorder`.
@@ -280,6 +272,12 @@ impl<E: Entity + Has<ProjectileBase>> Parts for E {
 
 /// The `Projectile.tick` stage, around `Entity`'s.
 pub const TICK: StageId = StageId("projectile.tick");
+/// The `Projectile.onHit` stage: dispatches to the entity or block hit.
+pub const ON_HIT: StageId = StageId("projectile.on_hit");
+/// The `Projectile.onHitBlock` stage: the block's projectile reaction.
+pub const ON_HIT_BLOCK: StageId = StageId("projectile.on_hit_block");
+/// The `Projectile.canHitEntity` stage.
+pub const CAN_HIT_ENTITY: StageId = StageId("projectile.can_hit_entity");
 
 /// Vanilla `Projectile`'s chains, on `Entity`'s.
 #[must_use]
@@ -293,9 +291,26 @@ pub fn definition<E: Parts>() -> Definition<E> {
             .projectile()
             .tick_around(|| inner(projectile, entity))
     }
+    fn on_hit<E: Parts>(projectile: &E, ctx: &mut OnHitCtx<'_>) -> Flow {
+        projectile.projectile().on_hit_base(ctx.entity, ctx.hit);
+        Flow::Continue
+    }
+    fn on_hit_block<E: Parts>(projectile: &E, ctx: &mut OnHitBlockCtx<'_>) -> Flow {
+        projectile.projectile().on_hit_block_base(ctx.hit);
+        Flow::Continue
+    }
+    fn can_hit_entity<E: Parts>(projectile: &E, ctx: &mut CanHitEntityCtx<'_>) -> Flow {
+        ctx.result = projectile.projectile().can_hit_entity_base(ctx.target);
+        Flow::Continue
+    }
     let definition = Definition::new();
     Definition {
         tick: definition.tick.around(TICK, tick::<E>),
+        on_hit: Pipeline::new([Stage::new(ON_HIT, on_hit::<E>)]),
+        // Vanilla's `Projectile.onHitEntity` does nothing.
+        on_hit_entity: Pipeline::new([]),
+        on_hit_block: Pipeline::new([Stage::new(ON_HIT_BLOCK, on_hit_block::<E>)]),
+        can_hit_entity: Pipeline::new([Stage::new(CAN_HIT_ENTITY, can_hit_entity::<E>)]),
         ..definition
     }
 }
@@ -475,8 +490,33 @@ impl<'a> Projectile<'a> {
         (movement.x, movement.z)
     }
 
-    /// Default for [`ProjectileProps::can_hit_entity`].
-    pub fn can_hit_entity_default(&self, target: &dyn Entity) -> bool {
+    /// `Projectile.canHitEntity`: runs this type's pipeline.
+    #[must_use]
+    pub fn can_hit_entity(&self, target: &dyn Entity) -> bool {
+        self.entity
+            .entity_definition()
+            .can_hit_entity(self.entity, target)
+    }
+
+    /// `Projectile.onHit`: runs this type's pipeline.
+    pub fn on_hit(&self, entity: &SharedEntity, hit: &ProjectileHit) {
+        self.entity.entity_definition().on_hit(entity, hit);
+    }
+
+    /// `Projectile.onHitEntity`: runs this type's pipeline.
+    pub fn on_hit_entity(&self, entity: &SharedEntity, target: &SharedEntity, location: DVec3) {
+        self.entity
+            .entity_definition()
+            .on_hit_entity(entity, target, location);
+    }
+
+    /// `Projectile.onHitBlock`: runs this type's pipeline.
+    pub fn on_hit_block(&self, entity: &SharedEntity, hit: &ClipHitResult) {
+        self.entity.entity_definition().on_hit_block(entity, hit);
+    }
+
+    /// The `Projectile.canHitEntity` base stage.
+    fn can_hit_entity_base(&self, target: &dyn Entity) -> bool {
         if !target.can_be_hit_by_projectile() {
             return false;
         }
@@ -661,8 +701,8 @@ impl<'a> Projectile<'a> {
         ProjectileDeflection::None
     }
 
-    /// Default for [`ProjectileProps::on_hit`].
-    pub fn on_hit_default(&self, entity: &SharedEntity, hit: &ProjectileHit) {
+    /// The `Projectile.onHit` base stage.
+    fn on_hit_base(&self, entity: &SharedEntity, hit: &ProjectileHit) {
         let world = self.level();
         match hit {
             ProjectileHit::Entity(entity_hit) => {
@@ -703,20 +743,8 @@ impl<'a> Projectile<'a> {
         }
     }
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `ProjectileProps`"
-    )]
-    const fn on_hit_entity_default(
-        &self,
-        _entity: &SharedEntity,
-        _target: &SharedEntity,
-        _location: DVec3,
-    ) {
-    }
-
-    /// Default for [`ProjectileProps::on_hit_block`].
-    pub fn on_hit_block_default(&self, _entity: &SharedEntity, hit: &ClipHitResult) {
+    /// The `Projectile.onHitBlock` base stage.
+    fn on_hit_block_base(&self, hit: &ClipHitResult) {
         let Some(world) = self.level() else {
             return;
         };
