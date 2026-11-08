@@ -25,6 +25,7 @@ use crate::entity::ai::path::PathType;
 use crate::entity::component::definition::BaseExperienceRewardCtx;
 use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::HurtCtx;
+use crate::entity::component::definition::TravelCtx;
 use crate::entity::component::pipeline::Flow;
 use crate::entity::component::pipeline::{Pipeline, Stage, StageId};
 use crate::entity::damage::DamageSource;
@@ -97,9 +98,6 @@ impl SquidEntity {
         sound_volume: |_| 0.4,
         hurt_sound: |_, _| Some(&sound_events::ENTITY_SQUID_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_SQUID_DEATH),
-        travel: |squid, entity, _| {
-            Arc::clone(entity).move_entity(MoverType::SelfMovement, squid.velocity())
-        },
         ..mob::living_props()
     };
     const MOB: MobProps<Self> = MobProps {
@@ -123,6 +121,7 @@ impl SquidEntity {
     const AIR: StageId = StageId("squid.air");
     const INK: StageId = StageId("squid.ink");
     const XP: StageId = StageId("squid.xp");
+    const TRAVEL: StageId = StageId("squid.travel");
 
     /// Vanilla `Squid`: the `AgeableMob` chains with the squid's goals, its
     /// water malus and its swimming.
@@ -137,11 +136,19 @@ impl SquidEntity {
                         .set(PathType::Water, 0.0);
                 }),
             ]),
-            ai_step: Pipeline::new([
-                mob::stages::ai_step::<Self>(),
+            ai_step: mob::stages::definition::<Self>().ai_step.then([
                 ageable::ai_step::<Self>(),
                 Stage::effect(Self::SWIM, Self::swim),
             ]),
+            // `Squid.travel` moves without `super`'s physics.
+            travel: Pipeline::new([Stage::new(
+                Self::TRAVEL,
+                |squid: &Self, ctx: &mut TravelCtx<'_>| {
+                    ctx.result = Arc::clone(ctx.entity)
+                        .move_entity(MoverType::SelfMovement, squid.velocity());
+                    Flow::Continue
+                },
+            )]),
             custom_server_ai_step: Pipeline::new([]),
             mob_interact: Pipeline::new([ageable::mob_interact::<Self>()]),
             finalize_spawn: Pipeline::new([

@@ -238,6 +238,20 @@ definition_chains! {
     /// Vanilla `Entity.getControllingPassenger`.
     ControllingPassenger / ControllingPassengerCtx:
         fn controlling_passenger() -> Option<SharedEntity> = None;
+    /// Vanilla `LivingEntity.travel`, with the movement it performed.
+    Travel / TravelCtx:
+        fn travel<'a>(entity: &'a SharedEntity, input: DVec3) -> Option<MoveResult> = None;
+    /// Vanilla `LivingEntity.jumpFromGround`.
+    JumpFromGround / JumpFromGroundCtx: fn jump_from_ground();
+    /// Vanilla `LivingEntity.isImmobile`.
+    IsImmobile / IsImmobileCtx: fn is_immobile() -> bool = false;
+    /// Vanilla `LivingEntity.canGlide`.
+    CanGlide / CanGlideCtx: fn can_glide() -> bool = false;
+    /// Vanilla `LivingEntity.isInvulnerableTo`.
+    IsInvulnerableTo / IsInvulnerableToCtx:
+        fn is_invulnerable_to<'a>(world: &'a World, source: &'a DamageSource) -> bool = false;
+    /// Vanilla `LivingEntity.canBeSeenAsEnemy`.
+    CanBeSeenAsEnemy / CanBeSeenAsEnemyCtx: fn can_be_seen_as_enemy() -> bool = false;
     /// Vanilla `LivingEntity.getVoicePitch`.
     VoicePitch / VoicePitchCtx: fn voice_pitch() -> f32 = 1.0;
     /// Vanilla `LivingEntity.getEquipSound`, as far as Steel resolves it.

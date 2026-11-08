@@ -1,9 +1,7 @@
 //! `Mob`'s own layers of the pipelined vanilla methods.
 
 use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::{
-    AiStep, AiStepCtx, Ate, FinalizeSpawn, FinalizeSpawnCtx, Tick,
-};
+use crate::entity::component::definition::{AiStep, Ate, FinalizeSpawn, FinalizeSpawnCtx, Tick};
 use crate::entity::component::definition::{BaseExperienceRewardCtx, CanDispenserEquipIntoSlotCtx};
 use crate::entity::component::definition::{ControllingPassengerCtx, Interact, InteractCtx};
 use crate::entity::component::pipeline::Inner;
@@ -13,7 +11,7 @@ use crate::entity::living_entity;
 use crate::entity::mob::Parts;
 use steel_registry::vanilla_game_events;
 
-/// Stage running `LivingEntity.aiStep` and `Mob.aiStep`.
+/// Stage running `Mob.aiStep` after the living one.
 pub const AI_STEP: StageId = StageId("mob.ai_step");
 /// Stage running `Mob.finalizeSpawn`.
 pub const FINALIZE_SPAWN: StageId = StageId("mob.finalize_spawn");
@@ -32,13 +30,13 @@ pub const TICK: StageId = StageId("mob.tick");
 /// Stage running `Mob.ate`.
 pub const ATE: StageId = StageId("mob.ate");
 
-/// The `Mob.aiStep` stage, including the `LivingEntity` base it calls first.
+/// The `Mob.aiStep` stage after `super.aiStep()`: daylight burning and
+/// item pickup.
 pub fn ai_step<E: Parts>() -> Stage<E, AiStep> {
-    fn run<E: Parts>(entity: &E, ctx: &mut AiStepCtx<'_>) -> Flow {
-        ctx.result = entity.mob().mob_ai_step(ctx.entity);
-        Flow::Continue
+    fn run<E: Parts>(entity: &E) {
+        entity.mob().mob_ai_step_after_super();
     }
-    Stage::new(AI_STEP, run::<E>)
+    Stage::effect(AI_STEP, run::<E>)
 }
 
 /// The `Mob.ate` stage: the `EAT` game event.
@@ -115,7 +113,7 @@ pub fn definition<E: Parts>() -> Definition<E> {
         base_tick: living.base_tick.then([Stage::effect(BASE_TICK, |mob: &E| {
             mob.mob().mob_base_tick();
         })]),
-        ai_step: Pipeline::new([ai_step::<E>()]),
+        ai_step: living.ai_step.then([ai_step::<E>()]),
         ate: Pipeline::new([ate::<E>()]),
         finalize_spawn: Pipeline::new([finalize_spawn::<E>()]),
         ..living

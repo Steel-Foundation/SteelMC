@@ -12,6 +12,7 @@ use steel_utils::BlockPos;
 
 use crate::entity::component::definition::Definition;
 use crate::entity::component::pipeline::{Stage, StageId};
+use crate::entity::living_entity;
 use crate::entity::mob::{self, LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE, Parts};
 use crate::entity::prelude::*;
 use crate::entity::{Entity, EntityProps, EntitySpawnReason, LivingProps, Mob, MobBase, MobProps};
@@ -35,8 +36,9 @@ pub fn definition<E: Parts>() -> Definition<E> {
         .then([Stage::effect(XP, |mob_base: &MobBase| {
             mob_base.set_xp_reward(5);
         })]);
+    // `Monster.aiStep` updates the idle time before `super.aiStep()`.
     definition.ai_step = definition.ai_step.before(
-        mob::stages::AI_STEP,
+        living_entity::AI_STEP,
         [Stage::effect(NO_ACTION_TIME, |monster: &E| {
             update_no_action_time(monster);
         })],

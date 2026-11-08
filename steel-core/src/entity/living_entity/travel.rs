@@ -457,9 +457,4 @@ impl Living<'_> {
 
         self.travel_in_air(entity, input)
     }
-
-    /// Handles the entity's self-driven movement for the current tick based on its input.
-    pub fn travel_default(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
-        self.default_travel(entity, input)
-    }
 }

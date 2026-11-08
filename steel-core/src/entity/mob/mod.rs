@@ -68,7 +68,6 @@ use crate::entity::{
     aabb_contains_any_liquid,
 };
 use crate::inventory::equipment::EquipmentSlot;
-use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
@@ -458,7 +457,6 @@ impl<'a> Mob<'a> {
 #[must_use]
 pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
-        ai_step: |mob, entity| mob.mob().run_ai_step(entity),
         server_ai_step: |mob, entity| mob.mob().mob_server_ai_step(entity),
         ..LivingProps::new()
     }
@@ -698,11 +696,6 @@ impl<'a> Mob<'a> {
             .sensing()
             .lock()
             .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
-    }
-
-    /// Runs this type's `aiStep` pipeline.
-    pub fn run_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
-        self.definition().ai_step(self.entity(), entity)
     }
 
     /// Runs this type's `customServerAiStep` pipeline.
@@ -1917,8 +1910,7 @@ impl<'a> Mob<'a> {
     ///
     /// Burning and pickup belong here, outside the `serverAiStep` AI gate,
     /// so mobs with `NoAI` still burn and collect loot as in vanilla.
-    pub fn mob_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
-        let result = self.default_ai_step(entity);
+    pub fn mob_ai_step_after_super(&self) {
         if REGISTRY
             .entity_types
             .is_in_tag(self.entity_type(), &EntityTypeTag::BURN_IN_DAYLIGHT)
@@ -1926,7 +1918,6 @@ impl<'a> Mob<'a> {
             self.tick_daylight_burning();
         }
         self.tick_looting();
-        result
     }
 
     pub fn tick_path_navigation(&self) {

@@ -6,6 +6,7 @@ pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
 pub mod connection;
 mod container_counter;
+mod definition;
 mod entity_hooks;
 mod entity_state;
 /// Experience System
@@ -109,7 +110,6 @@ use crate::behavior::{
 };
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
-use crate::enchantment_helper;
 use crate::entity::LivingEntityRef;
 use crate::entity::LivingProps;
 use crate::entity::damage::DamageSource;

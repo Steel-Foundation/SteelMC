@@ -45,20 +45,14 @@ entity_props! {
         fn set_absorption_amount(amount: f32) = set_absorption_amount_default;
         /// Reacts to an equipped item breaking.
         fn on_equipped_item_broken(item: ItemRef, slot: EquipmentSlot) = on_equipped_item_broken_default;
-        /// `LivingEntity.canBeSeenAsEnemy`.
-        fn can_be_seen_as_enemy() -> bool = can_be_seen_as_enemy_default;
         /// `LivingEntity.isAffectedByFluids`.
         fn is_affected_by_fluids() -> bool = is_affected_by_fluids_default;
-        /// `LivingEntity.aiStep`.
-        fn ai_step(entity: &SharedEntity) -> Option<MoveResult> = ai_step_default;
         /// `LivingEntity.indicateDamage`.
         fn indicate_damage(xd: f64, zd: f64) = indicate_damage_default;
         /// `LivingEntity.isUsingItem`.
         fn is_using_item() -> bool = is_using_item_default;
         /// `LivingEntity.getLuck`.
         fn luck() -> f32 = luck_default;
-        /// `LivingEntity.isInvulnerableTo`.
-        fn is_invulnerable_to(world: &World, source: &DamageSource) -> bool = is_invulnerable_to_default;
         /// `LivingEntity.hurtArmor`.
         fn hurt_armor(source: &DamageSource, damage: f32) = hurt_armor_default;
         /// `LivingEntity.hurtHelmet`, for damage that hits a worn helmet.
@@ -83,16 +77,8 @@ entity_props! {
         fn has_infinite_materials() -> bool = has_infinite_materials_default;
         /// `LivingEntity.handleExtraItemsCreatedOnUse`.
         fn handle_extra_items_created_on_use(extra: ItemStack) = handle_extra_items_created_on_use_default;
-        /// `LivingEntity.canGlide`.
-        fn can_glide() -> bool = can_glide_default;
-        /// `LivingEntity.isImmobile`.
-        fn is_immobile() -> bool = is_immobile_default;
         /// `LivingEntity.stopSleeping`.
         fn stop_sleeping() = stop_sleeping_default;
-        /// `LivingEntity.jumpFromGround`.
-        fn jump_from_ground() = jump_from_ground_default;
-        /// `LivingEntity.travel`.
-        fn travel(entity: &SharedEntity, input: DVec3) -> Option<MoveResult> = travel_default;
         /// `LivingEntity.getFlyingSpeed`.
         fn flying_speed() -> f32 = flying_speed_default;
         /// `LivingEntity.getHurtSound`.
@@ -699,6 +685,54 @@ impl<'a> Living<'a> {
         }
     }
 
+    /// Vanilla `LivingEntity.aiStep`: runs this type's pipeline, returning
+    /// the movement it performed.
+    pub fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        self.entity.entity_definition().ai_step(self.entity, entity)
+    }
+
+    /// Vanilla `LivingEntity.travel`: runs this type's pipeline.
+    pub fn travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+        self.entity
+            .entity_definition()
+            .travel(self.entity, entity, input)
+    }
+
+    /// Vanilla `LivingEntity.jumpFromGround`: runs this type's pipeline.
+    pub fn jump_from_ground(&self) {
+        self.entity
+            .entity_definition()
+            .jump_from_ground(self.entity);
+    }
+
+    /// Vanilla `LivingEntity.isImmobile`: runs this type's pipeline.
+    #[must_use]
+    pub fn is_immobile(&self) -> bool {
+        self.entity.entity_definition().is_immobile(self.entity)
+    }
+
+    /// Vanilla `LivingEntity.canGlide`: runs this type's pipeline.
+    #[must_use]
+    pub fn can_glide(&self) -> bool {
+        self.entity.entity_definition().can_glide(self.entity)
+    }
+
+    /// Vanilla `LivingEntity.isInvulnerableTo`: runs this type's pipeline.
+    #[must_use]
+    pub fn is_invulnerable_to(&self, world: &World, source: &DamageSource) -> bool {
+        self.entity
+            .entity_definition()
+            .is_invulnerable_to(self.entity, world, source)
+    }
+
+    /// Vanilla `LivingEntity.canBeSeenAsEnemy`: runs this type's pipeline.
+    #[must_use]
+    pub fn can_be_seen_as_enemy(&self) -> bool {
+        self.entity
+            .entity_definition()
+            .can_be_seen_as_enemy(self.entity)
+    }
+
     /// Vanilla `LivingEntity.getVoicePitch`: runs this type's pipeline.
     #[must_use]
     pub fn voice_pitch(&self) -> f32 {
@@ -917,7 +951,7 @@ impl<'a> Living<'a> {
 
     /// Returns whether this entity can be targeted as an enemy: visible and not invulnerable.
     #[must_use]
-    pub fn can_be_seen_as_enemy_default(&self) -> bool {
+    fn can_be_seen_as_enemy_base(&self) -> bool {
         !self.is_invulnerable() && self.can_be_seen_by_anyone()
     }
 

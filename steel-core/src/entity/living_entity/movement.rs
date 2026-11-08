@@ -257,12 +257,6 @@ impl Living<'_> {
                 .any(|&slot| self.can_glide_using_equipment_slot(slot))
     }
 
-    /// Returns whether the entity currently meets the conditions to glide with an elytra.
-    #[must_use]
-    pub fn can_glide_default(&self) -> bool {
-        self.default_can_glide()
-    }
-
     /// Puts the entity into the fall-flying (elytra gliding) state.
     pub fn start_fall_flying(&self) {
         self.set_fall_flying(true);
@@ -387,12 +381,6 @@ impl Living<'_> {
         self.is_dead_or_dying()
     }
 
-    /// Returns whether this entity is currently immobile.
-    #[must_use]
-    pub fn is_immobile_default(&self) -> bool {
-        self.default_is_immobile()
-    }
-
     /// Zeroes out velocity components too small to matter, using a stricter
     /// horizontal threshold for players than other entities.
     pub fn apply_living_velocity_thresholds(&self) {
@@ -480,11 +468,6 @@ impl Living<'_> {
         }
 
         self.mark_velocity_sync();
-    }
-
-    /// Applies the entity's jump velocity.
-    pub fn jump_from_ground_default(&self) {
-        self.default_jump_from_ground();
     }
 
     /// Applies downward velocity while submerged and not jumping out of a liquid.
@@ -627,11 +610,6 @@ impl Living<'_> {
             );
         }
         result
-    }
-
-    /// Runs one AI-driven movement and effect tick for the entity.
-    pub fn ai_step_default(&self, entity: &SharedEntity) -> Option<MoveResult> {
-        self.default_ai_step(entity)
     }
 
     /// Default for [`LivingProps::push_entities`].

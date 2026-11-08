@@ -416,11 +416,9 @@ pub fn ai_step<E: Parts>() -> Pipeline<E, AiStep> {
     fn love<E: Parts>(entity: &E) {
         entity.animal().tick_love();
     }
-    Pipeline::new([
-        mob::stages::ai_step::<E>(),
-        ageable::ai_step::<E>(),
-        Stage::effect(AI_STEP, love::<E>),
-    ])
+    mob::stages::definition::<E>()
+        .ai_step
+        .then([ageable::ai_step::<E>(), Stage::effect(AI_STEP, love::<E>)])
 }
 
 /// Vanilla's animal `customServerAiStep` chain.

@@ -1,6 +1,9 @@
 //! `LivingEntity`'s layer of the pipelined vanilla methods.
 
 use crate::entity::component::definition::{
+    AiStepCtx, CanBeSeenAsEnemyCtx, CanGlideCtx, IsImmobileCtx, IsInvulnerableToCtx, TravelCtx,
+};
+use crate::entity::component::definition::{
     BaseExperienceRewardCtx, BaseTick, BaseTickCtx, BlockSpeedFactor, BlockSpeedFactorCtx,
     CanDispenserEquipIntoSlotCtx, CanFreeze, CanFreezeCtx, CanUseSlotCtx, CauseFallDamageCtx,
     CheckFallDamage, CheckFallDamageCtx, Definition, EquipSoundCtx, HurtCtx, SetYBodyRotCtx,
@@ -39,6 +42,20 @@ pub const CAN_USE_SLOT: StageId = StageId("living_entity.can_use_slot");
 /// The `LivingEntity.canDispenserEquipIntoSlot` stage: any slot.
 pub const CAN_DISPENSER_EQUIP_INTO_SLOT: StageId =
     StageId("living_entity.can_dispenser_equip_into_slot");
+/// The `LivingEntity.aiStep` stage.
+pub const AI_STEP: StageId = StageId("living_entity.ai_step");
+/// The `LivingEntity.travel` stage.
+pub const TRAVEL: StageId = StageId("living_entity.travel");
+/// The `LivingEntity.jumpFromGround` stage.
+pub const JUMP_FROM_GROUND: StageId = StageId("living_entity.jump_from_ground");
+/// The `LivingEntity.isImmobile` stage.
+pub const IS_IMMOBILE: StageId = StageId("living_entity.is_immobile");
+/// The `LivingEntity.canGlide` stage.
+pub const CAN_GLIDE: StageId = StageId("living_entity.can_glide");
+/// The `LivingEntity.isInvulnerableTo` stage.
+pub const IS_INVULNERABLE_TO: StageId = StageId("living_entity.is_invulnerable_to");
+/// The `LivingEntity.canBeSeenAsEnemy` stage.
+pub const CAN_BE_SEEN_AS_ENEMY: StageId = StageId("living_entity.can_be_seen_as_enemy");
 /// The `LivingEntity.baseTick` stage, around `Entity`'s.
 pub const BASE_TICK: StageId = StageId("living_entity.base_tick");
 
@@ -91,6 +108,48 @@ pub fn definition<E: Parts>() -> Definition<E> {
         // Vanilla's `LivingEntity.tickRidden` does nothing.
         tick_ridden: Pipeline::new([]),
         hurt: Pipeline::new([Stage::new(HURT, hurt::<E>)]),
+        ai_step: Pipeline::new([Stage::new(
+            AI_STEP,
+            |living: &E, ctx: &mut AiStepCtx<'_>| {
+                ctx.result = living.living().default_ai_step(ctx.entity);
+                Flow::Continue
+            },
+        )]),
+        travel: Pipeline::new([Stage::new(TRAVEL, |living: &E, ctx: &mut TravelCtx<'_>| {
+            ctx.result = living.living().default_travel(ctx.entity, ctx.input);
+            Flow::Continue
+        })]),
+        jump_from_ground: Pipeline::new([Stage::effect(JUMP_FROM_GROUND, |living: &E| {
+            living.living().default_jump_from_ground();
+        })]),
+        is_immobile: Pipeline::new([Stage::new(
+            IS_IMMOBILE,
+            |living: &E, ctx: &mut IsImmobileCtx<'_>| {
+                ctx.result = living.living().default_is_immobile();
+                Flow::Continue
+            },
+        )]),
+        can_glide: Pipeline::new([Stage::new(
+            CAN_GLIDE,
+            |living: &E, ctx: &mut CanGlideCtx<'_>| {
+                ctx.result = living.living().default_can_glide();
+                Flow::Continue
+            },
+        )]),
+        is_invulnerable_to: Pipeline::new([Stage::new(
+            IS_INVULNERABLE_TO,
+            |living: &E, ctx: &mut IsInvulnerableToCtx<'_>| {
+                ctx.result = living.living().is_invulnerable_to_living(ctx.source);
+                Flow::Continue
+            },
+        )]),
+        can_be_seen_as_enemy: Pipeline::new([Stage::new(
+            CAN_BE_SEEN_AS_ENEMY,
+            |living: &E, ctx: &mut CanBeSeenAsEnemyCtx<'_>| {
+                ctx.result = living.living().can_be_seen_as_enemy_base();
+                Flow::Continue
+            },
+        )]),
         ..definition
     }
 }

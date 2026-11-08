@@ -358,18 +358,7 @@ impl Entity for HiddenTarget {
 }
 
 impl HiddenTarget {
-    const LIVING: LivingProps<Self> = LivingProps {
-        can_be_seen_as_enemy: Self::living_can_be_seen_as_enemy,
-        ..LivingProps::new()
-    };
-
-    #[expect(
-        clippy::unused_self,
-        reason = "kept as a method of the view for callers; the body does not need the entity"
-    )]
-    fn living_can_be_seen_as_enemy(&self) -> bool {
-        false
-    }
+    const LIVING: LivingProps<Self> = LivingProps::new();
 }
 
 impl Has<LivingEntityBase> for HiddenTarget {
@@ -1218,7 +1207,7 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
             .expect("test entity should attach to the loaded chunk");
     }
 
-    Mob::mob_ai_step(&mob.mob(), &mob_entity);
+    let _ = mob.living().ai_step(&mob_entity);
 
     assert!(
         item.is_removed(),
@@ -1780,7 +1769,7 @@ fn mob_ai_step_gates_daylight_burning_on_burn_in_daylight_tag() {
     let zombie = daylit_mob(world, &vanilla_entities::ZOMBIE);
     let zombie_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&zombie);
     for _ in 0..BURN_ROLL_ATTEMPTS {
-        Mob::mob_ai_step(&zombie.mob(), &zombie_entity);
+        let _ = zombie.living().ai_step(&zombie_entity);
         if zombie.is_on_fire() {
             break;
         }
@@ -1792,7 +1781,7 @@ fn mob_ai_step_gates_daylight_burning_on_burn_in_daylight_tag() {
 
     let pig = daylit_mob(world, &vanilla_entities::PIG);
     let pig_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&pig);
-    Mob::mob_ai_step(&pig.mob(), &pig_entity);
+    let _ = pig.living().ai_step(&pig_entity);
     assert!(
         !pig.is_on_fire(),
         "aiStep must not burn a mob outside the burn_in_daylight tag"

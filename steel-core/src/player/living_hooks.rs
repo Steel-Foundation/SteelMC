@@ -1,12 +1,10 @@
 //! `ServerPlayer`'s overrides of the living hooks.
 
 use super::*;
-use crate::entity::component::definition::RideTickCtx;
-use crate::entity::component::definition::TickCtx;
-use crate::entity::component::definition::VoicePitchCtx;
-use crate::entity::component::definition::{self, Definition};
-use crate::entity::component::pipeline::Pipeline;
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
+use crate::entity::component::definition::{
+    CanBeSeenAsEnemyCtx, CanGlideCtx, IsImmobileCtx, IsInvulnerableToCtx,
+};
+use crate::entity::component::pipeline::Flow;
 use crate::entity::prelude::*;
 
 impl Player {
@@ -23,8 +21,6 @@ impl Player {
         indicate_damage: Self::living_indicate_damage,
         is_using_item: Self::living_is_using_item,
         luck: Self::living_get_luck,
-        can_be_seen_as_enemy: Self::living_can_be_seen_as_enemy,
-        is_invulnerable_to: Self::living_is_invulnerable_to,
         hurt_armor: Self::living_hurt_armor,
         actually_hurt: Self::living_actually_hurt,
         hurt_broadcast_chunk: Self::living_hurt_broadcast_chunk,
@@ -38,12 +34,7 @@ impl Player {
         absorption_amount: Self::living_get_absorption_amount,
         set_absorption_amount: Self::living_set_absorption_amount,
         is_affected_by_fluids: Self::living_is_affected_by_fluids,
-        can_glide: Self::living_can_glide,
-        is_immobile: Self::living_is_immobile,
         stop_sleeping: Self::living_stop_sleeping,
-        jump_from_ground: Self::living_jump_from_ground,
-        ai_step: Self::living_ai_step,
-        travel: Self::living_travel,
         flying_speed: Self::living_get_flying_speed,
         on_equipped_item_broken: Self::living_on_equipped_item_broken,
         ..LivingProps::new()
@@ -58,93 +49,7 @@ impl Player {
         });
     }
 
-    /// Vanilla `LivingEntity`'s chains, except that `ServerPlayer.tick` never
-    /// calls `super`: the player runs the living tick's pieces itself, around
-    /// the client-driven movement.
-    pub(super) fn define() -> Definition<Self> {
-        const TICK: StageId = StageId("player.tick");
-        const HURT: StageId = StageId("player.hurt");
-        const VOICE_PITCH: StageId = StageId("player.voice_pitch");
-        const MACE_BURST: StageId = StageId("player.mace_burst");
-        const FLIGHT_FALL: StageId = StageId("player.flight_fall");
-        const FLIGHT_SPEED: StageId = StageId("player.flight_speed");
-        const SPECTATOR_FREEZE: StageId = StageId("player.spectator_freeze");
-        const SPECTATOR_SPLASH: StageId = StageId("player.spectator_splash");
-        const FLIGHT_SWIM: StageId = StageId("player.flight_swim");
-        const FLIGHT_STUCK: StageId = StageId("player.flight_stuck");
-        const RIDE_TICK: StageId = StageId("player.ride_tick");
-        let living = living_entity::definition();
-        Definition {
-            tick: Pipeline::new([Stage::new(TICK, |player: &Self, ctx: &mut TickCtx<'_>| {
-                player.tick_player(ctx.entity);
-                Flow::Continue
-            })]),
-            // `Player.getVoicePitch` never calls `super`.
-            voice_pitch: Pipeline::new([Stage::new(
-                VOICE_PITCH,
-                |_: &Self, ctx: &mut VoicePitchCtx<'_>| {
-                    ctx.result = 1.0;
-                    Flow::Continue
-                },
-            )]),
-            check_fall_damage: living.check_fall_damage.before(
-                living_entity::CHECK_FALL_DAMAGE,
-                [Stage::new(MACE_BURST, Self::check_fall_damage_before_super)],
-            ),
-            cause_fall_damage: living.cause_fall_damage.before(
-                living_entity::CAUSE_FALL_DAMAGE,
-                [Stage::new(
-                    FLIGHT_FALL,
-                    Self::cause_fall_damage_before_super,
-                )],
-            ),
-            block_speed_factor: living.block_speed_factor.before(
-                living_entity::BLOCK_SPEED_FACTOR,
-                [Stage::new(
-                    FLIGHT_SPEED,
-                    Self::block_speed_factor_before_super,
-                )],
-            ),
-            can_freeze: living.can_freeze.before(
-                living_entity::CAN_FREEZE,
-                [Stage::new(SPECTATOR_FREEZE, Self::can_freeze_before_super)],
-            ),
-            do_water_splash_effect: living.do_water_splash_effect.before(
-                definition::DO_WATER_SPLASH_EFFECT,
-                [Stage::new(
-                    SPECTATOR_SPLASH,
-                    Self::do_water_splash_effect_before_super,
-                )],
-            ),
-            update_swimming: living.update_swimming.before(
-                definition::UPDATE_SWIMMING,
-                [Stage::new(FLIGHT_SWIM, Self::update_swimming_before_super)],
-            ),
-            make_stuck_in_block: living.make_stuck_in_block.before(
-                definition::MAKE_STUCK_IN_BLOCK,
-                [Stage::new(
-                    FLIGHT_STUCK,
-                    Self::make_stuck_in_block_before_super,
-                )],
-            ),
-            ride_tick: living.ride_tick.around(
-                RIDE_TICK,
-                |player: &Self, ctx: &mut RideTickCtx<'_>, inner| {
-                    player.ride_tick_around(|| {
-                        inner(player, ctx);
-                    });
-                    Flow::Continue
-                },
-            ),
-            hurt: living.hurt.before(
-                living_entity::HURT,
-                [Stage::new(HURT, Self::hurt_before_super)],
-            ),
-            ..living
-        }
-    }
-
-    fn tick_player(&self, entity: &SharedEntity) {
+    pub(super) fn tick_player(&self, entity: &SharedEntity) {
         self.advance_tick();
         self.tick_item_cooldowns();
         self.tick_attack_strength();
@@ -270,24 +175,29 @@ impl Player {
             .required_value(vanilla_attributes::LUCK) as f32
     }
 
-    fn living_can_be_seen_as_enemy(&self) -> bool {
-        !self.abilities.lock().invulnerable
-            && !self.is_invulnerable()
-            && self.living().can_be_seen_by_anyone()
+    /// `Player.canBeSeenAsEnemy` before `super`: invulnerable players are
+    /// never targeted.
+    pub(super) fn can_be_seen_as_enemy_before_super(
+        &self,
+        ctx: &mut CanBeSeenAsEnemyCtx<'_>,
+    ) -> Flow {
+        if self.abilities.lock().invulnerable {
+            ctx.result = false;
+            return Flow::Stop;
+        }
+        Flow::Continue
     }
 
-    fn living_is_invulnerable_to(&self, world: &World, source: &DamageSource) -> bool {
-        if self.living().default_is_invulnerable_to(source)
-            || enchantment_helper::is_immune_to_damage(&self.living(), source)
-        {
-            return true;
+    /// `Player.isInvulnerableTo` after `super`: damage types switched off by
+    /// game rules, and players whose client has not loaded.
+    pub(super) fn is_invulnerable_to_after_super(&self, ctx: &mut IsInvulnerableToCtx<'_>) -> Flow {
+        if !ctx.result {
+            ctx.result = match Self::disabled_damage_game_rule(ctx.source) {
+                Some(rule) => !ctx.world.get_game_rule(rule),
+                None => !self.has_client_loaded(),
+            };
         }
-
-        if let Some(rule) = Self::disabled_damage_game_rule(source) {
-            return !world.get_game_rule(rule);
-        }
-
-        !self.has_client_loaded()
+        Flow::Continue
     }
 
     fn living_hurt_armor(&self, source: &DamageSource, damage: f32) {
@@ -458,20 +368,27 @@ impl Player {
         !self.is_flying()
     }
 
-    fn living_can_glide(&self) -> bool {
-        !self.is_flying() && self.living().default_can_glide()
+    /// `Player.canGlide` before `super`: flying players cannot glide.
+    pub(super) fn can_glide_before_super(&self, ctx: &mut CanGlideCtx<'_>) -> Flow {
+        if self.is_flying() {
+            ctx.result = false;
+            return Flow::Stop;
+        }
+        Flow::Continue
     }
 
-    fn living_is_immobile(&self) -> bool {
-        self.living().default_is_immobile() || self.living().is_sleeping()
+    /// `Player.isImmobile` after `super`: sleeping players are immobile too.
+    pub(super) fn is_immobile_after_super(&self, ctx: &mut IsImmobileCtx<'_>) -> Flow {
+        ctx.result = ctx.result || self.living().is_sleeping();
+        Flow::Continue
     }
 
     fn living_stop_sleeping(&self) {
         self.stop_sleep_in_bed(true, true);
     }
 
-    fn living_jump_from_ground(&self) {
-        self.living().default_jump_from_ground();
+    /// `Player.jumpFromGround` after `super`: the jump statistic and exhaustion.
+    pub(super) fn jump_from_ground_after_super(&self) {
         self.award_custom_stat(&vanilla_custom_stats::JUMP);
         if self.living().is_sprinting() {
             self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT_JUMP);
@@ -480,14 +397,18 @@ impl Player {
         }
     }
 
-    fn living_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+    /// `Player.aiStep` around `super.aiStep()`.
+    pub(super) fn ai_step_around(
+        &self,
+        super_ai_step: impl FnOnce() -> Option<MoveResult>,
+    ) -> Option<MoveResult> {
         self.tick_regeneration();
         InventoryTickContext::tick_player_inventory(&self.get_world(), self);
         if self.is_flying() && !self.is_passenger() {
             self.reset_fall_distance();
         }
 
-        let result = self.living().default_ai_step(entity);
+        let result = super_ai_step();
         self.living().set_y_head_rot(self.rotation().0);
         // Pickup uses the simulated position; `tick_living_entity` restores the
         // authoritative tick position after this returns.
@@ -497,9 +418,14 @@ impl Player {
         result
     }
 
-    fn living_travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+    /// `Player.travel` around `super.travel()`: swimming follows the look
+    /// direction, and flying keeps most vertical speed.
+    pub(super) fn travel_around(
+        &self,
+        super_travel: impl FnOnce() -> Option<MoveResult>,
+    ) -> Option<MoveResult> {
         if self.is_passenger() {
-            return self.living().default_travel(entity, input);
+            return super_travel();
         }
 
         if self.is_swimming() {
@@ -520,7 +446,7 @@ impl Player {
 
         if self.is_flying() {
             let original_movement_y = self.velocity().y;
-            let result = self.living().default_travel(entity, input);
+            let result = super_travel();
             let velocity = self.velocity();
             self.set_velocity(DVec3::new(
                 velocity.x,
@@ -529,7 +455,7 @@ impl Player {
             ));
             result
         } else {
-            self.living().default_travel(entity, input)
+            super_travel()
         }
     }
 

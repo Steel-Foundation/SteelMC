@@ -193,7 +193,7 @@ impl Living<'_> {
     }
 
     /// Returns whether this living entity ignores a damage source.
-    pub fn is_invulnerable_to_default(&self, _world: &World, source: &DamageSource) -> bool {
+    pub(super) fn is_invulnerable_to_living(&self, source: &DamageSource) -> bool {
         self.default_is_invulnerable_to(source)
             || enchantment_helper::is_immune_to_damage(self, source)
     }
