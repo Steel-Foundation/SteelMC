@@ -45,7 +45,6 @@ pub struct NavigationRecomputeRequest {
 pub struct PathNavigation {
     path: Option<Path>,
     path_finder: PathFinder,
-    path_type_cache: PathTypeCache,
     direct_target: Option<DVec3>,
     target_pos: Option<BlockPos>,
     speed_modifier: f64,
@@ -72,11 +71,10 @@ pub struct PathNavigation {
 
 impl PathNavigation {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             path: None,
             path_finder: PathFinder::new(0),
-            path_type_cache: PathTypeCache::new(),
             direct_target: None,
             target_pos: None,
             speed_modifier: 0.0,
@@ -221,10 +219,6 @@ impl PathNavigation {
         self.tick = self.tick.wrapping_add(1);
     }
 
-    pub fn invalidate_path_type(&mut self, pos: BlockPos) {
-        self.path_type_cache.invalidate(pos);
-    }
-
     pub fn stop(&mut self) {
         self.path = None;
         self.done = true;
@@ -244,6 +238,7 @@ impl PathNavigation {
         &mut self,
         evaluator: &mut WalkNodeEvaluator,
         level: &dyn LevelReader,
+        path_type_cache: &mut PathTypeCache,
         collision: &mut impl WalkNodeCollision,
         request: NavigationPathRequest<'_>,
     ) -> Option<Path> {
@@ -255,7 +250,7 @@ impl PathNavigation {
         }
 
         let mut context =
-            PathfindingContext::with_cache(level, request.mob_position, &mut self.path_type_cache);
+            PathfindingContext::with_cache(level, request.mob_position, path_type_cache);
         let path = self.path_finder.find_path(
             evaluator,
             &mut context,
@@ -738,7 +733,7 @@ mod tests {
     use super::{NavigationPathRequest, NavigationTickContext, PathNavigation};
     use crate::behavior::init_behaviors;
     use crate::entity::ai::node::Node;
-    use crate::entity::ai::path::{Path, PathType, PathfindingMalus};
+    use crate::entity::ai::path::{Path, PathType, PathTypeCache, PathfindingMalus};
     use crate::entity::ai::walk::{MobPathSettings, WalkNodeEvaluator};
     use crate::world::LevelReader;
 
@@ -1442,6 +1437,7 @@ mod tests {
         let reused = navigation.create_path(
             &mut evaluator,
             &level,
+            &mut PathTypeCache::new(),
             &mut no_collision,
             NavigationPathRequest {
                 mob_position: BlockPos::new(0, 64, 0),
@@ -1529,6 +1525,7 @@ mod tests {
         let path = navigation.create_path(
             &mut evaluator,
             &level,
+            &mut PathTypeCache::new(),
             &mut no_collision,
             NavigationPathRequest {
                 mob_position: BlockPos::new(0, 64, 0),

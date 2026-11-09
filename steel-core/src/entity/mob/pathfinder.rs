@@ -337,6 +337,7 @@ impl Mob<'_> {
         self.mob_base().navigation().lock().create_path(
             &mut evaluator,
             world.as_ref(),
+            &mut world.path_type_cache.lock(),
             &mut collision,
             NavigationPathRequest {
                 mob_position,

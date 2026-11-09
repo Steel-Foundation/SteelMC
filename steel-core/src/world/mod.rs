@@ -17,6 +17,7 @@ use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
 use crate::chunk::status::ChunkStatus;
+use crate::entity::ai::path::PathTypeCache;
 use crate::entity::damage::DamageHistory;
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
@@ -302,6 +303,8 @@ pub struct World {
     entity_tracker: EntityTracker,
     /// Runtime IDs for pathfinder mobs currently visible to the active world.
     navigating_mobs: NavigatingMobTracker,
+    /// Block path types shared by every mob pathfinding in this world.
+    pub(crate) path_type_cache: SyncMutex<PathTypeCache>,
     /// Weather Data needed for animating starting and stopping of rain clientside
     pub weather: SyncMutex<Weather>,
     /// Per-level recent toggle history used by vanilla redstone-torch burnout.
@@ -459,6 +462,7 @@ impl World {
                 game_event_listener_count: GameEventListenerCount::shared(),
                 entity_tracker: EntityTracker::new(),
                 navigating_mobs: NavigatingMobTracker::new(),
+                path_type_cache: SyncMutex::new(PathTypeCache::new()),
                 weather: SyncMutex::new(weather),
                 redstone_torch_toggles: SyncMutex::new(
                     redstone::RedstoneTorchToggleTracker::default(),
