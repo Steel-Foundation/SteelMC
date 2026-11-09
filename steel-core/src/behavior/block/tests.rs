@@ -8,6 +8,7 @@ use steel_registry::init_vanilla_registry;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entities;
+use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_items;
 
 use crate::behavior::init_behaviors;
@@ -133,7 +134,7 @@ fn default_fluid_replacement_does_not_use_waterloggable_property_alone() {
         .set_value(&BlockStateProperties::WATERLOGGED, false);
     let behavior = DefaultBlockBehavior::new(&vanilla_blocks::OAK_SLAB);
 
-    assert!(!behavior.can_be_replaced_by_fluid(double_slab, &vanilla_blocks::WATER));
+    assert!(!behavior.can_be_replaced_by_fluid(double_slab, &vanilla_fluids::WATER));
 }
 
 #[test]

@@ -1339,6 +1339,10 @@ impl Player {
 }
 
 impl Entity for Player {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -1825,7 +1829,9 @@ impl LivingEntity for Player {
 
         self.default_tick();
         self.detect_equipment_updates();
-        self.ai_step(entity);
+        if !self.is_removed() {
+            self.ai_step(entity);
+        }
 
         // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
         if let Err(error) = self.try_set_position(tick_position) {
@@ -1841,7 +1847,6 @@ impl LivingEntity for Player {
         self.living_base.decrement_invulnerable_time();
         self.tick_mob_effects();
         self.tick_active_item_use(entity);
-        // TODO: Tick stats even when the player has been dead for more than 20 ticks.
         self.tick_stats();
 
         if self.get_health() <= 0.0 {

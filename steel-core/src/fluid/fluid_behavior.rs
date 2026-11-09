@@ -8,6 +8,8 @@ use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::World;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::{FluidRef, FluidState};
+use steel_registry::items::ItemRef;
+use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Trait for fluid behavior implementations.
@@ -15,6 +17,12 @@ use steel_utils::{BlockPos, BlockStateId};
 pub trait FluidBehavior: Send + Sync {
     /// Gets the fluid type for this behavior.
     fn fluid_type(&self) -> FluidRef;
+
+    /// Creates the block state that holds `fluid_state` on its own.
+    fn create_legacy_block(&self, fluid_state: FluidState) -> BlockStateId;
+
+    /// The filled bucket of this fluid, or air if it has none.
+    fn bucket(&self) -> ItemRef;
 
     /// Checks if this fluid is the same type as another fluid ref.
     ///
@@ -36,8 +44,7 @@ pub trait FluidBehavior: Send + Sync {
 
     /// Called every tick for fluid blocks.
     ///
-    /// The block and fluid states are the live states validated by the tick caller,
-    /// matching Vanilla's `Fluid.tick` callback contract.
+    /// The block and fluid states are the live states validated by the tick caller.
     fn tick(
         &self,
         world: &Arc<World>,
@@ -99,6 +106,11 @@ pub trait FluidBehavior: Send + Sync {
         0.0
     }
 
+    /// The sound of picking this fluid up with a bucket.
+    fn pickup_sound(&self) -> Option<SoundEventRef> {
+        None
+    }
+
     /// Called on random tick for this fluid's block.
     /// Used for lava fire spread.
     #[expect(
@@ -123,7 +135,7 @@ pub trait FluidBehavior: Send + Sync {
         self.tick_delay(world)
     }
 
-    /// Returns this fluid state's vanilla flow vector at a position.
+    /// Returns this fluid state's flow vector at a position.
     #[expect(
         unused_variables,
         reason = "default implementation is used by empty/non-flowing fluids"

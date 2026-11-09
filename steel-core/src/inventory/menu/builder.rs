@@ -685,13 +685,28 @@ impl MenuBuilder {
     /// Adds a single fake result slot driven by `handler`, backed by the
     /// handler's [`result_container`](ResultHandler::result_container).
     ///
+    /// Taken items do not award `ITEM_CRAFTED`; use
+    /// [`crafting_result_slot`](Self::crafting_result_slot) for crafting grids.
+    ///
     /// See [`crate::inventory::container::ResultContainer`] and [`crate::inventory::slots::ResultHandler`].
     ///
     /// # Panics
     /// Panics if the result container has no slot `0`, or that slot is already
     /// covered by another section of this menu.
     pub fn result_slot(&mut self, handler: impl ResultHandler + 'static) -> Section {
-        let slot = ResultSlot::new(handler);
+        self.add_result_slot(ResultSlot::new(handler))
+    }
+
+    /// Adds a crafting result slot whose taken items award `ITEM_CRAFTED`.
+    ///
+    /// # Panics
+    /// Panics if the result container has no slot `0`, or that slot is already
+    /// covered by another section of this menu.
+    pub fn crafting_result_slot(&mut self, handler: impl ResultHandler + 'static) -> Section {
+        self.add_result_slot(ResultSlot::crafting(handler))
+    }
+
+    fn add_result_slot(&mut self, slot: ResultSlot) -> Section {
         let container = slot.result_container().clone();
         self.claim(&container, (0..1).into());
         let start = self.slots.len();

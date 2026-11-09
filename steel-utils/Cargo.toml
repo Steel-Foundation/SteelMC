@@ -70,7 +70,7 @@ heck.workspace = true
 text_components = { workspace = true, features = ["build"] }
 reqwest = { workspace = true, features = ["blocking"] }
 sha1.workspace = true
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "9.4.0", default-features = false, features = ["deflate"] }
 
 [[bench]]
 name = "xoroshiro"
