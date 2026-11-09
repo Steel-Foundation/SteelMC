@@ -485,11 +485,7 @@ impl Player {
             .as_ref()
             .ok_or(ChatValidationError::MissingProfileKey)?;
 
-        if session
-            .profile_public_key
-            .data()
-            .has_expired_with_grace(profile_key::EXPIRY_GRACE_PERIOD)
-        {
+        if session.profile_public_key.data().has_expired() {
             return Err(ChatValidationError::ExpiredProfileKey);
         }
 
