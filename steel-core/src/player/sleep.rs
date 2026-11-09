@@ -6,7 +6,7 @@ use steel_registry::{
     stat::custom::CustomStatRef,
     vanilla_blocks, vanilla_custom_stats,
 };
-use steel_utils::{BlockPos, Direction};
+use steel_utils::{BlockPos, Direction, WorldAabb, types::GameType};
 use text_components::{TextComponent, translation::TranslatedMessage};
 
 use super::sleep_state::SLEEP_DURATION;
@@ -19,10 +19,13 @@ use crate::{
 
 const BED_INTERACTION_XZ_RANGE: f64 = 3.0;
 const BED_INTERACTION_Y_RANGE: f64 = 2.0;
+const MONSTER_SEARCH_XZ_RANGE: f64 = 8.0;
+const MONSTER_SEARCH_Y_RANGE: f64 = 5.0;
 
 #[derive(Debug)]
 pub(crate) enum BedSleepingProblem {
     OtherProblem,
+    NotSafe(Box<TextComponent>),
     Message(Box<TextComponent>),
 }
 
@@ -30,9 +33,30 @@ impl BedSleepingProblem {
     #[must_use]
     pub(crate) fn message(&self) -> Option<&TextComponent> {
         match self {
-            Self::Message(message) => Some(message.as_ref()),
+            Self::Message(message) | Self::NotSafe(message) => Some(message.as_ref()),
             Self::OtherProblem => None,
         }
+    }
+}
+
+impl Player {
+    /// Checks for monsters within 8 blocks horizontally and 5 vertically of the bed.
+    fn monster_prevents_rest(&self, pos: BlockPos) -> bool {
+        let world = self.get_world();
+        let center = DVec3::from(pos.get_bottom_center());
+        let search = WorldAabb::new(
+            center.x - MONSTER_SEARCH_XZ_RANGE,
+            center.y - MONSTER_SEARCH_Y_RANGE,
+            center.z - MONSTER_SEARCH_XZ_RANGE,
+            center.x + MONSTER_SEARCH_XZ_RANGE,
+            center.y + MONSTER_SEARCH_Y_RANGE,
+            center.z + MONSTER_SEARCH_XZ_RANGE,
+        );
+        world.has_entity_in_aabb_matching(&search, |entity| {
+            entity
+                .as_monster()
+                .is_some_and(|monster| monster.is_preventing_player_rest(&world, self))
+        })
     }
 }
 
@@ -180,8 +204,17 @@ impl Player {
             return Err(Self::bed_sleep_problem(rule));
         }
 
-        // TODO: Mirror vanilla Monster::isPreventingPlayerRest once Steel has
-        // the required Monster capability/class foundation.
+        if self.game_mode() != GameType::Creative && self.monster_prevents_rest(pos) {
+            return Err(BedSleepingProblem::NotSafe(Box::new(
+                TranslatedMessage {
+                    key: "block.minecraft.bed.not_safe".into(),
+                    fallback: None,
+                    args: None,
+                }
+                .component(),
+            )));
+        }
+
         self.set_sleep_counter(0);
         if self.start_sleeping(pos).is_err() {
             return Err(BedSleepingProblem::OtherProblem);

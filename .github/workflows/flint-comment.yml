@@ -1,0 +1,59 @@
+name: Flint PR comment
+
+# Privileged half of flint.yml. Runs via workflow_run so the token can comment
+# even when the PR comes from a fork (pull_request runs get a read-only token).
+# The report artifact is untrusted PR output: it is only posted as a comment body.
+
+on:
+  workflow_run:
+    workflows: ["Flint Tests"]
+    types: [completed]
+
+permissions:
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  comment:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download PR report
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          name: flint-pr-report
+
+      - name: Create or update report comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const issue_number = parseInt(fs.readFileSync("pr_number.txt", "utf8").trim(), 10);
+            if (Number.isNaN(issue_number)) {
+              core.setFailed("Invalid PR number in artifact");
+              return;
+            }
+            const { owner, repo } = context.repo;
+
+            // The artifact is untrusted: only post if that PR's head is the commit this run tested.
+            const run = context.payload.workflow_run;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: issue_number });
+            if (pr.head.sha !== run.head_sha) {
+              core.warning(`Skipping comment: PR #${issue_number} head ${pr.head.sha} does not match run head ${run.head_sha}`);
+              return;
+            }
+            const HEADING = "## Flint test report";
+            const body = fs.readFileSync("comment.md", "utf8").slice(0, 65000);
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number,
+            });
+            const existing = comments.find(c => c.user?.type === "Bot" && c.body?.startsWith(HEADING));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

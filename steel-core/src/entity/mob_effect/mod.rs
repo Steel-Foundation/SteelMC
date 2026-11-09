@@ -15,6 +15,8 @@ mod weaving;
 mod wind_charged;
 mod wither;
 
+#[cfg(test)]
+pub(crate) use absorption::ABSORPTION_PER_LEVEL;
 pub use absorption::AbsorptionBehavior;
 pub use bad_omen::BadOmenBehavior;
 pub use heal_or_harm::HealOrHarmBehavior;
@@ -73,7 +75,7 @@ pub trait InstantaneousMobEffect: MobEffectBehavior {
         amplifier: i32,
         direct_entity: Option<&SharedEntity>,
         causing_entity: Option<&SharedEntity>,
-        scale: f32,
+        scale: f64,
     ) {
         let _ = (direct_entity, causing_entity, scale);
         self.apply_effect_tick(world, user, amplifier);

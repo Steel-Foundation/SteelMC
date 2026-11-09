@@ -19,6 +19,8 @@ use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_loot_tables;
 use steel_registry::{DyeColor, REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey};
@@ -31,9 +33,10 @@ use crate::entity::ai::goal::{
 use crate::entity::damage::DamageSource;
 use crate::entity::living_entity::shearing_loot_items_with_rng;
 use crate::entity::{
-    AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
-    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SharedEntity, SpawnGroupData,
+    AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
+    EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
+    LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule,
+    sync_dirty_mob_effects,
 };
 use crate::inventory::recipe_manager;
 use crate::physics::MoveResult;
@@ -60,7 +63,7 @@ const SHEARED_BIT: i8 = 0x10;
 const ATE_AGE_UP_SECONDS: i32 = 60;
 
 /// Vanilla sheep entity.
-#[entity_behavior(class = "Sheep")]
+#[entity_behavior(class = "Sheep", spawn_rule)]
 pub struct SheepEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -77,6 +80,11 @@ unsafe impl DowncastType for SheepEntity {
 }
 
 impl SheepEntity {
+    /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
+    pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, random| {
+        <Self as Animal>::check_animal_spawn_rules(entity_type, level, spawn_reason, pos, random)
+    };
+
     /// Creates a new sheep entity.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
@@ -141,22 +149,10 @@ impl SheepEntity {
     }
 
     fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
+        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
+            self.entity_data
+                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
         }
-
-        let display = self.living_base.mob_effect_display_state();
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
-        self.entity_data
-            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
     /// Returns whether the stack is vanilla sheep food.
@@ -307,7 +303,17 @@ impl SheepEntity {
     }
 }
 
+impl DefaultEntityPush for SheepEntity {}
+
 impl Entity for SheepEntity {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -362,8 +368,10 @@ impl Entity for SheepEntity {
         self.load_mob(nbt);
         self.load_ageable_mob(nbt);
         self.load_animal(nbt);
-        self.set_sheared(nbt.byte("Sheared").is_some_and(|value| value != 0));
-        self.set_color(DyeColor::by_id(i32::from(nbt.byte("Color").unwrap_or(0))));
+        self.set_sheared(nbt.byte_value("Sheared").is_some_and(|value| value != 0));
+        self.set_color(DyeColor::by_id(i32::from(
+            nbt.get("Color").and_then(|tag| tag.codec_i8()).unwrap_or(0),
+        )));
     }
 }
 

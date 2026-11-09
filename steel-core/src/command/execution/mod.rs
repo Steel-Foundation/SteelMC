@@ -16,6 +16,7 @@ mod selector;
 mod source;
 mod structure;
 mod suggestions;
+mod swing_animation;
 mod text;
 mod world;
 

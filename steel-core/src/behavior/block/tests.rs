@@ -7,9 +7,44 @@ use steel_registry::blocks::properties::{BlockStateProperties, SlabType};
 use steel_registry::init_vanilla_registry;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_entities;
+use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_items;
 
 use crate::behavior::init_behaviors;
+
+#[test]
+fn default_spawn_rule_requires_full_up_support_and_low_light_emission() {
+    init_vanilla_registry();
+    init_behaviors();
+    let level = TestLevel::default();
+    let pos = BlockPos::new(3, 64, 5);
+    let entity_type = &vanilla_entities::ZOMBIE;
+
+    let stone = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::STONE);
+    assert!(stone.is_valid_spawn(
+        vanilla_blocks::STONE.default_state(),
+        &level,
+        pos,
+        entity_type
+    ));
+
+    let glowstone = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::GLOWSTONE);
+    assert!(!glowstone.is_valid_spawn(
+        vanilla_blocks::GLOWSTONE.default_state(),
+        &level,
+        pos,
+        entity_type
+    ));
+
+    let torch = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::TORCH);
+    assert!(!torch.is_valid_spawn(
+        vanilla_blocks::TORCH.default_state(),
+        &level,
+        pos,
+        entity_type
+    ));
+}
 
 #[test]
 fn clone_item_stack_uses_registered_block_item_association() {
@@ -26,7 +61,7 @@ fn clone_item_stack_uses_registered_block_item_association() {
     ] {
         let clone_item = BLOCK_BEHAVIORS
             .get_behavior(block)
-            .get_clone_item_stack(block, block.default_state(), false)
+            .get_clone_item_stack(block, block.default_state(), None, false)
             .map(|stack| stack.item());
 
         assert_eq!(clone_item, Some(expected_item));
@@ -36,6 +71,7 @@ fn clone_item_stack_uses_registered_block_item_association() {
     let clone_item = BLOCK_BEHAVIORS.get_behavior(block).get_clone_item_stack(
         block,
         block.default_state(),
+        None,
         false,
     );
 
@@ -98,7 +134,7 @@ fn default_fluid_replacement_does_not_use_waterloggable_property_alone() {
         .set_value(&BlockStateProperties::WATERLOGGED, false);
     let behavior = DefaultBlockBehavior::new(&vanilla_blocks::OAK_SLAB);
 
-    assert!(!behavior.can_be_replaced_by_fluid(double_slab, &vanilla_blocks::WATER));
+    assert!(!behavior.can_be_replaced_by_fluid(double_slab, &vanilla_fluids::WATER));
 }
 
 #[test]

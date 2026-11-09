@@ -16,6 +16,7 @@ struct ManagerTestEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     always_ticking: bool,
+    hard_collision_relevant: bool,
 }
 
 struct DelayedFirstBoundsCallback {
@@ -61,6 +62,22 @@ impl ManagerTestEntity {
             base: EntityBase::with_uuid(id, uuid, position, entity_type.dimensions, Weak::new()),
             entity_type,
             always_ticking: false,
+            hard_collision_relevant: true,
+        })
+    }
+
+    fn shared_non_hard(id: i32, uuid: Uuid, position: DVec3) -> SharedEntity {
+        Arc::new(Self {
+            base: EntityBase::with_uuid(
+                id,
+                uuid,
+                position,
+                vanilla_entities::ITEM.dimensions,
+                Weak::new(),
+            ),
+            entity_type: &vanilla_entities::ITEM,
+            always_ticking: false,
+            hard_collision_relevant: false,
         })
     }
 
@@ -75,6 +92,7 @@ impl ManagerTestEntity {
             ),
             entity_type: &vanilla_entities::ITEM,
             always_ticking: true,
+            hard_collision_relevant: true,
         })
     }
 }
@@ -228,6 +246,10 @@ impl Entity for ManagerTestEntity {
     fn is_always_ticking(&self) -> bool {
         self.always_ticking
     }
+
+    fn is_hard_collision_relevant(&self) -> bool {
+        self.hard_collision_relevant
+    }
 }
 
 fn entity(id: i32, uuid_seed: u128, position: DVec3) -> SharedEntity {
@@ -263,4 +285,5 @@ mod lifecycle;
 mod movement_and_visibility;
 mod persistence;
 mod queries_and_order;
+mod spatial_queries;
 mod ticking;

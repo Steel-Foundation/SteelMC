@@ -8,7 +8,7 @@
 )]
 
 use core::panic;
-use std::{borrow::Cow, fs};
+use std::{borrow::Cow, fs, path::Path};
 
 use rustc_hash::FxHashMap;
 
@@ -45,6 +45,7 @@ pub struct BlockConfig {
     pub replaceable: bool,
     #[serde(default, rename = "sound_type")]
     pub sound_type: Option<Cow<'static, str>>,
+    pub loot_table: Option<String>,
 }
 
 impl BlockConfig {
@@ -75,6 +76,7 @@ impl BlockConfig {
             instrument: Cow::Borrowed("HARP"),
             replaceable: false,
             sound_type: None,
+            loot_table: None,
         }
     }
 }
@@ -347,6 +349,39 @@ fn generate_builder_calls(bp: &BlockConfig, default_props: &BlockConfig) -> Vec<
     }
 
     builder_calls
+}
+
+fn generate_loot_table_builder_call(loot_table: Option<&str>) -> TokenStream {
+    let Some(key) = loot_table else {
+        return quote! {};
+    };
+    let Some(path) = key.strip_prefix("minecraft:") else {
+        panic!("Unsupported block loot table key {key}: expected the minecraft namespace");
+    };
+    if path.is_empty()
+        || path
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        panic!("Invalid block loot table key {key}");
+    }
+
+    let table_path =
+        Path::new("../steel-utils/build_assets/builtin_datapacks/minecraft/loot_table")
+            .join(format!("{path}.json"));
+    assert!(
+        table_path.is_file(),
+        "Block loot table {key} does not exist at {}",
+        table_path.display()
+    );
+
+    let const_ident = Ident::new(
+        &path.replace('/', "_").to_shouty_snake_case(),
+        Span::call_site(),
+    );
+    quote! {
+        .loot_table(Some(&crate::vanilla_loot_tables::#const_ident))
+    }
 }
 
 /// Generates the default state initialization for blocks with properties
@@ -852,6 +887,8 @@ pub(crate) fn build() -> TokenStream {
 
         // Generate builder method calls for properties that differ from defaults
         let builder_calls = generate_builder_calls(&block.behavior_properties, &default_props);
+        let loot_table_builder_call =
+            generate_loot_table_builder_call(block.behavior_properties.loot_table.as_deref());
 
         // Generate default state if block has properties
         let default_state = generate_default_state(block);
@@ -969,7 +1006,7 @@ pub(crate) fn build() -> TokenStream {
         stream.extend(quote! {
             pub static #block_name: Block = Block::new(
                 Identifier::vanilla_static(#block_name_str),
-                BlockConfig::new()#(#builder_calls)*,
+                BlockConfig::new()#(#builder_calls)* #loot_table_builder_call,
                 &[
                     #(#properties),*
                 ],

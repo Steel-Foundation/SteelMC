@@ -14,7 +14,9 @@ use steel_registry::{
     blocks::{
         behavior::PushReaction, block_state_ext::BlockStateExt, properties::BlockStateProperties,
     },
-    data_components::{DataComponentPatch, ItemContainerContents, vanilla_components::CONTAINER},
+    data_components::{
+        DataComponentMap, DataComponentPatch, ItemContainerContents, vanilla_components::CONTAINER,
+    },
     item_stack::ItemStack,
     vanilla_block_entity_types,
 };
@@ -27,9 +29,9 @@ use steel_utils::{
 
 use crate::{
     behavior::blocks::ShulkerBoxBlock,
-    block_entity::{BlockEntity, BlockEntityBase},
+    block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter},
     inventory::{
-        container::Container,
+        container::{Container, load_all_items},
         lock::{ContainerRef, SharedContainer},
     },
     physics::{CollisionWorld as _, MoverType, WorldCollisionProvider},
@@ -193,13 +195,11 @@ impl ShulkerBoxBlockEntity {
         }
     }
 
-    /// Builds the item form of a placed, possibly-filled shulker box.
-    /// Vanilla `ShulkerBoxBlockEntity.collectComponents()` +
-    /// `BaseContainerBlockEntity.collectImplicitComponents(CONTAINER)`.
+    /// Builds a shulker box item containing the stored inventory.
     pub fn shulker_box_as_item(&self, state: BlockStateId) -> ItemStack {
         let block_item = REGISTRY.items.by_block(state.get_block());
 
-        let contents = self.collect_components();
+        let contents = self.container_contents();
 
         let mut patch = DataComponentPatch::new();
         patch.set(CONTAINER, contents);
@@ -279,7 +279,7 @@ impl ShulkerBoxBlockEntity {
     /// # Panics
     /// Panics if shulker box somehow has more than 256 slots. This should never happen
     #[must_use]
-    pub fn collect_components(&self) -> ItemContainerContents {
+    pub fn container_contents(&self) -> ItemContainerContents {
         let container = self.container.lock();
 
         let size = container.get_container_size();
@@ -345,25 +345,7 @@ impl BlockEntity for ShulkerBoxBlockEntity {
         let mut container = self.container.lock();
         container.items.fill(ItemStack::empty());
 
-        let Some(items_list) = nbt_view.list("Items") else {
-            return;
-        };
-        let Some(compounds) = items_list.compounds() else {
-            return;
-        };
-
-        for compound in compounds {
-            let Some(slot) = compound.byte("Slot") else {
-                continue;
-            };
-            let slot = slot as usize;
-            if slot >= SHULKER_BOX_SLOTS {
-                continue;
-            }
-            if let Some(item) = ItemStack::from_borrowed_compound(&compound) {
-                container.items[slot] = item;
-            }
-        }
+        load_all_items(nbt_view, &mut container.items);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -382,10 +364,9 @@ impl BlockEntity for ShulkerBoxBlockEntity {
         nbt.insert("Items", NbtList::Compound(items));
     }
 
-    fn apply_components_from_item(&self, item: &ItemStack) {
-        let Some(contents) = item.get(CONTAINER) else {
-            return;
-        };
+    /// Copies the container component into the block entity inventory
+    fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
+        let contents = components.get_or_default(CONTAINER, ItemContainerContents::empty());
 
         let mut container = self.container.lock();
         container.items.fill(ItemStack::empty());
@@ -401,6 +382,11 @@ impl BlockEntity for ShulkerBoxBlockEntity {
                 );
             }
         }
+    }
+
+    /// Stores the block entity inventory in the container component
+    fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        components.set(CONTAINER, Some(self.container_contents()));
     }
 
     fn container_ref(&self) -> Option<ContainerRef> {

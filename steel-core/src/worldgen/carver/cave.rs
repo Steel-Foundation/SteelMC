@@ -143,8 +143,7 @@ where
         // argument is a float (π/2 cast to f32), looked up in the SIN table;
         // the result equals 1.0f exactly, so the table detour doesn't
         // matter here.
-        let horizontal_radius =
-            1.5 + f64::from(trig::sin(f64::from(FRAC_PI_2))) * f64::from(thickness);
+        let horizontal_radius = 1.5 + f64::from(trig::sin(FRAC_PI_2)) * f64::from(thickness);
         let vertical_radius = horizontal_radius * y_scale;
         self.carve_ellipsoid(
             x + 1.0,
@@ -176,10 +175,10 @@ where
             let progress_arg = PI * current_step as f32 / tunnel.dist as f32;
             let horizontal_radius = horizontal_tunnel_radius(progress_arg, tunnel.thickness);
             let vertical_radius = horizontal_radius * tunnel.y_scale;
-            let cos_x = trig::cos(f64::from(state.vertical_rotation));
-            state.x += f64::from(trig::cos(f64::from(state.horizontal_rotation)) * cos_x);
-            state.y += f64::from(trig::sin(f64::from(state.vertical_rotation)));
-            state.z += f64::from(trig::sin(f64::from(state.horizontal_rotation)) * cos_x);
+            let cos_x = trig::cos(state.vertical_rotation);
+            state.x += f64::from(trig::cos(state.horizontal_rotation) * cos_x);
+            state.y += f64::from(trig::sin(state.vertical_rotation));
+            state.z += f64::from(trig::sin(state.horizontal_rotation) * cos_x);
             state.vertical_rotation *= if steep { 0.92 } else { 0.7 };
             state.vertical_rotation += x_rota * 0.1;
             state.horizontal_rotation += y_rota * 0.1;

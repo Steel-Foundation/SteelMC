@@ -22,6 +22,9 @@ wincode.workspace = true
 rayon.workspace = true
 
 [build-dependencies]
+# Extract vanilla datapacks before the worldgen build script reads them.
+steel-utils.workspace = true
+
 # Serialization
 serde.workspace = true
 serde_json.workspace = true

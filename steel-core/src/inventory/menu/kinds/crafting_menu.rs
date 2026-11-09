@@ -8,12 +8,10 @@
 
 use std::sync::Arc;
 
-use crate::inventory::container::CraftingContainer;
-use crate::inventory::container::ResultContainer;
+use crate::inventory::container::{CraftingContainer, ResultContainer};
 use crate::inventory::prelude::*;
 use crate::inventory::slots::CraftingHandler;
 use crate::player::player_inventory::PlayerInventory;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_menu_types;
@@ -34,7 +32,7 @@ pub fn crafting(inventory: Shared<PlayerInventory>, container_id: u8, block_pos:
     );
 
     let mut builder = MenuBuilder::new(&vanilla_menu_types::CRAFTING, container_id);
-    let result = builder.result_slot(handler.clone());
+    let result = builder.crafting_result_slot(handler.clone());
     let grid = builder.section_all(crafting_container);
     let player = builder.player_inventory(&inventory);
 
@@ -84,12 +82,13 @@ impl MenuKind for CraftingKind {
         !self.result.contains(slot_index)
     }
 
-    /// Returns true if the block is still a crafting table and the player is in
-    /// range (plus a 4.0 buffer).
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
-        let world = player.get_world();
-        world.get_block_state(self.block_pos).get_block() == &vanilla_blocks::CRAFTING_TABLE
-            && player.is_within_block_interaction_range_with_buffer(self.block_pos, 4.0)
+        still_valid_block(
+            &player.get_world(),
+            self.block_pos,
+            &vanilla_blocks::CRAFTING_TABLE,
+            player,
+        )
     }
 
     /// Clears the virtual result on close. The grid is drained by [`Menu::removed`].

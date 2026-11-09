@@ -1,7 +1,7 @@
 use super::{
     DyeColor, EquipmentSlotGroup, Identifier, InstrumentRef, ItemPredicate, ItemStack,
     LootCondition, LootContext, LootContextEntity, LootEntry, NumberProvider, REGISTRY, RngExt,
-    TaggedRegistryExt,
+    TaggedRegistryExt, context::math_round,
 };
 
 /// Options for selecting enchantments - either a tag reference or explicit list.
@@ -360,11 +360,12 @@ impl LootFunction {
                 count: provider,
                 limit,
             } => {
-                let level = ctx.get_enchantment_level_by_id(enchantment);
+                let level = ctx.get_attacking_entity_enchantment_level(enchantment);
                 if level > 0 {
-                    let bonus = (provider.get_simple(ctx.rng) * level as f32).round() as i32;
-                    let bonus = if *limit > 0 { bonus.min(*limit) } else { bonus };
-                    item.count += bonus;
+                    item.count += math_round(level as f32 * provider.get_float(ctx));
+                    if *limit > 0 {
+                        item.count = item.count.min(*limit);
+                    }
                 }
             }
             LootFunction::LimitCount { min, max } => {

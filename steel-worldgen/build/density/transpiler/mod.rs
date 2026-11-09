@@ -44,7 +44,9 @@ mod codegen_structs;
 mod context;
 mod fingerprint;
 mod graph;
+pub(super) mod material_ore;
 mod naming;
+mod nonpositive;
 
 /// Input to the transpiler.
 pub struct TranspilerInput {

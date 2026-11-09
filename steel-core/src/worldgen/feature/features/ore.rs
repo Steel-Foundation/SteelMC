@@ -37,18 +37,19 @@ impl FeatureDecorationRunner {
         let size_xz = 2 * (spread_xz_ceil + max_radius);
         let size_y = 2 * (2 + max_radius);
 
-        for x_probe in x_start..=x_start + size_xz {
-            for z_probe in z_start..=z_start + size_xz {
-                if y_start <= region.height_at(HeightmapType::OceanFloorWg, x_probe, z_probe) {
-                    return Self::do_place_ore(
-                        region, registry, random, config, x0, x1, z0, z1, y0, y1, x_start, y_start,
-                        z_start, size_xz, size_y,
-                    );
-                }
-            }
+        if !region.any_height_at_least(
+            HeightmapType::OceanFloorWg,
+            (x_start, z_start),
+            (x_start + size_xz, z_start + size_xz),
+            y_start,
+        ) {
+            return false;
         }
 
-        false
+        Self::do_place_ore(
+            region, registry, random, config, x0, x1, z0, z1, y0, y1, x_start, y_start, z_start,
+            size_xz, size_y,
+        )
     }
 
     #[expect(
@@ -81,7 +82,7 @@ impl FeatureDecorationRunner {
         for i in 0..size {
             let step = i as f32 / config.size as f32;
             let size_factor = random.next_f64() * f64::from(config.size) / 16.0;
-            let radius_wave = trig::sin(f64::from(PI * step)) + 1.0;
+            let radius_wave = trig::sin(PI * step) + 1.0;
             let radius = f64::from(radius_wave) * size_factor + 1.0;
             vein_nodes[i] = [
                 lerp(f64::from(step), x0, x1),

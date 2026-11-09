@@ -402,7 +402,7 @@ impl<'a> ChunkBuilder<'a> {
             .blocks
             .by_state_id(block_id)
             .expect("Invalid block state ID");
-        let properties = self.registry.blocks.get_properties(block_id);
+        let properties = self.registry.blocks.properties(block_id).collect();
 
         let persistent = PersistentBlockState {
             name: block.key.clone(),
@@ -762,8 +762,7 @@ impl ChunkStorage {
                 let pos = entity.get_block_pos();
 
                 // Serialize NBT data
-                let mut nbt = NbtCompound::new();
-                entity.save_additional(&mut nbt);
+                let nbt = entity.save_without_metadata();
                 let mut nbt_bytes = Vec::new();
                 nbt.write(&mut nbt_bytes);
 

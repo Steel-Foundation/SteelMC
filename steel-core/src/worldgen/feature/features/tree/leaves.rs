@@ -2,8 +2,8 @@ use steel_registry::vanilla_block_tags::BlockTag;
 
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
-use super::super::super::vanilla_collections::JavaBlockPosSet;
 use super::{TreeBounds, TreePlacement};
+use crate::java_block_pos_set::JavaBlockPosSet;
 
 const LEAF_DISTANCE_LIMIT: usize = 7;
 

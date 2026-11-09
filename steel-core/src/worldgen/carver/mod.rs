@@ -319,7 +319,7 @@ impl<F: FnMut(f64, f64, f64, i32) -> bool> CarveSkipChecker for F {
 #[inline]
 #[must_use]
 pub(super) fn horizontal_tunnel_radius(progress_arg: f32, thickness: f32) -> f64 {
-    let radius_offset = trig::sin(f64::from(progress_arg)) * thickness;
+    let radius_offset = trig::sin(progress_arg) * thickness;
     1.5 + f64::from(radius_offset)
 }
 

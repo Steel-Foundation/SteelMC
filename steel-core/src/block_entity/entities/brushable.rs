@@ -14,6 +14,8 @@ use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::{
     REGISTRY, RegistryExt as _, vanilla_block_entity_types, vanilla_blocks, vanilla_entities,
 };
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{
     BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey, Identifier, locks::SyncMutex,
@@ -21,7 +23,7 @@ use steel_utils::{
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::block_entity::{BlockEntity, BlockEntityBase};
-use crate::entity::{LivingEntity as _, entity_loot_ref};
+use crate::entity::{LivingEntity as _, entity_loot_ref, living_loot_equipment};
 use crate::player::Player;
 use crate::world::World;
 
@@ -224,6 +226,8 @@ impl BrushableBlockEntity {
     ) {
         let loot = match loot_table {
             Some(table) => {
+                // TODO: Trigger CriteriaTriggers.GENERATE_LOOT once criteria triggers exist.
+                let equipment = living_loot_equipment(player);
                 let mut ctx = LootContext::new(rng)
                     .with_luck(player.get_luck())
                     .with_tool(brush)
@@ -232,7 +236,7 @@ impl BrushableBlockEntity {
                         f64::from(self.get_block_pos().y()) + 0.5,
                         f64::from(self.get_block_pos().z()) + 0.5,
                     )
-                    .with_this_entity(entity_loot_ref(player));
+                    .with_this_entity(entity_loot_ref(player, Some(&equipment)));
                 table.get_random_items(&mut ctx)
             }
             None => Vec::new(),
@@ -325,7 +329,7 @@ impl BlockEntity for BrushableBlockEntity {
         state.loot_table = nbt_view
             .string("LootTable")
             .and_then(|value| Identifier::from_str(&value.to_str()).ok());
-        state.loot_table_seed = nbt_view.long("LootTableSeed").unwrap_or(0);
+        state.loot_table_seed = nbt_view.long_value("LootTableSeed").unwrap_or(0);
 
         // Vanilla: LootTable and item are mutually exclusive on load.
         if state.loot_table.is_some() {
@@ -339,7 +343,8 @@ impl BlockEntity for BrushableBlockEntity {
 
         // Vanilla Direction.LEGACY_ID_CODEC: byte 3D data value.
         state.hit_direction = nbt_view
-            .byte("hit_direction")
+            .get("hit_direction")
+            .and_then(|tag| tag.codec_i8())
             .map(|value| Direction::from_3d_data_value(i32::from(value)));
     }
 

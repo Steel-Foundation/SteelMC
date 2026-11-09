@@ -34,7 +34,11 @@ impl FaceAttachedHorizontalDirectionalBlock {
         }
     }
 
-    pub(crate) fn can_attach(level: &dyn LevelReader, pos: BlockPos, direction: Direction) -> bool {
+    pub(crate) fn can_attach(
+        level: &(impl LevelReader + ?Sized),
+        pos: BlockPos,
+        direction: Direction,
+    ) -> bool {
         let support_pos = pos.relative(direction);
         level.is_face_sturdy(
             level.get_block_state(support_pos),
@@ -43,7 +47,11 @@ impl FaceAttachedHorizontalDirectionalBlock {
         )
     }
 
-    pub(crate) fn can_survive(state: BlockStateId, level: &dyn LevelReader, pos: BlockPos) -> bool {
+    pub(crate) fn can_survive(
+        state: BlockStateId,
+        level: &(impl LevelReader + ?Sized),
+        pos: BlockPos,
+    ) -> bool {
         Self::can_attach(level, pos, Self::connected_direction(state).opposite())
     }
 

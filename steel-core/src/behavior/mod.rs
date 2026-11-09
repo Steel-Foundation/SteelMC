@@ -59,6 +59,11 @@ pub mod waxables;
 #[path = "generated/weathering.rs"]
 pub mod weathering;
 
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/skull_types.rs"]
+pub mod skull_types;
+
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionBoxes, BlockCollisionContext,
     BlockEntityCreation, BlockLootContext, BrushableData, DefaultBlockBehavior, EntityFallDamage,
@@ -85,6 +90,7 @@ use std::sync::OnceLock;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::consume_effect::vanilla_consume_effect_types;
+use steel_registry::fluid::FluidRef;
 use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_mob_effects;
 use steel_utils::BlockStateId;
@@ -133,7 +139,7 @@ pub trait BlockStateBehaviorExt {
     fn is_liquid_container(&self) -> bool;
 
     /// Returns whether this block state can be replaced by the given fluid block.
-    fn can_be_replaced_by_fluid(&self, fluid_block: BlockRef) -> bool;
+    fn can_be_replaced_by_fluid(&self, fluid: FluidRef) -> bool;
 
     /// Returns whether this block state can be replaced in this placement context.
     fn can_be_replaced(&self, context: &BlockPlaceContext<'_>) -> bool;
@@ -158,10 +164,10 @@ impl BlockStateBehaviorExt for BlockStateId {
         behavior.is_liquid_container(*self)
     }
 
-    fn can_be_replaced_by_fluid(&self, fluid_block: BlockRef) -> bool {
+    fn can_be_replaced_by_fluid(&self, fluid: FluidRef) -> bool {
         let block = self.get_block();
         let behavior = BLOCK_BEHAVIORS.get_behavior(block);
-        behavior.can_be_replaced_by_fluid(*self, fluid_block)
+        behavior.can_be_replaced_by_fluid(*self, fluid)
     }
 
     fn can_be_replaced(&self, context: &BlockPlaceContext<'_>) -> bool {

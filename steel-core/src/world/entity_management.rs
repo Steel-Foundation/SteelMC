@@ -7,6 +7,8 @@ use super::{
     WorldChangeRequest, block_entity_ticker, mem, vanilla_entities,
 };
 
+use crate::entity::{EntityCollisionCandidates, selector::EntitySelector};
+
 pub(super) struct NavigatingMobTracker {
     ids: SyncMutex<FxHashSet<i32>>,
 }
@@ -245,6 +247,52 @@ impl World {
         }
         self.register_loaded_entity(entity)?;
         self.mark_chunk_dirty(chunk_pos);
+        Ok(())
+    }
+
+    /// Adds a fresh vehicle/passenger tree only after every member has passed
+    /// chunk and identity validation.
+    pub(crate) fn try_add_fresh_entity_with_passengers(
+        self: &Arc<Self>,
+        root: SharedEntity,
+    ) -> Result<(), AddEntityError> {
+        let mut entities = Vec::new();
+        let mut seen_ids = FxHashSet::default();
+        Self::collect_fresh_entity_tree(&root, &mut seen_ids, &mut entities)?;
+
+        let mut dirty_chunks = FxHashSet::default();
+        for entity in &entities {
+            let chunk = ChunkPos::from_entity_pos(entity.position());
+            if !self.entity_manager.is_chunk_loaded(chunk) {
+                return Err(AddEntityError::ChunkNotLoaded {
+                    entity_id: entity.id(),
+                    chunk,
+                });
+            }
+            dirty_chunks.insert(chunk);
+        }
+
+        self.register_loaded_entity_tree(&entities)?;
+        for chunk in dirty_chunks {
+            self.mark_chunk_dirty(chunk);
+        }
+        Ok(())
+    }
+
+    fn collect_fresh_entity_tree(
+        entity: &SharedEntity,
+        seen_ids: &mut FxHashSet<i32>,
+        entities: &mut Vec<SharedEntity>,
+    ) -> Result<(), AddEntityError> {
+        if !seen_ids.insert(entity.id()) {
+            return Err(AddEntityError::DuplicateId {
+                entity_id: entity.id(),
+            });
+        }
+        entities.push(Arc::clone(entity));
+        for passenger in entity.passengers() {
+            Self::collect_fresh_entity_tree(&passenger, seen_ids, entities)?;
+        }
         Ok(())
     }
 
@@ -549,6 +597,30 @@ impl World {
             .get_entity_bounding_boxes_in_aabb_matching(aabb, predicate)
     }
 
+    /// Gets entity shapes for movement collision through the selected conservative broad phase.
+    #[must_use]
+    pub(crate) fn get_movement_collision_boxes_in_aabb_matching(
+        &self,
+        aabb: &WorldAabb,
+        candidates: EntityCollisionCandidates,
+        predicate: impl FnMut(&dyn Entity) -> bool,
+    ) -> Vec<WorldAabb> {
+        self.entity_manager
+            .get_movement_collision_boxes_in_aabb_matching(aabb, candidates, predicate)
+    }
+
+    /// Returns whether the selected movement-collision broad phase has a matching entity.
+    #[must_use]
+    pub(crate) fn has_movement_collision_in_aabb_matching(
+        &self,
+        aabb: &WorldAabb,
+        candidates: EntityCollisionCandidates,
+        predicate: impl FnMut(&dyn Entity) -> bool,
+    ) -> bool {
+        self.entity_manager
+            .has_movement_collision_in_aabb_matching(aabb, candidates, predicate)
+    }
+
     /// Gets the nearest entity intersecting the given bounding box and matching `predicate`.
     ///
     /// Only returns entities in loaded chunks.
@@ -616,11 +688,18 @@ impl World {
         pusher: &dyn Entity,
         aabb: &WorldAabb,
     ) -> Vec<SharedEntity> {
-        self.get_entities_in_aabb(aabb)
+        Self::filter_pushable_entities(pusher, self.get_entities_in_aabb(aabb))
+    }
+
+    pub(crate) fn filter_pushable_entities(
+        pusher: &dyn Entity,
+        entities: Vec<SharedEntity>,
+    ) -> Vec<SharedEntity> {
+        let predicate = EntitySelector::pushable_by(pusher);
+
+        entities
             .into_iter()
-            .filter(|entity| entity.id() != pusher.id())
-            .filter(|entity| !entity.is_spectator())
-            .filter(|entity| entity.is_pushable())
+            .filter(|entity| predicate(entity.as_ref()))
             .collect()
     }
 
