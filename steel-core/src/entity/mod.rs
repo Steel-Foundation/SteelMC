@@ -333,7 +333,7 @@ fn finish_inside_block_effects(
         return;
     }
 
-    if is_in_rain(entity) {
+    if entity.is_in_rain() {
         entity.clear_fire();
     }
 
@@ -350,20 +350,6 @@ fn finish_inside_block_effects(
     } else {
         entity.sync_base_fire_freeze_entity_data();
     }
-}
-
-fn is_in_rain(entity: &dyn Entity) -> bool {
-    let Some(world) = entity.level() else {
-        return false;
-    };
-
-    let pos = entity.block_position();
-    world.is_raining_at(pos)
-        || world.is_raining_at(BlockPos::new(
-            pos.x(),
-            entity.bounding_box().max_y().floor() as i32,
-            pos.z(),
-        ))
 }
 
 fn closest_open_space_direction(
@@ -448,12 +434,12 @@ pub(crate) fn get_input_vector(input: DVec3, speed: f32, yaw_degrees: f32) -> DV
         input
     } * f64::from(speed);
     let yaw = yaw_degrees.to_radians();
-    let sin = trig::sin(yaw);
-    let cos = trig::cos(yaw);
+    let sin = f64::from(trig::sin(yaw));
+    let cos = f64::from(trig::cos(yaw));
     DVec3::new(
-        movement.x * f64::from(cos) - movement.z * f64::from(sin),
+        movement.x * cos - movement.z * sin,
         movement.y,
-        movement.z * f64::from(cos) + movement.x * f64::from(sin),
+        movement.z * cos + movement.x * sin,
     )
 }
 
@@ -794,8 +780,10 @@ mod monster;
 mod movement_sync;
 mod potion_contents;
 pub mod projectile;
+pub(crate) mod pushing;
 mod reference;
 mod registry;
+pub(crate) mod selector;
 mod spawn;
 mod spawn_placements;
 mod storage;
@@ -864,13 +852,14 @@ pub use projectile::{
     SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
     compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
+pub use pushing::{DefaultEntityPush, EntityPushSnapshot};
 pub use reference::EntityReference;
 pub(crate) use registry::SpawnRule;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
-    AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest,
-    SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
-    create_entity_instance, load_entity_recursive_owned, spawn_entity,
+    AgeableMobGroupData, EntitySpawnError, EntitySpawnPlacement, EntitySpawnReason,
+    EntitySpawnRequest, SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
+    apply_item_stack_components, create_entity_instance, load_entity_recursive_owned, spawn_entity,
 };
 pub(crate) use spawn_placements::SpawnPlacements;
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
