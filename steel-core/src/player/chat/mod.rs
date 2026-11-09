@@ -583,7 +583,7 @@ impl Player {
             self.gameprofile.id(),
             sender_index,
             signature.clone(),
-            chat_message.clone(),
+            chat_message,
             packet.timestamp,
             packet.salt,
             Box::new([]),

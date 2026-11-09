@@ -1,5 +1,6 @@
 //! Dispatcher-owned command node arena.
 
+use std::ops::Range;
 #[cfg(test)]
 use super::CommandContext;
 use super::{
@@ -431,7 +432,7 @@ fn utf16_range_to_byte_range(
     s: &str,
     start_utf16: usize,
     end_utf16: usize,
-) -> Option<std::ops::Range<usize>> {
+) -> Option<Range<usize>> {
     if start_utf16 > end_utf16 {
         return None;
     }
@@ -489,6 +490,16 @@ impl<S> CommandDispatcher<S, BrigadierRuntime> {
     }
 }
 
+impl<S, R> Default for CommandDispatcher<S, R>
+where
+    R: CommandRuntime<S>,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::utf16_range_to_byte_range;
@@ -512,7 +523,7 @@ mod tests {
         // 'c' (0), 'a' (1), 'f' (2), 'é' (3..5), ' ' (5), "noir" (6..10)
         let range = utf16_range_to_byte_range(text, 5, 9);
         assert_eq!(range, Some(6..10));
-        assert_eq!(&text[range.unwrap()], "noir");
+        assert_eq!(&text[range.expect("Invalid UTF-16 range")], "noir");
     }
 
     #[test]
@@ -527,12 +538,12 @@ mod tests {
         // Slicing the emoji itself
         let emoji_range = utf16_range_to_byte_range(text, 5, 7);
         assert_eq!(emoji_range, Some(5..9));
-        assert_eq!(&text[emoji_range.unwrap()], "🎮");
+        assert_eq!(&text[emoji_range.expect("Invalid UTF-16 range")], "🎮");
 
         // Slicing "now" after the emoji
         let now_range = utf16_range_to_byte_range(text, 8, 11);
         assert_eq!(now_range, Some(10..13));
-        assert_eq!(&text[now_range.unwrap()], "now");
+        assert_eq!(&text[now_range.expect("Invalid UTF-16 range")], "now");
     }
 
     #[test]
@@ -547,14 +558,5 @@ mod tests {
         // Splitting a surrogate pair should be rejected / return None
         let emoji_text = "🎮"; // 2 UTF-16 code units
         assert_eq!(utf16_range_to_byte_range(emoji_text, 0, 1), None);
-    }
-}
-
-impl<S, R> Default for CommandDispatcher<S, R>
-where
-    R: CommandRuntime<S>,
-{
-    fn default() -> Self {
-        Self::new()
     }
 }
