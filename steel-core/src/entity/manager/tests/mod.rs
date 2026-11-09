@@ -285,4 +285,5 @@ mod lifecycle;
 mod movement_and_visibility;
 mod persistence;
 mod queries_and_order;
+mod spatial_queries;
 mod ticking;

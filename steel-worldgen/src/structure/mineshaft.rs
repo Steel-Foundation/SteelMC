@@ -180,7 +180,7 @@ pub fn find_generation_point(
     mtype: MineshaftType,
     sea_level: i32,
     min_y: i32,
-    get_surface_height: &mut dyn FnMut(i32, i32) -> i32,
+    get_surface_height: &mut (impl FnMut(i32, i32) -> i32 + ?Sized),
 ) -> MineshaftResult {
     rng.next_f64();
 

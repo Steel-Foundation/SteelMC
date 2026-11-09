@@ -4,10 +4,12 @@
 //! including player inventories, chests, barrels, furnaces, etc.
 
 mod crafting;
+mod helper;
 mod result;
 mod simple;
 
 pub use crafting::CraftingContainer;
+pub use helper::load_all_items;
 pub use result::ResultContainer;
 pub use simple::SimpleContainer;
 
@@ -17,7 +19,7 @@ use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::ErasedType;
 
-/// Default distance buffer for container interaction range checks.
+/// Extra reach allowed when validating containers and menus.
 pub const DEFAULT_DISTANCE_BUFFER: f32 = 4.0;
 
 /// Something that contains items.
@@ -320,7 +322,7 @@ pub trait Container: ErasedType + Send + Sync {
 /// Removes or counts matching items in one stack using vanilla `/clear` semantics.
 pub(crate) fn clear_or_count_matching_stack(
     stack: &mut ItemStack,
-    predicate: &dyn Fn(&ItemStack) -> bool,
+    predicate: &(impl Fn(&ItemStack) -> bool + ?Sized),
     amount_to_remove: i32,
     counting_only: bool,
 ) -> i32 {
@@ -333,7 +335,7 @@ pub(crate) fn clear_or_count_matching_stack(
 
 fn matching_item_count(
     stack: &ItemStack,
-    predicate: &dyn Fn(&ItemStack) -> bool,
+    predicate: &(impl Fn(&ItemStack) -> bool + ?Sized),
     amount_to_remove: i32,
     counting_only: bool,
 ) -> i32 {
@@ -365,7 +367,7 @@ fn matching_item_count(
 /// # Returns
 /// Signal strength from 0 to 15
 #[must_use]
-pub fn calculate_redstone_signal_from_container(container: &dyn Container) -> i32 {
+pub fn calculate_redstone_signal_from_container(container: &(impl Container + ?Sized)) -> i32 {
     let size = container.get_container_size();
     if size == 0 {
         return 0;

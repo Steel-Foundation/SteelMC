@@ -6,7 +6,6 @@ use steel_registry::data_components::vanilla_components::MAX_DAMAGE;
 use steel_registry::vanilla_blocks;
 use steel_registry::{
     REGISTRY, RegistryExt, TaggedRegistryExt,
-    blocks::block_state_ext::BlockStateExt,
     data_components::{
         components::ItemEnchantments,
         vanilla_components::{ENCHANTMENTS, REPAIR_COST, STORED_ENCHANTMENTS},
@@ -255,9 +254,12 @@ impl GrindstoneKind {
 impl MenuKind for GrindstoneKind {
     /// Returns true while the original grindstone remains in range.
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
-        let state = self.world.get_block_state(self.block_pos);
-        state.get_block() == &vanilla_blocks::GRINDSTONE
-            && player.is_within_block_interaction_range_with_buffer(self.block_pos, 4.0)
+        still_valid_block(
+            &self.world,
+            self.block_pos,
+            &vanilla_blocks::GRINDSTONE,
+            player,
+        )
     }
 
     fn slots_changed(

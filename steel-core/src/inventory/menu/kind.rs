@@ -1,10 +1,13 @@
 //! Per-menu behavior hooks.
 
+use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::mob_effect::MobEffectRef;
-use steel_utils::ErasedType;
+use steel_utils::{BlockPos, ErasedType};
 
+use crate::inventory::container::DEFAULT_DISTANCE_BUFFER;
 use crate::inventory::menu::behavior::MenuBehavior;
+use crate::world::World;
 use crate::{inventory::lock::ContainerLockGuard, player::Player};
 
 use crate::inventory::click::{Click, ClickOutcome, QuickCraft};
@@ -33,6 +36,18 @@ pub trait MenuKind: ErasedType + Send + Sync {
     /// Applies a rename from the client (anvil-style text input) and recomputes
     /// any result. No-op for kinds without a rename input.
     fn on_rename(&mut self, _behavior: &mut MenuBehavior, _name: String, _player: &Player) {}
+
+    /// Handles a client button press (vanilla `clickMenuButton`). Returns true
+    /// when the press was handled, whether or not it changed anything; the
+    /// caller then re-syncs the menu. No-op for kinds without buttons.
+    fn click_menu_button(
+        &mut self,
+        _behavior: &mut MenuBehavior,
+        _button_id: i32,
+        _player: &Player,
+    ) -> bool {
+        false
+    }
 
     /// Runs after initial contents are built but before they're sent, so
     /// anything populated here appears in the first render.
@@ -116,4 +131,14 @@ pub trait MenuKind: ErasedType + Send + Sync {
     ) -> Option<ItemStack> {
         None
     }
+}
+
+/// Vanilla's static `AbstractContainerMenu.stillValid(access, player, block)`, renamed
+/// so it does not read as [`MenuKind::still_valid`]: the block at `pos` is still
+/// `block` and the player is within reach.
+#[must_use]
+pub fn still_valid_block(world: &World, pos: BlockPos, block: BlockRef, player: &Player) -> bool {
+    world.get_block_state(pos).get_block() == block
+        && player
+            .is_within_block_interaction_range_with_buffer(pos, f64::from(DEFAULT_DISTANCE_BUFFER))
 }

@@ -1280,7 +1280,7 @@ pub trait BlockBehavior: Send + Sync {
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
-        world: &dyn LevelReader,
+        world: &World,
         pos: BlockPos,
         direction: Direction,
     ) -> i32 {
@@ -1335,7 +1335,7 @@ pub trait BlockBehavior: Send + Sync {
     ///
     /// This is a behavior hook because vanilla block subclasses can override the
     /// base replacement rule. The default mirrors `Block.canBeReplaced(Fluid)`.
-    fn can_be_replaced_by_fluid(&self, state: BlockStateId, _fluid_block: BlockRef) -> bool {
+    fn can_be_replaced_by_fluid(&self, state: BlockStateId, _fluid: FluidRef) -> bool {
         if state.is_air() {
             return true;
         }
