@@ -2,30 +2,37 @@
 //! definitions, their value types, modifiers, and attribute maps.
 //!
 //! Attribute definitions come from the built-in `environment_attribute`
-//! registry extracted by `SteelExtractor`. Layered sampling (dimension, timeline,
-//! weather, and biome layers) lives in `steel-core`'s
-//! `world::environment_attributes`.
+//! registry extracted by `SteelExtractor`. The typed layer chains
+//! ([`ValueSampler`]) and the layers built from registry data live here; the
+//! per-world system that assembles them, and the weather layers, live in
+//! `steel-core`'s `world::environment_attributes`.
 //!
 //! Every vanilla attribute type is implemented except `activity`.
 // TODO: Implement the `activity` attribute type (villager schedules) once Steel
 // has the built-in activity registry.
 
 mod attribute_type;
+mod layer;
 mod lazy_value;
 mod map;
 mod modifier;
 mod range;
+mod sampler;
 mod values;
 
 use std::fmt::Debug;
 
 use rustc_hash::FxHashMap;
-use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
+use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier};
 
 pub use attribute_type::{
     AMBIENT_PARTICLES, AMBIENT_SOUNDS, ANGLE_DEGREES, ARGB_COLOR, AttributeType, BACKGROUND_MUSIC,
     BED_RULE, BOOLEAN, FLOAT, INTEGER, MOB_SPAWN_SETTINGS, MOON_PHASE, PARTICLE, RGB_COLOR,
     TRI_STATE,
+};
+pub use layer::{
+    BiomeLayer, BiomeSource, ClockSource, ConstantLayer, DimensionLayer, EnvironmentAttributeLayer,
+    EnvironmentSampleContext, PositionalLayer, TimeBasedLayer, TimelineTrackLayer,
 };
 pub use lazy_value::LazyValue;
 pub use map::{EnvironmentAttributeMap, EnvironmentAttributeMapEntry};
@@ -34,8 +41,10 @@ pub use modifier::{
     ColorAlphaBlendModifier, ColorMultiplyModifier, ErasedAttributeModifierEntry,
     FloatAlphaBlendModifier, FloatModifier, FloatWithAlpha, IntegerModifier, ListAppendModifier,
     MobSpawnSettingsOverlayModifier, OperationId, OverrideModifier, RgbModifier,
+    TypedAttributeModifierEntry,
 };
 pub use range::AttributeRange;
+pub use sampler::{ErasedValueSampler, LayerValueTypeMismatch, ValueSampler};
 pub use values::{
     AmbientAdditionsSettings, AmbientMoodSettings, AmbientParticle, AmbientSounds, AttributeList,
     BackgroundMusic, BedRule, BedRuleValue, CategorySpawns, MobSpawnCost, MobSpawnSettings,
@@ -154,12 +163,27 @@ impl<V: AttributeValue> PartialEq for EnvironmentAttribute<V> {
 
 impl<V: AttributeValue> Eq for EnvironmentAttribute<V> {}
 
-/// Object-safe access to environment attribute metadata.
-pub trait ErasedEnvironmentAttribute: Debug + Send + Sync {
+// SAFETY: The key includes `V`'s key, so every instantiation of this
+// Steel-owned type has its own key.
+unsafe impl<V: AttributeValue> DowncastType for EnvironmentAttribute<V> {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::generic(
+        "steel:environment_attribute/environment_attribute",
+        &[V::TYPE_KEY],
+    );
+}
+
+/// Object-safe access to an environment attribute of any value type.
+///
+/// Recover the typed attribute with [`downcast`](#method.downcast).
+pub trait ErasedEnvironmentAttribute: ErasedType + Debug + Send + Sync {
     fn key(&self) -> &Identifier;
     fn flags(&self) -> EnvironmentAttributeFlags;
     /// Downcast key of the attribute's value type.
     fn value_type_key(&self) -> DowncastTypeKey;
+
+    /// Creates an empty sampler of this attribute's value type, so layers
+    /// built from erased registry data can be typed.
+    fn new_value_sampler(&'static self) -> Box<dyn ErasedValueSampler>;
 }
 
 impl<V: AttributeValue> ErasedEnvironmentAttribute for EnvironmentAttribute<V> {
@@ -173,6 +197,20 @@ impl<V: AttributeValue> ErasedEnvironmentAttribute for EnvironmentAttribute<V> {
 
     fn value_type_key(&self) -> DowncastTypeKey {
         V::TYPE_KEY
+    }
+
+    fn new_value_sampler(&'static self) -> Box<dyn ErasedValueSampler> {
+        Box::new(ValueSampler::new(self))
+    }
+}
+
+impl dyn ErasedEnvironmentAttribute {
+    /// Returns this attribute typed by its value type, or `None` when its
+    /// value type is not `V`.
+    #[must_use]
+    pub fn downcast<V: AttributeValue>(&self) -> Option<&EnvironmentAttribute<V>> {
+        let erased: &dyn ErasedType = self;
+        erased.downcast_ref()
     }
 }
 

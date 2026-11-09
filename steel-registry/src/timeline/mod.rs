@@ -5,7 +5,7 @@ use steel_utils::Identifier;
 
 mod attribute_track;
 
-pub use attribute_track::{AttributeTrack, ErasedAttributeTrack};
+pub use attribute_track::{AttributeTrack, ErasedAttributeTrack, TypedAttributeTrack};
 
 use crate::RegistryTags;
 use crate::world_clock::WorldClockRef;

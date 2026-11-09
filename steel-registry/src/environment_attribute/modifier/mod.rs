@@ -15,7 +15,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use steel_math::keyframe_track::LerpFunction;
-use steel_utils::{Downcast as _, ErasedType};
+use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, ErasedType};
 
 use super::{AttributeValue, EnvironmentAttribute, LazyValue};
 
@@ -145,13 +145,39 @@ impl<V: AttributeValue, M: AttributeModifier<V>> AttributeModifierEntry<V, M> {
     }
 }
 
-/// Object-safe access to a modifier entry of any value type.
+/// A modifier entry of value type `V`, with its modifier type erased.
+pub trait TypedAttributeModifierEntry<V: AttributeValue>: Debug + Send + Sync {
+    fn operation_id(&self) -> OperationId;
+
+    fn apply(&self, subject: V) -> V;
+}
+
+impl<V: AttributeValue, M: AttributeModifier<V>> TypedAttributeModifierEntry<V>
+    for AttributeModifierEntry<V, M>
+{
+    fn operation_id(&self) -> OperationId {
+        self.modifier.operation_id()
+    }
+
+    fn apply(&self, subject: V) -> V {
+        Self::apply(self, subject)
+    }
+}
+
+/// A modifier entry with both its value and modifier types erased, as stored
+/// in attribute maps of mixed value types.
+///
+/// Recover the typed entry with [`downcast`](#method.downcast).
 pub trait ErasedAttributeModifierEntry: Debug + Send + Sync {
     fn operation_id(&self) -> OperationId;
 
-    /// Applies the modifier to `subject` in place. Returns `false`, leaving
-    /// `subject` untouched, when its type does not match the entry.
-    fn apply_erased(&self, subject: &mut dyn ErasedType) -> bool;
+    /// Downcast key of the entry's value type.
+    fn value_type_key(&self) -> DowncastTypeKey;
+
+    /// Stores this entry in `slot` when `slot` is the
+    /// `TypedModifierEntrySlot` of the entry's value type.
+    #[doc(hidden)]
+    fn fill_typed_slot(&'static self, slot: &mut dyn ErasedType);
 }
 
 impl<V: AttributeValue, M: AttributeModifier<V>> ErasedAttributeModifierEntry
@@ -161,27 +187,40 @@ impl<V: AttributeValue, M: AttributeModifier<V>> ErasedAttributeModifierEntry
         self.modifier.operation_id()
     }
 
-    fn apply_erased(&self, subject: &mut dyn ErasedType) -> bool {
-        let Some(subject) = subject.downcast_mut::<V>() else {
-            return false;
-        };
-        *subject = self.apply(subject.clone());
-        true
+    fn value_type_key(&self) -> DowncastTypeKey {
+        V::TYPE_KEY
+    }
+
+    fn fill_typed_slot(&'static self, slot: &mut dyn ErasedType) {
+        if let Some(slot) = slot.downcast_mut::<TypedModifierEntrySlot<V>>() {
+            slot.0 = Some(self);
+        }
     }
 }
 
 impl dyn ErasedAttributeModifierEntry {
-    /// Applies the modifier to a typed value.
-    ///
-    /// Entries are paired with their attribute by typed constructors, so a
-    /// mismatch is a construction bug; the value is returned unchanged.
+    /// Returns this entry typed by its value type, or `None` when its value
+    /// type is not `V`.
     #[must_use]
-    pub fn apply_typed<V: AttributeValue>(&self, mut subject: V) -> V {
-        let applied = self.apply_erased(&mut subject);
-        debug_assert!(
-            applied,
-            "modifier entry {self:?} does not apply to this value type"
-        );
-        subject
+    pub fn downcast<V: AttributeValue>(
+        &'static self,
+    ) -> Option<&'static dyn TypedAttributeModifierEntry<V>> {
+        let mut slot = TypedModifierEntrySlot::<V>(None);
+        self.fill_typed_slot(&mut slot);
+        slot.0
     }
+}
+
+/// Carries a typed entry out of [`ErasedAttributeModifierEntry::fill_typed_slot`].
+struct TypedModifierEntrySlot<V: AttributeValue>(
+    Option<&'static dyn TypedAttributeModifierEntry<V>>,
+);
+
+// SAFETY: The key includes `V`'s key, so every instantiation of this
+// Steel-owned type has its own key.
+unsafe impl<V: AttributeValue> DowncastType for TypedModifierEntrySlot<V> {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::generic(
+        "steel:environment_attribute/typed_modifier_entry_slot",
+        &[V::TYPE_KEY],
+    );
 }

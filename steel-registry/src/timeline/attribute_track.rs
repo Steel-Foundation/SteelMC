@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use steel_math::keyframe_track::KeyframeTrack;
-use steel_utils::{Downcast as _, ErasedType};
+use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, ErasedType};
 
 use crate::environment_attribute::{
     AttributeModifier, AttributeValue, EnvironmentAttribute, ErasedEnvironmentAttributeRef,
@@ -43,18 +43,30 @@ impl<V: AttributeValue, M: AttributeModifier<V>> AttributeTrack<V, M> {
     }
 }
 
-/// Object-safe access to an attribute track of any value type.
+/// An attribute track of value type `V`, with its modifier type erased.
+pub trait TypedAttributeTrack<V: AttributeValue>: Debug + Send + Sync {
+    /// Samples the argument at `total_ticks` of the timeline's clock and
+    /// applies the modifier to `subject`.
+    fn apply(&self, subject: V, period_ticks: Option<i32>, total_ticks: i64) -> V;
+}
+
+impl<V: AttributeValue, M: AttributeModifier<V>> TypedAttributeTrack<V> for AttributeTrack<V, M> {
+    fn apply(&self, subject: V, period_ticks: Option<i32>, total_ticks: i64) -> V {
+        Self::apply(self, subject, period_ticks, total_ticks)
+    }
+}
+
+/// An attribute track with both its value and modifier types erased, as
+/// stored in a timeline's track list.
+///
+/// Recover the typed track with [`downcast`](#method.downcast).
 pub trait ErasedAttributeTrack: Debug + Send + Sync {
     fn attribute(&self) -> ErasedEnvironmentAttributeRef;
 
-    /// Applies the track to `subject` in place. Returns `false`, leaving
-    /// `subject` untouched, when its type does not match the track.
-    fn apply_erased(
-        &self,
-        subject: &mut dyn ErasedType,
-        period_ticks: Option<i32>,
-        total_ticks: i64,
-    ) -> bool;
+    /// Stores this track in `slot` when `slot` is the `TypedTrackSlot` of the
+    /// track's value type.
+    #[doc(hidden)]
+    fn fill_typed_slot(&'static self, slot: &mut dyn ErasedType);
 }
 
 impl<V: AttributeValue, M: AttributeModifier<V>> ErasedAttributeTrack for AttributeTrack<V, M> {
@@ -62,37 +74,32 @@ impl<V: AttributeValue, M: AttributeModifier<V>> ErasedAttributeTrack for Attrib
         self.attribute
     }
 
-    fn apply_erased(
-        &self,
-        subject: &mut dyn ErasedType,
-        period_ticks: Option<i32>,
-        total_ticks: i64,
-    ) -> bool {
-        let Some(subject) = subject.downcast_mut::<V>() else {
-            return false;
-        };
-        *subject = self.apply(subject.clone(), period_ticks, total_ticks);
-        true
+    fn fill_typed_slot(&'static self, slot: &mut dyn ErasedType) {
+        if let Some(slot) = slot.downcast_mut::<TypedTrackSlot<V>>() {
+            slot.0 = Some(self);
+        }
     }
 }
 
 impl dyn ErasedAttributeTrack {
-    /// Applies the track to a typed value.
-    ///
-    /// Tracks are typed by their attribute at construction, so a mismatch is a
-    /// lookup bug; the value is returned unchanged.
+    /// Returns this track typed by its value type, or `None` when its value
+    /// type is not `V`.
     #[must_use]
-    pub fn apply_typed<V: AttributeValue>(
-        &self,
-        mut subject: V,
-        period_ticks: Option<i32>,
-        total_ticks: i64,
-    ) -> V {
-        let applied = self.apply_erased(&mut subject, period_ticks, total_ticks);
-        debug_assert!(
-            applied,
-            "attribute track {self:?} does not apply to this value type"
-        );
-        subject
+    pub fn downcast<V: AttributeValue>(
+        &'static self,
+    ) -> Option<&'static dyn TypedAttributeTrack<V>> {
+        let mut slot = TypedTrackSlot::<V>(None);
+        self.fill_typed_slot(&mut slot);
+        slot.0
     }
+}
+
+/// Carries a typed track out of [`ErasedAttributeTrack::fill_typed_slot`].
+struct TypedTrackSlot<V: AttributeValue>(Option<&'static dyn TypedAttributeTrack<V>>);
+
+// SAFETY: The key includes `V`'s key, so every instantiation of this
+// Steel-owned type has its own key.
+unsafe impl<V: AttributeValue> DowncastType for TypedTrackSlot<V> {
+    const TYPE_KEY: DowncastTypeKey =
+        DowncastTypeKey::generic("steel:timeline/typed_track_slot", &[V::TYPE_KEY]);
 }

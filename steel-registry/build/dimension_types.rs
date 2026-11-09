@@ -13,6 +13,30 @@ use quote::quote;
 use serde::Deserialize;
 use steel_utils::Identifier;
 
+/// Generates the dimension type's `HolderSet<Timeline>`; vanilla defaults a
+/// missing field to the empty set.
+fn generate_timeline_set(timelines: Option<&str>) -> TokenStream {
+    let Some(timelines) = timelines else {
+        return quote! { crate::RegistryHolderSet::Direct(Vec::new()) };
+    };
+    let Some(tag) = timelines.strip_prefix('#') else {
+        // A non-empty direct set needs a `Vec`, which a generated `static`
+        // dimension type cannot hold; vanilla data only references tags.
+        panic!("expected a timeline tag in dimension type timelines, found {timelines}");
+    };
+    let (namespace, path) = tag
+        .split_once(':')
+        .expect("timeline tag identifier missing ':'");
+    assert_eq!(
+        namespace, "minecraft",
+        "expected vanilla timeline tag, found {tag}"
+    );
+    let ident = Ident::new(&path.to_shouty_snake_case(), Span::call_site());
+    quote! {
+        crate::RegistryHolderSet::Tag(crate::vanilla_timeline_tags::TimelineTag::#ident)
+    }
+}
+
 #[derive(Deserialize, Debug)]
 pub struct DimensionTypeJson {
     #[serde(default)]
@@ -369,13 +393,7 @@ pub(crate) fn build() -> TokenStream {
             },
         );
         let default_clock = generate_world_clock_ref(dimension_type.default_clock.as_deref());
-        let timelines = generate_option(
-            &dimension_type.timelines.as_deref().map(str::to_owned),
-            |s| {
-                let s = s.as_str();
-                quote! { #s }
-            },
-        );
+        let timelines = generate_timeline_set(dimension_type.timelines.as_deref());
 
         // Visual attributes
         let sky_color = generate_option(

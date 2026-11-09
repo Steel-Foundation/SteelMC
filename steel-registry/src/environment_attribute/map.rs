@@ -1,6 +1,7 @@
 use super::{
     AttributeModifier, AttributeModifierEntry, AttributeValue, EnvironmentAttribute,
     ErasedAttributeModifierEntry, ErasedEnvironmentAttribute, ErasedEnvironmentAttributeRef,
+    TypedAttributeModifierEntry,
 };
 
 /// An attribute paired with the modifier entry a map applies to it.
@@ -73,6 +74,19 @@ impl EnvironmentAttributeMap {
             .map(|entry| entry.modifier)
     }
 
+    /// Returns the typed modifier entry for `attribute`, if this map has one.
+    ///
+    /// Entries are paired with their attribute by
+    /// [`EnvironmentAttributeMapEntry::new`], so the entry always has the
+    /// attribute's value type.
+    #[must_use]
+    pub fn get_typed<V: AttributeValue>(
+        &self,
+        attribute: &EnvironmentAttribute<V>,
+    ) -> Option<&'static dyn TypedAttributeModifierEntry<V>> {
+        self.get(attribute)?.downcast::<V>()
+    }
+
     #[must_use]
     pub fn contains(&self, attribute: &(impl ErasedEnvironmentAttribute + ?Sized)) -> bool {
         self.get(attribute).is_some()
@@ -86,8 +100,8 @@ impl EnvironmentAttributeMap {
         attribute: &EnvironmentAttribute<V>,
         base: V,
     ) -> V {
-        match self.get(attribute) {
-            Some(modifier) => modifier.apply_typed(base),
+        match self.get_typed(attribute) {
+            Some(modifier) => modifier.apply(base),
             None => base,
         }
     }

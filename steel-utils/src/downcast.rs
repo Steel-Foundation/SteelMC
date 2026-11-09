@@ -8,31 +8,63 @@ use std::ptr::{from_mut, from_ref};
 /// Keys conventionally use `<owner>:<kind>/<name>`, such as
 /// `steel:entity/item`. They identify Rust implementations, not Minecraft
 /// registry entries or translation keys.
+///
+/// A generic type keys each instantiation with [`DowncastTypeKey::generic`],
+/// combining its own name with the keys of its type parameters, so
+/// `Wrapper<A>` and `Wrapper<B>` never share a key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DowncastTypeKey(&'static str);
+pub struct DowncastTypeKey {
+    name: &'static str,
+    parameters: &'static [Self],
+}
 
 impl DowncastTypeKey {
     /// Creates a non-empty downcast type key.
     ///
     /// # Panics
     ///
-    /// Panics if `key` is empty.
+    /// Panics if `name` is empty.
     #[must_use]
-    pub const fn new(key: &'static str) -> Self {
-        assert!(!key.is_empty(), "downcast type keys cannot be empty");
-        Self(key)
+    pub const fn new(name: &'static str) -> Self {
+        Self::generic(name, &[])
     }
 
-    /// Returns the key as a string.
+    /// Creates the key of one instantiation of a generic type from the type's
+    /// own name and the keys of its type parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `name` is empty.
     #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        self.0
+    pub const fn generic(name: &'static str, parameters: &'static [Self]) -> Self {
+        assert!(!name.is_empty(), "downcast type keys cannot be empty");
+        Self { name, parameters }
+    }
+
+    /// Returns the type's own name, without its type parameters.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        self.name
+    }
+
+    /// Returns the keys of the type parameters of a generic instantiation.
+    #[must_use]
+    pub const fn parameters(self) -> &'static [Self] {
+        self.parameters
     }
 }
 
 impl Display for DowncastTypeKey {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.0)
+        formatter.write_str(self.name)?;
+        let Some((first, rest)) = self.parameters.split_first() else {
+            return Ok(());
+        };
+        write!(formatter, "<{first}")?;
+        for parameter in rest {
+            write!(formatter, ", {parameter}")?;
+        }
+        formatter.write_str(">")
     }
 }
 
@@ -52,6 +84,8 @@ impl Display for DowncastTypeKey {
 ///   identical layout.
 /// - Versions of a type that may coexist use different keys unless they are the
 ///   same concrete Rust type to every caller that can perform the downcast.
+/// - A generic type includes the key of every type parameter that changes the
+///   concrete type, through [`DowncastTypeKey::generic`].
 pub unsafe trait DowncastType: 'static {
     /// The process-wide key for this concrete type.
     const TYPE_KEY: DowncastTypeKey;
@@ -168,6 +202,29 @@ mod tests {
     // concrete types within the test process.
     unsafe impl DowncastType for Second {
         const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:test/downcast/second");
+    }
+
+    struct Wrapper<T>(T);
+
+    // SAFETY: The key includes `T`'s key, so every instantiation of this
+    // test-only type has its own key.
+    unsafe impl<T: DowncastType> DowncastType for Wrapper<T> {
+        const TYPE_KEY: DowncastTypeKey =
+            DowncastTypeKey::generic("steel:test/downcast/wrapper", &[T::TYPE_KEY]);
+    }
+
+    #[test]
+    fn generic_keys_distinguish_instantiations() {
+        let value = Wrapper(First(7));
+        let erased: &dyn ErasedType = &value;
+
+        assert!(erased.is::<Wrapper<First>>());
+        assert!(!erased.is::<Wrapper<Second>>());
+        assert!(!erased.is::<First>());
+        assert_eq!(
+            Wrapper::<First>::TYPE_KEY.to_string(),
+            "steel:test/downcast/wrapper<steel:test/downcast/first>"
+        );
     }
 
     #[test]

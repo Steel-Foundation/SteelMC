@@ -3,15 +3,17 @@
 use glam::{Vec3, Vec4};
 use steel_registry::environment_attribute::{
     AttributeModifierEntry, AttributeValue, BlendToGray, BlendToGrayModifier,
-    ColorAlphaBlendModifier, ColorMultiplyModifier, EnvironmentAttribute, EnvironmentAttributeMap,
-    EnvironmentAttributeMapEntry, FloatAlphaBlendModifier, FloatWithAlpha, OverrideModifier, argb,
+    ColorAlphaBlendModifier, ColorMultiplyModifier, EnvironmentAttribute,
+    EnvironmentAttributeLayer, EnvironmentAttributeMap, EnvironmentAttributeMapEntry,
+    EnvironmentSampleContext, FloatAlphaBlendModifier, FloatWithAlpha, OverrideModifier,
+    TimeBasedLayer, TypedAttributeModifierEntry, argb,
 };
 use steel_registry::vanilla_environment_attributes::{
     BEES_STAY_IN_HIVE, CLOUD_COLOR, FOG_COLOR, SKY_COLOR, SKY_LIGHT_COLOR, SKY_LIGHT_FACTOR,
     SKY_LIGHT_LEVEL, STAR_BRIGHTNESS, SUNRISE_SUNSET_COLOR,
 };
 
-use super::{EnvironmentAttributeLayer, EnvironmentAttributeSystemBuilder, WeatherLayer};
+use super::EnvironmentAttributeSystemBuilder;
 
 /// Vanilla `Timelines.NIGHT_SKY_LIGHT_COLOR`.
 const NIGHT_SKY_LIGHT_COLOR: u32 = argb::color_from_float(1.0, 0.48, 0.48, 1.0);
@@ -171,11 +173,62 @@ fn add_layer<V: AttributeValue>(
     builder: EnvironmentAttributeSystemBuilder,
     attribute: &'static EnvironmentAttribute<V>,
 ) -> EnvironmentAttributeSystemBuilder {
-    let layer = WeatherLayer::new(attribute, RAIN.get(attribute), THUNDER.get(attribute));
+    let layer = WeatherLayer::new(
+        attribute,
+        RAIN.get_typed(attribute),
+        THUNDER.get_typed(attribute),
+    );
     builder.add_layer(
         attribute,
         EnvironmentAttributeLayer::TimeBased(Box::new(layer)),
     )
+}
+
+/// Blends rain and thunder modifiers in by the current weather levels, as
+/// the layer vanilla's `WeatherAttributes.addBuiltinLayers` registers.
+pub struct WeatherLayer<V: AttributeValue> {
+    attribute: &'static EnvironmentAttribute<V>,
+    rain: Option<&'static dyn TypedAttributeModifierEntry<V>>,
+    thunder: Option<&'static dyn TypedAttributeModifierEntry<V>>,
+}
+
+impl<V: AttributeValue> WeatherLayer<V> {
+    /// Blends `attribute` toward its rain and thunder entries.
+    #[must_use]
+    pub const fn new(
+        attribute: &'static EnvironmentAttribute<V>,
+        rain: Option<&'static dyn TypedAttributeModifierEntry<V>>,
+        thunder: Option<&'static dyn TypedAttributeModifierEntry<V>>,
+    ) -> Self {
+        Self {
+            attribute,
+            rain,
+            thunder,
+        }
+    }
+}
+
+impl<V: AttributeValue> TimeBasedLayer<V> for WeatherLayer<V> {
+    fn apply_time_based(&self, mut result: V, context: &EnvironmentSampleContext<'_>) -> V {
+        let lerp = self.attribute.attribute_type().state_change_lerp();
+        let thunder_level = context.thunder_level;
+        let rain_level = context.rain_level - thunder_level;
+        // Vanilla also builds a new value per state: the lerp needs both the
+        // unmodified and the modified value.
+        if let Some(rain) = self.rain
+            && rain_level > 0.0
+        {
+            let rain_value = rain.apply(result.clone());
+            result = lerp(rain_level, &result, &rain_value);
+        }
+        if let Some(thunder) = self.thunder
+            && thunder_level > 0.0
+        {
+            let thunder_value = thunder.apply(result.clone());
+            result = lerp(thunder_level, &result, &thunder_value);
+        }
+        result
+    }
 }
 
 #[cfg(test)]

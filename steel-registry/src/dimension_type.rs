@@ -1,5 +1,3 @@
-use std::str::FromStr as _;
-
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
@@ -7,9 +5,9 @@ use steel_utils::Identifier;
 
 use crate::environment_attribute::EnvironmentAttributeMap;
 use crate::sound_event::SoundEventRef;
-use crate::timeline::TimelineRef;
+use crate::timeline::{Timeline, TimelineRef};
 use crate::world_clock::WorldClockRef;
-use crate::{REGISTRY, RegistryExt as _, TaggedRegistryExt as _};
+use crate::{REGISTRY, RegistryHolderSet, TaggedRegistryExt as _};
 
 pub use crate::environment_attribute::{BedRule, BedRuleValue};
 
@@ -49,7 +47,8 @@ pub struct DimensionType {
     pub infiniburn: &'static str,
     pub ambient_light: f32,
     pub default_clock: Option<WorldClockRef>,
-    pub timelines: Option<&'static str>,
+    /// Timelines whose tracks layer this dimension's environment attributes.
+    pub timelines: RegistryHolderSet<Timeline>,
     pub has_ender_dragon_fight: bool,
     pub monster_spawn_light_level: MonsterSpawnLightLevel,
     pub monster_spawn_block_light_limit: i32,
@@ -93,22 +92,13 @@ pub struct DimensionType {
 }
 
 impl DimensionType {
-    /// Resolves `timelines`, a timeline key or `#tag`, to the timelines it names.
+    /// Resolves `timelines` to the timelines it names.
     #[must_use]
     pub fn timelines(&self) -> Vec<TimelineRef> {
-        let Some(timelines) = self.timelines else {
-            return Vec::new();
-        };
-        if let Some(tag) = timelines.strip_prefix('#') {
-            let Ok(tag) = Identifier::from_str(tag) else {
-                return Vec::new();
-            };
-            return REGISTRY.timelines.iter_tag(&tag).collect();
+        match &self.timelines {
+            RegistryHolderSet::Tag(tag) => REGISTRY.timelines.iter_tag(tag).collect(),
+            RegistryHolderSet::Direct(timelines) => timelines.clone(),
         }
-        let Ok(key) = Identifier::from_str(timelines) else {
-            return Vec::new();
-        };
-        REGISTRY.timelines.by_key(&key).into_iter().collect()
     }
 
     #[must_use]
@@ -149,8 +139,10 @@ impl ToNbtTag for &DimensionType {
         if let Some(clock) = self.default_clock {
             compound.insert("default_clock", clock.key.to_string().as_str());
         }
-        if let Some(timelines) = self.timelines {
-            compound.insert("timelines", timelines);
+        // Vanilla omits the field when it holds the empty default.
+        if !matches!(&self.timelines, RegistryHolderSet::Direct(timelines) if timelines.is_empty())
+        {
+            compound.insert("timelines", self.timelines.clone().to_nbt_tag());
         }
         if let Some(skybox) = self.skybox {
             compound.insert("skybox", skybox);

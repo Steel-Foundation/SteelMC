@@ -11,10 +11,17 @@ use steel_registry::vanilla_environment_attributes::{
     SKY_LIGHT_LEVEL, SUN_ANGLE,
 };
 use steel_registry::{vanilla_biomes, vanilla_world_clocks};
-use steel_utils::BlockPos;
 use steel_utils::value_providers::IntProvider;
+use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, Identifier};
 
-use super::{BiomeSource, EnvironmentAttributeSystem, EnvironmentSampleContext};
+use steel_registry::environment_attribute::{
+    AttributeModifierEntry, AttributeRange, AttributeType, BiomeSource, ConstantLayer,
+    EnvironmentAttribute, EnvironmentAttributeFlags, EnvironmentAttributeLayer,
+    EnvironmentAttributeMap, EnvironmentAttributeMapEntry, EnvironmentSampleContext, FLOAT,
+    LazyValue, OverrideModifier,
+};
+
+use super::EnvironmentAttributeSystem;
 use crate::world::clock::WorldClockManager;
 
 const F32_CLOSE_EPSILON: f32 = 0.000_001;
@@ -244,4 +251,92 @@ fn biome_natural_mob_spawns_overlay_the_empty_default() {
         }
     ));
     assert!(spawns.get_mobs_in_category(MobCategory::Axolotls).is_none());
+}
+
+/// A value type a plugin would add, unknown to Steel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PluginValue(i32);
+
+// SAFETY: Test-only key unique to `PluginValue`.
+unsafe impl DowncastType for PluginValue {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:test/plugin_value");
+}
+
+static PLUGIN_VALUE_TYPE: AttributeType<PluginValue> =
+    AttributeType::not_interpolated(Identifier::new_static("plugin", "value"));
+
+static PLUGIN_ATTRIBUTE: EnvironmentAttribute<PluginValue> = EnvironmentAttribute::new(
+    Identifier::new_static("plugin", "attribute"),
+    &PLUGIN_VALUE_TYPE,
+    LazyValue::new(PluginValue(1)),
+    AttributeRange::Any,
+    EnvironmentAttributeFlags::DEFAULT,
+);
+
+static PLUGIN_OVERRIDE: AttributeModifierEntry<PluginValue, OverrideModifier> =
+    AttributeModifierEntry::new(OverrideModifier, PluginValue(10));
+
+static PLUGIN_MAP: EnvironmentAttributeMap =
+    EnvironmentAttributeMap::new(&[EnvironmentAttributeMapEntry::new(
+        &PLUGIN_ATTRIBUTE,
+        &PLUGIN_OVERRIDE,
+    )]);
+
+/// Shares `PLUGIN_ATTRIBUTE`'s key with another value type.
+static CONFLICTING_ATTRIBUTE: EnvironmentAttribute<f32> = EnvironmentAttribute::new(
+    Identifier::new_static("plugin", "attribute"),
+    &FLOAT,
+    LazyValue::new(0.0),
+    AttributeRange::Any,
+    EnvironmentAttributeFlags::DEFAULT,
+);
+
+struct AddOne;
+
+impl ConstantLayer<PluginValue> for AddOne {
+    fn apply_constant(&self, value: PluginValue) -> PluginValue {
+        PluginValue(value.0 + 1)
+    }
+}
+
+struct Identity;
+
+impl ConstantLayer<f32> for Identity {
+    fn apply_constant(&self, value: f32) -> f32 {
+        value
+    }
+}
+
+#[test]
+fn plugin_value_types_sample_data_and_typed_layers() {
+    init_vanilla_registry();
+    let clocks = WorldClockManager::new();
+    let system = EnvironmentAttributeSystem::builder()
+        .add_constant_layer_map(PLUGIN_MAP)
+        .add_layer(
+            &PLUGIN_ATTRIBUTE,
+            EnvironmentAttributeLayer::Constant(Box::new(AddOne)),
+        )
+        .build();
+    let context = EnvironmentSampleContext {
+        clocks: &clocks,
+        rain_level: 0.0,
+        thunder_level: 0.0,
+        biomes: &NO_BIOME,
+    };
+    assert_eq!(
+        system.get_value(&PLUGIN_ATTRIBUTE, ORIGIN, &context),
+        PluginValue(11)
+    );
+}
+
+#[test]
+#[should_panic(expected = "cannot be added to attribute plugin:attribute")]
+fn layers_of_another_value_type_under_one_key_are_rejected() {
+    let _ = EnvironmentAttributeSystem::builder()
+        .add_constant_layer_map(PLUGIN_MAP)
+        .add_layer(
+            &CONFLICTING_ATTRIBUTE,
+            EnvironmentAttributeLayer::Constant(Box::new(Identity)),
+        );
 }

@@ -8,6 +8,9 @@
 //! Differences from vanilla:
 //! - Layers read world state from an [`EnvironmentSampleContext`] snapshot
 //!   passed per read instead of capturing the level.
+//! - Samplers of every value type share one map, so each read downcasts its
+//!   attribute's [`ValueSampler`] once (see `steel_registry`'s
+//!   `environment_attribute::sampler`).
 //! - Leading constant layers are not baked into a base value and nothing is
 //!   cached per tick; every read recomputes from the layers, so it always
 //!   sees the current clocks and weather.
@@ -29,7 +32,6 @@
 //! - Spatial biome interpolation (`SpatialAttributeInterpolator`) is
 //!   client-side and not implemented; the server never passes one.
 
-mod layers;
 mod weather_attributes;
 
 #[cfg(test)]
@@ -41,123 +43,22 @@ use steel_math::keyframe_track::lerp_float;
 use steel_registry::biome::BiomeRef;
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::environment_attribute::{
-    AttributeValue, EnvironmentAttribute, EnvironmentAttributeMap, ErasedEnvironmentAttribute,
-    ErasedEnvironmentAttributeRef,
+    AttributeValue, BiomeSource, ClockSource, EnvironmentAttribute, EnvironmentAttributeLayer,
+    EnvironmentAttributeMap, EnvironmentSampleContext, ErasedEnvironmentAttribute,
+    ErasedEnvironmentAttributeRef, ErasedValueSampler, LayerValueTypeMismatch, ValueSampler,
 };
 use steel_registry::world_clock::WorldClockRef;
 use steel_registry::{REGISTRY, RegistryExt as _};
-use steel_utils::{BlockPos, ErasedType, Identifier};
+use steel_utils::{BlockPos, Downcast as _, ErasedType, Identifier};
 
 use super::World;
 use super::clock::WorldClockManager;
 
-pub use layers::{BiomeLayer, DimensionLayer, TimelineTrackLayer, WeatherLayer};
-
-/// Looks up the biomes a world's positional layers sample.
-pub trait BiomeSource {
-    /// Biome stored for the given quart (4x4x4 block cell), as vanilla's
-    /// `BiomeManager.getNoiseBiomeAtQuart`.
-    fn noise_biome(&self, quart_x: i32, quart_y: i32, quart_z: i32) -> Option<BiomeRef>;
-
-    /// Zoomed (fuzzed) biome at a block, as vanilla's `BiomeManager.getBiome`.
-    fn biome(&self, pos: BlockPos) -> Option<BiomeRef>;
-}
-
-/// World state layers read while sampling.
-pub struct EnvironmentSampleContext<'a> {
-    pub(crate) clocks: &'a WorldClockManager,
-    /// Vanilla `Level.getRainLevel(1.0F)`.
-    pub rain_level: f32,
-    /// Vanilla `Level.getThunderLevel(1.0F)`, already scaled by the rain level.
-    pub thunder_level: f32,
-    /// Biome lookup for positional layers.
-    pub biomes: &'a dyn BiomeSource,
-}
-
-impl EnvironmentSampleContext<'_> {
-    /// Total ticks elapsed on `clock`, if the world tracks it.
-    #[must_use]
-    pub fn clock_total_ticks(&self, clock: WorldClockRef) -> Option<i64> {
-        self.clocks.total_ticks(clock)
-    }
-}
-
-/// A layer whose result only depends on its input value.
-pub trait ConstantLayer: Send + Sync {
-    /// Modifies `value` in place; ignores values of another type.
-    fn apply_constant(&self, value: &mut dyn ErasedType);
-}
-
-/// A layer that varies with clocks or weather.
-pub trait TimeBasedLayer: Send + Sync {
-    /// Modifies `value` in place; ignores values of another type.
-    fn apply_time_based(&self, value: &mut dyn ErasedType, context: &EnvironmentSampleContext<'_>);
-}
-
-/// A layer that varies with position.
-pub trait PositionalLayer: Send + Sync {
-    /// Modifies `value` in place; ignores values of another type.
-    fn apply_positional(
-        &self,
-        value: &mut dyn ErasedType,
-        pos: DVec3,
-        context: &EnvironmentSampleContext<'_>,
-    );
-}
-
-/// One step of an attribute's sampling chain, as vanilla's
-/// `EnvironmentAttributeLayer`.
-pub enum EnvironmentAttributeLayer {
-    /// Depends only on its input value.
-    Constant(Box<dyn ConstantLayer>),
-    /// Varies with clocks or weather.
-    TimeBased(Box<dyn TimeBasedLayer>),
-    /// Varies with the sampled position; skipped by dimension reads.
-    Positional(Box<dyn PositionalLayer>),
-}
-
-struct ValueSampler {
-    layers: Vec<EnvironmentAttributeLayer>,
-    is_affected_by_position: bool,
-}
-
-impl ValueSampler {
-    fn new(layers: Vec<EnvironmentAttributeLayer>) -> Self {
-        let is_affected_by_position = layers
-            .iter()
-            .any(|layer| matches!(layer, EnvironmentAttributeLayer::Positional(_)));
-        Self {
-            layers,
-            is_affected_by_position,
-        }
-    }
-
-    /// Runs every layer over `value`; positional layers only run with a `pos`.
-    fn sample(
-        &self,
-        value: &mut dyn ErasedType,
-        pos: Option<DVec3>,
-        context: &EnvironmentSampleContext<'_>,
-    ) {
-        for layer in &self.layers {
-            match layer {
-                EnvironmentAttributeLayer::Constant(layer) => layer.apply_constant(value),
-                EnvironmentAttributeLayer::TimeBased(layer) => {
-                    layer.apply_time_based(value, context);
-                }
-                EnvironmentAttributeLayer::Positional(layer) => {
-                    if let Some(pos) = pos {
-                        layer.apply_positional(value, pos, context);
-                    }
-                }
-            }
-        }
-    }
-}
+pub use weather_attributes::WeatherLayer;
 
 /// Samples every layered environment attribute of a world.
 pub struct EnvironmentAttributeSystem {
-    samplers: FxHashMap<Identifier, ValueSampler>,
+    samplers: FxHashMap<Identifier, Box<dyn ErasedValueSampler>>,
 }
 
 impl EnvironmentAttributeSystem {
@@ -219,20 +120,33 @@ impl EnvironmentAttributeSystem {
         pos: Option<DVec3>,
         context: &EnvironmentSampleContext<'_>,
     ) -> V {
-        let mut value = attribute.default_value().clone();
+        let value = attribute.default_value().clone();
         let Some(sampler) = self.samplers.get(attribute.key()) else {
             return value;
         };
-        let pos = pos.filter(|_| sampler.is_affected_by_position);
-        sampler.sample(&mut value, pos, context);
-        attribute.sanitize_value(value)
+        let sampler: &dyn ErasedType = sampler.as_ref();
+        let Some(sampler) = sampler.downcast_ref::<ValueSampler<V>>() else {
+            // The builder keeps one value type per key, so only an
+            // unregistered attribute reusing a registered key gets here.
+            debug_assert!(
+                false,
+                "attribute {} is read with another value type than its layers",
+                attribute.key()
+            );
+            return value;
+        };
+        attribute.sanitize_value(sampler.sample(value, pos, context))
     }
 }
 
 /// Collects layers per attribute, as vanilla's `EnvironmentAttributeSystem.Builder`.
+///
+/// Attribute keys are unique, so every layer added for one key must share its
+/// value type. Adding a layer of another value type panics, like registering a
+/// duplicate registry key.
 #[derive(Default)]
 pub struct EnvironmentAttributeSystemBuilder {
-    layers_by_attribute: FxHashMap<Identifier, Vec<EnvironmentAttributeLayer>>,
+    samplers: FxHashMap<Identifier, Box<dyn ErasedValueSampler>>,
 }
 
 impl EnvironmentAttributeSystemBuilder {
@@ -265,10 +179,7 @@ impl EnvironmentAttributeSystemBuilder {
             }
         }
         for attribute in biome_attributes {
-            self = self.add_layer(
-                attribute,
-                EnvironmentAttributeLayer::Positional(Box::new(BiomeLayer::new(attribute))),
-            );
+            self.sampler_mut(attribute).add_biome_layer();
         }
         self
     }
@@ -283,12 +194,10 @@ impl EnvironmentAttributeSystemBuilder {
     ) -> Self {
         for timeline in dimension_type.timelines() {
             for &track in timeline.attribute_tracks {
-                self = self.add_layer(
-                    track.attribute(),
-                    EnvironmentAttributeLayer::TimeBased(Box::new(TimelineTrackLayer::new(
-                        timeline, track,
-                    ))),
-                );
+                let added = self
+                    .sampler_mut(track.attribute())
+                    .add_timeline_track_layer(timeline, track);
+                Self::expect_value_type(added);
             }
         }
         if can_have_weather {
@@ -301,27 +210,38 @@ impl EnvironmentAttributeSystemBuilder {
     #[must_use]
     pub fn add_constant_layer_map(mut self, map: EnvironmentAttributeMap) -> Self {
         for entry in map.entries() {
-            self = self.add_layer(
-                entry.attribute(),
-                EnvironmentAttributeLayer::Constant(Box::new(DimensionLayer::new(
-                    entry.modifier(),
-                ))),
-            );
+            let added = self
+                .sampler_mut(entry.attribute())
+                .add_dimension_layer(entry.modifier());
+            Self::expect_value_type(added);
         }
         self
     }
 
     /// Appends `layer` to `attribute`'s sampling chain.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a layer of another value type was added under the same
+    /// attribute key.
     #[must_use]
-    pub fn add_layer(
+    pub fn add_layer<V: AttributeValue>(
         mut self,
-        attribute: ErasedEnvironmentAttributeRef,
-        layer: EnvironmentAttributeLayer,
+        attribute: &'static EnvironmentAttribute<V>,
+        layer: EnvironmentAttributeLayer<V>,
     ) -> Self {
-        self.layers_by_attribute
-            .entry(attribute.key().clone())
-            .or_default()
-            .push(layer);
+        let sampler = self.sampler_mut(attribute);
+        let found = sampler.attribute().value_type_key();
+        let sampler: &mut dyn ErasedType = sampler;
+        let Some(sampler) = sampler.downcast_mut::<ValueSampler<V>>() else {
+            Self::expect_value_type(Err(LayerValueTypeMismatch {
+                attribute: attribute.key().clone(),
+                expected: found,
+                found: attribute.value_type_key(),
+            }));
+            return self;
+        };
+        sampler.add_layer(layer);
         self
     }
 
@@ -329,11 +249,31 @@ impl EnvironmentAttributeSystemBuilder {
     #[must_use]
     pub fn build(self) -> EnvironmentAttributeSystem {
         EnvironmentAttributeSystem {
-            samplers: self
-                .layers_by_attribute
-                .into_iter()
-                .map(|(key, layers)| (key, ValueSampler::new(layers)))
-                .collect(),
+            samplers: self.samplers,
+        }
+    }
+
+    /// Returns `attribute`'s sampler, creating it with the attribute's value
+    /// type on first use.
+    fn sampler_mut(
+        &mut self,
+        attribute: ErasedEnvironmentAttributeRef,
+    ) -> &mut dyn ErasedValueSampler {
+        self.samplers
+            .entry(attribute.key().clone())
+            .or_insert_with(|| attribute.new_value_sampler())
+            .as_mut()
+    }
+
+    /// Panics on a layer whose value type differs from its attribute key's
+    /// earlier layers; see the type docs.
+    #[expect(
+        clippy::panic,
+        reason = "two value types under one attribute key is a fatal setup error, like a duplicate registry key"
+    )]
+    fn expect_value_type(added: Result<(), LayerValueTypeMismatch>) {
+        if let Err(mismatch) = added {
+            panic!("{mismatch}");
         }
     }
 }
@@ -406,6 +346,12 @@ impl World {
     #[must_use]
     pub const fn environment_attributes(&self) -> EnvironmentAttributeReader<'_> {
         EnvironmentAttributeReader { world: self }
+    }
+}
+
+impl ClockSource for WorldClockManager {
+    fn total_ticks(&self, clock: WorldClockRef) -> Option<i64> {
+        Self::total_ticks(self, clock)
     }
 }
 
