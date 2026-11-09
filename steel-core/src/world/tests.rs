@@ -8,16 +8,19 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::sound_event::SoundEventHolder;
 use steel_registry::{
     init_vanilla_registry, sound_events, stat::vanilla_stat_types, vanilla_custom_stats,
-    vanilla_entities, vanilla_fluids, vanilla_game_rules, vanilla_items,
+    vanilla_damage_types, vanilla_entities, vanilla_fluids, vanilla_game_rules, vanilla_items,
 };
 use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use crate::entity::{EntityBase, LivingEntity as _, entities::PigEntity, next_entity_id};
-use crate::player::ResetReason;
+use crate::entity::{
+    DEATH_DURATION, Entity, EntityBase, LivingEntity, damage::DamageSource, entities::PigEntity,
+    next_entity_id,
+};
+use crate::player::{Player, ResetReason};
 use crate::test_support::{
-    TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world,
+    TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world, tick_test_world,
 };
 
 const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
@@ -805,4 +808,53 @@ fn fluid_clip_height_treats_source_and_flowing_variants_as_same_fluid_above() {
     );
 
     assert_eq!(height.to_bits(), 1.0_f64.to_bits());
+}
+
+#[test]
+fn removed_dead_players_continue_ticking_stats() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("removed_dead_player_ticking");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Dead", next_entity_id()).build();
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+
+    player.set_health(0.0);
+    LivingEntity::die(
+        player.as_ref(),
+        &DamageSource::environment(&vanilla_damage_types::GENERIC),
+    );
+    let death_duration = u64::try_from(DEATH_DURATION).expect("death duration is positive");
+    for tick in 0..death_duration {
+        tick_test_world(world, tick, true);
+    }
+    assert!(
+        player.is_removed(),
+        "the death animation should remove the player entity"
+    );
+
+    let time_since_rest = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::TIME_SINCE_REST);
+    let stat_count = |player: &Player| {
+        player
+            .stats()
+            .into_iter()
+            .find_map(|(stat, count)| (stat == time_since_rest).then_some(count))
+            .unwrap_or(0)
+    };
+    let before = stat_count(&player);
+    let tick_count_before = Entity::tick_count(player.as_ref());
+
+    tick_test_world(world, death_duration, true);
+
+    assert_eq!(
+        stat_count(&player),
+        before + 1,
+        "removed players should keep accruing TIME_SINCE_REST like vanilla"
+    );
+    assert_eq!(
+        Entity::tick_count(player.as_ref()),
+        tick_count_before,
+        "removed players skip commonTick, so tickCount stays frozen like vanilla"
+    );
 }
