@@ -298,7 +298,10 @@ impl OutgoingChatMessage {
                 .lock()
                 .chat_session
                 .as_ref()
-                .is_some_and(|active| active.session_id == sc.session_id)
+                .is_some_and(|active| {
+                    active.session_id == sc.session_id
+                        && active.profile_public_key.is_valid_at(sc.timestamp)
+                })
         });
 
         if !is_session_current {
