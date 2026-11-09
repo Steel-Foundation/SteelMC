@@ -950,7 +950,8 @@ impl Player {
         if !has_all_required_signatures {
             warn!(
                 "Received signed command packet from {} missing expected argument signatures: {}",
-                self.gameprofile.name(), packet.command
+                self.gameprofile.name(),
+                packet.command
             );
             self.send_message(
                 &CHAT_DISABLED_INVALID_SIGNATURE
