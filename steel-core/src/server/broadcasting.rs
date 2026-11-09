@@ -10,7 +10,7 @@ use steel_registry::{RegistryEntry, vanilla_chat_types};
 
 impl Server {
     /// Logs and broadcasts a system chat message to online players.
-    fn broadcast_system_chat(&self, message: &TextComponent, excluded_player: Option<Uuid>) {
+    pub fn broadcast_system_chat(&self, message: &TextComponent, excluded_player: Option<Uuid>) {
         log::info!("{}", message.to_plain(&DisplayResolutor));
         self.online_players.iter_players(|uuid, player| {
             if Some(*uuid) != excluded_player {

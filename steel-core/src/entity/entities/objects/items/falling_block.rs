@@ -21,11 +21,13 @@ use steel_registry::{
     REGISTRY, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_fluids,
 };
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, types::UpdateFlags};
 
 use crate::behavior::blocks::{AnvilBlock, FallingBlock};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockPlaceContext, Fallable};
 use crate::block_entity::block_state_nbt;
+use crate::entity::DEFAULT_AIR_DRAG;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData, RemovalReason,
@@ -38,7 +40,6 @@ use crate::world::{ClipBlockShape, ClipFluid, World};
 const DEFAULT_FALL_DAMAGE_PER_DISTANCE: f32 = 0.0;
 const DEFAULT_MAX_FALL_DAMAGE: i32 = 40;
 const DEFAULT_GRAVITY: f64 = 0.04;
-const AIR_DRAG: f64 = 0.98;
 const LANDED_HORIZONTAL_DRAG: f64 = 0.7;
 const LANDED_VERTICAL_BOUNCE: f64 = -0.5;
 
@@ -411,7 +412,10 @@ impl Entity for FallingBlockEntity {
         {
             self.tick_server(&world, block);
         }
-        self.set_velocity(self.velocity() * AIR_DRAG);
+        self.set_velocity(self.velocity() * DEFAULT_AIR_DRAG);
+        self.base.set_requires_precise_position(
+            self.horizontal_collision() || self.vertical_collision(),
+        );
     }
 
     fn get_default_gravity(&self) -> f64 {
@@ -540,18 +544,20 @@ impl Entity for FallingBlockEntity {
             .unwrap_or_else(|| vanilla_blocks::SAND.default_state());
         let mut state = self.state.lock();
         state.block_state = block_state;
-        state.time = nbt.int("Time").unwrap_or(0);
-        state.hurt_entities = nbt.byte("HurtEntities").map_or_else(
+        state.time = nbt.int_value("Time").unwrap_or(0);
+        state.hurt_entities = nbt.byte_value("HurtEntities").map_or_else(
             || block_state.get_block().has_tag(&BlockTag::ANVIL),
             |value| value != 0,
         );
         state.fall_damage_per_distance = nbt
-            .float("FallHurtAmount")
+            .float_value("FallHurtAmount")
             .unwrap_or(DEFAULT_FALL_DAMAGE_PER_DISTANCE);
-        state.fall_damage_max = nbt.int("FallHurtMax").unwrap_or(DEFAULT_MAX_FALL_DAMAGE);
-        state.drop_item = nbt.byte("DropItem").is_none_or(|value| value != 0);
+        state.fall_damage_max = nbt
+            .int_value("FallHurtMax")
+            .unwrap_or(DEFAULT_MAX_FALL_DAMAGE);
+        state.drop_item = nbt.byte_value("DropItem").is_none_or(|value| value != 0);
         state.block_data = nbt.compound("TileEntityData").map(|data| data.to_owned());
-        state.cancel_drop = nbt.byte("CancelDrop").is_some_and(|value| value != 0);
+        state.cancel_drop = nbt.byte_value("CancelDrop").is_some_and(|value| value != 0);
     }
 }
 

@@ -20,6 +20,7 @@ use crate::behavior::blocks::vegetation::vegetation_block::{
     survival_update_shape, vegetation_can_survive,
 };
 use crate::behavior::context::BlockPlaceContext;
+use crate::block_entity::SharedBlockEntity;
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
@@ -46,7 +47,11 @@ const AGE: &IntProperty = &BlockStateProperties::AGE_7;
 ///
 /// Stems use the same farmland and neighboring-crop calculation as crops, but
 /// have different survival and mature-growth behavior.
-pub(super) fn crop_growth_speed(block: BlockRef, world: &dyn LevelReader, pos: BlockPos) -> f32 {
+pub(super) fn crop_growth_speed(
+    block: BlockRef,
+    world: &(impl LevelReader + ?Sized),
+    pos: BlockPos,
+) -> f32 {
     let mut speed = 1.0_f32;
     let below = pos.below();
 
@@ -284,6 +289,7 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(self.clone_item_stack())

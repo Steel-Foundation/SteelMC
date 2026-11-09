@@ -1,5 +1,6 @@
 //! Steel-owned built-in command declarations.
 
+pub mod advancement;
 mod clear;
 mod damage;
 mod defaultgamemode;
@@ -20,6 +21,7 @@ mod locate;
 mod operator;
 mod perms;
 mod playsound;
+mod position;
 mod return_command;
 mod say;
 mod seed;
@@ -30,6 +32,8 @@ mod spawnpoint;
 mod stop;
 mod stopsound;
 mod summon;
+mod swing;
+mod tag;
 mod teleport;
 mod tellraw;
 mod tick;
@@ -69,6 +73,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.declare_permission(perms::MANAGE_ALL_PERMISSION)?;
     builder.declare_permission(perms::GROUP_ALL_PERMISSION)?;
     builder.declare_permission(perms::METADATA_PERMISSION)?;
+    builder.register(advancement::registration())?;
     builder.register(clear::registration())?;
     builder.register(operator::deop_registration())?;
     builder.register(damage::registration())?;
@@ -99,6 +104,8 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(stop::registration())?;
     builder.register(stopsound::registration())?;
     builder.register(summon::registration())?;
+    builder.register(swing::registration())?;
+    builder.register(tag::registration())?;
     builder.register(teleport::registration())?;
     builder.register(tellraw::registration())?;
     builder.register(tick::registration())?;
@@ -152,6 +159,7 @@ mod tests {
         assert_eq!(
             names,
             [
+                "advancement",
                 "clear",
                 "deop",
                 "damage",
@@ -183,6 +191,8 @@ mod tests {
                 "stop",
                 "stopsound",
                 "summon",
+                "swing",
+                "tag",
                 "teleport",
                 "tp",
                 "tellraw",

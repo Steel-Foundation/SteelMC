@@ -241,7 +241,7 @@ pub enum StatePropertyValueMatcher {
 }
 
 impl StatePropertyValueMatcher {
-    fn matches(&self, property: &dyn Property, actual: &str) -> bool {
+    fn matches(&self, property: &(impl Property + ?Sized), actual: &str) -> bool {
         match self {
             Self::Exact(expected) => {
                 property.compare_value_names(actual, expected) == Some(Ordering::Equal)
@@ -376,8 +376,6 @@ impl StatePropertiesPredicate {
         let Some(block) = REGISTRY.blocks.by_state_id(state) else {
             return false;
         };
-        let values = REGISTRY.blocks.get_properties(state);
-
         self.properties.iter().all(|matcher| {
             let Some(index) = block
                 .properties
@@ -386,9 +384,10 @@ impl StatePropertiesPredicate {
             else {
                 return false;
             };
-            matcher
-                .value()
-                .matches(block.properties[index], values[index].1)
+            REGISTRY
+                .blocks
+                .get_property_str(state, matcher.name())
+                .is_some_and(|value| matcher.value().matches(block.properties[index], value))
         })
     }
 

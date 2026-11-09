@@ -32,7 +32,7 @@
 ## What is SteelMC?
 
 SteelMC is an independent implementation of the Minecraft Java Edition server. It
-tracks the latest Java Edition release and currently targets **Minecraft 26.2**.
+tracks the latest Java Edition release and currently targets **Minecraft 26.3**.
 
 The goal is to match vanilla behavior while making better use of modern multicore
 hardware. Gameplay updates remain synchronous, while chunk generation, lighting,
@@ -119,6 +119,14 @@ typos
 
 Nix and NixOS users can get the pinned toolchain, `lld`, `prek`, and `typos` in one
 step with `nix develop` (or `direnv allow`, using the checked-in `.envrc`).
+
+Generated Rust formatting is disabled by default. Enable the `fmt` feature on
+`steel-registry`, `steel-utils`, and `steel-worldgen` to format their generated files
+with prettyplease during compilation:
+
+```bash
+cargo build --features steel-registry/fmt,steel-utils/fmt,steel-worldgen/fmt
+```
 
 Generated documentation for SteelMC's Rust crates is available in the
 [Rust API reference](https://rustdoc.steelmc.dev/steel_core/index.html).

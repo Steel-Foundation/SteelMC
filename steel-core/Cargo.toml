@@ -24,7 +24,7 @@ steel-worldgen.workspace = true
 steel-math.workspace = true
 
 # Async runtime
-tokio.workspace = true
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "io-std", "fs", "signal"] }
 tokio-util.workspace = true
 futures.workspace = true
 
@@ -99,6 +99,11 @@ required-features = ["benchmark-support"]
 
 [[bench]]
 name = "chunk_sender"
+harness = false
+required-features = ["benchmark-support"]
+
+[[bench]]
+name = "entity_tick"
 harness = false
 required-features = ["benchmark-support"]
 

@@ -16,7 +16,7 @@ use crate::world::{LevelReader, ScheduledTickAccess, SignalGetter as _, World};
 use super::rail_state::RailState;
 
 /// Shared server behavior inherited from vanilla's `BaseRailBlock`.
-pub(super) struct BaseRailBlock {
+pub(crate) struct BaseRailBlock {
     pub(super) block: BlockRef,
     is_straight: bool,
 }
@@ -36,12 +36,12 @@ impl BaseRailBlock {
     }
 
     #[must_use]
-    pub(super) fn is_rail_state(state: BlockStateId) -> bool {
+    pub(crate) fn is_rail_state(state: BlockStateId) -> bool {
         let block = state.get_block();
         block.has_tag(&BlockTag::RAILS) && BLOCK_BEHAVIORS.get_behavior(block).as_rail().is_some()
     }
 
-    fn can_support_rigid_block(level: &dyn LevelReader, pos: BlockPos) -> bool {
+    fn can_support_rigid_block(level: &(impl LevelReader + ?Sized), pos: BlockPos) -> bool {
         level.is_face_sturdy_for(
             level.get_block_state(pos),
             pos,
@@ -51,7 +51,7 @@ impl BaseRailBlock {
     }
 
     #[must_use]
-    pub(super) fn can_survive(level: &dyn LevelReader, pos: BlockPos) -> bool {
+    pub(super) fn can_survive(level: &(impl LevelReader + ?Sized), pos: BlockPos) -> bool {
         Self::can_support_rigid_block(level, pos.below())
     }
 

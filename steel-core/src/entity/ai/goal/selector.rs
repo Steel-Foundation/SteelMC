@@ -121,6 +121,10 @@ impl WrappedGoal {
         self.running
     }
 
+    fn goal(&self) -> &dyn Goal {
+        self.goal.as_ref()
+    }
+
     fn controls(&self) -> GoalControls {
         self.goal.controls()
     }
@@ -186,6 +190,21 @@ impl GoalSelector {
     {
         self.available_goals
             .push(WrappedGoal::new(priority, Box::new(goal)));
+    }
+
+    /// Stops and removes matching goals. `mob` supplies the stop-hook context.
+    pub fn remove_all_goals(
+        &mut self,
+        mob: &dyn PathfinderMob,
+        mut predicate: impl FnMut(&dyn Goal) -> bool,
+    ) {
+        for wrapped in &mut self.available_goals {
+            if predicate(wrapped.goal()) && wrapped.is_running() {
+                wrapped.stop(mob);
+            }
+        }
+        self.available_goals
+            .retain(|wrapped| !predicate(wrapped.goal()));
     }
 
     pub fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
@@ -623,5 +642,51 @@ mod tests {
                 .has_running_panic_goal()
         );
         assert!(mob.is_panicking());
+    }
+
+    #[test]
+    fn remove_all_goals_stops_matching_running_goals_and_keeps_others() {
+        let mob = Arc::new(TestPathfinderMob::new());
+        let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
+        let mut selector = GoalSelector::new();
+        selector.add_goal(3, StaticGoal::new(GoalControls::MOVE));
+        selector.add_goal(7, StaticGoal::new(GoalControls::LOOK));
+        selector.tick(mob.as_ref(), &mob_entity);
+        assert_eq!(selector.running_goal_count(), 2);
+
+        selector.remove_all_goals(mob.as_ref(), |goal| goal.controls() == GoalControls::MOVE);
+
+        assert_eq!(selector.available_goal_count(), 1);
+        assert!(
+            selector.is_priority_running(7),
+            "the non-matching goal must keep running through removal"
+        );
+        assert!(
+            !selector.is_priority_running(3),
+            "the removed goal must be gone entirely"
+        );
+
+        selector.tick(mob.as_ref(), &mob_entity);
+        assert_eq!(selector.running_goal_count(), 1);
+        assert!(selector.is_priority_running(7));
+    }
+
+    #[test]
+    fn pathfinder_mob_remove_free_will_clears_all_goals() {
+        let mob = Arc::new(TestPathfinderMob::new());
+        let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
+        {
+            let mut selector = mob.mob_base().goal_selector().lock();
+            selector.add_goal(1, StaticGoal::new(GoalControls::MOVE));
+            selector.add_goal(2, StaticGoal::new(GoalControls::LOOK));
+            selector.tick(mob.as_ref(), &mob_entity);
+            assert_eq!(selector.running_goal_count(), 2);
+        }
+
+        mob.remove_free_will();
+
+        let selector = mob.mob_base().goal_selector().lock();
+        assert_eq!(selector.available_goal_count(), 0);
+        assert_eq!(selector.running_goal_count(), 0);
     }
 }

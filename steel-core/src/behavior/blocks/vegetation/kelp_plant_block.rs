@@ -14,6 +14,7 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{
     block::BlockBehavior, blocks::vegetation::growing_plant_body_block::GrowingPlantBodyBlock,
 };
+use crate::block_entity::SharedBlockEntity;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::BlockRef;
@@ -63,6 +64,7 @@ impl BlockBehavior for KelpPlantBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::KELP))

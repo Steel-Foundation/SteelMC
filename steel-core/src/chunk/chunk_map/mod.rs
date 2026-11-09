@@ -1180,7 +1180,7 @@ impl ChunkMap {
     }
 
     /// Returns whether the chunk is full and currently allows entity ticks.
-    pub(crate) fn is_entity_ticking_full_chunk_loaded(&self, pos: ChunkPos) -> bool {
+    pub fn is_entity_ticking_full_chunk_loaded(&self, pos: ChunkPos) -> bool {
         self.chunks
             .read_sync(&pos, |_, holder| holder.entity_visibility().is_ticking())
             .unwrap_or(false)

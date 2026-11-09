@@ -14,15 +14,20 @@ use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::data_components::vanilla_components::{
     SIGN_TEXT_BACK, SIGN_TEXT_FRONT, SignText as SignTextComponent, WAXED,
 };
-use steel_registry::item_stack::ItemStack;
+use steel_registry::sound_event::SoundEventRef;
+use steel_registry::sound_events::{
+    BLOCK_HANGING_SIGN_WAXED_INTERACT_FAIL, BLOCK_SIGN_WAXED_INTERACT_FAIL,
+};
 use steel_registry::{DyeColor, vanilla_block_entity_types};
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{
     BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex, types::SignTextSlot,
 };
 use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
 
-use crate::block_entity::{BlockEntity, BlockEntityBase};
+use crate::block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter};
 use crate::entity::Entity;
 use crate::world::World;
 
@@ -127,8 +132,8 @@ impl SignText {
         }
 
         // Load glow
-        if let Some(glow) = nbt.byte("has_glowing_text") {
-            self.has_glowing_text = glow != 0;
+        if let Some(glow) = nbt.get("has_glowing_text").and_then(|tag| tag.codec_bool()) {
+            self.has_glowing_text = glow;
         }
     }
 
@@ -256,10 +261,7 @@ impl SignBlockEntity {
         sign.is_waxed = true;
         true
     }
-    /// Sets whether a side's text glows, returning whether its state changed or not :3.
-    ///
-    /// Mirrors vanilla `SignBlockEntity.updateText`: returns false when the side
-    /// already has the requested glow state, so callers can skip consuming the item.
+    /// Sets whether a side's text glows, returning whether its state changed.
     pub fn set_glowing(&self, slot: SignTextSlot, glowing: bool) -> bool {
         let mut sign = self.sign.lock();
         let text = if slot.is_front() {
@@ -272,6 +274,31 @@ impl SignBlockEntity {
         }
         text.has_glowing_text = glowing;
         true
+    }
+
+    /// Sets the text color for a side, returning whether its state changed.
+    pub fn set_color(&self, slot: SignTextSlot, color: DyeColor) -> bool {
+        let mut sign = self.sign.lock();
+        let text = if slot.is_front() {
+            &mut sign.front_text
+        } else {
+            &mut sign.back_text
+        };
+        if text.color == color {
+            return false;
+        }
+        text.color = color;
+        true
+    }
+
+    /// Returns the sound event to play when a player fails to interact with this waxed sign.
+    #[must_use]
+    pub fn sign_interaction_failed_sound_event(&self) -> SoundEventRef {
+        if self.base.block_entity_type() == &vanilla_block_entity_types::HANGING_SIGN {
+            &BLOCK_HANGING_SIGN_WAXED_INTERACT_FAIL
+        } else {
+            &BLOCK_SIGN_WAXED_INTERACT_FAIL
+        }
     }
 
     /// Sets the text for a side.
@@ -306,16 +333,16 @@ impl BlockEntity for SignBlockEntity {
         }
 
         // Load waxed state
-        if let Some(waxed) = nbt_view.byte("is_waxed") {
+        if let Some(waxed) = nbt_view.byte_value("is_waxed") {
             sign.is_waxed = waxed != 0;
         }
     }
 
-    fn apply_components_from_item(&self, item: &ItemStack) {
+    fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
         let mut sign = self.sign.lock();
-        sign.front_text = SignText::from_component(item.get(SIGN_TEXT_FRONT));
-        sign.back_text = SignText::from_component(item.get(SIGN_TEXT_BACK));
-        sign.is_waxed = item.has(WAXED);
+        sign.front_text = SignText::from_component(components.get(SIGN_TEXT_FRONT).as_ref());
+        sign.back_text = SignText::from_component(components.get(SIGN_TEXT_BACK).as_ref());
+        sign.is_waxed = components.get(WAXED).is_some();
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -375,14 +402,14 @@ mod tests {
 
     use simdnbt::borrow::read_tag;
     use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
+    use steel_registry::{
+        init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_items,
+    };
     use steel_utils::{BlockPos, translations, types::SignTextSlot};
     use text_components::{Modifier as _, TextComponent};
     use uuid::Uuid;
 
-    use super::{
-        DyeColor, ItemStack, SIGN_TEXT_FRONT, SignBlockEntity, SignText, SignTextComponent, WAXED,
-    };
+    use super::{DyeColor, SIGN_TEXT_FRONT, SignBlockEntity, SignText, SignTextComponent, WAXED};
     use crate::block_entity::BlockEntity as _;
     use crate::test_support::fresh_test_world;
 
@@ -466,7 +493,7 @@ mod tests {
         );
         item.set(WAXED, ());
 
-        sign.apply_components_from_item(&item);
+        sign.apply_components_from_item_stack(&item);
 
         let front = sign.get_text(SignTextSlot::Front);
         assert_eq!(front.messages, messages);
@@ -474,6 +501,8 @@ mod tests {
         assert!(front.has_glowing_text);
         assert!(!sign.get_text(SignTextSlot::Back).has_message());
         assert!(sign.is_waxed());
+        assert!(!sign.base().stored_components().has(SIGN_TEXT_FRONT));
+        assert!(!sign.base().stored_components().has(WAXED));
     }
 
     #[test]
@@ -490,5 +519,26 @@ mod tests {
 
         sign.tick(world);
         assert_eq!(sign.get_player_who_may_edit(), None);
+    }
+
+    #[test]
+    fn set_color_updates_color_and_reports_change() {
+        init_vanilla_registry();
+        let world_fixture = fresh_test_world("sign_set_color");
+        let world = &world_fixture.world;
+        let sign = SignBlockEntity::new(
+            Arc::downgrade(world),
+            BlockPos::new(0, 64, 0),
+            vanilla_blocks::OAK_SIGN.default_state(),
+        );
+
+        assert_eq!(sign.get_text(SignTextSlot::Front).color, DyeColor::Black);
+        assert!(sign.set_color(SignTextSlot::Front, DyeColor::Blue));
+        assert_eq!(sign.get_text(SignTextSlot::Front).color, DyeColor::Blue);
+        assert!(!sign.set_color(SignTextSlot::Front, DyeColor::Blue));
+
+        assert_eq!(sign.get_text(SignTextSlot::Back).color, DyeColor::Black);
+        assert!(sign.set_color(SignTextSlot::Back, DyeColor::Red));
+        assert_eq!(sign.get_text(SignTextSlot::Back).color, DyeColor::Red);
     }
 }

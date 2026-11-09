@@ -462,9 +462,19 @@ fn base_state_caches_fluid_contact() {
     assert!(!base.was_eye_in_water());
 
     base.set_fluid_contact(water_contact);
-    base.set_fluid_contact_for_base_tick(air_contact);
+    base.update_was_eye_in_water();
+    base.set_fluid_interaction(air_contact);
 
     assert_eq!(base.fluid_contact(), air_contact);
+    assert!(base.was_eye_in_water());
+    assert!(!base.was_touching_water());
+
+    // Mid-tick interaction refreshes must not advance eye-water history.
+    base.set_fluid_interaction(water_contact);
+
+    assert!(base.was_touching_water());
+    assert!(base.was_eye_in_water());
+    base.set_fluid_interaction(air_contact);
     assert!(base.was_eye_in_water());
 }
 
@@ -1083,8 +1093,8 @@ fn movement_trace_falls_back_to_old_position_when_no_moves_were_recorded() {
     let movements = base.take_movements_for_block_effects();
 
     assert_eq!(
-        movements,
-        vec![EntityMovement::new(
+        movements.as_slice(),
+        &[EntityMovement::new(
             DVec3::new(-1.0, 2.0, -3.0),
             DVec3::new(1.0, 2.0, 3.0)
         )]
@@ -1131,8 +1141,8 @@ fn movement_trace_appends_direct_position_change_after_recorded_moves() {
     let movements = base.take_movements_for_block_effects();
 
     assert_eq!(
-        movements,
-        vec![
+        movements.as_slice(),
+        &[
             EntityMovement::with_axis_dependent_original_movement(
                 DVec3::new(0.0, 64.0, 0.0),
                 DVec3::new(1.0, 64.0, 0.0),
@@ -1163,8 +1173,8 @@ fn movement_trace_removes_latest_movement_recording() {
     let movements = base.take_movements_for_block_effects();
 
     assert_eq!(
-        movements,
-        vec![EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0))]
+        movements.as_slice(),
+        &[EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0))]
     );
 }
 

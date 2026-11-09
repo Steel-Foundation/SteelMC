@@ -1,12 +1,11 @@
 use std::{collections::BTreeSet, ptr, sync::Arc};
 
-use super::{CommandExecutionContext, GameProfileArgument};
-use crate::command::signing_context::CommandSigningContext;
 use crate::{
     command::{
         brigadier::CommandSyntaxError,
         registration::{entity_selector_advanced_permission_expr, entity_selector_permission_expr},
         sender::CommandSender,
+        signing_context::CommandSigningContext,
     },
     entity::{Entity, EntityAnchor, SharedEntity},
     permission::{
@@ -29,6 +28,8 @@ use steel_registry::{
 };
 use steel_utils::translations;
 use text_components::{Modifier, TextComponent, format::Color};
+
+use super::{CommandExecutionContext, GameProfileArgument, selector::EntitySelector};
 
 type CommandResultCallbackFn = dyn Fn(bool, i32) + Send + Sync;
 
@@ -116,6 +117,10 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
     }
 
     fn group_permission_metadata_suggestions(&self, _group: &str) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn entity_tag_suggestions(&self, _targets: &EntitySelector) -> Vec<String> {
         Vec::new()
     }
 
@@ -588,6 +593,17 @@ impl ExecutionCommandSource for CommandSource {
 }
 
 impl CommandArgumentSource for CommandSource {
+    fn entity_tag_suggestions(&self, targets: &EntitySelector) -> Vec<String> {
+        targets
+            .find_entities(self)
+            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|entity| entity.tags())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     fn default_world_clock(&self) -> Option<WorldClockRef> {
         self.world.dimension_type.default_clock
     }

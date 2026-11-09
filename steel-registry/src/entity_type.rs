@@ -1,5 +1,6 @@
 use glam::DVec3;
 use rustc_hash::FxHashMap;
+use steel_math::trig;
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 use crate::{RegistryTags, blocks::behavior::PushReaction};
@@ -168,9 +169,9 @@ fn fallback_point(attachment: EntityAttachment, dimensions: EntityDimensions) ->
 }
 
 fn rotate_attachment_point(point: DVec3, yaw_degrees: f32) -> DVec3 {
-    let radians = f64::from(-yaw_degrees).to_radians();
-    let cos = radians.cos();
-    let sin = radians.sin();
+    let radians = (-yaw_degrees).to_radians();
+    let cos = f64::from(trig::cos(radians));
+    let sin = f64::from(trig::sin(radians));
     DVec3::new(
         point.x.mul_add(cos, point.z * sin),
         point.y,

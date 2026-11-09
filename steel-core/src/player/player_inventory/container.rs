@@ -38,8 +38,9 @@ impl PlayerInventory {
     /// Applies vanilla `ItemUtils.createFilledResult` to a held item.
     ///
     /// Mutates the held stack and inventory, returning only the result stack that
-    /// should be dropped by the caller. Creative inventory insertion discards
-    /// leftover result items instead of dropping them.
+    /// should be dropped by the caller. When `limit_creative_stack_size` is set,
+    /// creative inventory insertion discards leftover result items instead of
+    /// dropping them.
     pub fn apply_filled_result(
         &mut self,
         hand: InteractionHand,
@@ -64,7 +65,7 @@ impl PlayerInventory {
         }
 
         let added = self.add(&mut result_stack);
-        if added || has_infinite_materials {
+        if added {
             ItemStack::empty()
         } else {
             result_stack
