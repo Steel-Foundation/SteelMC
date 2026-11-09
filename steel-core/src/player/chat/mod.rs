@@ -156,8 +156,7 @@ impl ChatValidationError {
     }
 }
 
-/// Mirror vanilla `OutgoingChatMessage`, by creating either a `Player`, sending a `CPlayerChat` packet,
-/// or a `Disguised`, sending a `CDisguisedChat` packet (used for console, command block, or when the player cannot sign the message)
+/// An outgoing player or disguised chat message
 pub enum OutgoingChatMessage {
     /// Signed or unsigned chat message from a genuine player session
     Player {
@@ -232,7 +231,6 @@ impl OutgoingChatMessage {
                     messages_received
                 );
 
-                // IMPORTANT: Index previous messages BEFORE updating the cache
                 // This matches vanilla's order: pack() then push()
                 let previous_messages = {
                     let chat = recipient.chat().lock();
@@ -241,11 +239,7 @@ impl OutgoingChatMessage {
                 };
                 packet.previous_messages.clone_from(&previous_messages);
 
-                // Send the packet
                 recipient.send_packet(*packet);
-
-                // AFTER sending, update the recipient's cache using vanilla's push algorithm
-                // This adds all lastSeen signatures + current signature to the cache
                 {
                     let mut chat = recipient.chat().lock();
                     if let Some(signature) = signature {
@@ -253,12 +247,10 @@ impl OutgoingChatMessage {
 
                         log::debug!("  Added signature to recipient's cache and pending list");
 
-                        // Add to pending messages for acknowledgment tracking
                         chat.message_validator
                             .add_pending(Some(Box::new(*signature) as Box<[u8]>));
                     }
 
-                    // Check against Vanilla DOS/memory leak threshold
                     let pending_count = chat.message_validator.tracked_count();
                     drop(chat);
 
@@ -291,7 +283,6 @@ impl OutgoingChatMessage {
 
         let signing_ctx = source.signing_context();
 
-        // Ensure the player's active chat session has not been superseded while waiting in queue
         let is_session_current = signing_ctx.as_ref().is_some_and(|sc| {
             player
                 .chat()
@@ -305,13 +296,10 @@ impl OutgoingChatMessage {
         });
 
         if !is_session_current {
-            // A newer chat session was announced: degrade to disguised to avoid client signature errors
             return Self::Disguised {
                 content: TextComponent::plain(message),
             };
         }
-
-        // Extract context and target signed argument (signature + individual chain index)
         let Some(sc) = signing_ctx else {
             return Self::Disguised {
                 content: TextComponent::plain(message),
@@ -324,7 +312,6 @@ impl OutgoingChatMessage {
             };
         };
 
-        // Validate signature byte length
         let mut sig_array = [0u8; 256];
         if signed_arg.signature.0.len() == 256 {
             sig_array.copy_from_slice(&signed_arg.signature.0);

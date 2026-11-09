@@ -362,12 +362,7 @@ impl SteelArgumentType {
         Self::new(WorldClockParser)
     }
 
-    /// Creates a greedy message argument parser (`minecraft:message`).
-    ///
-    /// In the vanilla protocol, this argument implements `SignedArgumentType`.
-    /// When traversed in the command tree, it forces secure clients to sign the
-    /// consumed argument string and send a `ServerboundChatCommandSignedPacket`
-    /// instead of a regular command packet.
+    /// Creates a greedy `minecraft:message` argument parser
     pub(crate) fn message() -> Self {
         Self::new(MessageParser)
     }
