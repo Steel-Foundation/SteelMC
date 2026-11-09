@@ -870,16 +870,30 @@ impl Player {
             return None;
         }
 
+        // Verify argument count: client must not provide extra or missing signatures
+        if packet.argument_signatures.len() != required_signed_args.len() {
+            drop(chat);
+            if server.enforces_secure_chat() {
+                self.disconnect("Invalid argument signatures count");
+            }
+            return None;
+        }
+
         let mut verified_args = FxHashMap::default();
 
-        // Verify each argument against its extracted string slice
-        for (arg_name, argument_value) in required_signed_args {
-            let Some(entry) = packet
-                .argument_signatures
+        // Consume signatures in packet order to preserve cryptographic chain advancement
+        for entry in &packet.argument_signatures {
+            // Find matching parsed argument value
+            let Some((_, argument_value)) = required_signed_args
                 .iter()
-                .find(|e| e.name.as_str() == arg_name.as_str())
+                .find(|(arg_name, _)| entry.name.as_str() == arg_name.as_str())
             else {
-                continue;
+                // Unknown or unexpected argument signature in packet
+                drop(chat);
+                if server.enforces_secure_chat() {
+                    self.disconnect(MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED.msg());
+                }
+                return None;
             };
 
             match Self::verify_and_advance_chain(
