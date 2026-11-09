@@ -18,6 +18,7 @@ use steel_registry::particle_type::{ColorParticleOption, ParticleData};
 use steel_registry::vanilla_entity_data::AreaEffectCloudEntityData;
 use steel_registry::vanilla_particle_types;
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{DowncastType, DowncastTypeKey, RgbColor};
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
@@ -430,23 +431,23 @@ impl Entity for AreaEffectCloudEntity {
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.base.set_tick_count(nbt.int("Age").unwrap_or(0));
+        self.base.set_tick_count(nbt.int_value("Age").unwrap_or(0));
         {
             let mut state = self.state.lock();
-            state.duration = nbt.int("Duration").unwrap_or(INFINITE_DURATION);
-            state.wait_time = nbt.int("WaitTime").unwrap_or(DEFAULT_WAIT_TIME);
+            state.duration = nbt.int_value("Duration").unwrap_or(INFINITE_DURATION);
+            state.wait_time = nbt.int_value("WaitTime").unwrap_or(DEFAULT_WAIT_TIME);
             state.reapplication_delay = nbt
-                .int("ReapplicationDelay")
+                .int_value("ReapplicationDelay")
                 .unwrap_or(DEFAULT_REAPPLICATION_DELAY);
-            state.duration_on_use = nbt.int("DurationOnUse").unwrap_or(0);
-            state.radius_on_use = nbt.float("RadiusOnUse").unwrap_or(0.0);
-            state.radius_per_tick = nbt.float("RadiusPerTick").unwrap_or(0.0);
+            state.duration_on_use = nbt.int_value("DurationOnUse").unwrap_or(0);
+            state.radius_on_use = nbt.float_value("RadiusOnUse").unwrap_or(0.0);
+            state.radius_per_tick = nbt.float_value("RadiusPerTick").unwrap_or(0.0);
             state.owner = EntityReference::read(&nbt, "Owner");
             state.potion_duration_scale = nbt
-                .float("potion_duration_scale")
+                .float_value("potion_duration_scale")
                 .unwrap_or(DEFAULT_POTION_DURATION_SCALE);
         }
-        self.set_radius(nbt.float("Radius").unwrap_or(DEFAULT_RADIUS));
+        self.set_radius(nbt.float_value("Radius").unwrap_or(DEFAULT_RADIUS));
         self.set_potion_contents(
             nbt.get("potion_contents")
                 .and_then(PotionContents::from_nbt_tag)

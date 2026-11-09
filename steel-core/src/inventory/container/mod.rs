@@ -4,10 +4,12 @@
 //! including player inventories, chests, barrels, furnaces, etc.
 
 mod crafting;
+mod helper;
 mod result;
 mod simple;
 
 pub use crafting::CraftingContainer;
+pub use helper::load_all_items;
 pub use result::ResultContainer;
 pub use simple::SimpleContainer;
 
