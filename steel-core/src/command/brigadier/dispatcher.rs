@@ -1,6 +1,5 @@
 //! Dispatcher-owned command node arena.
 
-use std::ops::Range;
 #[cfg(test)]
 use super::CommandContext;
 use super::{
@@ -11,6 +10,7 @@ use super::{
     node::{CommandNode, CommandNodeData, UnregisteredCommandNode},
 };
 use crate::command::brigadier::node::ArgumentData;
+use std::ops::Range;
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
@@ -498,7 +498,6 @@ where
         Self::new()
     }
 }
-
 
 #[cfg(test)]
 mod tests {

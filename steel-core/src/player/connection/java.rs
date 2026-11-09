@@ -21,10 +21,10 @@ use steel_protocol::packets::game::{
     SSpectatorAction, SUseItem, SUseItemOn,
 };
 
+use crate::command::{handle_client_request, sender::CommandSender};
 use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerSession};
 use crate::server::Server;
-use crate::command::{handle_client_request, sender::CommandSender};
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
