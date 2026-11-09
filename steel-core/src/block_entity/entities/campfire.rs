@@ -16,6 +16,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::entity::Entity;
+use crate::inventory::container::load_all_items;
 use crate::player::Player;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
@@ -196,18 +197,7 @@ impl BlockEntity for CampfireBlockEntity {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
         let mut cooking = self.cooking.lock();
         cooking.items.fill(ItemStack::empty());
-        if let Some(items) = nbt.list("Items").and_then(|list| list.compounds()) {
-            for compound in items {
-                let Some(slot) = compound.byte("Slot").map(|slot| slot as usize) else {
-                    continue;
-                };
-                if slot < CAMPFIRE_SLOTS
-                    && let Some(stack) = ItemStack::from_borrowed_compound(&compound)
-                {
-                    cooking.items[slot] = stack;
-                }
-            }
-        }
+        load_all_items(nbt, &mut cooking.items);
         cooking.cooking_progress = nbt
             .int_array("CookingTimes")
             .map_or([0; CAMPFIRE_SLOTS], |values| {
