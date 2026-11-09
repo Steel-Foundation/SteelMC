@@ -12,8 +12,14 @@ pub trait NbtNumeric {
     /// Decodes `Codec.BOOL` from any numeric NBT tag.
     fn codec_bool(&self) -> Option<bool>;
 
+    /// Decodes `Codec.BYTE` from any numeric NBT tag.
+    fn codec_i8(&self) -> Option<i8>;
+
     /// Decodes `Codec.INT` from any numeric NBT tag.
     fn codec_i32(&self) -> Option<i32>;
+
+    /// Decodes `Codec.LONG` from any numeric NBT tag.
+    fn codec_i64(&self) -> Option<i64>;
 
     /// Decodes `Codec.FLOAT` from any numeric NBT tag.
     fn codec_f32(&self) -> Option<f32>;
@@ -48,6 +54,18 @@ impl NbtNumeric for OwnedNbtTag {
         }
     }
 
+    fn codec_i8(&self) -> Option<i8> {
+        match self {
+            Self::Byte(value) => Some(*value),
+            Self::Short(value) => Some(*value as i8),
+            Self::Int(value) => Some(*value as i8),
+            Self::Long(value) => Some(*value as i8),
+            Self::Float(value) => Some(*value as i32 as i8),
+            Self::Double(value) => Some(*value as i32 as i8),
+            _ => None,
+        }
+    }
+
     fn codec_i32(&self) -> Option<i32> {
         match self {
             Self::Byte(value) => Some(i32::from(*value)),
@@ -56,6 +74,18 @@ impl NbtNumeric for OwnedNbtTag {
             Self::Long(value) => Some(*value as i32),
             Self::Float(value) => Some(*value as i32),
             Self::Double(value) => Some(*value as i32),
+            _ => None,
+        }
+    }
+
+    fn codec_i64(&self) -> Option<i64> {
+        match self {
+            Self::Byte(value) => Some(i64::from(*value)),
+            Self::Short(value) => Some(i64::from(*value)),
+            Self::Int(value) => Some(i64::from(*value)),
+            Self::Long(value) => Some(*value),
+            Self::Float(value) => Some(*value as i64),
+            Self::Double(value) => Some(*value as i64),
             _ => None,
         }
     }
@@ -108,6 +138,15 @@ impl NbtNumeric for BorrowedNbtTag<'_, '_> {
             .or_else(|| self.double().map(|value| value != 0.0))
     }
 
+    fn codec_i8(&self) -> Option<i8> {
+        self.byte()
+            .or_else(|| self.short().map(|value| value as i8))
+            .or_else(|| self.int().map(|value| value as i8))
+            .or_else(|| self.long().map(|value| value as i8))
+            .or_else(|| self.float().map(|value| value as i32 as i8))
+            .or_else(|| self.double().map(|value| value as i32 as i8))
+    }
+
     fn codec_i32(&self) -> Option<i32> {
         self.byte()
             .map(i32::from)
@@ -116,6 +155,16 @@ impl NbtNumeric for BorrowedNbtTag<'_, '_> {
             .or_else(|| self.long().map(|value| value as i32))
             .or_else(|| self.float().map(|value| value as i32))
             .or_else(|| self.double().map(|value| value as i32))
+    }
+
+    fn codec_i64(&self) -> Option<i64> {
+        self.byte()
+            .map(i64::from)
+            .or_else(|| self.short().map(i64::from))
+            .or_else(|| self.int().map(i64::from))
+            .or_else(|| self.long())
+            .or_else(|| self.float().map(|value| value as i64))
+            .or_else(|| self.double().map(|value| value as i64))
     }
 
     fn codec_f32(&self) -> Option<f32> {
@@ -161,6 +210,9 @@ mod tests {
     fn owned_numeric_tags_use_codec_coercions() {
         assert_eq!(NbtTag::Double(5.5).codec_f32(), Some(5.5));
         assert_eq!(NbtTag::Float(5.9).codec_i32(), Some(5));
+        assert_eq!(NbtTag::Int(0x1FF).codec_i8(), Some(-1));
+        assert_eq!(NbtTag::Double(-1.5).codec_i64(), Some(-1));
+        assert_eq!(NbtTag::Float(-1.5).codec_i8(), Some(-1));
         assert_eq!(
             NbtTag::Long(i64::from(i32::MAX) + 1).codec_i32(),
             Some(i32::MIN)

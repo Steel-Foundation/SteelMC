@@ -16,6 +16,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::BatEntityData;
 use steel_registry::{level_events, sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::chunk::heightmap::HeightmapType;
@@ -390,7 +391,7 @@ impl Entity for BatEntity {
         self.entity_data
             .lock()
             .id_flags
-            .set(nbt.byte("BatFlags").unwrap_or(0));
+            .set(nbt.byte_value("BatFlags").unwrap_or(0));
     }
 }
 

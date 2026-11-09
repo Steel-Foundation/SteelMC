@@ -1,9 +1,12 @@
 use std::collections::BTreeSet;
 
 use super::*;
-use crate::entity::{leash::Leashable, pushing::EntityPush};
+use crate::entity::{
+    entities::objects::vehicles::AbstractMinecart, leash::Leashable, pushing::EntityPush,
+};
 use rand::{RngExt, rng};
 use steel_math::DEGREE_90;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::nbt::{NbtNumeric, nbt_collection_values};
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
@@ -687,6 +690,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().stop_riding();
     }
 
+    /// Dismounts every passenger from this entity.
+    fn eject_passengers(&self) {
+        for passenger in self.passengers().into_iter().rev() {
+            passenger.stop_riding();
+        }
+    }
+
     /// Starts riding `entity_to_ride` if vanilla boarding rules allow it.
     fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
         let Some(world) = self.level() else {
@@ -803,10 +813,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         )
     }
 
-    /// Returns this vehicle's passenger attachment point.
-    ///
-    /// Mirrors vanilla `Entity.getPassengerAttachmentPoint` for the base entity class.
-    fn passenger_attachment_point(&self, passenger: &dyn Entity) -> DVec3 {
+    /// Returns this vehicle's passenger attachment point for this entity's dimensions and
+    /// seat index, rotated by the vehicle's yaw.
+    fn default_passenger_attachment_point(&self, passenger: &dyn Entity) -> DVec3 {
         let dimensions = self.base().dimensions();
         let passenger_index = self.passenger_index(passenger).unwrap_or_default();
         dimensions.attachments.get_clamped(
@@ -815,6 +824,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             self.rotation().0,
             dimensions,
         )
+    }
+
+    /// Returns the vehicle-relative position where this passenger attaches to.
+    fn passenger_attachment_point(&self, passenger: &dyn Entity) -> DVec3 {
+        self.default_passenger_attachment_point(passenger)
     }
 
     /// Returns the world position where `passenger` should ride this vehicle.
@@ -1621,6 +1635,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn Leashable>(self)
     }
 
+    /// Returns this entity as an `AbstractMinecart` if it has `AbstractMinecart` behavior.
+    fn as_abstract_minecart(&self) -> Option<&dyn AbstractMinecart> {
+        try_as_dyn::<Self, dyn AbstractMinecart>(self)
+    }
+
     /// Returns true for entities that implement vanilla animal behavior.
     fn is_animal(&self) -> bool {
         self.as_animal().is_some()
@@ -1791,8 +1810,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         false
     }
 
-    /// Returns the movement vector vanilla exposes for block-contact logic.
-    fn known_movement(&self) -> DVec3 {
+    /// Returns vanilla's base known movement before entity-specific adjustments.
+    fn default_known_movement(&self) -> DVec3 {
         if let Some(controller) = self.controlling_passenger()
             && !self.is_removed()
             && controller.entity_type() == &vanilla_entities::PLAYER
@@ -1801,6 +1820,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         self.velocity()
+    }
+
+    /// Returns the movement vector vanilla exposes for block-contact logic.
+    fn known_movement(&self) -> DVec3 {
+        self.default_known_movement()
     }
 
     /// Returns the base-tick displacement vanilla exposes as `getKnownSpeed`.
@@ -1859,6 +1883,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn direction_yaw(&self) -> Direction {
         let (yaw, _) = self.rotation();
         Direction::from_yaw(yaw)
+    }
+
+    /// Returns the horizontal direction used for movement-dependent behavior.
+    fn motion_direction(&self) -> Direction {
+        self.direction_yaw()
     }
 
     /// Rotates this entity to face a fixed position.
@@ -2106,6 +2135,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns whether vanilla should play this entity's lava hurt sound.
     fn should_play_lava_hurt_sound(&self) -> bool {
         true
+    }
+
+    /// Ignites this entity in lava.
+    fn lava_ignite(&self) {
+        self.apply_inside_block_effect(InsideBlockEffectType::LavaIgnite);
     }
 
     /// Applies vanilla lava-contact damage after lava ignition effects.
@@ -2722,7 +2756,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         clippy::float_cmp,
         reason = "intentional: vanilla checks static block speed factors against 1.0"
     )]
-    fn block_speed_factor(&self) -> f32 {
+    fn default_block_speed_factor(&self) -> f32 {
         let Some(world) = self.level() else {
             return 1.0;
         };
@@ -2753,6 +2787,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             .get_block()
             .config
             .speed_factor
+    }
+
+    /// Returns the block speed factor applied after movement.
+    fn block_speed_factor(&self) -> f32 {
+        self.default_block_speed_factor()
     }
 
     /// Returns the jump-height multiplier from the block at this entity's
@@ -3506,7 +3545,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         clippy::too_many_lines,
         reason = "keeps vanilla movement phases in order"
     )]
-    fn move_entity(self: Arc<Self>, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
+    fn default_move_entity(
+        self: Arc<Self>,
+        mover_type: MoverType,
+        delta: DVec3,
+    ) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
             return self.move_without_physics(delta);
@@ -3641,6 +3684,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         ));
 
         Some(result)
+    }
+
+    /// Moves the entity with collision detection.
+    fn move_entity(self: Arc<Self>, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
+        self.default_move_entity(mover_type, delta)
     }
 
     /// Applies vanilla fall-distance bookkeeping after accepted movement.
@@ -3912,12 +3960,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// is loaded. Keeping that merge at the entity boundary preserves defaults
     /// and entity-specific state when the component only overrides one field.
     fn apply_spawn_data(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        let read_int = |key: &str| {
-            nbt.int(key)
-                .or_else(|| nbt.short(key).map(i32::from))
-                .or_else(|| nbt.byte(key).map(i32::from))
-        };
-
         if let Some(position) = read_nbt_dvec3(&nbt, "Pos")
             && position.is_finite()
         {
@@ -3938,27 +3980,27 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         if let Some(fall_distance) = nbt
-            .double("fall_distance")
-            .or_else(|| nbt.double("FallDistance"))
+            .double_value("fall_distance")
+            .or_else(|| nbt.double_value("FallDistance"))
         {
             self.set_fall_distance(fall_distance);
         }
 
-        if let Some(on_ground) = nbt.byte("OnGround") {
+        if let Some(on_ground) = nbt.byte_value("OnGround") {
             self.set_on_ground(on_ground != 0);
         }
 
         let mut save_data = self.base().save_data();
-        if let Some(air_supply) = read_int("Air") {
+        if let Some(air_supply) = nbt.int_value("Air") {
             save_data.air_supply = air_supply;
         }
-        if let Some(portal_cooldown) = read_int("PortalCooldown") {
+        if let Some(portal_cooldown) = nbt.int_value("PortalCooldown") {
             save_data.portal_cooldown = portal_cooldown;
         }
-        if let Some(no_gravity) = nbt.byte("NoGravity") {
+        if let Some(no_gravity) = nbt.byte_value("NoGravity") {
             save_data.no_gravity = no_gravity != 0;
         }
-        if let Some(invulnerable) = nbt.byte("Invulnerable") {
+        if let Some(invulnerable) = nbt.byte_value("Invulnerable") {
             save_data.invulnerable = invulnerable != 0;
         }
         if let Some(custom_name) = nbt
@@ -3967,13 +4009,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         {
             save_data.custom_name = Some(custom_name);
         }
-        if let Some(custom_name_visible) = nbt.byte("CustomNameVisible") {
+        if let Some(custom_name_visible) = nbt.byte_value("CustomNameVisible") {
             save_data.custom_name_visible = custom_name_visible != 0;
         }
-        if let Some(silent) = nbt.byte("Silent") {
+        if let Some(silent) = nbt.byte_value("Silent") {
             save_data.silent = silent != 0;
         }
-        if let Some(glowing) = nbt.byte("Glowing") {
+        if let Some(glowing) = nbt.byte_value("Glowing") {
             save_data.glowing = glowing != 0;
         }
         if let Some(tags) = nbt.list("Tags").and_then(|list| list.strings()) {
@@ -3988,13 +4030,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
         self.base().replace_save_data(save_data);
 
-        if let Some(remaining_fire_ticks) = read_int("Fire") {
-            self.set_remaining_fire_ticks(remaining_fire_ticks);
+        if let Some(remaining_fire_ticks) = nbt.short_value("Fire") {
+            self.set_remaining_fire_ticks(i32::from(remaining_fire_ticks));
         }
-        if let Some(ticks_frozen) = read_int("TicksFrozen") {
+        if let Some(ticks_frozen) = nbt.int_value("TicksFrozen") {
             self.set_ticks_frozen(ticks_frozen);
         }
-        if let Some(has_visual_fire) = nbt.byte("HasVisualFire") {
+        if let Some(has_visual_fire) = nbt.byte_value("HasVisualFire") {
             self.base().set_visual_fire(has_visual_fire != 0);
         }
 
