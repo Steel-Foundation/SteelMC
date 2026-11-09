@@ -284,16 +284,13 @@ pub fn main() {
 
     for (content, file_name) in vanilla_builds {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
-        // Parse the tokens directly instead of printing them to a string and parsing that again.
-        #[cfg(feature = "fmt")]
+        // rustc is slow on very long lines, so add a line break after every `,` and `;`.
+        // This keeps the same tokens and is much cheaper than parsing and formatting the code.
         let content = {
-            let syntax: syn::File = syn::parse2(content).unwrap_or_else(|error| {
-                panic!("Failed to parse generated file {}: {error}", path.display())
-            });
-            prettyplease::unparse(&syntax)
+            let mut out = String::new();
+            print_with_breaks(content, &mut out);
+            out
         };
-        #[cfg(not(feature = "fmt"))]
-        let content = content.to_string();
         generated_files.push(path.clone());
 
         // Only write if content changed
@@ -311,6 +308,41 @@ pub fn main() {
             let path = entry.path();
             if !generated_files.contains(&path) {
                 let _ = fs::remove_file(&path);
+            }
+        }
+    }
+}
+
+/// Writes tokens like `TokenStream::to_string()`, plus a line break after every `,` and `;`.
+fn print_with_breaks(ts: proc_macro2::TokenStream, out: &mut String) {
+    use proc_macro2::{Delimiter, Spacing, TokenTree};
+    for tt in ts {
+        match tt {
+            TokenTree::Group(g) => {
+                let (open, close) = match g.delimiter() {
+                    Delimiter::Parenthesis => ("(", ")"),
+                    Delimiter::Brace => ("{", "}"),
+                    Delimiter::Bracket => ("[", "]"),
+                    Delimiter::None => ("", ""),
+                };
+                out.push_str(open);
+                print_with_breaks(g.stream(), out);
+                out.push_str(close);
+                out.push(' ');
+            }
+            TokenTree::Punct(p) => {
+                out.push(p.as_char());
+                if p.spacing() == Spacing::Alone {
+                    out.push(if matches!(p.as_char(), ',' | ';') {
+                        '\n'
+                    } else {
+                        ' '
+                    });
+                }
+            }
+            other => {
+                out.push_str(&other.to_string());
+                out.push(' ');
             }
         }
     }
