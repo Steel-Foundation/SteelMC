@@ -25,7 +25,7 @@ use crate::command::brigadier::{
     ArgumentSuggestionContext, CommandContext, CommandNodeBuilder, CommandRedirectTarget,
     CommandRuntime, CommandSyntaxError, ContextChain,
 };
-use crate::command::execution::argument::{AdvancementValue, DamageTypeValue};
+use crate::command::execution::argument::{AdvancementValue, DamageTypeValue, MessageValue};
 use crate::command::incorrectly_typed_argument;
 use crate::{
     chunk::heightmap::HeightmapType,

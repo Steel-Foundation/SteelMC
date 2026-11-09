@@ -21,7 +21,7 @@ use steel_protocol::packets::game::{
     SSpectatorAction, SUseItem, SUseItemOn,
 };
 
-use crate::command::{handle_client_request, sender::CommandSender};
+use crate::command::handle_client_request;
 use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerSession};
 use crate::server::Server;

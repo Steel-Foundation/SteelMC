@@ -2404,6 +2404,7 @@ impl TwoDomains<'_> {
         CommandSource::new(
             CommandSender::Player(Arc::clone(player)),
             Arc::clone(&self.server),
+            None,
         )
     }
 
