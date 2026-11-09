@@ -284,8 +284,17 @@ pub fn main() {
 
     for (content, file_name) in vanilla_builds {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
-        // rustc is slow on very long lines, so add a line break after every `,` and `;`.
-        // This keeps the same tokens and is much cheaper than parsing and formatting the code.
+        // With `fmt`, format the code with prettyplease so it is easy to read.
+        #[cfg(feature = "fmt")]
+        let content = {
+            let syntax: syn::File = syn::parse2(content).unwrap_or_else(|error| {
+                panic!("Failed to parse generated file {}: {error}", path.display())
+            });
+            prettyplease::unparse(&syntax)
+        };
+        // Without `fmt`, add a line break after every `,` and `;`, because rustc is slow on very
+        // long lines. This keeps the same tokens and is much cheaper than formatting the code.
+        #[cfg(not(feature = "fmt"))]
         let content = {
             let mut out = String::new();
             print_with_breaks(content, &mut out);
@@ -314,6 +323,7 @@ pub fn main() {
 }
 
 /// Writes tokens like `TokenStream::to_string()`, plus a line break after every `,` and `;`.
+#[cfg(not(feature = "fmt"))]
 fn print_with_breaks(ts: proc_macro2::TokenStream, out: &mut String) {
     use proc_macro2::{Delimiter, Spacing, TokenTree};
     for tt in ts {

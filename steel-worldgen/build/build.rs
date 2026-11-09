@@ -58,13 +58,54 @@ fn write_if_changed(path: &Path, tokens: proc_macro2::TokenStream) {
         });
         prettyplease::unparse(&syntax)
     };
+    // Without `fmt`, add line breaks, because rustc is slow on very long lines.
     #[cfg(not(feature = "fmt"))]
-    let content = tokens.to_string();
+    let content = {
+        let mut out = String::new();
+        print_with_breaks(tokens, &mut out);
+        out
+    };
     if fs::read_to_string(path).is_ok_and(|existing| existing == content) {
         return;
     }
 
     if let Err(error) = fs::write(path, content) {
         panic!("Failed to write {}: {error}", path.display());
+    }
+}
+
+/// Writes tokens like `TokenStream::to_string()`, plus a line break after every `,` and `;`.
+#[cfg(not(feature = "fmt"))]
+fn print_with_breaks(ts: proc_macro2::TokenStream, out: &mut String) {
+    use proc_macro2::{Delimiter, Spacing, TokenTree};
+    for tt in ts {
+        match tt {
+            TokenTree::Group(g) => {
+                let (open, close) = match g.delimiter() {
+                    Delimiter::Parenthesis => ("(", ")"),
+                    Delimiter::Brace => ("{", "}"),
+                    Delimiter::Bracket => ("[", "]"),
+                    Delimiter::None => ("", ""),
+                };
+                out.push_str(open);
+                print_with_breaks(g.stream(), out);
+                out.push_str(close);
+                out.push(' ');
+            }
+            TokenTree::Punct(p) => {
+                out.push(p.as_char());
+                if p.spacing() == Spacing::Alone {
+                    out.push(if matches!(p.as_char(), ',' | ';') {
+                        '\n'
+                    } else {
+                        ' '
+                    });
+                }
+            }
+            other => {
+                out.push_str(&other.to_string());
+                out.push(' ');
+            }
+        }
     }
 }
