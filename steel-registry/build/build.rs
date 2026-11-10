@@ -26,6 +26,10 @@
 
 use std::{env, fs, path::Path};
 
+#[path = "../../build/codegen.rs"]
+mod codegen;
+use codegen::write_tokens_if_changed;
+
 /// Structure-processor codec types, shared by `structure::processors` and
 /// `features` (inline `TemplateFeature` processors). Deserialize derives
 /// live in `src/`, so build script and library use the same file.
@@ -184,6 +188,7 @@ const SUSPICIOUS_STEW_EFFECTS: &str = "suspicious_stew_effects";
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
     println!("cargo:rerun-if-changed=build/");
+    println!("cargo:rerun-if-changed=../build/codegen.rs");
 
     // Use CARGO_MANIFEST_DIR to get the absolute path to the crate directory
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -284,23 +289,8 @@ pub fn main() {
 
     for (content, file_name) in vanilla_builds {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
-        let content = content.to_string();
-        #[cfg(feature = "fmt")]
-        let content = {
-            let syntax = syn::parse_file(&content).unwrap_or_else(|error| {
-                panic!("Failed to parse generated file {}: {error}", path.display())
-            });
-            prettyplease::unparse(&syntax)
-        };
-        generated_files.push(path.clone());
-
-        // Only write if content changed
-        if let Ok(existing) = fs::read_to_string(&path)
-            && existing == content
-        {
-            continue;
-        }
-        fs::write(&path, content).unwrap();
+        write_tokens_if_changed(&path, content);
+        generated_files.push(path);
     }
 
     // Remove any stale files not generated this run
