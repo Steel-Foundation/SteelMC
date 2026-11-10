@@ -4,7 +4,6 @@ use std::{iter, path::Path};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_registry::REGISTRY;
-use steel_registry::biome::BiomeRef;
 use steel_registry::structure::StructureRef;
 use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_registry::vanilla_template_pools::{vanilla_template_pools, vanilla_templates};
@@ -117,6 +116,7 @@ impl StructureBiomeProvider for BiomeSourceKind {
                 format!("multi_noise/minecraft:the_nether/{}", source.seed())
             }
             Self::End(source) => format!("minecraft:the_end/{}", source.seed()),
+            Self::Fixed(source) => format!("minecraft:fixed/{}", source.biome().key),
         };
         Some(key)
     }
@@ -137,57 +137,6 @@ impl StructureBiomeProvider for BiomeSourceKind {
             &|biome| allowed(&biome.key),
             rng,
         )
-    }
-}
-
-/// Fixed-biome provider used by flat generation settings.
-pub struct FixedStructureBiomeProvider {
-    biome: BiomeRef,
-}
-
-impl FixedStructureBiomeProvider {
-    /// Creates a fixed-biome provider.
-    #[must_use]
-    pub const fn new(biome: BiomeRef) -> Self {
-        Self { biome }
-    }
-}
-
-impl StructureBiomeProvider for FixedStructureBiomeProvider {
-    fn possible_biomes(&self) -> FxHashSet<Identifier> {
-        FxHashSet::from_iter([self.biome.key.clone()])
-    }
-
-    fn ring_position_cache_key(&self) -> Option<String> {
-        Some(format!("fixed/{}", self.biome.key))
-    }
-
-    fn find_biome_horizontal(
-        &self,
-        origin_x: i32,
-        origin_z: i32,
-        search_radius: i32,
-        allowed: &dyn Fn(&Identifier) -> bool,
-        rng: &mut LegacyRandom,
-    ) -> Option<(i32, i32)> {
-        if !allowed(&self.biome.key) {
-            return None;
-        }
-
-        let noise_center_x = origin_x >> 2;
-        let noise_center_z = origin_z >> 2;
-        let noise_radius = search_radius >> 2;
-        let mut result = None;
-        let mut found = 0;
-        for z in -noise_radius..=noise_radius {
-            for x in -noise_radius..=noise_radius {
-                if result.is_none() || rng.next_i32_bounded(found + 1) == 0 {
-                    result = Some(((noise_center_x + x) << 2, (noise_center_z + z) << 2));
-                }
-                found += 1;
-            }
-        }
-        result
     }
 }
 
@@ -1157,7 +1106,7 @@ mod tests {
 
     fn vanilla_assets_cover_vanilla_structure_sets_inner() {
         init_vanilla_registry();
-        let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
+        let biome_provider = BiomeSourceKind::fixed(&vanilla_biomes::PLAINS);
         let thread_pool = rayon::ThreadPoolBuilder::default()
             .build()
             .expect("Couldn't create a new thread pool.");
@@ -1192,7 +1141,7 @@ mod tests {
     fn ring_cache_keys_entries_by_placement_inputs_inner() {
         init_vanilla_registry();
         let world_dir = temp_world_dir("placement-inputs");
-        let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
+        let biome_provider = BiomeSourceKind::fixed(&vanilla_biomes::PLAINS);
         let thread_pool = rayon::ThreadPoolBuilder::new()
             .num_threads(2)
             .build()
@@ -1280,7 +1229,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "non-positive spacing")]
     fn constructor_rejects_invalid_random_spread_spacing() {
-        let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
+        let biome_provider = BiomeSourceKind::fixed(&vanilla_biomes::PLAINS);
         let sets = vec![(
             Identifier::new("test", "invalid"),
             StructureSet {
