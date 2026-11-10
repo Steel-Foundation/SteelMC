@@ -459,18 +459,11 @@ impl ChunkMap {
         }
     }
 
-    /// The gate in which `step` must reserve its window before running, if any.
+    /// The gate `step` must reserve its window in before running, if any.
     ///
-    /// Light worksets write light across their whole cache window. Steps that write blocks
-    /// into neighboring chunks (features) run one at a time in vanilla, on its `worldgen`
-    /// `ConsecutiveExecutor`; Steel runs them in parallel, so ones whose windows overlap are
-    /// serialized here and the rest still run concurrently.
-    ///
-    /// Features can also update a structure start owned by a chunk up to 8 chunks away, which
-    /// chunks with disjoint windows may do in either order. That stays serializable because a
-    /// piece whose placement depends on which chunk places it first is small enough that every
-    /// chunk placing it overlaps the others' windows; structure placement checks this in debug
-    /// builds.
+    /// Light worksets write across their cache window, and feature steps write into neighboring
+    /// chunks. Vanilla runs features one at a time; Steel runs them in parallel and serializes
+    /// only steps whose windows overlap.
     pub fn window_gate_for_step(&self, step: &ChunkStep) -> Option<Arc<ChunkWindowGate>> {
         if step.target_status == ChunkStatus::Light {
             return Some(Arc::clone(&self.light_work_window_gate));
