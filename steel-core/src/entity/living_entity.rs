@@ -1,5 +1,5 @@
 use crate::loot::LOOT_TABLES;
-use steel_math::{DEGREE_90, trig};
+use steel_math::{DEGREE_90, java_round_f32, trig};
 use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
 use steel_registry::entity_variant::MooshroomVariant;
 use steel_registry::stat::vanilla_stat_types;
@@ -819,7 +819,7 @@ pub trait LivingEntity: Entity {
             damage = (damage * absorb as f32 / 25.0).max(0.0);
             let damage_resisted = old_damage - damage;
             if (0.0..f32::MAX).contains(&damage_resisted) {
-                let stats_to_award = (damage_resisted * 10.0).round() as i32;
+                let stats_to_award = java_round_f32(damage_resisted * 10.0);
                 if let Some(player) = self.as_player() {
                     player.award_custom_stat_with_count(
                         &vanilla_custom_stats::DAMAGE_RESISTED,
@@ -869,7 +869,7 @@ pub trait LivingEntity: Entity {
         {
             player.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_DEALT_ABSORBED,
-                (absorbed_damage * 10.0).round() as i32,
+                java_round_f32(absorbed_damage * 10.0),
             );
         }
 

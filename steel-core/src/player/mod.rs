@@ -59,7 +59,7 @@ use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
-use steel_math::RAD_TO_DEG_F64;
+use steel_math::{RAD_TO_DEG_F64, java_round_f32, java_round_f64};
 use steel_protocol::packets::game::{
     CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CRespawn,
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
@@ -867,7 +867,7 @@ impl Player {
         if (0.0..f32::MAX).contains(&absorbed_damage) {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_ABSORBED,
-                (absorbed_damage * 10.0).round() as i32,
+                java_round_f32(absorbed_damage * 10.0),
             );
         }
 
@@ -878,7 +878,7 @@ impl Player {
             if damage < f32::MAX {
                 self.award_custom_stat_with_count(
                     &vanilla_custom_stats::DAMAGE_TAKEN,
-                    (damage * 10.0).round() as i32,
+                    java_round_f32(damage * 10.0),
                 );
             }
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
@@ -1567,7 +1567,7 @@ impl Entity for Player {
         if fall_distance >= 2.0 {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::FALL_ONE_CM,
-                (fall_distance * 100.0).round() as i32,
+                java_round_f64(fall_distance * 100.0) as i32,
             );
         }
 

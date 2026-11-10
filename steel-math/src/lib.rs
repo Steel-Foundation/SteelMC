@@ -5,6 +5,7 @@
 pub mod angle;
 /// Math utilities used by vanilla world generation noise.
 mod noise_math;
+mod rounding;
 pub mod trig;
 
 pub use crate::angle::{
@@ -12,3 +13,4 @@ pub use crate::angle::{
     RAD_TO_DEG_F64, convert_to_rotation_segment, wrap_degrees,
 };
 pub use crate::noise_math::*;
+pub use crate::rounding::{java_round_f32, java_round_f64};

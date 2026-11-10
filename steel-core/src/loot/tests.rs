@@ -468,18 +468,3 @@ fn missing_enchantment_component_skips_provider_and_component_creation() {
     assert!(!items[0].has(ENCHANTMENTS));
     assert_eq!(rng.next_i64(), random(12345).next_i64());
 }
-
-#[test]
-fn count_rounding_matches_java_at_half_boundaries_and_nonfinite_values() {
-    for (value, expected) in [
-        (f32::from_bits(0x3eff_ffff), 0),
-        (0.5, 1),
-        (-0.5, 0),
-        (-1.5, -1),
-        (f32::NAN, 0),
-        (f32::INFINITY, i32::MAX),
-        (f32::NEG_INFINITY, i32::MIN),
-    ] {
-        assert_eq!(modifiers::round_count(value), expected);
-    }
-}

@@ -79,9 +79,3 @@ pub(super) fn uniform_bonus(
     let bonus = random.next_i32_bounded(multiplier * level + 1);
     item.set_count(item.count().wrapping_add(bonus));
 }
-
-// Widen before adding the half: an f32 addition would round the value directly
-// below 0.5 up to 1.0. Java rounds negative ties toward positive infinity.
-pub(super) fn round_count(value: f32) -> i32 {
-    (f64::from(value) + 0.5).floor() as i32
-}

@@ -12,7 +12,7 @@ use super::{
 
 use crate::player::food_data::food_constants;
 use std::ops::Add;
-use steel_math::trig;
+use steel_math::{java_round_f32, trig};
 use steel_registry::particle_type::ParticleData;
 use steel_registry::{vanilla_custom_stats, vanilla_particle_types};
 
@@ -708,7 +708,7 @@ impl Player {
             let actual_damage = old_entity_living_health - entity.get_health();
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_DEALT,
-                (actual_damage * 10.0).round() as i32,
+                java_round_f32(actual_damage * 10.0),
             );
 
             let count = (actual_damage * 0.5).round() as i32;
