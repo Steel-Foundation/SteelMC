@@ -48,7 +48,10 @@ steel_registry::impl_registry_ext!(LootTableRegistry, LootTable, tables_by_id, t
 
 #[cfg(test)]
 mod tests {
-    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use std::{
+        panic::{AssertUnwindSafe, catch_unwind},
+        ptr,
+    };
 
     use super::*;
 
@@ -72,10 +75,15 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(registry.len(), 1);
         assert_eq!(registry.id_from_key(&ORIGINAL.key), Some(id));
-        assert!(std::ptr::eq(registry.by_id(id).unwrap(), &ORIGINAL));
-        assert!(std::ptr::eq(
-            registry.by_key(&ORIGINAL.key).unwrap(),
-            &ORIGINAL
-        ));
+        assert!(
+            registry
+                .by_id(id)
+                .is_some_and(|table| ptr::eq(table, &raw const ORIGINAL))
+        );
+        assert!(
+            registry
+                .by_key(&ORIGINAL.key)
+                .is_some_and(|table| ptr::eq(table, &raw const ORIGINAL))
+        );
     }
 }
