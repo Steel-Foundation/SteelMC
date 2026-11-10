@@ -84,7 +84,6 @@ impl NoiseSpawnTarget for OverworldNoises {
     fn initial_spawn_search_origin(biome_source: &BiomeSourceKind, seed: u64) -> BlockPos {
         match biome_source {
             BiomeSourceKind::Overworld(source) => source.climate_sampler().find_spawn_position(),
-            // A fixed source has no climate sampler of its own.
             _ => OverworldClimateSampler::new(seed).find_spawn_position(),
         }
     }
