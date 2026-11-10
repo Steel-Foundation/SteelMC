@@ -93,6 +93,8 @@ const MAX_SCHEDULED_TICKS_PER_TICK: usize = 65_536;
 /// Squared block distance from a chunk center within which a non-spectator
 /// player makes that chunk a natural-spawn candidate.
 const SPAWN_CANDIDATE_PLAYER_DISTANCE_SQUARED: f64 = 16_384.0;
+/// Chunk radius around a player tracked by vanilla's natural-spawn counter.
+const NATURAL_SPAWN_CHUNK_RADIUS: i32 = 8;
 
 /// Lifetime, in ticks, of a thrown ender pearl's chunk ticket (vanilla
 /// `TicketType.ENDER_PEARL` timeout). The pearl refreshes it every
@@ -875,10 +877,21 @@ impl ChunkMap {
             return;
         }
 
-        self.chunks.iter_sync(|pos, holder| {
-            if !holder.load_level().is_some_and(is_full) {
-                return true;
+        let mut candidate_chunks = FxHashSet::default();
+        for position in &player_positions {
+            let player_chunk = ChunkPos::from_entity_pos(*position);
+            for x in (player_chunk.0.x - NATURAL_SPAWN_CHUNK_RADIUS)
+                ..=(player_chunk.0.x + NATURAL_SPAWN_CHUNK_RADIUS)
+            {
+                for z in (player_chunk.0.y - NATURAL_SPAWN_CHUNK_RADIUS)
+                    ..=(player_chunk.0.y + NATURAL_SPAWN_CHUNK_RADIUS)
+                {
+                    candidate_chunks.insert(ChunkPos::new(x, z));
+                }
             }
+        }
+
+        for pos in candidate_chunks {
             let center_x = f64::from(pos.0.x * 16 + 8);
             let center_z = f64::from(pos.0.y * 16 + 8);
             let is_spawn_candidate = player_positions.iter().any(|position| {
@@ -886,11 +899,22 @@ impl ChunkMap {
                 let delta_z = center_z - position.z;
                 delta_x * delta_x + delta_z * delta_z < SPAWN_CANDIDATE_PLAYER_DISTANCE_SQUARED
             });
-            if is_spawn_candidate && let Some(chunk) = holder.try_full_chunk() {
+            if !is_spawn_candidate {
+                continue;
+            }
+
+            let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder)) else {
+                continue;
+            };
+            if !is_block_ticking(holder.load_level())
+                || !holder.ticking_readiness_snapshot().is_block_ticking()
+            {
+                continue;
+            }
+            if let Some(chunk) = holder.try_full_chunk() {
                 chunk.common().increment_inhabited_time();
             }
-            true
-        });
+        }
     }
 
     /// Processes chunk updates, ticks chunks, and executes ready scheduled ticks.
