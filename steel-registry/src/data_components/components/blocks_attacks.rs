@@ -4,7 +4,8 @@ use std::io::{Cursor, Error, Result, Write};
 
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
-use steel_math::{DEGREE_90, round_f32};
+use steel_math::{DEG_TO_RAD, DEGREE_90, clamp_f32, round_f32};
+use steel_utils::TICKS_PER_SECOND;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
@@ -77,8 +78,7 @@ impl DamageReduction {
     /// arriving `angle` radians away from the blocker's horizontal view.
     #[must_use]
     pub fn resolve(&self, damage_type: &'static DamageType, dealt_damage: f32, angle: f64) -> f32 {
-        // Vanilla multiplies by `(float) (Math.PI / 180.0)`, not `Mth.DEG_TO_RAD`.
-        let max_angle = (std::f64::consts::PI / 180.0) as f32 * self.horizontal_blocking_angle;
+        let max_angle = DEG_TO_RAD * self.horizontal_blocking_angle;
         if angle > f64::from(max_angle) {
             return 0.0;
         }
@@ -89,7 +89,7 @@ impl DamageReduction {
         {
             return 0.0;
         }
-        mth_clamp(self.base + self.factor * dealt_damage, 0.0, dealt_damage)
+        clamp_f32(self.base + self.factor * dealt_damage, 0.0, dealt_damage)
     }
 
     fn to_nbt_compound(&self) -> NbtCompound {
@@ -399,7 +399,7 @@ impl BlocksAttacks {
     /// Returns ticks of active use required before this item starts blocking.
     #[must_use]
     pub const fn block_delay_ticks(&self) -> i32 {
-        round_f32(self.block_delay_seconds * 20.0)
+        round_f32(self.block_delay_seconds * TICKS_PER_SECOND as f32)
     }
 
     /// Returns the cooldown applied when an attack disables blocking for
@@ -408,7 +408,7 @@ impl BlocksAttacks {
     pub const fn disable_blocking_for_ticks(&self, base_seconds: f32) -> i32 {
         let seconds = base_seconds * self.disable_cooldown_scale;
         if seconds > 0.0 {
-            round_f32(seconds * 20.0)
+            round_f32(seconds * TICKS_PER_SECOND as f32)
         } else {
             0
         }
@@ -435,7 +435,7 @@ impl BlocksAttacks {
             .iter()
             .map(|reduction| reduction.resolve(damage_type, dealt_damage, angle))
             .fold(0.0, |total, blocked| total + blocked);
-        mth_clamp(blocked_damage, 0.0, dealt_damage)
+        clamp_f32(blocked_damage, 0.0, dealt_damage)
     }
 
     fn to_nbt_tag_ref(&self) -> NbtTag {
@@ -650,17 +650,6 @@ impl HashComponent for DamageReductionList<'_> {
             hasher.put_component_hash(reduction);
         }
         hasher.end_list();
-    }
-}
-
-/// Java `Mth.clamp(float, float, float)`, which propagates NaN through `Math.min`.
-fn mth_clamp(value: f32, min: f32, max: f32) -> f32 {
-    if value < min {
-        min
-    } else if value <= max || value.is_nan() {
-        value
-    } else {
-        max
     }
 }
 
