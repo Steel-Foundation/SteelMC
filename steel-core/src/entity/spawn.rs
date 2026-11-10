@@ -4,7 +4,7 @@ use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound, NbtCompound as BorrowedNbtCompoundView, read_compound};
 use simdnbt::owned::NbtCompound;
 use steel_math::{DEGREE_360, wrap_degrees};
-use steel_registry::data_components::vanilla_components::{CUSTOM_DATA, CUSTOM_NAME, ENTITY_DATA};
+use steel_registry::data_components::vanilla_components::ENTITY_DATA;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -328,24 +328,15 @@ fn load_entity_save_data(nbt: &BorrowedNbtCompoundView<'_, '_>) -> EntityBaseSav
 
 /// Applies the implicit entity data carried by an item stack.
 pub(crate) fn apply_implicit_item_stack_components(entity: &SharedEntity, item_stack: &ItemStack) {
-    entity.apply_implicit_item_components(item_stack);
-
-    if let Some(custom_name) = item_stack.get(CUSTOM_NAME) {
-        entity.set_custom_name(Some(custom_name.clone()));
-    }
-
-    if let Some(custom_data) = item_stack.get(CUSTOM_DATA) {
-        entity.set_custom_data(custom_data.copy_tag());
-    }
+    entity.apply_components_from_item_stack(item_stack);
 }
-
 /// Applies all entity data carried by an item stack during a normal item spawn.
 pub(crate) fn apply_item_stack_components(
     entity: &SharedEntity,
     item_stack: &ItemStack,
     user_is_operator: bool,
 ) -> Result<(), EntitySpawnError> {
-    apply_implicit_item_stack_components(entity, item_stack);
+    entity.apply_components_from_item_stack(item_stack);
 
     let Some(entity_data) = item_stack.get(ENTITY_DATA) else {
         return Ok(());

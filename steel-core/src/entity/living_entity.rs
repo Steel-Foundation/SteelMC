@@ -2971,6 +2971,19 @@ pub trait LivingEntity: Entity {
         None
     }
 
+    /// Returns the number of arrows stuck in this entity.
+    fn arrow_count(&self) -> i32 {
+        self.living_synced_data()
+            .map_or(0, LivingEntitySyncedData::arrow_count)
+    }
+
+    /// Sets the number of arrows stuck in this entity.
+    fn set_arrow_count(&self, arrow_count: i32) {
+        if let Some(data) = self.living_synced_data() {
+            data.set_arrow_count(arrow_count);
+        }
+    }
+
     /// Starts sleeping at the given bed position.
     fn start_sleeping(&self, bed_position: BlockPos) -> Result<(), EntityMoveError> {
         let Some(world) = self.level() else {
