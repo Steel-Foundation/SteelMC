@@ -6,7 +6,7 @@ use super::{
     EnchantmentPostAttackContext, Entity, EntityTypeRef, GameType, ITEM_BEHAVIORS, InteractionHand,
     InteractionResult, InventoryAccess, ItemStack, LivingEntity, PiercingWeapon, Player, SAttack,
     SInteract, SharedEntity, SoundEventHolder, SoundEventRef, TextComponent, TranslatedMessage,
-    World, WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes,
+    World, WorldAabb, enchantment_helper, piercing_ray_hit_t, sound_events, vanilla_attributes,
     vanilla_damage_types, vanilla_entities,
 };
 
@@ -15,6 +15,9 @@ use std::ops::Add;
 use steel_math::trig;
 use steel_registry::particle_type::ParticleData;
 use steel_registry::{vanilla_custom_stats, vanilla_particle_types};
+
+/// An attack only counts as full strength once the attack strength scale exceeds this.
+const FULL_ATTACK_STRENGTH_SCALE_THRESHOLD: f32 = 0.9;
 
 const fn sound_holder_ref(holder: &SoundEventHolder) -> Option<SoundEventRef> {
     match holder {
@@ -385,6 +388,12 @@ impl Player {
         self.play_sound(sound, 1.0, 1.0);
     }
 
+    fn play_attack_sound(&self, sound: SoundEventRef) {
+        if let Some(world) = self.level() {
+            world.play_sound_at(sound, self.sound_source(), self.position(), 1.0, 1.0, None);
+        }
+    }
+
     fn cannot_attack(self: &Arc<Self>, entity: &dyn Entity) -> bool {
         !entity.attackable()
             || entity.skip_attack_interaction(&(Arc::clone(self) as Arc<dyn Entity>))
@@ -427,30 +436,36 @@ impl Player {
             enchantment_helper::modify_damage(&attacking_item, &enchantment_context, attack_damage);
         let magic_boost = attack_strength_scale * (enchanted_damage - attack_damage);
         let mut base_damage = attack_damage * Self::base_damage_scale_factor(attack_strength_scale);
+        self.reset_attack_strength_ticker();
+
+        if base_damage <= 0.0 && magic_boost <= 0.0 {
+            // Vanilla still runs post-piercing attack effects when no damage is dealt.
+            let world = self.get_world();
+            enchantment_helper::do_post_piercing_attack_effects(&world, self.as_ref());
+            return false;
+        }
+
+        let full_strength_attack = attack_strength_scale > FULL_ATTACK_STRENGTH_SCALE_THRESHOLD;
+        let knockback_attack = self.is_sprinting() && full_strength_attack;
+        if knockback_attack {
+            self.play_attack_sound(&sound_events::ENTITY_PLAYER_ATTACK_KNOCKBACK);
+        }
         base_damage += ITEM_BEHAVIORS
             .get_behavior(attacking_item.item())
             .get_attack_damage_bonus(self.as_ref(), entity, base_damage, &damage_source);
         let total_damage = base_damage + magic_boost;
-        let full_strength_attack = attack_strength_scale > 0.9;
-        let knockback_attack = self.is_sprinting() && full_strength_attack;
-        self.reset_attack_strength_ticker();
-
-        if total_damage <= 0.0 {
-            return false;
-        }
 
         let old_entity_living_health = entity
             .as_living_entity()
             .map_or(0.0, LivingEntity::get_health);
 
-        // TODO: Apply crits, sweep attacks, and sounds.
+        // TODO: Apply crits and sweep attacks.
         let old_movement = entity.velocity();
         let Some(target_world) = entity.level() else {
             return false;
         };
         let was_hurt = entity.hurt(&target_world, &damage_source, total_damage);
         if was_hurt {
-            self.set_last_hurt_mob(Some(target));
             let sprint_knockback = if knockback_attack { 0.5 } else { 0.0 };
             self.cause_extra_knockback(
                 entity,
@@ -458,9 +473,17 @@ impl Player {
                     + sprint_knockback,
                 old_movement,
             );
+            if full_strength_attack {
+                self.play_attack_sound(&sound_events::ENTITY_PLAYER_ATTACK_STRONG);
+            } else {
+                self.play_attack_sound(&sound_events::ENTITY_PLAYER_ATTACK_WEAK);
+            }
+            self.set_last_hurt_mob(Some(target));
             self.item_attack_interaction(target, &damage_source, true);
             self.damage_stats_and_hearts(entity, old_entity_living_health);
             self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
+        } else {
+            self.play_attack_sound(&sound_events::ENTITY_PLAYER_ATTACK_NODAMAGE);
         }
 
         let world = self.get_world();
