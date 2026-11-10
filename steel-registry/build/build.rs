@@ -26,6 +26,10 @@
 
 use std::{env, fs, path::Path};
 
+#[path = "../../build/codegen.rs"]
+mod codegen;
+use codegen::write_tokens_if_changed;
+
 /// Structure-processor codec types, shared by `structure::processors` and
 /// `features` (inline `TemplateFeature` processors). Deserialize derives
 /// live in `src/`, so build script and library use the same file.
@@ -184,6 +188,7 @@ const SUSPICIOUS_STEW_EFFECTS: &str = "suspicious_stew_effects";
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
     println!("cargo:rerun-if-changed=build/");
+    println!("cargo:rerun-if-changed=../build/codegen.rs");
 
     // Use CARGO_MANIFEST_DIR to get the absolute path to the crate directory
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -284,31 +289,8 @@ pub fn main() {
 
     for (content, file_name) in vanilla_builds {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
-        // With `fmt`, format the code with prettyplease so it is easy to read.
-        #[cfg(feature = "fmt")]
-        let content = {
-            let syntax: syn::File = syn::parse2(content).unwrap_or_else(|error| {
-                panic!("Failed to parse generated file {}: {error}", path.display())
-            });
-            prettyplease::unparse(&syntax)
-        };
-        // Without `fmt`, add a line break after every `,` and `;`, because rustc is slow on very
-        // long lines. This keeps the same tokens and is much cheaper than formatting the code.
-        #[cfg(not(feature = "fmt"))]
-        let content = {
-            let mut out = String::new();
-            print_with_breaks(content, &mut out);
-            out
-        };
-        generated_files.push(path.clone());
-
-        // Only write if content changed
-        if let Ok(existing) = fs::read_to_string(&path)
-            && existing == content
-        {
-            continue;
-        }
-        fs::write(&path, content).unwrap();
+        write_tokens_if_changed(&path, content);
+        generated_files.push(path);
     }
 
     // Remove any stale files not generated this run
@@ -317,42 +299,6 @@ pub fn main() {
             let path = entry.path();
             if !generated_files.contains(&path) {
                 let _ = fs::remove_file(&path);
-            }
-        }
-    }
-}
-
-/// Writes tokens like `TokenStream::to_string()`, plus a line break after every `,` and `;`.
-#[cfg(not(feature = "fmt"))]
-fn print_with_breaks(ts: proc_macro2::TokenStream, out: &mut String) {
-    use proc_macro2::{Delimiter, Spacing, TokenTree};
-    for tt in ts {
-        match tt {
-            TokenTree::Group(g) => {
-                let (open, close) = match g.delimiter() {
-                    Delimiter::Parenthesis => ("(", ")"),
-                    Delimiter::Brace => ("{", "}"),
-                    Delimiter::Bracket => ("[", "]"),
-                    Delimiter::None => ("", ""),
-                };
-                out.push_str(open);
-                print_with_breaks(g.stream(), out);
-                out.push_str(close);
-                out.push(' ');
-            }
-            TokenTree::Punct(p) => {
-                out.push(p.as_char());
-                if p.spacing() == Spacing::Alone {
-                    out.push(if matches!(p.as_char(), ',' | ';') {
-                        '\n'
-                    } else {
-                        ' '
-                    });
-                }
-            }
-            other => {
-                out.push_str(&other.to_string());
-                out.push(' ');
             }
         }
     }
