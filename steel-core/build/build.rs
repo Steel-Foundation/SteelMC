@@ -8,6 +8,7 @@ use heck::ToShoutySnakeCase;
 use proc_macro2::Span;
 use serde::Deserialize;
 use std::{env, fs, path::Path, process::Command};
+use steel_utils as _;
 use syn::Ident;
 
 mod blocks;
