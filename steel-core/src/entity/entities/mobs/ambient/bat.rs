@@ -4,6 +4,7 @@ use std::f32::consts::PI;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
+use rand::{Rng, RngExt as _};
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
@@ -11,19 +12,23 @@ use steel_math::wrap_degrees;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::BatEntityData;
 use steel_registry::{level_events, sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
+use crate::chunk::heightmap::HeightmapType;
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose, EntitySyncedData,
-    LivingEntity, LivingEntityBase, LivingTravelInput, Mob, MobBase, SharedEntity,
+    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose,
+    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, LivingTravelInput, Mob,
+    MobBase, SharedEntity, SpawnRule,
 };
 use crate::physics::MoveResult;
-use crate::world::{World, is_redstone_conductor};
+use crate::world::{LevelReader, World, is_redstone_conductor};
 
 const FLAG_RESTING: i8 = 1;
 const BAT_RESTING_TARGETING_RANGE: f64 = 4.0;
@@ -51,7 +56,7 @@ const FLIGHT_FORWARD_INPUT: f32 = 0.5;
 const AIRBORNE_Y_DRAG: f64 = 0.6;
 
 /// Vanilla bat entity.
-#[entity_behavior(class = "Bat")]
+#[entity_behavior(class = "Bat", spawn_rule)]
 pub struct BatEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -67,6 +72,30 @@ unsafe impl DowncastType for BatEntity {
 }
 
 impl BatEntity {
+    pub(crate) const SPAWN_RULE: SpawnRule = Self::check_bat_spawn_rules;
+
+    /// Bats spawn below the world surface in dark places on `bats_spawnable_on` blocks.
+    pub(crate) fn check_bat_spawn_rules(
+        entity_type: EntityTypeRef,
+        level: &dyn LevelReader,
+        spawn_reason: EntitySpawnReason,
+        pos: BlockPos,
+        random: &mut dyn Rng,
+    ) -> bool {
+        if pos.y() >= level.height_at(HeightmapType::WorldSurface, pos.x(), pos.z())
+            || random.random::<bool>()
+            || i32::from(level.max_local_raw_brightness(pos, level.sky_darkening()))
+                > random.random_range(0..4)
+        {
+            return false;
+        }
+        level
+            .get_block_state(pos.below())
+            .get_block()
+            .has_tag(&BlockTag::BATS_SPAWNABLE_ON)
+            && <Self as Mob>::check_mob_spawn_rules(entity_type, level, spawn_reason, pos)
+    }
+
     /// Creates a new bat at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
@@ -245,7 +274,17 @@ impl BatEntity {
     }
 }
 
+impl DefaultEntityPush for BatEntity {}
+
 impl Entity for BatEntity {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -352,7 +391,7 @@ impl Entity for BatEntity {
         self.entity_data
             .lock()
             .id_flags
-            .set(nbt.byte("BatFlags").unwrap_or(0));
+            .set(nbt.byte_value("BatFlags").unwrap_or(0));
     }
 }
 

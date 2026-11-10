@@ -8,12 +8,12 @@ use steel_registry::{
     data_components::vanilla_components::{CUSTOM_NAME, LOCK},
     equipment::EquipmentSlot,
     item_predicate::LockCode,
-    item_stack::ItemStack,
 };
 use steel_utils::locks::SyncRwLock;
 use text_components::TextComponent;
 
 use crate::{
+    block_entity::ImplicitComponentGetter,
     entity::{Entity as _, LivingEntity as _},
     item_predicate::registered_item_predicate_matches,
     player::Player,
@@ -72,10 +72,10 @@ impl ContainerProperties {
         }
     }
 
-    pub(crate) fn apply_components(&self, item: &ItemStack) {
+    pub(crate) fn apply_components(&self, components: &mut ImplicitComponentGetter<'_>) {
         *self.properties.write() = Arc::new(Properties {
-            name: item.get(CUSTOM_NAME).cloned(),
-            lock: item.get(LOCK).cloned().unwrap_or(LockCode::NO_LOCK),
+            name: components.get(CUSTOM_NAME),
+            lock: components.get_or_default(LOCK, LockCode::NO_LOCK),
         });
     }
 

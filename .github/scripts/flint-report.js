@@ -8,7 +8,7 @@ const IMPLEMENTED = "implemented.txt";
 const REGRESSIONS = "regressions.json";
 const MERGED_BASELINE = "flint_baseline.json";
 const REPORT_DIR = "report";
-const MARKER = "<!-- flint-report -->";
+const HEADING = "## Flint test report";
 
 const readJson = (path) => (fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, "utf8")) : null);
 const readLines = (path) =>
@@ -62,7 +62,7 @@ function newlyImplementedSection(summary, currentIds, baseIds) {
 }
 
 function buildReport({ summary, regressions, currentIds, baseIds, runUrl }) {
-  const lines = [MARKER, "## Flint test report", ""];
+  const lines = [HEADING, ""];
   if (!summary) {
     lines.push(
       `:x: No \`flint_summary.json\` produced — steel-flint likely failed to compile. See the [workflow run](${runUrl}).`,

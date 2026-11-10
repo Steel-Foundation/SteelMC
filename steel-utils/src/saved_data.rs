@@ -10,7 +10,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(not(target_family = "wasm"))]
 use serde::{Serialize, de::DeserializeOwned};
+#[cfg(not(target_family = "wasm"))]
 use tokio::fs;
 use wincode::{SchemaRead, SchemaWrite, config::DefaultConfig};
 
@@ -51,6 +53,7 @@ impl SavedDataName {
         }
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn file_name(self) -> String {
         format!("{}.toml", self.0)
     }
@@ -162,6 +165,7 @@ impl SavedDataManager {
 
     /// Loads saved data, or returns `T::default()` when the data file is absent
     /// or this world has no persistent storage.
+    #[cfg(not(target_family = "wasm"))]
     pub async fn load_or_default<T>(&self, name: SavedDataName) -> io::Result<T>
     where
         T: DeserializeOwned + Default,
@@ -204,6 +208,7 @@ impl SavedDataManager {
     }
 
     /// Saves a typed saved-data value.
+    #[cfg(not(target_family = "wasm"))]
     pub async fn save<T>(&self, name: SavedDataName, data: &T) -> io::Result<()>
     where
         T: Serialize,
@@ -220,6 +225,7 @@ impl SavedDataManager {
         fs::write(path, content).await
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn path_for(&self, name: SavedDataName) -> Option<PathBuf> {
         self.data_dir
             .as_ref()

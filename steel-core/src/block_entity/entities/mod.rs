@@ -10,7 +10,9 @@ mod campfire;
 mod chest;
 mod chiseled_bookshelf;
 mod comparator;
+mod conduit;
 mod daylight_detector;
+mod enchanting_table;
 mod end_gateway;
 mod end_portal;
 mod ender_chest;
@@ -20,6 +22,7 @@ mod potent_sulfur;
 mod shulker_box;
 mod sign;
 mod skull;
+mod spawner;
 mod unimplemented;
 
 pub use abstract_furnace::{
@@ -37,7 +40,9 @@ pub use campfire::{CAMPFIRE_SLOTS, CampfireBlockEntity};
 pub use chest::{CHEST_SLOTS, ChestBlockEntity};
 pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEntity};
 pub use comparator::ComparatorBlockEntity;
+pub use conduit::ConduitBlockEntity;
 pub use daylight_detector::DaylightDetectorBlockEntity;
+pub use enchanting_table::EnchantingTableBlockEntity;
 pub use end_gateway::EndGatewayBlockEntity;
 pub use end_portal::EndPortalBlockEntity;
 pub use ender_chest::EnderChestBlockEntity;
@@ -47,4 +52,8 @@ pub use potent_sulfur::PotentSulfurBlockEntity;
 pub use shulker_box::{AnimationStatus, SHULKER_BOX_SLOTS, ShulkerBoxBlockEntity};
 pub use sign::{SIGN_LINES, SignBlockEntity, SignText};
 pub use skull::SkullBlockEntity;
+pub use spawner::{
+    BaseSpawner, BaseSpawnerConfig, CustomSpawnRules, EquipmentTable, LightRange, SpawnData,
+    Spawner, SpawnerBlockEntity, WeightedSpawnData,
+};
 pub use unimplemented::UnimplementedBlockEntity;

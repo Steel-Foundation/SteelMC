@@ -3,7 +3,7 @@ mod item_in_use;
 use std::sync::Arc;
 
 use item_in_use::EnchantedItemInUse;
-use steel_math::java_round_f32;
+use steel_math::round_f32;
 
 use steel_registry::enchantment_effect::{
     DamageSourcePredicate, EnchantmentEffectComponent, EnchantmentEffectRequirements,
@@ -18,6 +18,10 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, MobEffectInstance, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
+
+mod selection;
+
+pub(crate) use selection::{EnchantmentInstance, get_enchantment_cost, select_enchantment};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct EnchantmentDamageContext<'a> {
@@ -212,7 +216,7 @@ pub(crate) fn do_post_attack_effects_from_item(
 
 pub(crate) fn do_post_attack_effects_with_item_source(
     world: &World,
-    victim: &dyn Entity,
+    victim: &(impl Entity + ?Sized),
     source: &ItemStack,
     context: &EnchantmentPostAttackContext<'_>,
 ) {
@@ -579,8 +583,8 @@ fn apply_supported_entity_effect(
             let max_amplifier = max_amplifier.calculate(level);
             let duration_seconds = random_between(min_duration, max_duration);
             let amplifier = random_between(min_amplifier, max_amplifier);
-            let duration_ticks = java_round_f32(duration_seconds * 20.0);
-            let amplifier = java_round_f32(amplifier).max(0);
+            let duration_ticks = round_f32(duration_seconds * 20.0);
+            let amplifier = round_f32(amplifier).max(0);
             living.add_mob_effect(MobEffectInstance::with_duration(
                 effect,
                 duration_ticks,

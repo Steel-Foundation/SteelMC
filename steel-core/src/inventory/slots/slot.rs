@@ -178,6 +178,12 @@ pub trait Slot: ErasedType + Send + Sync {
         None
     }
 
+    /// Called when a hotbar swap takes items from this slot.
+    fn on_swap_craft(&self, _count: i32) {}
+
+    /// Called after a shift-click moves items out of this slot.
+    fn on_quick_craft(&self, _stack: &ItemStack, _player: &Player) {}
+
     /// Takes items with all checks and callbacks. Returns the items taken.
     fn safe_take(
         &self,

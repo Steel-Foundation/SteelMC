@@ -33,6 +33,8 @@ use steel_registry::{
     vanilla_game_rules, vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{
     BlockPos, ChunkPos, Downcast as _, Identifier, TICKS_PER_SECOND, WorldAabb, axis::Axis,
@@ -149,7 +151,10 @@ impl DropChances {
 
         let mut loaded = Self::DEFAULT;
         for slot in EquipmentSlot::ALL {
-            let Some(chance) = drop_chances.float(slot.name()) else {
+            let Some(chance) = drop_chances
+                .get(slot.name())
+                .and_then(|tag| tag.codec_f32())
+            else {
                 continue;
             };
             if !loaded.set_equipment_chance(slot, chance) {
@@ -354,6 +359,11 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn set_mob_flags(&self, flags: i8);
 
+    /// Returns whether the entity-specific spawn predicate accepts this spawn.
+    fn check_spawn_rules(&self, _world: &Arc<World>, _reason: EntitySpawnReason) -> bool {
+        true
+    }
+
     /// Sets the vanilla baby state. Vanilla `Mob.setBaby` is a no-op; ageable
     /// mobs derive it from their start age, and other mobs override as needed.
     fn set_baby(&self, baby: bool) {
@@ -375,6 +385,14 @@ pub trait Mob: LivingEntity + Leashable {
             is_saddled = self.is_equippable_in_slot(item_stack, EquipmentSlot::Saddle);
         });
         is_saddled
+    }
+
+    /// Checks line of sight using this mob sensing cache
+    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
+        self.mob_base()
+            .sensing()
+            .lock()
+            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
     }
 
     fn custom_server_ai_step(&self) {}
@@ -1125,13 +1143,16 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn load_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_equipment(nbt);
-        self.set_can_pick_up_loot(nbt.byte("CanPickUpLoot").is_some_and(|value| value != 0));
+        self.set_can_pick_up_loot(
+            nbt.byte_value("CanPickUpLoot")
+                .is_some_and(|value| value != 0),
+        );
         *self.mob_base().persistence_required().lock() = nbt
-            .byte("PersistenceRequired")
+            .byte_value("PersistenceRequired")
             .is_some_and(|value| value != 0);
         *self.mob_base().drop_chances().lock() = DropChances::load(nbt);
         *self.mob_base().leash_data().lock() = LeashData::load(nbt);
-        let home_radius = nbt.int("home_radius").unwrap_or(-1);
+        let home_radius = nbt.int_value("home_radius").unwrap_or(-1);
         if home_radius >= 0 {
             let home_position = nbt
                 .int_array("home_pos")
@@ -1144,14 +1165,14 @@ pub trait Mob: LivingEntity + Leashable {
             self.clear_home();
         }
 
-        self.set_left_handed(nbt.byte("LeftHanded").is_some_and(|value| value != 0));
+        self.set_left_handed(nbt.byte_value("LeftHanded").is_some_and(|value| value != 0));
         let death_loot_table = nbt
             .string("DeathLootTable")
             .and_then(|loot_table| loot_table.to_str().as_ref().parse().ok());
         *self.mob_base().death_loot_table().lock() = death_loot_table;
         *self.mob_base().death_loot_table_seed().lock() =
-            nbt.long("DeathLootTableSeed").unwrap_or(0);
-        self.set_no_ai(nbt.byte("NoAI").is_some_and(|value| value != 0));
+            nbt.long_value("DeathLootTableSeed").unwrap_or(0);
+        self.set_no_ai(nbt.byte_value("NoAI").is_some_and(|value| value != 0));
     }
 
     fn set_death_loot_table(&self, loot_table: Option<Identifier>) {
@@ -1310,14 +1331,6 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn is_aggressive(&self) -> bool {
         self.mob_flags() & MOB_FLAG_AGGRESSIVE != 0
-    }
-
-    /// Whether this mob can see `target`.
-    fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
-        self.mob_base()
-            .sensing()
-            .lock()
-            .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
     }
 
     /// Maximum degrees the head may pitch up or down independently of the body.

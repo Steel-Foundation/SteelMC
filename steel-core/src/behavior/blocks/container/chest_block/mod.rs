@@ -321,7 +321,7 @@ impl BlockBehavior for ChestBlock {
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
-        world: &dyn LevelReader,
+        world: &World,
         pos: BlockPos,
         _direction: Direction,
     ) -> i32 {

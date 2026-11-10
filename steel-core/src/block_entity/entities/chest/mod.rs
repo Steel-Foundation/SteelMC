@@ -9,7 +9,6 @@ use steel_registry::{
         properties::{BlockStateProperties, ChestType},
     },
     data_components::vanilla_components::SeededContainerLoot,
-    item_stack::ItemStack,
     vanilla_block_entity_types, vanilla_game_events,
 };
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, translations};
@@ -18,7 +17,8 @@ use text_components::TextComponent;
 use crate::{
     behavior::{BLOCK_BEHAVIORS, blocks::ChestBlock},
     block_entity::{
-        BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _, RandomizableContainer,
+        BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _, ImplicitComponentGetter,
+        RandomizableContainer,
         container_openers_counter::{ContainerOpenersCounter, OpenersChange},
         container_properties::ContainerProperties,
         randomizable_container::RandomizableContainerStorage,
@@ -164,9 +164,9 @@ impl BlockEntity for ChestBlockEntity {
         self.properties.save(nbt);
         self.storage.save_additional(nbt);
     }
-    fn apply_components_from_item(&self, item: &ItemStack) {
-        self.properties.apply_components(item);
-        self.storage.apply_components_from_item(item);
+    fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
+        self.properties.apply_components(components);
+        self.storage.apply_implicit_components(components);
     }
     fn pre_remove_side_effects(&self, pos: BlockPos, _state: BlockStateId) {
         self.storage.pre_remove_side_effects(pos);

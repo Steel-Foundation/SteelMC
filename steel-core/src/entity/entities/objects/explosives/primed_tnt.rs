@@ -16,6 +16,7 @@ use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_data::PrimedTntEntityData;
 use steel_registry::vanilla_game_rules::TNT_EXPLODES;
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::block_entity::block_state_nbt;
@@ -300,8 +301,7 @@ impl Entity for PrimedTntEntity {
                 self.explode(&world);
             }
         } else {
-            self.refresh_fluid_contact_with_currents();
-            self.base.reset_fall_distance_in_water();
+            self.update_fluid_interaction();
         }
 
         self.base.set_requires_precise_position(
@@ -359,7 +359,8 @@ impl Entity for PrimedTntEntity {
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.set_fuse(i32::from(
-            nbt.short("fuse").unwrap_or(Self::DEFAULT_FUSE_TIME as i16),
+            nbt.short_value("fuse")
+                .unwrap_or(Self::DEFAULT_FUSE_TIME as i16),
         ));
         self.set_block_state(
             nbt.compound("block_state")
@@ -368,7 +369,7 @@ impl Entity for PrimedTntEntity {
         );
         let mut state = self.state.lock();
         state.explosion_power = nbt
-            .float("explosion_power")
+            .float_value("explosion_power")
             .unwrap_or(DEFAULT_EXPLOSION_POWER)
             .clamp(0.0, MAX_EXPLOSION_POWER);
         state.owner = EntityReference::read(&nbt, "owner");

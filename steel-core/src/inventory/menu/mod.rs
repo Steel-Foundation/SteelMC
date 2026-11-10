@@ -17,7 +17,7 @@ pub use builder::{
     PlayerInventorySections, Section, SectionKind, SectionSource, SlotFactory,
 };
 pub use grid::{ColSpan, GridPlacer, PlacementBuilder, Rect, Region, RowSpan, SpanBounds};
-pub use kind::MenuKind;
+pub use kind::{MenuKind, still_valid_block};
 pub(crate) use layout::MenuLayout;
 #[cfg(test)]
 use steel_utils::locks::Shared;
@@ -178,6 +178,13 @@ impl Menu {
     pub fn set_item_name(&mut self, name: impl Into<String>, player: &Player) {
         let Self { behavior, kind, .. } = self;
         kind.on_rename(behavior, name.into(), player);
+    }
+
+    /// Forwards a client button press to the menu's kind and reports whether
+    /// the kind handled it. Always false for kinds without buttons.
+    pub fn click_menu_button(&mut self, button_id: i32, player: &Player) -> bool {
+        let Self { behavior, kind, .. } = self;
+        kind.click_menu_button(behavior, button_id, player)
     }
 
     /// Clears or counts crafting-grid items in the base inventory menu,
@@ -471,6 +478,7 @@ impl Menu {
                     unreachable!("the explicitly locked player inventory must be present");
                 };
                 inventory.set_item(inventory_slot, target_item.clone());
+                target_slot.on_swap_craft(target_item.count);
                 target_slot.set_by_player(&mut guard, ItemStack::empty(), &target_item);
                 if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
                     player.add_item_or_drop_with_guard(

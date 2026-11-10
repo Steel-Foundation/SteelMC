@@ -2,6 +2,7 @@ use std::iter::empty;
 use std::sync::Weak;
 
 use glam::DVec3;
+use rand::Rng;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
@@ -11,6 +12,7 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::EndermiteEntityData;
 use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::entity::ai::goal::{
@@ -19,19 +21,19 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose, EntitySyncedData,
-    LivingEntity, LivingEntityBase, Mob, MobBase, Monster, PathfinderMob, RemovalReason,
-    SharedEntity,
+    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose,
+    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, Monster,
+    PathfinderMob, RemovalReason, SharedEntity, SpawnRule, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
-use crate::world::World;
+use crate::world::{LevelReader, World};
 
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 const MAX_LIFETIME: i32 = 2400;
 const XP_REWARD: i32 = 3;
 
 /// A hostile endermite entity.
-#[entity_behavior(class = "Endermite")]
+#[entity_behavior(class = "Endermite", spawn_rule)]
 pub struct EndermiteEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -48,6 +50,20 @@ unsafe impl DowncastType for EndermiteEntity {
 }
 
 impl EndermiteEntity {
+    /// Vanilla `SpawnPlacements` predicate: `Endermite.checkEndermiteSpawnRules`.
+    pub(crate) const SPAWN_RULE: SpawnRule = Self::check_endermite_spawn_rules;
+
+    /// Checks the Endermite placement predicate for the spawner-only dispatcher.
+    pub(crate) fn check_endermite_spawn_rules(
+        _entity_type: EntityTypeRef,
+        _level: &dyn LevelReader,
+        spawn_reason: EntitySpawnReason,
+        _pos: BlockPos,
+        _random: &mut dyn Rng,
+    ) -> bool {
+        spawn_reason.is_spawner()
+    }
+
     /// Creates a new endermite entity instance.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
@@ -122,24 +138,21 @@ impl EndermiteEntity {
     }
 
     fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
-        }
-
-        let display = self.living_base.mob_effect_display_state();
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
+        sync_dirty_mob_effects(&self.living_base, &self.entity_data);
     }
 }
 
+impl DefaultEntityPush for EndermiteEntity {}
+
 impl Entity for EndermiteEntity {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -192,6 +205,10 @@ impl Entity for EndermiteEntity {
         Monster::swim_sound_monster(self)
     }
 
+    fn swim_splash_sound(&self) -> SoundEventRef {
+        Monster::swim_splash_sound_monster(self)
+    }
+
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {
         self.play_sound(&sound_events::ENTITY_ENDERMITE_STEP, 0.15, 1.0);
     }
@@ -204,8 +221,8 @@ impl Entity for EndermiteEntity {
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_mob(nbt);
-        *self.lifetime.lock() = nbt.int("Lifetime").unwrap_or(0);
-        *self.player_spawned.lock() = nbt.byte("PlayerSpawned").is_some_and(|b| b != 0);
+        *self.lifetime.lock() = nbt.int_value("Lifetime").unwrap_or(0);
+        *self.player_spawned.lock() = nbt.byte_value("PlayerSpawned").is_some_and(|b| b != 0);
     }
 }
 

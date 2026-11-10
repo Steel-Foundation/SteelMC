@@ -50,7 +50,7 @@ impl CompileModifier for EnchantedCountIncrease {
         let count = compiler.float_provider(count);
         let clamp = (*limit > 0).then(|| quote! { item.set_count(item.count().min(#limit)); });
         quote! { let level = ctx.attacker_enchantment_level(&#enchantment);
-            if level > 0 { let count = #count; let bonus = steel_math::java_round_f32(level as f32 * count);
+            if level > 0 { let count = #count; let bonus = steel_math::round_f32(level as f32 * count);
                 item.set_count(item.count().wrapping_add(bonus));
                 #clamp
             }

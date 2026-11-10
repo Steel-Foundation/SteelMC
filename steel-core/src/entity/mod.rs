@@ -261,7 +261,7 @@ fn entity_eye_suffocation_box(eye_pos: DVec3, width: f64) -> WorldAabb {
 
 fn block_state_suffocates_eye_box(
     state: BlockStateId,
-    world: &dyn LevelReader,
+    world: &impl LevelReader,
     pos: BlockPos,
     eye_box: WorldAabb,
 ) -> bool {
@@ -337,7 +337,7 @@ fn finish_inside_block_effects(
         return;
     }
 
-    if is_in_rain(entity) {
+    if entity.is_in_rain() {
         entity.clear_fire();
     }
 
@@ -354,20 +354,6 @@ fn finish_inside_block_effects(
     } else {
         entity.sync_base_fire_freeze_entity_data();
     }
-}
-
-fn is_in_rain(entity: &dyn Entity) -> bool {
-    let Some(world) = entity.level() else {
-        return false;
-    };
-
-    let pos = entity.block_position();
-    world.is_raining_at(pos)
-        || world.is_raining_at(BlockPos::new(
-            pos.x(),
-            entity.bounding_box().max_y().floor() as i32,
-            pos.z(),
-        ))
 }
 
 fn closest_open_space_direction(
@@ -452,12 +438,12 @@ pub(crate) fn get_input_vector(input: DVec3, speed: f32, yaw_degrees: f32) -> DV
         input
     } * f64::from(speed);
     let yaw = yaw_degrees.to_radians();
-    let sin = trig::sin(yaw);
-    let cos = trig::cos(yaw);
+    let sin = f64::from(trig::sin(yaw));
+    let cos = f64::from(trig::cos(yaw));
     DVec3::new(
-        movement.x * f64::from(cos) - movement.z * f64::from(sin),
+        movement.x * cos - movement.z * sin,
         movement.y,
-        movement.z * f64::from(cos) + movement.x * f64::from(sin),
+        movement.z * cos + movement.x * sin,
     )
 }
 
@@ -777,6 +763,7 @@ pub mod entities;
     reason = "the entity module mirrors vanilla's Entity class and groups its implementation"
 )]
 mod entity;
+pub mod entity_selector;
 mod fluid_contact;
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -797,9 +784,12 @@ mod monster;
 mod movement_sync;
 mod potion_contents;
 pub mod projectile;
+pub(crate) mod pushing;
 mod reference;
 mod registry;
+pub(crate) mod selector;
 mod spawn;
+mod spawn_placements;
 mod storage;
 mod synced_data;
 mod ticking;
@@ -824,6 +814,7 @@ pub use callback::{
 };
 pub use conversion::{AfterConversion, ConversionParams, ConversionType};
 pub(crate) use entity::apply_entity_look_at;
+pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
@@ -836,9 +827,10 @@ pub use inside_block_effects::{
 pub(crate) use item_based_steering::{ItemBasedSteering, ItemSteerable};
 pub use item_frame::ItemFrame;
 pub use living_base::{
-    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase,
-    LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
-    MobEffectSyncChange, MobEffectSyncPacket,
+    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION,
+    HURT_DURATION_TICKS, LivingEntityBase, LivingRotationState, LivingSwingState,
+    LivingTravelInput, MobEffectInstance, MobEffectSyncChange, MobEffectSyncPacket,
+    sync_dirty_mob_effects,
 };
 pub use living_entity::LivingEntity;
 pub(crate) use manager::EntityCollisionCandidates;
@@ -864,13 +856,16 @@ pub use projectile::{
     SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
     compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
+pub use pushing::{DefaultEntityPush, EntityPushSnapshot};
 pub use reference::EntityReference;
+pub(crate) use registry::SpawnRule;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
-    AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest,
-    SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
-    create_entity_instance, spawn_entity,
+    AgeableMobGroupData, EntitySpawnError, EntitySpawnPlacement, EntitySpawnReason,
+    EntitySpawnRequest, SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
+    apply_item_stack_components, create_entity_instance, load_entity_recursive_owned, spawn_entity,
 };
+pub(crate) use spawn_placements::SpawnPlacements;
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
 pub(crate) use ticking::{snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_if};

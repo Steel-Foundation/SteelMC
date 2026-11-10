@@ -1,3 +1,4 @@
+use std::f64::consts::FRAC_1_SQRT_2;
 use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -19,7 +20,7 @@ use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, SharedEntity,
     damage::DamageSource,
-    entities::{EndermiteEntity, ItemEntity},
+    entities::{EndermiteEntity, ItemEntity, PigEntity},
     next_entity_id,
 };
 use crate::inventory::{
@@ -40,17 +41,17 @@ use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
     ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
 };
-use steel_protocol::packets::game::{EquipmentSlotItem, SSetCreativeModeSlot};
+use steel_protocol::packets::game::{EquipmentSlotItem, SPlayerInput, SSetCreativeModeSlot};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::data_component_predicate::DataComponentMatchers;
 use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
 use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
-use steel_registry::packets::play::C_REMOVE_ENTITIES;
+use steel_registry::packets::play::{C_REMOVE_ENTITIES, C_SOUND};
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
-    vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
+    sound_events, vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
     vanilla_enchantments, vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
     vanilla_world_clocks,
 };
@@ -238,10 +239,83 @@ fn removed_entity_ids(packet: &EncodedPacket) -> Vec<i32> {
     entity_ids
 }
 
+fn sound_packet_ids(packets: &[EncodedPacket]) -> Vec<i32> {
+    packets
+        .iter()
+        .filter_map(|packet| {
+            let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+            VarInt::read(&mut cursor).ok()?;
+            if VarInt::read(&mut cursor).ok()?.0 != C_SOUND {
+                return None;
+            }
+            Some(VarInt::read(&mut cursor).ok()?.0)
+        })
+        .collect()
+}
+
 fn test_player(world: Arc<World>) -> Arc<Player> {
     let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
     player.set_client_loaded(true);
     player
+}
+
+#[test]
+fn last_client_move_intent_matches_vanilla_directional_inputs() {
+    const FORWARD: u8 = 0x01;
+    const BACKWARD: u8 = 0x02;
+    const LEFT: u8 = 0x04;
+    const RIGHT: u8 = 0x08;
+    const JUMP: u8 = 0x10;
+    const SHIFT: u8 = 0x20;
+    const SPRINT: u8 = 0x40;
+
+    let player = test_player(Arc::clone(test_world()));
+    let diagonal = FRAC_1_SQRT_2;
+
+    let cases = [
+        ("no input", 0, 0.0, DVec3::ZERO),
+        ("forward", FORWARD, 0.0, DVec3::new(0.0, 0.0, 1.0)),
+        ("backward", BACKWARD, 0.0, DVec3::new(0.0, 0.0, -1.0)),
+        ("left", LEFT, 0.0, DVec3::new(1.0, 0.0, 0.0)),
+        ("right", RIGHT, 0.0, DVec3::new(-1.0, 0.0, 0.0)),
+        (
+            "opposite forward inputs",
+            FORWARD | BACKWARD,
+            0.0,
+            DVec3::ZERO,
+        ),
+        ("opposite sideways inputs", LEFT | RIGHT, 0.0, DVec3::ZERO),
+        (
+            "forward-right diagonal",
+            FORWARD | RIGHT,
+            0.0,
+            DVec3::new(-diagonal, 0.0, diagonal),
+        ),
+        (
+            "forward rotated by yaw",
+            FORWARD,
+            90.0,
+            DVec3::new(-1.0, 0.0, 0.0),
+        ),
+        (
+            "non-movement inputs",
+            JUMP | SHIFT | SPRINT,
+            0.0,
+            DVec3::ZERO,
+        ),
+    ];
+
+    for (name, flags, yaw, expected) in cases {
+        player.set_rotation((yaw, 0.0));
+        player.handle_player_input(SPlayerInput { flags });
+
+        let actual = player.last_client_move_intent();
+
+        assert!(
+            (actual - expected).length_squared() < 1.0E-12,
+            "{name}: expected {expected:?}, got {actual:?}"
+        );
+    }
 }
 
 fn test_persistent_entity(
@@ -1366,6 +1440,47 @@ fn persistent_player_data_restores_independent_experience_fields_and_score() {
 }
 
 #[test]
+fn enchanting_spends_levels_and_rerolls_the_seed() {
+    let mut experience = Experience::from_parts(30, 0.5, 1000).with_enchantment_seed(77);
+    experience.on_enchantment_performed(3, 99);
+    assert_eq!(experience.level(), 27);
+    assert_eq!(experience.enchantment_seed(), 99);
+    assert!(experience.dirty);
+
+    let mut broke = Experience::from_parts(1, 0.5, 20).with_enchantment_seed(77);
+    broke.on_enchantment_performed(3, 5);
+    assert_eq!(broke.level(), 0);
+    assert_eq!(broke.progress().to_bits(), 0.0_f32.to_bits());
+    assert_eq!(broke.total_points(), 0);
+}
+
+#[test]
+fn only_a_zero_saved_enchantment_seed_is_rerolled() {
+    let rerolled = Experience::from_parts(0, 0.0, 0).with_loaded_enchantment_seed(0, || 99);
+    assert_eq!(rerolled.enchantment_seed(), 99);
+
+    let kept = Experience::from_parts(0, 0.0, 0).with_loaded_enchantment_seed(4242, || 99);
+    assert_eq!(kept.enchantment_seed(), 4242);
+}
+
+#[test]
+fn saved_enchantment_seed_round_trips_through_player_data() {
+    init_vanilla_registry();
+    let world_fixture = fresh_test_world("player_data_enchantment_seed_round_trip");
+    let world = &world_fixture.world;
+    let player = TestPlayerBuilder::new(Arc::clone(world), "SeedTester", 1).build();
+
+    let mut stored = PersistentPlayerData::from_player(&player);
+    stored.enchantment_seed = 4242;
+    stored.apply_to_player_without_location(&player);
+    assert_eq!(player.experience.lock().enchantment_seed(), 4242);
+    assert_eq!(
+        PersistentPlayerData::from_player(&player).enchantment_seed,
+        4242
+    );
+}
+
+#[test]
 fn persistent_player_data_restores_equipment_inventory_slots() {
     init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
@@ -1824,4 +1939,102 @@ fn sword_does_not_destroy_blocks_in_creative() {
         dirt,
         "swords should not destroy blocks when player is in creative mode."
     );
+}
+
+#[test]
+fn player_melee_attack_plays_sound_packets() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world_fixture = fresh_test_world("player_melee_attack_sounds");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+
+    let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
+    let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+        sent_packets: Arc::clone(&sent_packets),
+        closed: AtomicBool::new(false),
+    })));
+    let attacker = TestPlayerBuilder::new(Arc::clone(world), "Attacker", next_entity_id())
+        .connection(connection)
+        .build();
+    attacker.set_client_loaded(true);
+    assert!(world.add_player(Arc::clone(&attacker), ResetReason::InitialJoin));
+
+    let pig = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(1.0, 64.0, 1.0),
+        Arc::downgrade(world),
+    ));
+    let pig_target: SharedEntity = Arc::<PigEntity>::clone(&pig);
+
+    // 1. Weak attack (freshly reset attack strength ticker, scale <= 0.9)
+    attacker.reset_attack_strength_ticker();
+    sent_packets.lock().clear();
+    assert!(attacker.attack(&pig_target));
+    assert_eq!(
+        sound_packet_ids(&sent_packets.lock()),
+        vec![sound_events::ENTITY_PLAYER_ATTACK_WEAK.packet_holder_id()]
+    );
+
+    // 2. Strong attack (fully charged ticker, scale > 0.9)
+    pig.set_invulnerable_time(0);
+    for _ in 0..40 {
+        attacker.tick_attack_strength();
+    }
+    sent_packets.lock().clear();
+    assert!(attacker.attack(&pig_target));
+    assert_eq!(
+        sound_packet_ids(&sent_packets.lock()),
+        vec![sound_events::ENTITY_PLAYER_ATTACK_STRONG.packet_holder_id()]
+    );
+
+    // 3. Sprinting strong attack (triggers knockback sound + strong sound)
+    pig.set_invulnerable_time(0);
+    for _ in 0..40 {
+        attacker.tick_attack_strength();
+    }
+    attacker.set_sprinting(true);
+    sent_packets.lock().clear();
+    assert!(attacker.attack(&pig_target));
+    assert_eq!(
+        sound_packet_ids(&sent_packets.lock()),
+        vec![
+            sound_events::ENTITY_PLAYER_ATTACK_KNOCKBACK.packet_holder_id(),
+            sound_events::ENTITY_PLAYER_ATTACK_STRONG.packet_holder_id(),
+        ]
+    );
+    attacker.set_sprinting(false);
+
+    // 4. Attack with no damage dealt / target cannot be hurt
+    let dead_pig = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(1.0, 64.0, 1.0),
+        Arc::downgrade(world),
+    ));
+    dead_pig.set_health(0.0);
+    let dead_target: SharedEntity = Arc::<PigEntity>::clone(&dead_pig);
+    sent_packets.lock().clear();
+    assert!(!attacker.attack(&dead_target));
+    assert_eq!(
+        sound_packet_ids(&sent_packets.lock()),
+        vec![sound_events::ENTITY_PLAYER_ATTACK_NODAMAGE.packet_holder_id()]
+    );
+
+    // 5. Sprinting with attack damage reduced to zero (for example by weakness)
+    // plays no knockback sound, matching vanilla's baseDamage/magicBoost gate.
+    attacker
+        .attributes()
+        .lock()
+        .set_base_value(vanilla_attributes::ATTACK_DAMAGE, 0.0);
+    pig.set_invulnerable_time(0);
+    for _ in 0..40 {
+        attacker.tick_attack_strength();
+    }
+    attacker.set_sprinting(true);
+    sent_packets.lock().clear();
+    assert!(!attacker.attack(&pig_target));
+    assert_eq!(sound_packet_ids(&sent_packets.lock()), Vec::<i32>::new());
 }

@@ -45,13 +45,13 @@ jobs:
               core.warning(`Skipping comment: PR #${issue_number} head ${pr.head.sha} does not match run head ${run.head_sha}`);
               return;
             }
-            const MARKER = "<!-- flint-report -->";
+            const HEADING = "## Flint test report";
             const body = fs.readFileSync("comment.md", "utf8").slice(0, 65000);
 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number,
             });
-            const existing = comments.find(c => c.user?.type === "Bot" && c.body?.startsWith(MARKER));
+            const existing = comments.find(c => c.user?.type === "Bot" && c.body?.startsWith(HEADING));
             if (existing) {
               await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             } else {

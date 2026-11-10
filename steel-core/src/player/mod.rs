@@ -57,9 +57,9 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
 use std::ptr;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
-use steel_math::{RAD_TO_DEG_F64, java_round_f32, java_round_f64};
+use steel_math::{RAD_TO_DEG_F64, round_f32, round_f64};
 use steel_protocol::packets::game::{
     CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CRespawn,
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
@@ -92,7 +92,7 @@ use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
 use text_components::{
     Modifier as _, TextComponent,
-    interactivity::{ClickEvent, HoverEvent},
+    interactivity::{ClickEvent, HoverEvent, Interactivity},
 };
 use text_components::{content::Resolvable, custom::CustomData};
 
@@ -132,7 +132,9 @@ use crate::server::{
     PlayerPacketTransition, Server,
     jobs::{JobPoll, ServerJob, ServerJobContext},
 };
-use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
+use crate::world::player_spawn_finder::{
+    POLL_TIME_BUDGET, PlayerSpawnSearch, PlayerSpawnSearchPoll,
+};
 use steel_registry::vanilla_damage_types;
 
 use steel_protocol::packets::{
@@ -140,6 +142,7 @@ use steel_protocol::packets::{
     game::{CContainerClose, CGameEvent, CSystemChat, GameEventType},
 };
 use steel_registry::RegistryEntry;
+use steel_registry::damage_type::DeathMessageType;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
@@ -149,11 +152,18 @@ use steel_utils::{
 
 use crate::inventory::container::Container;
 
-const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
 const DROP_SPAM_THROTTLER_INCREMENT_STEP: i32 = 20;
 const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
+
+static INTENTIONAL_GAME_DESIGN_STYLE: LazyLock<Interactivity> = LazyLock::new(|| Interactivity {
+    click: Some(ClickEvent::open_url(
+        "https://bugs.mojang.com/browse/MCPE-28723",
+    )),
+    hover: Some(HoverEvent::show_text("MCPE-28723")),
+    ..Interactivity::new()
+});
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::entities::objects::projectiles::FishingHookEntity;
@@ -867,7 +877,7 @@ impl Player {
         if (0.0..f32::MAX).contains(&absorbed_damage) {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_ABSORBED,
-                java_round_f32(absorbed_damage * 10.0),
+                round_f32(absorbed_damage * 10.0),
             );
         }
 
@@ -878,10 +888,45 @@ impl Player {
             if damage < f32::MAX {
                 self.award_custom_stat_with_count(
                     &vanilla_custom_stats::DAMAGE_TAKEN,
-                    java_round_f32(damage * 10.0),
+                    round_f32(damage * 10.0),
                 );
             }
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
+        }
+    }
+
+    fn get_death_message(&self, source: &DamageSource) -> TextComponent {
+        let death_key = format!("death.attack.{}", source.damage_type.message_id);
+        match source.damage_type.death_message_type {
+            DeathMessageType::IntentionalGameDesign => {
+                let mut link = translations::CHAT_SQUARE_BRACKETS
+                    .message([TranslatedMessage {
+                        key: format!("{death_key}.link").into(),
+                        fallback: None,
+                        args: None,
+                    }
+                    .component()])
+                    .component();
+                link.interactions = INTENTIONAL_GAME_DESIGN_STYLE.clone();
+
+                TranslatedMessage {
+                    key: format!("{death_key}.message").into(),
+                    fallback: None,
+                    args: Some(Box::new([self.display_name(), link])),
+                }
+                .component()
+            }
+            DeathMessageType::Default | DeathMessageType::FallVariants => {
+                // TODO: use CombatTracker for killer name items and fall variants
+                TranslatedMessage {
+                    key: death_key.into(),
+                    fallback: None,
+                    args: Some(Box::new([TextComponent::plain(
+                        self.gameprofile.name().to_owned(),
+                    )])),
+                }
+                .component()
+            }
         }
     }
 
@@ -917,16 +962,7 @@ impl Player {
 
         let show_death_messages = world.get_game_rule(&SHOW_DEATH_MESSAGES);
 
-        // TODO: use CombatTracker for multi-arg messages (killer name, item, etc.)
-        let death_key = format!("death.attack.{}", source.damage_type.message_id);
-        let death_message = TranslatedMessage {
-            key: death_key.into(),
-            fallback: None,
-            args: Some(Box::new([TextComponent::plain(
-                self.gameprofile.name().to_owned(),
-            )])),
-        }
-        .component();
+        let death_message = self.get_death_message(source);
 
         self.send_packet(CPlayerCombatKill {
             player_id: self.id(),
@@ -1173,6 +1209,7 @@ impl Player {
             nbt.insert("XpP", experience.progress());
             nbt.insert("XpLevel", experience.level());
             nbt.insert("XpTotal", experience.total_points());
+            nbt.insert("XpSeed", experience.enchantment_seed());
         }
         nbt.insert("Score", self.score());
 
@@ -1302,6 +1339,10 @@ impl Player {
 }
 
 impl Entity for Player {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -1312,6 +1353,20 @@ impl Entity for Player {
 
     fn base_tick(&self) {
         LivingEntity::base_tick_living_entity(self);
+    }
+
+    fn do_water_splash_effect(&self) {
+        if !self.is_spectator() {
+            self.default_do_water_splash_effect();
+        }
+    }
+
+    fn swim_splash_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_PLAYER_SPLASH
+    }
+
+    fn swim_high_speed_splash_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED
     }
 
     fn scoreboard_name(&self) -> String {
@@ -1567,7 +1622,7 @@ impl Entity for Player {
         if fall_distance >= 2.0 {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::FALL_ONE_CM,
-                java_round_f64(fall_distance * 100.0) as i32,
+                round_f64(fall_distance * 100.0) as i32,
             );
         }
 
@@ -1774,7 +1829,9 @@ impl LivingEntity for Player {
 
         self.default_tick();
         self.detect_equipment_updates();
-        self.ai_step(entity);
+        if !self.is_removed() {
+            self.ai_step(entity);
+        }
 
         // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
         if let Err(error) = self.try_set_position(tick_position) {
@@ -1790,7 +1847,6 @@ impl LivingEntity for Player {
         self.living_base.decrement_invulnerable_time();
         self.tick_mob_effects();
         self.tick_active_item_use(entity);
-        // TODO: Tick stats even when the player has been dead for more than 20 ticks.
         self.tick_stats();
 
         if self.get_health() <= 0.0 {

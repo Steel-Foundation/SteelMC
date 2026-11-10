@@ -8,6 +8,7 @@ use crate::BlockStateId;
 use crate::noise::OreVeinifier;
 use crate::random::RandomSplitter;
 use crate::surface::SurfaceRuleContext;
+use crate::surface_partial::PartialSurfaceRule;
 use rustc_hash::FxHashMap;
 
 use super::NoiseParameters;
@@ -91,6 +92,16 @@ pub trait DimensionNoises: Sized + Send + Sync {
 
     // ── Aquifer router functions ────────────────────────────────────────────
 
+    /// Whether aquifer noise lookups require a prepared column cache.
+    ///
+    /// Returning `false` promises that barrier, floodedness, spread and lava
+    /// all use their explicit coordinates without reading prepared cache values.
+    /// Custom implementations retain column-cache preparation by default.
+    #[must_use]
+    fn aquifer_needs_column_cache() -> bool {
+        true
+    }
+
     /// Barrier noise for aquifer boundaries.
     fn router_barrier(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f32;
 
@@ -160,6 +171,13 @@ pub trait DimensionNoises: Sized + Send + Sync {
 
     /// Whether vein functions have interpolation channels.
     fn vein_interp_enabled() -> bool;
+
+    /// Interpolated channels that, when `<= 0` at a block, prove its combined
+    /// final density is not positive. Cell corners alone are insufficient for
+    /// Vanilla's repeated-addition interpolation.
+    /// Derived by the transpiler from the final-density tree; `None` when no
+    /// such proof exists.
+    fn final_density_nonpositive_channels() -> Option<&'static [usize]>;
 
     /// Compute blended noise for an entire column of Y values.
     ///
@@ -260,6 +278,15 @@ pub trait DimensionNoises: Sized + Send + Sync {
     /// Whether the generated surface rule reads biome-dependent context.
     fn surface_rule_uses_biome() -> bool;
 
+    /// Distinct `biome_is` sets the generated surface rule tests, as biome
+    /// registry ids. Together with a biome's temperature parameters these are
+    /// everything the rule can observe about a biome.
+    fn surface_rule_biome_sets() -> &'static [Box<[u16]>];
+
+    /// The surface rule reduced to what is decidable from Y and biome below the
+    /// preliminary surface.
+    fn surface_rule_below_preliminary_surface() -> &'static PartialSurfaceRule;
+
     /// Whether the generated surface rule reads preliminary surface level.
     fn surface_rule_uses_preliminary_surface() -> bool;
 
@@ -274,6 +301,13 @@ pub trait DimensionNoises: Sized + Send + Sync {
 
     /// Number of prefilled density/richness values for this dimension's material ore rules.
     fn material_ore_vein_value_count() -> usize;
+
+    /// Height of the prefilled Y prefix, starting at [`NoiseSettings::MIN_Y`].
+    /// Keep it within `HEIGHT`; every omitted ore density must be `<= 0.0`.
+    #[must_use]
+    fn material_ore_vein_value_height() -> usize {
+        Self::Settings::HEIGHT as usize
+    }
 
     /// Fill one block's material ore density/richness values.
     ///

@@ -13,9 +13,22 @@ members = [
     "steel-math",
     "steel-flint",
 ]
+# steel-flint is only built on demand via `-p steel-flint`.
+default-members = [
+    "steel",
+    "steel-login",
+    "steel-macros",
+    "steel-protocol",
+    "steel-registry",
+    "steel-worldgen",
+    "steel-utils",
+    "steel-core",
+    "steel-crypto",
+    "steel-math",
+]
 
 [workspace.package]
-version = "0.16.1+mc26.3"
+version = "0.17.0+mc26.3"
 edition = "2024"
 authors = ["Alve Jeansson"]
 license = "AGPL-3.0-or-later"
@@ -33,17 +46,7 @@ steel-worldgen = { path = "steel-worldgen" }
 steel-math = { path = "steel-math" }
 
 # Async runtime
-tokio = { version = "1.54.1", features = [
-    "macros",
-    "net",
-    "rt-multi-thread",
-    "sync",
-    "io-std",
-    "fs",
-    "io-util",
-    "time",
-    "signal",
-] }
+tokio = { version = "1.54.1", features = ["macros", "sync", "io-util", "rt", "time"] }
 tokio-util = { version = "0.7.20", features = ["rt"] }
 futures = "0.3.34"
 
@@ -160,6 +163,7 @@ inherits = "release"
 lto = false
 codegen-units = 16
 panic = "unwind"
+opt-level = 0
 
 [profile.bench]
 debug = true

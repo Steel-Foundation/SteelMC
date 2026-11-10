@@ -8,7 +8,6 @@ use crate::player::player_inventory::Prediction;
 use std::slice;
 use std::sync::Arc;
 
-use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::{
     REGISTRY, RegistryEntry, TaggedRegistryExt, item_stack::ItemStack, mob_effect::MobEffectRef,
     sound_events, vanilla_blocks, vanilla_item_tags, vanilla_menu_types,
@@ -155,8 +154,7 @@ impl MenuKind for BeaconKind {
     }
 
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
-        self.world.get_block_state(self.pos).get_block() == &vanilla_blocks::BEACON
-            && player.is_within_block_interaction_range_with_buffer(self.pos, 4.0)
+        still_valid_block(&self.world, self.pos, &vanilla_blocks::BEACON, player)
     }
 
     fn on_open(

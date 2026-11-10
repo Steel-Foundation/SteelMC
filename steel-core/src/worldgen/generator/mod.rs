@@ -5,6 +5,7 @@ mod empty;
 mod flat;
 mod generation_chunk;
 pub mod registry;
+mod surface_biomes;
 pub(crate) mod vanilla;
 
 pub use empty::EmptyChunkGenerator;
@@ -12,7 +13,9 @@ pub use flat::FlatChunkGenerator;
 #[cfg(feature = "benchmark-support")]
 pub use generation_chunk::benchmark_support as generation_benchmark_support;
 pub use generation_chunk::{GenerationChunk, TerrainPhase};
-pub use vanilla::{SteelPostNoiseState, VanillaGenerator, VanillaPostNoiseStateType};
+pub use vanilla::{
+    NoiseSpawnTarget, SteelPostNoiseState, VanillaGenerator, VanillaPostNoiseStateType,
+};
 
 use enum_dispatch::enum_dispatch;
 use glam::IVec3;

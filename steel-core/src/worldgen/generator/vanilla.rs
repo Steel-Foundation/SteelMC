@@ -28,19 +28,24 @@ use crate::worldgen::carver::{
     CarveRun, CarverBlockIds, CarvingContext, CarvingMask, PreliminarySurfaceCorners, SourceChunk,
 };
 use crate::worldgen::feature::FeatureDecorationRunner;
+use crate::worldgen::generator::surface_biomes::{
+    FuzzedBiomeColumn, SurfaceBiomeClasses, SurfaceQuartBiomes,
+};
 use crate::worldgen::generator::{
     ChunkGenerator, GenerationChunk, TerrainPhase, worldgen_region_random_from_splitter,
 };
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::{StructureGenerator, create_structures};
 use crate::worldgen::surface::SurfaceSystem;
-use steel_worldgen::biomes::BiomeSourceKind;
 use steel_worldgen::biomes::obfuscate_biome_seed;
+use steel_worldgen::biomes::{BiomeSourceKind, OverworldClimateSampler};
 use steel_worldgen::noise::Beardifier;
 use steel_worldgen::noise::NoiseChunk;
 use steel_worldgen::noise::OreVeinifier;
 use steel_worldgen::noise::{Aquifer, AquiferResult, LazyAquifer, preliminary_surface_level};
+use steel_worldgen::noise::{CornerColumnStore, PreliminarySurfaceStore};
 use steel_worldgen::structure::GenerationContext;
+use steel_worldgen::surface_partial::PartialSurfaceOutcome;
 
 const CARVER_SOURCE_CHUNK_COUNT: usize = 17 * 17;
 
@@ -61,9 +66,32 @@ pub trait VanillaPostNoiseStateType: DimensionNoises + 'static {
     /// Recovers the concrete Aquifer at a later generation stage.
     fn post_noise_aquifer(state: &mut Self::State) -> &mut Aquifer<Self>;
 
-    /// Gets the prefilled material ore density/richness values.
+    /// dense ore values from `Settings::MIN_Y`, up to `material_ore_vein_value_height`
     fn material_ore_vein_values(state: &mut Self::State) -> Arc<[f32]>;
 }
+
+/// Where a dimension's spawn search starts: vanilla's `NoiseBasedChunkGenerator.getOrigin`,
+/// which reads the noise settings' spawn target rather than the biome source.
+pub trait NoiseSpawnTarget {
+    /// Defaults to the origin, for settings without a spawn target.
+    #[must_use]
+    fn initial_spawn_search_origin(_biome_source: &BiomeSourceKind, _seed: u64) -> BlockPos {
+        BlockPos::new(0, 0, 0)
+    }
+}
+
+impl NoiseSpawnTarget for OverworldNoises {
+    fn initial_spawn_search_origin(biome_source: &BiomeSourceKind, seed: u64) -> BlockPos {
+        match biome_source {
+            BiomeSourceKind::Overworld(source) => source.climate_sampler().find_spawn_position(),
+            _ => OverworldClimateSampler::new(seed).find_spawn_position(),
+        }
+    }
+}
+
+impl NoiseSpawnTarget for NetherNoises {}
+
+impl NoiseSpawnTarget for EndNoises {}
 
 /// Steel-owned post-Noise state for the built-in dimensions.
 #[doc(hidden)]
@@ -138,12 +166,18 @@ pub struct VanillaGenerator<N: DimensionNoises> {
     noises: Box<N>,
     /// Seed positional splitter for per-chunk construction of aquifers.
     splitter: RandomSplitter,
+    /// Preliminary surface levels shared by every aquifer this generator builds.
+    preliminary_surface: Arc<PreliminarySurfaceStore>,
+    /// boundary corner columns shared with neighbors
+    corner_columns: CornerColumnStore,
     /// Ore vein generator for replacing stone with ore blocks.
     ore_veinifier: Option<OreVeinifier>,
     /// Surface system for biome-specific block replacement.
     surface_system: SurfaceSystem,
     /// Which vanilla surface extension biomes this source can produce.
     surface_extension_biomes: SurfaceExtensionBiomes,
+    /// Biome classes the surface rule cannot tell apart.
+    surface_biome_classes: Option<SurfaceBiomeClasses>,
     /// Block state ID for the default block, cached at construction time.
     default_block_id: BlockStateId,
     /// Obfuscated seed for `BiomeManager` biome zoom fuzzing.
@@ -231,9 +265,12 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
             uniform_carver_biome,
             noises: Box::new(noises),
             splitter,
+            preliminary_surface: Arc::default(),
+            corner_columns: CornerColumnStore::default(),
             ore_veinifier,
             surface_system,
             surface_extension_biomes,
+            surface_biome_classes: SurfaceBiomeClasses::new::<N>(),
             default_block_id,
             biome_zoom_seed,
             seed: seed as i64,
@@ -294,7 +331,7 @@ impl<N: VanillaPostNoiseStateType> VanillaGenerator<N> {
     }
 }
 
-impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
+impl<N: VanillaPostNoiseStateType + NoiseSpawnTarget> ChunkGenerator for VanillaGenerator<N> {
     fn min_y(&self) -> i32 {
         N::Settings::MIN_Y
     }
@@ -309,8 +346,8 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
             .sample(quart_x, quart_y, quart_z)
     }
 
-    fn initial_spawn_search_origin(&self) -> steel_utils::BlockPos {
-        self.biome_source.initial_spawn_search_origin()
+    fn initial_spawn_search_origin(&self) -> BlockPos {
+        N::initial_spawn_search_origin(&self.biome_source, self.seed as u64)
     }
 
     fn structure_generator(&self) -> Option<&StructureGenerator> {
@@ -333,7 +370,13 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
         // use their own caches, and the 1–4 column probes of the remainder
         // hit this cache's lazy single-entry mode cheaply. Eager 5×5 quart
         // init cost ~36µs per chunk with no payoff.
-        let mut aquifer = LazyAquifer::new(chunk_min_x, chunk_min_z, &self.splitter, &*self.noises);
+        let mut aquifer = LazyAquifer::new(
+            chunk_min_x,
+            chunk_min_z,
+            &self.splitter,
+            &*self.noises,
+            &self.preliminary_surface,
+        );
         let mut surface_y_cache: Option<i32> = None;
         let mut height_cache_grid_ready = false;
         let mut ctx = GenerationContext::<'_, '_, N>::new(
@@ -343,6 +386,7 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
             sea_level,
             &self.noises,
             &self.splitter,
+            &self.preliminary_surface,
             self.structure_generator.template_pools(),
             self.structure_generator.templates(),
             &mut sampler,
@@ -436,49 +480,69 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
             height,
             &self.splitter,
             noises,
+            &self.preliminary_surface,
             // Aquifer samples at arbitrary (x,z) outside the chunk, so it needs its own cache
             column_cache.clone(),
         );
 
         // Collect writes per (x,z) column and flush in batch to avoid per-block
         // write lock acquisition on sections.
-        let mut pending_writes: Vec<(usize, usize, usize, BlockStateId)> = Vec::new();
+        let mut pending_writes: Vec<(usize, BlockStateId)> = Vec::new();
         let mut prev_x: usize = usize::MAX;
         let mut prev_z: usize = usize::MAX;
+
+        let mut ocean_floor_complete = false;
+        let mut world_surface_complete = false;
+
         let mut ocean_floor_wg =
             Heightmap::new(HeightmapType::OceanFloorWg, min_y, N::Settings::HEIGHT);
         let mut world_surface_wg =
             Heightmap::new(HeightmapType::WorldSurfaceWg, min_y, N::Settings::HEIGHT);
 
         let material_value_count = N::material_ore_vein_value_count();
+        let material_value_height = if material_value_count == 0 {
+            0
+        } else {
+            N::material_ore_vein_value_height()
+        };
+
+        let unsampled_air_min_y = aquifer
+            .unsampled_air_min_y()
+            .max(min_y + material_value_height as i32);
+
         // An exact-length iterator allocates the retained Arc slice directly.
         let mut material_ore_vein_values: Arc<[f32]> = iter::repeat_n(
             0.0_f32,
-            16 * 16 * N::Settings::HEIGHT as usize * material_value_count,
+            16 * 16 * material_value_height * material_value_count,
         )
         .collect();
+
         let material_values = Arc::make_mut(&mut material_ore_vein_values);
         let mut material_cache = N::ColumnCache::default();
         noise_chunk.fill(
             noises,
             &mut column_cache,
             beardifier,
+            unsampled_air_min_y,
+            &self.corner_columns,
             |local_x, world_y, local_z, density, interpolated, _| {
                 // Flush when we move to a new column
                 if local_x != prev_x || local_z != prev_z {
                     if !pending_writes.is_empty() {
-                        chunk.write_block_batch(&pending_writes);
+                        chunk.write_noise_column(prev_x, prev_z, &pending_writes);
                         pending_writes.clear();
                     }
                     prev_x = local_x;
                     prev_z = local_z;
+                    ocean_floor_complete = false;
+                    world_surface_complete = false;
                 }
 
                 let relative_y = (world_y - min_y) as usize;
                 let world_x = chunk_min_x + local_x as i32;
                 let world_z = chunk_min_z + local_z as i32;
 
-                if material_value_count != 0 {
+                if material_value_count != 0 && relative_y < material_value_height {
                     let offset =
                         (relative_y * 16 * 16 + local_z * 16 + local_x) * material_value_count;
                     noises.fill_material_ore_vein_values(
@@ -500,24 +564,31 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                 );
                 match substance {
                     AquiferResult::Solid => {
-                        pending_writes.push((local_x, relative_y, local_z, default_block_id));
-                        ocean_floor_wg.update_for_initial_fill(
-                            local_x,
-                            world_y,
-                            local_z,
-                            default_block_id,
-                        );
-                        world_surface_wg.update_for_initial_fill(
-                            local_x,
-                            world_y,
-                            local_z,
-                            default_block_id,
-                        );
+                        pending_writes.push((relative_y, default_block_id));
+                        ocean_floor_complete = ocean_floor_complete
+                            || ocean_floor_wg.update_for_initial_fill(
+                                local_x,
+                                world_y,
+                                local_z,
+                                default_block_id,
+                            );
+                        world_surface_complete = world_surface_complete
+                            || world_surface_wg.update_for_initial_fill(
+                                local_x,
+                                world_y,
+                                local_z,
+                                default_block_id,
+                            );
                     }
                     AquiferResult::Fluid(id) => {
-                        pending_writes.push((local_x, relative_y, local_z, id));
-                        ocean_floor_wg.update_for_initial_fill(local_x, world_y, local_z, id);
-                        world_surface_wg.update_for_initial_fill(local_x, world_y, local_z, id);
+                        pending_writes.push((relative_y, id));
+                        ocean_floor_complete = ocean_floor_complete
+                            || ocean_floor_wg
+                                .update_for_initial_fill(local_x, world_y, local_z, id);
+                        world_surface_complete = world_surface_complete
+                            || world_surface_wg
+                                .update_for_initial_fill(local_x, world_y, local_z, id);
+
                         if aquifer.should_schedule_fluid_update() && id.has_fluid() {
                             chunk.mark_pos_for_postprocessing(BlockPos::new(
                                 world_x, world_y, world_z,
@@ -531,7 +602,7 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
 
         // Flush remaining writes
         if !pending_writes.is_empty() {
-            chunk.write_block_batch(&pending_writes);
+            chunk.write_noise_column(prev_x, prev_z, &pending_writes);
         }
         chunk.replace_noise_heightmaps(ocean_floor_wg, world_surface_wg);
         chunk.install_post_noise_state(N::wrap_post_noise_state(aquifer, material_ore_vein_values));
@@ -579,7 +650,16 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
 
         // Pre-extract biome palette values only if surface rules/extensions need them.
         let biome_data = surface_needs_biomes.then(|| chunk.read_all_biomes());
-        let section_count = chunk.section_count();
+        let mut quart_biomes = biome_data.as_deref().map(|biome_data| {
+            SurfaceQuartBiomes::new(
+                biome_data,
+                chunk.section_count(),
+                min_y,
+                chunk_quart_x,
+                chunk_quart_z,
+                neighbor_biomes,
+            )
+        });
 
         let mut pending_writes: Vec<(usize, BlockStateId)> = Vec::new();
         let mut column_buf: Vec<BlockStateId> = Vec::new();
@@ -604,17 +684,13 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                 let mut start_height = chunk.world_surface_height_at(local_x, local_z);
 
                 // Column-local Voronoi cache for fuzzed biome lookups.
-                let mut biome_col = biome_data.as_deref().map(|biome_data| {
+                let mut biome_col = quart_biomes.as_mut().map(|quart_biomes| {
                     FuzzedBiomeColumn::new(
-                        biome_data,
-                        section_count,
+                        quart_biomes,
+                        self.surface_biome_classes.as_ref(),
                         self.biome_zoom_seed,
                         block_x,
                         block_z,
-                        min_y,
-                        chunk_quart_x,
-                        chunk_quart_z,
-                        neighbor_biomes,
                     )
                 });
 
@@ -732,6 +808,27 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                     stone_depth_above += 1;
                     let stone_depth_below = y - next_ceiling_stone_y + 1;
 
+                    // Below the preliminary surface the rule is mostly
+                    // decided by Y and biome class; run it only when not.
+                    let outcome = if y < min_surface_level && preliminary_surface_corners.is_some()
+                    {
+                        biome_col
+                            .as_mut()
+                            .map_or(PartialSurfaceOutcome::Evaluate, |col| {
+                                col.below_preliminary_outcome(y)
+                            })
+                    } else {
+                        PartialSurfaceOutcome::Evaluate
+                    };
+                    match outcome {
+                        PartialSurfaceOutcome::Keep => continue,
+                        PartialSurfaceOutcome::Place(index) => {
+                            pending_writes.push((relative_y, surface_rule_block_states[index]));
+                            continue;
+                        }
+                        PartialSurfaceOutcome::Evaluate => {}
+                    }
+
                     material_ore_vein_results.clear();
                     material_ore_vein_results.resize(material_ore_vein_count, None);
                     if let Some(ore_veinifier) = &self.ore_veinifier {
@@ -754,7 +851,9 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                     }
 
                     let eager_biome_id = if surface_rule_uses_biome && !lazy_surface_rule_biome {
-                        biome_col.as_mut().map(|biome_col| biome_col.get(y))
+                        biome_col
+                            .as_mut()
+                            .map(|biome_col| biome_col.get_for_surface_rule(y))
                     } else {
                         None
                     };
@@ -864,6 +963,7 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
                     height,
                     &self.splitter,
                     noises,
+                    &self.preliminary_surface,
                     column_cache,
                 ))
             };
@@ -1011,7 +1111,7 @@ where
 
 /// Vanilla's `LinearCongruentialGenerator.next()`.
 #[inline]
-const fn lcg_next(mut rval: i64, c: i64) -> i64 {
+pub(super) const fn lcg_next(mut rval: i64, c: i64) -> i64 {
     rval = rval.wrapping_mul(
         rval.wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(1_442_695_040_888_963_407),
@@ -1022,7 +1122,7 @@ const fn lcg_next(mut rval: i64, c: i64) -> i64 {
 
 /// Vanilla's `BiomeManager.getFiddle()`.
 #[inline]
-fn get_fiddle(rval: i64) -> f64 {
+pub(super) fn get_fiddle(rval: i64) -> f64 {
     let uniform = ((rval >> 24).rem_euclid(1024)) as f64 / 1024.0;
     (uniform - 0.5) * 0.9
 }
@@ -1078,7 +1178,10 @@ pub(crate) fn fuzzed_biome_at_block<F: FnMut(IVec3) -> u16>(
         rval = lcg_next(rval, biome_zoom_seed);
         let fz = get_fiddle(rval);
 
-        let dist = (dx + fx).powi(2) + (dy + fy).powi(2) + (dz + fz).powi(2);
+        let dx = dx + fx;
+        let dy = dy + fy;
+        let dz = dz + fz;
+        let dist = dz * dz + dy * dy + dx * dx;
         if min_dist > dist {
             min_i = i;
             min_dist = dist;
@@ -1105,202 +1208,6 @@ pub(crate) fn fuzzed_biome_at_block<F: FnMut(IVec3) -> u16>(
     quart_biome(b)
 }
 
-/// Column-local cache for fuzzed biome lookups (vanilla `BiomeManager.getBiome()`).
-///
-/// Within a column, `parent_x`, `parent_z`, `fract_x`, `fract_z` are constant.
-/// The 8 Voronoi candidate fiddle values (computed via 8 serial LCG calls each)
-/// only change when `parent_y` changes (every 4 blocks). This cache precomputes
-/// the fiddle values and X/Z distance components per `parent_y` group, reducing
-/// per-block work to 8 additions + 8 multiplies + 8 comparisons.
-struct FuzzedBiomeColumn<'a> {
-    biome_data: &'a [u16],
-    section_count: usize,
-    biome_zoom_seed: i64,
-    parent_x: i32,
-    parent_z: i32,
-    fract_x: f64,
-    fract_z: f64,
-    min_y: i32,
-    chunk_quart_x: i32,
-    chunk_quart_z: i32,
-    neighbor_biomes: &'a dyn Fn(IVec3) -> u16,
-    cached_parent_y: i32,
-    /// Per-candidate cached values: (`fy`, `xz_partial_distance`).
-    candidates: [(f64, f64); 8],
-    /// Precomputed `lcg_next(seed, parent_x)` and `lcg_next(seed, parent_x + 1)`.
-    rval_after_cx: [i64; 2],
-}
-
-impl<'a> FuzzedBiomeColumn<'a> {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "matches vanilla BiomeManager.getBiome signature"
-    )]
-    fn new(
-        biome_data: &'a [u16],
-        section_count: usize,
-        biome_zoom_seed: i64,
-        block_x: i32,
-        block_z: i32,
-        min_y: i32,
-        chunk_quart_x: i32,
-        chunk_quart_z: i32,
-        neighbor_biomes: &'a dyn Fn(IVec3) -> u16,
-    ) -> Self {
-        let abs_x = block_x - 2;
-        let abs_z = block_z - 2;
-        let parent_x = abs_x >> 2;
-        let parent_z = abs_z >> 2;
-        Self {
-            biome_data,
-            section_count,
-            biome_zoom_seed,
-            parent_x,
-            parent_z,
-            fract_x: f64::from(abs_x & 3) / 4.0,
-            fract_z: f64::from(abs_z & 3) / 4.0,
-            min_y,
-            chunk_quart_x,
-            chunk_quart_z,
-            neighbor_biomes,
-            cached_parent_y: i32::MIN,
-            candidates: [(0.0, 0.0); 8],
-            rval_after_cx: [
-                lcg_next(biome_zoom_seed, i64::from(parent_x)),
-                lcg_next(biome_zoom_seed, i64::from(parent_x + 1)),
-            ],
-        }
-    }
-
-    /// Compute candidates for a given `cy`, writing to either the low (bit1=0)
-    /// or high (bit1=1) slots. Shares the `lcg_next(seed, cx)` precomputation
-    /// and the `lcg_next(_, cy)` step within each cx group.
-    #[inline]
-    fn compute_cy_group(&mut self, cy: i32, high: bool) {
-        let base_idx = if high { 2 } else { 0 };
-        for cx_idx in 0..2usize {
-            let cx = self.parent_x + cx_idx as i32;
-            let dx = if cx_idx == 0 {
-                self.fract_x
-            } else {
-                self.fract_x - 1.0
-            };
-            let rval_cy = lcg_next(self.rval_after_cx[cx_idx], i64::from(cy));
-            for cz_off in 0..2usize {
-                let cz = self.parent_z + cz_off as i32;
-                let dz = if cz_off == 0 {
-                    self.fract_z
-                } else {
-                    self.fract_z - 1.0
-                };
-
-                let mut rval = lcg_next(rval_cy, i64::from(cz));
-                rval = lcg_next(rval, i64::from(cx));
-                rval = lcg_next(rval, i64::from(cy));
-                rval = lcg_next(rval, i64::from(cz));
-                let fx = get_fiddle(rval);
-                rval = lcg_next(rval, self.biome_zoom_seed);
-                let fy = get_fiddle(rval);
-                rval = lcg_next(rval, self.biome_zoom_seed);
-                let fz = get_fiddle(rval);
-
-                let xz_partial = (dx + fx) * (dx + fx) + (dz + fz) * (dz + fz);
-                self.candidates[cx_idx * 4 + base_idx + cz_off] = (fy, xz_partial);
-            }
-        }
-    }
-
-    /// Recompute the 8 candidate fiddle values and X/Z distance for a new `parent_y`.
-    ///
-    /// When scanning downward (`parent_y` decreases by 1), the old low-cy candidates
-    /// (`cy=old_parent_y`) match the new high-cy slots (`cy=new_parent_y+1`), so only
-    /// the 4 new low-cy candidates need fresh LCG computation.
-    fn recompute_candidates(&mut self, parent_y: i32) {
-        if self.cached_parent_y != i32::MIN && parent_y == self.cached_parent_y - 1 {
-            // Reuse: old low-cy group → new high-cy group
-            self.candidates[2] = self.candidates[0];
-            self.candidates[3] = self.candidates[1];
-            self.candidates[6] = self.candidates[4];
-            self.candidates[7] = self.candidates[5];
-            self.compute_cy_group(parent_y, false);
-        } else {
-            self.compute_cy_group(parent_y, false);
-            self.compute_cy_group(parent_y + 1, true);
-        }
-        self.cached_parent_y = parent_y;
-    }
-
-    /// Fuzzed biome lookup for a given `block_y`.
-    #[expect(
-        clippy::similar_names,
-        reason = "matches vanilla variable names: fract_x/y/z, parent_x/y/z"
-    )]
-    #[inline]
-    fn get(&mut self, block_y: i32) -> u16 {
-        let abs_y = block_y - 2;
-        let parent_y = abs_y >> 2;
-        let fract_y = f64::from(abs_y & 3) / 4.0;
-
-        if parent_y != self.cached_parent_y {
-            self.recompute_candidates(parent_y);
-        }
-
-        let mut min_i = 0usize;
-        let mut min_dist = f64::INFINITY;
-        for (i, &(fy, xz_partial)) in self.candidates.iter().enumerate() {
-            let dy = if (i & 2) == 0 { fract_y } else { fract_y - 1.0 };
-            let dist = xz_partial + (dy + fy) * (dy + fy);
-            if min_dist > dist {
-                min_i = i;
-                min_dist = dist;
-            }
-        }
-
-        let biome_quart = IVec3::new(
-            if (min_i & 4) == 0 {
-                self.parent_x
-            } else {
-                self.parent_x + 1
-            },
-            if (min_i & 2) == 0 {
-                parent_y
-            } else {
-                parent_y + 1
-            },
-            if (min_i & 1) == 0 {
-                self.parent_z
-            } else {
-                self.parent_z + 1
-            },
-        );
-
-        let in_chunk = biome_quart.x >= self.chunk_quart_x
-            && biome_quart.x < self.chunk_quart_x + 4
-            && biome_quart.z >= self.chunk_quart_z
-            && biome_quart.z < self.chunk_quart_z + 4;
-
-        if in_chunk {
-            let min_qy = self.min_y >> 2;
-            let total_quarts_y = self.section_count * 4;
-            let local_qx = (biome_quart.x - self.chunk_quart_x) as usize;
-            let local_qz = (biome_quart.z - self.chunk_quart_z) as usize;
-            let qy_in_chunk = (biome_quart.y - min_qy).clamp(0, total_quarts_y as i32 - 1) as usize;
-            let section_idx = qy_in_chunk / 4;
-            let local_qy = qy_in_chunk % 4;
-            self.biome_data[section_idx * 64 + local_qy * 16 + local_qz * 4 + local_qx]
-        } else {
-            (self.neighbor_biomes)(biome_quart)
-        }
-    }
-}
-
-impl SurfaceBiomeProvider for FuzzedBiomeColumn<'_> {
-    #[inline]
-    fn biome_id(&mut self, block_y: i32) -> u16 {
-        self.get(block_y)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Weak;
@@ -1312,12 +1219,27 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::chunk::{
         Chunk,
-        heightmap::HeightmapType,
+        heightmap::{ChunkHeightmaps, Heightmap, HeightmapType},
         section::{ChunkSection, Sections},
     };
     use crate::worldgen::generator::{
         ChunkGenerator as _, GenerationChunk, TerrainPhase, context::OverworldGenerator,
     };
+
+    #[test]
+    fn fixed_biome_overworld_keeps_climate_spawn_origin() {
+        use super::{NoiseSpawnTarget as _, OverworldNoises};
+        use steel_registry::vanilla_biomes;
+
+        let seed = 12_345;
+        assert_eq!(
+            OverworldNoises::initial_spawn_search_origin(
+                &BiomeSourceKind::fixed(&vanilla_biomes::LUSH_CAVES),
+                seed
+            ),
+            OverworldNoises::initial_spawn_search_origin(&BiomeSourceKind::overworld(seed), seed),
+        );
+    }
 
     fn make_overworld_chunk() -> Chunk {
         let dimension = &vanilla_dimension_types::OVERWORLD;
@@ -1402,6 +1324,22 @@ mod tests {
         for chunk in [&warm, &cold] {
             generator.create_biomes(chunk);
             generator.fill_from_noise(GenerationChunk::<TerrainPhase>::for_test(chunk), None);
+
+            let mut expected = ChunkHeightmaps::empty();
+            expected.prime_from_sections(
+                HeightmapType::worldgen_types(),
+                chunk.min_y(),
+                chunk.height(),
+                &chunk.sections().sections,
+            );
+            let actual = chunk.heightmaps.read();
+            for &heightmap_type in HeightmapType::worldgen_types() {
+                assert_eq!(
+                    actual.get(heightmap_type).map(Heightmap::raw_data),
+                    expected.get(heightmap_type).map(Heightmap::raw_data),
+                    "{heightmap_type:?} must match the generated blocks",
+                );
+            }
         }
         assert!(has_overworld_post_noise_state(&warm));
         assert!(has_overworld_post_noise_state(&cold));

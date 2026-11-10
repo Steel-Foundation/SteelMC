@@ -4,7 +4,7 @@ use std::f32::consts::{PI, TAU};
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
-use steel_math::{DEG_TO_RAD, java_round_f32, trig};
+use steel_math::{DEG_TO_RAD, round_f32, trig};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -59,7 +59,7 @@ impl DaylightDetectorBlock {
         let mut sun_angle = sun_angle_degrees * DEG_TO_RAD;
         let offset = if sun_angle < PI { 0.0 } else { TAU };
         sun_angle += (offset - sun_angle) * 0.2;
-        java_round_f32(f32::from(sky_brightness) * trig::cos(sun_angle))
+        round_f32(f32::from(sky_brightness) * trig::cos(sun_angle))
             .clamp(MIN_REDSTONE_SIGNAL, MAX_REDSTONE_SIGNAL) as u8
     }
 
@@ -221,7 +221,7 @@ mod tests {
         let mut adjusted_angle = sun_angle_degrees * DEG_TO_RAD;
         let offset = if adjusted_angle < PI { 0.0 } else { TAU };
         adjusted_angle += (offset - adjusted_angle) * 0.2;
-        assert_eq!(java_round_f32(11.0 * adjusted_angle.cos()), 7);
+        assert_eq!(round_f32(11.0 * adjusted_angle.cos()), 7);
         assert_eq!(
             DaylightDetectorBlock::calculate_signal_strength(11, sun_angle_degrees, false),
             6

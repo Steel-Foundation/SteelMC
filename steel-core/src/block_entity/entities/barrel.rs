@@ -1,7 +1,7 @@
 //! Barrel block entity.
 use crate::{
     block_entity::{
-        BlockEntity, BlockEntityBase, RandomizableContainer,
+        BlockEntity, BlockEntityBase, ImplicitComponentGetter, RandomizableContainer,
         randomizable_container::RandomizableContainerStorage,
     },
     inventory::lock::ContainerRef,
@@ -12,8 +12,7 @@ use crate::{
 use simdnbt::{borrow::BaseNbtCompound, owned::NbtCompound};
 use std::sync::Weak;
 use steel_registry::{
-    data_components::vanilla_components::SeededContainerLoot, item_stack::ItemStack,
-    vanilla_block_entity_types,
+    data_components::vanilla_components::SeededContainerLoot, vanilla_block_entity_types,
 };
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
@@ -59,8 +58,8 @@ impl BlockEntity for BarrelBlockEntity {
     fn pre_remove_side_effects(&self, pos: BlockPos, _state: BlockStateId) {
         self.storage.pre_remove_side_effects(pos);
     }
-    fn apply_components_from_item(&self, item: &ItemStack) {
-        self.storage.apply_components_from_item(item);
+    fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
+        self.storage.apply_implicit_components(components);
     }
     fn container_ref(&self) -> Option<ContainerRef> {
         Some(self.storage.container_ref.clone())

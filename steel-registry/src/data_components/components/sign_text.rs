@@ -10,6 +10,7 @@ use std::io::{Cursor, Result, Write};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry};
+use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 use text_components::TextComponent;
 
@@ -115,8 +116,8 @@ impl FromNbtTag for SignText {
             .unwrap_or(DyeColor::Black);
         let has_glowing_text = compound
             .get("has_glowing_text")
-            .and_then(|tag| tag.byte())
-            .is_some_and(|value| value != 0);
+            .and_then(|tag| tag.codec_bool())
+            .unwrap_or(false);
         Some(Self {
             messages,
             filtered_messages: Some(filtered_messages),

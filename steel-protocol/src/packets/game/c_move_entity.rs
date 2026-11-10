@@ -11,7 +11,7 @@
 use std::io::{self, Write};
 
 use steel_macros::{ClientPacket, WriteTo};
-use steel_math::{DEGREE_360, java_round_f64};
+use steel_math::{DEGREE_360, round_f64};
 use steel_registry::packets::play::{C_MOVE_ENTITY_POS, C_MOVE_ENTITY_POS_ROT, C_MOVE_ENTITY_ROT};
 use steel_utils::codec::VarInt;
 
@@ -229,7 +229,7 @@ pub const fn to_angle_byte(degrees: f32) -> i8 {
 #[inline]
 #[must_use]
 pub const fn encode_position(value: f64) -> i64 {
-    java_round_f64(value * TRUNCATION_STEPS)
+    round_f64(value * TRUNCATION_STEPS)
 }
 
 /// Calculates the delta for entity movement.

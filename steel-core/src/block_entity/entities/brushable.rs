@@ -13,6 +13,8 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::{
     RegistryExt as _, vanilla_block_entity_types, vanilla_blocks, vanilla_entities,
 };
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{
@@ -324,7 +326,7 @@ impl BlockEntity for BrushableBlockEntity {
         state.loot_table = nbt_view
             .string("LootTable")
             .and_then(|value| Identifier::from_str(&value.to_str()).ok());
-        state.loot_table_seed = nbt_view.long("LootTableSeed").unwrap_or(0);
+        state.loot_table_seed = nbt_view.long_value("LootTableSeed").unwrap_or(0);
 
         // Vanilla: LootTable and item are mutually exclusive on load.
         if state.loot_table.is_some() {
@@ -338,7 +340,8 @@ impl BlockEntity for BrushableBlockEntity {
 
         // Vanilla Direction.LEGACY_ID_CODEC: byte 3D data value.
         state.hit_direction = nbt_view
-            .byte("hit_direction")
+            .get("hit_direction")
+            .and_then(|tag| tag.codec_i8())
             .map(|value| Direction::from_3d_data_value(i32::from(value)));
     }
 

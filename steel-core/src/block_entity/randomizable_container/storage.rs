@@ -13,9 +13,9 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::{RegistryExt, block_entity_type::BlockEntityTypeRef};
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
-use crate::block_entity::{BlockEntityBase, RandomizableContainer};
+use crate::block_entity::{BlockEntityBase, ImplicitComponentGetter, RandomizableContainer};
 use crate::entity::{LivingEntity, entity_loot_ref, living_loot_equipment};
-use crate::inventory::container::Container;
+use crate::inventory::container::{Container, load_all_items};
 use crate::inventory::lock::{ContainerRef, SharedContainer};
 use crate::loot::{LOOT_TABLES, LootContext, LootError, LootResult};
 use crate::player::Player;
@@ -126,33 +126,7 @@ impl RandomizableContainerStorage {
             return;
         }
 
-        // Load items from NBT using borrowed NBT for proper ItemStack parsing
-        if let Some(items_list) = nbt_view.list("Items")
-            && let Some(compounds) = items_list.compounds()
-        {
-            for compound in compounds {
-                let slot = match compound.get("Slot") {
-                    None => Some(0),
-                    Some(tag) => tag
-                        .byte()
-                        .map(|value| value as u8)
-                        .or_else(|| tag.short().map(|value| value as u8))
-                        .or_else(|| tag.int().map(|value| value as u8))
-                        .or_else(|| tag.long().map(|value| value as u8))
-                        .or_else(|| tag.float().map(|value| value as i32 as u8))
-                        .or_else(|| tag.double().map(|value| value as i32 as u8)),
-                };
-                if let Some(slot) = slot {
-                    let slot = usize::from(slot);
-                    if slot < container.items.len() {
-                        // Parse item directly from the borrowed compound
-                        if let Some(item) = ItemStack::from_borrowed_compound(&compound) {
-                            container.items[slot] = item;
-                        }
-                    }
-                }
-            }
-        }
+        load_all_items(nbt_view, &mut container.items);
     }
 
     pub(crate) fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -178,9 +152,9 @@ impl RandomizableContainerStorage {
         nbt.insert("Items", NbtList::Compound(items));
     }
 
-    pub(crate) fn apply_components_from_item(&self, item: &ItemStack) {
+    pub(crate) fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
         let mut container = self.container.lock();
-        if let Some(contents) = item.get(CONTAINER) {
+        if let Some(contents) = components.get(CONTAINER) {
             container.items.fill(ItemStack::empty());
             for (slot, template) in contents
                 .items()
@@ -197,8 +171,8 @@ impl RandomizableContainerStorage {
                 }
             }
         }
-        if let Some(loot) = item.get(CONTAINER_LOOT) {
-            container.loot_table = Some(loot.clone());
+        if let Some(loot) = components.get(CONTAINER_LOOT) {
+            container.loot_table = Some(loot);
             container.generation = container.generation.wrapping_add(1);
             container.unpacking = false;
         }

@@ -1,4 +1,4 @@
-use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
+use steel_registry::{init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_items};
 
 use super::*;
 use crate::inventory::container::Container as _;
@@ -248,7 +248,7 @@ fn placed_container_loot_component_remains_lazy() {
     let barrel = test_barrel();
     let mut patch = DataComponentPatch::new();
     patch.set(CONTAINER_LOOT, pending(42));
-    barrel.apply_components_from_item(&ItemStack::with_count_and_patch(
+    barrel.apply_components_from_item_stack(&ItemStack::with_count_and_patch(
         &vanilla_items::BARREL,
         1,
         patch,

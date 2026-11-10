@@ -1,14 +1,28 @@
-//! Integer rounding compatible with Java's `Math.round` overloads.
+//! Java-compatible floating-point rounding
 
-/// Rounds to the nearest integer, with ties toward positive infinity.
+use crate::float_consts::{EXP_BIAS, EXP_BIT_MASK, SIGNIF_BIT_MASK, SIGNIFICAND_WIDTH, SIZE};
+
+/// Rounds ties toward positive infinity, unlike [`f32::round`], which rounds
+/// them away from zero. Uses the JDK's IEEE 754 bit-shift implementation of
+/// [`Math.round(float)`], including saturation and NaN handling, without rounding
+/// up values just below a half-integer
 ///
-/// Returns zero for NaN and saturates at the `i32` bounds, matching
-/// Java's `Math.round(float)`.
-#[inline]
+/// [`Math.round(float)`]: https://github.com/openjdk/jdk25u/blob/master/src/java.base/share/classes/java/lang/Math.java#L752-L783
 #[must_use]
-pub fn java_round_f32(value: f32) -> i32 {
-    // Widen so the value directly below 0.5 does not round up during addition.
-    (f64::from(value) + 0.5).floor() as i32
+pub const fn round_f32(value: f32) -> i32 {
+    let bits = value.to_bits() as i32;
+    let biased_exp = (bits & EXP_BIT_MASK) >> (SIGNIFICAND_WIDTH - 1);
+    let shift = (SIGNIFICAND_WIDTH - 2 + EXP_BIAS) - biased_exp;
+    // The JDK spells this `(shift & -32) == 0`: a finite value whose ulp lies in [2^-32, 1).
+    if shift >= 0 && shift < SIZE {
+        let mut r = (bits & SIGNIF_BIT_MASK) | (SIGNIF_BIT_MASK + 1);
+        if bits < 0 {
+            r = -r;
+        }
+        ((r >> shift) + 1) >> 1
+    } else {
+        value as i32
+    }
 }
 
 /// Rounds to the nearest integer, with ties toward positive infinity.
@@ -17,7 +31,7 @@ pub fn java_round_f32(value: f32) -> i32 {
 /// Java's `Math.round(double)`.
 #[inline]
 #[must_use]
-pub const fn java_round_f64(value: f64) -> i64 {
+pub const fn round_f64(value: f64) -> i64 {
     let floor = value.floor();
     // Adding 0.5 directly can round the value just below a tie up to that tie.
     if value - floor >= 0.5 {
@@ -29,7 +43,7 @@ pub const fn java_round_f64(value: f64) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{java_round_f32, java_round_f64};
+    use super::{round_f32, round_f64};
 
     #[test]
     fn float_rounding_matches_java_at_ties_precision_limits_and_nonfinite_values() {
@@ -48,7 +62,7 @@ mod tests {
             (f32::INFINITY, i32::MAX),
             (f32::NEG_INFINITY, i32::MIN),
         ] {
-            assert_eq!(java_round_f32(value), expected, "value={value:?}");
+            assert_eq!(round_f32(value), expected, "value={value:?}");
         }
     }
 
@@ -69,7 +83,7 @@ mod tests {
             (f64::INFINITY, i64::MAX),
             (f64::NEG_INFINITY, i64::MIN),
         ] {
-            assert_eq!(java_round_f64(value), expected, "value={value:?}");
+            assert_eq!(round_f64(value), expected, "value={value:?}");
         }
     }
 }
