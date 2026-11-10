@@ -7,6 +7,8 @@ use steel_utils::Identifier;
 use super::{LootTable, LootTableRef, vanilla_loot_tables};
 
 /// Registered vanilla loot-table identities, independent of their execution context.
+// TODO: Allow loot table customization before freezing, through the same
+// initialization flow as the other registries.
 pub static LOOT_TABLES: LazyLock<LootTableRegistry> = LazyLock::new(|| {
     let mut registry = LootTableRegistry::new();
     vanilla_loot_tables::register_loot_tables(&mut registry);
@@ -31,36 +33,49 @@ impl LootTableRegistry {
             allows_registering: true,
         }
     }
-
-    /// Registers a table identity and returns its registry index.
-    ///
-    /// # Panics
-    /// Panics if the registry has been frozen.
-    pub fn register(&mut self, table: LootTableRef) -> usize {
-        assert!(
-            self.allows_registering,
-            "Cannot register loot tables after the registry has been frozen"
-        );
-
-        let id = self.tables_by_id.len();
-        self.tables_by_key.insert(table.key.clone(), id);
-        self.tables_by_id.push(table);
-        id
-    }
-
-    /// Iterates table identities in registration order.
-    pub fn iter(&self) -> impl Iterator<Item = (usize, LootTableRef)> + '_ {
-        self.tables_by_id
-            .iter()
-            .enumerate()
-            .map(|(id, &table)| (id, table))
-    }
 }
 
-impl Default for LootTableRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+steel_registry::impl_standard_methods!(
+    LootTableRegistry,
+    LootTableRef,
+    tables_by_id,
+    tables_by_key,
+    allows_registering,
+    "Cannot register duplicate loot table key: {}"
+);
 
 steel_registry::impl_registry_ext!(LootTableRegistry, LootTable, tables_by_id, tables_by_key);
+
+#[cfg(test)]
+mod tests {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    use super::*;
+
+    #[test]
+    fn duplicate_key_rejection_preserves_registered_table() {
+        static ORIGINAL: LootTable = LootTable {
+            key: Identifier::new_static("steel", "test/duplicate"),
+            param_set: Identifier::vanilla_static("generic"),
+            random_sequence: None,
+        };
+        static DUPLICATE: LootTable = LootTable {
+            key: Identifier::new_static("steel", "test/duplicate"),
+            param_set: Identifier::vanilla_static("block"),
+            random_sequence: None,
+        };
+
+        let mut registry = LootTableRegistry::new();
+        let id = registry.register(&ORIGINAL);
+        let result = catch_unwind(AssertUnwindSafe(|| registry.register(&DUPLICATE)));
+
+        assert!(result.is_err());
+        assert_eq!(registry.len(), 1);
+        assert_eq!(registry.id_from_key(&ORIGINAL.key), Some(id));
+        assert!(std::ptr::eq(registry.by_id(id).unwrap(), &ORIGINAL));
+        assert!(std::ptr::eq(
+            registry.by_key(&ORIGINAL.key).unwrap(),
+            &ORIGINAL
+        ));
+    }
+}
