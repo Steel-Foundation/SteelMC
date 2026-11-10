@@ -471,7 +471,7 @@ impl ChunkMap {
     /// piece whose placement depends on which chunk places it first is small enough that every
     /// chunk placing it overlaps the others' windows; structure placement checks this in debug
     /// builds.
-    pub(crate) fn window_gate_for_step(&self, step: &ChunkStep) -> Option<Arc<ChunkWindowGate>> {
+    pub fn window_gate_for_step(&self, step: &ChunkStep) -> Option<Arc<ChunkWindowGate>> {
         if step.target_status == ChunkStatus::Light {
             return Some(Arc::clone(&self.light_work_window_gate));
         }

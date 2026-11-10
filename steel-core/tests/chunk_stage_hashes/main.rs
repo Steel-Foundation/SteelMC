@@ -6,40 +6,39 @@
 //!
 //! Tests all dimensions (overworld, nether, end) using the new JSON format
 //! with a `dimensions` wrapper.
+// Auto-trait (`Send`/`Sync`) proofs through the World/chunk type graph exceed the default depth of 128.
+#![recursion_limit = "256"]
 
-use std::collections::VecDeque;
 use std::env;
 use std::fmt::Write;
 use std::fs;
 use std::io::{BufReader, Cursor, Read as IoRead};
 use std::mem;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Weak};
 use std::thread;
 
-use crate::chunk::Chunk;
-use crate::chunk::chunk_generation_task::StaticCache2D;
-use crate::chunk::chunk_holder::ChunkHolder;
-use crate::chunk::chunk_pyramid::{ChunkStep, GENERATION_PYRAMID};
-use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use crate::chunk::light::{
+use flate2::read::GzDecoder;
+use glam::IVec3;
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use serde::Deserialize;
+use steel_core::chunk::Chunk;
+use steel_core::chunk::chunk_generation_task::StaticCache2D;
+use steel_core::chunk::chunk_holder::ChunkHolder;
+use steel_core::chunk::chunk_pyramid::{ChunkStep, GENERATION_PYRAMID};
+use steel_core::chunk::chunk_ticket_manager::ChunkTicketLevel;
+use steel_core::chunk::light::{
     BlockLightChunkEdgeChecks, DATA_LAYER_SIZE, LightCacheLayout, LightCacheSetupRadius,
     LightLayer, LightSection, LightSectionRange, LightWorkset, SkyLightChunkEdgeChecks,
     propagate_block_light_chunk, propagate_sky_light_chunk,
 };
-use crate::chunk::section::{ChunkSection, Sections};
-use crate::chunk::status::ChunkStatus;
-use crate::chunk::window_gate::ChunkWindowGate;
-use crate::entity::damage::DamageHistory;
-use crate::level_data::{GameTimeSource, WorldGenerationSettings};
-use crate::world::{World, WorldConfig, WorldStorageConfig};
-use crate::worldgen::generator::{GenerationChunk, TerrainPhase};
-use crate::worldgen::{ChunkGenerator, ChunkGeneratorType, WorldGenContext};
-use flate2::read::GzDecoder;
-use glam::IVec3;
-use rayon::prelude::*;
-use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
-use serde::Deserialize;
+use steel_core::chunk::section::{ChunkSection, Sections};
+use steel_core::chunk::status::ChunkStatus;
+use steel_core::entity::damage::DamageHistory;
+use steel_core::level_data::{GameTimeSource, WorldGenerationSettings};
+use steel_core::world::{World, WorldConfig, WorldStorageConfig};
+use steel_core::worldgen::generator::{GenerationChunk, TerrainPhase};
+use steel_core::worldgen::{ChunkGenerator, ChunkGeneratorType, WorldGenContext};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::structure::TerrainAdjustment;
 use steel_registry::{dimension_type::DimensionTypeRef, vanilla_dimension_types};
@@ -54,9 +53,14 @@ use steel_worldgen::structure::StructureStart;
 use tokio::runtime::Runtime;
 use toml::map::Map;
 
+mod feature_schedule;
+
+use feature_schedule::{
+    FeatureSchedule, FeatureScheduler, PARALLEL_FEATURE_THREADS, RecordedFeatureOrders,
+    generate_features_for_positions,
+};
+
 type FeatureHolderMap = Arc<FxHashMap<(i32, i32), Arc<ChunkHolder>>>;
-/// Chunk orders a [`FeatureSchedule::Gate`] run recorded, by dimension.
-type RecordedFeatureOrders = FxHashMap<&'static str, VecDeque<Vec<(i32, i32)>>>;
 
 struct FeatureGenerationInputs<'a> {
     holders: &'a FeatureHolderMap,
@@ -66,43 +70,6 @@ struct FeatureGenerationInputs<'a> {
     feature_cache_radius: i32,
     seed: u64,
     scheduler: &'a FeatureScheduler,
-}
-
-/// How [`generate_features_for_positions`] orders feature generation.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum FeatureSchedule {
-    /// One chunk at a time, in vanilla's order.
-    Serial,
-    /// Waves of chunks that cannot observe each other, on several threads (see
-    /// [`feature_waves`]).
-    Waves,
-    /// Several threads each taking the next chunk, kept apart only by the chunk map's features
-    /// gate. Records the order chunks got their windows in.
-    Gate,
-    /// One chunk at a time, in the orders a [`Self::Gate`] run recorded.
-    Replay,
-}
-
-impl FeatureSchedule {
-    /// Whether chunks that can observe each other run in vanilla's order, so the result
-    /// must match vanilla's hashes.
-    fn follows_vanilla_order(self) -> bool {
-        matches!(self, Self::Serial | Self::Waves)
-    }
-}
-
-/// Feature scheduling state for one dimension.
-struct FeatureScheduler {
-    schedule: FeatureSchedule,
-    /// Threads for [`FeatureSchedule::Waves`] and [`FeatureSchedule::Gate`].
-    pool: Option<rayon::ThreadPool>,
-    /// The chunk map's features-step gate, for [`FeatureSchedule::Gate`].
-    gate: Option<Arc<ChunkWindowGate>>,
-    /// Chunk orders, one per [`generate_features_for_positions`] call, that a
-    /// [`FeatureSchedule::Gate`] run records and a [`FeatureSchedule::Replay`] run consumes.
-    orders: SyncMutex<VecDeque<Vec<(i32, i32)>>>,
-    /// Failed window reservations in a [`FeatureSchedule::Gate`] run.
-    window_waits: AtomicUsize,
 }
 
 /// What one run of [`chunk_stage_hashes_inner`] produced.
@@ -934,8 +901,6 @@ fn format_light_diffs(diffs: &LightDiffs, chunk_x: i32, chunk_z: i32) -> String 
     msg
 }
 
-/// Threads used by [`chunk_stage_hashes_parallel_features`].
-const PARALLEL_FEATURE_THREADS: usize = 4;
 /// Stack size for test threads: pre-generating biome data for neighbor lookups increases
 /// stack usage enough to overflow the default in debug builds.
 const TEST_THREAD_STACK_SIZE: usize = 16 * 1024 * 1024;
@@ -949,8 +914,9 @@ fn chunk_stage_hashes() {
 }
 
 /// The same comparison with features generated on several threads. Chunks whose features can
-/// observe each other still run in vanilla's recorded order (see [`feature_waves`]), so the
-/// hashes must match exactly; a mismatch means running features concurrently changed a result.
+/// observe each other still run in vanilla's recorded order (see
+/// `feature_schedule::feature_waves`), so the hashes must match exactly; a mismatch means
+/// running features concurrently changed a result.
 ///
 /// This checks that feature generation is safe to run concurrently. The window gate that
 /// orders overlapping feature steps in a live world is checked by
@@ -1075,136 +1041,6 @@ fn build_test_beardifier(
     (!beardifier.is_empty()).then_some(beardifier)
 }
 
-fn generate_features_for_positions(
-    positions: &[(i32, i32)],
-    generated_positions: &mut FxHashSet<(i32, i32)>,
-    inputs: FeatureGenerationInputs<'_>,
-) {
-    let pending = positions
-        .iter()
-        .copied()
-        .filter(|&pos| generated_positions.insert(pos))
-        .collect::<Vec<_>>();
-    let scheduler = inputs.scheduler;
-    match scheduler.schedule {
-        FeatureSchedule::Serial => {
-            for &pos in &pending {
-                generate_features_at(pos, &inputs);
-            }
-        }
-        FeatureSchedule::Waves => {
-            let Some(pool) = &scheduler.pool else {
-                panic!("wave feature schedule needs a thread pool");
-            };
-            for wave in feature_waves(&pending, &inputs) {
-                pool.install(|| {
-                    wave.par_iter()
-                        .for_each(|&pos| generate_features_at(pos, &inputs));
-                });
-            }
-        }
-        FeatureSchedule::Gate => {
-            let (Some(pool), Some(gate)) = (&scheduler.pool, &scheduler.gate) else {
-                panic!("gated feature schedule needs a thread pool and a gate");
-            };
-            let order = SyncMutex::new(Vec::with_capacity(pending.len()));
-            // Every thread takes the next chunk in order, so neighboring chunks are started
-            // together and have to be kept apart by the gate.
-            let next = AtomicUsize::new(0);
-            pool.broadcast(|_| {
-                while let Some(&(x, z)) = pending.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    let _reservation = loop {
-                        if let Some(reservation) = gate.try_reserve_centered(ChunkPos::new(x, z)) {
-                            break reservation;
-                        }
-                        scheduler.window_waits.fetch_add(1, Ordering::Relaxed);
-                        thread::yield_now();
-                    };
-                    // Recorded while the window is held, so chunks with overlapping windows
-                    // are recorded in the order they ran.
-                    order.lock().push((x, z));
-                    generate_features_at((x, z), &inputs);
-                }
-            });
-            scheduler.orders.lock().push_back(order.into_inner());
-        }
-        FeatureSchedule::Replay => {
-            let Some(order) = scheduler.orders.lock().pop_front() else {
-                panic!("feature replay ran out of recorded orders");
-            };
-            let mut replayed = order.clone();
-            replayed.sort_unstable();
-            let mut expected = pending;
-            expected.sort_unstable();
-            assert_eq!(
-                replayed, expected,
-                "recorded feature order covers other chunks"
-            );
-            for pos in order {
-                generate_features_at(pos, &inputs);
-            }
-        }
-    }
-}
-
-/// Splits `positions`, in vanilla's generation order, into waves whose chunks can run
-/// concurrently without changing any result vanilla's serial order would produce.
-///
-/// A chunk goes in a later wave than every earlier chunk it conflicts with. Two chunks
-/// conflict when one's features may write where the other's read or write (centers within
-/// twice the write radius), or when both place pieces of the same structure start, since
-/// the first placement can update the start's shared state (e.g. a scattered feature's
-/// height position). The live gate does not exclude shared starts, so this is stricter than
-/// it; see `ChunkMap::window_gate_for_step`.
-fn feature_waves(
-    positions: &[(i32, i32)],
-    inputs: &FeatureGenerationInputs<'_>,
-) -> Vec<Vec<(i32, i32)>> {
-    let conflict_distance = inputs.feature_step.block_state_write_radius * 2;
-    let placed_starts = positions
-        .iter()
-        .map(|pos| {
-            let Some(holder) = inputs.holders.get(pos) else {
-                panic!("Missing feature center chunk {pos:?}");
-            };
-            let Some(chunk) = holder.try_chunk(ChunkStatus::Terrain) else {
-                panic!("Feature center chunk {pos:?} missing");
-            };
-            chunk
-                .structure_references()
-                .iter()
-                .flat_map(|(structure, sources)| {
-                    sources
-                        .iter()
-                        .map(move |source| (structure.clone(), *source))
-                })
-                .collect::<FxHashSet<(Identifier, ChunkPos)>>()
-        })
-        .collect::<Vec<_>>();
-
-    let mut wave_of = Vec::<usize>::with_capacity(positions.len());
-    for (index, &(x, z)) in positions.iter().enumerate() {
-        let wave = (0..index)
-            .filter(|&earlier| {
-                let (earlier_x, earlier_z) = positions[earlier];
-                ((x - earlier_x).abs() <= conflict_distance
-                    && (z - earlier_z).abs() <= conflict_distance)
-                    || !placed_starts[index].is_disjoint(&placed_starts[earlier])
-            })
-            .map(|earlier| wave_of[earlier] + 1)
-            .max()
-            .unwrap_or(0);
-        wave_of.push(wave);
-    }
-
-    let wave_count = wave_of.iter().max().map_or(0, |last| last + 1);
-    let mut waves = vec![Vec::new(); wave_count];
-    for (&pos, &wave) in positions.iter().zip(&wave_of) {
-        waves[wave].push(pos);
-    }
-    waves
-}
-
 fn generate_features_at((chunk_x, chunk_z): (i32, i32), inputs: &FeatureGenerationInputs<'_>) {
     let center = ChunkPos::new(chunk_x, chunk_z);
     let Some(center_holder) = inputs.holders.get(&(chunk_x, chunk_z)) else {
@@ -1229,7 +1065,7 @@ fn generate_features_at((chunk_x, chunk_z): (i32, i32), inputs: &FeatureGenerati
     let region_random = inputs
         .generator
         .create_worldgen_region_random(inputs.seed as i64, center);
-    let mut region = crate::worldgen::WorldGenRegion::new(
+    let mut region = steel_core::worldgen::WorldGenRegion::new(
         inputs.context,
         inputs.feature_step,
         &cache,
@@ -1311,8 +1147,8 @@ fn chunk_stage_hashes_inner(
     schedule: FeatureSchedule,
     mut recorded_orders: Option<RecordedFeatureOrders>,
 ) -> ChunkStageRun {
-    use crate::bootstrap::init_globals;
-    use crate::worldgen::{EndGenerator, NetherGenerator, OverworldGenerator};
+    use steel_core::bootstrap::init_globals;
+    use steel_core::worldgen::{EndGenerator, NetherGenerator, OverworldGenerator};
     use steel_worldgen::biomes::BiomeSourceKind;
 
     init_globals();

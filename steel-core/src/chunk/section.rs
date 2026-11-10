@@ -743,7 +743,7 @@ impl ChunkSection {
 
     /// Returns the section's read-only block palette.
     #[must_use]
-    pub(crate) const fn states(&self) -> &BlockPalette {
+    pub const fn states(&self) -> &BlockPalette {
         &self.states
     }
 

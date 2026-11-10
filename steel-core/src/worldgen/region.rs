@@ -352,10 +352,11 @@ impl<'a> WorldGenRegion<'a> {
     /// their write windows, so a chunk outside the zone may be written by another chunk's
     /// step at the same moment and the read could see half of that write. Unlike vanilla,
     /// which checks every step, only these steps are checked, and only in test and debug
-    /// builds because the check is on the hot read path.
+    /// builds because the check is on the hot read path. Test builds, including the
+    /// `test-framework` parity tests, panic instead of logging.
     #[inline]
     fn warn_if_read_outside_write_zone(&self, chunk_x: i32, chunk_z: i32) {
-        if cfg!(any(test, debug_assertions))
+        if cfg!(any(test, debug_assertions, feature = "test-framework"))
             && self.step.block_state_write_radius > 0
             && !self.can_write_to_chunk(chunk_x, chunk_z)
         {
@@ -371,7 +372,7 @@ impl<'a> WorldGenRegion<'a> {
     fn report_read_outside_write_zone(&self, chunk_x: i32, chunk_z: i32) {
         let distance = Self::chessboard_distance(self.center, chunk_x, chunk_z);
         assert!(
-            !cfg!(test),
+            !cfg!(any(test, feature = "test-framework")),
             "Unsafe terrain read from chunk ({chunk_x}, {chunk_z}) while generating {:?} for \
              ({}, {}) (distance {distance}, write radius {})",
             self.step.target_status,

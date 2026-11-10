@@ -12,7 +12,7 @@ use tokio::sync::Notify;
 /// `2 * window_radius` apart on both axes; overlapping work runs one at a time and the
 /// rest runs concurrently.
 #[derive(Debug)]
-pub(crate) struct ChunkWindowGate {
+pub struct ChunkWindowGate {
     window_radius: i32,
     active_centers: SyncMutex<Vec<ChunkPos>>,
     released: Notify,
@@ -20,7 +20,7 @@ pub(crate) struct ChunkWindowGate {
 
 /// Reservation for one chunk window.
 #[derive(Debug)]
-pub(crate) struct ChunkWindowReservation {
+pub struct ChunkWindowReservation {
     gate: Arc<ChunkWindowGate>,
     center: ChunkPos,
 }
@@ -69,7 +69,7 @@ impl ChunkWindowGate {
     }
 
     /// Attempts to reserve the window centered on `center`.
-    pub(crate) fn try_reserve_centered(
+    pub fn try_reserve_centered(
         self: &Arc<Self>,
         center: ChunkPos,
     ) -> Option<ChunkWindowReservation> {

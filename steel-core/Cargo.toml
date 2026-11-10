@@ -92,6 +92,11 @@ criterion.workspace = true
 sha1.workspace = true
 steel-registry.workspace = true
 
+[[test]]
+name = "chunk_stage_hashes"
+# Needs test-only access to worldgen internals.
+required-features = ["test-framework"]
+
 [[bench]]
 name = "worldgen"
 harness = false
