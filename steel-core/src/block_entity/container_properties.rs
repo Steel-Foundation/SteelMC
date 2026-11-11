@@ -86,7 +86,13 @@ impl ContainerProperties {
         if player.is_spectator() {
             return true;
         }
-        let properties = Arc::clone(&self.properties.read());
+        let properties = {
+            let properties = self.properties.read();
+            if properties.lock == LockCode::NO_LOCK {
+                return true;
+            }
+            Arc::clone(&properties)
+        };
         let mut can_open = false;
         player.with_equipment_slot(EquipmentSlot::MainHand, &mut |item| {
             can_open = properties.lock.predicate().matches(item);
