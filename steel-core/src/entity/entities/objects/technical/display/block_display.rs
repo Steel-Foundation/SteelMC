@@ -20,7 +20,10 @@ use steel_registry::vanilla_entity_data::{BlockDisplayEntityData, DisplayEntityD
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockStateId, DowncastType, DowncastTypeKey};
 
-/// A mc block display entity renders the configured [`BlockStateId`] using the common display properties
+/// A display entity that renders the block model associated with a [`BlockStateId`].
+///
+/// To **access** or **modify** the data of a block display, you will need to use [`Display::with_view`].
+/// This method takes a function with a [`ItemDisplayView`] as a parameter, which can be used within the function.
 #[entity_behavior(class = "BlockDisplay")]
 pub struct BlockDisplayEntity {
     base: EntityBase,
