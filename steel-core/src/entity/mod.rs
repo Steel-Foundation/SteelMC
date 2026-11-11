@@ -155,6 +155,10 @@ const BUBBLE_COLUMN_INSIDE_UP_ACCELERATION: f64 = 0.06;
 const BUBBLE_COLUMN_ABOVE_UP_ACCELERATION: f64 = 0.1;
 const DAMAGE_KNOCKBACK_POWER: f64 = 0.4_f32 as f64;
 const KNOCKBACK_DIRECTION_EPSILON_SQ: f64 = 1.0e-5_f32 as f64;
+/// Below this length vanilla `Vec3.normalize` returns zero.
+const VEC3_NORMALIZE_EPSILON: f64 = 1.0e-5_f32 as f64;
+/// Damage stats are only awarded below vanilla's `3.4028235E37F` bound.
+const DAMAGE_STAT_LIMIT: f32 = f32::MAX / 10.0;
 const MOVE_TOWARDS_CLOSEST_SPACE_DIRECTIONS: [Direction; 5] = [
     Direction::North,
     Direction::South,

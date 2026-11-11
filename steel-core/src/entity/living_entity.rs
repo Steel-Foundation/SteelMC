@@ -804,7 +804,7 @@ pub trait LivingEntity: Entity {
 
         if let Some(player) = self.as_player()
             && damage_blocked > 0.0
-            && damage_blocked < 3.402_823_5e37
+            && damage_blocked < DAMAGE_STAT_LIMIT
         {
             player.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_BLOCKED_BY_SHIELD,
@@ -844,8 +844,7 @@ pub trait LivingEntity: Entity {
                     source_position.z - position.z,
                 );
                 let length = horizontal.length();
-                // Vanilla `Vec3.normalize` returns zero below this length.
-                let to_source = if length < f64::from(1.0e-5_f32) {
+                let to_source = if length < VEC3_NORMALIZE_EPSILON {
                     DVec3::ZERO
                 } else {
                     horizontal / length
@@ -911,22 +910,24 @@ pub trait LivingEntity: Entity {
     /// Returns how long this entity's weapon disables a blocking item it hits.
     ///
     /// Vanilla only counts the weapon when it is also the active item, so a
-    /// main-hand weapon does not count while the off hand is in use.
+    /// main-hand weapon does not count while the off hand is in use, or when
+    /// it replaced the item being used in the main hand.
     fn get_seconds_to_disable_blocking(&self) -> f32 {
         if self.is_spectator() {
             return 0.0;
         }
-        if self.is_using_item()
-            && self
-                .living_base()
-                .active_item_use()
-                .is_some_and(|active| active.hand() != InteractionHand::MainHand)
-        {
-            return 0.0;
-        }
+        let active = self
+            .living_base()
+            .active_item_use()
+            .filter(|_| self.is_using_item());
         let mut seconds = 0.0;
         self.with_weapon_item(&mut |weapon_item| {
             seconds = weapon_item
+                .filter(|item| {
+                    active.is_none_or(|active| {
+                        active.hand() == InteractionHand::MainHand && active.item() == item.item()
+                    })
+                })
                 .and_then(ItemStack::get_weapon)
                 .map_or(0.0, |weapon| weapon.disable_blocking_for_seconds);
         });
@@ -1845,15 +1846,16 @@ pub trait LivingEntity: Entity {
         }
         let user = self.as_living_entity()?;
         let active = self.living_base().active_item_use()?;
-        let mut use_item = None;
+        let mut blocking_item = None;
         self.with_equipment_slot(active.hand().into(), &mut |item| {
-            if item.item() == active.item() && item.has(BLOCKS_ATTACKS) {
-                use_item = Some(item.clone());
+            if item.item() == active.item()
+                && let Some(blocks_attacks) = item.get(BLOCKS_ATTACKS)
+            {
+                blocking_item = Some((item.clone(), blocks_attacks.block_delay_ticks()));
             }
         });
         // Use duration is read outside the equipment lock so behaviors may inspect the user.
-        let use_item = use_item?;
-        let block_delay_ticks = use_item.get(BLOCKS_ATTACKS)?.block_delay_ticks();
+        let (use_item, block_delay_ticks) = blocking_item?;
         let use_duration = ITEM_BEHAVIORS
             .get_behavior(use_item.item())
             .get_use_duration(&use_item, user);
