@@ -1,7 +1,8 @@
 //! Shared operations used by compiled item modifier functions.
 use steel_registry::recipe::{SingleItemRecipeInput, vanilla_recipe_types};
 use steel_registry::{
-    REGISTRY, data_components::vanilla_components::CUSTOM_NAME, item_stack::ItemStack,
+    REGISTRY, data_components::vanilla_components::CUSTOM_NAME, enchantment::Enchantment,
+    item_stack::ItemStack,
 };
 use steel_utils::{
     Identifier,
@@ -37,7 +38,11 @@ pub(super) fn set_enchantment(item: &mut ItemStack, key: Identifier, level: i32,
         0
     };
     item.set_enchantments(
-        &[(key, base.wrapping_add(level).clamp(0, 255) as u32)],
+        &[(
+            key,
+            base.wrapping_add(level)
+                .clamp(0, Enchantment::MAX_LEVEL as i32) as u32,
+        )],
         false,
     );
 }

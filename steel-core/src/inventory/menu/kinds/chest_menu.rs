@@ -8,6 +8,7 @@
 use steel_registry::menu_type::MenuTypeRef;
 use steel_registry::vanilla_menu_types;
 
+use crate::inventory::menu::GRID_WIDTH;
 use crate::inventory::prelude::*;
 use crate::player::player_inventory::PlayerInventory;
 
@@ -55,7 +56,7 @@ pub(crate) fn chest_with_kind(
     );
 
     let mut builder = MenuBuilder::new(menu_type_for_rows(rows), container_id);
-    let chest = builder.section(&container, rows * 9);
+    let chest = builder.section(&container, rows * GRID_WIDTH);
     let player = builder.player_inventory(&inventory);
 
     builder.route(chest, player.all(), FillDirection::Backward);

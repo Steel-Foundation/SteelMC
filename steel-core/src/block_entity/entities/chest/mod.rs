@@ -34,6 +34,8 @@ use crate::{
 /// Slots stored independently by each half of a chest.
 pub const CHEST_SLOTS: usize = 27;
 
+const EVENT_SET_OPEN_COUNT: i32 = 1;
+
 /// Normal chest inventory, loot, name/lock, and open-count state.
 pub struct ChestBlockEntity {
     storage: RandomizableContainerStorage,
@@ -92,7 +94,7 @@ impl ChestBlockEntity {
         world.schedule_block_tick_default(
             self.get_block_pos(),
             self.get_block_state().get_block(),
-            5,
+            ContainerOpenersCounter::CHECK_TICK_DELAY,
         );
     }
 
@@ -118,7 +120,7 @@ impl ChestBlockEntity {
                 &GameEventContext::new(source, None),
             );
         }
-        world.block_event(pos, state.get_block(), 1, change.current);
+        world.block_event(pos, state.get_block(), EVENT_SET_OPEN_COUNT, change.current);
     }
 
     fn play_sound(&self, world: &World, state: BlockStateId, opening: bool) {
@@ -205,7 +207,7 @@ impl BlockEntity for ChestBlockEntity {
     }
     fn trigger_event(&self, param_a: i32, _param_b: i32) -> bool {
         // Lid interpolation is client-side; the server publishes the open-count event.
-        param_a == 1
+        param_a == EVENT_SET_OPEN_COUNT
     }
 }
 

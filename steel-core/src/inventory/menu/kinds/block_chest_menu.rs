@@ -1,6 +1,7 @@
 use super::chest_menu::menu_type_for_rows;
 use crate::{
-    block_entity::SharedBlockEntity, inventory::prelude::*,
+    block_entity::{SharedBlockEntity, entities::CHEST_SLOTS},
+    inventory::{menu::GRID_WIDTH, prelude::*},
     player::player_inventory::PlayerInventory,
 };
 use smallvec::SmallVec;
@@ -13,10 +14,13 @@ pub(crate) fn block_chest(
     owners: SmallVec<[SharedBlockEntity; 2]>,
     containers: SmallVec<[ContainerRef; 2]>,
 ) -> Menu {
-    let mut builder = MenuBuilder::new(menu_type_for_rows(containers.len() * 3), container_id);
+    let mut builder = MenuBuilder::new(
+        menu_type_for_rows(containers.len() * CHEST_SLOTS / GRID_WIDTH),
+        container_id,
+    );
     let mut sections = containers
         .iter()
-        .map(|container| builder.section(container, 27));
+        .map(|container| builder.section(container, CHEST_SLOTS));
     let Some(first) = sections.next() else {
         unreachable!("chest row count was already validated");
     };

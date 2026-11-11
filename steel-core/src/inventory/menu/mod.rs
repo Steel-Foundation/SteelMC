@@ -16,6 +16,7 @@ pub use builder::{
     ContainerSlots, DataSlot, FakeResultRemainderPolicy, FillDirection, IntoSections, MenuBuilder,
     PlayerInventorySections, Section, SectionKind, SectionSource, SlotFactory,
 };
+pub(crate) use grid::GRID_WIDTH;
 pub use grid::{ColSpan, GridPlacer, PlacementBuilder, Rect, Region, RowSpan, SpanBounds};
 pub use kind::{MenuKind, still_valid_block};
 pub(crate) use layout::MenuLayout;

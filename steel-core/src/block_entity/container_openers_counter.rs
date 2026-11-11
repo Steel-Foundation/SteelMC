@@ -3,6 +3,8 @@ use steel_utils::{BlockPos, WorldAabb, locks::SyncMutex};
 
 use crate::{entity::ContainerUser, inventory::lock::ContainerId, world::World};
 
+const OPENERS_SCAN_MARGIN: f64 = 4.0;
+
 #[derive(Default)]
 struct OpenersState {
     count: i32,
@@ -21,6 +23,8 @@ pub(crate) struct ContainerOpenersCounter {
 }
 
 impl ContainerOpenersCounter {
+    pub(crate) const CHECK_TICK_DELAY: i32 = 5;
+
     pub(crate) fn increment(&self, user: &dyn ContainerUser) -> OpenersChange {
         let interaction_range = user.container_interaction_range();
         let mut state = self.state.lock();
@@ -52,7 +56,7 @@ impl ContainerOpenersCounter {
         pos: BlockPos,
         container: ContainerId,
     ) -> OpenersChange {
-        let range = self.state.lock().max_interaction_range + 4.0;
+        let range = self.state.lock().max_interaction_range + OPENERS_SCAN_MARGIN;
         let min = DVec3::new(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
         let bounds = WorldAabb::new(min.x, min.y, min.z, min.x + 1.0, min.y + 1.0, min.z + 1.0)
             .inflate(range);

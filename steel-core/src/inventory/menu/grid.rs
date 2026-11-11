@@ -52,7 +52,8 @@ use crate::inventory::menu::builder::{
 use crate::inventory::slots::{ResultHandler, ResultSlot, Slot};
 use crate::player::Player;
 
-const GRID_WIDTH: usize = 9;
+/// Slots per row in a standard chest grid.
+pub(crate) const GRID_WIDTH: usize = 9;
 
 /// A column or row selection for [`Rect::cols`] / [`Rect::rows`]: any range or a bare index.
 pub trait SpanBounds: sealed::Sealed {
