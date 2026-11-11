@@ -61,7 +61,9 @@ impl CompileEntry for DynamicEntry {
             quality,
             ..
         } = self;
-        let operation = format!("dynamic:{name}");
+        let operation = format!(
+            "minecraft:dynamic entry '{name}': context-provided dynamic drops are not implemented"
+        );
         // TODO: Emit context-provided named dynamic drops when selected, including
         // decorated-pot sherds, instead of rejecting every dynamic entry.
         Compiler::weighted_candidate(
@@ -156,15 +158,18 @@ impl CompileEntry for TagEntry {
             quality,
             ..
         } = self;
-        let tag = identifier(
-            items
-                .strip_prefix('#')
-                .unwrap_or_else(|| panic!("Expected item tag: {items}")),
-        );
+        let Some(tag_name) = items.strip_prefix('#') else {
+            panic!(
+                "minecraft:tag entry has unsupported 'items' value {items:?}: \
+                 expected a named item tag starting with '#'; direct item holder sets are not implemented"
+            );
+        };
+        let tag = identifier(tag_name);
+        let missing_tag = format!("minecraft:tag entry: item tag '{items}' is not registered");
         if *expand {
             EntryExpansion::Statements(quote! {{
                 let Some(items) = REGISTRY.items.get_tag(&#tag) else {
-                    return ctx.unsupported("missing item tag");
+                    return ctx.unsupported(#missing_tag);
                 };
                 for item in items {
                     candidates.push(LootCandidate::new(#weight, #quality, ctx.luck, move |ctx, output| output(ctx, ItemStack::new(item))));
@@ -176,7 +181,7 @@ impl CompileEntry for TagEntry {
                 *quality,
                 quote! { |ctx, output| {
                         let Some(items) = REGISTRY.items.get_tag(&#tag) else {
-                            return ctx.unsupported("missing item tag");
+                            return ctx.unsupported(#missing_tag);
                         };
                         for item in items { output(ctx, ItemStack::new(item))?; }
                         Ok(())
