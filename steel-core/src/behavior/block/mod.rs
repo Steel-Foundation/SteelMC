@@ -421,7 +421,7 @@ pub trait BlockBehavior: Send + Sync {
         explosion: &dyn Explosion,
         on_hit: &mut dyn FnMut(ItemStack, BlockPos),
     ) {
-        if state.is_air() {
+        if state.is_air() || explosion.block_interaction() == BlockInteraction::TriggerBlock {
             return;
         }
 
