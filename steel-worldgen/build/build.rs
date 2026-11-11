@@ -8,6 +8,10 @@ use std::{env, fs, path::Path};
 
 use steel_utils as _;
 
+#[path = "../../build/codegen.rs"]
+mod codegen;
+use codegen::write_tokens_if_changed;
+
 mod density;
 mod multi_noise;
 mod noise_parameters;
@@ -17,6 +21,7 @@ const NOISE_PARAMETERS: &str = "noise_parameters";
 
 pub fn main() {
     println!("cargo:rerun-if-changed=build/");
+    println!("cargo:rerun-if-changed=../build/codegen.rs");
 
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let out_dir = Path::new(&manifest_dir).join("src/generated");
@@ -29,7 +34,7 @@ pub fn main() {
 
     for (content, file_name) in generated_files {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
-        write_if_changed(&path, content.to_string());
+        write_tokens_if_changed(&path, content);
     }
 
     let df = density::build();
@@ -42,26 +47,9 @@ pub fn main() {
         (df.end, "end"),
     ] {
         let path = df_dir.join(format!("{name}.rs"));
-        write_if_changed(&path, content.to_string());
+        write_tokens_if_changed(&path, content);
     }
 
     let path = df_dir.join("mod.rs");
-    write_if_changed(&path, df.index.to_string());
-}
-
-fn write_if_changed(path: &Path, content: String) {
-    #[cfg(feature = "fmt")]
-    let content = {
-        let syntax = syn::parse_file(&content).unwrap_or_else(|error| {
-            panic!("Failed to parse generated file {}: {error}", path.display())
-        });
-        prettyplease::unparse(&syntax)
-    };
-    if fs::read_to_string(path).is_ok_and(|existing| existing == content) {
-        return;
-    }
-
-    if let Err(error) = fs::write(path, content) {
-        panic!("Failed to write {}: {error}", path.display());
-    }
+    write_tokens_if_changed(&path, df.index);
 }
