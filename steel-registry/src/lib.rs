@@ -53,6 +53,7 @@ pub mod game_events;
 pub mod game_profile;
 pub mod game_rules;
 pub mod instrument;
+pub mod item_instance;
 pub mod item_predicate;
 pub mod item_stack;
 pub mod item_stack_template;

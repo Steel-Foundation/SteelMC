@@ -1,19 +1,10 @@
 //! Vanilla item-predicate command argument parsing.
-use crate::item_predicate::{
-    AttributeModifierCollectionPredicate, AttributeModifierCountPredicate,
-    AttributeModifierEntryPredicate, AttributeModifiersPredicate, DamagePredicate,
-    DataComponentPredicate, DoubleRange, EnchantmentPredicate, IntRange,
-};
-
-use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::{
     REGISTRY, RegistryExt as _, TaggedRegistryExt as _,
-    attribute::{AttributeModifierOperation, AttributeRef},
-    data_component_predicate as registered,
-    data_component_predicate::DataComponentPredicateCodec as _,
-    data_components::{ComponentData, ComponentEntry, vanilla_components},
-    enchantment::EnchantmentRef,
-    equipment::EquipmentSlotGroup,
+    data_component_predicate::DataComponentPredicateData,
+    data_components::{ComponentData, ComponentEntry},
+    item_predicate::IntBounds,
     item_stack::ItemStack,
     items::ItemRef,
 };
@@ -29,24 +20,6 @@ use super::{
     item::{component_value_is_valid, numeric_i32, read_component_value},
     suggestions::matches_substring,
 };
-
-const VANILLA_DATA_COMPONENT_PREDICATE_KEYS: &[&str] = &[
-    "damage",
-    "enchantments",
-    "stored_enchantments",
-    "potion_contents",
-    "custom_data",
-    "container",
-    "bundle_contents",
-    "firework_explosion",
-    "fireworks",
-    "writable_book_content",
-    "written_book_content",
-    "attribute_modifiers",
-    "trim",
-    "jukebox_playable",
-    "villager/variant",
-];
 
 /// A fully decoded item predicate retained until command execution.
 #[derive(Clone, Debug, PartialEq)]
@@ -75,8 +48,8 @@ enum ItemPredicateTerm {
         key: Identifier,
         value: Box<ComponentData>,
     },
-    Count(IntRange),
-    DataPredicate(DataComponentPredicate),
+    Count(IntBounds),
+    DataPredicate(DataComponentPredicateData),
     Not(Box<Self>),
 }
 
@@ -304,8 +277,12 @@ fn parse_predicate_value_test(
             .ok_or_else(|| malformed_predicate(reader, &key));
     }
 
-    if is_vanilla_predicate_key(&key) {
-        let predicate = parse_supported_data_predicate(&key, &tag)
+    if REGISTRY
+        .data_component_predicate_types
+        .by_key(&key)
+        .is_some()
+    {
+        let predicate = DataComponentPredicateData::from_persistent_entry(&key, &tag)
             .ok_or_else(|| malformed_predicate(reader, &key))?;
         return Ok(ItemPredicateTerm::DataPredicate(predicate));
     }
@@ -367,312 +344,16 @@ fn is_count_key(key: &Identifier) -> bool {
     key.namespace == Identifier::VANILLA_NAMESPACE && key.path == "count"
 }
 
-fn is_vanilla_predicate_key(key: &Identifier) -> bool {
-    key.namespace == Identifier::VANILLA_NAMESPACE
-        && VANILLA_DATA_COMPONENT_PREDICATE_KEYS
-            .iter()
-            .any(|path| key.path == *path)
-}
-
-fn parse_supported_data_predicate(
-    key: &Identifier,
-    tag: &NbtTag,
-) -> Option<DataComponentPredicate> {
-    match key.path.as_ref() {
-        "custom_data" => vanilla_components::CustomData::from_nbt_value(tag)
-            .map(DataComponentPredicate::CustomData),
-        "damage" => parse_damage_predicate(tag).map(DataComponentPredicate::Damage),
-        "enchantments" => parse_enchantment_predicates(tag).map(|predicates| {
-            DataComponentPredicate::Enchantments {
-                stored: false,
-                predicates,
-            }
-        }),
-        "stored_enchantments" => parse_enchantment_predicates(tag).map(|predicates| {
-            DataComponentPredicate::Enchantments {
-                stored: true,
-                predicates,
-            }
-        }),
-        "attribute_modifiers" => {
-            parse_attribute_modifiers_predicate(tag).map(DataComponentPredicate::AttributeModifiers)
-        }
-        "potion_contents" => {
-            registered::PotionsPredicate::from_nbt_value(tag).map(DataComponentPredicate::Potions)
-        }
-        "container" => registered::ContainerPredicate::from_nbt_value(tag)
-            .map(DataComponentPredicate::Container),
-        "bundle_contents" => {
-            registered::BundlePredicate::from_nbt_value(tag).map(DataComponentPredicate::Bundle)
-        }
-        "firework_explosion" => registered::FireworkExplosionPredicate::from_nbt_value(tag)
-            .map(DataComponentPredicate::FireworkExplosion),
-        "fireworks" => registered::FireworksPredicate::from_nbt_value(tag)
-            .map(DataComponentPredicate::Fireworks),
-        "writable_book_content" => registered::WritableBookPredicate::from_nbt_value(tag)
-            .map(DataComponentPredicate::WritableBook),
-        "written_book_content" => registered::WrittenBookPredicate::from_nbt_value(tag)
-            .map(DataComponentPredicate::WrittenBook),
-        "trim" => registered::TrimPredicate::from_nbt_value(tag).map(DataComponentPredicate::Trim),
-        "jukebox_playable" => registered::JukeboxPlayablePredicate::from_nbt_value(tag)
-            .map(DataComponentPredicate::JukeboxPlayable),
-        "villager/variant" => registered::VillagerTypePredicate::from_nbt_value(tag)
-            .map(DataComponentPredicate::VillagerType),
-        _ => None,
-    }
-}
-
-fn parse_int_range(tag: &NbtTag) -> Option<IntRange> {
+fn parse_int_range(tag: &NbtTag) -> Option<IntBounds> {
     if let Some(value) = numeric_i32(tag) {
-        return Some(IntRange {
-            min: Some(value),
-            max: Some(value),
-        });
+        return Some(IntBounds::exactly(value));
     }
     let NbtTag::Compound(compound) = tag else {
         return None;
     };
     let min = parse_optional_field(compound, "min", numeric_i32).ok()?;
     let max = parse_optional_field(compound, "max", numeric_i32).ok()?;
-    if min.zip(max).is_some_and(|(min, max)| min > max) {
-        return None;
-    }
-    Some(IntRange { min, max })
-}
-
-fn parse_damage_predicate(tag: &NbtTag) -> Option<DamagePredicate> {
-    let NbtTag::Compound(compound) = tag else {
-        return None;
-    };
-    let durability = parse_optional_field(compound, "durability", parse_int_range)
-        .ok()?
-        .unwrap_or(IntRange::ANY);
-    let damage = parse_optional_field(compound, "damage", parse_int_range)
-        .ok()?
-        .unwrap_or(IntRange::ANY);
-    Some(DamagePredicate { durability, damage })
-}
-
-fn parse_enchantment_predicates(tag: &NbtTag) -> Option<Vec<EnchantmentPredicate>> {
-    match tag {
-        NbtTag::List(NbtList::Empty) => Some(Vec::new()),
-        NbtTag::List(NbtList::Compound(compounds)) => {
-            compounds.iter().map(parse_enchantment_predicate).collect()
-        }
-        _ => None,
-    }
-}
-
-fn parse_enchantment_predicate(compound: &NbtCompound) -> Option<EnchantmentPredicate> {
-    let enchantments =
-        parse_optional_field(compound, "enchantments", parse_enchantment_holder_set).ok()?;
-    let levels = parse_optional_field(compound, "levels", parse_int_range)
-        .ok()?
-        .unwrap_or(IntRange::ANY);
-    Some(EnchantmentPredicate {
-        enchantments,
-        levels,
-    })
-}
-
-fn parse_enchantment_holder_set(tag: &NbtTag) -> Option<Vec<EnchantmentRef>> {
-    match tag {
-        NbtTag::String(value) => parse_enchantment_holder(&value.to_string()),
-        NbtTag::List(NbtList::Empty) => Some(Vec::new()),
-        NbtTag::List(NbtList::String(values)) => {
-            let mut enchantments = Vec::new();
-            for value in values {
-                enchantments.push(parse_enchantment_reference(&value.to_string())?);
-            }
-            Some(enchantments)
-        }
-        _ => None,
-    }
-}
-
-fn parse_enchantment_holder(value: &str) -> Option<Vec<EnchantmentRef>> {
-    if let Some(tag) = value.strip_prefix('#') {
-        let key = parse_identifier_with_default_namespace(tag)?;
-        return REGISTRY.enchantments.get_tag(&key);
-    }
-    parse_enchantment_reference(value).map(|enchantment| vec![enchantment])
-}
-
-fn parse_enchantment_reference(value: &str) -> Option<EnchantmentRef> {
-    let key = parse_identifier_with_default_namespace(value)?;
-    REGISTRY.enchantments.by_key(&key)
-}
-
-fn parse_attribute_modifiers_predicate(tag: &NbtTag) -> Option<AttributeModifiersPredicate> {
-    let NbtTag::Compound(compound) = tag else {
-        return None;
-    };
-    let modifiers =
-        parse_optional_field(compound, "modifiers", parse_attribute_modifier_collection).ok()?;
-    Some(AttributeModifiersPredicate { modifiers })
-}
-
-fn parse_attribute_modifier_collection(
-    tag: &NbtTag,
-) -> Option<AttributeModifierCollectionPredicate> {
-    let NbtTag::Compound(compound) = tag else {
-        return None;
-    };
-    let contains = parse_optional_field(
-        compound,
-        "contains",
-        parse_attribute_modifier_predicate_list,
-    )
-    .ok()?
-    .unwrap_or_default();
-    let counts = parse_optional_field(compound, "count", parse_attribute_modifier_count_list)
-        .ok()?
-        .unwrap_or_default();
-    let size = parse_optional_field(compound, "size", parse_int_range).ok()?;
-    Some(AttributeModifierCollectionPredicate {
-        contains,
-        counts,
-        size,
-    })
-}
-
-fn parse_attribute_modifier_predicate_list(
-    tag: &NbtTag,
-) -> Option<Vec<AttributeModifierEntryPredicate>> {
-    match tag {
-        NbtTag::List(NbtList::Empty) => Some(Vec::new()),
-        NbtTag::List(NbtList::Compound(compounds)) => compounds
-            .iter()
-            .map(parse_attribute_modifier_entry)
-            .collect(),
-        _ => None,
-    }
-}
-
-fn parse_attribute_modifier_count_list(
-    tag: &NbtTag,
-) -> Option<Vec<AttributeModifierCountPredicate>> {
-    match tag {
-        NbtTag::List(NbtList::Empty) => Some(Vec::new()),
-        NbtTag::List(NbtList::Compound(compounds)) => compounds
-            .iter()
-            .map(parse_attribute_modifier_count)
-            .collect(),
-        _ => None,
-    }
-}
-
-fn parse_attribute_modifier_count(
-    compound: &NbtCompound,
-) -> Option<AttributeModifierCountPredicate> {
-    let NbtTag::Compound(test) = compound.get("test")? else {
-        return None;
-    };
-    let count = parse_int_range(compound.get("count")?)?;
-    Some(AttributeModifierCountPredicate {
-        test: parse_attribute_modifier_entry(test)?,
-        count,
-    })
-}
-
-fn parse_attribute_modifier_entry(
-    compound: &NbtCompound,
-) -> Option<AttributeModifierEntryPredicate> {
-    let attributes =
-        parse_optional_field(compound, "attribute", parse_attribute_holder_set).ok()?;
-    let id = parse_optional_field(compound, "id", parse_identifier_tag).ok()?;
-    let amount = parse_optional_field(compound, "amount", parse_double_range)
-        .ok()?
-        .unwrap_or(DoubleRange::ANY);
-    let operation =
-        parse_optional_field(compound, "operation", parse_attribute_modifier_operation).ok()?;
-    let slot = parse_optional_field(compound, "slot", parse_equipment_slot_group).ok()?;
-    Some(AttributeModifierEntryPredicate {
-        attributes,
-        id,
-        amount,
-        operation,
-        slot,
-    })
-}
-
-fn parse_attribute_holder_set(tag: &NbtTag) -> Option<Vec<AttributeRef>> {
-    match tag {
-        NbtTag::String(value) => parse_attribute_holder(&value.to_string()),
-        NbtTag::List(NbtList::Empty) => Some(Vec::new()),
-        NbtTag::List(NbtList::String(values)) => {
-            let mut attributes = Vec::new();
-            for value in values {
-                attributes.extend(parse_attribute_holder(&value.to_string())?);
-            }
-            Some(attributes)
-        }
-        _ => None,
-    }
-}
-
-fn parse_attribute_holder(value: &str) -> Option<Vec<AttributeRef>> {
-    if value.starts_with('#') {
-        // TODO: Support attribute tags once Steel's attribute registry stores them.
-        return None;
-    }
-    let key = parse_identifier_with_default_namespace(value)?;
-    REGISTRY
-        .attributes
-        .by_key(&key)
-        .map(|attribute| vec![attribute])
-}
-
-fn parse_identifier_tag(tag: &NbtTag) -> Option<Identifier> {
-    let NbtTag::String(value) = tag else {
-        return None;
-    };
-    parse_identifier_with_default_namespace(&value.to_string())
-}
-
-fn parse_attribute_modifier_operation(tag: &NbtTag) -> Option<AttributeModifierOperation> {
-    let NbtTag::String(value) = tag else {
-        return None;
-    };
-    AttributeModifierOperation::by_name(&value.to_string())
-}
-
-fn parse_equipment_slot_group(tag: &NbtTag) -> Option<EquipmentSlotGroup> {
-    let NbtTag::String(value) = tag else {
-        return None;
-    };
-    let value = value.to_string();
-    EquipmentSlotGroup::by_name(&value).filter(|slot| slot.name() == value)
-}
-
-fn parse_double_range(tag: &NbtTag) -> Option<DoubleRange> {
-    if let Some(value) = numeric_f64(tag) {
-        return Some(DoubleRange {
-            min: Some(value),
-            max: Some(value),
-        });
-    }
-    let NbtTag::Compound(compound) = tag else {
-        return None;
-    };
-    let min = parse_optional_field(compound, "min", numeric_f64).ok()?;
-    let max = parse_optional_field(compound, "max", numeric_f64).ok()?;
-    if min.zip(max).is_some_and(|(min, max)| min > max) {
-        return None;
-    }
-    Some(DoubleRange { min, max })
-}
-
-fn numeric_f64(tag: &NbtTag) -> Option<f64> {
-    match tag {
-        NbtTag::Byte(value) => Some(f64::from(*value)),
-        NbtTag::Short(value) => Some(f64::from(*value)),
-        NbtTag::Int(value) => Some(f64::from(*value)),
-        NbtTag::Long(value) => Some(*value as f64),
-        NbtTag::Float(value) => Some(f64::from(*value)),
-        NbtTag::Double(value) => Some(*value),
-        _ => None,
-    }
+    IntBounds::new(min, max)
 }
 
 fn parse_optional_field<T>(
@@ -684,21 +365,6 @@ fn parse_optional_field<T>(
         Some(tag) => parser(tag).map(Some).ok_or(()),
         None => Ok(None),
     }
-}
-
-fn parse_identifier_with_default_namespace(value: &str) -> Option<Identifier> {
-    let (namespace, path) = value.split_once(':').map_or(
-        (Identifier::VANILLA_NAMESPACE, value),
-        |(namespace, path)| {
-            if namespace.is_empty() {
-                (Identifier::VANILLA_NAMESPACE, path)
-            } else {
-                (namespace, path)
-            }
-        },
-    );
-    (!namespace.is_empty() && !path.is_empty() && Identifier::validate(namespace, path))
-        .then(|| Identifier::new(namespace.to_owned(), path.to_owned()))
 }
 
 pub(super) fn suggest_item_predicate(builder: &mut SuggestionsBuilder<'_>) {
@@ -737,10 +403,9 @@ pub(super) fn suggest_item_predicate(builder: &mut SuggestionsBuilder<'_>) {
     if resource_matches(resource_prefix, &count) {
         builder.suggest(format!("{prefix}{count}"));
     }
-    for path in VANILLA_DATA_COMPONENT_PREDICATE_KEYS {
-        let key = Identifier::vanilla_static(path);
-        if resource_matches(resource_prefix, &key) {
-            builder.suggest(format!("{prefix}{key}"));
+    for (_, predicate_type) in REGISTRY.data_component_predicate_types.iter() {
+        if resource_matches(resource_prefix, &predicate_type.key) {
+            builder.suggest(format!("{prefix}{}", predicate_type.key));
         }
     }
 }

@@ -15,7 +15,6 @@ use text_components::TextComponent;
 use crate::{
     block_entity::ImplicitComponentGetter,
     entity::{Entity as _, LivingEntity as _},
-    item_predicate::registered_item_predicate_matches,
     player::Player,
 };
 
@@ -90,7 +89,7 @@ impl ContainerProperties {
         let properties = Arc::clone(&self.properties.read());
         let mut can_open = false;
         player.with_equipment_slot(EquipmentSlot::MainHand, &mut |item| {
-            can_open = registered_item_predicate_matches(properties.lock.predicate(), item);
+            can_open = properties.lock.predicate().matches(item);
         });
         can_open
     }
