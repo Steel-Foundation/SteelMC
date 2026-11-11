@@ -23,7 +23,7 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 /// A display entity that renders the model of an [`ItemStack`] using an [`ItemDisplayContext`].
 ///
 /// To **access** or **modify** the data of an item display, you will need to use [`Display::with_view`].
-/// This method takes a function with a [`ItemDisplayView`] as a parameter, which can be used within the function.
+/// This method takes a function with an [`ItemDisplayView`] as a parameter, which can be used within the function.
 #[entity_behavior(class = "ItemDisplay")]
 pub struct ItemDisplayEntity {
     base: EntityBase,

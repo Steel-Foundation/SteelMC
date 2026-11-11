@@ -23,7 +23,7 @@ use steel_utils::{BlockStateId, DowncastType, DowncastTypeKey};
 /// A display entity that renders the block model associated with a [`BlockStateId`].
 ///
 /// To **access** or **modify** the data of a block display, you will need to use [`Display::with_view`].
-/// This method takes a function with a [`ItemDisplayView`] as a parameter, which can be used within the function.
+/// This method takes a function with a [`BlockDisplayView`] as a parameter, which can be used within the function.
 #[entity_behavior(class = "BlockDisplay")]
 pub struct BlockDisplayEntity {
     base: EntityBase,
