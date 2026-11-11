@@ -260,11 +260,8 @@ impl BlockBehavior for ChestBlock {
                         .message([title])
                         .component(),
                 );
-                let mut center = DVec3::new(
-                    f64::from(pos.x()) + 0.5,
-                    f64::from(pos.y()) + 0.5,
-                    f64::from(pos.z()) + 0.5,
-                );
+                let (x, y, z) = pos.get_center();
+                let mut center = DVec3::new(x, y, z);
                 if chest.owners.len() == 2 {
                     center += DVec3::from(Self::connected_direction(state).offset_vec()) * 0.5;
                 }

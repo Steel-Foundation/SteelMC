@@ -280,13 +280,7 @@ impl MenuKind for EnchantmentKind {
         let has_infinite_materials = player.has_infinite_materials();
 
         let mut guard =
-            match ContainerLockGuard::lock_all(&[ContainerRef::from(&self.enchant_slots)]) {
-                Ok(guard) => guard,
-                Err(error) => {
-                    log::error!("Failed to access enchanting table inventory: {error}");
-                    return false;
-                }
-            };
+            ContainerLockGuard::lock_storage(&[ContainerRef::from(&self.enchant_slots)]);
         let container_id = ContainerId::from_arc(&self.enchant_slots);
         let Some(container) = guard.get(container_id) else {
             return false;

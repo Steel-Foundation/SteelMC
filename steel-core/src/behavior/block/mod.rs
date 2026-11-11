@@ -77,13 +77,10 @@ pub(crate) fn drop_from_block_interact_loot_table(
 ) -> Vec<ItemStack> {
     let mut loot_rng = RandomSource::Legacy(LegacyRandom::from_seed(rand::RngExt::random(rng)));
     let block_entity = world.get_block_entity(pos);
+    let (x, y, z) = pos.get_center();
     let mut ctx = LootContext::new(&mut loot_rng)
         .with_world(world)
-        .with_origin(
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-        )
+        .with_origin(x, y, z)
         .with_block_state(interacted_block_state);
     if let Some(block_entity) = block_entity.as_deref() {
         ctx = ctx.with_block_entity(block_entity);

@@ -64,7 +64,7 @@ impl RandomSequences {
             let key = key
                 .parse::<Identifier>()
                 .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-            let random = Xoroshiro::from_state(sequence.source.map(|word| word as u64));
+            let random = Xoroshiro::from_state(sequence.source.map(i64::cast_unsigned));
             sequences.insert(
                 key,
                 Arc::new(SyncMutex::new(RandomSource::Xoroshiro(random))),
@@ -156,7 +156,7 @@ impl RandomSequences {
             sequences.insert(
                 key,
                 PersistentSequence {
-                    source: random.state().map(|word| word as i64),
+                    source: random.state().map(u64::cast_signed),
                 },
             );
         }

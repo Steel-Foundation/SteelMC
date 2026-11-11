@@ -54,11 +54,10 @@ impl EntryExpansion {
 
 impl Compiler {
     pub(super) fn pool(&mut self, pool: &LootPool) -> Ident {
-        let condition = self.condition(pool.condition.as_ref());
-        let guard = pool
-            .condition
-            .as_ref()
-            .map(|_| quote! { let passes = #condition; if !passes { return Ok(()); } });
+        let guard = pool.condition.as_ref().map(|condition| {
+            let condition = self.condition(Some(condition));
+            quote! { let passes = #condition; if !passes { return Ok(()); } }
+        });
         let rolls = self.int_provider(&pool.rolls);
         let bonus = pool
             .bonus_rolls

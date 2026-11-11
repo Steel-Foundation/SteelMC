@@ -36,11 +36,12 @@ impl MenuLayout {
             return;
         }
 
-        let Ok(mut guard) = (if return_to_inventory {
+        let guard = if return_to_inventory {
             behavior.lock_all_containers_with(ContainerRef::from(Arc::clone(&player.inventory)))
         } else {
             behavior.lock_all_containers()
-        }) else {
+        };
+        let Ok(mut guard) = guard else {
             return;
         };
         for range in &self.drain_sections {

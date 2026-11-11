@@ -57,14 +57,9 @@ pub(super) fn build(inputs: &[(String, LootTable)]) -> TokenStream {
 fn accessors(tables: &[LootTableData<'_>]) -> TokenStream {
     let mut categories: BTreeMap<&str, Vec<(&LootTableData<'_>, Ident)>> = BTreeMap::new();
     for table in tables {
-        let category = table.key.split('/').next().unwrap_or("other");
-        let field_name = table.key.split('/').skip(1).collect::<Vec<_>>().join("_");
-        let field_name = if field_name.is_empty() {
-            table.key
-        } else {
-            &field_name
-        };
-        let field = Ident::new(&field_name.to_snake_case(), Span::call_site());
+        let (category, path) = table.key.split_once('/').unwrap_or((table.key, table.key));
+        let field_name = if path.is_empty() { table.key } else { path };
+        let field = Ident::new(&field_name.replace('/', "_").to_snake_case(), Span::call_site());
         categories.entry(category).or_default().push((table, field));
     }
 

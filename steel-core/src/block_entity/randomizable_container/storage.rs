@@ -117,7 +117,7 @@ impl RandomizableContainerStorage {
                             .or_else(|| tag.short().map(i64::from))
                             .or_else(|| tag.byte().map(i64::from))
                             .or_else(|| tag.float().map(|value| value as i64))
-                            .or_else(|| tag.double().map(|value| value as i64))
+                            .or_else(|| tag.double().map(|value| value.floor() as i64))
                     })
                     .unwrap_or(0);
                 SeededContainerLoot::new(key, seed)
@@ -163,11 +163,7 @@ impl RandomizableContainerStorage {
                 .enumerate()
             {
                 if let Some(template) = template {
-                    container.items[slot] = ItemStack::with_count_and_patch(
-                        template.item(),
-                        template.count(),
-                        template.components().clone(),
-                    );
+                    container.items[slot] = template.create();
                 }
             }
         }

@@ -23,16 +23,14 @@ pub(super) fn item_enchantment_matches(
     min: i32,
     max: i32,
 ) -> bool {
+    let matches_level = |level| level > 0 && (min..=max).contains(&level);
     if !tag {
-        let level = item.get_enchantment_level(key);
-        return level > 0 && level >= min && level <= max;
+        return matches_level(item.get_enchantment_level(key));
     }
+    
     item.get_enchantments().is_some_and(|enchantments| {
         enchantments.iter().any(|(key_id, level)| {
-            let level = *level as i32;
-            level > 0
-                && level >= min
-                && level <= max
+            matches_level(*level as i32)
                 && REGISTRY
                     .enchantments
                     .by_key(key_id)

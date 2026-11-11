@@ -634,10 +634,11 @@ fn equip_from_table(world: &World, mob: &dyn Mob, equipment: &EquipmentTable) ->
 
     let mob_equipment = living_loot_equipment(mob);
     let entity_ref = entity_loot_ref(mob.as_entity_event_source(), Some(&mob_equipment));
+    let position = mob.position();
     let items = world.with_loot_random(table, 0, |random| {
         let mut context = LootContext::new(random)
             .with_world(world)
-            .with_origin(mob.position().x, mob.position().y, mob.position().z)
+            .with_origin(position.x, position.y, position.z)
             .with_this_entity(entity_ref);
         table.get_random_items(&mut context)
     })?;
