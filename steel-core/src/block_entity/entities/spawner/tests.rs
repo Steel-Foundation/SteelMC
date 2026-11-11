@@ -60,7 +60,7 @@ fn load_into(spawner: &BaseSpawner, nbt: &NbtCompound) {
     nbt.write(&mut bytes);
     let borrowed =
         read_compound(&mut Cursor::new(bytes.as_slice())).expect("spawner NBT should be readable");
-    spawner.load(&borrowed);
+    spawner.load(&(&borrowed).into());
 }
 
 fn load_spawner(nbt: &NbtCompound) -> BaseSpawner {
@@ -157,7 +157,11 @@ fn unsupported_spawn_data_delays_and_reselects_without_inserting() {
     let player = TestPlayerBuilder::new(Arc::clone(world), "SpawnerPlayer", 1).build();
     assert!(world.add_player(player, ResetReason::InitialJoin));
 
-    let result = spawner.server_tick(world, BlockPos::ZERO);
+    let mut reset_events = 0;
+    let result = spawner.server_tick(world, BlockPos::ZERO, || {
+        reset_events += 1;
+    });
+    assert_eq!(reset_events, 1);
 
     assert!(result.state_changed);
     assert!(result.next_spawn_data_changed);
@@ -358,4 +362,31 @@ fn set_entity_id_normalizes_the_active_spawn_data() {
         saved.compound("SpawnData"),
         Some(&spawn_data("minecraft:blaze").to_nbt())
     );
+}
+
+#[test]
+fn delay_reset_events_preserve_repeated_resets_and_allow_state_reads() {
+    init_vanilla_registry();
+    init_entities();
+
+    let spawner = BaseSpawner::new();
+    spawner.set_config(BaseSpawnerConfig {
+        min_spawn_delay: 0,
+        max_spawn_delay: 0,
+        spawn_count: 1,
+        ..BaseSpawnerConfig::default()
+    });
+    spawner.set_spawn_delay(-1);
+
+    let fixture = fresh_test_world("spawner_repeated_delay_reset_events");
+    let world = &fixture.world;
+    let player = TestPlayerBuilder::new(Arc::clone(world), "SpawnerPlayer", 1).build();
+    assert!(world.add_player(player, ResetReason::InitialJoin));
+
+    let mut observed_delays = Vec::new();
+    spawner.server_tick(world, BlockPos::ZERO, || {
+        observed_delays.push(spawner.spawn_delay());
+    });
+
+    assert_eq!(observed_delays, [0, 0]);
 }
