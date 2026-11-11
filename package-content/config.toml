@@ -10,7 +10,7 @@ max_players = 20
 allow_extended_view_distance = false
 # Maximum view distance in chunks. Normally 1-32; 1-128 when allow_extended_view_distance is true.
 view_distance = 10
-# Maximum simulation distance in chunks
+# Maximum simulation distance in chunks. Vanilla minimum is 4; 0-3 freezes mobs and other activity outside the chunks the player is in.
 simulation_distance = 10
 # Maximum chained neighbor-update tasks. Negative values disable the limit.
 max_chained_neighbor_updates = 1000000

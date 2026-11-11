@@ -5,14 +5,14 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use rand::{Rng, RngExt, rng};
-use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
+use simdnbt::borrow::NbtCompound as NbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList};
 use steel_math::DEGREE_360;
 use steel_registry::data_components::components::EntityData;
 use steel_registry::entity_type::{EntityTypeRef, MobCategory};
 use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::{
-    REGISTRY, RegistryExt, level_events, vanilla_blocks, vanilla_game_events, vanilla_game_rules,
+    REGISTRY, RegistryExt, level_events, vanilla_game_events, vanilla_game_rules,
 };
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
@@ -29,7 +29,7 @@ use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::{WorldCollisionProvider, has_collision};
 use crate::world::World;
 
-const EVENT_SPAWN: i32 = 1;
+pub(super) const EVENT_SPAWN: i32 = 1;
 const DEFAULT_SPAWN_DELAY: i32 = 20;
 const DEFAULT_MIN_SPAWN_DELAY: i32 = 200;
 const DEFAULT_MAX_SPAWN_DELAY: i32 = 800;
@@ -91,7 +91,7 @@ struct SpawnerState {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct SpawnerTickResult {
+pub(crate) struct SpawnerTickResult {
     pub(super) state_changed: bool,
     pub(super) next_spawn_data_changed: bool,
 }
@@ -163,8 +163,7 @@ impl BaseSpawner {
     }
 
     /// Loads the vanilla spawner fields from NBT.
-    pub fn load(&self, nbt: &BorrowedNbtCompound<'_>) {
-        let nbt: NbtCompoundView<'_, '_> = nbt.into();
+    pub fn load(&self, nbt: &NbtCompoundView<'_, '_>) {
         let mut state = self.state.lock();
         state.spawn_delay = nbt
             .get("Delay")
@@ -355,7 +354,12 @@ impl BaseSpawner {
         clippy::too_many_lines,
         reason = "The order of this method mirrors vanilla BaseSpawner.serverTick."
     )]
-    pub(super) fn server_tick(&self, world: &Arc<World>, pos: BlockPos) -> SpawnerTickResult {
+    pub(crate) fn server_tick(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        mut broadcast_event: impl FnMut(),
+    ) -> SpawnerTickResult {
         let center = DVec3::from(pos.get_center());
         let config = self.config();
         let Some(_) =
@@ -372,7 +376,7 @@ impl BaseSpawner {
         let mut random = rng();
         let mut result = SpawnerTickResult::default();
         if self.spawn_delay() == -1 {
-            result = self.delay(world, pos, &mut random);
+            result = self.delay(&mut random, &mut broadcast_event);
         }
 
         if self.decrement_spawn_delay() {
@@ -394,7 +398,7 @@ impl BaseSpawner {
         for _ in 0..spawn_count {
             let Some(entity_type) = entity_type_from_owned_nbt(&next_spawn_data.entity_to_spawn)
             else {
-                return self.delay_result(world, pos, &mut random, result);
+                return self.delay_result(&mut random, &mut broadcast_event, result);
             };
 
             let spawn_position = configured_or_random_position(
@@ -442,7 +446,7 @@ impl BaseSpawner {
                     entity.snap_to(spawn_position, entity.rotation().0, entity.rotation().1);
                 },
             ) else {
-                return self.delay_result(world, pos, &mut random, result);
+                return self.delay_result(&mut random, &mut broadcast_event, result);
             };
             let entity = &loaded.root;
 
@@ -462,7 +466,7 @@ impl BaseSpawner {
                 })
                 .len();
             if nearby_count as i32 >= max_nearby_entities {
-                return self.delay_result(world, pos, &mut random, result);
+                return self.delay_result(&mut random, &mut broadcast_event, result);
             }
 
             let yaw = random.random::<f32>() * DEGREE_360;
@@ -487,7 +491,7 @@ impl BaseSpawner {
                 .try_add_fresh_entity_with_passengers(Arc::clone(entity))
                 .is_err()
             {
-                return self.delay_result(world, pos, &mut random, result);
+                return self.delay_result(&mut random, &mut broadcast_event, result);
             }
 
             world.level_event(level_events::PARTICLES_MOBBLOCK_SPAWN, pos, 0, None);
@@ -503,19 +507,18 @@ impl BaseSpawner {
         }
 
         if spawned_any {
-            result = self.delay_result(world, pos, &mut random, result);
+            result = self.delay_result(&mut random, &mut broadcast_event, result);
         }
         result
     }
 
     fn delay_result<R: Rng + ?Sized>(
         &self,
-        world: &Arc<World>,
-        pos: BlockPos,
         random: &mut R,
+        broadcast_event: &mut impl FnMut(),
         mut result: SpawnerTickResult,
     ) -> SpawnerTickResult {
-        let delay_result = self.delay(world, pos, random);
+        let delay_result = self.delay(random, broadcast_event);
         result.state_changed |= delay_result.state_changed;
         result.next_spawn_data_changed |= delay_result.next_spawn_data_changed;
         result
@@ -523,9 +526,8 @@ impl BaseSpawner {
 
     fn delay<R: Rng + ?Sized>(
         &self,
-        world: &Arc<World>,
-        pos: BlockPos,
         random: &mut R,
+        broadcast_event: &mut impl FnMut(),
     ) -> SpawnerTickResult {
         let mut result = SpawnerTickResult {
             state_changed: true,
@@ -550,7 +552,7 @@ impl BaseSpawner {
                 state.next_spawn_data = Some(NextSpawnData::Potential(index));
             }
         }
-        world.block_event(pos, &vanilla_blocks::SPAWNER, EVENT_SPAWN, 0);
+        broadcast_event();
         result
     }
 
