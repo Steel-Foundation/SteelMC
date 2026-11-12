@@ -1,7 +1,10 @@
 //! Shared item use logic for throwing projectiles
 
+use std::sync::Arc;
+
 use glam::DVec3;
 use steel_protocol::packets::game::SoundSource;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::stat::vanilla_stat_types;
 
@@ -9,6 +12,8 @@ use crate::behavior::context::UseItemContext;
 use crate::entity::{
     Entity, Projectile, SharedEntity, ThrowableItemProjectile, spawn_throwable_item_projectile,
 };
+use crate::player::Player;
+use crate::world::World;
 
 const THROW_PITCH_NUMERATOR: f32 = 0.4;
 const THROW_PITCH_DIVISOR_MIN: f32 = 0.8;
@@ -30,7 +35,8 @@ pub(super) struct ThrowParams {
     pub uncertainty: f32,
 }
 
-/// Throws a projectile plays its sound awards `ITEM_USED` and consumes one item
+/// Throws a throwable-item projectile from just below the player's eye, plays
+/// its sound, awards `ITEM_USED` and consumes one item.
 pub(super) fn throw_item_projectile<E>(
     context: &mut UseItemContext,
     params: &ThrowParams,
@@ -39,6 +45,26 @@ pub(super) fn throw_item_projectile<E>(
 where
     E: Projectile + ThrowableItemProjectile + Entity + 'static,
 {
+    throw_projectile(context, params, |world, player, thrown_item| {
+        spawn_throwable_item_projectile(
+            world,
+            player,
+            thrown_item,
+            params.y_offset,
+            params.power,
+            params.uncertainty,
+            create,
+        )
+    })
+}
+
+/// Plays the throw sound, spawns the projectile, awards `ITEM_USED` and
+/// consumes one item. `spawn` receives a copy of the used stack.
+pub(super) fn throw_projectile(
+    context: &mut UseItemContext,
+    params: &ThrowParams,
+    spawn: impl FnOnce(&Arc<World>, &Arc<Player>, &mut ItemStack) -> Option<SharedEntity>,
+) -> Option<SharedEntity> {
     let player = context.player;
     let world = context.world;
 
@@ -54,15 +80,7 @@ where
     );
 
     let mut thrown_item = context.inv.with_item(|item| item.clone());
-    let projectile = spawn_throwable_item_projectile(
-        world,
-        player,
-        &mut thrown_item,
-        params.y_offset,
-        params.power,
-        params.uncertainty,
-        create,
-    );
+    let projectile = spawn(world, player, &mut thrown_item);
     if projectile.is_none() {
         log::debug!("world rejected a thrown projectile; still consuming the stack");
     }

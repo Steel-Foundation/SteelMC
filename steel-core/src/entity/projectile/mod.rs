@@ -1,7 +1,8 @@
 //! Vanilla `Projectile` class hierarchy, mirrored as Rust traits + base structs.
 //!
 //! Mirrors `net.minecraft.world.entity.projectile`:
-//! `Entity → Projectile → ThrowableProjectile → ThrowableItemProjectile`.
+//! `Entity → Projectile → ThrowableProjectile → ThrowableItemProjectile` and
+//! `Entity → Projectile → AbstractHurtingProjectile → AbstractWindCharge`.
 //! Concrete projectiles embed [`ProjectileBase`] (owner / left-owner / shot state)
 //! and implement the trait stack; the per-layer tick logic chains explicitly via
 //! [`Projectile::projectile_base_tick`] and
@@ -9,9 +10,11 @@
 //!
 //! The block + entity move-vector raycast mirrors `ProjectileUtil`.
 
+mod hurting;
 mod throwable;
 mod throwable_item;
 mod thrown_potion;
+mod wind_charge;
 
 #[cfg(test)]
 mod owner_tests;
@@ -48,11 +51,13 @@ use super::{
     BUBBLE_COLUMN_INSIDE_UP_ACCELERATION,
 };
 
+pub use hurting::{AbstractHurtingProjectile, HurtingProjectileBase, INITIAL_ACCELERATION_POWER};
 pub use throwable::ThrowableProjectile;
 pub use throwable_item::ThrowableItemProjectile;
 pub use thrown_potion::{
     AbstractThrownPotion, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH,
 };
+pub use wind_charge::AbstractWindCharge;
 
 /// Vanilla `Projectile.shoot` per-axis spread scale (`0.0172275 * uncertainty`).
 const SHOOT_INACCURACY_SCALE: f64 = 0.0172_275;
@@ -457,8 +462,19 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.set_rotation((yaw, pitch));
     }
 
-    /// Applies a Vanilla projectile deflection.
+    /// Applies a Vanilla projectile deflection, returning whether it was accepted.
     fn deflect(
+        &self,
+        deflection: ProjectileDeflection,
+        deflecting_entity: Option<&dyn Entity>,
+        new_owner: Option<EntityReference>,
+        by_attack: bool,
+    ) -> bool {
+        self.base_deflect(deflection, deflecting_entity, new_owner, by_attack)
+    }
+
+    /// The base `Projectile.deflect`, for overrides of [`Projectile::deflect`].
+    fn base_deflect(
         &self,
         deflection: ProjectileDeflection,
         deflecting_entity: Option<&dyn Entity>,
@@ -714,22 +730,53 @@ where
     entity.set_owner_entity(Some(&owner));
     entity.set_item_clamped(item_stack.clone());
 
-    let (yaw, player_pitch) = player.rotation();
-    entity.shoot_from_rotation(
-        player.as_ref(),
-        player_pitch,
+    spawn_projectile_from_rotation(
+        world,
+        player,
+        item_stack,
+        pitch_offset,
+        power,
+        uncertainty,
+        entity,
+    )
+}
+
+/// Shoots an already-created projectile from the source's rotation, adds it to
+/// the world, then runs the `minecraft:projectile_spawned` enchantment effects.
+///
+/// Mirrors vanilla `Projectile.spawnProjectileFromRotation` after its factory
+/// has run; the factory is responsible for the spawn position and owner.
+/// Returns `None` when the world rejects the projectile.
+#[must_use]
+pub fn spawn_projectile_from_rotation<E>(
+    world: &Arc<World>,
+    source: &Arc<Player>,
+    item_stack: &mut ItemStack,
+    pitch_offset: f32,
+    power: f32,
+    uncertainty: f32,
+    projectile: E,
+) -> Option<SharedEntity>
+where
+    E: Projectile + Entity + 'static,
+{
+    let (yaw, pitch) = source.rotation();
+    projectile.shoot_from_rotation(
+        source.as_ref(),
+        pitch,
         yaw,
         pitch_offset,
         power,
         uncertainty,
     );
+    let owner = projectile.get_owner();
 
-    let entity: SharedEntity = Arc::new(entity);
+    let entity: SharedEntity = Arc::new(projectile);
     if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
-        log::debug!("failed to spawn throwable item projectile: {error}");
+        log::debug!("failed to spawn projectile: {error}");
         return None;
     }
-    enchantment_helper::on_projectile_spawned(world, item_stack, entity.as_ref(), Some(&owner));
+    enchantment_helper::on_projectile_spawned(world, item_stack, entity.as_ref(), owner.as_ref());
 
     Some(entity)
 }
