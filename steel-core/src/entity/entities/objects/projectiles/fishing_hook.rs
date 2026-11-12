@@ -16,7 +16,8 @@ use std::f32::consts::PI;
 use std::ops::Add;
 use std::sync::{Arc, Weak};
 use steel_macros::entity_behavior;
-use steel_math::{DEG_TO_RAD, DEGREE_360, trig};
+use steel_math::trig;
+use steel_math::{DEG_TO_RAD, DEGREE_360, RAD_TO_DEG_F64};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidStateExt;
@@ -164,12 +165,12 @@ impl FishingHookEntity {
 
         self.set_velocity(new_movement);
 
-        let yaw_new = new_movement.x.atan2(new_movement.z).to_degrees() as f32;
+        let yaw_new = (trig::atan2(new_movement.x, new_movement.z) * RAD_TO_DEG_F64) as f32;
 
         let horizontal_distance =
             (new_movement.x * new_movement.x + new_movement.z * new_movement.z).sqrt();
 
-        let pitch_new = new_movement.y.atan2(horizontal_distance).to_degrees() as f32;
+        let pitch_new = (trig::atan2(new_movement.y, horizontal_distance) * RAD_TO_DEG_F64) as f32;
 
         self.set_rotation((yaw_new, pitch_new));
         self.base().set_old_rotation_to_current();
