@@ -1,4 +1,5 @@
 use crate::config::ResolvedDomainConfig;
+use crate::entity::WeakSelf;
 use crate::entity::damage::DamageHistory;
 use crate::server::worlds::WorldMap;
 use std::cell::{Cell, RefCell};
@@ -70,7 +71,13 @@ impl TestEntity {
         entity_type: EntityTypeRef,
     ) -> Self {
         Self {
-            base: EntityBase::new(id, position, entity_type.dimensions, world),
+            base: EntityBase::new(
+                id,
+                position,
+                entity_type.dimensions,
+                world,
+                WeakSelf::detached(),
+            ),
             entity_type,
         }
     }

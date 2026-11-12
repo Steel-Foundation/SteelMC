@@ -29,7 +29,7 @@ use super::minecart_behavior::MinecartBehavior;
 use super::vehicle_entity::{self, Vehicle};
 use crate::block_entity::block_state_nbt;
 use crate::entity::component::definition::{
-    self as entity_definition, BlockSpeedFactorCtx, Definition, TickCtx,
+    self as entity_definition, BlockSpeedFactorCtx, Definition,
 };
 use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::component::props::entity_props;
@@ -224,9 +224,8 @@ pub const BLOCK_SPEED_FACTOR: StageId = StageId("abstract_minecart.block_speed_f
 /// Vanilla `AbstractMinecart`'s chains, on `VehicleEntity`'s.
 #[must_use]
 pub fn definition<E: Parts>() -> Definition<E> {
-    fn tick<E: Parts>(minecart: &E, ctx: &mut TickCtx<'_>) -> Flow {
-        minecart.abstract_minecart().tick(ctx.entity);
-        Flow::Continue
+    fn tick<E: Parts>(minecart: &E) {
+        minecart.abstract_minecart().tick();
     }
     fn block_speed_factor<E: Parts>(minecart: &E, ctx: &mut BlockSpeedFactorCtx<'_>) -> Flow {
         let Some(world) = minecart.level() else {
@@ -241,7 +240,7 @@ pub fn definition<E: Parts>() -> Definition<E> {
     }
     let definition = vehicle_entity::definition::<E>();
     Definition {
-        tick: Pipeline::new([Stage::new(TICK, tick::<E>)]),
+        tick: Pipeline::new([Stage::effect(TICK, tick::<E>)]),
         block_speed_factor: definition.block_speed_factor.before(
             entity_definition::BLOCK_SPEED_FACTOR,
             [Stage::new(BLOCK_SPEED_FACTOR, block_speed_factor::<E>)],
@@ -289,8 +288,8 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
             MinecartBehavior::known_movement(minecart.known_movement_default())
         },
         air_drag: |_| AIR_DRAG,
-        move_entity: |minecart, entity, mover_type, delta| {
-            let result = Arc::clone(entity).move_entity_default(mover_type, delta);
+        move_entity: |minecart, mover_type, delta| {
+            let result = minecart.move_entity_default(mover_type, delta);
             minecart.abstract_minecart().apply_effects_from_blocks();
             result
         },
@@ -520,7 +519,7 @@ impl AbstractMinecart<'_> {
     }
 
     /// `AbstractMinecart.tick`, which never calls `Entity`'s.
-    pub fn tick(&self, entity: &SharedEntity) {
+    pub fn tick(&self) {
         let Some(world) = self.level() else {
             return;
         };
@@ -535,7 +534,7 @@ impl AbstractMinecart<'_> {
         self.check_below_world();
         self.base().compute_known_speed();
         self.handle_portal();
-        MinecartBehavior::tick(self, entity, &world);
+        MinecartBehavior::tick(self, &world);
         self.update_fluid_interaction();
 
         if self.is_in_lava() {
@@ -559,7 +558,7 @@ impl AbstractMinecart<'_> {
     }
 
     /// Moves the minecart freely after it leaves the track.
-    pub fn come_off_track(&self, entity: &SharedEntity, world: &World) {
+    pub fn come_off_track(&self, world: &World) {
         let max_speed = self.max_speed(world);
         let velocity = self.velocity();
         let mut velocity = DVec3::new(
@@ -571,7 +570,7 @@ impl AbstractMinecart<'_> {
             velocity *= OFF_TRACK_GROUND_SLOWDOWN_FACTOR;
         }
         self.set_velocity(velocity);
-        if Arc::clone(entity)
+        if self
             .move_entity(MoverType::SelfMovement, self.velocity())
             .is_none()
         {

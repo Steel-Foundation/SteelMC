@@ -185,24 +185,24 @@ mod tests {
         let world_fixture = fresh_loaded_test_world("hurt_by_target_goal");
         let world = &world_fixture.world;
 
-        let hunter = Arc::new(ChickenEntity::new(
+        let hunter = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             1,
             DVec3::new(8.0, 65.0, 8.0),
             Arc::downgrade(world),
-        ));
-        let ally = Arc::new(ChickenEntity::new(
+        );
+        let ally = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             2,
             DVec3::new(9.0, 65.0, 8.0),
             Arc::downgrade(world),
-        ));
-        let attacker = Arc::new(ChickenEntity::new(
+        );
+        let attacker = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             3,
             DVec3::new(10.0, 65.0, 8.0),
             Arc::downgrade(world),
-        ));
+        );
 
         let hunter_entity: SharedEntity = Arc::<ChickenEntity>::clone(&hunter);
         let ally_entity: SharedEntity = Arc::<ChickenEntity>::clone(&ally);

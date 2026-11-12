@@ -11,7 +11,7 @@ fn saddled_pig_is_steered_by_a_rider_holding_a_carrot_on_a_stick() {
     init_globals();
     let world_fixture = fresh_test_world("pig_steering_controller");
     let world = &world_fixture.world;
-    let pig = Arc::new(pig(1));
+    let pig = pig(1);
     saddle(&pig);
     let vehicle: SharedEntity = Arc::<PigEntity>::clone(&pig);
     let rider = TestPlayerBuilder::new(Arc::clone(world), "Rider", 2).build();
@@ -35,8 +35,8 @@ fn saddled_pig_is_steered_by_a_rider_holding_a_carrot_on_a_stick() {
 #[test]
 fn a_mob_riding_a_pig_controls_it() {
     init_vanilla_registry();
-    let vehicle: SharedEntity = Arc::new(pig(1));
-    let passenger: SharedEntity = Arc::new(pig(2));
+    let vehicle: SharedEntity = pig(1);
+    let passenger: SharedEntity = pig(2);
     EntityBase::restore_passenger_relationship(&vehicle, &passenger);
 
     assert_eq!(
@@ -85,12 +85,12 @@ fn player_without_food_mounts_a_saddled_pig() {
     init_globals();
     let world_fixture = fresh_loaded_test_world("pig_mount");
     let world = &world_fixture.world;
-    let pig = Arc::new(PigEntity::new(
+    let pig = PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::new(0.0, 80.0, 0.0),
         Arc::downgrade(world),
-    ));
+    );
     saddle(&pig);
     world
         .try_add_entity(Arc::<PigEntity>::clone(&pig))
@@ -122,12 +122,12 @@ fn rider_dismounts_onto_the_floor_right_of_the_pig() {
     }
 
     let spawn = |id| -> SharedEntity {
-        let pig = Arc::new(PigEntity::new(
+        let pig = PigEntity::new(
             &vanilla_entities::PIG,
             id,
             DVec3::new(8.5, 64.0, 8.5),
             Arc::downgrade(world),
-        ));
+        );
         world
             .try_add_entity(Arc::clone(&pig) as SharedEntity)
             .expect("pig should join the world");

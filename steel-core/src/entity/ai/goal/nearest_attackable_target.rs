@@ -180,24 +180,24 @@ mod tests {
         let world = &world_fixture.world;
         insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-        let pig_hunter = Arc::new(ChickenEntity::new(
+        let pig_hunter = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             1,
             DVec3::new(8.0, 65.0, 8.0),
             Arc::downgrade(world),
-        ));
-        let nearer_pig = Arc::new(ChickenEntity::new(
+        );
+        let nearer_pig = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             2,
             DVec3::new(9.0, 65.0, 8.0),
             Arc::downgrade(world),
-        ));
-        let farther_cow = Arc::new(ChickenEntity::new(
+        );
+        let farther_cow = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             3,
             DVec3::new(10.0, 65.0, 8.0),
             Arc::downgrade(world),
-        ));
+        );
 
         let entities: [SharedEntity; 3] = [
             Arc::<ChickenEntity>::clone(&pig_hunter),

@@ -15,6 +15,6 @@ use super::*;
 mod core;
 mod shearing;
 
-fn sheep(id: i32) -> SheepEntity {
+fn sheep(id: i32) -> Arc<SheepEntity> {
     SheepEntity::new(&vanilla_entities::SHEEP, id, DVec3::ZERO, Weak::new())
 }

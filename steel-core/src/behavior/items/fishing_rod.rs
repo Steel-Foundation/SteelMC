@@ -81,12 +81,12 @@ impl ItemBehavior for FishingRodItem {
                 0.0,
             );
 
-            let hook = Arc::new(FishingHookEntity::new(
+            let hook = FishingHookEntity::new(
                 &vanilla_entities::FISHING_BOBBER,
                 next_entity_id(),
                 spawn_pos,
                 Arc::downgrade(world),
-            ));
+            );
 
             hook.shoot_from_player(player, luck as i32, lure_speed as i32);
 
@@ -157,12 +157,12 @@ mod tests {
 
         let player_owner = Arc::clone(&player);
         let owner: SharedEntity = player_owner;
-        let hook = Arc::new(FishingHookEntity::new(
+        let hook = FishingHookEntity::new(
             &vanilla_entities::FISHING_BOBBER,
             2,
             DVec3::ZERO,
             Arc::downgrade(world),
-        ));
+        );
         hook.set_owner(&owner);
         hook.set_on_ground(true);
 

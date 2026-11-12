@@ -34,8 +34,8 @@ use uuid::Uuid;
 use crate::entity::damage::DamageHistoryBinding;
 use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{
-    EntityGeneration, EntityLevelCallback, EntityMoveError, InsideBlockEffectType,
-    NullEntityCallback, RemovalReason, SharedEntity,
+    Entity, EntityGeneration, EntityLevelCallback, EntityMoveError, InsideBlockEffectType,
+    NullEntityCallback, RemovalReason, SharedEntity, WeakEntity,
 };
 use crate::physics::EntityPhysicsState;
 use crate::portal::{PortalKind, PortalProcessResult, PortalProcessor};
@@ -385,13 +385,45 @@ pub struct EntityBase {
     portal_process: CheckedMutex<Option<PortalProcessor>>,
     /// Callback for entity lifecycle events.
     level_callback: CheckedMutex<Arc<dyn EntityLevelCallback>>,
+    /// This entity's handle to its own allocation.
+    this: WeakSelf,
+}
+
+/// An entity's weak handle to its own allocation, handed to the entity while
+/// it is built so `&self` code can reach its [`SharedEntity`] without one
+/// being threaded through every call.
+pub struct WeakSelf(Option<WeakEntity>);
+
+impl WeakSelf {
+    /// Builds an entity around its own handle.
+    #[must_use]
+    pub fn build<E: Entity>(build: impl FnOnce(Self) -> E) -> Arc<E> {
+        Arc::new_cyclic(|this: &Weak<E>| {
+            let this: WeakEntity = Weak::<E>::clone(this);
+            build(Self(Some(this)))
+        })
+    }
+
+    /// A handle for an entity that lives outside an `Arc`, which can never
+    /// hand out a [`SharedEntity`].
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) const fn detached() -> Self {
+        Self(None)
+    }
 }
 
 impl EntityBase {
     /// Creates a new `EntityBase` with a randomly generated UUID.
     #[must_use]
-    pub fn new(id: i32, position: DVec3, dimensions: EntityDimensions, world: Weak<World>) -> Self {
-        Self::new_with_state(id, EntityBaseState::new(position, dimensions), world)
+    pub fn new(
+        id: i32,
+        position: DVec3,
+        dimensions: EntityDimensions,
+        world: Weak<World>,
+        this: WeakSelf,
+    ) -> Self {
+        Self::new_with_state(id, EntityBaseState::new(position, dimensions), world, this)
     }
 
     /// Creates a new `EntityBase` with a randomly generated UUID and explicit state.
@@ -400,8 +432,13 @@ impl EntityBase {
         clippy::large_types_passed_by_value,
         reason = "EntityBaseState is an owned construction snapshot built with with_* helpers"
     )]
-    pub fn new_with_state(id: i32, state: EntityBaseState, world: Weak<World>) -> Self {
-        Self::with_uuid_and_state(id, Uuid::new_v4(), state, world)
+    pub fn new_with_state(
+        id: i32,
+        state: EntityBaseState,
+        world: Weak<World>,
+        this: WeakSelf,
+    ) -> Self {
+        Self::with_uuid_and_state(id, Uuid::new_v4(), state, world, this)
     }
 
     /// Creates a new `EntityBase` with the specified UUID.
@@ -414,8 +451,15 @@ impl EntityBase {
         position: DVec3,
         dimensions: EntityDimensions,
         world: Weak<World>,
+        this: WeakSelf,
     ) -> Self {
-        Self::with_uuid_and_state(id, uuid, EntityBaseState::new(position, dimensions), world)
+        Self::with_uuid_and_state(
+            id,
+            uuid,
+            EntityBaseState::new(position, dimensions),
+            world,
+            this,
+        )
     }
 
     /// Creates a new `EntityBase` with the specified UUID and restored movement state.
@@ -432,6 +476,7 @@ impl EntityBase {
         uuid: Uuid,
         state: EntityBaseState,
         world: Weak<World>,
+        this: WeakSelf,
     ) -> Self {
         Self {
             damage_history: DamageHistoryBinding::default(),
@@ -446,12 +491,22 @@ impl EntityBase {
             relationships: CheckedMutex::new(EntityRelationshipState::default()),
             portal_process: CheckedMutex::new(None),
             level_callback: CheckedMutex::new(Arc::new(NullEntityCallback)),
+            this,
         }
+    }
+
+    /// Returns a shared handle to the entity this base belongs to.
+    ///
+    /// `None` while the entity is still being built or is being dropped, so
+    /// constructors and `Drop` impls cannot rely on it.
+    #[must_use]
+    pub fn shared(&self) -> Option<SharedEntity> {
+        self.this.0.as_ref()?.upgrade()
     }
 
     /// Creates a base from persistent vanilla entity fields.
     #[must_use]
-    pub fn from_load(load: EntityBaseLoad, dimensions: EntityDimensions) -> Self {
+    pub fn from_load(load: EntityBaseLoad, dimensions: EntityDimensions, this: WeakSelf) -> Self {
         let base = Self::with_uuid_and_state(
             load.id,
             load.uuid,
@@ -462,6 +517,7 @@ impl EntityBase {
                 .with_fire_freeze_state(load.fire_freeze)
                 .with_on_ground(load.on_ground),
             load.world,
+            this,
         );
         base.replace_save_data(load.save_data);
         base

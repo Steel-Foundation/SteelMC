@@ -12,7 +12,7 @@
 //! caller passes when the chain declares none.
 //!
 //! Chains whose arguments borrow declare `<'a>`, the context's lifetime:
-//! `fn on_hit<'a>(entity: &'a SharedEntity, hit: &'a ProjectileHit);`.
+//! `fn on_hit<'a>(hit: &'a ProjectileHit);`.
 
 use std::marker::PhantomData;
 use std::sync::{Arc, LazyLock};
@@ -95,10 +95,6 @@ macro_rules! definition_chains {
         ///
         /// Implemented once for every definition, so entity types never forward
         /// entry points by hand.
-        #[expect(
-            clippy::too_many_arguments,
-            reason = "chains take vanilla's arguments plus the entity"
-        )]
         pub trait DefinitionEntries: Send + Sync {
             /// Runs the mob constructor chain on a fresh `mob_base`.
             fn construct(&self, mob_base: &MobBase);
@@ -189,7 +185,7 @@ impl Entry for Construct {
 
 definition_chains! {
     /// Vanilla `Entity.tick`.
-    Tick / TickCtx: fn tick<'a>(entity: &'a SharedEntity);
+    Tick / TickCtx: fn tick();
     /// Vanilla `Entity.baseTick`.
     BaseTick / BaseTickCtx: fn base_tick();
     /// Vanilla `Entity.hurtServer`; stages may change `amount` for later ones.
@@ -197,11 +193,10 @@ definition_chains! {
     Hurt / HurtCtx:
         fn hurt<'a>(world: &'a World, source: &'a DamageSource, amount: f32) -> bool = false;
     /// Vanilla `Entity.rideTick`: a passenger's tick.
-    RideTick / RideTickCtx: fn ride_tick<'a>(entity: &'a SharedEntity);
+    RideTick / RideTickCtx: fn ride_tick();
     /// Vanilla `Entity.checkFallDamage`: accumulates fall distance and lands.
     CheckFallDamage / CheckFallDamageCtx:
         fn check_fall_damage<'a>(
-            entity: &'a SharedEntity,
             vertical_movement: f64,
             on_ground: bool,
             on_state: BlockStateId,
@@ -211,7 +206,6 @@ definition_chains! {
     /// Vanilla `Entity.causeFallDamage`.
     CauseFallDamage / CauseFallDamageCtx:
         fn cause_fall_damage<'a>(
-            entity: &'a SharedEntity,
             fall_distance: f64,
             damage_modifier: f32,
             source: &'a DamageSource,
@@ -245,7 +239,7 @@ definition_chains! {
         fn controlling_passenger() -> Option<SharedEntity> = None;
     /// Vanilla `LivingEntity.travel`, with the movement it performed.
     Travel / TravelCtx:
-        fn travel<'a>(entity: &'a SharedEntity, input: DVec3) -> Option<MoveResult> = None;
+        fn travel(input: DVec3) -> Option<MoveResult> = None;
     /// Vanilla `LivingEntity.jumpFromGround`.
     JumpFromGround / JumpFromGroundCtx: fn jump_from_ground();
     /// Vanilla `LivingEntity.isImmobile`.
@@ -274,16 +268,16 @@ definition_chains! {
     /// this entity.
     TickRidden / TickRiddenCtx: fn tick_ridden<'a>(controller: &'a Player, ridden_input: DVec3);
     /// Vanilla `Projectile.onHit`.
-    OnHit / OnHitCtx: fn on_hit<'a>(entity: &'a SharedEntity, hit: &'a ProjectileHit);
+    OnHit / OnHitCtx: fn on_hit<'a>(hit: &'a ProjectileHit);
     /// Vanilla `Projectile.onHitEntity`.
     OnHitEntity / OnHitEntityCtx:
-        fn on_hit_entity<'a>(entity: &'a SharedEntity, target: &'a SharedEntity, location: DVec3);
+        fn on_hit_entity<'a>(target: &'a SharedEntity, location: DVec3);
     /// Vanilla `Projectile.onHitBlock`.
-    OnHitBlock / OnHitBlockCtx: fn on_hit_block<'a>(entity: &'a SharedEntity, hit: &'a ClipHitResult);
+    OnHitBlock / OnHitBlockCtx: fn on_hit_block<'a>(hit: &'a ClipHitResult);
     /// Vanilla `Projectile.canHitEntity`.
     CanHitEntity / CanHitEntityCtx: fn can_hit_entity<'a>(target: &'a dyn Entity) -> bool = false;
     /// Vanilla `LivingEntity.aiStep`, with the movement it performed.
-    AiStep / AiStepCtx: fn ai_step<'a>(entity: &'a SharedEntity) -> Option<MoveResult> = None;
+    AiStep / AiStepCtx: fn ai_step() -> Option<MoveResult> = None;
     /// Vanilla `Mob.customServerAiStep`.
     CustomServerAiStep / CustomServerAiStepCtx: fn custom_server_ai_step();
     /// Vanilla `Mob.ate`, run after an eating goal consumes a block.
@@ -349,12 +343,14 @@ impl<E: Entity + ?Sized> Definition<E> {
             position_rider_default(entity, ctx.passenger);
             Flow::Continue
         }
-        fn ride_tick<E: Entity + ?Sized>(_: &E, ctx: &mut RideTickCtx<'_>) -> Flow {
-            Arc::clone(ctx.entity).ride_tick_default();
-            Flow::Continue
+        fn ride_tick<E: Entity + ?Sized>(entity: &E) {
+            entity.ride_tick_default();
         }
-        fn check_fall_damage<E: Entity + ?Sized>(_: &E, ctx: &mut CheckFallDamageCtx<'_>) -> Flow {
-            Arc::clone(ctx.entity).check_fall_damage_default(
+        fn check_fall_damage<E: Entity + ?Sized>(
+            entity: &E,
+            ctx: &mut CheckFallDamageCtx<'_>,
+        ) -> Flow {
+            entity.check_fall_damage_default(
                 ctx.vertical_movement,
                 ctx.on_ground,
                 ctx.on_state,
@@ -363,8 +359,11 @@ impl<E: Entity + ?Sized> Definition<E> {
             );
             Flow::Continue
         }
-        fn cause_fall_damage<E: Entity + ?Sized>(_: &E, ctx: &mut CauseFallDamageCtx<'_>) -> Flow {
-            ctx.result = Arc::clone(ctx.entity).cause_fall_damage_default(
+        fn cause_fall_damage<E: Entity + ?Sized>(
+            entity: &E,
+            ctx: &mut CauseFallDamageCtx<'_>,
+        ) -> Flow {
+            ctx.result = entity.cause_fall_damage_default(
                 ctx.fall_distance,
                 ctx.damage_modifier,
                 ctx.source,
@@ -390,7 +389,7 @@ impl<E: Entity + ?Sized> Definition<E> {
             Flow::Continue
         }
         Self {
-            ride_tick: Pipeline::new([Stage::new(RIDE_TICK, ride_tick::<E>)]),
+            ride_tick: Pipeline::new([Stage::effect(RIDE_TICK, ride_tick::<E>)]),
             check_fall_damage: Pipeline::new([Stage::new(
                 CHECK_FALL_DAMAGE,
                 check_fall_damage::<E>,

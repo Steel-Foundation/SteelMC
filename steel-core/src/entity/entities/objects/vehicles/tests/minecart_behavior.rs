@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use std::sync::Weak;
 
 use steel_registry::init_vanilla_registry;
@@ -7,7 +9,7 @@ use super::*;
 use crate::entity::entities::objects::vehicles::MinecartEntity;
 use crate::entity::entities::objects::vehicles::abstract_minecart::Parts as _;
 use crate::entity::entities::objects::vehicles::test_support::{assert_vec_close, test_world};
-use crate::entity::{Entity, EntityEventSource};
+use crate::entity::{Entity, SharedEntity};
 
 fn run_flat_track_case(
     key: &'static str,
@@ -38,13 +40,13 @@ fn run_flat_track_case(
     assert_eq!(world.get_block_state(pos), state);
 
     let start = DVec3::new(8.5, 64.0625, 8.5);
-    let cart = Arc::new(MinecartEntity::new(
+    let cart = MinecartEntity::new(
         &vanilla_entities::MINECART,
         8_001,
         start,
         Arc::downgrade(world),
-    ));
-    let entity = Arc::clone(&cart).into_shared_entity();
+    );
+    let entity: SharedEntity = Arc::<MinecartEntity>::clone(&cart);
 
     world
         .try_add_entity(Arc::clone(&entity))
@@ -53,7 +55,7 @@ fn run_flat_track_case(
     cart.set_old_position_to_current();
     cart.set_velocity(DVec3::new(initial_vx, 0.0, 0.0));
 
-    MinecartBehavior::move_along_track(&cart.abstract_minecart(), &entity, world);
+    MinecartBehavior::move_along_track(&cart.abstract_minecart(), world);
 
     (cart.position() - start, cart.velocity())
 }

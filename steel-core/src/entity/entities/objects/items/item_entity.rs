@@ -26,11 +26,10 @@ use steel_utils::locks::CheckedMutex;
 use uuid::Uuid;
 
 use crate::behavior::ITEM_BEHAVIORS;
-use crate::entity::SharedEntity;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMovementEmission,
-    RemovalReason,
+    RemovalReason, WeakSelf,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -125,7 +124,12 @@ impl ItemEntity {
     ///
     /// Use `set_item()` to set the actual item after creation, or use `with_item()`.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: i32,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Arc<Self> {
         Self::with_item_and_velocity(
             entity_type,
             id,
@@ -144,7 +148,7 @@ impl ItemEntity {
         position: DVec3,
         item: ItemStack,
         world: Weak<World>,
-    ) -> Self {
+    ) -> Arc<Self> {
         Self::with_item_and_velocity(
             entity_type,
             id,
@@ -164,22 +168,25 @@ impl ItemEntity {
         item: ItemStack,
         velocity: DVec3,
         world: Weak<World>,
-    ) -> Self {
+    ) -> Arc<Self> {
         // Random yaw rotation for visual variety
         let yaw = rand::random_range(0.0..DEGREE_360);
 
-        let mut entity = Self::from_base(
-            EntityBase::new_with_state(
-                id,
-                EntityBaseState::new(position, entity_type.dimensions)
-                    .with_velocity(velocity)
-                    .with_rotation((yaw, 0.0)),
-                world,
-            ),
-            entity_type,
-        );
-        entity.entity_data.get_mut().item.set(item);
-        entity
+        WeakSelf::build(|this| {
+            let mut entity = Self::from_base(
+                EntityBase::new_with_state(
+                    id,
+                    EntityBaseState::new(position, entity_type.dimensions)
+                        .with_velocity(velocity)
+                        .with_rotation((yaw, 0.0)),
+                    world,
+                    this,
+                ),
+                entity_type,
+            );
+            entity.entity_data.get_mut().item.set(item);
+            entity
+        })
     }
 
     pub(crate) fn default_spawn_velocity() -> DVec3 {
@@ -195,11 +202,13 @@ impl ItemEntity {
     /// Used when loading entities from disk. Type-specific data (item, age, etc.)
     /// is restored via `load_additional()` after this constructor.
     #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-        )
+    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Arc<Self> {
+        WeakSelf::build(|this| {
+            Self::from_base(
+                EntityBase::from_load(load, entity_type.dimensions, this),
+                entity_type,
+            )
+        })
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
@@ -516,10 +525,9 @@ impl ItemEntity {
     fn define() -> Definition<Self> {
         let definition = Definition::new();
         Definition {
-            tick: definition.tick.around(Self::TICK, |item, entity, inner| {
-                let shared = entity.entity;
-                item.entity_tick(shared, || {
-                    inner(item, entity);
+            tick: definition.tick.around(Self::TICK, |item, ctx, inner| {
+                item.entity_tick(|| {
+                    inner(item, ctx);
                 });
                 Flow::Continue
             }),
@@ -565,7 +573,7 @@ impl ItemEntity {
     }
 
     /// `ItemEntity.tick`: an empty stack is discarded instead of ticking.
-    fn entity_tick(&self, entity: &SharedEntity, super_tick: impl FnOnce()) {
+    fn entity_tick(&self, super_tick: impl FnOnce()) {
         if self.item().is_empty() {
             self.set_removed(RemovalReason::Discarded);
             return;
@@ -605,9 +613,7 @@ impl ItemEntity {
 
         if should_move {
             // Move with collision detection; movement handles velocity zeroing on collision.
-            if let Some(result) =
-                Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())
-            {
+            if let Some(result) = self.move_entity(MoverType::SelfMovement, self.velocity()) {
                 self.apply_effects_from_blocks();
                 if self.is_removed() {
                     return;
@@ -907,13 +913,13 @@ mod tests {
             vanilla_blocks::WATER.default_state(),
             UpdateFlags::UPDATE_NONE,
         ));
-        let item = Arc::new(ItemEntity::with_item(
+        let item = ItemEntity::with_item(
             &vanilla_entities::ITEM,
             1,
             DVec3::new(8.5, 65.1, 8.5),
             ItemStack::new(&vanilla_items::STONE),
             Arc::downgrade(world),
-        ));
+        );
         item.set_velocity(DVec3::new(0.0, -0.2, 0.0));
 
         Arc::clone(&item).tick();

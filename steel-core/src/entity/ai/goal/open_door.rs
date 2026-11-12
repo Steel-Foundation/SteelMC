@@ -1,7 +1,6 @@
 use super::door_interact::DoorInteractGoal;
 use super::selector::{Goal, GoalControls};
 use crate::entity::Mob;
-use crate::entity::SharedEntity;
 
 const FORGET_TICKS: i32 = 20;
 
@@ -48,7 +47,7 @@ impl Goal for OpenDoorGoal {
         true
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         self.forget_time -= 1;
         self.door_interact.tick(mob);
     }
@@ -67,7 +66,7 @@ mod tests {
     use crate::entity::entities::ChickenEntity;
     use crate::entity::prelude::*;
 
-    fn pig() -> ChickenEntity {
+    fn pig() -> Arc<ChickenEntity> {
         ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new())
     }
 
@@ -92,15 +91,14 @@ mod tests {
     fn open_door_goal_uses_vanilla_forget_time() {
         init_vanilla_registry();
         let mut goal = OpenDoorGoal::new(true);
-        let mob = Arc::new(pig());
-        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
+        let mob = pig();
 
         goal.start(&mob.mob());
 
         assert_eq!(goal.forget_time, FORGET_TICKS);
         assert!(goal.can_continue_to_use(&mob.mob()));
 
-        goal.tick(&mob.mob(), &mob_entity);
+        goal.tick(&mob.mob());
 
         assert_eq!(goal.forget_time, FORGET_TICKS - 1);
     }

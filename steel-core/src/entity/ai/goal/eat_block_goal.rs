@@ -11,7 +11,7 @@ use steel_utils::types::UpdateFlags;
 
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{Animal, Mob, SharedEntity};
+use crate::entity::{Animal, Mob};
 use crate::world::LevelAccessor;
 
 /// Constant mirroring vanilla `EatBlockGoal.EAT_ANIMATION_TICKS`, the full animation
@@ -85,7 +85,7 @@ impl Goal for EatBlockGoal {
         self.eat_animation_tick = 0;
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         self.eat_animation_tick = (self.eat_animation_tick - 1).max(0);
         if self.eat_animation_tick != reduced_tick_delay(4) {
             return;
@@ -172,7 +172,7 @@ mod tests {
             Arc::downgrade(world),
         );
         sheep.set_sheared(true);
-        let shared: SharedEntity = Arc::new(sheep);
+        let shared: SharedEntity = sheep;
         world
             .try_add_entity(Arc::clone(&shared))
             .expect("sheep should attach to the loaded test chunk");
@@ -196,7 +196,7 @@ mod tests {
         let mut goal = EatBlockGoal::new();
         goal.start(&mob);
         for _ in 0..18 {
-            goal.tick(&mob, &shared);
+            goal.tick(&mob);
         }
 
         let sheep = shared
@@ -225,7 +225,7 @@ mod tests {
         let mut goal = EatBlockGoal::new();
         goal.start(&mob);
         for _ in 0..18 {
-            goal.tick(&mob, &shared);
+            goal.tick(&mob);
         }
 
         let sheep = shared

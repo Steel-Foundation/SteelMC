@@ -29,8 +29,8 @@ const ROCKET_PLACEMENT_OFFSET: f64 = 0.15;
 pub struct FireworkRocketItem;
 
 impl FireworkRocketItem {
-    fn add_rocket(world: &Arc<World>, rocket: FireworkRocketEntity) -> SharedEntity {
-        let entity: SharedEntity = Arc::new(rocket);
+    fn add_rocket(world: &Arc<World>, rocket: Arc<FireworkRocketEntity>) -> SharedEntity {
+        let entity: SharedEntity = rocket;
         if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
             log::debug!("failed to spawn firework rocket: {error}");
         }

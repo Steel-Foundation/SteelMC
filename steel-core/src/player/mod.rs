@@ -112,6 +112,7 @@ use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::entity::LivingEntityRef;
 use crate::entity::LivingProps;
+use crate::entity::WeakSelf;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::{ExperienceOrbEntity, FishingHookEntity};
 use crate::entity::{
@@ -409,12 +410,15 @@ impl Player {
     }
 
     /// Releases the currently used item and invokes its release hook.
-    pub fn release_using_item(&self, entity: &SharedEntity) {
+    pub fn release_using_item(&self) {
         let Some(active) = self.living_base.active_item_use() else {
             return;
         };
+        let Some(entity) = self.shared() else {
+            return;
+        };
         let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
-        self.release_using_item_with_behavior(entity, behavior, active);
+        self.release_using_item_with_behavior(&entity, behavior, active);
     }
 
     fn release_using_item_with_behavior(
@@ -457,12 +461,17 @@ impl Player {
         self.stop_using_item();
     }
 
-    fn tick_active_item_use(&self, entity: &SharedEntity) {
+    fn tick_active_item_use(&self) {
         let Some(active) = self.living_base.active_item_use() else {
             return;
         };
+        // Item behaviors keep the user's handle, so this is the one handle a
+        // player takes per tick, and only while using an item.
+        let Some(entity) = self.shared() else {
+            return;
+        };
         let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
-        self.tick_active_item_use_with_behavior(entity, behavior, active);
+        self.tick_active_item_use_with_behavior(&entity, behavior, active);
     }
 
     fn tick_active_item_use_with_behavior(
@@ -589,10 +598,39 @@ impl Player {
         config: Arc<RuntimeConfig>,
         entity_id: i32,
         client_information: ClientInformation,
-    ) -> Self {
+    ) -> Arc<Self> {
+        Self::with_ender_chest(
+            gameprofile,
+            connection,
+            session,
+            world,
+            server,
+            config,
+            entity_id,
+            client_information,
+            Arc::new(SyncMutex::new(PlayerEnderChestContainer::new())),
+        )
+    }
+
+    /// Creates a player around an existing ender chest container, which a
+    /// respawn replacement keeps from the player it replaces.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "player construction requires explicit connection, session, world, and identity owners"
+    )]
+    pub(crate) fn with_ender_chest(
+        gameprofile: GameProfile,
+        connection: Arc<PlayerConnection>,
+        session: Arc<PlayerSession>,
+        world: Arc<World>,
+        server: Weak<Server>,
+        config: Arc<RuntimeConfig>,
+        entity_id: i32,
+        client_information: ClientInformation,
+        ender_chest_inventory: SyncPlayerEnderChest,
+    ) -> Arc<Self> {
         // Create a single shared inventory container used by both the player and inventory menu
         let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
-        let ender_chest_inventory = Arc::new(SyncMutex::new(PlayerEnderChestContainer::new()));
 
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
@@ -607,7 +645,7 @@ impl Player {
         Self::apply_client_information_to_entity_data(&mut entity_data, &client_information);
         let player_uuid = gameprofile.id();
         let world_ref = Arc::downgrade(&world);
-        Self {
+        WeakSelf::build(|this| Self {
             gameprofile,
             connection,
             session,
@@ -621,6 +659,7 @@ impl Player {
                 pos,
                 Self::dimensions_for_pose(EntityPose::Standing),
                 world_ref,
+                this,
             ),
             lifecycle: CheckedMutex::new(PlayerLifecycleState::default()),
             movement: CheckedMutex::new(MovementState::new()),
@@ -658,7 +697,7 @@ impl Player {
             stats: CheckedMutex::new(StatsCounter::new()),
             last_action_time: CheckedMutex::new(Instant::now()),
             advancements: CheckedMutex::new(PlayerAdvancement::default()), // TODO save the advancement
-        }
+        })
     }
 
     fn send_experience_packet_if_dirty(&self) {

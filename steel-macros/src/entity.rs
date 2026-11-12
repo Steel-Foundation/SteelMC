@@ -166,11 +166,19 @@ fn extra_tokens(input: &DeriveInput, options: &StructOptions) -> syn::Result<Tok
                 id: i32,
                 position: ::glam::DVec3,
                 world: ::std::sync::Weak<crate::world::World>,
-            ) -> Self {
-                Self::from_base(
-                    crate::entity::EntityBase::new(id, position, entity_type.dimensions, world),
-                    entity_type,
-                )
+            ) -> ::std::sync::Arc<Self> {
+                crate::entity::WeakSelf::build(|this| {
+                    Self::from_base(
+                        crate::entity::EntityBase::new(
+                            id,
+                            position,
+                            entity_type.dimensions,
+                            world,
+                            this,
+                        ),
+                        entity_type,
+                    )
+                })
             }
 
             /// Reconstructs an entity of this type from saved base data.
@@ -178,11 +186,17 @@ fn extra_tokens(input: &DeriveInput, options: &StructOptions) -> syn::Result<Tok
             pub fn from_saved(
                 entity_type: ::steel_registry::entity_type::EntityTypeRef,
                 load: crate::entity::EntityBaseLoad,
-            ) -> Self {
-                Self::from_base(
-                    crate::entity::EntityBase::from_load(load, entity_type.dimensions),
-                    entity_type,
-                )
+            ) -> ::std::sync::Arc<Self> {
+                crate::entity::WeakSelf::build(|this| {
+                    Self::from_base(
+                        crate::entity::EntityBase::from_load(
+                            load,
+                            entity_type.dimensions,
+                            this,
+                        ),
+                        entity_type,
+                    )
+                })
             }
         }
     });

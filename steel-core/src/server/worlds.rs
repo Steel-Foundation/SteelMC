@@ -263,12 +263,12 @@ mod tests {
         let other_fixture = fresh_test_derived_world(primary, "other");
         let other = &other_fixture.world;
         insert_ready_full_chunk(other, ChunkPos::new(0, 0));
-        let owner: SharedEntity = Arc::new(ChickenEntity::new(
+        let owner: SharedEntity = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             1,
             DVec3::ZERO,
             Arc::downgrade(other),
-        ));
+        );
         other
             .try_add_entity(Arc::clone(&owner))
             .expect("register owner");

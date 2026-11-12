@@ -13,7 +13,7 @@ use super::*;
 
 mod core;
 
-fn mooshroom(id: i32) -> MushroomCowEntity {
+fn mooshroom(id: i32) -> Arc<MushroomCowEntity> {
     MushroomCowEntity::new(&vanilla_entities::MOOSHROOM, id, DVec3::ZERO, Weak::new())
 }
 

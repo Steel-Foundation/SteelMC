@@ -1,3 +1,4 @@
+use crate::entity::WeakSelf;
 use std::{ptr, sync::Weak};
 
 use glam::DVec3;
@@ -39,6 +40,7 @@ impl SelectorTestEntity {
                 DVec3::ZERO,
                 vanilla_entities::ITEM.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             ),
         }
     }

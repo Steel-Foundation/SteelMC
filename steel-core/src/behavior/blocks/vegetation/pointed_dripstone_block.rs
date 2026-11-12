@@ -910,6 +910,7 @@ pub fn get_cauldron_fill_fluid_type(
 #[cfg(test)]
 mod tests {
 
+    use crate::entity::WeakSelf;
     use crate::test_support::advance_test_game_time_to;
     use std::sync::Weak;
 
@@ -941,7 +942,13 @@ mod tests {
 
         fn new(entity_type: EntityTypeRef, velocity: DVec3) -> Self {
             let projectile = Self {
-                base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                base: EntityBase::new(
+                    1,
+                    DVec3::ZERO,
+                    entity_type.dimensions,
+                    Weak::new(),
+                    WeakSelf::detached(),
+                ),
                 projectile_base: ProjectileBase::new(&Self::PROJECTILE),
                 entity_type,
             };

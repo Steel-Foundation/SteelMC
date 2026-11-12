@@ -59,7 +59,7 @@ impl ItemBehavior for BrushItem {
             return;
         };
         let Some((pos, direction)) = calculate_block_hit(world, player) else {
-            player.release_using_item(user.entity());
+            player.release_using_item();
             return;
         };
 
@@ -113,6 +113,6 @@ fn equipped_brush_slot(player: &Player, _stack: &ItemStack) -> EquipmentSlot {
 
 fn release_player_use(user: LivingEntityRef<'_>) {
     if let Some(player) = user.living().as_player() {
-        player.release_using_item(user.entity());
+        player.release_using_item();
     }
 }

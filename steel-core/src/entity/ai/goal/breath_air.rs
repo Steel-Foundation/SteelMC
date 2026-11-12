@@ -1,5 +1,4 @@
 use crate::entity::prelude::*;
-use std::sync::Arc;
 
 use glam::DVec3;
 use steel_math::fast_floor;
@@ -9,8 +8,8 @@ use steel_utils::BlockPos;
 
 use super::selector::{Goal, GoalControls};
 use crate::behavior::BlockStateBehaviorExt as _;
+use crate::entity::Mob;
 use crate::entity::ai::path::PathComputationType;
-use crate::entity::{Mob, SharedEntity};
 use crate::physics::MoverType;
 use crate::world::World;
 
@@ -49,7 +48,7 @@ impl Goal for BreathAirGoal {
         mob.mob_base().navigation().lock().stop();
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         find_air_position(mob);
         let input = mob.travel_input();
         mob.move_relative(
@@ -60,7 +59,7 @@ impl Goal for BreathAirGoal {
                 f64::from(input.forward()),
             ),
         );
-        Arc::clone(entity).move_entity(MoverType::SelfMovement, mob.velocity());
+        mob.move_entity(MoverType::SelfMovement, mob.velocity());
     }
 }
 
@@ -134,7 +133,7 @@ fn gives_air(level: &World, pos: BlockPos) -> bool {
 #[cfg(test)]
 mod tests {
 
-    use std::sync::{Arc, Weak};
+    use std::sync::Weak;
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
@@ -170,17 +169,11 @@ mod tests {
     fn breath_air_goal_tick_applies_travel_input_to_velocity() {
         init_vanilla_registry();
         let mut goal = BreathAirGoal::new();
-        let mob = Arc::new(ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
-        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
+        let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
         mob.living()
             .set_travel_input(LivingTravelInput::new(1.0, 0.0, 0.0));
 
-        goal.tick(&mob.mob(), &mob_entity);
+        goal.tick(&mob.mob());
 
         assert!(mob.velocity().length_squared() > 0.0);
     }

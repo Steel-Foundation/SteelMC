@@ -46,7 +46,7 @@ fn java_test_player(
         1,
         Arc::clone(&session),
     )));
-    let player = Arc::new(Player::new(
+    let player = Player::new(
         GameProfile::new(uuid, "TestPlayer".to_owned(), Vec::new()).expect("valid test profile"),
         connection,
         Arc::clone(&session),
@@ -55,7 +55,7 @@ fn java_test_player(
         Arc::clone(&server.config),
         1,
         ClientInformation::default(),
-    ));
+    );
     assert!(session.bind_initial_player(&player));
     (player, receiver, network_writer)
 }
@@ -177,7 +177,7 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
             },
         )));
         let session = Arc::new(PlayerSession::new(10, 10));
-        let player = Arc::new(Player::new(
+        let player = Player::new(
             GameProfile::new(uuid, "TestPlayer".to_owned(), Vec::new())
                 .expect("valid test profile"),
             connection,
@@ -187,7 +187,7 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
             Arc::clone(&server.config),
             1,
             ClientInformation::default(),
-        ));
+        );
         assert!(session.bind_initial_player(&player));
 
         assert!(server.online_players.insert(Arc::clone(&player)));

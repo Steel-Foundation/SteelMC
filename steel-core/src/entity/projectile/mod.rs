@@ -296,7 +296,7 @@ pub fn definition<E: Parts>() -> Definition<E> {
             .tick_around(|| inner(projectile, ctx))
     }
     fn on_hit<E: Parts>(projectile: &E, ctx: &mut OnHitCtx<'_>) -> Flow {
-        projectile.projectile().on_hit_base(ctx.entity, ctx.hit);
+        projectile.projectile().on_hit_base(ctx.hit);
         Flow::Continue
     }
     fn on_hit_block<E: Parts>(projectile: &E, ctx: &mut OnHitBlockCtx<'_>) -> Flow {
@@ -391,16 +391,16 @@ impl<'a> Projectile<'a> {
         owner.get_entity(&world)
     }
 
-    /// `DamageSources.thrown`: damage from this projectile (`entity`), caused
-    /// by its owner.
+    /// `DamageSources.thrown`: damage from this projectile, caused by its
+    /// owner.
     #[must_use]
-    pub fn thrown_damage(&self, entity: &SharedEntity) -> DamageSource {
+    pub fn thrown_damage(&self) -> Option<DamageSource> {
         let damage = DamageSource::environment(&vanilla_damage_types::THROWN)
-            .with_direct_entity(Arc::clone(entity));
-        match self.owner() {
+            .with_direct_entity(self.shared()?);
+        Some(match self.owner() {
             Some(owner) => damage.with_causing_entity(owner),
             None => damage,
-        }
+        })
     }
 
     /// `Projectile.mayInteract`: the owning player's build permission, or the
@@ -506,24 +506,22 @@ impl<'a> Projectile<'a> {
     }
 
     /// `Projectile.onHit`: runs this type's pipeline.
-    pub fn on_hit(&self, entity: &SharedEntity, hit: &ProjectileHit) {
-        self.entity
-            .entity_definition()
-            .on_hit(self.entity, entity, hit);
+    pub fn on_hit(&self, hit: &ProjectileHit) {
+        self.entity.entity_definition().on_hit(self.entity, hit);
     }
 
     /// `Projectile.onHitEntity`: runs this type's pipeline.
-    pub fn on_hit_entity(&self, entity: &SharedEntity, target: &SharedEntity, location: DVec3) {
+    pub fn on_hit_entity(&self, target: &SharedEntity, location: DVec3) {
         self.entity
             .entity_definition()
-            .on_hit_entity(self.entity, entity, target, location);
+            .on_hit_entity(self.entity, target, location);
     }
 
     /// `Projectile.onHitBlock`: runs this type's pipeline.
-    pub fn on_hit_block(&self, entity: &SharedEntity, hit: &ClipHitResult) {
+    pub fn on_hit_block(&self, hit: &ClipHitResult) {
         self.entity
             .entity_definition()
-            .on_hit_block(self.entity, entity, hit);
+            .on_hit_block(self.entity, hit);
     }
 
     /// The `Projectile.canHitEntity` base stage.
@@ -676,11 +674,7 @@ impl<'a> Projectile<'a> {
 
     /// `Projectile.hitTargetOrDeflectSelf`: deflects this projectile off an
     /// entity or the world border, or resolves the hit.
-    pub fn hit_target_or_deflect_self(
-        &self,
-        entity: &SharedEntity,
-        hit: &ProjectileHit,
-    ) -> ProjectileDeflection {
+    pub fn hit_target_or_deflect_self(&self, hit: &ProjectileHit) -> ProjectileDeflection {
         if let ProjectileHit::Entity(entity_hit) = hit {
             let deflection = entity_hit.entity.deflection(self);
             if deflection != ProjectileDeflection::None {
@@ -708,12 +702,12 @@ impl<'a> Projectile<'a> {
             return deflection;
         }
 
-        self.on_hit(entity, hit);
+        self.on_hit(hit);
         ProjectileDeflection::None
     }
 
     /// The `Projectile.onHit` base stage.
-    fn on_hit_base(&self, entity: &SharedEntity, hit: &ProjectileHit) {
+    fn on_hit_base(&self, hit: &ProjectileHit) {
         let world = self.level();
         match hit {
             ProjectileHit::Entity(entity_hit) => {
@@ -731,7 +725,7 @@ impl<'a> Projectile<'a> {
                         true,
                     );
                 }
-                self.on_hit_entity(entity, &entity_hit.entity, entity_hit.location);
+                self.on_hit_entity(&entity_hit.entity, entity_hit.location);
                 if let Some(world) = world {
                     world.game_event_at(
                         &vanilla_game_events::PROJECTILE_LAND,
@@ -741,7 +735,7 @@ impl<'a> Projectile<'a> {
                 }
             }
             ProjectileHit::Block { hit, .. } => {
-                self.on_hit_block(entity, hit);
+                self.on_hit_block(hit);
                 if let Some(world) = world {
                     let state = world.get_block_state(hit.block_pos);
                     world.game_event(
@@ -835,7 +829,7 @@ pub fn spawn_throwable_item_projectile<E: throwable_item::Parts>(
     pitch_offset: f32,
     power: f32,
     uncertainty: f32,
-    create: impl FnOnce(DVec3) -> E,
+    create: impl FnOnce(DVec3) -> Arc<E>,
 ) -> Option<SharedEntity> {
     let player_pos = player.position();
     let spawn_pos = DVec3::new(
@@ -860,7 +854,7 @@ pub fn spawn_throwable_item_projectile<E: throwable_item::Parts>(
         uncertainty,
     );
 
-    let entity: SharedEntity = Arc::new(entity);
+    let entity: SharedEntity = entity;
     if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
         log::debug!("failed to spawn throwable item projectile: {error}");
         return None;

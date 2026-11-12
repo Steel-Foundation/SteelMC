@@ -41,7 +41,7 @@ fn chicken_loads_vanilla_state_and_variant_data() {
     nbt.insert("sound_variant", "minecraft:picky");
 
     let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    load_additional(&chicken, &nbt);
+    load_additional(&*chicken, &nbt);
 
     assert_eq!(chicken.animal().ageable().age(), -24_000);
     assert!(chicken.is_chicken_jockey());
@@ -62,7 +62,7 @@ fn chicken_load_defaults_jockey_and_keeps_random_egg_time_when_absent() {
     nbt.insert("sound_variant", "minecraft:classic");
 
     let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    load_additional(&chicken, &nbt);
+    load_additional(&*chicken, &nbt);
 
     assert!(!chicken.is_chicken_jockey());
     assert!(

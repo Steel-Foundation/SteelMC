@@ -47,13 +47,13 @@ impl TntBlock {
         owner: Option<&dyn Entity>,
     ) -> Arc<PrimedTntEntity> {
         let (x, y, z) = pos.get_bottom_center();
-        Arc::new(PrimedTntEntity::primed(
+        PrimedTntEntity::primed(
             &vanilla_entities::TNT,
             next_entity_id(),
             DVec3::new(x, y, z),
             world,
             owner,
-        ))
+        )
     }
 
     /// Primes TNT at `pos` without a source, returning whether a primed entity was added.

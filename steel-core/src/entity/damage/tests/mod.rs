@@ -195,18 +195,18 @@ fn removed_sources_keep_exact_entities_when_the_world_reuses_their_ids() {
     init_vanilla_registry();
     let world_fixture = fresh_loaded_test_world("damage_source_identity");
     let world = &world_fixture.world;
-    let attacker: SharedEntity = Arc::new(ChickenEntity::new(
+    let attacker: SharedEntity = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         1,
         DVec3::ZERO,
         Arc::downgrade(world),
-    ));
-    let projectile: SharedEntity = Arc::new(SnowballEntity::new(
+    );
+    let projectile: SharedEntity = SnowballEntity::new(
         &vanilla_entities::SNOWBALL,
         2,
         DVec3::ZERO,
         Arc::downgrade(world),
-    ));
+    );
     for entity in [&attacker, &projectile] {
         world
             .try_add_entity(Arc::clone(entity))
@@ -261,24 +261,23 @@ fn removed_sources_keep_exact_entities_when_the_world_reuses_their_ids() {
 fn projectile_callback_can_build_a_source_after_its_removal() {
     let world_fixture = fresh_test_world("discarded_projectile_source");
     let world = &world_fixture.world;
-    let target = Arc::new(ChickenEntity::new(
+    let target = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         1,
         DVec3::ZERO,
         Arc::downgrade(world),
-    ));
-    let projectile = Arc::new(SnowballEntity::new(
+    );
+    let projectile = SnowballEntity::new(
         &vanilla_entities::SNOWBALL,
         2,
         DVec3::ZERO,
         Arc::downgrade(world),
-    ));
+    );
     projectile.set_removed(RemovalReason::Discarded);
     let target_entity: SharedEntity = Arc::<ChickenEntity>::clone(&target);
-    let projectile_entity: SharedEntity = Arc::<SnowballEntity>::clone(&projectile);
     projectile
         .projectile()
-        .on_hit_entity(&projectile_entity, &target_entity, DVec3::ZERO);
+        .on_hit_entity(&target_entity, DVec3::ZERO);
     let source = target
         .living()
         .last_damage_source()

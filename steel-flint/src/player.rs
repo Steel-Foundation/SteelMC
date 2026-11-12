@@ -63,9 +63,7 @@ impl SteelTestPlayer {
         );
         // Mark as loaded so interactions work
         player.set_client_loaded(true);
-        Self {
-            player: Arc::new(player),
-        }
+        Self { player }
     }
 }
 

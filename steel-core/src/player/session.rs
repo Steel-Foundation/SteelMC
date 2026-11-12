@@ -157,7 +157,7 @@ mod tests {
     use super::PlayerSession;
 
     fn replacement_for(player: &Arc<Player>, session: Arc<PlayerSession>) -> Arc<Player> {
-        Arc::new(Player::new(
+        Player::new(
             player.gameprofile.clone(),
             Arc::clone(&player.connection),
             session,
@@ -166,7 +166,7 @@ mod tests {
             Arc::clone(&player.config),
             player.id(),
             ClientInformation::default(),
-        ))
+        )
     }
 
     #[test]

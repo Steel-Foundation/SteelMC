@@ -2,7 +2,6 @@
 
 use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::HurtCtx;
-use crate::entity::component::definition::TickCtx;
 use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
@@ -85,7 +84,7 @@ impl ExperienceOrbEntity {
         position: DVec3,
         value: i32,
         world: Weak<World>,
-    ) -> Self {
+    ) -> Arc<Self> {
         let entity = Self::new(entity_type, id, position, world);
         entity.set_value(value);
         entity.initialize_spawn_movement();
@@ -140,13 +139,13 @@ impl ExperienceOrbEntity {
                 continue;
             }
 
-            let entity: SharedEntity = Arc::new(Self::with_value(
+            let entity: SharedEntity = Self::with_value(
                 &vanilla_entities::EXPERIENCE_ORB,
                 next_entity_id(),
                 position,
                 value,
                 Arc::downgrade(world),
-            ));
+            );
             if let Err(error) = world.try_add_entity(entity) {
                 log::debug!("failed to add experience orb: {error}");
             }
@@ -417,14 +416,9 @@ impl ExperienceOrbEntity {
         Definition {
             // `ExperienceOrb.doWaterSplashEffect` does nothing.
             do_water_splash_effect: Pipeline::new([]),
-            tick: definition.tick.then([Stage::new(
-                Self::TICK,
-                |orb: &Self, ctx: &mut TickCtx<'_>| {
-                    let entity = ctx.entity;
-                    orb.entity_tick(entity);
-                    Flow::Continue
-                },
-            )]),
+            tick: definition
+                .tick
+                .then([Stage::effect(Self::TICK, Self::entity_tick)]),
             hurt: Pipeline::new([Stage::new(
                 Self::HURT,
                 |orb: &Self, ctx: &mut HurtCtx<'_>| {
@@ -449,7 +443,7 @@ impl ExperienceOrbEntity {
     };
 
     /// `ExperienceOrb.tick` after `super.tick()`.
-    fn entity_tick(&self, entity: &SharedEntity) {
+    fn entity_tick(&self) {
         self.set_old_position_to_current();
 
         let Some(world) = self.level() else {
@@ -488,7 +482,7 @@ impl ExperienceOrbEntity {
         }
 
         let fall_speed = self.velocity().y;
-        if Arc::clone(entity)
+        if self
             .move_entity(MoverType::SelfMovement, self.velocity())
             .is_some()
         {
@@ -675,7 +669,7 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         );
-        load_additional(&loaded, &nbt);
+        load_additional(&*loaded, &nbt);
 
         assert_eq!(loaded.value(), 17);
         assert_eq!(loaded.age(), 42);

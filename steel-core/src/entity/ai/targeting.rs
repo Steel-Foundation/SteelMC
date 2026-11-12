@@ -131,6 +131,7 @@ impl Default for TargetingConditions {
 #[cfg(test)]
 mod tests {
     use crate::entity::LivingProps;
+    use crate::entity::WeakSelf;
     use crate::test_support::synced_with_health;
     use std::sync::{Arc, Weak};
 
@@ -168,7 +169,13 @@ mod tests {
         fn new(id: i32, position: DVec3, world: Weak<World>) -> Self {
             init_vanilla_registry();
             Self {
-                base: EntityBase::new(id, position, vanilla_entities::PIG.dimensions, world),
+                base: EntityBase::new(
+                    id,
+                    position,
+                    vanilla_entities::PIG.dimensions,
+                    world,
+                    WeakSelf::detached(),
+                ),
                 living_base: LivingEntityBase::without_synced_data(
                     &vanilla_entities::PIG,
                     &HoveringTestMob::LIVING,

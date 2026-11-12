@@ -1,5 +1,4 @@
 use std::f64::consts::PI;
-use std::sync::Arc;
 
 use glam::DVec3;
 use steel_math::DEGREE_360;
@@ -178,12 +177,12 @@ impl FeatureDecorationRunner {
             f64::from(spike.height + 1),
             f64::from(spike.center_z) + 0.5,
         );
-        let crystal = Arc::new(EndCrystalEntity::new(
+        let crystal = EndCrystalEntity::new(
             &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             position,
             region.weak_world(),
-        ));
+        );
         crystal.set_beam_target(config.crystal_beam_target.map(BlockPos));
         crystal.set_invulnerable(config.crystal_invulnerable);
         crystal.snap_to(position, random.next_f32() * DEGREE_360, 0.0);

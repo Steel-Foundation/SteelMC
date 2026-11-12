@@ -208,6 +208,7 @@ fn enchantment_display_name(enchantment: EnchantmentRef, level: u32) -> TextComp
 mod tests {
     use crate::entity::EntitySyncedData;
     use crate::entity::LivingProps;
+    use crate::entity::WeakSelf;
     use crate::entity::component::Has;
     use crate::entity::prelude::*;
     use crate::test_support::synced_with_health;
@@ -313,7 +314,13 @@ mod tests {
     impl TestLivingEntity {
         fn new(entity_type: EntityTypeRef) -> Self {
             Self {
-                base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                base: EntityBase::new(
+                    1,
+                    DVec3::ZERO,
+                    entity_type.dimensions,
+                    Weak::new(),
+                    WeakSelf::detached(),
+                ),
                 living_base: LivingEntityBase::without_synced_data(
                     entity_type,
                     &TestLivingEntity::LIVING,

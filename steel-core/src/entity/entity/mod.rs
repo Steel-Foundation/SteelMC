@@ -133,16 +133,9 @@ pub enum AcceptedClientMovementOutcome {
 pub trait EntityEventSource {
     /// Returns this entity as a game-event source.
     fn as_entity_event_source(&self) -> &dyn Entity;
-
-    /// Retains this exact entity allocation as a shared entity handle.
-    fn into_shared_entity(self: Arc<Self>) -> SharedEntity;
 }
 
 impl<T: Entity> EntityEventSource for T {
-    fn into_shared_entity(self: Arc<Self>) -> SharedEntity {
-        self
-    }
-
     fn as_entity_event_source(&self) -> &dyn Entity {
         self
     }
@@ -171,6 +164,7 @@ impl<T: Entity> EntityEventSource for T {
 /// ```ignore
 /// #[derive(Entity)]
 /// #[entity(hooks = Self::ENTITY, save = Self::save_my_entity, load = Self::load_my_entity)]
+/// #[entity(key = "steel:entity/my_entity", definition = living_entity::definition)]
 /// pub struct MyEntity {
 ///     #[entity(base)]
 ///     base: EntityBase,
@@ -221,6 +215,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Default for [`Self::broadcast_to_player`].
     fn broadcast_to_player_default(&self, _player: &Player) -> bool {
         true
+    }
+
+    /// Returns a shared handle to this entity, for code that keeps one beyond
+    /// the current call. `None` only while the entity is being built or
+    /// dropped.
+    fn shared(&self) -> Option<SharedEntity> {
+        self.base().shared()
     }
 
     /// Gets the entity's unique network ID (session-local).
@@ -378,34 +379,29 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Called every game tick when the entity is in a ticked chunk: runs this
     /// type's `tick` pipeline. The caller handles post-tick dirty data sync.
-    fn tick(self: Arc<Self>) {
-        let entity = self.into_shared_entity();
-        entity.entity_definition().tick(entity.as_ref(), &entity);
+    fn tick(&self) {
+        self.entity_definition().tick(self.as_entity_event_source());
     }
 
     /// Vanilla `Entity.rideTick`: a passenger's tick, through this type's
     /// `ride_tick` pipeline.
-    fn ride_tick(self: Arc<Self>) {
-        let entity = self.into_shared_entity();
-        entity
-            .entity_definition()
-            .ride_tick(entity.as_ref(), &entity);
+    fn ride_tick(&self) {
+        self.entity_definition()
+            .ride_tick(self.as_entity_event_source());
     }
 
     /// Vanilla `Entity.checkFallDamage`: accumulates fall distance, lands on
     /// the block fallen on and resets it, through this type's pipeline.
     fn check_fall_damage(
-        self: Arc<Self>,
+        &self,
         vertical_movement: f64,
         on_ground: bool,
         on_state: BlockStateId,
         pos: BlockPos,
         world: &Arc<World>,
     ) {
-        let entity = self.into_shared_entity();
-        entity.entity_definition().check_fall_damage(
-            entity.as_ref(),
-            &entity,
+        self.entity_definition().check_fall_damage(
+            self.as_entity_event_source(),
             vertical_movement,
             on_ground,
             on_state,
@@ -416,15 +412,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Vanilla `Entity.causeFallDamage`, through this type's pipeline.
     fn cause_fall_damage(
-        self: Arc<Self>,
+        &self,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
     ) -> bool {
-        let entity = self.into_shared_entity();
-        entity.entity_definition().cause_fall_damage(
-            entity.as_ref(),
-            &entity,
+        self.entity_definition().cause_fall_damage(
+            self.as_entity_event_source(),
             fall_distance,
             damage_modifier,
             source,

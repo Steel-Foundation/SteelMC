@@ -4,6 +4,7 @@ use super::{
     EntityMovementFlags, EntityMovementProgress, EntityPhysicsStateInput, EntityPistonMovement,
     EntityVerticalMovementStateUpdate, MAX_ENTITY_TAGS,
 };
+use crate::entity::WeakSelf;
 use crate::entity::component::definition::{CauseFallDamageCtx, Definition, DefinitionEntries};
 use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::prelude::*;
@@ -74,6 +75,7 @@ impl FallDamageTestEntity {
                 DVec3::ZERO,
                 vanilla_entities::ITEM.dimensions,
                 Weak::<World>::new(),
+                WeakSelf::detached(),
             ),
             fall_damage_calls: SyncMutex::new(Vec::new()),
         })
@@ -270,6 +272,7 @@ fn base_tick_count_advances_like_vanilla_entity_tick_count() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     assert_eq!(base.tick_count(), 0);
@@ -303,6 +306,7 @@ fn lifecycle_state_tracks_removal() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
     let callback = Arc::new(CountingCallback::default());
     base.set_level_callback(Arc::<CountingCallback>::clone(&callback));
@@ -382,6 +386,7 @@ fn lifecycle_state_tracks_pending_world_change_tokens() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     let Some(first) = base.begin_pending_world_change() else {
@@ -406,7 +411,13 @@ fn lifecycle_state_tracks_pending_world_change_tokens() {
 #[test]
 fn killed_player_can_reserve_respawn_transition() {
     let dimensions = vanilla_entities::PLAYER.dimensions;
-    let base = EntityBase::new(1, DVec3::ZERO, dimensions, Weak::<World>::new());
+    let base = EntityBase::new(
+        1,
+        DVec3::ZERO,
+        dimensions,
+        Weak::<World>::new(),
+        WeakSelf::detached(),
+    );
     base.set_removed(RemovalReason::Killed);
 
     assert_eq!(base.begin_pending_world_change(), None);
@@ -424,6 +435,7 @@ fn try_set_position_rolls_back_when_commit_fails() {
         DVec3::new(1.0, 2.0, 3.0),
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
     base.set_level_callback(Arc::new(CommitRejectingCallback));
 
@@ -444,6 +456,7 @@ fn set_position_local_panics_when_callback_requires_manager_commit() {
         DVec3::new(1.0, 2.0, 3.0),
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
     base.set_level_callback(Arc::new(CountingCallback::default()));
 
@@ -457,6 +470,7 @@ fn dimension_change_notifies_the_level_callback_of_new_bounds() {
         DVec3::new(1.0, 2.0, 3.0),
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
     let callback = Arc::new(CountingCallback::default());
     base.set_level_callback(Arc::<CountingCallback>::clone(&callback));
@@ -473,6 +487,7 @@ fn base_state_caches_fluid_contact() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
     let water_contact = EntityFluidContact::from_parts(0.4, 0.0, true, false);
     let air_contact = EntityFluidContact::default();
@@ -511,6 +526,7 @@ fn fire_freeze_state_applies_inside_block_effects() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.apply_inside_block_effect(
@@ -563,6 +579,7 @@ fn fire_ignite_respects_remaining_fire_tick_cap() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.apply_inside_block_effect(
@@ -605,6 +622,7 @@ fn fire_ignite_respects_vanilla_cooldown_shape() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_remaining_fire_ticks(-2);
@@ -658,6 +676,7 @@ fn base_tick_advances_powder_snow_and_fire_state() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.apply_inside_block_effect(
@@ -702,7 +721,11 @@ fn fire_freeze_state_round_trips_through_base_load() {
         world: Weak::<World>::new(),
     };
 
-    let base = EntityBase::from_load(load, EntityDimensions::new(0.25, 0.25, 0.125));
+    let base = EntityBase::from_load(
+        load,
+        EntityDimensions::new(0.25, 0.25, 0.125),
+        WeakSelf::detached(),
+    );
     let state = base.fire_freeze_state();
 
     assert_eq!(state.remaining_fire_ticks(), 12);
@@ -720,6 +743,7 @@ fn no_physics_is_stored_on_base_state() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     assert!(!base.no_physics());
@@ -814,6 +838,7 @@ fn physics_state_uses_current_base_bounding_box() {
         .with_on_ground(true)
         .with_fall_distance(3.5),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     let physics_state = base.physics_state(EntityPhysicsStateInput {
@@ -842,6 +867,7 @@ fn old_position_is_explicit_movement_trace_state() {
         DVec3::new(1.0, 2.0, 3.0),
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     assert_vec3_close(base.old_position(), DVec3::new(1.0, 2.0, 3.0));
@@ -862,6 +888,7 @@ fn set_velocity_ignores_non_finite_updates_like_vanilla() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     let velocity = DVec3::new(0.25, -0.5, 0.75);
@@ -881,6 +908,7 @@ fn set_rotation_wraps_yaw_and_clamps_pitch_like_vanilla_snap() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_rotation((450.0, 120.0));
@@ -911,6 +939,7 @@ fn old_rotation_is_base_tick_snapshot_state() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_rotation((30.0, 40.0));
@@ -937,6 +966,7 @@ fn set_position_rejects_non_finite_values() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_position_local(DVec3::new(f64::NAN, 0.0, 0.0));
@@ -950,6 +980,7 @@ fn set_old_position_rejects_non_finite_values() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_old_position(DVec3::new(0.0, f64::INFINITY, 0.0));
@@ -963,6 +994,7 @@ fn set_rotation_rejects_non_finite_values() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_rotation((f32::NAN, 0.0));
@@ -975,6 +1007,7 @@ fn known_speed_is_base_tick_position_delta() {
         DVec3::new(1.0, 2.0, 3.0),
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_position_local(DVec3::new(4.0, 2.0, 3.0));
@@ -993,6 +1026,7 @@ fn base_tick_state_decrements_boarding_cooldown() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_boarding_cooldown(2);
@@ -1011,6 +1045,7 @@ fn portal_cooldown_tick_decrements_portal_cooldown() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_portal_cooldown(2);
@@ -1029,6 +1064,7 @@ fn base_tick_state_does_not_decrement_portal_cooldown() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_portal_cooldown(2);
@@ -1044,6 +1080,7 @@ fn active_portal_process_reuses_same_portal_after_tick_is_consumed() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_as_inside_portal(PortalKind::Nether, BlockPos::new(1, 64, 1));
@@ -1074,6 +1111,7 @@ fn active_portal_process_restarts_for_different_portal_kind() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_as_inside_portal(PortalKind::Nether, BlockPos::new(1, 64, 1));
@@ -1093,6 +1131,7 @@ fn entity_tags_respect_vanilla_limit() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     for index in 0..MAX_ENTITY_TAGS {
@@ -1113,6 +1152,7 @@ fn movement_trace_falls_back_to_old_position_when_no_moves_were_recorded() {
         DVec3::new(1.0, 2.0, 3.0),
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
     base.set_old_position(DVec3::new(-1.0, 2.0, -3.0));
 
@@ -1134,6 +1174,7 @@ fn movement_trace_replays_last_finalized_movements() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
     assert_eq!(base.last_movements_for_block_effects().len(), 0);
 
@@ -1156,6 +1197,7 @@ fn movement_trace_appends_direct_position_change_after_recorded_moves() {
         DVec3::new(0.0, 64.0, 0.0),
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
     base.record_movement_this_tick(EntityMovement::with_axis_dependent_original_movement(
         DVec3::new(0.0, 64.0, 0.0),
@@ -1186,6 +1228,7 @@ fn movement_trace_removes_latest_movement_recording() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
     base.record_movement_this_tick(EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0)));
     base.record_movement_this_tick(EntityMovement::new(
@@ -1211,6 +1254,7 @@ fn movement_trace_compacts_oldest_moves_at_vanilla_limit() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     for x in 0..101 {
@@ -1240,6 +1284,7 @@ fn fall_distance_is_stored_on_base_state() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_fall_distance(4.5);
@@ -1255,6 +1300,7 @@ fn fall_distance_accumulation_uses_vanilla_float_cast() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     let vertical_movement = -1.0 / 3.0;
@@ -1275,6 +1321,7 @@ fn base_tick_lava_contact_dampens_fall_distance() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_fall_distance(8.0);
@@ -1292,6 +1339,7 @@ fn base_tick_water_contact_resets_fall_distance() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_fall_distance(8.0);
@@ -1308,6 +1356,7 @@ fn water_reset_runs_before_lava_fall_distance_damping() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
 
     base.set_fall_distance(8.0);
@@ -1326,6 +1375,7 @@ fn stuck_speed_multiplier_resets_fall_distance_and_applies_once() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
     base.set_velocity(DVec3::new(0.4, -0.2, 0.3));
     base.set_fall_distance(3.0);
@@ -1350,6 +1400,7 @@ fn stuck_speed_multiplier_can_be_consumed_without_applying_for_pistons() {
         DVec3::ZERO,
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
+        WeakSelf::detached(),
     );
     base.set_velocity(DVec3::new(0.4, -0.2, 0.3));
     base.make_stuck_in_block(DVec3::new(0.8, 0.75, 0.8));

@@ -136,14 +136,14 @@ impl World {
             let vz = triangle_random(0.0, VELOCITY_SPREAD);
 
             let entity_id = next_entity_id();
-            let entity = Arc::new(ItemEntity::with_item_and_velocity(
+            let entity = ItemEntity::with_item_and_velocity(
                 &vanilla_entities::ITEM,
                 entity_id,
                 DVec3::new(x, y, z),
                 split_stack,
                 DVec3::new(vx, vy, vz),
                 Arc::downgrade(self),
-            ));
+            );
             entity.set_default_pickup_delay();
             if let Err(error) = self.try_add_entity(entity) {
                 log::warn!("Failed to drop item stack entity: {error}");

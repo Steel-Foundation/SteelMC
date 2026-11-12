@@ -1,6 +1,6 @@
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::{Mob, SharedEntity};
+use crate::entity::Mob;
 use crate::world::World;
 use glam::DVec3;
 use steel_utils::BlockPos;
@@ -176,7 +176,7 @@ impl Goal for MoveToBlockGoal {
         self.max_stay_ticks = rand::random_range(0..inner_bound) + STAY_TICKS;
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         let move_to_target = self.move_to_target();
         if move_to_target.closer_to_center_than(mob.position(), self.accepted_distance) {
             self.reached_target = true;
@@ -237,7 +237,6 @@ const fn next_mirrored_offset(value: i32) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use std::sync::Weak;
 
@@ -306,15 +305,14 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| false);
         goal.block_pos = BlockPos::new(0, -1, 0);
-        let pig = Arc::new(ChickenEntity::new(
+        let pig = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             1,
             DVec3::new(0.5, 0.5, 0.5),
             Weak::new(),
-        ));
-        let pig_entity: SharedEntity = Arc::<ChickenEntity>::clone(&pig);
+        );
 
-        goal.tick(&pig.mob(), &pig_entity);
+        goal.tick(&pig.mob());
 
         assert!(goal.is_reached_target());
         assert_eq!(goal.try_ticks, -1);

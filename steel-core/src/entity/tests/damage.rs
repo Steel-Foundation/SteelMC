@@ -79,12 +79,12 @@ fn damage_reductions_use_the_retained_attacker_after_removal() {
     assert!(!Arc::ptr_eq(attached_world, explicit_world));
 
     let attacker_id = 1_750_001;
-    let attacker = Arc::new(ChickenEntity::new(
+    let attacker = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         attacker_id,
         DVec3::ZERO,
         Arc::downgrade(attached_world),
-    ));
+    );
     let mut mace = ItemStack::new(&vanilla_items::MACE);
     mace.set_enchantments(&[(Identifier::vanilla_static("breach"), 4)], false);
     attacker

@@ -144,7 +144,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         is_pickable: |_| true,
         skip_attack_interaction: skip_attack_interaction::<E>,
         ignore_explosion: |_, explosion| ignore_explosion(explosion),
-        move_entity: |entity, _, _, delta| {
+        move_entity: |entity, _, delta| {
             pop_off_if_moved(entity, delta);
             None
         },

@@ -23,8 +23,7 @@ use steel_utils::locks::CheckedMutex;
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::TickCtx;
-use crate::entity::component::definition::{OnHitBlockCtx, OnHitEntityCtx};
+use crate::entity::component::definition::OnHitBlockCtx;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::prelude::*;
@@ -72,13 +71,12 @@ impl FireworkRocketEntity {
     fn define() -> Definition<Self> {
         let definition = projectile::definition();
         Definition {
-            on_hit_entity: definition.on_hit_entity.then([Stage::new(
+            on_hit_entity: definition.on_hit_entity.then([Stage::effect(
                 Self::ON_HIT_ENTITY,
-                |rocket: &Self, ctx: &mut OnHitEntityCtx<'_>| {
+                |rocket: &Self| {
                     if let Some(world) = rocket.level() {
-                        rocket.explode(ctx.entity, &world);
+                        rocket.explode(&world);
                     }
-                    Flow::Continue
                 },
             )]),
             on_hit_block: definition.on_hit_block.before(
@@ -86,19 +84,14 @@ impl FireworkRocketEntity {
                 [Stage::new(
                     Self::ON_HIT_BLOCK,
                     |rocket: &Self, ctx: &mut OnHitBlockCtx<'_>| {
-                        rocket.on_hit_block_before_super(ctx.entity, ctx.hit);
+                        rocket.on_hit_block_before_super(ctx.hit);
                         Flow::Continue
                     },
                 )],
             ),
-            tick: definition.tick.then([Stage::new(
-                Self::TICK,
-                |rocket: &Self, ctx: &mut TickCtx<'_>| {
-                    let entity = ctx.entity;
-                    rocket.entity_tick(entity);
-                    Flow::Continue
-                },
-            )]),
+            tick: definition
+                .tick
+                .then([Stage::effect(Self::TICK, Self::entity_tick)]),
             ..definition
         }
     }
@@ -138,7 +131,7 @@ impl FireworkRocketEntity {
         position: DVec3,
         world: Weak<World>,
         source_item: ItemStack,
-    ) -> Self {
+    ) -> Arc<Self> {
         let rocket = Self::new(entity_type, id, position, world);
         let flight_count = source_item
             .get(FIREWORKS)
@@ -163,7 +156,7 @@ impl FireworkRocketEntity {
         world: Weak<World>,
         source_item: ItemStack,
         attached_to: &SharedEntity,
-    ) -> Self {
+    ) -> Arc<Self> {
         let rocket = Self::launched(entity_type, id, attached_to.position(), world, source_item);
         rocket.projectile().set_owner(Some(attached_to));
         rocket.flight.lock().attached_to_entity = Some(Arc::downgrade(attached_to));
@@ -213,7 +206,7 @@ impl FireworkRocketEntity {
     }
 
     /// `FireworkRocketEntity.tick` after `super.tick()`.
-    fn entity_tick(&self, entity: &SharedEntity) {
+    fn entity_tick(&self) {
         let projectile = self.projectile();
         let Some(world) = self.level() else {
             return;
@@ -222,13 +215,13 @@ impl FireworkRocketEntity {
         let hit = if self.is_attached_to_entity() {
             self.tick_attached(&world)
         } else {
-            self.tick_free_flying(entity)
+            self.tick_free_flying()
         };
         if !self.no_physics()
             && self.is_alive()
             && let Some(hit) = &hit
         {
-            projectile.hit_target_or_deflect_self(entity, hit);
+            projectile.hit_target_or_deflect_self(hit);
             self.mark_velocity_sync();
         }
 
@@ -250,7 +243,7 @@ impl FireworkRocketEntity {
             );
         }
         if expired {
-            self.explode(entity, &world);
+            self.explode(&world);
         }
     }
 
@@ -275,7 +268,7 @@ impl FireworkRocketEntity {
         self.projectile().hit_result_on_move_vector()
     }
 
-    fn tick_free_flying(&self, entity: &SharedEntity) -> Option<ProjectileHit> {
+    fn tick_free_flying(&self) -> Option<ProjectileHit> {
         if !self.is_shot_at_angle() {
             let horizontal_acceleration = if self.horizontal_collision() {
                 1.0
@@ -291,7 +284,7 @@ impl FireworkRocketEntity {
         }
         let movement = self.velocity();
         let hit = self.projectile().hit_result_on_move_vector();
-        Arc::clone(entity).move_entity(MoverType::SelfMovement, movement);
+        self.move_entity(MoverType::SelfMovement, movement);
         self.apply_effects_from_blocks();
         self.set_velocity(movement);
         hit
@@ -306,26 +299,29 @@ impl FireworkRocketEntity {
             .map_or(0, |fireworks| fireworks.explosions().len())
     }
 
-    fn fireworks_damage(&self, entity: &SharedEntity) -> DamageSource {
+    fn fireworks_damage(&self) -> Option<DamageSource> {
         let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS)
-            .with_direct_entity(Arc::clone(entity));
-        match self.projectile().owner() {
+            .with_direct_entity(self.shared()?);
+        Some(match self.projectile().owner() {
             Some(owner) => source.with_causing_entity(owner),
             None => source,
-        }
+        })
     }
 
     /// `FireworkRocketEntity.dealExplosionDamage`: the attached entity and
     /// living entities in view within five blocks take damage.
-    fn deal_explosion_damage(&self, entity: &SharedEntity, world: &Arc<World>) {
+    fn deal_explosion_damage(&self, world: &Arc<World>) {
         let explosion_count = self.explosion_count();
         if explosion_count == 0 {
             return;
         }
+        let Some(damage_source) = self.fireworks_damage() else {
+            return;
+        };
         let damage = 5.0 + explosion_count as f32 * 2.0;
         let attached = self.attached_entity(world);
         if let Some(attached) = &attached {
-            attached.hurt(world, &self.fireworks_damage(entity), damage);
+            attached.hurt(world, &damage_source, damage);
         }
 
         let rocket_position = self.position();
@@ -358,26 +354,22 @@ impl FireworkRocketEntity {
             }
             let distance_scale =
                 ((EXPLOSION_RADIUS - distance_squared.sqrt()) / EXPLOSION_RADIUS).sqrt();
-            target.hurt(
-                world,
-                &self.fireworks_damage(entity),
-                damage * distance_scale as f32,
-            );
+            target.hurt(world, &damage_source, damage * distance_scale as f32);
         }
     }
 
-    fn explode(&self, entity: &SharedEntity, world: &Arc<World>) {
+    fn explode(&self, world: &Arc<World>) {
         self.broadcast_entity_event(EntityStatus::FireworksExplode);
         let owner = self.projectile().owner();
         self.game_event_with_source_entity(&vanilla_game_events::EXPLODE, owner.as_deref());
-        self.deal_explosion_damage(entity, world);
+        self.deal_explosion_damage(world);
         self.set_removed(RemovalReason::Discarded);
     }
 
     /// `FireworkRocketEntity.onHitBlock`: the block reacts as if the rocket
     /// were inside it, and a rocket with explosions explodes.
     /// `FireworkRocketEntity.onHitBlock` before `super`.
-    fn on_hit_block_before_super(&self, entity: &SharedEntity, hit: &ClipHitResult) {
+    fn on_hit_block_before_super(&self, hit: &ClipHitResult) {
         if let Some(world) = self.level() {
             let state = world.get_block_state(hit.block_pos);
             let mut ignored_effects = InsideBlockEffectCollector::new();
@@ -392,7 +384,7 @@ impl FireworkRocketEntity {
                     true,
                 );
             if self.explosion_count() != 0 {
-                self.explode(entity, &world);
+                self.explode(&world);
             }
         }
     }

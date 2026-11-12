@@ -82,12 +82,12 @@ fn passenger_dismounts_to_the_right_of_the_motion_direction() {
     // A cart facing south moves west, so its right-hand side is north.
     cart.set_rotation((0.0, 0.0));
     let vehicle: SharedEntity = Arc::clone(&cart) as SharedEntity;
-    let passenger: SharedEntity = Arc::new(PigEntity::new(
+    let passenger: SharedEntity = PigEntity::new(
         &vanilla_entities::PIG,
         next_entity_id(),
         cart.position(),
         Arc::downgrade(world),
-    ));
+    );
     world
         .try_add_entity(Arc::clone(&passenger))
         .expect("pig should join the world");

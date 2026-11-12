@@ -77,13 +77,13 @@ fn compare_ray_mode(expected: &TntExplosionFixture, recorded_rays: bool) {
     let fixture = fresh_test_world("explosion_java_tree_gameplay");
     let world = &fixture.world;
     let tnt = populate_fixture(world, &expected.tnt_positions);
-    let source: SharedEntity = Arc::new(PrimedTntEntity::primed(
+    let source: SharedEntity = PrimedTntEntity::primed(
         &vanilla_entities::TNT,
         next_entity_id(),
         DVec3::from_array(expected.source_position),
         world,
         None,
-    ));
+    );
     let [x, y, z] = expected.source_position;
     let center = DVec3::new(
         x,

@@ -1,7 +1,6 @@
 //! Shared vanilla entity tick helpers.
 
 use crate::entity::prelude::*;
-use std::sync::Arc;
 
 use smallvec::SmallVec;
 
@@ -65,7 +64,7 @@ fn tick_passenger(
     if can_tick(entity) {
         snapshot_old_pos_and_rot_for_tick(entity.as_ref());
         entity.advance_tick_count();
-        Arc::clone(entity).ride_tick();
+        entity.ride_tick();
         post_tick(entity);
 
         for passenger in entity.passengers() {

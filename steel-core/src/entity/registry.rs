@@ -312,7 +312,6 @@ pub fn init_entities() {
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
-    use std::sync::Arc;
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtCompound;
@@ -435,7 +434,7 @@ mod tests {
         init_vanilla_registry();
         let mut registry = EntityRegistry::new();
         registry.register_load(&vanilla_entities::PIG, |entity_type, load| {
-            let entity: SharedEntity = Arc::new(ChickenEntity::from_saved(entity_type, load));
+            let entity: SharedEntity = ChickenEntity::from_saved(entity_type, load);
             entity
         });
         assert!(!registry.has_factory(&vanilla_entities::PIG));

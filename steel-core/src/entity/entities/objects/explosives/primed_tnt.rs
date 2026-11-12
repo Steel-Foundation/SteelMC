@@ -1,8 +1,7 @@
 //! Primed TNT entity behavior.
 
 use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::TickCtx;
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
+use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::prelude::*;
 use std::{f32::consts::TAU, sync::Arc};
 use steel_utils::nbt::NbtValueInput as _;
@@ -151,7 +150,7 @@ impl PrimedTntEntity {
         position: DVec3,
         world: &Arc<World>,
         owner: Option<&dyn Entity>,
-    ) -> Self {
+    ) -> Arc<Self> {
         let entity = Self::new(entity_type, id, position, Arc::downgrade(world));
         entity.set_velocity(Self::initial_velocity(rand::random()));
         entity.state.lock().owner = owner.map(|owner| EntityReference::from_uuid(owner.uuid()));
@@ -225,10 +224,13 @@ impl PrimedTntEntity {
             .filter(|owner| owner.is_living_entity())
     }
 
-    fn explode(&self, entity: &SharedEntity, world: &Arc<World>) {
+    fn explode(&self, world: &Arc<World>) {
         if !world.get_game_rule(&TNT_EXPLODES) {
             return;
         }
+        let Some(this) = self.shared() else {
+            return;
+        };
 
         let position = self.position();
         let center = DVec3::new(
@@ -241,7 +243,7 @@ impl PrimedTntEntity {
             (state.explosion_power, state.used_portal)
         };
         let mut options = ExplosionOptions::new(center, explosion_power, ExplosionInteraction::Tnt);
-        options.source = Some(Arc::clone(entity));
+        options.source = Some(this);
         if used_portal {
             options.damage_calculator = Some(&USED_PORTAL_DAMAGE_CALCULATOR);
             options.immutable_block_calculator = Some(&USED_PORTAL_DAMAGE_CALCULATOR);
@@ -257,14 +259,7 @@ impl PrimedTntEntity {
 
     /// `PrimedTnt.tick` never calls `super`.
     fn define() -> Definition<Self> {
-        Definition::replacing_tick([Stage::new(
-            Self::TICK,
-            |tnt: &Self, ctx: &mut TickCtx<'_>| {
-                let entity = ctx.entity;
-                tnt.entity_tick(entity);
-                Flow::Continue
-            },
-        )])
+        Definition::replacing_tick([Stage::effect(Self::TICK, Self::entity_tick)])
     }
 
     const ENTITY: EntityProps<Self> = EntityProps {
@@ -279,10 +274,10 @@ impl PrimedTntEntity {
         ..EntityProps::new()
     };
 
-    fn entity_tick(&self, entity: &SharedEntity) {
+    fn entity_tick(&self) {
         self.handle_portal();
         self.apply_gravity();
-        Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity());
+        self.move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
         let mut velocity = self.velocity() * f64::from(self.air_drag());
         if self.on_ground() {
@@ -298,7 +293,7 @@ impl PrimedTntEntity {
         if fuse <= 0 {
             self.set_removed(RemovalReason::Discarded);
             if let Some(world) = self.level() {
-                self.explode(entity, &world);
+                self.explode(&world);
             }
         } else {
             self.update_fluid_interaction();

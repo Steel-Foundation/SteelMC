@@ -414,7 +414,7 @@ pub fn mob_interact<E: mob::Parts + Has<Age>>() -> Stage<E, MobInteract> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
@@ -424,7 +424,7 @@ mod tests {
     use crate::entity::component::Components as _;
     use crate::entity::entities::ChickenEntity;
 
-    fn chicken() -> ChickenEntity {
+    fn chicken() -> Arc<ChickenEntity> {
         init_vanilla_registry();
         ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new())
     }
@@ -511,7 +511,7 @@ mod tests {
     #[test]
     fn dynamic_lookup_finds_the_age_component() {
         let chicken = chicken();
-        let entity: &dyn Entity = &chicken;
+        let entity: &dyn Entity = &*chicken;
         assert!(Ageable::of(entity).is_some());
     }
 }

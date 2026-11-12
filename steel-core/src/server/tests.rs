@@ -4002,23 +4002,23 @@ fn ender_pearl_end_return_requires_owner_seen_credits_when_owner_is_player() {
     };
 
     assert!(!can_entity_return_from_end_to_overworld(
-        &blocked_pearl,
+        &*blocked_pearl,
         owner_seen_credits
     ));
     assert!(can_entity_return_from_end_to_overworld(
-        &allowed_pearl,
+        &*allowed_pearl,
         owner_seen_credits
     ));
     assert!(can_entity_return_from_end_to_overworld(
-        &unknown_owner_pearl,
+        &*unknown_owner_pearl,
         owner_seen_credits
     ));
     assert!(can_entity_return_from_end_to_overworld(
-        &no_player_owner_pearl,
+        &*no_player_owner_pearl,
         owner_seen_credits
     ));
     assert!(can_entity_return_from_end_to_overworld(
-        &item,
+        &*item,
         owner_seen_credits
     ));
 }
@@ -4492,12 +4492,12 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         assert!(source_world.add_player(Arc::clone(&old_player), ResetReason::InitialJoin));
         let _ = old_player.mark_joined_world();
 
-        let pearl = Arc::new(EnderPearlEntity::new(
+        let pearl = EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
             2,
             DVec3::new(8.5, 100.0, 8.5),
             Arc::downgrade(source_world),
-        ));
+        );
         let old_owner: SharedEntity = Arc::<Player>::clone(&old_player);
         pearl.projectile().set_owner(Some(&old_owner));
         let source = DamageSource::environment(&vanilla_damage_types::THROWN)

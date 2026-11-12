@@ -721,7 +721,7 @@ pub use base::{
     EntityBaseLoad, EntityBaseSaveData, EntityBaseState, EntityFireFreezeState,
     EntityGroundContact, EntityMovement, EntityMovementEmission, EntityMovementFlags,
     EntityMovementProgress, EntityVerticalMovementStateUpdate, MAX_ENTITY_TAGS,
-    PendingWorldChangeToken,
+    PendingWorldChangeToken, WeakSelf,
 };
 pub use callback::{
     EntityChunkCallback, EntityLevelCallback, InactiveEntityCallback, NullEntityCallback,

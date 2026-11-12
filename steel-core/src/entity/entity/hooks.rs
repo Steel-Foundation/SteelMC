@@ -9,9 +9,6 @@
 //!   `EntityProps<E>` and by [`EntityDefaults`].
 //! - dispatch methods on [`Entity`], so callers never see the plumbing.
 //!
-//! `ref` hooks take `&self`. `shared` hooks take `self: Arc<Self>` on [`Entity`]
-//! and receive the [`SharedEntity`] handle next to the typed entity.
-//!
 //! Each hook names the [`Entity`] method holding its default body.
 
 use super::*;
@@ -21,7 +18,7 @@ use steel_utils::DowncastType;
 macro_rules! entity_hook_list {
     ($callback:ident) => {
         $callback! {
-            ref {
+            {
                 /// Returns whether this entity ignores chunk ticking visibility.
                 fn is_always_ticking() -> bool = is_always_ticking_default;
                 /// Returns whether this entity should be broadcast to the given player.
@@ -324,8 +321,6 @@ macro_rules! entity_hook_list {
                 /// Where `passenger` stands after leaving this vehicle; may set
                 /// the passenger's pose to the one that fits there.
                 fn dismount_location_for_passenger(passenger: &Living<'_>) -> DVec3 = dismount_location_for_passenger_default;
-            }
-            shared {
                 /// Moves this entity by `delta`, resolving collisions.
                 fn move_entity(mover_type: MoverType, delta: DVec3) -> Option<MoveResult> = move_entity_default;
             }
@@ -336,13 +331,9 @@ macro_rules! entity_hook_list {
 /// Generates [`EntityProps`], [`EntityHooks`] and [`EntityDefaults`].
 macro_rules! entity_hook_items {
     (
-        ref { $(
+        { $(
             $(#[$meta:meta])*
             fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty)? = $default:ident;
-        )* }
-        shared { $(
-            $(#[$smeta:meta])*
-            fn $sname:ident($($sarg:ident: $sty:ty),* $(,)?) $(-> $sret:ty)? = $sdefault:ident;
         )* }
     ) => {
         /// Per-type entity hooks, typed for the concrete entity `E`.
@@ -350,10 +341,6 @@ macro_rules! entity_hook_items {
             $(
                 $(#[$meta])*
                 pub $name: fn(&E $(, $ty)*) $(-> $ret)?,
-            )*
-            $(
-                $(#[$smeta])*
-                pub $sname: fn(&E, &SharedEntity $(, $sty)*) $(-> $sret)?,
             )*
         }
 
@@ -363,7 +350,6 @@ macro_rules! entity_hook_items {
             pub const fn new() -> Self {
                 Self {
                     $( $name: |entity $(, $arg)*| entity.$default($($arg),*), )*
-                    $( $sname: |_, entity $(, $sarg)*| Arc::clone(entity).$sdefault($($sarg),*), )*
                 }
             }
         }
@@ -384,10 +370,6 @@ macro_rules! entity_hook_items {
                 $(#[$meta])*
                 fn $name(&self, entity: &dyn Entity $(, $arg: $ty)*) $(-> $ret)?;
             )*
-            $(
-                $(#[$smeta])*
-                fn $sname(&self, entity: &SharedEntity $(, $sarg: $sty)*) $(-> $sret)?;
-            )*
         }
 
         impl<E: Entity + DowncastType> EntityHooks for EntityProps<E> {
@@ -396,14 +378,6 @@ macro_rules! entity_hook_items {
                     match entity.downcast_ref::<E>() {
                         Some(typed) => (self.$name)(typed $(, $arg)*),
                         None => entity.$default($($arg),*),
-                    }
-                }
-            )*
-            $(
-                fn $sname(&self, entity: &SharedEntity $(, $sarg: $sty)*) $(-> $sret)? {
-                    match (**entity).downcast_ref::<E>() {
-                        Some(typed) => (self.$sname)(typed, entity $(, $sarg)*),
-                        None => Arc::clone(entity).$sdefault($($sarg),*),
                     }
                 }
             )*
@@ -418,11 +392,6 @@ macro_rules! entity_hook_items {
                     entity.$default($($arg),*)
                 }
             )*
-            $(
-                fn $sname(&self, entity: &SharedEntity $(, $sarg: $sty)*) $(-> $sret)? {
-                    Arc::clone(entity).$sdefault($($sarg),*)
-                }
-            )*
         }
     };
 }
@@ -430,26 +399,15 @@ macro_rules! entity_hook_items {
 /// Generates the dispatch methods inside [`Entity`].
 macro_rules! entity_hook_dispatch {
     (
-        ref { $(
+        { $(
             $(#[$meta:meta])*
             fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty)? = $default:ident;
-        )* }
-        shared { $(
-            $(#[$smeta:meta])*
-            fn $sname:ident($($sarg:ident: $sty:ty),* $(,)?) $(-> $sret:ty)? = $sdefault:ident;
         )* }
     ) => {
         $(
             $(#[$meta])*
             fn $name(&self $(, $arg: $ty)*) $(-> $ret)? {
                 self.entity_hooks().$name(self.as_entity_event_source() $(, $arg)*)
-            }
-        )*
-        $(
-            $(#[$smeta])*
-            fn $sname(self: Arc<Self> $(, $sarg: $sty)*) $(-> $sret)? {
-                let entity = self.into_shared_entity();
-                entity.entity_hooks().$sname(&entity $(, $sarg)*)
             }
         )*
     };

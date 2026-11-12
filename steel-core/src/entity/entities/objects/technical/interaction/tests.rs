@@ -10,7 +10,7 @@ use crate::test_support::{TestPlayerBuilder, fresh_test_world, tick_test_world};
 
 const POSITION: DVec3 = DVec3::new(-8.0, 128.0, 4.0);
 
-fn interaction(world: &Arc<World>, id: i32) -> InteractionEntity {
+fn interaction(world: &Arc<World>, id: i32) -> Arc<InteractionEntity> {
     InteractionEntity::new(
         &vanilla_entities::INTERACTION,
         id,
@@ -86,6 +86,6 @@ fn resizing_updates_the_box_including_on_load() {
 
     let mut nbt = NbtCompound::new();
     nbt.insert("width", 2.0_f32);
-    load_additional(&interaction, &nbt);
+    load_additional(&*interaction, &nbt);
     assert_size(2.0, DEFAULT_HEIGHT);
 }

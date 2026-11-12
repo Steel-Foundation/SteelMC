@@ -19,7 +19,8 @@ impl Player {
         transfer_inventory: bool,
         spawn_block_valid: bool,
     ) -> Arc<Self> {
-        let mut replacement = Self::new(
+        // Vanilla ServerPlayer.restoreFrom retains the same ender chest container.
+        let replacement = Self::with_ender_chest(
             self.gameprofile.clone(),
             Arc::clone(&self.connection),
             Arc::clone(&self.session),
@@ -28,10 +29,8 @@ impl Player {
             Arc::clone(&self.config),
             self.base.id(),
             self.client_information(),
+            Arc::clone(&self.ender_chest_inventory),
         );
-        // Vanilla ServerPlayer.restoreFrom retains the same ender chest container.
-        replacement.ender_chest_inventory = Arc::clone(&self.ender_chest_inventory);
-        let replacement = Arc::new(replacement);
 
         replacement.restore_respawn_state_from(
             self,

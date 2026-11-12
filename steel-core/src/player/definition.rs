@@ -3,8 +3,8 @@
 
 use crate::entity::component::definition as definition_layer;
 use crate::entity::component::definition::{
-    AiStep, AiStepCtx, Definition, RemoveVehicle, RemoveVehicleCtx, RideTick, RideTickCtx, TickCtx,
-    Travel, TravelCtx, VoicePitchCtx,
+    AiStep, AiStepCtx, Definition, RemoveVehicle, RemoveVehicleCtx, RideTick, RideTickCtx, Travel,
+    TravelCtx, VoicePitchCtx,
 };
 use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage, StageId};
 use crate::entity::living_entity;
@@ -39,7 +39,7 @@ impl Player {
     pub(super) fn define() -> Definition<Self> {
         let living = living_entity::definition();
         Definition {
-            tick: Pipeline::new([Stage::new(TICK, tick)]),
+            tick: Pipeline::new([Stage::effect(TICK, tick)]),
             remove_vehicle: living.remove_vehicle.around(REMOVE_VEHICLE, remove_vehicle),
             // `Player.getVoicePitch` never calls `super`.
             voice_pitch: Pipeline::new([Stage::new(VOICE_PITCH, voice_pitch)]),
@@ -117,9 +117,8 @@ impl Player {
     }
 }
 
-fn tick(player: &Player, ctx: &mut TickCtx<'_>) -> Flow {
-    player.tick_player(ctx.entity);
-    Flow::Continue
+fn tick(player: &Player) {
+    player.tick_player();
 }
 
 /// `Player.getVoicePitch` never calls `super`.

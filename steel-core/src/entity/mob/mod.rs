@@ -462,7 +462,7 @@ impl<'a> Mob<'a> {
 #[must_use]
 pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
-        server_ai_step: |mob, entity| mob.mob().mob_server_ai_step(entity),
+        server_ai_step: |mob| mob.mob().mob_server_ai_step(),
         ..LivingProps::new()
     }
 }
@@ -710,16 +710,16 @@ impl<'a> Mob<'a> {
 
     /// Ticks the target and goal selectors; between full updates only the
     /// running goals tick.
-    pub fn tick_goal_selectors(&self, entity: &SharedEntity) {
+    pub fn tick_goal_selectors(&self) {
         let id_based_tick_count = self.tick_count().wrapping_add(self.id());
         let target_selector = self.mob_base().target_selector();
         let goal_selector = self.mob_base().goal_selector();
         if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
-            GoalSelector::tick_running_goals(target_selector, self, entity, false);
-            GoalSelector::tick_running_goals(goal_selector, self, entity, false);
+            GoalSelector::tick_running_goals(target_selector, self, false);
+            GoalSelector::tick_running_goals(goal_selector, self, false);
         } else {
-            GoalSelector::tick(target_selector, self, entity);
-            GoalSelector::tick(goal_selector, self, entity);
+            GoalSelector::tick(target_selector, self);
+            GoalSelector::tick(goal_selector, self);
         }
     }
 
@@ -1612,13 +1612,11 @@ impl<'a> Mob<'a> {
     /// damage and knockback, applies enchantment effects, and returns whether
     /// the target was hurt.
     #[must_use]
-    pub fn do_hurt_target(
-        &self,
-        entity: &SharedEntity,
-        world: &World,
-        target: &SharedEntity,
-    ) -> bool {
+    pub fn do_hurt_target(&self, world: &World, target: &SharedEntity) -> bool {
         let Some(attacker) = self.as_entity_event_source().as_living_entity() else {
+            return false;
+        };
+        let Some(this) = self.shared() else {
             return false;
         };
         let weapon_item = {
@@ -1632,7 +1630,7 @@ impl<'a> Mob<'a> {
             .attributes()
             .lock()
             .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32;
-        let damage_source = Self::mob_attack_damage_source(&weapon_item, entity);
+        let damage_source = Self::mob_attack_damage_source(&weapon_item, &this);
         let enchantment_context = EnchantmentDamageContext::new(
             target.entity_type(),
             Some(self.entity_type()),
@@ -1839,10 +1837,10 @@ impl<'a> Mob<'a> {
         ));
     }
 
-    pub fn mob_server_ai_step(&self, entity: &SharedEntity) {
+    pub fn mob_server_ai_step(&self) {
         self.increment_no_action_time();
         self.mob_base().sensing().lock().tick();
-        self.tick_goal_selectors(entity);
+        self.tick_goal_selectors();
         self.tick_path_navigation();
         self.custom_server_ai_step();
         self.tick_move_control();

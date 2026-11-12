@@ -51,12 +51,12 @@ mod tests {
     const POSITION: DVec3 = DVec3::new(-8.0, 128.0, 4.0);
 
     fn marker() -> Arc<MarkerEntity> {
-        Arc::new(MarkerEntity::new(
+        MarkerEntity::new(
             &vanilla_entities::MARKER,
             0,
             POSITION,
             Arc::downgrade(test_world()),
-        ))
+        )
     }
 
     #[test]
@@ -76,12 +76,12 @@ mod tests {
     fn markers_cannot_carry_passengers() {
         init_vanilla_registry();
         let marker: SharedEntity = marker();
-        let pig: SharedEntity = Arc::new(PigEntity::new(
+        let pig: SharedEntity = PigEntity::new(
             &vanilla_entities::PIG,
             1,
             POSITION,
             Arc::downgrade(test_world()),
-        ));
+        );
 
         assert!(!start_riding_entities(&pig, &marker));
     }

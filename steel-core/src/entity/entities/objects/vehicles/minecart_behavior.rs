@@ -1,7 +1,5 @@
 //! Vanilla `OldMinecartBehavior`: minecart movement along rails.
 
-use std::sync::Arc;
-
 use glam::DVec3;
 use glam::Vec3Swizzles;
 use steel_math::{DEGREE_180, DEGREE_360, RAD_TO_DEG_F64, trig::atan2, wrap_degrees};
@@ -16,7 +14,6 @@ use steel_utils::{BlockPos, Direction};
 
 use super::abstract_minecart::{AbstractMinecart, rail_exits};
 use crate::behavior::blocks::BaseRailBlock;
-use crate::entity::SharedEntity;
 use crate::entity::prelude::*;
 use crate::physics::MoverType;
 use crate::world::{SignalGetter as _, World};
@@ -56,7 +53,7 @@ const SLOPE_HEIGHT_SCALE: f64 = 2.0;
 pub struct MinecartBehavior;
 
 impl MinecartBehavior {
-    pub(crate) fn tick(minecart: &AbstractMinecart<'_>, entity: &SharedEntity, world: &World) {
+    pub(crate) fn tick(minecart: &AbstractMinecart<'_>, world: &World) {
         minecart.apply_gravity();
         let pos = minecart.current_block_pos_or_rail_below(world);
         let block_state = world.get_block_state(pos);
@@ -64,12 +61,12 @@ impl MinecartBehavior {
         minecart.set_on_rails(on_rails);
 
         if on_rails {
-            Self::move_along_track(minecart, entity, world);
+            Self::move_along_track(minecart, world);
             if block_state.get_block() == &vanilla_blocks::ACTIVATOR_RAIL {
                 minecart.activate_minecart(world, pos, block_state.get_value(POWERED));
             }
         } else {
-            minecart.come_off_track(entity, world);
+            minecart.come_off_track(world);
         }
 
         minecart.apply_effects_from_blocks();
@@ -124,7 +121,7 @@ impl MinecartBehavior {
         clippy::too_many_lines,
         reason = "keeping it together makes it easier to audit"
     )]
-    fn move_along_track(minecart: &AbstractMinecart<'_>, entity: &SharedEntity, world: &World) {
+    fn move_along_track(minecart: &AbstractMinecart<'_>, world: &World) {
         let pos = minecart.current_block_pos_or_rail_below(world);
         let state = world.get_block_state(pos);
         minecart.reset_fall_distance();
@@ -239,7 +236,7 @@ impl MinecartBehavior {
             0.0,
             (scale * velocity.z).clamp(-max_speed, max_speed),
         );
-        if Arc::clone(entity)
+        if minecart
             .move_entity(MoverType::SelfMovement, clamped)
             .is_none()
         {

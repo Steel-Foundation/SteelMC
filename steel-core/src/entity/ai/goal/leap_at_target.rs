@@ -84,12 +84,12 @@ mod tests {
 
     use crate::entity::{Entity, entities::ChickenEntity};
 
-    fn pig(id: i32, position: DVec3) -> ChickenEntity {
+    fn pig(id: i32, position: DVec3) -> Arc<ChickenEntity> {
         ChickenEntity::new(&vanilla_entities::CHICKEN, id, position, Weak::new())
     }
 
     fn shared_pig(id: i32, position: DVec3) -> SharedEntity {
-        Arc::new(pig(id, position))
+        pig(id, position)
     }
 
     fn set_target(mob: &ChickenEntity, target: &SharedEntity) {

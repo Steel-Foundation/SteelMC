@@ -19,7 +19,7 @@ use crate::entity::component::pipeline::{Flow, StageId};
 use crate::entity::prelude::*;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMoveError, EntityProps,
-    RemovalReason, SharedEntity, next_entity_id,
+    RemovalReason, SharedEntity, WeakSelf, next_entity_id,
 };
 use crate::player::Player;
 use crate::world::World;
@@ -72,7 +72,12 @@ impl LeashFenceKnotEntity {
 
     /// Creates a knot from the generic entity factory path.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: i32,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Arc<Self> {
         Self::new_attached(
             entity_type,
             id,
@@ -88,8 +93,8 @@ impl LeashFenceKnotEntity {
         id: i32,
         block_pos: BlockPos,
         world: Weak<World>,
-    ) -> Self {
-        Self {
+    ) -> Arc<Self> {
+        WeakSelf::build(|this| Self {
             base: EntityBase::new_with_state(
                 id,
                 EntityBaseState::new_with_bounding_box(
@@ -98,23 +103,24 @@ impl LeashFenceKnotEntity {
                     Self::knot_bounding_box(entity_type, block_pos),
                 ),
                 world,
+                this,
             ),
             entity_type,
             attachment: BlockAttachment::new(block_pos),
-        }
+        })
     }
 
     /// Reconstructs a knot from saved base data, tied to the block it is in.
     #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
+    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Arc<Self> {
         let position = load.position;
-        Self {
-            base: EntityBase::from_load(load, entity_type.dimensions),
+        WeakSelf::build(|this| Self {
+            base: EntityBase::from_load(load, entity_type.dimensions, this),
             entity_type,
             attachment: BlockAttachment::new(BlockPos::containing(
                 position.x, position.y, position.z,
             )),
-        }
+        })
     }
 
     /// Finds the knot tied to the fence at `pos`.
@@ -145,12 +151,12 @@ impl LeashFenceKnotEntity {
         if let Some(knot) = Self::get_knot(world, pos) {
             return Some(knot);
         }
-        let knot: SharedEntity = Arc::new(Self::new_attached(
+        let knot: SharedEntity = Self::new_attached(
             &vanilla_entities::LEASH_KNOT,
             next_entity_id(),
             pos,
             Arc::downgrade(world),
-        ));
+        );
         if let Err(error) = world.try_add_entity(Arc::clone(&knot)) {
             log::warn!("Failed to spawn leash knot entity: {error}");
             return None;

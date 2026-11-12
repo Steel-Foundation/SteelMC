@@ -129,7 +129,7 @@ impl JavaTcpClient {
             Arc::clone(&session),
         );
         let connection = Arc::new(PlayerConnection::Java(java_connection));
-        let player = Arc::new(Player::new(
+        let player = Player::new(
             gameprofile,
             connection,
             Arc::clone(&session),
@@ -138,7 +138,7 @@ impl JavaTcpClient {
             Arc::clone(&self.server.config),
             entity_id,
             client_info,
-        ));
+        );
         assert!(
             session.bind_initial_player(&player),
             "new client session was already bound to a player"

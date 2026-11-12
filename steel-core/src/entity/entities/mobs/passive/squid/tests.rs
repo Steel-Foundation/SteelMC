@@ -4,7 +4,7 @@ use super::*;
 use crate::entity::EntityFluidContact;
 use std::sync::Weak;
 
-fn squid() -> SquidEntity {
+fn squid() -> Arc<SquidEntity> {
     init_vanilla_registry();
     SquidEntity::new(&vanilla_entities::SQUID, 1, DVec3::ZERO, Weak::new())
 }

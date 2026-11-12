@@ -7,7 +7,7 @@ use crate::entity::component::definition::{
     BaseExperienceRewardCtx, BaseTick, BaseTickCtx, BlockSpeedFactor, BlockSpeedFactorCtx,
     CanDispenserEquipIntoSlotCtx, CanFreeze, CanFreezeCtx, CanUseSlotCtx, CauseFallDamage,
     CauseFallDamageCtx, CheckFallDamage, CheckFallDamageCtx, Definition, EquipSoundCtx, HurtCtx,
-    SetYBodyRotCtx, StopRiding, StopRidingCtx, TickCtx, VoicePitchCtx,
+    SetYBodyRotCtx, StopRiding, StopRidingCtx, VoicePitchCtx,
 };
 use crate::entity::component::pipeline::StageId;
 use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage};
@@ -67,7 +67,7 @@ pub const BASE_TICK: StageId = StageId("living_entity.base_tick");
 pub fn definition<E: Parts>() -> Definition<E> {
     let definition = Definition::new();
     Definition {
-        tick: definition.tick.then([Stage::new(TICK, tick::<E>)]),
+        tick: definition.tick.then([Stage::effect(TICK, tick::<E>)]),
         base_tick: definition.base_tick.around(BASE_TICK, base_tick::<E>),
         set_y_body_rot: definition
             .set_y_body_rot
@@ -117,12 +117,12 @@ pub fn definition<E: Parts>() -> Definition<E> {
         ai_step: Pipeline::new([Stage::new(
             AI_STEP,
             |living: &E, ctx: &mut AiStepCtx<'_>| {
-                ctx.result = living.living().default_ai_step(ctx.entity);
+                ctx.result = living.living().default_ai_step();
                 Flow::Continue
             },
         )]),
         travel: Pipeline::new([Stage::new(TRAVEL, |living: &E, ctx: &mut TravelCtx<'_>| {
-            ctx.result = living.living().default_travel(ctx.entity, ctx.input);
+            ctx.result = living.living().default_travel(ctx.input);
             Flow::Continue
         })]),
         jump_from_ground: Pipeline::new([Stage::effect(JUMP_FROM_GROUND, |living: &E| {
@@ -160,9 +160,8 @@ pub fn definition<E: Parts>() -> Definition<E> {
     }
 }
 
-fn tick<E: Parts>(living: &E, ctx: &mut TickCtx<'_>) -> Flow {
-    living.living().tick_living(ctx.entity);
-    Flow::Continue
+fn tick<E: Parts>(living: &E) {
+    living.living().tick_living();
 }
 
 fn base_tick<E: Parts>(

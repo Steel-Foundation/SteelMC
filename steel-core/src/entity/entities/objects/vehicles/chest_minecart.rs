@@ -1,7 +1,7 @@
 //! Vanilla `MinecartChest`.
 
 use std::str::FromStr;
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -15,7 +15,7 @@ use steel_utils::nbt::NbtValueInput as _;
 use super::{abstract_minecart, vehicle_entity};
 use crate::entity::component::definition::Definition;
 use crate::entity::prelude::*;
-use crate::entity::{EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps};
+use crate::entity::{EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps, WeakSelf};
 use crate::world::World;
 
 /// A chest minecart with its placement and loot table state.
@@ -56,22 +56,31 @@ impl ChestMinecartEntity {
 
     /// Creates a chest minecart.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-            true,
-        )
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: i32,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Arc<Self> {
+        WeakSelf::build(|this| {
+            Self::from_base(
+                EntityBase::new(id, position, entity_type.dimensions, world, this),
+                entity_type,
+                true,
+            )
+        })
     }
 
     /// Reconstructs a chest minecart from saved base data.
     #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(
-            EntityBase::from_load(load, entity_type.dimensions),
-            entity_type,
-            false,
-        )
+    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Arc<Self> {
+        WeakSelf::build(|this| {
+            Self::from_base(
+                EntityBase::from_load(load, entity_type.dimensions, this),
+                entity_type,
+                false,
+            )
+        })
     }
 
     const fn from_base(base: EntityBase, entity_type: EntityTypeRef, first_tick: bool) -> Self {
@@ -124,7 +133,7 @@ mod tests {
 
     use super::*;
 
-    fn minecart(position: DVec3) -> ChestMinecartEntity {
+    fn minecart(position: DVec3) -> Arc<ChestMinecartEntity> {
         ChestMinecartEntity::new(&vanilla_entities::CHEST_MINECART, 1, position, Weak::new())
     }
 

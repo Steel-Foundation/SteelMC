@@ -179,7 +179,7 @@ impl ItemBehavior for EnderEyeItem {
         eye.set_item(&context.inv.with_item(|stack| stack.clone()));
         eye.signal_to(stronghold_pos.0.as_dvec3());
 
-        let entity: SharedEntity = Arc::new(eye);
+        let entity: SharedEntity = eye;
         if let Err(error) = world.try_add_entity(entity) {
             log::debug!("failed to spawn eye of ender: {error}");
             return InteractionResult::Consume;

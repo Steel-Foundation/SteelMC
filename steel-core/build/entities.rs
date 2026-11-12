@@ -53,7 +53,7 @@ pub fn build(entities: &[EntityClass]) -> String {
                 &vanilla_entities::#entity_type_ident,
                 |entity_type, id, pos, world| {
                     let entity: SharedEntity =
-                        Arc::new(#struct_ident::new(entity_type, id, pos, world #(, #args)*));
+                        #struct_ident::new(entity_type, id, pos, world #(, #args)*);
                     entity
                 },
             );
@@ -61,7 +61,7 @@ pub fn build(entities: &[EntityClass]) -> String {
                 &vanilla_entities::#entity_type_ident,
                 |entity_type, load| {
                     let entity: SharedEntity =
-                        Arc::new(#struct_ident::from_saved(entity_type, load #(, #args)*));
+                        #struct_ident::from_saved(entity_type, load #(, #args)*);
                     entity
                 },
             );
@@ -94,7 +94,6 @@ pub fn build(entities: &[EntityClass]) -> String {
     let output = quote! {
         //! Generated entity factory and spawn rule registrations.
 
-        use std::sync::Arc;
         use steel_registry::{vanilla_entities #(#registry_import_tokens)*};
         use crate::entity::{EntityRegistry, SharedEntity};
         #[expect(

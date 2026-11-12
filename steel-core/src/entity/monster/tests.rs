@@ -22,18 +22,17 @@ fn monster_ai_step_grows_no_action_time_by_vanilla_light_rate() {
     init_behaviors();
     let bright_world_fixture = fresh_loaded_test_world("monster_ai_step_bright");
     let bright_world = &bright_world_fixture.world;
-    let bright_mob = Arc::new(EndermiteEntity::new(
+    let bright_mob = EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(bright_world),
-    ));
+    );
     bright_world
         .try_add_entity(Arc::clone(&bright_mob) as SharedEntity)
         .expect("test endermite should attach to the loaded chunk");
 
-    let bright_mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&bright_mob);
-    let _ = bright_mob.living().ai_step(&bright_mob_entity);
+    let _ = bright_mob.living().ai_step();
 
     // Bright light adds two idle ticks alongside the normal AI tick.
     assert_eq!(bright_mob.living().no_action_time(), 3);
@@ -45,18 +44,17 @@ fn monster_ai_step_grows_no_action_time_by_vanilla_light_rate() {
     );
     let dark_world = &dark_world_fixture.world;
     insert_ready_full_chunk(dark_world, ChunkPos::new(0, 0));
-    let dark_mob = Arc::new(EndermiteEntity::new(
+    let dark_mob = EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(dark_world),
-    ));
+    );
     dark_world
         .try_add_entity(Arc::clone(&dark_mob) as SharedEntity)
         .expect("test endermite should attach to the loaded chunk");
 
-    let dark_mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&dark_mob);
-    let _ = dark_mob.living().ai_step(&dark_mob_entity);
+    let _ = dark_mob.living().ai_step();
 
     assert_eq!(dark_mob.living().no_action_time(), 1);
 }
@@ -115,12 +113,12 @@ fn monster_spawn_obstruction_checks_entities_and_excludes_spectators_and_shared_
     let world_fixture = fresh_loaded_test_world("monster_spawn_entity_obstruction");
     let world = &world_fixture.world;
     let position = DVec3::new(8.0, 65.0, 8.0);
-    let mob = Arc::new(EndermiteEntity::new(
+    let mob = EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),
         position,
         Arc::downgrade(world),
-    ));
+    );
     let mob_entity: SharedEntity = Arc::<EndermiteEntity>::clone(&mob);
     world
         .try_add_entity(Arc::clone(&mob_entity))
@@ -158,18 +156,18 @@ fn enemy_monsters_cannot_be_leashed() {
     init_vanilla_registry();
     let world_fixture = fresh_test_world("enemy_leash");
     let world = &world_fixture.world;
-    let hostile: SharedEntity = Arc::new(EndermiteEntity::new(
+    let hostile: SharedEntity = EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),
         DVec3::ZERO,
         Arc::downgrade(world),
-    ));
-    let pig: SharedEntity = Arc::new(ChickenEntity::new(
+    );
+    let pig: SharedEntity = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         next_entity_id(),
         DVec3::new(2.0, 0.0, 0.0),
         Arc::downgrade(world),
-    ));
+    );
 
     assert!(hostile.is_enemy(), "monsters are vanilla `Enemy`s");
     assert!(!pig.is_enemy(), "a passive animal is not a vanilla `Enemy`");

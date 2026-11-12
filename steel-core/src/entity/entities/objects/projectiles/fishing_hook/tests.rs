@@ -7,12 +7,12 @@ use crate::behavior::init_behaviors;
 use crate::test_support::{TestPlayerBuilder, fresh_loaded_test_world, fresh_test_world};
 
 fn test_hook(world: &Arc<World>, id: i32) -> Arc<FishingHookEntity> {
-    Arc::new(FishingHookEntity::new(
+    FishingHookEntity::new(
         &vanilla_entities::FISHING_BOBBER,
         id,
         DVec3::ZERO,
         Arc::downgrade(world),
-    ))
+    )
 }
 
 #[test]

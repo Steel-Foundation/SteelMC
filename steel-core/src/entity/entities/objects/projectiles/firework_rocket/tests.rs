@@ -42,12 +42,12 @@ fn attached_rocket_keeps_its_target_when_world_ids_are_reused() {
     let owner_world_fixture = fresh_test_world("rocket_owner_world");
     let owner_world = &owner_world_fixture.world;
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
-    let target: SharedEntity = Arc::new(PigEntity::new(
+    let target: SharedEntity = PigEntity::new(
         &vanilla_entities::PIG,
         900_019,
         DVec3::ZERO,
         Arc::downgrade(owner_world),
-    ));
+    );
     let rocket = FireworkRocketEntity::attached_to_living(
         &vanilla_entities::FIREWORK_ROCKET,
         900_020,
@@ -66,12 +66,12 @@ fn attached_rocket_keeps_its_target_when_world_ids_are_reused() {
 
     target.set_removed(RemovalReason::Discarded);
     let original_generation = target.generation();
-    let replacement: SharedEntity = Arc::new(PigEntity::new(
+    let replacement: SharedEntity = PigEntity::new(
         &vanilla_entities::PIG,
         target.id(),
         DVec3::ZERO,
         Arc::downgrade(world),
-    ));
+    );
     world
         .try_add_entity(replacement)
         .expect("replacement registration");
@@ -93,37 +93,36 @@ fn explosion_damages_an_entity_reusing_the_attached_id() {
     let world_fixture = fresh_loaded_test_world("firework_explosion_identity");
     let world = &world_fixture.world;
     let position = DVec3::new(8.0, 64.0, 8.0);
-    let original: SharedEntity = Arc::new(PigEntity::new(
+    let original: SharedEntity = PigEntity::new(
         &vanilla_entities::PIG,
         900_001,
         position,
         Arc::downgrade(world),
-    ));
+    );
     world
         .try_add_entity(Arc::clone(&original))
         .expect("register original attachment");
-    let rocket = Arc::new(FireworkRocketEntity::attached_to_living(
+    let rocket = FireworkRocketEntity::attached_to_living(
         &vanilla_entities::FIREWORK_ROCKET,
         900_002,
         Arc::downgrade(world),
         rocket_item(1, 1),
         &original,
-    ));
-    let rocket_entity: SharedEntity = Arc::<FireworkRocketEntity>::clone(&rocket);
+    );
 
     original.set_removed(RemovalReason::Discarded);
-    let replacement = Arc::new(PigEntity::new(
+    let replacement = PigEntity::new(
         &vanilla_entities::PIG,
         original.id(),
         position + DVec3::X,
         Arc::downgrade(world),
-    ));
+    );
     world
         .try_add_entity(Arc::<PigEntity>::clone(&replacement))
         .expect("register replacement");
 
     let health = replacement.living().health();
-    rocket.deal_explosion_damage(&rocket_entity, world);
+    rocket.deal_explosion_damage(world);
     assert!(
         replacement.living().health() < health,
         "a different entity with the attachment id must take explosion damage"
@@ -162,7 +161,7 @@ fn rocket_saves_and_loads_its_flight() {
         DVec3::ZERO,
         Weak::new(),
     );
-    load_additional(&loaded, &nbt);
+    load_additional(&*loaded, &nbt);
 
     {
         let flight = loaded.flight.lock();

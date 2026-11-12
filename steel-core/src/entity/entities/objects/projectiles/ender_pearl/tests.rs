@@ -1,3 +1,4 @@
+use crate::entity::WeakSelf;
 use std::sync::Arc;
 
 use steel_registry::init_vanilla_registry;
@@ -14,12 +15,12 @@ fn ticket_renewal_registers_the_pearl_with_its_player_owner() {
     let world = &world_fixture.world;
     let player = TestPlayerBuilder::new(Arc::clone(world), "Owner", 900_001).build();
     let owner: SharedEntity = Arc::<Player>::clone(&player);
-    let pearl = Arc::new(EnderPearlEntity::new(
+    let pearl = EnderPearlEntity::new(
         &vanilla_entities::ENDER_PEARL,
         900_002,
         DVec3::new(0.5, 64.0, 0.5),
         Arc::downgrade(world),
-    ));
+    );
     pearl.projectile().set_owner(Some(&owner));
     let shared: SharedEntity = Arc::<EnderPearlEntity>::clone(&pearl);
     world
@@ -90,6 +91,7 @@ fn removing_a_pearl_keeps_a_same_uuid_copy_registered() {
                 DVec3::ZERO,
                 vanilla_entities::ENDER_PEARL.dimensions,
                 Arc::downgrade(world),
+                WeakSelf::detached(),
             ),
             &vanilla_entities::ENDER_PEARL,
         );

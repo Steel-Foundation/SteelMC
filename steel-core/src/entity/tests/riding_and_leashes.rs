@@ -57,12 +57,12 @@ fn failed_save_restore_drops_leash_but_keeps_home_restriction() {
     let world_fixture = fresh_loaded_test_world("leash_save_restore_failure");
     let world = &world_fixture.world;
 
-    let mob = Arc::new(ChickenEntity::new(
+    let mob = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(world),
-    ));
+    );
     world
         .try_add_entity(Arc::clone(&mob) as SharedEntity)
         .expect("test entity should attach to the loaded chunk");
@@ -92,19 +92,15 @@ fn failed_save_restore_drops_leash_but_keeps_home_restriction() {
 fn mob_start_riding_drops_attached_leash() {
     init_vanilla_registry();
 
-    let passenger: SharedEntity = Arc::new(ChickenEntity::new(
-        &vanilla_entities::CHICKEN,
-        1,
-        DVec3::ZERO,
-        Weak::new(),
-    ));
+    let passenger: SharedEntity =
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
     let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
-    let leash_holder: SharedEntity = Arc::new(ChickenEntity::new(
+    let leash_holder: SharedEntity = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         3,
         DVec3::new(5.0, 0.0, 0.0),
         Weak::new(),
-    ));
+    );
     let mob = passenger
         .as_leashable()
         .expect("pig should expose leashable behavior");
@@ -124,24 +120,16 @@ fn mob_start_riding_drops_attached_leash() {
 fn transfer_leashables_to_holder_moves_valid_mobs() {
     init_vanilla_registry();
 
-    let old_holder: SharedEntity = Arc::new(ChickenEntity::new(
-        &vanilla_entities::CHICKEN,
-        1,
-        DVec3::ZERO,
-        Weak::new(),
-    ));
-    let new_holder: SharedEntity = Arc::new(ChickenEntity::new(
-        &vanilla_entities::CHICKEN,
-        2,
-        DVec3::ZERO,
-        Weak::new(),
-    ));
-    let leashable: SharedEntity = Arc::new(ChickenEntity::new(
+    let old_holder: SharedEntity =
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+    let new_holder: SharedEntity =
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 2, DVec3::ZERO, Weak::new());
+    let leashable: SharedEntity = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         3,
         DVec3::new(1.0, 0.0, 0.0),
         Weak::new(),
-    ));
+    );
     let mob = leashable
         .as_leashable()
         .expect("pig should expose leashable behavior");
@@ -162,24 +150,16 @@ fn transfer_leashables_to_holder_moves_valid_mobs() {
 fn transfer_leashables_to_holder_skips_mobs_outside_snap_distance() {
     init_vanilla_registry();
 
-    let old_holder: SharedEntity = Arc::new(ChickenEntity::new(
-        &vanilla_entities::CHICKEN,
-        1,
-        DVec3::ZERO,
-        Weak::new(),
-    ));
-    let new_holder: SharedEntity = Arc::new(ChickenEntity::new(
-        &vanilla_entities::CHICKEN,
-        2,
-        DVec3::ZERO,
-        Weak::new(),
-    ));
-    let leashable: SharedEntity = Arc::new(ChickenEntity::new(
+    let old_holder: SharedEntity =
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+    let new_holder: SharedEntity =
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 2, DVec3::ZERO, Weak::new());
+    let leashable: SharedEntity = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         3,
         DVec3::new(20.0, 0.0, 0.0),
         Weak::new(),
-    ));
+    );
     let mob = leashable
         .as_leashable()
         .expect("pig should expose leashable behavior");
@@ -204,12 +184,8 @@ fn set_leashed_to_notifies_replaced_holder() {
     let old_holder: SharedEntity = Arc::<LeashNotificationTestEntity>::clone(&old_holder_typed);
     let new_holder_typed = LeashNotificationTestEntity::new(2);
     let new_holder: SharedEntity = Arc::<LeashNotificationTestEntity>::clone(&new_holder_typed);
-    let leashable: SharedEntity = Arc::new(ChickenEntity::new(
-        &vanilla_entities::CHICKEN,
-        3,
-        DVec3::ZERO,
-        Weak::new(),
-    ));
+    let leashable: SharedEntity =
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 3, DVec3::ZERO, Weak::new());
     let mob = leashable
         .as_leashable()
         .expect("pig should expose leashable behavior");
@@ -227,12 +203,8 @@ fn tick_leash_notifies_live_holder() {
 
     let holder_typed = LeashNotificationTestEntity::new(1);
     let holder: SharedEntity = Arc::<LeashNotificationTestEntity>::clone(&holder_typed);
-    let leashable: SharedEntity = Arc::new(ChickenEntity::new(
-        &vanilla_entities::CHICKEN,
-        3,
-        DVec3::ZERO,
-        Weak::new(),
-    ));
+    let leashable: SharedEntity =
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 3, DVec3::ZERO, Weak::new());
     let mob = leashable
         .as_leashable()
         .expect("pig should expose leashable behavior");
@@ -251,12 +223,8 @@ fn tick_leash_snaps_live_holder_past_snap_distance() {
 
     let holder_typed = LeashNotificationTestEntity::with_position(1, DVec3::new(13.0, 0.0, 0.0));
     let holder: SharedEntity = Arc::<LeashNotificationTestEntity>::clone(&holder_typed);
-    let leashable: SharedEntity = Arc::new(ChickenEntity::new(
-        &vanilla_entities::CHICKEN,
-        3,
-        DVec3::ZERO,
-        Weak::new(),
-    ));
+    let leashable: SharedEntity =
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 3, DVec3::ZERO, Weak::new());
     let mob = leashable
         .as_leashable()
         .expect("pig should expose leashable behavior");

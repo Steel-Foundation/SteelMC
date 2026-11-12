@@ -69,12 +69,12 @@ impl thrown_potion::Parts for LingeringPotionEntity {
             ProjectileHit::Entity(entity_hit) => entity_hit.entity.position(),
             ProjectileHit::Block { .. } => self.position(),
         };
-        let cloud = Arc::new(AreaEffectCloudEntity::new(
+        let cloud = AreaEffectCloudEntity::new(
             &vanilla_entities::AREA_EFFECT_CLOUD,
             next_entity_id(),
             position,
             Arc::downgrade(world),
-        ));
+        );
         cloud.set_owner(self.projectile().owner().as_ref());
         cloud.set_radius(3.0);
         cloud.set_radius_on_use(-0.5);

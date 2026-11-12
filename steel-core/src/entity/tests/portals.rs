@@ -151,12 +151,12 @@ fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
     init_vanilla_registry();
 
     let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    let holder: SharedEntity = Arc::new(ChickenEntity::new(
+    let holder: SharedEntity = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         2,
         DVec3::new(1.0, 0.0, 0.0),
         Weak::new(),
-    ));
+    );
     let Some(mob) = pig.as_mob() else {
         panic!("pig should expose mob behavior");
     };
@@ -166,7 +166,7 @@ fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
         ItemStack::new(&vanilla_items::SADDLE),
     );
 
-    remove_after_changing_dimensions(&pig);
+    remove_after_changing_dimensions(&*pig);
 
     assert!(!mob.leashable().is_leashed());
     assert!(

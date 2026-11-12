@@ -10,7 +10,6 @@ use steel_utils::{ChunkPos, Downcast as _};
 use super::*;
 use crate::block_entity::entities::BaseSpawnerConfig;
 use crate::bootstrap::init_globals;
-use crate::entity::EntityEventSource as _;
 use crate::entity::entities::objects::vehicles::abstract_minecart::Parts as _;
 use crate::entity::entities::objects::vehicles::test_support::test_world;
 use crate::entity::{ENTITIES, next_entity_id};
@@ -83,14 +82,14 @@ fn spawner_uses_the_post_movement_block_position_and_obeys_the_game_rule() {
         TestPlayerBuilder::new(Arc::clone(world), "SpawnerPlayer", next_entity_id()).build();
     player.snap_to(DVec3::new(9.6, 65.2, 8.5), 0.0, 0.0);
     assert!(world.add_player(player, ResetReason::InitialJoin));
-    let cart = Arc::new(SpawnerMinecartEntity::new(
+    let cart = SpawnerMinecartEntity::new(
         &vanilla_entities::SPAWNER_MINECART,
         next_entity_id(),
         DVec3::new(8.9, 64.0, 8.5),
         Arc::downgrade(world),
-    ));
+    );
     world
-        .try_add_entity(Arc::clone(&cart).into_shared_entity())
+        .try_add_entity(Arc::<SpawnerMinecartEntity>::clone(&cart))
         .expect("spawner minecart should enter the loaded chunk");
     cart.set_no_gravity(true);
     cart.set_velocity(DVec3::new(0.4, 0.0, 0.0));

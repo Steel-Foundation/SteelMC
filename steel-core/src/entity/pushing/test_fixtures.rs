@@ -1,3 +1,4 @@
+use crate::entity::WeakSelf;
 use crate::entity::prelude::*;
 use std::iter::once;
 use std::sync::{
@@ -31,78 +32,43 @@ pub(super) const LIVING_FIXTURES: usize = 6;
 
 pub(super) const DEFAULT_ENTITIES: [(&str, Factory); 9] = [
     ("cow", |world, id, pos| {
-        Arc::new(CowEntity::new(
-            &vanilla_entities::COW,
-            id,
-            pos,
-            Arc::downgrade(world),
-        ))
+        CowEntity::new(&vanilla_entities::COW, id, pos, Arc::downgrade(world))
     }),
     ("pig", |world, id, pos| {
-        Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
-            id,
-            pos,
-            Arc::downgrade(world),
-        ))
+        PigEntity::new(&vanilla_entities::PIG, id, pos, Arc::downgrade(world))
     }),
     ("sheep", |world, id, pos| {
-        Arc::new(SheepEntity::new(
-            &vanilla_entities::SHEEP,
-            id,
-            pos,
-            Arc::downgrade(world),
-        ))
+        SheepEntity::new(&vanilla_entities::SHEEP, id, pos, Arc::downgrade(world))
     }),
     ("chicken", |world, id, pos| {
-        Arc::new(ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
-            id,
-            pos,
-            Arc::downgrade(world),
-        ))
+        ChickenEntity::new(&vanilla_entities::CHICKEN, id, pos, Arc::downgrade(world))
     }),
     ("mooshroom", |world, id, pos| {
-        Arc::new(MushroomCowEntity::new(
-            &vanilla_entities::MOOSHROOM,
-            id,
-            pos,
-            Arc::downgrade(world),
-        ))
+        MushroomCowEntity::new(&vanilla_entities::MOOSHROOM, id, pos, Arc::downgrade(world))
     }),
     ("endermite", |world, id, pos| {
-        Arc::new(EndermiteEntity::new(
-            &vanilla_entities::ENDERMITE,
-            id,
-            pos,
-            Arc::downgrade(world),
-        ))
+        EndermiteEntity::new(&vanilla_entities::ENDERMITE, id, pos, Arc::downgrade(world))
     }),
     ("bat", |world, id, pos| {
-        Arc::new(BatEntity::new(
-            &vanilla_entities::BAT,
-            id,
-            pos,
-            Arc::downgrade(world),
-        ))
+        BatEntity::new(&vanilla_entities::BAT, id, pos, Arc::downgrade(world))
     }),
     ("item", |world, id, pos| {
-        Arc::new(ItemEntity::with_item_and_velocity(
+        ItemEntity::with_item_and_velocity(
             &vanilla_entities::ITEM,
             id,
             pos,
             ItemStack::new(&vanilla_items::WHEAT),
             DVec3::ZERO,
             Arc::downgrade(world),
-        ))
+        )
     }),
     ("experience_orb", |world, id, pos| {
-        Arc::new(ExperienceOrbEntity::new(
+        ExperienceOrbEntity::new(
             &vanilla_entities::EXPERIENCE_ORB,
             id,
             pos,
             Arc::downgrade(world),
-        ))
+        )
     }),
 ];
 
@@ -128,6 +94,7 @@ impl CustomContact {
                 DVec3::new(1.65, 64.0, 1.65),
                 vanilla_entities::ITEM.dimensions,
                 world,
+                WeakSelf::detached(),
             ),
             contacts: AtomicUsize::new(0),
         })

@@ -298,7 +298,7 @@ fn living_dimensions_use_the_sleeping_box_and_the_type_default_size() {
     assert_eq!((sleeping.width, sleeping.height), (0.2, 0.2));
 
     let adult = chicken.dimensions_for_pose(EntityPose::Standing);
-    crate::entity::ageable::Ageable::of(&chicken)
+    crate::entity::ageable::Ageable::of(&*chicken)
         .expect("chickens age")
         .set_baby(true);
     let baby = chicken.dimensions_for_pose(EntityPose::Standing);

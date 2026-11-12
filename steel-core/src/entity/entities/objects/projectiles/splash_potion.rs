@@ -167,13 +167,12 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let potion = Arc::new(SplashPotionEntity::new(
+        let potion = SplashPotionEntity::new(
             &vanilla_entities::SPLASH_POTION,
             1,
             DVec3::ZERO,
             Arc::downgrade(test_world()),
-        ));
-        let entity: SharedEntity = Arc::clone(&potion) as SharedEntity;
+        );
         let hit = ProjectileHit::Block {
             location: DVec3::ZERO,
             hit: ClipHitResult {
@@ -186,7 +185,7 @@ mod tests {
             },
         };
 
-        potion.projectile().on_hit(&entity, &hit);
+        potion.projectile().on_hit(&hit);
         assert!(potion.is_removed());
     }
 }

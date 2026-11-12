@@ -1,6 +1,6 @@
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
 use crate::entity::prelude::*;
-use crate::entity::{Mob, MobBase, SharedEntity};
+use crate::entity::{Mob, MobBase};
 
 pub struct FloatGoal;
 
@@ -26,7 +26,7 @@ impl Goal for FloatGoal {
         true
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         if rand::random::<f32>() < 0.8 {
             mob.mob_base().controls().lock().jump_control.jump();
         }
@@ -36,6 +36,7 @@ impl Goal for FloatGoal {
 #[cfg(test)]
 mod tests {
     use crate::entity::LivingProps;
+    use crate::entity::WeakSelf;
     use crate::test_support::synced_with_health;
     use std::sync::Weak;
 
@@ -69,6 +70,7 @@ mod tests {
                 DVec3::ZERO,
                 vanilla_entities::PIG.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             );
             base.set_fluid_contact(EntityFluidContact::from_parts(
                 water_height,

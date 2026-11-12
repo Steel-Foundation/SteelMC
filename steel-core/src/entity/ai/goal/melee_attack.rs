@@ -33,12 +33,7 @@ impl MeleeAttackGoal {
         }
     }
 
-    fn check_and_perform_attack(
-        &mut self,
-        mob: &Mob<'_>,
-        entity: &SharedEntity,
-        target: &SharedEntity,
-    ) {
+    fn check_and_perform_attack(&mut self, mob: &Mob<'_>, target: &SharedEntity) {
         let Some(target_living) = target.as_living_entity() else {
             return;
         };
@@ -49,7 +44,7 @@ impl MeleeAttackGoal {
         self.reset_attack_cooldown();
         mob.swing_for_attack(InteractionHand::MainHand);
         if let Some(world) = mob.level() {
-            let _ = mob.do_hurt_target(entity, &world, target);
+            let _ = mob.do_hurt_target(&world, target);
         }
     }
 
@@ -196,7 +191,7 @@ impl Goal for MeleeAttackGoal {
         true
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         let Some(target) = mob.target() else {
             return;
         };
@@ -215,7 +210,7 @@ impl Goal for MeleeAttackGoal {
         }
 
         self.ticks_until_next_attack = (self.ticks_until_next_attack - 1).max(0);
-        self.check_and_perform_attack(mob, entity, &target);
+        self.check_and_perform_attack(mob, &target);
     }
 }
 
@@ -231,12 +226,12 @@ mod tests {
     use crate::entity::ai::goal::selector::Goal;
     use crate::entity::entities::ChickenEntity;
 
-    fn pig(id: i32, position: DVec3) -> ChickenEntity {
+    fn pig(id: i32, position: DVec3) -> Arc<ChickenEntity> {
         ChickenEntity::new(&vanilla_entities::CHICKEN, id, position, Weak::new())
     }
 
     fn shared_pig(id: i32, position: DVec3) -> SharedEntity {
-        Arc::new(pig(id, position))
+        pig(id, position)
     }
 
     #[test]
@@ -313,12 +308,11 @@ mod tests {
     fn melee_attack_goal_tick_recalculates_path_with_failed_move_penalty() {
         init_vanilla_registry();
         let mut goal = MeleeAttackGoal::new(1.0, true);
-        let mob = Arc::new(pig(1, DVec3::ZERO));
-        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
+        let mob = pig(1, DVec3::ZERO);
         let target = shared_pig(2, DVec3::new(4.0, 0.0, 0.0));
         assert!(mob.mob().set_target(Some(&target)));
 
-        goal.tick(&mob.mob(), &mob_entity);
+        goal.tick(&mob.mob());
 
         assert_eq!(goal.pathed_target, target.position());
         assert!(goal.ticks_until_next_path_recalculation > 0);

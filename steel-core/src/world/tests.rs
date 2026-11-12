@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::WeakSelf;
 use crate::entity::prelude::*;
 use std::{
     sync::{Arc, Weak},
@@ -115,12 +116,12 @@ fn disconnect_while_riding_removes_the_vehicle_like_vanilla() {
     let world = &world_fixture.world;
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-    let vehicle: SharedEntity = Arc::new(PigEntity::new(
+    let vehicle: SharedEntity = PigEntity::new(
         &vanilla_entities::PIG,
         next_entity_id(),
         DVec3::new(1.0, 64.0, 1.0),
         Arc::downgrade(world),
-    ));
+    );
     world
         .try_add_entity(Arc::clone(&vehicle))
         .expect("the test vehicle should attach to the loaded chunk");
@@ -276,6 +277,7 @@ impl TrackerTestEntity {
                 DVec3::ZERO,
                 vanilla_entities::ITEM.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             ),
         })
     }
@@ -672,12 +674,8 @@ fn navigating_mob_tracker_tracks_only_pathfinder_mobs() {
 
     let tracker = NavigatingMobTracker::new();
     let non_pathfinder = TrackerTestEntity::shared(1);
-    let pig: SharedEntity = Arc::new(ChickenEntity::new(
-        &vanilla_entities::CHICKEN,
-        2,
-        DVec3::ZERO,
-        Weak::new(),
-    ));
+    let pig: SharedEntity =
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 2, DVec3::ZERO, Weak::new());
 
     tracker.track(&non_pathfinder);
     assert_eq!(tracker.ids().len(), 0);

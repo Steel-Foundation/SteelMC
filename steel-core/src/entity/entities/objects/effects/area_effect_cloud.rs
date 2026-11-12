@@ -98,12 +98,11 @@ impl AreaEffectCloudEntity {
         Definition {
             tick: definition.tick.then([Stage::new(
                 Self::TICK,
-                |cloud: &Self, ctx: &mut TickCtx<'_>| {
-                    let entity = ctx.entity;
+                |cloud: &Self, _ctx: &mut TickCtx<'_>| {
                     // Clients draw the particles from the synced radius, waiting
                     // flag and particle; only the server tick runs here.
                     if let Some(world) = cloud.level() {
-                        cloud.server_tick(entity, &world);
+                        cloud.server_tick(&world);
                     }
                     Flow::Continue
                 },
@@ -231,7 +230,7 @@ impl AreaEffectCloudEntity {
             .filter(|owner| owner.as_living_entity().is_some())
     }
 
-    fn server_tick(&self, entity: &SharedEntity, world: &World) {
+    fn server_tick(&self, world: &World) {
         let tick_count = self.tick_count();
         let (duration, wait_time, radius_per_tick) = {
             let state = self.state.lock();
@@ -261,12 +260,12 @@ impl AreaEffectCloudEntity {
         }
 
         if tick_count % TIME_BETWEEN_APPLICATIONS == 0 {
-            self.apply_effects(entity, world, tick_count, radius);
+            self.apply_effects(world, tick_count, radius);
         }
     }
 
     /// Applies the cloud's effects to every eligible living entity inside it.
-    fn apply_effects(&self, this: &SharedEntity, world: &World, tick_count: i32, mut radius: f32) {
+    fn apply_effects(&self, world: &World, tick_count: i32, mut radius: f32) {
         let (effects, reapplication_delay) = {
             let mut state = self.state.lock();
             state.victims.retain(|_, until| tick_count < *until);
@@ -290,6 +289,9 @@ impl AreaEffectCloudEntity {
         if entities.is_empty() {
             return;
         }
+        let Some(this) = self.shared() else {
+            return;
+        };
 
         let owner = self.owner();
         let position = self.position();
@@ -322,7 +324,7 @@ impl AreaEffectCloudEntity {
             };
 
             for effect in &effects {
-                self.apply_effect(world, &living, effect, this, owner.as_ref());
+                self.apply_effect(world, &living, effect, &this, owner.as_ref());
             }
 
             if radius_on_use != 0.0 {

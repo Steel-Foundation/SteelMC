@@ -293,12 +293,12 @@ mod tests {
     }
 
     fn add_pig(world: &Arc<World>) -> SharedEntity {
-        let pig: SharedEntity = Arc::new(ChickenEntity::new(
+        let pig: SharedEntity = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             next_entity_id(),
             DVec3::new(1.0, 64.0, 1.0),
             Arc::downgrade(world),
-        ));
+        );
         world
             .try_add_entity(Arc::clone(&pig))
             .expect("test pig should attach to the loaded chunk");

@@ -63,7 +63,13 @@ struct PushableTestEntity {
 impl PushableTestEntity {
     fn shared(id: i32, position: DVec3) -> SharedEntity {
         Arc::new(Self {
-            base: EntityBase::new(id, position, vanilla_entities::ITEM.dimensions, Weak::new()),
+            base: EntityBase::new(
+                id,
+                position,
+                vanilla_entities::ITEM.dimensions,
+                Weak::new(),
+                WeakSelf::detached(),
+            ),
         })
     }
 }
@@ -99,7 +105,13 @@ struct TypedTestEntity {
 impl TypedTestEntity {
     fn new(id: i32, entity_type: EntityTypeRef) -> Self {
         Self {
-            base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+            base: EntityBase::new(
+                id,
+                DVec3::ZERO,
+                entity_type.dimensions,
+                Weak::new(),
+                WeakSelf::detached(),
+            ),
             entity_type,
         }
     }
@@ -595,7 +607,13 @@ impl LeashNotificationTestEntity {
 
     fn with_position(id: i32, position: DVec3) -> Arc<Self> {
         Arc::new(Self {
-            base: EntityBase::new(id, position, vanilla_entities::ITEM.dimensions, Weak::new()),
+            base: EntityBase::new(
+                id,
+                position,
+                vanilla_entities::ITEM.dimensions,
+                Weak::new(),
+                WeakSelf::detached(),
+            ),
             holder_notifications: SyncMutex::new(Vec::new()),
             removed_notifications: SyncMutex::new(Vec::new()),
         })
@@ -654,6 +672,7 @@ impl MultiPassengerTestEntity {
                 DVec3::ZERO,
                 vanilla_entities::ITEM.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             ),
         })
     }
@@ -716,7 +735,13 @@ impl KnownMovementTestEntity {
         known_speed: DVec3,
     ) -> SharedEntity {
         Arc::new(Self {
-            base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+            base: EntityBase::new(
+                id,
+                DVec3::ZERO,
+                entity_type.dimensions,
+                Weak::new(),
+                WeakSelf::detached(),
+            ),
             entity_type,
             known_movement,
             known_speed,
@@ -772,6 +797,7 @@ impl LivingFluidTestEntity {
             DVec3::ZERO,
             vanilla_entities::PLAYER.dimensions,
             Weak::new(),
+            WeakSelf::detached(),
         );
         base.set_fluid_contact(EntityFluidContact::from_parts(
             water_height,
@@ -1262,6 +1288,7 @@ impl ControlledVehicleTestEntity {
                 DVec3::ZERO,
                 vanilla_entities::ACACIA_BOAT.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             ),
             controller,
         })

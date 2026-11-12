@@ -236,6 +236,7 @@ impl BlockBehavior for BubbleColumnBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::WeakSelf;
     use std::sync::Weak;
 
     use glam::DVec3;
@@ -269,6 +270,7 @@ mod tests {
                     DVec3::ZERO,
                     vanilla_entities::ITEM.dimensions,
                     Weak::new(),
+                    WeakSelf::detached(),
                 ),
                 calls: SyncMutex::new(Vec::new()),
             }

@@ -1,3 +1,4 @@
+use crate::entity::WeakSelf;
 use crate::entity::prelude::*;
 use std::sync::{
     Arc, Weak,
@@ -188,7 +189,7 @@ fn ready_world(key: &'static str) -> TestWorld {
     fixture
 }
 
-fn item_entity(world: &Arc<World>, position: DVec3) -> ItemEntity {
+fn item_entity(world: &Arc<World>, position: DVec3) -> Arc<ItemEntity> {
     ItemEntity::new(
         &vanilla_entities::ITEM,
         next_entity_id(),
@@ -197,8 +198,7 @@ fn item_entity(world: &Arc<World>, position: DVec3) -> ItemEntity {
     )
 }
 
-fn add_entity<E: Entity>(world: &Arc<World>, entity: E) -> Arc<E> {
-    let entity = Arc::new(entity);
+fn add_entity<E: Entity>(world: &Arc<World>, entity: Arc<E>) -> Arc<E> {
     let Ok(()) = world.try_add_entity(Arc::<E>::clone(&entity)) else {
         panic!("test entity must be added to its loaded chunk");
     };
@@ -303,6 +303,7 @@ fn source_and_custom_calculator_hooks_run_on_the_sequential_lane() {
             center,
             vanilla_entities::ITEM.dimensions,
             Arc::downgrade(world),
+            WeakSelf::detached(),
         ),
         resistance_calls: AtomicUsize::new(0),
         decision_calls: AtomicUsize::new(0),
@@ -386,7 +387,7 @@ fn stable_air_certificate_skips_rays_and_observes_later_block_writes() {
         world,
         TEST_BLOCK_BOTTOM_CENTER + DVec3::X * FAR_EXPOSURE_TARGET_DISTANCE,
     );
-    let exposure = EntityExplosionExposure::capture(&entity);
+    let exposure = EntityExplosionExposure::capture(&*entity);
     let mut raycast = ExplosionExposureRaycast::new(world, exposure.collision_context);
 
     assert_eq!(
@@ -426,7 +427,7 @@ fn resting_tnt_certificate_includes_vanilla_adjusted_source_block() {
     );
     let center = explosion_position
         + DVec3::Y * (f64::from(vanilla_entities::TNT.dimensions.height) * 0.0625);
-    let exposure = EntityExplosionExposure::capture(&target);
+    let exposure = EntityExplosionExposure::capture(&*target);
     let Some(bounds) = exposure.stable_air_certificate_bounds(center) else {
         panic!("resting TNT exposure must have finite certificate bounds");
     };
@@ -450,7 +451,7 @@ fn cached_exposure_matches_across_chunk_and_section_boundaries() {
     ));
     let entity = item_entity(world, DVec3::new(16.5, 80.0, 0.5));
 
-    assert_exposure_matches_seen_percent(world, DVec3::new(14.5, 78.5, 0.5), &entity);
+    assert_exposure_matches_seen_percent(world, DVec3::new(14.5, 78.5, 0.5), &*entity);
 }
 
 #[test]
@@ -488,7 +489,7 @@ fn exposure_clipping_uses_the_entity_collision_context() {
         TEST_BLOCK_BOTTOM_CENTER + DVec3::X * NEAR_EXPOSURE_TARGET_DISTANCE,
     );
     let center = TEST_LOW_EXPLOSION_CENTER;
-    let walking_exposure = EntityExplosionExposure::capture(&entity);
+    let walking_exposure = EntityExplosionExposure::capture(&*entity);
     let mut shared_raycast =
         ExplosionExposureRaycast::new(world, walking_exposure.collision_context);
     shared_raycast.configure_clear_grid(BlockPos::new(0, 63, 0), BlockPos::new(3, 66, 1));
@@ -499,7 +500,7 @@ fn exposure_clipping_uses_the_entity_collision_context() {
     // Powder snow only collides with entities that are not descending.
     entity.set_fall_distance(3.0);
     entity.set_shared_shift_key_down(true);
-    let falling_exposure = EntityExplosionExposure::capture(&entity);
+    let falling_exposure = EntityExplosionExposure::capture(&*entity);
     assert!(falling_exposure.collision_context.is_descending());
     let falling = falling_exposure.calculate_cached_with(&mut shared_raycast, center);
     assert_eq!(falling.to_bits(), 0.0_f32.to_bits());
@@ -520,11 +521,12 @@ fn exposure_cache_is_cleared_before_block_mutating_entity_callbacks() {
             position,
             vanilla_entities::ITEM.dimensions,
             Arc::downgrade(world),
+            WeakSelf::detached(),
         ),
         place_wall_on_hit,
     };
-    let mutator = add_entity(world, entity(true));
-    let observer = add_entity(world, entity(false));
+    let mutator = add_entity(world, Arc::new(entity(true)));
+    let observer = add_entity(world, Arc::new(entity(false)));
 
     world.explode(ExplosionOptions::new(
         TEST_LOW_EXPLOSION_CENTER,
@@ -569,7 +571,7 @@ fn moving_piston_exposure_uses_live_block_entities() {
         world,
         TEST_BLOCK_BOTTOM_CENTER + DVec3::X * NEAR_EXPOSURE_TARGET_DISTANCE,
     );
-    let exposure = EntityExplosionExposure::capture(&entity);
+    let exposure = EntityExplosionExposure::capture(&*entity);
     let live = exposure.calculate_uncached(world, center);
     assert!(live < 1.0, "the moving piston should occlude a sample");
     let mut raycast = ExplosionExposureRaycast::new(world, exposure.collision_context);
@@ -619,12 +621,12 @@ fn mob_explosion_does_not_push_vehicles_when_mob_griefing_is_disabled() {
             Arc::downgrade(world),
         ),
     );
-    let pig: SharedEntity = Arc::new(PigEntity::new(
+    let pig: SharedEntity = PigEntity::new(
         &vanilla_entities::PIG,
         next_entity_id(),
         TEST_BLOCK_BOTTOM_CENTER,
         Arc::downgrade(world),
-    ));
+    );
     let mut options = ExplosionOptions::new(
         TEST_BLOCK_BOTTOM_CENTER,
         ENTITY_EFFECT_TEST_RADIUS,
@@ -652,7 +654,7 @@ fn submerged_source_explosion_does_not_push_block_attached_entities() {
         ENTITY_EFFECT_TEST_RADIUS,
         ExplosionInteraction::Block,
     );
-    options.source = Some(Arc::new(source) as SharedEntity);
+    options.source = Some(source as SharedEntity);
 
     world.explode(options);
 

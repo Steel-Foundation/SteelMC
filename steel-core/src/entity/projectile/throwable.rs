@@ -10,7 +10,7 @@ use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::Tick;
 use crate::entity::component::pipeline::{Flow, Inner, StageId};
 use crate::entity::projectile::{self, Parts, Projectile};
-use crate::entity::{EntityProps, InsideBlockEffectCollector, RemovalReason, SharedEntity};
+use crate::entity::{EntityProps, InsideBlockEffectCollector, RemovalReason};
 
 const WATER_INERTIA: f32 = 0.8;
 
@@ -32,8 +32,7 @@ pub const TICK: StageId = StageId("throwable.tick");
 #[must_use]
 pub fn definition<E: Parts>() -> Definition<E> {
     fn run<E: Parts>(entity: &E, ctx: &mut TickCtx<'_>, inner: Inner<'_, E, Tick>) -> Flow {
-        let shared = ctx.entity;
-        tick(&entity.projectile(), shared, || inner(entity, ctx))
+        tick(&entity.projectile(), || inner(entity, ctx))
     }
     let definition = projectile::definition();
     Definition {
@@ -44,11 +43,7 @@ pub fn definition<E: Parts>() -> Definition<E> {
 
 /// `ThrowableProjectile.tick`: applies gravity and drag, moves to the first
 /// hit on the move vector, runs `super.tick()`, then resolves the hit.
-fn tick(
-    projectile: &Projectile<'_>,
-    entity: &SharedEntity,
-    super_tick: impl FnOnce() -> Flow,
-) -> Flow {
+fn tick(projectile: &Projectile<'_>, super_tick: impl FnOnce() -> Flow) -> Flow {
     // Vanilla's level stores the old position and rotation before ticking;
     // `onHit` (teleports) and `updateRotation` read them.
     projectile.set_old_position_to_current();
@@ -79,7 +74,7 @@ fn tick(
         && projectile.is_alive()
         && !projectile.is_world_change_pending()
     {
-        projectile.hit_target_or_deflect_self(entity, &result);
+        projectile.hit_target_or_deflect_self(&result);
     }
     flow
 }
@@ -169,12 +164,12 @@ mod tests {
 
         assert!(world.set_block(bubble_pos, bubble_column, UpdateFlags::UPDATE_NONE));
 
-        let snowball = Arc::new(SnowballEntity::new(
+        let snowball = SnowballEntity::new(
             &vanilla_entities::SNOWBALL,
             1,
             initial_position,
             Arc::downgrade(world),
-        ));
+        );
         world
             .try_add_entity(Arc::clone(&snowball) as SharedEntity)
             .expect("snowball should attach to the loaded chunk");

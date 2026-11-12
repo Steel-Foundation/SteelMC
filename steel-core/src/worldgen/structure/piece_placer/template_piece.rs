@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use glam::{DVec3, IVec3};
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -521,13 +519,13 @@ impl StructurePiecePlacer {
         pos: BlockPos,
         direction: Direction,
     ) {
-        let entity = Arc::new(ItemFrameEntity::new_attached(
+        let entity = ItemFrameEntity::new_attached(
             &vanilla_entities::ITEM_FRAME,
             next_entity_id(),
             pos,
             direction,
             region.weak_world(),
-        ));
+        );
         entity.set_item_with_update(ItemStack::new(&vanilla_items::ELYTRA), false);
         let _ = region.add_fresh_entity(entity);
     }

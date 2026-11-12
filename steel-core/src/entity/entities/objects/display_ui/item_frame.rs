@@ -1,6 +1,6 @@
 //! Vanilla `ItemFrame`.
 
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -21,6 +21,7 @@ use crate::entity::block_attached::{self, BlockAttachment};
 use crate::entity::prelude::*;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMoveError, EntityProps, ItemFrame,
+    WeakSelf,
 };
 use crate::world::World;
 
@@ -51,7 +52,12 @@ impl ItemFrameEntity {
 
     /// Creates a frame from the generic entity factory path.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: i32,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Arc<Self> {
         Self::new_attached(
             entity_type,
             id,
@@ -69,10 +75,10 @@ impl ItemFrameEntity {
         block_pos: BlockPos,
         direction: Direction,
         world: Weak<World>,
-    ) -> Self {
+    ) -> Arc<Self> {
         let mut entity_data = ItemFrameEntityData::new();
         entity_data.hanging_entity.direction.set(direction);
-        Self {
+        WeakSelf::build(|this| Self {
             base: EntityBase::new_with_state(
                 id,
                 EntityBaseState::new_with_bounding_box(
@@ -82,25 +88,26 @@ impl ItemFrameEntity {
                 )
                 .with_rotation(Self::rotation_for_direction(direction)),
                 world,
+                this,
             ),
             entity_type,
             attachment: BlockAttachment::new(block_pos),
             entity_data: CheckedMutex::new(entity_data),
-        }
+        })
     }
 
     /// Reconstructs a frame from saved base data.
     #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
+    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Arc<Self> {
         let position = load.position;
-        Self {
-            base: EntityBase::from_load(load, entity_type.dimensions),
+        WeakSelf::build(|this| Self {
+            base: EntityBase::from_load(load, entity_type.dimensions, this),
             entity_type,
             attachment: BlockAttachment::new(BlockPos::containing(
                 position.x, position.y, position.z,
             )),
             entity_data: CheckedMutex::new(ItemFrameEntityData::new()),
-        }
+        })
     }
 
     /// Sets the framed item, keeping a single item.
@@ -287,9 +294,9 @@ mod tests {
     use super::*;
     use crate::test_support::load_additional;
 
-    fn frame_loaded_from(nbt: &NbtCompound) -> ItemFrameEntity {
+    fn frame_loaded_from(nbt: &NbtCompound) -> Arc<ItemFrameEntity> {
         let frame = frame();
-        load_additional(&frame, nbt);
+        load_additional(&*frame, nbt);
         frame
     }
 
@@ -313,7 +320,7 @@ mod tests {
         assert_eq!(*entity_data.hanging_entity.direction.get(), Direction::Down);
     }
 
-    fn frame() -> ItemFrameEntity {
+    fn frame() -> Arc<ItemFrameEntity> {
         ItemFrameEntity::new_attached(
             &vanilla_entities::ITEM_FRAME,
             1,

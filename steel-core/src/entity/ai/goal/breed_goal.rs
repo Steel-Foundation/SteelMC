@@ -93,7 +93,7 @@ impl Goal for BreedGoal {
         self.love_time = 0;
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         let Some(partner) = &self.partner else {
             return;
         };

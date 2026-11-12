@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
 use steel_registry::blocks::shapes::SupportType;
@@ -601,12 +599,12 @@ impl MineshaftPlacer<'_, '_> {
         let rail = Self::rail().set_value(&BlockStateProperties::RAIL_SHAPE, shape);
         self.place_block(rail, x, y, z);
         let loot_seed = random.next_i64();
-        let chest = Arc::new(ChestMinecartEntity::new(
+        let chest = ChestMinecartEntity::new(
             &vanilla_entities::CHEST_MINECART,
             next_entity_id(),
             pos.get_center().into(),
             self.region.weak_world(),
-        ));
+        );
         chest.set_loot_table(ABANDONED_MINESHAFT_LOOT, loot_seed);
         let _ = self.region.add_fresh_entity(chest);
         true

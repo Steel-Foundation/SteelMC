@@ -31,7 +31,6 @@ use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Downcast as _};
 
 use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::TickCtx;
 use crate::entity::component::definition::{CanHitEntityCtx, OnHitBlockCtx, OnHitEntityCtx};
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
@@ -145,14 +144,7 @@ impl FishingHookEntity {
                     projectile::TICK,
                     [Stage::effect(Self::SEED, Self::seed_synchronized_random)],
                 )
-                .then([Stage::new(
-                    Self::TICK,
-                    |hook: &Self, ctx: &mut TickCtx<'_>| {
-                        let entity = ctx.entity;
-                        hook.entity_tick(entity);
-                        Flow::Continue
-                    },
-                )]),
+                .then([Stage::effect(Self::TICK, Self::entity_tick)]),
             ..definition
         }
     }
@@ -607,13 +599,13 @@ impl FishingHookEntity {
             );
             let is_fish = item_stack.item().has_tag(&ItemTag::FISHES);
             world.spawn_item_with_velocity(self.position(), item_stack, velocity);
-            let orb: SharedEntity = Arc::new(ExperienceOrbEntity::with_value(
+            let orb: SharedEntity = ExperienceOrbEntity::with_value(
                 &vanilla_entities::EXPERIENCE_ORB,
                 next_entity_id(),
                 player.position() + DVec3::new(0.0, 0.5, 0.5),
                 rand::random_range(1..=6),
                 Arc::downgrade(world),
-            ));
+            );
             if let Err(error) = world.try_add_entity(orb) {
                 log::error!("Failed to spawn experience orb: {error}");
             }
@@ -632,7 +624,6 @@ impl FishingHookEntity {
     /// Runs the bobber state machine; returns `false` when the tick ends here.
     fn tick_bobber(
         &self,
-        entity: &SharedEntity,
         world: &World,
         is_in_water: bool,
         pos: BlockPos,
@@ -657,7 +648,7 @@ impl FishingHookEntity {
                 if !self.on_ground() {
                     let projectile = self.projectile();
                     if let Some(hit) = projectile.hit_result_on_move_vector() {
-                        projectile.hit_target_or_deflect_self(entity, &hit);
+                        projectile.hit_target_or_deflect_self(&hit);
                     }
                 }
                 true
@@ -752,7 +743,7 @@ impl FishingHookEntity {
     }
 
     /// `FishingHook.tick` after `super.tick()`.
-    fn entity_tick(&self, entity: &SharedEntity) {
+    fn entity_tick(&self) {
         let Some(owner) = self.player_owner() else {
             self.set_removed(RemovalReason::Discarded);
             return;
@@ -774,7 +765,7 @@ impl FishingHookEntity {
         } else {
             0.0
         };
-        if !self.tick_bobber(entity, &world, liquid_height > 0.0, pos, liquid_height) {
+        if !self.tick_bobber(&world, liquid_height > 0.0, pos, liquid_height) {
             return;
         }
 
@@ -784,7 +775,7 @@ impl FishingHookEntity {
         {
             self.set_velocity(self.velocity() + DVec3::new(0.0, -self.default_gravity(), 0.0));
         }
-        Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity());
+        self.move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
         self.projectile().update_rotation();
         if self.should_stop() {

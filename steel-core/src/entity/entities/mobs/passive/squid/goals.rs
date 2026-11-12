@@ -9,9 +9,9 @@ use steel_registry::fluid::FluidStateExt as _;
 use steel_utils::{BlockPos, Downcast as _, TICKS_PER_SECOND};
 
 use super::SquidEntity;
+use crate::entity::Mob;
 use crate::entity::ai::goal::{Goal, GoalControls, reduced_tick_delay};
 use crate::entity::prelude::*;
-use crate::entity::{Mob, SharedEntity};
 use crate::world::LevelReader as _;
 
 const FLEE_MIN_DISTANCE: f64 = 5.0;
@@ -28,7 +28,7 @@ impl Goal for SquidRandomMovementGoal {
         true
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         let Some(squid) = mob.entity().downcast_ref::<SquidEntity>() else {
             return;
         };
@@ -79,7 +79,7 @@ impl Goal for SquidFleeGoal {
         self.flee_ticks = 0;
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         self.flee_ticks += 1;
         let Some(attacker) = mob.last_hurt_by_mob() else {
             return;

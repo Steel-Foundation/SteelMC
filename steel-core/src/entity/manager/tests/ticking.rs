@@ -1,3 +1,4 @@
+use crate::entity::WeakSelf;
 use std::mem;
 
 use super::*;
@@ -26,6 +27,7 @@ impl RelationshipTickTestEntity {
                 DVec3::new(1.0, 64.0, 1.0),
                 vanilla_entities::ITEM.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             ),
             events: Arc::clone(events),
             action: SyncMutex::new(RelationshipTickAction::None),

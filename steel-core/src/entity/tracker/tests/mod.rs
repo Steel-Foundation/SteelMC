@@ -1,5 +1,6 @@
 use crate::entity::EntitySyncedData;
 use crate::entity::LivingProps;
+use crate::entity::WeakSelf;
 use crate::entity::component::Has;
 use std::{
     mem,
@@ -48,7 +49,13 @@ impl PairingTestEntity {
         attributes: Vec<AttributeSnapshot>,
     ) -> Arc<Self> {
         Arc::new(Self {
-            base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+            base: EntityBase::new(
+                id,
+                DVec3::ZERO,
+                entity_type.dimensions,
+                Weak::new(),
+                WeakSelf::detached(),
+            ),
             entity_type,
             living_base: LivingEntityBase::without_synced_data(
                 &vanilla_entities::PIG,

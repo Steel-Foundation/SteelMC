@@ -104,7 +104,7 @@ impl Goal for AvoidEntityGoal {
         self.path = None;
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         let Some(to_avoid) = &self.to_avoid else {
             return;
         };
@@ -123,7 +123,7 @@ impl Goal for AvoidEntityGoal {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::Weak;
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
@@ -145,7 +145,7 @@ mod tests {
         init_vanilla_registry();
         let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-        assert!(entity_selector::no_creative_or_spectator(&pig));
+        assert!(entity_selector::no_creative_or_spectator(&*pig));
     }
 
     #[test]
@@ -161,21 +161,15 @@ mod tests {
     fn avoid_entity_goal_sprints_when_close_to_avoided_entity() {
         init_vanilla_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
-        let mob = Arc::new(ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
-        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
-        goal.to_avoid = Some(Arc::new(ChickenEntity::new(
+        let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+        goal.to_avoid = Some(ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             2,
             DVec3::new(2.0, 0.0, 0.0),
             Weak::new(),
-        )));
+        ));
 
-        goal.tick(&mob.mob(), &mob_entity);
+        goal.tick(&mob.mob());
 
         assert_eq!(
             mob.mob()
@@ -192,21 +186,15 @@ mod tests {
     fn avoid_entity_goal_walks_when_far_from_avoided_entity() {
         init_vanilla_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
-        let mob = Arc::new(ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
-        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
-        goal.to_avoid = Some(Arc::new(ChickenEntity::new(
+        let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+        goal.to_avoid = Some(ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             2,
             DVec3::new(8.0, 0.0, 0.0),
             Weak::new(),
-        )));
+        ));
 
-        goal.tick(&mob.mob(), &mob_entity);
+        goal.tick(&mob.mob());
 
         assert_eq!(
             mob.mob()

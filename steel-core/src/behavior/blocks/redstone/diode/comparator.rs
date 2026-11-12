@@ -387,6 +387,7 @@ impl BlockBehavior for ComparatorBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::WeakSelf;
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::init_vanilla_registry;
@@ -498,6 +499,7 @@ mod tests {
                 DVec3::new(8.5, 64.25, 8.5),
                 vanilla_entities::ITEM_FRAME.dimensions,
                 Arc::downgrade(world),
+                WeakSelf::detached(),
             ),
             direction: Direction::North,
             analog_output: 6,

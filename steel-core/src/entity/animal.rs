@@ -346,13 +346,13 @@ impl<'a> Animal<'a> {
             .broadcast_entity_event(EntityStatus::InLoveHearts);
 
         if world.get_game_rule(&MOB_DROPS) {
-            let orb: SharedEntity = Arc::new(ExperienceOrbEntity::with_value(
+            let orb: SharedEntity = ExperienceOrbEntity::with_value(
                 &vanilla_entities::EXPERIENCE_ORB,
                 next_entity_id(),
                 self.entity().position(),
                 rand::random_range(BREEDING_XP),
                 Arc::downgrade(world),
-            ));
+            );
             if let Err(error) = world.try_add_entity(orb) {
                 log::debug!("failed to add breeding experience orb: {error}");
             }

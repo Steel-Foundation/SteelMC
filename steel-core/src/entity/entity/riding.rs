@@ -240,9 +240,9 @@ pub trait EntityRiding: Entity {
     }
 
     /// Default for [`Entity::ride_tick`].
-    fn ride_tick_default(self: Arc<Self>) {
+    fn ride_tick_default(&self) {
         self.set_velocity(DVec3::ZERO);
-        Arc::clone(&self).tick();
+        self.tick();
         if let Some(vehicle) = self.vehicle() {
             vehicle.position_rider(self.as_entity_event_source());
         }

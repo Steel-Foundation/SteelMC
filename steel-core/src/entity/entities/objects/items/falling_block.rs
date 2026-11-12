@@ -3,7 +3,6 @@
 use crate::entity::component::definition::CauseFallDamageCtx;
 use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::HurtCtx;
-use crate::entity::component::definition::TickCtx;
 use crate::entity::component::pipeline::Pipeline;
 use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
@@ -35,9 +34,10 @@ use crate::behavior::blocks::{AnvilBlock, FallingBlock};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockPlaceContext, Fallable};
 use crate::block_entity::block_state_nbt;
 use crate::entity::EntityProps;
-use crate::entity::SharedEntity;
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, EntityBase, EntityMovementEmission, RemovalReason, next_entity_id};
+use crate::entity::{
+    Entity, EntityBase, EntityMovementEmission, RemovalReason, WeakSelf, next_entity_id,
+};
 use crate::fluid::fluid_state_to_block;
 use crate::physics::MoverType;
 use crate::world::{ClipBlockShape, ClipFluid, World};
@@ -98,18 +98,20 @@ impl FallingBlockEntity {
         position: DVec3,
         block_state: BlockStateId,
         world: Weak<World>,
-    ) -> Self {
-        let mut entity = Self::from_base(
-            EntityBase::new(id, position, entity_type.dimensions, world),
-            entity_type,
-        );
-        entity.entity_data.get_mut().start_pos.set(BlockPos::new(
-            position.x.floor() as i32,
-            position.y.floor() as i32,
-            position.z.floor() as i32,
-        ));
-        entity.state.get_mut().block_state = block_state;
-        entity
+    ) -> Arc<Self> {
+        WeakSelf::build(|this| {
+            let mut entity = Self::from_base(
+                EntityBase::new(id, position, entity_type.dimensions, world, this),
+                entity_type,
+            );
+            entity.entity_data.get_mut().start_pos.set(BlockPos::new(
+                position.x.floor() as i32,
+                position.y.floor() as i32,
+                position.z.floor() as i32,
+            ));
+            entity.state.get_mut().block_state = block_state;
+            entity
+        })
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
@@ -132,7 +134,7 @@ impl FallingBlockEntity {
         } else {
             state
         };
-        let entity = Arc::new(Self::with_block_state(
+        let entity = Self::with_block_state(
             &vanilla_entities::FALLING_BLOCK,
             next_entity_id(),
             DVec3::new(
@@ -142,7 +144,7 @@ impl FallingBlockEntity {
             ),
             carried_state,
             Arc::downgrade(world),
-        ));
+        );
         entity.state.lock().blocks_building = true;
 
         world.set_block(
@@ -395,7 +397,6 @@ impl FallingBlockEntity {
                 Self::FALL_DAMAGE,
                 |falling: &Self, ctx: &mut CauseFallDamageCtx<'_>| {
                     ctx.result = falling.entity_cause_fall_damage(
-                        ctx.entity,
                         ctx.fall_distance,
                         ctx.damage_modifier,
                         ctx.source,
@@ -410,13 +411,7 @@ impl FallingBlockEntity {
                     Flow::Continue
                 },
             )]),
-            ..Definition::replacing_tick([Stage::new(
-                Self::TICK,
-                |falling: &Self, ctx: &mut TickCtx<'_>| {
-                    falling.entity_tick(ctx.entity);
-                    Flow::Continue
-                },
-            )])
+            ..Definition::replacing_tick([Stage::effect(Self::TICK, Self::entity_tick)])
         }
     }
 
@@ -430,7 +425,7 @@ impl FallingBlockEntity {
         ..EntityProps::new()
     };
 
-    fn entity_tick(&self, entity: &SharedEntity) {
+    fn entity_tick(&self) {
         let block_state = self.block_state();
         if block_state.is_air() {
             self.set_removed(RemovalReason::Discarded);
@@ -443,7 +438,7 @@ impl FallingBlockEntity {
             state.time = state.time.wrapping_add(1);
         }
         self.apply_gravity();
-        let _ = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity());
+        let _ = self.move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
         self.handle_portal();
         if let Some(world) = self.level()
@@ -466,7 +461,6 @@ impl FallingBlockEntity {
 
     fn entity_cause_fall_damage(
         &self,
-        entity: &SharedEntity,
         fall_distance: f64,
         _damage_modifier: f32,
         _source: &DamageSource,
@@ -488,12 +482,15 @@ impl FallingBlockEntity {
             return false;
         }
 
+        let Some(this) = self.shared() else {
+            return false;
+        };
         let source = BLOCK_BEHAVIORS
             .get_behavior(self.block_state().get_block())
             .as_fallable()
             .map_or_else(
-                || DamageSource::direct(&vanilla_damage_types::FALLING_BLOCK, Arc::clone(entity)),
-                |fallable| fallable.get_fall_damage_source(entity),
+                || DamageSource::direct(&vanilla_damage_types::FALLING_BLOCK, Arc::clone(&this)),
+                |fallable| fallable.get_fall_damage_source(&this),
             );
         let damage = (fall_distance as f32 * damage_per_distance)
             .floor()

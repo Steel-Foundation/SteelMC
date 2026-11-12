@@ -369,14 +369,14 @@ impl World {
         }
 
         let entity_id = next_entity_id();
-        let entity = Arc::new(ItemEntity::with_item_and_velocity(
+        let entity = ItemEntity::with_item_and_velocity(
             &vanilla_entities::ITEM,
             entity_id,
             pos,
             item,
             velocity,
             Arc::downgrade(self),
-        ));
+        );
         if let Err(error) = self.try_add_entity(Arc::<ItemEntity>::clone(&entity)) {
             log::warn!("Failed to spawn item entity: {error}");
             return None;

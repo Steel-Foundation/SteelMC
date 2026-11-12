@@ -20,12 +20,12 @@ const POSITION: DVec3 = DVec3::new(8.0, 64.0, 8.0);
 
 /// A cloud configured like the one a lingering potion leaves behind.
 fn lingering_cloud(world: &Arc<World>) -> Arc<AreaEffectCloudEntity> {
-    let cloud = Arc::new(AreaEffectCloudEntity::new(
+    let cloud = AreaEffectCloudEntity::new(
         &vanilla_entities::AREA_EFFECT_CLOUD,
         1,
         POSITION,
         Arc::downgrade(world),
-    ));
+    );
     cloud.set_radius(3.0);
     cloud.set_radius_on_use(-0.5);
     cloud.set_duration(600);
@@ -67,12 +67,7 @@ fn affects_living_entities_once_per_reapplication_delay() {
     init_behaviors();
     let fixture = fresh_loaded_test_world("area_effect_cloud_affects_pig");
     let world = &fixture.world;
-    let pig = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
-        2,
-        POSITION,
-        Arc::downgrade(world),
-    ));
+    let pig = PigEntity::new(&vanilla_entities::PIG, 2, POSITION, Arc::downgrade(world));
     let shared_pig: SharedEntity = Arc::<PigEntity>::clone(&pig);
     world.try_add_entity(shared_pig).expect("register pig");
     let cloud = lingering_cloud(world);
@@ -107,12 +102,7 @@ fn extreme_saved_timings_wrap_like_vanilla_int_arithmetic() {
     init_behaviors();
     let fixture = fresh_loaded_test_world("area_effect_cloud_wrapping");
     let world = &fixture.world;
-    let pig = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
-        2,
-        POSITION,
-        Arc::downgrade(world),
-    ));
+    let pig = PigEntity::new(&vanilla_entities::PIG, 2, POSITION, Arc::downgrade(world));
     let shared_pig: SharedEntity = Arc::<PigEntity>::clone(&pig);
     world.try_add_entity(shared_pig).expect("register pig");
     let cloud = lingering_cloud(world);

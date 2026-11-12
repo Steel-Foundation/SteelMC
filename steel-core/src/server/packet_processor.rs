@@ -1076,7 +1076,7 @@ mod tests {
     }
 
     fn replacement_for(player: &Arc<Player>) -> Arc<Player> {
-        Arc::new(Player::new(
+        Player::new(
             player.gameprofile.clone(),
             Arc::clone(&player.connection),
             Arc::clone(&player.session),
@@ -1085,7 +1085,7 @@ mod tests {
             Arc::clone(&player.config),
             player.id(),
             ClientInformation::default(),
-        ))
+        )
     }
 
     #[test]

@@ -4,7 +4,7 @@ use steel_registry::{TaggedRegistryExt as _, vanilla_blocks, vanilla_entity_type
 
 use super::selector::{Goal, GoalControls};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
-use crate::entity::{Mob, SharedEntity};
+use crate::entity::Mob;
 
 pub struct ClimbOnTopOfPowderSnowGoal;
 
@@ -58,7 +58,7 @@ impl Goal for ClimbOnTopOfPowderSnowGoal {
         true
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         mob.mob_base().controls().lock().jump_control.jump();
     }
 }
@@ -77,7 +77,7 @@ mod tests {
     use crate::entity::entities::ChickenEntity;
     use crate::entity::{Entity as _, InsideBlockEffectType};
 
-    fn pig() -> ChickenEntity {
+    fn pig() -> Arc<ChickenEntity> {
         ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new())
     }
 
@@ -122,10 +122,9 @@ mod tests {
     fn climb_on_top_of_powder_snow_goal_ticks_jump_control() {
         init_vanilla_registry();
         let mut goal = ClimbOnTopOfPowderSnowGoal::new();
-        let mob = Arc::new(pig());
-        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
+        let mob = pig();
 
-        goal.tick(&mob.mob(), &mob_entity);
+        goal.tick(&mob.mob());
 
         assert!(mob.mob().mob_base().controls().lock().jump_control.tick());
     }

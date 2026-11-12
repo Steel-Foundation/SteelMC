@@ -162,7 +162,7 @@ impl EyeOfEnderEntity {
                 self.item(),
                 Arc::downgrade(&world),
             );
-            if let Err(error) = world.try_add_entity(Arc::new(item)) {
+            if let Err(error) = world.try_add_entity(item) {
                 log::warn!("failed to drop eye of ender item: {error}");
             }
         } else {

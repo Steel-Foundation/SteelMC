@@ -416,7 +416,7 @@ impl Living<'_> {
         clippy::unused_self,
         reason = "vanilla's base body; entity types override it through `LivingProps`"
     )]
-    pub fn server_ai_step_default(&self, _entity: &SharedEntity) {}
+    pub const fn server_ai_step_default(&self) {}
 
     /// Returns the jump-height bonus from the Jump Boost effect, scaling with amplifier.
     #[must_use]
@@ -530,17 +530,12 @@ impl Living<'_> {
     }
 
     /// Handles movement while this entity is being ridden and steered by a controlling player.
-    pub fn travel_ridden(
-        &self,
-        entity: &SharedEntity,
-        controller: &Player,
-        self_input: DVec3,
-    ) -> Option<MoveResult> {
+    pub fn travel_ridden(&self, controller: &Player, self_input: DVec3) -> Option<MoveResult> {
         let ridden_input = self.ridden_input(controller, self_input);
         self.tick_ridden(controller, ridden_input);
         if self.can_simulate_movement() {
             self.set_speed(self.ridden_speed(controller));
-            return self.travel(entity, ridden_input);
+            return self.travel(ridden_input);
         }
 
         self.set_velocity(DVec3::ZERO);
@@ -551,7 +546,8 @@ impl Living<'_> {
     ///
     /// This covers the shared travel state Steel currently has; mob AI and
     /// equipment ticking are still separate follow-up work.
-    pub fn default_ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+    #[must_use]
+    pub fn default_ai_step(&self) -> Option<MoveResult> {
         self.tick_no_jump_delay();
         if !self.can_simulate_movement() {
             self.set_velocity(self.velocity() * 0.98);
@@ -565,7 +561,7 @@ impl Living<'_> {
             let input = self.travel_input();
             self.set_travel_input(LivingTravelInput::new(0.0, input.vertical(), 0.0));
         } else if self.is_effective_ai() {
-            self.server_ai_step(entity);
+            self.server_ai_step();
         }
 
         self.handle_living_jump();
@@ -590,9 +586,9 @@ impl Living<'_> {
             && let Some(controller_entity) = self.controlling_passenger()
             && let Some(controller) = controller_entity.as_player()
         {
-            self.travel_ridden(entity, controller, input)
+            self.travel_ridden(controller, input)
         } else if self.can_simulate_movement() && self.is_effective_ai() {
-            self.travel(entity, input)
+            self.travel(input)
         } else {
             None
         };

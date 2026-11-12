@@ -252,6 +252,7 @@ impl Vegetation for SweetBerryBushBlock {}
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::WeakSelf;
     use std::sync::Weak;
 
     use steel_registry::{entity_type::EntityTypeRef, init_vanilla_registry, vanilla_blocks};
@@ -294,7 +295,13 @@ mod tests {
 
         fn new(entity_type: EntityTypeRef, living_base: Option<LivingEntityBase>) -> Self {
             Self {
-                base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::<World>::new()),
+                base: EntityBase::new(
+                    1,
+                    DVec3::ZERO,
+                    entity_type.dimensions,
+                    Weak::<World>::new(),
+                    WeakSelf::detached(),
+                ),
                 entity_type,
                 living_base,
                 uses_client_movement_packets: false,

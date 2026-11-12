@@ -36,7 +36,7 @@ fn cow_loads_vanilla_age_and_variant_data() {
     nbt.insert("sound_variant", "minecraft:moody");
 
     let cow = CowEntity::new(&vanilla_entities::COW, 1, DVec3::ZERO, Weak::new());
-    load_additional(&cow, &nbt);
+    load_additional(&*cow, &nbt);
 
     assert_eq!(cow.animal().ageable().age(), -24_000);
     assert!(cow.animal().ageable().is_age_locked());

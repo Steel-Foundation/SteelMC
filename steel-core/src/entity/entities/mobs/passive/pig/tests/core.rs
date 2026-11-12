@@ -82,7 +82,7 @@ fn pig_saves_and_loads_its_saddle_and_variants() {
     pig.save_additional(&mut nbt);
 
     let loaded = self::pig(2);
-    load_additional(&loaded, &nbt);
+    load_additional(&*loaded, &nbt);
     assert!(loaded.mob().is_saddled());
     assert_eq!(loaded.variant().key, vanilla_pig_variants::COLD.key);
     assert_eq!(

@@ -34,12 +34,12 @@ fn ready_tnt_world(key: &'static str) -> TestWorld {
 }
 
 fn primed_tnt(world: &Arc<World>, position: DVec3) -> Arc<PrimedTntEntity> {
-    Arc::new(PrimedTntEntity::new(
+    PrimedTntEntity::new(
         &vanilla_entities::TNT,
         next_entity_id(),
         position,
         Arc::downgrade(world),
-    ))
+    )
 }
 
 #[test]
@@ -76,13 +76,13 @@ fn cross_world_recreation_preserves_owner_and_explosion_attribution() {
     let player = TestPlayerBuilder::new(Arc::clone(source), "Owner", next_entity_id()).build();
     assert!(source.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     let owner: SharedEntity = player;
-    let previous = Arc::new(PrimedTntEntity::primed(
+    let previous = PrimedTntEntity::primed(
         &vanilla_entities::TNT,
         next_entity_id(),
         position,
         source,
         Some(owner.as_ref()),
-    ));
+    );
     let previous_entity: SharedEntity = Arc::<PrimedTntEntity>::clone(&previous);
     source
         .try_add_entity(Arc::clone(&previous_entity))
@@ -104,12 +104,12 @@ fn cross_world_recreation_preserves_owner_and_explosion_attribution() {
         .expect("recreated entity should remain primed TNT");
     assert!(recreated_tnt.state.lock().used_portal);
 
-    let victim = Arc::new(ChickenEntity::new(
+    let victim = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         next_entity_id(),
         position + DVec3::X,
         Arc::downgrade(target),
-    ));
+    );
     target
         .try_add_entity(Arc::<ChickenEntity>::clone(&victim))
         .expect("victim should enter the loaded target chunk");
@@ -218,8 +218,7 @@ fn teleported_tnt_preserves_nether_portal_but_explodes_other_blocks() {
     let entity = primed_tnt(world, test_tnt_position());
 
     entity.on_teleported();
-    let shared: SharedEntity = Arc::<PrimedTntEntity>::clone(&entity);
-    entity.explode(&shared, world);
+    entity.explode(world);
 
     assert_eq!(
         world.get_block_state(portal_pos).get_block(),

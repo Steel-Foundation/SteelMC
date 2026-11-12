@@ -2059,7 +2059,7 @@ impl WorldEntityManager {
     fn tick_non_passenger(&self, entity: &SharedEntity, dirty_chunks: &mut FxHashSet<ChunkPos>) {
         snapshot_old_pos_and_rot_for_tick(entity.as_ref());
         entity.advance_tick_count();
-        Arc::clone(entity).tick();
+        entity.tick();
         self.mark_dirty_after_tick(entity, dirty_chunks);
         self.tick_vehicle_passengers(entity.as_ref(), dirty_chunks);
     }

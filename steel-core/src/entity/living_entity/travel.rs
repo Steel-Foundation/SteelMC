@@ -127,15 +127,15 @@ impl Living<'_> {
     }
 
     /// Applies friction-adjusted relative movement and returns the resulting velocity and move result.
+    #[must_use]
     pub fn handle_relative_friction_and_calculate_movement(
         &self,
-        entity: &SharedEntity,
         input: DVec3,
         block_friction: f32,
     ) -> Option<(DVec3, MoveResult)> {
         self.move_relative(self.friction_influenced_speed(block_friction), input);
         self.set_velocity(self.handle_on_climbable(self.velocity()));
-        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())?;
+        let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
         let mut movement = self.velocity();
         if (result.horizontal_collision || self.is_jumping())
             && (self.on_climbable()
@@ -149,7 +149,8 @@ impl Living<'_> {
     }
 
     /// Handles movement, gravity, and air friction while the entity is airborne.
-    pub fn travel_in_air(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+    #[must_use]
+    pub fn travel_in_air(&self, input: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         let pos_below = self.block_pos_below_that_affects_movement()?;
         let block_friction = if self.on_ground() {
@@ -159,7 +160,7 @@ impl Living<'_> {
         };
         let horizontal_friction = block_friction * 0.91;
         let (movement, result) =
-            self.handle_relative_friction_and_calculate_movement(entity, input, block_friction)?;
+            self.handle_relative_friction_and_calculate_movement(input, block_friction)?;
         let movement_y = if let Some(levitation_y) = self.levitation_travel_y_delta(movement.y) {
             movement.y + levitation_y
         } else {
@@ -238,9 +239,9 @@ impl Living<'_> {
     }
 
     /// Handles movement, drag, and buoyancy effects while the entity is swimming in water.
+    #[must_use]
     pub fn travel_in_water(
         &self,
-        entity: &SharedEntity,
         input: DVec3,
         base_gravity: f64,
         is_falling: bool,
@@ -267,7 +268,7 @@ impl Living<'_> {
         }
 
         self.move_relative(speed, input);
-        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())?;
+        let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
         let mut movement = self.velocity();
         if result.horizontal_collision && self.on_climbable() {
             movement.y = 0.2;
@@ -285,16 +286,16 @@ impl Living<'_> {
     }
 
     /// Handles movement and drag effects while the entity is moving through lava.
+    #[must_use]
     pub fn travel_in_lava(
         &self,
-        entity: &SharedEntity,
         input: DVec3,
         base_gravity: f64,
         is_falling: bool,
         old_y: f64,
     ) -> Option<MoveResult> {
         self.move_relative(0.02, input);
-        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity())?;
+        let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
         if self.fluid_contact().lava_height() <= self.fluid_jump_threshold() {
             let movement = self.velocity();
             self.set_velocity(DVec3::new(
@@ -321,17 +322,18 @@ impl Living<'_> {
     }
 
     /// Dispatches fluid movement handling to the water or lava variant based on the current fluid.
-    pub fn travel_in_fluid(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+    #[must_use]
+    pub fn travel_in_fluid(&self, input: DVec3) -> Option<MoveResult> {
         let is_falling = self.velocity().y <= 0.0;
         let old_y = self.position().y;
         let base_gravity = self.effective_gravity();
         if self.is_in_water() {
-            let result = self.travel_in_water(entity, input, base_gravity, is_falling, old_y);
+            let result = self.travel_in_water(input, base_gravity, is_falling, old_y);
             self.float_in_water_while_ridden();
             return result;
         }
 
-        self.travel_in_lava(entity, input, base_gravity, is_falling, old_y)
+        self.travel_in_lava(input, base_gravity, is_falling, old_y)
     }
 
     /// Mirrors the validation part of vanilla `LivingEntity.updateFallFlying()`.
@@ -427,9 +429,10 @@ impl Living<'_> {
     }
 
     /// Handles movement, lift, and collision damage while the entity is gliding with an elytra.
-    pub fn travel_fall_flying(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+    #[must_use]
+    pub fn travel_fall_flying(&self, input: DVec3) -> Option<MoveResult> {
         if self.on_climbable() {
-            let result = self.travel_in_air(entity, input);
+            let result = self.travel_in_air(input);
             self.stop_fall_flying();
             return result;
         }
@@ -437,7 +440,7 @@ impl Living<'_> {
         let previous_movement = self.velocity();
         let previous_horizontal_speed = horizontal_distance(previous_movement);
         self.set_velocity(self.update_fall_flying_movement(previous_movement));
-        let result = Arc::clone(entity).move_entity(MoverType::SelfMovement, self.velocity());
+        let result = self.move_entity(MoverType::SelfMovement, self.velocity());
         let new_horizontal_speed = horizontal_distance(self.velocity());
         self.handle_fall_flying_collisions(previous_horizontal_speed, new_horizontal_speed);
         result
@@ -445,16 +448,17 @@ impl Living<'_> {
 
     /// Dispatches movement to fluid, fall-flying, or air travel handling
     /// based on current state.
-    pub fn default_travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
+    #[must_use]
+    pub fn default_travel(&self, input: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         let fluid_state = get_fluid_state(&world, self.block_position());
         if self.should_travel_in_fluid(fluid_state) {
-            return self.travel_in_fluid(entity, input);
+            return self.travel_in_fluid(input);
         }
         if self.is_fall_flying() {
-            return self.travel_fall_flying(entity, input);
+            return self.travel_fall_flying(input);
         }
 
-        self.travel_in_air(entity, input)
+        self.travel_in_air(input)
     }
 }

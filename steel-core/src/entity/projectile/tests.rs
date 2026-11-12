@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::WeakSelf;
 use steel_registry::{entity_type::EntityTypeRef, init_vanilla_registry, vanilla_entities};
 
 use steel_registry::blocks::properties::{BlockStateProperties, Tilt};
@@ -28,6 +29,7 @@ impl OwnerCollisionProjectile {
                 position,
                 vanilla_entities::ENDER_PEARL.dimensions,
                 Arc::downgrade(test_world()),
+                WeakSelf::detached(),
             ),
             projectile_base: ProjectileBase::new(&Self::PROJECTILE),
         }
@@ -79,6 +81,7 @@ impl OwnerCollisionTestEntity {
                 position,
                 entity_type.dimensions,
                 Arc::downgrade(test_world()),
+                WeakSelf::detached(),
             ),
             pickable,
             entity_type,
@@ -226,12 +229,12 @@ fn firework_deflects_without_exploding_on_deflecting_entity() {
         .uuid(owner.uuid())
         .build();
     for cached in [false, true] {
-        let firework = Arc::new(FireworkRocketEntity::new(
+        let firework = FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             4,
             DVec3::ZERO,
             Arc::downgrade(&world),
-        ));
+        );
         if cached {
             firework.projectile().set_owner(Some(&owner));
         } else {
@@ -252,14 +255,12 @@ fn firework_deflects_without_exploding_on_deflecting_entity() {
             &vanilla_entities::BREEZE,
         );
 
-        let firework_entity: SharedEntity = Arc::<FireworkRocketEntity>::clone(&firework);
-        let deflection = firework.projectile().hit_target_or_deflect_self(
-            &firework_entity,
-            &ProjectileHit::Entity(EntityHitResult {
+        let deflection = firework
+            .projectile()
+            .hit_target_or_deflect_self(&ProjectileHit::Entity(EntityHitResult {
                 entity: deflector,
                 location: DVec3::X,
-            }),
-        );
+            }));
 
         assert_eq!(deflection, ProjectileDeflection::Reverse);
         assert_eq!(firework.velocity(), DVec3::new(-0.5, 0.0, 0.0));
@@ -301,12 +302,12 @@ fn base_block_hit_dispatches_vanilla_block_callbacks() {
                 .set_value(&BlockStateProperties::LIT, false);
             assert!(world.set_block(pos, unlit, UpdateFlags::UPDATE_ALL));
 
-            let firework = Arc::new(FireworkRocketEntity::new(
+            let firework = FireworkRocketEntity::new(
                 &vanilla_entities::FIREWORK_ROCKET,
                 3,
                 DVec3::new(1_136.5, 64.5, 1_136.5),
                 Arc::downgrade(&world),
-            ));
+            );
             let hit_block = |block_pos| {
                 firework.projectile().on_hit_block_base(&ClipHitResult {
                     location: firework.position(),

@@ -59,9 +59,11 @@ impl ThrownEggEntity {
             on_hit_entity: definition.on_hit_entity.then([Stage::new(
                 Self::ON_HIT_ENTITY,
                 |egg: &Self, ctx: &mut OnHitEntityCtx<'_>| {
-                    let (entity, target) = (ctx.entity, ctx.target);
-                    if let Some(world) = target.level() {
-                        target.hurt(&world, &egg.projectile().thrown_damage(entity), 0.0);
+                    let target = ctx.target;
+                    if let Some(world) = target.level()
+                        && let Some(source) = egg.projectile().thrown_damage()
+                    {
+                        target.hurt(&world, &source, 0.0);
                     }
                     Flow::Continue
                 },
@@ -108,12 +110,12 @@ impl ThrownEggEntity {
     /// Hatches a chick where the egg is, with the egg's chicken variant.
     /// Returns `false` when the chick does not fit, which stops the hatching.
     fn hatch_chick(&self, world: &Arc<World>) -> bool {
-        let chicken = Arc::new(ChickenEntity::new(
+        let chicken = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             next_entity_id(),
             self.position(),
             Arc::downgrade(world),
-        ));
+        );
         chicken.animal().ageable().set_age(BABY_START_AGE);
         chicken.set_rotation((self.rotation().0, 0.0));
         if let Some(variant) = self.throwable_item().item().get(CHICKEN_VARIANT) {
@@ -145,7 +147,7 @@ mod tests {
     use crate::test_support::{fresh_loaded_test_world, fresh_test_world, insert_ready_full_chunk};
     use glam::DVec3;
 
-    fn egg(world: &Arc<World>, pos: DVec3) -> ThrownEggEntity {
+    fn egg(world: &Arc<World>, pos: DVec3) -> Arc<ThrownEggEntity> {
         ThrownEggEntity::new(
             &vanilla_entities::EGG,
             next_entity_id(),

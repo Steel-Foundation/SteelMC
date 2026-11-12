@@ -339,7 +339,7 @@ mod tests {
         assert_eq!(nbt.byte("BatFlags"), Some(0));
 
         let loaded = BatEntity::new(&vanilla_entities::BAT, 2, DVec3::ZERO, Weak::new());
-        load_additional(&loaded, &nbt);
+        load_additional(&*loaded, &nbt);
         assert!(!loaded.is_resting());
     }
 

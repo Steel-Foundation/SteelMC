@@ -76,7 +76,7 @@ impl Goal for MoveTowardsTargetGoal {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::Weak;
 
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
@@ -105,12 +105,12 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveTowardsTargetGoal::new(1.0, 8.0);
         let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-        let target: SharedEntity = Arc::new(ChickenEntity::new(
+        let target: SharedEntity = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             2,
             DVec3::new(9.0, 0.0, 0.0),
             Weak::new(),
-        ));
+        );
         assert!(mob.mob().set_target(Some(&target)));
 
         assert!(!goal.can_use(&mob.mob()));

@@ -1,3 +1,4 @@
+use crate::entity::WeakSelf;
 use std::{sync::atomic::AtomicUsize, thread};
 
 use super::*;
@@ -18,6 +19,7 @@ impl SourceSelectiveHardCollisionTarget {
                 position,
                 vanilla_entities::ITEM.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             ),
             accepted_source_id,
         })
@@ -65,6 +67,7 @@ impl BroadCollisionSourceEntity {
                 position,
                 vanilla_entities::ITEM.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             ),
             accepted_target_id,
         })

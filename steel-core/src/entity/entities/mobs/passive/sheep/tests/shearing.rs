@@ -3,12 +3,12 @@ use crate::entity::entities::ItemEntity;
 
 fn sheep_in_world(world: &Arc<World>) -> Arc<SheepEntity> {
     insert_ready_full_chunk(world, ChunkPos::new(0, 0));
-    let sheep = Arc::new(SheepEntity::new(
+    let sheep = SheepEntity::new(
         &vanilla_entities::SHEEP,
         1,
         DVec3::new(0.5, 80.0, 0.5),
         Arc::downgrade(world),
-    ));
+    );
     world
         .try_add_entity(Arc::<SheepEntity>::clone(&sheep))
         .unwrap_or_else(|error| panic!("sheep should join the world: {error}"));

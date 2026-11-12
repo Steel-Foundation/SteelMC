@@ -62,10 +62,9 @@ impl EnderPearlEntity {
     fn define() -> Definition<Self> {
         let definition = Self::define_hits(throwable::definition());
         Definition {
-            tick: definition.tick.around(Self::TICK, |pearl, entity, inner| {
-                let shared = entity.entity;
-                pearl.entity_tick(shared, || {
-                    inner(pearl, entity);
+            tick: definition.tick.around(Self::TICK, |pearl, ctx, inner| {
+                pearl.entity_tick(|| {
+                    inner(pearl, ctx);
                 });
                 Flow::Continue
             }),
@@ -101,9 +100,11 @@ impl EnderPearlEntity {
             on_hit_entity: definition.on_hit_entity.then([Stage::new(
                 Self::ON_HIT_ENTITY,
                 |pearl: &Self, ctx: &mut OnHitEntityCtx<'_>| {
-                    let (entity, target) = (ctx.entity, ctx.target);
-                    if let Some(world) = target.level() {
-                        target.hurt(&world, &pearl.projectile().thrown_damage(entity), 0.0);
+                    let target = ctx.target;
+                    if let Some(world) = target.level()
+                        && let Some(source) = pearl.projectile().thrown_damage()
+                    {
+                        target.hurt(&world, &source, 0.0);
                     }
                     Flow::Continue
                 },
@@ -146,7 +147,7 @@ impl EnderPearlEntity {
 
     /// `ThrownEnderpearl.tick`: vanishes when its owner died (if the game
     /// rule says so), then flies and keeps its chunk loaded.
-    fn entity_tick(&self, entity: &SharedEntity, super_tick: impl FnOnce()) {
+    fn entity_tick(&self, super_tick: impl FnOnce()) {
         let Some(world) = self.level() else {
             super_tick();
             return;
@@ -174,8 +175,11 @@ impl EnderPearlEntity {
             *timer -= 1;
             *timer <= 0 || current_chunk != previous_chunk
         };
-        if renew && let Some(player) = owner_player {
-            player.register_ender_pearl(entity);
+        if renew
+            && let Some(player) = owner_player
+            && let Some(pearl) = self.shared()
+        {
+            player.register_ender_pearl(&pearl);
             world.chunk_map.place_ender_pearl_ticket(current_chunk);
             // Vanilla `registerAndUpdateEnderPearlTicket` returns `timeout - 1`.
             *self.ticket_timer.lock() = ENDER_PEARL_TICKET_TIMEOUT - 1;
@@ -235,12 +239,12 @@ impl EnderPearlEntity {
             && world.get_game_rule(&SPAWN_MONSTERS)
             && world.difficulty() != Difficulty::Peaceful
         {
-            let endermite = Arc::new(EndermiteEntity::new(
+            let endermite = EndermiteEntity::new(
                 &vanilla_entities::ENDERMITE,
                 next_entity_id(),
                 owner.position(),
                 Arc::downgrade(world),
-            ));
+            );
             endermite.set_rotation(owner.rotation());
             if let Err(error) = world.try_add_entity(endermite) {
                 log::debug!("failed to add ender pearl endermite: {error}");

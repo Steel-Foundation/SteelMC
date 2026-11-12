@@ -5,8 +5,8 @@ use steel_utils::BlockPos;
 
 use super::selector::{Goal, GoalControls};
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::entity::Mob;
 use crate::entity::ai::path::Path;
-use crate::entity::{Mob, SharedEntity};
 
 pub(super) struct DoorInteractGoal {
     door_pos: BlockPos,
@@ -172,7 +172,7 @@ impl Goal for DoorInteractGoal {
         true
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         Self::tick(self, mob);
     }
 }
@@ -186,7 +186,7 @@ fn distance_to_door_sqr(mob: &Mob<'_>, door_pos: BlockPos) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
@@ -196,7 +196,7 @@ mod tests {
     use crate::entity::entities::ChickenEntity;
     use crate::entity::{Entity, EntityGroundContact, EntityMovementFlags};
 
-    fn pig(position: DVec3) -> ChickenEntity {
+    fn pig(position: DVec3) -> Arc<ChickenEntity> {
         ChickenEntity::new(&vanilla_entities::CHICKEN, 1, position, Weak::new())
     }
 

@@ -110,7 +110,7 @@ fn get_hide_pos_with(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
@@ -118,7 +118,7 @@ mod tests {
     use super::*;
     use crate::entity::entities::ChickenEntity;
 
-    fn pig() -> ChickenEntity {
+    fn pig() -> Arc<ChickenEntity> {
         ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new())
     }
 

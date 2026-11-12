@@ -14,7 +14,7 @@ use crate::server::worlds::WorldMap;
 use crate::test_support::{TestPlayerBuilder, insert_ready_full_chunk, test_domain};
 use crate::world::World;
 
-fn pearl(world: &Arc<World>) -> EnderPearlEntity {
+fn pearl(world: &Arc<World>) -> Arc<EnderPearlEntity> {
     EnderPearlEntity::new(
         &vanilla_entities::ENDER_PEARL,
         10,
@@ -145,22 +145,19 @@ fn uuid_owner_is_attributed_on_projectile_entity_hit() {
     worlds[0]
         .try_add_entity(Arc::clone(&owner))
         .expect("register owner");
-    let projectile = Arc::new(pearl(worlds[1]));
+    let projectile = pearl(worlds[1]);
     projectile.projectile().set_owner_uuid(Some(owner.uuid()));
-    let victim = Arc::new(ChickenEntity::new(
+    let victim = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         2,
         DVec3::ZERO,
         Arc::downgrade(worlds[1]),
-    ));
+    );
     let target: SharedEntity = Arc::<ChickenEntity>::clone(&victim);
     worlds[1]
         .try_add_entity(Arc::clone(&target))
         .expect("register victim");
-    let projectile_entity: SharedEntity = Arc::<EnderPearlEntity>::clone(&projectile);
-    projectile
-        .projectile()
-        .on_hit_entity(&projectile_entity, &target, DVec3::ZERO);
+    projectile.projectile().on_hit_entity(&target, DVec3::ZERO);
     let source = victim
         .living()
         .last_damage_source()
@@ -196,7 +193,7 @@ fn serialized_owner_resolves_by_uuid_and_loading_clears_old_cache() {
         Some(owner.uuid().to_int_array().as_slice())
     );
     let loaded = pearl(worlds[1]);
-    load_additional(&loaded, &nbt);
+    load_additional(&*loaded, &nbt);
     assert!(Arc::ptr_eq(
         &loaded.projectile().owner().expect("loaded UUID owner"),
         &owner
@@ -212,7 +209,7 @@ fn serialized_owner_resolves_by_uuid_and_loading_clears_old_cache() {
         if let Some(tag) = owner_tag {
             nbt.insert("Owner", tag);
         }
-        load_additional(&loaded, &nbt);
+        load_additional(&*loaded, &nbt);
         assert!(loaded.projectile().owner().is_none());
     }
 }

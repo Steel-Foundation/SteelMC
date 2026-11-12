@@ -1,3 +1,4 @@
+use crate::entity::WeakSelf;
 use std::sync::{
     Arc, Barrier, LazyLock, Weak,
     atomic::{AtomicUsize, Ordering},
@@ -62,7 +63,14 @@ impl ManagerTestEntity {
         entity_type: EntityTypeRef,
     ) -> SharedEntity {
         Arc::new(Self {
-            base: EntityBase::with_uuid(id, uuid, position, entity_type.dimensions, Weak::new()),
+            base: EntityBase::with_uuid(
+                id,
+                uuid,
+                position,
+                entity_type.dimensions,
+                Weak::new(),
+                WeakSelf::detached(),
+            ),
             entity_type,
             always_ticking: false,
             hard_collision_relevant: true,
@@ -77,6 +85,7 @@ impl ManagerTestEntity {
                 position,
                 vanilla_entities::ITEM.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             ),
             entity_type: &vanilla_entities::ITEM,
             always_ticking: false,
@@ -92,6 +101,7 @@ impl ManagerTestEntity {
                 position,
                 vanilla_entities::ITEM.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             ),
             entity_type: &vanilla_entities::ITEM,
             always_ticking: true,
@@ -121,6 +131,7 @@ impl MovingTickTestEntity {
                 position,
                 vanilla_entities::ITEM.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             ),
             tick_position,
             tick_rotation,
@@ -195,6 +206,7 @@ impl AddDuringTickTestEntity {
                 position,
                 vanilla_entities::ITEM.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             ),
             manager,
             entity_to_add: SyncMutex::new(Some(entity_to_add)),
@@ -266,6 +278,7 @@ impl DespawnOnCheckTestEntity {
                 position,
                 vanilla_entities::ITEM.dimensions,
                 Weak::new(),
+                WeakSelf::detached(),
             ),
         })
     }

@@ -117,6 +117,7 @@ impl BlockBehavior for RedStoneOreBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::WeakSelf;
     use std::sync::Arc;
 
     use glam::DVec3;
@@ -146,6 +147,7 @@ mod tests {
                     DVec3::new(8.5, 65.0, 8.5),
                     vanilla_entities::PIG.dimensions,
                     Arc::downgrade(world),
+                    WeakSelf::detached(),
                 ),
                 careful,
             }

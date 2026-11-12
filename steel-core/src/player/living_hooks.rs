@@ -56,7 +56,7 @@ impl Player {
         });
     }
 
-    pub(super) fn tick_player(&self, entity: &SharedEntity) {
+    pub(super) fn tick_player(&self) {
         self.advance_tick();
         self.tick_item_cooldowns();
         self.tick_attack_strength();
@@ -98,7 +98,7 @@ impl Player {
         self.base_tick();
         self.living().detect_equipment_updates();
         if !self.is_removed() {
-            let _movement = self.living().ai_step(entity);
+            let _movement = self.living().ai_step();
         }
 
         // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
@@ -114,7 +114,7 @@ impl Player {
 
         self.living_base.decrement_invulnerable_time();
         self.living().tick_mob_effects();
-        self.tick_active_item_use(entity);
+        self.tick_active_item_use();
         self.tick_stats();
 
         if self.living().health() <= 0.0 {

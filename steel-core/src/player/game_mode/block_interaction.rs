@@ -143,8 +143,7 @@ impl Player {
                 self.drop_from_selected(false);
             }
             PlayerAction::ReleaseUseItem => {
-                let player: SharedEntity = Arc::<Player>::clone(self);
-                self.release_using_item(&player);
+                self.release_using_item();
             }
             PlayerAction::SwapItemWithOffhand => {
                 if self.game_mode() == GameType::Spectator {

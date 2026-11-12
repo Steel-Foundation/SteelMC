@@ -62,7 +62,7 @@ pub const ON_HIT_BLOCK: StageId = StageId("thrown_potion.on_hit_block");
 #[must_use]
 pub fn definition<E: Parts>() -> Definition<E> {
     fn on_hit_stage<E: Parts>(potion: &E, ctx: &mut OnHitCtx<'_>) -> Flow {
-        on_hit(potion, ctx.entity, ctx.hit);
+        on_hit(potion, ctx.hit);
         Flow::Continue
     }
     fn on_hit_block_stage<E: Parts>(potion: &E, ctx: &mut OnHitBlockCtx<'_>) -> Flow {
@@ -96,17 +96,20 @@ pub const fn projectile_props<E: Parts>() -> ProjectileProps<E> {
 /// `AbstractThrownPotion.onHit` after `super`: affects water-sensitive and
 /// burning entities, applies the potion, then breaks with its particles and
 /// sound.
-fn on_hit<E: Parts>(potion: &E, entity: &SharedEntity, hit: &ProjectileHit) {
+fn on_hit<E: Parts>(potion: &E, hit: &ProjectileHit) {
     let Some(world) = potion.level() else {
+        return;
+    };
+    let Some(entity) = potion.shared() else {
         return;
     };
 
     let potion_item = potion.throwable_item().item();
     let contents =
         potion_item.get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
-    affect_entities_around(&potion.projectile(), entity, &world, &contents);
+    affect_entities_around(&potion.projectile(), &entity, &world, &contents);
     if contents.has_effects() {
-        potion.on_hit_as_potion(entity, &world, &potion_item, hit);
+        potion.on_hit_as_potion(&entity, &world, &potion_item, hit);
     }
 
     let has_instant_effects = contents

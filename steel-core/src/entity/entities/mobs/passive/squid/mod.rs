@@ -85,12 +85,12 @@ impl SquidEntity {
 
     const AGEABLE: AgeableProps = AgeableProps {
         breed_offspring: |parent, world, _| {
-            let squid: SharedEntity = Arc::new(SquidEntity::new(
+            let squid: SharedEntity = SquidEntity::new(
                 &vanilla_entities::SQUID,
                 next_entity_id(),
                 parent.entity().position(),
                 Arc::downgrade(world),
-            ));
+            );
             Some(squid)
         },
     };
@@ -144,8 +144,7 @@ impl SquidEntity {
             travel: Pipeline::new([Stage::new(
                 Self::TRAVEL,
                 |squid: &Self, ctx: &mut TravelCtx<'_>| {
-                    ctx.result = Arc::clone(ctx.entity)
-                        .move_entity(MoverType::SelfMovement, squid.velocity());
+                    ctx.result = squid.move_entity(MoverType::SelfMovement, squid.velocity());
                     Flow::Continue
                 },
             )]),

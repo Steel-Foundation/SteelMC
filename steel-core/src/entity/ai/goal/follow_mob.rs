@@ -111,7 +111,7 @@ impl Goal for FollowMobGoal {
         mob.set_pathfinding_malus(PathType::Water, self.old_water_cost);
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         let Some(following_mob) = &self.following_mob else {
             return;
         };
@@ -213,12 +213,12 @@ mod tests {
         init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
         let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-        goal.following_mob = Some(Arc::new(ChickenEntity::new(
+        goal.following_mob = Some(ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             2,
             DVec3::new(4.0, 0.0, 0.0),
             Weak::new(),
-        )));
+        ));
 
         assert!(!goal.can_continue_to_use(&mob.mob()));
     }
@@ -227,22 +227,16 @@ mod tests {
     fn follow_mob_goal_looks_at_following_mob() {
         init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
-        let mob = Arc::new(ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
-        let mob_entity: SharedEntity = Arc::<ChickenEntity>::clone(&mob);
-        let following_mob: SharedEntity = Arc::new(ChickenEntity::new(
+        let mob = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+        let following_mob: SharedEntity = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             2,
             DVec3::new(4.0, 0.0, 0.0),
             Weak::new(),
-        ));
+        );
         goal.following_mob = Some(Arc::clone(&following_mob));
 
-        goal.tick(&mob.mob(), &mob_entity);
+        goal.tick(&mob.mob());
 
         let wanted_position = mob
             .mob()

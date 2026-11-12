@@ -194,12 +194,12 @@ mod tests {
         let world = &world_fixture.world;
 
         let spawn = |x| {
-            let endermite = Arc::new(EndermiteEntity::new(
+            let endermite = EndermiteEntity::new(
                 &vanilla_entities::ENDERMITE,
                 next_entity_id(),
                 DVec3::new(x, 65.0, 8.0),
                 Arc::downgrade(world),
-            ));
+            );
             world
                 .try_add_entity(Arc::clone(&endermite) as SharedEntity)
                 .expect("test endermite should attach to the loaded chunk");
@@ -234,7 +234,7 @@ mod tests {
 
         let loaded =
             EndermiteEntity::new(&vanilla_entities::ENDERMITE, 2, DVec3::ZERO, Weak::new());
-        load_additional(&loaded, &nbt);
+        load_additional(&*loaded, &nbt);
         assert_eq!(*loaded.life.lock(), 1234);
     }
 }

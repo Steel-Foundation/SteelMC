@@ -96,7 +96,7 @@ fn sheep_saves_and_loads_wool() {
     assert_eq!(nbt.byte("Color"), Some(DyeColor::Lime.id() as i8));
 
     let loaded = self::sheep(2);
-    load_additional(&loaded, &nbt);
+    load_additional(&*loaded, &nbt);
     assert_eq!(loaded.color(), DyeColor::Lime);
     assert!(loaded.is_sheared());
 }

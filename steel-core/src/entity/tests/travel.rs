@@ -79,13 +79,12 @@ fn living_ai_step_keeps_player_horizontal_velocity_above_combined_threshold() {
 fn default_ai_step_resets_idle_jump_delay_and_dampens_input_before_travel() {
     init_vanilla_registry();
     let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
-    let shared_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
     entity.living().set_no_jump_delay(2);
     entity
         .living()
         .set_travel_input(LivingTravelInput::new(1.0, 0.5, -1.0));
 
-    assert!(entity.living().default_ai_step(&shared_entity).is_none());
+    assert!(entity.living().default_ai_step().is_none());
 
     assert_eq!(entity.living().no_jump_delay(), 0);
     assert_eq!(
@@ -100,22 +99,20 @@ fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
     init_behaviors();
 
     let slow_falling = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
-    let slow_falling_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&slow_falling);
     slow_falling.set_fall_distance(7.0);
     slow_falling
         .living()
         .set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
-    slow_falling.living().default_ai_step(&slow_falling_entity);
+    let _ = slow_falling.living().default_ai_step();
 
     assert_f64_close(slow_falling.fall_distance(), 0.0);
 
     let levitating = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
-    let levitating_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&levitating);
     levitating.set_fall_distance(7.0);
     levitating
         .living()
         .set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
-    levitating.living().default_ai_step(&levitating_entity);
+    let _ = levitating.living().default_ai_step();
 
     assert_f64_close(levitating.fall_distance(), 0.0);
 }
@@ -124,12 +121,11 @@ fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
 fn default_ai_step_jumps_from_ground_and_sets_vanilla_cooldown() {
     init_vanilla_registry();
     let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
-    let shared_entity: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
     let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
     entity.set_on_ground(true);
     entity.living().set_jumping(true);
 
-    assert!(entity.living().default_ai_step(&shared_entity).is_none());
+    assert!(entity.living().default_ai_step().is_none());
 
     assert_vec3_close(entity.velocity(), DVec3::new(0.0, jump_strength, 0.0));
     assert_eq!(entity.living().no_jump_delay(), 10);

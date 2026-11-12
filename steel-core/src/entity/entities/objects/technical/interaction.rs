@@ -1,6 +1,6 @@
 //! Vanilla `Interaction`: an invisible box that records player clicks.
 
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::nbt::NbtValueInput as _;
 
@@ -21,7 +21,7 @@ use crate::entity::component::definition::Definition;
 use crate::entity::component::definition::InteractCtx;
 use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::prelude::*;
-use crate::entity::{EntityBase, EntityBaseLoad, EntityProps, SharedEntity};
+use crate::entity::{EntityBase, EntityBaseLoad, EntityProps, SharedEntity, WeakSelf};
 use crate::player::Player;
 use crate::world::World;
 
@@ -84,17 +84,29 @@ impl InteractionEntity {
 
     /// Creates a new interaction.
     #[must_use]
-    pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
-        Self::from_base(
-            EntityBase::new(id, position, DEFAULT_DIMENSIONS, world),
-            entity_type,
-        )
+    pub fn new(
+        entity_type: EntityTypeRef,
+        id: i32,
+        position: DVec3,
+        world: Weak<World>,
+    ) -> Arc<Self> {
+        WeakSelf::build(|this| {
+            Self::from_base(
+                EntityBase::new(id, position, DEFAULT_DIMENSIONS, world, this),
+                entity_type,
+            )
+        })
     }
 
     /// Reconstructs an interaction from saved base data.
     #[must_use]
-    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
-        Self::from_base(EntityBase::from_load(load, DEFAULT_DIMENSIONS), entity_type)
+    pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Arc<Self> {
+        WeakSelf::build(|this| {
+            Self::from_base(
+                EntityBase::from_load(load, DEFAULT_DIMENSIONS, this),
+                entity_type,
+            )
+        })
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {

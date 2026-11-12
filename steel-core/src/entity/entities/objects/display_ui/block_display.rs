@@ -129,25 +129,25 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         );
-        load_additional(&loaded, &nbt);
+        load_additional(&*loaded, &nbt);
         assert_eq!(loaded.block_state(), state);
     }
 
     #[test]
     fn block_display_leaves_a_removed_vehicle() {
         init_vanilla_registry();
-        let display: SharedEntity = Arc::new(BlockDisplayEntity::new(
+        let display: SharedEntity = BlockDisplayEntity::new(
             &vanilla_entities::BLOCK_DISPLAY,
             1,
             DVec3::ZERO,
             Weak::new(),
-        ));
-        let vehicle: SharedEntity = Arc::new(BlockDisplayEntity::new(
+        );
+        let vehicle: SharedEntity = BlockDisplayEntity::new(
             &vanilla_entities::BLOCK_DISPLAY,
             2,
             DVec3::ZERO,
             Weak::new(),
-        ));
+        );
         EntityBase::restore_passenger_relationship(&vehicle, &display);
         vehicle.set_removed(RemovalReason::Discarded);
 

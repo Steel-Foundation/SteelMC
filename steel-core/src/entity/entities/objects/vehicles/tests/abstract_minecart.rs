@@ -7,10 +7,10 @@ use steel_utils::{ChunkPos, types::UpdateFlags};
 use super::*;
 use crate::entity::entities::objects::vehicles::test_support::{assert_vec_close, test_world};
 use crate::entity::entities::{MinecartEntity, PigEntity};
-use crate::entity::{EntityBase, EntityEventSource, EntityFluidContact};
+use crate::entity::{EntityBase, EntityFluidContact};
 use crate::test_support::load_additional;
 
-fn test_cart(id: i32, position: DVec3) -> MinecartEntity {
+fn test_cart(id: i32, position: DVec3) -> Arc<MinecartEntity> {
     init_vanilla_registry();
     MinecartEntity::new(&vanilla_entities::MINECART, id, position, Weak::new())
 }
@@ -23,14 +23,10 @@ fn natural_slowdown_handles_passengers_water_and_vertical_motion() {
         (true, false, 0.997),
         (true, true, 0.947_149_988_114_833_9),
     ] {
-        let cart = Arc::new(test_cart(1, DVec3::ZERO));
-        let vehicle = Arc::clone(&cart).into_shared_entity();
-        let passenger: SharedEntity = Arc::new(PigEntity::new(
-            &vanilla_entities::PIG,
-            2,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
+        let cart = test_cart(1, DVec3::ZERO);
+        let vehicle: SharedEntity = Arc::<MinecartEntity>::clone(&cart);
+        let passenger: SharedEntity =
+            PigEntity::new(&vanilla_entities::PIG, 2, DVec3::ZERO, Weak::new());
 
         if occupied {
             EntityBase::restore_passenger_relationship(&vehicle, &passenger);
@@ -92,13 +88,13 @@ fn derailing_clamps_before_ground_slowdown_and_applies_air_drag_after_moving() {
         }
 
         let start = DVec3::new(8.5, 64.0, 8.5);
-        let cart = Arc::new(MinecartEntity::new(
+        let cart = MinecartEntity::new(
             &vanilla_entities::MINECART,
             8_001,
             start,
             Arc::downgrade(world),
-        ));
-        let entity = Arc::clone(&cart).into_shared_entity();
+        );
+        let entity: SharedEntity = Arc::<MinecartEntity>::clone(&cart);
 
         world
             .try_add_entity(Arc::clone(&entity))
@@ -106,7 +102,7 @@ fn derailing_clamps_before_ground_slowdown_and_applies_air_drag_after_moving() {
 
         cart.set_on_ground(grounded);
         cart.set_velocity(initial_velocity);
-        cart.abstract_minecart().come_off_track(&entity, world);
+        cart.abstract_minecart().come_off_track(world);
 
         assert_vec_close(cart.position() - start, expected_displacement);
         assert_vec_close(cart.velocity(), expected_velocity);
@@ -133,7 +129,7 @@ fn aligned_cart_collisions_exchange_horizontal_velocity() {
         first.set_velocity(DVec3::new(0.3, 0.5, 0.0));
         second.set_velocity(DVec3::new(-0.1, -0.25, 0.0));
 
-        first.abstract_minecart().push_entity(&second);
+        first.abstract_minecart().push_entity(&*second);
 
         assert_vec_close(first.velocity(), DVec3::new(expected_first_x, 0.5, 0.0));
         assert_vec_close(second.velocity(), DVec3::new(expected_second_x, -0.25, 0.0));
@@ -152,7 +148,7 @@ fn cart_push_distance_threshold_preserves_vanilla_float_precision() {
         let second = test_cart(2, DVec3::new(distance, 64.0, 0.0));
         first.set_rotation((0.0, 0.0));
 
-        first.abstract_minecart().push_entity(&second);
+        first.abstract_minecart().push_entity(&*second);
 
         assert_vec_close(first.velocity(), DVec3::new(-expected_impulse, 0.0, 0.0));
         assert_vec_close(second.velocity(), DVec3::new(expected_impulse, 0.0, 0.0));
@@ -186,7 +182,7 @@ fn display_settings_and_rotation_round_trip_with_vanilla_has_ticked_semantics() 
 
         let loaded = test_cart(2, DVec3::ZERO);
         loaded.set_first_tick(!first_tick);
-        load_additional(&loaded, &saved);
+        load_additional(&*loaded, &saved);
 
         assert_eq!(
             loaded.abstract_minecart().custom_display_block(),
@@ -207,7 +203,7 @@ fn loading_empty_nbt_clears_previous_settings_and_omits_default_display_fields()
     cart.abstract_minecart().set_flipped(true);
     cart.set_first_tick(true);
 
-    load_additional(&cart, &NbtCompound::new());
+    load_additional(&*cart, &NbtCompound::new());
 
     assert_eq!(cart.abstract_minecart().custom_display_block(), None);
     assert_eq!(cart.abstract_minecart().display_offset(), 6);

@@ -2,7 +2,7 @@ use super::*;
 use crate::bootstrap::init_globals;
 use steel_registry::init_vanilla_registry;
 
-fn cow(id: i32) -> CowEntity {
+fn cow(id: i32) -> Arc<CowEntity> {
     CowEntity::new(&vanilla_entities::COW, id, DVec3::ZERO, Weak::new())
 }
 

@@ -160,7 +160,7 @@ fn falling_block_persistence_and_spawn_data_preserve_the_carried_state() {
             world: Weak::new(),
         },
     );
-    load_additional(&loaded, &saved);
+    load_additional(&*loaded, &saved);
 
     let loaded_state = loaded.state.lock();
     assert_eq!(loaded_state.block_state, block_state);

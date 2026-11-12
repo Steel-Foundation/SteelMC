@@ -76,12 +76,7 @@ fn spawn_pairing_includes_live_mob_leash_link_packet() {
     init_vanilla_registry();
 
     let tracker = EntityTracker::new();
-    let pig_typed = Arc::new(ChickenEntity::new(
-        &vanilla_entities::CHICKEN,
-        1,
-        DVec3::ZERO,
-        Weak::new(),
-    ));
+    let pig_typed = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
     let holder: SharedEntity = PairingTestEntity::new(2, Vec::new());
     assert!(pig_typed.set_leashed_to(&holder));
     let pig: SharedEntity = pig_typed;
@@ -96,12 +91,8 @@ fn send_changes_broadcasts_leash_link_changes_once() {
     init_vanilla_registry();
 
     let tracker = EntityTracker::new();
-    let pig: SharedEntity = Arc::new(ChickenEntity::new(
-        &vanilla_entities::CHICKEN,
-        1,
-        DVec3::ZERO,
-        Weak::new(),
-    ));
+    let pig: SharedEntity =
+        ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
     let holder: SharedEntity = PairingTestEntity::new(2, Vec::new());
     track_entity_for_player(&tracker, &pig, 99);
     let Some(pig_mob) = pig.as_mob() else {

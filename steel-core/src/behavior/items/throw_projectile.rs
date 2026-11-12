@@ -1,5 +1,7 @@
 //! Shared item use logic for throwing projectiles
 
+use std::sync::Arc;
+
 use glam::DVec3;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::sound_event::SoundEventRef;
@@ -34,7 +36,7 @@ pub(super) struct ThrowParams {
 pub(super) fn throw_item_projectile<E: throwable_item::Parts>(
     context: &mut UseItemContext,
     params: &ThrowParams,
-    create: impl FnOnce(DVec3) -> E,
+    create: impl FnOnce(DVec3) -> Arc<E>,
 ) -> Option<SharedEntity> {
     let player = context.player;
     let world = context.world;

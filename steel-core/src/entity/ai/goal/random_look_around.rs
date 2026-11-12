@@ -3,9 +3,9 @@ use std::f64::consts::TAU;
 
 use glam::DVec3;
 
+use crate::entity::Mob;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
-use crate::entity::{Mob, SharedEntity};
 
 pub struct RandomLookAroundGoal {
     rel_x: f64,
@@ -54,7 +54,7 @@ impl Goal for RandomLookAroundGoal {
         true
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         self.look_time -= 1;
         let position = mob.position();
         mob.mob_base().controls().lock().look_control.set_look_at(
@@ -73,6 +73,7 @@ impl Goal for RandomLookAroundGoal {
 mod tests {
 
     use crate::entity::LivingProps;
+    use crate::entity::WeakSelf;
     use crate::test_support::synced_with_health;
     use std::sync::Arc;
 
@@ -109,6 +110,7 @@ mod tests {
                     DVec3::ZERO,
                     vanilla_entities::PIG.dimensions,
                     Weak::new(),
+                    WeakSelf::detached(),
                 ),
                 living_base: LivingEntityBase::without_synced_data(
                     &vanilla_entities::PIG,
@@ -192,11 +194,10 @@ mod tests {
     #[test]
     fn random_look_around_sets_look_control_to_eye_height() {
         let mob = Arc::new(TestPathfinderMob::new());
-        let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
         let mut goal = RandomLookAroundGoal::new();
 
         goal.start(&mob.mob());
-        goal.tick(&mob.mob(), &mob_entity);
+        goal.tick(&mob.mob());
 
         let look_control = mob.mob().mob_base().controls().lock().look_control;
         assert!(look_control.is_looking_at_target());

@@ -34,12 +34,12 @@ fn player_holding(world: &Arc<World>, weapon: ItemStack) -> Arc<Player> {
 }
 
 fn kill_pig(world: &Arc<World>, loot_seed: i64, source: &DamageSource) {
-    let pig = Arc::new(PigEntity::new(
+    let pig = PigEntity::new(
         &vanilla_entities::PIG,
         next_entity_id(),
         PIG_POSITION,
         Arc::downgrade(world),
-    ));
+    );
     pig.mob().set_death_loot_table_seed(loot_seed);
     world
         .try_add_entity(Arc::clone(&pig) as SharedEntity)

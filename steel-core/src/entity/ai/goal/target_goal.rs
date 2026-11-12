@@ -157,12 +157,7 @@ mod tests {
     use crate::entity::prelude::*;
 
     fn pig(id: i32, position: DVec3) -> Arc<ChickenEntity> {
-        Arc::new(ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
-            id,
-            position,
-            Weak::new(),
-        ))
+        ChickenEntity::new(&vanilla_entities::CHICKEN, id, position, Weak::new())
     }
 
     fn target_living(target: &SharedEntity) -> Living<'_> {

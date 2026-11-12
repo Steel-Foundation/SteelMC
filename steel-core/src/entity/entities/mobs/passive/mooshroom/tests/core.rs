@@ -89,12 +89,12 @@ fn shearing_turns_a_mooshroom_into_a_cow_and_drops_its_mushrooms() {
     init_globals();
     let world_fixture = fresh_loaded_test_world("mooshroom_shear");
     let world = &world_fixture.world;
-    let mooshroom = Arc::new(MushroomCowEntity::new(
+    let mooshroom = MushroomCowEntity::new(
         &vanilla_entities::MOOSHROOM,
         800_000,
         DVec3::new(0.5, 80.0, 0.5),
         Arc::downgrade(world),
-    ));
+    );
     world
         .try_add_entity(Arc::<MushroomCowEntity>::clone(&mooshroom))
         .unwrap_or_else(|error| panic!("mooshroom should join the world: {error}"));
@@ -156,7 +156,7 @@ fn mooshroom_saves_and_loads_its_variant_and_stew() {
     mooshroom.save_additional(&mut nbt);
 
     let loaded = self::mooshroom(2);
-    load_additional(&loaded, &nbt);
+    load_additional(&*loaded, &nbt);
     assert_eq!(loaded.variant(), MooshroomVariant::Brown);
     assert_eq!(loaded.stew_effects(), mooshroom.stew_effects());
 }

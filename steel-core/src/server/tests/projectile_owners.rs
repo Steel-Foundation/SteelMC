@@ -62,12 +62,12 @@ fn assert_pearl_impact(owner_in_nether: bool, pearl_in_nether: bool, cached: boo
             vanilla_blocks::STONE.default_state(),
             UpdateFlags::UPDATE_ALL,
         ));
-        let pearl = Arc::new(EnderPearlEntity::new(
+        let pearl = EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
             2,
             DVec3::new(0.5, 65.25, 0.5),
             Arc::downgrade(pearl_world),
-        ));
+        );
         if cached {
             let owner: SharedEntity = Arc::<Player>::clone(&player);
             pearl.projectile().set_owner(Some(&owner));

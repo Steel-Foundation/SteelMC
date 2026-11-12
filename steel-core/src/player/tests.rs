@@ -524,11 +524,10 @@ fn ai_step_copies_player_yaw_to_head_yaw() {
     init_vanilla_registry();
     init_behaviors();
     let player = test_player(Arc::clone(test_world()));
-    let player_entity: SharedEntity = Arc::<Player>::clone(&player);
     player.set_rotation((90.0, 15.0));
     player.living().set_y_head_rot(-45.0);
 
-    let _ = player.living().ai_step(&player_entity);
+    let _ = player.living().ai_step();
 
     assert_eq!(player.living().y_head_rot().to_bits(), 90.0_f32.to_bits());
 }
@@ -691,12 +690,12 @@ fn death_removes_tracked_entities_from_dead_players_client() {
     let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1)
         .connection(connection)
         .build();
-    let item: SharedEntity = Arc::new(ItemEntity::new(
+    let item: SharedEntity = ItemEntity::new(
         &vanilla_entities::ITEM,
         2,
         DVec3::ZERO,
         Arc::downgrade(world),
-    ));
+    );
 
     world.entity_tracker().add(
         &item,
@@ -946,12 +945,12 @@ fn hurt_uses_explicit_world_difficulty() {
 fn conditional_damage_does_not_scale_without_a_living_non_player_cause() {
     let world = hard_damage_test_world();
     let causing_player: SharedEntity = test_player(Arc::clone(world));
-    let object: SharedEntity = Arc::new(ItemEntity::new(
+    let object: SharedEntity = ItemEntity::new(
         &vanilla_entities::ITEM,
         2,
         DVec3::ZERO,
         Arc::downgrade(world),
-    ));
+    );
     for cause in [None, Some(causing_player), Some(object)] {
         let mut source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
         if let Some(cause) = cause {
@@ -1756,7 +1755,6 @@ fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tic
     let world_fixture = fresh_loaded_test_world("drink_honey_bottle_tick_loop_full_inventory");
     let world = &world_fixture.world;
     let player = test_player(Arc::clone(world));
-    let player_entity: SharedEntity = Arc::<Player>::clone(&player);
 
     {
         let mut inventory = player.inventory.lock();
@@ -1768,7 +1766,7 @@ fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tic
 
     player.start_using_item(InteractionHand::MainHand);
     for _ in 0..40 {
-        player.tick_active_item_use(&player_entity);
+        player.tick_active_item_use();
     }
 
     let hand_item = player
@@ -1944,12 +1942,12 @@ fn monster_prevents_rest_blocks_sleeping_near_a_bed() {
     assert!(player.living().is_sleeping());
     player.stop_sleep_in_bed(false, false);
 
-    let endermite: SharedEntity = Arc::new(EndermiteEntity::new(
+    let endermite: SharedEntity = EndermiteEntity::new(
         &vanilla_entities::ENDERMITE,
         next_entity_id(),
         DVec3::new(11.0, 65.0, 8.0),
         Arc::downgrade(world),
-    ));
+    );
     world
         .try_add_entity(Arc::clone(&endermite))
         .expect("test endermite should attach to the loaded chunk");
@@ -1986,12 +1984,12 @@ fn player_melee_attack_plays_sound_packets() {
     attacker.set_client_loaded(true);
     assert!(world.add_player(Arc::clone(&attacker), ResetReason::InitialJoin));
 
-    let pig = Arc::new(PigEntity::new(
+    let pig = PigEntity::new(
         &vanilla_entities::PIG,
         next_entity_id(),
         DVec3::new(1.0, 64.0, 1.0),
         Arc::downgrade(world),
-    ));
+    );
     let pig_target: SharedEntity = Arc::<PigEntity>::clone(&pig);
 
     // 1. Weak attack (freshly reset attack strength ticker, scale <= 0.9)
@@ -2033,12 +2031,12 @@ fn player_melee_attack_plays_sound_packets() {
     attacker.living().set_sprinting(false);
 
     // 4. Attack with no damage dealt / target cannot be hurt
-    let dead_pig = Arc::new(PigEntity::new(
+    let dead_pig = PigEntity::new(
         &vanilla_entities::PIG,
         next_entity_id(),
         DVec3::new(1.0, 64.0, 1.0),
         Arc::downgrade(world),
-    ));
+    );
     dead_pig.living().set_health(0.0);
     let dead_target: SharedEntity = Arc::<PigEntity>::clone(&dead_pig);
     sent_packets.lock().clear();

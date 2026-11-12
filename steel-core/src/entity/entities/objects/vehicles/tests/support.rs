@@ -8,7 +8,7 @@ use steel_utils::ChunkPos;
 
 use super::MinecartEntity;
 use crate::bootstrap::init_globals;
-use crate::entity::{EntityEventSource as _, next_entity_id};
+use crate::entity::next_entity_id;
 use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 use crate::world::World;
 
@@ -36,15 +36,15 @@ pub(crate) fn test_world(key: &'static str, chunk: ChunkPos) -> TestWorld {
 
 /// A minecart added to `world` at `(8.5, 64, 8.5)`.
 pub(crate) fn spawned_minecart(world: &Arc<World>) -> Arc<MinecartEntity> {
-    let cart = Arc::new(MinecartEntity::new(
+    let cart = MinecartEntity::new(
         &vanilla_entities::MINECART,
         next_entity_id(),
         DVec3::new(8.5, 64.0, 8.5),
         Arc::downgrade(world),
-    ));
+    );
 
     world
-        .try_add_entity(Arc::clone(&cart).into_shared_entity())
+        .try_add_entity(Arc::<MinecartEntity>::clone(&cart))
         .expect("test minecart should enter the loaded chunk");
 
     cart

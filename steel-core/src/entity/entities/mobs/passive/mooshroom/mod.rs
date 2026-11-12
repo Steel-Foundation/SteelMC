@@ -343,7 +343,7 @@ impl Shearable for MushroomCowEntity {
                         drop.copy_with_count(1),
                         Arc::downgrade(&world),
                     );
-                    let _ = world.try_add_entity(Arc::new(item));
+                    let _ = world.try_add_entity(item);
                 }
             }
         };

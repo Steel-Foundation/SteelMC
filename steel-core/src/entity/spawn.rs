@@ -692,12 +692,7 @@ mod tests {
     fn item_entity_data_overrides_entity_state_without_replacing_defaults() {
         init_vanilla_registry();
 
-        let chicken = Arc::new(ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
+        let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
         let entity: SharedEntity = Arc::<ChickenEntity>::clone(&chicken);
         chicken.set_custom_name(Some(TextComponent::plain("Existing")));
 
@@ -727,12 +722,7 @@ mod tests {
     fn item_chicken_variant_overrides_spawn_variant() {
         init_vanilla_registry();
 
-        let chicken = Arc::new(ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
+        let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
         chicken.set_variant(&vanilla_chicken_variants::WARM);
         let entity: SharedEntity = Arc::<ChickenEntity>::clone(&chicken);
 
@@ -752,12 +742,7 @@ mod tests {
     fn item_chicken_components_override_spawn_state() {
         init_vanilla_registry();
 
-        let chicken = Arc::new(ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
+        let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
         let entity: SharedEntity = Arc::<ChickenEntity>::clone(&chicken);
 
         let mut spawn_egg = ItemStack::new(&vanilla_items::CHICKEN_SPAWN_EGG);
@@ -784,12 +769,7 @@ mod tests {
     fn item_sheep_color_overrides_spawn_state() {
         init_vanilla_registry();
 
-        let sheep = Arc::new(SheepEntity::new(
-            &vanilla_entities::SHEEP,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
+        let sheep = SheepEntity::new(&vanilla_entities::SHEEP, 1, DVec3::ZERO, Weak::new());
         let entity: SharedEntity = Arc::<SheepEntity>::clone(&sheep);
 
         let mut spawn_egg = ItemStack::new(&vanilla_items::SHEEP_SPAWN_EGG);
@@ -805,12 +785,7 @@ mod tests {
     fn item_cow_components_override_spawn_state() {
         init_vanilla_registry();
 
-        let cow = Arc::new(CowEntity::new(
-            &vanilla_entities::COW,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        ));
+        let cow = CowEntity::new(&vanilla_entities::COW, 1, DVec3::ZERO, Weak::new());
         let entity: SharedEntity = Arc::<CowEntity>::clone(&cow);
 
         let mut spawn_egg = ItemStack::new(&vanilla_items::COW_SPAWN_EGG);

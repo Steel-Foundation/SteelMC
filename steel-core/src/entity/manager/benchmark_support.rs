@@ -1,6 +1,6 @@
 //! Fixtures for benchmarking the world entity manager without a live world.
 
-use std::sync::{Arc, Weak};
+use std::sync::Weak;
 
 use glam::DVec3;
 use steel_registry::entity_type::EntityTypeRef;
@@ -8,7 +8,7 @@ use steel_registry::vanilla_entities;
 use steel_utils::ChunkPos;
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase, SharedEntity};
+use crate::entity::{Entity, EntityBase, SharedEntity, WeakSelf};
 
 use super::{EntityOwnership, EntityVisibility, WorldEntityManager};
 use crate::entity::{EntityDefaults, EntityHooks};
@@ -23,13 +23,14 @@ struct BenchEntity {
 
 impl BenchEntity {
     fn shared(id: i32, position: DVec3) -> SharedEntity {
-        Arc::new(Self {
+        WeakSelf::build(|this| Self {
             base: EntityBase::with_uuid(
                 id,
                 Uuid::from_u128(u128::try_from(id).expect("positive benchmark entity id") + 1),
                 position,
                 vanilla_entities::ITEM.dimensions,
                 Weak::new(),
+                this,
             ),
         })
     }

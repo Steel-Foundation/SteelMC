@@ -10,12 +10,12 @@ fn live_pig(world: &Arc<World>, id: i32) -> Arc<ChickenEntity> {
     if !world.has_full_chunk(chunk) {
         insert_ready_full_chunk(world, chunk);
     }
-    let pig = Arc::new(ChickenEntity::new(
+    let pig = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         id,
         DVec3::ZERO,
         Arc::downgrade(world),
-    ));
+    );
     world
         .try_add_entity(Arc::<ChickenEntity>::clone(&pig))
         .expect("register pig");

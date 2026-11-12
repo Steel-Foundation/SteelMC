@@ -238,7 +238,7 @@ pub trait EntityMotion: Entity {
 
     /// Default for [`Entity::cause_fall_damage`].
     fn cause_fall_damage_default(
-        self: Arc<Self>,
+        &self,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
@@ -384,7 +384,7 @@ pub trait EntityMotion: Entity {
     /// Mirrors the shared tail of vanilla player and controlled-vehicle movement
     /// handling after rollback/collision validation has accepted the target.
     fn default_apply_accepted_client_movement(
-        self: Arc<Self>,
+        &self,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
@@ -398,7 +398,7 @@ pub trait EntityMotion: Entity {
             accepted.horizontal_collision,
             accepted.movement,
         );
-        if Arc::clone(&self).do_check_fall_damage(accepted.movement, accepted.on_ground, world) {
+        if self.do_check_fall_damage(accepted.movement, accepted.on_ground, world) {
             return Ok(AcceptedClientMovementOutcome::Handled);
         }
         if accepted.reset_fall_distance {
@@ -410,7 +410,7 @@ pub trait EntityMotion: Entity {
 
     /// Applies final state accepted from a client-authored movement packet.
     fn apply_accepted_client_movement(
-        self: Arc<Self>,
+        &self,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
@@ -419,7 +419,7 @@ pub trait EntityMotion: Entity {
 
     /// Applies final state accepted from a controlled-vehicle movement packet.
     fn apply_accepted_client_vehicle_movement(
-        self: Arc<Self>,
+        &self,
         world: &Arc<World>,
         mut accepted: AcceptedClientMovement,
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
@@ -562,11 +562,7 @@ pub trait EntityMotion: Entity {
         reason = "keeps vanilla movement phases in order"
     )]
     /// Default for [`Entity::move_entity`].
-    fn move_entity_default(
-        self: Arc<Self>,
-        mover_type: MoverType,
-        delta: DVec3,
-    ) -> Option<MoveResult> {
+    fn move_entity_default(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
             return self.move_without_physics(delta);
@@ -631,9 +627,7 @@ pub trait EntityMotion: Entity {
         self.base()
             .set_movement_flags(movement_flags, ground_contact);
 
-        if self.is_server_driven_movement()
-            && Arc::clone(&self).apply_fall_damage_after_move(&result, &world)
-        {
+        if self.is_server_driven_movement() && self.apply_fall_damage_after_move(&result, &world) {
             return Some(result);
         }
 
@@ -703,11 +697,7 @@ pub trait EntityMotion: Entity {
     }
 
     /// Applies vanilla fall-distance bookkeeping after accepted movement.
-    fn apply_fall_damage_after_move(
-        self: Arc<Self>,
-        result: &MoveResult,
-        world: &Arc<World>,
-    ) -> bool {
+    fn apply_fall_damage_after_move(&self, result: &MoveResult, world: &Arc<World>) -> bool {
         self.do_check_fall_damage(result.actual_movement, result.on_ground, world)
     }
 
@@ -736,17 +726,12 @@ pub trait EntityMotion: Entity {
     /// entity was removed (e.g. killed) as a result.
     ///
     /// Callers update on-ground/supporting-block state before this method.
-    fn do_check_fall_damage(
-        self: Arc<Self>,
-        movement: DVec3,
-        on_ground: bool,
-        world: &Arc<World>,
-    ) -> bool {
+    fn do_check_fall_damage(&self, movement: DVec3, on_ground: bool, world: &Arc<World>) -> bool {
         let Some(effect_pos) = self.on_pos_legacy() else {
             return false;
         };
         let effect_state = world.get_block_state(effect_pos);
-        Arc::clone(&self).check_fall_damage(movement.y, on_ground, effect_state, effect_pos, world);
+        self.check_fall_damage(movement.y, on_ground, effect_state, effect_pos, world);
         self.is_removed()
     }
 
@@ -758,7 +743,7 @@ pub trait EntityMotion: Entity {
 
     /// Default for [`Entity::check_fall_damage`].
     fn check_fall_damage_default(
-        self: Arc<Self>,
+        &self,
         vertical_movement: f64,
         on_ground: bool,
         on_state: BlockStateId,
@@ -779,7 +764,7 @@ pub trait EntityMotion: Entity {
             let fall_context =
                 EntityFallOnContext::from_entity(fall_distance, self.as_entity_event_source());
             if let Some(fall_damage) = behavior.fall_on(on_state, world, pos, fall_context) {
-                let damage_applied = Arc::clone(&self).cause_fall_damage(
+                let damage_applied = self.cause_fall_damage(
                     fall_damage.fall_distance,
                     fall_damage.damage_modifier,
                     &fall_damage.source,

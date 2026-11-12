@@ -92,7 +92,7 @@ entity_props! {
         /// The chicken variant key for loot predicates, when this is a chicken.
         fn chicken_loot_variant() -> Option<&'static Identifier> = chicken_loot_variant_default;
         /// `LivingEntity.serverAiStep`.
-        fn server_ai_step(entity: &SharedEntity) = server_ai_step_default;
+        fn server_ai_step() = server_ai_step_default;
         /// `LivingEntity.canBeAffected`.
         fn can_be_affected(effect: &MobEffectInstance) -> bool = can_be_affected_default;
         /// `LivingEntity.canStandOnFluid`.
@@ -691,15 +691,15 @@ impl<'a> Living<'a> {
 
     /// Vanilla `LivingEntity.aiStep`: runs this type's pipeline, returning
     /// the movement it performed.
-    pub fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
-        self.entity.entity_definition().ai_step(self.entity, entity)
+    #[must_use]
+    pub fn ai_step(&self) -> Option<MoveResult> {
+        self.entity.entity_definition().ai_step(self.entity)
     }
 
     /// Vanilla `LivingEntity.travel`: runs this type's pipeline.
-    pub fn travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
-        self.entity
-            .entity_definition()
-            .travel(self.entity, entity, input)
+    #[must_use]
+    pub fn travel(&self, input: DVec3) -> Option<MoveResult> {
+        self.entity.entity_definition().travel(self.entity, input)
     }
 
     /// Vanilla `LivingEntity.jumpFromGround`: runs this type's pipeline.
@@ -960,7 +960,7 @@ impl<'a> Living<'a> {
     }
 
     /// `LivingEntity.tick` after its `super.tick()`.
-    fn tick_living(&self, entity: &SharedEntity) {
+    fn tick_living(&self) {
         self.living_base().decrement_invulnerable_time();
 
         if self.is_dead_or_dying() {
@@ -971,7 +971,7 @@ impl<'a> Living<'a> {
         self.detect_equipment_updates();
 
         if !self.is_removed() {
-            let _movement = self.ai_step(entity);
+            let _movement = self.ai_step();
         }
 
         self.tick_living_state();

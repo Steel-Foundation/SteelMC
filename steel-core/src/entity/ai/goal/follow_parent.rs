@@ -88,7 +88,7 @@ impl Goal for FollowParentGoal {
         self.parent = None;
     }
 
-    fn tick(&mut self, mob: &Mob<'_>, _entity: &SharedEntity) {
+    fn tick(&mut self, mob: &Mob<'_>) {
         self.time_to_recalc_path -= 1;
         if self.time_to_recalc_path > 0 {
             return;

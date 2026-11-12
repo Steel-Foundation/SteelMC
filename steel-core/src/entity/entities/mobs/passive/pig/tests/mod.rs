@@ -19,7 +19,7 @@ use super::*;
 mod core;
 mod riding;
 
-fn pig(id: i32) -> PigEntity {
+fn pig(id: i32) -> Arc<PigEntity> {
     PigEntity::new(&vanilla_entities::PIG, id, DVec3::ZERO, Weak::new())
 }
 

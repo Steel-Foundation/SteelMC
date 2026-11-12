@@ -1010,6 +1010,7 @@ mod tests {
 
     use crate::entity::EntitySyncedData;
     use crate::entity::LivingProps;
+    use crate::entity::WeakSelf;
     use crate::entity::component::Has;
     use crate::entity::entities::FireworkRocketEntity;
     use crate::test_support::synced_with_health;
@@ -1052,6 +1053,7 @@ mod tests {
                     DVec3::ZERO,
                     entity_type.dimensions,
                     Arc::downgrade(test_world()),
+                    WeakSelf::detached(),
                 ),
                 living_base: LivingEntityBase::without_synced_data(
                     entity_type,
@@ -1559,7 +1561,7 @@ mod tests {
             1,
         );
 
-        on_projectile_spawned(test_world(), &mut rocket, &projectile, None);
+        on_projectile_spawned(test_world(), &mut rocket, &*projectile, None);
 
         assert_eq!(projectile.remaining_fire_ticks(), 2_000);
     }

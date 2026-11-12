@@ -194,12 +194,12 @@ mod tests {
             vanilla_blocks::STONE.default_state(),
             UpdateFlags::UPDATE_ALL,
         ));
-        let crystal = Arc::new(EndCrystalEntity::new(
+        let crystal = EndCrystalEntity::new(
             &vanilla_entities::END_CRYSTAL,
             next_entity_id(),
             DVec3::new(0.5, 64.0, 0.5),
             Arc::downgrade(world),
-        ));
+        );
         let Ok(()) = world.try_add_entity(Arc::<EndCrystalEntity>::clone(&crystal)) else {
             panic!("crystal must be added to its loaded chunk");
         };

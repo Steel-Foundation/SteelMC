@@ -49,14 +49,16 @@ impl SnowballEntity {
             on_hit_entity: definition.on_hit_entity.then([Stage::new(
                 Self::ON_HIT_ENTITY,
                 |snowball: &Self, ctx: &mut OnHitEntityCtx<'_>| {
-                    let (entity, target) = (ctx.entity, ctx.target);
+                    let target = ctx.target;
                     let damage = if target.entity_type() == &vanilla_entities::BLAZE {
                         3.0
                     } else {
                         0.0
                     };
-                    if let Some(world) = target.level() {
-                        target.hurt(&world, &snowball.projectile().thrown_damage(entity), damage);
+                    if let Some(world) = target.level()
+                        && let Some(source) = snowball.projectile().thrown_damage()
+                    {
+                        target.hurt(&world, &source, damage);
                     }
                     Flow::Continue
                 },
@@ -97,7 +99,7 @@ mod tests {
     use steel_utils::{BlockPos, Direction};
 
     use super::*;
-    use crate::entity::SharedEntity;
+
     use crate::entity::damage::DamageSource;
     use crate::entity::projectile::ProjectileHit;
     use crate::test_support::test_world;
@@ -105,12 +107,12 @@ mod tests {
     use glam::DVec3;
 
     fn snowball() -> Arc<SnowballEntity> {
-        Arc::new(SnowballEntity::new(
+        SnowballEntity::new(
             &vanilla_entities::SNOWBALL,
             1,
             DVec3::ZERO,
             Arc::downgrade(test_world()),
-        ))
+        )
     }
 
     #[test]
@@ -143,7 +145,6 @@ mod tests {
     fn hitting_a_block_discards_the_snowball() {
         init_vanilla_registry();
         let snowball = snowball();
-        let entity: SharedEntity = Arc::clone(&snowball) as SharedEntity;
         let hit = ProjectileHit::Block {
             location: DVec3::ZERO,
             hit: ClipHitResult {
@@ -156,7 +157,7 @@ mod tests {
             },
         };
 
-        snowball.projectile().on_hit(&entity, &hit);
+        snowball.projectile().on_hit(&hit);
         assert!(snowball.is_removed());
     }
 }
