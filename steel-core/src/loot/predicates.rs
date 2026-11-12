@@ -27,7 +27,7 @@ pub(super) fn item_enchantment_matches(
     if !tag {
         return matches_level(item.get_enchantment_level(key));
     }
-    
+
     item.get_enchantments().is_some_and(|enchantments| {
         enchantments.iter().any(|(key_id, level)| {
             matches_level(*level as i32)

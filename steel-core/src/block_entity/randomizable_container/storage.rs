@@ -71,9 +71,7 @@ impl RandomizableContainerStorage {
             container,
         }
     }
-}
 
-impl RandomizableContainerStorage {
     pub(crate) fn pre_remove_side_effects(&self, pos: BlockPos) {
         if let Err(error) = self.unpack_loot_table(None) {
             log::error!("Could not unpack container loot at {pos:?} before removal: {error}");

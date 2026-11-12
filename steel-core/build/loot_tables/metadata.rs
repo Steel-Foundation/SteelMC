@@ -59,7 +59,10 @@ fn accessors(tables: &[LootTableData<'_>]) -> TokenStream {
     for table in tables {
         let (category, path) = table.key.split_once('/').unwrap_or((table.key, table.key));
         let field_name = if path.is_empty() { table.key } else { path };
-        let field = Ident::new(&field_name.replace('/', "_").to_snake_case(), Span::call_site());
+        let field = Ident::new(
+            &field_name.replace('/', "_").to_snake_case(),
+            Span::call_site(),
+        );
         categories.entry(category).or_default().push((table, field));
     }
 
