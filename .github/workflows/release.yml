@@ -94,7 +94,7 @@ jobs:
           RUSTFLAGS: ${{ matrix.rustflags }}
         run: |
           cargo install cross --git https://github.com/cross-rs/cross
-          cross build --release --target ${{ matrix.target }} --no-default-features --features stand-alone,deadlock_detection,tls-native,mimalloc --verbose
+          cross build --release --target ${{ matrix.target }} --features stand-alone,deadlock_detection,tls-native --verbose
       - name: Build portable release binary
         if: ${{ !matrix.cross }}
         env:
