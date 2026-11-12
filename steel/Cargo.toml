@@ -57,7 +57,7 @@ workspace = true
 serde_json.workspace = true
 
 [features]
-default = ["mimalloc", "reqwest/rustls"]
+default = ["mimalloc"]
 stand-alone = []
 deadlock_detection = ["dep:parking_lot"]
 dhat-heap = ["dhat"]
