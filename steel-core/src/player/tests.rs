@@ -32,8 +32,8 @@ use crate::inventory::{
 use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
 use crate::player::game_mode::PlayerGameModeState;
 use crate::test_support::{
-    TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, hard_damage_test_world,
-    insert_ready_full_chunk, test_world,
+    TestPlayerBuilder, TestWorld, fresh_test_world, fresh_test_world_in_domain,
+    hard_damage_test_world, insert_ready_full_chunk, test_world,
 };
 use crate::world::World;
 use glam::DVec3;
@@ -48,6 +48,7 @@ use steel_registry::data_component_predicate::DataComponentMatchers;
 use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
 use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
 use steel_registry::packets::play::{C_ANIMATE, C_REMOVE_ENTITIES, C_SOUND};
+use steel_registry::sound_event::SoundEvent;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
@@ -2048,7 +2049,7 @@ fn player_attack_sound_ids(packets: &[EncodedPacket]) -> Vec<i32> {
         &sound_events::ENTITY_PLAYER_ATTACK_SWEEP,
         &sound_events::ENTITY_PLAYER_ATTACK_WEAK,
     ]
-    .map(|sound| sound.packet_holder_id());
+    .map(SoundEvent::packet_holder_id);
     sound_packet_ids(packets)
         .into_iter()
         .filter(|id| attack_sounds.contains(id))
@@ -2073,7 +2074,7 @@ fn animate_packets(packets: &[EncodedPacket]) -> Vec<(i32, u8)> {
 }
 
 struct MeleeFixture {
-    _world_fixture: crate::test_support::TestWorld,
+    _world_fixture: TestWorld,
     world: Arc<World>,
     attacker: Arc<Player>,
     sent_packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
@@ -2161,7 +2162,7 @@ fn falling_full_strength_attack_is_critical_unless_sprinting() {
             sound_events::ENTITY_PLAYER_ATTACK_STRONG.packet_holder_id(),
         ]
     );
-    assert!(animate_packets(&packets).is_empty());
+    assert_eq!(animate_packets(&packets), Vec::<(i32, u8)>::new());
 }
 
 #[test]
