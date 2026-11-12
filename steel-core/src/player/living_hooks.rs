@@ -97,7 +97,9 @@ impl Player {
 
         self.base_tick();
         self.living().detect_equipment_updates();
-        let _movement = self.living().ai_step(entity);
+        if !self.is_removed() {
+            let _movement = self.living().ai_step(entity);
+        }
 
         // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
         if let Err(error) = self.try_set_position(tick_position) {
@@ -113,7 +115,6 @@ impl Player {
         self.living_base.decrement_invulnerable_time();
         self.living().tick_mob_effects();
         self.tick_active_item_use(entity);
-        // TODO: Tick stats even when the player has been dead for more than 20 ticks.
         self.tick_stats();
 
         if self.living().health() <= 0.0 {

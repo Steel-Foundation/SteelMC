@@ -63,6 +63,7 @@ deadlock_detection = ["dep:parking_lot"]
 dhat-heap = ["dhat"]
 mimalloc = ["dep:mimalloc"]
 slow_chunk_gen = ["steel-core/slow_chunk_gen"]
+tls-native = ["reqwest/native-tls-vendored"]
 jaeger = [
     "dep:opentelemetry",
     "dep:opentelemetry_sdk",

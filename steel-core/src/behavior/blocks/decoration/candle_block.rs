@@ -12,6 +12,7 @@ use steel_registry::{
     },
     entity_data::Direction,
     fluid::FluidState,
+    item_stack::ItemStack,
     items::item::BlockHitResult,
     sound_events,
     vanilla_block_tags::BlockTag,
@@ -34,7 +35,7 @@ use crate::{
     player::{self, Player},
     world::{
         ClipHitResult, LevelAccessor, LevelReader, ScheduledTickAccess, World,
-        game_event::GameEventContext,
+        explosion::Explosion, game_event::GameEventContext,
     },
 };
 
@@ -92,6 +93,18 @@ impl CandleBlock {
             pos,
             &GameEventContext::new(player.map(|player| player as &dyn Entity), None),
         );
+    }
+
+    /// Extinguishes a lit candle or candle cake hit by a block-triggering explosion.
+    pub(super) fn extinguish_from_explosion(
+        state: steel_utils::BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &dyn Explosion,
+    ) {
+        if explosion.can_trigger_blocks() && state.get_value(LIT_PROPERTY) {
+            Self::extinguish(None, state, world, pos);
+        }
     }
 }
 
@@ -170,6 +183,18 @@ impl BlockBehavior for CandleBlock {
         world.set_block(hit.block_pos, lit_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
     }
 
+    fn on_explosion_hit(
+        &self,
+        state: steel_utils::BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &dyn Explosion,
+        on_hit: &mut dyn FnMut(ItemStack, BlockPos),
+    ) {
+        Self::extinguish_from_explosion(state, world, pos, explosion);
+        self.default_on_explosion_hit(state, world, pos, explosion, on_hit);
+    }
+
     fn use_item_on(
         &self,
         state: steel_utils::BlockStateId,
@@ -218,7 +243,7 @@ impl BlockBehavior for CandleBlock {
 mod tests {
     use super::*;
     use glam::DVec3;
-    use steel_registry::{init_vanilla_registry, item_stack::ItemStack, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_items};
     use steel_utils::ChunkPos;
 
     use crate::{
