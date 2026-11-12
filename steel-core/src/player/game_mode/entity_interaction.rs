@@ -31,6 +31,30 @@ const SWEEP_AREA_INFLATE_Y: f64 = 0.25;
 const SWEEP_MAX_DISTANCE_SQ: f64 = 9.0;
 const SWEEP_KNOCKBACK: f64 = 0.4;
 
+/// The kind of melee hit, which selects its attack sound.
+///
+/// Vanilla passes these as separate flags to `attackVisualEffects`, but they are
+/// mutually exclusive: sweeps require a non-critical hit, and stabs are their own path.
+#[derive(Clone, Copy)]
+enum AttackVisualKind {
+    Critical,
+    Sweep,
+    Stab,
+    Normal { full_strength: bool },
+}
+
+impl AttackVisualKind {
+    const fn melee(critical: bool, sweep: bool, full_strength: bool) -> Self {
+        if critical {
+            Self::Critical
+        } else if sweep {
+            Self::Sweep
+        } else {
+            Self::Normal { full_strength }
+        }
+    }
+}
+
 const fn sound_holder_ref(holder: &SoundEventHolder) -> Option<SoundEventRef> {
     match holder {
         SoundEventHolder::Registry(sound) => Some(*sound),
@@ -387,7 +411,7 @@ impl Player {
             return false;
         }
 
-        self.attack_visual_effects(entity, false, false, deals_damage, true, magic_boost);
+        self.attack_visual_effects(entity, AttackVisualKind::Stab, magic_boost);
         self.item_attack_interaction(target, &damage_source, damage_dealt);
         self.set_last_hurt_mob(Some(target));
         self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
@@ -504,14 +528,9 @@ impl Player {
                     attack_strength_scale,
                 );
             }
-            self.attack_visual_effects(
-                entity,
-                critical_attack,
-                sweep_attack,
-                full_strength_attack,
-                false,
-                magic_boost,
-            );
+            let visual_kind =
+                AttackVisualKind::melee(critical_attack, sweep_attack, full_strength_attack);
+            self.attack_visual_effects(entity, visual_kind, magic_boost);
             self.set_last_hurt_mob(Some(target));
             self.item_attack_interaction(target, &damage_source, true);
             self.damage_stats_and_hearts(entity, old_entity_living_health);
@@ -537,7 +556,7 @@ impl Player {
     }
 
     fn is_mobility_restricted(&self) -> bool {
-        self.has_mob_effect(&vanilla_mob_effects::BLINDNESS)
+        self.has_mob_effect(vanilla_mob_effects::BLINDNESS)
     }
 
     fn is_sweep_attack(
@@ -642,26 +661,20 @@ impl Player {
         );
     }
 
-    fn attack_visual_effects(
-        &self,
-        target: &dyn Entity,
-        critical_attack: bool,
-        sweep_attack: bool,
-        full_strength_attack: bool,
-        stab_attack: bool,
-        magic_boost: f32,
-    ) {
-        if critical_attack {
-            self.play_attack_sound(&sound_events::ENTITY_PLAYER_ATTACK_CRIT);
-            self.send_to_tracking_players_and_self(CAnimate::critical_hit(target.id()));
-        }
-
-        if !critical_attack && !sweep_attack && !stab_attack {
-            self.play_attack_sound(if full_strength_attack {
-                &sound_events::ENTITY_PLAYER_ATTACK_STRONG
-            } else {
-                &sound_events::ENTITY_PLAYER_ATTACK_WEAK
-            });
+    fn attack_visual_effects(&self, target: &dyn Entity, kind: AttackVisualKind, magic_boost: f32) {
+        match kind {
+            AttackVisualKind::Critical => {
+                self.play_attack_sound(&sound_events::ENTITY_PLAYER_ATTACK_CRIT);
+                self.send_to_tracking_players_and_self(CAnimate::critical_hit(target.id()));
+            }
+            AttackVisualKind::Normal { full_strength } => {
+                self.play_attack_sound(if full_strength {
+                    &sound_events::ENTITY_PLAYER_ATTACK_STRONG
+                } else {
+                    &sound_events::ENTITY_PLAYER_ATTACK_WEAK
+                });
+            }
+            AttackVisualKind::Sweep | AttackVisualKind::Stab => {}
         }
 
         if magic_boost > 0.0 {
