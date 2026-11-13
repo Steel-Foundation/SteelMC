@@ -387,6 +387,12 @@ pub trait Mob: LivingEntity + Leashable {
         is_saddled
     }
 
+    /// Clears this tick's line-of-sight cache, as vanilla `Mob.serverAiStep` does. A mob
+    /// that replaces `ai_step`, like the Ender Dragon, must call this itself.
+    fn tick_sensing(&self) {
+        self.mob_base().sensing().lock().tick();
+    }
+
     /// Checks line of sight using this mob sensing cache
     fn has_line_of_sight_cached(&self, target: &dyn Entity) -> bool {
         self.mob_base()
@@ -1575,7 +1581,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn mob_server_ai_step(&self, entity: &SharedEntity) {
         self.increment_no_action_time();
-        self.mob_base().sensing().lock().tick();
+        self.tick_sensing();
         if self.tick_count() % 5 == 0 {
             self.update_control_flags();
         }

@@ -629,12 +629,13 @@ fn death_keeps_menu_items_until_entity_removal() {
             .is_empty()
     );
 
+    let handle: SharedEntity = Arc::clone(&player) as SharedEntity;
     for _ in 1..DEATH_DURATION {
-        player.tick_death();
+        player.tick_death(&handle);
     }
     assert_eq!(transient.lock().get_item(0).count(), 3);
 
-    player.tick_death();
+    player.tick_death(&handle);
 
     assert!(transient.lock().get_item(0).is_empty());
     assert!(crafting.lock().get_item(0).is_empty());
@@ -710,8 +711,9 @@ fn death_removes_tracked_entities_from_dead_players_client() {
     );
     sent_packets.lock().clear();
 
+    let handle: SharedEntity = Arc::clone(&player) as SharedEntity;
     for _ in 0..DEATH_DURATION {
-        player.tick_death();
+        player.tick_death(&handle);
     }
 
     let removed_ids = sent_packets

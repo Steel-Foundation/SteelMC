@@ -111,6 +111,9 @@ pub(crate) struct DiscoveredObject {
     pub(crate) class_name: String,
     pub(crate) fields: Vec<JsonArgField>,
     pub(crate) spawn_rule: bool,
+    /// How many sub-entities the type owns, from `parts = N`. Declared on the struct, not
+    /// in `classes.json`, since it describes the Rust type rather than vanilla data.
+    pub(crate) part_count: u32,
 }
 
 pub(crate) fn parse_object_behavior(
@@ -138,6 +141,7 @@ pub(crate) fn parse_object_behavior(
         class_name,
         fields,
         spawn_rule: args.spawn_rule,
+        part_count: args.part_count,
     })
 }
 
@@ -406,13 +410,18 @@ pub(crate) fn generate_arg(
     }
 }
 
-/// Arguments of the behavior attribute itself, e.g. `#[entity_behavior(class = "Pig", spawn_rule)]`.
+/// Arguments of the behavior attribute itself, e.g.
+/// `#[entity_behavior(class = "Pig", spawn_rule)]` or `#[entity_behavior(parts = 8)]`.
 #[derive(Default)]
 struct BehaviorArgs {
     class_name: Option<String>,
     spawn_rule: bool,
+    /// How many sub-entities the type owns, from `parts = N`.
+    part_count: u32,
 }
 
+/// Unrecognized keys are consumed and ignored so each behavior kind can carry keys
+/// the others do not use.
 fn parse_behavior_args(attr: &syn::Attribute, attribute_name: &str) -> BehaviorArgs {
     let mut args = BehaviorArgs::default();
     let syn::Meta::List(meta) = &attr.meta else {
@@ -426,6 +435,14 @@ fn parse_behavior_args(attr: &syn::Attribute, attribute_name: &str) -> BehaviorA
             args.class_name = Some(lit.value());
         } else if meta.path.is_ident("spawn_rule") {
             args.spawn_rule = true;
+        } else if meta.path.is_ident("parts") {
+            args.part_count = meta
+                .value()?
+                .parse::<syn::LitInt>()?
+                .base10_parse()
+                .unwrap_or_else(|e| panic!("Failed to parse {attribute_name} parts count: {e}"));
+        } else if let Ok(value) = meta.value() {
+            let _: syn::Expr = value.parse()?;
         }
         Ok(())
     })

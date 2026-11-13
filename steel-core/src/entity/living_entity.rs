@@ -929,9 +929,15 @@ pub trait LivingEntity: Entity {
         )
     }
 
-    /// Applies knockback velocity in the direction (`xd`, `zd`), scaled by
-    /// `power` and reduced by knockback resistance.
-    fn knockback(&self, mut power: f64, mut xd: f64, mut zd: f64) {
+    /// Applies knockback in the direction (`xd`, `zd`), scaled by `power` and reduced
+    /// by knockback resistance.
+    fn knockback(&self, power: f64, xd: f64, zd: f64) {
+        self.default_knockback(power, xd, zd);
+    }
+
+    /// The body of [`Self::knockback`], for overrides that only sometimes take
+    /// knockback, since Rust has no `super`.
+    fn default_knockback(&self, mut power: f64, mut xd: f64, mut zd: f64) {
         power *= 1.0 - self.knockback_resistance();
         if power <= 0.0 {
             return;
@@ -1038,6 +1044,8 @@ pub trait LivingEntity: Entity {
         if self.is_removed() {
             return;
         }
+        // Vanilla checks `!this.dead` and sets it in `handleKillingBlow`; worlds tick in
+        // parallel here, so the check and set stay one atomic step.
         if !self.living_base().mark_death_processed() {
             return;
         }
@@ -1223,7 +1231,7 @@ pub trait LivingEntity: Entity {
     fn drop_custom_death_loot(&self, _source: &DamageSource, _killed_by_player: bool) {}
 
     /// Ticks the vanilla living death animation and removes the entity at completion.
-    fn tick_death(&self) {
+    fn tick_death(&self, _entity: &SharedEntity) {
         let death_time = self.living_base().increment_death_time();
         if death_time >= DEATH_DURATION && !self.is_removed() {
             self.broadcast_entity_event(EntityStatus::Poof);
@@ -2022,10 +2030,13 @@ pub trait LivingEntity: Entity {
     /// The default `Entity::tick` dispatches living entities here.
     fn tick_living_entity(&self, entity: &SharedEntity) {
         self.default_tick();
+        self.living_base().decrement_hurt_time();
         self.living_base().decrement_invulnerable_time();
 
+        // As in vanilla, dying only stops the AI (`isImmobile` skips `serverAiStep`);
+        // movement keeps running because death animations depend on it.
         if self.is_dead_or_dying() {
-            self.tick_death();
+            self.tick_death(entity);
         }
 
         self.tick_mob_effects();

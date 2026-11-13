@@ -4,6 +4,7 @@ pub mod mobs;
 pub mod objects;
 
 pub use mobs::ambient::BatEntity;
+pub use mobs::bosses::{EnderDragonEntity, EnderDragonPart};
 pub use mobs::hostile::EndermiteEntity;
 pub use mobs::passive::*;
 pub use objects::display_ui::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
