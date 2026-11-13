@@ -29,7 +29,7 @@ impl EntityPush {
             return;
         }
 
-        let target = pusher.as_entity_event_source();
+        let target = pusher.as_entity();
         let candidates = if let Some(default_push) = target.as_default_entity_push() {
             let max_cramming = world.get_game_rule(&MAX_ENTITY_CRAMMING);
             let target_id = target.id();

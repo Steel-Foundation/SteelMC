@@ -2,13 +2,17 @@
 
 mod color_spawn_rules;
 
+use crate::entity::EntitySpawnReason;
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
+use crate::entity::SpawnGroupData;
 use crate::entity::ageable;
 use crate::entity::mob;
 use crate::entity::prelude::*;
 use crate::player::Player;
 use std::sync::Arc;
+use steel_utils::BlockPos;
+use steel_utils::BlockStateId;
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::InteractionHand;
@@ -33,12 +37,12 @@ use steel_utils::random::legacy_random::LegacyRandom;
 
 use crate::behavior::InteractionResult;
 use crate::entity::EntityTable;
-use crate::entity::ageable::{Age, Ageable, AgeableProps};
+use crate::entity::ageable::{Age, Ageable, AgeableProps, AgeableTable};
 use crate::entity::ai::goal::{
     BreedGoal, EatBlockGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal,
     RandomLookAroundGoal, TemptGoal, WaterAvoidingRandomStrollGoal,
 };
-use crate::entity::animal::{self, Breeding, BreedingProps};
+use crate::entity::animal::{self, AnimalProps, AnimalTable, Breeding};
 use crate::entity::shearable::{self, Shearable};
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityProps, LivingEntityBase, LivingProps, MobBase, MobProps,
@@ -74,16 +78,24 @@ pub struct SheepEntity {
     entity_data: CheckedMutex<SheepEntityData>,
 }
 
+impl AgeableTable for SheepEntity {
+    const AGEABLE: AgeableProps<Self> = AgeableProps {
+        breed_offspring: Self::ageable_breed_offspring,
+    };
+}
+
+impl AnimalTable for SheepEntity {
+    const ANIMAL: AnimalProps<Self> = AnimalProps {
+        is_food: |_, item_stack| Self::is_food(item_stack),
+        ..AnimalProps::new()
+    };
+}
+
 impl SheepEntity {
     /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
     pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, random| {
         animal::check_animal_spawn_rules(entity_type, level, spawn_reason, pos, random)
     };
-
-    const AGEABLE: AgeableProps = AgeableProps {
-        breed_offspring: Self::breed_offspring,
-    };
-    const BREEDING: BreedingProps = BreedingProps::new(Self::is_food);
 
     /// `Mob`'s constructor registers goals before `Animal`'s sets its malus.
     fn construct(mob_base: &MobBase) {
@@ -99,8 +111,8 @@ impl SheepEntity {
             entity_type,
             living_base,
             mob_base: MobBase::new(Self::construct),
-            age: Age::new(&Self::AGEABLE),
-            breeding: Breeding::new(&Self::BREEDING),
+            age: Age::new(),
+            breeding: Breeding::new(),
             entity_data: CheckedMutex::new(entity_data),
         }
     }
@@ -180,8 +192,10 @@ impl SheepEntity {
         })
     }
 
-    /// `Sheep.ate`: eating grass regrows the wool and speeds up a lamb's growth.
+    /// `Sheep.ate`: after `super`, eating grass regrows the wool and speeds up
+    /// a lamb's growth.
     fn mob_ate(&self) {
+        mob::ate(self);
         self.set_sheared(false);
         let ageable = self.animal().ageable();
         if ageable.can_age_up() {
@@ -197,20 +211,17 @@ impl SheepEntity {
     }
 
     /// `Sheep.getBreedOffspring`: a lamb with the parents' colors mixed.
-    fn breed_offspring(
-        parent: &Ageable<'_>,
+    fn ageable_breed_offspring(
+        &self,
         world: &Arc<World>,
         partner: &Ageable<'_>,
     ) -> Option<SharedEntity> {
-        let offspring = parent.create_offspring(world)?;
-        let color_of =
-            |ageable: &Ageable<'_>| ageable.entity().downcast_ref::<Self>().map(Self::color);
-        if let (Some(color1), Some(color2), Some(lamb)) = (
-            color_of(parent),
-            color_of(partner),
+        let offspring = self.ageable().create_offspring(world)?;
+        if let (Some(mate_color), Some(lamb)) = (
+            partner.entity().downcast_ref::<Self>().map(Self::color),
             offspring.downcast_ref::<Self>(),
         ) {
-            lamb.set_color(mixed_color(color1, color2));
+            lamb.set_color(mixed_color(self.color(), mate_color));
         }
         Some(offspring)
     }
@@ -219,24 +230,32 @@ impl SheepEntity {
 impl MobTable for SheepEntity {
     const MOB: MobProps<Self> = MobProps {
         ambient_sound: |_| Some(&sound_events::ENTITY_SHEEP_AMBIENT),
-        // `Sheep.mobInteract`: shearing comes before `super`.
-        mob_interact: |sheep, player, hand| {
-            if let Some(result) = sheep.shear_by_player(player, hand) {
-                return result;
-            }
-            animal::mob_interact(sheep, player, hand)
-        },
-        // `Sheep.finalizeSpawn` picks the wool color before `super`.
-        finalize_spawn: |sheep, world, reason, group_data| {
-            sheep.pick_spawn_color(world);
-            ageable::finalize_spawn(sheep, world, reason, group_data)
-        },
-        ate: |sheep| {
-            mob::ate(sheep);
-            sheep.mob_ate();
-        },
+        mob_interact: Self::mob_interact,
+        finalize_spawn: Self::mob_finalize_spawn,
+        ate: Self::mob_ate,
         ..animal::mob_props()
     };
+}
+
+impl SheepEntity {
+    /// `Sheep.mobInteract`: shearing comes before `super`.
+    fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
+        if let Some(result) = self.shear_by_player(player, hand) {
+            return result;
+        }
+        animal::mob_interact(self, player, hand)
+    }
+
+    /// `Sheep.finalizeSpawn` picks the wool color before `super`.
+    fn mob_finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        reason: EntitySpawnReason,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        self.pick_spawn_color(world);
+        ageable::finalize_spawn(self, world, reason, group_data)
+    }
 }
 
 impl LivingTable for SheepEntity {
@@ -328,16 +347,22 @@ impl DefaultEntityPush for SheepEntity {}
 
 impl EntityTable for SheepEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        apply_implicit_item_components: |sheep, item_stack| {
-            if let Some(color) = item_stack.get(SHEEP_COLOR) {
-                sheep.set_color(*color);
-            }
-        },
-        play_step_sound: |sheep, _, _| {
-            sheep.play_sound(&sound_events::ENTITY_SHEEP_STEP, 0.15, 1.0);
-        },
+        apply_implicit_item_components: Self::entity_apply_implicit_item_components,
+        play_step_sound: Self::entity_play_step_sound,
         ..animal::entity_props()
     };
+}
+
+impl SheepEntity {
+    fn entity_apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(color) = item_stack.get(SHEEP_COLOR) {
+            self.set_color(*color);
+        }
+    }
+
+    fn entity_play_step_sound(&self, _: BlockPos, _: BlockStateId) {
+        self.play_sound(&sound_events::ENTITY_SHEEP_STEP, 0.15, 1.0);
+    }
 }
 
 impl SheepEntity {

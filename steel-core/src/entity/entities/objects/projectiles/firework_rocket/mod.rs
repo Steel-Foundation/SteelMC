@@ -4,6 +4,7 @@
 //! explosion damage; clients draw the trail and explosion from the synced
 //! item and entity event 17.
 
+use crate::entity::Living;
 use crate::entity::projectile::ProjectileTable;
 use std::sync::{Arc, Weak};
 use steel_utils::nbt::NbtValueInput as _;
@@ -64,10 +65,7 @@ pub struct FireworkRocketEntity {
 
 impl EntityTable for FireworkRocketEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |rocket| {
-            projectile::tick(rocket);
-            rocket.entity_tick();
-        },
+        tick: Self::entity_tick,
         attackable: |_| false,
         ..projectile::entity_props()
     };
@@ -171,8 +169,9 @@ impl FireworkRocketEntity {
         Some(attached)
     }
 
-    /// `FireworkRocketEntity.tick` after `super.tick()`.
+    /// `FireworkRocketEntity.tick`.
     fn entity_tick(&self) {
+        projectile::tick(self);
         let projectile = self.projectile();
         let Some(world) = self.level() else {
             return;
@@ -385,19 +384,29 @@ impl FireworkRocketEntity {
 
 impl ProjectileTable for FireworkRocketEntity {
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        on_hit_entity: |rocket, target, location| {
-            projectile::on_hit_entity(rocket, target, location);
-            if let Some(world) = rocket.level() {
-                rocket.explode(&world);
-            }
-        },
+        on_hit_entity: Self::projectile_on_hit_entity,
         on_hit_block: Self::projectile_on_hit_block,
-        horizontal_hurt_knockback_direction: |rocket, hurt_entity, _| {
-            let delta = hurt_entity.position() - rocket.position();
-            (delta.x, delta.z)
-        },
+        horizontal_hurt_knockback_direction: Self::projectile_horizontal_hurt_knockback_direction,
         ..ProjectileProps::new()
     };
+}
+
+impl FireworkRocketEntity {
+    fn projectile_on_hit_entity(&self, target: &SharedEntity, location: DVec3) {
+        projectile::on_hit_entity(self, target, location);
+        if let Some(world) = self.level() {
+            self.explode(&world);
+        }
+    }
+
+    fn projectile_horizontal_hurt_knockback_direction(
+        &self,
+        hurt_entity: &Living<'_>,
+        _: &DamageSource,
+    ) -> (f64, f64) {
+        let delta = hurt_entity.position() - self.position();
+        (delta.x, delta.z)
+    }
 }
 
 /// The velocity a rocket gives a gliding entity looking along `look_angle`.

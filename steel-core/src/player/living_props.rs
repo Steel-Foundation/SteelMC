@@ -1,4 +1,4 @@
-//! `ServerPlayer`'s overrides of the living hooks.
+//! `ServerPlayer`'s overrides of the living properties.
 
 use super::*;
 use crate::entity::LivingTable;
@@ -229,7 +229,7 @@ impl Player {
                     && self.living().is_equippable_in_slot(stack, slot)
             })
         };
-        if !can_equip(&item_stack) || !EntityHooks::is_alive(self) {
+        if !can_equip(&item_stack) || !EntityMethods::is_alive(self) {
             return InteractionResult::Pass;
         }
 
@@ -434,11 +434,7 @@ impl LivingTable for Player {
         default_dimensions: |_, pose| Player::dimensions_for_pose(pose),
         hurt_sound: |_, source| Some(source.damage_type.effects.sound()),
         does_emit_equip_event: |_, slot| slot.slot_type() == EquipmentSlotType::HumanoidArmor,
-        hurt_helmet: |player, source, damage| {
-            player
-                .living()
-                .do_hurt_equipment(source, damage, &[EquipmentSlot::Head]);
-        },
+        hurt_helmet: Self::living_hurt_helmet,
         death_sound: |_| Some(&sound_events::ENTITY_PLAYER_DEATH),
         dismount_poses: |_| {
             &[
@@ -468,4 +464,11 @@ impl LivingTable for Player {
         on_equipped_item_broken: Self::living_on_equipped_item_broken,
         ..LivingProps::new()
     };
+}
+
+impl Player {
+    fn living_hurt_helmet(&self, source: &DamageSource, damage: f32) {
+        self.living()
+            .do_hurt_equipment(source, damage, &[EquipmentSlot::Head]);
+    }
 }

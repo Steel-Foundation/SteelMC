@@ -42,7 +42,7 @@ impl ItemBehavior for DyeItem {
         let Some(sheep) = target.downcast_ref::<SheepEntity>() else {
             return InteractionResult::Pass;
         };
-        if !EntityHooks::is_alive(sheep) || sheep.is_sheared() || sheep.color() == dye_color {
+        if !EntityMethods::is_alive(sheep) || sheep.is_sheared() || sheep.color() == dye_color {
             return InteractionResult::Pass;
         }
 

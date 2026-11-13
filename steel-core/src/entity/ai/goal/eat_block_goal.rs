@@ -48,13 +48,12 @@ impl Goal for EatBlockGoal {
     }
 
     fn can_use(&mut self, mob: &Mob<'_>) -> bool {
-        let interval = if Animal::of(mob.as_entity_event_source())
-            .is_some_and(|animal| animal.ageable().is_baby())
-        {
-            50
-        } else {
-            1000
-        };
+        let interval =
+            if Animal::of(mob.as_entity()).is_some_and(|animal| animal.ageable().is_baby()) {
+                50
+            } else {
+                1000
+            };
         let adjusted = reduced_tick_delay(interval);
         if rand::random_range(0..adjusted) != 0 {
             return false;

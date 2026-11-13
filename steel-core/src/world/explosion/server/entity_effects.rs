@@ -1,6 +1,6 @@
 //! Entity damage, knockback, and post-explosion callbacks.
 
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use glam::DVec3;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_attributes};

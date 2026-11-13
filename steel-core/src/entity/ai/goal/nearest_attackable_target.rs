@@ -219,7 +219,7 @@ mod tests {
             animal_fixture("nearest_attackable_selector");
         let mut goal =
             NearestAttackableTargetGoal::new_with_interval(0, false, false, |target, _| {
-                Animal::of(target.as_entity_event_source()).is_some()
+                Animal::of(target.as_entity()).is_some()
             });
 
         assert!(goal.can_use(&pig_hunter.mob()));

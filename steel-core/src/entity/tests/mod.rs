@@ -49,7 +49,7 @@ use crate::world::game_event::{GameEventListener, SharedGameEventListener};
 use crate::world::{LevelReader, World};
 
 use super::*;
-use crate::entity::{EntityHooks, EntityProps, living_entity};
+use crate::entity::{EntityMethods, EntityProps, living_entity};
 
 struct PushableTestEntity {
     base: EntityBase,

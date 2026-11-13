@@ -1,4 +1,4 @@
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use std::{
     array,
     ops::Range,

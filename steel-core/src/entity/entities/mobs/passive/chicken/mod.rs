@@ -1,11 +1,16 @@
 //! Vanilla Chicken entity with variant + sound-variant parity, wing-flap
 //! slow-fall, and periodic egg-laying behavior.
 
+use crate::entity::Arc;
+use crate::entity::EntitySpawnReason;
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
+use crate::entity::SpawnGroupData;
 use crate::entity::ageable;
 use crate::entity::entity;
 use crate::entity::prelude::*;
+use crate::physics::MoveResult;
+use crate::world::World;
 use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
@@ -30,13 +35,13 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::entity::EntityProps;
 use crate::entity::EntityTable;
-use crate::entity::ageable::{Age, AgeableProps};
+use crate::entity::ageable::{Age, AgeableProps, AgeableTable};
 use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
     TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::ai::path::PathType;
-use crate::entity::animal::{self, Breeding, BreedingProps};
+use crate::entity::animal::{self, AnimalProps, AnimalTable, Breeding};
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, LivingEntityBase, LivingProps, MobBase, MobProps,
@@ -94,16 +99,24 @@ pub struct ChickenEntity {
     entity_data: CheckedMutex<ChickenEntityData>,
 }
 
+impl AgeableTable for ChickenEntity {
+    const AGEABLE: AgeableProps<Self> = AgeableProps {
+        breed_offspring: variant::breed_offspring::<Self>,
+    };
+}
+
+impl AnimalTable for ChickenEntity {
+    const ANIMAL: AnimalProps<Self> = AnimalProps {
+        is_food: |_, item_stack| Self::is_food(item_stack),
+        ..AnimalProps::new()
+    };
+}
+
 impl ChickenEntity {
     /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
     pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, random| {
         animal::check_animal_spawn_rules(entity_type, level, spawn_reason, pos, random)
     };
-
-    const AGEABLE: AgeableProps = AgeableProps {
-        breed_offspring: variant::breed_offspring::<Self>,
-    };
-    const BREEDING: BreedingProps = BreedingProps::new(Self::is_food);
 
     /// `Mob`'s constructor registers goals before `Animal`'s sets its malus;
     /// `Chicken`'s then clears the water malus.
@@ -129,8 +142,8 @@ impl ChickenEntity {
             entity_type,
             living_base,
             mob_base,
-            age: Age::new(&Self::AGEABLE),
-            breeding: Breeding::new(&Self::BREEDING),
+            age: Age::new(),
+            breeding: Breeding::new(),
             state: CheckedMutex::new(state),
             entity_data: CheckedMutex::new(entity_data),
         }
@@ -219,7 +232,7 @@ impl ChickenEntity {
     /// Runs vanilla `Chicken.aiStep` egg-laying side effects.
     fn tick_egg_laying(&self) {
         if self.level().is_none()
-            || !EntityHooks::is_alive(self)
+            || !EntityMethods::is_alive(self)
             || self.animal().ageable().is_baby()
         {
             return;
@@ -254,13 +267,22 @@ impl MobTable for ChickenEntity {
         ambient_sound: |chicken| Some(chicken.current_sound_set().ambient_sound),
         // Chicken jockeys persist like their rider.
         remove_when_far_away: |chicken, _| chicken.is_chicken_jockey(),
-        // `Chicken.finalizeSpawn` picks the variants before `super`.
-        finalize_spawn: |chicken, world, reason, group_data| {
-            variant::pick_spawn_variants(chicken, world);
-            ageable::finalize_spawn(chicken, world, reason, group_data)
-        },
+        finalize_spawn: Self::mob_finalize_spawn,
         ..animal::mob_props()
     };
+}
+
+impl ChickenEntity {
+    /// `Chicken.finalizeSpawn` picks the variants before `super`.
+    fn mob_finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        reason: EntitySpawnReason,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        variant::pick_spawn_variants(self, world);
+        ageable::finalize_spawn(self, world, reason, group_data)
+    }
 }
 
 impl LivingTable for ChickenEntity {
@@ -268,22 +290,28 @@ impl LivingTable for ChickenEntity {
         hurt_sound: |chicken, _| Some(chicken.current_sound_set().hurt_sound),
         death_sound: |chicken| Some(chicken.current_sound_set().death_sound),
         chicken_loot_variant: |chicken| Some(&chicken.variant().key),
-        // `Chicken.aiStep`: flapping and egg laying after `super`.
-        ai_step: |chicken| {
-            let movement = animal::ai_step(chicken);
-            chicken.tick_flapping();
-            chicken.tick_egg_laying();
-            movement
-        },
-        // `Chicken.getBaseExperienceReward`: jockeys give 10 instead of `super`.
-        base_experience_reward: |chicken| {
-            if chicken.is_chicken_jockey() {
-                return 10;
-            }
-            animal::base_experience_reward(chicken)
-        },
+        ai_step: Self::living_ai_step,
+        base_experience_reward: Self::living_base_experience_reward,
         ..animal::living_props()
     };
+}
+
+impl ChickenEntity {
+    /// `Chicken.aiStep`: flapping and egg laying after `super`.
+    fn living_ai_step(&self) -> Option<MoveResult> {
+        let movement = animal::ai_step(self);
+        self.tick_flapping();
+        self.tick_egg_laying();
+        movement
+    }
+
+    /// `Chicken.getBaseExperienceReward`: jockeys give 10 instead of `super`.
+    fn living_base_experience_reward(&self) -> i32 {
+        if self.is_chicken_jockey() {
+            return 10;
+        }
+        animal::base_experience_reward(self)
+    }
 }
 
 impl Variants for ChickenEntity {
@@ -329,15 +357,19 @@ impl EntityTable for ChickenEntity {
         play_step_sound: Self::entity_play_step_sound,
         is_flapping: Self::entity_is_flapping,
         on_flap: Self::entity_on_flap,
-        // `Chicken.positionRider` after `super`: the rider faces the chicken's way.
-        position_rider: |chicken, passenger| {
-            entity::position_rider(chicken, passenger);
-            if let Some(living) = passenger.as_living_entity() {
-                living.set_y_body_rot(chicken.living().y_body_rot());
-            }
-        },
+        position_rider: Self::entity_position_rider,
         ..animal::entity_props()
     };
+}
+
+impl ChickenEntity {
+    /// `Chicken.positionRider` after `super`: the rider faces the chicken's way.
+    fn entity_position_rider(&self, passenger: &dyn Entity) {
+        entity::position_rider(self, passenger);
+        if let Some(living) = passenger.as_living_entity() {
+            living.set_y_body_rot(self.living().y_body_rot());
+        }
+    }
 }
 
 impl ChickenEntity {

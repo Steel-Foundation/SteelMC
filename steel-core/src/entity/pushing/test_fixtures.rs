@@ -19,7 +19,7 @@ use crate::entity::entities::{
     MushroomCowEntity, PigEntity, SheepEntity,
 };
 use crate::entity::{Entity, EntityBase, SharedEntity, next_entity_id};
-use crate::entity::{EntityHooks, EntityProps};
+use crate::entity::{EntityMethods, EntityProps};
 use crate::test_support::{
     TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,
 };

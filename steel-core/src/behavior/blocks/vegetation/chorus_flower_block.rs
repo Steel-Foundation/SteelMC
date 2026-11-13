@@ -245,7 +245,7 @@ impl BlockBehavior for ChorusFlowerBlock {
         projectile: &Projectile<'_>,
     ) {
         if Self::projectile_can_break(projectile, world, hit.block_pos) {
-            world.destroy_block_by_entity(hit.block_pos, true, projectile.as_entity_event_source());
+            world.destroy_block_by_entity(hit.block_pos, true, projectile.as_entity());
         }
     }
 }

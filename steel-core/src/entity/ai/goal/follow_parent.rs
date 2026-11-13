@@ -30,7 +30,7 @@ impl Goal for FollowParentGoal {
     }
 
     fn can_use(&mut self, mob: &Mob<'_>) -> bool {
-        let Some(animal) = Animal::of(mob.as_entity_event_source()) else {
+        let Some(animal) = Animal::of(mob.as_entity()) else {
             return false;
         };
         if animal.ageable().age() >= 0 {
@@ -62,7 +62,7 @@ impl Goal for FollowParentGoal {
     }
 
     fn can_continue_to_use(&mut self, mob: &Mob<'_>) -> bool {
-        let Some(animal) = Animal::of(mob.as_entity_event_source()) else {
+        let Some(animal) = Animal::of(mob.as_entity()) else {
             return false;
         };
         if animal.ageable().age() >= 0 {

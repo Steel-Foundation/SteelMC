@@ -5,7 +5,7 @@ use crate::entity::Entity;
 
 /// Vanilla push and cramming behavior with no overrides. Implementors only read state,
 /// only write velocity and the velocity sync flag, and never re-enter the entity manager.
-/// Entities that override contact, velocity or cramming hooks must not opt in.
+/// Entities that override contact, velocity or cramming properties must not opt in.
 pub trait DefaultEntityPush: Entity {
     /// Push inputs for one contact, or `None` while riding. `known_pushable` skips the
     /// `is_pushable` check when the selector has already passed this entity.

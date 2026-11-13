@@ -2,7 +2,7 @@
 //!
 //! State lives in the [`AbstractMinecartBase`] component and the synced
 //! `AbstractMinecart` data layer, behavior on the [`AbstractMinecart`] view;
-//! per-type hooks are [`AbstractMinecartProps`].
+//! per-type properties are [`AbstractMinecartProps`].
 
 use crate::entity::entity;
 use crate::physics::MoveResult;
@@ -30,7 +30,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, WorldAa
 use super::minecart_behavior::MinecartBehavior;
 use super::vehicle_entity::{self, Vehicle};
 use crate::block_entity::block_state_nbt;
-use crate::entity::component::props::entity_props;
+use crate::entity::component::props::layer_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::dismount_helper;
 use crate::entity::prelude::*;
@@ -133,9 +133,9 @@ impl Component for AbstractMinecartBase {
     }
 }
 
-entity_props! {
+layer_props! {
     /// Per-type properties of a vanilla `AbstractMinecart`.
-    pub struct AbstractMinecartProps<E>: AbstractMinecartHooks for AbstractMinecart
+    pub struct AbstractMinecartProps<E>: AbstractMinecartMethods for AbstractMinecart
     where E: Parts,
     table AbstractMinecartTable::MINECART,
     component AbstractMinecartBase {
@@ -159,7 +159,7 @@ entity_props! {
 pub struct AbstractMinecart<'a> {
     entity: &'a dyn Entity,
     base: &'a AbstractMinecartBase,
-    hooks: &'a dyn AbstractMinecartHooks,
+    methods: &'a dyn AbstractMinecartMethods,
 }
 
 impl<'a> AbstractMinecart<'a> {
@@ -169,18 +169,18 @@ impl<'a> AbstractMinecart<'a> {
         Self {
             entity,
             base: entity.get::<AbstractMinecartBase>(),
-            hooks: entity,
+            methods: entity,
         }
     }
 
     /// Returns `entity` as a minecart, if it is one.
     #[must_use]
     pub fn of(entity: &'a dyn Entity) -> Option<Self> {
-        let hooks = entity.as_abstract_minecart_hooks()?;
+        let methods = entity.as_abstract_minecart_methods()?;
         Some(Self {
             entity,
-            base: hooks.layer_component(),
-            hooks,
+            base: methods.layer_component(),
+            methods,
         })
     }
 
@@ -205,11 +205,11 @@ impl Deref for AbstractMinecart<'_> {
     }
 }
 
-/// A concrete minecart type: its component and its hook table.
+/// A concrete minecart type: its component and its property table.
 pub trait AbstractMinecartTable:
     vehicle_entity::Parts + Has<AbstractMinecartBase> + DowncastType + Sized
 {
-    /// The `AbstractMinecart` hooks this type runs.
+    /// The `AbstractMinecart` properties this type runs.
     const MINECART: AbstractMinecartProps<Self>;
 }
 
@@ -344,7 +344,7 @@ pub fn push_entity<E: Parts>(minecart: &E, other: &dyn Entity) {
     minecart.abstract_minecart().push_entity(other);
 }
 
-/// `AbstractMinecart`'s overrides of the entity hooks.
+/// `AbstractMinecart`'s overrides of the entity properties.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {

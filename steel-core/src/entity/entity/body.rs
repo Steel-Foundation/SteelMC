@@ -158,7 +158,7 @@ pub trait EntityBody: Entity {
         let Some(world) = self.level() else {
             return false;
         };
-        let provider = WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
+        let provider = WorldCollisionProvider::for_entity(&world, self.as_entity());
         if let Some(free_center) = provider.find_free_position(
             &allowed_centers,
             old_center,
@@ -229,7 +229,7 @@ pub fn motion_direction<E: Entity + ?Sized>(entity: &E) -> Direction {
 
 /// `Entity`'s [`EntityProps::look_at`].
 pub fn look_at<E: Entity + ?Sized>(entity: &E, from_anchor: EntityAnchor, target: DVec3) {
-    apply_entity_look_at(entity.as_entity_event_source(), from_anchor, target);
+    apply_entity_look_at(entity.as_entity(), from_anchor, target);
 }
 
 /// `Entity`'s [`EntityProps::look_at_entity`].

@@ -14,7 +14,7 @@ pub trait EntityInteraction: Entity {
 
     /// Finds leashable mobs in vanilla's nearby leash scan whose holder is this entity.
     fn leashables_leashed_to(&self) -> Vec<SharedEntity> {
-        self.leashables_leashed_to_holder_in_area(self.as_entity_event_source())
+        self.leashables_leashed_to_holder_in_area(self.as_entity())
     }
 
     /// Finds leashable mobs in this entity's nearby leash scan whose holder is `holder`.
@@ -79,7 +79,7 @@ pub trait EntityInteraction: Entity {
 
         if let Some(world) = self.level() {
             let sound_source =
-                player.map_or_else(|| self.sound_source(), EntityHooks::sound_source);
+                player.map_or_else(|| self.sound_source(), EntityMethods::sound_source);
             world.play_sound(
                 &sound_events::ITEM_SHEARS_SNIP,
                 sound_source,

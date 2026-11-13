@@ -17,7 +17,7 @@ use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
 use crate::chunk::status::ChunkStatus;
-use crate::entity::EntityHooks as _;
+use crate::entity::EntityMethods as _;
 use crate::entity::ai::path::PathTypeCache;
 use crate::entity::damage::DamageHistory;
 use crate::poi::OccupationStatus;

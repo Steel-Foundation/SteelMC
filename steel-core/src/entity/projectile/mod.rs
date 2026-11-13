@@ -2,7 +2,7 @@
 //! their movement.
 //!
 //! State lives in the [`ProjectileBase`] component and behavior on the
-//! [`Projectile`] view; per-type hooks are [`ProjectileProps`]. The
+//! [`Projectile`] view; per-type properties are [`ProjectileProps`]. The
 //! `ThrowableProjectile`, `ThrowableItemProjectile` and
 //! `AbstractThrownPotion` layers are the [`throwable`], [`throwable_item`] and
 //! [`thrown_potion`] modules.
@@ -35,7 +35,7 @@ use uuid::Uuid;
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::enchantment_helper;
-use crate::entity::component::props::entity_props;
+use crate::entity::component::props::layer_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, EntityProps, EntityReference, Living, SharedEntity};
@@ -204,9 +204,9 @@ impl Component for ProjectileBase {
     }
 }
 
-entity_props! {
+layer_props! {
     /// Per-type properties of a vanilla `Projectile`.
-    pub struct ProjectileProps<E>: ProjectileHooks for Projectile
+    pub struct ProjectileProps<E>: ProjectileMethods for Projectile
     where E: Parts,
     table ProjectileTable::PROJECTILE,
     component ProjectileBase {
@@ -232,7 +232,7 @@ entity_props! {
 pub struct Projectile<'a> {
     entity: &'a (dyn Entity + 'static),
     base: &'a ProjectileBase,
-    hooks: &'a dyn ProjectileHooks,
+    methods: &'a dyn ProjectileMethods,
 }
 
 impl<'a> Projectile<'a> {
@@ -242,18 +242,18 @@ impl<'a> Projectile<'a> {
         Self {
             entity,
             base: entity.get::<ProjectileBase>(),
-            hooks: entity,
+            methods: entity,
         }
     }
 
     /// Returns `entity` as a projectile, if it is one.
     #[must_use]
     pub fn of(entity: &'a (dyn Entity + 'static)) -> Option<Self> {
-        let hooks = entity.as_projectile_hooks()?;
+        let methods = entity.as_projectile_methods()?;
         Some(Self {
             entity,
-            base: hooks.layer_component(),
-            hooks,
+            base: methods.layer_component(),
+            methods,
         })
     }
 
@@ -272,9 +272,9 @@ impl Deref for Projectile<'_> {
     }
 }
 
-/// A concrete projectile type: its component and its hook table.
+/// A concrete projectile type: its component and its property table.
 pub trait ProjectileTable: Entity + Has<ProjectileBase> + Sized {
-    /// The `Projectile` hooks this type runs, built on its layer's preset.
+    /// The `Projectile` properties this type runs, built on its layer's preset.
     const PROJECTILE: ProjectileProps<Self>;
 }
 
@@ -365,7 +365,7 @@ pub fn restore_owner_reference<E: Parts>(projectile: &E, owner: &SharedEntity) {
     projectile.projectile().cache_owner(owner);
 }
 
-/// `Projectile`'s overrides of the entity hooks.
+/// `Projectile`'s overrides of the entity properties.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {

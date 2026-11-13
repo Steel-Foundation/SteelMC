@@ -40,7 +40,7 @@ impl Living<'_> {
     /// open, usable slot this entity's type accepts.
     #[must_use]
     pub fn can_equip_with_dispenser(&self, item_stack: &ItemStack) -> bool {
-        if !EntityHooks::is_alive(self.entity()) || self.is_spectator() {
+        if !EntityMethods::is_alive(self.entity()) || self.is_spectator() {
             return false;
         }
 
@@ -264,7 +264,8 @@ pub fn interact_living_entity_with_equippable<E: Parts>(
     }
 
     let slot = equippable.slot;
-    if !living.is_equippable_in_slot(&item_stack, slot) || !EntityHooks::is_alive(living.entity()) {
+    if !living.is_equippable_in_slot(&item_stack, slot) || !EntityMethods::is_alive(living.entity())
+    {
         return InteractionResult::Pass;
     }
 

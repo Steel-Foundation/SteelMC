@@ -41,17 +41,21 @@ pub struct EndCrystalEntity {
 
 impl EntityTable for EndCrystalEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        // `EndCrystal.tick` never calls `super`.
-        tick: |crystal| {
-            crystal.apply_effects_from_blocks();
-            crystal.handle_portal();
-        },
+        tick: Self::entity_tick,
         hurt: |crystal, _, source, _| crystal.hurt_crystal(source),
         movement_emission: |_| EntityMovementEmission::None,
         is_pickable: |_| true,
         blocks_building: |_| true,
         ..EntityProps::new()
     };
+}
+
+impl EndCrystalEntity {
+    /// `EndCrystal.tick` never calls `super`.
+    fn entity_tick(&self) {
+        self.apply_effects_from_blocks();
+        self.handle_portal();
+    }
 }
 
 impl EndCrystalEntity {
@@ -119,7 +123,7 @@ impl EndCrystalEntity {
                 DamageSource::explosion(crystal.clone(), Some(Arc::clone(attacker)))
             });
             options.source = crystal;
-            // The crystal keeps the default block-explosion hooks.
+            // The crystal keeps the default block-explosion properties.
             options.immutable_block_calculator = Some(&DefaultExplosionDamageCalculator);
             world.explode(options);
         }

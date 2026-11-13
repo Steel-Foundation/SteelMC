@@ -1,26 +1,26 @@
-//! Per-type entity hooks: the `Entity` methods entity types override.
+//! Per-type entity properties: the `Entity` methods entity types override.
 //!
-//! [`entity_hooks!`] declares each hook once, at the end of this file, and
+//! [`entity_props!`] declares each property once, at the end of this file, and
 //! expands into:
 //!
-//! - [`EntityProps<E>`]: one `fn(&E, ..)` per hook, typed for the concrete
+//! - [`EntityProps<E>`]: one `fn(&E, ..)` per property, typed for the concrete
 //!   entity. `EntityProps::new()` holds vanilla `Entity`'s behavior; layer
 //!   presets such as `living_entity::entity_props()` override fields with
 //!   struct-update syntax.
-//! - [`EntityHooks`]: the hooks as methods, a supertrait of [`Entity`]. It is
+//! - [`EntityMethods`]: the properties as methods, a supertrait of [`Entity`]. It is
 //!   implemented once, for every [`EntityTable`], by reading the type's `const`
 //!   table. A call through `dyn Entity` is one virtual call, and the entry it
 //!   lands on is known at compile time.
 //!
-//! Vanilla `Entity`'s body for a hook is the function of the same name in
+//! Vanilla `Entity`'s body for a property is the function of the same name in
 //! [`crate::entity::entity`] (`entity::tick`); `EntityProps::new()` lists them.
 //!
 //! # Calling `super`
 //!
 //! A layer keeps each override as a function of its module named after the
-//! hook, and its preset lists them. An override that extends its parent the
+//! property, and its preset lists them. An override that extends its parent the
 //! way a vanilla subclass calls `super` calls the parent layer's function,
-//! which is `Entity`'s when no layer in between overrides the hook:
+//! which is `Entity`'s when no layer in between overrides the property:
 //!
 //! ```ignore
 //! // living_entity
@@ -36,21 +36,21 @@
 //! }
 //! ```
 //!
-//! A layer has a function only for the hooks its vanilla class overrides, so
+//! A layer has a function only for the properties its vanilla class overrides, so
 //! `super` names the nearest ancestor that has one. A layer that gains an
 //! override must repoint the subtypes that called past it.
 
 use super::*;
 
-/// Declares the entity hooks: generates [`EntityProps`] and [`EntityHooks`].
-macro_rules! entity_hooks {
+/// Declares the entity properties: generates [`EntityProps`] and [`EntityMethods`].
+macro_rules! entity_props {
     (
         $(
             $(#[$meta:meta])*
             fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty)?;
         )*
     ) => {
-        /// Per-type entity hooks, typed for the concrete entity `E`.
+        /// Per-type entity properties, typed for the concrete entity `E`.
         pub struct EntityProps<E: 'static> {
             $(
                 $(#[$meta])*
@@ -59,7 +59,7 @@ macro_rules! entity_hooks {
         }
 
         impl<E: Entity> EntityProps<E> {
-            /// Every hook at vanilla `Entity`'s behavior.
+            /// Every property at vanilla `Entity`'s behavior.
             #[must_use]
             pub const fn new() -> Self {
                 Self {
@@ -74,16 +74,16 @@ macro_rules! entity_hooks {
             }
         }
 
-        /// The entity hooks as methods. Implemented for every
+        /// The entity properties as methods. Implemented for every
         /// [`EntityTable`]; entity types change them through their table.
-        pub trait EntityHooks {
+        pub trait EntityMethods {
             $(
                 $(#[$meta])*
                 fn $name(&self $(, $arg: $ty)*) $(-> $ret)?;
             )*
         }
 
-        impl<T: EntityTable> EntityHooks for T {
+        impl<T: EntityTable> EntityMethods for T {
             $(
                 fn $name(&self $(, $arg: $ty)*) $(-> $ret)? {
                     (T::ENTITY.$name)(self $(, $arg)*)
@@ -93,16 +93,16 @@ macro_rules! entity_hooks {
     };
 }
 
-/// A concrete entity type's hook table.
+/// A concrete entity type's property table.
 ///
 /// Every entity type implements it, like its layer tables; an empty impl runs
 /// vanilla `Entity`'s behavior.
 pub trait EntityTable: Entity + Sized {
-    /// The hooks this type runs.
+    /// The properties this type runs.
     const ENTITY: EntityProps<Self> = EntityProps::new();
 }
 
-entity_hooks! {
+entity_props! {
     /// Returns whether this entity ignores chunk ticking visibility.
     fn is_always_ticking() -> bool;
     /// Returns whether this entity should be broadcast to the given player.
@@ -144,7 +144,7 @@ entity_hooks! {
     /// Returns whether vanilla fluid currents can push this entity.
     ///
     /// The extractor flattens vanilla's per-subclass overrides into one flag.
-    /// Entities with extra conditions set this hook, as `Player` does.
+    /// Entities with extra conditions set this property, as `Player` does.
     fn is_pushed_by_fluid() -> bool;
     /// Applies bubble-column surface push velocity, dispatching to the
     /// projectile override when this entity is a projectile.
@@ -194,8 +194,8 @@ entity_hooks! {
     ) -> bool;
     /// Whether movement queries must consider this entity for hard collisions.
     ///
-    /// Returning `false` promises [`EntityHooks::can_be_collided_with`] is always false and
-    /// [`EntityHooks::can_collide_with`] never broadens the default rule. This capability may
+    /// Returning `false` promises [`EntityMethods::can_be_collided_with`] is always false and
+    /// [`EntityMethods::can_collide_with`] never broadens the default rule. This capability may
     /// be cached for the registered lifetime, including chunk-unload retention.
     fn is_hard_collision_relevant() -> bool;
     /// Returns whether projectile collision may interact with this entity.
@@ -403,7 +403,7 @@ entity_hooks! {
     /// in a ticked chunk. The caller handles post-tick dirty data sync.
     fn tick();
     /// Vanilla `Entity.baseTick`. It stays separate from
-    /// [`EntityHooks::tick`] because several vanilla subclasses override
+    /// [`EntityMethods::tick`] because several vanilla subclasses override
     /// `tick` without calling `super.tick()`.
     fn base_tick();
     /// Vanilla `Entity.hurtServer`: applies damage, returning whether it

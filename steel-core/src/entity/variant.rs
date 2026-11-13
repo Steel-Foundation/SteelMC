@@ -11,6 +11,7 @@ use steel_registry::{RegistryEntry, RegistryExt, SoundVariantRegistry, SpawnVari
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{Downcast as _, DowncastType, Identifier};
 
+use crate::entity::ageable;
 use crate::entity::ageable::Ageable;
 use crate::entity::{Entity, SharedEntity};
 use crate::world::World;
@@ -84,21 +85,18 @@ pub fn pick_spawn_variants<E: Variants>(entity: &E, world: &World) {
 }
 
 /// `getBreedOffspring`: a baby of the parent's type with either parent's variant.
-pub fn breed_offspring<E: Variants>(
-    parent: &Ageable<'_>,
+pub fn breed_offspring<E: Variants + ageable::Parts>(
+    parent: &E,
     world: &Arc<World>,
     partner: &Ageable<'_>,
 ) -> Option<SharedEntity> {
-    let offspring = parent.create_offspring(world)?;
-    let inherited = if rand::random::<bool>() {
-        parent
+    let offspring = parent.ageable().create_offspring(world)?;
+    let source = if rand::random::<bool>() {
+        Some(parent)
     } else {
-        partner
+        partner.entity().downcast_ref::<E>()
     };
-    if let (Some(source), Some(baby)) = (
-        inherited.entity().downcast_ref::<E>(),
-        offspring.downcast_ref::<E>(),
-    ) {
+    if let (Some(source), Some(baby)) = (source, offspring.downcast_ref::<E>()) {
         baby.set_variant(source.variant());
     }
     Some(offspring)

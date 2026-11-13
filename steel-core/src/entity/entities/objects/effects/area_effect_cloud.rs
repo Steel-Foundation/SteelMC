@@ -1,6 +1,7 @@
 //! Lingering cloud that applies its potion effects to living entities standing inside it.
 
 use crate::entity::entity;
+use crate::inventory::prelude::ItemStack;
 use rustc_hash::FxHashMap;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
@@ -91,33 +92,41 @@ pub struct AreaEffectCloudEntity {
 
 impl EntityTable for AreaEffectCloudEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |cloud| {
-            entity::tick(cloud);
-            // Clients draw the particles from the synced radius, waiting
-            // flag and particle; only the server tick runs here.
-            if let Some(world) = cloud.level() {
-                cloud.server_tick(&world);
-            }
-        },
+        tick: Self::entity_tick,
         piston_push_reaction: |_| PushReaction::IgnoreEntity,
         dimensions_for_pose: |cloud, _| {
             EntityDimensions::with_default_eye_height(cloud.radius() * 2.0, HEIGHT)
         },
-        restore_owner_reference: |cloud, owner| {
-            if let Some(reference) = &cloud.state.lock().owner {
-                reference.cache_entity(owner);
-            }
-        },
-        apply_implicit_item_components: |cloud, item_stack| {
-            if let Some(contents) = item_stack.get(vanilla_components::POTION_CONTENTS) {
-                cloud.set_potion_contents(contents.clone());
-            }
-            if let Some(scale) = item_stack.get(vanilla_components::POTION_DURATION_SCALE) {
-                cloud.set_potion_duration_scale(*scale);
-            }
-        },
+        restore_owner_reference: Self::entity_restore_owner_reference,
+        apply_implicit_item_components: Self::entity_apply_implicit_item_components,
         ..EntityProps::new()
     };
+}
+
+impl AreaEffectCloudEntity {
+    fn entity_tick(&self) {
+        entity::tick(self);
+        // Clients draw the particles from the synced radius, waiting
+        // flag and particle; only the server tick runs here.
+        if let Some(world) = self.level() {
+            self.server_tick(&world);
+        }
+    }
+
+    fn entity_restore_owner_reference(&self, owner: &SharedEntity) {
+        if let Some(reference) = &self.state.lock().owner {
+            reference.cache_entity(owner);
+        }
+    }
+
+    fn entity_apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(contents) = item_stack.get(vanilla_components::POTION_CONTENTS) {
+            self.set_potion_contents(contents.clone());
+        }
+        if let Some(scale) = item_stack.get(vanilla_components::POTION_DURATION_SCALE) {
+            self.set_potion_duration_scale(*scale);
+        }
+    }
 }
 
 impl AreaEffectCloudEntity {

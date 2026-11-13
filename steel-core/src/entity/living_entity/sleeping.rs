@@ -90,20 +90,16 @@ pub fn stop_sleeping<E: Parts>(entity: &E) {
             BLOCK_BEHAVIORS
                 .get_behavior(state.get_block())
                 .on_stop_sleeping(state, &world, bed_position);
-            let stand_up = BedBlock::find_standup_position(
-                &world,
-                living.as_entity_event_source(),
-                facing,
-                bed_position,
-            )
-            .unwrap_or_else(|| {
-                let above = bed_position.above();
-                DVec3::new(
-                    f64::from(above.x()) + 0.5,
-                    f64::from(above.y()) + 0.1,
-                    f64::from(above.z()) + 0.5,
-                )
-            });
+            let stand_up =
+                BedBlock::find_standup_position(&world, living.as_entity(), facing, bed_position)
+                    .unwrap_or_else(|| {
+                        let above = bed_position.above();
+                        DVec3::new(
+                            f64::from(above.x()) + 0.5,
+                            f64::from(above.y()) + 0.1,
+                            f64::from(above.z()) + 0.5,
+                        )
+                    });
             let bed_center = DVec3::new(
                 f64::from(bed_position.x()) + 0.5,
                 f64::from(bed_position.y()),

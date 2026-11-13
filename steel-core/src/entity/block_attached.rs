@@ -2,7 +2,7 @@
 //! moved, pushed or hurt, and when their block can no longer hold them.
 //!
 //! State lives in the [`BlockAttachment`] component; entity types implement
-//! [`Parts`] and start their hooks from [`entity_props`].
+//! [`Parts`] and start their properties from [`entity_props`].
 
 use crate::physics::MoveResult;
 use crate::physics::MoverType;
@@ -144,7 +144,7 @@ pub fn spawn_position<E: Parts>(entity: &E) -> DVec3 {
     entity.block_pos().0.as_dvec3()
 }
 
-/// The `BlockAttachedEntity` overrides of the entity hooks.
+/// The `BlockAttachedEntity` overrides of the entity properties.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {

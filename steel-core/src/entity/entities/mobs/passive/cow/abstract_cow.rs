@@ -103,7 +103,7 @@ pub fn play_step_sound<E: Parts>(cow: &E, _: BlockPos, _: BlockStateId) {
     cow.play_sound(CLASSIC_SOUNDS.step_sound, 0.15, 1.0);
 }
 
-/// `AbstractCow`'s changes to the mob entity hooks.
+/// `AbstractCow`'s changes to the mob entity properties.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {

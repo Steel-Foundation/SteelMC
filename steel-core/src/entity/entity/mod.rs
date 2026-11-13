@@ -16,11 +16,11 @@ mod body;
 mod combat;
 mod fire;
 mod fluids;
-mod hooks;
 mod interaction;
 mod motion;
 mod persistence;
 mod portals;
+mod props;
 mod riding;
 mod sounds;
 pub use {
@@ -52,7 +52,6 @@ pub use fluids::{
     do_water_splash_effect, is_pushed_by_fluid, is_swimming, on_above_bubble_column,
     on_inside_bubble_column, update_swimming,
 };
-pub use hooks::{EntityHooks, EntityProps, EntityTable};
 pub use interaction::{
     interact, may_interact, notify_leash_holder, notify_leashee_removed, player_touch,
 };
@@ -67,6 +66,7 @@ pub use persistence::apply_implicit_item_components;
 pub use portals::{
     can_use_portal, dimension_changing_delay, on_teleported, relative_portal_position,
 };
+pub use props::{EntityMethods, EntityProps, EntityTable};
 pub use riding::{
     can_add_passenger, could_accept_passenger, dismount_location_for_passenger,
     passenger_attachment_point, remove_vehicle, ride_tick, start_riding,
@@ -174,14 +174,15 @@ pub enum AcceptedClientMovementOutcome {
     Handled,
 }
 
-/// Object-safe access to an entity trait object from default `Entity` methods.
-pub trait EntityEventSource {
-    /// Returns this entity as a game-event source.
-    fn as_entity_event_source(&self) -> &dyn Entity;
+/// Unsizes an entity reference where `Self` may not be `Sized`, as in the
+/// `Entity` extension traits and the `entity::*` functions.
+pub trait AsEntity {
+    /// Returns this entity as `&dyn Entity`.
+    fn as_entity(&self) -> &dyn Entity;
 }
 
-impl<T: Entity> EntityEventSource for T {
-    fn as_entity_event_source(&self) -> &dyn Entity {
+impl<T: Entity> AsEntity for T {
+    fn as_entity(&self) -> &dyn Entity {
         self
     }
 }
@@ -242,7 +243,7 @@ impl<T: Entity> EntityEventSource for T {
 ///     };
 /// }
 /// ```
-pub trait Entity: EntityHooks + EntityEventSource + ErasedType + Send + Sync + 'static {
+pub trait Entity: EntityMethods + AsEntity + ErasedType + Send + Sync + 'static {
     /// Returns a reference to the entity's shared vanilla base fields.
     fn base(&self) -> &EntityBase;
 
@@ -438,7 +439,7 @@ pub trait Entity: EntityHooks + EntityEventSource + ErasedType + Send + Sync + '
 
     /// Emits a vanilla game event from this entity's exact position.
     fn game_event(&self, event: GameEventRef) {
-        self.game_event_with_source_entity(event, Some(self.as_entity_event_source()));
+        self.game_event_with_source_entity(event, Some(self.as_entity()));
     }
 
     /// Sets the level callback for lifecycle events (movement, removal).
@@ -458,12 +459,12 @@ pub trait Entity: EntityHooks + EntityEventSource + ErasedType + Send + Sync + '
 
     /// Returns this entity as a projectile, if it is one.
     fn as_projectile(&self) -> Option<Projectile<'_>> {
-        Projectile::of(self.as_entity_event_source())
+        Projectile::of(self.as_entity())
     }
 
     /// Returns this entity as a living entity when it has living behavior.
     fn as_living_entity(&self) -> Option<Living<'_>> {
-        Living::of(self.as_entity_event_source())
+        Living::of(self.as_entity())
     }
 
     /// Returns this entity as an item frame when it has item-frame behavior.
@@ -493,7 +494,7 @@ pub trait Entity: EntityHooks + EntityEventSource + ErasedType + Send + Sync + '
 
     /// Returns this entity as a mob when it has mob behavior.
     fn as_mob(&self) -> Option<Mob<'_>> {
-        Mob::of(self.as_entity_event_source())
+        Mob::of(self.as_entity())
     }
 
     /// Returns this entity as [`Shearable`] when shears act on it.
@@ -506,25 +507,35 @@ pub trait Entity: EntityHooks + EntityEventSource + ErasedType + Send + Sync + '
         try_as_dyn::<Self, dyn Leashable>(self)
     }
 
-    /// Returns this entity's `LivingEntity` hooks when it is a living entity;
+    /// Returns this entity's `LivingEntity` properties when it is a living entity;
     /// [`Living::of`] builds the view from them.
-    fn as_living_hooks(&self) -> Option<&dyn LivingHooks> {
-        try_as_dyn::<Self, dyn LivingHooks>(self)
+    fn as_living_methods(&self) -> Option<&dyn LivingMethods> {
+        try_as_dyn::<Self, dyn LivingMethods>(self)
     }
 
-    /// Returns this entity's `Mob` hooks when it is a mob.
-    fn as_mob_hooks(&self) -> Option<&dyn MobHooks> {
-        try_as_dyn::<Self, dyn MobHooks>(self)
+    /// Returns this entity's `Mob` properties when it is a mob.
+    fn as_mob_methods(&self) -> Option<&dyn MobMethods> {
+        try_as_dyn::<Self, dyn MobMethods>(self)
     }
 
-    /// Returns this entity's `Projectile` hooks when it is a projectile.
-    fn as_projectile_hooks(&self) -> Option<&dyn ProjectileHooks> {
-        try_as_dyn::<Self, dyn ProjectileHooks>(self)
+    /// Returns this entity's `AgeableMob` properties when it is an ageable mob.
+    fn as_ageable_methods(&self) -> Option<&dyn AgeableMethods> {
+        try_as_dyn::<Self, dyn AgeableMethods>(self)
     }
 
-    /// Returns this entity's `AbstractMinecart` hooks when it is a minecart.
-    fn as_abstract_minecart_hooks(&self) -> Option<&dyn AbstractMinecartHooks> {
-        try_as_dyn::<Self, dyn AbstractMinecartHooks>(self)
+    /// Returns this entity's `Animal` properties when it is an animal.
+    fn as_animal_methods(&self) -> Option<&dyn AnimalMethods> {
+        try_as_dyn::<Self, dyn AnimalMethods>(self)
+    }
+
+    /// Returns this entity's `Projectile` properties when it is a projectile.
+    fn as_projectile_methods(&self) -> Option<&dyn ProjectileMethods> {
+        try_as_dyn::<Self, dyn ProjectileMethods>(self)
+    }
+
+    /// Returns this entity's `AbstractMinecart` properties when it is a minecart.
+    fn as_abstract_minecart_methods(&self) -> Option<&dyn AbstractMinecartMethods> {
+        try_as_dyn::<Self, dyn AbstractMinecartMethods>(self)
     }
 
     /// Whether this entity implements the `Enemy` marker.
@@ -819,7 +830,7 @@ pub fn position_rider<E: Entity + ?Sized>(this: &E, passenger: &dyn Entity) {
     }
 
     let riding_position = this.passenger_riding_position(passenger);
-    let vehicle_attachment = passenger.vehicle_attachment_point(this.as_entity_event_source());
+    let vehicle_attachment = passenger.vehicle_attachment_point(this.as_entity());
     if let Err(error) = passenger.try_set_position(riding_position - vehicle_attachment) {
         log::debug!(
             "Failed to position passenger {} riding entity {}: {error}",

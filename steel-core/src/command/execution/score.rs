@@ -1,6 +1,6 @@
 //! Deferred scoreboard command arguments.
 
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use uuid::Uuid;
 
 use super::{CommandArgumentSource, CommandSource};

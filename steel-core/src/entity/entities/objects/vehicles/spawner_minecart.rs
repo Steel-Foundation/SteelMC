@@ -44,12 +44,16 @@ impl vehicle_entity::Parts for SpawnerMinecartEntity {
 
 impl EntityTable for SpawnerMinecartEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |minecart| {
-            abstract_minecart::tick(minecart);
-            minecart.tick_spawner();
-        },
+        tick: Self::entity_tick,
         ..abstract_minecart::entity_props()
     };
+}
+
+impl SpawnerMinecartEntity {
+    fn entity_tick(&self) {
+        abstract_minecart::tick(self);
+        self.tick_spawner();
+    }
 }
 
 impl SpawnerMinecartEntity {

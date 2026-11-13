@@ -1,6 +1,6 @@
 //! Vanilla experience command plus Steel's existing clear extension.
 
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use std::sync::Arc;
 
 use steel_utils::{Identifier, translations};

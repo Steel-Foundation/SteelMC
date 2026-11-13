@@ -2,7 +2,7 @@
 
 pub mod pathfinder;
 
-use crate::entity::component::props::entity_props;
+use crate::entity::component::props::layer_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::entity;
 use crate::entity::leash::{LeashData, Leashable};
@@ -347,9 +347,9 @@ impl Component for MobBase {
     }
 }
 
-entity_props! {
+layer_props! {
     /// Per-type properties of a vanilla `Mob`.
-    pub struct MobProps<E>: MobHooks for Mob
+    pub struct MobProps<E>: MobMethods for Mob
     where E: Parts,
     table MobTable::MOB,
     component MobBase {
@@ -415,7 +415,7 @@ pub struct Mob<'a> {
     living: Living<'a>,
     leashable: &'a (dyn Leashable + 'static),
     base: &'a MobBase,
-    hooks: &'a dyn MobHooks,
+    methods: &'a dyn MobMethods,
 }
 
 impl<'a> Mob<'a> {
@@ -426,19 +426,19 @@ impl<'a> Mob<'a> {
             living: entity.living(),
             leashable: entity,
             base: entity.get::<MobBase>(),
-            hooks: entity,
+            methods: entity,
         }
     }
 
     /// Returns `entity` as a mob, if it is one.
     #[must_use]
     pub fn of(entity: &'a (dyn Entity + 'static)) -> Option<Self> {
-        let hooks = entity.as_mob_hooks()?;
+        let methods = entity.as_mob_methods()?;
         Some(Self {
             living: Living::of(entity)?,
             leashable: entity.as_leashable()?,
-            base: hooks.layer_component(),
-            hooks,
+            base: methods.layer_component(),
+            methods,
         })
     }
 
@@ -620,7 +620,7 @@ pub fn is_effective_ai<E: Parts>(mob: &E) -> bool {
     mob.is_server_driven_movement() && !mob.mob().is_no_ai()
 }
 
-/// `Mob`'s overrides of entity hooks, on top of
+/// `Mob`'s overrides of entity properties, on top of
 /// [`living_entity::entity_props`](crate::entity::living_entity::entity_props).
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
@@ -635,9 +635,9 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     }
 }
 
-/// A concrete mob type: its component and its hook table.
+/// A concrete mob type: its component and its property table.
 pub trait MobTable: LivingParts + Has<MobBase> {
-    /// The `Mob` hooks this type runs, built on its layer's preset
+    /// The `Mob` properties this type runs, built on its layer's preset
     /// (`MobProps::new()`, `pathfinder::mob_props()`, ...).
     const MOB: MobProps<Self>;
 }
@@ -788,7 +788,7 @@ impl<'a> Mob<'a> {
     /// Sets the vanilla baby state. Vanilla `Mob.setBaby` is a no-op; ageable
     /// mobs derive it from their start age, and other mobs override as needed.
     pub fn set_baby(&self, baby: bool) {
-        if let Some(ageable) = Ageable::of(self.as_entity_event_source()) {
+        if let Some(ageable) = Ageable::of(self.as_entity()) {
             ageable.set_baby(baby);
         }
     }
@@ -931,7 +931,7 @@ impl<'a> Mob<'a> {
                 && !entity.is_removed()
                 && !entity.is_spectator()
                 && entity.blocks_building()
-                && !entity.is_passenger_of_same_vehicle(self.as_entity_event_source())
+                && !entity.is_passenger_of_same_vehicle(self.as_entity())
         })
     }
 
@@ -1296,7 +1296,7 @@ impl<'a> Mob<'a> {
             return;
         };
         if !self.can_pick_up_loot()
-            || !EntityHooks::is_alive(self.entity())
+            || !EntityMethods::is_alive(self.entity())
             || !world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
         {
             return;
@@ -1596,7 +1596,7 @@ impl<'a> Mob<'a> {
     /// the target was hurt.
     #[must_use]
     pub fn do_hurt_target(&self, world: &World, target: &SharedEntity) -> bool {
-        let Some(attacker) = self.as_entity_event_source().as_living_entity() else {
+        let Some(attacker) = self.as_entity().as_living_entity() else {
             return false;
         };
         let Some(this) = self.shared() else {
@@ -1656,7 +1656,7 @@ impl<'a> Mob<'a> {
             self.play_attack_sound();
         }
 
-        if let Some(user) = self.as_entity_event_source().as_living_entity() {
+        if let Some(user) = self.as_entity().as_living_entity() {
             enchantment_helper::do_post_piercing_attack_effects(world, &user);
         }
         was_hurt
@@ -2198,7 +2198,7 @@ impl<T: MobTable> Leashable for T {
         if mob.is_pathfinder() {
             mob.when_leashed_to_pathfinder(holder);
         } else {
-            holder.notify_leash_holder(self.as_entity_event_source());
+            holder.notify_leash_holder(self.as_entity());
         }
     }
 

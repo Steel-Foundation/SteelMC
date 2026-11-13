@@ -24,7 +24,7 @@ impl AvoidEntityGoal {
             max_dist,
             walk_speed_modifier,
             sprint_speed_modifier,
-            |target, _| entity_selector::no_creative_or_spectator(target.as_entity_event_source()),
+            |target, _| entity_selector::no_creative_or_spectator(target.as_entity()),
         )
     }
 

@@ -8,6 +8,7 @@ use crate::entity::entity;
 use crate::entity::projectile;
 use crate::entity::projectile::ProjectileTable;
 use std::sync::Arc;
+use steel_utils::BlockPos;
 
 use glam::DVec3;
 use steel_macros::entity_behavior;
@@ -59,22 +60,30 @@ pub struct EnderPearlEntity {
 impl EntityTable for EnderPearlEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: Self::entity_tick,
-        on_removal: |pearl, reason| {
-            // Pearls saved with their player stay registered for the next login.
-            if reason != RemovalReason::StoredWithPlayer {
-                pearl.deregister_from_owner();
-            }
-        },
-        // Unlike other projectiles, pearls move through bubble columns like
-        // any entity.
-        on_above_bubble_column: |pearl, drag_down, pos| {
-            entity::on_above_bubble_column(pearl, drag_down, pos);
-        },
-        on_inside_bubble_column: |pearl, drag_down| {
-            entity::on_inside_bubble_column(pearl, drag_down);
-        },
+        on_removal: Self::entity_on_removal,
+        on_above_bubble_column: Self::entity_on_above_bubble_column,
+        on_inside_bubble_column: Self::entity_on_inside_bubble_column,
         ..throwable::entity_props()
     };
+}
+
+impl EnderPearlEntity {
+    fn entity_on_removal(&self, reason: RemovalReason) {
+        // Pearls saved with their player stay registered for the next login.
+        if reason != RemovalReason::StoredWithPlayer {
+            self.deregister_from_owner();
+        }
+    }
+
+    /// Unlike other projectiles, pearls move through bubble columns like
+    /// any entity.
+    fn entity_on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
+        entity::on_above_bubble_column(self, drag_down, pos);
+    }
+
+    fn entity_on_inside_bubble_column(&self, drag_down: bool) {
+        entity::on_inside_bubble_column(self, drag_down);
+    }
 }
 
 impl EnderPearlEntity {
@@ -272,16 +281,20 @@ impl EnderPearlEntity {
 impl ProjectileTable for EnderPearlEntity {
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
         on_hit: Self::projectile_on_hit,
-        on_hit_entity: |pearl, target, location| {
-            projectile::on_hit_entity(pearl, target, location);
-            if let Some(world) = target.level()
-                && let Some(source) = pearl.projectile().thrown_damage()
-            {
-                target.hurt(&world, &source, 0.0);
-            }
-        },
+        on_hit_entity: Self::projectile_on_hit_entity,
         ..ProjectileProps::new()
     };
+}
+
+impl EnderPearlEntity {
+    fn projectile_on_hit_entity(&self, target: &SharedEntity, location: DVec3) {
+        projectile::on_hit_entity(self, target, location);
+        if let Some(world) = target.level()
+            && let Some(source) = self.projectile().thrown_damage()
+        {
+            target.hurt(&world, &source, 0.0);
+        }
+    }
 }
 
 #[cfg(test)]

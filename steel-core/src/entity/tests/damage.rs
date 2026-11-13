@@ -195,7 +195,7 @@ fn head_yaw_uses_living_head_rotation_only() {
     living.set_rotation((35.0, 0.0));
     living.living().set_y_head_rot(120.0);
 
-    assert_f32_close(EntityHooks::y_head_rot(&living), 120.0);
+    assert_f32_close(EntityMethods::y_head_rot(&living), 120.0);
 
     let non_living = PushableTestEntity::shared(2, DVec3::ZERO);
     non_living.set_rotation((35.0, 0.0));
@@ -370,7 +370,7 @@ fn death_side_effects_run_only_once() {
     assert_eq!(entity.pose(), EntityPose::Dying);
 
     // `die` claims the death atomically, so a second call cannot re-run the side
-    // effects. Whether a subclass hook keeps the entity alive for an animation is
+    // effects. Whether a subclass override keeps the entity alive for an animation is
     // that subclass's own contract, tested with it.
     entity.set_pose(EntityPose::Standing);
     entity.living().die(&source);

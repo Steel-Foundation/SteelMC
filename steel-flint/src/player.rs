@@ -5,7 +5,7 @@
 
 use std::any::Any;
 use std::sync::Arc;
-use steel_core::entity::EntityHooks;
+use steel_core::entity::EntityMethods;
 
 use flint_core::test_spec::{GameMode, PlayerSlot};
 use flint_core::{FlintPlayer, Item};

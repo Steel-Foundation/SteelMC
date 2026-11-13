@@ -38,7 +38,7 @@ use crate::entity::leash::{LEASH_ELASTIC_DISTANCE, LEASH_SNAP_DISTANCE, Leashabl
 use crate::entity::mob::pathfinder::LEASH_CLOSE_RANGE_WANTED_DISTANCE;
 use crate::entity::mob::{Mob, MobBase};
 use crate::entity::{Entity, EntityBase, LivingEntityBase, SharedEntity, next_entity_id};
-use crate::entity::{EntityHooks, EntityProps, living_entity};
+use crate::entity::{EntityMethods, EntityProps, living_entity};
 use crate::entity::{EntitySyncedData, MobProps, mob};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::ResetReason;

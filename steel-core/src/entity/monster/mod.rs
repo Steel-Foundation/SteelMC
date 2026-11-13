@@ -123,7 +123,7 @@ pub fn fall_sounds<E: Parts>(_: &E) -> (SoundEventRef, SoundEventRef) {
     )
 }
 
-/// `Monster`'s changes to the entity hooks.
+/// `Monster`'s changes to the entity properties.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {

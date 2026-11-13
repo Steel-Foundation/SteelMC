@@ -6,7 +6,7 @@ use crate::command::execution::{
     literal, suggest_list,
 };
 use crate::command::registration::CommandRegistration;
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use crate::player::Player;
 use crate::player::advancement::PlayerAdvancement;
 use std::sync::Arc;

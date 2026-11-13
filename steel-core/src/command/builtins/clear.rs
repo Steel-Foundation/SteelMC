@@ -1,6 +1,6 @@
 //! Vanilla player inventory clearing command.
 
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use std::{slice, sync::Arc};
 
 use steel_registry::item_stack::ItemStack;

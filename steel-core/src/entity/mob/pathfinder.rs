@@ -275,7 +275,7 @@ impl Mob<'_> {
     pub fn when_leashed_to_pathfinder(&self, holder: &dyn Entity) {
         let radius = self.leashable().leash_elastic_distance() as i32 - 1;
         self.set_home_to(holder.block_position(), radius);
-        holder.notify_leash_holder(self.as_entity_event_source());
+        holder.notify_leash_holder(self.as_entity());
     }
 
     /// Re-enables MOVE and follows a nearby holder unless panicking.
@@ -349,8 +349,7 @@ impl Mob<'_> {
         let mob_position = self.block_position();
         let settings = MobPathSettings::from_mob(self);
         let mut evaluator = WalkNodeEvaluator::new(settings);
-        let collision_world =
-            WorldCollisionProvider::for_path_navigation(world, self.as_entity_event_source());
+        let collision_world = WorldCollisionProvider::for_path_navigation(world, self.as_entity());
         let mut collision = |aabb| {
             collision_world.has_entity_context_collision(
                 aabb,

@@ -2,8 +2,9 @@
 //!
 //! State lives in the [`Age`] component; behavior lives on the [`Ageable`]
 //! view, which any code holding an entity can obtain with [`Ageable::of`].
-//! [`living_props`] and [`mob_props`] are the tables an ageable mob type
-//! builds on.
+//! [`AgeableProps`] holds the methods `AgeableMob` declares, and
+//! [`living_props`] and [`mob_props`] are the presets an ageable mob type
+//! builds its other tables on.
 
 use crate::entity::EntitySpawnReason;
 use crate::entity::LivingProps;
@@ -30,6 +31,7 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::behavior::InteractionResult;
+use crate::entity::component::props::layer_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::next_entity_id;
 use crate::entity::{AgeableMobGroupData, ENTITIES, Entity, SharedEntity, SpawnGroupData, mob};
@@ -48,25 +50,56 @@ struct AgeState {
     age_lock_particle_timer: i32,
 }
 
-/// Per-type properties of a vanilla `AgeableMob`.
-pub struct AgeableProps {
-    /// `AgeableMob.getBreedOffspring`: creates the offspring of `parent` and
-    /// `partner`. Spawn eggs used on an adult pass the parent as partner.
-    pub breed_offspring:
-        fn(parent: &Ageable<'_>, world: &Arc<World>, partner: &Ageable<'_>) -> Option<SharedEntity>,
+layer_props! {
+    /// Per-type properties of a vanilla `AgeableMob`.
+    pub struct AgeableProps<E>: AgeableMethods for Ageable
+    where E: Parts,
+    table AgeableTable::AGEABLE,
+    component Age {
+        /// `AgeableMob.getBreedOffspring`: creates this mob's offspring with
+        /// `partner`. Spawn eggs used on an adult pass the parent as partner.
+        fn breed_offspring(world: &Arc<World>, partner: &Ageable<'_>) -> Option<SharedEntity>;
+    }
+}
+
+/// `AgeableMob`'s [`AgeableProps::breed_offspring`]: vanilla's is abstract, so
+/// a type without one has no offspring.
+pub const fn breed_offspring<E: Parts>(
+    _entity: &E,
+    _world: &Arc<World>,
+    _partner: &Ageable<'_>,
+) -> Option<SharedEntity> {
+    None
+}
+
+/// A concrete ageable mob type: its age component and its table.
+pub trait AgeableTable: mob::Parts + Has<Age> {
+    /// The `AgeableMob` properties this type runs.
+    const AGEABLE: AgeableProps<Self>;
+}
+
+/// Every ageable mob type; keeps generic bounds short.
+pub trait Parts: AgeableTable {
+    /// Returns this entity as an ageable mob.
+    fn ageable(&self) -> Ageable<'_>;
+}
+
+impl<E: AgeableTable> Parts for E {
+    fn ageable(&self) -> Ageable<'_> {
+        Ageable::new(self)
+    }
 }
 
 /// Age state of a vanilla `AgeableMob`. The baby and age-locked flags are
 /// synchronized data and live in the entity's generated synced data.
 pub struct Age {
     state: CheckedMutex<AgeState>,
-    props: &'static AgeableProps,
 }
 
 impl Age {
-    /// An adult with no forced growth, with `props` describing its type.
+    /// An adult with no forced growth.
     #[must_use]
-    pub const fn new(props: &'static AgeableProps) -> Self {
+    pub const fn new() -> Self {
         Self {
             state: CheckedMutex::new(AgeState {
                 age: 0,
@@ -74,7 +107,6 @@ impl Age {
                 forced_age_timer: 0,
                 age_lock_particle_timer: 0,
             }),
-            props,
         }
     }
 }
@@ -86,14 +118,18 @@ unsafe impl DowncastType for Age {
 
 impl Component for Age {
     fn save(&self, owner: &dyn Entity, nbt: &mut NbtCompound) {
-        let ageable = Ageable::new(owner, self);
+        let Some(ageable) = Ageable::of(owner) else {
+            return;
+        };
         nbt.insert("Age", ageable.age());
         nbt.insert("ForcedAge", ageable.forced_age());
         nbt.insert("AgeLocked", i8::from(ageable.is_age_locked()));
     }
 
     fn load(&self, owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        let ageable = Ageable::new(owner, self);
+        let Some(ageable) = Ageable::of(owner) else {
+            return;
+        };
         ageable.set_age(nbt.int_value("Age").unwrap_or(0));
         self.state.lock().forced_age = nbt.int_value("ForcedAge").unwrap_or(0);
         ageable.set_age_locked(nbt.byte_value("AgeLocked").is_some_and(|value| value != 0));
@@ -105,19 +141,29 @@ impl Component for Age {
 pub struct Ageable<'a> {
     entity: &'a dyn Entity,
     age: &'a Age,
+    methods: &'a dyn AgeableMethods,
 }
 
 impl<'a> Ageable<'a> {
-    /// Pairs `entity` with its age component.
+    /// Pairs a concrete ageable mob with its state.
     #[must_use]
-    pub const fn new(entity: &'a dyn Entity, age: &'a Age) -> Self {
-        Self { entity, age }
+    pub fn new<E: Parts>(entity: &'a E) -> Self {
+        Self {
+            entity,
+            age: entity.get::<Age>(),
+            methods: entity,
+        }
     }
 
     /// Returns `entity` as an ageable mob, if it is one.
     #[must_use]
     pub fn of(entity: &'a dyn Entity) -> Option<Self> {
-        Some(Self::new(entity, entity.query::<Age>()?))
+        let methods = entity.as_ageable_methods()?;
+        Some(Self {
+            entity,
+            age: methods.layer_component(),
+            methods,
+        })
     }
 
     /// Returns the entity this view belongs to.
@@ -234,16 +280,6 @@ impl<'a> Ageable<'a> {
         }
     }
 
-    /// Creates this mob's offspring with `partner` (`getBreedOffspring`).
-    #[must_use]
-    pub fn breed_offspring(
-        &self,
-        world: &Arc<World>,
-        partner: &Ageable<'_>,
-    ) -> Option<SharedEntity> {
-        (self.age.props.breed_offspring)(self, world, partner)
-    }
-
     /// Creates a same-type entity at this mob's position to become offspring.
     #[must_use]
     pub fn create_offspring(&self, world: &Arc<World>) -> Option<SharedEntity> {
@@ -332,15 +368,15 @@ impl<'a> Ageable<'a> {
 }
 
 /// `AgeableMob`'s [`LivingProps::ai_step`].
-pub fn ai_step<E: mob::Parts + Has<Age>>(entity: &E) -> Option<MoveResult> {
+pub fn ai_step<E: Parts>(entity: &E) -> Option<MoveResult> {
     let movement = mob::ai_step(entity);
-    Ageable::new(entity, entity.get::<Age>()).tick();
+    entity.ageable().tick();
     movement
 }
 
 /// `AgeableMob`'s changes to the living defaults.
 #[must_use]
-pub const fn living_props<E: mob::Parts + Has<Age>>() -> LivingProps<E> {
+pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
         ai_step: ai_step::<E>,
         ..mob::living_props()
@@ -348,7 +384,7 @@ pub const fn living_props<E: mob::Parts + Has<Age>>() -> LivingProps<E> {
 }
 
 /// `AgeableMob`'s [`MobProps::mob_interact`].
-pub fn mob_interact<E: mob::Parts + Has<Age>>(
+pub fn mob_interact<E: Parts>(
     entity: &E,
     player: &Player,
     hand: InteractionHand,
@@ -363,7 +399,7 @@ pub fn mob_interact<E: mob::Parts + Has<Age>>(
 ///
 /// `AgeableMob.finalizeSpawn` rolls whether a spawned group member is
 /// a baby before `super`.
-pub fn finalize_spawn<E: mob::Parts + Has<Age>>(
+pub fn finalize_spawn<E: Parts>(
     entity: &E,
     world: &Arc<World>,
     reason: EntitySpawnReason,
@@ -374,7 +410,7 @@ pub fn finalize_spawn<E: mob::Parts + Has<Age>>(
         None => AgeableMobGroupData::with_should_spawn_baby(true),
     };
     if group_data.finalize_ageable_spawn(rand::random::<f32>) {
-        Ageable::new(entity, entity.get::<Age>()).set_age(BABY_START_AGE);
+        entity.ageable().set_age(BABY_START_AGE);
     }
     mob::finalize_spawn(
         entity,
@@ -386,7 +422,7 @@ pub fn finalize_spawn<E: mob::Parts + Has<Age>>(
 
 /// `AgeableMob`'s changes to the mob defaults.
 #[must_use]
-pub const fn mob_props<E: mob::Parts + Has<Age>>() -> MobProps<E> {
+pub const fn mob_props<E: Parts>() -> MobProps<E> {
     MobProps {
         mob_interact: mob_interact::<E>,
         finalize_spawn: finalize_spawn::<E>,
@@ -396,12 +432,12 @@ pub const fn mob_props<E: mob::Parts + Has<Age>>() -> MobProps<E> {
 
 /// `AgeableMob.mobInteract` before `super`: toggles a baby's age lock when fed
 /// a golden dandelion. `None` when the interaction is not this one.
-fn toggle_age_lock<E: mob::Parts + Has<Age>>(
+fn toggle_age_lock<E: Parts>(
     entity: &E,
     player: &Player,
     hand: InteractionHand,
 ) -> Option<InteractionResult> {
-    let ageable = Ageable::new(entity, entity.get::<Age>());
+    let ageable = entity.ageable();
     let holds_dandelion = player
         .inventory
         .lock()
@@ -452,9 +488,8 @@ mod tests {
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
-    use super::{Age, Ageable};
+    use super::Ageable;
     use crate::entity::Entity;
-    use crate::entity::component::Components as _;
     use crate::entity::entities::ChickenEntity;
 
     fn chicken() -> Arc<ChickenEntity> {
@@ -463,7 +498,7 @@ mod tests {
     }
 
     fn ageable(chicken: &ChickenEntity) -> Ageable<'_> {
-        Ageable::new(chicken, chicken.get::<Age>())
+        Ageable::new(chicken)
     }
 
     #[test]

@@ -1,9 +1,9 @@
 //! Vanilla `Animal`: feeding, love mode and breeding.
 //!
-//! State and per-type properties live in the [`Breeding`] component;
-//! behavior lives on the [`Animal`] view. [`living_props`], [`mob_props`] and
-//! [`entity_props`] are the tables an animal type builds on, and
-//! [`construct`] is `Animal`'s part of the constructor.
+//! State lives in the [`Breeding`] component; behavior lives on the [`Animal`]
+//! view. [`AnimalProps`] holds the methods `Animal` declares; [`living_props`],
+//! [`mob_props`] and [`entity_props`] are the presets an animal type builds its
+//! other tables on, and [`construct`] is `Animal`'s part of the constructor.
 
 use crate::entity::entity;
 use crate::entity::prelude::*;
@@ -30,8 +30,9 @@ use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, UuidExt};
 use uuid::Uuid;
 
 use crate::behavior::InteractionResult;
-use crate::entity::ageable::{self, Age, Ageable};
+use crate::entity::ageable::{self, Ageable};
 use crate::entity::ai::path::PathType;
+use crate::entity::component::props::layer_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::dismount_helper;
 use crate::entity::entities::ExperienceOrbEntity;
@@ -68,7 +69,7 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
     }
 }
 
-/// `Animal`'s overrides of the entity hooks.
+/// `Animal`'s overrides of the entity properties.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
@@ -161,25 +162,27 @@ pub fn construct(mob_base: &MobBase) {
     Breeding::initialize_pathfinding_malus(mob_base);
 }
 
-/// Per-type properties of a vanilla `Animal`.
-pub struct BreedingProps {
-    /// `Animal.isFood`.
-    pub is_food: fn(&ItemStack) -> bool,
-    /// `Animal.playEatingSound`; vanilla's default plays nothing.
-    pub play_eating_sound: fn(&dyn Entity),
-}
-
-impl BreedingProps {
-    /// Properties for an animal eating `is_food`, with vanilla's defaults
-    /// for everything else.
-    #[must_use]
-    pub const fn new(is_food: fn(&ItemStack) -> bool) -> Self {
-        Self {
-            is_food,
-            play_eating_sound: |_| {},
-        }
+layer_props! {
+    /// Per-type properties of a vanilla `Animal`.
+    pub struct AnimalProps<E>: AnimalMethods for Animal
+    where E: Parts,
+    table AnimalTable::ANIMAL,
+    component Breeding {
+        /// `Animal.isFood`.
+        fn is_food(item_stack: &ItemStack) -> bool;
+        /// `Animal.playEatingSound`.
+        fn play_eating_sound();
     }
 }
+
+/// `Animal`'s [`AnimalProps::is_food`]: vanilla's is abstract, so a type
+/// without one eats nothing.
+pub const fn is_food<E: Parts>(_entity: &E, _item_stack: &ItemStack) -> bool {
+    false
+}
+
+/// `Animal`'s [`AnimalProps::play_eating_sound`]: plays nothing.
+pub const fn play_eating_sound<E: Parts>(_entity: &E) {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 struct LoveState {
@@ -187,22 +190,20 @@ struct LoveState {
     love_cause: Option<Uuid>,
 }
 
-/// Love state and properties of a vanilla `Animal`.
+/// Love state of a vanilla `Animal`.
 pub struct Breeding {
     state: CheckedMutex<LoveState>,
-    props: &'static BreedingProps,
 }
 
 impl Breeding {
-    /// Not in love, with `props` describing this animal type.
+    /// Not in love.
     #[must_use]
-    pub const fn new(props: &'static BreedingProps) -> Self {
+    pub const fn new() -> Self {
         Self {
             state: CheckedMutex::new(LoveState {
                 in_love: 0,
                 love_cause: None,
             }),
-            props,
         }
     }
 
@@ -247,26 +248,29 @@ impl Component for Breeding {
 pub struct Animal<'a> {
     ageable: Ageable<'a>,
     breeding: &'a Breeding,
+    methods: &'a dyn AnimalMethods,
 }
 
 impl<'a> Animal<'a> {
-    /// Pairs `entity` with its animal components.
+    /// Pairs a concrete animal with its state.
     #[must_use]
-    pub const fn new(entity: &'a dyn Entity, age: &'a Age, breeding: &'a Breeding) -> Self {
+    pub fn new<E: Parts>(entity: &'a E) -> Self {
         Self {
-            ageable: Ageable::new(entity, age),
-            breeding,
+            ageable: entity.ageable(),
+            breeding: entity.get::<Breeding>(),
+            methods: entity,
         }
     }
 
     /// Returns `entity` as an animal, if it is one.
     #[must_use]
     pub fn of(entity: &'a dyn Entity) -> Option<Self> {
-        Some(Self::new(
-            entity,
-            entity.query::<Age>()?,
-            entity.query::<Breeding>()?,
-        ))
+        let methods = entity.as_animal_methods()?;
+        Some(Self {
+            ageable: Ageable::of(entity)?,
+            breeding: methods.layer_component(),
+            methods,
+        })
     }
 
     /// Returns this animal's age view.
@@ -279,12 +283,6 @@ impl<'a> Animal<'a> {
     #[must_use]
     pub const fn entity(&self) -> &'a dyn Entity {
         self.ageable.entity()
-    }
-
-    /// Returns whether `item_stack` is this animal's food (`Animal.isFood`).
-    #[must_use]
-    pub fn is_food(&self, item_stack: &ItemStack) -> bool {
-        (self.breeding.props.is_food)(item_stack)
     }
 
     /// Ticks remaining in love mode.
@@ -337,11 +335,6 @@ impl<'a> Animal<'a> {
             && self.entity().entity_type() == partner.entity().entity_type()
             && self.is_in_love()
             && partner.is_in_love()
-    }
-
-    /// Plays this animal type's eating sound.
-    pub fn play_eating_sound(&self) {
-        (self.breeding.props.play_eating_sound)(self.entity());
     }
 
     /// Random breeding experience: 1 to 3 (`Animal.getBaseExperienceReward`).
@@ -462,15 +455,21 @@ impl<'a> Animal<'a> {
     }
 }
 
+/// A concrete animal type: its love component and its table.
+pub trait AnimalTable: ageable::Parts + Has<Breeding> {
+    /// The `Animal` properties this type runs.
+    const ANIMAL: AnimalProps<Self>;
+}
+
 /// Every animal type; keeps generic bounds short.
-pub trait Parts: mob::Parts + Has<Age> + Has<Breeding> {
+pub trait Parts: AnimalTable {
     /// Returns this entity as an animal.
     fn animal(&self) -> Animal<'_>;
 }
 
-impl<E: mob::Parts + Has<Age> + Has<Breeding>> Parts for E {
+impl<E: AnimalTable> Parts for E {
     fn animal(&self) -> Animal<'_> {
-        Animal::new(self, self.get::<Age>(), self.get::<Breeding>())
+        Animal::new(self)
     }
 }
 

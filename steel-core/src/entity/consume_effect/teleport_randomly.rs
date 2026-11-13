@@ -59,7 +59,7 @@ fn teleport_randomly(effect: TeleportRandomlyConsumeEffect, world: &Arc<World>, 
         world.game_event_at(
             &vanilla_game_events::TELEPORT,
             old_pos,
-            &GameEventContext::new(Some(user.as_entity_event_source()), None),
+            &GameEventContext::new(Some(user.as_entity()), None),
         );
         // TODO: Play `FOX_TELEPORT` on `SoundSource::Neutral` instead once Fox
         // is implemented, mirroring vanilla `TeleportRandomlyConsumeEffect.apply`.

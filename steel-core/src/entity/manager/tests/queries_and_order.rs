@@ -3,7 +3,7 @@ use crate::entity::WeakSelf;
 use std::{sync::atomic::AtomicUsize, thread};
 
 use super::*;
-use crate::entity::{EntityHooks, EntityProps};
+use crate::entity::{EntityMethods, EntityProps};
 
 // Models Vanilla targets such as Happy Ghasts whose collision eligibility depends on the source.
 struct SourceSelectiveHardCollisionTarget {

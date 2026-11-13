@@ -4,6 +4,7 @@
 //! hook is removed.
 
 use crate::entity::projectile::ProjectileTable;
+use crate::world::ClipHitResult;
 use std::f32::consts::PI;
 use std::sync::Arc;
 
@@ -105,19 +106,8 @@ impl FishingHookState {
 
 impl EntityTable for FishingHookEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |hook| {
-            hook.seed_synchronized_random();
-            projectile::tick(hook);
-            hook.entity_tick();
-        },
-        // Vanilla `FishingHook.remove`: the player stops fishing with it.
-        on_removal: |hook, _| {
-            if let Some(owner) = hook.projectile().owner()
-                && let Some(player) = owner.as_player()
-            {
-                player.clear_fishing_hook(hook);
-            }
-        },
+        tick: Self::entity_tick,
+        on_removal: Self::entity_on_removal,
         movement_emission: |_| EntityMovementEmission::None,
         can_use_portal: |_, _| false,
         default_gravity: |_| f64::from(0.03_f32),
@@ -130,6 +120,17 @@ impl EntityTable for FishingHookEntity {
         },
         ..projectile::entity_props()
     };
+}
+
+impl FishingHookEntity {
+    /// Vanilla `FishingHook.remove`: the player stops fishing with it.
+    fn entity_on_removal(&self, _: RemovalReason) {
+        if let Some(owner) = self.projectile().owner()
+            && let Some(player) = owner.as_player()
+        {
+            player.clear_fishing_hook(self);
+        }
+    }
 }
 
 impl FishingHookEntity {
@@ -700,8 +701,11 @@ impl FishingHookEntity {
         }
     }
 
-    /// `FishingHook.tick` after `super.tick()`.
+    /// `FishingHook.tick`: seeds the synchronized random, runs `super`, then
+    /// the hook's own state machine.
     fn entity_tick(&self) {
+        self.seed_synchronized_random();
+        projectile::tick(self);
         let Some(owner) = self.player_owner() else {
             self.set_removed(RemovalReason::Discarded);
             return;
@@ -750,20 +754,26 @@ impl ProjectileTable for FishingHookEntity {
             projectile::can_hit_entity(hook, target)
                 || (target.is_alive() && target.is::<ItemEntity>())
         },
-        on_hit_entity: |hook, target, location| {
-            projectile::on_hit_entity(hook, target, location);
-            hook.set_hooked_entity(Some(Arc::clone(target)));
-        },
-        on_hit_block: |hook, hit| {
-            projectile::on_hit_block(hook, hit);
-            // Vanilla scales by `HitResult.distanceTo`, which is the squared
-            // distance.
-            let distance_sqr = hit.location.distance_squared(hook.position());
-            hook.set_velocity(vector::normalize(hook.velocity()) * distance_sqr);
-        },
+        on_hit_entity: Self::projectile_on_hit_entity,
+        on_hit_block: Self::projectile_on_hit_block,
         should_bounce_on_world_border: |_| true,
         ..ProjectileProps::new()
     };
+}
+
+impl FishingHookEntity {
+    fn projectile_on_hit_entity(&self, target: &SharedEntity, location: DVec3) {
+        projectile::on_hit_entity(self, target, location);
+        self.set_hooked_entity(Some(Arc::clone(target)));
+    }
+
+    fn projectile_on_hit_block(&self, hit: &ClipHitResult) {
+        projectile::on_hit_block(self, hit);
+        // Vanilla scales by `HitResult.distanceTo`, which is the squared
+        // distance.
+        let distance_sqr = hit.location.distance_squared(self.position());
+        self.set_velocity(vector::normalize(self.velocity()) * distance_sqr);
+    }
 }
 
 /// Collection of possible states the fishing bobber of the `FishingHookEntity` can take on.

@@ -406,10 +406,7 @@ impl DefaultEntityPush for ExperienceOrbEntity {}
 
 impl EntityTable for ExperienceOrbEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |orb| {
-            entity::tick(orb);
-            orb.entity_tick();
-        },
+        tick: Self::entity_tick,
         hurt: Self::entity_hurt,
         // `ExperienceOrb.doWaterSplashEffect` does nothing.
         do_water_splash_effect: |_| {},
@@ -426,8 +423,9 @@ impl EntityTable for ExperienceOrbEntity {
 }
 
 impl ExperienceOrbEntity {
-    /// `ExperienceOrb.tick` after `super.tick()`.
+    /// `ExperienceOrb.tick`.
     fn entity_tick(&self) {
+        entity::tick(self);
         self.set_old_position_to_current();
 
         let Some(world) = self.level() else {

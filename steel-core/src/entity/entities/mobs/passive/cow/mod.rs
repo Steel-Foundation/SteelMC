@@ -2,10 +2,14 @@
 
 pub mod abstract_cow;
 
+use crate::entity::Arc;
+use crate::entity::EntitySpawnReason;
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
+use crate::entity::SpawnGroupData;
 use crate::entity::ageable;
 use crate::entity::prelude::*;
+use crate::world::World;
 
 use steel_macros::entity_behavior;
 use steel_registry::cow_sound_variant::{CowSoundVariantRef, CowSoundVariantRegistry};
@@ -19,8 +23,8 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::entity::EntityTable;
-use crate::entity::ageable::{Age, AgeableProps};
-use crate::entity::animal::{self, Breeding, BreedingProps};
+use crate::entity::ageable::{Age, AgeableProps, AgeableTable};
+use crate::entity::animal::{self, AnimalProps, AnimalTable, Breeding};
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityProps, LivingEntityBase, LivingProps, MobBase, MobProps,
@@ -49,16 +53,24 @@ pub struct CowEntity {
     entity_data: CheckedMutex<CowEntityData>,
 }
 
+impl AgeableTable for CowEntity {
+    const AGEABLE: AgeableProps<Self> = AgeableProps {
+        breed_offspring: variant::breed_offspring::<Self>,
+    };
+}
+
+impl AnimalTable for CowEntity {
+    const ANIMAL: AnimalProps<Self> = AnimalProps {
+        is_food: |_, item_stack| abstract_cow::is_food(item_stack),
+        ..AnimalProps::new()
+    };
+}
+
 impl CowEntity {
     /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
     pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, random| {
         animal::check_animal_spawn_rules(entity_type, level, spawn_reason, pos, random)
     };
-
-    const AGEABLE: AgeableProps = AgeableProps {
-        breed_offspring: variant::breed_offspring::<Self>,
-    };
-    const BREEDING: BreedingProps = BreedingProps::new(abstract_cow::is_food);
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = CowEntityData::new();
@@ -68,8 +80,8 @@ impl CowEntity {
             entity_type,
             living_base,
             mob_base: MobBase::new(abstract_cow::construct),
-            age: Age::new(&Self::AGEABLE),
-            breeding: Breeding::new(&Self::BREEDING),
+            age: Age::new(),
+            breeding: Breeding::new(),
             entity_data: CheckedMutex::new(entity_data),
         }
     }
@@ -78,13 +90,22 @@ impl CowEntity {
 impl MobTable for CowEntity {
     const MOB: MobProps<Self> = MobProps {
         ambient_sound: |cow| Some(cow.sound_variant().ambient_sound),
-        // `Cow.finalizeSpawn` picks the variants before `super`.
-        finalize_spawn: |cow, world, reason, group_data| {
-            variant::pick_spawn_variants(cow, world);
-            ageable::finalize_spawn(cow, world, reason, group_data)
-        },
+        finalize_spawn: Self::mob_finalize_spawn,
         ..abstract_cow::mob_props()
     };
+}
+
+impl CowEntity {
+    /// `Cow.finalizeSpawn` picks the variants before `super`.
+    fn mob_finalize_spawn(
+        &self,
+        world: &Arc<World>,
+        reason: EntitySpawnReason,
+        group_data: Option<SpawnGroupData>,
+    ) -> Option<SpawnGroupData> {
+        variant::pick_spawn_variants(self, world);
+        ageable::finalize_spawn(self, world, reason, group_data)
+    }
 }
 
 impl LivingTable for CowEntity {

@@ -16,7 +16,7 @@ pub trait EntityBlockContact: Entity {
     ///
     /// Mirrors the shared ownership boundary of vanilla `Entity.applyEffectsFromBlocks`.
     fn apply_effects_from_blocks(&self) {
-        let entity = self.as_entity_event_source();
+        let entity = self.as_entity();
         let movements = self.base().take_movements_for_block_effects();
         apply_effects_from_block_movements(entity, &movements);
     }
@@ -26,13 +26,13 @@ pub trait EntityBlockContact: Entity {
     /// Mirrors vanilla's `Entity.applyEffectsFromBlocks(Vec3, Vec3)` overload,
     /// which does not finalize or clear the entity's normal movement trace.
     fn apply_effects_from_blocks_between(&self, from: DVec3, to: DVec3) {
-        let entity = self.as_entity_event_source();
+        let entity = self.as_entity();
         apply_effects_from_block_movements(entity, &[EntityMovement::new(from, to)]);
     }
 
     /// Replays the last finalized block-contact movement list.
     fn apply_effects_from_blocks_for_last_movements(&self) {
-        let entity = self.as_entity_event_source();
+        let entity = self.as_entity();
         let movements = self.base().last_movements_for_block_effects();
         apply_effects_from_block_movements(entity, &movements);
     }
@@ -217,7 +217,7 @@ pub trait EntityBlockContact: Entity {
             world.game_event_at(
                 &vanilla_game_events::STEP,
                 self.position(),
-                &GameEventContext::new(Some(self.as_entity_event_source()), Some(block_state)),
+                &GameEventContext::new(Some(self.as_entity()), Some(block_state)),
             );
         }
 
@@ -244,8 +244,7 @@ pub trait EntityBlockContact: Entity {
             bounding_box.min_y(),
             bounding_box.max_z(),
         );
-        let collision_world =
-            WorldCollisionProvider::for_entity(world, self.as_entity_event_source());
+        let collision_world = WorldCollisionProvider::for_entity(world, self.as_entity());
         let descending = self.is_descending();
         let mut supporting_block =
             collision_world.find_supporting_block(self.position(), &test_area, descending);

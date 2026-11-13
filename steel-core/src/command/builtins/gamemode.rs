@@ -1,6 +1,6 @@
 //! Player game-mode command and permission projection.
 
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use std::{slice, sync::Arc};
 
 use steel_registry::vanilla_game_rules::SEND_COMMAND_FEEDBACK;

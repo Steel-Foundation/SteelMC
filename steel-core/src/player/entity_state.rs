@@ -86,7 +86,7 @@ impl Player {
     #[must_use]
     fn bounding_box_for_pose(&self, pose: EntityPose) -> WorldAabb {
         let position = self.base.position();
-        let dimensions = <Self as EntityHooks>::dimensions_for_pose(self, pose);
+        let dimensions = <Self as EntityMethods>::dimensions_for_pose(self, pose);
         WorldAabb::entity_box(
             position.x,
             position.y,
@@ -211,7 +211,7 @@ impl Player {
 
         self.base.set_pose_and_dimensions(
             actual_pose,
-            <Self as EntityHooks>::dimensions_for_pose(self, actual_pose),
+            <Self as EntityMethods>::dimensions_for_pose(self, actual_pose),
         );
         self.entity_data.lock().base_mut().pose.set(actual_pose);
     }

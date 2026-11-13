@@ -1,9 +1,11 @@
 //! Vanilla `Bat`: rests on cave ceilings and flutters through the dark.
 
+use crate::entity::DamageSource;
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
 use crate::entity::living_entity;
 use std::f32::consts::PI;
+use steel_registry::sound_event::SoundEventRef;
 use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
@@ -62,25 +64,31 @@ impl EntityTable for BatEntity {
         is_pushable: |_| false,
         is_ignoring_block_triggers: |_| true,
         push_entity: |_, _| {},
-        tick: |bat| {
-            mob::tick(bat);
-            bat.tick_hang();
-        },
+        tick: Self::entity_tick,
         // `Bat.checkFallDamage` does nothing.
         check_fall_damage: |_, _, _, _, _, _| {},
-        // `Bat.hurtServer` before `super`: invulnerable bats ignore the hit;
-        // others wake up.
-        hurt: |bat, world, source, amount| {
-            if bat.living().is_invulnerable_to(world, source) {
-                return false;
-            }
-            if bat.is_resting() {
-                bat.set_resting(false);
-            }
-            living_entity::hurt(bat, world, source, amount)
-        },
+        hurt: Self::entity_hurt,
         ..mob::entity_props()
     };
+}
+
+impl BatEntity {
+    fn entity_tick(&self) {
+        mob::tick(self);
+        self.tick_hang();
+    }
+
+    /// `Bat.hurtServer` before `super`: invulnerable bats ignore the hit;
+    /// others wake up.
+    fn entity_hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        if self.living().is_invulnerable_to(world, source) {
+            return false;
+        }
+        if self.is_resting() {
+            self.set_resting(false);
+        }
+        living_entity::hurt(self, world, source, amount)
+    }
 }
 
 impl BatEntity {
@@ -266,21 +274,27 @@ impl BatEntity {
 
 impl MobTable for BatEntity {
     const MOB: MobProps<Self> = MobProps {
-        ambient_sound: |bat| {
-            if bat.is_resting() && rand::random_range(0..4) != 0 {
-                None
-            } else {
-                Some(&sound_events::ENTITY_BAT_AMBIENT)
-            }
-        },
+        ambient_sound: Self::mob_ambient_sound,
         // `AmbientCreature.canBeLeashed`.
         mob_can_be_leashed: |_| false,
-        custom_server_ai_step: |bat| {
-            mob::custom_server_ai_step(bat);
-            bat.fly();
-        },
+        custom_server_ai_step: Self::mob_custom_server_ai_step,
         ..MobProps::new()
     };
+}
+
+impl BatEntity {
+    fn mob_ambient_sound(&self) -> Option<SoundEventRef> {
+        if self.is_resting() && rand::random_range(0..4) != 0 {
+            None
+        } else {
+            Some(&sound_events::ENTITY_BAT_AMBIENT)
+        }
+    }
+
+    fn mob_custom_server_ai_step(&self) {
+        mob::custom_server_ai_step(self);
+        self.fly();
+    }
 }
 
 impl LivingTable for BatEntity {

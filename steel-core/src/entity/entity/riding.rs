@@ -197,7 +197,7 @@ pub fn remove_vehicle<E: Entity + ?Sized>(entity: &E) {
         world.game_event_at(
             &vanilla_game_events::ENTITY_DISMOUNT,
             old_vehicle.position(),
-            &GameEventContext::new(Some(entity.as_entity_event_source()), None),
+            &GameEventContext::new(Some(entity.as_entity()), None),
         );
     }
 }
@@ -250,6 +250,6 @@ pub fn ride_tick<E: Entity + ?Sized>(entity: &E) {
     entity.set_velocity(DVec3::ZERO);
     entity.tick();
     if let Some(vehicle) = entity.vehicle() {
-        vehicle.position_rider(entity.as_entity_event_source());
+        vehicle.position_rider(entity.as_entity());
     }
 }

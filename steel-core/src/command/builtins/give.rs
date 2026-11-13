@@ -1,6 +1,6 @@
 //! Vanilla item-giving command.
 
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use steel_registry::{
     data_components::vanilla_components::{CUSTOM_NAME, ITEM_NAME},
     item_stack::ItemStack,

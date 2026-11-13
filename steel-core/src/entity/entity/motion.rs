@@ -15,11 +15,10 @@ pub trait EntityMotion: Entity {
         };
 
         let target_box = self.bounding_box().translate(delta);
-        let collision_world =
-            WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
+        let collision_world = WorldCollisionProvider::for_entity(&world, self.as_entity());
         if collision_world.has_collision_with_context(
             &target_box.deflate(COLLISION_EPSILON),
-            physics_state_for_move(self.as_entity_event_source()).block_collision_context(),
+            physics_state_for_move(self.as_entity()).block_collision_context(),
         ) {
             return false;
         }
@@ -182,8 +181,7 @@ pub trait EntityMotion: Entity {
             return;
         };
 
-        let collision_world =
-            WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
+        let collision_world = WorldCollisionProvider::for_entity(&world, self.as_entity());
         let colliding = collision_world.has_collision_with_context(
             &self.bounding_box().deflate(NO_PHYSICS_COLLISION_EPSILON),
             BlockCollisionContext::empty(),
@@ -323,7 +321,7 @@ pub trait EntityMotion: Entity {
         self.base().try_set_position(pos)
     }
 
-    /// Default for [`EntityHooks::teleport_to`].
+    /// Default for [`EntityMethods::teleport_to`].
     // TODO: Recursively reposition this entity's passengers (vanilla
     // `Entity.teleportPassengers`, via `getSelfAndPassengers`)
     /// Sets the vanilla movement-trace old position to the current position.
@@ -502,7 +500,7 @@ pub const fn is_hard_collision_relevant<E: Entity + ?Sized>(_entity: &E) -> bool
 
 /// `Entity`'s [`EntityProps::can_collide_with`].
 pub fn can_collide_with<E: Entity + ?Sized>(entity: &E, other: &dyn Entity) -> bool {
-    other.can_be_collided_with(Some(entity.as_entity_event_source()))
+    other.can_be_collided_with(Some(entity.as_entity()))
         && !entity.is_passenger_of_same_vehicle(other)
 }
 
@@ -638,7 +636,7 @@ pub fn effective_gravity<E: Entity + ?Sized>(entity: &E) -> f64 {
 /// Moves the entity with collision detection.
 ///
 /// Updates position, `on_ground`, velocity (on collision), and returns collision info.
-/// Default for [`EntityHooks::move_entity`].
+/// Default for [`EntityMethods::move_entity`].
 #[expect(
     clippy::too_many_lines,
     reason = "keeps vanilla movement phases in order"
@@ -665,15 +663,15 @@ pub fn move_entity<E: Entity + ?Sized>(
         .base()
         .consume_stuck_speed_multiplier(movement, mover_type != MoverType::Piston);
 
-    let physics_state = physics_state_for_move(this.as_entity_event_source());
+    let physics_state = physics_state_for_move(this.as_entity());
     let start_position = physics_state.position();
 
     // Perform collision detection and movement
-    let collision_world = WorldCollisionProvider::for_entity(&world, this.as_entity_event_source());
+    let collision_world = WorldCollisionProvider::for_entity(&world, this.as_entity());
     let result = resolve_entity_movement(&physics_state, movement, mover_type, &collision_world);
 
     record_movement_for_block_effects(
-        this.as_entity_event_source(),
+        this.as_entity(),
         start_position,
         result.final_position,
         movement,
@@ -752,10 +750,7 @@ pub fn move_entity<E: Entity + ?Sized>(
                     effect_state,
                     &world,
                     effect_pos,
-                    EntityFallOnContext::from_entity(
-                        this.fall_distance(),
-                        this.as_entity_event_source(),
-                    ),
+                    EntityFallOnContext::from_entity(this.fall_distance(), this.as_entity()),
                 );
             }
             res
@@ -798,8 +793,7 @@ pub fn check_fall_damage<E: Entity + ?Sized>(
     let fall_distance = entity.fall_distance();
     if fall_distance > 0.0 {
         let behavior = BLOCK_BEHAVIORS.get_behavior(on_state.get_block());
-        let fall_context =
-            EntityFallOnContext::from_entity(fall_distance, entity.as_entity_event_source());
+        let fall_context = EntityFallOnContext::from_entity(fall_distance, entity.as_entity());
         if let Some(fall_damage) = behavior.fall_on(on_state, world, pos, fall_context) {
             let damage_applied = entity.cause_fall_damage(
                 fall_damage.fall_distance,
@@ -810,7 +804,7 @@ pub fn check_fall_damage<E: Entity + ?Sized>(
                 on_state,
                 world,
                 pos,
-                entity.as_entity_event_source(),
+                entity.as_entity(),
                 &fall_damage,
                 damage_applied,
             );
@@ -829,10 +823,7 @@ pub fn check_fall_damage<E: Entity + ?Sized>(
                 entity.position().y.floor() as i32,
                 entity.position().z.floor() as i32,
             ),
-            &GameEventContext::new(
-                Some(entity.as_entity_event_source()),
-                Some(supporting_state),
-            ),
+            &GameEventContext::new(Some(entity.as_entity()), Some(supporting_state)),
         );
     }
 

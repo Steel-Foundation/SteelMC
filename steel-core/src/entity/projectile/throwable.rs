@@ -28,7 +28,7 @@ pub const fn can_use_portal<E: Parts>(_: &E, _: bool) -> bool {
     true
 }
 
-/// `ThrowableProjectile`'s overrides of the entity hooks.
+/// `ThrowableProjectile`'s overrides of the entity properties.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {

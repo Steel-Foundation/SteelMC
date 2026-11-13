@@ -42,13 +42,17 @@ pub struct LeashFenceKnotEntity {
 impl EntityTable for LeashFenceKnotEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         interact: Self::entity_interact,
-        notify_leashee_removed: |knot, _| {
-            if knot.leashables_leashed_to().is_empty() {
-                knot.set_removed(RemovalReason::Discarded);
-            }
-        },
+        notify_leashee_removed: Self::entity_notify_leashee_removed,
         ..block_attached::entity_props()
     };
+}
+
+impl LeashFenceKnotEntity {
+    fn entity_notify_leashee_removed(&self, _: &dyn Entity) {
+        if self.leashables_leashed_to().is_empty() {
+            self.set_removed(RemovalReason::Discarded);
+        }
+    }
 }
 
 impl LeashFenceKnotEntity {

@@ -1,6 +1,6 @@
 //! Vanilla sound playback command.
 
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use std::sync::Arc;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::sound_event::SoundEventHolder;

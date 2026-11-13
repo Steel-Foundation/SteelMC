@@ -104,7 +104,7 @@ impl SpawnEggItem {
         }
 
         let world = parent.level()?;
-        let offspring = if let Some(ageable) = Ageable::of(parent.as_entity_event_source()) {
+        let offspring = if let Some(ageable) = Ageable::of(parent.as_entity()) {
             ageable.breed_offspring(&world, &ageable)?
         } else {
             match create_entity_instance(&world, entity_type, parent.position()) {

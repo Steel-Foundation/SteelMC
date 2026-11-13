@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use crate::entity::{
     DEATH_DURATION, EntityBase,
     damage::DamageSource,

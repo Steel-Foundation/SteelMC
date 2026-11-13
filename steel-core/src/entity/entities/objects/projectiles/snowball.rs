@@ -1,6 +1,8 @@
 //! Vanilla `Snowball`.
 
+use crate::entity::DVec3;
 use crate::entity::ProjectileHit;
+use crate::entity::SharedEntity;
 use crate::entity::projectile;
 use crate::entity::projectile::ProjectileTable;
 use steel_macros::entity_behavior;
@@ -63,21 +65,25 @@ impl SnowballEntity {
 impl ProjectileTable for SnowballEntity {
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
         on_hit: Self::projectile_on_hit,
-        on_hit_entity: |snowball, target, location| {
-            projectile::on_hit_entity(snowball, target, location);
-            let damage = if target.entity_type() == &vanilla_entities::BLAZE {
-                3.0
-            } else {
-                0.0
-            };
-            if let Some(world) = target.level()
-                && let Some(source) = snowball.projectile().thrown_damage()
-            {
-                target.hurt(&world, &source, damage);
-            }
-        },
+        on_hit_entity: Self::projectile_on_hit_entity,
         ..ProjectileProps::new()
     };
+}
+
+impl SnowballEntity {
+    fn projectile_on_hit_entity(&self, target: &SharedEntity, location: DVec3) {
+        projectile::on_hit_entity(self, target, location);
+        let damage = if target.entity_type() == &vanilla_entities::BLAZE {
+            3.0
+        } else {
+            0.0
+        };
+        if let Some(world) = target.level()
+            && let Some(source) = self.projectile().thrown_damage()
+        {
+            target.hurt(&world, &source, damage);
+        }
+    }
 }
 
 #[cfg(test)]

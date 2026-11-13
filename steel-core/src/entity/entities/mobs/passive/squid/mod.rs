@@ -5,6 +5,8 @@ mod goals;
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
 use crate::entity::living_entity;
+use crate::physics::MoveResult;
+use crate::world::World;
 use std::f32::consts::{PI, TAU};
 use std::sync::Arc;
 
@@ -24,7 +26,7 @@ use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 
 use crate::entity::EntityTable;
-use crate::entity::ageable::{self, Age, AgeableProps};
+use crate::entity::ageable::{self, Age, AgeableProps, AgeableTable};
 use crate::entity::ai::path::PathType;
 use crate::entity::damage::DamageSource;
 use crate::entity::mob::{self};
@@ -47,7 +49,7 @@ struct Swimming {
 
 /// A squid.
 // TODO: `AgeableWaterCreature.checkSpawnObstruction` (`isUnobstructed`)
-// once `Mob.checkSpawnObstruction` is a mob hook.
+// once `Mob.checkSpawnObstruction` is a mob property.
 #[entity_behavior(class = "Squid", spawn_rule)]
 #[derive(Entity)]
 #[entity(key = "steel:entity/squid", constructors)]
@@ -74,17 +76,35 @@ impl EntityTable for SquidEntity {
         // `AgeableWaterCreature.isPushedByFluid`.
         is_pushed_by_fluid: |_| false,
         base_tick: Self::water_creature_base_tick,
-        // `Squid.hurtServer` after `super`: a squid hurt by a mob squirts ink.
-        hurt: |squid, world, source, amount| {
-            let hurt = living_entity::hurt(squid, world, source, amount);
-            if hurt && squid.living().last_hurt_by_mob().is_some() {
-                squid.spawn_ink();
-                return true;
-            }
-            false
-        },
+        hurt: Self::entity_hurt,
         ..mob::entity_props()
     };
+}
+
+impl AgeableTable for SquidEntity {
+    const AGEABLE: AgeableProps<Self> = AgeableProps {
+        breed_offspring: |parent, world, _| {
+            let squid: SharedEntity = SquidEntity::new(
+                &vanilla_entities::SQUID,
+                next_entity_id(),
+                parent.position(),
+                Arc::downgrade(world),
+            );
+            Some(squid)
+        },
+    };
+}
+
+impl SquidEntity {
+    /// `Squid.hurtServer` after `super`: a squid hurt by a mob squirts ink.
+    fn entity_hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        let hurt = living_entity::hurt(self, world, source, amount);
+        if hurt && self.living().last_hurt_by_mob().is_some() {
+            self.spawn_ink();
+            return true;
+        }
+        false
+    }
 }
 
 impl SquidEntity {
@@ -98,18 +118,6 @@ impl SquidEntity {
                 .get_fluid_state()
                 .is_water()
             && level.get_block_state(pos.above()).get_block() == &vanilla_blocks::WATER
-    };
-
-    const AGEABLE: AgeableProps = AgeableProps {
-        breed_offspring: |parent, world, _| {
-            let squid: SharedEntity = SquidEntity::new(
-                &vanilla_entities::SQUID,
-                next_entity_id(),
-                parent.entity().position(),
-                Arc::downgrade(world),
-            );
-            Some(squid)
-        },
     };
 
     /// `Squid`'s constructor chain: its goals, then its own water malus.
@@ -129,7 +137,7 @@ impl SquidEntity {
             entity_type,
             living_base,
             mob_base: MobBase::new(Self::construct),
-            age: Age::new(&Self::AGEABLE),
+            age: Age::new(),
             swimming: CheckedMutex::new(Swimming {
                 x_body_rot: 0.0,
                 x_body_rot_o: 0.0,
@@ -283,17 +291,21 @@ impl LivingTable for SquidEntity {
         sound_volume: |_| 0.4,
         hurt_sound: |_, _| Some(&sound_events::ENTITY_SQUID_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_SQUID_DEATH),
-        ai_step: |squid| {
-            let movement = ageable::ai_step(squid);
-            squid.swim();
-            movement
-        },
+        ai_step: Self::living_ai_step,
         // `Squid.travel` moves without `super`'s physics.
         travel: |squid, _| squid.move_entity(MoverType::SelfMovement, squid.velocity()),
         // `AgeableWaterCreature.getBaseExperienceReward`, which replaces `Mob`'s.
         base_experience_reward: |_| 1 + rand::random_range(0..3),
         ..ageable::living_props()
     };
+}
+
+impl SquidEntity {
+    fn living_ai_step(&self) -> Option<MoveResult> {
+        let movement = ageable::ai_step(self);
+        self.swim();
+        movement
+    }
 }
 
 impl DefaultEntityPush for SquidEntity {}

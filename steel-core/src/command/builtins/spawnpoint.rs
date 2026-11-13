@@ -1,6 +1,6 @@
 //! Vanilla per-player spawn-point command.
 
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use std::{slice, sync::Arc};
 
 use steel_utils::{BlockPos, Identifier, java::float_to_string, translations};

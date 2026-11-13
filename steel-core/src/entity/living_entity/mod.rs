@@ -12,7 +12,7 @@ use steel_registry::vanilla_entity_data::LivingEntityData;
 use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
 use crate::entity::EntityProps;
-use crate::entity::component::props::entity_props;
+use crate::entity::component::props::layer_props;
 use crate::entity::component::{Components as _, Has};
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::RecentDamageSource;
@@ -56,9 +56,9 @@ const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
 /// `LivingEntity.SLEEPING_DIMENSIONS`.
 const SLEEPING_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.2, 0.2, 0.2);
 
-entity_props! {
+layer_props! {
     /// Per-type properties of a vanilla `LivingEntity`.
-    pub struct LivingProps<E>: LivingHooks for Living
+    pub struct LivingProps<E>: LivingMethods for Living
     where E: Parts,
     table LivingTable::LIVING,
     component LivingEntityBase {
@@ -112,6 +112,8 @@ entity_props! {
         /// `LivingEntity.getDeathSound`.
         fn death_sound() -> Option<SoundEventRef>;
         /// The chicken variant key for loot predicates, when this is a chicken.
+        // TODO: replace with vanilla `Entity.get(DataComponentType)` once loot
+        // predicates match entity components generally.
         fn chicken_loot_variant() -> Option<&'static Identifier>;
         /// `LivingEntity.serverAiStep`.
         fn server_ai_step();
@@ -130,6 +132,8 @@ entity_props! {
         /// Changed equipment clients see.
         fn drain_dirty_equipment() -> Vec<EquipmentSlotItem>;
         /// The sheep color and sheared state for loot predicates, when this is a sheep.
+        // TODO: the color is vanilla `Entity.get(DataComponents.SHEEP_COLOR)`;
+        // the sheared flag is `SheepPredicate`'s `instanceof Sheep` check.
         fn sheep_loot_state() -> Option<(DyeColor, bool)>;
         /// Returns the volume used for this entity's sounds.
         fn sound_volume() -> f32;
@@ -146,7 +150,7 @@ entity_props! {
         fn should_drop_experience() -> bool;
         /// `LivingEntity.isAlwaysExperienceDropper`.
         fn is_always_experience_dropper() -> bool;
-        /// Hook for non-mob custom death loot.
+        /// Custom death loot for living entities that are not mobs.
         fn drop_custom_death_loot(source: &DamageSource, killed_by_player: bool);
         /// Checks if the entity is blocking with a shield or similar item.
         fn is_blocking() -> bool;
@@ -195,7 +199,7 @@ entity_props! {
 pub struct Living<'a> {
     entity: &'a (dyn Entity + 'static),
     base: &'a LivingEntityBase,
-    hooks: &'a dyn LivingHooks,
+    methods: &'a dyn LivingMethods,
 }
 
 impl<'a> Living<'a> {
@@ -205,18 +209,18 @@ impl<'a> Living<'a> {
         Self {
             entity,
             base: entity.get::<LivingEntityBase>(),
-            hooks: entity,
+            methods: entity,
         }
     }
 
     /// Returns `entity` as a living entity, if it is one.
     #[must_use]
     pub fn of(entity: &'a (dyn Entity + 'static)) -> Option<Self> {
-        let hooks = entity.as_living_hooks()?;
+        let methods = entity.as_living_methods()?;
         Some(Self {
             entity,
-            base: hooks.layer_component(),
-            hooks,
+            base: methods.layer_component(),
+            methods,
         })
     }
 
@@ -440,7 +444,7 @@ pub fn with_weapon_item<E: Parts>(living: &E, visitor: &mut dyn FnMut(Option<&It
         .with_equipment_slot(EquipmentSlot::MainHand, &mut |item| visitor(Some(item)));
 }
 
-/// `LivingEntity`'s overrides of entity hooks; living entity types build their
+/// `LivingEntity`'s overrides of entity properties; living entity types build their
 /// [`EntityProps`] on this.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
@@ -478,9 +482,9 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     }
 }
 
-/// A concrete living entity type: its component and its hook table.
+/// A concrete living entity type: its component and its property table.
 pub trait LivingTable: Entity + Has<LivingEntityBase> + Sized {
-    /// The `LivingEntity` hooks this type runs, built on its layer's preset
+    /// The `LivingEntity` properties this type runs, built on its layer's preset
     /// (`LivingProps::new()`, `mob::living_props()`, ...).
     const LIVING: LivingProps<Self>;
 }
@@ -799,7 +803,7 @@ impl<'a> Living<'a> {
     /// Returns whether this entity is currently a baby.
     #[must_use]
     pub fn is_baby(&self) -> bool {
-        Ageable::of(self.as_entity_event_source()).is_some_and(|ageable| ageable.is_baby())
+        Ageable::of(self.as_entity()).is_some_and(|ageable| ageable.is_baby())
     }
 
     /// Plays `sound` at this entity's current volume and pitch, if any.
@@ -924,7 +928,7 @@ impl<'a> Living<'a> {
     /// Returns whether this entity is currently visible to anything: alive and not a spectator.
     #[must_use]
     pub fn can_be_seen_by_anyone(&self) -> bool {
-        !self.is_spectator() && EntityHooks::is_alive(self.entity())
+        !self.is_spectator() && EntityMethods::is_alive(self.entity())
     }
 
     /// Ticks living-entity counters after movement.

@@ -87,8 +87,7 @@ pub trait Leashable: Entity {
     ///
     /// Despite the same, this function does not check for any leash state.
     fn leash_distance_to(&self, holder: &dyn Entity) -> f64 {
-        leash_bounding_box_center(self.as_entity_event_source())
-            .distance(leash_bounding_box_center(holder))
+        leash_bounding_box_center(self.as_entity()).distance(leash_bounding_box_center(holder))
     }
 
     /// Returns the minimum leash distance for which a leash will snap.
@@ -104,7 +103,7 @@ pub trait Leashable: Entity {
 
     /// Called when this entity is leashed to `holder`.
     fn when_leashed_to(&self, holder: &dyn Entity) {
-        holder.notify_leash_holder(self.as_entity_event_source());
+        holder.notify_leash_holder(self.as_entity());
     }
 
     /// Called by leash-drop paths after clearing leash data.
@@ -126,11 +125,9 @@ pub trait Leashable: Entity {
     /// Performs the calculations to pull this entity towards its leash holder and applies
     /// velocity to it.
     fn check_elastic_interactions(&self, holder: &dyn Entity) -> bool {
-        let Some(wrench) = compute_elastic_interaction(
-            self.as_entity_event_source(),
-            holder,
-            self.leash_elastic_distance(),
-        ) else {
+        let Some(wrench) =
+            compute_elastic_interaction(self.as_entity(), holder, self.leash_elastic_distance())
+        else {
             return false;
         };
 
@@ -143,7 +140,7 @@ pub trait Leashable: Entity {
         }
 
         let relative_velocity_to_leasher =
-            leash_holder_movement(holder) - leash_holder_movement(self.as_entity_event_source());
+            leash_holder_movement(holder) - leash_holder_movement(self.as_entity());
         self.push_impulse(
             axis_specific_leash_elasticity(wrench.force)
                 + relative_velocity_to_leasher * LEASH_STIFFNESS,
@@ -234,7 +231,7 @@ pub trait Leashable: Entity {
         if let Some(old_holder) = old_holder
             && old_holder.id() != holder.id()
         {
-            old_holder.notify_leashee_removed(self.as_entity_event_source());
+            old_holder.notify_leashee_removed(self.as_entity());
         }
         true
     }
@@ -334,7 +331,7 @@ pub trait Leashable: Entity {
         self.on_leash_removed();
         let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
         if let Some(holder) = holder {
-            holder.notify_leashee_removed(self.as_entity_event_source());
+            holder.notify_leashee_removed(self.as_entity());
         }
     }
 
@@ -347,7 +344,7 @@ pub trait Leashable: Entity {
         let holder = self.remove_leash_state();
         self.on_leash_removed();
         if let Some(holder) = holder {
-            holder.notify_leashee_removed(self.as_entity_event_source());
+            holder.notify_leashee_removed(self.as_entity());
         }
     }
 

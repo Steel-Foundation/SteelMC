@@ -53,10 +53,7 @@ pub struct EyeOfEnderEntity {
 
 impl EntityTable for EyeOfEnderEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |eye| {
-            entity::tick(eye);
-            eye.entity_tick();
-        },
+        tick: Self::entity_tick,
         attackable: |_| false,
         ..EntityProps::new()
     };
@@ -117,9 +114,10 @@ impl EyeOfEnderEntity {
         flight.survive_after_death = rand::random_range(0..5) > 0;
     }
 
-    /// `EyeOfEnder.tick` after `super.tick()`: flies toward its target and,
-    /// when its life ends, drops as an item or shatters.
+    /// `EyeOfEnder.tick`: after `super`, flies toward its target and, when its
+    /// life ends, drops as an item or shatters.
     fn entity_tick(&self) {
+        entity::tick(self);
         let new_position = self.position() + self.velocity();
         let target = self.flight.lock().target;
         if let Some(target) = target {

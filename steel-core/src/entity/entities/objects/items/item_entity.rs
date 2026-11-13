@@ -529,13 +529,17 @@ impl EntityTable for ItemEntity {
         fire_immune: Self::entity_fire_immune,
         player_touch: Self::entity_player_touch,
         name: Self::entity_name,
-        on_teleported: |item| {
-            if let Some(world) = item.level() {
-                item.merge_with_neighbors(&world);
-            }
-        },
+        on_teleported: Self::entity_on_teleported,
         ..EntityProps::new()
     };
+}
+
+impl ItemEntity {
+    fn entity_on_teleported(&self) {
+        if let Some(world) = self.level() {
+            self.merge_with_neighbors(&world);
+        }
+    }
 }
 
 impl ItemEntity {

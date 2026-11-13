@@ -6,7 +6,7 @@ pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
 pub mod connection;
 mod container_counter;
-mod entity_hooks;
+mod entity_props;
 mod entity_state;
 /// Experience System
 pub mod experience;
@@ -16,7 +16,7 @@ pub mod game_mode;
 mod health_sync;
 mod item_cooldowns;
 mod lifecycle;
-mod living_hooks;
+mod living_props;
 pub mod movement;
 mod permissions;
 pub mod player_data;
@@ -113,7 +113,7 @@ use crate::entity::WeakSelf;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::{ExperienceOrbEntity, FishingHookEntity};
 use crate::entity::{
-    ActiveItemUseState, DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource,
+    ActiveItemUseState, AsEntity, DEATH_DURATION, Entity, EntityAnchor, EntityBase,
     EntityMoveError, EntityMovementEmission, Living, LivingEntityBase, MobEffectSyncChange,
     MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, get_kill_credit,
     start_riding_entities,
@@ -760,7 +760,7 @@ impl Player {
             1,
         );
 
-        if EntityHooks::is_alive(self) {
+        if EntityMethods::is_alive(self) {
             stats.increment(
                 vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::TIME_SINCE_DEATH),
                 1,

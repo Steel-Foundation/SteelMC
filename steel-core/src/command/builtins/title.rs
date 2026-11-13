@@ -1,6 +1,6 @@
 //! Vanilla title display command.
 
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use std::sync::Arc;
 
 use steel_utils::{Identifier, translations};

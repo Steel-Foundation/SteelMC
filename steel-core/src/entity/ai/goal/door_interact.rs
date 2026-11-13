@@ -66,13 +66,7 @@ impl DoorInteractGoal {
         };
         let state = world.get_block_state(self.door_pos);
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-        behavior.set_door_open(
-            state,
-            &world,
-            self.door_pos,
-            Some(mob.as_entity_event_source()),
-            open,
-        );
+        behavior.set_door_open(state, &world, self.door_pos, Some(mob.as_entity()), open);
     }
 
     pub(super) fn can_use(&mut self, mob: &Mob<'_>) -> bool {

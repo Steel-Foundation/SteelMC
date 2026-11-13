@@ -57,7 +57,7 @@ impl Goal for BreedGoal {
     }
 
     fn can_use(&mut self, mob: &Mob<'_>) -> bool {
-        let Some(animal) = Animal::of(mob.as_entity_event_source()) else {
+        let Some(animal) = Animal::of(mob.as_entity()) else {
             return false;
         };
         if !animal.is_in_love() {
@@ -97,7 +97,7 @@ impl Goal for BreedGoal {
         let Some(partner) = &self.partner else {
             return;
         };
-        let Some(animal) = Animal::of(mob.as_entity_event_source()) else {
+        let Some(animal) = Animal::of(mob.as_entity()) else {
             return;
         };
         let Some(partner_animal) = Animal::of(partner.as_ref()) else {

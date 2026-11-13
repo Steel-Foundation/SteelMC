@@ -32,7 +32,7 @@ use crate::entity::entities::{
     PrimedTntEntity,
 };
 use crate::entity::{EntityBase, EntityFluidContact, next_entity_id};
-use crate::entity::{EntityHooks, EntityProps};
+use crate::entity::{EntityMethods, EntityProps};
 use crate::player::ResetReason;
 use crate::test_support::{
     TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk,

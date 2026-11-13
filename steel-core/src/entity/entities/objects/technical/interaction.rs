@@ -1,5 +1,6 @@
 //! Vanilla `Interaction`: an invisible box that records player clicks.
 
+use crate::entity::EntityPose;
 use std::sync::{Arc, Weak};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::nbt::NbtValueInput as _;
@@ -60,12 +61,16 @@ impl EntityTable for InteractionEntity {
         piston_push_reaction: |_| PushReaction::IgnoreEntity,
         is_ignoring_block_triggers: |_| true,
         skip_attack_interaction: Self::entity_skip_attack_interaction,
-        dimensions_for_pose: |interaction, _| {
-            let data = interaction.entity_data.lock();
-            EntityDimensions::with_default_eye_height(*data.width.get(), *data.height.get())
-        },
+        dimensions_for_pose: Self::entity_dimensions_for_pose,
         ..EntityProps::new()
     };
+}
+
+impl InteractionEntity {
+    fn entity_dimensions_for_pose(&self, _: EntityPose) -> EntityDimensions {
+        let data = self.entity_data.lock();
+        EntityDimensions::with_default_eye_height(*data.width.get(), *data.height.get())
+    }
 }
 
 impl InteractionEntity {

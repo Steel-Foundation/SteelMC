@@ -3,7 +3,7 @@
 //!
 //! The hurt animation and damage live in the synced `VehicleEntity` data
 //! layer, reached through the [`Vehicle`] view; entity types implement
-//! [`Parts`] and start their hooks from [`entity_props`].
+//! [`Parts`] and start their properties from [`entity_props`].
 
 use std::ops::Deref;
 
@@ -137,7 +137,7 @@ pub const fn dimension_changing_delay<E: Parts>(_: &E) -> i32 {
     DIMENSION_CHANGING_DELAY
 }
 
-/// `VehicleEntity`'s overrides of the entity hooks.
+/// `VehicleEntity`'s overrides of the entity properties.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {

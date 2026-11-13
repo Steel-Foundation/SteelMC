@@ -200,7 +200,7 @@ fn convert_common(from: &Mob<'_>, to: &Mob<'_>, params: ConversionParams) {
         to.add_mob_effect(effect);
     }
 
-    let to_ageable = Ageable::of(to.as_entity_event_source());
+    let to_ageable = Ageable::of(to.as_entity());
     if from.is_baby()
         && let Some(to_ageable) = to_ageable
     {
@@ -208,7 +208,7 @@ fn convert_common(from: &Mob<'_>, to: &Mob<'_>, params: ConversionParams) {
     }
 
     if let (Some(old_ageable), Some(converted_ageable)) =
-        (Ageable::of(from.as_entity_event_source()), to_ageable)
+        (Ageable::of(from.as_entity()), to_ageable)
     {
         converted_ageable.set_age(old_ageable.age());
         converted_ageable.copy_forced_growth_from(&old_ageable);

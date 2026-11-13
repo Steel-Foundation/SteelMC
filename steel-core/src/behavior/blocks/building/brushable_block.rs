@@ -18,7 +18,7 @@ use crate::behavior::{
 use crate::block_entity::BLOCK_ENTITIES;
 use crate::block_entity::entities::BrushableBlockEntity;
 use crate::entity::entities::FallingBlockEntity;
-use crate::entity::{Entity as _, EntityEventSource as _};
+use crate::entity::{AsEntity as _, Entity as _};
 use crate::world::game_event::GameEventContext;
 use crate::world::{ScheduledTickAccess, World};
 
@@ -143,10 +143,7 @@ impl Fallable for BrushableBlock {
         world.game_event_at(
             &vanilla_game_events::BLOCK_DESTROY,
             center,
-            &GameEventContext::new(
-                Some(entity.as_entity_event_source()),
-                Some(entity.block_state()),
-            ),
+            &GameEventContext::new(Some(entity.as_entity()), Some(entity.block_state())),
         );
     }
 }

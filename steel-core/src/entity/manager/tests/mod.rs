@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::entity::{Entity, EntityBase, EntityLevelCallback, InactiveEntityCallback};
 
 use super::*;
-use crate::entity::{EntityHooks, EntityProps};
+use crate::entity::{EntityMethods, EntityProps};
 
 struct ManagerTestEntity {
     base: EntityBase,

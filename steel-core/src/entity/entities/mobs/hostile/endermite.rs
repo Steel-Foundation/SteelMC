@@ -4,12 +4,15 @@ use crate::entity::LivingTable;
 use crate::entity::MobTable;
 use crate::entity::living_entity;
 use crate::entity::mob;
+use crate::physics::MoveResult;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::sound_events;
 use steel_registry::vanilla_entity_data::EndermiteEntityData;
+use steel_utils::BlockPos;
+use steel_utils::BlockStateId;
 use steel_utils::locks::CheckedMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
@@ -55,21 +58,29 @@ impl DefaultEntityPush for EndermiteEntity {}
 impl EntityTable for EndermiteEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         movement_emission: |_| EntityMovementEmission::Events,
-        play_step_sound: |endermite, _, _| {
-            endermite.play_sound(&sound_events::ENTITY_ENDERMITE_STEP, 0.15, 1.0);
-        },
-        // `Endermite.tick` faces its body forward before `super.tick()`.
-        tick: |endermite| {
-            endermite.living().set_y_body_rot(endermite.rotation().0);
-            mob::tick(endermite);
-        },
-        // `Endermite.setYBodyRot` turns the whole endermite before `super`.
-        set_y_body_rot: |endermite, y_body_rot| {
-            endermite.set_rotation((y_body_rot, endermite.rotation().1));
-            living_entity::set_y_body_rot(endermite, y_body_rot);
-        },
+        play_step_sound: Self::entity_play_step_sound,
+        tick: Self::entity_tick,
+        set_y_body_rot: Self::entity_set_y_body_rot,
         ..monster::entity_props()
     };
+}
+
+impl EndermiteEntity {
+    fn entity_play_step_sound(&self, _: BlockPos, _: BlockStateId) {
+        self.play_sound(&sound_events::ENTITY_ENDERMITE_STEP, 0.15, 1.0);
+    }
+
+    /// `Endermite.tick` faces its body forward before `super.tick()`.
+    fn entity_tick(&self) {
+        self.living().set_y_body_rot(self.rotation().0);
+        mob::tick(self);
+    }
+
+    /// `Endermite.setYBodyRot` turns the whole endermite before `super`.
+    fn entity_set_y_body_rot(&self, y_body_rot: f32) {
+        self.set_rotation((y_body_rot, self.rotation().1));
+        living_entity::set_y_body_rot(self, y_body_rot);
+    }
 }
 
 impl EndermiteEntity {
@@ -157,13 +168,17 @@ impl LivingTable for EndermiteEntity {
     const LIVING: LivingProps<Self> = LivingProps {
         hurt_sound: |_, _| Some(&sound_events::ENTITY_ENDERMITE_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_ENDERMITE_DEATH),
-        ai_step: |endermite| {
-            let movement = monster::ai_step(endermite);
-            endermite.age();
-            movement
-        },
+        ai_step: Self::living_ai_step,
         ..monster::living_props()
     };
+}
+
+impl EndermiteEntity {
+    fn living_ai_step(&self) -> Option<MoveResult> {
+        let movement = monster::ai_step(self);
+        self.age();
+        movement
+    }
 }
 
 #[cfg(test)]

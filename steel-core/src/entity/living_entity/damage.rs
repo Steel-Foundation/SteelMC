@@ -186,9 +186,9 @@ impl Living<'_> {
         world.clip(start, end, block_shape, fluid).is_miss()
     }
 
-    /// Hook before applying damage after vanilla reductions.
+    /// Runs before applying damage after vanilla reductions.
     pub fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {
-        if let Some(animal) = Animal::of(self.as_entity_event_source()) {
+        if let Some(animal) = Animal::of(self.as_entity()) {
             animal.reset_love();
         }
     }
@@ -795,7 +795,7 @@ pub fn die<E: Parts>(this: &E, source: &DamageSource) {
 /// Runs vanilla `LivingEntity.handleKillingBlow`.
 ///
 /// Vanilla's body is `this.dead = true`, which [`Living::die`] has already done
-/// atomically by the time this runs. The hook exists for the subclasses that
+/// atomically by the time this runs. The property exists for the subclasses that
 /// replace it: bosses playing a death animation clamp their health and enter a
 /// dying state here instead of falling over.
 pub const fn handle_killing_blow<E: Parts>(_entity: &E) {}
@@ -824,7 +824,7 @@ pub const fn is_always_experience_dropper<E: Parts>(_entity: &E) -> bool {
 
 /// `LivingEntity`'s [`LivingProps::drop_custom_death_loot`].
 ///
-/// Hook for non-mob custom death loot.
+/// Custom death loot for living entities that are not mobs.
 pub const fn drop_custom_death_loot<E: Parts>(
     _entity: &E,
     _source: &DamageSource,
@@ -870,7 +870,7 @@ fn death_loot_items_with_rng<R: rand::Rng>(
     let causing_equipment = causing_entity.and_then(loot_equipment);
     let direct_equipment = direct_entity.and_then(loot_equipment);
     let last_damage_player_equipment = last_damage_player.as_deref().and_then(loot_equipment);
-    let this_entity = entity_loot_ref(entity.as_entity_event_source(), Some(&this_equipment));
+    let this_entity = entity_loot_ref(entity.as_entity(), Some(&this_equipment));
     let causing_entity =
         causing_entity.map(|causing| entity_loot_ref(causing, causing_equipment.as_ref()));
     let direct_entity =

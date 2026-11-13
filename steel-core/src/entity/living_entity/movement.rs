@@ -367,7 +367,7 @@ impl Living<'_> {
 
     /// Pushes against `entities` in the given order. The caller applies cramming damage first.
     pub fn push_entities_in_order(&self, entities: &[SharedEntity]) {
-        EntityPush::push_entities_in_order(self.as_entity_event_source(), entities);
+        EntityPush::push_entities_in_order(self.as_entity(), entities);
     }
 
     /// Applies vanilla max entity cramming damage from `LivingEntity.pushEntities()`.
@@ -496,7 +496,7 @@ impl Living<'_> {
             f64::from(dimensions.half_width()),
             f64::from(dimensions.height),
         );
-        let collision = WorldCollisionProvider::for_entity(world, self.as_entity_event_source());
+        let collision = WorldCollisionProvider::for_entity(world, self.as_entity());
         if collision.has_entity_collision(&aabb)
             || collision.has_block_collision_with_context(&aabb, BlockCollisionContext::empty())
             || aabb_contains_any_liquid(world, aabb)
@@ -660,7 +660,7 @@ pub fn is_immobile<E: Parts>(entity: &E) -> bool {
 
 /// `LivingEntity`'s [`LivingProps::server_ai_step`].
 ///
-/// Server AI hook called from vanilla `LivingEntity.aiStep()`.
+/// Server AI step called from vanilla `LivingEntity.aiStep()`.
 pub const fn server_ai_step<E: Parts>(_entity: &E) {}
 
 /// `LivingEntity`'s [`LivingProps::jump_from_ground`].
@@ -750,7 +750,7 @@ pub fn ai_step<E: Parts>(entity: &E) -> Option<MoveResult> {
         f64::from(input.vertical()),
         f64::from(input.forward()),
     );
-    let result = if EntityHooks::is_alive(living.entity())
+    let result = if EntityMethods::is_alive(living.entity())
         && let Some(controller_entity) = living.controlling_passenger()
         && let Some(controller) = controller_entity.as_player()
     {

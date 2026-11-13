@@ -1,6 +1,6 @@
 //! Spyglass item behavior.
 
-use crate::entity::EntityHooks;
+use crate::entity::EntityMethods;
 use std::sync::Arc;
 
 use steel_macros::item_behavior;

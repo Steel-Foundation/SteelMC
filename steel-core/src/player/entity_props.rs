@@ -1,4 +1,4 @@
-//! `Player`'s overrides of the entity hooks.
+//! `Player`'s overrides of the entity properties.
 
 use super::*;
 use crate::entity::EntityTable;
@@ -14,58 +14,15 @@ impl EntityTable for Player {
         ride_tick: Self::entity_ride_tick,
         remove_vehicle: Self::entity_remove_vehicle,
         check_fall_damage: Self::entity_check_fall_damage,
-        // `Player.causeFallDamage` before `super`: players who may fly take no
-        // fall damage; others count the distance fallen.
-        cause_fall_damage: |player, fall_distance, damage_modifier, source| {
-            if player.abilities.lock().may_fly {
-                return false;
-            }
-            if fall_distance >= 2.0 {
-                player.award_custom_stat_with_count(
-                    &vanilla_custom_stats::FALL_ONE_CM,
-                    (fall_distance * 100.0).round() as i32,
-                );
-            }
-            living_entity::cause_fall_damage(player, fall_distance, damage_modifier, source)
-        },
-        // `Player.getBlockSpeedFactor`: flying and gliding players keep full speed.
-        block_speed_factor: |player| {
-            if player.abilities.lock().flying || player.living().is_fall_flying() {
-                return 1.0;
-            }
-            living_entity::block_speed_factor(player)
-        },
+        cause_fall_damage: Self::entity_cause_fall_damage,
+        block_speed_factor: Self::entity_block_speed_factor,
         // `Player.canFreeze`: spectators never freeze.
         can_freeze: |player| !player.is_spectator() && living_entity::can_freeze(player),
-        // `Player.doWaterSplashEffect`: spectators make no splash.
-        do_water_splash_effect: |player| {
-            if !player.is_spectator() {
-                entity::do_water_splash_effect(player);
-            }
-        },
-        // `Player.updateSwimming`: flying players never swim.
-        update_swimming: |player| {
-            if player.is_flying() {
-                player.set_shared_swimming(false);
-            } else {
-                entity::update_swimming(player);
-            }
-        },
-        // `Player.makeStuckInBlock`: flying players do not get stuck.
-        // TODO: Reset current impulse context once vehicle/player impulse contexts exist.
-        make_stuck_in_block: |player, state, speed_multiplier| {
-            if !player.is_flying() {
-                entity::make_stuck_in_block(player, state, speed_multiplier);
-            }
-        },
+        do_water_splash_effect: Self::entity_do_water_splash_effect,
+        update_swimming: Self::entity_update_swimming,
+        make_stuck_in_block: Self::entity_make_stuck_in_block,
         dimension_changing_delay: |_| 10,
-        on_explosion_hit: |player, explosion_source| {
-            let from_wind_charge = explosion_source
-                .is_some_and(|source| source.entity_type() == &vanilla_entities::WIND_CHARGE);
-            player
-                .living()
-                .set_ignore_fall_damage_from_current_impulse(from_wind_charge, player.position());
-        },
+        on_explosion_hit: Self::entity_on_explosion_hit,
         swim_splash_sound: |_| &sound_events::ENTITY_PLAYER_SPLASH,
         swim_high_speed_splash_sound: |_| &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED,
         scoreboard_name: |entity| entity.gameprofile.name().to_owned(),
@@ -115,6 +72,67 @@ impl EntityTable for Player {
         award_kill_score: Self::entity_award_kill_score,
         ..living_entity::entity_props()
     };
+}
+
+impl Player {
+    /// `Player.causeFallDamage` before `super`: players who may fly take no
+    /// fall damage; others count the distance fallen.
+    fn entity_cause_fall_damage(
+        &self,
+        fall_distance: f64,
+        damage_modifier: f32,
+        source: &DamageSource,
+    ) -> bool {
+        if self.abilities.lock().may_fly {
+            return false;
+        }
+        if fall_distance >= 2.0 {
+            self.award_custom_stat_with_count(
+                &vanilla_custom_stats::FALL_ONE_CM,
+                (fall_distance * 100.0).round() as i32,
+            );
+        }
+        living_entity::cause_fall_damage(self, fall_distance, damage_modifier, source)
+    }
+
+    /// `Player.getBlockSpeedFactor`: flying and gliding players keep full speed.
+    fn entity_block_speed_factor(&self) -> f32 {
+        if self.abilities.lock().flying || self.living().is_fall_flying() {
+            return 1.0;
+        }
+        living_entity::block_speed_factor(self)
+    }
+
+    /// `Player.doWaterSplashEffect`: spectators make no splash.
+    fn entity_do_water_splash_effect(&self) {
+        if !self.is_spectator() {
+            entity::do_water_splash_effect(self);
+        }
+    }
+
+    /// `Player.updateSwimming`: flying players never swim.
+    fn entity_update_swimming(&self) {
+        if self.is_flying() {
+            self.set_shared_swimming(false);
+        } else {
+            entity::update_swimming(self);
+        }
+    }
+
+    /// `Player.makeStuckInBlock`: flying players do not get stuck.
+    /// TODO: Reset current impulse context once vehicle/player impulse contexts exist.
+    fn entity_make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
+        if !self.is_flying() {
+            entity::make_stuck_in_block(self, state, speed_multiplier);
+        }
+    }
+
+    fn entity_on_explosion_hit(&self, explosion_source: Option<&dyn Entity>) {
+        let from_wind_charge = explosion_source
+            .is_some_and(|source| source.entity_type() == &vanilla_entities::WIND_CHARGE);
+        self.living()
+            .set_ignore_fall_damage_from_current_impulse(from_wind_charge, self.position());
+    }
 }
 
 impl Player {
@@ -261,7 +279,7 @@ impl Player {
             return false;
         }
 
-        entity_to_ride.position_rider(self.as_entity_event_source());
+        entity_to_ride.position_rider(self.as_entity());
         let position = self.position();
         let (yaw, pitch) = self.rotation();
         if let Err(error) = self.teleport(position, yaw, pitch) {

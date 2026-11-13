@@ -49,7 +49,7 @@ pub const fn default_gravity<E: Parts>(_: &E) -> f64 {
     0.05
 }
 
-/// `AbstractThrownPotion`'s overrides of the entity hooks.
+/// `AbstractThrownPotion`'s overrides of the entity properties.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
@@ -68,7 +68,7 @@ pub fn horizontal_hurt_knockback_direction<E: Parts>(
     (delta.x, delta.z)
 }
 
-/// `AbstractThrownPotion`'s overrides of the projectile hooks.
+/// `AbstractThrownPotion`'s overrides of the projectile properties.
 #[must_use]
 pub const fn projectile_props<E: Parts>() -> ProjectileProps<E> {
     ProjectileProps {

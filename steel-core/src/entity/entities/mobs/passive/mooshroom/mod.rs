@@ -36,8 +36,8 @@ use steel_utils::{BlockPos, Downcast as _};
 
 use crate::behavior::InteractionResult;
 use crate::entity::EntityTable;
-use crate::entity::ageable::{Age, Ageable, AgeableProps};
-use crate::entity::animal::{self, Breeding, BreedingProps};
+use crate::entity::ageable::{Age, Ageable, AgeableProps, AgeableTable};
+use crate::entity::animal::{self, AnimalProps, AnimalTable, Breeding};
 use crate::entity::entities::ItemEntity;
 use crate::entity::entities::mobs::passive::cow::abstract_cow;
 use crate::entity::shearable::{self, Shearable};
@@ -76,6 +76,19 @@ pub struct MushroomCowEntity {
     entity_data: CheckedMutex<MooshroomEntityData>,
 }
 
+impl AgeableTable for MushroomCowEntity {
+    const AGEABLE: AgeableProps<Self> = AgeableProps {
+        breed_offspring: Self::ageable_breed_offspring,
+    };
+}
+
+impl AnimalTable for MushroomCowEntity {
+    const ANIMAL: AnimalProps<Self> = AnimalProps {
+        is_food: |_, item_stack| abstract_cow::is_food(item_stack),
+        ..AnimalProps::new()
+    };
+}
+
 impl MushroomCowEntity {
     /// `MushroomCow.checkMushroomSpawnRules`: a mooshroom-spawnable block below
     /// and enough light, for every spawn reason.
@@ -88,11 +101,6 @@ impl MushroomCowEntity {
                 && animal::is_bright_enough_to_spawn(level, pos)
         };
 
-    const AGEABLE: AgeableProps = AgeableProps {
-        breed_offspring: Self::breed_offspring,
-    };
-    const BREEDING: BreedingProps = BreedingProps::new(abstract_cow::is_food);
-
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = MooshroomEntityData::new();
         let living_base = LivingEntityBase::new(entity_type, &mut entity_data);
@@ -101,8 +109,8 @@ impl MushroomCowEntity {
             entity_type,
             living_base,
             mob_base: MobBase::new(abstract_cow::construct),
-            age: Age::new(&Self::AGEABLE),
-            breeding: Breeding::new(&Self::BREEDING),
+            age: Age::new(),
+            breeding: Breeding::new(),
             stew_effects: CheckedMutex::new(None),
             entity_data: CheckedMutex::new(entity_data),
         }
@@ -245,19 +253,17 @@ impl MushroomCowEntity {
 
     /// `MushroomCow.getBreedOffspring`: either parent's variant, and rarely the
     /// other variant when both parents match.
-    fn breed_offspring(
-        parent: &Ageable<'_>,
+    fn ageable_breed_offspring(
+        &self,
         world: &Arc<World>,
         partner: &Ageable<'_>,
     ) -> Option<SharedEntity> {
-        let offspring = parent.create_offspring(world)?;
-        let variant_of =
-            |ageable: &Ageable<'_>| ageable.entity().downcast_ref::<Self>().map(Self::variant);
-        if let (Some(variant), Some(mate_variant), Some(calf)) = (
-            variant_of(parent),
-            variant_of(partner),
+        let offspring = self.ageable().create_offspring(world)?;
+        if let (Some(mate_variant), Some(calf)) = (
+            partner.entity().downcast_ref::<Self>().map(Self::variant),
             offspring.downcast_ref::<Self>(),
         ) {
+            let variant = self.variant();
             let mut random = rand::rng();
             let calf_variant = if variant == mate_variant && random.random_ratio(1, MUTATE_CHANCE) {
                 match variant {
@@ -278,22 +284,26 @@ impl MushroomCowEntity {
 impl MobTable for MushroomCowEntity {
     const MOB: MobProps<Self> = MobProps {
         walk_target_value: Self::mob_walk_target_value,
-        // `MushroomCow.mobInteract`: stew, shearing and flower feeding come
-        // before `super`'s milk bucket.
-        mob_interact: |mooshroom, player, hand| {
-            if let Some(result) = mooshroom.fill_bowl(player, hand) {
-                return result;
-            }
-            if let Some(result) = mooshroom.shear_by_player(player, hand) {
-                return result;
-            }
-            if let Some(result) = mooshroom.eat_flower(player, hand) {
-                return result;
-            }
-            abstract_cow::mob_interact(mooshroom, player, hand)
-        },
+        mob_interact: Self::mob_interact,
         ..abstract_cow::mob_props()
     };
+}
+
+impl MushroomCowEntity {
+    /// `MushroomCow.mobInteract`: stew, shearing and flower feeding come
+    /// before `super`'s milk bucket.
+    fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
+        if let Some(result) = self.fill_bowl(player, hand) {
+            return result;
+        }
+        if let Some(result) = self.shear_by_player(player, hand) {
+            return result;
+        }
+        if let Some(result) = self.eat_flower(player, hand) {
+            return result;
+        }
+        abstract_cow::mob_interact(self, player, hand)
+    }
 }
 
 impl LivingTable for MushroomCowEntity {
@@ -358,13 +368,17 @@ impl DefaultEntityPush for MushroomCowEntity {}
 
 impl EntityTable for MushroomCowEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        apply_implicit_item_components: |mooshroom, item_stack| {
-            if let Some(variant) = item_stack.get(MOOSHROOM_VARIANT) {
-                mooshroom.set_variant(*variant);
-            }
-        },
+        apply_implicit_item_components: Self::entity_apply_implicit_item_components,
         ..abstract_cow::entity_props()
     };
+}
+
+impl MushroomCowEntity {
+    fn entity_apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(variant) = item_stack.get(MOOSHROOM_VARIANT) {
+            self.set_variant(*variant);
+        }
+    }
 }
 
 impl MushroomCowEntity {
