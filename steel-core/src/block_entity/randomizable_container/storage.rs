@@ -213,7 +213,7 @@ impl RandomizableContainerStorage {
             container.generation = container.generation.wrapping_add(1);
             (loot, container.generation)
         };
-        let result = (|| {
+        let result = {
             let table = LOOT_TABLES.by_key(loot.loot_table());
             let pos = base.pos();
             let equipment = player.map(living_loot_equipment);
@@ -241,7 +241,7 @@ impl RandomizableContainerStorage {
                 generated.fill(&mut *container);
                 Ok(())
             })
-        })();
+        };
         {
             let mut container = storage.lock();
             if container.generation == generation {
