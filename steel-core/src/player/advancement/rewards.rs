@@ -26,7 +26,7 @@ pub fn grant_reward(player: &Player, reward: &AdvancementRewards) {
             log::error!("Advancement reward loot table {key} is not registered");
             continue;
         };
-        let items = world.with_loot_random(loot_table, 0, |rng| {
+        let items = world.with_loot_random(Some(loot_table), 0, |rng| {
             let mut ctx = LootContext::new(rng)
                 .with_world(&world)
                 .with_this_entity(entity_loot_ref(player, Some(&equipment)))

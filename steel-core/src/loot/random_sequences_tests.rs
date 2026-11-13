@@ -302,7 +302,7 @@ fn domain_worlds_share_sequences_and_domains_stay_isolated() {
         let table = &vanilla_loot_tables::CHESTS_SPAWN_BONUS_CHEST;
         let mut expected_seeded = LegacyRandom::from_seed(42);
         assert_eq!(
-            a.with_loot_random(table, 42, |random| Ok(random.next_i64()))
+            a.with_loot_random(Some(table), 42, |random| Ok(random.next_i64()))
                 .expect("seeded draw"),
             expected_seeded.next_i64()
         );

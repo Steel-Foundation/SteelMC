@@ -194,6 +194,21 @@ fn failed_generation_does_not_change_container_contents() {
 }
 
 #[test]
+fn registered_table_without_a_callable_still_reports_an_error() {
+    let mut tables = tables();
+    let table = &vanilla_loot_tables::CHESTS_SPAWN_BONUS_CHEST;
+    assert!(tables.functions.remove(&table.key).is_some());
+    let mut rng = random(12345);
+    let mut ctx = LootContext::new(&mut rng);
+    ctx.tables = Some(&tables);
+
+    assert!(matches!(
+        table.generate_for_container(&mut ctx),
+        Err(LootError::MissingTable(key)) if key == table.key
+    ));
+}
+
+#[test]
 fn vanilla_block_tables_keep_supported_behavior() {
     init_vanilla_registry();
     let mut rng = random(12345);

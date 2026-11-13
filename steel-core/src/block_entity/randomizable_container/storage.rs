@@ -17,7 +17,7 @@ use crate::block_entity::{BlockEntityBase, ImplicitComponentGetter, Randomizable
 use crate::entity::{LivingEntity, entity_loot_ref, living_loot_equipment};
 use crate::inventory::container::{Container, load_all_items};
 use crate::inventory::lock::{ContainerRef, SharedContainer};
-use crate::loot::{LOOT_TABLES, LootContext, LootError, LootResult};
+use crate::loot::{GeneratedLoot, LOOT_TABLES, LootContext, LootError, LootResult};
 use crate::player::Player;
 use crate::world::World;
 
@@ -214,9 +214,7 @@ impl RandomizableContainerStorage {
             (loot, container.generation)
         };
         let result = (|| {
-            let table = LOOT_TABLES
-                .by_key(loot.loot_table())
-                .ok_or_else(|| LootError::MissingTable(loot.loot_table().clone()))?;
+            let table = LOOT_TABLES.by_key(loot.loot_table());
             let pos = base.pos();
             let equipment = player.map(living_loot_equipment);
             world.with_loot_random(table, loot.seed(), |random| {
@@ -231,7 +229,10 @@ impl RandomizableContainerStorage {
                         .with_luck(player.get_luck())
                         .with_this_entity(entity_loot_ref(player, equipment.as_ref()));
                 }
-                let generated = table.generate_for_container(&mut context)?;
+                let generated = match table {
+                    Some(table) => table.generate_for_container(&mut context)?,
+                    None => GeneratedLoot::new(Vec::new(), context.rng),
+                };
                 let mut container = storage.lock();
                 if container.generation != generation {
                     return Err(LootError::ContainerChanged);

@@ -10,9 +10,10 @@ impl World {
     // Death-loot contexts also need the credited player's luck.
     /// Selects the saved seed, domain sequence, or live world stream in vanilla order.
     /// Generation and container placement must both complete inside the callback.
+    /// `None` represents vanilla's unregistered empty fallback table.
     pub fn with_loot_random<T>(
         &self,
-        table: &LootTable,
+        table: Option<&LootTable>,
         seed: i64,
         use_random: impl FnOnce(&mut RandomSource) -> LootResult<T>,
     ) -> LootResult<T> {
@@ -21,7 +22,7 @@ impl World {
                 seed as u64,
             )));
         }
-        if let Some(key) = &table.random_sequence {
+        if let Some(key) = table.and_then(|table| table.random_sequence.as_ref()) {
             let sequences = self.random_sequences.read().as_ref().cloned().ok_or(
                 LootError::RandomUnavailable("world is not bound to its domain sequences"),
             )?;

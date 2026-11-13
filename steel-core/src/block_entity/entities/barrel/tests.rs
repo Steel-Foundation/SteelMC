@@ -2,7 +2,6 @@ use steel_registry::{init_vanilla_registry, item_stack::ItemStack, vanilla_block
 
 use super::*;
 use crate::inventory::container::Container as _;
-use crate::loot::LootError;
 use crate::{
     behavior::{BLOCK_BEHAVIORS, init_behaviors},
     block_entity::init_block_entities,
@@ -12,6 +11,7 @@ use crate::{
 use simdnbt::owned::NbtTag;
 use std::sync::Arc;
 use steel_registry::data_components::vanilla_components::CONTAINER_LOOT;
+use steel_utils::random::{Random as _, RandomSource, legacy_random::LegacyRandom};
 use steel_utils::{ChunkPos, Direction, Identifier, types::UpdateFlags};
 
 fn pending(seed: i64) -> SeededContainerLoot {
@@ -125,32 +125,59 @@ fn first_storage_access_fills_once_and_preserves_generated_items_on_reload() {
 }
 
 #[test]
-fn failed_generation_keeps_pending_loot_and_aborts_before_locking_any_inventory() {
-    let fixture = fresh_test_world("failed_barrel_loot");
-    let barrel = BarrelBlockEntity::new(
-        Arc::downgrade(&fixture.world),
-        BlockPos::new(1, 64, 1),
-        vanilla_blocks::BARREL.default_state(),
-    );
-    let missing = SeededContainerLoot::new(Identifier::new_static("example", "missing_table"), 12);
-    barrel.set_loot_table(Some(missing.clone()));
-    let container = barrel.container_ref().expect("container");
-    assert!(matches!(
-        ContainerLockGuard::lock_all(&[&container]),
-        Err(LootError::MissingTable(_))
-    ));
-    assert_eq!(barrel.loot_table(), Some(missing));
-    assert!(
+fn missing_loot_table_fills_as_empty_once_and_preserves_existing_items() {
+    for seed in [0_i64, 12] {
+        let fixture = fresh_test_world("missing_barrel_loot");
+        let barrel = BarrelBlockEntity::new(
+            Arc::downgrade(&fixture.world),
+            BlockPos::new(1, 64, 1),
+            vanilla_blocks::BARREL.default_state(),
+        );
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", "example:missing_table");
+        nbt.insert("LootTableSeed", seed);
+        barrel
+            .load_with_owned_components(&nbt)
+            .expect("load stale loot key");
         barrel
             .storage
             .container
-            .try_lock()
-            .expect("no retained lock")
-            .is_empty()
-    );
-    barrel.set_loot_table(Some(pending(12)));
-    drop(ContainerLockGuard::lock_all(&[&container]).expect("retry valid loot"));
-    assert!(barrel.loot_table().is_none());
+            .lock()
+            .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
+        *fixture.world.loot_random.lock() = RandomSource::Legacy(LegacyRandom::from_seed(42));
+        let mut expected_random = LegacyRandom::from_seed(42);
+        if seed == 0 {
+            // Vanilla fill shuffles empty slots even when the table has no pools.
+            for end in (2..BARREL_SLOTS).rev() {
+                expected_random.next_i32_bounded(end as i32);
+            }
+        }
+
+        let container = barrel.container_ref().expect("container");
+        for _ in 0..2 {
+            let guard = ContainerLockGuard::lock_all(&[&container]).expect("access stale loot");
+            let inventory = guard
+                .get(container.container_id())
+                .expect("locked inventory");
+            assert_eq!(
+                inventory.get_item(0),
+                &ItemStack::with_count(&vanilla_items::STONE, 3)
+            );
+            assert!(inventory.items()[1..].iter().all(ItemStack::is_empty));
+        }
+        assert!(barrel.loot_table().is_none());
+        let saved = barrel.save_custom_only();
+        assert!(saved.get("LootTable").is_none());
+        assert!(saved.get("Items").is_some());
+        assert_eq!(
+            fixture.world.loot_random.lock().next_i64(),
+            expected_random.next_i64()
+        );
+
+        barrel.set_loot_table(Some(pending(12)));
+        drop(ContainerLockGuard::lock_all(&[&container]).expect("generate reassigned loot"));
+        assert!(barrel.loot_table().is_none());
+    }
 }
 
 #[test]

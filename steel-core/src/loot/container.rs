@@ -13,7 +13,7 @@ pub struct GeneratedLoot<'a> {
 }
 
 impl<'a> GeneratedLoot<'a> {
-    pub(super) const fn new(items: Vec<ItemStack>, random: &'a mut RandomSource) -> Self {
+    pub(crate) const fn new(items: Vec<ItemStack>, random: &'a mut RandomSource) -> Self {
         Self { items, random }
     }
 
