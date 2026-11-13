@@ -6,6 +6,7 @@ use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
 use crate::TaggedRegistryExt;
+use crate::environment_attribute::EnvironmentAttributeMap;
 use crate::sound_event::SoundEventRef;
 use crate::{REGISTRY, RegistryTags};
 
@@ -18,10 +19,10 @@ pub struct Biome {
     pub temperature_modifier: TemperatureModifier,
     pub effects: BiomeEffects,
     pub creature_spawn_probability: f32,
-    pub spawners: FxHashMap<String, Vec<SpawnerData>>,
-    pub spawn_costs: FxHashMap<Identifier, SpawnCost>,
     pub carvers: Vec<Identifier>,
     pub features: Vec<Vec<Identifier>>,
+    /// Positional environment attribute layer of this biome.
+    pub attributes: EnvironmentAttributeMap,
     /// Cached registry ID, set during registration for O(1) lookup on hot paths.
     pub id: OnceLock<usize>,
 }
@@ -48,20 +49,6 @@ pub struct BiomeEffects {
     pub additions_sound: Option<AdditionsSound>,
     pub mood_sound: Option<MoodSound>,
     pub particle: Option<Particle>,
-}
-
-#[derive(Debug)]
-pub struct SpawnerData {
-    pub entity_type: Identifier,
-    pub weight: i32,
-    pub min_count: i32,
-    pub max_count: i32,
-}
-
-#[derive(Debug)]
-pub struct SpawnCost {
-    pub energy_budget: f64,
-    pub charge: f64,
 }
 
 #[derive(Debug, Default)]
@@ -208,39 +195,6 @@ impl ToNbtTag for &Biome {
             effects.insert("music", NbtTag::List(NbtList::Compound(music_nbt)));
         }
         compound.insert("effects", NbtTag::Compound(effects));
-
-        // Spawners
-        let mut spawners_compound = NbtCompound::new();
-        for (category, entries) in &self.spawners {
-            let category_entries: Vec<NbtCompound> = entries
-                .iter()
-                .map(|sd| {
-                    let mut e = NbtCompound::new();
-                    let s = sd.entity_type.to_string();
-                    e.insert("type", s.as_str());
-                    e.insert("weight", sd.weight);
-                    e.insert("minCount", sd.min_count);
-                    e.insert("maxCount", sd.max_count);
-                    e
-                })
-                .collect();
-            spawners_compound.insert(
-                category.as_str(),
-                NbtTag::List(NbtList::Compound(category_entries)),
-            );
-        }
-        compound.insert("spawners", NbtTag::Compound(spawners_compound));
-
-        // Spawn costs
-        let mut spawn_costs_compound = NbtCompound::new();
-        for (entity_type, cost) in &self.spawn_costs {
-            let mut cost_compound = NbtCompound::new();
-            cost_compound.insert("charge", cost.charge);
-            cost_compound.insert("energy_budget", cost.energy_budget);
-            let s = entity_type.to_string();
-            spawn_costs_compound.insert(s.as_str(), NbtTag::Compound(cost_compound));
-        }
-        compound.insert("spawn_costs", NbtTag::Compound(spawn_costs_compound));
 
         // Carvers (all treated as "air" step)
         let mut carvers_compound = NbtCompound::new();

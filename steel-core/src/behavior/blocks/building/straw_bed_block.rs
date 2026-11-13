@@ -94,8 +94,8 @@ impl BlockBehavior for StrawBedBlock {
         (!shape.is_empty()).then(|| shape.max(Axis::Y))
     }
 
-    fn on_stop_sleeping(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if world.dimension_type.straw_bed_rule.destroy_on_leave {
+    fn on_stop_sleeping(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        if Player::bed_rule_for(world, state, pos).destroy_on_leave {
             Self::destroy_bed(world, pos);
         }
     }
@@ -146,8 +146,11 @@ impl BlockBehavior for StrawBedBlock {
             return InteractionResult::Consume;
         };
 
-        let rule = &world.dimension_type.straw_bed_rule;
+        let rule = Player::bed_rule_for(world, head_state, head_pos);
         if rule.destroy_on_use {
+            if let Some(message) = rule.error_message {
+                player.send_overlay_message(&message());
+            }
             Self::destroy_bed(world, head_pos);
             return InteractionResult::SuccessServer;
         }
@@ -162,7 +165,7 @@ impl BlockBehavior for StrawBedBlock {
         }
 
         if let Err(problem) =
-            player.start_sleep_in_bed(head_pos, rule, &vanilla_custom_stats::SLEEP_IN_STRAW_BED)
+            player.start_sleep_in_bed(head_pos, &rule, &vanilla_custom_stats::SLEEP_IN_STRAW_BED)
             && let Some(message) = problem.message()
         {
             player.send_overlay_message(message);

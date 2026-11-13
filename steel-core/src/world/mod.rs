@@ -115,7 +115,8 @@ mod broadcasts;
 pub(crate) mod clock;
 mod domain_entity_directory;
 mod entity_management;
-mod environment;
+/// Vanilla environment attribute sampling.
+pub mod environment_attributes;
 mod events;
 pub mod explosion;
 /// Vanilla game-event contexts, listeners, and dispatch storage.
@@ -304,6 +305,8 @@ pub struct World {
     navigating_mobs: NavigatingMobTracker,
     /// Weather Data needed for animating starting and stopping of rain clientside
     pub weather: SyncMutex<Weather>,
+    /// Layered environment attributes; read through `environment_attributes()`.
+    environment_attributes: environment_attributes::EnvironmentAttributeSystem,
     /// Per-level recent toggle history used by vanilla redstone-torch burnout.
     redstone_torch_toggles: SyncMutex<redstone::RedstoneTorchToggleTracker>,
     /// World registration and sparse head index for chunk-owned scheduled ticks.
@@ -460,6 +463,8 @@ impl World {
                 entity_tracker: EntityTracker::new(),
                 navigating_mobs: NavigatingMobTracker::new(),
                 weather: SyncMutex::new(weather),
+                environment_attributes:
+                    environment_attributes::EnvironmentAttributeSystem::for_level(dimension_type),
                 redstone_torch_toggles: SyncMutex::new(
                     redstone::RedstoneTorchToggleTracker::default(),
                 ),

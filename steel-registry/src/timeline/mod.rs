@@ -3,6 +3,10 @@ use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
+mod attribute_track;
+
+pub use attribute_track::{AttributeTrack, ErasedAttributeTrack, TypedAttributeTrack};
+
 use crate::RegistryTags;
 use crate::world_clock::WorldClockRef;
 
@@ -66,7 +70,11 @@ pub struct Timeline {
     pub key: Identifier,
     pub clock: WorldClockRef,
     pub period_ticks: Option<i32>,
+    /// Raw tracks of every attribute, used for registry sync.
     pub tracks: &'static [Track],
+    /// Typed tracks of the attributes Steel implements, sampled by the
+    /// environment attribute system.
+    pub attribute_tracks: &'static [&'static dyn ErasedAttributeTrack],
     pub time_markers: &'static [TimeMarker],
 }
 

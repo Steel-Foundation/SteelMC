@@ -111,6 +111,11 @@ impl ParticleData {
     }
 }
 
+// SAFETY: This Steel-owned key uniquely identifies `ParticleData` within the process.
+unsafe impl DowncastType for ParticleData {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:particle/particle_data");
+}
+
 impl Clone for ParticleData {
     fn clone(&self) -> Self {
         Self {

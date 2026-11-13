@@ -1,0 +1,501 @@
+{
+  "environment_attributes": [
+    {
+      "name": "minecraft:visual/fog_color",
+      "type": "minecraft:rgb_color",
+      "default": "#000000",
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/fog_start_distance",
+      "type": "minecraft:float",
+      "default": 0.0,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/fog_end_distance",
+      "type": "minecraft:float",
+      "default": 1024.0,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false,
+      "min": 0.0
+    },
+    {
+      "name": "minecraft:visual/sky_fog_end_distance",
+      "type": "minecraft:float",
+      "default": 512.0,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false,
+      "min": 0.0
+    },
+    {
+      "name": "minecraft:visual/cloud_fog_end_distance",
+      "type": "minecraft:float",
+      "default": 2048.0,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false,
+      "min": 0.0
+    },
+    {
+      "name": "minecraft:visual/water_fog_color",
+      "type": "minecraft:rgb_color",
+      "default": "#050533",
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/water_fog_start_distance",
+      "type": "minecraft:float",
+      "default": -8.0,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/water_fog_end_distance",
+      "type": "minecraft:float",
+      "default": 96.0,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false,
+      "min": 0.0
+    },
+    {
+      "name": "minecraft:visual/sky_color",
+      "type": "minecraft:rgb_color",
+      "default": "#000000",
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/sunrise_sunset_color",
+      "type": "minecraft:argb_color",
+      "default": "#00000000",
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/cloud_color",
+      "type": "minecraft:argb_color",
+      "default": "#00000000",
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/cloud_height",
+      "type": "minecraft:float",
+      "default": 192.33,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/sun_angle",
+      "type": "minecraft:angle_degrees",
+      "default": 0.0,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/moon_angle",
+      "type": "minecraft:angle_degrees",
+      "default": 0.0,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/star_angle",
+      "type": "minecraft:angle_degrees",
+      "default": 0.0,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/moon_phase",
+      "type": "minecraft:moon_phase",
+      "default": "full_moon",
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/star_brightness",
+      "type": "minecraft:float",
+      "default": 0.0,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false,
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "minecraft:visual/block_light_tint",
+      "type": "minecraft:rgb_color",
+      "default": "#ffd88c",
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/sky_light_color",
+      "type": "minecraft:rgb_color",
+      "default": "#ffffff",
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/sky_light_factor",
+      "type": "minecraft:float",
+      "default": 1.0,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false,
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "minecraft:visual/night_vision_color",
+      "type": "minecraft:rgb_color",
+      "default": "#999999",
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/ambient_light_color",
+      "type": "minecraft:rgb_color",
+      "default": "#000000",
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": true,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/default_dripstone_particle",
+      "type": "minecraft:particle",
+      "default": {
+        "type": "minecraft:dripping_dripstone_water"
+      },
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:visual/ambient_particles",
+      "type": "minecraft:ambient_particles",
+      "default": [],
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:audio/background_music",
+      "type": "minecraft:background_music",
+      "default": {},
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:audio/music_volume",
+      "type": "minecraft:float",
+      "default": 1.0,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false,
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "minecraft:audio/ambient_sounds",
+      "type": "minecraft:ambient_sounds",
+      "default": {},
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:audio/firefly_bush_sounds",
+      "type": "minecraft:boolean",
+      "default": false,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/sky_light_level",
+      "type": "minecraft:float",
+      "default": 15.0,
+      "syncable": true,
+      "positional": false,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false,
+      "min": 0.0,
+      "max": 15.0
+    },
+    {
+      "name": "minecraft:gameplay/can_start_raid",
+      "type": "minecraft:boolean",
+      "default": true,
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/water_evaporates",
+      "type": "minecraft:boolean",
+      "default": false,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/bed_rule",
+      "type": "minecraft:bed_rule",
+      "default": {
+        "can_sleep": "when_dark",
+        "can_set_spawn": "always",
+        "error_message": {
+          "translate": "block.minecraft.bed.no_sleep"
+        }
+      },
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/straw_bed_rule",
+      "type": "minecraft:bed_rule",
+      "default": {
+        "can_sleep": "when_dark",
+        "can_set_spawn": "never",
+        "destroy_on_leave": true,
+        "error_message": {
+          "translate": "block.minecraft.bed.no_sleep"
+        }
+      },
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/respawn_anchor_works",
+      "type": "minecraft:boolean",
+      "default": false,
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/nether_portal_spawns_piglin",
+      "type": "minecraft:boolean",
+      "default": false,
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/fast_lava",
+      "type": "minecraft:boolean",
+      "default": false,
+      "syncable": true,
+      "positional": false,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/increased_fire_burnout",
+      "type": "minecraft:boolean",
+      "default": false,
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/eyeblossom_open",
+      "type": "minecraft:tri_state",
+      "default": "default",
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/turtle_egg_hatch_chance",
+      "type": "minecraft:float",
+      "default": 0.002,
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false,
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "minecraft:gameplay/piglins_zombify",
+      "type": "minecraft:boolean",
+      "default": true,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/snow_golem_melts",
+      "type": "minecraft:boolean",
+      "default": false,
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/creaking_active",
+      "type": "minecraft:boolean",
+      "default": false,
+      "syncable": true,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/surface_slime_spawn_chance",
+      "type": "minecraft:float",
+      "default": 0.0,
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false,
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "minecraft:gameplay/cat_waking_up_gift_chance",
+      "type": "minecraft:float",
+      "default": 0.0,
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false,
+      "min": 0.0,
+      "max": 1.0
+    },
+    {
+      "name": "minecraft:gameplay/bees_stay_in_hive",
+      "type": "minecraft:boolean",
+      "default": false,
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/monsters_burn",
+      "type": "minecraft:boolean",
+      "default": false,
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/can_pillager_patrol_spawn",
+      "type": "minecraft:boolean",
+      "default": true,
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/natural_mob_spawns",
+      "type": "minecraft:mob_spawn_settings",
+      "default": {
+        "spawns_by_category": {},
+        "spawn_costs": {}
+      },
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": true
+    },
+    {
+      "name": "minecraft:gameplay/creature_world_gen_spawn_probability",
+      "type": "minecraft:float",
+      "default": 0.1,
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false,
+      "min": 0.0,
+      "max": 0.9999999
+    },
+    {
+      "name": "minecraft:gameplay/villager_activity",
+      "type": "minecraft:activity",
+      "default": "minecraft:idle",
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    },
+    {
+      "name": "minecraft:gameplay/baby_villager_activity",
+      "type": "minecraft:activity",
+      "default": "minecraft:idle",
+      "syncable": false,
+      "positional": true,
+      "spatially_interpolated": false,
+      "full_resolution_biomes": false
+    }
+  ]
+}

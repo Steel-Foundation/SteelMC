@@ -13,8 +13,8 @@ use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
-    level_events, sound_events, vanilla_entities, vanilla_game_events, vanilla_game_rules,
-    vanilla_items, vanilla_world_clocks,
+    level_events, sound_events, vanilla_entities, vanilla_environment_attributes,
+    vanilla_game_events, vanilla_game_rules, vanilla_items,
 };
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
@@ -34,15 +34,6 @@ const MAX_HATCH_LEVEL: u8 = 2;
 /// Maximum number of eggs that can occupy a single block space.
 const MAX_EGGS: u8 = 4;
 
-/// Length of one full Minecraft day, in ticks.
-const TICKS_PER_DAY: i64 = 24_000;
-/// Base per-random-tick chance that an egg advances a cracking stage.
-const BASE_HATCH_CHANCE: f32 = 0.002;
-/// Start (inclusive) of the pre-dawn window where eggs always advance.
-const HATCH_WINDOW_START: i64 = 21_062;
-/// End (exclusive) of the pre-dawn window where eggs always advance.
-const HATCH_WINDOW_END: i64 = 21_905;
-
 /// One in this many chance to trample an egg while standing on it each tick.
 const STEP_TRAMPLE_ODDS: i32 = 100;
 /// One in this many chance to trample an egg by falling onto it.
@@ -50,12 +41,6 @@ const FALL_TRAMPLE_ODDS: i32 = 3;
 
 /// Particle count for the "egg placed on sand" effect.
 const TURTLE_EGG_PLACEMENT_PARTICLE_COUNT: i32 = 15;
-
-/// Dimension timeline tag that carries the day timeline. Only dimensions on this
-/// tag (the overworld and its caves variant) apply the pre-dawn hatch boost;
-/// nether and end eggs stay at the base chance, matching vanilla's per-dimension
-/// resolution of the `gameplay/turtle_egg_hatch_chance` attribute.
-const OVERWORLD_TIMELINE_TAG: &str = "#minecraft:in_overworld";
 
 const HATCH: &IntProperty = &BlockStateProperties::HATCH;
 const EGGS: &IntProperty = &BlockStateProperties::EGGS;
@@ -82,36 +67,13 @@ impl TurtleEggBlock {
             .has_tag(&BlockTag::SAND)
     }
 
-    /// Rolls whether an egg should advance its cracking stage this random tick.
-    ///
-    /// In vanilla this chance comes from the `gameplay/turtle_egg_hatch_chance`
-    /// environment attribute: base 0.002, raised to 1.0 by a day-timeline
-    /// `maximum` modifier during the pre-dawn window (ticks 21062 to 21904).
-    /// Vanilla resolves the attribute per dimension, and only dimensions tagged
-    /// `#minecraft:in_overworld` include that day timeline, so eggs in the nether
-    /// or end keep the 0.002 base regardless of the overworld time of day.
-    ///
-    /// Steel's timeline sampler in `world::environment` only handles
-    /// `multiply`/replace modifiers and exposes sky light and sun angle, so it
-    /// cannot resolve this attribute yet; the turtle curve is reproduced inline
-    /// off the overworld day clock, gated on the same timeline tag.
-    // TODO(environment-attributes): replace this inline curve with a single
-    // attribute lookup once the timeline sampler learns the `maximum` modifier
-    // and exposes a public environment-attribute getter.
-    fn should_update_hatch_level(world: &Arc<World>) -> bool {
-        let day_time = world
-            .clock_total_ticks(&vanilla_world_clocks::OVERWORLD)
-            .unwrap_or(0)
-            .rem_euclid(TICKS_PER_DAY);
-
-        let in_hatch_window = (HATCH_WINDOW_START..HATCH_WINDOW_END).contains(&day_time)
-            && world.dimension_type.timelines == Some(OVERWORLD_TIMELINE_TAG);
-        let chance = if in_hatch_window {
-            1.0
-        } else {
-            BASE_HATCH_CHANCE
-        };
-
+    /// Vanilla `TurtleEggBlock.shouldUpdateHatchLevel`: rolls the
+    /// `gameplay/turtle_egg_hatch_chance` attribute sampled at `pos`.
+    fn should_update_hatch_level(world: &Arc<World>, pos: BlockPos) -> bool {
+        let chance = world.environment_attributes().get_value(
+            &vanilla_environment_attributes::TURTLE_EGG_HATCH_CHANCE,
+            pos,
+        );
         chance > 0.0 && rand::random::<f32>() < chance
     }
 
@@ -225,7 +187,7 @@ impl BlockBehavior for TurtleEggBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if !Self::should_update_hatch_level(world) || !Self::on_sand(world, pos) {
+        if !Self::should_update_hatch_level(world, pos) || !Self::on_sand(world, pos) {
             return;
         }
 
@@ -335,8 +297,9 @@ mod tests {
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
     use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
-    /// A day-time tick inside the pre-dawn window where eggs always advance, so
-    /// random ticks are deterministic in tests.
+    /// A day-time tick inside the overworld day timeline's pre-dawn window,
+    /// where the hatch chance attribute is raised to 1.0, so random ticks are
+    /// deterministic in tests.
     const ALWAYS_HATCH_DAY_TIME: i64 = 21_500;
 
     fn prepare(key: &'static str) -> (TestWorld, BlockPos) {

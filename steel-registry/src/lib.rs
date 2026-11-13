@@ -41,6 +41,7 @@ pub mod dialog;
 pub mod dimension_type;
 pub mod dye_color;
 pub mod enchantment;
+pub mod environment_attribute;
 pub use enchantment::effect as enchantment_effect;
 pub mod entity_data;
 pub mod entity_type;
@@ -410,6 +411,11 @@ pub mod vanilla_block_entity_types;
 #[rustfmt::skip]
 #[path = "generated/vanilla_game_rules.rs"]
 pub mod vanilla_game_rules;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_environment_attributes.rs"]
+pub mod vanilla_environment_attributes;
 
 #[expect(warnings)]
 #[rustfmt::skip]

@@ -9,6 +9,7 @@ use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, IntProperty};
+use steel_registry::vanilla_environment_attributes;
 use steel_registry::{vanilla_block_entity_types, vanilla_game_events};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
@@ -43,7 +44,9 @@ impl DaylightDetectorBlock {
         let sky_brightness = world.effective_sky_brightness(pos);
         Self::calculate_signal_strength(
             sky_brightness,
-            world.sun_angle_degrees(),
+            world
+                .environment_attributes()
+                .get_value(&vanilla_environment_attributes::SUN_ANGLE, pos),
             state.get_value(INVERTED),
         )
     }
@@ -230,7 +233,9 @@ mod tests {
                 .set_total_ticks(&vanilla_world_clocks::OVERWORLD, 680),
             Some(())
         );
-        let sun_angle_degrees = world.sun_angle_degrees();
+        let sun_angle_degrees = world
+            .environment_attributes()
+            .get_value(&vanilla_environment_attributes::SUN_ANGLE, BlockPos::ZERO);
 
         let mut adjusted_angle = sun_angle_degrees * DEG_TO_RAD;
         let offset = if adjusted_angle < PI { 0.0 } else { TAU };

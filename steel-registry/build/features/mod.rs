@@ -17,6 +17,7 @@ mod data;
 mod nbt;
 mod placement;
 mod providers;
+
 mod structures;
 
 use common::{
@@ -34,10 +35,8 @@ use placement::{
     generate_block_predicate, generate_placed_feature_data, generate_placed_feature_ref,
 };
 pub(crate) use providers::generate_block_state_provider;
-use providers::{
-    generate_float_provider, generate_height_provider, generate_int_provider,
-    generate_uniform_int_provider,
-};
+pub(crate) use providers::generate_int_provider;
+use providers::{generate_float_provider, generate_height_provider, generate_uniform_int_provider};
 use structures::{
     generate_block_column_layer, generate_end_spike, generate_feature_size,
     generate_foliage_placer, generate_geode_block_settings, generate_geode_crack_settings,

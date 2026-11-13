@@ -4,6 +4,7 @@ use glam::DVec3;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
+use steel_registry::vanilla_environment_attributes;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_items;
 use steel_registry::{
@@ -1557,10 +1558,12 @@ fn daylight_test_world(name: &'static str, total_ticks: i64) -> TestWorld {
     world_fixture
 }
 
+const DAYLIT_MOB_POSITION: DVec3 = DVec3::new(8.0, 65.0, 8.0);
+
 fn daylit_mob(world: &Arc<World>, entity_type: EntityTypeRef) -> Arc<DespawnTestMob> {
     Arc::new(DespawnTestMob::with_world_and_entity_type(
         next_entity_id(),
-        DVec3::new(8.0, 65.0, 8.0),
+        DAYLIT_MOB_POSITION,
         entity_type,
         world,
     ))
@@ -1571,7 +1574,10 @@ fn daylight_burning_ignites_unprotected_mob_in_burn_in_daylight_tag() {
     let world_fixture = daylight_test_world("daylight_burn_ignite", OVERWORLD_DAY_TICKS);
     let world = &world_fixture.world;
     assert!(
-        world.monsters_burn(),
+        world.environment_attributes().get_value_at(
+            &vanilla_environment_attributes::MONSTERS_BURN,
+            DAYLIT_MOB_POSITION
+        ),
         "the pinned noon clock must enable MONSTERS_BURN"
     );
     let mob = daylit_mob(world, &vanilla_entities::ZOMBIE);
@@ -1636,7 +1642,10 @@ fn daylight_burning_is_gated_off_at_night_and_in_the_nether() {
     let night_world = &night_world_fixture.world;
     let night_mob = daylit_mob(night_world, &vanilla_entities::ZOMBIE);
     assert!(
-        !night_world.monsters_burn(),
+        !night_world.environment_attributes().get_value_at(
+            &vanilla_environment_attributes::MONSTERS_BURN,
+            DAYLIT_MOB_POSITION
+        ),
         "the pinned midnight clock must disable MONSTERS_BURN"
     );
     for _ in 0..BURN_ROLL_ATTEMPTS {

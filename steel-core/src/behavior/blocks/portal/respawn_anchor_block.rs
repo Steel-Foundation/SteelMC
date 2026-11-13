@@ -12,6 +12,7 @@ use steel_registry::blocks::{
 use steel_registry::fluid::{FluidState, is_water_fluid};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
+use steel_registry::vanilla_environment_attributes;
 use steel_registry::{
     sound_events, vanilla_blocks, vanilla_damage_types, vanilla_game_events, vanilla_items,
 };
@@ -122,8 +123,10 @@ impl RespawnAnchorBlock {
     }
 
     #[must_use]
-    pub(crate) const fn can_set_spawn(world: &World, _pos: BlockPos) -> bool {
-        world.dimension_type.respawn_anchor_works
+    pub(crate) fn can_set_spawn(world: &World, pos: BlockPos) -> bool {
+        world
+            .environment_attributes()
+            .get_value(&vanilla_environment_attributes::RESPAWN_ANCHOR_WORKS, pos)
     }
 
     pub(crate) fn find_standup_position(

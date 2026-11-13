@@ -344,7 +344,7 @@ impl BlockBehavior for BedBlock {
             return InteractionResult::Consume;
         };
 
-        let bed_rule = &world.dimension_type.bed_rule;
+        let bed_rule = Player::bed_rule_for(world, head_state, head_pos);
         if bed_rule.destroy_on_use {
             if let Some(message) = bed_rule.error_message {
                 player.send_overlay_message(&message());
@@ -364,7 +364,7 @@ impl BlockBehavior for BedBlock {
         }
 
         if let Err(problem) =
-            player.start_sleep_in_bed(head_pos, bed_rule, &vanilla_custom_stats::SLEEP_IN_BED)
+            player.start_sleep_in_bed(head_pos, &bed_rule, &vanilla_custom_stats::SLEEP_IN_BED)
             && let Some(message) = problem.message()
         {
             player.send_overlay_message(message);

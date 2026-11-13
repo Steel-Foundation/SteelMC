@@ -17,6 +17,7 @@ use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_environment_attributes;
 use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_game_events;
 use steel_registry::vanilla_items;
@@ -187,8 +188,12 @@ fn use_filled_bucket(fluid: FluidRef, context: &mut UseItemContext) -> Interacti
         }
 
         // Water-tagged fluids fizz out where water evaporates (e.g. the Nether).
-        // TODO: Read the per-position WATER_EVAPORATES attribute once Steel has environment attributes.
-        if is_water_fluid(fluid) && context.world.dimension_type.water_evaporates {
+        if is_water_fluid(fluid)
+            && context
+                .world
+                .environment_attributes()
+                .get_value(&vanilla_environment_attributes::WATER_EVAPORATES, pos)
+        {
             context
                 .world
                 .level_event(level_events::PARTICLES_WATER_EVAPORATING, pos, 0, None);

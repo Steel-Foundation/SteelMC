@@ -23,6 +23,7 @@ use crate::items::Item;
 use crate::jukebox_song::JukeboxSong;
 use crate::mob_effect::MobEffect;
 use crate::potion::Potion;
+use crate::timeline::Timeline;
 use crate::trim_material::TrimMaterial;
 use crate::trim_pattern::TrimPattern;
 use crate::villager_type::VillagerType;
@@ -268,6 +269,7 @@ impl_registry_holder_set_entry!(TrimMaterial, trim_materials, "trim material");
 impl_registry_holder_set_entry!(TrimPattern, trim_patterns, "trim pattern");
 impl_registry_holder_set_entry!(JukeboxSong, jukebox_songs, "jukebox song");
 impl_registry_holder_set_entry!(VillagerType, villager_types, "villager type");
+impl_registry_holder_set_entry!(Timeline, timelines, "timeline");
 
 #[cfg(test)]
 mod tests {

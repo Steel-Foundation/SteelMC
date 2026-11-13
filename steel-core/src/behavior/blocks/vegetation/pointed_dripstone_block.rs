@@ -7,6 +7,7 @@ use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, EnumProperty, IntProperty, SpeleothemThickness,
 };
 use steel_registry::blocks::shapes::{BooleanOp, VoxelShape, join_is_not_empty};
+use steel_registry::vanilla_environment_attributes;
 use steel_registry::{
     fluid::FluidRef, level_events, vanilla_block_tags::BlockTag, vanilla_blocks,
     vanilla_damage_types, vanilla_entities, vanilla_fluids, vanilla_game_events,
@@ -723,18 +724,15 @@ impl SpeleothemBlockBehavior {
         };
 
         if fluid_info.source_state.get_block() == &vanilla_blocks::MUD && is_water {
-            if !world.dimension_type.water_evaporates {
-                let clay_state = vanilla_blocks::CLAY.default_state();
-                let _ =
-                    push_entities_up(fluid_info.source_state, clay_state, world, fluid_info.pos);
-                world.set_block(fluid_info.pos, clay_state, UpdateFlags::UPDATE_ALL);
-                world.game_event(
-                    &vanilla_game_events::BLOCK_CHANGE,
-                    fluid_info.pos,
-                    &GameEventContext::new(None, Some(clay_state)),
-                );
-                world.level_event(level_events::DRIPSTONE_DRIP, tip_pos, 0, None);
-            }
+            let clay_state = vanilla_blocks::CLAY.default_state();
+            let _ = push_entities_up(fluid_info.source_state, clay_state, world, fluid_info.pos);
+            world.set_block(fluid_info.pos, clay_state, UpdateFlags::UPDATE_ALL);
+            world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                fluid_info.pos,
+                &GameEventContext::new(None, Some(clay_state)),
+            );
+            world.level_event(level_events::DRIPSTONE_DRIP, tip_pos, 0, None);
             return;
         }
 
@@ -771,7 +769,9 @@ impl SpeleothemBlockBehavior {
         let above_state = world.get_block_state(above_pos);
 
         let fluid = if above_state.get_block() == &vanilla_blocks::MUD
-            && !world.dimension_type.water_evaporates
+            && !world
+                .environment_attributes()
+                .get_value(&vanilla_environment_attributes::WATER_EVAPORATES, above_pos)
         {
             &vanilla_fluids::WATER
         } else {
