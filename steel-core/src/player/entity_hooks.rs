@@ -9,29 +9,10 @@ impl Player {
         // `ServerPlayer.tick` never calls `super`: the player runs the living
         // tick's pieces itself, around the client-driven movement.
         tick: |player| player.tick_player(),
-        hurt: |player, world, source, amount| {
-            let Some(amount) = player.hurt_amount_before_super(world, source, amount) else {
-                return false;
-            };
-            living_entity::hurt(player, world, source, amount)
-        },
-        ride_tick: |player| player.ride_tick_player(),
-        remove_vehicle: |player| {
-            let old_vehicle = player.vehicle();
-            entity::remove_vehicle(player);
-            player.after_remove_vehicle(old_vehicle);
-        },
-        check_fall_damage: |player, vertical_movement, on_ground, on_state, pos, world| {
-            player.check_fall_damage_before_super(on_ground, on_state, pos, world);
-            living_entity::check_fall_damage(
-                player,
-                vertical_movement,
-                on_ground,
-                on_state,
-                pos,
-                world,
-            );
-        },
+        hurt: Self::entity_hurt,
+        ride_tick: Self::entity_ride_tick,
+        remove_vehicle: Self::entity_remove_vehicle,
+        check_fall_damage: Self::entity_check_fall_damage,
         // `Player.causeFallDamage` before `super`: players who may fly take no
         // fall damage; others count the distance fallen.
         cause_fall_damage: |player, fall_distance, damage_modifier, source| {
@@ -133,10 +114,11 @@ impl Player {
         ..living_entity::entity_props()
     };
 
-    /// `ServerPlayer.checkFallDamage` before `super`: the mace smash burst on
-    /// landing.
-    fn check_fall_damage_before_super(
+    /// `ServerPlayer.checkFallDamage`: the mace smash burst on landing, then
+    /// `super`.
+    fn entity_check_fall_damage(
         &self,
+        vertical_movement: f64,
         on_ground: bool,
         on_state: BlockStateId,
         pos: BlockPos,
@@ -162,6 +144,7 @@ impl Player {
             );
             self.set_spawn_extra_particles_on_fall(false);
         }
+        living_entity::check_fall_damage(self, vertical_movement, on_ground, on_state, pos, world);
     }
 
     /// Whether the next landing sends the mace smash burst.
@@ -216,7 +199,7 @@ impl Player {
 
     /// `ServerPlayer.rideTick` around `super`: a player wanting off dismounts
     /// instead, and riding statistics count the distance.
-    pub(super) fn ride_tick_player(&self) {
+    fn entity_ride_tick(&self) {
         let pre = self.position();
         if self.wants_to_stop_riding() && self.is_passenger() {
             self.stop_riding();
@@ -226,10 +209,12 @@ impl Player {
         self.check_riding_statistics(self.position() - pre);
     }
 
-    /// `Player.removeVehicle` and `ServerPlayer.removeVehicle`, after
-    /// `Entity`'s: clears the boarding cooldown, the vehicle's effects and
+    /// `Player.removeVehicle` and `ServerPlayer.removeVehicle`: after
+    /// `Entity`'s, clears the boarding cooldown, the vehicle's effects and
     /// tells the client the vehicle lost its passenger.
-    pub(super) fn after_remove_vehicle(&self, old_vehicle: Option<SharedEntity>) {
+    fn entity_remove_vehicle(&self) {
+        let old_vehicle = self.vehicle();
+        entity::remove_vehicle(self);
         self.base.set_boarding_cooldown(0);
         let Some(old_vehicle) = old_vehicle else {
             return;

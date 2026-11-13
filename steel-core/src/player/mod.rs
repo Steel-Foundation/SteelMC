@@ -800,29 +800,23 @@ impl Player {
         self.movement.lock().finish_client_tick();
     }
 
-    /// `Player.hurtServer` before `super`: player-specific guards and the
-    /// difficulty scaling of `amount`.
-    /// Returns the scaled amount, or `None` when the player takes no damage.
-    fn hurt_amount_before_super(
-        &self,
-        world: &World,
-        source: &DamageSource,
-        mut amount: f32,
-    ) -> Option<f32> {
+    /// `Player.hurtServer`: player-specific guards and the difficulty scaling
+    /// of `amount`, then `super`.
+    fn entity_hurt(&self, world: &World, source: &DamageSource, mut amount: f32) -> bool {
         if self.living().is_invulnerable_to(world, source) {
-            return None;
+            return false;
         }
 
         {
             let abilities = self.abilities.lock();
             if abilities.invulnerable && !source.bypasses_invulnerability() {
-                return None;
+                return false;
             }
         }
 
         // TODO: reset player noActionTime and remove shoulder entities.
         if self.living().health() <= 0.0 {
-            return None;
+            return false;
         }
 
         // Difficulty scaling (vanilla: Player.hurtServer)
@@ -843,10 +837,10 @@ impl Player {
         }
 
         if amount == 0.0 {
-            return None;
+            return false;
         }
 
-        Some(amount)
+        living_entity::hurt(self, world, source, amount)
     }
 
     fn disabled_damage_game_rule(source: &DamageSource) -> Option<GameRuleRef<bool>> {

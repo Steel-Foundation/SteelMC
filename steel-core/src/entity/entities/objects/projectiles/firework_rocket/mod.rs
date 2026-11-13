@@ -330,9 +330,8 @@ impl FireworkRocketEntity {
     }
 
     /// `FireworkRocketEntity.onHitBlock`: the block reacts as if the rocket
-    /// were inside it, and a rocket with explosions explodes.
-    /// `FireworkRocketEntity.onHitBlock` before `super`.
-    fn on_hit_block_before_super(&self, hit: &ClipHitResult) {
+    /// were inside it, and a rocket with explosions explodes; then `super`.
+    fn projectile_on_hit_block(&self, hit: &ClipHitResult) {
         if let Some(world) = self.level() {
             let state = world.get_block_state(hit.block_pos);
             let mut ignored_effects = InsideBlockEffectCollector::new();
@@ -350,6 +349,7 @@ impl FireworkRocketEntity {
                 self.explode(&world);
             }
         }
+        projectile::on_hit_block(self, hit);
     }
 
     fn save_rocket(&self, nbt: &mut NbtCompound) {
@@ -388,10 +388,7 @@ impl ProjectileTable for FireworkRocketEntity {
                 rocket.explode(&world);
             }
         },
-        on_hit_block: |rocket, hit| {
-            rocket.on_hit_block_before_super(hit);
-            projectile::on_hit_block(rocket, hit);
-        },
+        on_hit_block: Self::projectile_on_hit_block,
         horizontal_hurt_knockback_direction: |rocket, hurt_entity, _| {
             let delta = hurt_entity.position() - rocket.position();
             (delta.x, delta.z)

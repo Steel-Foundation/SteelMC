@@ -3,6 +3,7 @@
 //! The pearl keeps its chunk loaded with a timed ticket while it flies and is
 //! registered on its owning player, so it is saved and respawned with them.
 
+use crate::entity::ProjectileHit;
 use crate::entity::entity;
 use crate::entity::projectile;
 use crate::entity::projectile::ProjectileTable;
@@ -146,7 +147,8 @@ impl EnderPearlEntity {
 
     /// `ThrownEnderpearl.onHit`: teleports the owner to where the pearl was
     /// before this tick's move, then disappears.
-    fn on_hit_after_super(&self) {
+    fn projectile_on_hit(&self, hit: &ProjectileHit) {
+        projectile::on_hit(self, hit);
         let projectile = self.projectile();
         // VANILLA CLIENT-LOCAL: the portal particles.
         let Some(world) = self.level() else {
@@ -267,10 +269,7 @@ impl EnderPearlEntity {
 
 impl ProjectileTable for EnderPearlEntity {
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        on_hit: |pearl, hit| {
-            projectile::on_hit(pearl, hit);
-            pearl.on_hit_after_super();
-        },
+        on_hit: Self::projectile_on_hit,
         on_hit_entity: |pearl, target, location| {
             projectile::on_hit_entity(pearl, target, location);
             if let Some(world) = target.level()

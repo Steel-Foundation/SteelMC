@@ -141,11 +141,14 @@ impl Player {
             .required_value(vanilla_attributes::LUCK) as f32
     }
 
-    /// `Player.isInvulnerableTo` after `super`: damage types switched off by
+    /// `Player.isInvulnerableTo`: after `super`, damage types switched off by
     /// game rules, then `ServerPlayer`'s players whose client has not loaded.
     // TODO: `ServerPlayer` also protects a player changing dimension from
     // everything but ender pearl damage; the player does not track that state yet.
-    fn is_invulnerable_to_after_super(&self, world: &World, source: &DamageSource) -> bool {
+    fn living_is_invulnerable_to(&self, world: &World, source: &DamageSource) -> bool {
+        if living_entity::is_invulnerable_to(self, world, source) {
+            return true;
+        }
         let rule_disabled =
             Self::disabled_damage_game_rule(source).is_some_and(|rule| !world.get_game_rule(rule));
         rule_disabled || !self.has_client_loaded()
@@ -323,8 +326,9 @@ impl Player {
         self.stop_sleep_in_bed(true, true);
     }
 
-    /// `Player.jumpFromGround` after `super`: the jump statistic and exhaustion.
-    pub(super) fn jump_from_ground_after_super(&self) {
+    /// `Player.jumpFromGround`: after `super`, the jump statistic and exhaustion.
+    fn living_jump_from_ground(&self) {
+        living_entity::jump_from_ground(self);
         self.award_custom_stat(&vanilla_custom_stats::JUMP);
         if self.living().is_sprinting() {
             self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT_JUMP);
@@ -334,7 +338,7 @@ impl Player {
     }
 
     /// `Player.aiStep` around `super.aiStep()`.
-    pub(super) fn ai_step_player(&self) -> Option<MoveResult> {
+    fn living_ai_step(&self) -> Option<MoveResult> {
         self.tick_regeneration();
         InventoryTickContext::tick_player_inventory(&self.get_world(), self);
         if self.is_flying() && !self.is_passenger() {
@@ -353,7 +357,7 @@ impl Player {
 
     /// `Player.travel` around `super.travel()`: swimming follows the look
     /// direction, and flying keeps most vertical speed.
-    pub(super) fn travel_player(&self, input: DVec3) -> Option<MoveResult> {
+    fn living_travel(&self, input: DVec3) -> Option<MoveResult> {
         if self.is_passenger() {
             return living_entity::travel(self, input);
         }
@@ -419,20 +423,14 @@ impl LivingTable for Player {
         can_be_seen_as_enemy: |player| {
             !player.abilities.lock().invulnerable && living_entity::can_be_seen_as_enemy(player)
         },
-        is_invulnerable_to: |player, world, source| {
-            living_entity::is_invulnerable_to(player, world, source)
-                || player.is_invulnerable_to_after_super(world, source)
-        },
+        is_invulnerable_to: Self::living_is_invulnerable_to,
         // `Player.canGlide`: flying players do not glide.
         can_glide: |player| !player.is_flying() && living_entity::can_glide(player),
         // `Player.isImmobile`: sleeping players are immobile too.
         is_immobile: |player| living_entity::is_immobile(player) || player.living().is_sleeping(),
-        jump_from_ground: |player| {
-            living_entity::jump_from_ground(player);
-            player.jump_from_ground_after_super();
-        },
-        ai_step: |player| player.ai_step_player(),
-        travel: |player, input| player.travel_player(input),
+        jump_from_ground: Self::living_jump_from_ground,
+        ai_step: Self::living_ai_step,
+        travel: Self::living_travel,
         default_dimensions: |_, pose| Player::dimensions_for_pose(pose),
         hurt_sound: |_, source| Some(source.damage_type.effects.sound()),
         does_emit_equip_event: |_, slot| slot.slot_type() == EquipmentSlotType::HumanoidArmor,

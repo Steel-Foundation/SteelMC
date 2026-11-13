@@ -178,9 +178,10 @@ impl PigEntity {
     }
 
     /// `Pig.tickRidden`: face where the rider looks and run the boost.
-    /// `Pig.tickRidden` after `super`: faces where the rider looks and ticks
+    /// `Pig.tickRidden`: after `super`, faces where the rider looks and ticks
     /// the boost.
-    fn tick_ridden_after_super(&self, controller: &Player) {
+    fn living_tick_ridden(&self, controller: &Player, ridden_input: DVec3) {
+        living_entity::tick_ridden(self, controller, ridden_input);
         let (yaw, pitch) = controller.rotation();
         self.set_rotation((yaw, pitch * 0.5));
         self.base.set_old_yaw_to_current();
@@ -244,10 +245,7 @@ impl LivingTable for PigEntity {
             }
             living_entity::equip_sound(pig, slot, stack)
         },
-        tick_ridden: |pig, controller, ridden_input| {
-            living_entity::tick_ridden(pig, controller, ridden_input);
-            pig.tick_ridden_after_super(controller);
-        },
+        tick_ridden: Self::living_tick_ridden,
         ..animal::living_props()
     };
 }

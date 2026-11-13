@@ -1,5 +1,6 @@
 //! Vanilla `Snowball`.
 
+use crate::entity::ProjectileHit;
 use crate::entity::projectile;
 use crate::entity::projectile::ProjectileTable;
 use steel_macros::entity_behavior;
@@ -49,7 +50,8 @@ impl SnowballEntity {
     }
 
     /// `Snowball.onHit`: breaks into particles on clients and disappears.
-    fn on_hit_after_super(&self) {
+    fn projectile_on_hit(&self, hit: &ProjectileHit) {
+        projectile::on_hit(self, hit);
         // VANILLA CLIENT-LOCAL: entity event 3 shows the break particles.
         self.broadcast_entity_event(EntityStatus::Death);
         self.set_removed(RemovalReason::Discarded);
@@ -58,10 +60,7 @@ impl SnowballEntity {
 
 impl ProjectileTable for SnowballEntity {
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        on_hit: |snowball, hit| {
-            projectile::on_hit(snowball, hit);
-            snowball.on_hit_after_super();
-        },
+        on_hit: Self::projectile_on_hit,
         on_hit_entity: |snowball, target, location| {
             projectile::on_hit_entity(snowball, target, location);
             let damage = if target.entity_type() == &vanilla_entities::BLAZE {

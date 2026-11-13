@@ -474,10 +474,19 @@ pub fn server_ai_step<E: Parts>(mob: &E) {
 
 /// `Mob`'s [`LivingProps::ai_step`].
 ///
-/// `Mob.aiStep` after `super`: daylight burning and item pickup.
-pub fn ai_step<E: Parts>(mob: &E) -> Option<MoveResult> {
-    let movement = living_entity::ai_step(mob);
-    mob.mob().mob_ai_step_after_super();
+/// `Mob.aiStep`: after `super`, daylight burning and item pickup. They sit
+/// outside the `serverAiStep` AI gate, so mobs with `NoAI` still burn and
+/// collect loot as in vanilla.
+pub fn ai_step<E: Parts>(entity: &E) -> Option<MoveResult> {
+    let movement = living_entity::ai_step(entity);
+    let mob = entity.mob();
+    if REGISTRY
+        .entity_types
+        .is_in_tag(mob.entity_type(), &EntityTypeTag::BURN_IN_DAYLIGHT)
+    {
+        mob.tick_daylight_burning();
+    }
+    mob.tick_looting();
     movement
 }
 
@@ -1892,20 +1901,6 @@ impl<'a> Mob<'a> {
             return;
         };
         self.on_equipped_item_broken(item, slot);
-    }
-
-    /// Runs movement, daylight burning, and item pickup.
-    ///
-    /// Burning and pickup belong here, outside the `serverAiStep` AI gate,
-    /// so mobs with `NoAI` still burn and collect loot as in vanilla.
-    pub fn mob_ai_step_after_super(&self) {
-        if REGISTRY
-            .entity_types
-            .is_in_tag(self.entity_type(), &EntityTypeTag::BURN_IN_DAYLIGHT)
-        {
-            self.tick_daylight_burning();
-        }
-        self.tick_looting();
     }
 
     pub fn tick_path_navigation(&self) {
