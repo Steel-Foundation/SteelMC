@@ -8,7 +8,7 @@ use steel_registry::{
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt as _,
-        properties::{BlockStateProperties, ChestType},
+        properties::{BlockStateProperties, BoolProperty, ChestType, EnumProperty},
     },
     sound_event::SoundEventRef,
     sound_events, vanilla_block_entity_types, vanilla_custom_stats,
@@ -51,6 +51,10 @@ pub struct ChestContainer {
     pub containers: SmallVec<[ContainerRef; 2]>,
 }
 
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const TYPE: &EnumProperty<ChestType> = &BlockStateProperties::CHEST_TYPE;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+
 impl ChestBlock {
     /// Creates behavior using extracted chest sounds.
     #[must_use]
@@ -69,8 +73,8 @@ impl ChestBlock {
     /// Direction from a chest half to its partner.
     #[must_use]
     pub fn connected_direction(state: BlockStateId) -> Direction {
-        let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
-        if state.get_value(&BlockStateProperties::CHEST_TYPE) == ChestType::Left {
+        let facing = state.get_value(FACING);
+        if state.get_value(TYPE) == ChestType::Left {
             facing.rotate_y_clockwise()
         } else {
             facing.rotate_y_counter_clockwise()
@@ -84,9 +88,8 @@ impl ChestBlock {
         direction: Direction,
     ) -> Option<Direction> {
         let state = world.get_block_state(pos.relative(direction));
-        (state.get_block() == self.block
-            && state.get_value(&BlockStateProperties::CHEST_TYPE) == ChestType::Single)
-            .then(|| state.get_value(&BlockStateProperties::HORIZONTAL_FACING))
+        (state.get_block() == self.block && state.get_value(TYPE) == ChestType::Single)
+            .then(|| state.get_value(FACING))
     }
 
     fn is_blocked(world: &dyn LevelReader, pos: BlockPos) -> bool {
@@ -108,16 +111,15 @@ impl ChestBlock {
         {
             return None;
         }
-        let chest_type = state.get_value(&BlockStateProperties::CHEST_TYPE);
+        let chest_type = state.get_value(TYPE);
         let mut owners: SmallVec<[SharedBlockEntity; 2]> = smallvec![first];
         if chest_type != ChestType::Single {
             let neighbor_pos = pos.relative(Self::connected_direction(state));
             let neighbor = world.get_block_state(neighbor_pos);
             if neighbor.get_block() == state.get_block()
-                && neighbor.get_value(&BlockStateProperties::CHEST_TYPE) != ChestType::Single
-                && neighbor.get_value(&BlockStateProperties::CHEST_TYPE) != chest_type
-                && neighbor.get_value(&BlockStateProperties::HORIZONTAL_FACING)
-                    == state.get_value(&BlockStateProperties::HORIZONTAL_FACING)
+                && neighbor.get_value(TYPE) != ChestType::Single
+                && neighbor.get_value(TYPE) != chest_type
+                && neighbor.get_value(FACING) == state.get_value(FACING)
             {
                 if !ignore_blocked && Self::is_blocked(world, neighbor_pos) {
                     return None;
@@ -193,12 +195,9 @@ impl BlockBehavior for ChestBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
-                .set_value(&BlockStateProperties::CHEST_TYPE, chest_type)
-                .set_value(
-                    &BlockStateProperties::WATERLOGGED,
-                    context.is_water_source(),
-                ),
+                .set_value(FACING, facing)
+                .set_value(TYPE, chest_type)
+                .set_value(WATERLOGGED, context.is_water_source()),
         )
     }
 
@@ -213,15 +212,14 @@ impl BlockBehavior for ChestBlock {
     ) -> BlockStateId {
         schedule_water_tick_if_waterlogged(state, world, pos);
         if neighbor.get_block() == self.block && direction.get_axis().is_horizontal() {
-            let neighbor_type = neighbor.get_value(&BlockStateProperties::CHEST_TYPE);
-            if state.get_value(&BlockStateProperties::CHEST_TYPE) == ChestType::Single
+            let neighbor_type = neighbor.get_value(TYPE);
+            if state.get_value(TYPE) == ChestType::Single
                 && neighbor_type != ChestType::Single
-                && state.get_value(&BlockStateProperties::HORIZONTAL_FACING)
-                    == neighbor.get_value(&BlockStateProperties::HORIZONTAL_FACING)
+                && state.get_value(FACING) == neighbor.get_value(FACING)
                 && Self::connected_direction(neighbor) == direction.opposite()
             {
                 return state.set_value(
-                    &BlockStateProperties::CHEST_TYPE,
+                    TYPE,
                     if neighbor_type == ChestType::Left {
                         ChestType::Right
                     } else {
@@ -230,7 +228,7 @@ impl BlockBehavior for ChestBlock {
                 );
             }
         } else if Self::connected_direction(state) == direction {
-            return state.set_value(&BlockStateProperties::CHEST_TYPE, ChestType::Single);
+            return state.set_value(TYPE, ChestType::Single);
         }
         state
     }
