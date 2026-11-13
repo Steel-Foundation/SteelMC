@@ -52,19 +52,6 @@ impl LootTable {
         result
     }
 
-    /// Collects raw output without normalizing stack sizes.
-    pub fn get_random_items_raw(
-        &self,
-        context: &mut LootContext<'_>,
-    ) -> LootResult<Vec<ItemStack>> {
-        let mut items = Vec::new();
-        self.emit_raw(context, &mut |_, item| {
-            items.push(item);
-            Ok(())
-        })?;
-        Ok(items)
-    }
-
     /// Collects and splits output into legal item stack sizes.
     pub fn get_random_items(&self, context: &mut LootContext<'_>) -> LootResult<Vec<ItemStack>> {
         // TODO: Filter items against the world's enabled feature flags before
