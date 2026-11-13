@@ -387,6 +387,7 @@ impl BlockBehavior for ComparatorBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityTable;
     use crate::entity::WeakSelf;
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
@@ -396,7 +397,7 @@ mod tests {
 
     use super::*;
     use crate::entity::{EntityBase, SharedEntity};
-    use crate::entity::{EntityDefaults, EntityHooks};
+
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     struct TestItemFrame {
@@ -415,11 +416,9 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM_FRAME
         }
-
-        fn entity_hooks(&self) -> &'static dyn EntityHooks {
-            &EntityDefaults
-        }
     }
+
+    impl EntityTable for TestItemFrame {}
 
     impl ItemFrame for TestItemFrame {
         fn direction(&self) -> Direction {

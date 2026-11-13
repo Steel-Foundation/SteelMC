@@ -15,9 +15,6 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::behavior::blocks::{CampfireBlock, CandleBlock};
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::{OnHitBlockCtx, OnHitCtx};
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::projectile::throwable_item;
 use crate::entity::projectile::{Projectile, ProjectileProps, throwable};
@@ -53,34 +50,6 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     }
 }
 
-/// The `AbstractThrownPotion.onHit` stage, after `Projectile`'s.
-pub const ON_HIT: StageId = StageId("thrown_potion.on_hit");
-/// The `AbstractThrownPotion.onHitBlock` stage, after `Projectile`'s.
-pub const ON_HIT_BLOCK: StageId = StageId("thrown_potion.on_hit_block");
-
-/// Vanilla `AbstractThrownPotion`'s chains, on `ThrowableProjectile`'s.
-#[must_use]
-pub fn definition<E: Parts>() -> Definition<E> {
-    fn on_hit_stage<E: Parts>(potion: &E, ctx: &mut OnHitCtx<'_>) -> Flow {
-        on_hit(potion, ctx.hit);
-        Flow::Continue
-    }
-    fn on_hit_block_stage<E: Parts>(potion: &E, ctx: &mut OnHitBlockCtx<'_>) -> Flow {
-        on_hit_block(potion, ctx.hit);
-        Flow::Continue
-    }
-    let definition = throwable::definition();
-    Definition {
-        on_hit: definition
-            .on_hit
-            .then([Stage::new(ON_HIT, on_hit_stage::<E>)]),
-        on_hit_block: definition
-            .on_hit_block
-            .then([Stage::new(ON_HIT_BLOCK, on_hit_block_stage::<E>)]),
-        ..definition
-    }
-}
-
 /// `AbstractThrownPotion`'s overrides of the projectile hooks.
 #[must_use]
 pub const fn projectile_props<E: Parts>() -> ProjectileProps<E> {
@@ -88,6 +57,14 @@ pub const fn projectile_props<E: Parts>() -> ProjectileProps<E> {
         horizontal_hurt_knockback_direction: |potion, hurt_entity, _| {
             let delta = hurt_entity.position() - potion.position();
             (delta.x, delta.z)
+        },
+        on_hit: |potion, hit| {
+            (const { ProjectileProps::<E>::new().on_hit })(potion, hit);
+            on_hit(potion, hit);
+        },
+        on_hit_block: |potion, hit| {
+            (const { ProjectileProps::<E>::new().on_hit_block })(potion, hit);
+            on_hit_block(potion, hit);
         },
         ..ProjectileProps::new()
     }

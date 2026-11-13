@@ -348,7 +348,6 @@ mod tests {
     fn player_tick_processes_food_exhaustion_once() {
         use std::sync::Arc;
 
-        use crate::entity::Entity;
         use crate::test_support::{TestPlayerBuilder, fresh_test_world};
 
         let world_fixture = fresh_test_world("player_tick_food_exhaustion");

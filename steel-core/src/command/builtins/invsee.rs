@@ -1,3 +1,4 @@
+use crate::entity::EntityHooks;
 use std::{
     array,
     ops::Range,
@@ -16,7 +17,6 @@ use super::super::{
     },
     registration::{CommandRegistration, CommandRegistrationError},
 };
-use crate::entity::Entity;
 use crate::inventory::menu::Menu;
 use crate::inventory::prelude::*;
 use crate::inventory::slots::CraftingHandler;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::EntityTable;
 use crate::entity::WeakSelf;
 use steel_registry::{entity_type::EntityTypeRef, init_vanilla_registry, vanilla_entities};
 
@@ -9,8 +10,8 @@ use steel_utils::{ChunkPos, Direction};
 
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
+use crate::entity::EntityProps;
 use crate::entity::entities::FireworkRocketEntity;
-use crate::entity::{EntityDefaults, EntityHooks, EntityProps};
 use crate::test_support::{TestPlayerBuilder, world_border_projectile_test_world};
 use crate::{entity::EntityBase, test_support::test_world};
 
@@ -20,8 +21,6 @@ struct OwnerCollisionProjectile {
 }
 
 impl OwnerCollisionProjectile {
-    const PROJECTILE: ProjectileProps<Self> = ProjectileProps::new();
-
     fn new(id: i32, position: DVec3) -> Self {
         Self {
             base: EntityBase::new(
@@ -31,9 +30,13 @@ impl OwnerCollisionProjectile {
                 Arc::downgrade(test_world()),
                 WeakSelf::detached(),
             ),
-            projectile_base: ProjectileBase::new(&Self::PROJECTILE),
+            projectile_base: ProjectileBase::new(),
         }
     }
+}
+
+impl ProjectileTable for OwnerCollisionProjectile {
+    const PROJECTILE: ProjectileProps<Self> = ProjectileProps::new();
 }
 
 crate::entity::impl_test_downcast_type!(OwnerCollisionProjectile);
@@ -52,11 +55,9 @@ impl Entity for OwnerCollisionProjectile {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ENDER_PEARL
     }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &EntityDefaults
-    }
 }
+
+impl EntityTable for OwnerCollisionProjectile {}
 
 struct OwnerCollisionTestEntity {
     base: EntityBase,
@@ -106,10 +107,10 @@ impl Entity for OwnerCollisionTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for OwnerCollisionTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 #[test]

@@ -1,6 +1,7 @@
 //! Vanilla `ThrownSplashPotion`.
 
 use crate::entity::prelude::*;
+use crate::entity::projectile::ProjectileTable;
 use std::sync::Arc;
 
 use steel_macros::entity_behavior;
@@ -27,7 +28,6 @@ use crate::world::World;
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/splash_potion", constructors)]
-#[entity(definition = thrown_potion::definition)]
 pub struct SplashPotionEntity {
     #[entity(base)]
     base: EntityBase,
@@ -43,7 +43,6 @@ pub struct SplashPotionEntity {
 
 impl SplashPotionEntity {
     const ENTITY: EntityProps<Self> = thrown_potion::entity_props();
-    const PROJECTILE: ProjectileProps<Self> = thrown_potion::projectile_props();
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = SplashPotionEntityData::new();
@@ -51,7 +50,7 @@ impl SplashPotionEntity {
         Self {
             base,
             entity_type,
-            projectile: ProjectileBase::new(&Self::PROJECTILE),
+            projectile: ProjectileBase::new(),
             thrown_item,
             entity_data: CheckedMutex::new(entity_data),
         }
@@ -90,6 +89,10 @@ impl SplashPotionEntity {
         let effect_source: &dyn Entity = owner.map_or(entity.as_ref(), AsRef::as_ref);
         living.add_mob_effect_with_source(scaled_effect, Some(effect_source));
     }
+}
+
+impl ProjectileTable for SplashPotionEntity {
+    const PROJECTILE: ProjectileProps<Self> = thrown_potion::projectile_props();
 }
 
 impl thrown_potion::Parts for SplashPotionEntity {

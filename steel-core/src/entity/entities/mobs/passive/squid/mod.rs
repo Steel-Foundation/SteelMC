@@ -2,6 +2,8 @@
 
 mod goals;
 
+use crate::entity::LivingTable;
+use crate::entity::MobTable;
 use std::f32::consts::{PI, TAU};
 use std::sync::Arc;
 
@@ -22,12 +24,6 @@ use steel_utils::locks::CheckedMutex;
 
 use crate::entity::ageable::{self, Age, AgeableProps};
 use crate::entity::ai::path::PathType;
-use crate::entity::component::definition::BaseExperienceRewardCtx;
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::HurtCtx;
-use crate::entity::component::definition::TravelCtx;
-use crate::entity::component::pipeline::Flow;
-use crate::entity::component::pipeline::{Pipeline, Stage, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::mob::{self};
 use crate::entity::prelude::*;
@@ -53,7 +49,7 @@ struct Swimming {
 #[entity_behavior(class = "Squid", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
-#[entity(key = "steel:entity/squid", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/squid", constructors)]
 pub struct SquidEntity {
     #[entity(base)]
     base: EntityBase,
@@ -94,98 +90,43 @@ impl SquidEntity {
             Some(squid)
         },
     };
-    const LIVING: LivingProps<Self> = LivingProps {
-        sound_volume: |_| 0.4,
-        hurt_sound: |_, _| Some(&sound_events::ENTITY_SQUID_HURT),
-        death_sound: |_| Some(&sound_events::ENTITY_SQUID_DEATH),
-        ..mob::living_props()
-    };
-    const MOB: MobProps<Self> = MobProps {
-        ambient_sound: |_| Some(&sound_events::ENTITY_SQUID_AMBIENT),
-        // `AgeableWaterCreature.getAmbientSoundInterval`.
-        ambient_sound_interval: |_| 120,
-        // Squids, unlike other water creatures, can be leashed.
-        mob_can_be_leashed: |_| true,
-        ..mob::pathfinder_mob_props()
-    };
     const ENTITY: EntityProps<Self> = EntityProps {
         default_gravity: |_| 0.08,
         movement_emission: |_| EntityMovementEmission::Events,
         // `AgeableWaterCreature.isPushedByFluid`.
         is_pushed_by_fluid: |_| false,
+        base_tick: |squid| {
+            squid.base_tick_around(|| (const { mob::entity_props::<Self>().base_tick })(squid));
+        },
+        // `Squid.hurtServer` after `super`: a squid hurt by a mob squirts ink.
+        hurt: |squid, world, source, amount| {
+            let hurt = (const { mob::entity_props::<Self>().hurt })(squid, world, source, amount);
+            if hurt && squid.living().last_hurt_by_mob().is_some() {
+                squid.spawn_ink();
+                return true;
+            }
+            false
+        },
         ..mob::entity_props()
     };
-    const GOALS: StageId = StageId("squid.goals");
-    const WATER_MALUS: StageId = StageId("squid.water_malus");
-    const SWIM: StageId = StageId("squid.swim");
-    const AIR: StageId = StageId("squid.air");
-    const INK: StageId = StageId("squid.ink");
-    const XP: StageId = StageId("squid.xp");
-    const TRAVEL: StageId = StageId("squid.travel");
 
-    /// Vanilla `Squid`: the `AgeableMob` chains with the squid's goals, its
-    /// water malus and its swimming.
-    fn define() -> Definition<Self> {
-        Definition {
-            construct: Pipeline::new([
-                Stage::effect(Self::GOALS, Self::register_goals),
-                Stage::effect(Self::WATER_MALUS, |mob_base: &MobBase| {
-                    mob_base
-                        .pathfinding_malus()
-                        .lock()
-                        .set(PathType::Water, 0.0);
-                }),
-            ]),
-            ai_step: mob::stages::definition::<Self>().ai_step.then([
-                ageable::ai_step::<Self>(),
-                Stage::effect(Self::SWIM, Self::swim),
-            ]),
-            // `Squid.travel` moves without `super`'s physics.
-            travel: Pipeline::new([Stage::new(
-                Self::TRAVEL,
-                |squid: &Self, ctx: &mut TravelCtx<'_>| {
-                    ctx.result = squid.move_entity(MoverType::SelfMovement, squid.velocity());
-                    Flow::Continue
-                },
-            )]),
-            custom_server_ai_step: Pipeline::new([]),
-            mob_interact: Pipeline::new([ageable::mob_interact::<Self>()]),
-            finalize_spawn: Pipeline::new([
-                ageable::finalize_spawn::<Self>(),
-                mob::stages::finalize_spawn::<Self>(),
-            ]),
-            base_tick: mob::stages::definition::<Self>().base_tick.around(
-                Self::AIR,
-                |squid: &Self, ctx, inner| {
-                    squid.base_tick_around(|| {
-                        inner(squid, ctx);
-                    });
-                    Flow::Continue
-                },
-            ),
-            // `AgeableWaterCreature.getBaseExperienceReward`, which replaces `Mob`'s.
-            base_experience_reward: Pipeline::new([Stage::new(
-                Self::XP,
-                |_: &Self, ctx: &mut BaseExperienceRewardCtx<'_>| {
-                    ctx.result = 1 + rand::random_range(0..3);
-                    Flow::Continue
-                },
-            )]),
-            hurt: mob::stages::definition::<Self>()
-                .hurt
-                .then([Stage::new(Self::INK, Self::hurt_after_super)]),
-            ..mob::stages::definition::<Self>()
-        }
+    /// `Squid`'s constructor chain: its goals, then its own water malus.
+    fn construct(mob_base: &MobBase) {
+        Self::register_goals(mob_base);
+        mob_base
+            .pathfinding_malus()
+            .lock()
+            .set(PathType::Water, 0.0);
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = SquidEntityData::new();
-        let living_base = LivingEntityBase::new(entity_type, &Self::LIVING, &mut entity_data);
+        let living_base = LivingEntityBase::new(entity_type, &mut entity_data);
         Self {
             base,
             entity_type,
             living_base,
-            mob_base: MobBase::new(&Self::MOB, Self::definition()),
+            mob_base: MobBase::new(Self::construct),
             age: Age::new(&Self::AGEABLE),
             swimming: CheckedMutex::new(Swimming {
                 x_body_rot: 0.0,
@@ -233,16 +174,6 @@ impl SquidEntity {
     }
 
     /// `Squid.hurtServer`: a squid hurt by a mob squirts ink.
-    /// `Squid.hurtServer` after `super`: a squid hurt by a mob squirts ink.
-    fn hurt_after_super(&self, ctx: &mut HurtCtx<'_>) -> Flow {
-        if ctx.result && self.living().last_hurt_by_mob().is_some() {
-            self.spawn_ink();
-        } else {
-            ctx.result = false;
-        }
-        Flow::Continue
-    }
-
     /// `Squid.rotateVector`: from squid-local space into world space.
     fn rotate_vector(&self, local: DVec3) -> DVec3 {
         let x_rot = self.swimming.lock().x_body_rot_o.to_radians();
@@ -332,6 +263,35 @@ impl SquidEntity {
             swimming.x_body_rot += (-DEGREE_90 - swimming.x_body_rot) * 0.02;
         }
     }
+}
+
+impl MobTable for SquidEntity {
+    const MOB: MobProps<Self> = MobProps {
+        ambient_sound: |_| Some(&sound_events::ENTITY_SQUID_AMBIENT),
+        // `AgeableWaterCreature.getAmbientSoundInterval`.
+        ambient_sound_interval: |_| 120,
+        // Squids, unlike other water creatures, can be leashed.
+        mob_can_be_leashed: |_| true,
+        ..ageable::mob_props()
+    };
+}
+
+impl LivingTable for SquidEntity {
+    const LIVING: LivingProps<Self> = LivingProps {
+        sound_volume: |_| 0.4,
+        hurt_sound: |_, _| Some(&sound_events::ENTITY_SQUID_HURT),
+        death_sound: |_| Some(&sound_events::ENTITY_SQUID_DEATH),
+        ai_step: |squid| {
+            let movement = (const { ageable::living_props::<Self>().ai_step })(squid);
+            squid.swim();
+            movement
+        },
+        // `Squid.travel` moves without `super`'s physics.
+        travel: |squid, _| squid.move_entity(MoverType::SelfMovement, squid.velocity()),
+        // `AgeableWaterCreature.getBaseExperienceReward`, which replaces `Mob`'s.
+        base_experience_reward: |_| 1 + rand::random_range(0..3),
+        ..ageable::living_props()
+    };
 }
 
 impl DefaultEntityPush for SquidEntity {}

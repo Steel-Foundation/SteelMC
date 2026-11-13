@@ -130,7 +130,10 @@ impl Default for TargetingConditions {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityTable;
     use crate::entity::LivingProps;
+    use crate::entity::LivingTable;
+    use crate::entity::MobTable;
     use crate::entity::WeakSelf;
     use crate::test_support::synced_with_health;
     use std::sync::{Arc, Weak};
@@ -147,14 +150,12 @@ mod tests {
     use crate::entity::prelude::*;
 
     use crate::behavior::init_behaviors;
+    use crate::entity::EntityProps;
     use crate::entity::component::Has;
-    use crate::entity::component::definition::{Definition, DefinitionEntries};
     use crate::entity::{Entity, EntityBase, LivingEntityBase, MobBase};
-    use crate::entity::{EntityHooks, EntityProps};
     use crate::entity::{EntitySyncedData, MobProps, mob};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
     use crate::world::World;
-    use std::sync::LazyLock;
     use steel_registry::vanilla_entity_data::MobEntityData;
     use steel_utils::{DowncastType as _, DowncastTypeKey, ErasedType};
 
@@ -176,11 +177,8 @@ mod tests {
                     world,
                     WeakSelf::detached(),
                 ),
-                living_base: LivingEntityBase::without_synced_data(
-                    &vanilla_entities::PIG,
-                    &HoveringTestMob::LIVING,
-                ),
-                mob_base: MobBase::new(&HoveringTestMob::MOB, HoveringTestMob::definition()),
+                living_base: LivingEntityBase::without_synced_data(&vanilla_entities::PIG),
+                mob_base: MobBase::new(|_| {}),
                 entity_data: CheckedMutex::new(synced_with_health(MobEntityData::new(), 10.0)),
             }
         }
@@ -188,14 +186,8 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(HoveringTestMob);
 
-    impl HoveringTestMob {
+    impl MobTable for HoveringTestMob {
         const MOB: MobProps<Self> = MobProps::new();
-
-        fn definition() -> &'static Definition<Self> {
-            static DEFINITION: LazyLock<Definition<HoveringTestMob>> =
-                LazyLock::new(mob::stages::definition);
-            &DEFINITION
-        }
     }
 
     impl HoveringTestMob {
@@ -224,19 +216,17 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::PIG
         }
-
-        fn entity_hooks(&self) -> &'static dyn EntityHooks {
-            &Self::ENTITY
-        }
-
-        fn entity_definition(&self) -> &'static dyn DefinitionEntries {
-            Self::definition()
-        }
     }
 
-    impl HoveringTestMob {
+    impl EntityTable for HoveringTestMob {
+        const ENTITY: EntityProps<Self> = Self::ENTITY;
+    }
+
+    impl LivingTable for HoveringTestMob {
         const LIVING: LivingProps<Self> = LivingProps {
-            ..LivingProps::new()
+            // Tests drive the goals and navigation themselves.
+            server_ai_step: |_| {},
+            ..mob::living_props()
         };
     }
 

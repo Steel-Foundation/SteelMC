@@ -6,6 +6,7 @@ use crate::behavior::{
     pickup_waterlogged_block,
 };
 use crate::entity::Entity;
+use crate::entity::EntityHooks;
 use crate::fluid::{fluid_state_to_block, is_lava_fluid, is_water_fluid};
 use crate::world::RaytraceAction;
 use steel_macros::item_behavior;

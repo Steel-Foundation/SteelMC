@@ -4,6 +4,7 @@ use super::{
     TabListTickStats, TextComponent, Uuid, client_permission_event, command_tree_packet,
     translations,
 };
+use crate::entity::EntityHooks;
 
 impl Server {
     /// Logs and broadcasts a system chat message to online players.

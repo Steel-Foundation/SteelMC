@@ -1,9 +1,5 @@
 //! Experience orb entity implementation.
 
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::HurtCtx;
-use crate::entity::component::pipeline::Pipeline;
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 use steel_utils::nbt::NbtNumeric as _;
@@ -64,7 +60,7 @@ impl ExperienceOrbState {
 #[entity_behavior(class = "ExperienceOrb")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_orb, load = Self::load_orb)]
-#[entity(key = "steel:entity/experience_orb", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/experience_orb", constructors)]
 pub struct ExperienceOrbEntity {
     #[entity(base)]
     base: EntityBase,
@@ -407,30 +403,14 @@ impl ExperienceOrbEntity {
 impl DefaultEntityPush for ExperienceOrbEntity {}
 
 impl ExperienceOrbEntity {
-    const TICK: StageId = StageId("experience_orb.tick");
-
-    const HURT: StageId = StageId("experience_orb.hurt");
-
-    fn define() -> Definition<Self> {
-        let definition = Definition::new();
-        Definition {
-            // `ExperienceOrb.doWaterSplashEffect` does nothing.
-            do_water_splash_effect: Pipeline::new([]),
-            tick: definition
-                .tick
-                .then([Stage::effect(Self::TICK, Self::entity_tick)]),
-            hurt: Pipeline::new([Stage::new(
-                Self::HURT,
-                |orb: &Self, ctx: &mut HurtCtx<'_>| {
-                    ctx.result = orb.entity_hurt(ctx.world, ctx.source, ctx.amount);
-                    Flow::Continue
-                },
-            )]),
-            ..definition
-        }
-    }
-
     const ENTITY: EntityProps<Self> = EntityProps {
+        tick: |orb| {
+            (const { EntityProps::<Self>::new().tick })(orb);
+            orb.entity_tick();
+        },
+        hurt: Self::entity_hurt,
+        // `ExperienceOrb.doWaterSplashEffect` does nothing.
+        do_water_splash_effect: |_| {},
         is_hard_collision_relevant: |_| false,
         // Vanilla `ExperienceOrb` overrides this with an empty body.
         movement_emission: |_| EntityMovementEmission::None,

@@ -17,9 +17,6 @@ use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
 use uuid::Uuid;
 
 use crate::behavior::InteractionResult;
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::InteractCtx;
-use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityBaseLoad, EntityProps, SharedEntity, WeakSelf};
 use crate::player::Player;
@@ -35,7 +32,7 @@ const DEFAULT_DIMENSIONS: EntityDimensions =
 #[entity_behavior(class = "Interaction")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_interaction, load = Self::load_interaction)]
-#[entity(key = "steel:entity/interaction", definition = Self::define)]
+#[entity(key = "steel:entity/interaction")]
 pub struct InteractionEntity {
     #[entity(base)]
     base: EntityBase,
@@ -53,23 +50,10 @@ struct RecordedActions {
 }
 
 impl InteractionEntity {
-    const INTERACT: StageId = StageId("interaction.interact");
-
-    /// `Interaction.tick` and `Interaction.interact` never call `super`.
-    fn define() -> Definition<Self> {
-        Definition {
-            interact: Pipeline::new([Stage::new(
-                Self::INTERACT,
-                |interaction: &Self, ctx: &mut InteractCtx<'_>| {
-                    ctx.result = interaction.record_interaction(ctx.player);
-                    Flow::Continue
-                },
-            )]),
-            ..Definition::replacing_tick([])
-        }
-    }
-
     const ENTITY: EntityProps<Self> = EntityProps {
+        // `Interaction.tick` and `Interaction.interact` never call `super`.
+        tick: |_| {},
+        interact: |interaction, player, _, _| interaction.record_interaction(player),
         is_pickable: |_| true,
         can_be_hit_by_projectile: |_| false,
         piston_push_reaction: |_| PushReaction::IgnoreEntity,

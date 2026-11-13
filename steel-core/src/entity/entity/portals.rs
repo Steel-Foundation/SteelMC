@@ -5,9 +5,9 @@ use super::*;
 /// Portals, portal cooldowns and world changes.
 ///
 /// Implemented for every [`Entity`]; entity types change behavior through
-/// [`EntityHooks`], never by implementing this trait.
+/// [`EntityProps`], never by implementing this trait.
 pub trait EntityPortals: Entity {
-    /// Default for [`Entity::relative_portal_position`].
+    /// Default for [`EntityHooks::relative_portal_position`].
     fn relative_portal_position_default(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
         PortalShape::get_relative_position(
             portal_area,
@@ -88,7 +88,7 @@ pub trait EntityPortals: Entity {
         self.base().is_world_change_token_pending(token)
     }
 
-    /// Default for [`Entity::can_use_portal`].
+    /// Default for [`EntityHooks::can_use_portal`].
     fn can_use_portal_default(&self, ignore_passenger: bool) -> bool {
         let entity_type = self.entity_type();
         if entity_type == &vanilla_entities::ENDER_DRAGON
@@ -100,7 +100,7 @@ pub trait EntityPortals: Entity {
         (ignore_passenger || !self.is_passenger()) && self.is_alive()
     }
 
-    /// Default for [`Entity::dimension_changing_delay`].
+    /// Default for [`EntityHooks::dimension_changing_delay`].
     fn dimension_changing_delay_default(&self) -> i32 {
         if let Some(first_passenger) = self.first_passenger()
             && first_passenger.as_player().is_some()
@@ -110,7 +110,7 @@ pub trait EntityPortals: Entity {
         300
     }
 
-    /// Default for [`Entity::on_teleported`].
+    /// Default for [`EntityHooks::on_teleported`].
     fn on_teleported_default(&self) {}
 
     /// Returns the vanilla portal cooldown in ticks.

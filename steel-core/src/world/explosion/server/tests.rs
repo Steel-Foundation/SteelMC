@@ -1,3 +1,4 @@
+use crate::entity::EntityTable;
 use crate::entity::WeakSelf;
 use crate::entity::prelude::*;
 use std::sync::{
@@ -99,10 +100,10 @@ impl Entity for VetoExplosionSource {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for VetoExplosionSource {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 #[derive(Default)]
@@ -175,10 +176,10 @@ impl Entity for BlockMutatingExposureEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for BlockMutatingExposureEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 fn ready_world(key: &'static str) -> TestWorld {

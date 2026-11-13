@@ -101,8 +101,8 @@ impl Living<'_> {
 
     /// Applies fall damage to a living entity, factoring in effects that reduce or negate it.
     ///
-    /// `Entity`'s chain runs through `super_cause_fall_damage` with the
-    /// effective fall distance.
+    /// `super_cause_fall_damage` is `Entity`'s, called with the effective fall
+    /// distance.
     #[must_use]
     pub fn cause_living_fall_damage(
         &self,
@@ -582,7 +582,7 @@ impl Living<'_> {
             f64::from(input.vertical()),
             f64::from(input.forward()),
         );
-        let result = if Entity::is_alive(self.entity())
+        let result = if EntityHooks::is_alive(self.entity())
             && let Some(controller_entity) = self.controlling_passenger()
             && let Some(controller) = controller_entity.as_player()
         {

@@ -1,3 +1,4 @@
+use crate::entity::EntityTable;
 use crate::entity::WeakSelf;
 use crate::entity::prelude::*;
 use std::iter::once;
@@ -138,10 +139,10 @@ impl Entity for CustomContact {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for CustomContact {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 pub(super) struct Fixture {

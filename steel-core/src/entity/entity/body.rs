@@ -5,7 +5,7 @@ use super::*;
 /// Pose, dimensions, eyes and look direction.
 ///
 /// Implemented for every [`Entity`]; entity types change behavior through
-/// [`EntityHooks`], never by implementing this trait.
+/// [`EntityProps`], never by implementing this trait.
 pub trait EntityBody: Entity {
     /// Builds this entity's default bounding box at `position`.
     fn make_bounding_box_at(&self, position: DVec3) -> WorldAabb {
@@ -38,17 +38,17 @@ pub trait EntityBody: Entity {
         Direction::from_yaw(yaw)
     }
 
-    /// Default for [`Entity::motion_direction`].
+    /// Default for [`EntityHooks::motion_direction`].
     fn motion_direction_default(&self) -> Direction {
         self.direction_yaw()
     }
 
-    /// Default for [`Entity::look_at`].
+    /// Default for [`EntityHooks::look_at`].
     fn look_at_default(&self, from_anchor: EntityAnchor, target: DVec3) {
         apply_entity_look_at(self.as_entity_event_source(), from_anchor, target);
     }
 
-    /// Default for [`Entity::look_at_entity`].
+    /// Default for [`EntityHooks::look_at_entity`].
     fn look_at_entity_default(
         &self,
         from_anchor: EntityAnchor,
@@ -95,7 +95,7 @@ pub trait EntityBody: Entity {
         self.position().y + self.eye_height()
     }
 
-    /// Default for [`Entity::is_in_wall`].
+    /// Default for [`EntityHooks::is_in_wall`].
     fn is_in_wall_default(&self) -> bool {
         if self.no_physics() {
             return false;
@@ -178,12 +178,12 @@ pub trait EntityBody: Entity {
         self.base().pose()
     }
 
-    /// Default for [`Entity::dimensions_for_pose`].
+    /// Default for [`EntityHooks::dimensions_for_pose`].
     fn dimensions_for_pose_default(&self, _pose: EntityPose) -> EntityDimensions {
         self.entity_type().dimensions
     }
 
-    /// Default for [`Entity::refresh_dimensions`].
+    /// Default for [`EntityHooks::refresh_dimensions`].
     fn refresh_dimensions_default(&self) {
         let pose = self.pose();
         let old_dimensions = self.base().dimensions();
@@ -288,7 +288,7 @@ pub trait EntityBody: Entity {
         }
     }
 
-    /// Default for [`Entity::is_crouching`].
+    /// Default for [`EntityHooks::is_crouching`].
     fn is_crouching_default(&self) -> bool {
         self.pose() == EntityPose::Sneaking
     }

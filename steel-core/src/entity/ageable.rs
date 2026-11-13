@@ -2,12 +2,16 @@
 //!
 //! State lives in the [`Age`] component; behavior lives on the [`Ageable`]
 //! view, which any code holding an entity can obtain with [`Ageable::of`].
-//! The `aiStep`, `finalizeSpawn` and `mobInteract` layers are pipeline stages
-//! in this module.
+//! [`living_props`] and [`mob_props`] are the tables an ageable mob type
+//! builds on.
 
+use crate::entity::LivingProps;
+use crate::entity::MobProps;
 use crate::entity::prelude::*;
+use crate::player::Player;
 use std::sync::Arc;
 use steel_utils::nbt::NbtValueInput as _;
+use steel_utils::types::InteractionHand;
 
 use glam::DVec3;
 
@@ -24,10 +28,6 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::behavior::InteractionResult;
-use crate::entity::component::definition::{
-    AiStep, FinalizeSpawn, FinalizeSpawnCtx, MobInteract, MobInteractCtx,
-};
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::next_entity_id;
 use crate::entity::{AgeableMobGroupData, ENTITIES, Entity, SharedEntity, SpawnGroupData, mob};
@@ -329,87 +329,99 @@ impl<'a> Ageable<'a> {
     }
 }
 
-/// Stage running [`Ageable::tick`].
-pub const AI_STEP: StageId = StageId("ageable.ai_step");
-/// Stage rolling whether a spawned group member is a baby.
-pub const FINALIZE_SPAWN: StageId = StageId("ageable.finalize_spawn");
-/// Stage toggling the age lock with a golden dandelion.
-pub const MOB_INTERACT: StageId = StageId("ageable.mob_interact");
-
-/// The `AgeableMob.aiStep` stage.
-pub fn ai_step<E: Entity + Has<Age>>() -> Stage<E, AiStep> {
-    fn run<E: Entity + Has<Age>>(entity: &E) {
-        Ageable::new(entity, entity.get::<Age>()).tick();
+/// `AgeableMob`'s changes to the living defaults.
+#[must_use]
+pub const fn living_props<E: mob::Parts + Has<Age>>() -> LivingProps<E> {
+    LivingProps {
+        ai_step: |entity| {
+            let movement = (const { mob::living_props::<E>().ai_step })(entity);
+            Ageable::new(entity, entity.get::<Age>()).tick();
+            movement
+        },
+        ..mob::living_props()
     }
-    Stage::effect(AI_STEP, run::<E>)
 }
 
-/// The `AgeableMob.finalizeSpawn` stage, before `Mob.finalizeSpawn`.
-pub fn finalize_spawn<E: Entity + Has<Age>>() -> Stage<E, FinalizeSpawn> {
-    fn run<E: Entity + Has<Age>>(entity: &E, ctx: &mut FinalizeSpawnCtx<'_>) -> Flow {
-        let mut group_data = match ctx.result.take() {
-            Some(SpawnGroupData::AgeableMob(group_data)) => group_data,
-            None => AgeableMobGroupData::with_should_spawn_baby(true),
-        };
-        if group_data.finalize_ageable_spawn(rand::random::<f32>) {
-            Ageable::new(entity, entity.get::<Age>()).set_age(BABY_START_AGE);
-        }
-        ctx.result = Some(SpawnGroupData::AgeableMob(group_data));
-        Flow::Continue
-    }
-    Stage::new(FINALIZE_SPAWN, run::<E>)
-}
-
-/// The `AgeableMob.mobInteract` stage: toggles a baby's age lock when fed a
-/// golden dandelion.
-pub fn mob_interact<E: mob::Parts + Has<Age>>() -> Stage<E, MobInteract> {
-    fn run<E: mob::Parts + Has<Age>>(entity: &E, ctx: &mut MobInteractCtx<'_>) -> Flow {
-        let ageable = Ageable::new(entity, entity.get::<Age>());
-        let holds_dandelion = ctx
-            .player
-            .inventory
-            .lock()
-            .get_item_in_hand(ctx.hand)
-            .is(&vanilla_items::GOLDEN_DANDELION);
-        if !holds_dandelion
-            || !ageable.is_baby()
-            || ageable.age.state.lock().age_lock_particle_timer != 0
-            || REGISTRY
-                .entity_types
-                .is_in_tag(entity.entity_type(), &EntityTypeTag::CANNOT_BE_AGE_LOCKED)
-        {
-            return Flow::Continue;
-        }
-
-        let age_locked = !ageable.is_age_locked();
-        ageable.set_age_locked(age_locked);
-        ageable.set_age(BABY_START_AGE);
-        ageable.age.state.lock().age_lock_particle_timer = AGE_LOCK_COOLDOWN_TICKS;
-        entity.mob().use_player_item(ctx.player, ctx.hand);
-
-        if age_locked {
-            entity.mob().set_persistence_required();
-        }
-        if let Some(world) = entity.level() {
-            let sound = if age_locked {
-                &sound_events::ITEM_GOLDEN_DANDELION_USE
-            } else {
-                &sound_events::ITEM_GOLDEN_DANDELION_UNUSE
+/// `AgeableMob`'s changes to the mob defaults.
+#[must_use]
+pub const fn mob_props<E: mob::Parts + Has<Age>>() -> MobProps<E> {
+    MobProps {
+        mob_interact: |entity, player, hand| {
+            if let Some(result) = toggle_age_lock(entity, player, hand) {
+                return result;
+            }
+            (const { mob::pathfinder_mob_props::<E>().mob_interact })(entity, player, hand)
+        },
+        // `AgeableMob.finalizeSpawn` rolls whether a spawned group member is
+        // a baby before `super`.
+        finalize_spawn: |entity, world, reason, group_data| {
+            let mut group_data = match group_data {
+                Some(SpawnGroupData::AgeableMob(group_data)) => group_data,
+                None => AgeableMobGroupData::with_should_spawn_baby(true),
             };
-            world.play_sound(
-                sound,
-                SoundSource::Players,
-                entity.block_position(),
-                1.0,
-                1.0,
-                None,
-            );
-        }
-
-        ctx.result = InteractionResult::Success;
-        Flow::Stop
+            if group_data.finalize_ageable_spawn(rand::random::<f32>) {
+                Ageable::new(entity, entity.get::<Age>()).set_age(BABY_START_AGE);
+            }
+            (const { mob::pathfinder_mob_props::<E>().finalize_spawn })(
+                entity,
+                world,
+                reason,
+                Some(SpawnGroupData::AgeableMob(group_data)),
+            )
+        },
+        ..mob::pathfinder_mob_props()
     }
-    Stage::new(MOB_INTERACT, run::<E>)
+}
+
+/// `AgeableMob.mobInteract` before `super`: toggles a baby's age lock when fed
+/// a golden dandelion. `None` when the interaction is not this one.
+fn toggle_age_lock<E: mob::Parts + Has<Age>>(
+    entity: &E,
+    player: &Player,
+    hand: InteractionHand,
+) -> Option<InteractionResult> {
+    let ageable = Ageable::new(entity, entity.get::<Age>());
+    let holds_dandelion = player
+        .inventory
+        .lock()
+        .get_item_in_hand(hand)
+        .is(&vanilla_items::GOLDEN_DANDELION);
+    if !holds_dandelion
+        || !ageable.is_baby()
+        || ageable.age.state.lock().age_lock_particle_timer != 0
+        || REGISTRY
+            .entity_types
+            .is_in_tag(entity.entity_type(), &EntityTypeTag::CANNOT_BE_AGE_LOCKED)
+    {
+        return None;
+    }
+
+    let age_locked = !ageable.is_age_locked();
+    ageable.set_age_locked(age_locked);
+    ageable.set_age(BABY_START_AGE);
+    ageable.age.state.lock().age_lock_particle_timer = AGE_LOCK_COOLDOWN_TICKS;
+    entity.mob().use_player_item(player, hand);
+
+    if age_locked {
+        entity.mob().set_persistence_required();
+    }
+    if let Some(world) = entity.level() {
+        let sound = if age_locked {
+            &sound_events::ITEM_GOLDEN_DANDELION_USE
+        } else {
+            &sound_events::ITEM_GOLDEN_DANDELION_UNUSE
+        };
+        world.play_sound(
+            sound,
+            SoundSource::Players,
+            entity.block_position(),
+            1.0,
+            1.0,
+            None,
+        );
+    }
+
+    Some(InteractionResult::Success)
 }
 
 #[cfg(test)]

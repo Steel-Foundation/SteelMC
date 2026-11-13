@@ -1,10 +1,5 @@
 use crate::entity::component::Has;
-use crate::entity::component::definition::ControllingPassengerCtx;
-use crate::entity::component::definition::{Definition, DefinitionEntries, HurtCtx};
-use crate::entity::component::pipeline::Pipeline;
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::test_support::synced_with_health;
-use std::sync::LazyLock;
 use std::{
     io::Cursor,
     sync::{Arc, Weak},
@@ -54,7 +49,7 @@ use crate::world::game_event::{GameEventListener, SharedGameEventListener};
 use crate::world::{LevelReader, World};
 
 use super::*;
-use crate::entity::{EntityDefaults, EntityHooks, EntityProps, living_entity};
+use crate::entity::{EntityHooks, EntityProps, living_entity};
 
 struct PushableTestEntity {
     base: EntityBase,
@@ -91,10 +86,10 @@ impl Entity for PushableTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for PushableTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 struct TypedTestEntity {
@@ -127,11 +122,9 @@ impl Entity for TypedTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
     }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &EntityDefaults
-    }
 }
+
+impl EntityTable for TypedTestEntity {}
 
 #[test]
 fn non_player_command_identity_uses_uuid_and_resolved_name() {
@@ -654,10 +647,10 @@ impl Entity for LeashNotificationTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for LeashNotificationTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 struct MultiPassengerTestEntity {
@@ -695,10 +688,10 @@ impl Entity for MultiPassengerTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for MultiPassengerTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 struct CommitRejectingCallback {
@@ -769,10 +762,10 @@ impl Entity for KnownMovementTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for KnownMovementTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 struct LivingFluidTestEntity {
@@ -807,10 +800,7 @@ impl LivingFluidTestEntity {
         ));
         Self {
             base,
-            living_base: LivingEntityBase::without_synced_data(
-                &vanilla_entities::PLAYER,
-                &LivingFluidTestEntity::LIVING,
-            ),
+            living_base: LivingEntityBase::without_synced_data(&vanilla_entities::PLAYER),
             entity_data: CheckedMutex::new(synced_with_health(SyncedLivingEntityData::new(), 20.0)),
             damage_types: SyncMutex::new(Vec::new()),
             damage_world_keys: SyncMutex::new(Vec::new()),
@@ -903,41 +893,22 @@ impl LivingFluidTestEntity {
             !entity.living().is_sleeping()
                 && (entity.in_wall_for_base_tick || entity.is_in_wall_default())
         },
+        // Records each hit before the living layer takes it.
+        hurt: |entity, world, source, amount| {
+            entity
+                .damage_types
+                .lock()
+                .push(source.damage_type.key.clone());
+            entity.damage_world_keys.lock().push(world.key.to_string());
+            (const { living_entity::entity_props::<Self>().hurt })(entity, world, source, amount)
+        },
         ..living_entity::entity_props()
     };
-
-    /// Records each hit before the living layer takes it.
-    fn record_hurt(&self, ctx: &mut HurtCtx<'_>) -> Flow {
-        self.damage_types
-            .lock()
-            .push(ctx.source.damage_type.key.clone());
-        self.damage_world_keys
-            .lock()
-            .push(ctx.world.key.to_string());
-        Flow::Continue
-    }
 }
 
 impl Entity for LivingFluidTestEntity {
     fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
         (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
-    }
-
-    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
-        static DEFINITION: LazyLock<Definition<LivingFluidTestEntity>> = LazyLock::new(|| {
-            let living = living_entity::definition();
-            Definition {
-                hurt: living.hurt.before(
-                    living_entity::HURT,
-                    [Stage::new(
-                        StageId("test.record_hurt"),
-                        LivingFluidTestEntity::record_hurt,
-                    )],
-                ),
-                ..living
-            }
-        });
-        &*DEFINITION
     }
 
     fn base(&self) -> &EntityBase {
@@ -948,24 +919,16 @@ impl Entity for LivingFluidTestEntity {
         self.entity_type
     }
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
     }
 }
 
-impl LivingFluidTestEntity {
-    const LIVING: LivingProps<Self> = LivingProps {
-        can_be_affected: Self::living_can_be_affected,
-        is_affected_by_fluids: Self::living_is_affected_by_fluids,
-        can_stand_on_fluid: Self::living_can_stand_on_fluid,
-        is_on_non_air_block_for_frost: Self::living_is_on_non_air_block_for_frost,
-        ..LivingProps::new()
-    };
+impl EntityTable for LivingFluidTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
+}
 
+impl LivingFluidTestEntity {
     fn living_can_be_affected(&self, effect: &MobEffectInstance) -> bool {
         if self.rejects_wither && effect.effect() == vanilla_mob_effects::WITHER {
             return false;
@@ -984,6 +947,16 @@ impl LivingFluidTestEntity {
     fn living_is_on_non_air_block_for_frost(&self) -> bool {
         self.on_non_air_block_for_frost
     }
+}
+
+impl LivingTable for LivingFluidTestEntity {
+    const LIVING: LivingProps<Self> = LivingProps {
+        can_be_affected: Self::living_can_be_affected,
+        is_affected_by_fluids: Self::living_is_affected_by_fluids,
+        can_stand_on_fluid: Self::living_can_stand_on_fluid,
+        is_on_non_air_block_for_frost: Self::living_is_on_non_air_block_for_frost,
+        ..LivingProps::new()
+    };
 }
 
 impl Has<LivingEntityBase> for LivingFluidTestEntity {
@@ -1298,7 +1271,10 @@ impl ControlledVehicleTestEntity {
 crate::entity::impl_test_downcast_type!(ControlledVehicleTestEntity);
 
 impl ControlledVehicleTestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps::new();
+    const ENTITY: EntityProps<Self> = EntityProps {
+        controlling_passenger: |vehicle| vehicle.controller.clone(),
+        ..EntityProps::new()
+    };
 }
 
 impl Entity for ControlledVehicleTestEntity {
@@ -1309,26 +1285,10 @@ impl Entity for ControlledVehicleTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ACACIA_BOAT
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
-    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
-        static DEFINITION: LazyLock<Definition<ControlledVehicleTestEntity>> =
-            LazyLock::new(|| Definition {
-                controlling_passenger: Pipeline::new([Stage::new(
-                    StageId("test.controller"),
-                    |vehicle: &ControlledVehicleTestEntity,
-                     ctx: &mut ControllingPassengerCtx<'_>| {
-                        ctx.result = vehicle.controller.clone();
-                        Flow::Continue
-                    },
-                )]),
-                ..Definition::new()
-            });
-        &*DEFINITION
-    }
+impl EntityTable for ControlledVehicleTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 fn assert_vec3_close(left: DVec3, right: DVec3) {

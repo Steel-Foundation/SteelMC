@@ -14,8 +14,6 @@ use steel_utils::{BlockPos, Downcast as _, WorldAabb};
 
 use crate::behavior::InteractionResult;
 use crate::entity::block_attached::{self, BlockAttachment};
-use crate::entity::component::definition::{Definition, InteractCtx};
-use crate::entity::component::pipeline::{Flow, StageId};
 use crate::entity::prelude::*;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMoveError, EntityProps,
@@ -29,7 +27,7 @@ use crate::world::World;
 #[entity_behavior(class = "LeashFenceKnotEntity")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, no_save_data)]
-#[entity(key = "steel:entity/leash_fence_knot", definition = Self::define)]
+#[entity(key = "steel:entity/leash_fence_knot")]
 pub struct LeashFenceKnotEntity {
     #[entity(base)]
     base: EntityBase,
@@ -40,28 +38,14 @@ pub struct LeashFenceKnotEntity {
 }
 
 impl LeashFenceKnotEntity {
-    const INTERACT: StageId = StageId("leash_fence_knot.interact");
-
-    fn define() -> Definition<Self> {
-        let definition = block_attached::definition();
-        Definition {
-            interact: definition.interact.around(
-                Self::INTERACT,
-                |knot: &Self, ctx: &mut InteractCtx<'_>, inner| {
-                    let (player, hand) = (ctx.player, ctx.hand);
-                    let result = knot.interact_around(player, hand, || {
-                        inner(knot, ctx);
-                        ctx.result
-                    });
-                    ctx.result = result;
-                    Flow::Continue
-                },
-            ),
-            ..definition
-        }
-    }
-
     const ENTITY: EntityProps<Self> = EntityProps {
+        interact: |knot, player, hand, location| {
+            knot.interact_around(player, hand, || {
+                (const { block_attached::entity_props::<Self>().interact })(
+                    knot, player, hand, location,
+                )
+            })
+        },
         notify_leashee_removed: |knot, _| {
             if knot.leashables_leashed_to().is_empty() {
                 knot.set_removed(RemovalReason::Discarded);

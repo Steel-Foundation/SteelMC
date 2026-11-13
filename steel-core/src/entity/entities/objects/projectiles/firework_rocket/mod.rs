@@ -4,6 +4,7 @@
 //! explosion damage; clients draw the trail and explosion from the synced
 //! item and entity event 17.
 
+use crate::entity::projectile::ProjectileTable;
 use std::sync::{Arc, Weak};
 use steel_utils::nbt::NbtValueInput as _;
 
@@ -22,9 +23,6 @@ use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 
 use crate::behavior::BLOCK_BEHAVIORS;
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::OnHitBlockCtx;
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::prelude::*;
 use crate::entity::projectile::{
@@ -50,7 +48,7 @@ struct Flight {
 #[entity_behavior(class = "FireworkRocketEntity")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_rocket, load = Self::load_rocket)]
-#[entity(key = "steel:entity/firework_rocket", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/firework_rocket", constructors)]
 pub struct FireworkRocketEntity {
     #[entity(base)]
     base: EntityBase,
@@ -64,48 +62,13 @@ pub struct FireworkRocketEntity {
 }
 
 impl FireworkRocketEntity {
-    const TICK: StageId = StageId("firework_rocket.tick");
-    const ON_HIT_ENTITY: StageId = StageId("firework_rocket.on_hit_entity");
-    const ON_HIT_BLOCK: StageId = StageId("firework_rocket.on_hit_block");
-
-    fn define() -> Definition<Self> {
-        let definition = projectile::definition();
-        Definition {
-            on_hit_entity: definition.on_hit_entity.then([Stage::effect(
-                Self::ON_HIT_ENTITY,
-                |rocket: &Self| {
-                    if let Some(world) = rocket.level() {
-                        rocket.explode(&world);
-                    }
-                },
-            )]),
-            on_hit_block: definition.on_hit_block.before(
-                projectile::ON_HIT_BLOCK,
-                [Stage::new(
-                    Self::ON_HIT_BLOCK,
-                    |rocket: &Self, ctx: &mut OnHitBlockCtx<'_>| {
-                        rocket.on_hit_block_before_super(ctx.hit);
-                        Flow::Continue
-                    },
-                )],
-            ),
-            tick: definition
-                .tick
-                .then([Stage::effect(Self::TICK, Self::entity_tick)]),
-            ..definition
-        }
-    }
-
     const ENTITY: EntityProps<Self> = EntityProps {
+        tick: |rocket| {
+            (const { projectile::entity_props::<Self>().tick })(rocket);
+            rocket.entity_tick();
+        },
         attackable: |_| false,
         ..projectile::entity_props()
-    };
-    const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        horizontal_hurt_knockback_direction: |rocket, hurt_entity, _| {
-            let delta = hurt_entity.position() - rocket.position();
-            (delta.x, delta.z)
-        },
-        ..ProjectileProps::new()
     };
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
@@ -116,7 +79,7 @@ impl FireworkRocketEntity {
         Self {
             base,
             entity_type,
-            projectile: ProjectileBase::new(&Self::PROJECTILE),
+            projectile: ProjectileBase::new(),
             flight: CheckedMutex::new(Flight::default()),
             entity_data: CheckedMutex::new(entity_data),
         }
@@ -415,6 +378,26 @@ impl FireworkRocketEntity {
                 .is_some_and(|value| value != 0),
         );
     }
+}
+
+impl ProjectileTable for FireworkRocketEntity {
+    const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
+        on_hit_entity: |rocket, target, location| {
+            (const { ProjectileProps::<Self>::new().on_hit_entity })(rocket, target, location);
+            if let Some(world) = rocket.level() {
+                rocket.explode(&world);
+            }
+        },
+        on_hit_block: |rocket, hit| {
+            rocket.on_hit_block_before_super(hit);
+            (const { ProjectileProps::<Self>::new().on_hit_block })(rocket, hit);
+        },
+        horizontal_hurt_knockback_direction: |rocket, hurt_entity, _| {
+            let delta = hurt_entity.position() - rocket.position();
+            (delta.x, delta.z)
+        },
+        ..ProjectileProps::new()
+    };
 }
 
 /// The velocity a rocket gives a gliding entity looking along `look_angle`.

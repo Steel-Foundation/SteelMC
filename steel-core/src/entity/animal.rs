@@ -1,15 +1,15 @@
 //! Vanilla `Animal`: feeding, love mode and breeding.
 //!
 //! State and per-type properties live in the [`Breeding`] component;
-//! behavior lives on the [`Animal`] view. The `aiStep`, `customServerAiStep`
-//! and `mobInteract` layers are pipeline stages in this module, and
-//! [`ai_step`] / [`mob_interact`] build an animal's whole vanilla chain.
+//! behavior lives on the [`Animal`] view. [`living_props`], [`mob_props`] and
+//! [`entity_props`] are the tables an animal type builds on, and
+//! [`construct`] is `Animal`'s part of the constructor.
 
-use crate::entity::component::definition::BaseExperienceRewardCtx;
 use crate::entity::prelude::*;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 use steel_utils::nbt::NbtValueInput as _;
+use steel_utils::types::InteractionHand;
 
 use glam::DVec3;
 use rand::Rng;
@@ -30,11 +30,6 @@ use uuid::Uuid;
 use crate::behavior::InteractionResult;
 use crate::entity::ageable::{self, Age, Ageable};
 use crate::entity::ai::path::PathType;
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::{
-    AiStep, CustomServerAiStep, MobInteract, MobInteractCtx,
-};
-use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::dismount_helper;
 use crate::entity::entities::ExperienceOrbEntity;
@@ -51,7 +46,14 @@ const BREEDING_XP: RangeInclusive<i32> = 1..=7;
 #[must_use]
 pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
-        ..mob::living_props()
+        ai_step: |animal| {
+            let movement = (const { ageable::living_props::<E>().ai_step })(animal);
+            animal.animal().tick_love();
+            movement
+        },
+        // `Animal.getBaseExperienceReward` replaces `Mob`'s.
+        base_experience_reward: |_| Animal::base_experience_reward(),
+        ..ageable::living_props()
     }
 }
 
@@ -103,8 +105,29 @@ pub const fn mob_props<E: Parts>() -> MobProps<E> {
         ambient_sound_interval: |_| 120,
         remove_when_far_away: |_, _| false,
         walk_target_value: |animal, pos| walk_target_value(animal, pos),
-        ..mob::pathfinder_mob_props()
+        // `Animal.customServerAiStep` ends love mode for non-adults.
+        custom_server_ai_step: |entity| {
+            let animal = entity.animal();
+            if animal.ageable.age() != 0 {
+                animal.reset_love();
+            }
+            (const { ageable::mob_props::<E>().custom_server_ai_step })(entity);
+        },
+        // `Animal.mobInteract`: feeding comes before `super`'s age lock.
+        mob_interact: |entity, player, hand| {
+            if let Some(result) = entity.animal().feed(&entity.mob(), player, hand) {
+                return result;
+            }
+            (const { ageable::mob_props::<E>().mob_interact })(entity, player, hand)
+        },
+        ..ageable::mob_props()
     }
+}
+
+/// `Animal`'s constructor: the danger pathfinding malus every animal starts
+/// with. A type's constructor chain runs it after `Mob.registerGoals`.
+pub fn construct(mob_base: &MobBase) {
+    Breeding::initialize_pathfinding_malus(mob_base);
 }
 
 /// Per-type properties of a vanilla `Animal`.
@@ -374,38 +397,41 @@ impl<'a> Animal<'a> {
 
     /// `Animal.mobInteract`: feeding food starts love mode for adults and
     /// speeds up growth for babies.
-    fn feed(&self, mob: &Mob<'_>, ctx: &mut MobInteractCtx<'_>) -> Flow {
+    fn feed(
+        &self,
+        mob: &Mob<'_>,
+        player: &Player,
+        hand: InteractionHand,
+    ) -> Option<InteractionResult> {
         let is_food = {
-            let inventory = ctx.player.inventory.lock();
-            self.is_food(inventory.get_item_in_hand(ctx.hand))
+            let inventory = player.inventory.lock();
+            self.is_food(inventory.get_item_in_hand(hand))
         };
         if !is_food {
-            return Flow::Continue;
+            return None;
         }
 
         let age = self.ageable.age();
         if age == 0 && self.can_fall_in_love() {
-            mob.use_player_item(ctx.player, ctx.hand);
-            self.set_in_love(Some(ctx.player));
+            mob.use_player_item(player, hand);
+            self.set_in_love(Some(player));
             self.play_eating_sound();
-            ctx.result = InteractionResult::SuccessServer;
-            return Flow::Stop;
+            return Some(InteractionResult::SuccessServer);
         }
 
         if self.ageable.can_age_up() {
-            mob.use_player_item(ctx.player, ctx.hand);
+            mob.use_player_item(player, hand);
             self.ageable
                 .age_up(Ageable::speed_up_seconds_when_feeding(-age), true);
             self.play_eating_sound();
-            ctx.result = InteractionResult::Success;
-            return Flow::Stop;
+            return Some(InteractionResult::Success);
         }
 
-        Flow::Continue
+        None
     }
 }
 
-/// Components every animal has; keeps stage bounds short.
+/// Every animal type; keeps generic bounds short.
 pub trait Parts: mob::Parts + Has<Age> + Has<Breeding> {
     /// Returns this entity as an animal.
     fn animal(&self) -> Animal<'_>;
@@ -415,79 +441,6 @@ impl<E: mob::Parts + Has<Age> + Has<Breeding>> Parts for E {
     fn animal(&self) -> Animal<'_> {
         Animal::new(self, self.get::<Age>(), self.get::<Breeding>())
     }
-}
-
-/// Stage running [`Animal::tick_love`].
-pub const AI_STEP: StageId = StageId("animal.ai_step");
-/// Stage setting the danger pathfinding malus every animal starts with.
-pub const PATHFINDING_MALUS: StageId = StageId("animal.pathfinding_malus");
-/// Stage ending love mode for non-adults in `customServerAiStep`.
-pub const CUSTOM_SERVER_AI_STEP: StageId = StageId("animal.custom_server_ai_step");
-/// Stage feeding the animal in `mobInteract`.
-pub const MOB_INTERACT: StageId = StageId("animal.mob_interact");
-/// Stage running `Animal.getBaseExperienceReward`, which replaces `Mob`'s.
-pub const BASE_EXPERIENCE_REWARD: StageId = StageId("animal.base_experience_reward");
-
-/// Vanilla's chains for an animal type: `LivingEntity` → `Mob` →
-/// `AgeableMob` → `Animal`, base first.
-#[must_use]
-pub fn definition<E: Parts>() -> Definition<E> {
-    Definition {
-        construct: Pipeline::new([Stage::effect(
-            PATHFINDING_MALUS,
-            Breeding::initialize_pathfinding_malus,
-        )]),
-        ai_step: ai_step(),
-        custom_server_ai_step: custom_server_ai_step(),
-        mob_interact: mob_interact(),
-        finalize_spawn: Pipeline::new([
-            ageable::finalize_spawn::<E>(),
-            mob::stages::finalize_spawn::<E>(),
-        ]),
-        base_experience_reward: Pipeline::new([Stage::new(
-            BASE_EXPERIENCE_REWARD,
-            |_: &E, ctx: &mut BaseExperienceRewardCtx<'_>| {
-                ctx.result = Animal::base_experience_reward();
-                Flow::Continue
-            },
-        )]),
-        ..mob::stages::definition::<E>()
-    }
-}
-
-/// Vanilla's animal `aiStep` chain.
-#[must_use]
-pub fn ai_step<E: Parts>() -> Pipeline<E, AiStep> {
-    fn love<E: Parts>(entity: &E) {
-        entity.animal().tick_love();
-    }
-    mob::stages::definition::<E>()
-        .ai_step
-        .then([ageable::ai_step::<E>(), Stage::effect(AI_STEP, love::<E>)])
-}
-
-/// Vanilla's animal `customServerAiStep` chain.
-#[must_use]
-pub fn custom_server_ai_step<E: Parts>() -> Pipeline<E, CustomServerAiStep> {
-    fn run<E: Parts>(entity: &E) {
-        let animal = entity.animal();
-        if animal.ageable.age() != 0 {
-            animal.reset_love();
-        }
-    }
-    Pipeline::new([Stage::effect(CUSTOM_SERVER_AI_STEP, run::<E>)])
-}
-
-/// Vanilla's animal `mobInteract` chain: feeding, then the age lock.
-#[must_use]
-pub fn mob_interact<E: Parts>() -> Pipeline<E, MobInteract> {
-    fn run<E: Parts>(entity: &E, ctx: &mut MobInteractCtx<'_>) -> Flow {
-        entity.animal().feed(&entity.mob(), ctx)
-    }
-    Pipeline::new([
-        Stage::new(MOB_INTERACT, run::<E>),
-        ageable::mob_interact::<E>(),
-    ])
 }
 
 /// How attractive `pos` is as a walk target: grass first, then light

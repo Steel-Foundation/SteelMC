@@ -1,5 +1,6 @@
 //! Deferred scoreboard command arguments.
 
+use crate::entity::EntityHooks;
 use uuid::Uuid;
 
 use super::{CommandArgumentSource, CommandSource};
@@ -11,7 +12,6 @@ use crate::{
         },
         execution::selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     },
-    entity::Entity as _,
     scoreboard::{ScoreHolder, Scoreboard},
 };
 use steel_utils::translations;

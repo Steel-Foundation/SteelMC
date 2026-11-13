@@ -4,7 +4,6 @@ use steel_macros::entity_behavior;
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_type::EntityTypeRef;
 
-use crate::entity::component::definition::Definition;
 use crate::entity::{Entity, EntityBase, EntityProps};
 
 /// A marker: no physics, no ticking, no damage and no passengers. Never sent
@@ -12,7 +11,7 @@ use crate::entity::{Entity, EntityBase, EntityProps};
 #[entity_behavior(class = "Marker")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
-#[entity(key = "steel:entity/marker", constructors, definition = || Definition::replacing_tick([]))]
+#[entity(key = "steel:entity/marker", constructors)]
 pub struct MarkerEntity {
     #[entity(base)]
     base: EntityBase,
@@ -22,6 +21,8 @@ pub struct MarkerEntity {
 
 impl MarkerEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
+        // `Marker.tick` does nothing.
+        tick: |_| {},
         can_add_passenger: |_, _| false,
         could_accept_passenger: |_| false,
         piston_push_reaction: |_| PushReaction::IgnoreEntity,

@@ -1,10 +1,5 @@
 //! Vanilla falling-block entity.
 
-use crate::entity::component::definition::CauseFallDamageCtx;
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::HurtCtx;
-use crate::entity::component::pipeline::Pipeline;
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
@@ -80,7 +75,7 @@ impl FallingBlockState {
 #[entity_behavior(class = "FallingBlockEntity")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_falling_block, load = Self::load_falling_block)]
-#[entity(key = "steel:entity/falling_block", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/falling_block", constructors)]
 pub struct FallingBlockEntity {
     #[entity(base)]
     base: EntityBase,
@@ -386,36 +381,11 @@ impl FallingBlockEntity {
     // TODO: vanilla names falling blocks `entity.minecraft.falling_block_type` with the
     // block's name. Needs extracted block description ids: wall variants override theirs
     // (`wall_torch` -> `block.minecraft.torch`), so they can't be derived from the key.
-    const TICK: StageId = StageId("falling_block.tick");
-    const HURT: StageId = StageId("falling_block.hurt");
-    const FALL_DAMAGE: StageId = StageId("falling_block.fall_damage");
-
-    /// `FallingBlockEntity.tick` never calls `super`.
-    fn define() -> Definition<Self> {
-        Definition {
-            cause_fall_damage: Pipeline::new([Stage::new(
-                Self::FALL_DAMAGE,
-                |falling: &Self, ctx: &mut CauseFallDamageCtx<'_>| {
-                    ctx.result = falling.entity_cause_fall_damage(
-                        ctx.fall_distance,
-                        ctx.damage_modifier,
-                        ctx.source,
-                    );
-                    Flow::Continue
-                },
-            )]),
-            hurt: Pipeline::new([Stage::new(
-                Self::HURT,
-                |falling: &Self, ctx: &mut HurtCtx<'_>| {
-                    ctx.result = falling.entity_hurt(ctx.world, ctx.source, ctx.amount);
-                    Flow::Continue
-                },
-            )]),
-            ..Definition::replacing_tick([Stage::effect(Self::TICK, Self::entity_tick)])
-        }
-    }
-
     const ENTITY: EntityProps<Self> = EntityProps {
+        // `FallingBlockEntity.tick` never calls `super`.
+        tick: Self::entity_tick,
+        hurt: Self::entity_hurt,
+        cause_fall_damage: Self::entity_cause_fall_damage,
         default_gravity: |_| 0.04,
         spawn_data: |entity| i32::from(entity.block_state().0),
         blocks_building: |falling| falling.state.lock().blocks_building,

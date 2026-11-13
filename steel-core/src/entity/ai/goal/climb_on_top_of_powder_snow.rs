@@ -74,8 +74,8 @@ mod tests {
 
     use super::*;
 
+    use crate::entity::InsideBlockEffectType;
     use crate::entity::entities::ChickenEntity;
-    use crate::entity::{Entity as _, InsideBlockEffectType};
 
     fn pig() -> Arc<ChickenEntity> {
         ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new())

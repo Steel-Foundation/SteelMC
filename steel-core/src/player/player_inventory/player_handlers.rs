@@ -1109,7 +1109,7 @@ impl Player {
     /// Returns false if the player is dead, removed, or has a flag preventing item drops.
     #[must_use]
     pub fn can_drop_items(&self) -> bool {
-        Entity::is_alive(self)
+        EntityHooks::is_alive(self)
     }
 
     /// Returns whether items from a closing menu (crafting grid, anvil inputs,

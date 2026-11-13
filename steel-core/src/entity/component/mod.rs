@@ -2,22 +2,28 @@
 //!
 //! Vanilla models entities as a deep class hierarchy (`Entity` → `LivingEntity`
 //! → `Mob` → `AgeableMob` → `Animal` → `Chicken`). Steel splits what those
-//! classes do into three mechanisms instead of mirroring the hierarchy:
+//! classes do into two mechanisms instead of mirroring the hierarchy:
 //!
 //! - **Components** hold one concern's state (age, love, …) and save/load it
 //!   themselves, so a layer's persistent data can never be forgotten.
-//! - **Pipelines** ([`pipeline`]) run behavior chains such as `aiStep` as an
-//!   explicit, ordered list of stages. Layer presets encode vanilla's chain;
-//!   entity types only list their deviations.
-//! - **Properties** are per-type values and hooks that vanilla subclasses
-//!   override without calling `super` (sounds, food, offspring). They live in
-//!   `&'static` property structs referenced by the component that uses them.
+//! - **Properties** are the methods vanilla subclasses override, one table of
+//!   `fn` pointers per vanilla class that declares them (`EntityProps`,
+//!   `LivingProps`, `MobProps`, …). A method goes in the table of the class
+//!   that declares it. Each layer has a preset per table, built on its parent
+//!   layer's; an entry that extends its parent the way vanilla calls `super`
+//!   calls the parent preset's entry from a `const` block:
+//!
+//!   ```ignore
+//!   ai_step: |animal| {
+//!       let movement = (const { ageable::living_props::<E>().ai_step })(animal);
+//!       animal.animal().tick_love();
+//!       movement
+//!   },
+//!   ```
 //!
 //! Layer modules expose borrowed views (for example `Ageable`) that pair an
 //! entity with its components and carry the layer's behavior.
 
-pub mod definition;
-pub mod pipeline;
 pub(crate) mod props;
 
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;

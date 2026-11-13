@@ -2,8 +2,6 @@
 
 use std::sync::Arc;
 
-use crate::entity::component::definition::{Definition, HurtCtx};
-use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::prelude::*;
 use steel_utils::nbt::NbtValueInput as _;
 
@@ -30,7 +28,7 @@ const EXPLOSION_RADIUS: f32 = 6.0;
 #[entity_behavior(class = "EndCrystal")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_crystal, load = Self::load_crystal)]
-#[entity(key = "steel:entity/end_crystal", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/end_crystal", constructors)]
 pub struct EndCrystalEntity {
     #[entity(base)]
     base: EntityBase,
@@ -41,26 +39,13 @@ pub struct EndCrystalEntity {
 }
 
 impl EndCrystalEntity {
-    const TICK: StageId = StageId("end_crystal.tick");
-    /// The `EndCrystal.hurtServer` stage; `Entity`'s is abstract.
-    const HURT: StageId = StageId("end_crystal.hurt");
-
-    /// `EndCrystal.tick` never calls `super`.
-    fn define() -> Definition<Self> {
-        fn hurt(crystal: &EndCrystalEntity, ctx: &mut HurtCtx<'_>) -> Flow {
-            ctx.result = crystal.hurt_crystal(ctx.source);
-            Flow::Continue
-        }
-        Definition {
-            hurt: Pipeline::new([Stage::new(Self::HURT, hurt)]),
-            ..Definition::replacing_tick([Stage::effect(Self::TICK, |crystal: &Self| {
-                crystal.apply_effects_from_blocks();
-                crystal.handle_portal();
-            })])
-        }
-    }
-
     const ENTITY: EntityProps<Self> = EntityProps {
+        // `EndCrystal.tick` never calls `super`.
+        tick: |crystal| {
+            crystal.apply_effects_from_blocks();
+            crystal.handle_portal();
+        },
+        hurt: |crystal, _, source, _| crystal.hurt_crystal(source),
         movement_emission: |_| EntityMovementEmission::None,
         is_pickable: |_| true,
         blocks_building: |_| true,

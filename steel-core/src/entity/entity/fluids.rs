@@ -5,14 +5,14 @@ use super::*;
 /// Water, lava, rain, bubble columns, swimming and air supply.
 ///
 /// Implemented for every [`Entity`]; entity types change behavior through
-/// [`EntityHooks`], never by implementing this trait.
+/// [`EntityProps`], never by implementing this trait.
 pub trait EntityFluids: Entity {
-    /// Default for [`Entity::is_pushed_by_fluid`].
+    /// Default for [`EntityHooks::is_pushed_by_fluid`].
     fn is_pushed_by_fluid_default(&self) -> bool {
         self.entity_type().flags.is_pushed_by_fluid
     }
 
-    /// Default for [`Entity::on_above_bubble_column`].
+    /// Default for [`EntityHooks::on_above_bubble_column`].
     fn on_above_bubble_column_default(&self, drag_down: bool, pos: BlockPos) {
         if self.is_flying_player() {
             return;
@@ -31,7 +31,7 @@ pub trait EntityFluids: Entity {
         }
     }
 
-    /// Default for [`Entity::on_inside_bubble_column`].
+    /// Default for [`EntityHooks::on_inside_bubble_column`].
     fn on_inside_bubble_column_default(&self, drag_down: bool) {
         if self.is_flying_player() {
             return;
@@ -55,7 +55,7 @@ pub trait EntityFluids: Entity {
         }
     }
 
-    /// Default for [`Entity::update_swimming`].
+    /// Default for [`EntityHooks::update_swimming`].
     fn update_swimming_default(&self) {
         let Some(world) = self.level() else {
             return;
@@ -222,7 +222,7 @@ pub trait EntityFluids: Entity {
         }
     }
 
-    /// Default for [`Entity::is_swimming`].
+    /// Default for [`EntityHooks::is_swimming`].
     fn is_swimming_default(&self) -> bool {
         self.synced_data()
             .is_some_and(EntitySyncedData::is_swimming)
@@ -246,7 +246,7 @@ pub trait EntityFluids: Entity {
         DEFAULT_MAX_AIR_SUPPLY
     }
 
-    /// Default for [`Entity::do_water_splash_effect`].
+    /// Default for [`EntityHooks::do_water_splash_effect`].
     fn do_water_splash_effect_default(&self) {
         let (movement, volume_modifier) = if let Some(passenger) = self.controlling_passenger() {
             (passenger.velocity(), 0.9)

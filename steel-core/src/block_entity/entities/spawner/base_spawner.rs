@@ -23,7 +23,7 @@ use steel_utils::{BlockPos, Identifier, WorldAabb};
 
 use super::spawn_data::{EquipmentTable, SpawnData, WeightedSpawnData};
 use crate::entity::{
-    Entity, EntitySpawnReason, Mob, SpawnPlacements, entity_loot_ref, living_loot_equipment,
+    EntitySpawnReason, Mob, SpawnPlacements, entity_loot_ref, living_loot_equipment,
     load_entity_recursive_owned, nbt_dvec3,
 };
 use crate::inventory::equipment::EquipmentSlot;

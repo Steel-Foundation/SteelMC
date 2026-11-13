@@ -1,14 +1,96 @@
 //! `Player`'s overrides of the entity hooks.
 
 use super::*;
-use crate::entity::component::definition::{
-    BlockSpeedFactorCtx, CanFreezeCtx, CauseFallDamageCtx, CheckFallDamageCtx,
-    DoWaterSplashEffectCtx, MakeStuckInBlockCtx, UpdateSwimmingCtx,
-};
 use crate::entity::prelude::*;
 
 impl Player {
     pub(super) const ENTITY: EntityProps<Self> = EntityProps {
+        // `ServerPlayer.tick` never calls `super`: the player runs the living
+        // tick's pieces itself, around the client-driven movement.
+        tick: |player| player.tick_player(),
+        hurt: |player, world, source, amount| {
+            let Some(amount) = player.hurt_amount_before_super(world, source, amount) else {
+                return false;
+            };
+            (const { living_entity::entity_props::<Self>().hurt })(player, world, source, amount)
+        },
+        ride_tick: |player| {
+            player.ride_tick_around(|| {
+                (const { living_entity::entity_props::<Self>().ride_tick })(player);
+            });
+        },
+        remove_vehicle: |player| {
+            let old_vehicle = player.vehicle();
+            (const { living_entity::entity_props::<Self>().remove_vehicle })(player);
+            player.after_remove_vehicle(old_vehicle);
+        },
+        check_fall_damage: |player, vertical_movement, on_ground, on_state, pos, world| {
+            player.check_fall_damage_before_super(on_ground, on_state, pos, world);
+            (const { living_entity::entity_props::<Self>().check_fall_damage })(
+                player,
+                vertical_movement,
+                on_ground,
+                on_state,
+                pos,
+                world,
+            );
+        },
+        // `Player.causeFallDamage` before `super`: players who may fly take no
+        // fall damage; others count the distance fallen.
+        cause_fall_damage: |player, fall_distance, damage_modifier, source| {
+            if player.abilities.lock().may_fly {
+                return false;
+            }
+            if fall_distance >= 2.0 {
+                player.award_custom_stat_with_count(
+                    &vanilla_custom_stats::FALL_ONE_CM,
+                    (fall_distance * 100.0).round() as i32,
+                );
+            }
+            (const { living_entity::entity_props::<Self>().cause_fall_damage })(
+                player,
+                fall_distance,
+                damage_modifier,
+                source,
+            )
+        },
+        // `Player.getBlockSpeedFactor`: flying and gliding players keep full speed.
+        block_speed_factor: |player| {
+            if player.abilities.lock().flying || player.living().is_fall_flying() {
+                return 1.0;
+            }
+            (const { living_entity::entity_props::<Self>().block_speed_factor })(player)
+        },
+        // `Player.canFreeze`: spectators never freeze.
+        can_freeze: |player| {
+            !player.is_spectator()
+                && (const { living_entity::entity_props::<Self>().can_freeze })(player)
+        },
+        // `Player.doWaterSplashEffect`: spectators make no splash.
+        do_water_splash_effect: |player| {
+            if !player.is_spectator() {
+                (const { living_entity::entity_props::<Self>().do_water_splash_effect })(player);
+            }
+        },
+        // `Player.updateSwimming`: flying players never swim.
+        update_swimming: |player| {
+            if player.is_flying() {
+                player.set_shared_swimming(false);
+            } else {
+                (const { living_entity::entity_props::<Self>().update_swimming })(player);
+            }
+        },
+        // `Player.makeStuckInBlock`: flying players do not get stuck.
+        // TODO: Reset current impulse context once vehicle/player impulse contexts exist.
+        make_stuck_in_block: |player, state, speed_multiplier| {
+            if !player.is_flying() {
+                (const { living_entity::entity_props::<Self>().make_stuck_in_block })(
+                    player,
+                    state,
+                    speed_multiplier,
+                );
+            }
+        },
         dimension_changing_delay: |_| 10,
         on_explosion_hit: |player, explosion_source| {
             let from_wind_charge = explosion_source
@@ -66,22 +148,15 @@ impl Player {
         ..living_entity::entity_props()
     };
 
-    /// `Player.doWaterSplashEffect` before `super`: spectators make no splash.
-    pub(super) fn do_water_splash_effect_before_super(
-        &self,
-        _: &mut DoWaterSplashEffectCtx<'_>,
-    ) -> Flow {
-        if self.is_spectator() {
-            Flow::Stop
-        } else {
-            Flow::Continue
-        }
-    }
-
     /// `ServerPlayer.checkFallDamage` before `super`: the mace smash burst on
     /// landing.
-    pub(super) fn check_fall_damage_before_super(&self, ctx: &mut CheckFallDamageCtx<'_>) -> Flow {
-        let (on_ground, on_state, pos, world) = (ctx.on_ground, ctx.on_state, ctx.pos, ctx.world);
+    fn check_fall_damage_before_super(
+        &self,
+        on_ground: bool,
+        on_state: BlockStateId,
+        pos: BlockPos,
+        world: &Arc<World>,
+    ) {
         let fall_distance = self.fall_distance();
         if on_ground && fall_distance > 0.0 && self.spawn_extra_particles_on_fall() {
             let count = (50.0 * fall_distance).clamp(0.0, 200.0) as i32;
@@ -102,8 +177,6 @@ impl Player {
             );
             self.set_spawn_extra_particles_on_fall(false);
         }
-
-        Flow::Continue
     }
 
     /// Whether the next landing sends the mace smash burst.
@@ -154,16 +227,6 @@ impl Player {
             target.id(),
             protocol_look_at_anchor(target_anchor),
         ));
-    }
-
-    /// `Player.updateSwimming` before `super`: flying players never swim.
-    pub(super) fn update_swimming_before_super(&self, _: &mut UpdateSwimmingCtx<'_>) -> Flow {
-        if self.is_flying() {
-            self.set_shared_swimming(false);
-            Flow::Stop
-        } else {
-            Flow::Continue
-        }
     }
 
     /// `ServerPlayer.rideTick` around `super`: a player wanting off dismounts
@@ -239,25 +302,6 @@ impl Player {
         self.living().health() > 0.0 && !self.is_spectator() && !self.on_climbable()
     }
 
-    /// `Player.canFreeze` before `super`: spectators never freeze.
-    pub(super) fn can_freeze_before_super(&self, ctx: &mut CanFreezeCtx<'_>) -> Flow {
-        if self.is_spectator() {
-            ctx.result = false;
-            return Flow::Stop;
-        }
-        Flow::Continue
-    }
-
-    /// `Player.makeStuckInBlock` before `super`: flying players do not get stuck.
-    // TODO: Reset current impulse context once vehicle/player impulse contexts exist.
-    pub(super) fn make_stuck_in_block_before_super(&self, _: &mut MakeStuckInBlockCtx<'_>) -> Flow {
-        if self.is_flying() {
-            Flow::Stop
-        } else {
-            Flow::Continue
-        }
-    }
-
     fn entity_can_be_hit_by_projectile(&self) -> bool {
         self.living().health() > 0.0 && self.is_pickable()
     }
@@ -284,37 +328,6 @@ impl Player {
         }
 
         self.movement.lock().last_known_client_movement()
-    }
-
-    /// `Player.getBlockSpeedFactor` before `super`: flying ignores the block.
-    pub(super) fn block_speed_factor_before_super(
-        &self,
-        ctx: &mut BlockSpeedFactorCtx<'_>,
-    ) -> Flow {
-        if self.abilities.lock().flying || self.living().is_fall_flying() {
-            ctx.result = 1.0;
-            return Flow::Stop;
-        }
-        Flow::Continue
-    }
-
-    /// `Player.causeFallDamage` before `super`: players who may fly take no
-    /// fall damage; others count the distance fallen.
-    pub(super) fn cause_fall_damage_before_super(&self, ctx: &mut CauseFallDamageCtx<'_>) -> Flow {
-        let fall_distance = ctx.fall_distance;
-        if self.abilities.lock().may_fly {
-            ctx.result = false;
-            return Flow::Stop;
-        }
-
-        if fall_distance >= 2.0 {
-            self.award_custom_stat_with_count(
-                &vanilla_custom_stats::FALL_ONE_CM,
-                (fall_distance * 100.0).round() as i32,
-            );
-        }
-
-        Flow::Continue
     }
 
     /// Matches vanilla `Player.playSound`, which excludes the source player.

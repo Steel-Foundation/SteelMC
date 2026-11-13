@@ -1,5 +1,6 @@
 //! Vanilla `Minecart`: the rideable minecart.
 
+use crate::entity::entities::objects::vehicles::abstract_minecart::AbstractMinecartTable;
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::items::ItemRef;
@@ -11,8 +12,6 @@ use steel_utils::locks::CheckedMutex;
 use super::abstract_minecart::{self, AbstractMinecartBase, AbstractMinecartProps};
 use super::vehicle_entity::{self, HURT_DURATION, Parts as _};
 use crate::behavior::InteractionResult;
-use crate::entity::component::definition::{Definition, InteractCtx};
-use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityProps};
 use crate::player::Player;
@@ -26,7 +25,7 @@ const ACTIVATOR_RAIL_DAMAGE: f32 = 50.0;
 // TODO: implement getPickResult.
 #[entity_behavior(class = "Minecart")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, key = "steel:entity/minecart", constructors, definition = Self::define)]
+#[entity(hooks = Self::ENTITY, key = "steel:entity/minecart", constructors)]
 pub struct MinecartEntity {
     #[entity(base)]
     base: EntityBase,
@@ -45,15 +44,10 @@ impl vehicle_entity::Parts for MinecartEntity {
 }
 
 impl MinecartEntity {
-    /// The `Minecart.interact` stage, which replaces `Entity`'s.
-    pub const INTERACT: StageId = StageId("minecart.interact");
-
-    const ENTITY: EntityProps<Self> = abstract_minecart::entity_props();
-
-    const MINECART: AbstractMinecartProps<Self> = AbstractMinecartProps {
-        is_rideable: |_| true,
-        activate_minecart: Self::activate_minecart,
-        ..AbstractMinecartProps::new()
+    const ENTITY: EntityProps<Self> = EntityProps {
+        // `Minecart.interact` replaces `Entity`'s.
+        interact: |minecart, player, _, _| minecart.interact_minecart(player),
+        ..abstract_minecart::entity_props()
     };
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
@@ -61,18 +55,7 @@ impl MinecartEntity {
             base,
             entity_type,
             entity_data: CheckedMutex::new(MinecartEntityData::new()),
-            minecart: AbstractMinecartBase::new(&Self::MINECART),
-        }
-    }
-
-    fn define() -> Definition<Self> {
-        fn interact(minecart: &MinecartEntity, ctx: &mut InteractCtx<'_>) -> Flow {
-            ctx.result = minecart.interact_minecart(ctx.player);
-            Flow::Continue
-        }
-        Definition {
-            interact: Pipeline::new([Stage::new(MinecartEntity::INTERACT, interact)]),
-            ..abstract_minecart::definition()
+            minecart: AbstractMinecartBase::new(),
         }
     }
 
@@ -109,6 +92,14 @@ impl MinecartEntity {
             self.mark_hurt();
         }
     }
+}
+
+impl AbstractMinecartTable for MinecartEntity {
+    const MINECART: AbstractMinecartProps<Self> = AbstractMinecartProps {
+        is_rideable: |_| true,
+        activate_minecart: Self::activate_minecart,
+        ..AbstractMinecartProps::new()
+    };
 }
 
 #[cfg(test)]

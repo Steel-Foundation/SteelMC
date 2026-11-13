@@ -5,36 +5,36 @@ use super::*;
 /// Explosions, damage, kills and projectile hits.
 ///
 /// Implemented for every [`Entity`]; entity types change behavior through
-/// [`EntityHooks`], never by implementing this trait.
+/// [`EntityProps`], never by implementing this trait.
 pub trait EntityCombat: Entity {
-    /// Default for [`Entity::attackable`].
+    /// Default for [`EntityHooks::attackable`].
     fn attackable_default(&self) -> bool {
         true
     }
 
-    /// Default for [`Entity::skip_attack_interaction`].
+    /// Default for [`EntityHooks::skip_attack_interaction`].
     fn skip_attack_interaction_default(&self, _source: &SharedEntity) -> bool {
         false
     }
 
-    /// Default for [`Entity::explosion_indirect_source`].
+    /// Default for [`EntityHooks::explosion_indirect_source`].
     fn explosion_indirect_source_default(&self) -> Option<SharedEntity> {
         self.projectile_owner()
             .filter(|owner| owner.as_living_entity().is_some())
     }
 
-    /// Default for [`Entity::explosion_damage_origin`].
+    /// Default for [`EntityHooks::explosion_damage_origin`].
     fn explosion_damage_origin_default(&self) -> DVec3 {
         let position = self.position();
         DVec3::new(position.x, self.eye_y(), position.z)
     }
 
-    /// Default for [`Entity::ignore_explosion`].
+    /// Default for [`EntityHooks::ignore_explosion`].
     fn ignore_explosion_default(&self, _explosion: &dyn Explosion) -> bool {
         false
     }
 
-    /// Default for [`Entity::block_explosion_resistance`].
+    /// Default for [`EntityHooks::block_explosion_resistance`].
     #[expect(
         unused_variables,
         reason = "default implementation preserves resistance"
@@ -51,7 +51,7 @@ pub trait EntityCombat: Entity {
         resistance
     }
 
-    /// Default for [`Entity::should_block_explode`].
+    /// Default for [`EntityHooks::should_block_explode`].
     #[expect(unused_variables, reason = "default implementation allows destruction")]
     fn should_block_explode_default(
         &self,
@@ -64,10 +64,10 @@ pub trait EntityCombat: Entity {
         true
     }
 
-    /// Default for [`Entity::on_explosion_hit`].
+    /// Default for [`EntityHooks::on_explosion_hit`].
     fn on_explosion_hit_default(&self, _explosion_source: Option<&dyn Entity>) {}
 
-    /// Default for [`Entity::can_be_hit_by_projectile`].
+    /// Default for [`EntityHooks::can_be_hit_by_projectile`].
     fn can_be_hit_by_projectile_default(&self) -> bool {
         !self.is_removed() && self.is_pickable()
     }
@@ -84,7 +84,7 @@ pub trait EntityCombat: Entity {
         }
     }
 
-    /// Default for [`Entity::kill`].
+    /// Default for [`EntityHooks::kill`].
     fn kill_default(&self, _world: &World) {
         self.set_removed(RemovalReason::Killed);
         self.game_event(&vanilla_game_events::ENTITY_DIE);
@@ -102,7 +102,7 @@ pub trait EntityCombat: Entity {
                 && self.is_fall_damage_immune()
     }
 
-    /// Default for [`Entity::killed_entity`].
+    /// Default for [`EntityHooks::killed_entity`].
     fn killed_entity_default(
         &self,
         _world: &World,
@@ -112,7 +112,7 @@ pub trait EntityCombat: Entity {
         true
     }
 
-    /// Default for [`Entity::award_kill_score`].
+    /// Default for [`EntityHooks::award_kill_score`].
     fn award_kill_score_default(&self, _victim: &dyn Entity, _killing_blow: &DamageSource) {
         // TODO: Trigger advancement criterion ENTITY_KILLED_PLAYER if the victim is a player.
     }

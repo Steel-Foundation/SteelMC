@@ -12,8 +12,6 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{Downcast as _, DowncastType, Identifier};
 
 use crate::entity::ageable::Ageable;
-use crate::entity::component::definition::{FinalizeSpawn, FinalizeSpawnCtx};
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::{Entity, SharedEntity};
 use crate::world::World;
 
@@ -69,28 +67,20 @@ fn read_key(nbt: BorrowedNbtCompoundView<'_, '_>, name: &str) -> Option<Identifi
     Identifier::from_str(nbt.string(name)?.to_str().as_ref()).ok()
 }
 
-/// Stage picking the spawn variants.
-pub const PICK_SPAWN_VARIANTS: StageId = StageId("variant.pick_spawn_variants");
-
 /// `finalizeSpawn` before `super`: the variant for the spawn biome
 /// (`VariantUtils.selectVariantToSpawn`) and a random sound variant.
-#[must_use]
-pub fn pick_spawn_variants<E: Variants>() -> Stage<E, FinalizeSpawn> {
-    fn run<E: Variants>(entity: &E, ctx: &mut FinalizeSpawnCtx<'_>) -> Flow {
-        let biome = ctx.world.biome_at(entity.block_position());
-        let mut random = LegacyRandom::from_seed(rand::random());
-        let variant =
-            biome.and_then(|biome| E::variant_registry().select_spawn_variant(biome, &mut random));
-        let sound_variant = E::sound_variant_registry().pick_random(&mut random);
-        if let Some(variant) = variant {
-            entity.set_variant(variant);
-        }
-        if let Some(sound_variant) = sound_variant {
-            entity.set_sound_variant(sound_variant);
-        }
-        Flow::Continue
+pub fn pick_spawn_variants<E: Variants>(entity: &E, world: &World) {
+    let biome = world.biome_at(entity.block_position());
+    let mut random = LegacyRandom::from_seed(rand::random());
+    let variant =
+        biome.and_then(|biome| E::variant_registry().select_spawn_variant(biome, &mut random));
+    let sound_variant = E::sound_variant_registry().pick_random(&mut random);
+    if let Some(variant) = variant {
+        entity.set_variant(variant);
     }
-    Stage::new(PICK_SPAWN_VARIANTS, run::<E>)
+    if let Some(sound_variant) = sound_variant {
+        entity.set_sound_variant(sound_variant);
+    }
 }
 
 /// `getBreedOffspring`: a baby of the parent's type with either parent's variant.

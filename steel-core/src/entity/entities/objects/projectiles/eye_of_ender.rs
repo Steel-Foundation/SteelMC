@@ -18,8 +18,6 @@ use steel_registry::{level_events, sound_events, vanilla_entities, vanilla_items
 use steel_utils::BlockPos;
 use steel_utils::locks::CheckedMutex;
 
-use crate::entity::component::definition::Definition;
-use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::entities::ItemEntity;
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityProps, RemovalReason, next_entity_id};
@@ -40,7 +38,7 @@ struct Flight {
 #[entity_behavior(class = "EyeOfEnder")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_item, load = Self::load_item)]
-#[entity(key = "steel:entity/eye_of_ender", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/eye_of_ender", constructors)]
 pub struct EyeOfEnderEntity {
     #[entity(base)]
     base: EntityBase,
@@ -52,19 +50,11 @@ pub struct EyeOfEnderEntity {
 }
 
 impl EyeOfEnderEntity {
-    const TICK: StageId = StageId("eye_of_ender.tick");
-
-    fn define() -> Definition<Self> {
-        let definition = Definition::new();
-        Definition {
-            tick: definition
-                .tick
-                .then([Stage::effect(Self::TICK, Self::entity_tick)]),
-            ..definition
-        }
-    }
-
     const ENTITY: EntityProps<Self> = EntityProps {
+        tick: |eye| {
+            (const { EntityProps::<Self>::new().tick })(eye);
+            eye.entity_tick();
+        },
         attackable: |_| false,
         ..EntityProps::new()
     };

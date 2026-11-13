@@ -1,11 +1,13 @@
 //! Vanilla `AbstractCow`: what cows and mooshrooms share on top of `Animal`.
 
+use crate::player::Player;
 use steel_registry::cow_sound_variant::CowSoundVariant;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_cow_sound_variants, vanilla_items,
 };
+use steel_utils::types::InteractionHand;
 
 use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
 use crate::entity::ai::goal::{
@@ -13,31 +15,15 @@ use crate::entity::ai::goal::{
     TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::animal::{self, Parts};
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::MobInteractCtx;
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use crate::entity::{EntityProps, LivingProps, MobBase, MobProps};
 use crate::player::player_inventory::Prediction;
 
-/// Stage registering the cow goals.
-pub const GOALS: StageId = StageId("abstract_cow.goals");
-/// Stage milking the cow with a bucket in `mobInteract`.
-pub const MILK: StageId = StageId("abstract_cow.milk");
-
-/// `AbstractCow`'s chains: the animal chains with cow goals and milking.
-#[must_use]
-pub fn definition<E: Parts>() -> Definition<E> {
-    let mut definition = animal::definition::<E>();
-    // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
-    definition.construct = definition.construct.before(
-        animal::PATHFINDING_MALUS,
-        [Stage::effect(GOALS, register_goals)],
-    );
-    definition.mob_interact = definition
-        .mob_interact
-        .before(animal::MOB_INTERACT, [Stage::new(MILK, milk::<E>)]);
-    definition
+/// `AbstractCow`'s constructor chain: `Mob`'s constructor registers the cow
+/// goals before `Animal`'s sets its malus.
+pub fn construct(mob_base: &MobBase) {
+    register_goals(mob_base);
+    animal::construct(mob_base);
 }
 
 /// `AbstractCow.getSoundSet`: the classic cow sounds, unless a type picks others.
@@ -59,6 +45,12 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
 pub const fn mob_props<E: Parts>() -> MobProps<E> {
     MobProps {
         ambient_sound: |_| Some(CLASSIC_SOUNDS.ambient_sound),
+        mob_interact: |cow, player, hand| {
+            if let Some(result) = milk(cow, player, hand) {
+                return result;
+            }
+            (const { animal::mob_props::<E>().mob_interact })(cow, player, hand)
+        },
         ..animal::mob_props()
     }
 }
@@ -94,21 +86,20 @@ fn register_goals(mob_base: &MobBase) {
 }
 
 /// `AbstractCow.mobInteract` before `super`: an adult fills a bucket with milk.
-fn milk<E: Parts>(cow: &E, ctx: &mut MobInteractCtx<'_>) -> Flow {
-    let player = ctx.player;
+fn milk<E: Parts>(cow: &E, player: &Player, hand: InteractionHand) -> Option<InteractionResult> {
     let holds_bucket = player
         .inventory
         .lock()
-        .get_item_in_hand(ctx.hand)
+        .get_item_in_hand(hand)
         .is(&vanilla_items::BUCKET);
     if !holds_bucket || cow.animal().ageable().is_baby() {
-        return Flow::Continue;
+        return None;
     }
 
     player.play_sound(&sound_events::ENTITY_COW_MILK, 1.0, 1.0);
     let has_infinite_materials = player.living().has_infinite_materials();
     let overflow = player.inventory.lock().apply_filled_result(
-        ctx.hand,
+        hand,
         ITEM_BEHAVIORS.default_instance(&vanilla_items::MILK_BUCKET),
         has_infinite_materials,
         true,
@@ -116,6 +107,5 @@ fn milk<E: Parts>(cow: &E, ctx: &mut MobInteractCtx<'_>) -> Flow {
     if !overflow.is_empty() {
         let _ = player.drop_item(overflow, false, Prediction::Predicted);
     }
-    ctx.result = InteractionResult::Success;
-    Flow::Stop
+    Some(InteractionResult::Success)
 }

@@ -192,8 +192,9 @@ impl Living<'_> {
         self.is_invulnerable_to_base(source)
     }
 
-    /// Returns whether this living entity ignores a damage source.
-    pub(super) fn is_invulnerable_to_living(&self, source: &DamageSource) -> bool {
+    /// Default for [`Self::is_invulnerable_to`]. `world` is vanilla's explicit
+    /// `ServerLevel` argument, which the base check does not read.
+    pub(super) fn is_invulnerable_to_living(&self, _world: &World, source: &DamageSource) -> bool {
         self.default_is_invulnerable_to(source)
             || enchantment_helper::is_immune_to_damage(self, source)
     }

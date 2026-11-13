@@ -1,5 +1,7 @@
 use crate::entity::EntitySyncedData;
+use crate::entity::EntityTable;
 use crate::entity::LivingProps;
+use crate::entity::LivingTable;
 use crate::entity::WeakSelf;
 use crate::entity::component::Has;
 use std::{
@@ -24,7 +26,7 @@ use crate::entity::{
     EntityBase, LivingEntityBase,
     entities::{ChickenEntity, LeashFenceKnotEntity},
 };
-use crate::entity::{EntityHooks, EntityProps, living_entity};
+use crate::entity::{EntityProps, living_entity};
 use crate::inventory::equipment::EquipmentSlot;
 
 struct PairingTestEntity {
@@ -57,10 +59,7 @@ impl PairingTestEntity {
                 WeakSelf::detached(),
             ),
             entity_type,
-            living_base: LivingEntityBase::without_synced_data(
-                &vanilla_entities::PIG,
-                &PairingTestEntity::LIVING,
-            ),
+            living_base: LivingEntityBase::without_synced_data(&vanilla_entities::PIG),
             entity_data: CheckedMutex::new(LivingEntityData::new()),
             attributes,
             dirty_attributes: SyncMutex::new(Vec::new()),
@@ -121,21 +120,13 @@ impl Entity for PairingTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for PairingTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 impl PairingTestEntity {
-    const LIVING: LivingProps<Self> = LivingProps {
-        pack_syncable_attributes: Self::living_pack_syncable_attributes,
-        drain_dirty_syncable_attributes: Self::living_drain_dirty_syncable_attributes,
-        pack_all_equipment: Self::living_pack_all_equipment,
-        drain_dirty_equipment: Self::living_drain_dirty_equipment,
-        ..LivingProps::new()
-    };
-
     fn living_pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
         self.attributes.clone()
     }
@@ -151,6 +142,16 @@ impl PairingTestEntity {
     fn living_drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
         mem::take(&mut *self.dirty_equipment.lock())
     }
+}
+
+impl LivingTable for PairingTestEntity {
+    const LIVING: LivingProps<Self> = LivingProps {
+        pack_syncable_attributes: Self::living_pack_syncable_attributes,
+        drain_dirty_syncable_attributes: Self::living_drain_dirty_syncable_attributes,
+        pack_all_equipment: Self::living_pack_all_equipment,
+        drain_dirty_equipment: Self::living_drain_dirty_equipment,
+        ..LivingProps::new()
+    };
 }
 
 impl Has<LivingEntityBase> for PairingTestEntity {

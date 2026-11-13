@@ -1,25 +1,31 @@
-//! Per-type properties: the values and hooks vanilla subclasses override
-//! without calling `super`.
+//! Per-type properties: the methods of one vanilla class that its subclasses
+//! override.
 //!
 //! [`entity_props!`] declares a layer's hooks once and generates:
 //!
 //! - `XProps<E>`: one `fn(&E, ..)` per hook, typed for the concrete entity.
 //!   `XProps::new()` holds the layer's defaults; presets and entity types
 //!   override fields with struct-update syntax.
-//! - `XHooks`: the same hooks reached through the layer's view, implemented
-//!   once for every `XProps<E>`. It downcasts the view's entity to `E` (with
-//!   the keyed downcast) and falls back to the default on a mismatch, which
-//!   only a wiring bug can cause.
+//! - `XHooks`: the same hooks as methods of the entity. It is implemented
+//!   once, for every type with the layer's table trait, by reading the type's
+//!   `const` table: a call lands on an entry known at compile time, and a
+//!   table of another type does not compile. It also hands out the layer's
+//!   component, so a view can be built from `dyn Entity` without a keyed
+//!   lookup.
 //! - one method per hook on the view, so callers never see the plumbing.
 //!
-//! Each hook names the view method holding its default body.
+//! Each hook names the view method holding its default body. The layer
+//! declares the table trait itself (`trait XTable { const X: XProps<Self>; }`)
+//! and stores the `&dyn XHooks` its view dispatches through.
 
 /// Declares a layer's per-type hooks; see the [module docs](self).
 macro_rules! entity_props {
     (
         $(#[$meta:meta])*
         $vis:vis struct $props:ident<E>: $hooks:ident for $view:ident
-        where E: $parts:path => $view_fn:ident {
+        where E: $parts:path => $view_fn:ident,
+        table $table:ident::$table_const:ident,
+        component $component:ty {
             $(
                 $(#[$hook_meta:meta])*
                 fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty)? = $default:ident;
@@ -50,23 +56,28 @@ macro_rules! entity_props {
             }
         }
 
-        #[doc = concat!("[`", stringify!($props), "`] reached through [`", stringify!($view), "`].")]
+        #[doc = concat!(
+            "[`", stringify!($props), "`] as methods of the entity. Implemented for every [`",
+            stringify!($table), "`]; [`", stringify!($view), "`] dispatches through it."
+        )]
         $vis trait $hooks: Send + Sync {
+            /// The layer's component of this entity.
+            fn layer_component(&self) -> &$component;
+
             $(
                 $(#[$hook_meta])*
-                fn $name(&self, view: &$view<'_> $(, $arg: $ty)*) $(-> $ret)?;
+                fn $name(&self $(, $arg: $ty)*) $(-> $ret)?;
             )*
         }
 
-        impl<E: $parts + ::steel_utils::DowncastType> $hooks for $props<E> {
+        impl<T: $table> $hooks for T {
+            fn layer_component(&self) -> &$component {
+                $crate::entity::component::Has::<$component>::component(self)
+            }
+
             $(
-                fn $name(&self, view: &$view<'_> $(, $arg: $ty)*) $(-> $ret)? {
-                    match <dyn $crate::entity::Entity as ::steel_utils::Downcast>::downcast_ref::<E>(
-                        view.entity(),
-                    ) {
-                        Some(entity) => (self.$name)(entity $(, $arg)*),
-                        None => view.$default($($arg),*),
-                    }
+                fn $name(&self $(, $arg: $ty)*) $(-> $ret)? {
+                    (T::$table_const.$name)(self $(, $arg)*)
                 }
             )*
         }
@@ -74,22 +85,22 @@ macro_rules! entity_props {
         impl $view<'_> {
             $(
                 $crate::entity::component::props::entity_props!(
-                    @dispatch $(#[$hook_meta])* $name($($arg: $ty),*) $(-> $ret)?
+                    @dispatch $hooks $(#[$hook_meta])* $name($($arg: $ty),*) $(-> $ret)?
                 );
             )*
         }
     };
-    (@dispatch $(#[$hook_meta:meta])* $name:ident($($arg:ident: $ty:ty),*) -> $ret:ty) => {
+    (@dispatch $hooks:ident $(#[$hook_meta:meta])* $name:ident($($arg:ident: $ty:ty),*) -> $ret:ty) => {
         $(#[$hook_meta])*
         #[must_use]
         pub fn $name(&self $(, $arg: $ty)*) -> $ret {
-            self.hooks().$name(self $(, $arg)*)
+            <dyn $hooks>::$name(self.hooks $(, $arg)*)
         }
     };
-    (@dispatch $(#[$hook_meta:meta])* $name:ident($($arg:ident: $ty:ty),*)) => {
+    (@dispatch $hooks:ident $(#[$hook_meta:meta])* $name:ident($($arg:ident: $ty:ty),*)) => {
         $(#[$hook_meta])*
         pub fn $name(&self $(, $arg: $ty)*) {
-            self.hooks().$name(self $(, $arg)*);
+            <dyn $hooks>::$name(self.hooks $(, $arg)*);
         }
     };
 }

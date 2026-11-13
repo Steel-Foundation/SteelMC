@@ -2,6 +2,7 @@
 //!
 //! Groups the advancementPlayer, advancement progress and visibility evaluator
 
+use crate::entity::EntityHooks;
 pub mod progress;
 pub mod rewards;
 mod saving;

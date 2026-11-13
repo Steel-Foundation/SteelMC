@@ -252,6 +252,7 @@ impl Vegetation for SweetBerryBushBlock {}
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityTable;
     use crate::entity::WeakSelf;
     use std::sync::Weak;
 
@@ -259,13 +260,9 @@ mod tests {
     use steel_utils::locks::SyncMutex;
 
     use super::*;
-    use crate::entity::component::definition::{Definition, DefinitionEntries, HurtCtx};
-    use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
+    use crate::entity::EntityProps;
     use crate::entity::{EntityBase, LivingEntityBase};
-    use crate::entity::{EntityHooks, EntityProps};
-    use crate::test_support::DEFAULT_LIVING_HOOKS;
     use crate::test_support::test_world;
-    use std::sync::LazyLock;
     use steel_utils::{DowncastType as _, DowncastTypeKey, ErasedType};
 
     struct TestEntity {
@@ -282,10 +279,7 @@ mod tests {
             init_vanilla_registry();
             Self::new(
                 entity_type,
-                Some(LivingEntityBase::without_synced_data(
-                    entity_type,
-                    &DEFAULT_LIVING_HOOKS,
-                )),
+                Some(LivingEntityBase::without_synced_data(entity_type)),
             )
         }
 
@@ -337,17 +331,15 @@ mod tests {
         const ENTITY: EntityProps<Self> = EntityProps {
             uses_client_movement_packets: |entity| entity.uses_client_movement_packets,
             known_movement: |entity| entity.known_movement,
+            hurt: |entity, _, source, amount| {
+                entity
+                    .damage
+                    .lock()
+                    .push((source.damage_type.key.path.as_ref().to_owned(), amount));
+                true
+            },
             ..EntityProps::new()
         };
-
-        fn record_hurt(&self, ctx: &mut HurtCtx<'_>) -> Flow {
-            self.damage.lock().push((
-                ctx.source.damage_type.key.path.as_ref().to_owned(),
-                ctx.amount,
-            ));
-            ctx.result = true;
-            Flow::Continue
-        }
     }
 
     impl Entity for TestEntity {
@@ -359,23 +351,15 @@ mod tests {
             self.entity_type
         }
 
-        fn entity_hooks(&self) -> &'static dyn EntityHooks {
-            &Self::ENTITY
-        }
-
-        fn entity_definition(&self) -> &'static dyn DefinitionEntries {
-            static DEFINITION: LazyLock<Definition<TestEntity>> = LazyLock::new(|| Definition {
-                hurt: Pipeline::new([Stage::new(StageId("test.hurt"), TestEntity::record_hurt)]),
-                ..Definition::new()
-            });
-            &*DEFINITION
-        }
-
         fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
             (key == LivingEntityBase::TYPE_KEY)
                 .then_some(self.living_base.as_ref()?)
                 .map(|base| base as &dyn ErasedType)
         }
+    }
+
+    impl EntityTable for TestEntity {
+        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     fn state_with_age(age: u8) -> BlockStateId {

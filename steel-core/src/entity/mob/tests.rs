@@ -1,7 +1,8 @@
+use crate::entity::EntityTable;
 use crate::entity::LivingProps;
+use crate::entity::LivingTable;
+use crate::entity::MobTable;
 use crate::entity::WeakSelf;
-use crate::entity::component::definition::ControllingPassengerCtx;
-use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::prelude::*;
 use crate::test_support::synced_with_health;
 use std::sync::{Arc, Weak};
@@ -30,7 +31,6 @@ use crate::entity::ai::goal::{Goal, GoalControl, GoalControls, GoalSelector};
 use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
 use crate::entity::component::Has;
-use crate::entity::component::definition::{Definition, DefinitionEntries};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ChickenEntity;
 use crate::entity::entities::objects::items::ItemEntity;
@@ -38,7 +38,7 @@ use crate::entity::leash::{LEASH_ELASTIC_DISTANCE, LEASH_SNAP_DISTANCE, Leashabl
 use crate::entity::mob::pathfinder::LEASH_CLOSE_RANGE_WANTED_DISTANCE;
 use crate::entity::mob::{Mob, MobBase};
 use crate::entity::{Entity, EntityBase, LivingEntityBase, SharedEntity, next_entity_id};
-use crate::entity::{EntityDefaults, EntityHooks, EntityProps, living_entity};
+use crate::entity::{EntityHooks, EntityProps, living_entity};
 use crate::entity::{EntitySyncedData, MobProps, mob};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::ResetReason;
@@ -47,7 +47,6 @@ use crate::test_support::{
     fresh_test_world_with_dimension_type, insert_ready_full_chunk, test_world,
 };
 use crate::world::{LevelReader, World};
-use std::sync::LazyLock;
 use steel_registry::vanilla_dimension_types;
 use steel_registry::vanilla_entity_data::MobEntityData;
 use steel_utils::types::UpdateFlags;
@@ -179,11 +178,8 @@ impl DespawnTestMob {
         WeakSelf::build(|this| Self {
             base: EntityBase::new(id, position, entity_type.dimensions, Weak::new(), this),
             entity_type,
-            living_base: LivingEntityBase::without_synced_data(
-                entity_type,
-                &DespawnTestMob::LIVING,
-            ),
-            mob_base: MobBase::new(&DespawnTestMob::MOB, DespawnTestMob::definition()),
+            living_base: LivingEntityBase::without_synced_data(entity_type),
+            mob_base: MobBase::new(|_| {}),
             entity_data: CheckedMutex::new(synced_with_health(
                 MobEntityData::new(),
                 INITIAL_TEST_HEALTH,
@@ -213,8 +209,8 @@ impl DespawnTestMob {
                 this,
             ),
             entity_type,
-            living_base: LivingEntityBase::without_synced_data(entity_type, &HiddenTarget::LIVING),
-            mob_base: MobBase::new(&DespawnTestMob::MOB, DespawnTestMob::definition()),
+            living_base: LivingEntityBase::without_synced_data(entity_type),
+            mob_base: MobBase::new(|_| {}),
             entity_data: CheckedMutex::new(MobEntityData::new()),
             can_be_leashed: SyncMutex::new(true),
             nearest_player_distance_sqr: None,
@@ -235,7 +231,7 @@ impl DespawnTestMob {
 
 crate::entity::impl_test_downcast_type!(DespawnTestMob);
 
-impl DespawnTestMob {
+impl MobTable for DespawnTestMob {
     const MOB: MobProps<Self> = MobProps {
         is_pathfinder: |_| true,
         remove_when_far_away: |mob, _| mob.remove_when_far_away,
@@ -243,24 +239,11 @@ impl DespawnTestMob {
         mob_can_be_leashed: |mob| *mob.can_be_leashed.lock(),
         ..MobProps::new()
     };
-
-    fn definition() -> &'static Definition<Self> {
-        static DEFINITION: LazyLock<Definition<DespawnTestMob>> = LazyLock::new(|| Definition {
-            controlling_passenger: Pipeline::new([Stage::new(
-                StageId("test.controller"),
-                |mob: &DespawnTestMob, ctx: &mut ControllingPassengerCtx<'_>| {
-                    ctx.result = mob.controlling_passenger.lock().clone();
-                    Flow::Continue
-                },
-            )]),
-            ..mob::stages::definition()
-        });
-        &DEFINITION
-    }
 }
 
 impl DespawnTestMob {
     const ENTITY: EntityProps<Self> = EntityProps {
+        controlling_passenger: |mob| mob.controlling_passenger.lock().clone(),
         ..mob::entity_props()
     };
 }
@@ -285,19 +268,17 @@ impl Entity for DespawnTestMob {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
     }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
-    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
-        Self::definition()
-    }
 }
 
-impl DespawnTestMob {
+impl EntityTable for DespawnTestMob {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
+}
+
+impl LivingTable for DespawnTestMob {
     const LIVING: LivingProps<Self> = LivingProps {
-        ..LivingProps::new()
+        // Tests drive the goals and navigation themselves.
+        server_ai_step: |_| {},
+        ..mob::living_props()
     };
 }
 
@@ -323,10 +304,7 @@ impl HiddenTarget {
                 Weak::new(),
                 WeakSelf::detached(),
             ),
-            living_base: LivingEntityBase::without_synced_data(
-                &vanilla_entities::PIG,
-                &HiddenTarget::LIVING,
-            ),
+            living_base: LivingEntityBase::without_synced_data(&vanilla_entities::PIG),
             entity_data: CheckedMutex::new(synced_with_health(
                 LivingEntityData::new(),
                 INITIAL_TEST_HEALTH,
@@ -359,14 +337,17 @@ impl Entity for HiddenTarget {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::PIG
     }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
 }
 
-impl HiddenTarget {
-    const LIVING: LivingProps<Self> = LivingProps::new();
+impl EntityTable for HiddenTarget {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
+}
+
+impl LivingTable for HiddenTarget {
+    const LIVING: LivingProps<Self> = LivingProps {
+        can_be_seen_as_enemy: |_| false,
+        ..LivingProps::new()
+    };
 }
 
 impl Has<LivingEntityBase> for HiddenTarget {
@@ -411,15 +392,13 @@ impl Entity for MobControlVehicleEntity {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
     }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &EntityDefaults
-    }
 }
+
+impl EntityTable for MobControlVehicleEntity {}
 
 #[test]
 fn mob_base_uses_vanilla_fire_path_malus_defaults() {
-    let base = MobBase::new(&DespawnTestMob::MOB, DespawnTestMob::definition());
+    let base = MobBase::new(|_| {});
     let malus = base.pathfinding_malus().lock();
 
     assert_eq!(

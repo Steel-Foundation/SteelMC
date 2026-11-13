@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::EntityTable;
 use crate::entity::WeakSelf;
 use crate::entity::prelude::*;
 use std::{
@@ -16,13 +17,13 @@ use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
+use crate::entity::EntityHooks;
 use crate::entity::{
     DEATH_DURATION, EntityBase,
     damage::DamageSource,
     entities::{ChickenEntity, PigEntity},
     next_entity_id,
 };
-use crate::entity::{EntityDefaults, EntityHooks};
 use crate::player::{Player, ResetReason};
 use crate::test_support::{
     TestPlayerBuilder, fresh_loaded_test_world, fresh_test_world, insert_ready_full_chunk,
@@ -293,11 +294,9 @@ impl Entity for TrackerTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &EntityDefaults
-    }
 }
+
+impl EntityTable for TrackerTestEntity {}
 
 #[test]
 fn entity_breaker_is_available_to_chorus_flower_loot() {

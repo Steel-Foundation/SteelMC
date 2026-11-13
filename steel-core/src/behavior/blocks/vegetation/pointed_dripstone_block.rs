@@ -910,7 +910,9 @@ pub fn get_cauldron_fill_fluid_type(
 #[cfg(test)]
 mod tests {
 
+    use crate::entity::EntityTable;
     use crate::entity::WeakSelf;
+    use crate::entity::projectile::ProjectileTable;
     use crate::test_support::advance_test_game_time_to;
     use std::sync::Weak;
 
@@ -922,7 +924,6 @@ mod tests {
         entity_type::EntityTypeRef, init_vanilla_registry, vanilla_blocks, vanilla_damage_types,
     };
 
-    use crate::entity::{EntityDefaults, EntityHooks};
     use crate::{
         behavior::init_behaviors,
         entity::component::Has,
@@ -938,8 +939,6 @@ mod tests {
     }
 
     impl TestProjectile {
-        const PROJECTILE: ProjectileProps<Self> = ProjectileProps::new();
-
         fn new(entity_type: EntityTypeRef, velocity: DVec3) -> Self {
             let projectile = Self {
                 base: EntityBase::new(
@@ -949,12 +948,16 @@ mod tests {
                     Weak::new(),
                     WeakSelf::detached(),
                 ),
-                projectile_base: ProjectileBase::new(&Self::PROJECTILE),
+                projectile_base: ProjectileBase::new(),
                 entity_type,
             };
             projectile.set_velocity(velocity);
             projectile
         }
+    }
+
+    impl ProjectileTable for TestProjectile {
+        const PROJECTILE: ProjectileProps<Self> = ProjectileProps::new();
     }
 
     crate::entity::impl_test_downcast_type!(TestProjectile);
@@ -967,11 +970,9 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             self.entity_type
         }
-
-        fn entity_hooks(&self) -> &'static dyn EntityHooks {
-            &EntityDefaults
-        }
     }
+
+    impl EntityTable for TestProjectile {}
 
     impl Has<ProjectileBase> for TestProjectile {
         fn component(&self) -> &ProjectileBase {

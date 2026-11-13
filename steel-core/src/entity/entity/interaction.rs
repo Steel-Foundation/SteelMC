@@ -5,20 +5,20 @@ use super::*;
 /// Player interaction, leashes and shearing.
 ///
 /// Implemented for every [`Entity`]; entity types change behavior through
-/// [`EntityHooks`], never by implementing this trait.
+/// [`EntityProps`], never by implementing this trait.
 pub trait EntityInteraction: Entity {
     /// Returns whether vanilla lets this entity interact with its loaded level.
     fn can_interact_with_level(&self) -> bool {
         self.is_alive() && !self.is_removed() && !self.is_spectator()
     }
 
-    /// Default for [`Entity::notify_leash_holder`].
+    /// Default for [`EntityHooks::notify_leash_holder`].
     fn notify_leash_holder_default(&self, _leashable: &dyn Entity) {}
 
-    /// Default for [`Entity::notify_leashee_removed`].
+    /// Default for [`EntityHooks::notify_leashee_removed`].
     fn notify_leashee_removed_default(&self, _leashable: &dyn Entity) {}
 
-    /// Default for [`Entity::player_touch`].
+    /// Default for [`EntityHooks::player_touch`].
     fn player_touch_default(&self, _player: &Arc<Player>) {}
 
     /// Finds leashable mobs in vanilla's nearby leash scan whose holder is this entity.
@@ -87,7 +87,8 @@ pub trait EntityInteraction: Entity {
         }
 
         if let Some(world) = self.level() {
-            let sound_source = player.map_or_else(|| self.sound_source(), Entity::sound_source);
+            let sound_source =
+                player.map_or_else(|| self.sound_source(), EntityHooks::sound_source);
             world.play_sound(
                 &sound_events::ITEM_SHEARS_SNIP,
                 sound_source,
@@ -158,7 +159,7 @@ pub trait EntityInteraction: Entity {
         false
     }
 
-    /// Default for [`Entity::interact`]: leashing/unleashing, cutting leash
+    /// Default for [`EntityHooks::interact`]: leashing/unleashing, cutting leash
     /// connections, or shearing equipment with shears.
     fn interact_default(
         &self,
@@ -263,7 +264,7 @@ pub trait EntityInteraction: Entity {
         InteractionResult::SuccessServer
     }
 
-    /// Default for [`Entity::may_interact`].
+    /// Default for [`EntityHooks::may_interact`].
     fn may_interact_default(&self, _world: &World, _pos: BlockPos) -> bool {
         true
     }

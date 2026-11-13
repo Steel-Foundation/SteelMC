@@ -82,6 +82,7 @@ impl BlockBehavior for NetherPortalBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityTable;
     use crate::entity::WeakSelf;
     use std::sync::Weak;
 
@@ -91,7 +92,6 @@ mod tests {
 
     use super::*;
     use crate::entity::EntityBase;
-    use crate::entity::{EntityDefaults, EntityHooks};
 
     struct TestEntity {
         base: EntityBase,
@@ -121,11 +121,9 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM
         }
-
-        fn entity_hooks(&self) -> &'static dyn EntityHooks {
-            &EntityDefaults
-        }
     }
+
+    impl EntityTable for TestEntity {}
 
     #[test]
     fn nether_portal_marks_entity_inside_portal() {

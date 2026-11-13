@@ -70,7 +70,7 @@ impl EntityCollisionCandidates {
     /// Selects the exact-safe broad phase for an optional movement source.
     #[must_use]
     pub(crate) fn for_source(source: Option<&dyn Entity>) -> Self {
-        if source.is_some_and(Entity::is_hard_collision_relevant) {
+        if source.is_some_and(EntityHooks::is_hard_collision_relevant) {
             Self::All
         } else {
             Self::HardCollisionRelevant

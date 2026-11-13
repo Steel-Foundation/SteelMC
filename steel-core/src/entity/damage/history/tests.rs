@@ -1,3 +1,4 @@
+use crate::entity::EntityTable;
 use std::sync::{
     Arc, Weak,
     atomic::{AtomicBool, Ordering},
@@ -8,7 +9,6 @@ use steel_registry::{entity_type::EntityTypeRef, vanilla_damage_types, vanilla_e
 
 use super::{DamageHistory, DamageSource};
 use crate::entity::{Entity, EntityBase, SharedEntity};
-use crate::entity::{EntityDefaults, EntityHooks};
 use crate::test_support::{TestEntity, advance_test_game_time_to, fresh_test_world};
 
 struct ReentrantSourceEntity {
@@ -27,11 +27,9 @@ impl Entity for ReentrantSourceEntity {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity.entity_type()
     }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &EntityDefaults
-    }
 }
+
+impl EntityTable for ReentrantSourceEntity {}
 
 impl Drop for ReentrantSourceEntity {
     fn drop(&mut self) {

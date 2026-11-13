@@ -5,7 +5,7 @@ use super::*;
 /// Fire, lava damage, powder snow and freezing.
 ///
 /// Implemented for every [`Entity`]; entity types change behavior through
-/// [`EntityHooks`], never by implementing this trait.
+/// [`EntityProps`], never by implementing this trait.
 pub trait EntityFireAndFreeze: Entity {
     /// Returns whether this entity is currently inside powder snow.
     fn is_in_powder_snow(&self) -> bool {
@@ -49,17 +49,17 @@ pub trait EntityFireAndFreeze: Entity {
         self.sync_base_fire_freeze_entity_data();
     }
 
-    /// Default for [`Entity::fire_immune`].
+    /// Default for [`EntityHooks::fire_immune`].
     fn fire_immune_default(&self) -> bool {
         self.entity_type().fire_immune
     }
 
-    /// Default for [`Entity::fire_immune_ticks`].
+    /// Default for [`EntityHooks::fire_immune_ticks`].
     fn fire_immune_ticks_default(&self) -> i32 {
         0
     }
 
-    /// Default for [`Entity::should_play_lava_hurt_sound`].
+    /// Default for [`EntityHooks::should_play_lava_hurt_sound`].
     fn should_play_lava_hurt_sound_default(&self) -> bool {
         true
     }
@@ -89,12 +89,12 @@ pub trait EntityFireAndFreeze: Entity {
         }
     }
 
-    /// Default for [`Entity::remaining_fire_ticks_cap`].
+    /// Default for [`EntityHooks::remaining_fire_ticks_cap`].
     fn remaining_fire_ticks_cap_default(&self) -> Option<i32> {
         None
     }
 
-    /// Default for [`Entity::fire_ignite_extra_ticks`].
+    /// Default for [`EntityHooks::fire_ignite_extra_ticks`].
     fn fire_ignite_extra_ticks_default(&self) -> i32 {
         0
     }
@@ -114,7 +114,7 @@ pub trait EntityFireAndFreeze: Entity {
         self.base().is_freezing()
     }
 
-    /// Default for [`Entity::can_freeze`].
+    /// Default for [`EntityHooks::can_freeze`].
     fn can_freeze_default(&self) -> bool {
         !REGISTRY.entity_types.is_in_tag(
             self.entity_type(),

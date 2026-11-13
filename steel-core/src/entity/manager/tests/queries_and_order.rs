@@ -1,3 +1,4 @@
+use crate::entity::EntityTable;
 use crate::entity::WeakSelf;
 use std::{sync::atomic::AtomicUsize, thread};
 
@@ -47,10 +48,10 @@ impl Entity for SourceSelectiveHardCollisionTarget {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for SourceSelectiveHardCollisionTarget {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 struct BroadCollisionSourceEntity {
@@ -91,10 +92,10 @@ impl Entity for BroadCollisionSourceEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for BroadCollisionSourceEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 fn hard_collision_candidate_ids(manager: &WorldEntityManager, aabb: &WorldAabb) -> Vec<i32> {

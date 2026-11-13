@@ -208,6 +208,7 @@ mod tests {
     use crate::behavior::block::BlockBehavior;
     use crate::behavior::{BlockStateBehaviorExt, init_behaviors};
     use crate::block_entity::entities::{EndGatewayBlockEntity, EndPortalBlockEntity};
+    use crate::entity::EntityTable;
     use crate::entity::WeakSelf;
     use crate::entity::{Entity, EntityBase};
     use crate::portal::PortalKind;
@@ -222,7 +223,7 @@ mod tests {
     };
 
     use super::{EndGatewayBlock, EndPortalBlock};
-    use crate::entity::{EntityDefaults, EntityHooks};
+
     use steel_registry::vanilla_entities;
     use steel_utils::{BlockPos, Downcast as _};
 
@@ -277,11 +278,9 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM
         }
-
-        fn entity_hooks(&self) -> &'static dyn EntityHooks {
-            &EntityDefaults
-        }
     }
+
+    impl EntityTable for TestEntity {}
 
     #[test]
     fn end_portal_entity_inside_shape_uses_outline_shape() {

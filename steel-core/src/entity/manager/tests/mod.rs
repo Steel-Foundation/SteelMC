@@ -1,6 +1,7 @@
+use crate::entity::EntityTable;
 use crate::entity::WeakSelf;
 use std::sync::{
-    Arc, Barrier, LazyLock, Weak,
+    Arc, Barrier, Weak,
     atomic::{AtomicUsize, Ordering},
 };
 
@@ -12,8 +13,6 @@ use uuid::Uuid;
 use crate::entity::{Entity, EntityBase, EntityLevelCallback, InactiveEntityCallback};
 
 use super::*;
-use crate::entity::component::definition::{Definition, DefinitionEntries};
-use crate::entity::component::pipeline::{Stage, StageId};
 use crate::entity::{EntityHooks, EntityProps};
 
 struct ManagerTestEntity {
@@ -142,22 +141,13 @@ impl MovingTickTestEntity {
 crate::entity::impl_test_downcast_type!(MovingTickTestEntity);
 
 impl MovingTickTestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps::new();
-    const TICK: StageId = StageId("test.tick");
-
-    fn definition() -> &'static Definition<Self> {
-        static DEFINITION: LazyLock<Definition<MovingTickTestEntity>> = LazyLock::new(|| {
-            let definition = Definition::new();
-            Definition {
-                tick: definition.tick.then([Stage::effect(
-                    MovingTickTestEntity::TICK,
-                    MovingTickTestEntity::entity_tick,
-                )]),
-                ..definition
-            }
-        });
-        &DEFINITION
-    }
+    const ENTITY: EntityProps<Self> = EntityProps {
+        tick: |entity| {
+            (const { EntityProps::<Self>::new().tick })(entity);
+            entity.entity_tick();
+        },
+        ..EntityProps::new()
+    };
 
     fn entity_tick(&self) {
         if let Err(error) = self.try_set_position(self.tick_position) {
@@ -175,14 +165,10 @@ impl Entity for MovingTickTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
-    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
-        Self::definition()
-    }
+impl EntityTable for MovingTickTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 struct AddDuringTickTestEntity {
@@ -217,22 +203,13 @@ impl AddDuringTickTestEntity {
 crate::entity::impl_test_downcast_type!(AddDuringTickTestEntity);
 
 impl AddDuringTickTestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps::new();
-    const TICK: StageId = StageId("test.tick");
-
-    fn definition() -> &'static Definition<Self> {
-        static DEFINITION: LazyLock<Definition<AddDuringTickTestEntity>> = LazyLock::new(|| {
-            let definition = Definition::new();
-            Definition {
-                tick: definition.tick.then([Stage::effect(
-                    AddDuringTickTestEntity::TICK,
-                    AddDuringTickTestEntity::entity_tick,
-                )]),
-                ..definition
-            }
-        });
-        &DEFINITION
-    }
+    const ENTITY: EntityProps<Self> = EntityProps {
+        tick: |entity| {
+            (const { EntityProps::<Self>::new().tick })(entity);
+            entity.entity_tick();
+        },
+        ..EntityProps::new()
+    };
 
     fn entity_tick(&self) {
         let Some(entity) = self.entity_to_add.lock().take() else {
@@ -255,14 +232,10 @@ impl Entity for AddDuringTickTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
-    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
-        Self::definition()
-    }
+impl EntityTable for AddDuringTickTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 struct DespawnOnCheckTestEntity {
@@ -305,10 +278,10 @@ impl Entity for DespawnOnCheckTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for DespawnOnCheckTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 crate::entity::impl_test_downcast_type!(ManagerTestEntity);
@@ -329,10 +302,10 @@ impl Entity for ManagerTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
+impl EntityTable for ManagerTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 fn entity(id: i32, uuid_seed: u128, position: DVec3) -> SharedEntity {

@@ -17,9 +17,6 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::TickCtx;
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::potion_contents::to_runtime_instance;
 use crate::entity::prelude::*;
 use crate::entity::{
@@ -79,7 +76,7 @@ impl AreaEffectCloudState {
 #[entity_behavior(class = "AreaEffectCloud")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_cloud, load = Self::load_cloud)]
-#[entity(key = "steel:entity/area_effect_cloud", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/area_effect_cloud", constructors)]
 pub struct AreaEffectCloudEntity {
     #[entity(base)]
     base: EntityBase,
@@ -91,27 +88,15 @@ pub struct AreaEffectCloudEntity {
 }
 
 impl AreaEffectCloudEntity {
-    const TICK: StageId = StageId("area_effect_cloud.tick");
-
-    fn define() -> Definition<Self> {
-        let definition = Definition::new();
-        Definition {
-            tick: definition.tick.then([Stage::new(
-                Self::TICK,
-                |cloud: &Self, _ctx: &mut TickCtx<'_>| {
-                    // Clients draw the particles from the synced radius, waiting
-                    // flag and particle; only the server tick runs here.
-                    if let Some(world) = cloud.level() {
-                        cloud.server_tick(&world);
-                    }
-                    Flow::Continue
-                },
-            )]),
-            ..definition
-        }
-    }
-
     const ENTITY: EntityProps<Self> = EntityProps {
+        tick: |cloud| {
+            (const { EntityProps::<Self>::new().tick })(cloud);
+            // Clients draw the particles from the synced radius, waiting
+            // flag and particle; only the server tick runs here.
+            if let Some(world) = cloud.level() {
+                cloud.server_tick(&world);
+            }
+        },
         piston_push_reaction: |_| PushReaction::IgnoreEntity,
         dimensions_for_pose: |cloud, _| {
             EntityDimensions::with_default_eye_height(cloud.radius() * 2.0, HEIGHT)

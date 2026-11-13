@@ -13,7 +13,6 @@ pub mod throwable;
 pub mod throwable_item;
 pub mod thrown_potion;
 
-use crate::entity::component::definition::TickCtx;
 use crate::entity::prelude::*;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
@@ -35,11 +34,6 @@ use uuid::Uuid;
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::enchantment_helper;
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::{
-    CanHitEntityCtx, HurtCtx, OnHitBlockCtx, OnHitCtx, Tick,
-};
-use crate::entity::component::pipeline::{Flow, Inner, Pipeline, Stage, StageId};
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::damage::DamageSource;
@@ -158,14 +152,12 @@ struct ProjectileState {
 /// and has left its owner.
 pub struct ProjectileBase {
     state: CheckedMutex<ProjectileState>,
-    hooks: &'static dyn ProjectileHooks,
 }
 
 impl ProjectileBase {
-    /// A projectile with no owner that has not been shot, with `hooks`
-    /// describing its type.
+    /// A projectile with no owner that has not been shot.
     #[must_use]
-    pub const fn new(hooks: &'static dyn ProjectileHooks) -> Self {
+    pub const fn new() -> Self {
         Self {
             state: CheckedMutex::new(ProjectileState {
                 owner: None,
@@ -174,8 +166,13 @@ impl ProjectileBase {
                 has_been_shot: false,
                 last_deflected_by: None,
             }),
-            hooks,
         }
+    }
+}
+
+impl Default for ProjectileBase {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -209,13 +206,23 @@ impl Component for ProjectileBase {
 entity_props! {
     /// Per-type properties of a vanilla `Projectile`.
     pub struct ProjectileProps<E>: ProjectileHooks for Projectile
-    where E: Parts => projectile {
+    where E: Parts => projectile,
+    table ProjectileTable::PROJECTILE,
+    component ProjectileBase {
         /// `Projectile.onDeflection`.
         fn on_deflection(by_attack: bool) = on_deflection_default;
         /// `Projectile.shouldBounceOnWorldBorder`.
         fn should_bounce_on_world_border() -> bool = should_bounce_on_world_border_default;
         /// `Projectile.calculateHorizontalHurtKnockbackDirection`.
         fn horizontal_hurt_knockback_direction(hurt_entity: &Living<'_>, source: &DamageSource) -> (f64, f64) = horizontal_hurt_knockback_direction_default;
+        /// `Projectile.onHit`: dispatches to the entity or block hit.
+        fn on_hit(hit: &ProjectileHit) = on_hit_base;
+        /// `Projectile.onHitEntity`.
+        fn on_hit_entity(target: &SharedEntity, location: DVec3) = on_hit_entity_default;
+        /// `Projectile.onHitBlock`: the block's projectile reaction.
+        fn on_hit_block(hit: &ClipHitResult) = on_hit_block_base;
+        /// `Projectile.canHitEntity`.
+        fn can_hit_entity(target: &dyn Entity) -> bool = can_hit_entity_base;
     }
 }
 
@@ -224,24 +231,28 @@ entity_props! {
 pub struct Projectile<'a> {
     entity: &'a (dyn Entity + 'static),
     base: &'a ProjectileBase,
+    hooks: &'a dyn ProjectileHooks,
 }
 
 impl<'a> Projectile<'a> {
     /// Pairs a concrete projectile with its state.
     #[must_use]
-    pub fn new<E: Entity + Has<ProjectileBase>>(entity: &'a E) -> Self {
+    pub fn new<E: ProjectileTable>(entity: &'a E) -> Self {
         Self {
             entity,
             base: entity.get::<ProjectileBase>(),
+            hooks: entity,
         }
     }
 
     /// Returns `entity` as a projectile, if it is one.
     #[must_use]
     pub fn of(entity: &'a (dyn Entity + 'static)) -> Option<Self> {
+        let hooks = entity.as_projectile_hooks()?;
         Some(Self {
             entity,
-            base: entity.query::<ProjectileBase>()?,
+            base: hooks.layer_component(),
+            hooks,
         })
     }
 
@@ -249,10 +260,6 @@ impl<'a> Projectile<'a> {
     #[must_use]
     pub const fn entity(&self) -> &'a (dyn Entity + 'static) {
         self.entity
-    }
-
-    fn hooks(&self) -> &'static dyn ProjectileHooks {
-        self.base.hooks
     }
 }
 
@@ -264,62 +271,21 @@ impl Deref for Projectile<'_> {
     }
 }
 
-/// A concrete vanilla `Projectile` type.
-pub trait Parts: Entity + Has<ProjectileBase> {
+/// A concrete projectile type: its component and its hook table.
+pub trait ProjectileTable: Entity + Has<ProjectileBase> + Sized {
+    /// The `Projectile` hooks this type runs, built on its layer's preset.
+    const PROJECTILE: ProjectileProps<Self>;
+}
+
+/// Every projectile type; keeps generic bounds short.
+pub trait Parts: ProjectileTable {
     /// Returns this entity as a projectile.
     fn projectile(&self) -> Projectile<'_>;
 }
 
-impl<E: Entity + Has<ProjectileBase>> Parts for E {
+impl<E: ProjectileTable> Parts for E {
     fn projectile(&self) -> Projectile<'_> {
         Projectile::new(self)
-    }
-}
-
-/// The `Projectile.tick` stage, around `Entity`'s.
-pub const TICK: StageId = StageId("projectile.tick");
-/// The `Projectile.onHit` stage: dispatches to the entity or block hit.
-pub const ON_HIT: StageId = StageId("projectile.on_hit");
-/// The `Projectile.onHitBlock` stage: the block's projectile reaction.
-pub const ON_HIT_BLOCK: StageId = StageId("projectile.on_hit_block");
-/// The `Projectile.hurtServer` stage; `Entity`'s is abstract.
-pub const HURT: StageId = StageId("projectile.hurt");
-/// The `Projectile.canHitEntity` stage.
-pub const CAN_HIT_ENTITY: StageId = StageId("projectile.can_hit_entity");
-
-/// Vanilla `Projectile`'s chains, on `Entity`'s.
-#[must_use]
-pub fn definition<E: Parts>() -> Definition<E> {
-    fn tick<E: Parts>(projectile: &E, ctx: &mut TickCtx<'_>, inner: Inner<'_, E, Tick>) -> Flow {
-        projectile
-            .projectile()
-            .tick_around(|| inner(projectile, ctx))
-    }
-    fn on_hit<E: Parts>(projectile: &E, ctx: &mut OnHitCtx<'_>) -> Flow {
-        projectile.projectile().on_hit_base(ctx.hit);
-        Flow::Continue
-    }
-    fn on_hit_block<E: Parts>(projectile: &E, ctx: &mut OnHitBlockCtx<'_>) -> Flow {
-        projectile.projectile().on_hit_block_base(ctx.hit);
-        Flow::Continue
-    }
-    fn can_hit_entity<E: Parts>(projectile: &E, ctx: &mut CanHitEntityCtx<'_>) -> Flow {
-        ctx.result = projectile.projectile().can_hit_entity_base(ctx.target);
-        Flow::Continue
-    }
-    let definition = Definition::new();
-    Definition {
-        tick: definition.tick.around(TICK, tick::<E>),
-        on_hit: Pipeline::new([Stage::new(ON_HIT, on_hit::<E>)]),
-        // Vanilla's `Projectile.onHitEntity` does nothing.
-        on_hit_entity: Pipeline::new([]),
-        on_hit_block: Pipeline::new([Stage::new(ON_HIT_BLOCK, on_hit_block::<E>)]),
-        can_hit_entity: Pipeline::new([Stage::new(CAN_HIT_ENTITY, can_hit_entity::<E>)]),
-        hurt: Pipeline::new([Stage::new(HURT, |projectile: &E, ctx: &mut HurtCtx<'_>| {
-            ctx.result = projectile.projectile().hurt_server(ctx.source);
-            Flow::Continue
-        })]),
-        ..definition
     }
 }
 
@@ -327,6 +293,12 @@ pub fn definition<E: Parts>() -> Definition<E> {
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
+        tick: |projectile| {
+            projectile
+                .projectile()
+                .tick_around(|| (const { EntityProps::<E>::new().tick })(projectile));
+        },
+        hurt: |projectile, _, source, _| projectile.projectile().hurt_server(source),
         is_pickable: |projectile| {
             REGISTRY.entity_types.is_in_tag(
                 projectile.entity_type(),
@@ -497,34 +469,14 @@ impl<'a> Projectile<'a> {
         (movement.x, movement.z)
     }
 
-    /// `Projectile.canHitEntity`: runs this type's pipeline.
-    #[must_use]
-    pub fn can_hit_entity(&self, target: &dyn Entity) -> bool {
-        self.entity
-            .entity_definition()
-            .can_hit_entity(self.entity, target)
-    }
+    /// Default for [`Self::on_hit_entity`]: vanilla's does nothing.
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; projectile types override it through `ProjectileProps`"
+    )]
+    const fn on_hit_entity_default(&self, _target: &SharedEntity, _location: DVec3) {}
 
-    /// `Projectile.onHit`: runs this type's pipeline.
-    pub fn on_hit(&self, hit: &ProjectileHit) {
-        self.entity.entity_definition().on_hit(self.entity, hit);
-    }
-
-    /// `Projectile.onHitEntity`: runs this type's pipeline.
-    pub fn on_hit_entity(&self, target: &SharedEntity, location: DVec3) {
-        self.entity
-            .entity_definition()
-            .on_hit_entity(self.entity, target, location);
-    }
-
-    /// `Projectile.onHitBlock`: runs this type's pipeline.
-    pub fn on_hit_block(&self, hit: &ClipHitResult) {
-        self.entity
-            .entity_definition()
-            .on_hit_block(self.entity, hit);
-    }
-
-    /// The `Projectile.canHitEntity` base stage.
+    /// Default for [`Self::can_hit_entity`].
     fn can_hit_entity_base(&self, target: &dyn Entity) -> bool {
         if !target.can_be_hit_by_projectile() {
             return false;
@@ -706,7 +658,7 @@ impl<'a> Projectile<'a> {
         ProjectileDeflection::None
     }
 
-    /// The `Projectile.onHit` base stage.
+    /// Default for [`Self::on_hit`].
     fn on_hit_base(&self, hit: &ProjectileHit) {
         let world = self.level();
         match hit {
@@ -748,7 +700,7 @@ impl<'a> Projectile<'a> {
         }
     }
 
-    /// The `Projectile.onHitBlock` base stage.
+    /// Default for [`Self::on_hit_block`].
     fn on_hit_block_base(&self, hit: &ClipHitResult) {
         let Some(world) = self.level() else {
             return;
@@ -796,7 +748,7 @@ impl<'a> Projectile<'a> {
 
     /// `Projectile.tick` around its `super.tick()`: announces the shot once
     /// and tracks leaving the owner.
-    fn tick_around(&self, base_tick: impl FnOnce() -> Flow) -> Flow {
+    fn tick_around(&self, base_tick: impl FnOnce()) {
         if !self.has_been_shot() {
             let owner = self.owner();
             self.game_event_with_source_entity(
@@ -806,9 +758,8 @@ impl<'a> Projectile<'a> {
             self.state().has_been_shot = true;
         }
         self.check_left_owner();
-        let flow = base_tick();
+        base_tick();
         self.state().left_owner_checked = false;
-        flow
     }
 }
 

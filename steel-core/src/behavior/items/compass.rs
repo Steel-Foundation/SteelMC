@@ -124,7 +124,6 @@ mod tests {
     use super::*;
 
     use crate::behavior::init_behaviors;
-    use crate::entity::Entity;
     use crate::entity::prelude::*;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
     use glam::DVec3;

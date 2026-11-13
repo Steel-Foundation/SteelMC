@@ -6,7 +6,7 @@ use steel_utils::nbt::NbtValueInput as _;
 /// Saving to NBT, spawn data and dropping items.
 ///
 /// Implemented for every [`Entity`]; entity types change behavior through
-/// [`EntityHooks`], never by implementing this trait.
+/// [`EntityProps`], never by implementing this trait.
 pub trait EntityPersistence: Entity {
     /// Returns the vanilla-shaped entity NBT used by command predicates.
     ///
@@ -154,7 +154,7 @@ pub trait EntityPersistence: Entity {
         Some(entity)
     }
 
-    /// Default for [`Entity::apply_implicit_item_components`].
+    /// Default for [`EntityHooks::apply_implicit_item_components`].
     fn apply_implicit_item_components_default(&self, _item_stack: &ItemStack) {}
 
     /// Spawn-item data is merged into the entity's current save state before it

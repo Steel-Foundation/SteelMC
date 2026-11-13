@@ -1,5 +1,6 @@
 //! Fixtures for benchmarking the world entity manager without a live world.
 
+use crate::entity::EntityTable;
 use std::sync::Weak;
 
 use glam::DVec3;
@@ -11,7 +12,6 @@ use uuid::Uuid;
 use crate::entity::{Entity, EntityBase, SharedEntity, WeakSelf};
 
 use super::{EntityOwnership, EntityVisibility, WorldEntityManager};
-use crate::entity::{EntityDefaults, EntityHooks};
 
 const CHUNK_WIDTH: i32 = 16;
 const ENTITY_Y: f64 = 64.0;
@@ -50,11 +50,9 @@ impl Entity for BenchEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &EntityDefaults
-    }
 }
+
+impl EntityTable for BenchEntity {}
 
 /// Builds a manager with `count` ticking, non-riding entities in one chunk.
 ///

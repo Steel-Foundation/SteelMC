@@ -1,5 +1,6 @@
 //! Vanilla `MinecartSpawner`: a minecart carrying a mob spawner.
 
+use crate::entity::entities::objects::vehicles::abstract_minecart::AbstractMinecartTable;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
@@ -13,8 +14,6 @@ use steel_utils::locks::CheckedMutex;
 use super::abstract_minecart::{self, AbstractMinecartBase, AbstractMinecartProps};
 use super::vehicle_entity;
 use crate::block_entity::entities::BaseSpawner;
-use crate::entity::component::definition::{Definition, TickCtx};
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityProps};
 
@@ -23,7 +22,7 @@ use crate::entity::{EntityBase, EntityProps};
 #[entity_behavior(class = "MinecartSpawner")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_spawner, load = Self::load_spawner)]
-#[entity(key = "steel:entity/spawner_minecart", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/spawner_minecart", constructors)]
 pub struct SpawnerMinecartEntity {
     #[entity(base)]
     base: EntityBase,
@@ -43,14 +42,12 @@ impl vehicle_entity::Parts for SpawnerMinecartEntity {
 }
 
 impl SpawnerMinecartEntity {
-    /// The `MinecartSpawner.tick` stage, after `AbstractMinecart`'s.
-    pub const TICK: StageId = StageId("spawner_minecart.tick");
-
-    const ENTITY: EntityProps<Self> = abstract_minecart::entity_props();
-
-    const MINECART: AbstractMinecartProps<Self> = AbstractMinecartProps {
-        default_display_block_state: |_| vanilla_blocks::SPAWNER.default_state(),
-        ..AbstractMinecartProps::new()
+    const ENTITY: EntityProps<Self> = EntityProps {
+        tick: |minecart| {
+            (const { abstract_minecart::entity_props::<Self>().tick })(minecart);
+            minecart.tick_spawner();
+        },
+        ..abstract_minecart::entity_props()
     };
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
@@ -58,22 +55,8 @@ impl SpawnerMinecartEntity {
             base,
             entity_type,
             entity_data: CheckedMutex::new(SpawnerMinecartEntityData::new()),
-            minecart: AbstractMinecartBase::new(&Self::MINECART),
+            minecart: AbstractMinecartBase::new(),
             spawner: BaseSpawner::new(),
-        }
-    }
-
-    fn define() -> Definition<Self> {
-        fn tick(minecart: &SpawnerMinecartEntity, _ctx: &mut TickCtx<'_>) -> Flow {
-            minecart.tick_spawner();
-            Flow::Continue
-        }
-        let definition = abstract_minecart::definition();
-        Definition {
-            tick: definition
-                .tick
-                .after(abstract_minecart::TICK, [Stage::new(Self::TICK, tick)]),
-            ..definition
         }
     }
 
@@ -100,6 +83,13 @@ impl SpawnerMinecartEntity {
     fn load_spawner(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.spawner.load(&nbt);
     }
+}
+
+impl AbstractMinecartTable for SpawnerMinecartEntity {
+    const MINECART: AbstractMinecartProps<Self> = AbstractMinecartProps {
+        default_display_block_state: |_| vanilla_blocks::SPAWNER.default_state(),
+        ..AbstractMinecartProps::new()
+    };
 }
 
 #[cfg(test)]

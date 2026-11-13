@@ -75,6 +75,7 @@ impl ItemBehavior for BottleItem {
 #[cfg(test)]
 mod tests {
 
+    use crate::entity::EntityHooks;
     use std::sync::Arc;
 
     use glam::DVec3;

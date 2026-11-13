@@ -5,9 +5,9 @@ use super::*;
 /// The blocks an entity stands on and moves through, and their effects.
 ///
 /// Implemented for every [`Entity`]; entity types change behavior through
-/// [`EntityHooks`], never by implementing this trait.
+/// [`EntityProps`], never by implementing this trait.
 pub trait EntityBlockContact: Entity {
-    /// Default for [`Entity::is_ignoring_block_triggers`].
+    /// Default for [`EntityHooks::is_ignoring_block_triggers`].
     fn is_ignoring_block_triggers_default(&self) -> bool {
         false
     }
@@ -17,7 +17,7 @@ pub trait EntityBlockContact: Entity {
         self.base().supporting_block() == Some(pos)
     }
 
-    /// Default for [`Entity::apply_inside_block_effect`].
+    /// Default for [`EntityHooks::apply_inside_block_effect`].
     fn apply_inside_block_effect_default(&self, effect_type: InsideBlockEffectType) {
         let fire_ignite_extra_ticks = if matches!(effect_type, InsideBlockEffectType::FireIgnite) {
             self.fire_ignite_extra_ticks()
@@ -35,17 +35,17 @@ pub trait EntityBlockContact: Entity {
         self.sync_base_fire_freeze_entity_data();
     }
 
-    /// Default for [`Entity::is_stepping_carefully`].
+    /// Default for [`EntityHooks::is_stepping_carefully`].
     fn is_stepping_carefully_default(&self) -> bool {
         self.is_suppressing_bounce()
     }
 
-    /// Default for [`Entity::on_climbable`].
+    /// Default for [`EntityHooks::on_climbable`].
     fn on_climbable_default(&self) -> bool {
         false
     }
 
-    /// Default for [`Entity::make_stuck_in_block`].
+    /// Default for [`EntityHooks::make_stuck_in_block`].
     fn make_stuck_in_block_default(&self, _state: BlockStateId, speed_multiplier: DVec3) {
         self.base().make_stuck_in_block(speed_multiplier);
     }
@@ -108,7 +108,7 @@ pub trait EntityBlockContact: Entity {
         ))
     }
 
-    /// Default for [`Entity::block_pos_below_that_affects_movement`].
+    /// Default for [`EntityHooks::block_pos_below_that_affects_movement`].
     fn block_pos_below_that_affects_movement_default(&self) -> Option<BlockPos> {
         self.on_pos(0.500_001)
     }
@@ -118,7 +118,7 @@ pub trait EntityBlockContact: Entity {
         self.on_pos(0.2)
     }
 
-    /// Default for [`Entity::block_speed_factor`].
+    /// Default for [`EntityHooks::block_speed_factor`].
     #[expect(
         clippy::float_cmp,
         reason = "intentional: vanilla checks static block speed factors against 1.0"
@@ -187,7 +187,7 @@ pub trait EntityBlockContact: Entity {
             .jump_factor
     }
 
-    /// Default for [`Entity::is_on_rails`].
+    /// Default for [`EntityHooks::is_on_rails`].
     fn is_on_rails_default(&self) -> bool {
         false
     }
@@ -198,7 +198,7 @@ pub trait EntityBlockContact: Entity {
         block.has_tag(&BlockTag::CLIMBABLE) || block == &vanilla_blocks::POWDER_SNOW
     }
 
-    /// Default for [`Entity::movement_emission`].
+    /// Default for [`EntityHooks::movement_emission`].
     fn movement_emission_default(&self) -> EntityMovementEmission {
         EntityMovementEmission::All
     }

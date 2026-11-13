@@ -59,7 +59,7 @@ fn a_brown_mooshroom_remembers_one_flower_for_suspicious_stew() {
         .inventory
         .lock()
         .set_selected_item(ItemStack::new(&vanilla_items::BOWL));
-    mooshroom
+    let _ = mooshroom
         .mob()
         .mob_interact(&player, InteractionHand::MainHand);
     let stew = held(&player);

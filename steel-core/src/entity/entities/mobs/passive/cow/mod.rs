@@ -2,6 +2,8 @@
 
 pub mod abstract_cow;
 
+use crate::entity::LivingTable;
+use crate::entity::MobTable;
 use crate::entity::prelude::*;
 
 use steel_macros::entity_behavior;
@@ -15,9 +17,8 @@ use steel_registry::{REGISTRY, RegistryReference};
 use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::entity::ageable::{self, Age, AgeableProps};
+use crate::entity::ageable::{Age, AgeableProps};
 use crate::entity::animal::{self, Breeding, BreedingProps};
-use crate::entity::component::definition::Definition;
 use crate::entity::variant::{self, Variants};
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityProps, LivingEntityBase, LivingProps, MobBase, MobProps,
@@ -28,7 +29,7 @@ use crate::entity::{
 #[entity_behavior(class = "Cow", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = variant::save, load = variant::load)]
-#[entity(key = "steel:entity/cow", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/cow", constructors)]
 pub struct CowEntity {
     #[entity(base)]
     base: EntityBase,
@@ -56,39 +57,42 @@ impl CowEntity {
         breed_offspring: variant::breed_offspring::<Self>,
     };
     const BREEDING: BreedingProps = BreedingProps::new(abstract_cow::is_food);
-    const LIVING: LivingProps<Self> = LivingProps {
-        hurt_sound: |cow, _| Some(cow.sound_variant().hurt_sound),
-        death_sound: |cow| Some(cow.sound_variant().death_sound),
-        ..abstract_cow::living_props()
-    };
-    const MOB: MobProps<Self> = MobProps {
-        ambient_sound: |cow| Some(cow.sound_variant().ambient_sound),
-        ..abstract_cow::mob_props()
-    };
-    /// Vanilla `Cow`: the `AbstractCow` chains plus variant selection before
-    /// `AgeableMob.finalizeSpawn`.
-    fn define() -> Definition<Self> {
-        let mut definition = abstract_cow::definition::<Self>();
-        definition.finalize_spawn = definition.finalize_spawn.before(
-            ageable::FINALIZE_SPAWN,
-            [variant::pick_spawn_variants::<Self>()],
-        );
-        definition
-    }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = CowEntityData::new();
-        let living_base = LivingEntityBase::new(entity_type, &Self::LIVING, &mut entity_data);
+        let living_base = LivingEntityBase::new(entity_type, &mut entity_data);
         Self {
             base,
             entity_type,
             living_base,
-            mob_base: MobBase::new(&Self::MOB, Self::definition()),
+            mob_base: MobBase::new(abstract_cow::construct),
             age: Age::new(&Self::AGEABLE),
             breeding: Breeding::new(&Self::BREEDING),
             entity_data: CheckedMutex::new(entity_data),
         }
     }
+}
+
+impl MobTable for CowEntity {
+    const MOB: MobProps<Self> = MobProps {
+        ambient_sound: |cow| Some(cow.sound_variant().ambient_sound),
+        // `Cow.finalizeSpawn` picks the variants before `super`.
+        finalize_spawn: |cow, world, reason, group_data| {
+            variant::pick_spawn_variants(cow, world);
+            (const { abstract_cow::mob_props::<Self>().finalize_spawn })(
+                cow, world, reason, group_data,
+            )
+        },
+        ..abstract_cow::mob_props()
+    };
+}
+
+impl LivingTable for CowEntity {
+    const LIVING: LivingProps<Self> = LivingProps {
+        hurt_sound: |cow, _| Some(cow.sound_variant().hurt_sound),
+        death_sound: |cow| Some(cow.sound_variant().death_sound),
+        ..abstract_cow::living_props()
+    };
 }
 
 impl Variants for CowEntity {

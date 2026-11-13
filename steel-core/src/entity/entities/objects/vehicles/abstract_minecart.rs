@@ -28,10 +28,6 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, WorldAa
 use super::minecart_behavior::MinecartBehavior;
 use super::vehicle_entity::{self, Vehicle};
 use crate::block_entity::block_state_nbt;
-use crate::entity::component::definition::{
-    self as entity_definition, BlockSpeedFactorCtx, Definition,
-};
-use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::dismount_helper;
@@ -71,20 +67,24 @@ struct MinecartState {
 /// on rails and whether its movement-facing rotation is flipped.
 pub struct AbstractMinecartBase {
     state: CheckedMutex<MinecartState>,
-    hooks: &'static dyn AbstractMinecartHooks,
 }
 
 impl AbstractMinecartBase {
-    /// A minecart off rails, with `hooks` describing its type.
+    /// A minecart off rails.
     #[must_use]
-    pub const fn new(hooks: &'static dyn AbstractMinecartHooks) -> Self {
+    pub const fn new() -> Self {
         Self {
             state: CheckedMutex::new(MinecartState {
                 on_rails: false,
                 flipped: false,
             }),
-            hooks,
         }
+    }
+}
+
+impl Default for AbstractMinecartBase {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -96,9 +96,8 @@ unsafe impl DowncastType for AbstractMinecartBase {
 
 impl Component for AbstractMinecartBase {
     fn save(&self, owner: &dyn Entity, nbt: &mut NbtCompound) {
-        let minecart = AbstractMinecart {
-            entity: owner,
-            base: self,
+        let Some(minecart) = AbstractMinecart::of(owner) else {
+            return;
         };
         if let Some(display_state) = minecart.custom_display_block() {
             nbt.insert(
@@ -115,9 +114,8 @@ impl Component for AbstractMinecartBase {
     }
 
     fn load(&self, owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        let minecart = AbstractMinecart {
-            entity: owner,
-            base: self,
+        let Some(minecart) = AbstractMinecart::of(owner) else {
+            return;
         };
         minecart
             .set_custom_display_block(nbt.compound("DisplayState").and_then(block_state_nbt::load));
@@ -136,7 +134,9 @@ impl Component for AbstractMinecartBase {
 entity_props! {
     /// Per-type properties of a vanilla `AbstractMinecart`.
     pub struct AbstractMinecartProps<E>: AbstractMinecartHooks for AbstractMinecart
-    where E: Parts => abstract_minecart {
+    where E: Parts => abstract_minecart,
+    table AbstractMinecartTable::MINECART,
+    component AbstractMinecartBase {
         /// `AbstractMinecart.isRideable`: whether it picks up mobs it runs into.
         fn is_rideable() -> bool = is_rideable_default;
         /// `AbstractMinecart.isFurnace`.
@@ -157,24 +157,28 @@ entity_props! {
 pub struct AbstractMinecart<'a> {
     entity: &'a dyn Entity,
     base: &'a AbstractMinecartBase,
+    hooks: &'a dyn AbstractMinecartHooks,
 }
 
 impl<'a> AbstractMinecart<'a> {
     /// Pairs a concrete minecart with its state.
     #[must_use]
-    pub fn new<E: Entity + Has<AbstractMinecartBase>>(entity: &'a E) -> Self {
+    pub fn new<E: AbstractMinecartTable>(entity: &'a E) -> Self {
         Self {
             entity,
             base: entity.get::<AbstractMinecartBase>(),
+            hooks: entity,
         }
     }
 
     /// Returns `entity` as a minecart, if it is one.
     #[must_use]
     pub fn of(entity: &'a dyn Entity) -> Option<Self> {
+        let hooks = entity.as_abstract_minecart_hooks()?;
         Some(Self {
             entity,
-            base: entity.query::<AbstractMinecartBase>()?,
+            base: hooks.layer_component(),
+            hooks,
         })
     }
 
@@ -182,10 +186,6 @@ impl<'a> AbstractMinecart<'a> {
     #[must_use]
     pub const fn entity(&self) -> &'a dyn Entity {
         self.entity
-    }
-
-    fn hooks(&self) -> &'static dyn AbstractMinecartHooks {
-        self.base.hooks
     }
 
     /// Returns this minecart as a vehicle.
@@ -203,49 +203,23 @@ impl Deref for AbstractMinecart<'_> {
     }
 }
 
-/// A concrete vanilla `AbstractMinecart` type.
-pub trait Parts: vehicle_entity::Parts + Has<AbstractMinecartBase> + DowncastType {
+/// A concrete minecart type: its component and its hook table.
+pub trait AbstractMinecartTable:
+    vehicle_entity::Parts + Has<AbstractMinecartBase> + DowncastType + Sized
+{
+    /// The `AbstractMinecart` hooks this type runs.
+    const MINECART: AbstractMinecartProps<Self>;
+}
+
+/// Every minecart type; keeps generic bounds short.
+pub trait Parts: AbstractMinecartTable {
     /// Returns this entity as a minecart.
     fn abstract_minecart(&self) -> AbstractMinecart<'_>;
 }
 
-impl<E: vehicle_entity::Parts + Has<AbstractMinecartBase> + DowncastType> Parts for E {
+impl<E: AbstractMinecartTable> Parts for E {
     fn abstract_minecart(&self) -> AbstractMinecart<'_> {
         AbstractMinecart::new(self)
-    }
-}
-
-/// The `AbstractMinecart.tick` stage, which replaces `Entity`'s.
-pub const TICK: StageId = StageId("abstract_minecart.tick");
-/// The `AbstractMinecart.getBlockSpeedFactor` stage: full speed on rails,
-/// before `Entity`'s.
-pub const BLOCK_SPEED_FACTOR: StageId = StageId("abstract_minecart.block_speed_factor");
-
-/// Vanilla `AbstractMinecart`'s chains, on `VehicleEntity`'s.
-#[must_use]
-pub fn definition<E: Parts>() -> Definition<E> {
-    fn tick<E: Parts>(minecart: &E) {
-        minecart.abstract_minecart().tick();
-    }
-    fn block_speed_factor<E: Parts>(minecart: &E, ctx: &mut BlockSpeedFactorCtx<'_>) -> Flow {
-        let Some(world) = minecart.level() else {
-            return Flow::Continue;
-        };
-        let state = world.get_block_state(minecart.block_position());
-        if !state.get_block().has_tag(&BlockTag::RAILS) {
-            return Flow::Continue;
-        }
-        ctx.result = 1.0;
-        Flow::Stop
-    }
-    let definition = vehicle_entity::definition::<E>();
-    Definition {
-        tick: Pipeline::new([Stage::effect(TICK, tick::<E>)]),
-        block_speed_factor: definition.block_speed_factor.before(
-            entity_definition::BLOCK_SPEED_FACTOR,
-            [Stage::new(BLOCK_SPEED_FACTOR, block_speed_factor::<E>)],
-        ),
-        ..definition
     }
 }
 
@@ -253,6 +227,23 @@ pub fn definition<E: Parts>() -> Definition<E> {
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
+        // `AbstractMinecart.tick` never calls `Entity`'s.
+        tick: |minecart| minecart.abstract_minecart().tick(),
+        // `AbstractMinecart.getBlockSpeedFactor`: full speed on rails, else
+        // `super`'s.
+        block_speed_factor: |minecart| {
+            let on_rails = minecart.level().is_some_and(|world| {
+                world
+                    .get_block_state(minecart.block_position())
+                    .get_block()
+                    .has_tag(&BlockTag::RAILS)
+            });
+            if on_rails {
+                1.0
+            } else {
+                (const { vehicle_entity::entity_props::<E>().block_speed_factor })(minecart)
+            }
+        },
         blocks_building: |_| true,
         movement_emission: |_| EntityMovementEmission::Events,
         can_collide_with: |minecart, other| {

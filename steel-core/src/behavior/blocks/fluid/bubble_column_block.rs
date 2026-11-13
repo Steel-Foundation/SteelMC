@@ -236,6 +236,7 @@ impl BlockBehavior for BubbleColumnBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityTable;
     use crate::entity::WeakSelf;
     use std::sync::Weak;
 
@@ -248,7 +249,7 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::entity::EntityBase;
-    use crate::entity::{EntityHooks, EntityProps};
+    use crate::entity::EntityProps;
     use crate::test_support::TestLevel;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -311,10 +312,10 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM
         }
+    }
 
-        fn entity_hooks(&self) -> &'static dyn EntityHooks {
-            &Self::ENTITY
-        }
+    impl EntityTable for RecordingEntity {
+        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     fn bubble_column_state(drag_down: bool) -> BlockStateId {

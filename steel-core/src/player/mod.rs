@@ -6,7 +6,6 @@ pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
 pub mod connection;
 mod container_counter;
-mod definition;
 mod entity_hooks;
 mod entity_state;
 /// Experience System
@@ -32,8 +31,6 @@ pub mod stats_counter;
 mod tick_state;
 mod title;
 
-use crate::entity::component::definition::HurtCtx;
-use crate::entity::component::pipeline::Flow;
 use crate::entity::prelude::*;
 use crate::player::player_inventory::Prediction;
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
@@ -185,7 +182,7 @@ use crate::world::World;
 /// A struct representing a player.
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, entity_type = &vanilla_entities::PLAYER)]
-#[entity(key = "steel:entity/player", definition = Self::define)]
+#[entity(key = "steel:entity/player")]
 pub struct Player {
     /// The player's game profile.
     pub gameprofile: GameProfile,
@@ -639,7 +636,6 @@ impl Player {
         let living_base = LivingEntityBase::with_equipment(
             &vanilla_entities::PLAYER,
             equipment,
-            &Self::LIVING,
             &mut entity_data,
         );
         Self::apply_client_information_to_entity_data(&mut entity_data, &client_information);
@@ -764,7 +760,7 @@ impl Player {
             1,
         );
 
-        if Entity::is_alive(self) {
+        if EntityHooks::is_alive(self) {
             stats.increment(
                 vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::TIME_SINCE_DEATH),
                 1,
@@ -806,26 +802,27 @@ impl Player {
 
     /// `Player.hurtServer` before `super`: player-specific guards and the
     /// difficulty scaling of `amount`.
-    pub(super) fn hurt_before_super(&self, ctx: &mut HurtCtx<'_>) -> Flow {
-        let (world, source) = (ctx.world, ctx.source);
-        let mut amount = ctx.amount;
+    /// Returns the scaled amount, or `None` when the player takes no damage.
+    fn hurt_amount_before_super(
+        &self,
+        world: &World,
+        source: &DamageSource,
+        mut amount: f32,
+    ) -> Option<f32> {
         if self.living().is_invulnerable_to(world, source) {
-            ctx.result = false;
-            return Flow::Stop;
+            return None;
         }
 
         {
             let abilities = self.abilities.lock();
             if abilities.invulnerable && !source.bypasses_invulnerability() {
-                ctx.result = false;
-                return Flow::Stop;
+                return None;
             }
         }
 
         // TODO: reset player noActionTime and remove shoulder entities.
         if self.living().health() <= 0.0 {
-            ctx.result = false;
-            return Flow::Stop;
+            return None;
         }
 
         // Difficulty scaling (vanilla: Player.hurtServer)
@@ -846,12 +843,10 @@ impl Player {
         }
 
         if amount == 0.0 {
-            ctx.result = false;
-            return Flow::Stop;
+            return None;
         }
 
-        ctx.amount = amount;
-        Flow::Continue
+        Some(amount)
     }
 
     fn disabled_damage_game_rule(source: &DamageSource) -> Option<GameRuleRef<bool>> {

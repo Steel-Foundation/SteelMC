@@ -1,8 +1,12 @@
 //! Vanilla Mooshroom (`MushroomCow`): mushroom stew, suspicious stew from fed
 //! flowers, and shearing into a cow.
 
+use crate::entity::LivingTable;
+use crate::entity::MobTable;
 use crate::entity::prelude::*;
+use crate::player::Player;
 use std::sync::Arc;
+use steel_utils::types::InteractionHand;
 
 use glam::DVec3;
 use rand::RngExt as _;
@@ -33,9 +37,6 @@ use steel_utils::{BlockPos, Downcast as _};
 use crate::behavior::InteractionResult;
 use crate::entity::ageable::{Age, Ageable, AgeableProps};
 use crate::entity::animal::{self, Breeding, BreedingProps};
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::MobInteractCtx;
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::entities::ItemEntity;
 use crate::entity::entities::mobs::passive::cow::abstract_cow;
 use crate::entity::shearable::{self, Shearable};
@@ -54,7 +55,7 @@ const MUTATE_CHANCE: u32 = 1024;
 #[entity_behavior(class = "MushroomCow", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_mooshroom, load = Self::load_mooshroom)]
-#[entity(key = "steel:entity/mooshroom", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/mooshroom", constructors)]
 pub struct MushroomCowEntity {
     #[entity(base)]
     base: EntityBase,
@@ -90,40 +91,15 @@ impl MushroomCowEntity {
         breed_offspring: Self::breed_offspring,
     };
     const BREEDING: BreedingProps = BreedingProps::new(abstract_cow::is_food);
-    const LIVING: LivingProps<Self> = LivingProps {
-        ..abstract_cow::living_props()
-    };
-    const MOB: MobProps<Self> = MobProps {
-        walk_target_value: Self::mob_walk_target_value,
-        ..abstract_cow::mob_props()
-    };
-    const BOWL: StageId = StageId("mooshroom.bowl");
-    const SHEARS: StageId = StageId("mooshroom.shears");
-    const FLOWER: StageId = StageId("mooshroom.flower");
-
-    /// Vanilla `MushroomCow`: the `AbstractCow` chains with stew, shearing and
-    /// flower feeding ahead of the milk bucket.
-    fn define() -> Definition<Self> {
-        let mut definition = abstract_cow::definition::<Self>();
-        definition.mob_interact = definition.mob_interact.before(
-            abstract_cow::MILK,
-            [
-                Stage::new(Self::BOWL, Self::fill_bowl),
-                Stage::new(Self::SHEARS, Self::shear_by_player),
-                Stage::new(Self::FLOWER, Self::eat_flower),
-            ],
-        );
-        definition
-    }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = MooshroomEntityData::new();
-        let living_base = LivingEntityBase::new(entity_type, &Self::LIVING, &mut entity_data);
+        let living_base = LivingEntityBase::new(entity_type, &mut entity_data);
         Self {
             base,
             entity_type,
             living_base,
-            mob_base: MobBase::new(&Self::MOB, Self::definition()),
+            mob_base: MobBase::new(abstract_cow::construct),
             age: Age::new(&Self::AGEABLE),
             breeding: Breeding::new(&Self::BREEDING),
             stew_effects: CheckedMutex::new(None),
@@ -166,15 +142,14 @@ impl MushroomCowEntity {
 
     /// `MushroomCow.mobInteract`: an adult fills a bowl with stew, suspicious
     /// if it ate a flower.
-    fn fill_bowl(&self, ctx: &mut MobInteractCtx<'_>) -> Flow {
-        let player = ctx.player;
+    fn fill_bowl(&self, player: &Player, hand: InteractionHand) -> Option<InteractionResult> {
         let holds_bowl = player
             .inventory
             .lock()
-            .get_item_in_hand(ctx.hand)
+            .get_item_in_hand(hand)
             .is(&vanilla_items::BOWL);
         if !holds_bowl || self.animal().ageable().is_baby() {
-            return Flow::Continue;
+            return None;
         }
 
         let stew_effects = self.stew_effects.lock().take();
@@ -190,47 +165,40 @@ impl MushroomCowEntity {
             ),
         };
         let has_infinite_materials = player.living().has_infinite_materials();
-        let overflow = player.inventory.lock().apply_filled_result(
-            ctx.hand,
-            stew,
-            has_infinite_materials,
-            false,
-        );
+        let overflow =
+            player
+                .inventory
+                .lock()
+                .apply_filled_result(hand, stew, has_infinite_materials, false);
         if !overflow.is_empty() {
             let _ = player.drop_item(overflow, false, Prediction::Predicted);
         }
         self.play_sound(sound, 1.0, 1.0);
-        ctx.result = InteractionResult::Success;
-        Flow::Stop
+        Some(InteractionResult::Success)
     }
 
     /// `MushroomCow.mobInteract`: shears on an adult turn it into a cow.
-    fn shear_by_player(&self, ctx: &mut MobInteractCtx<'_>) -> Flow {
-        let holds_shears = ctx
-            .player
+    fn shear_by_player(&self, player: &Player, hand: InteractionHand) -> Option<InteractionResult> {
+        let holds_shears = player
             .inventory
             .lock()
-            .get_item_in_hand(ctx.hand)
+            .get_item_in_hand(hand)
             .is(&vanilla_items::SHEARS);
         if !holds_shears || !self.ready_for_shearing() {
-            return Flow::Continue;
+            return None;
         }
-        shearable::shear_by_player(self, ctx.player, ctx.hand);
-        ctx.result = InteractionResult::Success;
-        Flow::Stop
+        shearable::shear_by_player(self, player, hand);
+        Some(InteractionResult::Success)
     }
 
     /// `MushroomCow.mobInteract`: an adult brown mooshroom eats a flower whose
     /// effects its next stew carries, but only one at a time.
-    fn eat_flower(&self, ctx: &mut MobInteractCtx<'_>) -> Flow {
+    fn eat_flower(&self, player: &Player, hand: InteractionHand) -> Option<InteractionResult> {
         if self.variant() != MooshroomVariant::Brown || self.animal().ageable().is_baby() {
-            return Flow::Continue;
+            return None;
         }
-        let player = ctx.player;
-        let held = player.inventory.lock().get_item_in_hand(ctx.hand).item();
-        let Some(effects) = vanilla_suspicious_stew_effects::from_item(held) else {
-            return Flow::Continue;
-        };
+        let held = player.inventory.lock().get_item_in_hand(hand).item();
+        let effects = vanilla_suspicious_stew_effects::from_item(held)?;
 
         let center = DVec3::new(
             self.position().x,
@@ -254,7 +222,7 @@ impl MushroomCowEntity {
             player
                 .inventory
                 .lock()
-                .mutate_item_in_hand(ctx.hand, |item| item.consume_one(has_infinite_materials));
+                .mutate_item_in_hand(hand, |item| item.consume_one(has_infinite_materials));
             if let Some(world) = world {
                 world.send_particles_with_motion(
                     ParticleData::new(
@@ -271,8 +239,7 @@ impl MushroomCowEntity {
             *self.stew_effects.lock() = Some(effects);
             self.play_sound(&sound_events::ENTITY_MOOSHROOM_EAT, 2.0, 1.0);
         }
-        ctx.result = InteractionResult::Success;
-        Flow::Stop
+        Some(InteractionResult::Success)
     }
 
     /// `MushroomCow.getBreedOffspring`: either parent's variant, and rarely the
@@ -305,6 +272,33 @@ impl MushroomCowEntity {
         }
         Some(offspring)
     }
+}
+
+impl MobTable for MushroomCowEntity {
+    const MOB: MobProps<Self> = MobProps {
+        walk_target_value: Self::mob_walk_target_value,
+        // `MushroomCow.mobInteract`: stew, shearing and flower feeding come
+        // before `super`'s milk bucket.
+        mob_interact: |mooshroom, player, hand| {
+            if let Some(result) = mooshroom.fill_bowl(player, hand) {
+                return result;
+            }
+            if let Some(result) = mooshroom.shear_by_player(player, hand) {
+                return result;
+            }
+            if let Some(result) = mooshroom.eat_flower(player, hand) {
+                return result;
+            }
+            (const { abstract_cow::mob_props::<Self>().mob_interact })(mooshroom, player, hand)
+        },
+        ..abstract_cow::mob_props()
+    };
+}
+
+impl LivingTable for MushroomCowEntity {
+    const LIVING: LivingProps<Self> = LivingProps {
+        ..abstract_cow::living_props()
+    };
 }
 
 impl Shearable for MushroomCowEntity {

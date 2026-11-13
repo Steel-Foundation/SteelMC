@@ -17,8 +17,6 @@ struct StructOptions {
     key: Option<LitStr>,
     /// Generates `new` and `from_saved` around the type's `from_base`.
     constructors: bool,
-    /// The mob definition builder; generates a cached `definition()`.
-    definition: Option<Expr>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -75,10 +73,9 @@ fn expand(input: TokenStream) -> syn::Result<TokenStream> {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let base_ident = &base.ident;
 
-    let hooks = options.hooks.as_ref().map_or_else(
-        || quote! { &crate::entity::EntityDefaults },
-        |hooks| quote! { &#hooks },
-    );
+    let table = options.hooks.as_ref().map(|hooks| {
+        quote! { const ENTITY: crate::entity::EntityProps<Self> = #hooks; }
+    });
 
     let synced_data = synced.map(|field| {
         let ident = &field.ident;
@@ -118,26 +115,20 @@ fn expand(input: TokenStream) -> syn::Result<TokenStream> {
                 #entity_type
             }
 
-            fn entity_hooks(&self) -> &'static dyn crate::entity::EntityHooks {
-                #hooks
-            }
-
-            fn entity_definition(
-                &self,
-            ) -> &'static dyn crate::entity::component::definition::DefinitionEntries {
-                Self::definition()
-            }
-
             #synced_data
             #erased_component
             #persistence
+        }
+
+        impl #impl_generics crate::entity::EntityTable for #name #ty_generics #where_clause {
+            #table
         }
 
         #(#has_impls)*
     })
 }
 
-/// The downcast impl, constructors and cached definition the struct options ask for.
+/// The downcast impl and constructors the struct options ask for.
 fn extra_tokens(input: &DeriveInput, options: &StructOptions) -> syn::Result<TokenStream> {
     let name = &input.ident;
     if !input.generics.params.is_empty() {
@@ -201,54 +192,18 @@ fn extra_tokens(input: &DeriveInput, options: &StructOptions) -> syn::Result<Tok
         }
     });
 
-    let Some(define) = options.definition.as_ref() else {
-        return Err(syn::Error::new(
-            name.span(),
-            "missing `#[entity(definition = ..)]`: name the type's `define` or the \
-             layer definition it uses unchanged, such as `Definition::new`",
-        ));
-    };
-    // A nested `static` cannot name `Self`.
-    let define = replace_self(quote! { #define }, name);
-    let definition = quote! {
-        /// This type's pipelines, built once.
-        fn definition() -> &'static crate::entity::component::definition::Definition<Self> {
-            static DEFINITION: ::std::sync::LazyLock<
-                crate::entity::component::definition::Definition<#name>,
-            > = ::std::sync::LazyLock::new(#define);
-            &DEFINITION
+    let inherent = constructors.map(|constructors| {
+        quote! {
+            impl #name {
+                #constructors
+            }
         }
-    };
-
-    let inherent = quote! {
-        impl #name {
-            #constructors
-            #definition
-        }
-    };
+    });
 
     Ok(quote! {
         #downcast
         #inherent
     })
-}
-
-/// Replaces every `Self` in `tokens` with `name`.
-fn replace_self(tokens: TokenStream, name: &Ident) -> TokenStream {
-    use proc_macro2::{Group, TokenTree};
-    tokens
-        .into_iter()
-        .map(|token| match token {
-            TokenTree::Ident(ident) if ident == "Self" => TokenTree::Ident(name.clone()),
-            TokenTree::Group(group) => {
-                let mut replaced =
-                    Group::new(group.delimiter(), replace_self(group.stream(), name));
-                replaced.set_span(group.span());
-                TokenTree::Group(replaced)
-            }
-            other => other,
-        })
-        .collect()
 }
 
 fn entity_type_tokens(
@@ -348,12 +303,10 @@ fn struct_options(input: &DeriveInput) -> syn::Result<StructOptions> {
                 options.key = Some(meta.value()?.parse()?);
             } else if meta.path.is_ident("constructors") {
                 options.constructors = true;
-            } else if meta.path.is_ident("definition") {
-                options.definition = Some(meta.value()?.parse()?);
             } else {
                 return Err(meta.error(
-                    "expected `hooks`, `entity_type`, `save`, `load`, `no_save_data`, `key`, \
-                     `constructors` or `definition`",
+                    "expected `hooks`, `entity_type`, `save`, `load`, `no_save_data`, `key` or \
+                     `constructors`",
                 ));
             }
             Ok(())

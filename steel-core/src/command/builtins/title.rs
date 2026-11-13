@@ -1,5 +1,6 @@
 //! Vanilla title display command.
 
+use crate::entity::EntityHooks;
 use std::sync::Arc;
 
 use steel_utils::{Identifier, translations};
@@ -13,7 +14,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::{entity::Entity as _, player::Player};
+use crate::player::Player;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("title"), |_| command())

@@ -1,14 +1,10 @@
 //! Vanilla `ThrowableProjectile`: projectiles moved by gravity and drag.
 
-use crate::entity::component::definition::TickCtx;
 use crate::entity::prelude::*;
 use steel_registry::{blocks::block_state_ext::BlockStateExt as _, vanilla_blocks};
 use steel_utils::{BlockPos, axis::Axis};
 
 use crate::behavior::BLOCK_BEHAVIORS;
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::Tick;
-use crate::entity::component::pipeline::{Flow, Inner, StageId};
 use crate::entity::projectile::{self, Parts, Projectile};
 use crate::entity::{EntityProps, InsideBlockEffectCollector, RemovalReason};
 
@@ -21,29 +17,18 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         default_gravity: |_| 0.03,
         air_drag: |_| 0.99,
         can_use_portal: |_, _| true,
+        tick: |entity| {
+            tick(&entity.projectile(), || {
+                (const { projectile::entity_props::<E>().tick })(entity);
+            });
+        },
         ..projectile::entity_props()
-    }
-}
-
-/// The `ThrowableProjectile.tick` stage, around `Projectile`'s.
-pub const TICK: StageId = StageId("throwable.tick");
-
-/// Vanilla `ThrowableProjectile`'s chains, on `Projectile`'s.
-#[must_use]
-pub fn definition<E: Parts>() -> Definition<E> {
-    fn run<E: Parts>(entity: &E, ctx: &mut TickCtx<'_>, inner: Inner<'_, E, Tick>) -> Flow {
-        tick(&entity.projectile(), || inner(entity, ctx))
-    }
-    let definition = projectile::definition();
-    Definition {
-        tick: definition.tick.around(TICK, run::<E>),
-        ..definition
     }
 }
 
 /// `ThrowableProjectile.tick`: applies gravity and drag, moves to the first
 /// hit on the move vector, runs `super.tick()`, then resolves the hit.
-fn tick(projectile: &Projectile<'_>, super_tick: impl FnOnce() -> Flow) -> Flow {
+fn tick(projectile: &Projectile<'_>, super_tick: impl FnOnce()) {
     // Vanilla's level stores the old position and rotation before ticking;
     // `onHit` (teleports) and `updateRotation` read them.
     projectile.set_old_position_to_current();
@@ -61,14 +46,12 @@ fn tick(projectile: &Projectile<'_>, super_tick: impl FnOnce() -> Flow) -> Flow 
     if let Err(error) = projectile.try_set_position(new_position) {
         log::debug!("failed to advance projectile {}: {error}", projectile.id());
         projectile.set_removed(RemovalReason::Discarded);
-        // Vanilla's `return` only leaves this layer; subclass code after
-        // `super.tick()` still runs.
-        return Flow::Continue;
+        return;
     }
 
     projectile.update_rotation();
     projectile.apply_effects_from_blocks();
-    let flow = super_tick();
+    super_tick();
 
     if let Some(result) = hit
         && projectile.is_alive()
@@ -76,7 +59,6 @@ fn tick(projectile: &Projectile<'_>, super_tick: impl FnOnce() -> Flow) -> Flow 
     {
         projectile.hit_target_or_deflect_self(&result);
     }
-    flow
 }
 
 /// `ThrowableProjectile.applyInertia`: water or air drag.

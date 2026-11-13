@@ -8,7 +8,7 @@ use text_components::TextComponent;
 use super::Parts as _;
 use crate::entity::entities::ItemEntity;
 use crate::entity::entities::objects::vehicles::test_support;
-use crate::entity::{DamageSource, Entity, RemovalReason, SharedEntity};
+use crate::entity::{DamageSource, Entity, EntityHooks as _, RemovalReason, SharedEntity};
 use crate::test_support::TestWorld;
 use crate::world::World;
 

@@ -117,6 +117,7 @@ impl BlockBehavior for RedStoneOreBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityTable;
     use crate::entity::WeakSelf;
     use std::sync::Arc;
 
@@ -129,7 +130,7 @@ mod tests {
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
     use crate::entity::EntityBase;
-    use crate::entity::{EntityHooks, EntityProps};
+    use crate::entity::EntityProps;
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     struct StepEntity {
@@ -169,10 +170,10 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::PIG
         }
+    }
 
-        fn entity_hooks(&self) -> &'static dyn EntityHooks {
-            &Self::ENTITY
-        }
+    impl EntityTable for StepEntity {
+        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     #[test]

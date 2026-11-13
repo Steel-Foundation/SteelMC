@@ -4,11 +4,10 @@ use super::{
     EntityMovementFlags, EntityMovementProgress, EntityPhysicsStateInput, EntityPistonMovement,
     EntityVerticalMovementStateUpdate, MAX_ENTITY_TAGS,
 };
+use crate::entity::EntityTable;
 use crate::entity::WeakSelf;
-use crate::entity::component::definition::{CauseFallDamageCtx, Definition, DefinitionEntries};
-use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::prelude::*;
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::{Arc, Weak};
 
 use glam::DVec3;
 use steel_registry::{
@@ -20,11 +19,11 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, WorldAabb};
 use uuid::Uuid;
 
+use crate::entity::EntityProps;
 use crate::entity::damage::{DamageHistory, DamageSource};
 use crate::entity::{
     Entity, EntityLevelCallback, InsideBlockEffectType, RemovalReason, SharedEntity,
 };
-use crate::entity::{EntityDefaults, EntityHooks, EntityProps};
 use crate::portal::PortalKind;
 use crate::test_support::{TestEntity, fresh_test_world};
 use crate::world::World;
@@ -96,27 +95,16 @@ fn generation_distinguishes_reconstructed_entity_identity() {
 crate::entity::impl_test_downcast_type!(FallDamageTestEntity);
 
 impl FallDamageTestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps::new();
-
-    fn definition() -> &'static Definition<Self> {
-        static DEFINITION: LazyLock<Definition<FallDamageTestEntity>> =
-            LazyLock::new(|| Definition {
-                cause_fall_damage: Pipeline::new([Stage::new(
-                    StageId("test.fall_damage"),
-                    FallDamageTestEntity::record_fall_damage,
-                )]),
-                ..Definition::new()
-            });
-        &DEFINITION
-    }
-
-    fn record_fall_damage(&self, ctx: &mut CauseFallDamageCtx<'_>) -> Flow {
-        self.fall_damage_calls
-            .lock()
-            .push((ctx.fall_distance, ctx.damage_modifier));
-        ctx.result = true;
-        Flow::Continue
-    }
+    const ENTITY: EntityProps<Self> = EntityProps {
+        cause_fall_damage: |entity, fall_distance, damage_modifier, _| {
+            entity
+                .fall_damage_calls
+                .lock()
+                .push((fall_distance, damage_modifier));
+            true
+        },
+        ..EntityProps::new()
+    };
 }
 
 impl Entity for FallDamageTestEntity {
@@ -127,14 +115,10 @@ impl Entity for FallDamageTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
-    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
-        Self::definition()
-    }
+impl EntityTable for FallDamageTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 #[derive(Default)]
@@ -346,11 +330,9 @@ fn removal_unlocks_lifecycle_before_destroying_retained_sources() {
         fn entity_type(&self) -> EntityTypeRef {
             self.entity.entity_type()
         }
-
-        fn entity_hooks(&self) -> &'static dyn EntityHooks {
-            &EntityDefaults
-        }
     }
+
+    impl EntityTable for RemovalSourceEntity {}
 
     impl Drop for RemovalSourceEntity {
         fn drop(&mut self) {

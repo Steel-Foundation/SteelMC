@@ -32,7 +32,7 @@ use crate::world::World;
 #[entity_behavior(class = "ItemFrame")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_item_frame, load = Self::load_item_frame)]
-#[entity(key = "steel:entity/item_frame", definition = block_attached::definition)]
+#[entity(key = "steel:entity/item_frame")]
 pub struct ItemFrameEntity {
     #[entity(base)]
     base: EntityBase,

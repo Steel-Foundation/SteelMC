@@ -1,5 +1,6 @@
 //! Vanilla experience command plus Steel's existing clear extension.
 
+use crate::entity::EntityHooks;
 use std::sync::Arc;
 
 use steel_utils::{Identifier, translations};
@@ -13,7 +14,6 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::entity::Entity;
 use crate::player::Player;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {

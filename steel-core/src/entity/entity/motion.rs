@@ -5,7 +5,7 @@ use super::*;
 /// Velocity, gravity, collisions, ground contact and moving.
 ///
 /// Implemented for every [`Entity`]; entity types change behavior through
-/// [`EntityHooks`], never by implementing this trait.
+/// [`EntityProps`], never by implementing this trait.
 pub trait EntityMotion: Entity {
     /// Returns whether the bounding box shifted by `delta` is free of block
     /// collisions and liquids.
@@ -27,33 +27,33 @@ pub trait EntityMotion: Entity {
         !aabb_contains_any_liquid(&world, target_box)
     }
 
-    /// Default for [`Entity::is_flying_player`].
+    /// Default for [`EntityHooks::is_flying_player`].
     fn is_flying_player_default(&self) -> bool {
         false
     }
 
-    /// Default for [`Entity::can_be_collided_with`].
+    /// Default for [`EntityHooks::can_be_collided_with`].
     fn can_be_collided_with_default(&self, _other: Option<&dyn Entity>) -> bool {
         false
     }
 
-    /// Default for [`Entity::is_hard_collision_relevant`].
+    /// Default for [`EntityHooks::is_hard_collision_relevant`].
     fn is_hard_collision_relevant_default(&self) -> bool {
         true
     }
 
-    /// Default for [`Entity::can_collide_with`].
+    /// Default for [`EntityHooks::can_collide_with`].
     fn can_collide_with_default(&self, other: &dyn Entity) -> bool {
         other.can_be_collided_with(Some(self.as_entity_event_source()))
             && !self.is_passenger_of_same_vehicle(other)
     }
 
-    /// Default for [`Entity::push_impulse`].
+    /// Default for [`EntityHooks::push_impulse`].
     fn push_impulse_default(&self, impulse: DVec3) {
         self.base().push_impulse(impulse);
     }
 
-    /// Default for [`Entity::push_entity`].
+    /// Default for [`EntityHooks::push_entity`].
     fn push_entity_default(&self, entity: &dyn Entity) {
         if self.is_passenger_of_same_vehicle(entity) || entity.no_physics() || self.no_physics() {
             return;
@@ -82,7 +82,7 @@ pub trait EntityMotion: Entity {
             .is_some_and(|living| living.is_fall_flying())
     }
 
-    /// Default for [`Entity::uses_client_movement_packets`].
+    /// Default for [`EntityHooks::uses_client_movement_packets`].
     fn uses_client_movement_packets_default(&self) -> bool {
         if !self.is_removed()
             && let Some(controller) = self.controlling_passenger()
@@ -100,12 +100,12 @@ pub trait EntityMotion: Entity {
         !self.uses_client_movement_packets()
     }
 
-    /// Default for [`Entity::can_simulate_movement`].
+    /// Default for [`EntityHooks::can_simulate_movement`].
     fn can_simulate_movement_default(&self) -> bool {
         self.is_server_driven_movement()
     }
 
-    /// Default for [`Entity::is_suppressing_bounce`].
+    /// Default for [`EntityHooks::is_suppressing_bounce`].
     fn is_suppressing_bounce_default(&self) -> bool {
         self.synced_data()
             .is_some_and(EntitySyncedData::is_shift_key_down)
@@ -130,7 +130,7 @@ pub trait EntityMotion: Entity {
         false
     }
 
-    /// Default for [`Entity::known_movement`].
+    /// Default for [`EntityHooks::known_movement`].
     fn known_movement_default(&self) -> DVec3 {
         if let Some(controller) = self.controlling_passenger()
             && !self.is_removed()
@@ -142,7 +142,7 @@ pub trait EntityMotion: Entity {
         self.velocity()
     }
 
-    /// Default for [`Entity::known_speed`].
+    /// Default for [`EntityHooks::known_speed`].
     fn known_speed_default(&self) -> DVec3 {
         if let Some(controller) = self.controlling_passenger()
             && !self.is_removed()
@@ -236,7 +236,7 @@ pub trait EntityMotion: Entity {
         }
     }
 
-    /// Default for [`Entity::cause_fall_damage`].
+    /// Default for [`EntityHooks::cause_fall_damage`].
     fn cause_fall_damage_default(
         &self,
         fall_distance: f64,
@@ -428,7 +428,7 @@ pub trait EntityMotion: Entity {
         self.default_apply_accepted_client_movement(world, accepted)
     }
 
-    /// Default for [`Entity::try_set_position`].
+    /// Default for [`EntityHooks::try_set_position`].
     fn try_set_position_default(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         self.try_set_position_base(pos)
     }
@@ -439,7 +439,7 @@ pub trait EntityMotion: Entity {
         self.base().try_set_position(pos)
     }
 
-    /// Default for [`Entity::teleport_to`].
+    /// Default for [`EntityHooks::teleport_to`].
     // TODO: Recursively reposition this entity's passengers (vanilla
     // `Entity.teleportPassengers`, via `getSelfAndPassengers`)
     #[must_use = "movement commits can fail when world entity state rejects the update"]
@@ -462,19 +462,19 @@ pub trait EntityMotion: Entity {
         self.base().remove_latest_movement_recording();
     }
 
-    /// Default for [`Entity::max_up_step`].
+    /// Default for [`EntityHooks::max_up_step`].
     fn max_up_step_default(&self) -> f32 {
         0.0
     }
 
-    /// Default for [`Entity::backs_off_from_edge`].
+    /// Default for [`EntityHooks::backs_off_from_edge`].
     fn backs_off_from_edge_default(&self) -> bool {
         false
     }
 
     // These mirror vanilla's Entity class methods.
 
-    /// Default for [`Entity::default_gravity`].
+    /// Default for [`EntityHooks::default_gravity`].
     fn default_gravity_default(&self) -> f64 {
         0.0
     }
@@ -503,12 +503,12 @@ pub trait EntityMotion: Entity {
         }
     }
 
-    /// Default for [`Entity::air_drag`].
+    /// Default for [`EntityHooks::air_drag`].
     fn air_drag_default(&self) -> f32 {
         DEFAULT_AIR_DRAG
     }
 
-    /// Default for [`Entity::effective_gravity`].
+    /// Default for [`EntityHooks::effective_gravity`].
     fn effective_gravity_default(&self) -> f64 {
         self.gravity()
     }
@@ -561,7 +561,7 @@ pub trait EntityMotion: Entity {
         clippy::too_many_lines,
         reason = "keeps vanilla movement phases in order"
     )]
-    /// Default for [`Entity::move_entity`].
+    /// Default for [`EntityHooks::move_entity`].
     fn move_entity_default(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         if self.no_physics() {
@@ -741,7 +741,7 @@ pub trait EntityMotion: Entity {
         self.base().set_ground_contact(ground_contact);
     }
 
-    /// Default for [`Entity::check_fall_damage`].
+    /// Default for [`EntityHooks::check_fall_damage`].
     fn check_fall_damage_default(
         &self,
         vertical_movement: f64,

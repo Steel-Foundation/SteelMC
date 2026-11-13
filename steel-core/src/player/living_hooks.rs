@@ -1,52 +1,10 @@
 //! `ServerPlayer`'s overrides of the living hooks.
 
 use super::*;
-use crate::entity::component::definition::{
-    CanBeSeenAsEnemyCtx, CanGlideCtx, IsImmobileCtx, IsInvulnerableToCtx,
-};
-use crate::entity::component::pipeline::Flow;
+use crate::entity::LivingTable;
 use crate::entity::prelude::*;
 
 impl Player {
-    pub(super) const LIVING: LivingProps<Self> = LivingProps {
-        default_dimensions: |_, pose| Player::dimensions_for_pose(pose),
-        hurt_sound: |_, source| Some(source.damage_type.effects.sound()),
-        does_emit_equip_event: |_, slot| slot.slot_type() == EquipmentSlotType::HumanoidArmor,
-        hurt_helmet: |player, source, damage| {
-            player
-                .living()
-                .do_hurt_equipment(source, damage, &[EquipmentSlot::Head]);
-        },
-        death_sound: |_| Some(&sound_events::ENTITY_PLAYER_DEATH),
-        dismount_poses: |_| {
-            &[
-                EntityPose::Standing,
-                EntityPose::Sneaking,
-                EntityPose::Swimming,
-            ]
-        },
-        indicate_damage: Self::living_indicate_damage,
-        is_using_item: Self::living_is_using_item,
-        luck: Self::living_get_luck,
-        hurt_armor: Self::living_hurt_armor,
-        actually_hurt: Self::living_actually_hurt,
-        hurt_broadcast_chunk: Self::living_hurt_broadcast_chunk,
-        die: Self::living_die,
-        tick_equipment: Self::living_tick_equipment,
-        with_equipment_slot: Self::living_with_equipment_slot,
-        with_equipment_slot_mut: Self::living_with_equipment_slot_mut,
-        interact_living_entity_with_equippable: Self::living_interact_living_entity_with_equippable,
-        has_infinite_materials: Self::living_has_infinite_materials,
-        handle_extra_items_created_on_use: Self::living_handle_extra_items_created_on_use,
-        absorption_amount: Self::living_get_absorption_amount,
-        set_absorption_amount: Self::living_set_absorption_amount,
-        is_affected_by_fluids: Self::living_is_affected_by_fluids,
-        stop_sleeping: Self::living_stop_sleeping,
-        flying_speed: Self::living_get_flying_speed,
-        on_equipped_item_broken: Self::living_on_equipped_item_broken,
-        ..LivingProps::new()
-    };
-
     fn living_indicate_damage(&self, xd: f64, zd: f64) {
         let (y_rot, _) = self.rotation();
         let hurt_dir = zd.atan2(xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
@@ -183,30 +141,14 @@ impl Player {
             .required_value(vanilla_attributes::LUCK) as f32
     }
 
-    /// `Player.canBeSeenAsEnemy` before `super`: invulnerable players are
-    /// never targeted.
-    pub(super) fn can_be_seen_as_enemy_before_super(
-        &self,
-        ctx: &mut CanBeSeenAsEnemyCtx<'_>,
-    ) -> Flow {
-        if self.abilities.lock().invulnerable {
-            ctx.result = false;
-            return Flow::Stop;
-        }
-        Flow::Continue
-    }
-
     /// `Player.isInvulnerableTo` after `super`: damage types switched off by
     /// game rules, then `ServerPlayer`'s players whose client has not loaded.
     // TODO: `ServerPlayer` also protects a player changing dimension from
     // everything but ender pearl damage; the player does not track that state yet.
-    pub(super) fn is_invulnerable_to_after_super(&self, ctx: &mut IsInvulnerableToCtx<'_>) -> Flow {
-        if !ctx.result {
-            let rule_disabled = Self::disabled_damage_game_rule(ctx.source)
-                .is_some_and(|rule| !ctx.world.get_game_rule(rule));
-            ctx.result = rule_disabled || !self.has_client_loaded();
-        }
-        Flow::Continue
+    fn is_invulnerable_to_after_super(&self, world: &World, source: &DamageSource) -> bool {
+        let rule_disabled =
+            Self::disabled_damage_game_rule(source).is_some_and(|rule| !world.get_game_rule(rule));
+        rule_disabled || !self.has_client_loaded()
     }
 
     fn living_hurt_armor(&self, source: &DamageSource, damage: f32) {
@@ -284,7 +226,7 @@ impl Player {
                     && self.living().is_equippable_in_slot(stack, slot)
             })
         };
-        if !can_equip(&item_stack) || !Entity::is_alive(self) {
+        if !can_equip(&item_stack) || !EntityHooks::is_alive(self) {
             return InteractionResult::Pass;
         }
 
@@ -375,21 +317,6 @@ impl Player {
 
     fn living_is_affected_by_fluids(&self) -> bool {
         !self.is_flying()
-    }
-
-    /// `Player.canGlide` before `super`: flying players cannot glide.
-    pub(super) fn can_glide_before_super(&self, ctx: &mut CanGlideCtx<'_>) -> Flow {
-        if self.is_flying() {
-            ctx.result = false;
-            return Flow::Stop;
-        }
-        Flow::Continue
-    }
-
-    /// `Player.isImmobile` after `super`: sleeping players are immobile too.
-    pub(super) fn is_immobile_after_super(&self, ctx: &mut IsImmobileCtx<'_>) -> Flow {
-        ctx.result = ctx.result || self.living().is_sleeping();
-        Flow::Continue
     }
 
     fn living_stop_sleeping(&self) {
@@ -488,4 +415,75 @@ impl Player {
         self.living().refresh_equipment_attribute_modifiers(slot);
         self.award_stat(&vanilla_stat_types::ITEM_BROKEN, item);
     }
+}
+
+impl LivingTable for Player {
+    const LIVING: LivingProps<Self> = LivingProps {
+        // `Player.getVoicePitch` never calls `super`.
+        voice_pitch: |_| 1.0,
+        // `Player.canBeSeenAsEnemy`: invulnerable players are never enemies.
+        can_be_seen_as_enemy: |player| {
+            !player.abilities.lock().invulnerable
+                && (const { LivingProps::<Self>::new().can_be_seen_as_enemy })(player)
+        },
+        is_invulnerable_to: |player, world, source| {
+            (const { LivingProps::<Self>::new().is_invulnerable_to })(player, world, source)
+                || player.is_invulnerable_to_after_super(world, source)
+        },
+        // `Player.canGlide`: flying players do not glide.
+        can_glide: |player| {
+            !player.is_flying() && (const { LivingProps::<Self>::new().can_glide })(player)
+        },
+        // `Player.isImmobile`: sleeping players are immobile too.
+        is_immobile: |player| {
+            (const { LivingProps::<Self>::new().is_immobile })(player)
+                || player.living().is_sleeping()
+        },
+        jump_from_ground: |player| {
+            (const { LivingProps::<Self>::new().jump_from_ground })(player);
+            player.jump_from_ground_after_super();
+        },
+        ai_step: |player| {
+            player.ai_step_around(|| (const { LivingProps::<Self>::new().ai_step })(player))
+        },
+        travel: |player, input| {
+            player.travel_around(|| (const { LivingProps::<Self>::new().travel })(player, input))
+        },
+        default_dimensions: |_, pose| Player::dimensions_for_pose(pose),
+        hurt_sound: |_, source| Some(source.damage_type.effects.sound()),
+        does_emit_equip_event: |_, slot| slot.slot_type() == EquipmentSlotType::HumanoidArmor,
+        hurt_helmet: |player, source, damage| {
+            player
+                .living()
+                .do_hurt_equipment(source, damage, &[EquipmentSlot::Head]);
+        },
+        death_sound: |_| Some(&sound_events::ENTITY_PLAYER_DEATH),
+        dismount_poses: |_| {
+            &[
+                EntityPose::Standing,
+                EntityPose::Sneaking,
+                EntityPose::Swimming,
+            ]
+        },
+        indicate_damage: Self::living_indicate_damage,
+        is_using_item: Self::living_is_using_item,
+        luck: Self::living_get_luck,
+        hurt_armor: Self::living_hurt_armor,
+        actually_hurt: Self::living_actually_hurt,
+        hurt_broadcast_chunk: Self::living_hurt_broadcast_chunk,
+        die: Self::living_die,
+        tick_equipment: Self::living_tick_equipment,
+        with_equipment_slot: Self::living_with_equipment_slot,
+        with_equipment_slot_mut: Self::living_with_equipment_slot_mut,
+        interact_living_entity_with_equippable: Self::living_interact_living_entity_with_equippable,
+        has_infinite_materials: Self::living_has_infinite_materials,
+        handle_extra_items_created_on_use: Self::living_handle_extra_items_created_on_use,
+        absorption_amount: Self::living_get_absorption_amount,
+        set_absorption_amount: Self::living_set_absorption_amount,
+        is_affected_by_fluids: Self::living_is_affected_by_fluids,
+        stop_sleeping: Self::living_stop_sleeping,
+        flying_speed: Self::living_get_flying_speed,
+        on_equipped_item_broken: Self::living_on_equipped_item_broken,
+        ..LivingProps::new()
+    };
 }

@@ -4,10 +4,6 @@
 //! (gravity, friction), despawns after 5 minutes, and can be picked up
 //! by players after a short delay.
 
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::HurtCtx;
-use crate::entity::component::pipeline::{Flow, StageId};
-use crate::entity::component::pipeline::{Pipeline, Stage};
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 use steel_utils::nbt::NbtValueInput as _;
@@ -101,7 +97,7 @@ impl ItemEntityState {
 #[entity_behavior]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_item, load = Self::load_item)]
-#[entity(key = "steel:entity/item", definition = Self::define)]
+#[entity(key = "steel:entity/item")]
 pub struct ItemEntity {
     /// Common entity fields (id, uuid, position, etc.).
     #[entity(base)]
@@ -518,31 +514,9 @@ impl ItemEntity {
 impl DefaultEntityPush for ItemEntity {}
 
 impl ItemEntity {
-    const TICK: StageId = StageId("item.tick");
-
-    const HURT: StageId = StageId("item.hurt");
-
-    fn define() -> Definition<Self> {
-        let definition = Definition::new();
-        Definition {
-            tick: definition.tick.around(Self::TICK, |item, ctx, inner| {
-                item.entity_tick(|| {
-                    inner(item, ctx);
-                });
-                Flow::Continue
-            }),
-            hurt: Pipeline::new([Stage::new(
-                Self::HURT,
-                |item: &Self, ctx: &mut HurtCtx<'_>| {
-                    ctx.result = item.entity_hurt(ctx.world, ctx.source, ctx.amount);
-                    Flow::Continue
-                },
-            )]),
-            ..definition
-        }
-    }
-
     const ENTITY: EntityProps<Self> = EntityProps {
+        tick: |item| item.entity_tick(|| (const { EntityProps::<Self>::new().tick })(item)),
+        hurt: Self::entity_hurt,
         is_hard_collision_relevant: |_| false,
         ignore_explosion: |_, explosion| !explosion.should_affect_blocklike_entities(),
         movement_emission: |_| EntityMovementEmission::None,

@@ -1,9 +1,9 @@
+use crate::entity::EntityTable;
 use crate::entity::WeakSelf;
 use std::mem;
 
 use super::*;
-use crate::entity::component::pipeline::Pipeline;
-use crate::entity::{EntityHooks, EntityProps};
+use crate::entity::EntityProps;
 
 #[derive(Default)]
 enum RelationshipTickAction {
@@ -50,24 +50,11 @@ impl RelationshipTickTestEntity {
 crate::entity::impl_test_downcast_type!(RelationshipTickTestEntity);
 
 impl RelationshipTickTestEntity {
-    const ENTITY: EntityProps<Self> = EntityProps::new();
-    const RIDE_TICK: StageId = StageId("test.ride_tick");
-    const TICK: StageId = StageId("test.tick");
-
-    fn definition() -> &'static Definition<Self> {
-        static DEFINITION: LazyLock<Definition<RelationshipTickTestEntity>> =
-            LazyLock::new(|| Definition {
-                ride_tick: Pipeline::new([Stage::effect(
-                    RelationshipTickTestEntity::RIDE_TICK,
-                    RelationshipTickTestEntity::entity_ride_tick,
-                )]),
-                ..Definition::replacing_tick([Stage::effect(
-                    RelationshipTickTestEntity::TICK,
-                    RelationshipTickTestEntity::entity_tick,
-                )])
-            });
-        &DEFINITION
-    }
+    const ENTITY: EntityProps<Self> = EntityProps {
+        tick: Self::entity_tick,
+        ride_tick: Self::entity_ride_tick,
+        ..EntityProps::new()
+    };
 
     fn entity_tick(&self) {
         self.events.lock().push((self.id(), "tick"));
@@ -88,14 +75,10 @@ impl Entity for RelationshipTickTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
+}
 
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &Self::ENTITY
-    }
-
-    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
-        Self::definition()
-    }
+impl EntityTable for RelationshipTickTestEntity {
+    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 #[test]

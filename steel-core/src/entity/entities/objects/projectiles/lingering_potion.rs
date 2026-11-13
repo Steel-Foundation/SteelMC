@@ -1,6 +1,7 @@
 //! Vanilla `ThrownLingeringPotion`.
 
 use crate::entity::prelude::*;
+use crate::entity::projectile::ProjectileTable;
 use std::sync::Arc;
 
 use steel_macros::entity_behavior;
@@ -24,7 +25,6 @@ use crate::world::World;
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/lingering_potion", constructors)]
-#[entity(definition = thrown_potion::definition)]
 pub struct LingeringPotionEntity {
     #[entity(base)]
     base: EntityBase,
@@ -40,7 +40,6 @@ pub struct LingeringPotionEntity {
 
 impl LingeringPotionEntity {
     const ENTITY: EntityProps<Self> = thrown_potion::entity_props();
-    const PROJECTILE: ProjectileProps<Self> = thrown_potion::projectile_props();
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = LingeringPotionEntityData::new();
@@ -48,11 +47,15 @@ impl LingeringPotionEntity {
         Self {
             base,
             entity_type,
-            projectile: ProjectileBase::new(&Self::PROJECTILE),
+            projectile: ProjectileBase::new(),
             thrown_item,
             entity_data: CheckedMutex::new(entity_data),
         }
     }
+}
+
+impl ProjectileTable for LingeringPotionEntity {
+    const PROJECTILE: ProjectileProps<Self> = thrown_potion::projectile_props();
 }
 
 impl thrown_potion::Parts for LingeringPotionEntity {

@@ -5,9 +5,9 @@ use super::*;
 /// Entity sounds: steps, swimming, splashes and flapping.
 ///
 /// Implemented for every [`Entity`]; entity types change behavior through
-/// [`EntityHooks`], never by implementing this trait.
+/// [`EntityProps`], never by implementing this trait.
 pub trait EntitySounds: Entity {
-    /// Default for [`Entity::fall_sounds`].
+    /// Default for [`EntityHooks::fall_sounds`].
     fn fall_sounds_default(&self) -> (SoundEventRef, SoundEventRef) {
         (
             &sound_events::ENTITY_GENERIC_SMALL_FALL,
@@ -15,12 +15,12 @@ pub trait EntitySounds: Entity {
         )
     }
 
-    /// Default for [`Entity::sound_source`].
+    /// Default for [`EntityHooks::sound_source`].
     fn sound_source_default(&self) -> SoundSource {
         SoundSource::Neutral
     }
 
-    /// Default for [`Entity::swim_sound`].
+    /// Default for [`EntityHooks::swim_sound`].
     fn swim_sound_default(&self) -> SoundEventRef {
         &sound_events::ENTITY_GENERIC_SWIM
     }
@@ -38,7 +38,7 @@ pub trait EntitySounds: Entity {
         }
     }
 
-    /// Default for [`Entity::play_sound`].
+    /// Default for [`EntityHooks::play_sound`].
     fn play_sound_default(&self, sound: SoundEventRef, volume: f32, pitch: f32) {
         if self.is_silent() {
             return;
@@ -56,17 +56,17 @@ pub trait EntitySounds: Entity {
         }
     }
 
-    /// Default for [`Entity::swim_splash_sound`].
+    /// Default for [`EntityHooks::swim_splash_sound`].
     fn swim_splash_sound_default(&self) -> SoundEventRef {
         &sound_events::ENTITY_GENERIC_SPLASH
     }
 
-    /// Default for [`Entity::swim_high_speed_splash_sound`].
+    /// Default for [`EntityHooks::swim_high_speed_splash_sound`].
     fn swim_high_speed_splash_sound_default(&self) -> SoundEventRef {
         &sound_events::ENTITY_GENERIC_SPLASH
     }
 
-    /// Default for [`Entity::play_step_sound`].
+    /// Default for [`EntityHooks::play_step_sound`].
     fn play_step_sound_default(&self, _pos: BlockPos, block_state: BlockStateId) {
         self.play_block_step_sound(block_state);
     }
@@ -142,12 +142,12 @@ pub trait EntitySounds: Entity {
         self.play_sound(self.swim_sound(), volume, pitch);
     }
 
-    /// Default for [`Entity::is_flapping`].
+    /// Default for [`EntityHooks::is_flapping`].
     fn is_flapping_default(&self) -> bool {
         false
     }
 
-    /// Default for [`Entity::on_flap`].
+    /// Default for [`EntityHooks::on_flap`].
     fn on_flap_default(&self) {}
 
     /// Processes vanilla flap movement side effects.

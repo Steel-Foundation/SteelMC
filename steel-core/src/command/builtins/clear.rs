@@ -1,5 +1,6 @@
 //! Vanilla player inventory clearing command.
 
+use crate::entity::EntityHooks;
 use std::{slice, sync::Arc};
 
 use steel_registry::item_stack::ItemStack;
@@ -14,7 +15,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::{entity::Entity as _, player::Player};
+use crate::player::Player;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("clear"), |_| command())

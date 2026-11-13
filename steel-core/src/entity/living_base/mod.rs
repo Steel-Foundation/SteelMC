@@ -31,7 +31,7 @@ use uuid::Uuid;
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 use crate::entity::component::Component;
-use crate::entity::{Living, LivingHooks, SharedEntity, WeakEntity};
+use crate::entity::{Living, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
 use crate::world::World;
 
@@ -722,7 +722,6 @@ pub struct LivingEntityBase {
     effects: CheckedMutex<ActiveEffects>,
     equipment: Shared<dyn EntityEquipment>,
     equipment_tracking: CheckedMutex<EquipmentTracking>,
-    hooks: &'static dyn LivingHooks,
 }
 
 /// Active mob effects and the changes clients have not been sent yet.
@@ -761,11 +760,10 @@ impl LivingEntityBase {
     #[must_use]
     pub fn new<T: VanillaLivingEntityData>(
         entity_type: EntityTypeRef,
-        hooks: &'static dyn LivingHooks,
         entity_data: &mut T,
     ) -> Self {
         let equipment: Shared<dyn EntityEquipment> = OwnedEntityEquipment::new().into_shared();
-        Self::with_equipment(entity_type, equipment, hooks, entity_data)
+        Self::with_equipment(entity_type, equipment, entity_data)
     }
 
     /// Like [`Self::new`], with an explicit canonical equipment backing.
@@ -773,13 +771,11 @@ impl LivingEntityBase {
     pub fn with_equipment<T: VanillaLivingEntityData>(
         entity_type: EntityTypeRef,
         equipment: Shared<dyn EntityEquipment>,
-        hooks: &'static dyn LivingHooks,
         entity_data: &mut T,
     ) -> Self {
         let base = Self::with_attributes_and_equipment(
             AttributeMap::new_for_entity(entity_type),
             equipment,
-            hooks,
         );
         base.initialize_synced_data(entity_data);
         base
@@ -788,22 +784,14 @@ impl LivingEntityBase {
     /// Living state for tests that keep no synced data of their own.
     #[cfg(test)]
     #[must_use]
-    pub(crate) fn without_synced_data(
-        entity_type: EntityTypeRef,
-        hooks: &'static dyn LivingHooks,
-    ) -> Self {
+    pub(crate) fn without_synced_data(entity_type: EntityTypeRef) -> Self {
         let equipment: Shared<dyn EntityEquipment> = OwnedEntityEquipment::new().into_shared();
-        Self::with_attributes_and_equipment(
-            AttributeMap::new_for_entity(entity_type),
-            equipment,
-            hooks,
-        )
+        Self::with_attributes_and_equipment(AttributeMap::new_for_entity(entity_type), equipment)
     }
 
     fn with_attributes_and_equipment(
         attributes: AttributeMap,
         equipment: Shared<dyn EntityEquipment>,
-        hooks: &'static dyn LivingHooks,
     ) -> Self {
         let speed = attributes.required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
 
@@ -817,14 +805,7 @@ impl LivingEntityBase {
                 pending_changes: array::from_fn(|_| None),
                 attribute_modifiers: array::from_fn(|_| Vec::new()),
             }),
-            hooks,
         }
-    }
-
-    /// Returns this entity type's living hooks.
-    #[must_use]
-    pub fn hooks(&self) -> &'static dyn LivingHooks {
-        self.hooks
     }
 
     /// Returns this entity's attribute map.

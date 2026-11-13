@@ -1,18 +1,32 @@
 //! Per-type entity hooks: the `Entity` methods entity types override.
 //!
-//! [`entity_hook_list!`] declares each hook once. Callbacks expand it into:
+//! [`entity_hook_list!`] declares each hook once and expands into:
 //!
 //! - [`EntityProps<E>`]: one `fn(&E, ..)` per hook, typed for the concrete
-//!   entity. `EntityProps::new()` holds the defaults; layer presets such as
-//!   `living_entity::entity_props()` override fields with struct-update syntax.
-//! - [`EntityHooks`]: the same hooks on `dyn Entity`, implemented once for every
-//!   `EntityProps<E>` and by [`EntityDefaults`].
-//! - dispatch methods on [`Entity`], so callers never see the plumbing.
+//!   entity. `EntityProps::new()` holds vanilla `Entity`'s behavior; layer
+//!   presets such as `living_entity::entity_props()` override fields with
+//!   struct-update syntax.
+//! - [`EntityHooks`]: the hooks as methods, a supertrait of [`Entity`]. It is
+//!   implemented once, for every [`EntityTable`], by reading the type's `const`
+//!   table. A call through `dyn Entity` is one virtual call, and the entry it
+//!   lands on is known at compile time.
 //!
 //! Each hook names the [`Entity`] method holding its default body.
+//!
+//! # Calling `super`
+//!
+//! A layer or entity type that extends a hook the way a vanilla subclass calls
+//! `super` calls its parent's entry, read from the parent's table in a `const`
+//! block so the call is direct:
+//!
+//! ```ignore
+//! tick: |living| {
+//!     (const { EntityProps::<E>::new().tick })(living);
+//!     living.living().tick_living();
+//! },
+//! ```
 
 use super::*;
-use steel_utils::DowncastType;
 
 /// Declares the entity hooks and passes them to `$callback`.
 macro_rules! entity_hook_list {
@@ -114,8 +128,8 @@ macro_rules! entity_hook_list {
                 ) -> bool = can_be_collided_with_default;
                 /// Whether movement queries must consider this entity for hard collisions.
                 ///
-                /// Returning `false` promises [`Self::can_be_collided_with`] is always false and
-                /// [`Self::can_collide_with`] never broadens the default rule. This capability may
+                /// Returning `false` promises [`EntityHooks::can_be_collided_with`] is always false and
+                /// [`EntityHooks::can_collide_with`] never broadens the default rule. This capability may
                 /// be cached for the registered lifetime, including chunk-unload retention.
                 fn is_hard_collision_relevant() -> bool = is_hard_collision_relevant_default;
                 /// Returns whether projectile collision may interact with this entity.
@@ -323,12 +337,71 @@ macro_rules! entity_hook_list {
                 fn dismount_location_for_passenger(passenger: &Living<'_>) -> DVec3 = dismount_location_for_passenger_default;
                 /// Moves this entity by `delta`, resolving collisions.
                 fn move_entity(mover_type: MoverType, delta: DVec3) -> Option<MoveResult> = move_entity_default;
+                /// Vanilla `Entity.tick`, called every game tick while the entity is
+                /// in a ticked chunk. The caller handles post-tick dirty data sync.
+                fn tick() = tick_default;
+                /// Vanilla `Entity.baseTick`. It stays separate from
+                /// [`EntityHooks::tick`] because several vanilla subclasses override
+                /// `tick` without calling `super.tick()`.
+                fn base_tick() = entity_base_tick;
+                /// Vanilla `Entity.hurtServer`: applies damage, returning whether it
+                /// was taken.
+                fn hurt(world: &World, source: &DamageSource, amount: f32) -> bool = hurt_default;
+                /// Vanilla `Entity.rideTick`: a passenger's tick.
+                fn ride_tick() = ride_tick_default;
+                /// Vanilla `Entity.checkFallDamage`: accumulates fall distance, lands
+                /// on the block fallen on and resets it.
+                fn check_fall_damage(
+                    vertical_movement: f64,
+                    on_ground: bool,
+                    on_state: BlockStateId,
+                    pos: BlockPos,
+                    world: &Arc<World>,
+                ) = check_fall_damage_default;
+                /// Vanilla `Entity.causeFallDamage`.
+                fn cause_fall_damage(
+                    fall_distance: f64,
+                    damage_modifier: f32,
+                    source: &DamageSource,
+                ) -> bool = cause_fall_damage_default;
+                /// Vanilla `Entity.canFreeze`.
+                fn can_freeze() -> bool = can_freeze_default;
+                /// Vanilla `Entity.makeStuckInBlock`.
+                fn make_stuck_in_block(
+                    state: BlockStateId,
+                    speed_multiplier: DVec3,
+                ) = make_stuck_in_block_default;
+                /// Vanilla `Entity.doWaterSplashEffect`.
+                fn do_water_splash_effect() = do_water_splash_effect_default;
+                /// Vanilla `Entity.updateSwimming`.
+                fn update_swimming() = update_swimming_default;
+                /// Vanilla `Entity.stopRiding`.
+                fn stop_riding() = stop_riding_default;
+                /// Vanilla `Entity.removeVehicle`: leaves the vehicle without
+                /// placing the entity.
+                fn remove_vehicle() = remove_vehicle_default;
+                /// Vanilla `Entity.getBlockSpeedFactor`.
+                fn block_speed_factor() -> f32 = block_speed_factor_default;
+                /// Vanilla `Entity.interact`.
+                fn interact(
+                    player: &Player,
+                    hand: InteractionHand,
+                    location: DVec3,
+                ) -> InteractionResult = interact_default;
+                /// Vanilla `Entity.setYBodyRot`.
+                fn set_y_body_rot(y_body_rot: f32) = set_y_body_rot_default;
+                /// Vanilla `Entity.positionRider`: places a direct passenger on this
+                /// vehicle.
+                fn position_rider(passenger: &dyn Entity) = position_rider_default;
+                /// Vanilla `Entity.getControllingPassenger`: the passenger steering
+                /// this entity.
+                fn controlling_passenger() -> Option<SharedEntity> = controlling_passenger_default;
             }
         }
     };
 }
 
-/// Generates [`EntityProps`], [`EntityHooks`] and [`EntityDefaults`].
+/// Generates [`EntityProps`] and [`EntityHooks`].
 macro_rules! entity_hook_items {
     (
         { $(
@@ -345,7 +418,7 @@ macro_rules! entity_hook_items {
         }
 
         impl<E: Entity> EntityProps<E> {
-            /// Every hook at its default.
+            /// Every hook at vanilla `Entity`'s behavior.
             #[must_use]
             pub const fn new() -> Self {
                 Self {
@@ -360,59 +433,32 @@ macro_rules! entity_hook_items {
             }
         }
 
-        /// [`EntityProps`] reached through `dyn Entity`.
-        #[expect(
-            clippy::too_many_arguments,
-            reason = "hooks take vanilla's arguments plus the entity"
-        )]
-        pub trait EntityHooks: Send + Sync {
+        /// The entity hooks as methods. Implemented for every
+        /// [`EntityTable`]; entity types change them through their table.
+        pub trait EntityHooks {
             $(
                 $(#[$meta])*
-                fn $name(&self, entity: &dyn Entity $(, $arg: $ty)*) $(-> $ret)?;
+                fn $name(&self $(, $arg: $ty)*) $(-> $ret)?;
             )*
         }
 
-        impl<E: Entity + DowncastType> EntityHooks for EntityProps<E> {
+        impl<T: EntityTable> EntityHooks for T {
             $(
-                fn $name(&self, entity: &dyn Entity $(, $arg: $ty)*) $(-> $ret)? {
-                    match entity.downcast_ref::<E>() {
-                        Some(typed) => (self.$name)(typed $(, $arg)*),
-                        None => entity.$default($($arg),*),
-                    }
-                }
-            )*
-        }
-
-        /// Every hook at its default, for entity types that override none.
-        pub struct EntityDefaults;
-
-        impl EntityHooks for EntityDefaults {
-            $(
-                fn $name(&self, entity: &dyn Entity $(, $arg: $ty)*) $(-> $ret)? {
-                    entity.$default($($arg),*)
+                fn $name(&self $(, $arg: $ty)*) $(-> $ret)? {
+                    (T::ENTITY.$name)(self $(, $arg)*)
                 }
             )*
         }
     };
 }
 
-/// Generates the dispatch methods inside [`Entity`].
-macro_rules! entity_hook_dispatch {
-    (
-        { $(
-            $(#[$meta:meta])*
-            fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty)? = $default:ident;
-        )* }
-    ) => {
-        $(
-            $(#[$meta])*
-            fn $name(&self $(, $arg: $ty)*) $(-> $ret)? {
-                self.entity_hooks().$name(self.as_entity_event_source() $(, $arg)*)
-            }
-        )*
-    };
+/// A concrete entity type's hook table.
+///
+/// `#[derive(Entity)]` implements it from `#[entity(hooks = ..)]`. The default
+/// is vanilla `Entity`'s behavior.
+pub trait EntityTable: Entity + Sized {
+    /// The hooks this type runs.
+    const ENTITY: EntityProps<Self> = EntityProps::new();
 }
-
-pub(crate) use {entity_hook_dispatch, entity_hook_list};
 
 entity_hook_list!(entity_hook_items);

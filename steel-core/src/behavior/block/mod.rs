@@ -1107,7 +1107,7 @@ pub trait BlockBehavior: Send + Sync {
     ///
     /// Vanilla mutates the entity in `Block.updateEntityMovementAfterFallOn`.
     /// Steel returns the velocity to apply so movement resolution keeps entity
-    /// state changes centralized in [`Entity::move_entity`].
+    /// state changes centralized in [`EntityHooks::move_entity`].
     fn update_entity_movement_after_fall_on(
         &self,
         state: BlockStateId,

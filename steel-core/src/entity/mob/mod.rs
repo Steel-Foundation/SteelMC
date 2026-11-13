@@ -1,9 +1,7 @@
 //! Vanilla-shaped mob foundations.
 
 mod pathfinder;
-pub(crate) mod stages;
 
-use crate::entity::component::definition::DefinitionEntries;
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::leash::{LeashData, Leashable};
@@ -172,7 +170,6 @@ pub struct MobBase {
     pathfinding_malus: CheckedMutex<PathfindingMalus>,
     state: CheckedMutex<MobState>,
     leash_data: CheckedMutex<Option<LeashData>>,
-    hooks: &'static dyn MobHooks,
 }
 
 /// A mob's plain per-instance values: persistence, loot, home and timers.
@@ -202,10 +199,11 @@ impl MobHomeRestriction {
 }
 
 impl MobBase {
-    /// Fresh mob state for a type with `hooks`, after its `definition`'s
-    /// constructor chain ran on it.
+    /// Creates the mob state and runs `construct` on it: the type's part of
+    /// the vanilla constructor chain (`Mob.registerGoals` and the layers'
+    /// constructors, in vanilla's order), before the entity itself exists.
     #[must_use]
-    pub fn new(hooks: &'static dyn MobHooks, definition: &'static dyn DefinitionEntries) -> Self {
+    pub fn new(construct: fn(&Self)) -> Self {
         let mob_base = Self {
             goal_selector: CheckedMutex::new(GoalSelector::new()),
             target_selector: CheckedMutex::new(GoalSelector::new()),
@@ -225,9 +223,8 @@ impl MobBase {
                 xp_reward: 0,
             }),
             leash_data: CheckedMutex::new(None),
-            hooks,
         };
-        definition.construct(&mob_base);
+        construct(&mob_base);
         mob_base
     }
 
@@ -351,7 +348,9 @@ impl Component for MobBase {
 entity_props! {
     /// Per-type properties of a vanilla `Mob`.
     pub struct MobProps<E>: MobHooks for Mob
-    where E: Parts => mob {
+    where E: Parts => mob,
+    table MobTable::MOB,
+    component MobBase {
         /// `Mob.getAmbientSound`.
         fn ambient_sound() -> Option<SoundEventRef> = ambient_sound_default;
         /// `Mob.getAmbientSoundInterval`.
@@ -389,6 +388,19 @@ entity_props! {
         /// `Monster.isPreventingPlayerRest`: whether this mob keeps `player`
         /// from sleeping nearby. Only monsters ever do.
         fn is_preventing_player_rest(world: &World, player: &Player) -> bool = is_preventing_player_rest_default;
+        /// `Mob.customServerAiStep`.
+        fn custom_server_ai_step() = custom_server_ai_step_default;
+        /// `Mob.ate`, run after an eating goal consumes a block.
+        fn ate() = ate_default;
+        /// `Mob.mobInteract`: the type's own interaction, tried after leashing
+        /// and spawn eggs.
+        fn mob_interact(player: &Player, hand: InteractionHand) -> InteractionResult = mob_interact_default;
+        /// `Mob.finalizeSpawn`; returns the group data for the next group member.
+        fn finalize_spawn(
+            world: &Arc<World>,
+            reason: EntitySpawnReason,
+            group_data: Option<SpawnGroupData>,
+        ) -> Option<SpawnGroupData> = finalize_spawn_mob_base;
     }
 }
 
@@ -401,26 +413,30 @@ pub struct Mob<'a> {
     living: Living<'a>,
     leashable: &'a (dyn Leashable + 'static),
     base: &'a MobBase,
+    hooks: &'a dyn MobHooks,
 }
 
 impl<'a> Mob<'a> {
     /// Pairs a concrete mob with its state.
     #[must_use]
-    pub fn new<E: LivingParts + Leashable + Has<MobBase>>(entity: &'a E) -> Self {
+    pub fn new<E: Parts>(entity: &'a E) -> Self {
         Self {
             living: entity.living(),
             leashable: entity,
             base: entity.get::<MobBase>(),
+            hooks: entity,
         }
     }
 
     /// Returns `entity` as a mob, if it is one.
     #[must_use]
     pub fn of(entity: &'a (dyn Entity + 'static)) -> Option<Self> {
+        let hooks = entity.as_mob_hooks()?;
         Some(Self {
             living: Living::of(entity)?,
             leashable: entity.as_leashable()?,
-            base: entity.query::<MobBase>()?,
+            base: hooks.layer_component(),
+            hooks,
         })
     }
 
@@ -442,14 +458,6 @@ impl<'a> Mob<'a> {
         self.leashable
     }
 
-    fn hooks(&self) -> &'static dyn MobHooks {
-        self.base.hooks
-    }
-
-    fn definition(&self) -> &'static dyn DefinitionEntries {
-        self.entity().entity_definition()
-    }
-
     fn with_synced<R>(&self, f: impl FnOnce(&mut MobEntityData) -> R) -> Option<R> {
         let synced = self.living.synced_data()?;
         let mut data = synced.lock_data();
@@ -457,12 +465,20 @@ impl<'a> Mob<'a> {
     }
 }
 
-/// `Mob`'s changes to the living defaults: the AI steps run this type's mob
-/// pipelines.
+/// `Mob`'s changes to the living defaults: the AI steps run the mob's goals,
+/// daylight burning and item pickup.
 #[must_use]
 pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
         server_ai_step: |mob| mob.mob().mob_server_ai_step(),
+        // `Mob.aiStep` after `super`: daylight burning and item pickup.
+        ai_step: |mob| {
+            let movement = (const { LivingProps::<E>::new().ai_step })(mob);
+            mob.mob().mob_ai_step_after_super();
+            movement
+        },
+        base_experience_reward: |mob| mob.mob().base_experience_reward_mob(),
+        can_dispenser_equip_into_slot: |mob, _| mob.mob().can_pick_up_loot(),
         ..LivingProps::new()
     }
 }
@@ -485,19 +501,44 @@ pub const fn pathfinder_mob_props<E: Parts>() -> MobProps<E> {
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
+        // `Mob.tick` updates the goal control flags every 5 ticks, whether or
+        // not the AI runs.
+        tick: |mob| {
+            (const { living_entity::entity_props::<E>().tick })(mob);
+            if mob.tick_count() % 5 == 0 {
+                mob.mob().update_control_flags();
+            }
+        },
+        base_tick: |mob| {
+            (const { living_entity::entity_props::<E>().base_tick })(mob);
+            mob.mob().mob_base_tick();
+        },
+        interact: |mob, player, hand, location| {
+            mob.mob().interact_around(player, hand, || {
+                (const { living_entity::entity_props::<E>().interact })(mob, player, hand, location)
+            })
+        },
+        controlling_passenger: |mob| mob.mob().controlling_passenger_mob(),
         check_despawn: |mob| mob.mob().check_mob_despawn(),
         is_effective_ai: |mob| mob.is_server_driven_movement() && !mob.mob().is_no_ai(),
         ..living_entity::entity_props()
     }
 }
 
-/// Components every mob has; keeps stage bounds short.
-pub trait Parts: LivingParts + Leashable + Has<MobBase> {
+/// A concrete mob type: its component and its hook table.
+pub trait MobTable: LivingParts + Has<MobBase> {
+    /// The `Mob` hooks this type runs, built on its layer's preset
+    /// (`MobProps::new()`, `pathfinder_mob_props()`, ...).
+    const MOB: MobProps<Self>;
+}
+
+/// Every mob type; keeps generic bounds short.
+pub trait Parts: MobTable + Leashable {
     /// Returns this entity as a mob.
     fn mob(&self) -> Mob<'_>;
 }
 
-impl<E: LivingParts + Leashable + Has<MobBase>> Parts for E {
+impl<E: MobTable + Leashable> Parts for E {
     fn mob(&self) -> Mob<'_> {
         Mob::new(self)
     }
@@ -528,9 +569,8 @@ impl Mob<'_> {
         true
     }
 
-    /// Runs this type's `Mob.ate` pipeline.
-    pub fn ate(&self) {
-        self.definition().ate(self.entity());
+    fn ate_default(&self) {
+        self.game_event(&vanilla_game_events::EAT);
     }
 
     fn mob_can_be_leashed_default(&self) -> bool {
@@ -703,10 +743,11 @@ impl<'a> Mob<'a> {
             .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
     }
 
-    /// Runs this type's `customServerAiStep` pipeline.
-    pub fn custom_server_ai_step(&self) {
-        self.definition().custom_server_ai_step(self.entity());
-    }
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn custom_server_ai_step_default(&self) {}
 
     /// Ticks the target and goal selectors; between full updates only the
     /// running goals tick.
@@ -806,16 +847,6 @@ impl<'a> Mob<'a> {
             self.reset_ambient_sound_time();
             self.play_ambient_sound();
         }
-    }
-
-    pub fn finalize_spawn(
-        &self,
-        world: &Arc<World>,
-        spawn_reason: EntitySpawnReason,
-        group_data: Option<SpawnGroupData>,
-    ) -> Option<SpawnGroupData> {
-        self.definition()
-            .finalize_spawn(self.entity(), world, spawn_reason, group_data)
     }
 
     pub fn finalize_spawn_mob_base(
@@ -978,11 +1009,16 @@ impl<'a> Mob<'a> {
         InteractionResult::Pass
     }
 
-    /// Mob-specific interaction hook for concrete mobs to override; does
-    /// nothing by default.
-    /// Runs this type's `mobInteract` pipeline.
-    pub fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
-        self.definition().mob_interact(self.entity(), player, hand)
+    #[expect(
+        clippy::unused_self,
+        reason = "vanilla's base body; mob types override it through `MobProps`"
+    )]
+    const fn mob_interact_default(
+        &self,
+        _player: &Player,
+        _hand: InteractionHand,
+    ) -> InteractionResult {
+        InteractionResult::Pass
     }
 
     /// Returns whether this mob's equipment can be sheared; false while
@@ -1300,7 +1336,7 @@ impl<'a> Mob<'a> {
             return;
         };
         if !self.can_pick_up_loot()
-            || !Entity::is_alive(self.entity())
+            || !EntityHooks::is_alive(self.entity())
             || !world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
         {
             return;
@@ -2167,7 +2203,7 @@ impl<'a> Mob<'a> {
 }
 
 // Every mob is `Leashable`.
-impl<T: LivingParts + Has<MobBase>> Leashable for T {
+impl<T: MobTable> Leashable for T {
     fn leash_data(&self) -> &CheckedMutex<Option<LeashData>> {
         self.get::<MobBase>().leash_data()
     }

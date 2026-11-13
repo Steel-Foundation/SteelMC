@@ -1,5 +1,7 @@
 //! Vanilla `Endermite`.
 
+use crate::entity::LivingTable;
+use crate::entity::MobTable;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
@@ -13,11 +15,6 @@ use crate::entity::ai::goal::{
     ClimbOnTopOfPowderSnowGoal, FloatGoal, HurtByTargetGoal, LookAtPlayerGoal, MeleeAttackGoal,
     NearestAttackableTargetGoal, RandomLookAroundGoal, WaterAvoidingRandomStrollGoal,
 };
-use crate::entity::component::definition::SetYBodyRotCtx;
-use crate::entity::component::definition::{self, Definition};
-use crate::entity::component::pipeline::Flow;
-use crate::entity::component::pipeline::{Stage, StageId};
-use crate::entity::living_entity;
 use crate::entity::monster::{self, Enemy};
 use crate::entity::prelude::*;
 use crate::entity::{
@@ -33,7 +30,7 @@ const XP_REWARD: i32 = 3;
 #[entity_behavior(class = "Endermite", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_life, load = Self::load_life)]
-#[entity(key = "steel:entity/endermite", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/endermite", constructors)]
 pub struct EndermiteEntity {
     #[entity(base)]
     base: EntityBase,
@@ -61,69 +58,40 @@ impl EndermiteEntity {
             && spawn_reason.is_spawner()
     };
 
-    const LIVING: LivingProps<Self> = LivingProps {
-        hurt_sound: |_, _| Some(&sound_events::ENTITY_ENDERMITE_HURT),
-        death_sound: |_| Some(&sound_events::ENTITY_ENDERMITE_DEATH),
-        ..monster::living_props()
-    };
-    const MOB: MobProps<Self> = MobProps {
-        ambient_sound: |_| Some(&sound_events::ENTITY_ENDERMITE_AMBIENT),
-        ..monster::mob_props()
-    };
     const ENTITY: EntityProps<Self> = EntityProps {
         movement_emission: |_| EntityMovementEmission::Events,
         play_step_sound: |endermite, _, _| {
             endermite.play_sound(&sound_events::ENTITY_ENDERMITE_STEP, 0.15, 1.0);
         },
+        // `Endermite.tick` faces its body forward before `super.tick()`.
+        tick: |endermite| {
+            endermite.living().set_y_body_rot(endermite.rotation().0);
+            (const { monster::entity_props::<Self>().tick })(endermite);
+        },
+        // `Endermite.setYBodyRot` turns the whole endermite before `super`.
+        set_y_body_rot: |endermite, y_body_rot| {
+            endermite.set_rotation((y_body_rot, endermite.rotation().1));
+            (const { monster::entity_props::<Self>().set_y_body_rot })(endermite, y_body_rot);
+        },
         ..monster::entity_props()
     };
-    const GOALS: StageId = StageId("endermite.goals");
-    const LIFE: StageId = StageId("endermite.life");
-    const BODY_ROT: StageId = StageId("endermite.body_rot");
-    const FACE_BODY: StageId = StageId("endermite.face_body");
 
-    /// Vanilla `Endermite`: the monster chains with its goals and lifetime.
-    fn define() -> Definition<Self> {
-        let mut definition = monster::definition::<Self>();
-        definition.construct =
-            definition
-                .construct
-                .then([Stage::effect(Self::GOALS, |mob_base: &MobBase| {
-                    mob_base.set_xp_reward(XP_REWARD);
-                    Self::register_goals(mob_base);
-                })]);
-        definition.ai_step = definition
-            .ai_step
-            .then([Stage::effect(Self::LIFE, Self::age)]);
-        // `Endermite.setYBodyRot` turns the whole endermite before `super`.
-        definition.set_y_body_rot = definition.set_y_body_rot.before(
-            living_entity::SET_Y_BODY_ROT,
-            [Stage::new(
-                Self::FACE_BODY,
-                |endermite: &Self, ctx: &mut SetYBodyRotCtx<'_>| {
-                    endermite.set_rotation((ctx.y_body_rot, endermite.rotation().1));
-                    Flow::Continue
-                },
-            )],
-        );
-        // `Endermite.tick` faces its body forward before `super.tick()`.
-        definition.tick = definition.tick.before(
-            definition::TICK,
-            [Stage::effect(Self::BODY_ROT, |endermite: &Self| {
-                endermite.living().set_y_body_rot(endermite.rotation().0);
-            })],
-        );
-        definition
+    /// `Endermite`'s constructor chain: `Monster`'s, then its own reward and
+    /// goals.
+    fn construct(mob_base: &MobBase) {
+        monster::construct(mob_base);
+        mob_base.set_xp_reward(XP_REWARD);
+        Self::register_goals(mob_base);
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = EndermiteEntityData::new();
-        let living_base = LivingEntityBase::new(entity_type, &Self::LIVING, &mut entity_data);
+        let living_base = LivingEntityBase::new(entity_type, &mut entity_data);
         Self {
             base,
             entity_type,
             living_base,
-            mob_base: MobBase::new(&Self::MOB, Self::definition()),
+            mob_base: MobBase::new(Self::construct),
             life: CheckedMutex::new(0),
             entity_data: CheckedMutex::new(entity_data),
         }
@@ -171,6 +139,26 @@ impl EndermiteEntity {
     fn load_life(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         *self.life.lock() = nbt.int_value("Lifetime").unwrap_or(0);
     }
+}
+
+impl MobTable for EndermiteEntity {
+    const MOB: MobProps<Self> = MobProps {
+        ambient_sound: |_| Some(&sound_events::ENTITY_ENDERMITE_AMBIENT),
+        ..monster::mob_props()
+    };
+}
+
+impl LivingTable for EndermiteEntity {
+    const LIVING: LivingProps<Self> = LivingProps {
+        hurt_sound: |_, _| Some(&sound_events::ENTITY_ENDERMITE_HURT),
+        death_sound: |_| Some(&sound_events::ENTITY_ENDERMITE_DEATH),
+        ai_step: |endermite| {
+            let movement = (const { monster::living_props::<Self>().ai_step })(endermite);
+            endermite.age();
+            movement
+        },
+        ..monster::living_props()
+    };
 }
 
 #[cfg(test)]

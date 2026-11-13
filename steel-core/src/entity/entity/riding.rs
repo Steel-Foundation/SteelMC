@@ -5,7 +5,7 @@ use super::*;
 /// Vehicles, passengers and rider positions.
 ///
 /// Implemented for every [`Entity`]; entity types change behavior through
-/// [`EntityHooks`], never by implementing this trait.
+/// [`EntityProps`], never by implementing this trait.
 pub trait EntityRiding: Entity {
     /// Gets the vehicle this entity is riding, if present.
     fn vehicle(&self) -> Option<SharedEntity> {
@@ -31,7 +31,7 @@ pub trait EntityRiding: Entity {
         !self.is_discrete() && self.base().boarding_cooldown() <= 0
     }
 
-    /// Default for [`Entity::remove_vehicle`].
+    /// Default for [`EntityHooks::remove_vehicle`].
     fn remove_vehicle_default(&self) {
         let Some(old_vehicle) = self.vehicle() else {
             return;
@@ -50,7 +50,7 @@ pub trait EntityRiding: Entity {
         }
     }
 
-    /// Default for [`Entity::dismount_location_for_passenger`]: on top of
+    /// Default for [`EntityHooks::dismount_location_for_passenger`]: on top of
     /// this vehicle.
     fn dismount_location_for_passenger_default(&self, _passenger: &Living<'_>) -> DVec3 {
         let position = self.position();
@@ -64,7 +64,7 @@ pub trait EntityRiding: Entity {
         }
     }
 
-    /// Default for [`Entity::start_riding`].
+    /// Default for [`EntityHooks::start_riding`].
     fn start_riding_default(&self, entity_to_ride: &SharedEntity) -> bool {
         let Some(world) = self.level() else {
             return false;
@@ -144,12 +144,12 @@ pub trait EntityRiding: Entity {
         self.base().has_passenger_id(passenger.id())
     }
 
-    /// Default for [`Entity::can_add_passenger`].
+    /// Default for [`EntityHooks::can_add_passenger`].
     fn can_add_passenger_default(&self, _passenger: &dyn Entity) -> bool {
         self.passengers().is_empty()
     }
 
-    /// Default for [`Entity::could_accept_passenger`].
+    /// Default for [`EntityHooks::could_accept_passenger`].
     fn could_accept_passenger_default(&self) -> bool {
         true
     }
@@ -172,7 +172,7 @@ pub trait EntityRiding: Entity {
         )
     }
 
-    /// Default for [`Entity::passenger_attachment_point`].
+    /// Default for [`EntityHooks::passenger_attachment_point`].
     fn passenger_attachment_point_default(&self, passenger: &dyn Entity) -> DVec3 {
         let dimensions = self.base().dimensions();
         let passenger_index = self.passenger_index(passenger).unwrap_or_default();
@@ -239,7 +239,7 @@ pub trait EntityRiding: Entity {
         false
     }
 
-    /// Default for [`Entity::ride_tick`].
+    /// Default for [`EntityHooks::ride_tick`].
     fn ride_tick_default(&self) {
         self.set_velocity(DVec3::ZERO);
         self.tick();

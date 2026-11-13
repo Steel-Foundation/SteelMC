@@ -1049,7 +1049,7 @@ impl EntityBase {
     /// Marks the entity as removed with the given reason.
     ///
     /// Notifies the level callback on first removal, and returns whether this
-    /// was the first removal. [`Entity::set_removed`] runs the riding chains
+    /// was the first removal. [`Entity::set_removed`] runs the dismounting
     /// between [`Self::mark_removed`] and [`Self::finish_removal`] instead.
     pub fn set_removed(&self, reason: RemovalReason) -> bool {
         let Some(callback) = self.mark_removed(reason) else {

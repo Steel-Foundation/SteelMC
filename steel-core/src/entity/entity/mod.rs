@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
 use super::*;
-use crate::entity::component::definition::{DefinitionEntries, ENTITY_DEFINITION};
 use crate::entity::shearable::Shearable;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use rand::{RngExt, rng};
@@ -28,8 +27,7 @@ pub use {
     riding::EntityRiding, sounds::EntitySounds,
 };
 
-pub use hooks::{EntityDefaults, EntityHooks, EntityProps};
-use hooks::{entity_hook_dispatch, entity_hook_list};
+pub use hooks::{EntityHooks, EntityProps, EntityTable};
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
@@ -151,10 +149,12 @@ impl<T: Entity> EntityEventSource for T {
 /// # Implementing
 ///
 /// Entities expose [`EntityBase`] for the state every entity has, their
-/// components, and their [`EntityHooks`] for the methods entity types change
-/// (see [`EntityProps`]). Implementations don't override the other methods;
-/// entity types change behavior through hooks. `#[derive(Entity)]` writes the
-/// impl.
+/// components, and one table per vanilla class they belong to for the methods
+/// entity types change: [`EntityProps`] here, `LivingProps`, `MobProps`, ...
+/// in the layers. A method goes in the table of the class that declares it,
+/// and an entry that extends its parent calls the parent preset's entry, as
+/// below. Implementations don't override the other methods.
+/// `#[derive(Entity)]` writes the impl; the layer tables are trait impls.
 ///
 /// Behavior shared by every entity lives in extension traits per concern
 /// ([`EntityMotion`], [`EntityRiding`], [`EntityFluids`], ...), implemented for
@@ -164,7 +164,7 @@ impl<T: Entity> EntityEventSource for T {
 /// ```ignore
 /// #[derive(Entity)]
 /// #[entity(hooks = Self::ENTITY, save = Self::save_my_entity, load = Self::load_my_entity)]
-/// #[entity(key = "steel:entity/my_entity", definition = living_entity::definition)]
+/// #[entity(key = "steel:entity/my_entity")]
 /// pub struct MyEntity {
 ///     #[entity(base)]
 ///     base: EntityBase,
@@ -182,24 +182,25 @@ impl<T: Entity> EntityEventSource for T {
 ///         ..living_entity::entity_props()
 ///     };
 /// }
+///
+/// impl LivingTable for MyEntity {
+///     const LIVING: LivingProps<Self> = LivingProps {
+///         // `super.aiStep()`, then this type's part.
+///         ai_step: |entity| {
+///             let movement = (const { LivingProps::<Self>::new().ai_step })(entity);
+///             entity.tick_my_state();
+///             movement
+///         },
+///         ..LivingProps::new()
+///     };
+/// }
 /// ```
-pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
+pub trait Entity: EntityHooks + EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns a reference to the entity's shared vanilla base fields.
     fn base(&self) -> &EntityBase;
 
     /// Gets the entity type containing tracking range, dimensions, etc.
     fn entity_type(&self) -> EntityTypeRef;
-
-    /// This entity type's hooks, usually its [`EntityProps`].
-    fn entity_hooks(&self) -> &'static dyn EntityHooks;
-
-    /// This entity type's pipelines, usually its [`Definition`]. Entities
-    /// written without `#[derive(Entity)]` get vanilla `Entity`'s.
-    fn entity_definition(&self) -> &'static dyn DefinitionEntries {
-        &*ENTITY_DEFINITION
-    }
-
-    entity_hook_list!(entity_hook_dispatch);
 
     /// Returns this entity's component whose downcast key is `key`; see
     /// [`Components::query`](crate::entity::component::Components::query).
@@ -207,12 +208,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         None
     }
 
-    /// Default for [`Self::is_always_ticking`].
+    /// Default for [`EntityHooks::is_always_ticking`].
     fn is_always_ticking_default(&self) -> bool {
         false
     }
 
-    /// Default for [`Self::broadcast_to_player`].
+    /// Default for [`EntityHooks::broadcast_to_player`].
     fn broadcast_to_player_default(&self, _player: &Player) -> bool {
         true
     }
@@ -239,12 +240,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().uuid()
     }
 
-    /// Default for [`Self::scoreboard_name`].
+    /// Default for [`EntityHooks::scoreboard_name`].
     fn scoreboard_name_default(&self) -> String {
         self.uuid().to_string()
     }
 
-    /// Default for [`Self::name`].
+    /// Default for [`EntityHooks::name`].
     fn name_default(&self) -> TextComponent {
         self.custom_name().map_or_else(
             || entity_type_name(self.entity_type()),
@@ -252,7 +253,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         )
     }
 
-    /// Default for [`Self::display_name`].
+    /// Default for [`EntityHooks::display_name`].
     fn display_name_default(&self) -> TextComponent {
         let name = self.name();
         name.clone()
@@ -264,7 +265,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             .insertion(self.uuid().to_string())
     }
 
-    /// Default for [`Self::plain_text_name`].
+    /// Default for [`EntityHooks::plain_text_name`].
     fn plain_text_name_default(&self) -> String {
         self.name().to_plain(&DisplayResolutor)
     }
@@ -274,7 +275,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().position()
     }
 
-    /// Default for [`Entity::spawn_position`].
+    /// Default for [`EntityHooks::spawn_position`].
     fn spawn_position_default(&self) -> DVec3 {
         self.position()
     }
@@ -304,27 +305,27 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().bounding_box()
     }
 
-    /// Default for [`Self::blocks_building`].
+    /// Default for [`EntityHooks::blocks_building`].
     fn blocks_building_default(&self) -> bool {
         false
     }
 
-    /// Default for [`Self::is_pickable`].
+    /// Default for [`EntityHooks::is_pickable`].
     fn is_pickable_default(&self) -> bool {
         false
     }
 
-    /// Default for [`Self::is_pushable`].
+    /// Default for [`EntityHooks::is_pushable`].
     fn is_pushable_default(&self) -> bool {
         false
     }
 
-    /// Default for [`Self::is_spectator`].
+    /// Default for [`EntityHooks::is_spectator`].
     fn is_spectator_default(&self) -> bool {
         false
     }
 
-    /// Default for [`Entity::piston_push_reaction`].
+    /// Default for [`EntityHooks::piston_push_reaction`].
     fn piston_push_reaction_default(&self) -> PushReaction {
         if self.is_marker_armor_stand() {
             PushReaction::IgnoreEntity
@@ -377,148 +378,50 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn DefaultEntityPush>(self)
     }
 
-    /// Called every game tick when the entity is in a ticked chunk: runs this
-    /// type's `tick` pipeline. The caller handles post-tick dirty data sync.
-    fn tick(&self) {
-        self.entity_definition().tick(self.as_entity_event_source());
+    /// Default for [`EntityHooks::tick`]: vanilla `Entity.tick` is the base tick.
+    fn tick_default(&self) {
+        self.base_tick();
     }
 
-    /// Vanilla `Entity.rideTick`: a passenger's tick, through this type's
-    /// `ride_tick` pipeline.
-    fn ride_tick(&self) {
-        self.entity_definition()
-            .ride_tick(self.as_entity_event_source());
+    /// Default for [`EntityHooks::hurt`]: vanilla `Entity.hurtServer` is
+    /// abstract, so an entity type without one takes no damage.
+    fn hurt_default(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
+        false
     }
 
-    /// Vanilla `Entity.checkFallDamage`: accumulates fall distance, lands on
-    /// the block fallen on and resets it, through this type's pipeline.
-    fn check_fall_damage(
-        &self,
-        vertical_movement: f64,
-        on_ground: bool,
-        on_state: BlockStateId,
-        pos: BlockPos,
-        world: &Arc<World>,
-    ) {
-        self.entity_definition().check_fall_damage(
-            self.as_entity_event_source(),
-            vertical_movement,
-            on_ground,
-            on_state,
-            pos,
-            world,
-        );
+    /// Default for [`EntityHooks::stop_riding`].
+    fn stop_riding_default(&self) {
+        self.remove_vehicle();
     }
 
-    /// Vanilla `Entity.causeFallDamage`, through this type's pipeline.
-    fn cause_fall_damage(
-        &self,
-        fall_distance: f64,
-        damage_modifier: f32,
-        source: &DamageSource,
-    ) -> bool {
-        self.entity_definition().cause_fall_damage(
-            self.as_entity_event_source(),
-            fall_distance,
-            damage_modifier,
-            source,
-        )
+    /// Default for [`EntityHooks::set_y_body_rot`]: only living entities have
+    /// a body rotation.
+    fn set_y_body_rot_default(&self, _y_body_rot: f32) {}
+
+    /// Default for [`EntityHooks::position_rider`]: repositions a direct
+    /// passenger from this vehicle's attachment point.
+    fn position_rider_default(&self, passenger: &dyn Entity) {
+        if !self.has_passenger(passenger) {
+            return;
+        }
+
+        let riding_position = self.passenger_riding_position(passenger);
+        let vehicle_attachment = passenger.vehicle_attachment_point(self.as_entity_event_source());
+        if let Err(error) = passenger.try_set_position(riding_position - vehicle_attachment) {
+            log::debug!(
+                "Failed to position passenger {} riding entity {}: {error}",
+                passenger.id(),
+                self.id()
+            );
+        }
     }
 
-    /// Vanilla `Entity.stopRiding`, through this type's pipeline.
-    fn stop_riding(&self) {
-        self.entity_definition()
-            .stop_riding(self.as_entity_event_source());
+    /// Default for [`EntityHooks::controlling_passenger`]: entities have none.
+    fn controlling_passenger_default(&self) -> Option<SharedEntity> {
+        None
     }
 
-    /// Vanilla `Entity.removeVehicle`, through this type's pipeline.
-    fn remove_vehicle(&self) {
-        self.entity_definition()
-            .remove_vehicle(self.as_entity_event_source());
-    }
-
-    /// Vanilla `Entity.canFreeze`, through this type's pipeline.
-    fn can_freeze(&self) -> bool {
-        self.entity_definition()
-            .can_freeze(self.as_entity_event_source())
-    }
-
-    /// Vanilla `Entity.makeStuckInBlock`, through this type's pipeline.
-    fn make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
-        self.entity_definition().make_stuck_in_block(
-            self.as_entity_event_source(),
-            state,
-            speed_multiplier,
-        );
-    }
-
-    /// Vanilla `Entity.doWaterSplashEffect`, through this type's pipeline.
-    fn do_water_splash_effect(&self) {
-        self.entity_definition()
-            .do_water_splash_effect(self.as_entity_event_source());
-    }
-
-    /// Vanilla `Entity.updateSwimming`, through this type's pipeline.
-    fn update_swimming(&self) {
-        self.entity_definition()
-            .update_swimming(self.as_entity_event_source());
-    }
-
-    /// Vanilla `Entity.getBlockSpeedFactor`, through this type's pipeline.
-    fn block_speed_factor(&self) -> f32 {
-        self.entity_definition()
-            .block_speed_factor(self.as_entity_event_source())
-    }
-
-    /// Vanilla `Entity.interact`: runs this type's `interact` pipeline.
-    fn interact(
-        &self,
-        player: &Player,
-        hand: InteractionHand,
-        location: DVec3,
-    ) -> InteractionResult {
-        self.entity_definition()
-            .interact(self.as_entity_event_source(), player, hand, location)
-    }
-
-    /// Vanilla `Entity.setYBodyRot`: runs this type's `set_y_body_rot` pipeline.
-    fn set_y_body_rot(&self, y_body_rot: f32) {
-        self.entity_definition()
-            .set_y_body_rot(self.as_entity_event_source(), y_body_rot);
-    }
-
-    /// Vanilla `Entity.positionRider`: places `passenger` on this vehicle
-    /// through this type's `position_rider` pipeline.
-    fn position_rider(&self, passenger: &dyn Entity) {
-        self.entity_definition()
-            .position_rider(self.as_entity_event_source(), passenger);
-    }
-
-    /// Vanilla `Entity.getControllingPassenger`: the passenger steering this
-    /// entity, through this type's `controlling_passenger` pipeline.
-    fn controlling_passenger(&self) -> Option<SharedEntity> {
-        self.entity_definition()
-            .controlling_passenger(self.as_entity_event_source())
-    }
-
-    /// Vanilla `Entity.hurtServer`: applies damage through this type's
-    /// `hurt` pipeline, returning whether it was taken.
-    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        self.entity_definition()
-            .hurt(self.as_entity_event_source(), world, source, amount)
-    }
-
-    /// Vanilla `Entity.baseTick`: runs this type's `base_tick` pipeline. It
-    /// stays separate from [`Self::tick`] because several vanilla subclasses
-    /// override `tick` without calling `super.tick()`.
-    fn base_tick(&self) {
-        self.entity_definition()
-            .base_tick(self.as_entity_event_source());
-    }
-
-    /// Runs only vanilla `Entity.baseTick` behavior.
-    ///
-    /// Subtype base-tick chains call this from their owner trait.
+    /// Default for [`EntityHooks::base_tick`]: vanilla `Entity.baseTick`.
     fn entity_base_tick(&self) {
         self.base().advance_base_tick_state();
         self.handle_portal();
@@ -559,12 +462,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
-    /// Default for [`Self::on_below_world`].
+    /// Default for [`EntityHooks::on_below_world`].
     fn on_below_world_default(&self) {
         self.set_removed(RemovalReason::Discarded);
     }
 
-    /// Default for [`Self::check_despawn`].
+    /// Default for [`EntityHooks::check_despawn`].
     fn check_despawn_default(&self) {}
 
     /// Gets the world this entity is in.
@@ -595,7 +498,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         None
     }
 
-    /// Default for [`Self::update_data_before_sync`].
+    /// Default for [`EntityHooks::update_data_before_sync`].
     fn update_data_before_sync_default(&self) {}
 
     /// Returns true if the entity has been marked for removal.
@@ -603,7 +506,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().is_removed()
     }
 
-    /// Default for [`Self::is_alive`].
+    /// Default for [`EntityHooks::is_alive`].
     fn is_alive_default(&self) -> bool {
         !self.is_removed()
     }
@@ -617,7 +520,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Only the first removal takes effect. Like vanilla, the entity leaves
     /// its vehicle when destroyed and its passengers dismount through their
-    /// own `stop_riding` chains before the world learns of the removal.
+    /// own `stop_riding` before the world learns of the removal.
     fn set_removed(&self, reason: RemovalReason) {
         let Some(callback) = self.base().mark_removed(reason) else {
             return;
@@ -632,7 +535,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.on_removal(reason);
     }
 
-    /// Default for [`Entity::on_removal`].
+    /// Default for [`EntityHooks::on_removal`].
     fn on_removal_default(&self, _reason: RemovalReason) {}
 
     /// Emits a vanilla game event from this entity's exact position with an explicit source entity.
@@ -657,7 +560,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.game_event_with_source_entity(event, Some(self.as_entity_event_source()));
     }
 
-    /// Default for [`Entity::restore_owner_reference`].
+    /// Default for [`EntityHooks::restore_owner_reference`].
     fn restore_owner_reference_default(&self, _owner: &SharedEntity) {}
 
     /// Sets the level callback for lifecycle events (movement, removal).
@@ -695,7 +598,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.downcast_ref::<Player>()
     }
 
-    /// Default for [`Self::with_weapon_item`].
+    /// Default for [`EntityHooks::with_weapon_item`].
     fn with_weapon_item_default(&self, visitor: &mut dyn FnMut(Option<&ItemStack>)) {
         visitor(None);
     }
@@ -730,6 +633,27 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn Leashable>(self)
     }
 
+    /// Returns this entity's `LivingEntity` hooks when it is a living entity;
+    /// [`Living::of`] builds the view from them.
+    fn as_living_hooks(&self) -> Option<&dyn LivingHooks> {
+        try_as_dyn::<Self, dyn LivingHooks>(self)
+    }
+
+    /// Returns this entity's `Mob` hooks when it is a mob.
+    fn as_mob_hooks(&self) -> Option<&dyn MobHooks> {
+        try_as_dyn::<Self, dyn MobHooks>(self)
+    }
+
+    /// Returns this entity's `Projectile` hooks when it is a projectile.
+    fn as_projectile_hooks(&self) -> Option<&dyn ProjectileHooks> {
+        try_as_dyn::<Self, dyn ProjectileHooks>(self)
+    }
+
+    /// Returns this entity's `AbstractMinecart` hooks when it is a minecart.
+    fn as_abstract_minecart_hooks(&self) -> Option<&dyn AbstractMinecartHooks> {
+        try_as_dyn::<Self, dyn AbstractMinecartHooks>(self)
+    }
+
     /// Whether this entity implements the `Enemy` marker.
     fn is_enemy(&self) -> bool {
         self.as_enemy().is_some()
@@ -750,7 +674,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn ItemSteerable>(self)
     }
 
-    /// Default for [`Self::is_effective_ai`].
+    /// Default for [`EntityHooks::is_effective_ai`].
     fn is_effective_ai_default(&self) -> bool {
         self.is_server_driven_movement()
     }
@@ -787,15 +711,15 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().set_rotation(rotation);
     }
 
-    /// Default for [`Self::y_head_rot`].
+    /// Default for [`EntityHooks::y_head_rot`].
     fn y_head_rot_default(&self) -> f32 {
         0.0
     }
 
-    /// Default for [`Self::set_y_head_rot`].
+    /// Default for [`EntityHooks::set_y_head_rot`].
     fn set_y_head_rot_default(&self, _y_head_rot: f32) {}
 
-    /// Default for [`Self::spawn_data`].
+    /// Default for [`EntityHooks::spawn_data`].
     fn spawn_data_default(&self) -> i32 {
         0
     }
@@ -935,26 +859,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
 pub(super) fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
     (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
-}
-
-/// Repositions a direct passenger from the vehicle's attachment point.
-///
-/// Shared between the [`Entity::position_rider`] default and entity overrides that
-/// extend it (e.g. `Chicken` mirroring the rider's body yaw).
-pub(crate) fn position_rider_default<E: Entity + ?Sized>(entity: &E, passenger: &dyn Entity) {
-    if !entity.has_passenger(passenger) {
-        return;
-    }
-
-    let riding_position = entity.passenger_riding_position(passenger);
-    let vehicle_attachment = passenger.vehicle_attachment_point(entity.as_entity_event_source());
-    if let Err(error) = passenger.try_set_position(riding_position - vehicle_attachment) {
-        log::debug!(
-            "Failed to position passenger {} riding entity {}: {error}",
-            passenger.id(),
-            entity.id()
-        );
-    }
 }
 
 pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAnchor, target: DVec3) {

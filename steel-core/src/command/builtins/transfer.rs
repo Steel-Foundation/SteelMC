@@ -1,3 +1,4 @@
+use crate::entity::EntityHooks;
 use std::sync::Arc;
 
 use steel_protocol::packets::common::CTransfer;
@@ -10,7 +11,6 @@ use crate::{
         execution::{CommandSource, SteelArgumentType, SteelCommandRuntime, argument, literal},
         registration::CommandRegistration,
     },
-    entity::Entity,
     player::Player,
 };
 

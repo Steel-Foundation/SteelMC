@@ -14,8 +14,6 @@ use steel_registry::vanilla_entity_data::VehicleEntityData;
 use steel_registry::vanilla_game_events;
 use steel_registry::vanilla_game_rules::{ENTITY_DROPS, MOB_GRIEFING};
 
-use crate::entity::component::definition::{Definition, HurtCtx};
-use crate::entity::component::pipeline::{Flow, Pipeline, Stage, StageId};
 use crate::entity::prelude::*;
 use crate::entity::{DamageSource, Entity, EntityProps, RemovalReason};
 use crate::world::{Explosion, World};
@@ -133,25 +131,11 @@ impl Deref for Vehicle<'_> {
     }
 }
 
-/// The `VehicleEntity.hurtServer` stage; `Entity`'s is abstract.
-pub const HURT: StageId = StageId("vehicle_entity.hurt");
-
-/// Vanilla `VehicleEntity`'s chains, on `Entity`'s.
-#[must_use]
-pub fn definition<E: Parts>() -> Definition<E> {
-    Definition {
-        hurt: Pipeline::new([Stage::new(HURT, |vehicle: &E, ctx: &mut HurtCtx<'_>| {
-            ctx.result = hurt(vehicle, ctx.world, ctx.source, ctx.amount);
-            Flow::Continue
-        })]),
-        ..Definition::new()
-    }
-}
-
 /// `VehicleEntity`'s overrides of the entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
+        hurt: hurt::<E>,
         ignore_explosion: |_, explosion| ignore_explosion(explosion),
         dimension_changing_delay: |_| DIMENSION_CHANGING_DELAY,
         ..EntityProps::new()

@@ -1,5 +1,5 @@
 use crate::entity::prelude::*;
-use crate::{entity::Entity, player::Player};
+use crate::player::Player;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct SleepStatus {

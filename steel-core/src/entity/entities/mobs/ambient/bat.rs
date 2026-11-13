@@ -1,5 +1,7 @@
 //! Vanilla `Bat`: rests on cave ceilings and flutters through the dark.
 
+use crate::entity::LivingTable;
+use crate::entity::MobTable;
 use std::f32::consts::PI;
 use steel_utils::nbt::NbtValueInput as _;
 
@@ -19,18 +21,12 @@ use steel_utils::locks::CheckedMutex;
 
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::ai::targeting::TargetingConditions;
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::HurtCtx;
-use crate::entity::component::definition::VoicePitchCtx;
-use crate::entity::component::pipeline::Flow;
-use crate::entity::component::pipeline::Pipeline;
-use crate::entity::component::pipeline::{Stage, StageId};
+use crate::entity::mob;
 use crate::entity::prelude::*;
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityMovementEmission, EntityProps, LivingEntityBase,
     LivingProps, LivingTravelInput, Mob, MobBase, MobProps, SpawnRule,
 };
-use crate::entity::{living_entity, mob};
 use crate::world::{World, is_redstone_conductor};
 
 const FLAG_RESTING: i8 = 1;
@@ -40,7 +36,7 @@ const RESTING_TARGETING_RANGE: f64 = 4.0;
 #[entity_behavior(class = "Bat", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_flags, load = Self::load_flags)]
-#[entity(key = "steel:entity/bat", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/bat", constructors)]
 pub struct BatEntity {
     #[entity(base)]
     base: EntityBase,
@@ -75,87 +71,40 @@ impl BatEntity {
             && Mob::check_mob_spawn_rules(entity_type, level, spawn_reason, pos)
     };
 
-    const LIVING: LivingProps<Self> = LivingProps {
-        sound_volume: |_| 0.1,
-        hurt_sound: |_, _| Some(&sound_events::ENTITY_BAT_HURT),
-        death_sound: |_| Some(&sound_events::ENTITY_BAT_DEATH),
-        push_entities: |_| {},
-        ..mob::living_props()
-    };
-    const MOB: MobProps<Self> = MobProps {
-        ambient_sound: |bat| {
-            if bat.is_resting() && rand::random_range(0..4) != 0 {
-                None
-            } else {
-                Some(&sound_events::ENTITY_BAT_AMBIENT)
-            }
-        },
-        // `AmbientCreature.canBeLeashed`.
-        mob_can_be_leashed: |_| false,
-        ..MobProps::new()
-    };
     const ENTITY: EntityProps<Self> = EntityProps {
         movement_emission: |_| EntityMovementEmission::Events,
         is_flapping: |bat| !bat.is_resting() && bat.tick_count() % 10 == 0,
         is_pushable: |_| false,
         is_ignoring_block_triggers: |_| true,
         push_entity: |_, _| {},
-        ..mob::entity_props()
-    };
-    const FLY: StageId = StageId("bat.fly");
-    const HANG: StageId = StageId("bat.hang");
-    const WAKE: StageId = StageId("bat.wake");
-    const PITCH: StageId = StageId("bat.pitch");
-
-    /// Vanilla `Bat`: the mob chains with its resting and flying.
-    fn define() -> Definition<Self> {
-        let mut definition = mob::stages::definition::<Self>();
-        definition.custom_server_ai_step = definition
-            .custom_server_ai_step
-            .then([Stage::effect(Self::FLY, Self::fly)]);
-        definition.tick = definition
-            .tick
-            .then([Stage::effect(Self::HANG, Self::tick_hang)]);
+        tick: |bat| {
+            (const { mob::entity_props::<Self>().tick })(bat);
+            bat.tick_hang();
+        },
         // `Bat.checkFallDamage` does nothing.
-        definition.check_fall_damage = Pipeline::new([]);
-        // `Bat.getVoicePitch`: `super`'s pitch lowered.
-        definition.voice_pitch = definition.voice_pitch.then([Stage::new(
-            Self::PITCH,
-            |_: &Self, ctx: &mut VoicePitchCtx<'_>| {
-                ctx.result *= 0.95;
-                Flow::Continue
-            },
-        )]);
+        check_fall_damage: |_, _, _, _, _, _| {},
         // `Bat.hurtServer` before `super`: invulnerable bats ignore the hit;
         // others wake up.
-        definition.hurt = definition.hurt.before(
-            living_entity::HURT,
-            [Stage::new(
-                Self::WAKE,
-                |bat: &Self, ctx: &mut HurtCtx<'_>| {
-                    if bat.living().is_invulnerable_to(ctx.world, ctx.source) {
-                        ctx.result = false;
-                        return Flow::Stop;
-                    }
-                    if bat.is_resting() {
-                        bat.set_resting(false);
-                    }
-                    Flow::Continue
-                },
-            )],
-        );
-        definition
-    }
-
+        hurt: |bat, world, source, amount| {
+            if bat.living().is_invulnerable_to(world, source) {
+                return false;
+            }
+            if bat.is_resting() {
+                bat.set_resting(false);
+            }
+            (const { mob::entity_props::<Self>().hurt })(bat, world, source, amount)
+        },
+        ..mob::entity_props()
+    };
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = BatEntityData::new();
-        let living_base = LivingEntityBase::new(entity_type, &Self::LIVING, &mut entity_data);
+        let living_base = LivingEntityBase::new(entity_type, &mut entity_data);
         entity_data.id_flags.set(FLAG_RESTING);
         Self {
             base,
             entity_type,
             living_base,
-            mob_base: MobBase::new(&Self::MOB, Self::definition()),
+            mob_base: MobBase::new(|_| {}),
             target_position: CheckedMutex::new(None),
             entity_data: CheckedMutex::new(entity_data),
         }
@@ -308,6 +257,37 @@ impl BatEntity {
             .id_flags
             .set(nbt.byte_value("BatFlags").unwrap_or(0));
     }
+}
+
+impl MobTable for BatEntity {
+    const MOB: MobProps<Self> = MobProps {
+        ambient_sound: |bat| {
+            if bat.is_resting() && rand::random_range(0..4) != 0 {
+                None
+            } else {
+                Some(&sound_events::ENTITY_BAT_AMBIENT)
+            }
+        },
+        // `AmbientCreature.canBeLeashed`.
+        mob_can_be_leashed: |_| false,
+        custom_server_ai_step: |bat| {
+            (const { MobProps::<Self>::new().custom_server_ai_step })(bat);
+            bat.fly();
+        },
+        ..MobProps::new()
+    };
+}
+
+impl LivingTable for BatEntity {
+    const LIVING: LivingProps<Self> = LivingProps {
+        sound_volume: |_| 0.1,
+        hurt_sound: |_, _| Some(&sound_events::ENTITY_BAT_HURT),
+        death_sound: |_| Some(&sound_events::ENTITY_BAT_DEATH),
+        push_entities: |_| {},
+        // `Bat.getVoicePitch`: `super`'s pitch lowered.
+        voice_pitch: |bat| (const { mob::living_props::<Self>().voice_pitch })(bat) * 0.95,
+        ..mob::living_props()
+    };
 }
 
 /// Java `Math.signum`: zero stays zero, where Rust's `signum` returns ±1.

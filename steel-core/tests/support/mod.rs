@@ -1,4 +1,5 @@
 use crate::config::ResolvedDomainConfig;
+use crate::entity::EntityTable;
 use crate::entity::WeakSelf;
 use crate::entity::damage::DamageHistory;
 use crate::server::worlds::WorldMap;
@@ -38,8 +39,7 @@ use crate::chunk::chunk_holder::{ChunkHolder, TickingReadiness};
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk::status::ChunkStatus;
-use crate::entity::entities::ChickenEntity;
-use crate::entity::{Entity, EntityBase, LivingProps, SharedEntity};
+use crate::entity::{Entity, EntityBase, SharedEntity};
 use crate::level_data::{GameTimeSource, WorldGenerationSettings};
 use crate::world::game_event::GameEventContext;
 use crate::world::{
@@ -51,7 +51,6 @@ use steel_utils::ChunkPos;
 mod connection;
 mod player;
 
-use crate::entity::{EntityDefaults, EntityHooks};
 pub(crate) use connection::TestConnection;
 pub(crate) use player::{TestPlayerBuilder, test_runtime_config};
 
@@ -102,11 +101,9 @@ impl Entity for TestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
     }
-
-    fn entity_hooks(&self) -> &'static dyn EntityHooks {
-        &EntityDefaults
-    }
 }
+
+impl EntityTable for TestEntity {}
 
 pub(crate) fn test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();
@@ -719,7 +716,3 @@ pub(crate) fn synced_with_health<D: VanillaEntityData>(mut data: D, health: f32)
     }
     data
 }
-
-/// Living hooks with vanilla's defaults, for tests that build a
-/// `LivingEntityBase` without a concrete entity type.
-pub(crate) static DEFAULT_LIVING_HOOKS: LivingProps<ChickenEntity> = LivingProps::new();

@@ -2,10 +2,14 @@
 
 mod color_spawn_rules;
 
+use crate::entity::LivingTable;
+use crate::entity::MobTable;
 use crate::entity::prelude::*;
+use crate::player::Player;
 use std::sync::Arc;
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::nbt::NbtValueInput as _;
+use steel_utils::types::InteractionHand;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -26,15 +30,12 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
 
 use crate::behavior::InteractionResult;
-use crate::entity::ageable::{self, Age, Ageable, AgeableProps};
+use crate::entity::ageable::{Age, Ageable, AgeableProps};
 use crate::entity::ai::goal::{
     BreedGoal, EatBlockGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal,
     RandomLookAroundGoal, TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::animal::{self, Breeding, BreedingProps};
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::{FinalizeSpawnCtx, MobInteractCtx};
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::shearable::{self, Shearable};
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityProps, LivingEntityBase, LivingProps, MobBase, MobProps,
@@ -52,7 +53,7 @@ const SHEARED_BIT: i8 = 0x10;
 #[entity_behavior(class = "Sheep", spawn_rule)]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_sheep, load = Self::load_sheep)]
-#[entity(key = "steel:entity/sheep", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/sheep", constructors)]
 pub struct SheepEntity {
     #[entity(base)]
     base: EntityBase,
@@ -80,52 +81,21 @@ impl SheepEntity {
         breed_offspring: Self::breed_offspring,
     };
     const BREEDING: BreedingProps = BreedingProps::new(Self::is_food);
-    const LIVING: LivingProps<Self> = LivingProps {
-        hurt_sound: |_, _| Some(&sound_events::ENTITY_SHEEP_HURT),
-        death_sound: |_| Some(&sound_events::ENTITY_SHEEP_DEATH),
-        sheep_loot_state: |sheep| Some((sheep.color(), sheep.is_sheared())),
-        ..animal::living_props()
-    };
-    const MOB: MobProps<Self> = MobProps {
-        ambient_sound: |_| Some(&sound_events::ENTITY_SHEEP_AMBIENT),
-        ..animal::mob_props()
-    };
-    const GOALS: StageId = StageId("sheep.goals");
-    const SHEAR: StageId = StageId("sheep.shear");
-    const PICK_COLOR: StageId = StageId("sheep.pick_color");
-    const ATE: StageId = StageId("sheep.ate");
 
-    /// Vanilla `Sheep`: the animal chains with sheep goals, shearing before
-    /// feeding, and the spawn wool color before `AgeableMob.finalizeSpawn`.
-    fn define() -> Definition<Self> {
-        let mut definition = animal::definition::<Self>();
-        // `Mob`'s constructor registers goals before `Animal`'s sets its malus.
-        definition.construct = definition.construct.before(
-            animal::PATHFINDING_MALUS,
-            [Stage::effect(Self::GOALS, Self::register_goals)],
-        );
-        definition.mob_interact = definition.mob_interact.before(
-            animal::MOB_INTERACT,
-            [Stage::new(Self::SHEAR, Self::shear_by_player)],
-        );
-        definition.finalize_spawn = definition.finalize_spawn.before(
-            ageable::FINALIZE_SPAWN,
-            [Stage::new(Self::PICK_COLOR, Self::pick_spawn_color)],
-        );
-        definition.ate = definition
-            .ate
-            .then([Stage::effect(Self::ATE, Self::mob_ate)]);
-        definition
+    /// `Mob`'s constructor registers goals before `Animal`'s sets its malus.
+    fn construct(mob_base: &MobBase) {
+        Self::register_goals(mob_base);
+        animal::construct(mob_base);
     }
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = SheepEntityData::new();
-        let living_base = LivingEntityBase::new(entity_type, &Self::LIVING, &mut entity_data);
+        let living_base = LivingEntityBase::new(entity_type, &mut entity_data);
         Self {
             base,
             entity_type,
             living_base,
-            mob_base: MobBase::new(&Self::MOB, Self::definition()),
+            mob_base: MobBase::new(Self::construct),
             age: Age::new(&Self::AGEABLE),
             breeding: Breeding::new(&Self::BREEDING),
             entity_data: CheckedMutex::new(entity_data),
@@ -190,23 +160,21 @@ impl SheepEntity {
     }
 
     /// `Sheep.mobInteract` before `super`: shears always end the interaction.
-    fn shear_by_player(&self, ctx: &mut MobInteractCtx<'_>) -> Flow {
-        let holds_shears = ctx
-            .player
+    fn shear_by_player(&self, player: &Player, hand: InteractionHand) -> Option<InteractionResult> {
+        let holds_shears = player
             .inventory
             .lock()
-            .get_item_in_hand(ctx.hand)
+            .get_item_in_hand(hand)
             .is(&vanilla_items::SHEARS);
         if !holds_shears {
-            return Flow::Continue;
+            return None;
         }
-        ctx.result = if self.ready_for_shearing() {
-            shearable::shear_by_player(self, ctx.player, ctx.hand);
+        Some(if self.ready_for_shearing() {
+            shearable::shear_by_player(self, player, hand);
             InteractionResult::SuccessServer
         } else {
             InteractionResult::Consume
-        };
-        Flow::Stop
+        })
     }
 
     /// `Sheep.ate`: eating grass regrows the wool and speeds up a lamb's growth.
@@ -219,11 +187,10 @@ impl SheepEntity {
     }
 
     /// `Sheep.finalizeSpawn` before `super`: the wool color for the biome.
-    fn pick_spawn_color(&self, ctx: &mut FinalizeSpawnCtx<'_>) -> Flow {
-        let biome = ctx.world.biome_at(self.block_position());
+    fn pick_spawn_color(&self, world: &World) {
+        let biome = world.biome_at(self.block_position());
         let mut random = LegacyRandom::from_seed(rand::random());
         self.set_color(color_spawn_rules::sheep_color(biome, &mut random));
-        Flow::Continue
     }
 
     /// `Sheep.getBreedOffspring`: a lamb with the parents' colors mixed.
@@ -244,6 +211,38 @@ impl SheepEntity {
         }
         Some(offspring)
     }
+}
+
+impl MobTable for SheepEntity {
+    const MOB: MobProps<Self> = MobProps {
+        ambient_sound: |_| Some(&sound_events::ENTITY_SHEEP_AMBIENT),
+        // `Sheep.mobInteract`: shearing comes before `super`.
+        mob_interact: |sheep, player, hand| {
+            if let Some(result) = sheep.shear_by_player(player, hand) {
+                return result;
+            }
+            (const { animal::mob_props::<Self>().mob_interact })(sheep, player, hand)
+        },
+        // `Sheep.finalizeSpawn` picks the wool color before `super`.
+        finalize_spawn: |sheep, world, reason, group_data| {
+            sheep.pick_spawn_color(world);
+            (const { animal::mob_props::<Self>().finalize_spawn })(sheep, world, reason, group_data)
+        },
+        ate: |sheep| {
+            (const { animal::mob_props::<Self>().ate })(sheep);
+            sheep.mob_ate();
+        },
+        ..animal::mob_props()
+    };
+}
+
+impl LivingTable for SheepEntity {
+    const LIVING: LivingProps<Self> = LivingProps {
+        hurt_sound: |_, _| Some(&sound_events::ENTITY_SHEEP_HURT),
+        death_sound: |_| Some(&sound_events::ENTITY_SHEEP_DEATH),
+        sheep_loot_state: |sheep| Some((sheep.color(), sheep.is_sheared())),
+        ..animal::living_props()
+    };
 }
 
 /// `DyeColor.getMixedColor`: the color two dyes craft into, or either parent's

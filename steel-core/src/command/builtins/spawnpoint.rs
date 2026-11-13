@@ -1,5 +1,6 @@
 //! Vanilla per-player spawn-point command.
 
+use crate::entity::EntityHooks;
 use std::{slice, sync::Arc};
 
 use steel_utils::{BlockPos, Identifier, java::float_to_string, translations};
@@ -14,7 +15,6 @@ use super::super::{
     registration::CommandRegistration,
 };
 use crate::{
-    entity::Entity as _,
     level_data::RespawnData,
     player::{Player, PlayerRespawnConfig},
 };

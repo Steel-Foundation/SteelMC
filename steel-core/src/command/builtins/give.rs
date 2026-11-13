@@ -1,5 +1,6 @@
 //! Vanilla item-giving command.
 
+use crate::entity::EntityHooks;
 use steel_registry::{
     data_components::vanilla_components::{CUSTOM_NAME, ITEM_NAME},
     item_stack::ItemStack,
@@ -15,7 +16,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::{entity::Entity as _, player::Player};
+use crate::player::Player;
 
 const MAX_ALLOWED_ITEM_STACKS: i32 = 100;
 

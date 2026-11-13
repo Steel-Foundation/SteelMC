@@ -1,7 +1,7 @@
 //! Equipment slots, equipping and item use.
 
 use super::{
-    CEntityEvent, Entity, EntityStatus, EquipmentSlot, EquipmentSlotItem, InteractionHand,
+    CEntityEvent, EntityStatus, EquipmentSlot, EquipmentSlotItem, InteractionHand,
     InteractionResult, InventoryTickContext, ItemRef, ItemStack, Living, Player, SoundEventRef,
     equipment_items_to_packet_items, vanilla_game_events,
 };
@@ -87,7 +87,7 @@ impl Living<'_> {
     /// open, usable slot this entity's type accepts.
     #[must_use]
     pub fn can_equip_with_dispenser(&self, item_stack: &ItemStack) -> bool {
-        if !Entity::is_alive(self.entity()) || self.is_spectator() {
+        if !EntityHooks::is_alive(self.entity()) || self.is_spectator() {
             return false;
         }
 
@@ -190,7 +190,7 @@ impl Living<'_> {
         }
 
         let slot = equippable.slot;
-        if !self.is_equippable_in_slot(&item_stack, slot) || !Entity::is_alive(self.entity()) {
+        if !self.is_equippable_in_slot(&item_stack, slot) || !EntityHooks::is_alive(self.entity()) {
             return InteractionResult::Pass;
         }
 

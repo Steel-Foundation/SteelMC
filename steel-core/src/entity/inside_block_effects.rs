@@ -140,6 +140,7 @@ impl Default for InsideBlockEffectCollector {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityTable;
     use crate::entity::WeakSelf;
     use std::sync::{Arc, Weak};
 
@@ -151,7 +152,7 @@ mod tests {
     use crate::entity::{Entity, EntityBase};
 
     use super::{InsideBlockEffectCollector, InsideBlockEffectType};
-    use crate::entity::{EntityHooks, EntityProps};
+    use crate::entity::EntityProps;
 
     struct EffectTestEntity {
         base: EntityBase,
@@ -206,10 +207,10 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM
         }
+    }
 
-        fn entity_hooks(&self) -> &'static dyn EntityHooks {
-            &Self::ENTITY
-        }
+    impl EntityTable for EffectTestEntity {
+        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     #[test]

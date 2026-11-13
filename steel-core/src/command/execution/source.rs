@@ -889,6 +889,7 @@ fn normalize_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::EntityTable;
     use crate::entity::WeakSelf;
     use std::sync::Weak;
 
@@ -905,7 +906,7 @@ mod tests {
     };
 
     use super::{CommandAuthorizationContext, admin_broadcast_source_name, normalize_rotation};
-    use crate::entity::{EntityHooks, EntityProps};
+    use crate::entity::EntityProps;
 
     struct NamedTestEntity {
         base: EntityBase,
@@ -928,10 +929,10 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM
         }
+    }
 
-        fn entity_hooks(&self) -> &'static dyn EntityHooks {
-            &Self::ENTITY
-        }
+    impl EntityTable for NamedTestEntity {
+        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     fn permission_key(value: &str) -> PermissionKey {

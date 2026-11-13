@@ -3,6 +3,7 @@
 //! The owning player keeps a weak reference to its hook, cleared when the
 //! hook is removed.
 
+use crate::entity::projectile::ProjectileTable;
 use std::f32::consts::PI;
 use std::sync::Arc;
 
@@ -30,9 +31,6 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Downcast as _};
 
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::{CanHitEntityCtx, OnHitBlockCtx, OnHitEntityCtx};
-use crate::entity::component::pipeline::{Flow, Stage, StageId};
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
 use crate::entity::prelude::*;
 use crate::entity::projectile::{self, ProjectileBase, ProjectileProps, triangle_random};
@@ -54,7 +52,7 @@ const MAX_DISTANCE_SQR: f64 = 32.0 * 32.0;
 #[entity_behavior(class = "FishingHook")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, no_save_data)]
-#[entity(key = "steel:entity/fishing_hook", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/fishing_hook", constructors)]
 pub struct FishingHookEntity {
     #[entity(base)]
     base: EntityBase,
@@ -105,51 +103,12 @@ impl FishingHookState {
 }
 
 impl FishingHookEntity {
-    const SEED: StageId = StageId("fishing_hook.seed");
-    const TICK: StageId = StageId("fishing_hook.tick");
-    const CAN_HIT_ENTITY: StageId = StageId("fishing_hook.can_hit_entity");
-    const ON_HIT_ENTITY: StageId = StageId("fishing_hook.on_hit_entity");
-    const ON_HIT_BLOCK: StageId = StageId("fishing_hook.on_hit_block");
-
-    fn define() -> Definition<Self> {
-        let definition = projectile::definition();
-        Definition {
-            can_hit_entity: definition.can_hit_entity.then([Stage::new(
-                Self::CAN_HIT_ENTITY,
-                |_: &Self, ctx: &mut CanHitEntityCtx<'_>| {
-                    ctx.result |= ctx.target.is_alive() && ctx.target.is::<ItemEntity>();
-                    Flow::Continue
-                },
-            )]),
-            on_hit_entity: definition.on_hit_entity.then([Stage::new(
-                Self::ON_HIT_ENTITY,
-                |hook: &Self, ctx: &mut OnHitEntityCtx<'_>| {
-                    hook.set_hooked_entity(Some(Arc::clone(ctx.target)));
-                    Flow::Continue
-                },
-            )]),
-            on_hit_block: definition.on_hit_block.then([Stage::new(
-                Self::ON_HIT_BLOCK,
-                |hook: &Self, ctx: &mut OnHitBlockCtx<'_>| {
-                    // Vanilla scales by `HitResult.distanceTo`, which is the
-                    // squared distance.
-                    let distance_sqr = ctx.hit.location.distance_squared(hook.position());
-                    hook.set_velocity(vector::normalize(hook.velocity()) * distance_sqr);
-                    Flow::Continue
-                },
-            )]),
-            tick: definition
-                .tick
-                .before(
-                    projectile::TICK,
-                    [Stage::effect(Self::SEED, Self::seed_synchronized_random)],
-                )
-                .then([Stage::effect(Self::TICK, Self::entity_tick)]),
-            ..definition
-        }
-    }
-
     const ENTITY: EntityProps<Self> = EntityProps {
+        tick: |hook| {
+            hook.seed_synchronized_random();
+            (const { projectile::entity_props::<Self>().tick })(hook);
+            hook.entity_tick();
+        },
         // Vanilla `FishingHook.remove`: the player stops fishing with it.
         on_removal: |hook, _| {
             if let Some(owner) = hook.projectile().owner()
@@ -170,16 +129,12 @@ impl FishingHookEntity {
         },
         ..projectile::entity_props()
     };
-    const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        should_bounce_on_world_border: |_| true,
-        ..ProjectileProps::new()
-    };
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {
             base,
             entity_type,
-            projectile: ProjectileBase::new(&Self::PROJECTILE),
+            projectile: ProjectileBase::new(),
             hook_state: CheckedMutex::new(FishingHookState::new(0, 0)),
             synchronized_random: CheckedMutex::new(LegacyRandom::from_seed(0)),
             entity_data: CheckedMutex::new(FishingBobberEntityData::new()),
@@ -784,6 +739,28 @@ impl FishingHookEntity {
         self.set_velocity(self.velocity() * 0.92);
         self.set_old_position_to_current();
     }
+}
+
+impl ProjectileTable for FishingHookEntity {
+    const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
+        can_hit_entity: |hook, target| {
+            (const { ProjectileProps::<Self>::new().can_hit_entity })(hook, target)
+                || (target.is_alive() && target.is::<ItemEntity>())
+        },
+        on_hit_entity: |hook, target, location| {
+            (const { ProjectileProps::<Self>::new().on_hit_entity })(hook, target, location);
+            hook.set_hooked_entity(Some(Arc::clone(target)));
+        },
+        on_hit_block: |hook, hit| {
+            (const { ProjectileProps::<Self>::new().on_hit_block })(hook, hit);
+            // Vanilla scales by `HitResult.distanceTo`, which is the squared
+            // distance.
+            let distance_sqr = hit.location.distance_squared(hook.position());
+            hook.set_velocity(vector::normalize(hook.velocity()) * distance_sqr);
+        },
+        should_bounce_on_world_border: |_| true,
+        ..ProjectileProps::new()
+    };
 }
 
 /// Collection of possible states the fishing bobber of the `FishingHookEntity` can take on.

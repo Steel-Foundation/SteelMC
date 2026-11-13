@@ -13,7 +13,6 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
 use super::{abstract_minecart, vehicle_entity};
-use crate::entity::component::definition::Definition;
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps, WeakSelf};
 use crate::world::World;
@@ -25,7 +24,7 @@ use crate::world::World;
 #[entity_behavior(class = "MinecartChest")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY, save = Self::save_chest, load = Self::load_chest)]
-#[entity(key = "steel:entity/chest_minecart", definition = Definition::new)]
+#[entity(key = "steel:entity/chest_minecart")]
 pub struct ChestMinecartEntity {
     #[entity(base)]
     base: EntityBase,

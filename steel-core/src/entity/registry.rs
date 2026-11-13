@@ -363,22 +363,6 @@ mod tests {
         assert_eq!(living_rotation.y_body_rot_o().to_bits(), 0.0_f32.to_bits());
     }
 
-    /// Definitions are built lazily, so a stage positioned against a missing
-    /// `StageId` would otherwise only panic when that type first spawns.
-    #[test]
-    fn every_implemented_entity_builds_its_definition() {
-        init_vanilla_registry();
-        let mut registry = EntityRegistry::new();
-        register_entity_factories(&mut registry);
-
-        for entity_type in registry.get_implemented() {
-            let Some(entity) = registry.create(entity_type, 1, DVec3::ZERO, Weak::new()) else {
-                panic!("{} has a factory", entity_type.key);
-            };
-            let _ = entity.entity_definition();
-        }
-    }
-
     #[test]
     fn create_and_load_skips_unregistered_entity_type() {
         init_vanilla_registry();

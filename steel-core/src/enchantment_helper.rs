@@ -1009,7 +1009,9 @@ fn damage_source_predicate_matches(
 mod tests {
 
     use crate::entity::EntitySyncedData;
+    use crate::entity::EntityTable;
     use crate::entity::LivingProps;
+    use crate::entity::LivingTable;
     use crate::entity::WeakSelf;
     use crate::entity::component::Has;
     use crate::entity::entities::FireworkRocketEntity;
@@ -1034,7 +1036,7 @@ mod tests {
 
     use crate::behavior::init_behaviors;
     use crate::entity::{EntityBase, LivingEntityBase};
-    use crate::entity::{EntityHooks, EntityProps, living_entity};
+    use crate::entity::{EntityProps, living_entity};
     use crate::test_support::{enchanted_item, test_world};
 
     struct TestLivingEntity {
@@ -1055,10 +1057,7 @@ mod tests {
                     Arc::downgrade(test_world()),
                     WeakSelf::detached(),
                 ),
-                living_base: LivingEntityBase::without_synced_data(
-                    entity_type,
-                    &TestLivingEntity::LIVING,
-                ),
+                living_base: LivingEntityBase::without_synced_data(entity_type),
                 entity_data: CheckedMutex::new(synced_with_health(LivingEntityData::new(), 20.0)),
                 broken_slots: SyncMutex::new(Vec::new()),
                 entity_type,
@@ -1106,20 +1105,13 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             self.entity_type
         }
+    }
 
-        fn entity_hooks(&self) -> &'static dyn EntityHooks {
-            &Self::ENTITY
-        }
+    impl EntityTable for TestLivingEntity {
+        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     impl TestLivingEntity {
-        const LIVING: LivingProps<Self> = LivingProps {
-            absorption_amount: Self::living_get_absorption_amount,
-            set_absorption_amount: Self::living_set_absorption_amount,
-            on_equipped_item_broken: Self::living_on_equipped_item_broken,
-            ..LivingProps::new()
-        };
-
         #[expect(
             clippy::unused_self,
             reason = "kept as a method of the view for callers; the body does not need the entity"
@@ -1137,6 +1129,15 @@ mod tests {
         fn living_on_equipped_item_broken(&self, _item: ItemRef, slot: EquipmentSlot) {
             self.broken_slots.lock().push(slot);
         }
+    }
+
+    impl LivingTable for TestLivingEntity {
+        const LIVING: LivingProps<Self> = LivingProps {
+            absorption_amount: Self::living_get_absorption_amount,
+            set_absorption_amount: Self::living_set_absorption_amount,
+            on_equipped_item_broken: Self::living_on_equipped_item_broken,
+            ..LivingProps::new()
+        };
     }
 
     impl Has<LivingEntityBase> for TestLivingEntity {

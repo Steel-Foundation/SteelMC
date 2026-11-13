@@ -161,7 +161,7 @@ impl Player {
         let direction = world
             .get_block_state(pos)
             .get_value(&BlockStateProperties::HORIZONTAL_FACING);
-        if self.living().is_sleeping() || !Entity::is_alive(self) {
+        if self.living().is_sleeping() || !EntityHooks::is_alive(self) {
             return Err(BedSleepingProblem::OtherProblem);
         }
 

@@ -730,20 +730,19 @@ pub use callback::{
 pub use conversion::{AfterConversion, ConversionParams, ConversionType};
 pub(crate) use entity::apply_entity_look_at;
 pub(crate) use entity::nbt_dvec3;
-pub(crate) use entity::position_rider_default;
 pub use entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityBlockContact, EntityBody,
-    EntityCombat, EntityDefaults, EntityEventSource, EntityFireAndFreeze, EntityFluids,
-    EntityHooks, EntityInteraction, EntityMotion, EntityPersistence, EntityPortals, EntityProps,
-    EntityRiding, EntitySounds,
+    EntityCombat, EntityEventSource, EntityFireAndFreeze, EntityFluids, EntityHooks,
+    EntityInteraction, EntityMotion, EntityPersistence, EntityPortals, EntityProps, EntityRiding,
+    EntitySounds, EntityTable,
 };
 
 /// [`Entity`] and the traits that extend it, for `use crate::entity::prelude::*`.
 pub mod prelude {
     pub use super::{
         Entity, EntityBlockContact, EntityBody, EntityCombat, EntityFireAndFreeze, EntityFluids,
-        EntityInteraction, EntityMotion, EntityPersistence, EntityPortals, EntityRiding,
-        EntitySounds,
+        EntityHooks, EntityInteraction, EntityMotion, EntityPersistence, EntityPortals,
+        EntityRiding, EntitySounds,
     };
     // The layers' `Parts` traits give `.living()`, `.mob()`, `.animal()`,
     // `.projectile()`, ... on concrete entity types.
@@ -755,6 +754,7 @@ pub mod prelude {
     pub use super::projectile::throwable_item::Parts as _;
     pub use super::projectile::thrown_potion::Parts as _;
 }
+pub(crate) use entities::objects::vehicles::abstract_minecart::AbstractMinecartHooks;
 pub use fluid_contact::EntityFluidContact;
 pub use identity::EntityGeneration;
 pub use inside_block_effects::{
@@ -767,7 +767,7 @@ pub use living_base::{
     HURT_DURATION_TICKS, LivingEntityBase, LivingRotationState, LivingSwingState,
     LivingTravelInput, MobEffectInstance, MobEffectSyncChange, MobEffectSyncPacket,
 };
-pub use living_entity::{Living, LivingHooks, LivingProps, Parts as LivingParts};
+pub use living_entity::{Living, LivingHooks, LivingProps, LivingTable, Parts as LivingParts};
 pub(crate) use manager::EntityCollisionCandidates;
 #[cfg(feature = "benchmark-support")]
 pub use manager::benchmark_support as entity_manager_benchmark_support;
@@ -775,7 +775,7 @@ pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
 };
-pub(crate) use mob::{Mob, MobBase, MobProps};
+pub(crate) use mob::{Mob, MobBase, MobHooks, MobProps, MobTable};
 pub(crate) use monster::Enemy;
 pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
@@ -785,6 +785,7 @@ pub use movement_sync::{
     PackedEntityRotation, ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate,
 };
 pub(crate) use potion_contents::apply_potion_contents;
+pub(crate) use projectile::ProjectileHooks;
 pub use projectile::{
     EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileHit,
     ProjectileProps, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH,

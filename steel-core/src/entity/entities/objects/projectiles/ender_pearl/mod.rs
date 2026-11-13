@@ -3,6 +3,7 @@
 //! The pearl keeps its chunk loaded with a timed ticket while it flies and is
 //! registered on its owning player, so it is saved and respawned with them.
 
+use crate::entity::projectile::ProjectileTable;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -19,10 +20,6 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::types::Difficulty;
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
-use crate::entity::component::definition::Definition;
-use crate::entity::component::definition::OnHitEntityCtx;
-use crate::entity::component::pipeline::Stage;
-use crate::entity::component::pipeline::{Flow, StageId};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::EndermiteEntity;
 use crate::entity::prelude::*;
@@ -40,7 +37,7 @@ use crate::world::World;
 #[entity_behavior(class = "ThrownEnderpearl")]
 #[derive(Entity)]
 #[entity(hooks = Self::ENTITY)]
-#[entity(key = "steel:entity/ender_pearl", constructors, definition = Self::define)]
+#[entity(key = "steel:entity/ender_pearl", constructors)]
 pub struct EnderPearlEntity {
     #[entity(base)]
     base: EntityBase,
@@ -57,22 +54,10 @@ pub struct EnderPearlEntity {
 }
 
 impl EnderPearlEntity {
-    const TICK: StageId = StageId("ender_pearl.tick");
-
-    fn define() -> Definition<Self> {
-        let definition = Self::define_hits(throwable::definition());
-        Definition {
-            tick: definition.tick.around(Self::TICK, |pearl, ctx, inner| {
-                pearl.entity_tick(|| {
-                    inner(pearl, ctx);
-                });
-                Flow::Continue
-            }),
-            ..definition
-        }
-    }
-
     const ENTITY: EntityProps<Self> = EntityProps {
+        tick: |pearl| {
+            pearl.entity_tick(|| (const { throwable::entity_props::<Self>().tick })(pearl));
+        },
         on_removal: |pearl, reason| {
             // Pearls saved with their player stay registered for the next login.
             if reason != RemovalReason::StoredWithPlayer {
@@ -89,33 +74,6 @@ impl EnderPearlEntity {
         },
         ..throwable::entity_props()
     };
-    const ON_HIT: StageId = StageId("ender_pearl.on_hit");
-    const ON_HIT_ENTITY: StageId = StageId("ender_pearl.on_hit_entity");
-
-    fn define_hits(definition: Definition<Self>) -> Definition<Self> {
-        Definition {
-            on_hit: definition
-                .on_hit
-                .then([Stage::effect(Self::ON_HIT, Self::on_hit_after_super)]),
-            on_hit_entity: definition.on_hit_entity.then([Stage::new(
-                Self::ON_HIT_ENTITY,
-                |pearl: &Self, ctx: &mut OnHitEntityCtx<'_>| {
-                    let target = ctx.target;
-                    if let Some(world) = target.level()
-                        && let Some(source) = pearl.projectile().thrown_damage()
-                    {
-                        target.hurt(&world, &source, 0.0);
-                    }
-                    Flow::Continue
-                },
-            )]),
-            ..definition
-        }
-    }
-
-    const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        ..ProjectileProps::new()
-    };
 
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = EnderPearlEntityData::new();
@@ -123,7 +81,7 @@ impl EnderPearlEntity {
         Self {
             base,
             entity_type,
-            projectile: ProjectileBase::new(&Self::PROJECTILE),
+            projectile: ProjectileBase::new(),
             thrown_item,
             ticket_timer: CheckedMutex::new(0),
             entity_data: CheckedMutex::new(entity_data),
@@ -305,6 +263,24 @@ impl EnderPearlEntity {
             None,
         );
     }
+}
+
+impl ProjectileTable for EnderPearlEntity {
+    const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
+        on_hit: |pearl, hit| {
+            (const { ProjectileProps::<Self>::new().on_hit })(pearl, hit);
+            pearl.on_hit_after_super();
+        },
+        on_hit_entity: |pearl, target, location| {
+            (const { ProjectileProps::<Self>::new().on_hit_entity })(pearl, target, location);
+            if let Some(world) = target.level()
+                && let Some(source) = pearl.projectile().thrown_damage()
+            {
+                target.hurt(&world, &source, 0.0);
+            }
+        },
+        ..ProjectileProps::new()
+    };
 }
 
 #[cfg(test)]
