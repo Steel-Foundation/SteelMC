@@ -10,15 +10,16 @@
 //!   `fn` pointers per vanilla class that declares them (`EntityProps`,
 //!   `LivingProps`, `MobProps`, …). A method goes in the table of the class
 //!   that declares it. Each layer has a preset per table, built on its parent
-//!   layer's; an entry that extends its parent the way vanilla calls `super`
-//!   calls the parent preset's entry from a `const` block:
+//!   layer's, listing the layer's overrides: functions of the layer's module
+//!   named after the method. One that extends its parent the way vanilla calls
+//!   `super` calls the parent layer's function:
 //!
 //!   ```ignore
-//!   ai_step: |animal| {
-//!       let movement = (const { ageable::living_props::<E>().ai_step })(animal);
+//!   pub fn ai_step<E: Parts>(animal: &E) -> Option<MoveResult> {
+//!       let movement = ageable::ai_step(animal);
 //!       animal.animal().tick_love();
 //!       movement
-//!   },
+//!   }
 //!   ```
 //!
 //! Layer modules expose borrowed views (for example `Ageable`) that pair an

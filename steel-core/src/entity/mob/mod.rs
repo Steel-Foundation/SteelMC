@@ -1,12 +1,14 @@
 //! Vanilla-shaped mob foundations.
 
-mod pathfinder;
+pub mod pathfinder;
 
 use crate::entity::component::props::entity_props;
 use crate::entity::component::{Component, Components as _, Has};
+use crate::entity::entity;
 use crate::entity::leash::{LeashData, Leashable};
 use crate::entity::prelude::*;
 use crate::entity::{Ageable, EntityProps};
+use crate::physics::MoveResult;
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
 use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target};
@@ -348,59 +350,59 @@ impl Component for MobBase {
 entity_props! {
     /// Per-type properties of a vanilla `Mob`.
     pub struct MobProps<E>: MobHooks for Mob
-    where E: Parts => mob,
+    where E: Parts,
     table MobTable::MOB,
     component MobBase {
         /// `Mob.getAmbientSound`.
-        fn ambient_sound() -> Option<SoundEventRef> = ambient_sound_default;
+        fn ambient_sound() -> Option<SoundEventRef>;
         /// `Mob.getAmbientSoundInterval`.
-        fn ambient_sound_interval() -> i32 = ambient_sound_interval_default;
+        fn ambient_sound_interval() -> i32;
         /// `Mob.removeWhenFarAway`, given the squared distance to the nearest player.
-        fn remove_when_far_away(dist_sqr: f64) -> bool = remove_when_far_away_default;
+        fn remove_when_far_away(dist_sqr: f64) -> bool;
         /// `Mob.canBeLeashed`, before the leash state is considered.
-        fn mob_can_be_leashed() -> bool = mob_can_be_leashed_default;
+        fn mob_can_be_leashed() -> bool;
         /// `Mob.getPreferredWeaponType`: the item tag this mob favors when picking up weapons.
-        fn preferred_weapon_type() -> Option<Identifier> = preferred_weapon_type_default;
+        fn preferred_weapon_type() -> Option<Identifier>;
         /// `Mob.checkSpawnRules`: the type's own spawn predicate.
-        fn check_spawn_rules(world: &Arc<World>, reason: EntitySpawnReason) -> bool = check_spawn_rules_default;
+        fn check_spawn_rules(world: &Arc<World>, reason: EntitySpawnReason) -> bool;
         /// `Mob.getPickupReach`: how far the item-pickup search box is inflated.
-        fn pickup_reach() -> DVec3 = pickup_reach_default;
+        fn pickup_reach() -> DVec3;
         /// `Mob.canHoldItem`: whether this mob is willing to hold the item.
-        fn can_hold_item(item_stack: &ItemStack) -> bool = can_hold_item_default;
+        fn can_hold_item(item_stack: &ItemStack) -> bool;
         /// `Mob.getMaxFallDistance`: blocks fallen before taking damage.
-        fn max_fall_distance() -> i32 = max_fall_distance_default;
+        fn max_fall_distance() -> i32;
         /// `Mob.getMaxHeadXRot`: degrees the head may pitch independently of the body.
-        fn max_head_x_rot() -> f32 = max_head_x_rot_default;
+        fn max_head_x_rot() -> f32;
         /// `Mob.getMaxHeadYRot`: degrees the head may yaw independently of the body.
-        fn max_head_y_rot() -> f32 = max_head_y_rot_default;
+        fn max_head_y_rot() -> f32;
         /// `Mob.playAttackSound`.
-        fn play_attack_sound() = play_attack_sound_default;
+        fn play_attack_sound();
         /// `Mob.sunProtectionSlot`: the slot whose item shields from sun burning.
-        fn sun_protection_slot() -> EquipmentSlot = sun_protection_slot_default;
+        fn sun_protection_slot() -> EquipmentSlot;
         /// `PathfinderMob.shouldStayCloseToLeashHolder`.
-        fn should_stay_close_to_leash_holder() -> bool = should_stay_close_to_leash_holder_default;
+        fn should_stay_close_to_leash_holder() -> bool;
         /// `PathfinderMob.followLeashSpeed`.
-        fn follow_leash_speed() -> f64 = follow_leash_speed_default;
+        fn follow_leash_speed() -> f64;
         /// Whether the type is a vanilla `PathfinderMob`, which changes leash behavior and passes `instanceof PathfinderMob` checks.
-        fn is_pathfinder() -> bool = is_pathfinder_default;
+        fn is_pathfinder() -> bool;
         /// `PathfinderMob.getWalkTargetValue`: how attractive a position is to wander to.
-        fn walk_target_value(pos: BlockPos) -> f32 = walk_target_value_default;
+        fn walk_target_value(pos: BlockPos) -> f32;
         /// `Monster.isPreventingPlayerRest`: whether this mob keeps `player`
         /// from sleeping nearby. Only monsters ever do.
-        fn is_preventing_player_rest(world: &World, player: &Player) -> bool = is_preventing_player_rest_default;
+        fn is_preventing_player_rest(world: &World, player: &Player) -> bool;
         /// `Mob.customServerAiStep`.
-        fn custom_server_ai_step() = custom_server_ai_step_default;
+        fn custom_server_ai_step();
         /// `Mob.ate`, run after an eating goal consumes a block.
-        fn ate() = ate_default;
+        fn ate();
         /// `Mob.mobInteract`: the type's own interaction, tried after leashing
         /// and spawn eggs.
-        fn mob_interact(player: &Player, hand: InteractionHand) -> InteractionResult = mob_interact_default;
+        fn mob_interact(player: &Player, hand: InteractionHand) -> InteractionResult;
         /// `Mob.finalizeSpawn`; returns the group data for the next group member.
         fn finalize_spawn(
             world: &Arc<World>,
             reason: EntitySpawnReason,
             group_data: Option<SpawnGroupData>,
-        ) -> Option<SpawnGroupData> = finalize_spawn_mob_base;
+        ) -> Option<SpawnGroupData>;
     }
 }
 
@@ -465,35 +467,83 @@ impl<'a> Mob<'a> {
     }
 }
 
+/// `Mob`'s [`LivingProps::server_ai_step`].
+pub fn server_ai_step<E: Parts>(mob: &E) {
+    mob.mob().mob_server_ai_step();
+}
+
+/// `Mob`'s [`LivingProps::ai_step`].
+///
+/// `Mob.aiStep` after `super`: daylight burning and item pickup.
+pub fn ai_step<E: Parts>(mob: &E) -> Option<MoveResult> {
+    let movement = living_entity::ai_step(mob);
+    mob.mob().mob_ai_step_after_super();
+    movement
+}
+
+/// `Mob`'s [`LivingProps::base_experience_reward`].
+pub fn base_experience_reward<E: Parts>(mob: &E) -> i32 {
+    mob.mob().base_experience_reward_mob()
+}
+
+/// `Mob`'s [`LivingProps::can_dispenser_equip_into_slot`].
+pub fn can_dispenser_equip_into_slot<E: Parts>(mob: &E, _: EquipmentSlot) -> bool {
+    mob.mob().can_pick_up_loot()
+}
+
 /// `Mob`'s changes to the living defaults: the AI steps run the mob's goals,
 /// daylight burning and item pickup.
 #[must_use]
 pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
-        server_ai_step: |mob| mob.mob().mob_server_ai_step(),
-        // `Mob.aiStep` after `super`: daylight burning and item pickup.
-        ai_step: |mob| {
-            let movement = (const { LivingProps::<E>::new().ai_step })(mob);
-            mob.mob().mob_ai_step_after_super();
-            movement
-        },
-        base_experience_reward: |mob| mob.mob().base_experience_reward_mob(),
-        can_dispenser_equip_into_slot: |mob, _| mob.mob().can_pick_up_loot(),
+        server_ai_step: server_ai_step::<E>,
+        ai_step: ai_step::<E>,
+        base_experience_reward: base_experience_reward::<E>,
+        can_dispenser_equip_into_slot: can_dispenser_equip_into_slot::<E>,
         ..LivingProps::new()
     }
 }
 
-/// `PathfinderMob`'s changes to the mob defaults.
-#[must_use]
-pub const fn pathfinder_mob_props<E: Parts>() -> MobProps<E> {
-    MobProps {
-        is_pathfinder: |_| true,
-        check_spawn_rules: |mob, _, _| {
-            let mob = mob.mob();
-            mob.walk_target_value(mob.block_position()) >= 0.0
-        },
-        ..MobProps::new()
+/// `Mob`'s [`EntityProps::tick`].
+///
+/// `Mob.tick` updates the goal control flags every 5 ticks, whether or
+/// not the AI runs.
+pub fn tick<E: Parts>(mob: &E) {
+    living_entity::tick(mob);
+    if mob.tick_count() % 5 == 0 {
+        mob.mob().update_control_flags();
     }
+}
+
+/// `Mob`'s [`EntityProps::base_tick`].
+pub fn base_tick<E: Parts>(mob: &E) {
+    living_entity::base_tick(mob);
+    mob.mob().mob_base_tick();
+}
+
+/// `Mob`'s [`EntityProps::interact`].
+pub fn interact<E: Parts>(
+    mob: &E,
+    player: &Player,
+    hand: InteractionHand,
+    location: DVec3,
+) -> InteractionResult {
+    mob.mob().interact_mob(player, hand, location)
+}
+
+/// `Mob`'s [`EntityProps::controlling_passenger`].
+pub fn controlling_passenger<E: Parts>(mob: &E) -> Option<SharedEntity> {
+    mob.mob().controlling_passenger_mob()
+}
+
+/// `Mob`'s [`EntityProps::check_despawn`].
+pub fn check_despawn<E: Parts>(mob: &E) {
+    mob.mob().check_mob_despawn();
+}
+
+/// `Mob`'s [`EntityProps::is_effective_ai`].
+pub fn is_effective_ai<E: Parts>(mob: &E) -> bool {
+    mob.is_server_driven_movement() && !mob.mob().is_no_ai()
 }
 
 /// `Mob`'s overrides of entity hooks, on top of
@@ -501,26 +551,12 @@ pub const fn pathfinder_mob_props<E: Parts>() -> MobProps<E> {
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        // `Mob.tick` updates the goal control flags every 5 ticks, whether or
-        // not the AI runs.
-        tick: |mob| {
-            (const { living_entity::entity_props::<E>().tick })(mob);
-            if mob.tick_count() % 5 == 0 {
-                mob.mob().update_control_flags();
-            }
-        },
-        base_tick: |mob| {
-            (const { living_entity::entity_props::<E>().base_tick })(mob);
-            mob.mob().mob_base_tick();
-        },
-        interact: |mob, player, hand, location| {
-            mob.mob().interact_around(player, hand, || {
-                (const { living_entity::entity_props::<E>().interact })(mob, player, hand, location)
-            })
-        },
-        controlling_passenger: |mob| mob.mob().controlling_passenger_mob(),
-        check_despawn: |mob| mob.mob().check_mob_despawn(),
-        is_effective_ai: |mob| mob.is_server_driven_movement() && !mob.mob().is_no_ai(),
+        tick: tick::<E>,
+        base_tick: base_tick::<E>,
+        interact: interact::<E>,
+        controlling_passenger: controlling_passenger::<E>,
+        check_despawn: check_despawn::<E>,
+        is_effective_ai: is_effective_ai::<E>,
         ..living_entity::entity_props()
     }
 }
@@ -528,7 +564,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
 /// A concrete mob type: its component and its hook table.
 pub trait MobTable: LivingParts + Has<MobBase> {
     /// The `Mob` hooks this type runs, built on its layer's preset
-    /// (`MobProps::new()`, `pathfinder_mob_props()`, ...).
+    /// (`MobProps::new()`, `pathfinder::mob_props()`, ...).
     const MOB: MobProps<Self>;
 }
 
@@ -544,152 +580,109 @@ impl<E: MobTable + Leashable> Parts for E {
     }
 }
 
-impl Mob<'_> {
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn ambient_sound_default(&self) -> Option<SoundEventRef> {
-        None
-    }
+impl Mob<'_> {}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn ambient_sound_interval_default(&self) -> i32 {
-        80
-    }
+/// `Mob`'s [`MobProps::ambient_sound`].
+pub const fn ambient_sound<E: Parts>(_entity: &E) -> Option<SoundEventRef> {
+    None
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn remove_when_far_away_default(&self, _dist_sqr: f64) -> bool {
-        true
-    }
+/// `Mob`'s [`MobProps::ambient_sound_interval`].
+pub const fn ambient_sound_interval<E: Parts>(_entity: &E) -> i32 {
+    80
+}
 
-    fn ate_default(&self) {
-        self.game_event(&vanilla_game_events::EAT);
-    }
+/// `Mob`'s [`MobProps::remove_when_far_away`].
+pub const fn remove_when_far_away<E: Parts>(_entity: &E, _dist_sqr: f64) -> bool {
+    true
+}
 
-    fn mob_can_be_leashed_default(&self) -> bool {
-        !self.is_enemy()
-    }
+/// `Mob`'s [`MobProps::ate`].
+pub fn ate<E: Parts>(entity: &E) {
+    let mob = &entity.mob();
+    mob.game_event(&vanilla_game_events::EAT);
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn preferred_weapon_type_default(&self) -> Option<Identifier> {
-        None
-    }
+/// `Mob`'s [`MobProps::mob_can_be_leashed`].
+pub fn mob_can_be_leashed<E: Parts>(entity: &E) -> bool {
+    let mob = &entity.mob();
+    !mob.is_enemy()
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn check_spawn_rules_default(
-        &self,
-        _world: &Arc<World>,
-        _reason: EntitySpawnReason,
-    ) -> bool {
-        true
-    }
+/// `Mob`'s [`MobProps::preferred_weapon_type`].
+pub const fn preferred_weapon_type<E: Parts>(_entity: &E) -> Option<Identifier> {
+    None
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn pickup_reach_default(&self) -> DVec3 {
-        ITEM_PICKUP_REACH
-    }
+/// `Mob`'s [`MobProps::check_spawn_rules`].
+pub const fn check_spawn_rules<E: Parts>(
+    _entity: &E,
+    _world: &Arc<World>,
+    _reason: EntitySpawnReason,
+) -> bool {
+    true
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn can_hold_item_default(&self, _item_stack: &ItemStack) -> bool {
-        true
-    }
+/// `Mob`'s [`MobProps::pickup_reach`].
+pub const fn pickup_reach<E: Parts>(_entity: &E) -> DVec3 {
+    ITEM_PICKUP_REACH
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn max_fall_distance_default(&self) -> i32 {
-        3
-    }
+/// `Mob`'s [`MobProps::can_hold_item`].
+pub const fn can_hold_item<E: Parts>(_entity: &E, _item_stack: &ItemStack) -> bool {
+    true
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn max_head_x_rot_default(&self) -> f32 {
-        40.0
-    }
+/// `Mob`'s [`MobProps::max_fall_distance`].
+pub const fn max_fall_distance<E: Parts>(_entity: &E) -> i32 {
+    3
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn max_head_y_rot_default(&self) -> f32 {
-        75.0
-    }
+/// `Mob`'s [`MobProps::max_head_x_rot`].
+pub const fn max_head_x_rot<E: Parts>(_entity: &E) -> f32 {
+    40.0
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn play_attack_sound_default(&self) {}
+/// `Mob`'s [`MobProps::max_head_y_rot`].
+pub const fn max_head_y_rot<E: Parts>(_entity: &E) -> f32 {
+    75.0
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn sun_protection_slot_default(&self) -> EquipmentSlot {
-        EquipmentSlot::Head
-    }
+/// `Mob`'s [`MobProps::play_attack_sound`].
+pub const fn play_attack_sound<E: Parts>(_entity: &E) {}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn should_stay_close_to_leash_holder_default(&self) -> bool {
-        true
-    }
+/// `Mob`'s [`MobProps::sun_protection_slot`].
+pub const fn sun_protection_slot<E: Parts>(_entity: &E) -> EquipmentSlot {
+    EquipmentSlot::Head
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn follow_leash_speed_default(&self) -> f64 {
-        1.0
-    }
+/// `Mob`'s [`MobProps::should_stay_close_to_leash_holder`].
+pub const fn should_stay_close_to_leash_holder<E: Parts>(_entity: &E) -> bool {
+    true
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn is_pathfinder_default(&self) -> bool {
-        false
-    }
+/// `Mob`'s [`MobProps::follow_leash_speed`].
+pub const fn follow_leash_speed<E: Parts>(_entity: &E) -> f64 {
+    1.0
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn walk_target_value_default(&self, _pos: BlockPos) -> f32 {
-        0.0
-    }
+/// `Mob`'s [`MobProps::is_pathfinder`].
+pub const fn is_pathfinder<E: Parts>(_entity: &E) -> bool {
+    false
+}
 
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn is_preventing_player_rest_default(&self, _world: &World, _player: &Player) -> bool {
-        false
-    }
+/// `Mob`'s [`MobProps::walk_target_value`].
+pub const fn walk_target_value<E: Parts>(_entity: &E, _pos: BlockPos) -> f32 {
+    0.0
+}
+
+/// `Mob`'s [`MobProps::is_preventing_player_rest`].
+pub const fn is_preventing_player_rest<E: Parts>(
+    _entity: &E,
+    _world: &World,
+    _player: &Player,
+) -> bool {
+    false
 }
 
 impl<'a> Deref for Mob<'a> {
@@ -742,12 +735,6 @@ impl<'a> Mob<'a> {
             .lock()
             .has_line_of_sight(target.id(), || self.has_line_of_sight(target))
     }
-
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn custom_server_ai_step_default(&self) {}
 
     /// Ticks the target and goal selectors; between full updates only the
     /// running goals tick.
@@ -849,35 +836,6 @@ impl<'a> Mob<'a> {
         }
     }
 
-    pub fn finalize_spawn_mob_base(
-        &self,
-        _world: &Arc<World>,
-        _spawn_reason: EntitySpawnReason,
-        group_data: Option<SpawnGroupData>,
-    ) -> Option<SpawnGroupData> {
-        let needs_random_spawn_bonus = !self
-            .attributes()
-            .lock()
-            .has_modifier(vanilla_attributes::FOLLOW_RANGE, &RANDOM_SPAWN_BONUS_ID);
-        let random_spawn_bonus = needs_random_spawn_bonus
-            .then(|| 0.114_850_000_000_000_01 * (rand::random::<f64>() - rand::random::<f64>()));
-        let left_handed = rand::random::<f32>() < 0.05;
-
-        if let Some(amount) = random_spawn_bonus {
-            self.attributes().lock().add_modifier(
-                vanilla_attributes::FOLLOW_RANGE,
-                AttributeModifier {
-                    id: RANDOM_SPAWN_BONUS_ID,
-                    amount,
-                    operation: AttributeModifierOperation::AddMultipliedBase,
-                },
-                true,
-            );
-        }
-        self.set_left_handed(left_handed);
-        group_data
-    }
-
     /// Creates a replacement or split mob and transfers state according to `params`.
     /// The callback finalizes mob-specific state. Returns `None` without changing
     /// the source if it is removed or world, difficulty, factory, mob-type, or
@@ -928,11 +886,11 @@ impl<'a> Mob<'a> {
 
     /// Dispatches held-item, entity, and mob-specific interactions in order.
     /// `Mob.interact` around its `super.interact()`.
-    pub(super) fn interact_around(
+    fn interact_mob(
         &self,
         player: &Player,
         hand: InteractionHand,
-        super_interact: impl FnOnce() -> InteractionResult,
+        location: DVec3,
     ) -> InteractionResult {
         if !self.living.is_alive() {
             return InteractionResult::Pass;
@@ -950,7 +908,7 @@ impl<'a> Mob<'a> {
             return important_interaction;
         }
 
-        let interaction_result = super_interact();
+        let interaction_result = entity::interact(self.entity(), player, hand, location);
         if interaction_result != InteractionResult::Pass {
             return interaction_result;
         }
@@ -1006,18 +964,6 @@ impl<'a> Mob<'a> {
             }
         }
 
-        InteractionResult::Pass
-    }
-
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; mob types override it through `MobProps`"
-    )]
-    const fn mob_interact_default(
-        &self,
-        _player: &Player,
-        _hand: InteractionHand,
-    ) -> InteractionResult {
         InteractionResult::Pass
     }
 
@@ -2200,6 +2146,49 @@ impl<'a> Mob<'a> {
         self.set_y_body_rot(update.y_body_rot());
         self.set_y_head_rot(update.y_head_rot());
     }
+}
+
+/// `Mob`'s [`MobProps::custom_server_ai_step`].
+pub const fn custom_server_ai_step<E: Parts>(_entity: &E) {}
+
+/// `Mob`'s [`MobProps::finalize_spawn`].
+pub fn finalize_spawn<E: Parts>(
+    entity: &E,
+    _world: &Arc<World>,
+    _spawn_reason: EntitySpawnReason,
+    group_data: Option<SpawnGroupData>,
+) -> Option<SpawnGroupData> {
+    let mob = &entity.mob();
+    let needs_random_spawn_bonus = !mob
+        .attributes()
+        .lock()
+        .has_modifier(vanilla_attributes::FOLLOW_RANGE, &RANDOM_SPAWN_BONUS_ID);
+    let random_spawn_bonus = needs_random_spawn_bonus
+        .then(|| 0.114_850_000_000_000_01 * (rand::random::<f64>() - rand::random::<f64>()));
+    let left_handed = rand::random::<f32>() < 0.05;
+
+    if let Some(amount) = random_spawn_bonus {
+        mob.attributes().lock().add_modifier(
+            vanilla_attributes::FOLLOW_RANGE,
+            AttributeModifier {
+                id: RANDOM_SPAWN_BONUS_ID,
+                amount,
+                operation: AttributeModifierOperation::AddMultipliedBase,
+            },
+            true,
+        );
+    }
+    mob.set_left_handed(left_handed);
+    group_data
+}
+
+/// `Mob`'s [`MobProps::mob_interact`].
+pub const fn mob_interact<E: Parts>(
+    _entity: &E,
+    _player: &Player,
+    _hand: InteractionHand,
+) -> InteractionResult {
+    InteractionResult::Pass
 }
 
 // Every mob is `Leashable`.

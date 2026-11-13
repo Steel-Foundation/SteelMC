@@ -69,63 +69,61 @@ impl Living<'_> {
         self.set_velocity(DVec3::ZERO);
         Ok(())
     }
+}
 
-    /// Shared body for overrides that need vanilla `super.stopSleeping()`.
-    pub fn default_stop_sleeping(&self) {
-        if let Some(bed_position) = self.sleeping_pos()
-            && let Some(world) = self.level()
-        {
-            let state = world.get_block_state(bed_position);
-            if state.is_bed() {
-                let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
-                world.set_block(
-                    bed_position,
-                    state.set_value(&BlockStateProperties::OCCUPIED, false),
-                    UpdateFlags::UPDATE_ALL,
-                );
-                BLOCK_BEHAVIORS
-                    .get_behavior(state.get_block())
-                    .on_stop_sleeping(state, &world, bed_position);
-                let stand_up = BedBlock::find_standup_position(
-                    &world,
-                    self.as_entity_event_source(),
-                    facing,
-                    bed_position,
+/// `LivingEntity`'s [`LivingProps::stop_sleeping`].
+///
+/// Stops the entity from sleeping.
+pub fn stop_sleeping<E: Parts>(entity: &E) {
+    let living = &entity.living();
+    if let Some(bed_position) = living.sleeping_pos()
+        && let Some(world) = living.level()
+    {
+        let state = world.get_block_state(bed_position);
+        if state.is_bed() {
+            let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+            world.set_block(
+                bed_position,
+                state.set_value(&BlockStateProperties::OCCUPIED, false),
+                UpdateFlags::UPDATE_ALL,
+            );
+            BLOCK_BEHAVIORS
+                .get_behavior(state.get_block())
+                .on_stop_sleeping(state, &world, bed_position);
+            let stand_up = BedBlock::find_standup_position(
+                &world,
+                living.as_entity_event_source(),
+                facing,
+                bed_position,
+            )
+            .unwrap_or_else(|| {
+                let above = bed_position.above();
+                DVec3::new(
+                    f64::from(above.x()) + 0.5,
+                    f64::from(above.y()) + 0.1,
+                    f64::from(above.z()) + 0.5,
                 )
-                .unwrap_or_else(|| {
-                    let above = bed_position.above();
-                    DVec3::new(
-                        f64::from(above.x()) + 0.5,
-                        f64::from(above.y()) + 0.1,
-                        f64::from(above.z()) + 0.5,
-                    )
-                });
-                let bed_center = DVec3::new(
-                    f64::from(bed_position.x()) + 0.5,
-                    f64::from(bed_position.y()),
-                    f64::from(bed_position.z()) + 0.5,
+            });
+            let bed_center = DVec3::new(
+                f64::from(bed_position.x()) + 0.5,
+                f64::from(bed_position.y()),
+                f64::from(bed_position.z()) + 0.5,
+            );
+            let look_direction = (bed_center - stand_up).normalize_or_zero();
+            let yaw = wrap_degrees(
+                (look_direction.z.atan2(look_direction.x).to_degrees() - f64::from(DEGREE_90))
+                    as f32,
+            );
+            if let Err(error) = living.try_set_position(stand_up) {
+                log::warn!(
+                    "failed to move entity {} to bed stand-up position: {error}",
+                    living.id()
                 );
-                let look_direction = (bed_center - stand_up).normalize_or_zero();
-                let yaw = wrap_degrees(
-                    (look_direction.z.atan2(look_direction.x).to_degrees() - f64::from(DEGREE_90))
-                        as f32,
-                );
-                if let Err(error) = self.try_set_position(stand_up) {
-                    log::warn!(
-                        "failed to move entity {} to bed stand-up position: {error}",
-                        self.id()
-                    );
-                }
-                self.set_rotation((yaw, 0.0));
             }
+            living.set_rotation((yaw, 0.0));
         }
-
-        self.set_pose(EntityPose::Standing);
-        self.clear_sleeping_pos();
     }
 
-    /// Stops the entity from sleeping.
-    pub fn stop_sleeping_default(&self) {
-        self.default_stop_sleeping();
-    }
+    living.set_pose(EntityPose::Standing);
+    living.clear_sleeping_pos();
 }

@@ -289,7 +289,7 @@ impl MobTable for MushroomCowEntity {
             if let Some(result) = mooshroom.eat_flower(player, hand) {
                 return result;
             }
-            (const { abstract_cow::mob_props::<Self>().mob_interact })(mooshroom, player, hand)
+            abstract_cow::mob_interact(mooshroom, player, hand)
         },
         ..abstract_cow::mob_props()
     };

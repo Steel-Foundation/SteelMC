@@ -11,11 +11,6 @@ use crate::physics::WorldCollisionProvider;
 const SMALL_ENTITY_MAX_SIZE: f32 = 4.0;
 
 impl Living<'_> {
-    #[expect(clippy::unused_self, reason = "the hook default for every living type")]
-    pub(super) const fn dismount_poses_default(&self) -> &'static [EntityPose] {
-        &[EntityPose::Standing]
-    }
-
     /// Vanilla `LivingEntity.dismountVehicle`: moves this entity off
     /// `vehicle`, which it just stopped riding.
     pub fn dismount_vehicle(&self, vehicle: &dyn Entity) {
@@ -58,4 +53,9 @@ impl Living<'_> {
             .find_free_position(&allowed_centers, center, width, height, width)
             .map_or(target, |free| free - DVec3::new(0.0, half_height, 0.0))
     }
+}
+
+/// `LivingEntity`'s [`LivingProps::dismount_poses`].
+pub const fn dismount_poses<E: Parts>(_entity: &E) -> &'static [EntityPose] {
+    &[EntityPose::Standing]
 }

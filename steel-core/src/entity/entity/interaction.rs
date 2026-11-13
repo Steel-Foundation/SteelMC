@@ -12,15 +12,6 @@ pub trait EntityInteraction: Entity {
         self.is_alive() && !self.is_removed() && !self.is_spectator()
     }
 
-    /// Default for [`EntityHooks::notify_leash_holder`].
-    fn notify_leash_holder_default(&self, _leashable: &dyn Entity) {}
-
-    /// Default for [`EntityHooks::notify_leashee_removed`].
-    fn notify_leashee_removed_default(&self, _leashable: &dyn Entity) {}
-
-    /// Default for [`EntityHooks::player_touch`].
-    fn player_touch_default(&self, _player: &Arc<Player>) {}
-
     /// Finds leashable mobs in vanilla's nearby leash scan whose holder is this entity.
     fn leashables_leashed_to(&self) -> Vec<SharedEntity> {
         self.leashables_leashed_to_holder_in_area(self.as_entity_event_source())
@@ -158,116 +149,123 @@ pub trait EntityInteraction: Entity {
 
         false
     }
-
-    /// Default for [`EntityHooks::interact`]: leashing/unleashing, cutting leash
-    /// connections, or shearing equipment with shears.
-    fn interact_default(
-        &self,
-        player: &Player,
-        hand: InteractionHand,
-        _location: DVec3,
-    ) -> InteractionResult {
-        // Vanilla's `Leashable` is Steel's mob layer.
-        let mob = self.as_mob();
-        let is_alive = self
-            .as_living_entity()
-            .is_none_or(|living| living.is_alive());
-
-        if let Some(mob) = &mob
-            && is_alive
-            && player.is_secondary_use_active()
-            && mob.leashable().can_be_leashed()
-            && self
-                .as_living_entity()
-                .is_none_or(|living| !living.is_baby())
-            && self.transfer_leashables_from_holder(player)
-        {
-            if let Some(world) = self.level() {
-                world.game_event(
-                    &vanilla_game_events::ENTITY_ACTION,
-                    self.block_position(),
-                    &GameEventContext::new(Some(player), None),
-                );
-            }
-            self.play_sound(&sound_events::ITEM_LEAD_TIED, 1.0, 1.0);
-            return InteractionResult::SuccessServer;
-        }
-
-        let holding_shears = {
-            let inventory = player.inventory.lock();
-            inventory.get_item_in_hand(hand).is(&vanilla_items::SHEARS)
-        };
-        if holding_shears && self.shear_off_all_leash_connections(Some(player)) {
-            let has_infinite_materials = player.has_infinite_materials();
-            player
-                .inventory
-                .lock()
-                .hurt_item_in_hand(hand, 1, has_infinite_materials);
-            return InteractionResult::Success;
-        }
-        if holding_shears && self.attempt_to_shear_equipment(player, hand) {
-            return InteractionResult::Success;
-        }
-
-        let Some(mob) = mob else {
-            return InteractionResult::Pass;
-        };
-        if !is_alive {
-            return InteractionResult::Pass;
-        }
-
-        if let Some(holder) = mob.leashable().leash_holder() {
-            if holder.id() == player.id() {
-                if player.has_infinite_materials() {
-                    mob.leashable().remove_leash();
-                } else {
-                    mob.leashable().drop_leash();
-                }
-
-                self.game_event_with_source_entity(
-                    &vanilla_game_events::ENTITY_INTERACT,
-                    Some(player),
-                );
-                self.play_sound(&sound_events::ITEM_LEAD_UNTIED, 1.0, 1.0);
-                return InteractionResult::Success;
-            }
-
-            if holder.as_player().is_some() {
-                return InteractionResult::Pass;
-            }
-        }
-
-        let holding_lead = {
-            let inventory = player.inventory.lock();
-            inventory.get_item_in_hand(hand).is(&vanilla_items::LEAD)
-        };
-        if !holding_lead || !mob.leashable().can_have_a_leash_attached_to(player) {
-            return InteractionResult::Pass;
-        }
-
-        let Some(world) = self.level() else {
-            return InteractionResult::Pass;
-        };
-        let Some(player_entity) = world.get_entity_by_id(player.id()) else {
-            return InteractionResult::Pass;
-        };
-
-        if mob.leashable().is_leashed() {
-            mob.leashable().drop_leash();
-        }
-        if !mob.leashable().set_leashed_to(&player_entity) {
-            return InteractionResult::Pass;
-        }
-
-        self.play_sound(&sound_events::ITEM_LEAD_TIED, 1.0, 1.0);
-        player.inventory.lock().shrink_item_in_hand(hand, 1);
-        InteractionResult::SuccessServer
-    }
-
-    /// Default for [`EntityHooks::may_interact`].
-    fn may_interact_default(&self, _world: &World, _pos: BlockPos) -> bool {
-        true
-    }
 }
 
 impl<T: Entity + ?Sized> EntityInteraction for T {}
+
+/// `Entity`'s [`EntityProps::notify_leash_holder`].
+pub fn notify_leash_holder<E: Entity + ?Sized>(_entity: &E, _leashable: &dyn Entity) {}
+
+/// `Entity`'s [`EntityProps::notify_leashee_removed`].
+pub fn notify_leashee_removed<E: Entity + ?Sized>(_entity: &E, _leashable: &dyn Entity) {}
+
+/// `Entity`'s [`EntityProps::player_touch`].
+pub const fn player_touch<E: Entity + ?Sized>(_entity: &E, _player: &Arc<Player>) {}
+
+/// `Entity`'s [`EntityProps::interact`]: leashing/unleashing, cutting leash
+/// connections, or shearing equipment with shears.
+pub fn interact<E: Entity + ?Sized>(
+    entity: &E,
+    player: &Player,
+    hand: InteractionHand,
+    _location: DVec3,
+) -> InteractionResult {
+    // Vanilla's `Leashable` is Steel's mob layer.
+    let mob = entity.as_mob();
+    let is_alive = entity
+        .as_living_entity()
+        .is_none_or(|living| living.is_alive());
+
+    if let Some(mob) = &mob
+        && is_alive
+        && player.is_secondary_use_active()
+        && mob.leashable().can_be_leashed()
+        && entity
+            .as_living_entity()
+            .is_none_or(|living| !living.is_baby())
+        && entity.transfer_leashables_from_holder(player)
+    {
+        if let Some(world) = entity.level() {
+            world.game_event(
+                &vanilla_game_events::ENTITY_ACTION,
+                entity.block_position(),
+                &GameEventContext::new(Some(player), None),
+            );
+        }
+        entity.play_sound(&sound_events::ITEM_LEAD_TIED, 1.0, 1.0);
+        return InteractionResult::SuccessServer;
+    }
+
+    let holding_shears = {
+        let inventory = player.inventory.lock();
+        inventory.get_item_in_hand(hand).is(&vanilla_items::SHEARS)
+    };
+    if holding_shears && entity.shear_off_all_leash_connections(Some(player)) {
+        let has_infinite_materials = player.has_infinite_materials();
+        player
+            .inventory
+            .lock()
+            .hurt_item_in_hand(hand, 1, has_infinite_materials);
+        return InteractionResult::Success;
+    }
+    if holding_shears && entity.attempt_to_shear_equipment(player, hand) {
+        return InteractionResult::Success;
+    }
+
+    let Some(mob) = mob else {
+        return InteractionResult::Pass;
+    };
+    if !is_alive {
+        return InteractionResult::Pass;
+    }
+
+    if let Some(holder) = mob.leashable().leash_holder() {
+        if holder.id() == player.id() {
+            if player.has_infinite_materials() {
+                mob.leashable().remove_leash();
+            } else {
+                mob.leashable().drop_leash();
+            }
+
+            entity
+                .game_event_with_source_entity(&vanilla_game_events::ENTITY_INTERACT, Some(player));
+            entity.play_sound(&sound_events::ITEM_LEAD_UNTIED, 1.0, 1.0);
+            return InteractionResult::Success;
+        }
+
+        if holder.as_player().is_some() {
+            return InteractionResult::Pass;
+        }
+    }
+
+    let holding_lead = {
+        let inventory = player.inventory.lock();
+        inventory.get_item_in_hand(hand).is(&vanilla_items::LEAD)
+    };
+    if !holding_lead || !mob.leashable().can_have_a_leash_attached_to(player) {
+        return InteractionResult::Pass;
+    }
+
+    let Some(world) = entity.level() else {
+        return InteractionResult::Pass;
+    };
+    let Some(player_entity) = world.get_entity_by_id(player.id()) else {
+        return InteractionResult::Pass;
+    };
+
+    if mob.leashable().is_leashed() {
+        mob.leashable().drop_leash();
+    }
+    if !mob.leashable().set_leashed_to(&player_entity) {
+        return InteractionResult::Pass;
+    }
+
+    entity.play_sound(&sound_events::ITEM_LEAD_TIED, 1.0, 1.0);
+    player.inventory.lock().shrink_item_in_hand(hand, 1);
+    InteractionResult::SuccessServer
+}
+
+/// `Entity`'s [`EntityProps::may_interact`].
+pub const fn may_interact<E: Entity + ?Sized>(_entity: &E, _world: &World, _pos: BlockPos) -> bool {
+    true
+}

@@ -49,21 +49,6 @@ pub trait EntityFireAndFreeze: Entity {
         self.sync_base_fire_freeze_entity_data();
     }
 
-    /// Default for [`EntityHooks::fire_immune`].
-    fn fire_immune_default(&self) -> bool {
-        self.entity_type().fire_immune
-    }
-
-    /// Default for [`EntityHooks::fire_immune_ticks`].
-    fn fire_immune_ticks_default(&self) -> i32 {
-        0
-    }
-
-    /// Default for [`EntityHooks::should_play_lava_hurt_sound`].
-    fn should_play_lava_hurt_sound_default(&self) -> bool {
-        true
-    }
-
     /// Ignites this entity in lava.
     fn lava_ignite(&self) {
         self.apply_inside_block_effect(InsideBlockEffectType::LavaIgnite);
@@ -89,16 +74,6 @@ pub trait EntityFireAndFreeze: Entity {
         }
     }
 
-    /// Default for [`EntityHooks::remaining_fire_ticks_cap`].
-    fn remaining_fire_ticks_cap_default(&self) -> Option<i32> {
-        None
-    }
-
-    /// Default for [`EntityHooks::fire_ignite_extra_ticks`].
-    fn fire_ignite_extra_ticks_default(&self) -> i32 {
-        0
-    }
-
     /// Returns whether the entity is on fire on the server.
     fn is_on_fire(&self) -> bool {
         self.base().is_on_fire(self.fire_immune())
@@ -112,14 +87,6 @@ pub trait EntityFireAndFreeze: Entity {
     /// Returns whether the entity has any frozen ticks.
     fn is_freezing(&self) -> bool {
         self.base().is_freezing()
-    }
-
-    /// Default for [`EntityHooks::can_freeze`].
-    fn can_freeze_default(&self) -> bool {
-        !REGISTRY.entity_types.is_in_tag(
-            self.entity_type(),
-            &EntityTypeTag::FREEZE_IMMUNE_ENTITY_TYPES,
-        )
     }
 
     /// Returns the ticks of powder-snow exposure required before this entity
@@ -195,3 +162,36 @@ pub trait EntityFireAndFreeze: Entity {
 }
 
 impl<T: Entity + ?Sized> EntityFireAndFreeze for T {}
+
+/// `Entity`'s [`EntityProps::fire_immune`].
+pub fn fire_immune<E: Entity + ?Sized>(entity: &E) -> bool {
+    entity.entity_type().fire_immune
+}
+
+/// `Entity`'s [`EntityProps::fire_immune_ticks`].
+pub const fn fire_immune_ticks<E: Entity + ?Sized>(_entity: &E) -> i32 {
+    0
+}
+
+/// `Entity`'s [`EntityProps::should_play_lava_hurt_sound`].
+pub const fn should_play_lava_hurt_sound<E: Entity + ?Sized>(_entity: &E) -> bool {
+    true
+}
+
+/// `Entity`'s [`EntityProps::remaining_fire_ticks_cap`].
+pub const fn remaining_fire_ticks_cap<E: Entity + ?Sized>(_entity: &E) -> Option<i32> {
+    None
+}
+
+/// `Entity`'s [`EntityProps::fire_ignite_extra_ticks`].
+pub const fn fire_ignite_extra_ticks<E: Entity + ?Sized>(_entity: &E) -> i32 {
+    0
+}
+
+/// `Entity`'s [`EntityProps::can_freeze`].
+pub fn can_freeze<E: Entity + ?Sized>(entity: &E) -> bool {
+    !REGISTRY.entity_types.is_in_tag(
+        entity.entity_type(),
+        &EntityTypeTag::FREEZE_IMMUNE_ENTITY_TYPES,
+    )
+}

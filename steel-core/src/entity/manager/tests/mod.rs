@@ -1,5 +1,6 @@
 use crate::entity::EntityTable;
 use crate::entity::WeakSelf;
+use crate::entity::entity;
 use std::sync::{
     Arc, Barrier, Weak,
     atomic::{AtomicUsize, Ordering},
@@ -143,7 +144,7 @@ crate::entity::impl_test_downcast_type!(MovingTickTestEntity);
 impl MovingTickTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |entity| {
-            (const { EntityProps::<Self>::new().tick })(entity);
+            entity::tick(entity);
             entity.entity_tick();
         },
         ..EntityProps::new()
@@ -205,7 +206,7 @@ crate::entity::impl_test_downcast_type!(AddDuringTickTestEntity);
 impl AddDuringTickTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |entity| {
-            (const { EntityProps::<Self>::new().tick })(entity);
+            entity::tick(entity);
             entity.entity_tick();
         },
         ..EntityProps::new()

@@ -2,6 +2,8 @@
 
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
+use crate::entity::living_entity;
+use crate::entity::mob;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
@@ -66,12 +68,12 @@ impl EndermiteEntity {
         // `Endermite.tick` faces its body forward before `super.tick()`.
         tick: |endermite| {
             endermite.living().set_y_body_rot(endermite.rotation().0);
-            (const { monster::entity_props::<Self>().tick })(endermite);
+            mob::tick(endermite);
         },
         // `Endermite.setYBodyRot` turns the whole endermite before `super`.
         set_y_body_rot: |endermite, y_body_rot| {
             endermite.set_rotation((y_body_rot, endermite.rotation().1));
-            (const { monster::entity_props::<Self>().set_y_body_rot })(endermite, y_body_rot);
+            living_entity::set_y_body_rot(endermite, y_body_rot);
         },
         ..monster::entity_props()
     };
@@ -153,7 +155,7 @@ impl LivingTable for EndermiteEntity {
         hurt_sound: |_, _| Some(&sound_events::ENTITY_ENDERMITE_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_ENDERMITE_DEATH),
         ai_step: |endermite| {
-            let movement = (const { monster::living_props::<Self>().ai_step })(endermite);
+            let movement = monster::ai_step(endermite);
             endermite.age();
             movement
         },

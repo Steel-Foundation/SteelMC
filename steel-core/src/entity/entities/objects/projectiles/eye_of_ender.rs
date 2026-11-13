@@ -3,6 +3,7 @@
 //! Despite its package, vanilla's eye is a plain entity that steers itself,
 //! not a projectile.
 
+use crate::entity::entity;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -52,7 +53,7 @@ pub struct EyeOfEnderEntity {
 impl EyeOfEnderEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |eye| {
-            (const { EntityProps::<Self>::new().tick })(eye);
+            entity::tick(eye);
             eye.entity_tick();
         },
         attackable: |_| false,

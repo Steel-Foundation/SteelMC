@@ -106,7 +106,7 @@ impl FishingHookEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |hook| {
             hook.seed_synchronized_random();
-            (const { projectile::entity_props::<Self>().tick })(hook);
+            projectile::tick(hook);
             hook.entity_tick();
         },
         // Vanilla `FishingHook.remove`: the player stops fishing with it.
@@ -744,15 +744,15 @@ impl FishingHookEntity {
 impl ProjectileTable for FishingHookEntity {
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
         can_hit_entity: |hook, target| {
-            (const { ProjectileProps::<Self>::new().can_hit_entity })(hook, target)
+            projectile::can_hit_entity(hook, target)
                 || (target.is_alive() && target.is::<ItemEntity>())
         },
         on_hit_entity: |hook, target, location| {
-            (const { ProjectileProps::<Self>::new().on_hit_entity })(hook, target, location);
+            projectile::on_hit_entity(hook, target, location);
             hook.set_hooked_entity(Some(Arc::clone(target)));
         },
         on_hit_block: |hook, hit| {
-            (const { ProjectileProps::<Self>::new().on_hit_block })(hook, hit);
+            projectile::on_hit_block(hook, hit);
             // Vanilla scales by `HitResult.distanceTo`, which is the squared
             // distance.
             let distance_sqr = hit.location.distance_squared(hook.position());

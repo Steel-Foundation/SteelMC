@@ -4,8 +4,8 @@
 //! [`entity_props!`] declares a layer's hooks once and generates:
 //!
 //! - `XProps<E>`: one `fn(&E, ..)` per hook, typed for the concrete entity.
-//!   `XProps::new()` holds the layer's defaults; presets and entity types
-//!   override fields with struct-update syntax.
+//!   `XProps::new()` holds the declaring class's own bodies; presets and
+//!   entity types override fields with struct-update syntax.
 //! - `XHooks`: the same hooks as methods of the entity. It is implemented
 //!   once, for every type with the layer's table trait, by reading the type's
 //!   `const` table: a call lands on an entry known at compile time, and a
@@ -14,7 +14,9 @@
 //!   lookup.
 //! - one method per hook on the view, so callers never see the plumbing.
 //!
-//! Each hook names the view method holding its default body. The layer
+//! The declaring class's body for a hook is the function of the same name in
+//! the module that invokes the macro (`living_entity::ai_step`); how overrides
+//! call `super` is described in [`crate::entity::component`]. The layer
 //! declares the table trait itself (`trait XTable { const X: XProps<Self>; }`)
 //! and stores the `&dyn XHooks` its view dispatches through.
 
@@ -23,12 +25,12 @@ macro_rules! entity_props {
     (
         $(#[$meta:meta])*
         $vis:vis struct $props:ident<E>: $hooks:ident for $view:ident
-        where E: $parts:path => $view_fn:ident,
+        where E: $parts:path,
         table $table:ident::$table_const:ident,
         component $component:ty {
             $(
                 $(#[$hook_meta:meta])*
-                fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty)? = $default:ident;
+                fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty)?;
             )*
         }
     ) => {
@@ -41,11 +43,11 @@ macro_rules! entity_props {
         }
 
         impl<E: $parts> $props<E> {
-            /// The layer's defaults.
+            /// The declaring class's own bodies.
             #[must_use]
             pub const fn new() -> Self {
                 Self {
-                    $( $name: |entity $(, $arg)*| entity.$view_fn().$default($($arg),*), )*
+                    $( $name: $name::<E>, )*
                 }
             }
         }

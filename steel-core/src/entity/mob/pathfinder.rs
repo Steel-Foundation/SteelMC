@@ -1,3 +1,6 @@
+//! Vanilla `PathfinderMob`: path navigation targets, leash following and the
+//! mob properties every pathfinder mob shares.
+
 use crate::entity::prelude::*;
 use std::sync::Arc;
 
@@ -7,7 +10,8 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::{vanilla_attributes, vanilla_blocks};
 use steel_utils::{BlockPos, ChunkPos};
 
-use super::{Mob, TARGET_REACH_DISTANCE_SQR};
+use super::{Mob, MobProps, Parts, TARGET_REACH_DISTANCE_SQR};
+use crate::entity::EntitySpawnReason;
 use crate::entity::ai::goal::{Goal, GoalControl, GoalSelector};
 use crate::entity::ai::navigation::{
     NavigationPathRequest, NavigationRecomputeRequest, NavigationTickContext,
@@ -19,6 +23,27 @@ use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
 
 pub(super) const LEASH_CLOSE_RANGE_WANTED_DISTANCE: f32 = 2.0;
+
+/// `PathfinderMob`'s [`MobProps::is_pathfinder`].
+pub const fn is_pathfinder<E: Parts>(_: &E) -> bool {
+    true
+}
+
+/// `PathfinderMob`'s [`MobProps::check_spawn_rules`].
+pub fn check_spawn_rules<E: Parts>(mob: &E, _: &Arc<World>, _: EntitySpawnReason) -> bool {
+    let mob = mob.mob();
+    mob.walk_target_value(mob.block_position()) >= 0.0
+}
+
+/// `PathfinderMob`'s changes to the mob defaults.
+#[must_use]
+pub const fn mob_props<E: Parts>() -> MobProps<E> {
+    MobProps {
+        is_pathfinder: is_pathfinder::<E>,
+        check_spawn_rules: check_spawn_rules::<E>,
+        ..MobProps::new()
+    }
+}
 
 pub(super) fn tick_path_navigation_target(
     mob: &Mob<'_>,

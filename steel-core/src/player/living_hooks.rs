@@ -334,17 +334,14 @@ impl Player {
     }
 
     /// `Player.aiStep` around `super.aiStep()`.
-    pub(super) fn ai_step_around(
-        &self,
-        super_ai_step: impl FnOnce() -> Option<MoveResult>,
-    ) -> Option<MoveResult> {
+    pub(super) fn ai_step_player(&self) -> Option<MoveResult> {
         self.tick_regeneration();
         InventoryTickContext::tick_player_inventory(&self.get_world(), self);
         if self.is_flying() && !self.is_passenger() {
             self.reset_fall_distance();
         }
 
-        let result = super_ai_step();
+        let result = living_entity::ai_step(self);
         self.living().set_y_head_rot(self.rotation().0);
         // Pickup uses the simulated position; `tick_living_entity` restores the
         // authoritative tick position after this returns.
@@ -356,12 +353,9 @@ impl Player {
 
     /// `Player.travel` around `super.travel()`: swimming follows the look
     /// direction, and flying keeps most vertical speed.
-    pub(super) fn travel_around(
-        &self,
-        super_travel: impl FnOnce() -> Option<MoveResult>,
-    ) -> Option<MoveResult> {
+    pub(super) fn travel_player(&self, input: DVec3) -> Option<MoveResult> {
         if self.is_passenger() {
-            return super_travel();
+            return living_entity::travel(self, input);
         }
 
         if self.is_swimming() {
@@ -382,7 +376,7 @@ impl Player {
 
         if self.is_flying() {
             let original_movement_y = self.velocity().y;
-            let result = super_travel();
+            let result = living_entity::travel(self, input);
             let velocity = self.velocity();
             self.set_velocity(DVec3::new(
                 velocity.x,
@@ -391,7 +385,7 @@ impl Player {
             ));
             result
         } else {
-            super_travel()
+            living_entity::travel(self, input)
         }
     }
 
@@ -423,32 +417,22 @@ impl LivingTable for Player {
         voice_pitch: |_| 1.0,
         // `Player.canBeSeenAsEnemy`: invulnerable players are never enemies.
         can_be_seen_as_enemy: |player| {
-            !player.abilities.lock().invulnerable
-                && (const { LivingProps::<Self>::new().can_be_seen_as_enemy })(player)
+            !player.abilities.lock().invulnerable && living_entity::can_be_seen_as_enemy(player)
         },
         is_invulnerable_to: |player, world, source| {
-            (const { LivingProps::<Self>::new().is_invulnerable_to })(player, world, source)
+            living_entity::is_invulnerable_to(player, world, source)
                 || player.is_invulnerable_to_after_super(world, source)
         },
         // `Player.canGlide`: flying players do not glide.
-        can_glide: |player| {
-            !player.is_flying() && (const { LivingProps::<Self>::new().can_glide })(player)
-        },
+        can_glide: |player| !player.is_flying() && living_entity::can_glide(player),
         // `Player.isImmobile`: sleeping players are immobile too.
-        is_immobile: |player| {
-            (const { LivingProps::<Self>::new().is_immobile })(player)
-                || player.living().is_sleeping()
-        },
+        is_immobile: |player| living_entity::is_immobile(player) || player.living().is_sleeping(),
         jump_from_ground: |player| {
-            (const { LivingProps::<Self>::new().jump_from_ground })(player);
+            living_entity::jump_from_ground(player);
             player.jump_from_ground_after_super();
         },
-        ai_step: |player| {
-            player.ai_step_around(|| (const { LivingProps::<Self>::new().ai_step })(player))
-        },
-        travel: |player, input| {
-            player.travel_around(|| (const { LivingProps::<Self>::new().travel })(player, input))
-        },
+        ai_step: |player| player.ai_step_player(),
+        travel: |player, input| player.travel_player(input),
         default_dimensions: |_, pose| Player::dimensions_for_pose(pose),
         hurt_sound: |_, source| Some(source.damage_type.effects.sound()),
         does_emit_equip_event: |_, slot| slot.slot_type() == EquipmentSlotType::HumanoidArmor,

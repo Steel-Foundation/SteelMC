@@ -36,13 +36,13 @@ impl Living<'_> {
 
     /// `LivingEntity.checkFallDamage`: refreshes fluid contact and sends the
     /// landing burst before the entity fall-damage step.
-    pub(super) fn check_fall_damage_around(
+    pub(super) fn living_check_fall_damage(
         &self,
+        vertical_movement: f64,
         on_ground: bool,
         on_state: BlockStateId,
         pos: BlockPos,
         world: &Arc<World>,
-        super_check: impl FnOnce(),
     ) {
         // Vanilla refreshes its fluid interaction when the cached state is not
         // already water. Steel refreshes contact during movement, so the last
@@ -55,7 +55,14 @@ impl Living<'_> {
             self.send_landing_particles(world, on_state, pos);
         }
 
-        super_check();
+        entity::check_fall_damage(
+            self.entity(),
+            vertical_movement,
+            on_ground,
+            on_state,
+            pos,
+            world,
+        );
     }
 
     /// Sends the vanilla landing burst when the fall was powerful enough.
@@ -90,26 +97,24 @@ impl Living<'_> {
     #[must_use]
     /// `LivingEntity.getBlockSpeedFactor` around `super`: movement
     /// efficiency pulls the block's factor toward 1.
-    pub(super) fn block_speed_factor_around(&self, super_factor: impl FnOnce() -> f32) -> f32 {
+    pub(super) fn living_block_speed_factor(&self) -> f32 {
         let efficiency =
             self.attributes()
                 .lock()
                 .required_value(vanilla_attributes::MOVEMENT_EFFICIENCY) as f32;
-        let block_factor = super_factor();
+        let block_factor = entity::block_speed_factor(self.entity());
         block_factor + efficiency * (1.0 - block_factor)
     }
 
     /// Applies fall damage to a living entity, factoring in effects that reduce or negate it.
     ///
-    /// `super_cause_fall_damage` is `Entity`'s, called with the effective fall
-    /// distance.
+    /// `Entity`'s step runs with the effective fall distance.
     #[must_use]
     pub fn cause_living_fall_damage(
         &self,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
-        super_cause_fall_damage: impl FnOnce(f64) -> bool,
     ) -> bool {
         let effective_fall_distance =
             if let Some(impact_pos) = self.living_base().current_impulse_impact_pos() {
@@ -125,7 +130,12 @@ impl Living<'_> {
             };
 
         // Vanilla ignores `super`'s result.
-        super_cause_fall_damage(effective_fall_distance);
+        let _ = entity::cause_fall_damage(
+            self.entity(),
+            effective_fall_distance,
+            damage_modifier,
+            source,
+        );
 
         let attributes = self.attributes().lock();
         let safe_fall_distance = attributes
@@ -192,20 +202,6 @@ impl Living<'_> {
         self.living_base().fall_flying_ticks()
     }
 
-    /// Returns whether the given item in the given slot allows elytra-style gliding.
-    #[must_use]
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub fn can_glide_using_default(&self, item_stack: &ItemStack, slot: EquipmentSlot) -> bool {
-        let Some(equippable) = item_stack.get_equippable() else {
-            return false;
-        };
-
-        item_stack.has(GLIDER) && equippable.slot == slot && !item_stack.next_damage_will_break()
-    }
-
     /// Returns whether the item in `slot` can be used for vanilla gliding.
     #[must_use]
     pub fn can_glide_using_equipment_slot(&self, slot: EquipmentSlot) -> bool {
@@ -243,19 +239,6 @@ impl Living<'_> {
         if item_broke {
             self.on_equipped_item_broken(item_ref, slot_to_damage);
         }
-    }
-
-    /// Returns whether this entity meets the base conditions to glide: not
-    /// grounded, not a passenger, not levitating, and wearing something that
-    /// allows gliding.
-    #[must_use]
-    pub fn default_can_glide(&self) -> bool {
-        !self.on_ground()
-            && !self.is_passenger()
-            && !self.has_mob_effect(vanilla_mob_effects::LEVITATION)
-            && EquipmentSlot::ALL
-                .iter()
-                .any(|&slot| self.can_glide_using_equipment_slot(slot))
     }
 
     /// Puts the entity into the fall-flying (elytra gliding) state.
@@ -375,13 +358,6 @@ impl Living<'_> {
         self.living_base().hurt_time()
     }
 
-    /// Returns vanilla `LivingEntity.isImmobile()`.
-    /// Returns whether this entity is immobile because it's dead or dying.
-    #[must_use]
-    pub fn default_is_immobile(&self) -> bool {
-        self.is_dead_or_dying()
-    }
-
     /// Zeroes out velocity components too small to matter, using a stricter
     /// horizontal threshold for players than other entities.
     pub fn apply_living_velocity_thresholds(&self) {
@@ -411,13 +387,6 @@ impl Living<'_> {
         self.set_velocity(DVec3::new(dx, dy, dz));
     }
 
-    /// Server AI hook called from vanilla `LivingEntity.aiStep()`.
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn server_ai_step_default(&self) {}
-
     /// Returns the jump-height bonus from the Jump Boost effect, scaling with amplifier.
     #[must_use]
     pub fn jump_boost_power(&self) -> f32 {
@@ -441,34 +410,6 @@ impl Living<'_> {
     #[must_use]
     pub fn jump_power(&self) -> f32 {
         self.jump_power_with_multiplier(1.0)
-    }
-
-    /// Applies this entity's jump velocity, unless jump power is negligible.
-    pub fn default_jump_from_ground(&self) {
-        let jump_power = self.jump_power();
-        if jump_power <= 1.0E-5 {
-            return;
-        }
-
-        let movement = self.velocity();
-        self.set_velocity(DVec3::new(
-            movement.x,
-            movement.y.max(f64::from(jump_power)),
-            movement.z,
-        ));
-        if self.is_sprinting() {
-            let angle = self.rotation().0.to_radians();
-            self.set_velocity(
-                self.velocity()
-                    + DVec3::new(
-                        -f64::from(trig::sin(angle)) * 0.2,
-                        0.0,
-                        f64::from(trig::cos(angle)) * 0.2,
-                    ),
-            );
-        }
-
-        self.mark_velocity_sync();
     }
 
     /// Applies downward velocity while submerged and not jumping out of a liquid.
@@ -515,20 +456,6 @@ impl Living<'_> {
         }
     }
 
-    /// Transforms the rider's raw input into this entity's movement input while ridden.
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn ridden_input_default(&self, _controller: &Player, self_input: DVec3) -> DVec3 {
-        self_input
-    }
-
-    /// Default for [`Self::ridden_speed`]: the current speed.
-    pub fn ridden_speed_default(&self, _controller: &Player) -> f32 {
-        self.speed()
-    }
-
     /// Handles movement while this entity is being ridden and steered by a controlling player.
     pub fn travel_ridden(&self, controller: &Player, self_input: DVec3) -> Option<MoveResult> {
         let ridden_input = self.ridden_input(controller, self_input);
@@ -540,78 +467,6 @@ impl Living<'_> {
 
         self.set_velocity(DVec3::ZERO);
         None
-    }
-
-    /// Default vanilla-shaped `LivingEntity.aiStep()` movement foundation for overrides.
-    ///
-    /// This covers the shared travel state Steel currently has; mob AI and
-    /// equipment ticking are still separate follow-up work.
-    #[must_use]
-    pub fn default_ai_step(&self) -> Option<MoveResult> {
-        self.tick_no_jump_delay();
-        if !self.can_simulate_movement() {
-            self.set_velocity(self.velocity() * 0.98);
-        }
-
-        self.tick_equipment();
-        self.apply_living_velocity_thresholds();
-        self.apply_input();
-        if self.is_immobile() {
-            self.set_jumping(false);
-            let input = self.travel_input();
-            self.set_travel_input(LivingTravelInput::new(0.0, input.vertical(), 0.0));
-        } else if self.is_effective_ai() {
-            self.server_ai_step();
-        }
-
-        self.handle_living_jump();
-
-        if self.is_fall_flying() {
-            self.update_fall_flying();
-        }
-
-        if self.has_mob_effect(vanilla_mob_effects::SLOW_FALLING)
-            || self.has_mob_effect(vanilla_mob_effects::LEVITATION)
-        {
-            self.reset_fall_distance();
-        }
-
-        let input = self.travel_input();
-        let input = DVec3::new(
-            f64::from(input.sideways()),
-            f64::from(input.vertical()),
-            f64::from(input.forward()),
-        );
-        let result = if EntityHooks::is_alive(self.entity())
-            && let Some(controller_entity) = self.controlling_passenger()
-            && let Some(controller) = controller_entity.as_player()
-        {
-            self.travel_ridden(controller, input)
-        } else if self.can_simulate_movement() && self.is_effective_ai() {
-            self.travel(input)
-        } else {
-            None
-        };
-
-        self.apply_effects_from_blocks();
-        self.tick_freezing();
-        self.push_entities();
-        if self.entity_type().flags.is_sensitive_to_water
-            && self.is_in_water_or_rain()
-            && let Some(world) = self.level()
-        {
-            self.hurt(
-                &world,
-                &DamageSource::environment(&vanilla_damage_types::DROWN),
-                1.0,
-            );
-        }
-        result
-    }
-
-    /// Default for [`LivingProps::push_entities`].
-    pub(crate) fn push_entities_default(&self) {
-        EntityPush::push_entities(self);
     }
 
     /// Pushes against `entities` in the given order. The caller applies cramming damage first.
@@ -766,6 +621,169 @@ impl Living<'_> {
         }
         true
     }
+}
+
+/// `LivingEntity`'s [`LivingProps::can_glide_using`].
+///
+/// Returns whether the given item in the given slot allows elytra-style gliding.
+#[must_use]
+pub fn can_glide_using<E: Parts>(_entity: &E, item_stack: &ItemStack, slot: EquipmentSlot) -> bool {
+    let Some(equippable) = item_stack.get_equippable() else {
+        return false;
+    };
+
+    item_stack.has(GLIDER) && equippable.slot == slot && !item_stack.next_damage_will_break()
+}
+
+/// `LivingEntity`'s [`LivingProps::can_glide`].
+///
+/// Returns whether this entity meets the base conditions to glide: not
+/// grounded, not a passenger, not levitating, and wearing something that
+/// allows gliding.
+#[must_use]
+pub fn can_glide<E: Parts>(entity: &E) -> bool {
+    let living = &entity.living();
+    !living.on_ground()
+        && !living.is_passenger()
+        && !living.has_mob_effect(vanilla_mob_effects::LEVITATION)
+        && EquipmentSlot::ALL
+            .iter()
+            .any(|&slot| living.can_glide_using_equipment_slot(slot))
+}
+
+/// `LivingEntity`'s [`LivingProps::is_immobile`].
+///
+/// Returns vanilla `LivingEntity.isImmobile()`.
+/// Returns whether this entity is immobile because it's dead or dying.
+#[must_use]
+pub fn is_immobile<E: Parts>(entity: &E) -> bool {
+    let living = &entity.living();
+    living.is_dead_or_dying()
+}
+
+/// `LivingEntity`'s [`LivingProps::server_ai_step`].
+///
+/// Server AI hook called from vanilla `LivingEntity.aiStep()`.
+pub const fn server_ai_step<E: Parts>(_entity: &E) {}
+
+/// `LivingEntity`'s [`LivingProps::jump_from_ground`].
+///
+/// Applies this entity's jump velocity, unless jump power is negligible.
+pub fn jump_from_ground<E: Parts>(entity: &E) {
+    let living = &entity.living();
+    let jump_power = living.jump_power();
+    if jump_power <= 1.0E-5 {
+        return;
+    }
+
+    let movement = living.velocity();
+    living.set_velocity(DVec3::new(
+        movement.x,
+        movement.y.max(f64::from(jump_power)),
+        movement.z,
+    ));
+    if living.is_sprinting() {
+        let angle = living.rotation().0.to_radians();
+        living.set_velocity(
+            living.velocity()
+                + DVec3::new(
+                    -f64::from(trig::sin(angle)) * 0.2,
+                    0.0,
+                    f64::from(trig::cos(angle)) * 0.2,
+                ),
+        );
+    }
+
+    living.mark_velocity_sync();
+}
+
+/// `LivingEntity`'s [`LivingProps::ridden_input`].
+///
+/// Transforms the rider's raw input into this entity's movement input while ridden.
+pub const fn ridden_input<E: Parts>(_entity: &E, _controller: &Player, self_input: DVec3) -> DVec3 {
+    self_input
+}
+
+/// `LivingEntity`'s [`LivingProps::ridden_speed`]: the current speed.
+pub fn ridden_speed<E: Parts>(entity: &E, _controller: &Player) -> f32 {
+    let living = &entity.living();
+    living.speed()
+}
+
+/// `LivingEntity`'s [`LivingProps::ai_step`].
+///
+/// Default vanilla-shaped `LivingEntity.aiStep()` movement foundation for overrides.
+///
+/// This covers the shared travel state Steel currently has; mob AI and
+/// equipment ticking are still separate follow-up work.
+#[must_use]
+pub fn ai_step<E: Parts>(entity: &E) -> Option<MoveResult> {
+    let living = &entity.living();
+    living.tick_no_jump_delay();
+    if !living.can_simulate_movement() {
+        living.set_velocity(living.velocity() * 0.98);
+    }
+
+    living.tick_equipment();
+    living.apply_living_velocity_thresholds();
+    living.apply_input();
+    if living.is_immobile() {
+        living.set_jumping(false);
+        let input = living.travel_input();
+        living.set_travel_input(LivingTravelInput::new(0.0, input.vertical(), 0.0));
+    } else if living.is_effective_ai() {
+        living.server_ai_step();
+    }
+
+    living.handle_living_jump();
+
+    if living.is_fall_flying() {
+        living.update_fall_flying();
+    }
+
+    if living.has_mob_effect(vanilla_mob_effects::SLOW_FALLING)
+        || living.has_mob_effect(vanilla_mob_effects::LEVITATION)
+    {
+        living.reset_fall_distance();
+    }
+
+    let input = living.travel_input();
+    let input = DVec3::new(
+        f64::from(input.sideways()),
+        f64::from(input.vertical()),
+        f64::from(input.forward()),
+    );
+    let result = if EntityHooks::is_alive(living.entity())
+        && let Some(controller_entity) = living.controlling_passenger()
+        && let Some(controller) = controller_entity.as_player()
+    {
+        living.travel_ridden(controller, input)
+    } else if living.can_simulate_movement() && living.is_effective_ai() {
+        living.travel(input)
+    } else {
+        None
+    };
+
+    living.apply_effects_from_blocks();
+    living.tick_freezing();
+    living.push_entities();
+    if living.entity_type().flags.is_sensitive_to_water
+        && living.is_in_water_or_rain()
+        && let Some(world) = living.level()
+    {
+        living.hurt(
+            &world,
+            &DamageSource::environment(&vanilla_damage_types::DROWN),
+            1.0,
+        );
+    }
+    result
+}
+
+/// `LivingEntity`'s [`LivingProps::push_entities`].
+pub fn push_entities<E: Parts>(entity: &E) {
+    let living = &entity.living();
+    EntityPush::push_entities(living);
 }
 
 /// Walks down from `y` until standing on a block that blocks motion,

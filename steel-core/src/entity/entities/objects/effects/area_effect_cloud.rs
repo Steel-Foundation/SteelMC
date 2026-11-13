@@ -1,5 +1,6 @@
 //! Lingering cloud that applies its potion effects to living entities standing inside it.
 
+use crate::entity::entity;
 use rustc_hash::FxHashMap;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
@@ -90,7 +91,7 @@ pub struct AreaEffectCloudEntity {
 impl AreaEffectCloudEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |cloud| {
-            (const { EntityProps::<Self>::new().tick })(cloud);
+            entity::tick(cloud);
             // Clients draw the particles from the synced radius, waiting
             // flag and particle; only the server tick runs here.
             if let Some(world) = cloud.level() {

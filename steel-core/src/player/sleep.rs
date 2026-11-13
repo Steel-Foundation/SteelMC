@@ -1,3 +1,4 @@
+use crate::entity::living_entity;
 use crate::entity::prelude::*;
 use glam::DVec3;
 use steel_protocol::packets::game::{AnimateAction, CAnimate};
@@ -136,7 +137,7 @@ impl Player {
             self.send_packet(packet);
         }
 
-        self.living().default_stop_sleeping();
+        living_entity::stop_sleeping(self);
         if update_level_list {
             self.get_world().update_sleeping_player_list();
         }

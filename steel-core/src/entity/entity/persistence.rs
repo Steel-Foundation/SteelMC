@@ -154,9 +154,6 @@ pub trait EntityPersistence: Entity {
         Some(entity)
     }
 
-    /// Default for [`EntityHooks::apply_implicit_item_components`].
-    fn apply_implicit_item_components_default(&self, _item_stack: &ItemStack) {}
-
     /// Spawn-item data is merged into the entity's current save state before it
     /// is loaded. Keeping that merge at the entity boundary preserves defaults
     /// and entity-specific state when the component only overrides one field.
@@ -247,3 +244,10 @@ pub trait EntityPersistence: Entity {
 }
 
 impl<T: Entity + ?Sized> EntityPersistence for T {}
+
+/// `Entity`'s [`EntityProps::apply_implicit_item_components`].
+pub const fn apply_implicit_item_components<E: Entity + ?Sized>(
+    _entity: &E,
+    _item_stack: &ItemStack,
+) {
+}

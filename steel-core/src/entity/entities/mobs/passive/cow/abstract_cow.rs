@@ -1,12 +1,16 @@
 //! Vanilla `AbstractCow`: what cows and mooshrooms share on top of `Animal`.
 
+use crate::entity::DamageSource;
 use crate::player::Player;
 use steel_registry::cow_sound_variant::CowSoundVariant;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_cow_sound_variants, vanilla_items,
 };
+use steel_utils::BlockPos;
+use steel_utils::BlockStateId;
 use steel_utils::types::InteractionHand;
 
 use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
@@ -29,37 +33,81 @@ pub fn construct(mob_base: &MobBase) {
 /// `AbstractCow.getSoundSet`: the classic cow sounds, unless a type picks others.
 const CLASSIC_SOUNDS: &CowSoundVariant = &vanilla_cow_sound_variants::CLASSIC;
 
+/// `AbstractCow`'s [`LivingProps::sound_volume`].
+pub const fn sound_volume<E: Parts>(_: &E) -> f32 {
+    0.4
+}
+
+/// `AbstractCow`'s [`LivingProps::hurt_sound`].
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the table entry fixes the signature"
+)]
+pub const fn hurt_sound<E: Parts>(_: &E, _: &DamageSource) -> Option<SoundEventRef> {
+    Some(CLASSIC_SOUNDS.hurt_sound)
+}
+
+/// `AbstractCow`'s [`LivingProps::death_sound`].
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the table entry fixes the signature"
+)]
+pub const fn death_sound<E: Parts>(_: &E) -> Option<SoundEventRef> {
+    Some(CLASSIC_SOUNDS.death_sound)
+}
+
 /// `AbstractCow`'s changes to the animal living defaults.
 #[must_use]
 pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
-        sound_volume: |_| 0.4,
-        hurt_sound: |_, _| Some(CLASSIC_SOUNDS.hurt_sound),
-        death_sound: |_| Some(CLASSIC_SOUNDS.death_sound),
+        sound_volume: sound_volume::<E>,
+        hurt_sound: hurt_sound::<E>,
+        death_sound: death_sound::<E>,
         ..animal::living_props()
     }
+}
+
+/// `AbstractCow`'s [`MobProps::ambient_sound`].
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the table entry fixes the signature"
+)]
+pub const fn ambient_sound<E: Parts>(_: &E) -> Option<SoundEventRef> {
+    Some(CLASSIC_SOUNDS.ambient_sound)
+}
+
+/// `AbstractCow`'s [`MobProps::mob_interact`].
+pub fn mob_interact<E: Parts>(
+    cow: &E,
+    player: &Player,
+    hand: InteractionHand,
+) -> InteractionResult {
+    if let Some(result) = milk(cow, player, hand) {
+        return result;
+    }
+    animal::mob_interact(cow, player, hand)
 }
 
 /// `AbstractCow`'s changes to the animal mob defaults.
 #[must_use]
 pub const fn mob_props<E: Parts>() -> MobProps<E> {
     MobProps {
-        ambient_sound: |_| Some(CLASSIC_SOUNDS.ambient_sound),
-        mob_interact: |cow, player, hand| {
-            if let Some(result) = milk(cow, player, hand) {
-                return result;
-            }
-            (const { animal::mob_props::<E>().mob_interact })(cow, player, hand)
-        },
+        ambient_sound: ambient_sound::<E>,
+        mob_interact: mob_interact::<E>,
         ..animal::mob_props()
     }
+}
+
+/// `AbstractCow`'s [`EntityProps::play_step_sound`].
+pub fn play_step_sound<E: Parts>(cow: &E, _: BlockPos, _: BlockStateId) {
+    cow.play_sound(CLASSIC_SOUNDS.step_sound, 0.15, 1.0);
 }
 
 /// `AbstractCow`'s changes to the mob entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        play_step_sound: |cow, _, _| cow.play_sound(CLASSIC_SOUNDS.step_sound, 0.15, 1.0),
+        play_step_sound: play_step_sound::<E>,
         ..animal::entity_props()
     }
 }

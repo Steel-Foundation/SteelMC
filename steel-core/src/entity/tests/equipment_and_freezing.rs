@@ -226,7 +226,7 @@ fn default_ai_step_ticks_freezing_after_travel() {
         entity.advance_tick_count();
     }
 
-    let _ = entity.living().default_ai_step();
+    let _ = living_entity::ai_step(&*entity);
 
     assert_eq!(
         entity.damage_type_keys(),

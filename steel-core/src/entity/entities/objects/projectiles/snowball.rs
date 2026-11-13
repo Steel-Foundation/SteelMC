@@ -1,5 +1,6 @@
 //! Vanilla `Snowball`.
 
+use crate::entity::projectile;
 use crate::entity::projectile::ProjectileTable;
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
@@ -58,11 +59,11 @@ impl SnowballEntity {
 impl ProjectileTable for SnowballEntity {
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
         on_hit: |snowball, hit| {
-            (const { ProjectileProps::<Self>::new().on_hit })(snowball, hit);
+            projectile::on_hit(snowball, hit);
             snowball.on_hit_after_super();
         },
         on_hit_entity: |snowball, target, location| {
-            (const { ProjectileProps::<Self>::new().on_hit_entity })(snowball, target, location);
+            projectile::on_hit_entity(snowball, target, location);
             let damage = if target.entity_type() == &vanilla_entities::BLAZE {
                 3.0
             } else {

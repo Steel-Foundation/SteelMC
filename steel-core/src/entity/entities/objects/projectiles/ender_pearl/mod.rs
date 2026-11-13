@@ -3,6 +3,8 @@
 //! The pearl keeps its chunk loaded with a timed ticket while it flies and is
 //! registered on its owning player, so it is saved and respawned with them.
 
+use crate::entity::entity;
+use crate::entity::projectile;
 use crate::entity::projectile::ProjectileTable;
 use std::sync::Arc;
 
@@ -55,9 +57,7 @@ pub struct EnderPearlEntity {
 
 impl EnderPearlEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |pearl| {
-            pearl.entity_tick(|| (const { throwable::entity_props::<Self>().tick })(pearl));
-        },
+        tick: Self::entity_tick,
         on_removal: |pearl, reason| {
             // Pearls saved with their player stay registered for the next login.
             if reason != RemovalReason::StoredWithPlayer {
@@ -67,10 +67,10 @@ impl EnderPearlEntity {
         // Unlike other projectiles, pearls move through bubble columns like
         // any entity.
         on_above_bubble_column: |pearl, drag_down, pos| {
-            pearl.on_above_bubble_column_default(drag_down, pos);
+            entity::on_above_bubble_column(pearl, drag_down, pos);
         },
         on_inside_bubble_column: |pearl, drag_down| {
-            pearl.on_inside_bubble_column_default(drag_down);
+            entity::on_inside_bubble_column(pearl, drag_down);
         },
         ..throwable::entity_props()
     };
@@ -105,9 +105,9 @@ impl EnderPearlEntity {
 
     /// `ThrownEnderpearl.tick`: vanishes when its owner died (if the game
     /// rule says so), then flies and keeps its chunk loaded.
-    fn entity_tick(&self, super_tick: impl FnOnce()) {
+    fn entity_tick(&self) {
         let Some(world) = self.level() else {
-            super_tick();
+            throwable::tick(self);
             return;
         };
 
@@ -121,7 +121,7 @@ impl EnderPearlEntity {
         }) {
             self.set_removed(RemovalReason::Discarded);
         } else {
-            super_tick();
+            throwable::tick(self);
         }
 
         if !self.is_alive() {
@@ -268,11 +268,11 @@ impl EnderPearlEntity {
 impl ProjectileTable for EnderPearlEntity {
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
         on_hit: |pearl, hit| {
-            (const { ProjectileProps::<Self>::new().on_hit })(pearl, hit);
+            projectile::on_hit(pearl, hit);
             pearl.on_hit_after_super();
         },
         on_hit_entity: |pearl, target, location| {
-            (const { ProjectileProps::<Self>::new().on_hit_entity })(pearl, target, location);
+            projectile::on_hit_entity(pearl, target, location);
             if let Some(world) = target.level()
                 && let Some(source) = pearl.projectile().thrown_damage()
             {

@@ -186,19 +186,6 @@ impl Living<'_> {
         world.clip(start, end, block_shape, fluid).is_miss()
     }
 
-    /// Returns vanilla base living-entity invulnerability.
-    #[must_use]
-    pub fn default_is_invulnerable_to(&self, source: &DamageSource) -> bool {
-        self.is_invulnerable_to_base(source)
-    }
-
-    /// Default for [`Self::is_invulnerable_to`]. `world` is vanilla's explicit
-    /// `ServerLevel` argument, which the base check does not read.
-    pub(super) fn is_invulnerable_to_living(&self, _world: &World, source: &DamageSource) -> bool {
-        self.default_is_invulnerable_to(source)
-            || enchantment_helper::is_immune_to_damage(self, source)
-    }
-
     /// Main vanilla living-entity damage entry point.
     ///
     /// `world` is the `ServerLevel` supplied by the vanilla caller. It may
@@ -304,20 +291,6 @@ impl Living<'_> {
         }
     }
 
-    /// Damages equipment that participates in vanilla armor absorption.
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn hurt_armor_default(&self, _source: &DamageSource, _damage: f32) {}
-
-    /// Damages a worn helmet; base living entities do not.
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn hurt_helmet_default(&self, _source: &DamageSource, _damage: f32) {}
-
     /// Damages equipped items in the given slots that are eligible to absorb this damage source.
     pub fn do_hurt_equipment(&self, source: &DamageSource, damage: f32, slots: &[EquipmentSlot]) {
         if damage <= 0.0 {
@@ -414,36 +387,6 @@ impl Living<'_> {
         damage
     }
 
-    /// Applies damage after vanilla reductions.
-    pub fn actually_hurt_default(&self, world: &World, source: &DamageSource, amount: f32) {
-        if self.is_invulnerable_to(world, source) {
-            return;
-        }
-
-        let damage = self.damage_after_armor_absorb(source, amount);
-        let damage = self.damage_after_magic_absorb(source, damage);
-        let original_damage = damage;
-        let damage = (damage - self.absorption_amount()).max(0.0);
-        self.set_absorption_amount(self.absorption_amount() - (original_damage - damage));
-
-        let absorbed_damage = original_damage - damage;
-        if (0.0..f32::MAX).contains(&absorbed_damage)
-            && let Some(damage_causer) = source.causing_entity()
-            && let Some(player) = damage_causer.as_player()
-        {
-            player.award_custom_stat_with_count(
-                &vanilla_custom_stats::DAMAGE_DEALT_ABSORBED,
-                (absorbed_damage * 10.0).round() as i32,
-            );
-        }
-
-        if damage != 0.0 {
-            self.set_health(self.health() - damage);
-            self.set_absorption_amount(self.absorption_amount() - damage);
-            self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
-        }
-    }
-
     /// Applies vanilla hurt knockback for a damage source.
     pub fn apply_damage_knockback(&self, source: &DamageSource) {
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_KNOCKBACK) {
@@ -512,19 +455,6 @@ impl Living<'_> {
             .required_value(vanilla_attributes::KNOCKBACK_RESISTANCE)
     }
 
-    /// Applies a client-visible damage knockback indication in the given direction.
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn indicate_damage_default(&self, _xd: f64, _zd: f64) {}
-
-    /// Returns the chunk used for vanilla nearby hurt broadcasts.
-    #[must_use]
-    pub fn hurt_broadcast_chunk_default(&self) -> ChunkPos {
-        ChunkPos::from_entity_pos(self.position())
-    }
-
     /// Broadcasts vanilla damage-event metadata near this entity.
     pub fn broadcast_damage_event(&self, world: &World, source: &DamageSource) {
         world.broadcast_to_nearby(
@@ -586,69 +516,6 @@ impl Living<'_> {
         }
         self.broadcast_entity_event(EntityStatus::ProtectedFromDeath);
         true
-    }
-
-    /// Processes vanilla living death side effects.
-    pub fn die_default(&self, source: &DamageSource) {
-        if self.is_removed() {
-            return;
-        }
-        if !self.living_base().mark_death_processed() {
-            return;
-        }
-
-        self.handle_killing_blow();
-
-        // Can't directly use &self for &Living<'_>, as the compiler doesn't know if it's Sized.
-        // Using a function meant for getting &Living<'_> directly works well here.
-        if let Some(world) = self.level()
-            && let Some(self_entity) = self.as_living_entity()
-        {
-            let source_entity = source.causing_entity();
-            if source_entity.is_none_or(|entity| entity.killed_entity(&world, &self_entity, source))
-            {
-                self.game_event(&vanilla_game_events::ENTITY_DIE);
-                self.drop_all_death_loot(source);
-                // TODO: Create wither rose for killer
-            }
-        }
-
-        self.broadcast_entity_event(EntityStatus::Death);
-        self.set_pose(EntityPose::Dying);
-    }
-
-    /// Runs vanilla `LivingEntity.handleKillingBlow`.
-    ///
-    /// Vanilla's body is `this.dead = true`, which [`Self::die`] has already done
-    /// atomically by the time this runs. The hook exists for the subclasses that
-    /// replace it: bosses playing a death animation clamp their health and enter a
-    /// dying state here instead of falling over.
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn handle_killing_blow_default(&self) {}
-
-    /// Default for [`LivingProps::should_drop_loot`]: not a baby, and the
-    /// mob-drops game rule allows it.
-    pub(crate) fn should_drop_loot_default(&self, world: &World) -> bool {
-        !self.is_baby() && world.get_game_rule(&MOB_DROPS)
-    }
-
-    /// Default for [`LivingProps::should_drop_experience`]: not a baby.
-    pub(crate) fn should_drop_experience_default(&self) -> bool {
-        !self.is_baby()
-    }
-
-    /// Returns whether this entity always drops experience regardless of the
-    /// player-kill requirement; false by default.
-    #[must_use]
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn is_always_experience_dropper_default(&self) -> bool {
-        false
     }
 
     /// Marks this entity to skip dropping experience on death.
@@ -776,18 +643,6 @@ impl Living<'_> {
         }
     }
 
-    /// Hook for non-mob custom death loot.
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn drop_custom_death_loot_default(
-        &self,
-        _source: &DamageSource,
-        _killed_by_player: bool,
-    ) {
-    }
-
     /// Ticks the vanilla living death animation and removes the entity at completion.
     pub fn tick_death(&self) {
         let death_time = self.living_base().increment_death_time();
@@ -795,17 +650,6 @@ impl Living<'_> {
             self.broadcast_entity_event(EntityStatus::Poof);
             self.set_removed(RemovalReason::Killed);
         }
-    }
-
-    /// Gets the absorption amount (extra health from effects like absorption).
-    #[must_use]
-    pub fn absorption_amount_default(&self) -> f32 {
-        self.living_base().absorption_amount()
-    }
-
-    /// Sets the absorption amount.
-    pub fn set_absorption_amount_default(&self, amount: f32) {
-        self.living_base().set_absorption_amount(amount);
     }
 
     /// `LivingEntity.dropFromShearingLootTable` without the drop: rolls
@@ -853,6 +697,163 @@ impl Living<'_> {
             .get_value(vanilla_attributes::ARMOR)
             .unwrap_or(0.0) as i32
     }
+}
+
+/// `LivingEntity`'s [`LivingProps::is_invulnerable_to`].
+///
+/// `world` is vanilla's explicit
+/// `ServerLevel` argument, which the base check does not read.
+pub fn is_invulnerable_to<E: Parts>(entity: &E, _world: &World, source: &DamageSource) -> bool {
+    let living = &entity.living();
+    living.is_invulnerable_to_base(source)
+        || enchantment_helper::is_immune_to_damage(living, source)
+}
+
+/// `LivingEntity`'s [`LivingProps::hurt_armor`].
+///
+/// Damages equipment that participates in vanilla armor absorption.
+pub const fn hurt_armor<E: Parts>(_entity: &E, _source: &DamageSource, _damage: f32) {}
+
+/// `LivingEntity`'s [`LivingProps::hurt_helmet`].
+///
+/// Damages a worn helmet; base living entities do not.
+pub const fn hurt_helmet<E: Parts>(_entity: &E, _source: &DamageSource, _damage: f32) {}
+
+/// `LivingEntity`'s [`LivingProps::actually_hurt`].
+///
+/// Applies damage after vanilla reductions.
+pub fn actually_hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource, amount: f32) {
+    let living = &entity.living();
+    if living.is_invulnerable_to(world, source) {
+        return;
+    }
+
+    let damage = living.damage_after_armor_absorb(source, amount);
+    let damage = living.damage_after_magic_absorb(source, damage);
+    let original_damage = damage;
+    let damage = (damage - living.absorption_amount()).max(0.0);
+    living.set_absorption_amount(living.absorption_amount() - (original_damage - damage));
+
+    let absorbed_damage = original_damage - damage;
+    if (0.0..f32::MAX).contains(&absorbed_damage)
+        && let Some(damage_causer) = source.causing_entity()
+        && let Some(player) = damage_causer.as_player()
+    {
+        player.award_custom_stat_with_count(
+            &vanilla_custom_stats::DAMAGE_DEALT_ABSORBED,
+            (absorbed_damage * 10.0).round() as i32,
+        );
+    }
+
+    if damage != 0.0 {
+        living.set_health(living.health() - damage);
+        living.set_absorption_amount(living.absorption_amount() - damage);
+        living.game_event(&vanilla_game_events::ENTITY_DAMAGE);
+    }
+}
+
+/// `LivingEntity`'s [`LivingProps::indicate_damage`].
+///
+/// Applies a client-visible damage knockback indication in the given direction.
+pub const fn indicate_damage<E: Parts>(_entity: &E, _xd: f64, _zd: f64) {}
+
+/// `LivingEntity`'s [`LivingProps::hurt_broadcast_chunk`].
+///
+/// Returns the chunk used for vanilla nearby hurt broadcasts.
+#[must_use]
+pub fn hurt_broadcast_chunk<E: Parts>(entity: &E) -> ChunkPos {
+    let living = &entity.living();
+    ChunkPos::from_entity_pos(living.position())
+}
+
+/// `LivingEntity`'s [`LivingProps::die`].
+///
+/// Processes vanilla living death side effects.
+pub fn die<E: Parts>(this: &E, source: &DamageSource) {
+    let living = &this.living();
+    if living.is_removed() {
+        return;
+    }
+    if !living.living_base().mark_death_processed() {
+        return;
+    }
+
+    living.handle_killing_blow();
+
+    // Can't directly use &living for &Living<'_>, as the compiler doesn't know if it's Sized.
+    // Using a function meant for getting &Living<'_> directly works well here.
+    if let Some(world) = living.level()
+        && let Some(self_entity) = living.as_living_entity()
+    {
+        let source_entity = source.causing_entity();
+        if source_entity.is_none_or(|entity| entity.killed_entity(&world, &self_entity, source)) {
+            living.game_event(&vanilla_game_events::ENTITY_DIE);
+            living.drop_all_death_loot(source);
+            // TODO: Create wither rose for killer
+        }
+    }
+
+    living.broadcast_entity_event(EntityStatus::Death);
+    living.set_pose(EntityPose::Dying);
+}
+
+/// `LivingEntity`'s [`LivingProps::handle_killing_blow`].
+///
+/// Runs vanilla `LivingEntity.handleKillingBlow`.
+///
+/// Vanilla's body is `this.dead = true`, which [`Living::die`] has already done
+/// atomically by the time this runs. The hook exists for the subclasses that
+/// replace it: bosses playing a death animation clamp their health and enter a
+/// dying state here instead of falling over.
+pub const fn handle_killing_blow<E: Parts>(_entity: &E) {}
+
+/// `LivingEntity`'s [`LivingProps::should_drop_loot`]: not a baby, and the
+/// mob-drops game rule allows it.
+pub fn should_drop_loot<E: Parts>(entity: &E, world: &World) -> bool {
+    let living = &entity.living();
+    !living.is_baby() && world.get_game_rule(&MOB_DROPS)
+}
+
+/// `LivingEntity`'s [`LivingProps::should_drop_experience`]: not a baby.
+pub fn should_drop_experience<E: Parts>(entity: &E) -> bool {
+    let living = &entity.living();
+    !living.is_baby()
+}
+
+/// `LivingEntity`'s [`LivingProps::is_always_experience_dropper`].
+///
+/// Returns whether this entity always drops experience regardless of the
+/// player-kill requirement; false by default.
+#[must_use]
+pub const fn is_always_experience_dropper<E: Parts>(_entity: &E) -> bool {
+    false
+}
+
+/// `LivingEntity`'s [`LivingProps::drop_custom_death_loot`].
+///
+/// Hook for non-mob custom death loot.
+pub const fn drop_custom_death_loot<E: Parts>(
+    _entity: &E,
+    _source: &DamageSource,
+    _killed_by_player: bool,
+) {
+}
+
+/// `LivingEntity`'s [`LivingProps::absorption_amount`].
+///
+/// Gets the absorption amount (extra health from effects like absorption).
+#[must_use]
+pub fn absorption_amount<E: Parts>(entity: &E) -> f32 {
+    let living = &entity.living();
+    living.living_base().absorption_amount()
+}
+
+/// `LivingEntity`'s [`LivingProps::set_absorption_amount`].
+///
+/// Sets the absorption amount.
+pub fn set_absorption_amount<E: Parts>(entity: &E, amount: f32) {
+    let living = &entity.living();
+    living.living_base().set_absorption_amount(amount);
 }
 
 fn death_loot_items_with_rng<R: rand::Rng>(

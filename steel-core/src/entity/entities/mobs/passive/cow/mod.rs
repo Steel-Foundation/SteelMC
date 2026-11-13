@@ -4,6 +4,7 @@ pub mod abstract_cow;
 
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
+use crate::entity::ageable;
 use crate::entity::prelude::*;
 
 use steel_macros::entity_behavior;
@@ -79,9 +80,7 @@ impl MobTable for CowEntity {
         // `Cow.finalizeSpawn` picks the variants before `super`.
         finalize_spawn: |cow, world, reason, group_data| {
             variant::pick_spawn_variants(cow, world);
-            (const { abstract_cow::mob_props::<Self>().finalize_spawn })(
-                cow, world, reason, group_data,
-            )
+            ageable::finalize_spawn(cow, world, reason, group_data)
         },
         ..abstract_cow::mob_props()
     };

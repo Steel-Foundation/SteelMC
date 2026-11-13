@@ -3,9 +3,14 @@
 //! Monsters have no state of their own; the layer is presets over the mob
 //! layer. Monster types also implement [`Enemy`].
 
+use crate::entity::DamageSource;
+use crate::physics::MoveResult;
+use crate::player::Player;
+use crate::world::World;
 use steel_math::fast_floor;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::sound_events;
 use steel_registry::vanilla_game_rules::MOB_DROPS;
 use steel_utils::BlockPos;
@@ -24,50 +29,108 @@ pub fn construct(mob_base: &MobBase) {
     mob_base.set_xp_reward(5);
 }
 
+/// `Monster`'s [`LivingProps::hurt_sound`].
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the table entry fixes the signature"
+)]
+pub fn hurt_sound<E: Parts>(_: &E, _: &DamageSource) -> Option<SoundEventRef> {
+    Some(&sound_events::ENTITY_HOSTILE_HURT)
+}
+
+/// `Monster`'s [`LivingProps::death_sound`].
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the table entry fixes the signature"
+)]
+pub fn death_sound<E: Parts>(_: &E) -> Option<SoundEventRef> {
+    Some(&sound_events::ENTITY_HOSTILE_DEATH)
+}
+
+/// `Monster`'s [`LivingProps::should_drop_experience`].
+pub const fn should_drop_experience<E: Parts>(_: &E) -> bool {
+    true
+}
+
+/// `Monster`'s [`LivingProps::should_drop_loot`].
+pub fn should_drop_loot<E: Parts>(_: &E, world: &World) -> bool {
+    world.get_game_rule(&MOB_DROPS)
+}
+
+/// `Monster`'s [`LivingProps::ai_step`].
+///
+/// `Monster.aiStep` updates the idle time before `super.aiStep()`.
+pub fn ai_step<E: Parts>(monster: &E) -> Option<MoveResult> {
+    update_no_action_time(monster);
+    mob::ai_step(monster)
+}
+
 /// `Monster`'s changes to the living defaults.
 #[must_use]
 pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
-        hurt_sound: |_, _| Some(&sound_events::ENTITY_HOSTILE_HURT),
-        death_sound: |_| Some(&sound_events::ENTITY_HOSTILE_DEATH),
-        should_drop_experience: |_| true,
-        should_drop_loot: |_, world| world.get_game_rule(&MOB_DROPS),
-        // `Monster.aiStep` updates the idle time before `super.aiStep()`.
-        ai_step: |monster| {
-            update_no_action_time(monster);
-            (const { mob::living_props::<E>().ai_step })(monster)
-        },
+        hurt_sound: hurt_sound::<E>,
+        death_sound: death_sound::<E>,
+        should_drop_experience: should_drop_experience::<E>,
+        should_drop_loot: should_drop_loot::<E>,
+        ai_step: ai_step::<E>,
         ..mob::living_props()
     }
+}
+
+/// `Monster`'s [`MobProps::walk_target_value`].
+pub fn walk_target_value<E: Parts>(monster: &E, pos: BlockPos) -> f32 {
+    monster
+        .level()
+        .map_or(0.0, |world| -world.pathfinding_cost_from_light_levels(pos))
+}
+
+/// `Monster`'s [`MobProps::is_preventing_player_rest`].
+pub const fn is_preventing_player_rest<E: Parts>(_: &E, _: &World, _: &Player) -> bool {
+    true
 }
 
 /// `Monster`'s changes to the mob defaults.
 #[must_use]
 pub const fn mob_props<E: Parts>() -> MobProps<E> {
     MobProps {
-        walk_target_value: |monster, pos| {
-            monster
-                .level()
-                .map_or(0.0, |world| -world.pathfinding_cost_from_light_levels(pos))
-        },
-        is_preventing_player_rest: |_, _, _| true,
-        ..mob::pathfinder_mob_props()
+        walk_target_value: walk_target_value::<E>,
+        is_preventing_player_rest: is_preventing_player_rest::<E>,
+        ..mob::pathfinder::mob_props()
     }
+}
+
+/// `Monster`'s [`EntityProps::sound_source`].
+pub const fn sound_source<E: Parts>(_: &E) -> SoundSource {
+    SoundSource::Hostile
+}
+
+/// `Monster`'s [`EntityProps::swim_sound`].
+pub fn swim_sound<E: Parts>(_: &E) -> SoundEventRef {
+    &sound_events::ENTITY_HOSTILE_SWIM
+}
+
+/// `Monster`'s [`EntityProps::swim_splash_sound`].
+pub fn swim_splash_sound<E: Parts>(_: &E) -> SoundEventRef {
+    &sound_events::ENTITY_HOSTILE_SPLASH
+}
+
+/// `Monster`'s [`EntityProps::fall_sounds`].
+pub fn fall_sounds<E: Parts>(_: &E) -> (SoundEventRef, SoundEventRef) {
+    (
+        &sound_events::ENTITY_HOSTILE_SMALL_FALL,
+        &sound_events::ENTITY_HOSTILE_BIG_FALL,
+    )
 }
 
 /// `Monster`'s changes to the entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        sound_source: |_| SoundSource::Hostile,
-        swim_sound: |_| &sound_events::ENTITY_HOSTILE_SWIM,
-        swim_splash_sound: |_| &sound_events::ENTITY_HOSTILE_SPLASH,
-        fall_sounds: |_| {
-            (
-                &sound_events::ENTITY_HOSTILE_SMALL_FALL,
-                &sound_events::ENTITY_HOSTILE_BIG_FALL,
-            )
-        },
+        sound_source: sound_source::<E>,
+        swim_sound: swim_sound::<E>,
+        swim_splash_sound: swim_splash_sound::<E>,
+        fall_sounds: fall_sounds::<E>,
         ..mob::entity_props()
     }
 }

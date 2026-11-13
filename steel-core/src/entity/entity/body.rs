@@ -38,26 +38,6 @@ pub trait EntityBody: Entity {
         Direction::from_yaw(yaw)
     }
 
-    /// Default for [`EntityHooks::motion_direction`].
-    fn motion_direction_default(&self) -> Direction {
-        self.direction_yaw()
-    }
-
-    /// Default for [`EntityHooks::look_at`].
-    fn look_at_default(&self, from_anchor: EntityAnchor, target: DVec3) {
-        apply_entity_look_at(self.as_entity_event_source(), from_anchor, target);
-    }
-
-    /// Default for [`EntityHooks::look_at_entity`].
-    fn look_at_entity_default(
-        &self,
-        from_anchor: EntityAnchor,
-        target: &dyn Entity,
-        target_anchor: EntityAnchor,
-    ) {
-        self.look_at(from_anchor, target_anchor.position(target));
-    }
-
     /// Gets the eye height for this entity.
     ///
     /// Default implementation returns the eye height from the entity type dimensions.
@@ -93,29 +73,6 @@ pub trait EntityBody: Entity {
     /// Gets the Y coordinate of the entity's eyes.
     fn eye_y(&self) -> f64 {
         self.position().y + self.eye_height()
-    }
-
-    /// Default for [`EntityHooks::is_in_wall`].
-    fn is_in_wall_default(&self) -> bool {
-        if self.no_physics() {
-            return false;
-        }
-
-        let Some(world) = self.level() else {
-            return false;
-        };
-
-        let position = self.position();
-        let check_width = f64::from(self.base().dimensions().width * 0.8);
-        let eye_box = entity_eye_suffocation_box(
-            DVec3::new(position.x, self.eye_y(), position.z),
-            check_width,
-        );
-
-        !block_effects::for_each_block_in_aabb(eye_box, |pos| {
-            let state = world.get_block_state(pos);
-            !block_state_suffocates_eye_box(state, world.as_ref(), pos, eye_box)
-        })
     }
 
     /// Computes a unit look-direction vector from the given pitch and yaw in degrees.
@@ -176,32 +133,6 @@ pub trait EntityBody: Entity {
     /// Returns this entity's physical pose.
     fn pose(&self) -> EntityPose {
         self.base().pose()
-    }
-
-    /// Default for [`EntityHooks::dimensions_for_pose`].
-    fn dimensions_for_pose_default(&self, _pose: EntityPose) -> EntityDimensions {
-        self.entity_type().dimensions
-    }
-
-    /// Default for [`EntityHooks::refresh_dimensions`].
-    fn refresh_dimensions_default(&self) {
-        let pose = self.pose();
-        let old_dimensions = self.base().dimensions();
-        let new_dimensions = self.dimensions_for_pose(pose);
-        self.base().set_pose_and_dimensions(pose, new_dimensions);
-
-        let is_small = new_dimensions.width <= FUDGE_SMALL_DIMENSION_LIMIT
-            && new_dimensions.height <= FUDGE_SMALL_DIMENSION_LIMIT;
-        if !self.is_first_tick()
-            && self.level().is_some()
-            && !self.no_physics()
-            && is_small
-            && (new_dimensions.width > old_dimensions.width
-                || new_dimensions.height > old_dimensions.height)
-            && self.as_player().is_none()
-        {
-            self.fudge_position_after_size_change(old_dimensions);
-        }
     }
 
     /// Moves the entity to the closest free position for its new dimensions
@@ -287,11 +218,80 @@ pub trait EntityBody: Entity {
             synced_data.set_pose(pose);
         }
     }
-
-    /// Default for [`EntityHooks::is_crouching`].
-    fn is_crouching_default(&self) -> bool {
-        self.pose() == EntityPose::Sneaking
-    }
 }
 
 impl<T: Entity + ?Sized> EntityBody for T {}
+
+/// `Entity`'s [`EntityProps::motion_direction`].
+pub fn motion_direction<E: Entity + ?Sized>(entity: &E) -> Direction {
+    entity.direction_yaw()
+}
+
+/// `Entity`'s [`EntityProps::look_at`].
+pub fn look_at<E: Entity + ?Sized>(entity: &E, from_anchor: EntityAnchor, target: DVec3) {
+    apply_entity_look_at(entity.as_entity_event_source(), from_anchor, target);
+}
+
+/// `Entity`'s [`EntityProps::look_at_entity`].
+pub fn look_at_entity<E: Entity + ?Sized>(
+    entity: &E,
+    from_anchor: EntityAnchor,
+    target: &dyn Entity,
+    target_anchor: EntityAnchor,
+) {
+    entity.look_at(from_anchor, target_anchor.position(target));
+}
+
+/// `Entity`'s [`EntityProps::is_in_wall`].
+pub fn is_in_wall<E: Entity + ?Sized>(entity: &E) -> bool {
+    if entity.no_physics() {
+        return false;
+    }
+
+    let Some(world) = entity.level() else {
+        return false;
+    };
+
+    let position = entity.position();
+    let check_width = f64::from(entity.base().dimensions().width * 0.8);
+    let eye_box = entity_eye_suffocation_box(
+        DVec3::new(position.x, entity.eye_y(), position.z),
+        check_width,
+    );
+
+    !block_effects::for_each_block_in_aabb(eye_box, |pos| {
+        let state = world.get_block_state(pos);
+        !block_state_suffocates_eye_box(state, world.as_ref(), pos, eye_box)
+    })
+}
+
+/// `Entity`'s [`EntityProps::dimensions_for_pose`].
+pub fn dimensions_for_pose<E: Entity + ?Sized>(entity: &E, _pose: EntityPose) -> EntityDimensions {
+    entity.entity_type().dimensions
+}
+
+/// `Entity`'s [`EntityProps::refresh_dimensions`].
+pub fn refresh_dimensions<E: Entity + ?Sized>(entity: &E) {
+    let pose = entity.pose();
+    let old_dimensions = entity.base().dimensions();
+    let new_dimensions = entity.dimensions_for_pose(pose);
+    entity.base().set_pose_and_dimensions(pose, new_dimensions);
+
+    let is_small = new_dimensions.width <= FUDGE_SMALL_DIMENSION_LIMIT
+        && new_dimensions.height <= FUDGE_SMALL_DIMENSION_LIMIT;
+    if !entity.is_first_tick()
+        && entity.level().is_some()
+        && !entity.no_physics()
+        && is_small
+        && (new_dimensions.width > old_dimensions.width
+            || new_dimensions.height > old_dimensions.height)
+        && entity.as_player().is_none()
+    {
+        entity.fudge_position_after_size_change(old_dimensions);
+    }
+}
+
+/// `Entity`'s [`EntityProps::is_crouching`].
+pub fn is_crouching<E: Entity + ?Sized>(entity: &E) -> bool {
+    entity.pose() == EntityPose::Sneaking
+}

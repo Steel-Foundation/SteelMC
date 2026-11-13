@@ -131,22 +131,29 @@ impl Deref for Vehicle<'_> {
     }
 }
 
+/// `VehicleEntity`'s [`EntityProps::dimension_changing_delay`].
+#[must_use]
+pub const fn dimension_changing_delay<E: Parts>(_: &E) -> i32 {
+    DIMENSION_CHANGING_DELAY
+}
+
 /// `VehicleEntity`'s overrides of the entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
         hurt: hurt::<E>,
-        ignore_explosion: |_, explosion| ignore_explosion(explosion),
-        dimension_changing_delay: |_| DIMENSION_CHANGING_DELAY,
+        ignore_explosion: ignore_explosion::<E>,
+        dimension_changing_delay: dimension_changing_delay::<E>,
         ..EntityProps::new()
     }
 }
 
+/// `VehicleEntity`'s [`EntityProps::hurt`]: damage accumulates until the vehicle breaks.
 #[expect(
     clippy::neg_cmp_op_on_partial_ord,
     reason = "negated comparisons preserve vanilla's NaN branch behavior"
 )]
-fn hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource, amount: f32) -> bool {
+pub fn hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource, amount: f32) -> bool {
     if entity.is_removed() {
         return true;
     }
@@ -182,7 +189,7 @@ fn hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource, amount: f32)
 }
 
 /// Mob explosions leave vehicles intact while `mobGriefing` is off.
-pub(super) fn ignore_explosion(explosion: &dyn Explosion) -> bool {
+pub fn ignore_explosion<E: Entity>(_vehicle: &E, explosion: &dyn Explosion) -> bool {
     explosion
         .indirect_source_entity()
         .is_some_and(|entity| entity.as_mob().is_some())

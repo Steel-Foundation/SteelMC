@@ -1,6 +1,8 @@
 //! Vanilla `AbstractThrownPotion`: what splash and lingering potions share.
 
+use crate::entity::Living;
 use crate::entity::prelude::*;
+use crate::entity::projectile;
 use std::sync::Arc;
 
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -41,39 +43,47 @@ pub trait Parts: throwable_item::Parts {
     );
 }
 
+/// `AbstractThrownPotion`'s [`EntityProps::default_gravity`].
+#[must_use]
+pub const fn default_gravity<E: Parts>(_: &E) -> f64 {
+    0.05
+}
+
 /// `AbstractThrownPotion`'s overrides of the entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        default_gravity: |_| 0.05,
+        default_gravity: default_gravity::<E>,
         ..throwable::entity_props()
     }
+}
+
+/// `AbstractThrownPotion`'s [`ProjectileProps::horizontal_hurt_knockback_direction`].
+pub fn horizontal_hurt_knockback_direction<E: Parts>(
+    potion: &E,
+    hurt_entity: &Living<'_>,
+    _: &DamageSource,
+) -> (f64, f64) {
+    let delta = hurt_entity.position() - potion.position();
+    (delta.x, delta.z)
 }
 
 /// `AbstractThrownPotion`'s overrides of the projectile hooks.
 #[must_use]
 pub const fn projectile_props<E: Parts>() -> ProjectileProps<E> {
     ProjectileProps {
-        horizontal_hurt_knockback_direction: |potion, hurt_entity, _| {
-            let delta = hurt_entity.position() - potion.position();
-            (delta.x, delta.z)
-        },
-        on_hit: |potion, hit| {
-            (const { ProjectileProps::<E>::new().on_hit })(potion, hit);
-            on_hit(potion, hit);
-        },
-        on_hit_block: |potion, hit| {
-            (const { ProjectileProps::<E>::new().on_hit_block })(potion, hit);
-            on_hit_block(potion, hit);
-        },
+        horizontal_hurt_knockback_direction: horizontal_hurt_knockback_direction::<E>,
+        on_hit: on_hit::<E>,
+        on_hit_block: on_hit_block::<E>,
         ..ProjectileProps::new()
     }
 }
 
-/// `AbstractThrownPotion.onHit` after `super`: affects water-sensitive and
-/// burning entities, applies the potion, then breaks with its particles and
-/// sound.
-fn on_hit<E: Parts>(potion: &E, hit: &ProjectileHit) {
+/// `AbstractThrownPotion`'s [`ProjectileProps::on_hit`]: after `super`, affects
+/// water-sensitive and burning entities, applies the potion, then breaks with
+/// its particles and sound.
+pub fn on_hit<E: Parts>(potion: &E, hit: &ProjectileHit) {
+    projectile::on_hit(potion, hit);
     let Some(world) = potion.level() else {
         return;
     };
@@ -164,9 +174,10 @@ fn affect_entities_around(
     }
 }
 
-/// `AbstractThrownPotion.onHitBlock` after `super`: `DOUSES_FIRE` potions put out fire
-/// around the hit face.
-fn on_hit_block<E: Parts>(potion: &E, hit: &ClipHitResult) {
+/// `AbstractThrownPotion`'s [`ProjectileProps::on_hit_block`]: after `super`,
+/// `DOUSES_FIRE` potions put out fire around the hit face.
+pub fn on_hit_block<E: Parts>(potion: &E, hit: &ClipHitResult) {
+    projectile::on_hit_block(potion, hit);
     let projectile = potion.projectile();
     let Some(world) = potion.level() else {
         return;

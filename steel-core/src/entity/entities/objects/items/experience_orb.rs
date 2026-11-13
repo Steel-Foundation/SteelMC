@@ -1,5 +1,6 @@
 //! Experience orb entity implementation.
 
+use crate::entity::entity;
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 use steel_utils::nbt::NbtNumeric as _;
@@ -405,7 +406,7 @@ impl DefaultEntityPush for ExperienceOrbEntity {}
 impl ExperienceOrbEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |orb| {
-            (const { EntityProps::<Self>::new().tick })(orb);
+            entity::tick(orb);
             orb.entity_tick();
         },
         hurt: Self::entity_hurt,

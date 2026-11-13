@@ -1,6 +1,7 @@
 use super::*;
 use crate::entity::EntityTable;
 use crate::entity::WeakSelf;
+use crate::entity::projectile;
 use steel_registry::{entity_type::EntityTypeRef, init_vanilla_registry, vanilla_entities};
 
 use steel_registry::blocks::properties::{BlockStateProperties, Tilt};
@@ -310,14 +311,17 @@ fn base_block_hit_dispatches_vanilla_block_callbacks() {
                 Arc::downgrade(&world),
             );
             let hit_block = |block_pos| {
-                firework.projectile().on_hit_block_base(&ClipHitResult {
-                    location: firework.position(),
-                    direction: Direction::Up,
-                    block_pos,
-                    miss: false,
-                    inside: false,
-                    world_border_hit: false,
-                });
+                projectile::on_hit_block(
+                    &*firework,
+                    &ClipHitResult {
+                        location: firework.position(),
+                        direction: Direction::Up,
+                        block_pos,
+                        miss: false,
+                        inside: false,
+                        world_border_hit: false,
+                    },
+                );
             };
             firework.set_remaining_fire_ticks(1);
             hit_block(pos);

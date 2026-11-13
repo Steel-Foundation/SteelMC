@@ -44,7 +44,7 @@ impl vehicle_entity::Parts for SpawnerMinecartEntity {
 impl SpawnerMinecartEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |minecart| {
-            (const { abstract_minecart::entity_props::<Self>().tick })(minecart);
+            abstract_minecart::tick(minecart);
             minecart.tick_spawner();
         },
         ..abstract_minecart::entity_props()

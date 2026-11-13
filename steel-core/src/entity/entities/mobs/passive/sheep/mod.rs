@@ -4,6 +4,8 @@ mod color_spawn_rules;
 
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
+use crate::entity::ageable;
+use crate::entity::mob;
 use crate::entity::prelude::*;
 use crate::player::Player;
 use std::sync::Arc;
@@ -221,15 +223,15 @@ impl MobTable for SheepEntity {
             if let Some(result) = sheep.shear_by_player(player, hand) {
                 return result;
             }
-            (const { animal::mob_props::<Self>().mob_interact })(sheep, player, hand)
+            animal::mob_interact(sheep, player, hand)
         },
         // `Sheep.finalizeSpawn` picks the wool color before `super`.
         finalize_spawn: |sheep, world, reason, group_data| {
             sheep.pick_spawn_color(world);
-            (const { animal::mob_props::<Self>().finalize_spawn })(sheep, world, reason, group_data)
+            ageable::finalize_spawn(sheep, world, reason, group_data)
         },
         ate: |sheep| {
-            (const { animal::mob_props::<Self>().ate })(sheep);
+            mob::ate(sheep);
             sheep.mob_ate();
         },
         ..animal::mob_props()

@@ -3,6 +3,9 @@
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
 use crate::entity::SharedEntity;
+use crate::entity::ageable;
+use crate::entity::living_entity;
+use crate::entity::mob;
 use crate::entity::prelude::*;
 use crate::player::Player;
 use steel_utils::types::InteractionHand;
@@ -197,7 +200,7 @@ impl MobTable for PigEntity {
             if let Some(result) = pig.ride(player, hand) {
                 return result;
             }
-            let result = (const { animal::mob_props::<Self>().mob_interact })(pig, player, hand);
+            let result = animal::mob_interact(pig, player, hand);
             if result.consumes_action() {
                 return result;
             }
@@ -206,7 +209,7 @@ impl MobTable for PigEntity {
         // `Pig.finalizeSpawn` picks the variants before `super`.
         finalize_spawn: |pig, world, reason, group_data| {
             variant::pick_spawn_variants(pig, world);
-            (const { animal::mob_props::<Self>().finalize_spawn })(pig, world, reason, group_data)
+            ageable::finalize_spawn(pig, world, reason, group_data)
         },
         ..animal::mob_props()
     };
@@ -230,22 +233,19 @@ impl LivingTable for PigEntity {
             if slot == EquipmentSlot::Saddle {
                 return EntityHooks::is_alive(pig) && !pig.animal().ageable().is_baby();
             }
-            (const { animal::living_props::<Self>().can_use_slot })(pig, slot)
+            living_entity::can_use_slot(pig, slot)
         },
         can_dispenser_equip_into_slot: |pig, slot| {
-            slot == EquipmentSlot::Saddle
-                || (const { animal::living_props::<Self>().can_dispenser_equip_into_slot })(
-                    pig, slot,
-                )
+            slot == EquipmentSlot::Saddle || mob::can_dispenser_equip_into_slot(pig, slot)
         },
         equip_sound: |pig, slot, stack| {
             if slot == EquipmentSlot::Saddle {
                 return Some(&sound_events::ENTITY_PIG_SADDLE);
             }
-            (const { animal::living_props::<Self>().equip_sound })(pig, slot, stack)
+            living_entity::equip_sound(pig, slot, stack)
         },
         tick_ridden: |pig, controller, ridden_input| {
-            (const { animal::living_props::<Self>().tick_ridden })(pig, controller, ridden_input);
+            living_entity::tick_ridden(pig, controller, ridden_input);
             pig.tick_ridden_after_super(controller);
         },
         ..animal::living_props()
@@ -311,7 +311,7 @@ impl PigEntity {
         // steers, else `super` decides.
         controlling_passenger: |pig| {
             pig.rider_with_carrot()
-                .or_else(|| (const { animal::entity_props::<Self>().controlling_passenger })(pig))
+                .or_else(|| mob::controlling_passenger(pig))
         },
         ..animal::entity_props()
     };

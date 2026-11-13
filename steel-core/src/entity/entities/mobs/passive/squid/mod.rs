@@ -4,6 +4,7 @@ mod goals;
 
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
+use crate::entity::living_entity;
 use std::f32::consts::{PI, TAU};
 use std::sync::Arc;
 
@@ -95,12 +96,10 @@ impl SquidEntity {
         movement_emission: |_| EntityMovementEmission::Events,
         // `AgeableWaterCreature.isPushedByFluid`.
         is_pushed_by_fluid: |_| false,
-        base_tick: |squid| {
-            squid.base_tick_around(|| (const { mob::entity_props::<Self>().base_tick })(squid));
-        },
+        base_tick: Self::water_creature_base_tick,
         // `Squid.hurtServer` after `super`: a squid hurt by a mob squirts ink.
         hurt: |squid, world, source, amount| {
-            let hurt = (const { mob::entity_props::<Self>().hurt })(squid, world, source, amount);
+            let hurt = living_entity::hurt(squid, world, source, amount);
             if hurt && squid.living().last_hurt_by_mob().is_some() {
                 squid.spawn_ink();
                 return true;
@@ -156,9 +155,9 @@ impl SquidEntity {
 
     /// `AgeableWaterCreature.baseTick` around `super.baseTick()`: squids
     /// drown on land.
-    fn base_tick_around(&self, super_base_tick: impl FnOnce()) {
+    fn water_creature_base_tick(&self) {
         let air_supply = self.air_supply();
-        super_base_tick();
+        mob::base_tick(self);
         if self.is_alive() && !self.is_in_water() {
             self.set_air_supply(air_supply - 1);
             if self.living().should_take_drowning_damage() {
@@ -282,7 +281,7 @@ impl LivingTable for SquidEntity {
         hurt_sound: |_, _| Some(&sound_events::ENTITY_SQUID_HURT),
         death_sound: |_| Some(&sound_events::ENTITY_SQUID_DEATH),
         ai_step: |squid| {
-            let movement = (const { ageable::living_props::<Self>().ai_step })(squid);
+            let movement = ageable::ai_step(squid);
             squid.swim();
             movement
         },

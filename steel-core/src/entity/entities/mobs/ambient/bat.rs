@@ -2,6 +2,7 @@
 
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
+use crate::entity::living_entity;
 use std::f32::consts::PI;
 use steel_utils::nbt::NbtValueInput as _;
 
@@ -78,7 +79,7 @@ impl BatEntity {
         is_ignoring_block_triggers: |_| true,
         push_entity: |_, _| {},
         tick: |bat| {
-            (const { mob::entity_props::<Self>().tick })(bat);
+            mob::tick(bat);
             bat.tick_hang();
         },
         // `Bat.checkFallDamage` does nothing.
@@ -92,7 +93,7 @@ impl BatEntity {
             if bat.is_resting() {
                 bat.set_resting(false);
             }
-            (const { mob::entity_props::<Self>().hurt })(bat, world, source, amount)
+            living_entity::hurt(bat, world, source, amount)
         },
         ..mob::entity_props()
     };
@@ -271,7 +272,7 @@ impl MobTable for BatEntity {
         // `AmbientCreature.canBeLeashed`.
         mob_can_be_leashed: |_| false,
         custom_server_ai_step: |bat| {
-            (const { MobProps::<Self>::new().custom_server_ai_step })(bat);
+            mob::custom_server_ai_step(bat);
             bat.fly();
         },
         ..MobProps::new()
@@ -285,7 +286,7 @@ impl LivingTable for BatEntity {
         death_sound: |_| Some(&sound_events::ENTITY_BAT_DEATH),
         push_entities: |_| {},
         // `Bat.getVoicePitch`: `super`'s pitch lowered.
-        voice_pitch: |bat| (const { mob::living_props::<Self>().voice_pitch })(bat) * 0.95,
+        voice_pitch: |bat| living_entity::voice_pitch(bat) * 0.95,
         ..mob::living_props()
     };
 }

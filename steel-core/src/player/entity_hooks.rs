@@ -1,6 +1,7 @@
 //! `Player`'s overrides of the entity hooks.
 
 use super::*;
+use crate::entity::entity;
 use crate::entity::prelude::*;
 
 impl Player {
@@ -12,21 +13,17 @@ impl Player {
             let Some(amount) = player.hurt_amount_before_super(world, source, amount) else {
                 return false;
             };
-            (const { living_entity::entity_props::<Self>().hurt })(player, world, source, amount)
+            living_entity::hurt(player, world, source, amount)
         },
-        ride_tick: |player| {
-            player.ride_tick_around(|| {
-                (const { living_entity::entity_props::<Self>().ride_tick })(player);
-            });
-        },
+        ride_tick: |player| player.ride_tick_player(),
         remove_vehicle: |player| {
             let old_vehicle = player.vehicle();
-            (const { living_entity::entity_props::<Self>().remove_vehicle })(player);
+            entity::remove_vehicle(player);
             player.after_remove_vehicle(old_vehicle);
         },
         check_fall_damage: |player, vertical_movement, on_ground, on_state, pos, world| {
             player.check_fall_damage_before_super(on_ground, on_state, pos, world);
-            (const { living_entity::entity_props::<Self>().check_fall_damage })(
+            living_entity::check_fall_damage(
                 player,
                 vertical_movement,
                 on_ground,
@@ -47,29 +44,21 @@ impl Player {
                     (fall_distance * 100.0).round() as i32,
                 );
             }
-            (const { living_entity::entity_props::<Self>().cause_fall_damage })(
-                player,
-                fall_distance,
-                damage_modifier,
-                source,
-            )
+            living_entity::cause_fall_damage(player, fall_distance, damage_modifier, source)
         },
         // `Player.getBlockSpeedFactor`: flying and gliding players keep full speed.
         block_speed_factor: |player| {
             if player.abilities.lock().flying || player.living().is_fall_flying() {
                 return 1.0;
             }
-            (const { living_entity::entity_props::<Self>().block_speed_factor })(player)
+            living_entity::block_speed_factor(player)
         },
         // `Player.canFreeze`: spectators never freeze.
-        can_freeze: |player| {
-            !player.is_spectator()
-                && (const { living_entity::entity_props::<Self>().can_freeze })(player)
-        },
+        can_freeze: |player| !player.is_spectator() && living_entity::can_freeze(player),
         // `Player.doWaterSplashEffect`: spectators make no splash.
         do_water_splash_effect: |player| {
             if !player.is_spectator() {
-                (const { living_entity::entity_props::<Self>().do_water_splash_effect })(player);
+                entity::do_water_splash_effect(player);
             }
         },
         // `Player.updateSwimming`: flying players never swim.
@@ -77,18 +66,14 @@ impl Player {
             if player.is_flying() {
                 player.set_shared_swimming(false);
             } else {
-                (const { living_entity::entity_props::<Self>().update_swimming })(player);
+                entity::update_swimming(player);
             }
         },
         // `Player.makeStuckInBlock`: flying players do not get stuck.
         // TODO: Reset current impulse context once vehicle/player impulse contexts exist.
         make_stuck_in_block: |player, state, speed_multiplier| {
             if !player.is_flying() {
-                (const { living_entity::entity_props::<Self>().make_stuck_in_block })(
-                    player,
-                    state,
-                    speed_multiplier,
-                );
+                entity::make_stuck_in_block(player, state, speed_multiplier);
             }
         },
         dimension_changing_delay: |_| 10,
@@ -231,12 +216,12 @@ impl Player {
 
     /// `ServerPlayer.rideTick` around `super`: a player wanting off dismounts
     /// instead, and riding statistics count the distance.
-    pub(super) fn ride_tick_around(&self, super_ride_tick: impl FnOnce()) {
+    pub(super) fn ride_tick_player(&self) {
         let pre = self.position();
         if self.wants_to_stop_riding() && self.is_passenger() {
             self.stop_riding();
         } else {
-            super_ride_tick();
+            living_entity::ride_tick(self);
         }
         self.check_riding_statistics(self.position() - pre);
     }

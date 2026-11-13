@@ -7,24 +7,6 @@ use super::*;
 /// Implemented for every [`Entity`]; entity types change behavior through
 /// [`EntityProps`], never by implementing this trait.
 pub trait EntitySounds: Entity {
-    /// Default for [`EntityHooks::fall_sounds`].
-    fn fall_sounds_default(&self) -> (SoundEventRef, SoundEventRef) {
-        (
-            &sound_events::ENTITY_GENERIC_SMALL_FALL,
-            &sound_events::ENTITY_GENERIC_BIG_FALL,
-        )
-    }
-
-    /// Default for [`EntityHooks::sound_source`].
-    fn sound_source_default(&self) -> SoundSource {
-        SoundSource::Neutral
-    }
-
-    /// Default for [`EntityHooks::swim_sound`].
-    fn swim_sound_default(&self) -> SoundEventRef {
-        &sound_events::ENTITY_GENERIC_SWIM
-    }
-
     /// Returns whether sounds from this entity are suppressed.
     fn is_silent(&self) -> bool {
         self.base().silent()
@@ -36,39 +18,6 @@ pub trait EntitySounds: Entity {
         if let Some(synced_data) = self.synced_data() {
             synced_data.set_silent(silent);
         }
-    }
-
-    /// Default for [`EntityHooks::play_sound`].
-    fn play_sound_default(&self, sound: SoundEventRef, volume: f32, pitch: f32) {
-        if self.is_silent() {
-            return;
-        }
-
-        if let Some(world) = self.level() {
-            world.play_sound_at(
-                sound,
-                self.sound_source(),
-                self.position(),
-                volume,
-                pitch,
-                None,
-            );
-        }
-    }
-
-    /// Default for [`EntityHooks::swim_splash_sound`].
-    fn swim_splash_sound_default(&self) -> SoundEventRef {
-        &sound_events::ENTITY_GENERIC_SPLASH
-    }
-
-    /// Default for [`EntityHooks::swim_high_speed_splash_sound`].
-    fn swim_high_speed_splash_sound_default(&self) -> SoundEventRef {
-        &sound_events::ENTITY_GENERIC_SPLASH
-    }
-
-    /// Default for [`EntityHooks::play_step_sound`].
-    fn play_step_sound_default(&self, _pos: BlockPos, block_state: BlockStateId) {
-        self.play_block_step_sound(block_state);
     }
 
     /// Plays a vanilla block step sound at this entity's current position.
@@ -142,14 +91,6 @@ pub trait EntitySounds: Entity {
         self.play_sound(self.swim_sound(), volume, pitch);
     }
 
-    /// Default for [`EntityHooks::is_flapping`].
-    fn is_flapping_default(&self) -> bool {
-        false
-    }
-
-    /// Default for [`EntityHooks::on_flap`].
-    fn on_flap_default(&self) {}
-
     /// Processes vanilla flap movement side effects.
     fn process_flapping_movement(&self) {
         if !self.is_flapping() {
@@ -169,3 +110,62 @@ pub trait EntitySounds: Entity {
 }
 
 impl<T: Entity + ?Sized> EntitySounds for T {}
+
+/// `Entity`'s [`EntityProps::fall_sounds`].
+pub fn fall_sounds<E: Entity + ?Sized>(_entity: &E) -> (SoundEventRef, SoundEventRef) {
+    (
+        &sound_events::ENTITY_GENERIC_SMALL_FALL,
+        &sound_events::ENTITY_GENERIC_BIG_FALL,
+    )
+}
+
+/// `Entity`'s [`EntityProps::sound_source`].
+pub const fn sound_source<E: Entity + ?Sized>(_entity: &E) -> SoundSource {
+    SoundSource::Neutral
+}
+
+/// `Entity`'s [`EntityProps::swim_sound`].
+pub fn swim_sound<E: Entity + ?Sized>(_entity: &E) -> SoundEventRef {
+    &sound_events::ENTITY_GENERIC_SWIM
+}
+
+/// `Entity`'s [`EntityProps::play_sound`].
+pub fn play_sound<E: Entity + ?Sized>(entity: &E, sound: SoundEventRef, volume: f32, pitch: f32) {
+    if entity.is_silent() {
+        return;
+    }
+
+    if let Some(world) = entity.level() {
+        world.play_sound_at(
+            sound,
+            entity.sound_source(),
+            entity.position(),
+            volume,
+            pitch,
+            None,
+        );
+    }
+}
+
+/// `Entity`'s [`EntityProps::swim_splash_sound`].
+pub fn swim_splash_sound<E: Entity + ?Sized>(_entity: &E) -> SoundEventRef {
+    &sound_events::ENTITY_GENERIC_SPLASH
+}
+
+/// `Entity`'s [`EntityProps::swim_high_speed_splash_sound`].
+pub fn swim_high_speed_splash_sound<E: Entity + ?Sized>(_entity: &E) -> SoundEventRef {
+    &sound_events::ENTITY_GENERIC_SPLASH
+}
+
+/// `Entity`'s [`EntityProps::play_step_sound`].
+pub fn play_step_sound<E: Entity + ?Sized>(entity: &E, _pos: BlockPos, block_state: BlockStateId) {
+    entity.play_block_step_sound(block_state);
+}
+
+/// `Entity`'s [`EntityProps::is_flapping`].
+pub const fn is_flapping<E: Entity + ?Sized>(_entity: &E) -> bool {
+    false
+}
+
+/// `Entity`'s [`EntityProps::on_flap`].
+pub const fn on_flap<E: Entity + ?Sized>(_entity: &E) {}

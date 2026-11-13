@@ -891,7 +891,7 @@ impl LivingFluidTestEntity {
         is_flying_player: |entity| entity.flying_player,
         is_in_wall: |entity| {
             !entity.living().is_sleeping()
-                && (entity.in_wall_for_base_tick || entity.is_in_wall_default())
+                && (entity.in_wall_for_base_tick || entity::is_in_wall(entity))
         },
         // Records each hit before the living layer takes it.
         hurt: |entity, world, source, amount| {
@@ -900,7 +900,7 @@ impl LivingFluidTestEntity {
                 .lock()
                 .push(source.damage_type.key.clone());
             entity.damage_world_keys.lock().push(world.key.to_string());
-            (const { living_entity::entity_props::<Self>().hurt })(entity, world, source, amount)
+            living_entity::hurt(entity, world, source, amount)
         },
         ..living_entity::entity_props()
     };
@@ -933,7 +933,7 @@ impl LivingFluidTestEntity {
         if self.rejects_wither && effect.effect() == vanilla_mob_effects::WITHER {
             return false;
         }
-        self.living().default_can_be_affected(effect)
+        living_entity::can_be_affected(self, effect)
     }
 
     fn living_is_affected_by_fluids(&self) -> bool {

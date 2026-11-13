@@ -675,7 +675,7 @@ pub mod entities;
     clippy::module_inception,
     reason = "the entity module mirrors vanilla's Entity class and groups its implementation"
 )]
-mod entity;
+pub mod entity;
 pub mod entity_selector;
 mod fluid_contact;
 #[expect(warnings)]

@@ -4,6 +4,8 @@
 //! State lives in the [`BlockAttachment`] component; entity types implement
 //! [`Parts`] and start their hooks from [`entity_props`].
 
+use crate::physics::MoveResult;
+use crate::physics::MoverType;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -116,30 +118,52 @@ pub trait Parts: Entity + Has<BlockAttachment> {
     }
 }
 
+/// `BlockAttachedEntity`'s [`EntityProps::is_pickable`].
+pub const fn is_pickable<E: Parts>(_: &E) -> bool {
+    true
+}
+
+/// `BlockAttachedEntity`'s [`EntityProps::move_entity`].
+pub fn move_entity<E: Parts>(entity: &E, _: MoverType, delta: DVec3) -> Option<MoveResult> {
+    pop_off_if_moved(entity, delta);
+    None
+}
+
+/// `BlockAttachedEntity`'s [`EntityProps::push_impulse`].
+pub fn push_impulse<E: Parts>(entity: &E, impulse: DVec3) {
+    pop_off_if_moved(entity, impulse);
+}
+
+/// `BlockAttachedEntity`'s [`EntityProps::refresh_dimensions`].
+pub const fn refresh_dimensions<E: Parts>(_: &E) {}
+
+/// `BlockAttachedEntity`'s [`EntityProps::spawn_position`].
+///
+/// Every vanilla subclass spawns on clients at its block, not its position.
+pub fn spawn_position<E: Parts>(entity: &E) -> DVec3 {
+    entity.block_pos().0.as_dvec3()
+}
+
 /// The `BlockAttachedEntity` overrides of the entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        // `BlockAttachedEntity.tick` never calls `super`.
         tick: tick::<E>,
-        hurt: |entity, world, source, _| hurt(entity, world, source),
-        is_pickable: |_| true,
+        hurt: hurt::<E>,
+        is_pickable: is_pickable::<E>,
         skip_attack_interaction: skip_attack_interaction::<E>,
-        ignore_explosion: |_, explosion| ignore_explosion(explosion),
-        move_entity: |entity, _, delta| {
-            pop_off_if_moved(entity, delta);
-            None
-        },
-        push_impulse: pop_off_if_moved::<E>,
-        refresh_dimensions: |_| {},
-        try_set_position: set_position::<E>,
-        // Every vanilla subclass spawns on clients at its block, not its position.
-        spawn_position: |entity| entity.block_pos().0.as_dvec3(),
+        ignore_explosion: ignore_explosion::<E>,
+        move_entity: move_entity::<E>,
+        push_impulse: push_impulse::<E>,
+        refresh_dimensions: refresh_dimensions::<E>,
+        try_set_position: try_set_position::<E>,
+        spawn_position: spawn_position::<E>,
         ..EntityProps::new()
     }
 }
 
-fn tick<E: Parts>(entity: &E) {
+/// `BlockAttachedEntity`'s [`EntityProps::tick`]; it never calls `super`.
+pub fn tick<E: Parts>(entity: &E) {
     let Some(world) = entity.level() else {
         return;
     };
@@ -150,7 +174,8 @@ fn tick<E: Parts>(entity: &E) {
     }
 }
 
-fn skip_attack_interaction<E: Parts>(entity: &E, source: &SharedEntity) -> bool {
+/// `BlockAttachedEntity`'s [`EntityProps::skip_attack_interaction`].
+pub fn skip_attack_interaction<E: Parts>(entity: &E, source: &SharedEntity) -> bool {
     let Some(player) = source.as_player() else {
         return false;
     };
@@ -162,7 +187,8 @@ fn skip_attack_interaction<E: Parts>(entity: &E, source: &SharedEntity) -> bool 
     !world.may_interact(player, entity.block_pos()) || entity.hurt(&world, &damage_source, 0.0)
 }
 
-fn hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource) -> bool {
+/// `BlockAttachedEntity`'s [`EntityProps::hurt`]: any damage pops the entity off.
+pub fn hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource, _amount: f32) -> bool {
     if entity.is_invulnerable_to_base(source) {
         return false;
     }
@@ -188,7 +214,8 @@ fn kill_attributed(entity: &dyn Entity, attributed_to: Option<&dyn Entity>) {
     );
 }
 
-fn ignore_explosion(explosion: &dyn Explosion) -> bool {
+/// `BlockAttachedEntity`'s [`EntityProps::ignore_explosion`].
+pub fn ignore_explosion<E: Parts>(_entity: &E, explosion: &dyn Explosion) -> bool {
     explosion
         .direct_source_entity()
         .is_some_and(EntityFluids::is_in_water)
@@ -209,7 +236,7 @@ fn pop_off_if_moved<E: Parts>(entity: &E, delta: DVec3) {
 
 /// Vanilla `setPos`: moves the attachment to the block containing `pos` and
 /// recomputes the position from it.
-fn set_position<E: Parts>(entity: &E, pos: DVec3) -> Result<(), EntityMoveError> {
+pub fn try_set_position<E: Parts>(entity: &E, pos: DVec3) -> Result<(), EntityMoveError> {
     entity
         .component()
         .set_pos(BlockPos::containing(pos.x, pos.y, pos.z));

@@ -45,11 +45,9 @@ impl ChestMinecartEntity {
         is_pickable: |minecart| !minecart.is_removed(),
         is_pushable: |_| true,
         blocks_building: |_| true,
-        ignore_explosion: |_, explosion| vehicle_entity::ignore_explosion(explosion),
+        ignore_explosion: vehicle_entity::ignore_explosion,
         dimension_changing_delay: |_| vehicle_entity::DIMENSION_CHANGING_DELAY,
-        relative_portal_position: |minecart, axis, portal_area| {
-            abstract_minecart::relative_portal_position(minecart, axis, portal_area)
-        },
+        relative_portal_position: abstract_minecart::relative_portal_position,
         ..EntityProps::new()
     };
 

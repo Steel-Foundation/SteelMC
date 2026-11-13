@@ -5,7 +5,9 @@
 //! [`entity_props`] are the tables an animal type builds on, and
 //! [`construct`] is `Animal`'s part of the constructor.
 
+use crate::entity::entity;
 use crate::entity::prelude::*;
+use crate::physics::MoveResult;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 use steel_utils::nbt::NbtValueInput as _;
@@ -42,17 +44,26 @@ use crate::world::{LevelReader, World};
 
 const PARENT_AGE_AFTER_BREEDING: i32 = 6000;
 const BREEDING_XP: RangeInclusive<i32> = 1..=7;
+/// `Animal`'s [`LivingProps::ai_step`].
+pub fn ai_step<E: Parts>(animal: &E) -> Option<MoveResult> {
+    let movement = ageable::ai_step(animal);
+    animal.animal().tick_love();
+    movement
+}
+
+/// `Animal`'s [`LivingProps::base_experience_reward`].
+///
+/// `Animal.getBaseExperienceReward` replaces `Mob`'s.
+pub fn base_experience_reward<E: Parts>(_: &E) -> i32 {
+    Animal::base_experience_reward()
+}
+
 /// `Animal`'s changes to the living defaults.
 #[must_use]
 pub const fn living_props<E: Parts>() -> LivingProps<E> {
     LivingProps {
-        ai_step: |animal| {
-            let movement = (const { ageable::living_props::<E>().ai_step })(animal);
-            animal.animal().tick_love();
-            movement
-        },
-        // `Animal.getBaseExperienceReward` replaces `Mob`'s.
-        base_experience_reward: |_| Animal::base_experience_reward(),
+        ai_step: ai_step::<E>,
+        base_experience_reward: base_experience_reward::<E>,
         ..ageable::living_props()
     }
 }
@@ -61,22 +72,20 @@ pub const fn living_props<E: Parts>() -> LivingProps<E> {
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        dismount_location_for_passenger: |animal, passenger| {
-            dismount_location_for_passenger(animal, passenger)
-        },
+        dismount_location_for_passenger: dismount_location_for_passenger::<E>,
         ..mob::entity_props()
     }
 }
 
 /// Vanilla `Animal.getDismountLocationForPassenger`: a floor beside the
 /// animal at its height, else on top of it.
-fn dismount_location_for_passenger(animal: &dyn Entity, passenger: &Living<'_>) -> DVec3 {
+pub fn dismount_location_for_passenger<E: Parts>(animal: &E, passenger: &Living<'_>) -> DVec3 {
     let forward = animal.motion_direction();
     let Some(world) = animal.level() else {
-        return animal.dismount_location_for_passenger_default(passenger);
+        return entity::dismount_location_for_passenger(animal, passenger);
     };
     if forward.axis() == Axis::Y {
-        return animal.dismount_location_for_passenger_default(passenger);
+        return entity::dismount_location_for_passenger(animal, passenger);
     }
 
     let vehicle_pos = animal.block_position();
@@ -95,31 +104,53 @@ fn dismount_location_for_passenger(animal: &dyn Entity, passenger: &Living<'_>) 
             }
         }
     }
-    animal.dismount_location_for_passenger_default(passenger)
+    entity::dismount_location_for_passenger(animal, passenger)
+}
+
+/// `Animal`'s [`MobProps::ambient_sound_interval`].
+pub const fn ambient_sound_interval<E: Parts>(_: &E) -> i32 {
+    120
+}
+
+/// `Animal`'s [`MobProps::remove_when_far_away`].
+pub const fn remove_when_far_away<E: Parts>(_: &E, _: f64) -> bool {
+    false
+}
+
+/// `Animal`'s [`MobProps::custom_server_ai_step`].
+///
+/// `Animal.customServerAiStep` ends love mode for non-adults.
+pub fn custom_server_ai_step<E: Parts>(entity: &E) {
+    let animal = entity.animal();
+    if animal.ageable.age() != 0 {
+        animal.reset_love();
+    }
+    mob::custom_server_ai_step(entity);
+}
+
+/// `Animal`'s [`MobProps::mob_interact`].
+///
+/// `Animal.mobInteract`: feeding comes before `super`'s age lock.
+pub fn mob_interact<E: Parts>(
+    entity: &E,
+    player: &Player,
+    hand: InteractionHand,
+) -> InteractionResult {
+    if let Some(result) = entity.animal().feed(&entity.mob(), player, hand) {
+        return result;
+    }
+    ageable::mob_interact(entity, player, hand)
 }
 
 /// `Animal`'s changes to the mob defaults.
 #[must_use]
 pub const fn mob_props<E: Parts>() -> MobProps<E> {
     MobProps {
-        ambient_sound_interval: |_| 120,
-        remove_when_far_away: |_, _| false,
-        walk_target_value: |animal, pos| walk_target_value(animal, pos),
-        // `Animal.customServerAiStep` ends love mode for non-adults.
-        custom_server_ai_step: |entity| {
-            let animal = entity.animal();
-            if animal.ageable.age() != 0 {
-                animal.reset_love();
-            }
-            (const { ageable::mob_props::<E>().custom_server_ai_step })(entity);
-        },
-        // `Animal.mobInteract`: feeding comes before `super`'s age lock.
-        mob_interact: |entity, player, hand| {
-            if let Some(result) = entity.animal().feed(&entity.mob(), player, hand) {
-                return result;
-            }
-            (const { ageable::mob_props::<E>().mob_interact })(entity, player, hand)
-        },
+        ambient_sound_interval: ambient_sound_interval::<E>,
+        remove_when_far_away: remove_when_far_away::<E>,
+        walk_target_value: walk_target_value::<E>,
+        custom_server_ai_step: custom_server_ai_step::<E>,
+        mob_interact: mob_interact::<E>,
         ..ageable::mob_props()
     }
 }
@@ -445,7 +476,7 @@ impl<E: mob::Parts + Has<Age> + Has<Breeding>> Parts for E {
 
 /// How attractive `pos` is as a walk target: grass first, then light
 /// (`Animal.getWalkTargetValue`).
-fn walk_target_value(entity: &dyn Entity, pos: BlockPos) -> f32 {
+pub fn walk_target_value<E: Parts>(entity: &E, pos: BlockPos) -> f32 {
     let Some(world) = entity.level() else {
         return 0.0;
     };

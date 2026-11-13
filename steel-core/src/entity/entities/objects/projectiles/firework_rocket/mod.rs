@@ -64,7 +64,7 @@ pub struct FireworkRocketEntity {
 impl FireworkRocketEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |rocket| {
-            (const { projectile::entity_props::<Self>().tick })(rocket);
+            projectile::tick(rocket);
             rocket.entity_tick();
         },
         attackable: |_| false,
@@ -383,14 +383,14 @@ impl FireworkRocketEntity {
 impl ProjectileTable for FireworkRocketEntity {
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
         on_hit_entity: |rocket, target, location| {
-            (const { ProjectileProps::<Self>::new().on_hit_entity })(rocket, target, location);
+            projectile::on_hit_entity(rocket, target, location);
             if let Some(world) = rocket.level() {
                 rocket.explode(&world);
             }
         },
         on_hit_block: |rocket, hit| {
             rocket.on_hit_block_before_super(hit);
-            (const { ProjectileProps::<Self>::new().on_hit_block })(rocket, hit);
+            projectile::on_hit_block(rocket, hit);
         },
         horizontal_hurt_knockback_direction: |rocket, hurt_entity, _| {
             let delta = hurt_entity.position() - rocket.position();

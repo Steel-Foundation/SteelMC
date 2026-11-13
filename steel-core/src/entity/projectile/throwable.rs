@@ -10,54 +10,69 @@ use crate::entity::{EntityProps, InsideBlockEffectCollector, RemovalReason};
 
 const WATER_INERTIA: f32 = 0.8;
 
+/// `ThrowableProjectile`'s [`EntityProps::default_gravity`].
+#[must_use]
+pub const fn default_gravity<E: Parts>(_: &E) -> f64 {
+    0.03
+}
+
+/// `ThrowableProjectile`'s [`EntityProps::air_drag`].
+#[must_use]
+pub const fn air_drag<E: Parts>(_: &E) -> f32 {
+    0.99
+}
+
+/// `ThrowableProjectile`'s [`EntityProps::can_use_portal`].
+#[must_use]
+pub const fn can_use_portal<E: Parts>(_: &E, _: bool) -> bool {
+    true
+}
+
 /// `ThrowableProjectile`'s overrides of the entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        default_gravity: |_| 0.03,
-        air_drag: |_| 0.99,
-        can_use_portal: |_, _| true,
-        tick: |entity| {
-            tick(&entity.projectile(), || {
-                (const { projectile::entity_props::<E>().tick })(entity);
-            });
-        },
+        default_gravity: default_gravity::<E>,
+        air_drag: air_drag::<E>,
+        can_use_portal: can_use_portal::<E>,
+        tick: tick::<E>,
         ..projectile::entity_props()
     }
 }
 
-/// `ThrowableProjectile.tick`: applies gravity and drag, moves to the first
-/// hit on the move vector, runs `super.tick()`, then resolves the hit.
-fn tick(projectile: &Projectile<'_>, super_tick: impl FnOnce()) {
+/// `ThrowableProjectile`'s [`EntityProps::tick`]: applies gravity and drag, moves to
+/// the first hit on the move vector, runs `super.tick()`, then resolves the hit.
+pub fn tick<E: Parts>(entity: &E) {
+    let this = &entity.projectile();
     // Vanilla's level stores the old position and rotation before ticking;
     // `onHit` (teleports) and `updateRotation` read them.
-    projectile.set_old_position_to_current();
-    projectile.base().set_old_rotation_to_current();
+    this.set_old_position_to_current();
+    this.base().set_old_rotation_to_current();
 
-    handle_first_tick_bubble_column(projectile);
-    projectile.apply_gravity();
-    apply_inertia(projectile);
+    handle_first_tick_bubble_column(this);
+    this.apply_gravity();
+    apply_inertia(this);
 
-    let hit = projectile.hit_result_on_move_vector();
+    let hit = this.hit_result_on_move_vector();
     let new_position = match &hit {
         Some(result) => result.location(),
-        None => projectile.position() + projectile.velocity(),
+        None => this.position() + this.velocity(),
     };
-    if let Err(error) = projectile.try_set_position(new_position) {
-        log::debug!("failed to advance projectile {}: {error}", projectile.id());
-        projectile.set_removed(RemovalReason::Discarded);
+    if let Err(error) = this.try_set_position(new_position) {
+        log::debug!("failed to advance this {}: {error}", this.id());
+        this.set_removed(RemovalReason::Discarded);
         return;
     }
 
-    projectile.update_rotation();
-    projectile.apply_effects_from_blocks();
-    super_tick();
+    this.update_rotation();
+    this.apply_effects_from_blocks();
+    projectile::tick(entity);
 
     if let Some(result) = hit
-        && projectile.is_alive()
-        && !projectile.is_world_change_pending()
+        && this.is_alive()
+        && !this.is_world_change_pending()
     {
-        projectile.hit_target_or_deflect_self(&result);
+        this.hit_target_or_deflect_self(&result);
     }
 }
 

@@ -1,5 +1,6 @@
 //! Vanilla `LeashFenceKnotEntity`: the knot a lead ties around a fence.
 
+use crate::entity::entity;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -39,13 +40,7 @@ pub struct LeashFenceKnotEntity {
 
 impl LeashFenceKnotEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        interact: |knot, player, hand, location| {
-            knot.interact_around(player, hand, || {
-                (const { block_attached::entity_props::<Self>().interact })(
-                    knot, player, hand, location,
-                )
-            })
-        },
+        interact: Self::entity_interact,
         notify_leashee_removed: |knot, _| {
             if knot.leashables_leashed_to().is_empty() {
                 knot.set_removed(RemovalReason::Discarded);
@@ -170,11 +165,11 @@ impl LeashFenceKnotEntity {
     /// fence, or hands the knot's mobs to the player.
     /// `LeashFenceKnotEntity.interact`: shears may cut the leashes first
     /// (`super`); then leashes move to or from the knot, or `super` runs.
-    fn interact_around(
+    fn entity_interact(
         &self,
         player: &Player,
         hand: InteractionHand,
-        mut super_interact: impl FnMut() -> InteractionResult,
+        location: DVec3,
     ) -> InteractionResult {
         let Some(world) = self.level() else {
             return InteractionResult::Pass;
@@ -186,7 +181,7 @@ impl LeashFenceKnotEntity {
             .get_item_in_hand(hand)
             .is(&vanilla_items::SHEARS);
         if holding_shears {
-            let result = super_interact();
+            let result = entity::interact(self, player, hand, location);
             if result == InteractionResult::Success {
                 return result;
             }
@@ -221,7 +216,7 @@ impl LeashFenceKnotEntity {
         }
 
         if !attached_mob && !any_dropped {
-            return super_interact();
+            return entity::interact(self, player, hand, location);
         }
 
         self.game_event_with_source_entity(&BLOCK_ATTACH, Some(player));

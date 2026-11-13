@@ -1,5 +1,6 @@
 //! Mob effects on living entities.
 
+use super::Parts;
 use super::{
     ActiveMobEffect, Entity, EntityTypeTag, Living, MOB_EFFECT_BEHAVIORS, MobEffectInstance,
     MobEffectRef, ParticleList, REGISTRY, TaggedRegistryExt, vanilla_mob_effects,
@@ -44,40 +45,6 @@ impl Living<'_> {
             self.entity_type(),
             &EntityTypeTag::INVERTED_HEALING_AND_HARM,
         )
-    }
-
-    /// Returns vanilla base `LivingEntity.canBeAffected` eligibility.
-    #[must_use]
-    pub fn default_can_be_affected(&self, effect: &MobEffectInstance) -> bool {
-        if REGISTRY
-            .entity_types
-            .is_in_tag(self.entity_type(), &EntityTypeTag::IMMUNE_TO_INFESTED)
-        {
-            return effect.effect() != vanilla_mob_effects::INFESTED;
-        }
-        if REGISTRY
-            .entity_types
-            .is_in_tag(self.entity_type(), &EntityTypeTag::IMMUNE_TO_OOZING)
-        {
-            return effect.effect() != vanilla_mob_effects::OOZING;
-        }
-        if REGISTRY
-            .entity_types
-            .is_in_tag(self.entity_type(), &EntityTypeTag::IGNORES_POISON_AND_REGEN)
-        {
-            return effect.effect() != vanilla_mob_effects::REGENERATION
-                && effect.effect() != vanilla_mob_effects::POISON;
-        }
-
-        true
-    }
-
-    /// Returns whether this entity accepts a mob-effect instance.
-    ///
-    /// Concrete entities override this for vanilla class-specific immunities.
-    #[must_use]
-    pub fn can_be_affected_default(&self, effect: &MobEffectInstance) -> bool {
-        self.default_can_be_affected(effect)
     }
 
     /// Returns whether this entity currently has `effect` active.
@@ -175,4 +142,35 @@ impl Living<'_> {
             self.living_base().tick_mob_effect_duration(effect.effect());
         }
     }
+}
+
+/// `LivingEntity`'s [`LivingProps::can_be_affected`].
+///
+/// Returns whether this entity accepts a mob-effect instance.
+///
+/// Concrete entities override this for vanilla class-specific immunities.
+#[must_use]
+pub fn can_be_affected<E: Parts>(entity: &E, effect: &MobEffectInstance) -> bool {
+    let living = &entity.living();
+    if REGISTRY
+        .entity_types
+        .is_in_tag(living.entity_type(), &EntityTypeTag::IMMUNE_TO_INFESTED)
+    {
+        return effect.effect() != vanilla_mob_effects::INFESTED;
+    }
+    if REGISTRY
+        .entity_types
+        .is_in_tag(living.entity_type(), &EntityTypeTag::IMMUNE_TO_OOZING)
+    {
+        return effect.effect() != vanilla_mob_effects::OOZING;
+    }
+    if REGISTRY.entity_types.is_in_tag(
+        living.entity_type(),
+        &EntityTypeTag::IGNORES_POISON_AND_REGEN,
+    ) {
+        return effect.effect() != vanilla_mob_effects::REGENERATION
+            && effect.effect() != vanilla_mob_effects::POISON;
+    }
+
+    true
 }

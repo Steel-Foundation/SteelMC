@@ -4,6 +4,8 @@
 //! `AbstractMinecart` data layer, behavior on the [`AbstractMinecart`] view;
 //! per-type hooks are [`AbstractMinecartProps`].
 
+use crate::entity::entity;
+use crate::physics::MoveResult;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -134,21 +136,21 @@ impl Component for AbstractMinecartBase {
 entity_props! {
     /// Per-type properties of a vanilla `AbstractMinecart`.
     pub struct AbstractMinecartProps<E>: AbstractMinecartHooks for AbstractMinecart
-    where E: Parts => abstract_minecart,
+    where E: Parts,
     table AbstractMinecartTable::MINECART,
     component AbstractMinecartBase {
         /// `AbstractMinecart.isRideable`: whether it picks up mobs it runs into.
-        fn is_rideable() -> bool = is_rideable_default;
+        fn is_rideable() -> bool;
         /// `AbstractMinecart.isFurnace`.
-        fn is_furnace() -> bool = is_furnace_default;
+        fn is_furnace() -> bool;
         /// `AbstractMinecart.activateMinecart`: contact with an activator rail.
-        fn activate_minecart(world: &World, pos: BlockPos, powered: bool) = activate_minecart_default;
+        fn activate_minecart(world: &World, pos: BlockPos, powered: bool);
         /// `AbstractMinecart.getDefaultDisplayBlockState`.
-        fn default_display_block_state() -> BlockStateId = default_display_block_state_default;
+        fn default_display_block_state() -> BlockStateId;
         /// `AbstractMinecart.getDefaultDisplayOffset`, in sixteenths of a block.
-        fn default_display_offset() -> i32 = default_display_offset_default;
+        fn default_display_offset() -> i32;
         /// `AbstractMinecart.getMaxSpeed`.
-        fn max_speed(world: &World) -> f64 = max_speed_default;
+        fn max_speed(world: &World) -> f64;
     }
 }
 
@@ -223,88 +225,162 @@ impl<E: AbstractMinecartTable> Parts for E {
     }
 }
 
+/// `AbstractMinecart`'s [`EntityProps::tick`].
+///
+/// `AbstractMinecart.tick` never calls `Entity`'s.
+pub fn tick<E: Parts>(minecart: &E) {
+    minecart.abstract_minecart().tick();
+}
+
+/// `AbstractMinecart`'s [`EntityProps::block_speed_factor`].
+///
+/// `AbstractMinecart.getBlockSpeedFactor`: full speed on rails, else
+/// `super`'s.
+pub fn block_speed_factor<E: Parts>(minecart: &E) -> f32 {
+    let on_rails = minecart.level().is_some_and(|world| {
+        world
+            .get_block_state(minecart.block_position())
+            .get_block()
+            .has_tag(&BlockTag::RAILS)
+    });
+    if on_rails {
+        1.0
+    } else {
+        entity::block_speed_factor(minecart)
+    }
+}
+
+/// `AbstractMinecart`'s [`EntityProps::blocks_building`].
+#[must_use]
+pub const fn blocks_building<E: Parts>(_: &E) -> bool {
+    true
+}
+
+/// `AbstractMinecart`'s [`EntityProps::movement_emission`].
+#[must_use]
+pub const fn movement_emission<E: Parts>(_: &E) -> EntityMovementEmission {
+    EntityMovementEmission::Events
+}
+
+/// `AbstractMinecart`'s [`EntityProps::can_collide_with`].
+pub fn can_collide_with<E: Parts>(minecart: &E, other: &dyn Entity) -> bool {
+    (other.can_be_collided_with(Some(minecart)) || other.is_pushable())
+        && !minecart.is_passenger_of_same_vehicle(other)
+}
+
+/// `AbstractMinecart`'s [`EntityProps::is_pushable`].
+#[must_use]
+pub const fn is_pushable<E: Parts>(_: &E) -> bool {
+    true
+}
+
+/// `AbstractMinecart`'s [`EntityProps::is_pickable`].
+pub fn is_pickable<E: Parts>(minecart: &E) -> bool {
+    !minecart.is_removed()
+}
+
+/// `AbstractMinecart`'s [`EntityProps::passenger_attachment_point`].
+pub fn passenger_attachment_point<E: Parts>(minecart: &E, passenger: &dyn Entity) -> DVec3 {
+    let passenger_type = passenger.entity_type();
+    if passenger_type == &vanilla_entities::VILLAGER
+        || passenger_type == &vanilla_entities::WANDERING_TRADER
+    {
+        LOWERED_PASSENGER_ATTACHMENT
+    } else {
+        entity::passenger_attachment_point(minecart, passenger)
+    }
+}
+
+/// `AbstractMinecart`'s [`EntityProps::motion_direction`].
+pub fn motion_direction<E: Parts>(minecart: &E) -> Direction {
+    MinecartBehavior::motion_direction(&minecart.abstract_minecart())
+}
+
+/// `AbstractMinecart`'s [`EntityProps::default_gravity`].
+pub fn default_gravity<E: Parts>(minecart: &E) -> f64 {
+    if minecart.is_in_water() {
+        GRAVITY_IN_WATER
+    } else {
+        GRAVITY
+    }
+}
+
+/// `AbstractMinecart`'s [`EntityProps::known_movement`].
+pub fn known_movement<E: Parts>(minecart: &E) -> DVec3 {
+    MinecartBehavior::known_movement(entity::known_movement(minecart))
+}
+
+/// `AbstractMinecart`'s [`EntityProps::air_drag`].
+#[must_use]
+pub const fn air_drag<E: Parts>(_: &E) -> f32 {
+    AIR_DRAG
+}
+
+/// `AbstractMinecart`'s [`EntityProps::move_entity`].
+pub fn move_entity<E: Parts>(
+    minecart: &E,
+    mover_type: MoverType,
+    delta: DVec3,
+) -> Option<MoveResult> {
+    let result = entity::move_entity(minecart, mover_type, delta);
+    minecart.abstract_minecart().apply_effects_from_blocks();
+    result
+}
+
+/// `AbstractMinecart`'s [`EntityProps::is_on_rails`].
+pub fn is_on_rails<E: Parts>(minecart: &E) -> bool {
+    minecart.abstract_minecart().on_rails()
+}
+
+/// `AbstractMinecart`'s [`EntityProps::dismount_location_for_passenger`].
+pub fn dismount_location_for_passenger<E: Parts>(minecart: &E, passenger: &Living<'_>) -> DVec3 {
+    minecart
+        .abstract_minecart()
+        .dismount_location_for_passenger(passenger)
+}
+
+/// `AbstractMinecart`'s [`EntityProps::push_entity`].
+pub fn push_entity<E: Parts>(minecart: &E, other: &dyn Entity) {
+    minecart.abstract_minecart().push_entity(other);
+}
+
 /// `AbstractMinecart`'s overrides of the entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        // `AbstractMinecart.tick` never calls `Entity`'s.
-        tick: |minecart| minecart.abstract_minecart().tick(),
-        // `AbstractMinecart.getBlockSpeedFactor`: full speed on rails, else
-        // `super`'s.
-        block_speed_factor: |minecart| {
-            let on_rails = minecart.level().is_some_and(|world| {
-                world
-                    .get_block_state(minecart.block_position())
-                    .get_block()
-                    .has_tag(&BlockTag::RAILS)
-            });
-            if on_rails {
-                1.0
-            } else {
-                (const { vehicle_entity::entity_props::<E>().block_speed_factor })(minecart)
-            }
-        },
-        blocks_building: |_| true,
-        movement_emission: |_| EntityMovementEmission::Events,
-        can_collide_with: |minecart, other| {
-            (other.can_be_collided_with(Some(minecart)) || other.is_pushable())
-                && !minecart.is_passenger_of_same_vehicle(other)
-        },
-        is_pushable: |_| true,
-        is_pickable: |minecart| !minecart.is_removed(),
-        relative_portal_position: |minecart, axis, portal_area| {
-            relative_portal_position(minecart, axis, portal_area)
-        },
-        passenger_attachment_point: |minecart, passenger| {
-            let passenger_type = passenger.entity_type();
-            if passenger_type == &vanilla_entities::VILLAGER
-                || passenger_type == &vanilla_entities::WANDERING_TRADER
-            {
-                LOWERED_PASSENGER_ATTACHMENT
-            } else {
-                minecart.passenger_attachment_point_default(passenger)
-            }
-        },
-        motion_direction: |minecart| {
-            MinecartBehavior::motion_direction(&minecart.abstract_minecart())
-        },
-        default_gravity: |minecart| {
-            if minecart.is_in_water() {
-                GRAVITY_IN_WATER
-            } else {
-                GRAVITY
-            }
-        },
-        known_movement: |minecart| {
-            MinecartBehavior::known_movement(minecart.known_movement_default())
-        },
-        air_drag: |_| AIR_DRAG,
-        move_entity: |minecart, mover_type, delta| {
-            let result = minecart.move_entity_default(mover_type, delta);
-            minecart.abstract_minecart().apply_effects_from_blocks();
-            result
-        },
-        is_on_rails: |minecart| minecart.abstract_minecart().on_rails(),
-        dismount_location_for_passenger: |minecart, passenger| {
-            minecart
-                .abstract_minecart()
-                .dismount_location_for_passenger(passenger)
-        },
-        push_entity: |minecart, other| minecart.abstract_minecart().push_entity(other),
+        tick: tick::<E>,
+        block_speed_factor: block_speed_factor::<E>,
+        blocks_building: blocks_building::<E>,
+        movement_emission: movement_emission::<E>,
+        can_collide_with: can_collide_with::<E>,
+        is_pushable: is_pushable::<E>,
+        is_pickable: is_pickable::<E>,
+        relative_portal_position: relative_portal_position::<E>,
+        passenger_attachment_point: passenger_attachment_point::<E>,
+        motion_direction: motion_direction::<E>,
+        default_gravity: default_gravity::<E>,
+        known_movement: known_movement::<E>,
+        air_drag: air_drag::<E>,
+        move_entity: move_entity::<E>,
+        is_on_rails: is_on_rails::<E>,
+        dismount_location_for_passenger: dismount_location_for_passenger::<E>,
+        push_entity: push_entity::<E>,
         ..vehicle_entity::entity_props()
     }
 }
 
 /// Vanilla `AbstractMinecart.getRelativePortalPosition`: the entity's portal
 /// position with the forward offset reset.
-pub(super) fn relative_portal_position(
-    minecart: &dyn Entity,
+pub fn relative_portal_position<E: Entity>(
+    minecart: &E,
     axis: Axis,
     portal_area: FoundRectangle,
 ) -> DVec3 {
-    reset_forward_direction_of_relative_portal_position(
-        minecart.relative_portal_position_default(axis, portal_area),
-    )
+    reset_forward_direction_of_relative_portal_position(entity::relative_portal_position(
+        minecart,
+        axis,
+        portal_area,
+    ))
 }
 
 impl AbstractMinecart<'_> {
@@ -371,48 +447,6 @@ impl AbstractMinecart<'_> {
             .unwrap_or_else(|| self.default_display_block_state())
     }
 
-    #[expect(
-        clippy::unused_self,
-        reason = "the hook default for every minecart type"
-    )]
-    const fn is_rideable_default(&self) -> bool {
-        false
-    }
-
-    #[expect(
-        clippy::unused_self,
-        reason = "the hook default for every minecart type"
-    )]
-    const fn is_furnace_default(&self) -> bool {
-        false
-    }
-
-    #[expect(
-        clippy::unused_self,
-        reason = "the hook default for every minecart type"
-    )]
-    const fn activate_minecart_default(&self, _world: &World, _pos: BlockPos, _powered: bool) {}
-
-    #[expect(
-        clippy::unused_self,
-        reason = "the hook default for every minecart type"
-    )]
-    fn default_display_block_state_default(&self) -> BlockStateId {
-        vanilla_blocks::AIR.default_state()
-    }
-
-    #[expect(
-        clippy::unused_self,
-        reason = "the hook default for every minecart type"
-    )]
-    const fn default_display_offset_default(&self) -> i32 {
-        6
-    }
-
-    fn max_speed_default(&self, world: &World) -> f64 {
-        MinecartBehavior::max_speed(self, world)
-    }
-
     /// The rail block below the minecart, or its own block position.
     #[must_use]
     pub fn current_block_pos_or_rail_below(&self, world: &World) -> BlockPos {
@@ -449,10 +483,10 @@ impl AbstractMinecart<'_> {
     pub fn dismount_location_for_passenger(&self, passenger: &Living<'_>) -> DVec3 {
         let forward = self.motion_direction();
         let Some(world) = self.level() else {
-            return self.dismount_location_for_passenger_default(passenger);
+            return entity::dismount_location_for_passenger(self.entity(), passenger);
         };
         if forward.axis() == Axis::Y {
-            return self.dismount_location_for_passenger_default(passenger);
+            return entity::dismount_location_for_passenger(self.entity(), passenger);
         }
 
         let vehicle_pos = self.block_position();
@@ -506,7 +540,7 @@ impl AbstractMinecart<'_> {
             }
         }
 
-        self.dismount_location_for_passenger_default(passenger)
+        entity::dismount_location_for_passenger(self.entity(), passenger)
     }
 
     /// `AbstractMinecart.tick`, which never calls `Entity`'s.
@@ -666,6 +700,41 @@ impl AbstractMinecart<'_> {
             other.push_impulse(DVec3::new(xdd + xa, 0.0, zdd + za));
         }
     }
+}
+
+/// `AbstractMinecart`'s [`AbstractMinecartProps::is_rideable`].
+pub const fn is_rideable<E: Parts>(_entity: &E) -> bool {
+    false
+}
+
+/// `AbstractMinecart`'s [`AbstractMinecartProps::is_furnace`].
+pub const fn is_furnace<E: Parts>(_entity: &E) -> bool {
+    false
+}
+
+/// `AbstractMinecart`'s [`AbstractMinecartProps::activate_minecart`].
+pub const fn activate_minecart<E: Parts>(
+    _entity: &E,
+    _world: &World,
+    _pos: BlockPos,
+    _powered: bool,
+) {
+}
+
+/// `AbstractMinecart`'s [`AbstractMinecartProps::default_display_block_state`].
+pub fn default_display_block_state<E: Parts>(_entity: &E) -> BlockStateId {
+    vanilla_blocks::AIR.default_state()
+}
+
+/// `AbstractMinecart`'s [`AbstractMinecartProps::default_display_offset`].
+pub const fn default_display_offset<E: Parts>(_entity: &E) -> i32 {
+    6
+}
+
+/// `AbstractMinecart`'s [`AbstractMinecartProps::max_speed`].
+pub fn max_speed<E: Parts>(entity: &E, world: &World) -> f64 {
+    let minecart = &entity.abstract_minecart();
+    MinecartBehavior::max_speed(minecart, world)
 }
 
 /// The block heights tried above and below the minecart for each dismount pose.

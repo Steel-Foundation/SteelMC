@@ -7,47 +7,9 @@ use super::*;
 /// Implemented for every [`Entity`]; entity types change behavior through
 /// [`EntityProps`], never by implementing this trait.
 pub trait EntityBlockContact: Entity {
-    /// Default for [`EntityHooks::is_ignoring_block_triggers`].
-    fn is_ignoring_block_triggers_default(&self) -> bool {
-        false
-    }
-
     /// Returns whether this entity's main supporting block is `pos`.
     fn is_supported_by(&self, pos: BlockPos) -> bool {
         self.base().supporting_block() == Some(pos)
-    }
-
-    /// Default for [`EntityHooks::apply_inside_block_effect`].
-    fn apply_inside_block_effect_default(&self, effect_type: InsideBlockEffectType) {
-        let fire_ignite_extra_ticks = if matches!(effect_type, InsideBlockEffectType::FireIgnite) {
-            self.fire_ignite_extra_ticks()
-        } else {
-            0
-        };
-        self.base().apply_inside_block_effect(
-            effect_type,
-            self.can_freeze(),
-            self.fire_immune(),
-            fire_ignite_extra_ticks,
-            self.ticks_required_to_freeze(),
-            self.remaining_fire_ticks_cap(),
-        );
-        self.sync_base_fire_freeze_entity_data();
-    }
-
-    /// Default for [`EntityHooks::is_stepping_carefully`].
-    fn is_stepping_carefully_default(&self) -> bool {
-        self.is_suppressing_bounce()
-    }
-
-    /// Default for [`EntityHooks::on_climbable`].
-    fn on_climbable_default(&self) -> bool {
-        false
-    }
-
-    /// Default for [`EntityHooks::make_stuck_in_block`].
-    fn make_stuck_in_block_default(&self, _state: BlockStateId, speed_multiplier: DVec3) {
-        self.base().make_stuck_in_block(speed_multiplier);
     }
 
     /// Applies current block-contact effects to this entity.
@@ -108,52 +70,9 @@ pub trait EntityBlockContact: Entity {
         ))
     }
 
-    /// Default for [`EntityHooks::block_pos_below_that_affects_movement`].
-    fn block_pos_below_that_affects_movement_default(&self) -> Option<BlockPos> {
-        self.on_pos(0.500_001)
-    }
-
     /// Returns vanilla `getOnPosLegacy()`, used by fall/step block hooks.
     fn on_pos_legacy(&self) -> Option<BlockPos> {
         self.on_pos(0.2)
-    }
-
-    /// Default for [`EntityHooks::block_speed_factor`].
-    #[expect(
-        clippy::float_cmp,
-        reason = "intentional: vanilla checks static block speed factors against 1.0"
-    )]
-    fn block_speed_factor_default(&self) -> f32 {
-        let Some(world) = self.level() else {
-            return 1.0;
-        };
-
-        let position = self.position();
-        let current_state = world.get_block_state(BlockPos::new(
-            position.x.floor() as i32,
-            position.y.floor() as i32,
-            position.z.floor() as i32,
-        ));
-        let current_block = current_state.get_block();
-        let speed_factor_here = current_block.config.speed_factor;
-        if current_block == &vanilla_blocks::WATER
-            || current_block == &vanilla_blocks::BUBBLE_COLUMN
-        {
-            return speed_factor_here;
-        }
-
-        if speed_factor_here != 1.0 {
-            return speed_factor_here;
-        }
-
-        let Some(below_pos) = self.block_pos_below_that_affects_movement() else {
-            return 1.0;
-        };
-        world
-            .get_block_state(below_pos)
-            .get_block()
-            .config
-            .speed_factor
     }
 
     /// Returns the jump-height multiplier from the block at this entity's
@@ -187,20 +106,10 @@ pub trait EntityBlockContact: Entity {
             .jump_factor
     }
 
-    /// Default for [`EntityHooks::is_on_rails`].
-    fn is_on_rails_default(&self) -> bool {
-        false
-    }
-
     /// Returns whether a block state is climbable for base movement effects.
     fn is_state_climbable(&self, state: BlockStateId) -> bool {
         let block = state.get_block();
         block.has_tag(&BlockTag::CLIMBABLE) || block == &vanilla_blocks::POWDER_SNOW
-    }
-
-    /// Default for [`EntityHooks::movement_emission`].
-    fn movement_emission_default(&self) -> EntityMovementEmission {
-        EntityMovementEmission::All
     }
 
     /// Applies vanilla movement sounds and game events after a completed move.
@@ -358,3 +267,99 @@ pub trait EntityBlockContact: Entity {
 }
 
 impl<T: Entity + ?Sized> EntityBlockContact for T {}
+
+/// `Entity`'s [`EntityProps::is_ignoring_block_triggers`].
+pub const fn is_ignoring_block_triggers<E: Entity + ?Sized>(_entity: &E) -> bool {
+    false
+}
+
+/// `Entity`'s [`EntityProps::apply_inside_block_effect`].
+pub fn apply_inside_block_effect<E: Entity + ?Sized>(
+    entity: &E,
+    effect_type: InsideBlockEffectType,
+) {
+    let fire_ignite_extra_ticks = if matches!(effect_type, InsideBlockEffectType::FireIgnite) {
+        entity.fire_ignite_extra_ticks()
+    } else {
+        0
+    };
+    entity.base().apply_inside_block_effect(
+        effect_type,
+        entity.can_freeze(),
+        entity.fire_immune(),
+        fire_ignite_extra_ticks,
+        entity.ticks_required_to_freeze(),
+        entity.remaining_fire_ticks_cap(),
+    );
+    entity.sync_base_fire_freeze_entity_data();
+}
+
+/// `Entity`'s [`EntityProps::is_stepping_carefully`].
+pub fn is_stepping_carefully<E: Entity + ?Sized>(entity: &E) -> bool {
+    entity.is_suppressing_bounce()
+}
+
+/// `Entity`'s [`EntityProps::on_climbable`].
+pub const fn on_climbable<E: Entity + ?Sized>(_entity: &E) -> bool {
+    false
+}
+
+/// `Entity`'s [`EntityProps::make_stuck_in_block`].
+pub fn make_stuck_in_block<E: Entity + ?Sized>(
+    entity: &E,
+    _state: BlockStateId,
+    speed_multiplier: DVec3,
+) {
+    entity.base().make_stuck_in_block(speed_multiplier);
+}
+
+/// `Entity`'s [`EntityProps::block_pos_below_that_affects_movement`].
+pub fn block_pos_below_that_affects_movement<E: Entity + ?Sized>(entity: &E) -> Option<BlockPos> {
+    entity.on_pos(0.500_001)
+}
+
+/// `Entity`'s [`EntityProps::block_speed_factor`].
+#[expect(
+    clippy::float_cmp,
+    reason = "intentional: vanilla checks static block speed factors against 1.0"
+)]
+pub fn block_speed_factor<E: Entity + ?Sized>(entity: &E) -> f32 {
+    let Some(world) = entity.level() else {
+        return 1.0;
+    };
+
+    let position = entity.position();
+    let current_state = world.get_block_state(BlockPos::new(
+        position.x.floor() as i32,
+        position.y.floor() as i32,
+        position.z.floor() as i32,
+    ));
+    let current_block = current_state.get_block();
+    let speed_factor_here = current_block.config.speed_factor;
+    if current_block == &vanilla_blocks::WATER || current_block == &vanilla_blocks::BUBBLE_COLUMN {
+        return speed_factor_here;
+    }
+
+    if speed_factor_here != 1.0 {
+        return speed_factor_here;
+    }
+
+    let Some(below_pos) = entity.block_pos_below_that_affects_movement() else {
+        return 1.0;
+    };
+    world
+        .get_block_state(below_pos)
+        .get_block()
+        .config
+        .speed_factor
+}
+
+/// `Entity`'s [`EntityProps::is_on_rails`].
+pub const fn is_on_rails<E: Entity + ?Sized>(_entity: &E) -> bool {
+    false
+}
+
+/// `Entity`'s [`EntityProps::movement_emission`].
+pub const fn movement_emission<E: Entity + ?Sized>(_entity: &E) -> EntityMovementEmission {
+    EntityMovementEmission::All
+}

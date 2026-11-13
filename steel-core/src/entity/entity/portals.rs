@@ -7,16 +7,6 @@ use super::*;
 /// Implemented for every [`Entity`]; entity types change behavior through
 /// [`EntityProps`], never by implementing this trait.
 pub trait EntityPortals: Entity {
-    /// Default for [`EntityHooks::relative_portal_position`].
-    fn relative_portal_position_default(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
-        PortalShape::get_relative_position(
-            portal_area,
-            axis,
-            self.position(),
-            self.dimensions_for_pose(self.pose()),
-        )
-    }
-
     /// Runs vanilla `Entity.handlePortal` behavior currently implemented by Steel.
     fn handle_portal(&self) {
         self.base().process_portal_cooldown();
@@ -88,31 +78,6 @@ pub trait EntityPortals: Entity {
         self.base().is_world_change_token_pending(token)
     }
 
-    /// Default for [`EntityHooks::can_use_portal`].
-    fn can_use_portal_default(&self, ignore_passenger: bool) -> bool {
-        let entity_type = self.entity_type();
-        if entity_type == &vanilla_entities::ENDER_DRAGON
-            || entity_type == &vanilla_entities::WITHER
-        {
-            return false;
-        }
-
-        (ignore_passenger || !self.is_passenger()) && self.is_alive()
-    }
-
-    /// Default for [`EntityHooks::dimension_changing_delay`].
-    fn dimension_changing_delay_default(&self) -> i32 {
-        if let Some(first_passenger) = self.first_passenger()
-            && first_passenger.as_player().is_some()
-        {
-            return first_passenger.dimension_changing_delay();
-        }
-        300
-    }
-
-    /// Default for [`EntityHooks::on_teleported`].
-    fn on_teleported_default(&self) {}
-
     /// Returns the vanilla portal cooldown in ticks.
     fn portal_cooldown(&self) -> i32 {
         self.base().portal_cooldown()
@@ -145,3 +110,40 @@ pub trait EntityPortals: Entity {
 }
 
 impl<T: Entity + ?Sized> EntityPortals for T {}
+
+/// `Entity`'s [`EntityProps::relative_portal_position`].
+pub fn relative_portal_position<E: Entity + ?Sized>(
+    entity: &E,
+    axis: Axis,
+    portal_area: FoundRectangle,
+) -> DVec3 {
+    PortalShape::get_relative_position(
+        portal_area,
+        axis,
+        entity.position(),
+        entity.dimensions_for_pose(entity.pose()),
+    )
+}
+
+/// `Entity`'s [`EntityProps::can_use_portal`].
+pub fn can_use_portal<E: Entity + ?Sized>(entity: &E, ignore_passenger: bool) -> bool {
+    let entity_type = entity.entity_type();
+    if entity_type == &vanilla_entities::ENDER_DRAGON || entity_type == &vanilla_entities::WITHER {
+        return false;
+    }
+
+    (ignore_passenger || !entity.is_passenger()) && entity.is_alive()
+}
+
+/// `Entity`'s [`EntityProps::dimension_changing_delay`].
+pub fn dimension_changing_delay<E: Entity + ?Sized>(entity: &E) -> i32 {
+    if let Some(first_passenger) = entity.first_passenger()
+        && first_passenger.as_player().is_some()
+    {
+        return first_passenger.dimension_changing_delay();
+    }
+    300
+}
+
+/// `Entity`'s [`EntityProps::on_teleported`].
+pub const fn on_teleported<E: Entity + ?Sized>(_entity: &E) {}

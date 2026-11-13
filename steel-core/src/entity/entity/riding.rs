@@ -31,48 +31,11 @@ pub trait EntityRiding: Entity {
         !self.is_discrete() && self.base().boarding_cooldown() <= 0
     }
 
-    /// Default for [`EntityHooks::remove_vehicle`].
-    fn remove_vehicle_default(&self) {
-        let Some(old_vehicle) = self.vehicle() else {
-            return;
-        };
-        self.base().stop_riding();
-        if self
-            .removal_reason()
-            .is_none_or(RemovalReason::should_destroy)
-            && let Some(world) = self.level()
-        {
-            world.game_event_at(
-                &vanilla_game_events::ENTITY_DISMOUNT,
-                old_vehicle.position(),
-                &GameEventContext::new(Some(self.as_entity_event_source()), None),
-            );
-        }
-    }
-
-    /// Default for [`EntityHooks::dismount_location_for_passenger`]: on top of
-    /// this vehicle.
-    fn dismount_location_for_passenger_default(&self, _passenger: &Living<'_>) -> DVec3 {
-        let position = self.position();
-        DVec3::new(position.x, self.bounding_box().max_y(), position.z)
-    }
-
     /// Dismounts every passenger from this entity.
     fn eject_passengers(&self) {
         for passenger in self.passengers().into_iter().rev() {
             passenger.stop_riding();
         }
-    }
-
-    /// Default for [`EntityHooks::start_riding`].
-    fn start_riding_default(&self, entity_to_ride: &SharedEntity) -> bool {
-        let Some(world) = self.level() else {
-            return false;
-        };
-        let Some(passenger) = world.get_entity_by_id(self.id()) else {
-            return false;
-        };
-        start_riding_entities(&passenger, entity_to_ride)
     }
 
     /// Gets this entity's direct passengers.
@@ -144,16 +107,6 @@ pub trait EntityRiding: Entity {
         self.base().has_passenger_id(passenger.id())
     }
 
-    /// Default for [`EntityHooks::can_add_passenger`].
-    fn can_add_passenger_default(&self, _passenger: &dyn Entity) -> bool {
-        self.passengers().is_empty()
-    }
-
-    /// Default for [`EntityHooks::could_accept_passenger`].
-    fn could_accept_passenger_default(&self) -> bool {
-        true
-    }
-
     /// Returns the current direct passenger index for attachment lookup.
     fn passenger_index(&self, passenger: &dyn Entity) -> Option<usize> {
         self.passengers()
@@ -167,18 +120,6 @@ pub trait EntityRiding: Entity {
         dimensions.attachments.get_clamped(
             EntityAttachment::Vehicle,
             0,
-            self.rotation().0,
-            dimensions,
-        )
-    }
-
-    /// Default for [`EntityHooks::passenger_attachment_point`].
-    fn passenger_attachment_point_default(&self, passenger: &dyn Entity) -> DVec3 {
-        let dimensions = self.base().dimensions();
-        let passenger_index = self.passenger_index(passenger).unwrap_or_default();
-        dimensions.attachments.get_clamped(
-            EntityAttachment::Passenger,
-            passenger_index,
             self.rotation().0,
             dimensions,
         )
@@ -238,15 +179,77 @@ pub trait EntityRiding: Entity {
 
         false
     }
-
-    /// Default for [`EntityHooks::ride_tick`].
-    fn ride_tick_default(&self) {
-        self.set_velocity(DVec3::ZERO);
-        self.tick();
-        if let Some(vehicle) = self.vehicle() {
-            vehicle.position_rider(self.as_entity_event_source());
-        }
-    }
 }
 
 impl<T: Entity + ?Sized> EntityRiding for T {}
+
+/// `Entity`'s [`EntityProps::remove_vehicle`].
+pub fn remove_vehicle<E: Entity + ?Sized>(entity: &E) {
+    let Some(old_vehicle) = entity.vehicle() else {
+        return;
+    };
+    entity.base().stop_riding();
+    if entity
+        .removal_reason()
+        .is_none_or(RemovalReason::should_destroy)
+        && let Some(world) = entity.level()
+    {
+        world.game_event_at(
+            &vanilla_game_events::ENTITY_DISMOUNT,
+            old_vehicle.position(),
+            &GameEventContext::new(Some(entity.as_entity_event_source()), None),
+        );
+    }
+}
+
+/// `Entity`'s [`EntityProps::dismount_location_for_passenger`]: on top of
+/// this vehicle.
+pub fn dismount_location_for_passenger<E: Entity + ?Sized>(
+    entity: &E,
+    _passenger: &Living<'_>,
+) -> DVec3 {
+    let position = entity.position();
+    DVec3::new(position.x, entity.bounding_box().max_y(), position.z)
+}
+
+/// `Entity`'s [`EntityProps::start_riding`].
+pub fn start_riding<E: Entity + ?Sized>(entity: &E, entity_to_ride: &SharedEntity) -> bool {
+    let Some(world) = entity.level() else {
+        return false;
+    };
+    let Some(passenger) = world.get_entity_by_id(entity.id()) else {
+        return false;
+    };
+    start_riding_entities(&passenger, entity_to_ride)
+}
+
+/// `Entity`'s [`EntityProps::can_add_passenger`].
+pub fn can_add_passenger<E: Entity + ?Sized>(entity: &E, _passenger: &dyn Entity) -> bool {
+    entity.passengers().is_empty()
+}
+
+/// `Entity`'s [`EntityProps::could_accept_passenger`].
+pub const fn could_accept_passenger<E: Entity + ?Sized>(_entity: &E) -> bool {
+    true
+}
+
+/// `Entity`'s [`EntityProps::passenger_attachment_point`].
+pub fn passenger_attachment_point<E: Entity + ?Sized>(entity: &E, passenger: &dyn Entity) -> DVec3 {
+    let dimensions = entity.base().dimensions();
+    let passenger_index = entity.passenger_index(passenger).unwrap_or_default();
+    dimensions.attachments.get_clamped(
+        EntityAttachment::Passenger,
+        passenger_index,
+        entity.rotation().0,
+        dimensions,
+    )
+}
+
+/// `Entity`'s [`EntityProps::ride_tick`].
+pub fn ride_tick<E: Entity + ?Sized>(entity: &E) {
+    entity.set_velocity(DVec3::ZERO);
+    entity.tick();
+    if let Some(vehicle) = entity.vehicle() {
+        vehicle.position_rider(entity.as_entity_event_source());
+    }
+}

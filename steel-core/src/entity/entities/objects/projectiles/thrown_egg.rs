@@ -1,5 +1,6 @@
 //! Vanilla `ThrownEgg`.
 
+use crate::entity::projectile;
 use crate::entity::projectile::ProjectileTable;
 use std::sync::Arc;
 
@@ -104,11 +105,11 @@ impl ThrownEggEntity {
 impl ProjectileTable for ThrownEggEntity {
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
         on_hit: |egg, hit| {
-            (const { ProjectileProps::<Self>::new().on_hit })(egg, hit);
+            projectile::on_hit(egg, hit);
             egg.on_hit_after_super();
         },
         on_hit_entity: |egg, target, location| {
-            (const { ProjectileProps::<Self>::new().on_hit_entity })(egg, target, location);
+            projectile::on_hit_entity(egg, target, location);
             if let Some(world) = target.level()
                 && let Some(source) = egg.projectile().thrown_damage()
             {

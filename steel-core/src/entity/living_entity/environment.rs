@@ -164,26 +164,6 @@ impl Living<'_> {
         self.tick_living_air_supply();
     }
 
-    /// Returns whether this entity is affected by fluid physics; true by default.
-    #[must_use]
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn is_affected_by_fluids_default(&self) -> bool {
-        true
-    }
-
-    /// Returns whether this entity can stand on the given fluid's surface; false by default.
-    #[must_use]
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn can_stand_on_fluid_default(&self, _fluid_state: FluidState) -> bool {
-        false
-    }
-
     /// Returns vanilla `LivingEntity.canFreeze()` after concrete entity exemptions.
     ///
     /// Vanilla keeps the entity-type freeze immunity on `Entity` and the equipment
@@ -191,7 +171,7 @@ impl Living<'_> {
     /// `Entity::can_freeze` implementations can delegate without downcasting.
     #[must_use]
     /// `LivingEntity.canFreeze` around `super`: freeze-immune armor blocks it.
-    pub(super) fn can_freeze_around(&self, super_can_freeze: impl FnOnce() -> bool) -> bool {
+    pub(super) fn living_can_freeze(&self) -> bool {
         for slot in EquipmentSlot::ALL {
             if !slot.is_armor() {
                 continue;
@@ -208,21 +188,7 @@ impl Living<'_> {
             }
         }
 
-        super_can_freeze()
-    }
-
-    /// Returns whether the block this entity is standing on is non-air,
-    /// required for the powder-snow speed penalty to apply.
-    #[must_use]
-    pub fn is_on_non_air_block_for_frost_default(&self) -> bool {
-        let Some(world) = self.level() else {
-            return false;
-        };
-        let Some(pos) = self.on_pos_legacy() else {
-            return false;
-        };
-
-        world.get_block_state(pos).get_block() != &vanilla_blocks::AIR
+        entity::can_freeze(self.entity())
     }
 
     /// Removes the powder snow speed penalty modifier.
@@ -272,4 +238,37 @@ impl Living<'_> {
             );
         }
     }
+}
+
+/// `LivingEntity`'s [`LivingProps::is_affected_by_fluids`].
+///
+/// Returns whether this entity is affected by fluid physics; true by default.
+#[must_use]
+pub const fn is_affected_by_fluids<E: Parts>(_entity: &E) -> bool {
+    true
+}
+
+/// `LivingEntity`'s [`LivingProps::can_stand_on_fluid`].
+///
+/// Returns whether this entity can stand on the given fluid's surface; false by default.
+#[must_use]
+pub const fn can_stand_on_fluid<E: Parts>(_entity: &E, _fluid_state: FluidState) -> bool {
+    false
+}
+
+/// `LivingEntity`'s [`LivingProps::is_on_non_air_block_for_frost`].
+///
+/// Returns whether the block this entity is standing on is non-air,
+/// required for the powder-snow speed penalty to apply.
+#[must_use]
+pub fn is_on_non_air_block_for_frost<E: Parts>(entity: &E) -> bool {
+    let living = &entity.living();
+    let Some(world) = living.level() else {
+        return false;
+    };
+    let Some(pos) = living.on_pos_legacy() else {
+        return false;
+    };
+
+    world.get_block_state(pos).get_block() != &vanilla_blocks::AIR
 }

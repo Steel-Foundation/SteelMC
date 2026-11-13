@@ -13,6 +13,7 @@ pub mod throwable;
 pub mod throwable_item;
 pub mod thrown_potion;
 
+use crate::entity::entity;
 use crate::entity::prelude::*;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
@@ -206,23 +207,23 @@ impl Component for ProjectileBase {
 entity_props! {
     /// Per-type properties of a vanilla `Projectile`.
     pub struct ProjectileProps<E>: ProjectileHooks for Projectile
-    where E: Parts => projectile,
+    where E: Parts,
     table ProjectileTable::PROJECTILE,
     component ProjectileBase {
         /// `Projectile.onDeflection`.
-        fn on_deflection(by_attack: bool) = on_deflection_default;
+        fn on_deflection(by_attack: bool);
         /// `Projectile.shouldBounceOnWorldBorder`.
-        fn should_bounce_on_world_border() -> bool = should_bounce_on_world_border_default;
+        fn should_bounce_on_world_border() -> bool;
         /// `Projectile.calculateHorizontalHurtKnockbackDirection`.
-        fn horizontal_hurt_knockback_direction(hurt_entity: &Living<'_>, source: &DamageSource) -> (f64, f64) = horizontal_hurt_knockback_direction_default;
+        fn horizontal_hurt_knockback_direction(hurt_entity: &Living<'_>, source: &DamageSource) -> (f64, f64);
         /// `Projectile.onHit`: dispatches to the entity or block hit.
-        fn on_hit(hit: &ProjectileHit) = on_hit_base;
+        fn on_hit(hit: &ProjectileHit);
         /// `Projectile.onHitEntity`.
-        fn on_hit_entity(target: &SharedEntity, location: DVec3) = on_hit_entity_default;
+        fn on_hit_entity(target: &SharedEntity, location: DVec3);
         /// `Projectile.onHitBlock`: the block's projectile reaction.
-        fn on_hit_block(hit: &ClipHitResult) = on_hit_block_base;
+        fn on_hit_block(hit: &ClipHitResult);
         /// `Projectile.canHitEntity`.
-        fn can_hit_entity(target: &dyn Entity) -> bool = can_hit_entity_base;
+        fn can_hit_entity(target: &dyn Entity) -> bool;
     }
 }
 
@@ -289,39 +290,73 @@ impl<E: ProjectileTable> Parts for E {
     }
 }
 
+/// `Projectile`'s [`EntityProps::tick`].
+pub fn tick<E: Parts>(projectile: &E) {
+    projectile.projectile().projectile_tick();
+}
+
+/// `Projectile`'s [`EntityProps::hurt`].
+pub fn hurt<E: Parts>(projectile: &E, _: &World, source: &DamageSource, _: f32) -> bool {
+    projectile.projectile().hurt_server(source)
+}
+
+/// `Projectile`'s [`EntityProps::is_pickable`].
+pub fn is_pickable<E: Parts>(projectile: &E) -> bool {
+    REGISTRY.entity_types.is_in_tag(
+        projectile.entity_type(),
+        &EntityTypeTag::REDIRECTABLE_PROJECTILE,
+    )
+}
+
+/// `Projectile`'s [`EntityProps::dimension_changing_delay`].
+#[must_use]
+pub const fn dimension_changing_delay<E: Parts>(_: &E) -> i32 {
+    2
+}
+
+/// `Projectile`'s [`EntityProps::may_interact`].
+pub fn may_interact<E: Parts>(projectile: &E, world: &World, pos: BlockPos) -> bool {
+    projectile.projectile().may_interact(world, pos)
+}
+
+/// `Projectile`'s [`EntityProps::on_above_bubble_column`].
+pub fn on_above_bubble_column<E: Parts>(projectile: &E, drag_down: bool, pos: BlockPos) {
+    projectile
+        .projectile()
+        .on_above_bubble_column(drag_down, pos);
+}
+
+/// `Projectile`'s [`EntityProps::on_inside_bubble_column`].
+pub fn on_inside_bubble_column<E: Parts>(projectile: &E, drag_down: bool) {
+    projectile.projectile().on_inside_bubble_column(drag_down);
+}
+
+/// `Projectile`'s [`EntityProps::spawn_data`].
+pub fn spawn_data<E: Parts>(projectile: &E) -> i32 {
+    projectile
+        .projectile()
+        .owner()
+        .map_or(0, |owner| owner.id())
+}
+
+/// `Projectile`'s [`EntityProps::restore_owner_reference`].
+pub fn restore_owner_reference<E: Parts>(projectile: &E, owner: &SharedEntity) {
+    projectile.projectile().cache_owner(owner);
+}
+
 /// `Projectile`'s overrides of the entity hooks.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
     EntityProps {
-        tick: |projectile| {
-            projectile
-                .projectile()
-                .tick_around(|| (const { EntityProps::<E>::new().tick })(projectile));
-        },
-        hurt: |projectile, _, source, _| projectile.projectile().hurt_server(source),
-        is_pickable: |projectile| {
-            REGISTRY.entity_types.is_in_tag(
-                projectile.entity_type(),
-                &EntityTypeTag::REDIRECTABLE_PROJECTILE,
-            )
-        },
-        dimension_changing_delay: |_| 2,
-        may_interact: |projectile, world, pos| projectile.projectile().may_interact(world, pos),
-        on_above_bubble_column: |projectile, drag_down, pos| {
-            projectile
-                .projectile()
-                .on_above_bubble_column(drag_down, pos);
-        },
-        on_inside_bubble_column: |projectile, drag_down| {
-            projectile.projectile().on_inside_bubble_column(drag_down);
-        },
-        spawn_data: |projectile| {
-            projectile
-                .projectile()
-                .owner()
-                .map_or(0, |owner| owner.id())
-        },
-        restore_owner_reference: |projectile, owner| projectile.projectile().cache_owner(owner),
+        tick: tick::<E>,
+        hurt: hurt::<E>,
+        is_pickable: is_pickable::<E>,
+        dimension_changing_delay: dimension_changing_delay::<E>,
+        may_interact: may_interact::<E>,
+        on_above_bubble_column: on_above_bubble_column::<E>,
+        on_inside_bubble_column: on_inside_bubble_column::<E>,
+        spawn_data: spawn_data::<E>,
+        restore_owner_reference: restore_owner_reference::<E>,
         ..EntityProps::new()
     }
 }
@@ -458,47 +493,6 @@ impl<'a> Projectile<'a> {
         }
 
         true
-    }
-
-    fn horizontal_hurt_knockback_direction_default(
-        &self,
-        _hurt_entity: &Living<'_>,
-        _source: &DamageSource,
-    ) -> (f64, f64) {
-        let movement = self.velocity();
-        (movement.x, movement.z)
-    }
-
-    /// Default for [`Self::on_hit_entity`]: vanilla's does nothing.
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; projectile types override it through `ProjectileProps`"
-    )]
-    const fn on_hit_entity_default(&self, _target: &SharedEntity, _location: DVec3) {}
-
-    /// Default for [`Self::can_hit_entity`].
-    fn can_hit_entity_base(&self, target: &dyn Entity) -> bool {
-        if !target.can_be_hit_by_projectile() {
-            return false;
-        }
-        let Some(owner) = self.owner() else {
-            return true;
-        };
-        self.left_owner() || !owner.is_passenger_of_same_vehicle(target)
-    }
-
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `ProjectileProps`"
-    )]
-    const fn on_deflection_default(&self, _by_attack: bool) {}
-
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `ProjectileProps`"
-    )]
-    const fn should_bounce_on_world_border_default(&self) -> bool {
-        false
     }
 
     /// The velocity for shooting toward `direction` at `power`, with random
@@ -658,59 +652,6 @@ impl<'a> Projectile<'a> {
         ProjectileDeflection::None
     }
 
-    /// Default for [`Self::on_hit`].
-    fn on_hit_base(&self, hit: &ProjectileHit) {
-        let world = self.level();
-        match hit {
-            ProjectileHit::Entity(entity_hit) => {
-                if REGISTRY.entity_types.is_in_tag(
-                    entity_hit.entity.entity_type(),
-                    &EntityTypeTag::REDIRECTABLE_PROJECTILE,
-                ) && let Some(target) = Projectile::of(entity_hit.entity.as_ref())
-                {
-                    let owner_entity = self.owner();
-                    let owner = self.state().owner.clone();
-                    target.deflect(
-                        ProjectileDeflection::AimDeflect,
-                        owner_entity.as_deref(),
-                        owner,
-                        true,
-                    );
-                }
-                self.on_hit_entity(&entity_hit.entity, entity_hit.location);
-                if let Some(world) = world {
-                    world.game_event_at(
-                        &vanilla_game_events::PROJECTILE_LAND,
-                        entity_hit.location,
-                        &GameEventContext::new(Some(self.entity), None),
-                    );
-                }
-            }
-            ProjectileHit::Block { hit, .. } => {
-                self.on_hit_block(hit);
-                if let Some(world) = world {
-                    let state = world.get_block_state(hit.block_pos);
-                    world.game_event(
-                        &vanilla_game_events::PROJECTILE_LAND,
-                        hit.block_pos,
-                        &GameEventContext::new(Some(self.entity), Some(state)),
-                    );
-                }
-            }
-        }
-    }
-
-    /// Default for [`Self::on_hit_block`].
-    fn on_hit_block_base(&self, hit: &ClipHitResult) {
-        let Some(world) = self.level() else {
-            return;
-        };
-        let state = world.get_block_state(hit.block_pos);
-        BLOCK_BEHAVIORS
-            .get_behavior(state.get_block())
-            .on_projectile_hit(state, &world, hit, self);
-    }
-
     /// `Projectile.hurtServer`: marks hurt unless invulnerable to the base
     /// checks, but never takes damage.
     fn hurt_server(&self, source: &DamageSource) -> bool {
@@ -748,7 +689,7 @@ impl<'a> Projectile<'a> {
 
     /// `Projectile.tick` around its `super.tick()`: announces the shot once
     /// and tracks leaving the owner.
-    fn tick_around(&self, base_tick: impl FnOnce()) {
+    fn projectile_tick(&self) {
         if !self.has_been_shot() {
             let owner = self.owner();
             self.game_event_with_source_entity(
@@ -758,9 +699,98 @@ impl<'a> Projectile<'a> {
             self.state().has_been_shot = true;
         }
         self.check_left_owner();
-        base_tick();
+        entity::tick(self.entity());
         self.state().left_owner_checked = false;
     }
+}
+
+/// `Projectile`'s [`ProjectileProps::horizontal_hurt_knockback_direction`].
+pub fn horizontal_hurt_knockback_direction<E: Parts>(
+    entity: &E,
+    _hurt_entity: &Living<'_>,
+    _source: &DamageSource,
+) -> (f64, f64) {
+    let projectile = &entity.projectile();
+    let movement = projectile.velocity();
+    (movement.x, movement.z)
+}
+
+/// `Projectile`'s [`ProjectileProps::on_hit_entity`]: vanilla's does nothing.
+pub const fn on_hit_entity<E: Parts>(_entity: &E, _target: &SharedEntity, _location: DVec3) {}
+
+/// `Projectile`'s [`ProjectileProps::can_hit_entity`].
+pub fn can_hit_entity<E: Parts>(entity: &E, target: &dyn Entity) -> bool {
+    let projectile = &entity.projectile();
+    if !target.can_be_hit_by_projectile() {
+        return false;
+    }
+    let Some(owner) = projectile.owner() else {
+        return true;
+    };
+    projectile.left_owner() || !owner.is_passenger_of_same_vehicle(target)
+}
+
+/// `Projectile`'s [`ProjectileProps::on_deflection`].
+pub const fn on_deflection<E: Parts>(_entity: &E, _by_attack: bool) {}
+
+/// `Projectile`'s [`ProjectileProps::should_bounce_on_world_border`].
+pub const fn should_bounce_on_world_border<E: Parts>(_entity: &E) -> bool {
+    false
+}
+
+/// `Projectile`'s [`ProjectileProps::on_hit`].
+pub fn on_hit<E: Parts>(this: &E, hit: &ProjectileHit) {
+    let projectile = &this.projectile();
+    let world = projectile.level();
+    match hit {
+        ProjectileHit::Entity(entity_hit) => {
+            if REGISTRY.entity_types.is_in_tag(
+                entity_hit.entity.entity_type(),
+                &EntityTypeTag::REDIRECTABLE_PROJECTILE,
+            ) && let Some(target) = Projectile::of(entity_hit.entity.as_ref())
+            {
+                let owner_entity = projectile.owner();
+                let owner = projectile.state().owner.clone();
+                target.deflect(
+                    ProjectileDeflection::AimDeflect,
+                    owner_entity.as_deref(),
+                    owner,
+                    true,
+                );
+            }
+            projectile.on_hit_entity(&entity_hit.entity, entity_hit.location);
+            if let Some(world) = world {
+                world.game_event_at(
+                    &vanilla_game_events::PROJECTILE_LAND,
+                    entity_hit.location,
+                    &GameEventContext::new(Some(projectile.entity), None),
+                );
+            }
+        }
+        ProjectileHit::Block { hit, .. } => {
+            projectile.on_hit_block(hit);
+            if let Some(world) = world {
+                let state = world.get_block_state(hit.block_pos);
+                world.game_event(
+                    &vanilla_game_events::PROJECTILE_LAND,
+                    hit.block_pos,
+                    &GameEventContext::new(Some(projectile.entity), Some(state)),
+                );
+            }
+        }
+    }
+}
+
+/// `Projectile`'s [`ProjectileProps::on_hit_block`].
+pub fn on_hit_block<E: Parts>(entity: &E, hit: &ClipHitResult) {
+    let projectile = &entity.projectile();
+    let Some(world) = projectile.level() else {
+        return;
+    };
+    let state = world.get_block_state(hit.block_pos);
+    BLOCK_BEHAVIORS
+        .get_behavior(state.get_block())
+        .on_projectile_hit(state, &world, hit, projectile);
 }
 
 /// Spawns a throwable-item projectile from the source's eye along its look

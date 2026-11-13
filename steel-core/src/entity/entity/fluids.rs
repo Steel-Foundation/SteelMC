@@ -7,74 +7,11 @@ use super::*;
 /// Implemented for every [`Entity`]; entity types change behavior through
 /// [`EntityProps`], never by implementing this trait.
 pub trait EntityFluids: Entity {
-    /// Default for [`EntityHooks::is_pushed_by_fluid`].
-    fn is_pushed_by_fluid_default(&self) -> bool {
-        self.entity_type().flags.is_pushed_by_fluid
-    }
-
-    /// Default for [`EntityHooks::on_above_bubble_column`].
-    fn on_above_bubble_column_default(&self, drag_down: bool, pos: BlockPos) {
-        if self.is_flying_player() {
-            return;
-        }
-
-        let velocity = self.velocity();
-        let y = if drag_down {
-            (velocity.y - BUBBLE_COLUMN_DOWN_ACCELERATION).max(BUBBLE_COLUMN_ABOVE_DOWN_MIN_SPEED)
-        } else {
-            (velocity.y + BUBBLE_COLUMN_ABOVE_UP_ACCELERATION).min(BUBBLE_COLUMN_ABOVE_UP_MAX_SPEED)
-        };
-        self.set_velocity(DVec3::new(velocity.x, y, velocity.z));
-
-        if let Some(world) = self.level() {
-            world.send_bubble_column_particles(pos);
-        }
-    }
-
-    /// Default for [`EntityHooks::on_inside_bubble_column`].
-    fn on_inside_bubble_column_default(&self, drag_down: bool) {
-        if self.is_flying_player() {
-            return;
-        }
-
-        let velocity = self.velocity();
-        let y = if drag_down {
-            (velocity.y - BUBBLE_COLUMN_DOWN_ACCELERATION).max(BUBBLE_COLUMN_INSIDE_DOWN_MIN_SPEED)
-        } else {
-            (velocity.y + BUBBLE_COLUMN_INSIDE_UP_ACCELERATION)
-                .min(BUBBLE_COLUMN_INSIDE_UP_MAX_SPEED)
-        };
-        self.set_velocity(DVec3::new(velocity.x, y, velocity.z));
-        self.reset_fall_distance();
-    }
-
     /// Sets the vanilla swimming shared flag.
     fn set_shared_swimming(&self, swimming: bool) {
         if let Some(synced_data) = self.synced_data() {
             synced_data.set_swimming(swimming);
         }
-    }
-
-    /// Default for [`EntityHooks::update_swimming`].
-    fn update_swimming_default(&self) {
-        let Some(world) = self.level() else {
-            return;
-        };
-
-        let block_fluid = get_fluid_state(&world, self.block_position());
-        let swimming = select_swimming_state(
-            self.is_swimming(),
-            SwimmingEnvironment {
-                sprinting: self
-                    .as_living_entity()
-                    .is_some_and(|living| living.is_sprinting()),
-                passenger: self.is_passenger(),
-                in_water: self.is_in_water(),
-                under_water: self.is_under_water(),
-                block_fluid_is_water: block_fluid.is_water(),
-            },
-        );
-        self.set_shared_swimming(swimming);
     }
 
     /// Returns the fluid-surface height threshold used for fluid-jump
@@ -222,12 +159,6 @@ pub trait EntityFluids: Entity {
         }
     }
 
-    /// Default for [`EntityHooks::is_swimming`].
-    fn is_swimming_default(&self) -> bool {
-        self.synced_data()
-            .is_some_and(EntitySyncedData::is_swimming)
-    }
-
     /// Returns this entity's current air supply in ticks, synced to clients.
     fn air_supply(&self) -> i32 {
         self.base().air_supply()
@@ -245,31 +176,99 @@ pub trait EntityFluids: Entity {
     fn max_air_supply(&self) -> i32 {
         DEFAULT_MAX_AIR_SUPPLY
     }
-
-    /// Default for [`EntityHooks::do_water_splash_effect`].
-    fn do_water_splash_effect_default(&self) {
-        let (movement, volume_modifier) = if let Some(passenger) = self.controlling_passenger() {
-            (passenger.velocity(), 0.9)
-        } else {
-            (self.velocity(), 0.2)
-        };
-        let speed = ((movement.x * movement.x * 0.2
-            + movement.y * movement.y
-            + movement.z * movement.z * 0.2)
-            .sqrt() as f32
-            * volume_modifier)
-            .min(1.0);
-        let pitch = 1.0 + (rng().random::<f32>() - rng().random::<f32>()) * 0.4;
-        if speed < 0.25 {
-            self.play_sound(self.swim_splash_sound(), speed, pitch);
-        } else {
-            self.play_sound(self.swim_high_speed_splash_sound(), speed, pitch);
-        }
-
-        // VANILLA CLIENT-LOCAL: the bubble/splash particle loop uses `Level.addParticle`.
-
-        self.game_event(&vanilla_game_events::SPLASH);
-    }
 }
 
 impl<T: Entity + ?Sized> EntityFluids for T {}
+
+/// `Entity`'s [`EntityProps::is_pushed_by_fluid`].
+pub fn is_pushed_by_fluid<E: Entity + ?Sized>(entity: &E) -> bool {
+    entity.entity_type().flags.is_pushed_by_fluid
+}
+
+/// `Entity`'s [`EntityProps::on_above_bubble_column`].
+pub fn on_above_bubble_column<E: Entity + ?Sized>(entity: &E, drag_down: bool, pos: BlockPos) {
+    if entity.is_flying_player() {
+        return;
+    }
+
+    let velocity = entity.velocity();
+    let y = if drag_down {
+        (velocity.y - BUBBLE_COLUMN_DOWN_ACCELERATION).max(BUBBLE_COLUMN_ABOVE_DOWN_MIN_SPEED)
+    } else {
+        (velocity.y + BUBBLE_COLUMN_ABOVE_UP_ACCELERATION).min(BUBBLE_COLUMN_ABOVE_UP_MAX_SPEED)
+    };
+    entity.set_velocity(DVec3::new(velocity.x, y, velocity.z));
+
+    if let Some(world) = entity.level() {
+        world.send_bubble_column_particles(pos);
+    }
+}
+
+/// `Entity`'s [`EntityProps::on_inside_bubble_column`].
+pub fn on_inside_bubble_column<E: Entity + ?Sized>(entity: &E, drag_down: bool) {
+    if entity.is_flying_player() {
+        return;
+    }
+
+    let velocity = entity.velocity();
+    let y = if drag_down {
+        (velocity.y - BUBBLE_COLUMN_DOWN_ACCELERATION).max(BUBBLE_COLUMN_INSIDE_DOWN_MIN_SPEED)
+    } else {
+        (velocity.y + BUBBLE_COLUMN_INSIDE_UP_ACCELERATION).min(BUBBLE_COLUMN_INSIDE_UP_MAX_SPEED)
+    };
+    entity.set_velocity(DVec3::new(velocity.x, y, velocity.z));
+    entity.reset_fall_distance();
+}
+
+/// `Entity`'s [`EntityProps::update_swimming`].
+pub fn update_swimming<E: Entity + ?Sized>(entity: &E) {
+    let Some(world) = entity.level() else {
+        return;
+    };
+
+    let block_fluid = get_fluid_state(&world, entity.block_position());
+    let swimming = select_swimming_state(
+        entity.is_swimming(),
+        SwimmingEnvironment {
+            sprinting: entity
+                .as_living_entity()
+                .is_some_and(|living| living.is_sprinting()),
+            passenger: entity.is_passenger(),
+            in_water: entity.is_in_water(),
+            under_water: entity.is_under_water(),
+            block_fluid_is_water: block_fluid.is_water(),
+        },
+    );
+    entity.set_shared_swimming(swimming);
+}
+
+/// `Entity`'s [`EntityProps::is_swimming`].
+pub fn is_swimming<E: Entity + ?Sized>(entity: &E) -> bool {
+    entity
+        .synced_data()
+        .is_some_and(EntitySyncedData::is_swimming)
+}
+
+/// `Entity`'s [`EntityProps::do_water_splash_effect`].
+pub fn do_water_splash_effect<E: Entity + ?Sized>(entity: &E) {
+    let (movement, volume_modifier) = if let Some(passenger) = entity.controlling_passenger() {
+        (passenger.velocity(), 0.9)
+    } else {
+        (entity.velocity(), 0.2)
+    };
+    let speed =
+        ((movement.x * movement.x * 0.2 + movement.y * movement.y + movement.z * movement.z * 0.2)
+            .sqrt() as f32
+            * volume_modifier)
+            .min(1.0);
+    let pitch = 1.0 + (rng().random::<f32>() - rng().random::<f32>()) * 0.4;
+    if speed < 0.25 {
+        entity.play_sound(entity.swim_splash_sound(), speed, pitch);
+    } else {
+        entity.play_sound(entity.swim_high_speed_splash_sound(), speed, pitch);
+    }
+
+    // VANILLA CLIENT-LOCAL: the bubble/splash particle loop uses `Level.addParticle`.
+
+    entity.game_event(&vanilla_game_events::SPLASH);
+}

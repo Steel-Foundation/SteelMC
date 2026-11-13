@@ -4,6 +4,7 @@
 //! (gravity, friction), despawns after 5 minutes, and can be picked up
 //! by players after a short delay.
 
+use crate::entity::entity;
 use crate::entity::prelude::*;
 use std::sync::{Arc, Weak};
 use steel_utils::nbt::NbtValueInput as _;
@@ -515,7 +516,7 @@ impl DefaultEntityPush for ItemEntity {}
 
 impl ItemEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        tick: |item| item.entity_tick(|| (const { EntityProps::<Self>::new().tick })(item)),
+        tick: Self::entity_tick,
         hurt: Self::entity_hurt,
         is_hard_collision_relevant: |_| false,
         ignore_explosion: |_, explosion| !explosion.should_affect_blocklike_entities(),
@@ -547,13 +548,13 @@ impl ItemEntity {
     }
 
     /// `ItemEntity.tick`: an empty stack is discarded instead of ticking.
-    fn entity_tick(&self, super_tick: impl FnOnce()) {
+    fn entity_tick(&self) {
         if self.item().is_empty() {
             self.set_removed(RemovalReason::Discarded);
             return;
         }
 
-        super_tick();
+        entity::tick(self);
 
         {
             let mut state = self.state.lock();

@@ -5,9 +5,11 @@
 //! [`living_props`] and [`mob_props`] are the tables an ageable mob type
 //! builds on.
 
+use crate::entity::EntitySpawnReason;
 use crate::entity::LivingProps;
 use crate::entity::MobProps;
 use crate::entity::prelude::*;
+use crate::physics::MoveResult;
 use crate::player::Player;
 use std::sync::Arc;
 use steel_utils::nbt::NbtValueInput as _;
@@ -329,47 +331,66 @@ impl<'a> Ageable<'a> {
     }
 }
 
+/// `AgeableMob`'s [`LivingProps::ai_step`].
+pub fn ai_step<E: mob::Parts + Has<Age>>(entity: &E) -> Option<MoveResult> {
+    let movement = mob::ai_step(entity);
+    Ageable::new(entity, entity.get::<Age>()).tick();
+    movement
+}
+
 /// `AgeableMob`'s changes to the living defaults.
 #[must_use]
 pub const fn living_props<E: mob::Parts + Has<Age>>() -> LivingProps<E> {
     LivingProps {
-        ai_step: |entity| {
-            let movement = (const { mob::living_props::<E>().ai_step })(entity);
-            Ageable::new(entity, entity.get::<Age>()).tick();
-            movement
-        },
+        ai_step: ai_step::<E>,
         ..mob::living_props()
     }
+}
+
+/// `AgeableMob`'s [`MobProps::mob_interact`].
+pub fn mob_interact<E: mob::Parts + Has<Age>>(
+    entity: &E,
+    player: &Player,
+    hand: InteractionHand,
+) -> InteractionResult {
+    if let Some(result) = toggle_age_lock(entity, player, hand) {
+        return result;
+    }
+    mob::mob_interact(entity, player, hand)
+}
+
+/// `AgeableMob`'s [`MobProps::finalize_spawn`].
+///
+/// `AgeableMob.finalizeSpawn` rolls whether a spawned group member is
+/// a baby before `super`.
+pub fn finalize_spawn<E: mob::Parts + Has<Age>>(
+    entity: &E,
+    world: &Arc<World>,
+    reason: EntitySpawnReason,
+    group_data: Option<SpawnGroupData>,
+) -> Option<SpawnGroupData> {
+    let mut group_data = match group_data {
+        Some(SpawnGroupData::AgeableMob(group_data)) => group_data,
+        None => AgeableMobGroupData::with_should_spawn_baby(true),
+    };
+    if group_data.finalize_ageable_spawn(rand::random::<f32>) {
+        Ageable::new(entity, entity.get::<Age>()).set_age(BABY_START_AGE);
+    }
+    mob::finalize_spawn(
+        entity,
+        world,
+        reason,
+        Some(SpawnGroupData::AgeableMob(group_data)),
+    )
 }
 
 /// `AgeableMob`'s changes to the mob defaults.
 #[must_use]
 pub const fn mob_props<E: mob::Parts + Has<Age>>() -> MobProps<E> {
     MobProps {
-        mob_interact: |entity, player, hand| {
-            if let Some(result) = toggle_age_lock(entity, player, hand) {
-                return result;
-            }
-            (const { mob::pathfinder_mob_props::<E>().mob_interact })(entity, player, hand)
-        },
-        // `AgeableMob.finalizeSpawn` rolls whether a spawned group member is
-        // a baby before `super`.
-        finalize_spawn: |entity, world, reason, group_data| {
-            let mut group_data = match group_data {
-                Some(SpawnGroupData::AgeableMob(group_data)) => group_data,
-                None => AgeableMobGroupData::with_should_spawn_baby(true),
-            };
-            if group_data.finalize_ageable_spawn(rand::random::<f32>) {
-                Ageable::new(entity, entity.get::<Age>()).set_age(BABY_START_AGE);
-            }
-            (const { mob::pathfinder_mob_props::<E>().finalize_spawn })(
-                entity,
-                world,
-                reason,
-                Some(SpawnGroupData::AgeableMob(group_data)),
-            )
-        },
-        ..mob::pathfinder_mob_props()
+        mob_interact: mob_interact::<E>,
+        finalize_spawn: finalize_spawn::<E>,
+        ..mob::pathfinder::mob_props()
     }
 }
 

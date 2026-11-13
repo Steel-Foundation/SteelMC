@@ -3,6 +3,8 @@
 
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
+use crate::entity::ageable;
+use crate::entity::entity;
 use crate::entity::prelude::*;
 use steel_utils::nbt::NbtValueInput as _;
 
@@ -254,9 +256,7 @@ impl MobTable for ChickenEntity {
         // `Chicken.finalizeSpawn` picks the variants before `super`.
         finalize_spawn: |chicken, world, reason, group_data| {
             variant::pick_spawn_variants(chicken, world);
-            (const { animal::mob_props::<Self>().finalize_spawn })(
-                chicken, world, reason, group_data,
-            )
+            ageable::finalize_spawn(chicken, world, reason, group_data)
         },
         ..animal::mob_props()
     };
@@ -269,7 +269,7 @@ impl LivingTable for ChickenEntity {
         chicken_loot_variant: |chicken| Some(&chicken.variant().key),
         // `Chicken.aiStep`: flapping and egg laying after `super`.
         ai_step: |chicken| {
-            let movement = (const { animal::living_props::<Self>().ai_step })(chicken);
+            let movement = animal::ai_step(chicken);
             chicken.tick_flapping();
             chicken.tick_egg_laying();
             movement
@@ -279,7 +279,7 @@ impl LivingTable for ChickenEntity {
             if chicken.is_chicken_jockey() {
                 return 10;
             }
-            (const { animal::living_props::<Self>().base_experience_reward })(chicken)
+            animal::base_experience_reward(chicken)
         },
         ..animal::living_props()
     };
@@ -330,7 +330,7 @@ impl ChickenEntity {
         on_flap: Self::entity_on_flap,
         // `Chicken.positionRider` after `super`: the rider faces the chicken's way.
         position_rider: |chicken, passenger| {
-            (const { animal::entity_props::<Self>().position_rider })(chicken, passenger);
+            entity::position_rider(chicken, passenger);
             if let Some(living) = passenger.as_living_entity() {
                 living.set_y_body_rot(chicken.living().y_body_rot());
             }

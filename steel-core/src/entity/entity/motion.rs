@@ -27,54 +27,6 @@ pub trait EntityMotion: Entity {
         !aabb_contains_any_liquid(&world, target_box)
     }
 
-    /// Default for [`EntityHooks::is_flying_player`].
-    fn is_flying_player_default(&self) -> bool {
-        false
-    }
-
-    /// Default for [`EntityHooks::can_be_collided_with`].
-    fn can_be_collided_with_default(&self, _other: Option<&dyn Entity>) -> bool {
-        false
-    }
-
-    /// Default for [`EntityHooks::is_hard_collision_relevant`].
-    fn is_hard_collision_relevant_default(&self) -> bool {
-        true
-    }
-
-    /// Default for [`EntityHooks::can_collide_with`].
-    fn can_collide_with_default(&self, other: &dyn Entity) -> bool {
-        other.can_be_collided_with(Some(self.as_entity_event_source()))
-            && !self.is_passenger_of_same_vehicle(other)
-    }
-
-    /// Default for [`EntityHooks::push_impulse`].
-    fn push_impulse_default(&self, impulse: DVec3) {
-        self.base().push_impulse(impulse);
-    }
-
-    /// Default for [`EntityHooks::push_entity`].
-    fn push_entity_default(&self, entity: &dyn Entity) {
-        if self.is_passenger_of_same_vehicle(entity) || entity.no_physics() || self.no_physics() {
-            return;
-        }
-
-        let other_position = entity.position();
-        let position = self.position();
-
-        let Some(impulse) = EntityPush::impulse(position, other_position) else {
-            return;
-        };
-
-        if !self.is_vehicle() && self.is_pushable() {
-            self.push_impulse(DVec3::new(-impulse.x, 0.0, -impulse.z));
-        }
-
-        if !entity.is_vehicle() && entity.is_pushable() {
-            entity.push_impulse(impulse);
-        }
-    }
-
     /// Returns whether this entity's velocity should sync every tick because
     /// it's currently fall-flying with an elytra.
     fn forces_fall_flying_velocity_sync(&self) -> bool {
@@ -82,33 +34,9 @@ pub trait EntityMotion: Entity {
             .is_some_and(|living| living.is_fall_flying())
     }
 
-    /// Default for [`EntityHooks::uses_client_movement_packets`].
-    fn uses_client_movement_packets_default(&self) -> bool {
-        if !self.is_removed()
-            && let Some(controller) = self.controlling_passenger()
-            && controller.id() != self.id()
-            && controller.uses_client_movement_packets()
-        {
-            return true;
-        }
-
-        false
-    }
-
     /// Returns true when normal server ticks drive this entity's movement.
     fn is_server_driven_movement(&self) -> bool {
         !self.uses_client_movement_packets()
-    }
-
-    /// Default for [`EntityHooks::can_simulate_movement`].
-    fn can_simulate_movement_default(&self) -> bool {
-        self.is_server_driven_movement()
-    }
-
-    /// Default for [`EntityHooks::is_suppressing_bounce`].
-    fn is_suppressing_bounce_default(&self) -> bool {
-        self.synced_data()
-            .is_some_and(EntitySyncedData::is_shift_key_down)
     }
 
     /// Sets the vanilla sprinting shared flag.
@@ -128,30 +56,6 @@ pub trait EntityMotion: Entity {
     /// Returns whether vanilla excludes this vehicle from floating kicks.
     fn is_flying_vehicle(&self) -> bool {
         false
-    }
-
-    /// Default for [`EntityHooks::known_movement`].
-    fn known_movement_default(&self) -> DVec3 {
-        if let Some(controller) = self.controlling_passenger()
-            && !self.is_removed()
-            && controller.entity_type() == &vanilla_entities::PLAYER
-        {
-            return controller.known_movement();
-        }
-
-        self.velocity()
-    }
-
-    /// Default for [`EntityHooks::known_speed`].
-    fn known_speed_default(&self) -> DVec3 {
-        if let Some(controller) = self.controlling_passenger()
-            && !self.is_removed()
-            && controller.entity_type() == &vanilla_entities::PLAYER
-        {
-            return controller.known_speed();
-        }
-
-        self.base().known_speed()
     }
 
     /// Gets the entity's velocity in blocks per tick.
@@ -234,21 +138,6 @@ pub trait EntityMotion: Entity {
         for passenger in self.passengers() {
             passenger.cause_fall_damage(fall_distance, damage_modifier, source);
         }
-    }
-
-    /// Default for [`EntityHooks::cause_fall_damage`].
-    fn cause_fall_damage_default(
-        &self,
-        fall_distance: f64,
-        damage_modifier: f32,
-        source: &DamageSource,
-    ) -> bool {
-        if self.is_fall_damage_immune() {
-            return false;
-        }
-
-        self.propagate_fall_to_passengers(fall_distance, damage_modifier, source);
-        false
     }
 
     /// Returns true if the entity is on the ground.
@@ -428,11 +317,6 @@ pub trait EntityMotion: Entity {
         self.default_apply_accepted_client_movement(world, accepted)
     }
 
-    /// Default for [`EntityHooks::try_set_position`].
-    fn try_set_position_default(&self, pos: DVec3) -> Result<(), EntityMoveError> {
-        self.try_set_position_base(pos)
-    }
-
     /// The base method to set the entity's position through world lifecycle validation.
     #[must_use = "movement commits can fail when world entity state rejects the update"]
     fn try_set_position_base(&self, pos: DVec3) -> Result<(), EntityMoveError> {
@@ -442,11 +326,6 @@ pub trait EntityMotion: Entity {
     /// Default for [`EntityHooks::teleport_to`].
     // TODO: Recursively reposition this entity's passengers (vanilla
     // `Entity.teleportPassengers`, via `getSelfAndPassengers`)
-    #[must_use = "movement commits can fail when world entity state rejects the update"]
-    fn teleport_to_default(&self, pos: DVec3) -> Result<(), EntityMoveError> {
-        self.try_set_position(pos)
-    }
-
     /// Sets the vanilla movement-trace old position to the current position.
     fn set_old_position_to_current(&self) {
         self.base().set_old_position_to_current();
@@ -462,22 +341,7 @@ pub trait EntityMotion: Entity {
         self.base().remove_latest_movement_recording();
     }
 
-    /// Default for [`EntityHooks::max_up_step`].
-    fn max_up_step_default(&self) -> f32 {
-        0.0
-    }
-
-    /// Default for [`EntityHooks::backs_off_from_edge`].
-    fn backs_off_from_edge_default(&self) -> bool {
-        false
-    }
-
     // These mirror vanilla's Entity class methods.
-
-    /// Default for [`EntityHooks::default_gravity`].
-    fn default_gravity_default(&self) -> f64 {
-        0.0
-    }
 
     /// Returns true if gravity is disabled for this entity.
     fn is_no_gravity(&self) -> bool {
@@ -501,16 +365,6 @@ pub trait EntityMotion: Entity {
         } else {
             self.default_gravity()
         }
-    }
-
-    /// Default for [`EntityHooks::air_drag`].
-    fn air_drag_default(&self) -> f32 {
-        DEFAULT_AIR_DRAG
-    }
-
-    /// Default for [`EntityHooks::effective_gravity`].
-    fn effective_gravity_default(&self) -> f64 {
-        self.gravity()
     }
 
     /// Applies gravity to the entity's velocity.
@@ -552,148 +406,6 @@ pub trait EntityMotion: Entity {
             z_collision: false,
             final_aabb: self.bounding_box(),
         })
-    }
-
-    /// Moves the entity with collision detection.
-    ///
-    /// Updates position, `on_ground`, velocity (on collision), and returns collision info.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "keeps vanilla movement phases in order"
-    )]
-    /// Default for [`EntityHooks::move_entity`].
-    fn move_entity_default(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
-        let world = self.level()?;
-        if self.no_physics() {
-            return self.move_without_physics(delta);
-        }
-
-        let mut movement = delta;
-        if mover_type == MoverType::Piston {
-            let game_time = world.game_time();
-            movement = self.base().limit_piston_movement(movement, game_time);
-            if movement == DVec3::ZERO {
-                return None;
-            }
-        }
-        movement = self
-            .base()
-            .consume_stuck_speed_multiplier(movement, mover_type != MoverType::Piston);
-
-        let physics_state = physics_state_for_move(self.as_entity_event_source());
-        let start_position = physics_state.position();
-
-        // Perform collision detection and movement
-        let collision_world =
-            WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
-        let result =
-            resolve_entity_movement(&physics_state, movement, mover_type, &collision_world);
-
-        record_movement_for_block_effects(
-            self.as_entity_event_source(),
-            start_position,
-            result.final_position,
-            movement,
-            result.actual_movement,
-        );
-
-        // Update entity state
-        if should_apply_resolved_movement(movement, result.actual_movement) {
-            self.reset_fall_distance_on_resetting_clip(&world, result.actual_movement);
-            if let Err(error) = self.try_set_position(result.final_position) {
-                log::debug!(
-                    "Rejected resolved movement for entity {}: {error}",
-                    self.id()
-                );
-                self.remove_latest_movement_recording();
-                return None;
-            }
-        }
-        let vertical_state_update =
-            EntityVerticalMovementStateUpdate::for_move(movement, self.is_server_driven_movement());
-        let movement_flags = EntityMovementFlags::after_move_with_previous(
-            self.base().movement_flags(),
-            vertical_state_update,
-            result.on_ground,
-            result.horizontal_collision,
-            result.vertical_collision,
-            movement,
-        );
-        let ground_contact = if vertical_state_update.refreshes_state() {
-            self.ground_contact_after_movement(result.on_ground, Some(result.actual_movement))
-        } else {
-            self.base().ground_contact()
-        };
-        self.base()
-            .set_movement_flags(movement_flags, ground_contact);
-
-        if self.is_server_driven_movement() && self.apply_fall_damage_after_move(&result, &world) {
-            return Some(result);
-        }
-
-        // Vanilla: Entity.move() zeros velocity components on collision.
-        // Horizontal collision zeros X/Z individually based on which axis collided.
-        // Vertical collision calls Block.updateEntityMovementAfterFallOn.
-        // The default block behavior zeros Y velocity; block-specific behavior
-        // can override this for slime, beds, and similar landing surfaces.
-        if result.horizontal_collision {
-            let vel = self.velocity();
-            self.set_velocity(DVec3::new(
-                if result.x_collision { 0.0 } else { vel.x },
-                vel.y,
-                if result.z_collision { 0.0 } else { vel.z },
-            ));
-        }
-        if result.vertical_collision && self.can_simulate_movement() {
-            let velocity = self.velocity();
-            let landing_context = EntityLandingContext::new(
-                velocity,
-                result.actual_movement.y,
-                self.is_living_entity(),
-                self.is_suppressing_bounce(),
-                self.effective_gravity(),
-                f64::from(self.air_drag()),
-            );
-
-            let next_velocity =
-                if let Some(effect_pos) = self.block_pos_below_that_affects_movement() {
-                    let effect_state = world.get_block_state(effect_pos);
-                    let behavior = BLOCK_BEHAVIORS.get_behavior(effect_state.get_block());
-                    let (res, bounced) = behavior.update_entity_movement_after_fall_on(
-                        effect_state,
-                        &world,
-                        effect_pos,
-                        landing_context,
-                    );
-                    if bounced {
-                        behavior.bounce_on(
-                            effect_state,
-                            &world,
-                            effect_pos,
-                            EntityFallOnContext::from_entity(
-                                self.fall_distance(),
-                                self.as_entity_event_source(),
-                            ),
-                        );
-                    }
-                    res
-                } else {
-                    landing_context.default_velocity_after_fall_on()
-                };
-            self.set_velocity(next_velocity);
-        }
-
-        self.apply_movement_side_effects_after_move(&world, result.actual_movement);
-
-        let speed_factor = f64::from(self.block_speed_factor());
-        let vel = self.velocity();
-        self.set_velocity(DVec3::new(
-            vel.x * speed_factor,
-            vel.y,
-            vel.z * speed_factor,
-        ));
-
-        Some(result)
     }
 
     /// Applies vanilla fall-distance bookkeeping after accepted movement.
@@ -741,64 +453,6 @@ pub trait EntityMotion: Entity {
         self.base().set_ground_contact(ground_contact);
     }
 
-    /// Default for [`EntityHooks::check_fall_damage`].
-    fn check_fall_damage_default(
-        &self,
-        vertical_movement: f64,
-        on_ground: bool,
-        on_state: BlockStateId,
-        pos: BlockPos,
-        world: &Arc<World>,
-    ) {
-        if !self.is_in_water() && vertical_movement < 0.0 {
-            self.base().accumulate_fall_distance(vertical_movement);
-        }
-
-        if !on_ground {
-            return;
-        }
-
-        let fall_distance = self.fall_distance();
-        if fall_distance > 0.0 {
-            let behavior = BLOCK_BEHAVIORS.get_behavior(on_state.get_block());
-            let fall_context =
-                EntityFallOnContext::from_entity(fall_distance, self.as_entity_event_source());
-            if let Some(fall_damage) = behavior.fall_on(on_state, world, pos, fall_context) {
-                let damage_applied = self.cause_fall_damage(
-                    fall_damage.fall_distance,
-                    fall_damage.damage_modifier,
-                    &fall_damage.source,
-                );
-                behavior.after_fall_on_damage(
-                    on_state,
-                    world,
-                    pos,
-                    self.as_entity_event_source(),
-                    &fall_damage,
-                    damage_applied,
-                );
-            }
-
-            let supporting_state = self
-                .base()
-                .supporting_block()
-                .map_or(on_state, |supporting_pos| {
-                    world.get_block_state(supporting_pos)
-                });
-            world.game_event(
-                &vanilla_game_events::HIT_GROUND,
-                BlockPos::new(
-                    self.position().x.floor() as i32,
-                    self.position().y.floor() as i32,
-                    self.position().z.floor() as i32,
-                ),
-                &GameEventContext::new(Some(self.as_entity_event_source()), Some(supporting_state)),
-            );
-        }
-
-        self.reset_fall_distance();
-    }
-
     /// Computes vanilla support state for an on-ground update.
     fn ground_contact_after_movement(
         &self,
@@ -835,3 +489,357 @@ pub trait EntityMotion: Entity {
 }
 
 impl<T: Entity + ?Sized> EntityMotion for T {}
+
+/// `Entity`'s [`EntityProps::is_flying_player`].
+pub const fn is_flying_player<E: Entity + ?Sized>(_entity: &E) -> bool {
+    false
+}
+
+/// `Entity`'s [`EntityProps::can_be_collided_with`].
+pub fn can_be_collided_with<E: Entity + ?Sized>(_entity: &E, _other: Option<&dyn Entity>) -> bool {
+    false
+}
+
+/// `Entity`'s [`EntityProps::is_hard_collision_relevant`].
+pub const fn is_hard_collision_relevant<E: Entity + ?Sized>(_entity: &E) -> bool {
+    true
+}
+
+/// `Entity`'s [`EntityProps::can_collide_with`].
+pub fn can_collide_with<E: Entity + ?Sized>(entity: &E, other: &dyn Entity) -> bool {
+    other.can_be_collided_with(Some(entity.as_entity_event_source()))
+        && !entity.is_passenger_of_same_vehicle(other)
+}
+
+/// `Entity`'s [`EntityProps::push_impulse`].
+pub fn push_impulse<E: Entity + ?Sized>(entity: &E, impulse: DVec3) {
+    entity.base().push_impulse(impulse);
+}
+
+/// `Entity`'s [`EntityProps::push_entity`].
+pub fn push_entity<E: Entity + ?Sized>(this: &E, entity: &dyn Entity) {
+    if this.is_passenger_of_same_vehicle(entity) || entity.no_physics() || this.no_physics() {
+        return;
+    }
+
+    let other_position = entity.position();
+    let position = this.position();
+
+    let Some(impulse) = EntityPush::impulse(position, other_position) else {
+        return;
+    };
+
+    if !this.is_vehicle() && this.is_pushable() {
+        this.push_impulse(DVec3::new(-impulse.x, 0.0, -impulse.z));
+    }
+
+    if !entity.is_vehicle() && entity.is_pushable() {
+        entity.push_impulse(impulse);
+    }
+}
+
+/// `Entity`'s [`EntityProps::uses_client_movement_packets`].
+pub fn uses_client_movement_packets<E: Entity + ?Sized>(entity: &E) -> bool {
+    if !entity.is_removed()
+        && let Some(controller) = entity.controlling_passenger()
+        && controller.id() != entity.id()
+        && controller.uses_client_movement_packets()
+    {
+        return true;
+    }
+
+    false
+}
+
+/// `Entity`'s [`EntityProps::can_simulate_movement`].
+pub fn can_simulate_movement<E: Entity + ?Sized>(entity: &E) -> bool {
+    entity.is_server_driven_movement()
+}
+
+/// `Entity`'s [`EntityProps::is_suppressing_bounce`].
+pub fn is_suppressing_bounce<E: Entity + ?Sized>(entity: &E) -> bool {
+    entity
+        .synced_data()
+        .is_some_and(EntitySyncedData::is_shift_key_down)
+}
+
+/// `Entity`'s [`EntityProps::known_movement`].
+pub fn known_movement<E: Entity + ?Sized>(entity: &E) -> DVec3 {
+    if let Some(controller) = entity.controlling_passenger()
+        && !entity.is_removed()
+        && controller.entity_type() == &vanilla_entities::PLAYER
+    {
+        return controller.known_movement();
+    }
+
+    entity.velocity()
+}
+
+/// `Entity`'s [`EntityProps::known_speed`].
+pub fn known_speed<E: Entity + ?Sized>(entity: &E) -> DVec3 {
+    if let Some(controller) = entity.controlling_passenger()
+        && !entity.is_removed()
+        && controller.entity_type() == &vanilla_entities::PLAYER
+    {
+        return controller.known_speed();
+    }
+
+    entity.base().known_speed()
+}
+
+/// `Entity`'s [`EntityProps::cause_fall_damage`].
+pub fn cause_fall_damage<E: Entity + ?Sized>(
+    entity: &E,
+    fall_distance: f64,
+    damage_modifier: f32,
+    source: &DamageSource,
+) -> bool {
+    if entity.is_fall_damage_immune() {
+        return false;
+    }
+
+    entity.propagate_fall_to_passengers(fall_distance, damage_modifier, source);
+    false
+}
+
+/// `Entity`'s [`EntityProps::try_set_position`].
+pub fn try_set_position<E: Entity + ?Sized>(entity: &E, pos: DVec3) -> Result<(), EntityMoveError> {
+    entity.try_set_position_base(pos)
+}
+
+/// `Entity`'s [`EntityProps::teleport_to`].
+#[must_use = "movement commits can fail when world entity state rejects the update"]
+pub fn teleport_to<E: Entity + ?Sized>(entity: &E, pos: DVec3) -> Result<(), EntityMoveError> {
+    entity.try_set_position(pos)
+}
+
+/// `Entity`'s [`EntityProps::max_up_step`].
+pub const fn max_up_step<E: Entity + ?Sized>(_entity: &E) -> f32 {
+    0.0
+}
+
+/// `Entity`'s [`EntityProps::backs_off_from_edge`].
+pub const fn backs_off_from_edge<E: Entity + ?Sized>(_entity: &E) -> bool {
+    false
+}
+
+/// `Entity`'s [`EntityProps::default_gravity`].
+pub const fn default_gravity<E: Entity + ?Sized>(_entity: &E) -> f64 {
+    0.0
+}
+
+/// `Entity`'s [`EntityProps::air_drag`].
+pub const fn air_drag<E: Entity + ?Sized>(_entity: &E) -> f32 {
+    DEFAULT_AIR_DRAG
+}
+
+/// `Entity`'s [`EntityProps::effective_gravity`].
+pub fn effective_gravity<E: Entity + ?Sized>(entity: &E) -> f64 {
+    entity.gravity()
+}
+
+/// `Entity`'s [`EntityProps::move_entity`].
+///
+/// Moves the entity with collision detection.
+///
+/// Updates position, `on_ground`, velocity (on collision), and returns collision info.
+/// Default for [`EntityHooks::move_entity`].
+#[expect(
+    clippy::too_many_lines,
+    reason = "keeps vanilla movement phases in order"
+)]
+pub fn move_entity<E: Entity + ?Sized>(
+    this: &E,
+    mover_type: MoverType,
+    delta: DVec3,
+) -> Option<MoveResult> {
+    let world = this.level()?;
+    if this.no_physics() {
+        return this.move_without_physics(delta);
+    }
+
+    let mut movement = delta;
+    if mover_type == MoverType::Piston {
+        let game_time = world.game_time();
+        movement = this.base().limit_piston_movement(movement, game_time);
+        if movement == DVec3::ZERO {
+            return None;
+        }
+    }
+    movement = this
+        .base()
+        .consume_stuck_speed_multiplier(movement, mover_type != MoverType::Piston);
+
+    let physics_state = physics_state_for_move(this.as_entity_event_source());
+    let start_position = physics_state.position();
+
+    // Perform collision detection and movement
+    let collision_world = WorldCollisionProvider::for_entity(&world, this.as_entity_event_source());
+    let result = resolve_entity_movement(&physics_state, movement, mover_type, &collision_world);
+
+    record_movement_for_block_effects(
+        this.as_entity_event_source(),
+        start_position,
+        result.final_position,
+        movement,
+        result.actual_movement,
+    );
+
+    // Update entity state
+    if should_apply_resolved_movement(movement, result.actual_movement) {
+        this.reset_fall_distance_on_resetting_clip(&world, result.actual_movement);
+        if let Err(error) = this.try_set_position(result.final_position) {
+            log::debug!(
+                "Rejected resolved movement for entity {}: {error}",
+                this.id()
+            );
+            this.remove_latest_movement_recording();
+            return None;
+        }
+    }
+    let vertical_state_update =
+        EntityVerticalMovementStateUpdate::for_move(movement, this.is_server_driven_movement());
+    let movement_flags = EntityMovementFlags::after_move_with_previous(
+        this.base().movement_flags(),
+        vertical_state_update,
+        result.on_ground,
+        result.horizontal_collision,
+        result.vertical_collision,
+        movement,
+    );
+    let ground_contact = if vertical_state_update.refreshes_state() {
+        this.ground_contact_after_movement(result.on_ground, Some(result.actual_movement))
+    } else {
+        this.base().ground_contact()
+    };
+    this.base()
+        .set_movement_flags(movement_flags, ground_contact);
+
+    if this.is_server_driven_movement() && this.apply_fall_damage_after_move(&result, &world) {
+        return Some(result);
+    }
+
+    // Vanilla: Entity.move() zeros velocity components on collision.
+    // Horizontal collision zeros X/Z individually based on which axis collided.
+    // Vertical collision calls Block.updateEntityMovementAfterFallOn.
+    // The default block behavior zeros Y velocity; block-specific behavior
+    // can override this for slime, beds, and similar landing surfaces.
+    if result.horizontal_collision {
+        let vel = this.velocity();
+        this.set_velocity(DVec3::new(
+            if result.x_collision { 0.0 } else { vel.x },
+            vel.y,
+            if result.z_collision { 0.0 } else { vel.z },
+        ));
+    }
+    if result.vertical_collision && this.can_simulate_movement() {
+        let velocity = this.velocity();
+        let landing_context = EntityLandingContext::new(
+            velocity,
+            result.actual_movement.y,
+            this.is_living_entity(),
+            this.is_suppressing_bounce(),
+            this.effective_gravity(),
+            f64::from(this.air_drag()),
+        );
+
+        let next_velocity = if let Some(effect_pos) = this.block_pos_below_that_affects_movement() {
+            let effect_state = world.get_block_state(effect_pos);
+            let behavior = BLOCK_BEHAVIORS.get_behavior(effect_state.get_block());
+            let (res, bounced) = behavior.update_entity_movement_after_fall_on(
+                effect_state,
+                &world,
+                effect_pos,
+                landing_context,
+            );
+            if bounced {
+                behavior.bounce_on(
+                    effect_state,
+                    &world,
+                    effect_pos,
+                    EntityFallOnContext::from_entity(
+                        this.fall_distance(),
+                        this.as_entity_event_source(),
+                    ),
+                );
+            }
+            res
+        } else {
+            landing_context.default_velocity_after_fall_on()
+        };
+        this.set_velocity(next_velocity);
+    }
+
+    this.apply_movement_side_effects_after_move(&world, result.actual_movement);
+
+    let speed_factor = f64::from(this.block_speed_factor());
+    let vel = this.velocity();
+    this.set_velocity(DVec3::new(
+        vel.x * speed_factor,
+        vel.y,
+        vel.z * speed_factor,
+    ));
+
+    Some(result)
+}
+
+/// `Entity`'s [`EntityProps::check_fall_damage`].
+pub fn check_fall_damage<E: Entity + ?Sized>(
+    entity: &E,
+    vertical_movement: f64,
+    on_ground: bool,
+    on_state: BlockStateId,
+    pos: BlockPos,
+    world: &Arc<World>,
+) {
+    if !entity.is_in_water() && vertical_movement < 0.0 {
+        entity.base().accumulate_fall_distance(vertical_movement);
+    }
+
+    if !on_ground {
+        return;
+    }
+
+    let fall_distance = entity.fall_distance();
+    if fall_distance > 0.0 {
+        let behavior = BLOCK_BEHAVIORS.get_behavior(on_state.get_block());
+        let fall_context =
+            EntityFallOnContext::from_entity(fall_distance, entity.as_entity_event_source());
+        if let Some(fall_damage) = behavior.fall_on(on_state, world, pos, fall_context) {
+            let damage_applied = entity.cause_fall_damage(
+                fall_damage.fall_distance,
+                fall_damage.damage_modifier,
+                &fall_damage.source,
+            );
+            behavior.after_fall_on_damage(
+                on_state,
+                world,
+                pos,
+                entity.as_entity_event_source(),
+                &fall_damage,
+                damage_applied,
+            );
+        }
+
+        let supporting_state = entity
+            .base()
+            .supporting_block()
+            .map_or(on_state, |supporting_pos| {
+                world.get_block_state(supporting_pos)
+            });
+        world.game_event(
+            &vanilla_game_events::HIT_GROUND,
+            BlockPos::new(
+                entity.position().x.floor() as i32,
+                entity.position().y.floor() as i32,
+                entity.position().z.floor() as i32,
+            ),
+            &GameEventContext::new(
+                Some(entity.as_entity_event_source()),
+                Some(supporting_state),
+            ),
+        );
+    }
+
+    entity.reset_fall_distance();
+}

@@ -25,16 +25,6 @@ impl Living<'_> {
             && !self.can_stand_on_fluid(fluid_state)
     }
 
-    /// Returns the water-movement slowdown multiplier.
-    #[must_use]
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn water_slow_down_default(&self) -> f32 {
-        0.8
-    }
-
     /// Returns the water movement efficiency attribute used by fluid travel.
     #[must_use]
     pub fn water_movement_efficiency(&self) -> f32 {
@@ -50,20 +40,6 @@ impl Living<'_> {
         self.has_mob_effect(vanilla_mob_effects::DOLPHINS_GRACE)
     }
 
-    /// Returns airborne movement speed: scaled from this entity's speed when
-    /// ridden by a player, otherwise a small constant.
-    #[must_use]
-    pub fn flying_speed_default(&self) -> f32 {
-        if self
-            .controlling_passenger()
-            .is_some_and(|passenger| passenger.entity_type() == &vanilla_entities::PLAYER)
-        {
-            self.speed() * 0.1
-        } else {
-            0.02
-        }
-    }
-
     /// Returns movement speed adjusted by ground friction; airborne entities
     /// use flying speed instead.
     #[must_use]
@@ -73,17 +49,6 @@ impl Living<'_> {
         } else {
             self.flying_speed()
         }
-    }
-
-    /// Returns the vertical friction used by `travelInAir`.
-    #[must_use]
-    #[expect(
-        clippy::unused_self,
-        reason = "vanilla's base body; entity types override it through `LivingProps`"
-    )]
-    pub const fn air_travel_vertical_friction_default(&self, _horizontal_friction: f32) -> f32 {
-        // TODO: FlyingAnimal uses horizontal friction here once animal types exist.
-        0.98
     }
 
     /// Clamps movement while on a climbable block: caps horizontal and
@@ -445,20 +410,57 @@ impl Living<'_> {
         self.handle_fall_flying_collisions(previous_horizontal_speed, new_horizontal_speed);
         result
     }
+}
 
-    /// Dispatches movement to fluid, fall-flying, or air travel handling
-    /// based on current state.
-    #[must_use]
-    pub fn default_travel(&self, input: DVec3) -> Option<MoveResult> {
-        let world = self.level()?;
-        let fluid_state = get_fluid_state(&world, self.block_position());
-        if self.should_travel_in_fluid(fluid_state) {
-            return self.travel_in_fluid(input);
-        }
-        if self.is_fall_flying() {
-            return self.travel_fall_flying(input);
-        }
+/// `LivingEntity`'s [`LivingProps::water_slow_down`].
+///
+/// Returns the water-movement slowdown multiplier.
+#[must_use]
+pub const fn water_slow_down<E: Parts>(_entity: &E) -> f32 {
+    0.8
+}
 
-        self.travel_in_air(input)
+/// `LivingEntity`'s [`LivingProps::flying_speed`].
+///
+/// Returns airborne movement speed: scaled from this entity's speed when
+/// ridden by a player, otherwise a small constant.
+#[must_use]
+pub fn flying_speed<E: Parts>(entity: &E) -> f32 {
+    let living = &entity.living();
+    if living
+        .controlling_passenger()
+        .is_some_and(|passenger| passenger.entity_type() == &vanilla_entities::PLAYER)
+    {
+        living.speed() * 0.1
+    } else {
+        0.02
     }
+}
+
+/// `LivingEntity`'s [`LivingProps::air_travel_vertical_friction`].
+///
+/// Returns the vertical friction used by `travelInAir`.
+#[must_use]
+pub const fn air_travel_vertical_friction<E: Parts>(_entity: &E, _horizontal_friction: f32) -> f32 {
+    // TODO: FlyingAnimal uses horizontal friction here once animal types exist.
+    0.98
+}
+
+/// `LivingEntity`'s [`LivingProps::travel`].
+///
+/// Dispatches movement to fluid, fall-flying, or air travel handling
+/// based on current state.
+#[must_use]
+pub fn travel<E: Parts>(entity: &E, input: DVec3) -> Option<MoveResult> {
+    let living = &entity.living();
+    let world = living.level()?;
+    let fluid_state = get_fluid_state(&world, living.block_position());
+    if living.should_travel_in_fluid(fluid_state) {
+        return living.travel_in_fluid(input);
+    }
+    if living.is_fall_flying() {
+        return living.travel_fall_flying(input);
+    }
+
+    living.travel_in_air(input)
 }
