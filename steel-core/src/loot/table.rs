@@ -86,6 +86,14 @@ impl LootTable {
         Ok(items)
     }
 
+    /// Collects items, logging a generation failure as empty loot.
+    pub fn get_random_items_or_log(&self, context: &mut LootContext<'_>) -> Vec<ItemStack> {
+        self.get_random_items(context).unwrap_or_else(|error| {
+            log::error!("Failed to generate loot {}: {error}", self.key);
+            Vec::new()
+        })
+    }
+
     /// Generates all loot before acquiring a destination container's lock.
     pub fn generate_for_container<'a>(
         &self,

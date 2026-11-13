@@ -225,15 +225,12 @@ impl BrushableBlockEntity {
         };
         let mut rng = RandomSource::Legacy(LegacyRandom::from_seed(seed));
         let equipment = living_loot_equipment(player);
+        let (x, y, z) = self.get_block_pos().get_center();
         let mut ctx = LootContext::new(&mut rng)
             .with_world(world)
             .with_luck(player.get_luck())
             .with_tool(brush)
-            .with_origin(
-                f64::from(self.get_block_pos().x()) + 0.5,
-                f64::from(self.get_block_pos().y()) + 0.5,
-                f64::from(self.get_block_pos().z()) + 0.5,
-            )
+            .with_origin(x, y, z)
             .with_this_entity(entity_loot_ref(player, Some(&equipment)));
         let items = table.get_random_items(&mut ctx)?;
         if items.len() > 1 {

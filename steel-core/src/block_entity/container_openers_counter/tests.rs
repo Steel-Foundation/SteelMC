@@ -1,16 +1,16 @@
 use super::ContainerOpenersCounter;
 use crate::{
-    behavior::{BLOCK_BEHAVIORS, BlockHitResult, InventoryAccess, init_behaviors},
+    behavior::init_behaviors,
     block_entity::init_block_entities,
     entity::{Entity as _, LivingEntity as _},
     inventory::lock::ContainerRef,
     player::ResetReason,
-    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
+    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, use_block},
 };
 use glam::DVec3;
 use std::sync::Arc;
 use steel_registry::{init_vanilla_registry, vanilla_attributes, vanilla_blocks};
-use steel_utils::types::{GameType, InteractionHand};
+use steel_utils::types::GameType;
 use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 
 #[test]
@@ -33,24 +33,7 @@ fn recheck_tracks_live_menus_ranges_and_spectators() {
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     let container = ContainerRef::from_block_entity(world.get_block_entity(pos).expect("chest"))
         .expect("inventory");
-    let hit = BlockHitResult {
-        location: DVec3::new(5.5, 64.5, 5.5),
-        direction: steel_utils::Direction::Up,
-        block_pos: pos,
-        miss: false,
-        inside: false,
-        world_border_hit: false,
-    };
-    let mut inv = InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
-    let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::CHEST);
-    behavior.use_without_item(
-        world.get_block_state(pos),
-        world,
-        pos,
-        &player,
-        &hit,
-        &mut inv,
-    );
+    use_block(world, pos, &player);
     assert!(player.has_container_open());
     let counter = ContainerOpenersCounter::default();
     assert_eq!(counter.increment(player.as_ref()).current, 1);

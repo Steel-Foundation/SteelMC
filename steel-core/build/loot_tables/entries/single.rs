@@ -19,9 +19,6 @@ pub struct ItemEntry {
 }
 
 impl CompileEntry for ItemEntry {
-    fn decorations(&self) -> (Option<&Holder<Condition>>, Option<&Modifier>) {
-        (self.condition.as_ref(), self.modifier.as_ref())
-    }
     fn compile_expansion(&self, _compiler: &mut Compiler) -> EntryExpansion {
         let Self {
             name,
@@ -51,9 +48,6 @@ pub struct DynamicEntry {
 }
 
 impl CompileEntry for DynamicEntry {
-    fn decorations(&self) -> (Option<&Holder<Condition>>, Option<&Modifier>) {
-        (self.condition.as_ref(), self.modifier.as_ref())
-    }
     fn compile_expansion(&self, _compiler: &mut Compiler) -> EntryExpansion {
         let Self {
             name,
@@ -87,9 +81,6 @@ pub struct LootTableEntry {
 }
 
 impl CompileEntry for LootTableEntry {
-    fn decorations(&self) -> (Option<&Holder<Condition>>, Option<&Modifier>) {
-        (self.condition.as_ref(), self.modifier.as_ref())
-    }
     fn compile_expansion(&self, compiler: &mut Compiler) -> EntryExpansion {
         let Self {
             value,
@@ -123,9 +114,6 @@ pub struct EmptyEntry {
 }
 
 impl CompileEntry for EmptyEntry {
-    fn decorations(&self) -> (Option<&Holder<Condition>>, Option<&Modifier>) {
-        (self.condition.as_ref(), self.modifier.as_ref())
-    }
     fn compile_expansion(&self, _compiler: &mut Compiler) -> EntryExpansion {
         Compiler::weighted_candidate(self.weight, self.quality, quote! { |_, _| Ok(()) })
     }
@@ -147,9 +135,6 @@ pub struct TagEntry {
 }
 
 impl CompileEntry for TagEntry {
-    fn decorations(&self) -> (Option<&Holder<Condition>>, Option<&Modifier>) {
-        (self.condition.as_ref(), self.modifier.as_ref())
-    }
     fn compile_expansion(&self, _compiler: &mut Compiler) -> EntryExpansion {
         let Self {
             items,

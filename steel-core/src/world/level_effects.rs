@@ -431,16 +431,13 @@ impl World {
         let mut loot_rng = RandomSource::Legacy(LegacyRandom::from_seed(rand::random()));
         let empty_tool = ItemStack::empty();
         let block_entity = context.world().get_block_entity(context.pos());
+        let (x, y, z) = context.pos().get_center();
         let mut ctx = LootContext::new(&mut loot_rng)
             .with_world(context.world())
             .with_tool(context.tool().unwrap_or(&empty_tool))
             .with_luck(context.luck())
             .with_block_state(state)
-            .with_origin(
-                f64::from(context.pos().x()) + 0.5,
-                f64::from(context.pos().y()) + 0.5,
-                f64::from(context.pos().z()) + 0.5,
-            );
+            .with_origin(x, y, z);
         if let Some(block_entity) = &block_entity {
             ctx = ctx.with_block_entity(block_entity.as_ref());
         }
@@ -452,13 +449,7 @@ impl World {
             ctx = ctx.with_explosion(radius);
         }
 
-        match loot_table.get_random_items(&mut ctx) {
-            Ok(items) => items,
-            Err(error) => {
-                log::error!("Failed to generate block loot {}: {error}", loot_table.key);
-                Vec::new()
-            }
-        }
+        loot_table.get_random_items_or_log(&mut ctx)
     }
 
     /// Plays a sound at a specific position, broadcasting to nearby players.

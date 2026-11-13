@@ -98,13 +98,7 @@ pub(crate) fn drop_from_block_interact_loot_table(
         ctx = ctx.with_tool(tool);
     }
 
-    match key.get_random_items(&mut ctx) {
-        Ok(items) => items,
-        Err(error) => {
-            log::error!("Failed to generate interaction loot {}: {error}", key.key);
-            Vec::new()
-        }
-    }
+    key.get_random_items_or_log(&mut ctx)
 }
 
 /// Samples and applies enchantment effects to a block experience drop.

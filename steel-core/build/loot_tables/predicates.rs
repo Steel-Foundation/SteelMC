@@ -1,10 +1,11 @@
 use super::{
     Compiler, TokenStream, ident, identifier,
-    model::{
-        DamageSourcePredicate, EntityFlag, EntityPredicate, EquipmentSlot, IntRange, ItemPredicate,
-    },
+    model::{Bounds, IntRange, yes},
     quote,
 };
+use heck::ToUpperCamelCase;
+use quote::format_ident;
+use serde::{Deserialize, Deserializer, de::IgnoredAny};
 use std::collections::BTreeMap;
 
 impl Compiler {
@@ -100,34 +101,15 @@ impl Compiler {
         }
         if let Some(equipment) = &predicate.equipment {
             for (slot, predicate) in equipment {
-                let slot = match slot {
-                    EquipmentSlot::Mainhand => quote! { MainHand },
-                    EquipmentSlot::Offhand => quote! { OffHand },
-                    EquipmentSlot::Head => quote! { Head },
-                    EquipmentSlot::Chest => quote! { Chest },
-                    EquipmentSlot::Legs => quote! { Legs },
-                    EquipmentSlot::Feet => quote! { Feet },
-                    EquipmentSlot::Body => quote! { Body },
-                    EquipmentSlot::Saddle => quote! { Saddle },
-                };
+                let slot = format_ident!("{}", slot.replace("hand", "_hand").to_upper_camel_case());
                 let predicate = Self::item_predicate(predicate);
                 checks.push(quote! { crate::loot::predicates::equipment_matches(entity, steel_registry::equipment::EquipmentSlot::#slot, |item| #predicate) });
             }
         }
         if let Some(flags) = &predicate.flags {
             for (flag, value) in flags {
-                let flag = match flag {
-                    EntityFlag::Baby => quote! { is_baby },
-                    EntityFlag::OnFire => quote! { is_on_fire },
-                    EntityFlag::Sneaking => quote! { is_sneaking },
-                    EntityFlag::Sprinting => quote! { is_sprinting },
-                    EntityFlag::Swimming => quote! { is_swimming },
-                };
-                checks.push(if *value {
-                    quote! { entity.flags.#flag }
-                } else {
-                    quote! { !entity.flags.#flag }
-                });
+                let flag = format_ident!("{flag}");
+                checks.push(Self::expected(*value, quote! { entity.flags.#flag }));
             }
         }
         for (key, present) in [
@@ -167,18 +149,13 @@ impl Compiler {
         let mut checks = Vec::new();
         for tag in &predicate.tags {
             let key = identifier(tag.id.strip_prefix('#').unwrap_or(&tag.id));
-            checks.push(if tag.expected {
-                quote! { crate::loot::predicates::damage_has_tag(source, &#key) }
-            } else {
-                quote! { !crate::loot::predicates::damage_has_tag(source, &#key) }
-            });
+            checks.push(Self::expected(
+                tag.expected,
+                quote! { crate::loot::predicates::damage_has_tag(source, &#key) },
+            ));
         }
         if let Some(value) = predicate.is_direct {
-            checks.push(if value {
-                quote! { source.is_direct }
-            } else {
-                quote! { !source.is_direct }
-            });
+            checks.push(Self::expected(value, quote! { source.is_direct }));
         }
         for (predicate, entity) in [
             (predicate.source_entity.as_ref(), quote! {ctx.killer_entity}),
@@ -197,21 +174,152 @@ impl Compiler {
     }
 
     pub(super) fn all(terms: &[TokenStream]) -> TokenStream {
-        let Some((first, rest)) = terms.split_first() else {
-            return quote! { true };
-        };
-        if rest.is_empty() {
-            return first.clone();
-        }
-        quote! { (#first) #(&& (#rest))* }
+        Self::join(terms, &quote! { && }, &quote! { true })
     }
     pub(super) fn any(terms: &[TokenStream]) -> TokenStream {
-        let Some((first, rest)) = terms.split_first() else {
-            return quote! { false };
-        };
-        if rest.is_empty() {
-            return first.clone();
-        }
-        quote! { (#first) #(|| (#rest))* }
+        Self::join(terms, &quote! { || }, &quote! { false })
     }
+    fn join(terms: &[TokenStream], op: &TokenStream, empty: &TokenStream) -> TokenStream {
+        match terms {
+            [] => empty.clone(),
+            [term] => term.clone(),
+            [first, rest @ ..] => quote! { (#first) #(#op (#rest))* },
+        }
+    }
+
+    fn expected(expected: bool, check: TokenStream) -> TokenStream {
+        if expected {
+            check
+        } else {
+            quote! { !#check }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ItemPredicate {
+    // TODO: Support vanilla holder-set lists and exact component predicates.
+    pub items: Option<String>,
+    pub count: Option<IntRange>,
+    pub predicates: Option<ItemComponentPredicates>,
+}
+
+#[derive(Deserialize)]
+pub struct ItemComponentPredicates {
+    #[serde(rename = "minecraft:enchantments")]
+    pub enchantments: Option<Vec<EnchantmentPredicate>>,
+    // The currently supported non-enchantment predicates require an empty
+    // payload. Unknown nonempty codecs fail decoding instead of becoming presence checks.
+    #[expect(
+        clippy::zero_sized_map_values,
+        reason = "JSON objects map component keys to validated empty predicate payloads"
+    )]
+    #[serde(flatten)]
+    pub presence: BTreeMap<String, EmptyPredicate>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmptyPredicate {}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnchantmentPredicate {
+    // TODO: Support optional enchantment holder sets and exact/ranged levels.
+    pub enchantments: String,
+    pub levels: Option<Bounds<i32>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntityPredicate {
+    // TODO: Add vanilla entity subpredicates: distance, effects, entity_tags,
+    // location, movement, movement_affected_by, nbt, passenger, periodic_tick,
+    // predicates, slots, stepping_on, targeted_entity, team,
+    // type_specific/lightning, and type_specific/player.
+    #[serde(rename = "minecraft:entity_type")]
+    pub entity_type: Option<String>,
+    #[serde(rename = "minecraft:flags")]
+    pub flags: Option<BTreeMap<String, bool>>,
+    #[serde(rename = "minecraft:equipment")]
+    pub equipment: Option<BTreeMap<String, ItemPredicate>>,
+    #[serde(rename = "minecraft:components")]
+    pub components: Option<EntityComponents>,
+    #[serde(rename = "minecraft:type_specific/sheep")]
+    pub sheep: Option<SheepPredicate>,
+    #[serde(
+        default,
+        rename = "minecraft:vehicle",
+        deserialize_with = "deferred_predicate"
+    )]
+    pub vehicle: Option<IgnoredAny>,
+    #[serde(
+        default,
+        rename = "minecraft:type_specific/cube_mob",
+        deserialize_with = "deferred_predicate"
+    )]
+    pub cube_mob: Option<IgnoredAny>,
+    #[serde(
+        default,
+        rename = "minecraft:type_specific/fishing_hook",
+        deserialize_with = "deferred_predicate"
+    )]
+    pub fishing_hook: Option<IgnoredAny>,
+    #[serde(
+        default,
+        rename = "minecraft:type_specific/raider",
+        deserialize_with = "deferred_predicate"
+    )]
+    pub raider: Option<IgnoredAny>,
+}
+
+// Even a null payload must retain the unsupported key instead of becoming an
+// absent predicate through Option's usual null handling.
+fn deferred_predicate<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<IgnoredAny>, D::Error> {
+    IgnoredAny::deserialize(deserializer).map(Some)
+}
+
+#[derive(Deserialize)]
+pub struct EntityComponents {
+    #[serde(rename = "minecraft:sheep/color")]
+    pub sheep_color: Option<String>,
+    #[serde(rename = "minecraft:chicken/variant")]
+    pub chicken_variant: Option<String>,
+    #[serde(rename = "minecraft:mooshroom/variant")]
+    pub mooshroom_variant: Option<String>,
+    // Component payloads without a supported entity capability remain explicit
+    // runtime errors, including dynamically named component types.
+    #[expect(
+        clippy::zero_sized_map_values,
+        reason = "deferred component payloads are discarded but their object keys must be retained for errors"
+    )]
+    #[serde(flatten)]
+    pub unsupported: BTreeMap<String, IgnoredAny>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SheepPredicate {
+    pub sheared: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DamageSourcePredicate {
+    #[serde(default)]
+    pub tags: Vec<TagPredicate>,
+    pub source_entity: Option<EntityPredicate>,
+    pub direct_entity: Option<EntityPredicate>,
+    pub is_direct: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TagPredicate {
+    pub id: String,
+    #[serde(default = "yes")]
+    pub expected: bool,
 }

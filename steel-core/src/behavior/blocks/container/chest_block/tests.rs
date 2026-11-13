@@ -1,9 +1,11 @@
 use super::*;
 use crate::{
-    behavior::{BLOCK_BEHAVIORS, PlacementOrientation, PlacementSource, init_behaviors},
+    behavior::{PlacementOrientation, PlacementSource, init_behaviors},
     block_entity::{entities::CHEST_SLOTS, init_block_entities},
     inventory::{click::Click, container::Container as _},
-    test_support::{TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk},
+    test_support::{
+        TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk, use_block,
+    },
 };
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::{
@@ -52,35 +54,27 @@ fn pair(world: &Arc<World>, pos: BlockPos) {
     ));
 }
 
+fn access(world: &Arc<World>, pos: BlockPos, ignore_blocked: bool) -> Option<ChestContainer> {
+    ChestBlock::get_container(
+        world.get_block_state(pos),
+        world.as_ref(),
+        pos,
+        ignore_blocked,
+    )
+}
+
+fn signal(world: &Arc<World>, pos: BlockPos) -> i32 {
+    behavior().get_analog_output_signal(
+        world.get_block_state(pos),
+        world.as_ref(),
+        pos,
+        Direction::North,
+    )
+}
+
 fn set_item(container: &ContainerRef, slot: usize, item: ItemStack) {
     let mut guard = ContainerLockGuard::lock_all(&[container]).expect("prepare storage");
     assert!(guard.set_item(container.container_id(), slot, item));
-}
-
-fn use_chest(world: &Arc<World>, pos: BlockPos, player: &Player) {
-    let hit = BlockHitResult {
-        location: DVec3::new(
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-        ),
-        direction: Direction::Up,
-        block_pos: pos,
-        miss: false,
-        inside: false,
-        world_border_hit: false,
-    };
-    let mut inv = InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
-    BLOCK_BEHAVIORS
-        .get_behavior(&vanilla_blocks::CHEST)
-        .use_without_item(
-            world.get_block_state(pos),
-            world,
-            pos,
-            player,
-            &hit,
-            &mut inv,
-        );
 }
 
 #[test]
@@ -207,15 +201,8 @@ fn either_half_combines_right_first_and_obstruction_blocks_both() {
     let world = &fixture.world;
     let pos = BlockPos::new(5, 64, 5);
     pair(world, pos);
-    let left = ChestBlock::get_container(world.get_block_state(pos), world.as_ref(), pos, false)
-        .expect("left access");
-    let right = ChestBlock::get_container(
-        world.get_block_state(pos.east()),
-        world.as_ref(),
-        pos.east(),
-        false,
-    )
-    .expect("right access");
+    let left = access(world, pos, false).expect("left access");
+    let right = access(world, pos.east(), false).expect("right access");
     assert_eq!(
         left.owners
             .iter()
@@ -239,25 +226,12 @@ fn either_half_combines_right_first_and_obstruction_blocks_both() {
         vanilla_blocks::STONE.default_state(),
         UpdateFlags::UPDATE_NONE
     ));
-    assert!(
-        ChestBlock::get_container(
-            world.get_block_state(pos.east()),
-            world.as_ref(),
-            pos.east(),
-            false
-        )
-        .is_none()
-    );
+    assert!(access(world, pos.east(), false).is_none());
     assert_eq!(
-        ChestBlock::get_container(
-            world.get_block_state(pos.east()),
-            world.as_ref(),
-            pos.east(),
-            true
-        )
-        .expect("automation ignores lid")
-        .containers
-        .len(),
+        access(world, pos.east(), true)
+            .expect("automation ignores lid")
+            .containers
+            .len(),
         2
     );
 }
@@ -268,8 +242,7 @@ fn double_chest_menu_maps_real_slots_and_merges_stacks_across_both_halves() {
     let world = &fixture.world;
     let pos = BlockPos::new(5, 64, 5);
     pair(world, pos);
-    let chest = ChestBlock::get_container(world.get_block_state(pos), world.as_ref(), pos, false)
-        .expect("double");
+    let chest = access(world, pos, false).expect("double");
     set_item(
         &chest.containers[1],
         0,
@@ -309,9 +282,7 @@ fn comparator_measures_both_halves_and_returns_zero_when_blocked() {
     let world = &fixture.world;
     let pos = BlockPos::new(5, 64, 5);
     pair(world, pos);
-    let behavior = behavior();
-    let chest = ChestBlock::get_container(world.get_block_state(pos), world.as_ref(), pos, false)
-        .expect("double");
+    let chest = access(world, pos, false).expect("double");
     for slot in 0..CHEST_SLOTS {
         set_item(
             &chest.containers[0],
@@ -319,38 +290,14 @@ fn comparator_measures_both_halves_and_returns_zero_when_blocked() {
             ItemStack::with_count(&vanilla_items::STONE, 64),
         );
     }
-    assert_eq!(
-        behavior.get_analog_output_signal(
-            world.get_block_state(pos),
-            world.as_ref(),
-            pos,
-            Direction::North
-        ),
-        8
-    );
-    assert_eq!(
-        behavior.get_analog_output_signal(
-            world.get_block_state(pos.east()),
-            world.as_ref(),
-            pos.east(),
-            Direction::North
-        ),
-        8
-    );
+    assert_eq!(signal(world, pos), 8);
+    assert_eq!(signal(world, pos.east()), 8);
     assert!(world.set_block(
         pos.east().above(),
         vanilla_blocks::STONE.default_state(),
         UpdateFlags::UPDATE_NONE
     ));
-    assert_eq!(
-        behavior.get_analog_output_signal(
-            world.get_block_state(pos),
-            world.as_ref(),
-            pos,
-            Direction::North
-        ),
-        0
-    );
+    assert_eq!(signal(world, pos), 0);
 }
 
 #[test]
@@ -359,8 +306,7 @@ fn double_chest_loot_stays_separate_and_opening_is_lazy_and_spectator_safe() {
     let world = &fixture.world;
     let pos = BlockPos::new(5, 64, 5);
     pair(world, pos);
-    let chest = ChestBlock::get_container(world.get_block_state(pos), world.as_ref(), pos, false)
-        .expect("double");
+    let chest = access(world, pos, false).expect("double");
     for (owner, seed) in chest.owners.iter().zip([12_i64, 34]) {
         owner
             .as_randomizable_container()
@@ -380,7 +326,7 @@ fn double_chest_loot_stays_separate_and_opening_is_lazy_and_spectator_safe() {
     let player = TestPlayerBuilder::new(Arc::clone(world), "Opener", 1).build();
     player.set_client_loaded(true);
     player.restore_game_modes(GameType::Spectator, None);
-    use_chest(world, pos, &player);
+    use_block(world, pos, &player);
     assert!(!player.has_container_open());
     assert!(chest.owners.iter().all(|owner| {
         owner
@@ -390,7 +336,7 @@ fn double_chest_loot_stays_separate_and_opening_is_lazy_and_spectator_safe() {
             .is_some()
     }));
     player.restore_game_modes(GameType::Survival, None);
-    use_chest(world, pos, &player);
+    use_block(world, pos, &player);
     assert!(player.has_container_open());
     for owner in &chest.owners {
         assert!(
@@ -416,8 +362,7 @@ fn lock_on_either_half_protects_the_whole_menu_and_custom_names_persist() {
     let world = &fixture.world;
     let pos = BlockPos::new(5, 64, 5);
     pair(world, pos);
-    let chest = ChestBlock::get_container(world.get_block_state(pos), world.as_ref(), pos, false)
-        .expect("double");
+    let chest = access(world, pos, false).expect("double");
     let mut lock = NbtCompound::new();
     lock.insert("items", "minecraft:diamond");
     let mut nbt = NbtCompound::new();
@@ -439,13 +384,13 @@ fn lock_on_either_half_protects_the_whole_menu_and_custom_names_persist() {
         .expect("reload lock/name");
     let player = TestPlayerBuilder::new(Arc::clone(world), "LockedOut", 1).build();
     player.set_client_loaded(true);
-    use_chest(world, pos.east(), &player);
+    use_block(world, pos.east(), &player);
     assert!(!player.has_container_open());
     player
         .inventory
         .lock()
         .set_selected_item(ItemStack::new(&vanilla_items::DIAMOND));
-    use_chest(world, pos, &player);
+    use_block(world, pos, &player);
     assert!(player.has_container_open());
     player.do_close_container();
     player
@@ -453,7 +398,7 @@ fn lock_on_either_half_protects_the_whole_menu_and_custom_names_persist() {
         .lock()
         .set_selected_item(ItemStack::empty());
     player.restore_game_modes(GameType::Spectator, None);
-    use_chest(world, pos, &player);
+    use_block(world, pos, &player);
     assert!(
         player.has_container_open(),
         "spectators bypass locks once loot is generated"
@@ -552,8 +497,7 @@ fn breaking_one_half_preserves_the_other_inventory_and_detaches_it() {
     let world = &fixture.world;
     let pos = BlockPos::new(5, 64, 5);
     pair(world, pos);
-    let chest = ChestBlock::get_container(world.get_block_state(pos), world.as_ref(), pos, false)
-        .expect("double");
+    let chest = access(world, pos, false).expect("double");
     set_item(
         &chest.containers[0],
         0,
@@ -565,13 +509,7 @@ fn breaking_one_half_preserves_the_other_inventory_and_detaches_it() {
         ItemStack::with_count(&vanilla_items::DIAMOND, 5),
     );
     assert!(world.destroy_block(pos, true));
-    let survivor = ChestBlock::get_container(
-        world.get_block_state(pos.east()),
-        world.as_ref(),
-        pos.east(),
-        false,
-    )
-    .expect("survivor");
+    let survivor = access(world, pos.east(), false).expect("survivor");
     assert_eq!(survivor.containers.len(), 1);
     assert_eq!(
         world

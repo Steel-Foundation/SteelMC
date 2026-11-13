@@ -3,6 +3,7 @@ use super::super::{
     model::{CompileEntry, Condition, Holder, LootPoolEntry, Modifier},
 };
 use super::EntryExpansion;
+use proc_macro2::TokenStream;
 use quote::quote;
 use serde::Deserialize;
 
@@ -15,16 +16,8 @@ pub struct AlternativesEntry {
 }
 
 impl CompileEntry for AlternativesEntry {
-    fn decorations(&self) -> (Option<&Holder<Condition>>, Option<&Modifier>) {
-        (self.condition.as_ref(), self.modifier.as_ref())
-    }
     fn compile_expansion(&self, compiler: &mut Compiler) -> EntryExpansion {
-        let terms = self
-            .children
-            .iter()
-            .map(|child| compiler.entry(child).into_expression())
-            .collect::<Vec<_>>();
-        EntryExpansion::Expression(Compiler::any(&terms))
+        EntryExpansion::Expression(Compiler::any(&compiler.expressions(&self.children)))
     }
 }
 
@@ -37,16 +30,8 @@ pub struct SequenceEntry {
 }
 
 impl CompileEntry for SequenceEntry {
-    fn decorations(&self) -> (Option<&Holder<Condition>>, Option<&Modifier>) {
-        (self.condition.as_ref(), self.modifier.as_ref())
-    }
     fn compile_expansion(&self, compiler: &mut Compiler) -> EntryExpansion {
-        let terms = self
-            .children
-            .iter()
-            .map(|child| compiler.entry(child).into_expression())
-            .collect::<Vec<_>>();
-        EntryExpansion::Expression(Compiler::all(&terms))
+        EntryExpansion::Expression(Compiler::all(&compiler.expressions(&self.children)))
     }
 }
 
@@ -59,9 +44,6 @@ pub struct GroupEntry {
 }
 
 impl CompileEntry for GroupEntry {
-    fn decorations(&self) -> (Option<&Holder<Condition>>, Option<&Modifier>) {
-        (self.condition.as_ref(), self.modifier.as_ref())
-    }
     fn compile_expansion(&self, compiler: &mut Compiler) -> EntryExpansion {
         if let [child] = self.children.as_slice() {
             return compiler.entry(child);
@@ -72,5 +54,14 @@ impl CompileEntry for GroupEntry {
             .map(|child| compiler.entry(child).into_statements())
             .collect::<Vec<_>>();
         EntryExpansion::Statements(quote! { #(#children)* })
+    }
+}
+
+impl Compiler {
+    fn expressions(&mut self, children: &[LootPoolEntry]) -> Vec<TokenStream> {
+        children
+            .iter()
+            .map(|child| self.entry(child).into_expression())
+            .collect()
     }
 }

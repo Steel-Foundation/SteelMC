@@ -21,23 +21,14 @@ mod numbers;
 mod predicates;
 mod test_tables;
 
+const INPUT_ROOT: &str = "../steel-utils/build_assets/builtin_datapacks/minecraft";
+
 /// Build-time compiler state. No JSON or executable AST is shipped to the server.
+#[derive(Default)]
 struct Compiler {
-    input_root: PathBuf,
     definitions: TokenStream,
     next_id: usize,
     reference_stack: BTreeSet<PathBuf>,
-}
-
-impl Default for Compiler {
-    fn default() -> Self {
-        Self {
-            input_root: PathBuf::from("../steel-utils/build_assets/builtin_datapacks/minecraft"),
-            definitions: TokenStream::new(),
-            next_id: 0,
-            reference_stack: BTreeSet::new(),
-        }
-    }
 }
 
 impl Compiler {
@@ -55,7 +46,9 @@ impl Compiler {
         let path = key
             .strip_prefix("minecraft:")
             .unwrap_or_else(|| panic!("Non-vanilla {directory} reference {key}"));
-        let path = self.input_root.join(directory).join(format!("{path}.json"));
+        let path = Path::new(INPUT_ROOT)
+            .join(directory)
+            .join(format!("{path}.json"));
         assert!(
             self.reference_stack.insert(path.clone()),
             "Recursive reference {}",
@@ -96,9 +89,9 @@ impl Compiler {
 
 pub(crate) fn build() -> TokenStream {
     let mut compiler = Compiler::default();
-    let root = compiler.input_root.join("loot_table");
+    let root = Path::new(INPUT_ROOT).join("loot_table");
     // Watch registry directories that a later extraction may create as well.
-    println!("cargo:rerun-if-changed={}", compiler.input_root.display());
+    println!("cargo:rerun-if-changed={INPUT_ROOT}");
     let mut paths = Vec::new();
     collect(&root, &mut paths);
     paths.sort();

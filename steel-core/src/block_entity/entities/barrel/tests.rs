@@ -211,11 +211,8 @@ fn comparator_access_unpacks_pending_loot_without_recursive_locking() {
 
 #[test]
 fn opening_generates_loot_but_spectators_leave_pending_barrels_closed() {
-    use crate::{
-        behavior::{BlockHitResult, InventoryAccess},
-        test_support::TestPlayerBuilder,
-    };
-    use steel_utils::types::{GameType, InteractionHand};
+    use crate::test_support::{TestPlayerBuilder, use_block};
+    use steel_utils::types::GameType;
 
     init_vanilla_registry();
     init_behaviors();
@@ -235,36 +232,12 @@ fn opening_generates_loot_but_spectators_leave_pending_barrels_closed() {
     let player = TestPlayerBuilder::new(Arc::clone(world), "Opener", 1).build();
     player.set_client_loaded(true);
     player.restore_game_modes(GameType::Spectator, None);
-    let hit = BlockHitResult {
-        location: glam::DVec3::new(1.5, 64.5, 1.5),
-        direction: Direction::Up,
-        block_pos: pos,
-        miss: false,
-        inside: false,
-        world_border_hit: false,
-    };
-    let mut inv = InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
-    let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::BARREL);
-    behavior.use_without_item(
-        vanilla_blocks::BARREL.default_state(),
-        world,
-        pos,
-        &player,
-        &hit,
-        &mut inv,
-    );
+    use_block(world, pos, &player);
     assert!(randomizable.loot_table().is_some());
     assert!(!player.has_container_open());
 
     player.restore_game_modes(GameType::Survival, None);
-    behavior.use_without_item(
-        vanilla_blocks::BARREL.default_state(),
-        world,
-        pos,
-        &player,
-        &hit,
-        &mut inv,
-    );
+    use_block(world, pos, &player);
     assert!(randomizable.loot_table().is_none());
     assert!(player.has_container_open());
 }

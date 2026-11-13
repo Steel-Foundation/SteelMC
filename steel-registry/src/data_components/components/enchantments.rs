@@ -1,3 +1,4 @@
+use crate::enchantment::Enchantment;
 use rustc_hash::FxHashMap;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
@@ -7,7 +8,7 @@ use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entr
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 
-use crate::{REGISTRY, RegistryExt, enchantment::Enchantment};
+use crate::{REGISTRY, RegistryExt};
 
 /// Enchantments stored on an item. Maps enchantment key to level.
 ///

@@ -27,11 +27,7 @@ pub struct AnyOf {
 
 impl CompileCondition for AnyOf {
     fn compile(&self, compiler: &mut Compiler) -> TokenStream {
-        let Self { terms, .. } = self;
-        let terms = terms
-            .iter()
-            .map(|term| compiler.condition(Some(term)))
-            .collect::<Vec<_>>();
+        let terms = compiler.conditions(&self.terms);
         Compiler::any(&terms)
     }
 }
@@ -44,11 +40,16 @@ pub struct AllOf {
 
 impl CompileCondition for AllOf {
     fn compile(&self, compiler: &mut Compiler) -> TokenStream {
-        let Self { terms, .. } = self;
-        let terms = terms
-            .iter()
-            .map(|term| compiler.condition(Some(term)))
-            .collect::<Vec<_>>();
+        let terms = compiler.conditions(&self.terms);
         Compiler::all(&terms)
+    }
+}
+
+impl Compiler {
+    fn conditions(&mut self, terms: &[Holder<Condition>]) -> Vec<TokenStream> {
+        terms
+            .iter()
+            .map(|term| self.condition(Some(term)))
+            .collect()
     }
 }

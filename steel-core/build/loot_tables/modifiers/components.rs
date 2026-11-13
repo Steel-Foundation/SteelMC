@@ -14,9 +14,6 @@ pub struct SetInstrument {
 }
 
 impl CompileModifier for SetInstrument {
-    fn condition(&self) -> Option<&Holder<Condition>> {
-        self.condition.as_ref()
-    }
     fn compile(&self, _compiler: &mut Compiler) -> TokenStream {
         let Self { options, .. } = self;
         let options = match options {
@@ -61,9 +58,6 @@ pub struct SetEnchantments {
 }
 
 impl CompileModifier for SetEnchantments {
-    fn condition(&self) -> Option<&Holder<Condition>> {
-        self.condition.as_ref()
-    }
     fn compile(&self, compiler: &mut Compiler) -> TokenStream {
         let Self {
             enchantments, add, ..
@@ -90,9 +84,6 @@ pub struct CopyComponents {
 }
 
 impl CompileModifier for CopyComponents {
-    fn condition(&self) -> Option<&Holder<Condition>> {
-        self.condition.as_ref()
-    }
     fn compile(&self, _compiler: &mut Compiler) -> TokenStream {
         let Self {
             source,

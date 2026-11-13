@@ -1,8 +1,10 @@
 use super::{
     Compiler, Ident, TokenStream,
-    model::{CompileEntry, LootPool, LootPoolEntry},
+    model::{Condition, Holder, LootPool, Modifier},
     quote,
 };
+use enum_dispatch::enum_dispatch;
+use serde::Deserialize;
 
 mod composite;
 mod single;
@@ -112,4 +114,58 @@ impl Compiler {
             candidates.push(LootCandidate::new(#weight, #quality, ctx.luck, #create));
         })
     }
+}
+
+#[enum_dispatch]
+pub(super) trait CompileEntry {
+    fn compile_expansion(&self, compiler: &mut Compiler) -> EntryExpansion;
+}
+
+#[enum_dispatch]
+pub(super) trait Decorated {
+    fn decorations(&self) -> (Option<&Holder<Condition>>, Option<&Modifier>);
+}
+
+macro_rules! decorated {
+    ($($entry:ty),* $(,)?) => {$(
+        impl Decorated for $entry {
+            fn decorations(&self) -> (Option<&Holder<Condition>>, Option<&Modifier>) {
+                (self.condition.as_ref(), self.modifier.as_ref())
+            }
+        }
+    )*};
+}
+
+decorated!(
+    AlternativesEntry,
+    DynamicEntry,
+    EmptyEntry,
+    GroupEntry,
+    ItemEntry,
+    LootTableEntry,
+    SequenceEntry,
+    TagEntry,
+);
+
+// TODO: Add the vanilla slots entry codec and context item-slot access.
+#[enum_dispatch(CompileEntry, Decorated)]
+#[derive(Deserialize)]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum LootPoolEntry {
+    #[serde(rename = "minecraft:item")]
+    Item(ItemEntry),
+    #[serde(rename = "minecraft:dynamic")]
+    Dynamic(DynamicEntry),
+    #[serde(rename = "minecraft:loot_table")]
+    LootTable(LootTableEntry),
+    #[serde(rename = "minecraft:tag")]
+    Tag(TagEntry),
+    #[serde(rename = "minecraft:empty")]
+    Empty(EmptyEntry),
+    #[serde(rename = "minecraft:alternatives")]
+    Alternatives(AlternativesEntry),
+    #[serde(rename = "minecraft:group")]
+    Group(GroupEntry),
+    #[serde(rename = "minecraft:sequence")]
+    Sequence(SequenceEntry),
 }

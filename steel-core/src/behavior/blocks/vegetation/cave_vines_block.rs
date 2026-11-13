@@ -84,13 +84,10 @@ impl CaveVinesBlock {
         }
         let mut loot_rng = RandomSource::Legacy(LegacyRandom::from_seed(rand::random()));
         let equipment = loot_equipment(source_entity);
+        let (x, y, z) = pos.get_center();
         let mut ctx = LootContext::new(&mut loot_rng)
             .with_world(world)
-            .with_origin(
-                f64::from(pos.x()) + 0.5,
-                f64::from(pos.y()) + 0.5,
-                f64::from(pos.z()) + 0.5,
-            )
+            .with_origin(x, y, z)
             .with_block_state(state)
             .with_interacting_entity(entity_loot_ref(source_entity, equipment.as_ref()));
 

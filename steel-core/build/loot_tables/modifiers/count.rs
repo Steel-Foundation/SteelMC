@@ -15,9 +15,6 @@ pub struct SetCount {
 }
 
 impl CompileModifier for SetCount {
-    fn condition(&self) -> Option<&Holder<Condition>> {
-        self.condition.as_ref()
-    }
     fn compile(&self, compiler: &mut Compiler) -> TokenStream {
         let Self { count, add, .. } = self;
         let count = compiler.int_provider(count);
@@ -36,9 +33,6 @@ pub struct EnchantedCountIncrease {
 }
 
 impl CompileModifier for EnchantedCountIncrease {
-    fn condition(&self) -> Option<&Holder<Condition>> {
-        self.condition.as_ref()
-    }
     fn compile(&self, compiler: &mut Compiler) -> TokenStream {
         let Self {
             enchantment,
@@ -66,9 +60,6 @@ pub struct LimitCount {
 }
 
 impl CompileModifier for LimitCount {
-    fn condition(&self) -> Option<&Holder<Condition>> {
-        self.condition.as_ref()
-    }
     fn compile(&self, compiler: &mut Compiler) -> TokenStream {
         let Self { limit, .. } = self;
         let min = limit.min.as_ref().map(|value| {
@@ -91,9 +82,6 @@ pub struct SetOminousBottleAmplifier {
 }
 
 impl CompileModifier for SetOminousBottleAmplifier {
-    fn condition(&self) -> Option<&Holder<Condition>> {
-        self.condition.as_ref()
-    }
     fn compile(&self, compiler: &mut Compiler) -> TokenStream {
         let Self { amplifier, .. } = self;
         let amplifier = compiler.int_provider(amplifier);

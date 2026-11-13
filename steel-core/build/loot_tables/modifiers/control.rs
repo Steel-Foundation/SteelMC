@@ -12,9 +12,6 @@ pub struct ExplosionDecay {
 }
 
 impl CompileModifier for ExplosionDecay {
-    fn condition(&self) -> Option<&Holder<Condition>> {
-        self.condition.as_ref()
-    }
     fn compile(&self, _compiler: &mut Compiler) -> TokenStream {
         quote! {
             if let Some(radius) = ctx.explosion_radius {
@@ -33,9 +30,6 @@ pub struct Discard {
 }
 
 impl CompileModifier for Discard {
-    fn condition(&self) -> Option<&Holder<Condition>> {
-        self.condition.as_ref()
-    }
     fn compile(&self, _compiler: &mut Compiler) -> TokenStream {
         quote! { *item = ItemStack::empty(); }
     }
@@ -50,9 +44,6 @@ pub struct FurnaceSmelt {
 }
 
 impl CompileModifier for FurnaceSmelt {
-    fn condition(&self) -> Option<&Holder<Condition>> {
-        self.condition.as_ref()
-    }
     fn compile(&self, _compiler: &mut Compiler) -> TokenStream {
         let Self {
             use_input_count, ..
@@ -71,9 +62,6 @@ pub struct Filtered {
 }
 
 impl CompileModifier for Filtered {
-    fn condition(&self) -> Option<&Holder<Condition>> {
-        self.condition.as_ref()
-    }
     fn compile(&self, compiler: &mut Compiler) -> TokenStream {
         let Self {
             item_filter,
@@ -96,9 +84,6 @@ pub struct Sequence {
 }
 
 impl CompileModifier for Sequence {
-    fn condition(&self) -> Option<&Holder<Condition>> {
-        self.condition.as_ref()
-    }
     fn compile(&self, compiler: &mut Compiler) -> TokenStream {
         let Self { functions, .. } = self;
         let functions = compiler.modifier(Some(functions));

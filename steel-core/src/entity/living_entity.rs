@@ -3276,13 +3276,7 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
         context = context.with_last_damage_player(entity);
     }
 
-    match loot_table.get_random_items(&mut context) {
-        Ok(items) => items,
-        Err(error) => {
-            log::error!("Failed to generate loot {}: {error}", loot_table.key);
-            Vec::new()
-        }
-    }
+    loot_table.get_random_items_or_log(&mut context)
 }
 
 /// Runs vanilla `LivingEntity.dropFromShearingLootTable` for `loot_table`, returning the
@@ -3306,11 +3300,5 @@ pub(crate) fn shearing_loot_items_with_rng<E: LivingEntity + ?Sized>(
     if let Some(level) = level.as_deref() {
         context = context.with_world(level).with_game_time(level.game_time());
     }
-    match loot_table.get_random_items(&mut context) {
-        Ok(items) => items,
-        Err(error) => {
-            log::error!("Failed to generate loot {}: {error}", loot_table.key);
-            Vec::new()
-        }
-    }
+    loot_table.get_random_items_or_log(&mut context)
 }

@@ -6,17 +6,7 @@ use serde::{
 };
 use std::{collections::BTreeMap, fmt, marker::PhantomData};
 
-mod conditions;
-mod entries;
-mod modifiers;
-mod numbers;
-mod predicates;
-
-pub(super) use conditions::*;
-pub(super) use entries::*;
-pub(super) use modifiers::*;
-pub(super) use numbers::*;
-pub(super) use predicates::*;
+pub(super) use super::{conditions::*, entries::*, modifiers::*, numbers::*, predicates::*};
 
 /// A registry reference or an inline definition, retaining inline decoding errors.
 pub enum Holder<T> {

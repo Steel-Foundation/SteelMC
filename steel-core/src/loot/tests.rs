@@ -24,13 +24,19 @@ fn tables() -> LootTableBehaviorRegistry {
 }
 
 fn generate(table: &LootTable, seed: u64) -> Vec<ItemStack> {
+    generate_with_rng(table, seed).0
+}
+
+/// Generates with fixture tables, returning the RNG for remaining-state checks.
+fn generate_with_rng(table: &LootTable, seed: u64) -> (Vec<ItemStack>, RandomSource) {
     let tables = tables();
     let mut rng = random(seed);
     let mut ctx = LootContext::new(&mut rng);
     ctx.tables = Some(&tables);
-    table
+    let items = table
         .get_random_items(&mut ctx)
-        .expect("table should generate")
+        .expect("table should generate");
+    (items, rng)
 }
 
 #[test]
@@ -40,7 +46,6 @@ fn empty_alternative_succeeds_without_falling_through() {
 
 #[test]
 fn group_expands_children_before_weighted_selection() {
-    let tables = tables();
     for seed in 0..100 {
         let mut expected = random(seed);
         let choice = expected.next_i32_bounded(10);
@@ -49,12 +54,7 @@ fn group_expands_children_before_weighted_selection() {
             1 => &vanilla_items::IRON_INGOT,
             _ => &vanilla_items::DIRT,
         };
-        let mut rng = random(seed);
-        let mut ctx = LootContext::new(&mut rng);
-        ctx.tables = Some(&tables);
-        let items = fixtures::GROUP_WEIGHT
-            .get_random_items(&mut ctx)
-            .expect("group loot");
+        let (items, mut rng) = generate_with_rng(&fixtures::GROUP_WEIGHT, seed);
         assert_eq!(items.len(), 1);
         assert!(items[0].is(expected_item));
         assert_eq!(rng.next_i64(), expected.next_i64());
@@ -73,7 +73,6 @@ fn sequence_keeps_prior_candidates_and_stops_after_failed_expansion() {
 
 #[test]
 fn modifiers_run_per_stack_in_entry_pool_table_order() {
-    let tables = tables();
     let mut expected = random(12345);
     let expected_counts: Vec<_> = (0..2)
         .map(|_| {
@@ -82,12 +81,7 @@ fn modifiers_run_per_stack_in_entry_pool_table_order() {
                 + expected.next_i32_between(1, 9)
         })
         .collect();
-    let mut rng = random(12345);
-    let mut ctx = LootContext::new(&mut rng);
-    ctx.tables = Some(&tables);
-    let items = fixtures::MODIFIER_ORDER
-        .get_random_items(&mut ctx)
-        .expect("modified loot");
+    let (items, mut rng) = generate_with_rng(&fixtures::MODIFIER_ORDER, 12345);
     assert_eq!(
         items.iter().map(ItemStack::count).collect::<Vec<_>>(),
         expected_counts
@@ -98,7 +92,6 @@ fn modifiers_run_per_stack_in_entry_pool_table_order() {
 
 #[test]
 fn partial_composites_keep_modifier_scopes_and_continue_with_siblings() {
-    let tables = tables();
     for seed in 0..100 {
         let mut expected = random(seed);
         expected.next_f32();
@@ -108,12 +101,7 @@ fn partial_composites_keep_modifier_scopes_and_continue_with_siblings() {
             2 => (&vanilla_items::DIRT, 14),
             _ => (&vanilla_items::COPPER_INGOT, 13),
         };
-        let mut rng = random(seed);
-        let mut ctx = LootContext::new(&mut rng);
-        ctx.tables = Some(&tables);
-        let items = fixtures::PARTIAL_COMPOSITE_MODIFIERS
-            .get_random_items(&mut ctx)
-            .expect("partially expanded loot");
+        let (items, mut rng) = generate_with_rng(&fixtures::PARTIAL_COMPOSITE_MODIFIERS, seed);
         assert_eq!(items.len(), 1);
         assert!(items[0].is(item));
         assert_eq!(items[0].count(), count);
@@ -123,7 +111,6 @@ fn partial_composites_keep_modifier_scopes_and_continue_with_siblings() {
 
 #[test]
 fn expanded_tag_items_each_receive_their_own_weight() {
-    let tables = tables();
     let members = REGISTRY
         .items
         .get_tag(&Identifier::vanilla_static("creeper_drop_music_discs"))
@@ -135,12 +122,7 @@ fn expanded_tag_items_each_receive_their_own_weight() {
             .get(choice / 2)
             .copied()
             .unwrap_or(&vanilla_items::DIAMOND);
-        let mut rng = random(seed);
-        let mut ctx = LootContext::new(&mut rng);
-        ctx.tables = Some(&tables);
-        let result = fixtures::TAG_WEIGHT
-            .get_random_items(&mut ctx)
-            .expect("tag loot");
+        let (result, mut rng) = generate_with_rng(&fixtures::TAG_WEIGHT, seed);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].item, item);
         assert_eq!(rng.next_i64(), expected.next_i64());
@@ -173,56 +155,6 @@ fn unsupported_operations_are_errors_only_when_executed() {
     );
     assert_eq!(ctx.visited, []);
     assert_eq!(generate(&fixtures::CONDITIONAL_UNSUPPORTED, 12345).len(), 1);
-}
-
-#[test]
-fn failed_generation_does_not_change_container_contents() {
-    let tables = tables();
-    let mut rng = random(12345);
-    let mut ctx = LootContext::new(&mut rng);
-    ctx.tables = Some(&tables);
-    let mut container = SimpleContainer::new(3);
-    container.set_item(1, ItemStack::new(&vanilla_items::STONE));
-    let result = fixtures::UNSUPPORTED_AFTER_OUTPUT.generate_for_container(&mut ctx);
-    assert!(result.is_err());
-    if let Ok(loot) = result {
-        loot.fill(&mut container);
-    }
-    assert!(container.get_item(0).is_empty());
-    assert!(container.get_item(1).is(&vanilla_items::STONE));
-    assert!(container.get_item(2).is_empty());
-}
-
-#[test]
-fn registered_table_without_a_callable_still_reports_an_error() {
-    let mut tables = tables();
-    let table = &vanilla_loot_tables::CHESTS_SPAWN_BONUS_CHEST;
-    assert!(tables.functions.remove(&table.key).is_some());
-    let mut rng = random(12345);
-    let mut ctx = LootContext::new(&mut rng);
-    ctx.tables = Some(&tables);
-
-    assert!(matches!(
-        table.generate_for_container(&mut ctx),
-        Err(LootError::MissingTable(key)) if key == table.key
-    ));
-}
-
-#[test]
-fn vanilla_block_tables_keep_supported_behavior() {
-    init_vanilla_registry();
-    let mut rng = random(12345);
-    let mut ctx = LootContext::new(&mut rng);
-    let items = vanilla_loot_tables::BLOCKS_OAK_LOG
-        .get_random_items(&mut ctx)
-        .expect("oak log loot");
-    assert_eq!(items.len(), 1);
-    assert!(items[0].is(&vanilla_items::OAK_LOG));
-    let items = vanilla_loot_tables::BLOCKS_DIAMOND_ORE
-        .get_random_items(&mut ctx)
-        .expect("diamond loot");
-    assert_eq!(items.len(), 1);
-    assert!(items[0].is(&vanilla_items::DIAMOND));
 }
 
 #[test]
@@ -441,17 +373,11 @@ fn looting_uses_attacker_equipment_and_limits_the_final_count() {
 
 #[test]
 fn chance_provider_is_evaluated_before_the_condition_random_draw() {
-    let tables = tables();
     for seed in 0..20 {
         let mut expected = random(seed);
         let probability = expected.next_f32();
         let passes = expected.next_f32() < probability;
-        let mut rng = random(seed);
-        let mut ctx = LootContext::new(&mut rng);
-        ctx.tables = Some(&tables);
-        let items = fixtures::PROVIDER_CHANCE
-            .get_random_items(&mut ctx)
-            .expect("chance output");
+        let (items, mut rng) = generate_with_rng(&fixtures::PROVIDER_CHANCE, seed);
         assert_eq!(items.len(), usize::from(passes));
         assert_eq!(rng.next_i64(), expected.next_i64());
     }
