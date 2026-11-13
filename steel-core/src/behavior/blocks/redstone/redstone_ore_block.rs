@@ -155,7 +155,7 @@ mod tests {
         }
     }
 
-    impl StepEntity {
+    impl EntityTable for StepEntity {
         const ENTITY: EntityProps<Self> = EntityProps {
             is_stepping_carefully: |entity| entity.careful,
             ..EntityProps::new()
@@ -170,10 +170,6 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::PIG
         }
-    }
-
-    impl EntityTable for StepEntity {
-        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     #[test]

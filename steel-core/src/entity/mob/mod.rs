@@ -468,8 +468,16 @@ impl<'a> Mob<'a> {
 }
 
 /// `Mob`'s [`LivingProps::server_ai_step`].
-pub fn server_ai_step<E: Parts>(mob: &E) {
-    mob.mob().mob_server_ai_step();
+pub fn server_ai_step<E: Parts>(entity: &E) {
+    let mob = &entity.mob();
+    mob.increment_no_action_time();
+    mob.mob_base().sensing().lock().tick();
+    mob.tick_goal_selectors();
+    mob.tick_path_navigation();
+    mob.custom_server_ai_step();
+    mob.tick_move_control();
+    mob.tick_look_control();
+    mob.tick_jump_control();
 }
 
 /// `Mob`'s [`LivingProps::ai_step`].
@@ -491,8 +499,28 @@ pub fn ai_step<E: Parts>(entity: &E) -> Option<MoveResult> {
 }
 
 /// `Mob`'s [`LivingProps::base_experience_reward`].
-pub fn base_experience_reward<E: Parts>(mob: &E) -> i32 {
-    mob.mob().base_experience_reward_mob()
+pub fn base_experience_reward<E: Parts>(entity: &E) -> i32 {
+    let mob = &entity.mob();
+    let xp_reward = mob.xp_reward();
+    if xp_reward <= 0 {
+        return xp_reward;
+    }
+
+    let mut result = xp_reward;
+    for slot in EquipmentSlot::ALL {
+        if !slot.can_increase_experience() {
+            continue;
+        }
+
+        let should_increase = {
+            let equipment = mob.living_base().equipment().lock();
+            !equipment.get_ref(slot).is_empty() && mob.equipment_drop_chance(slot) <= 1.0
+        };
+        if should_increase {
+            result += 1 + rand::random_range(0..3);
+        }
+    }
+    result
 }
 
 /// `Mob`'s [`LivingProps::can_dispenser_equip_into_slot`].
@@ -531,23 +559,60 @@ pub fn base_tick<E: Parts>(mob: &E) {
 }
 
 /// `Mob`'s [`EntityProps::interact`].
+///
+/// Dispatches held-item, entity, and mob-specific interactions in order.
+/// `Mob.interact` around its `super.interact()`.
 pub fn interact<E: Parts>(
-    mob: &E,
+    entity: &E,
     player: &Player,
     hand: InteractionHand,
     location: DVec3,
 ) -> InteractionResult {
-    mob.mob().interact_mob(player, hand, location)
+    let mob = &entity.mob();
+    if !mob.living.is_alive() {
+        return InteractionResult::Pass;
+    }
+
+    let important_interaction = mob.check_and_handle_important_interactions(player, hand);
+    if important_interaction.consumes_action() {
+        if let Some(world) = mob.level() {
+            world.game_event(
+                &vanilla_game_events::ENTITY_INTERACT,
+                mob.block_position(),
+                &GameEventContext::new(Some(player), None),
+            );
+        }
+        return important_interaction;
+    }
+
+    let interaction_result = entity::interact(entity, player, hand, location);
+    if interaction_result != InteractionResult::Pass {
+        return interaction_result;
+    }
+
+    let interaction_result = mob.mob_interact(player, hand);
+    if interaction_result.consumes_action() {
+        mob.game_event_with_source_entity(&vanilla_game_events::ENTITY_INTERACT, Some(player));
+    }
+
+    interaction_result
 }
 
 /// `Mob`'s [`EntityProps::controlling_passenger`].
-pub fn controlling_passenger<E: Parts>(mob: &E) -> Option<SharedEntity> {
-    mob.mob().controlling_passenger_mob()
+pub fn controlling_passenger<E: Parts>(entity: &E) -> Option<SharedEntity> {
+    let mob = &entity.mob();
+    let first_passenger = mob.first_passenger()?;
+    if mob.is_no_ai() || !first_passenger.is_mob() || !first_passenger.can_control_vehicle() {
+        return None;
+    }
+
+    Some(first_passenger)
 }
 
 /// `Mob`'s [`EntityProps::check_despawn`].
-pub fn check_despawn<E: Parts>(mob: &E) {
-    mob.mob().check_mob_despawn();
+pub fn check_despawn<E: Parts>(entity: &E) {
+    let mob = &entity.mob();
+    mob.check_mob_despawn_with(mob.nearest_player_distance_sqr());
 }
 
 /// `Mob`'s [`EntityProps::is_effective_ai`].
@@ -799,29 +864,6 @@ impl<'a> Mob<'a> {
         target.entity_type() != &vanilla_entities::GHAST && self.living.can_attack(target)
     }
 
-    pub fn base_experience_reward_mob(&self) -> i32 {
-        let xp_reward = self.xp_reward();
-        if xp_reward <= 0 {
-            return xp_reward;
-        }
-
-        let mut result = xp_reward;
-        for slot in EquipmentSlot::ALL {
-            if !slot.can_increase_experience() {
-                continue;
-            }
-
-            let should_increase = {
-                let equipment = self.living_base().equipment().lock();
-                !equipment.get_ref(slot).is_empty() && self.equipment_drop_chance(slot) <= 1.0
-            };
-            if should_increase {
-                result += 1 + rand::random_range(0..3);
-            }
-        }
-        result
-    }
-
     pub fn play_ambient_sound(&self) {
         self.make_sound(self.ambient_sound());
     }
@@ -891,43 +933,6 @@ impl<'a> Mob<'a> {
                 && entity.blocks_building()
                 && !entity.is_passenger_of_same_vehicle(self.as_entity_event_source())
         })
-    }
-
-    /// Dispatches held-item, entity, and mob-specific interactions in order.
-    /// `Mob.interact` around its `super.interact()`.
-    fn interact_mob(
-        &self,
-        player: &Player,
-        hand: InteractionHand,
-        location: DVec3,
-    ) -> InteractionResult {
-        if !self.living.is_alive() {
-            return InteractionResult::Pass;
-        }
-
-        let important_interaction = self.check_and_handle_important_interactions(player, hand);
-        if important_interaction.consumes_action() {
-            if let Some(world) = self.level() {
-                world.game_event(
-                    &vanilla_game_events::ENTITY_INTERACT,
-                    self.block_position(),
-                    &GameEventContext::new(Some(player), None),
-                );
-            }
-            return important_interaction;
-        }
-
-        let interaction_result = entity::interact(self.entity(), player, hand, location);
-        if interaction_result != InteractionResult::Pass {
-            return interaction_result;
-        }
-
-        let interaction_result = self.mob_interact(player, hand);
-        if interaction_result.consumes_action() {
-            self.game_event_with_source_entity(&vanilla_game_events::ENTITY_INTERACT, Some(player));
-        }
-
-        interaction_result
     }
 
     /// Handles interactions that take priority over normal behavior: renaming
@@ -1506,10 +1511,6 @@ impl<'a> Mob<'a> {
         self.home_radius() != -1
     }
 
-    pub fn check_mob_despawn(&self) {
-        self.check_mob_despawn_with(self.nearest_player_distance_sqr());
-    }
-
     /// [`Self::check_mob_despawn`] given the squared distance to the nearest
     /// player, if any.
     pub(crate) fn check_mob_despawn_with(&self, nearest_player_dist_sqr: Option<f64>) {
@@ -1557,15 +1558,6 @@ impl<'a> Mob<'a> {
     pub fn nearest_player_distance_sqr(&self) -> Option<f64> {
         let world = self.level()?;
         world.nearest_player_distance_sqr(self.position())
-    }
-
-    pub fn controlling_passenger_mob(&self) -> Option<SharedEntity> {
-        let first_passenger = self.first_passenger()?;
-        if self.is_no_ai() || !first_passenger.is_mob() || !first_passenger.can_control_vehicle() {
-            return None;
-        }
-
-        Some(first_passenger)
     }
 
     pub fn pathfinding_malus(&self, path_type: PathType) -> f32 {
@@ -1826,17 +1818,6 @@ impl<'a> Mob<'a> {
             input.vertical(),
             speed,
         ));
-    }
-
-    pub fn mob_server_ai_step(&self) {
-        self.increment_no_action_time();
-        self.mob_base().sensing().lock().tick();
-        self.tick_goal_selectors();
-        self.tick_path_navigation();
-        self.custom_server_ai_step();
-        self.tick_move_control();
-        self.tick_look_control();
-        self.tick_jump_control();
     }
 
     /// Rolls the daylight-burning chance when `MONSTERS_BURN` is enabled.

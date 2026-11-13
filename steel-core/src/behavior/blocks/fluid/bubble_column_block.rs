@@ -284,13 +284,15 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(RecordingEntity);
 
-    impl RecordingEntity {
+    impl EntityTable for RecordingEntity {
         const ENTITY: EntityProps<Self> = EntityProps {
             on_above_bubble_column: Self::entity_on_above_bubble_column,
             on_inside_bubble_column: Self::entity_on_inside_bubble_column,
             ..EntityProps::new()
         };
+    }
 
+    impl RecordingEntity {
         fn entity_on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
             self.calls
                 .lock()
@@ -312,10 +314,6 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM
         }
-    }
-
-    impl EntityTable for RecordingEntity {
-        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     fn bubble_column_state(drag_down: bool) -> BlockStateId {

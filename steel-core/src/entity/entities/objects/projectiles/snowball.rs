@@ -10,6 +10,7 @@ use steel_registry::{vanilla_entities, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 
+use crate::entity::EntityTable;
 use crate::entity::prelude::*;
 use crate::entity::projectile::throwable;
 use crate::entity::projectile::throwable_item::ThrownItem;
@@ -19,7 +20,6 @@ use crate::entity::{Entity, EntityBase, EntityProps, RemovalReason};
 /// A thrown snowball.
 #[entity_behavior(class = "Snowball")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/snowball", constructors)]
 pub struct SnowballEntity {
     #[entity(base)]
@@ -34,9 +34,11 @@ pub struct SnowballEntity {
     entity_data: CheckedMutex<SnowballEntityData>,
 }
 
-impl SnowballEntity {
+impl EntityTable for SnowballEntity {
     const ENTITY: EntityProps<Self> = throwable::entity_props();
+}
 
+impl SnowballEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = SnowballEntityData::new();
         let thrown_item = ThrownItem::new(&vanilla_items::SNOWBALL, &mut entity_data);

@@ -104,13 +104,15 @@ impl CustomContact {
 
 crate::entity::impl_test_downcast_type!(CustomContact);
 
-impl CustomContact {
+impl EntityTable for CustomContact {
     const ENTITY: EntityProps<Self> = EntityProps {
         is_pushable: Self::entity_is_pushable,
         push_entity: Self::entity_push_entity,
         ..EntityProps::new()
     };
+}
 
+impl CustomContact {
     fn entity_is_pushable(&self) -> bool {
         let world = self.level().expect("custom contact world");
         assert!(world.entity_manager().get_by_id(self.id()).is_some());
@@ -139,10 +141,6 @@ impl Entity for CustomContact {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-}
-
-impl EntityTable for CustomContact {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 pub(super) struct Fixture {

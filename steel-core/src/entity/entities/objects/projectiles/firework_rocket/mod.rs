@@ -23,6 +23,7 @@ use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::entity::EntityTable;
 use crate::entity::damage::DamageSource;
 use crate::entity::prelude::*;
 use crate::entity::projectile::{
@@ -47,7 +48,7 @@ struct Flight {
 /// A launched firework rocket.
 #[entity_behavior(class = "FireworkRocketEntity")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_rocket, load = Self::load_rocket)]
+#[entity(save = Self::save_rocket, load = Self::load_rocket)]
 #[entity(key = "steel:entity/firework_rocket", constructors)]
 pub struct FireworkRocketEntity {
     #[entity(base)]
@@ -61,7 +62,7 @@ pub struct FireworkRocketEntity {
     entity_data: CheckedMutex<FireworkRocketEntityData>,
 }
 
-impl FireworkRocketEntity {
+impl EntityTable for FireworkRocketEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |rocket| {
             projectile::tick(rocket);
@@ -70,7 +71,9 @@ impl FireworkRocketEntity {
         attackable: |_| false,
         ..projectile::entity_props()
     };
+}
 
+impl FireworkRocketEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = FireworkRocketEntityData::new();
         entity_data

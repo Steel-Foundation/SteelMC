@@ -490,11 +490,6 @@ pub trait EntityMotion: Entity {
 
 impl<T: Entity + ?Sized> EntityMotion for T {}
 
-/// `Entity`'s [`EntityProps::is_flying_player`].
-pub const fn is_flying_player<E: Entity + ?Sized>(_entity: &E) -> bool {
-    false
-}
-
 /// `Entity`'s [`EntityProps::can_be_collided_with`].
 pub fn can_be_collided_with<E: Entity + ?Sized>(_entity: &E, _other: Option<&dyn Entity>) -> bool {
     false

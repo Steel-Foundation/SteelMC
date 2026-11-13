@@ -62,14 +62,15 @@ pub fn entity_behavior(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// - `#[entity(synced)]`: the generated synced entity data.
 ///
 /// Struct options in `#[entity(..)]`:
-/// - `hooks = Self::ENTITY`: the type's `const EntityProps<Self>`; its entries
-///   become the `Entity` hook methods (default: vanilla `Entity`'s).
 /// - `save = Self::save_x` / `load = Self::load_x`: type-specific NBT, run after
 ///   the components.
 /// - `no_save_data`: the type saves nothing beyond the base entity data.
 /// - `key = "steel:entity/x"`: the owner-scoped `DowncastType` key.
 /// - `constructors`: `new` and `from_saved`, built on the type's
 ///   `fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self`.
+///
+/// The type implements `EntityTable` itself, like its layer tables; an empty
+/// impl runs vanilla `Entity`'s behavior.
 ///
 /// Expands to `crate::` paths, so it is only usable inside `steel-core`.
 #[proc_macro_derive(Entity, attributes(entity))]

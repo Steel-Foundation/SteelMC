@@ -1,6 +1,7 @@
 //! `PotentSulfurBlockEntity` for geyser eruption
 
 use crate::entity::prelude::*;
+use crate::player::Player;
 use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
@@ -224,7 +225,7 @@ impl PotentSulfurBlockEntity {
             if !entity.can_simulate_movement() {
                 continue;
             }
-            if entity.is_flying_player() {
+            if entity.as_player().is_some_and(Player::is_flying) {
                 continue;
             }
             if entity.is_passenger() {

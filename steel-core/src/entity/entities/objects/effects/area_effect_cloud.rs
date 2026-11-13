@@ -18,6 +18,7 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
+use crate::entity::EntityTable;
 use crate::entity::potion_contents::to_runtime_instance;
 use crate::entity::prelude::*;
 use crate::entity::{
@@ -76,7 +77,7 @@ impl AreaEffectCloudState {
 // particle from the potion color.
 #[entity_behavior(class = "AreaEffectCloud")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_cloud, load = Self::load_cloud)]
+#[entity(save = Self::save_cloud, load = Self::load_cloud)]
 #[entity(key = "steel:entity/area_effect_cloud", constructors)]
 pub struct AreaEffectCloudEntity {
     #[entity(base)]
@@ -88,7 +89,7 @@ pub struct AreaEffectCloudEntity {
     entity_data: CheckedMutex<AreaEffectCloudEntityData>,
 }
 
-impl AreaEffectCloudEntity {
+impl EntityTable for AreaEffectCloudEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |cloud| {
             entity::tick(cloud);
@@ -117,7 +118,9 @@ impl AreaEffectCloudEntity {
         },
         ..EntityProps::new()
     };
+}
 
+impl AreaEffectCloudEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         base.set_no_physics(true);
         Self {

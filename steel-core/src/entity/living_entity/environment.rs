@@ -164,33 +164,6 @@ impl Living<'_> {
         self.tick_living_air_supply();
     }
 
-    /// Returns vanilla `LivingEntity.canFreeze()` after concrete entity exemptions.
-    ///
-    /// Vanilla keeps the entity-type freeze immunity on `Entity` and the equipment
-    /// immunity on `LivingEntity`. Steel keeps this helper separate so concrete
-    /// `Entity::can_freeze` implementations can delegate without downcasting.
-    #[must_use]
-    /// `LivingEntity.canFreeze` around `super`: freeze-immune armor blocks it.
-    pub(super) fn living_can_freeze(&self) -> bool {
-        for slot in EquipmentSlot::ALL {
-            if !slot.is_armor() {
-                continue;
-            }
-            let mut is_freeze_immune = false;
-            self.with_equipment_slot(slot, &mut |item_stack| {
-                is_freeze_immune = REGISTRY
-                    .items
-                    .is_in_tag(item_stack.item(), &ItemTag::FREEZE_IMMUNE_WEARABLES);
-            });
-
-            if is_freeze_immune {
-                return false;
-            }
-        }
-
-        entity::can_freeze(self.entity())
-    }
-
     /// Removes the powder snow speed penalty modifier.
     pub fn remove_frost(&self) {
         self.attributes().lock().remove_modifier(
@@ -238,6 +211,31 @@ impl Living<'_> {
             );
         }
     }
+}
+
+/// `LivingEntity`'s [`EntityProps::can_freeze`].
+///
+/// Freeze-immune armor blocks freezing; otherwise `super` decides.
+#[must_use]
+pub fn can_freeze<E: Parts>(entity: &E) -> bool {
+    let living = &entity.living();
+    for slot in EquipmentSlot::ALL {
+        if !slot.is_armor() {
+            continue;
+        }
+        let mut is_freeze_immune = false;
+        living.with_equipment_slot(slot, &mut |item_stack| {
+            is_freeze_immune = REGISTRY
+                .items
+                .is_in_tag(item_stack.item(), &ItemTag::FREEZE_IMMUNE_WEARABLES);
+        });
+
+        if is_freeze_immune {
+            return false;
+        }
+    }
+
+    entity::can_freeze(entity)
 }
 
 /// `LivingEntity`'s [`LivingProps::is_affected_by_fluids`].

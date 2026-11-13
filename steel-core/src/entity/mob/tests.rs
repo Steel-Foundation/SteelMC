@@ -241,7 +241,7 @@ impl MobTable for DespawnTestMob {
     };
 }
 
-impl DespawnTestMob {
+impl EntityTable for DespawnTestMob {
     const ENTITY: EntityProps<Self> = EntityProps {
         controlling_passenger: |mob| mob.controlling_passenger.lock().clone(),
         ..mob::entity_props()
@@ -268,10 +268,6 @@ impl Entity for DespawnTestMob {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
     }
-}
-
-impl EntityTable for DespawnTestMob {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 impl LivingTable for DespawnTestMob {
@@ -315,7 +311,7 @@ impl HiddenTarget {
 
 crate::entity::impl_test_downcast_type!(HiddenTarget);
 
-impl HiddenTarget {
+impl EntityTable for HiddenTarget {
     const ENTITY: EntityProps<Self> = EntityProps {
         ..living_entity::entity_props()
     };
@@ -337,10 +333,6 @@ impl Entity for HiddenTarget {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::PIG
     }
-}
-
-impl EntityTable for HiddenTarget {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 impl LivingTable for HiddenTarget {
@@ -429,7 +421,7 @@ fn mob_server_ai_step_increments_no_action_time() {
     let mob = DespawnTestMob::new(None, false);
 
     mob.living().set_no_action_time(12);
-    mob.mob().mob_server_ai_step();
+    super::server_ai_step(&*mob);
 
     assert_eq!(mob.living().no_action_time(), 13);
 }

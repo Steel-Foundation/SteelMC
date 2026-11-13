@@ -11,6 +11,7 @@ use steel_registry::vanilla_entity_data::LingeringPotionEntityData;
 use steel_registry::{vanilla_entities, vanilla_items};
 use steel_utils::locks::CheckedMutex;
 
+use crate::entity::EntityTable;
 use crate::entity::entities::AreaEffectCloudEntity;
 use crate::entity::projectile::throwable_item::ThrownItem;
 use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps, thrown_potion};
@@ -23,7 +24,6 @@ use crate::world::World;
 /// A thrown lingering potion, which leaves an effect cloud where it lands.
 #[entity_behavior(class = "ThrownLingeringPotion")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/lingering_potion", constructors)]
 pub struct LingeringPotionEntity {
     #[entity(base)]
@@ -38,9 +38,11 @@ pub struct LingeringPotionEntity {
     entity_data: CheckedMutex<LingeringPotionEntityData>,
 }
 
-impl LingeringPotionEntity {
+impl EntityTable for LingeringPotionEntity {
     const ENTITY: EntityProps<Self> = thrown_potion::entity_props();
+}
 
+impl LingeringPotionEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = LingeringPotionEntityData::new();
         let thrown_item = ThrownItem::new(&vanilla_items::LINGERING_POTION, &mut entity_data);

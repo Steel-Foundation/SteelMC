@@ -23,6 +23,7 @@ use steel_registry::{
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 
+use crate::entity::EntityTable;
 use crate::entity::ageable::{self, Age, AgeableProps};
 use crate::entity::ai::path::PathType;
 use crate::entity::damage::DamageSource;
@@ -49,7 +50,6 @@ struct Swimming {
 // once `Mob.checkSpawnObstruction` is a mob hook.
 #[entity_behavior(class = "Squid", spawn_rule)]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/squid", constructors)]
 pub struct SquidEntity {
     #[entity(base)]
@@ -65,6 +65,26 @@ pub struct SquidEntity {
     swimming: CheckedMutex<Swimming>,
     #[entity(synced)]
     entity_data: CheckedMutex<SquidEntityData>,
+}
+
+impl EntityTable for SquidEntity {
+    const ENTITY: EntityProps<Self> = EntityProps {
+        default_gravity: |_| 0.08,
+        movement_emission: |_| EntityMovementEmission::Events,
+        // `AgeableWaterCreature.isPushedByFluid`.
+        is_pushed_by_fluid: |_| false,
+        base_tick: Self::water_creature_base_tick,
+        // `Squid.hurtServer` after `super`: a squid hurt by a mob squirts ink.
+        hurt: |squid, world, source, amount| {
+            let hurt = living_entity::hurt(squid, world, source, amount);
+            if hurt && squid.living().last_hurt_by_mob().is_some() {
+                squid.spawn_ink();
+                return true;
+            }
+            false
+        },
+        ..mob::entity_props()
+    };
 }
 
 impl SquidEntity {
@@ -90,23 +110,6 @@ impl SquidEntity {
             );
             Some(squid)
         },
-    };
-    const ENTITY: EntityProps<Self> = EntityProps {
-        default_gravity: |_| 0.08,
-        movement_emission: |_| EntityMovementEmission::Events,
-        // `AgeableWaterCreature.isPushedByFluid`.
-        is_pushed_by_fluid: |_| false,
-        base_tick: Self::water_creature_base_tick,
-        // `Squid.hurtServer` after `super`: a squid hurt by a mob squirts ink.
-        hurt: |squid, world, source, amount| {
-            let hurt = living_entity::hurt(squid, world, source, amount);
-            if hurt && squid.living().last_hurt_by_mob().is_some() {
-                squid.spawn_ink();
-                return true;
-            }
-            false
-        },
-        ..mob::entity_props()
     };
 
     /// `Squid`'s constructor chain: its goals, then its own water malus.

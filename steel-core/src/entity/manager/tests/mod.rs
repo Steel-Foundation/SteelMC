@@ -141,7 +141,7 @@ impl MovingTickTestEntity {
 
 crate::entity::impl_test_downcast_type!(MovingTickTestEntity);
 
-impl MovingTickTestEntity {
+impl EntityTable for MovingTickTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |entity| {
             entity::tick(entity);
@@ -149,7 +149,9 @@ impl MovingTickTestEntity {
         },
         ..EntityProps::new()
     };
+}
 
+impl MovingTickTestEntity {
     fn entity_tick(&self) {
         if let Err(error) = self.try_set_position(self.tick_position) {
             panic!("moving tick test entity failed to move during tick: {error}");
@@ -166,10 +168,6 @@ impl Entity for MovingTickTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-}
-
-impl EntityTable for MovingTickTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 struct AddDuringTickTestEntity {
@@ -203,7 +201,7 @@ impl AddDuringTickTestEntity {
 
 crate::entity::impl_test_downcast_type!(AddDuringTickTestEntity);
 
-impl AddDuringTickTestEntity {
+impl EntityTable for AddDuringTickTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |entity| {
             entity::tick(entity);
@@ -211,7 +209,9 @@ impl AddDuringTickTestEntity {
         },
         ..EntityProps::new()
     };
+}
 
+impl AddDuringTickTestEntity {
     fn entity_tick(&self) {
         let Some(entity) = self.entity_to_add.lock().take() else {
             return;
@@ -235,10 +235,6 @@ impl Entity for AddDuringTickTestEntity {
     }
 }
 
-impl EntityTable for AddDuringTickTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
-}
-
 struct DespawnOnCheckTestEntity {
     base: EntityBase,
 }
@@ -260,12 +256,14 @@ impl DespawnOnCheckTestEntity {
 
 crate::entity::impl_test_downcast_type!(DespawnOnCheckTestEntity);
 
-impl DespawnOnCheckTestEntity {
+impl EntityTable for DespawnOnCheckTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         check_despawn: Self::entity_check_despawn,
         ..EntityProps::new()
     };
+}
 
+impl DespawnOnCheckTestEntity {
     fn entity_check_despawn(&self) {
         self.set_removed(RemovalReason::Discarded);
     }
@@ -281,13 +279,9 @@ impl Entity for DespawnOnCheckTestEntity {
     }
 }
 
-impl EntityTable for DespawnOnCheckTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
-}
-
 crate::entity::impl_test_downcast_type!(ManagerTestEntity);
 
-impl ManagerTestEntity {
+impl EntityTable for ManagerTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         is_always_ticking: |entity| entity.always_ticking,
         is_hard_collision_relevant: |entity| entity.hard_collision_relevant,
@@ -303,10 +297,6 @@ impl Entity for ManagerTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
     }
-}
-
-impl EntityTable for ManagerTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 fn entity(id: i32, uuid_seed: u128, position: DVec3) -> SharedEntity {

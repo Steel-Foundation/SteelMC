@@ -15,6 +15,7 @@ use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_utils::BlockPos;
 use steel_utils::locks::CheckedMutex;
 
+use crate::entity::EntityTable;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, EntityBase, EntityMovementEmission, EntityProps, RemovalReason};
 use crate::world::explosion::{
@@ -27,7 +28,7 @@ const EXPLOSION_RADIUS: f32 = 6.0;
 // TODO: the fire it keeps lit in the End and the dragon fight callbacks.
 #[entity_behavior(class = "EndCrystal")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_crystal, load = Self::load_crystal)]
+#[entity(save = Self::save_crystal, load = Self::load_crystal)]
 #[entity(key = "steel:entity/end_crystal", constructors)]
 pub struct EndCrystalEntity {
     #[entity(base)]
@@ -38,7 +39,7 @@ pub struct EndCrystalEntity {
     entity_data: CheckedMutex<EndCrystalEntityData>,
 }
 
-impl EndCrystalEntity {
+impl EntityTable for EndCrystalEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         // `EndCrystal.tick` never calls `super`.
         tick: |crystal| {
@@ -51,7 +52,9 @@ impl EndCrystalEntity {
         blocks_building: |_| true,
         ..EntityProps::new()
     };
+}
 
+impl EndCrystalEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {
             base,

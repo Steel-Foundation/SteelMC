@@ -26,7 +26,7 @@
 //! // living_entity
 //! pub fn tick<E: Parts>(living: &E) {
 //!     entity::tick(living);
-//!     living.living().tick_living();
+//!     // ...the rest of `LivingEntity.tick`
 //! }
 //!
 //! // mob
@@ -95,8 +95,8 @@ macro_rules! entity_hooks {
 
 /// A concrete entity type's hook table.
 ///
-/// `#[derive(Entity)]` implements it from `#[entity(hooks = ..)]`. The default
-/// is vanilla `Entity`'s behavior.
+/// Every entity type implements it, like its layer tables; an empty impl runs
+/// vanilla `Entity`'s behavior.
 pub trait EntityTable: Entity + Sized {
     /// The hooks this type runs.
     const ENTITY: EntityProps<Self> = EntityProps::new();
@@ -186,8 +186,6 @@ entity_hooks! {
     fn on_explosion_hit(
         explosion_source: Option<&dyn Entity>,
     );
-    /// Returns true for vanilla players whose abilities have `flying` set.
-    fn is_flying_player() -> bool;
     /// Returns whether `other` can collide with this entity.
     ///
     /// Base entities cannot be collided with unless a concrete entity type opts in.

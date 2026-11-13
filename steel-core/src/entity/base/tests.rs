@@ -94,7 +94,7 @@ fn generation_distinguishes_reconstructed_entity_identity() {
 
 crate::entity::impl_test_downcast_type!(FallDamageTestEntity);
 
-impl FallDamageTestEntity {
+impl EntityTable for FallDamageTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         cause_fall_damage: |entity, fall_distance, damage_modifier, _| {
             entity
@@ -115,10 +115,6 @@ impl Entity for FallDamageTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-}
-
-impl EntityTable for FallDamageTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 #[derive(Default)]

@@ -186,104 +186,6 @@ impl Living<'_> {
         world.clip(start, end, block_shape, fluid).is_miss()
     }
 
-    /// Main vanilla living-entity damage entry point.
-    ///
-    /// `world` is the `ServerLevel` supplied by the vanilla caller. It may
-    /// intentionally differ from the entity's attached world.
-    pub fn hurt_server(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        self.default_hurt_server(world, source, amount)
-    }
-
-    /// Runs the base `LivingEntity.hurtServer` body.
-    ///
-    /// Overrides of [`Self::hurt_server`] call this where vanilla calls
-    /// `super.hurtServer`; the Ender Dragon routes its per-part damage scaling
-    /// through here.
-    pub fn default_hurt_server(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        if self.is_invulnerable_to(world, source) {
-            return false;
-        }
-        if self.is_dead_or_dying() {
-            return false;
-        }
-        if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE)
-            && self.has_mob_effect(vanilla_mob_effects::FIRE_RESISTANCE)
-        {
-            return false;
-        }
-        if self.is_sleeping() {
-            self.stop_sleeping();
-        }
-
-        self.set_no_action_time(0);
-
-        let mut damage = amount;
-        if damage < 0.0 {
-            damage = 0.0;
-        }
-
-        // TODO: apply item blocking before actually_hurt once shield/use-item hooks exist.
-        if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FREEZING)
-            && REGISTRY
-                .entity_types
-                .is_in_tag(self.entity_type(), &EntityTypeTag::FREEZE_HURTS_EXTRA_TYPES)
-        {
-            damage *= 5.0;
-        }
-        if source.is(&vanilla_damage_type_tags::DamageTypeTag::DAMAGES_HELMET) {
-            let mut wears_helmet = false;
-            self.with_equipment_slot(EquipmentSlot::Head, &mut |item| {
-                wears_helmet = !item.is_empty();
-            });
-            if wears_helmet {
-                self.hurt_helmet(source, damage);
-                damage *= 0.75;
-            }
-        }
-        if !damage.is_finite() {
-            damage = f32::MAX;
-        }
-
-        let Some((took_full_damage, effective_amount)) = self
-            .living_base()
-            .apply_damage_cooldown(damage, source.bypasses_cooldown())
-        else {
-            return false;
-        };
-
-        self.before_actually_hurt(source, effective_amount);
-        self.actually_hurt(world, source, effective_amount);
-        if took_full_damage {
-            self.living_base().begin_hurt_animation();
-        }
-        self.resolve_mob_responsible_for_damage(source);
-        self.resolve_player_responsible_for_damage(source);
-
-        if took_full_damage {
-            self.broadcast_damage_event(world, source);
-            if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT) {
-                self.mark_hurt();
-            }
-            self.apply_damage_knockback(source);
-        }
-
-        if self.is_dead_or_dying() {
-            if !self.check_totem_death_protection(source) {
-                if took_full_damage {
-                    self.play_death_sound();
-                }
-                self.die(source);
-            }
-        } else if took_full_damage {
-            self.play_hurt_sound(source);
-        }
-        // TODO: Play secondary hurt sounds once equipment effects expose them.
-
-        self.record_last_damage_source(source);
-
-        true
-    }
-
     /// Hook before applying damage after vanilla reductions.
     pub fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {
         if let Some(animal) = Animal::of(self.as_entity_event_source()) {
@@ -697,6 +599,97 @@ impl Living<'_> {
             .get_value(vanilla_attributes::ARMOR)
             .unwrap_or(0.0) as i32
     }
+}
+
+/// `LivingEntity`'s [`EntityProps::hurt`].
+///
+/// `world` is the `ServerLevel` supplied by the vanilla caller. It may
+/// intentionally differ from the entity's attached world.
+pub fn hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource, amount: f32) -> bool {
+    let living = &entity.living();
+    if living.is_invulnerable_to(world, source) {
+        return false;
+    }
+    if living.is_dead_or_dying() {
+        return false;
+    }
+    if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE)
+        && living.has_mob_effect(vanilla_mob_effects::FIRE_RESISTANCE)
+    {
+        return false;
+    }
+    if living.is_sleeping() {
+        living.stop_sleeping();
+    }
+
+    living.set_no_action_time(0);
+
+    let mut damage = amount;
+    if damage < 0.0 {
+        damage = 0.0;
+    }
+
+    // TODO: apply item blocking before actually_hurt once shield/use-item hooks exist.
+    if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FREEZING)
+        && REGISTRY.entity_types.is_in_tag(
+            living.entity_type(),
+            &EntityTypeTag::FREEZE_HURTS_EXTRA_TYPES,
+        )
+    {
+        damage *= 5.0;
+    }
+    if source.is(&vanilla_damage_type_tags::DamageTypeTag::DAMAGES_HELMET) {
+        let mut wears_helmet = false;
+        living.with_equipment_slot(EquipmentSlot::Head, &mut |item| {
+            wears_helmet = !item.is_empty();
+        });
+        if wears_helmet {
+            living.hurt_helmet(source, damage);
+            damage *= 0.75;
+        }
+    }
+    if !damage.is_finite() {
+        damage = f32::MAX;
+    }
+
+    let Some((took_full_damage, effective_amount)) = living
+        .living_base()
+        .apply_damage_cooldown(damage, source.bypasses_cooldown())
+    else {
+        return false;
+    };
+
+    living.before_actually_hurt(source, effective_amount);
+    living.actually_hurt(world, source, effective_amount);
+    if took_full_damage {
+        living.living_base().begin_hurt_animation();
+    }
+    living.resolve_mob_responsible_for_damage(source);
+    living.resolve_player_responsible_for_damage(source);
+
+    if took_full_damage {
+        living.broadcast_damage_event(world, source);
+        if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT) {
+            living.mark_hurt();
+        }
+        living.apply_damage_knockback(source);
+    }
+
+    if living.is_dead_or_dying() {
+        if !living.check_totem_death_protection(source) {
+            if took_full_damage {
+                living.play_death_sound();
+            }
+            living.die(source);
+        }
+    } else if took_full_damage {
+        living.play_hurt_sound(source);
+    }
+    // TODO: Play secondary hurt sounds once equipment effects expose them.
+
+    living.record_last_damage_source(source);
+
+    true
 }
 
 /// `LivingEntity`'s [`LivingProps::is_invulnerable_to`].

@@ -35,6 +35,7 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, Downcast as _};
 
 use crate::behavior::InteractionResult;
+use crate::entity::EntityTable;
 use crate::entity::ageable::{Age, Ageable, AgeableProps};
 use crate::entity::animal::{self, Breeding, BreedingProps};
 use crate::entity::entities::ItemEntity;
@@ -54,7 +55,7 @@ const MUTATE_CHANCE: u32 = 1024;
 // TODO: `MushroomCow.thunderHit` swaps the variant once lightning bolts are ported.
 #[entity_behavior(class = "MushroomCow", spawn_rule)]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_mooshroom, load = Self::load_mooshroom)]
+#[entity(save = Self::save_mooshroom, load = Self::load_mooshroom)]
 #[entity(key = "steel:entity/mooshroom", constructors)]
 pub struct MushroomCowEntity {
     #[entity(base)]
@@ -355,7 +356,7 @@ impl Shearable for MushroomCowEntity {
 
 impl DefaultEntityPush for MushroomCowEntity {}
 
-impl MushroomCowEntity {
+impl EntityTable for MushroomCowEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         apply_implicit_item_components: |mooshroom, item_stack| {
             if let Some(variant) = item_stack.get(MOOSHROOM_VARIANT) {
@@ -364,7 +365,9 @@ impl MushroomCowEntity {
         },
         ..abstract_cow::entity_props()
     };
+}
 
+impl MushroomCowEntity {
     fn save_mooshroom(&self, nbt: &mut NbtCompound) {
         nbt.insert("Type", self.variant().serialized_name());
         if let Some(stew_effects) = self.stew_effects.lock().as_ref() {

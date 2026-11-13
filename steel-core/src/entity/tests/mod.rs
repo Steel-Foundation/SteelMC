@@ -71,7 +71,7 @@ impl PushableTestEntity {
 
 impl_test_downcast_type!(PushableTestEntity);
 
-impl PushableTestEntity {
+impl EntityTable for PushableTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         is_pushable: |_| true,
         ..EntityProps::new()
@@ -86,10 +86,6 @@ impl Entity for PushableTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-}
-
-impl EntityTable for PushableTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 struct TypedTestEntity {
@@ -623,13 +619,15 @@ impl LeashNotificationTestEntity {
 
 crate::entity::impl_test_downcast_type!(LeashNotificationTestEntity);
 
-impl LeashNotificationTestEntity {
+impl EntityTable for LeashNotificationTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         notify_leash_holder: Self::entity_notify_leash_holder,
         notify_leashee_removed: Self::entity_notify_leashee_removed,
         ..EntityProps::new()
     };
+}
 
+impl LeashNotificationTestEntity {
     fn entity_notify_leash_holder(&self, leashable: &dyn Entity) {
         self.holder_notifications.lock().push(leashable.id());
     }
@@ -647,10 +645,6 @@ impl Entity for LeashNotificationTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-}
-
-impl EntityTable for LeashNotificationTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 struct MultiPassengerTestEntity {
@@ -673,7 +667,7 @@ impl MultiPassengerTestEntity {
 
 crate::entity::impl_test_downcast_type!(MultiPassengerTestEntity);
 
-impl MultiPassengerTestEntity {
+impl EntityTable for MultiPassengerTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         can_add_passenger: |_, _| true,
         ..EntityProps::new()
@@ -688,10 +682,6 @@ impl Entity for MultiPassengerTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-}
-
-impl EntityTable for MultiPassengerTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 struct CommitRejectingCallback {
@@ -745,7 +735,7 @@ impl KnownMovementTestEntity {
 
 crate::entity::impl_test_downcast_type!(KnownMovementTestEntity);
 
-impl KnownMovementTestEntity {
+impl EntityTable for KnownMovementTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         known_movement: |entity| entity.known_movement,
         known_speed: |entity| entity.known_speed,
@@ -764,10 +754,6 @@ impl Entity for KnownMovementTestEntity {
     }
 }
 
-impl EntityTable for KnownMovementTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
-}
-
 struct LivingFluidTestEntity {
     base: EntityBase,
     living_base: LivingEntityBase,
@@ -779,7 +765,6 @@ struct LivingFluidTestEntity {
     can_stand_on_fluid: bool,
     on_non_air_block_for_frost: bool,
     in_wall_for_base_tick: bool,
-    flying_player: bool,
     rejects_wither: bool,
 }
 
@@ -809,7 +794,6 @@ impl LivingFluidTestEntity {
             can_stand_on_fluid: false,
             on_non_air_block_for_frost: false,
             in_wall_for_base_tick: false,
-            flying_player: false,
             rejects_wither: false,
         }
     }
@@ -842,11 +826,6 @@ impl LivingFluidTestEntity {
 
     const fn with_in_wall_for_base_tick(mut self) -> Self {
         self.in_wall_for_base_tick = true;
-        self
-    }
-
-    const fn with_flying_player(mut self) -> Self {
-        self.flying_player = true;
         self
     }
 
@@ -886,9 +865,8 @@ impl LivingFluidTestEntity {
 
 crate::entity::impl_test_downcast_type!(LivingFluidTestEntity);
 
-impl LivingFluidTestEntity {
+impl EntityTable for LivingFluidTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        is_flying_player: |entity| entity.flying_player,
         is_in_wall: |entity| {
             !entity.living().is_sleeping()
                 && (entity.in_wall_for_base_tick || entity::is_in_wall(entity))
@@ -922,10 +900,6 @@ impl Entity for LivingFluidTestEntity {
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
     }
-}
-
-impl EntityTable for LivingFluidTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 impl LivingFluidTestEntity {
@@ -1270,7 +1244,7 @@ impl ControlledVehicleTestEntity {
 
 crate::entity::impl_test_downcast_type!(ControlledVehicleTestEntity);
 
-impl ControlledVehicleTestEntity {
+impl EntityTable for ControlledVehicleTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         controlling_passenger: |vehicle| vehicle.controller.clone(),
         ..EntityProps::new()
@@ -1285,10 +1259,6 @@ impl Entity for ControlledVehicleTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ACACIA_BOAT
     }
-}
-
-impl EntityTable for ControlledVehicleTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 fn assert_vec3_close(left: DVec3, right: DVec3) {

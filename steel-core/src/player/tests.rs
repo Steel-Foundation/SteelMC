@@ -260,6 +260,21 @@ fn test_player(world: Arc<World>) -> Arc<Player> {
 }
 
 #[test]
+fn flying_players_ignore_bubble_columns() {
+    let player = test_player(Arc::clone(test_world()));
+    player.set_flying(true);
+    let velocity = DVec3::new(0.1, 0.2, 0.3);
+    player.set_velocity(velocity);
+    player.set_fall_distance(4.0);
+
+    player.on_inside_bubble_column(false);
+    player.on_above_bubble_column(false, BlockPos::ZERO);
+
+    assert_eq!(player.velocity(), velocity);
+    assert_eq!(player.fall_distance().to_bits(), 4.0_f64.to_bits());
+}
+
+#[test]
 fn last_client_move_intent_matches_vanilla_directional_inputs() {
     const FORWARD: u8 = 0x01;
     const BACKWARD: u8 = 0x02;

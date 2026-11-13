@@ -13,6 +13,7 @@ use steel_registry::vanilla_entity_data::EndermiteEntityData;
 use steel_utils::locks::CheckedMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
+use crate::entity::EntityTable;
 use crate::entity::ai::goal::{
     ClimbOnTopOfPowderSnowGoal, FloatGoal, HurtByTargetGoal, LookAtPlayerGoal, MeleeAttackGoal,
     NearestAttackableTargetGoal, RandomLookAroundGoal, WaterAvoidingRandomStrollGoal,
@@ -31,7 +32,7 @@ const XP_REWARD: i32 = 3;
 /// An endermite: a short-lived hostile mob.
 #[entity_behavior(class = "Endermite", spawn_rule)]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_life, load = Self::load_life)]
+#[entity(save = Self::save_life, load = Self::load_life)]
 #[entity(key = "steel:entity/endermite", constructors)]
 pub struct EndermiteEntity {
     #[entity(base)]
@@ -51,15 +52,7 @@ impl Enemy for EndermiteEntity {}
 
 impl DefaultEntityPush for EndermiteEntity {}
 
-impl EndermiteEntity {
-    /// `Endermite.checkEndermiteSpawnRules`.
-    // TODO: outside spawners, vanilla also requires no player within 5
-    // blocks; spawn rules get a `LevelReader`, which cannot find players.
-    pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, _| {
-        monster::check_any_light_monster_spawn_rules(entity_type, level, spawn_reason, pos)
-            && spawn_reason.is_spawner()
-    };
-
+impl EntityTable for EndermiteEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         movement_emission: |_| EntityMovementEmission::Events,
         play_step_sound: |endermite, _, _| {
@@ -76,6 +69,16 @@ impl EndermiteEntity {
             living_entity::set_y_body_rot(endermite, y_body_rot);
         },
         ..monster::entity_props()
+    };
+}
+
+impl EndermiteEntity {
+    /// `Endermite.checkEndermiteSpawnRules`.
+    // TODO: outside spawners, vanilla also requires no player within 5
+    // blocks; spawn rules get a `LevelReader`, which cannot find players.
+    pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, _| {
+        monster::check_any_light_monster_spawn_rules(entity_type, level, spawn_reason, pos)
+            && spawn_reason.is_spawner()
     };
 
     /// `Endermite`'s constructor chain: `Monster`'s, then its own reward and

@@ -19,6 +19,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::block_entity::block_state_nbt;
 use crate::entity::EntityProps;
+use crate::entity::EntityTable;
 use crate::entity::{
     Entity, EntityBase, EntityMovementEmission, EntityReference, RemovalReason, SharedEntity,
 };
@@ -124,7 +125,7 @@ static USED_PORTAL_DAMAGE_CALCULATOR: NetherPortalPreservingExplosionDamageCalcu
 /// Vanilla primed TNT entity.
 #[entity_behavior(class = "PrimedTnt")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_tnt, load = Self::load_tnt)]
+#[entity(save = Self::save_tnt, load = Self::load_tnt)]
 #[entity(key = "steel:entity/primed_tnt", constructors)]
 pub struct PrimedTntEntity {
     #[entity(base)]
@@ -252,7 +253,7 @@ impl PrimedTntEntity {
     }
 }
 
-impl PrimedTntEntity {
+impl EntityTable for PrimedTntEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         // `PrimedTnt.tick` never calls `super`.
         tick: Self::entity_tick,
@@ -266,7 +267,9 @@ impl PrimedTntEntity {
         on_teleported: Self::entity_on_teleported,
         ..EntityProps::new()
     };
+}
 
+impl PrimedTntEntity {
     fn entity_tick(&self) {
         self.handle_portal();
         self.apply_gravity();

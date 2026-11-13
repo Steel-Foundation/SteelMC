@@ -29,6 +29,7 @@ use crate::behavior::blocks::{AnvilBlock, FallingBlock};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockPlaceContext, Fallable};
 use crate::block_entity::block_state_nbt;
 use crate::entity::EntityProps;
+use crate::entity::EntityTable;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityMovementEmission, RemovalReason, WeakSelf, next_entity_id,
@@ -74,7 +75,7 @@ impl FallingBlockState {
 /// Entity carrying a block state while it falls under vanilla physics.
 #[entity_behavior(class = "FallingBlockEntity")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_falling_block, load = Self::load_falling_block)]
+#[entity(save = Self::save_falling_block, load = Self::load_falling_block)]
 #[entity(key = "steel:entity/falling_block", constructors)]
 pub struct FallingBlockEntity {
     #[entity(base)]
@@ -377,7 +378,7 @@ impl FallingBlockEntity {
     }
 }
 
-impl FallingBlockEntity {
+impl EntityTable for FallingBlockEntity {
     // TODO: vanilla names falling blocks `entity.minecraft.falling_block_type` with the
     // block's name. Needs extracted block description ids: wall variants override theirs
     // (`wall_torch` -> `block.minecraft.torch`), so they can't be derived from the key.
@@ -394,7 +395,9 @@ impl FallingBlockEntity {
         movement_emission: |_| EntityMovementEmission::None,
         ..EntityProps::new()
     };
+}
 
+impl FallingBlockEntity {
     fn entity_tick(&self) {
         let block_state = self.block_state();
         if block_state.is_air() {

@@ -93,7 +93,7 @@ impl OwnerCollisionTestEntity {
 
 crate::entity::impl_test_downcast_type!(OwnerCollisionTestEntity);
 
-impl OwnerCollisionTestEntity {
+impl EntityTable for OwnerCollisionTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         is_pickable: |entity| entity.pickable && !entity.is_removed(),
         ..EntityProps::new()
@@ -108,10 +108,6 @@ impl Entity for OwnerCollisionTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
     }
-}
-
-impl EntityTable for OwnerCollisionTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 #[test]

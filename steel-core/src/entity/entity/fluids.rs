@@ -187,10 +187,6 @@ pub fn is_pushed_by_fluid<E: Entity + ?Sized>(entity: &E) -> bool {
 
 /// `Entity`'s [`EntityProps::on_above_bubble_column`].
 pub fn on_above_bubble_column<E: Entity + ?Sized>(entity: &E, drag_down: bool, pos: BlockPos) {
-    if entity.is_flying_player() {
-        return;
-    }
-
     let velocity = entity.velocity();
     let y = if drag_down {
         (velocity.y - BUBBLE_COLUMN_DOWN_ACCELERATION).max(BUBBLE_COLUMN_ABOVE_DOWN_MIN_SPEED)
@@ -206,10 +202,6 @@ pub fn on_above_bubble_column<E: Entity + ?Sized>(entity: &E, drag_down: bool, p
 
 /// `Entity`'s [`EntityProps::on_inside_bubble_column`].
 pub fn on_inside_bubble_column<E: Entity + ?Sized>(entity: &E, drag_down: bool) {
-    if entity.is_flying_player() {
-        return;
-    }
-
     let velocity = entity.velocity();
     let y = if drag_down {
         (velocity.y - BUBBLE_COLUMN_DOWN_ACCELERATION).max(BUBBLE_COLUMN_INSIDE_DOWN_MIN_SPEED)

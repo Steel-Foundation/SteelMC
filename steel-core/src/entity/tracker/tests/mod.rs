@@ -98,7 +98,7 @@ impl PairingTestEntity {
 
 crate::entity::impl_test_downcast_type!(PairingTestEntity);
 
-impl PairingTestEntity {
+impl EntityTable for PairingTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         ..living_entity::entity_props()
     };
@@ -120,10 +120,6 @@ impl Entity for PairingTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
     }
-}
-
-impl EntityTable for PairingTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 impl PairingTestEntity {

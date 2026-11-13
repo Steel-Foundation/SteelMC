@@ -12,6 +12,7 @@ use steel_utils::locks::CheckedMutex;
 use super::abstract_minecart::{self, AbstractMinecartBase, AbstractMinecartProps};
 use super::vehicle_entity::{self, HURT_DURATION, Parts as _};
 use crate::behavior::InteractionResult;
+use crate::entity::EntityTable;
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityProps};
 use crate::player::Player;
@@ -25,7 +26,7 @@ const ACTIVATOR_RAIL_DAMAGE: f32 = 50.0;
 // TODO: implement getPickResult.
 #[entity_behavior(class = "Minecart")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, key = "steel:entity/minecart", constructors)]
+#[entity(key = "steel:entity/minecart", constructors)]
 pub struct MinecartEntity {
     #[entity(base)]
     base: EntityBase,
@@ -43,13 +44,15 @@ impl vehicle_entity::Parts for MinecartEntity {
     }
 }
 
-impl MinecartEntity {
+impl EntityTable for MinecartEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         // `Minecart.interact` replaces `Entity`'s.
         interact: |minecart, player, _, _| minecart.interact_minecart(player),
         ..abstract_minecart::entity_props()
     };
+}
 
+impl MinecartEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {
             base,

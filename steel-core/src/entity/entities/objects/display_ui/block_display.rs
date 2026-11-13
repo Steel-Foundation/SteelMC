@@ -11,6 +11,7 @@ use steel_utils::BlockStateId;
 use steel_utils::locks::CheckedMutex;
 
 use crate::block_entity::block_state_nbt;
+use crate::entity::EntityTable;
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityProps};
 
@@ -19,7 +20,7 @@ use crate::entity::{EntityBase, EntityProps};
 // interpolation, view range, shadow, brightness, glow color, size).
 #[entity_behavior(class = "BlockDisplay")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_block_display, load = Self::load_block_display)]
+#[entity(save = Self::save_block_display, load = Self::load_block_display)]
 #[entity(key = "steel:entity/block_display", constructors)]
 pub struct BlockDisplayEntity {
     #[entity(base)]
@@ -30,7 +31,7 @@ pub struct BlockDisplayEntity {
     entity_data: CheckedMutex<BlockDisplayEntityData>,
 }
 
-impl BlockDisplayEntity {
+impl EntityTable for BlockDisplayEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         // `Display.tick` never calls `super`.
         tick: Self::tick_display,
@@ -38,7 +39,9 @@ impl BlockDisplayEntity {
         is_ignoring_block_triggers: |_| true,
         ..EntityProps::new()
     };
+}
 
+impl BlockDisplayEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {
             base,

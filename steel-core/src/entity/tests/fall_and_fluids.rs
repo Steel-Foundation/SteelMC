@@ -230,21 +230,6 @@ fn above_bubble_column_drag_down_uses_vanilla_stronger_velocity_limit() {
 }
 
 #[test]
-fn flying_players_ignore_bubble_column_entity_hooks() {
-    init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_flying_player();
-    let velocity = DVec3::new(0.1, 0.2, 0.3);
-    entity.set_velocity(velocity);
-    entity.set_fall_distance(4.0);
-
-    entity.on_inside_bubble_column(false);
-    entity.on_above_bubble_column(false, BlockPos::ZERO);
-
-    assert_vec3_close(entity.velocity(), velocity);
-    assert_f64_close(entity.fall_distance(), 4.0);
-}
-
-#[test]
 fn dolphins_grace_water_travel_hook_uses_active_mob_effect_state() {
     init_vanilla_registry();
     init_behaviors();

@@ -14,6 +14,7 @@ use steel_registry::vanilla_items;
 use steel_utils::locks::CheckedMutex;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
+use crate::entity::EntityTable;
 use crate::entity::potion_contents::to_runtime_instance_icon_from_visibility;
 use crate::entity::projectile::throwable_item::ThrownItem;
 use crate::entity::projectile::{ProjectileBase, ProjectileHit, ProjectileProps, thrown_potion};
@@ -26,7 +27,6 @@ use crate::world::World;
 /// A thrown splash potion.
 #[entity_behavior(class = "ThrownSplashPotion")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/splash_potion", constructors)]
 pub struct SplashPotionEntity {
     #[entity(base)]
@@ -41,9 +41,11 @@ pub struct SplashPotionEntity {
     entity_data: CheckedMutex<SplashPotionEntityData>,
 }
 
-impl SplashPotionEntity {
+impl EntityTable for SplashPotionEntity {
     const ENTITY: EntityProps<Self> = thrown_potion::entity_props();
+}
 
+impl SplashPotionEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = SplashPotionEntityData::new();
         let thrown_item = ThrownItem::new(&vanilla_items::SPLASH_POTION, &mut entity_data);

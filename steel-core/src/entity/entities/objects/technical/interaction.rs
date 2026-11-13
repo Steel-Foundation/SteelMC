@@ -17,6 +17,7 @@ use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
 use uuid::Uuid;
 
 use crate::behavior::InteractionResult;
+use crate::entity::EntityTable;
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityBaseLoad, EntityProps, SharedEntity, WeakSelf};
 use crate::player::Player;
@@ -31,7 +32,7 @@ const DEFAULT_DIMENSIONS: EntityDimensions =
 /// the last player to attack it and the last to interact with it.
 #[entity_behavior(class = "Interaction")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_interaction, load = Self::load_interaction)]
+#[entity(save = Self::save_interaction, load = Self::load_interaction)]
 #[entity(key = "steel:entity/interaction")]
 pub struct InteractionEntity {
     #[entity(base)]
@@ -49,7 +50,7 @@ struct RecordedActions {
     interaction: Option<PlayerAction>,
 }
 
-impl InteractionEntity {
+impl EntityTable for InteractionEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         // `Interaction.tick` and `Interaction.interact` never call `super`.
         tick: |_| {},
@@ -65,7 +66,9 @@ impl InteractionEntity {
         },
         ..EntityProps::new()
     };
+}
 
+impl InteractionEntity {
     /// Creates a new interaction.
     #[must_use]
     pub fn new(

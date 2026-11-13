@@ -13,6 +13,7 @@ use steel_registry::{vanilla_entities, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
 
+use crate::entity::EntityTable;
 use crate::entity::ageable::BABY_START_AGE;
 use crate::entity::entities::ChickenEntity;
 use crate::entity::prelude::*;
@@ -29,7 +30,6 @@ const ZERO_SIZED_DIMENSIONS: EntityDimensions = EntityDimensions::new(0.0, 0.0, 
 /// A thrown egg, which may hatch chicks where it lands.
 #[entity_behavior(class = "ThrownEgg")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/thrown_egg", constructors)]
 pub struct ThrownEggEntity {
     #[entity(base)]
@@ -44,9 +44,11 @@ pub struct ThrownEggEntity {
     entity_data: CheckedMutex<EggEntityData>,
 }
 
-impl ThrownEggEntity {
+impl EntityTable for ThrownEggEntity {
     const ENTITY: EntityProps<Self> = throwable::entity_props();
+}
 
+impl ThrownEggEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = EggEntityData::new();
         let thrown_item = ThrownItem::new(&vanilla_items::EGG, &mut entity_data);

@@ -4,13 +4,13 @@ use steel_macros::entity_behavior;
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_type::EntityTypeRef;
 
+use crate::entity::EntityTable;
 use crate::entity::{Entity, EntityBase, EntityProps};
 
 /// A marker: no physics, no ticking, no damage and no passengers. Never sent
 /// to clients.
 #[entity_behavior(class = "Marker")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/marker", constructors)]
 pub struct MarkerEntity {
     #[entity(base)]
@@ -19,7 +19,7 @@ pub struct MarkerEntity {
     entity_type: EntityTypeRef,
 }
 
-impl MarkerEntity {
+impl EntityTable for MarkerEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         // `Marker.tick` does nothing.
         tick: |_| {},
@@ -29,7 +29,9 @@ impl MarkerEntity {
         is_ignoring_block_triggers: |_| true,
         ..EntityProps::new()
     };
+}
 
+impl MarkerEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         base.set_no_physics(true);
         Self { base, entity_type }

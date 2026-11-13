@@ -14,6 +14,7 @@ use steel_utils::locks::CheckedMutex;
 use super::abstract_minecart::{self, AbstractMinecartBase, AbstractMinecartProps};
 use super::vehicle_entity;
 use crate::block_entity::entities::BaseSpawner;
+use crate::entity::EntityTable;
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityProps};
 
@@ -21,7 +22,7 @@ use crate::entity::{EntityBase, EntityProps};
 // TODO: implement getPickResult.
 #[entity_behavior(class = "MinecartSpawner")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_spawner, load = Self::load_spawner)]
+#[entity(save = Self::save_spawner, load = Self::load_spawner)]
 #[entity(key = "steel:entity/spawner_minecart", constructors)]
 pub struct SpawnerMinecartEntity {
     #[entity(base)]
@@ -41,7 +42,7 @@ impl vehicle_entity::Parts for SpawnerMinecartEntity {
     }
 }
 
-impl SpawnerMinecartEntity {
+impl EntityTable for SpawnerMinecartEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |minecart| {
             abstract_minecart::tick(minecart);
@@ -49,7 +50,9 @@ impl SpawnerMinecartEntity {
         },
         ..abstract_minecart::entity_props()
     };
+}
 
+impl SpawnerMinecartEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {
             base,

@@ -291,13 +291,34 @@ impl<E: ProjectileTable> Parts for E {
 }
 
 /// `Projectile`'s [`EntityProps::tick`].
-pub fn tick<E: Parts>(projectile: &E) {
-    projectile.projectile().projectile_tick();
+///
+/// `Projectile.tick` around its `super.tick()`: announces the shot once
+/// and tracks leaving the owner.
+pub fn tick<E: Parts>(entity: &E) {
+    let projectile = &entity.projectile();
+    if !projectile.has_been_shot() {
+        let owner = projectile.owner();
+        projectile.game_event_with_source_entity(
+            &vanilla_game_events::PROJECTILE_SHOOT,
+            owner.as_deref(),
+        );
+        projectile.state().has_been_shot = true;
+    }
+    projectile.check_left_owner();
+    entity::tick(entity);
+    projectile.state().left_owner_checked = false;
 }
 
 /// `Projectile`'s [`EntityProps::hurt`].
-pub fn hurt<E: Parts>(projectile: &E, _: &World, source: &DamageSource, _: f32) -> bool {
-    projectile.projectile().hurt_server(source)
+///
+/// `Projectile.hurtServer`: marks hurt unless invulnerable to the base
+/// checks, but never takes damage.
+pub fn hurt<E: Parts>(entity: &E, _: &World, source: &DamageSource, _: f32) -> bool {
+    let projectile = &entity.projectile();
+    if !projectile.is_invulnerable_to_base(source) {
+        projectile.mark_hurt();
+    }
+    false
 }
 
 /// `Projectile`'s [`EntityProps::is_pickable`].
@@ -652,15 +673,6 @@ impl<'a> Projectile<'a> {
         ProjectileDeflection::None
     }
 
-    /// `Projectile.hurtServer`: marks hurt unless invulnerable to the base
-    /// checks, but never takes damage.
-    fn hurt_server(&self, source: &DamageSource) -> bool {
-        if !self.is_invulnerable_to_base(source) {
-            self.mark_hurt();
-        }
-        false
-    }
-
     /// `Projectile.onAboveBubbleColumn`: unlike other entities, projectiles
     /// accelerate without a speed cap.
     fn on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
@@ -685,22 +697,6 @@ impl<'a> Projectile<'a> {
         };
         self.set_velocity(self.velocity() + DVec3::new(0.0, acceleration, 0.0));
         self.reset_fall_distance();
-    }
-
-    /// `Projectile.tick` around its `super.tick()`: announces the shot once
-    /// and tracks leaving the owner.
-    fn projectile_tick(&self) {
-        if !self.has_been_shot() {
-            let owner = self.owner();
-            self.game_event_with_source_entity(
-                &vanilla_game_events::PROJECTILE_SHOOT,
-                owner.as_deref(),
-            );
-            self.state().has_been_shot = true;
-        }
-        self.check_left_owner();
-        entity::tick(self.entity());
-        self.state().left_owner_checked = false;
     }
 }
 

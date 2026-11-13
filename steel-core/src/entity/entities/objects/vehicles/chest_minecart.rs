@@ -13,6 +13,7 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
 use super::{abstract_minecart, vehicle_entity};
+use crate::entity::EntityTable;
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityBaseLoad, EntityMovementEmission, EntityProps, WeakSelf};
 use crate::world::World;
@@ -23,7 +24,7 @@ use crate::world::World;
 /// keeps what structure generation places and persists.
 #[entity_behavior(class = "MinecartChest")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_chest, load = Self::load_chest)]
+#[entity(save = Self::save_chest, load = Self::load_chest)]
 #[entity(key = "steel:entity/chest_minecart")]
 pub struct ChestMinecartEntity {
     #[entity(base)]
@@ -39,7 +40,7 @@ struct ChestMinecartState {
     loot_table_seed: i64,
 }
 
-impl ChestMinecartEntity {
+impl EntityTable for ChestMinecartEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         movement_emission: |_| EntityMovementEmission::Events,
         is_pickable: |minecart| !minecart.is_removed(),
@@ -50,7 +51,9 @@ impl ChestMinecartEntity {
         relative_portal_position: abstract_minecart::relative_portal_position,
         ..EntityProps::new()
     };
+}
 
+impl ChestMinecartEntity {
     /// Creates a chest minecart.
     #[must_use]
     pub fn new(

@@ -914,7 +914,7 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(NamedTestEntity);
 
-    impl NamedTestEntity {
+    impl EntityTable for NamedTestEntity {
         const ENTITY: EntityProps<Self> = EntityProps {
             plain_text_name: |_| "Executor".to_owned(),
             ..EntityProps::new()
@@ -929,10 +929,6 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM
         }
-    }
-
-    impl EntityTable for NamedTestEntity {
-        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     fn permission_key(value: &str) -> PermissionKey {

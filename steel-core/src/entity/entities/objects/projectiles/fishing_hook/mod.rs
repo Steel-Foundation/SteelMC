@@ -31,6 +31,7 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Downcast as _};
 
+use crate::entity::EntityTable;
 use crate::entity::entities::{ExperienceOrbEntity, ItemEntity};
 use crate::entity::prelude::*;
 use crate::entity::projectile::{self, ProjectileBase, ProjectileProps, triangle_random};
@@ -51,7 +52,7 @@ const MAX_DISTANCE_SQR: f64 = 32.0 * 32.0;
 /// A fishing hook.
 #[entity_behavior(class = "FishingHook")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, no_save_data)]
+#[entity(no_save_data)]
 #[entity(key = "steel:entity/fishing_hook", constructors)]
 pub struct FishingHookEntity {
     #[entity(base)]
@@ -102,7 +103,7 @@ impl FishingHookState {
     }
 }
 
-impl FishingHookEntity {
+impl EntityTable for FishingHookEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |hook| {
             hook.seed_synchronized_random();
@@ -129,7 +130,9 @@ impl FishingHookEntity {
         },
         ..projectile::entity_props()
     };
+}
 
+impl FishingHookEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {
             base,

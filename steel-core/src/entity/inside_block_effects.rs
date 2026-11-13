@@ -181,13 +181,15 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(EffectTestEntity);
 
-    impl EffectTestEntity {
+    impl EntityTable for EffectTestEntity {
         const ENTITY: EntityProps<Self> = EntityProps {
             is_alive: |entity| !entity.is_removed() && *entity.alive.lock(),
             apply_inside_block_effect: Self::entity_apply_inside_block_effect,
             ..EntityProps::new()
         };
+    }
 
+    impl EffectTestEntity {
         fn entity_apply_inside_block_effect(&self, effect_type: InsideBlockEffectType) {
             self.calls.lock().push(match effect_type {
                 InsideBlockEffectType::Freeze => "freeze",
@@ -207,10 +209,6 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::ITEM
         }
-    }
-
-    impl EntityTable for EffectTestEntity {
-        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     #[test]

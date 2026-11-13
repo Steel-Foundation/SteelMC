@@ -31,21 +31,23 @@ mod sleeping;
 mod travel;
 
 pub use damage::{
-    absorption_amount, actually_hurt, die, drop_custom_death_loot, handle_killing_blow, hurt_armor,
-    hurt_broadcast_chunk, hurt_helmet, indicate_damage, is_always_experience_dropper,
+    absorption_amount, actually_hurt, die, drop_custom_death_loot, handle_killing_blow, hurt,
+    hurt_armor, hurt_broadcast_chunk, hurt_helmet, indicate_damage, is_always_experience_dropper,
     is_invulnerable_to, set_absorption_amount, should_drop_experience, should_drop_loot,
 };
 pub use dismount::dismount_poses;
 pub use effects::can_be_affected;
-pub use environment::{can_stand_on_fluid, is_affected_by_fluids, is_on_non_air_block_for_frost};
+pub use environment::{
+    can_freeze, can_stand_on_fluid, is_affected_by_fluids, is_on_non_air_block_for_frost,
+};
 pub use equipment::{
     does_emit_equip_event, equip_sound, handle_extra_items_created_on_use, has_infinite_materials,
     interact_living_entity_with_equippable, is_blocking, is_using_item, on_equipped_item_broken,
     tick_equipment, with_equipment_slot, with_equipment_slot_mut,
 };
 pub use movement::{
-    ai_step, can_glide, can_glide_using, is_immobile, jump_from_ground, push_entities,
-    ridden_input, ridden_speed, server_ai_step,
+    ai_step, block_speed_factor, can_glide, can_glide_using, cause_fall_damage, check_fall_damage,
+    is_immobile, jump_from_ground, push_entities, ridden_input, ridden_speed, server_ai_step,
 };
 pub use sleeping::stop_sleeping;
 pub use travel::{air_travel_vertical_friction, flying_speed, travel, water_slow_down};
@@ -240,19 +242,44 @@ impl Deref for Living<'_> {
 }
 
 /// `LivingEntity`'s [`EntityProps::tick`].
-pub fn tick<E: Parts>(living: &E) {
-    entity::tick(living);
-    living.living().tick_living();
+///
+/// `LivingEntity.tick` after its `super.tick()`.
+pub fn tick<E: Parts>(entity: &E) {
+    let living = &entity.living();
+    entity::tick(entity);
+    living.living_base().decrement_invulnerable_time();
+
+    if living.is_dead_or_dying() {
+        living.tick_death();
+    }
+
+    living.tick_mob_effects();
+    living.detect_equipment_updates();
+
+    if !living.is_removed() {
+        let _movement = living.ai_step();
+    }
+
+    living.tick_living_state();
 }
 
 /// `LivingEntity`'s [`EntityProps::base_tick`].
-pub fn base_tick<E: Parts>(living: &E) {
-    living.living().living_base_tick();
-}
-
-/// `LivingEntity`'s [`EntityProps::hurt`].
-pub fn hurt<E: Parts>(living: &E, world: &World, source: &DamageSource, amount: f32) -> bool {
-    living.living().hurt_server(world, source, amount)
+///
+/// Runs the shared per-tick living-entity behavior: rotation/animation
+/// snapshots, base entity tick, environmental damage, the hurt timer, and
+/// combat memory expiry. Memory must expire before mob effects tick, so a
+/// lethal effect tick sees the same kill credit as vanilla.
+pub fn base_tick<E: Parts>(entity: &E) {
+    let living = &entity.living();
+    living.advance_living_rotation_for_base_tick();
+    living.living_base().tick_swing_state();
+    entity::base_tick(entity);
+    living.tick_living_environmental_damage();
+    living.living_base().decrement_hurt_time();
+    living.living_base().tick_last_hurt_by_player_memory();
+    living
+        .living_base()
+        .tick_living_combat_memory(living.tick_count());
 }
 
 /// `LivingEntity`'s [`EntityProps::set_y_body_rot`].
@@ -279,42 +306,6 @@ pub fn stop_riding<E: Parts>(living: &E) {
 pub fn ride_tick<E: Parts>(living: &E) {
     entity::ride_tick(living);
     living.reset_fall_distance();
-}
-
-/// `LivingEntity`'s [`EntityProps::check_fall_damage`].
-pub fn check_fall_damage<E: Parts>(
-    living: &E,
-    vertical_movement: f64,
-    on_ground: bool,
-    on_state: BlockStateId,
-    pos: BlockPos,
-    world: &Arc<World>,
-) {
-    living
-        .living()
-        .living_check_fall_damage(vertical_movement, on_ground, on_state, pos, world);
-}
-
-/// `LivingEntity`'s [`EntityProps::cause_fall_damage`].
-pub fn cause_fall_damage<E: Parts>(
-    living: &E,
-    fall_distance: f64,
-    damage_modifier: f32,
-    source: &DamageSource,
-) -> bool {
-    living
-        .living()
-        .cause_living_fall_damage(fall_distance, damage_modifier, source)
-}
-
-/// `LivingEntity`'s [`EntityProps::can_freeze`].
-pub fn can_freeze<E: Parts>(living: &E) -> bool {
-    living.living().living_can_freeze()
-}
-
-/// `LivingEntity`'s [`EntityProps::block_speed_factor`].
-pub fn block_speed_factor<E: Parts>(living: &E) -> f32 {
-    living.living().living_block_speed_factor()
 }
 
 /// `LivingEntity`'s [`EntityProps::on_below_world`].
@@ -545,21 +536,6 @@ impl<'a> Living<'a> {
     /// Copies current living body/head rotations to vanilla old-rotation state.
     pub fn advance_living_rotation_for_base_tick(&self) {
         self.living_base().advance_rotation_for_base_tick();
-    }
-
-    /// Runs the shared per-tick living-entity behavior: rotation/animation
-    /// snapshots, base entity tick, environmental damage, the hurt timer, and
-    /// combat memory expiry. Memory must expire before mob effects tick, so a
-    /// lethal effect tick sees the same kill credit as vanilla.
-    fn living_base_tick(&self) {
-        self.advance_living_rotation_for_base_tick();
-        self.living_base().tick_swing_state();
-        entity::base_tick(self.entity());
-        self.tick_living_environmental_damage();
-        self.living_base().decrement_hurt_time();
-        self.living_base().tick_last_hurt_by_player_memory();
-        self.living_base()
-            .tick_living_combat_memory(self.tick_count());
     }
 
     /// Returns vanilla arm-swing animation state.
@@ -949,24 +925,6 @@ impl<'a> Living<'a> {
     #[must_use]
     pub fn can_be_seen_by_anyone(&self) -> bool {
         !self.is_spectator() && EntityHooks::is_alive(self.entity())
-    }
-
-    /// `LivingEntity.tick` after its `super.tick()`.
-    fn tick_living(&self) {
-        self.living_base().decrement_invulnerable_time();
-
-        if self.is_dead_or_dying() {
-            self.tick_death();
-        }
-
-        self.tick_mob_effects();
-        self.detect_equipment_updates();
-
-        if !self.is_removed() {
-            let _movement = self.ai_step();
-        }
-
-        self.tick_living_state();
     }
 
     /// Ticks living-entity counters after movement.

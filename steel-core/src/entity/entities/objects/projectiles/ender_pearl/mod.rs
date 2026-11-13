@@ -23,6 +23,7 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::types::Difficulty;
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
+use crate::entity::EntityTable;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::EndermiteEntity;
 use crate::entity::prelude::*;
@@ -39,7 +40,6 @@ use crate::world::World;
 /// A thrown ender pearl.
 #[entity_behavior(class = "ThrownEnderpearl")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY)]
 #[entity(key = "steel:entity/ender_pearl", constructors)]
 pub struct EnderPearlEntity {
     #[entity(base)]
@@ -56,7 +56,7 @@ pub struct EnderPearlEntity {
     entity_data: CheckedMutex<EnderPearlEntityData>,
 }
 
-impl EnderPearlEntity {
+impl EntityTable for EnderPearlEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: Self::entity_tick,
         on_removal: |pearl, reason| {
@@ -75,7 +75,9 @@ impl EnderPearlEntity {
         },
         ..throwable::entity_props()
     };
+}
 
+impl EnderPearlEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = EnderPearlEntityData::new();
         let thrown_item = ThrownItem::new(&vanilla_items::ENDER_PEARL, &mut entity_data);

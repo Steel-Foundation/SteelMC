@@ -21,6 +21,7 @@ use steel_utils::BlockPos;
 use steel_utils::locks::CheckedMutex;
 
 use crate::chunk::heightmap::HeightmapType;
+use crate::entity::EntityTable;
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::mob;
 use crate::entity::prelude::*;
@@ -36,7 +37,7 @@ const RESTING_TARGETING_RANGE: f64 = 4.0;
 /// A bat.
 #[entity_behavior(class = "Bat", spawn_rule)]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_flags, load = Self::load_flags)]
+#[entity(save = Self::save_flags, load = Self::load_flags)]
 #[entity(key = "steel:entity/bat", constructors)]
 pub struct BatEntity {
     #[entity(base)]
@@ -54,24 +55,7 @@ pub struct BatEntity {
 
 impl DefaultEntityPush for BatEntity {}
 
-impl BatEntity {
-    /// `Bat.checkBatSpawnRules`: below the surface, in the dark, on blocks
-    /// bats spawn on.
-    pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, random| {
-        if pos.y() >= level.height_at(HeightmapType::WorldSurface, pos.x(), pos.z())
-            || random.random::<bool>()
-            || i32::from(level.max_local_raw_brightness(pos, level.sky_darkening()))
-                > random.random_range(0..4)
-        {
-            return false;
-        }
-        level
-            .get_block_state(pos.below())
-            .get_block()
-            .has_tag(&BlockTag::BATS_SPAWNABLE_ON)
-            && Mob::check_mob_spawn_rules(entity_type, level, spawn_reason, pos)
-    };
-
+impl EntityTable for BatEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         movement_emission: |_| EntityMovementEmission::Events,
         is_flapping: |bat| !bat.is_resting() && bat.tick_count() % 10 == 0,
@@ -97,6 +81,26 @@ impl BatEntity {
         },
         ..mob::entity_props()
     };
+}
+
+impl BatEntity {
+    /// `Bat.checkBatSpawnRules`: below the surface, in the dark, on blocks
+    /// bats spawn on.
+    pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, random| {
+        if pos.y() >= level.height_at(HeightmapType::WorldSurface, pos.x(), pos.z())
+            || random.random::<bool>()
+            || i32::from(level.max_local_raw_brightness(pos, level.sky_darkening()))
+                > random.random_range(0..4)
+        {
+            return false;
+        }
+        level
+            .get_block_state(pos.below())
+            .get_block()
+            .has_tag(&BlockTag::BATS_SPAWNABLE_ON)
+            && Mob::check_mob_spawn_rules(entity_type, level, spawn_reason, pos)
+    };
+
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = BatEntityData::new();
         let living_base = LivingEntityBase::new(entity_type, &mut entity_data);

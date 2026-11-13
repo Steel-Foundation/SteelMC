@@ -35,6 +35,7 @@ use crate::world::World;
 use text_components::TextComponent;
 
 use crate::entity::EntityProps;
+use crate::entity::EntityTable;
 use simdnbt::ToNbtTag;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -97,7 +98,7 @@ impl ItemEntityState {
 /// - Has pickup delay before players can collect it
 #[entity_behavior]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_item, load = Self::load_item)]
+#[entity(save = Self::save_item, load = Self::load_item)]
 #[entity(key = "steel:entity/item")]
 pub struct ItemEntity {
     /// Common entity fields (id, uuid, position, etc.).
@@ -514,7 +515,7 @@ impl ItemEntity {
 
 impl DefaultEntityPush for ItemEntity {}
 
-impl ItemEntity {
+impl EntityTable for ItemEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: Self::entity_tick,
         hurt: Self::entity_hurt,
@@ -535,7 +536,9 @@ impl ItemEntity {
         },
         ..EntityProps::new()
     };
+}
 
+impl ItemEntity {
     /// Unlike other entities, the custom name keeps its click and hover actions.
     fn entity_name(&self) -> TextComponent {
         self.custom_name().unwrap_or_else(|| {

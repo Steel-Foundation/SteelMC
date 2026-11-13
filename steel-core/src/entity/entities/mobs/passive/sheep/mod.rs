@@ -32,6 +32,7 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
 
 use crate::behavior::InteractionResult;
+use crate::entity::EntityTable;
 use crate::entity::ageable::{Age, Ageable, AgeableProps};
 use crate::entity::ai::goal::{
     BreedGoal, EatBlockGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal,
@@ -54,7 +55,7 @@ const SHEARED_BIT: i8 = 0x10;
 /// Vanilla sheep entity.
 #[entity_behavior(class = "Sheep", spawn_rule)]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_sheep, load = Self::load_sheep)]
+#[entity(save = Self::save_sheep, load = Self::load_sheep)]
 #[entity(key = "steel:entity/sheep", constructors)]
 pub struct SheepEntity {
     #[entity(base)]
@@ -325,7 +326,7 @@ impl Shearable for SheepEntity {
 
 impl DefaultEntityPush for SheepEntity {}
 
-impl SheepEntity {
+impl EntityTable for SheepEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         apply_implicit_item_components: |sheep, item_stack| {
             if let Some(color) = item_stack.get(SHEEP_COLOR) {
@@ -337,7 +338,9 @@ impl SheepEntity {
         },
         ..animal::entity_props()
     };
+}
 
+impl SheepEntity {
     fn save_sheep(&self, nbt: &mut NbtCompound) {
         nbt.insert("Sheared", i8::from(self.is_sheared()));
         // `DyeColor.LEGACY_ID_CODEC`: the color id as a byte.

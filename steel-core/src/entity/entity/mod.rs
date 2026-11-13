@@ -58,7 +58,7 @@ pub use interaction::{
 };
 pub use motion::{
     air_drag, backs_off_from_edge, can_be_collided_with, can_collide_with, can_simulate_movement,
-    cause_fall_damage, check_fall_damage, default_gravity, effective_gravity, is_flying_player,
+    cause_fall_damage, check_fall_damage, default_gravity, effective_gravity,
     is_hard_collision_relevant, is_suppressing_bounce, known_movement, known_speed, max_up_step,
     move_entity, push_entity, push_impulse, teleport_to, try_set_position,
     uses_client_movement_packets,
@@ -210,7 +210,7 @@ impl<T: Entity> EntityEventSource for T {
 ///
 /// ```ignore
 /// #[derive(Entity)]
-/// #[entity(hooks = Self::ENTITY, save = Self::save_my_entity, load = Self::load_my_entity)]
+/// #[entity(save = Self::save_my_entity, load = Self::load_my_entity)]
 /// #[entity(key = "steel:entity/my_entity")]
 /// pub struct MyEntity {
 ///     #[entity(base)]
@@ -223,7 +223,7 @@ impl<T: Entity> EntityEventSource for T {
 ///     entity_data: CheckedMutex<MyEntityData>,
 /// }
 ///
-/// impl MyEntity {
+/// impl EntityTable for MyEntity {
 ///     const ENTITY: EntityProps<Self> = EntityProps {
 ///         is_pickable: |_| true,
 ///         ..living_entity::entity_props()

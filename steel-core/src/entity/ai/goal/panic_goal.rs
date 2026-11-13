@@ -124,6 +124,7 @@ mod tests {
 
     use crate::entity::damage::DamageSource;
     use crate::entity::entities::ChickenEntity;
+    use crate::entity::living_entity;
     use crate::test_support::test_world;
 
     #[test]
@@ -146,14 +147,16 @@ mod tests {
 
         assert!(!PanicGoal::should_panic(&pig.mob()));
 
-        assert!(pig.living().hurt_server(
+        assert!(living_entity::hurt(
+            &*pig,
             test_world(),
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
             1.0
         ));
         assert!(!PanicGoal::should_panic(&pig.mob()));
 
-        assert!(pig.living().hurt_server(
+        assert!(living_entity::hurt(
+            &*pig,
             test_world(),
             &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK),
             2.0

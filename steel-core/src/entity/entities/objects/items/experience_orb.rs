@@ -21,6 +21,7 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
 
 use crate::entity::EntityProps;
+use crate::entity::EntityTable;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityMovementEmission, RemovalReason, SharedEntity,
@@ -60,7 +61,7 @@ impl ExperienceOrbState {
 /// Vanilla experience orb entity.
 #[entity_behavior(class = "ExperienceOrb")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_orb, load = Self::load_orb)]
+#[entity(save = Self::save_orb, load = Self::load_orb)]
 #[entity(key = "steel:entity/experience_orb", constructors)]
 pub struct ExperienceOrbEntity {
     #[entity(base)]
@@ -403,7 +404,7 @@ impl ExperienceOrbEntity {
 
 impl DefaultEntityPush for ExperienceOrbEntity {}
 
-impl ExperienceOrbEntity {
+impl EntityTable for ExperienceOrbEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |orb| {
             entity::tick(orb);
@@ -422,7 +423,9 @@ impl ExperienceOrbEntity {
         player_touch: Self::entity_player_touch,
         ..EntityProps::new()
     };
+}
 
+impl ExperienceOrbEntity {
     /// `ExperienceOrb.tick` after `super.tick()`.
     fn entity_tick(&self) {
         self.set_old_position_to_current();

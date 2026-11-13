@@ -17,6 +17,7 @@ use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
 
+use crate::entity::EntityTable;
 use crate::entity::block_attached::{self, BlockAttachment};
 use crate::entity::prelude::*;
 use crate::entity::{
@@ -31,7 +32,7 @@ use crate::world::World;
 /// and invisible frames, and map tracking.
 #[entity_behavior(class = "ItemFrame")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_item_frame, load = Self::load_item_frame)]
+#[entity(save = Self::save_item_frame, load = Self::load_item_frame)]
 #[entity(key = "steel:entity/item_frame")]
 pub struct ItemFrameEntity {
     #[entity(base)]
@@ -44,12 +45,14 @@ pub struct ItemFrameEntity {
     entity_data: CheckedMutex<ItemFrameEntityData>,
 }
 
-impl ItemFrameEntity {
+impl EntityTable for ItemFrameEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         spawn_data: |frame| direction_3d_data_value(frame.direction()),
         ..block_attached::entity_props()
     };
+}
 
+impl ItemFrameEntity {
     /// Creates a frame from the generic entity factory path.
     #[must_use]
     pub fn new(

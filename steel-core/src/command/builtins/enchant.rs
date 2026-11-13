@@ -348,7 +348,7 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(TestLivingEntity);
 
-    impl TestLivingEntity {
+    impl EntityTable for TestLivingEntity {
         const ENTITY: EntityProps<Self> = EntityProps {
             ..living_entity::entity_props()
         };
@@ -370,10 +370,6 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             self.entity_type
         }
-    }
-
-    impl EntityTable for TestLivingEntity {
-        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     impl TestLivingEntity {

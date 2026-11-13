@@ -6,7 +6,6 @@ use syn::{Data, DeriveInput, Expr, Fields, Ident, LitStr, Path, Type, parse2, sp
 
 #[derive(Default)]
 struct StructOptions {
-    hooks: Option<Expr>,
     entity_type: Option<Expr>,
     save: Option<Path>,
     load: Option<Path>,
@@ -73,10 +72,6 @@ fn expand(input: TokenStream) -> syn::Result<TokenStream> {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let base_ident = &base.ident;
 
-    let table = options.hooks.as_ref().map(|hooks| {
-        quote! { const ENTITY: crate::entity::EntityProps<Self> = #hooks; }
-    });
-
     let synced_data = synced.map(|field| {
         let ident = &field.ident;
         quote! {
@@ -118,10 +113,6 @@ fn expand(input: TokenStream) -> syn::Result<TokenStream> {
             #synced_data
             #erased_component
             #persistence
-        }
-
-        impl #impl_generics crate::entity::EntityTable for #name #ty_generics #where_clause {
-            #table
         }
 
         #(#has_impls)*
@@ -289,9 +280,7 @@ fn struct_options(input: &DeriveInput) -> syn::Result<StructOptions> {
         .filter(|attr| attr.path().is_ident("entity"))
     {
         attr.parse_nested_meta(|meta| {
-            if meta.path.is_ident("hooks") {
-                options.hooks = Some(meta.value()?.parse()?);
-            } else if meta.path.is_ident("entity_type") {
+            if meta.path.is_ident("entity_type") {
                 options.entity_type = Some(meta.value()?.parse()?);
             } else if meta.path.is_ident("save") {
                 options.save = Some(meta.value()?.parse()?);
@@ -305,8 +294,7 @@ fn struct_options(input: &DeriveInput) -> syn::Result<StructOptions> {
                 options.constructors = true;
             } else {
                 return Err(meta.error(
-                    "expected `hooks`, `entity_type`, `save`, `load`, `no_save_data`, `key` or \
-                     `constructors`",
+                    "expected `entity_type`, `save`, `load`, `no_save_data`, `key` or `constructors`",
                 ));
             }
             Ok(())

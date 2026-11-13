@@ -14,6 +14,7 @@ use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Downcast as _, WorldAabb};
 
 use crate::behavior::InteractionResult;
+use crate::entity::EntityTable;
 use crate::entity::block_attached::{self, BlockAttachment};
 use crate::entity::prelude::*;
 use crate::entity::{
@@ -27,7 +28,7 @@ use crate::world::World;
 /// position and recreate the knot on load.
 #[entity_behavior(class = "LeashFenceKnotEntity")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, no_save_data)]
+#[entity(no_save_data)]
 #[entity(key = "steel:entity/leash_fence_knot")]
 pub struct LeashFenceKnotEntity {
     #[entity(base)]
@@ -38,7 +39,7 @@ pub struct LeashFenceKnotEntity {
     attachment: BlockAttachment,
 }
 
-impl LeashFenceKnotEntity {
+impl EntityTable for LeashFenceKnotEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         interact: Self::entity_interact,
         notify_leashee_removed: |knot, _| {
@@ -48,7 +49,9 @@ impl LeashFenceKnotEntity {
         },
         ..block_attached::entity_props()
     };
+}
 
+impl LeashFenceKnotEntity {
     /// Creates a knot from the generic entity factory path.
     #[must_use]
     pub fn new(

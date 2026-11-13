@@ -59,13 +59,15 @@ unsafe impl DowncastType for VetoExplosionSource {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:test/explosion_veto_source");
 }
 
-impl VetoExplosionSource {
+impl EntityTable for VetoExplosionSource {
     const ENTITY: EntityProps<Self> = EntityProps {
         block_explosion_resistance: Self::entity_block_explosion_resistance,
         should_block_explode: Self::entity_should_block_explode,
         ..EntityProps::new()
     };
+}
 
+impl VetoExplosionSource {
     fn entity_block_explosion_resistance(
         &self,
         _explosion: &dyn Explosion,
@@ -100,10 +102,6 @@ impl Entity for VetoExplosionSource {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-}
-
-impl EntityTable for VetoExplosionSource {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 #[derive(Default)]
@@ -149,12 +147,14 @@ unsafe impl DowncastType for BlockMutatingExposureEntity {
         DowncastTypeKey::new("steel:test/block_mutating_exposure_entity");
 }
 
-impl BlockMutatingExposureEntity {
+impl EntityTable for BlockMutatingExposureEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         on_explosion_hit: Self::entity_on_explosion_hit,
         ..EntityProps::new()
     };
+}
 
+impl BlockMutatingExposureEntity {
     fn entity_on_explosion_hit(&self, _explosion_source: Option<&dyn Entity>) {
         if self.place_wall_on_hit
             && let Some(world) = self.level()
@@ -176,10 +176,6 @@ impl Entity for BlockMutatingExposureEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-}
-
-impl EntityTable for BlockMutatingExposureEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 fn ready_world(key: &'static str) -> TestWorld {

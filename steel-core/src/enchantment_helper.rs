@@ -1075,12 +1075,14 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(TestLivingEntity);
 
-    impl TestLivingEntity {
+    impl EntityTable for TestLivingEntity {
         const ENTITY: EntityProps<Self> = EntityProps {
             with_weapon_item: Self::entity_with_weapon_item,
             ..living_entity::entity_props()
         };
+    }
 
+    impl TestLivingEntity {
         fn entity_with_weapon_item(&self, visitor: &mut dyn FnMut(Option<&ItemStack>)) {
             let equipment = self.living_base.equipment().try_lock().expect(
                 "entity effects must release equipment locks before inspecting source weapons",
@@ -1105,10 +1107,6 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             self.entity_type
         }
-    }
-
-    impl EntityTable for TestLivingEntity {
-        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     impl TestLivingEntity {

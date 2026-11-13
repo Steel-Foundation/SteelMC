@@ -49,13 +49,15 @@ impl RelationshipTickTestEntity {
 
 crate::entity::impl_test_downcast_type!(RelationshipTickTestEntity);
 
-impl RelationshipTickTestEntity {
+impl EntityTable for RelationshipTickTestEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: Self::entity_tick,
         ride_tick: Self::entity_ride_tick,
         ..EntityProps::new()
     };
+}
 
+impl RelationshipTickTestEntity {
     fn entity_tick(&self) {
         self.events.lock().push((self.id(), "tick"));
         self.run_action();
@@ -75,10 +77,6 @@ impl Entity for RelationshipTickTestEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-}
-
-impl EntityTable for RelationshipTickTestEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 #[test]

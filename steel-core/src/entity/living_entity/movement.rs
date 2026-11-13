@@ -34,37 +34,6 @@ impl Living<'_> {
         );
     }
 
-    /// `LivingEntity.checkFallDamage`: refreshes fluid contact and sends the
-    /// landing burst before the entity fall-damage step.
-    pub(super) fn living_check_fall_damage(
-        &self,
-        vertical_movement: f64,
-        on_ground: bool,
-        on_state: BlockStateId,
-        pos: BlockPos,
-        world: &Arc<World>,
-    ) {
-        // Vanilla refreshes its fluid interaction when the cached state is not
-        // already water. Steel refreshes contact during movement, so the last
-        // interaction result is the vanilla check.
-        if !self.base().was_touching_water() {
-            self.update_fluid_interaction();
-        }
-
-        if on_ground && self.fall_distance() > 0.0 {
-            self.send_landing_particles(world, on_state, pos);
-        }
-
-        entity::check_fall_damage(
-            self.entity(),
-            vertical_movement,
-            on_ground,
-            on_state,
-            pos,
-            world,
-        );
-    }
-
     /// Sends the vanilla landing burst when the fall was powerful enough.
     fn send_landing_particles(&self, world: &World, on_state: BlockStateId, pos: BlockPos) {
         if on_state.is_air() {
@@ -90,79 +59,6 @@ impl Living<'_> {
             DVec3::ZERO,
             f64::from(0.15_f32),
         );
-    }
-
-    /// `LivingEntity.getBlockSpeedFactor`: Movement Efficiency moves the block
-    /// factor towards 1.
-    #[must_use]
-    /// `LivingEntity.getBlockSpeedFactor` around `super`: movement
-    /// efficiency pulls the block's factor toward 1.
-    pub(super) fn living_block_speed_factor(&self) -> f32 {
-        let efficiency =
-            self.attributes()
-                .lock()
-                .required_value(vanilla_attributes::MOVEMENT_EFFICIENCY) as f32;
-        let block_factor = entity::block_speed_factor(self.entity());
-        block_factor + efficiency * (1.0 - block_factor)
-    }
-
-    /// Applies fall damage to a living entity, factoring in effects that reduce or negate it.
-    ///
-    /// `Entity`'s step runs with the effective fall distance.
-    #[must_use]
-    pub fn cause_living_fall_damage(
-        &self,
-        fall_distance: f64,
-        damage_modifier: f32,
-        source: &DamageSource,
-    ) -> bool {
-        let effective_fall_distance =
-            if let Some(impact_pos) = self.living_base().current_impulse_impact_pos() {
-                let effective_fall_distance = fall_distance.min(impact_pos.y - self.position().y);
-                if effective_fall_distance <= 0.0 {
-                    self.reset_current_impulse_context();
-                } else {
-                    self.try_reset_current_impulse_context();
-                }
-                effective_fall_distance
-            } else {
-                fall_distance
-            };
-
-        // Vanilla ignores `super`'s result.
-        let _ = entity::cause_fall_damage(
-            self.entity(),
-            effective_fall_distance,
-            damage_modifier,
-            source,
-        );
-
-        let attributes = self.attributes().lock();
-        let safe_fall_distance = attributes
-            .get_value(vanilla_attributes::SAFE_FALL_DISTANCE)
-            .unwrap_or(vanilla_attributes::SAFE_FALL_DISTANCE.default_value);
-        let fall_damage_multiplier = attributes
-            .get_value(vanilla_attributes::FALL_DAMAGE_MULTIPLIER)
-            .unwrap_or(vanilla_attributes::FALL_DAMAGE_MULTIPLIER.default_value);
-        drop(attributes);
-
-        let damage = LivingEntityBase::calculate_fall_damage(
-            effective_fall_distance,
-            damage_modifier,
-            safe_fall_distance,
-            fall_damage_multiplier,
-        );
-        if damage <= 0 {
-            return false;
-        }
-
-        self.reset_current_impulse_context();
-        self.play_sound(self.fall_damage_sound(damage), 1.0, 1.0);
-        self.play_block_fall_sound();
-        if let Some(world) = self.level() {
-            self.hurt(&world, source, damage as f32);
-        }
-        true
     }
 
     /// Gets the gravity value from the attribute system.
@@ -621,6 +517,107 @@ impl Living<'_> {
         }
         true
     }
+}
+
+/// `LivingEntity`'s [`EntityProps::block_speed_factor`].
+///
+/// `LivingEntity.getBlockSpeedFactor`: Movement Efficiency moves the block
+/// factor towards 1.
+/// `LivingEntity.getBlockSpeedFactor` around `super`: movement
+/// efficiency pulls the block's factor toward 1.
+#[must_use]
+pub fn block_speed_factor<E: Parts>(entity: &E) -> f32 {
+    let living = &entity.living();
+    let efficiency = living
+        .attributes()
+        .lock()
+        .required_value(vanilla_attributes::MOVEMENT_EFFICIENCY) as f32;
+    let block_factor = entity::block_speed_factor(entity);
+    block_factor + efficiency * (1.0 - block_factor)
+}
+
+/// `LivingEntity`'s [`EntityProps::cause_fall_damage`].
+///
+/// Applies fall damage to a living entity, factoring in effects that reduce or negate it.
+///
+/// `Entity`'s step runs with the effective fall distance.
+#[must_use]
+pub fn cause_fall_damage<E: Parts>(
+    entity: &E,
+    fall_distance: f64,
+    damage_modifier: f32,
+    source: &DamageSource,
+) -> bool {
+    let living = &entity.living();
+    let effective_fall_distance =
+        if let Some(impact_pos) = living.living_base().current_impulse_impact_pos() {
+            let effective_fall_distance = fall_distance.min(impact_pos.y - living.position().y);
+            if effective_fall_distance <= 0.0 {
+                living.reset_current_impulse_context();
+            } else {
+                living.try_reset_current_impulse_context();
+            }
+            effective_fall_distance
+        } else {
+            fall_distance
+        };
+
+    // Vanilla ignores `super`'s result.
+    let _ = entity::cause_fall_damage(entity, effective_fall_distance, damage_modifier, source);
+
+    let attributes = living.attributes().lock();
+    let safe_fall_distance = attributes
+        .get_value(vanilla_attributes::SAFE_FALL_DISTANCE)
+        .unwrap_or(vanilla_attributes::SAFE_FALL_DISTANCE.default_value);
+    let fall_damage_multiplier = attributes
+        .get_value(vanilla_attributes::FALL_DAMAGE_MULTIPLIER)
+        .unwrap_or(vanilla_attributes::FALL_DAMAGE_MULTIPLIER.default_value);
+    drop(attributes);
+
+    let damage = LivingEntityBase::calculate_fall_damage(
+        effective_fall_distance,
+        damage_modifier,
+        safe_fall_distance,
+        fall_damage_multiplier,
+    );
+    if damage <= 0 {
+        return false;
+    }
+
+    living.reset_current_impulse_context();
+    living.play_sound(living.fall_damage_sound(damage), 1.0, 1.0);
+    living.play_block_fall_sound();
+    if let Some(world) = living.level() {
+        living.hurt(&world, source, damage as f32);
+    }
+    true
+}
+
+/// `LivingEntity`'s [`EntityProps::check_fall_damage`].
+///
+/// `LivingEntity.checkFallDamage`: refreshes fluid contact and sends the
+/// landing burst before the entity fall-damage step.
+pub fn check_fall_damage<E: Parts>(
+    entity: &E,
+    vertical_movement: f64,
+    on_ground: bool,
+    on_state: BlockStateId,
+    pos: BlockPos,
+    world: &Arc<World>,
+) {
+    let living = &entity.living();
+    // Vanilla refreshes its fluid interaction when the cached state is not
+    // already water. Steel refreshes contact during movement, so the last
+    // interaction result is the vanilla check.
+    if !living.base().was_touching_water() {
+        living.update_fluid_interaction();
+    }
+
+    if on_ground && living.fall_distance() > 0.0 {
+        living.send_landing_particles(world, on_state, pos);
+    }
+
+    entity::check_fall_damage(entity, vertical_movement, on_ground, on_state, pos, world);
 }
 
 /// `LivingEntity`'s [`LivingProps::can_glide_using`].

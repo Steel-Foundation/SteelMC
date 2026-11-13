@@ -327,7 +327,7 @@ mod tests {
 
     crate::entity::impl_test_downcast_type!(TestEntity);
 
-    impl TestEntity {
+    impl EntityTable for TestEntity {
         const ENTITY: EntityProps<Self> = EntityProps {
             uses_client_movement_packets: |entity| entity.uses_client_movement_packets,
             known_movement: |entity| entity.known_movement,
@@ -356,10 +356,6 @@ mod tests {
                 .then_some(self.living_base.as_ref()?)
                 .map(|base| base as &dyn ErasedType)
         }
-    }
-
-    impl EntityTable for TestEntity {
-        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     fn state_with_age(age: u8) -> BlockStateId {

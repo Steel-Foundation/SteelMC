@@ -29,12 +29,14 @@ impl SourceSelectiveHardCollisionTarget {
 
 crate::entity::impl_test_downcast_type!(SourceSelectiveHardCollisionTarget);
 
-impl SourceSelectiveHardCollisionTarget {
+impl EntityTable for SourceSelectiveHardCollisionTarget {
     const ENTITY: EntityProps<Self> = EntityProps {
         can_be_collided_with: Self::entity_can_be_collided_with,
         ..EntityProps::new()
     };
+}
 
+impl SourceSelectiveHardCollisionTarget {
     fn entity_can_be_collided_with(&self, other: Option<&dyn Entity>) -> bool {
         other.is_some_and(|source| source.id() == self.accepted_source_id)
     }
@@ -48,10 +50,6 @@ impl Entity for SourceSelectiveHardCollisionTarget {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-}
-
-impl EntityTable for SourceSelectiveHardCollisionTarget {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 struct BroadCollisionSourceEntity {
@@ -77,7 +75,7 @@ impl BroadCollisionSourceEntity {
 
 crate::entity::impl_test_downcast_type!(BroadCollisionSourceEntity);
 
-impl BroadCollisionSourceEntity {
+impl EntityTable for BroadCollisionSourceEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         can_collide_with: |entity, other| other.id() == entity.accepted_target_id,
         ..EntityProps::new()
@@ -92,10 +90,6 @@ impl Entity for BroadCollisionSourceEntity {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-}
-
-impl EntityTable for BroadCollisionSourceEntity {
-    const ENTITY: EntityProps<Self> = Self::ENTITY;
 }
 
 fn hard_collision_candidate_ids(manager: &WorldEntityManager, aabb: &WorldAabb) -> Vec<i32> {

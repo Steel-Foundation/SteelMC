@@ -1,11 +1,12 @@
 //! `Player`'s overrides of the entity hooks.
 
 use super::*;
+use crate::entity::EntityTable;
 use crate::entity::entity;
 use crate::entity::prelude::*;
 
-impl Player {
-    pub(super) const ENTITY: EntityProps<Self> = EntityProps {
+impl EntityTable for Player {
+    const ENTITY: EntityProps<Self> = EntityProps {
         // `ServerPlayer.tick` never calls `super`: the player runs the living
         // tick's pieces itself, around the client-driven movement.
         tick: |player| player.tick_player(),
@@ -88,7 +89,8 @@ impl Player {
         is_pushable: Self::entity_is_pushable,
         on_climbable: Self::on_climbable,
         is_spectator: |entity| entity.game_mode() == GameType::Spectator,
-        is_flying_player: |entity| entity.is_flying(),
+        on_above_bubble_column: Self::entity_on_above_bubble_column,
+        on_inside_bubble_column: Self::entity_on_inside_bubble_column,
         fire_immune_ticks: |_| 20,
         remaining_fire_ticks_cap: |entity| entity.abilities.lock().invulnerable.then_some(1),
         fire_ignite_extra_ticks: |_| rand::random_range(1..=2),
@@ -113,7 +115,9 @@ impl Player {
         award_kill_score: Self::entity_award_kill_score,
         ..living_entity::entity_props()
     };
+}
 
+impl Player {
     /// `ServerPlayer.checkFallDamage`: the mace smash burst on landing, then
     /// `super`.
     fn entity_check_fall_damage(
@@ -195,6 +199,20 @@ impl Player {
             target.id(),
             protocol_look_at_anchor(target_anchor),
         ));
+    }
+
+    /// `Player.onAboveBubbleColumn`: a flying player is not pushed.
+    fn entity_on_above_bubble_column(&self, drag_down: bool, pos: BlockPos) {
+        if !self.is_flying() {
+            entity::on_above_bubble_column(self, drag_down, pos);
+        }
+    }
+
+    /// `Player.onInsideBubbleColumn`: a flying player is not pushed.
+    fn entity_on_inside_bubble_column(&self, drag_down: bool) {
+        if !self.is_flying() {
+            entity::on_inside_bubble_column(self, drag_down);
+        }
     }
 
     /// `ServerPlayer.rideTick` around `super`: a player wanting off dismounts

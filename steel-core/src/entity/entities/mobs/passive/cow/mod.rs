@@ -18,6 +18,7 @@ use steel_registry::{REGISTRY, RegistryReference};
 use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::entity::EntityTable;
 use crate::entity::ageable::{Age, AgeableProps};
 use crate::entity::animal::{self, Breeding, BreedingProps};
 use crate::entity::variant::{self, Variants};
@@ -29,7 +30,7 @@ use crate::entity::{
 /// Vanilla cow entity.
 #[entity_behavior(class = "Cow", spawn_rule)]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = variant::save, load = variant::load)]
+#[entity(save = variant::save, load = variant::load)]
 #[entity(key = "steel:entity/cow", constructors)]
 pub struct CowEntity {
     #[entity(base)]
@@ -132,13 +133,15 @@ impl Variants for CowEntity {
 
 impl DefaultEntityPush for CowEntity {}
 
-impl CowEntity {
+impl EntityTable for CowEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         apply_implicit_item_components: Self::entity_apply_implicit_item_components,
         play_step_sound: Self::entity_play_step_sound,
         ..abstract_cow::entity_props()
     };
+}
 
+impl CowEntity {
     fn entity_apply_implicit_item_components(&self, item_stack: &ItemStack) {
         if let Some(variant) = item_stack.get(COW_VARIANT) {
             self.set_variant(variant.value());

@@ -26,6 +26,7 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::InteractionResult;
+use crate::entity::EntityTable;
 use crate::entity::ageable::{Age, AgeableProps};
 use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
@@ -45,7 +46,7 @@ use crate::inventory::equipment::EquipmentSlot;
 // `ZombifiedPiglin` are ported.
 #[entity_behavior(class = "Pig", spawn_rule)]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = variant::save, load = variant::load)]
+#[entity(save = variant::save, load = variant::load)]
 #[entity(key = "steel:entity/pig", constructors)]
 pub struct PigEntity {
     #[entity(base)]
@@ -301,7 +302,7 @@ impl ItemSteerable for PigEntity {
 
 impl DefaultEntityPush for PigEntity {}
 
-impl PigEntity {
+impl EntityTable for PigEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         apply_implicit_item_components: Self::entity_apply_implicit_item_components,
         play_step_sound: Self::entity_play_step_sound,
@@ -313,7 +314,9 @@ impl PigEntity {
         },
         ..animal::entity_props()
     };
+}
 
+impl PigEntity {
     fn entity_apply_implicit_item_components(&self, item_stack: &ItemStack) {
         if let Some(variant) = item_stack.get(PIG_VARIANT) {
             self.set_variant(variant.value());

@@ -29,6 +29,7 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::entity::EntityProps;
+use crate::entity::EntityTable;
 use crate::entity::ageable::{Age, AgeableProps};
 use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
@@ -73,7 +74,7 @@ impl ChickenState {
 /// Vanilla chicken entity.
 #[entity_behavior(class = "Chicken", spawn_rule)]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_chicken, load = Self::load_chicken)]
+#[entity(save = Self::save_chicken, load = Self::load_chicken)]
 #[entity(key = "steel:entity/chicken", constructors)]
 pub struct ChickenEntity {
     #[entity(base)]
@@ -322,7 +323,7 @@ impl Variants for ChickenEntity {
 
 impl DefaultEntityPush for ChickenEntity {}
 
-impl ChickenEntity {
+impl EntityTable for ChickenEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         apply_implicit_item_components: Self::entity_apply_implicit_item_components,
         play_step_sound: Self::entity_play_step_sound,
@@ -337,7 +338,9 @@ impl ChickenEntity {
         },
         ..animal::entity_props()
     };
+}
 
+impl ChickenEntity {
     fn entity_apply_implicit_item_components(&self, item_stack: &ItemStack) {
         if let Some(variant) = item_stack.get(CHICKEN_VARIANT) {
             self.set_variant(variant.value());

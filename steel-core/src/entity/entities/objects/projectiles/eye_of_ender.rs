@@ -19,6 +19,7 @@ use steel_registry::{level_events, sound_events, vanilla_entities, vanilla_items
 use steel_utils::BlockPos;
 use steel_utils::locks::CheckedMutex;
 
+use crate::entity::EntityTable;
 use crate::entity::entities::ItemEntity;
 use crate::entity::prelude::*;
 use crate::entity::{EntityBase, EntityProps, RemovalReason, next_entity_id};
@@ -38,7 +39,7 @@ struct Flight {
 /// A thrown eye of ender.
 #[entity_behavior(class = "EyeOfEnder")]
 #[derive(Entity)]
-#[entity(hooks = Self::ENTITY, save = Self::save_item, load = Self::load_item)]
+#[entity(save = Self::save_item, load = Self::load_item)]
 #[entity(key = "steel:entity/eye_of_ender", constructors)]
 pub struct EyeOfEnderEntity {
     #[entity(base)]
@@ -50,7 +51,7 @@ pub struct EyeOfEnderEntity {
     entity_data: CheckedMutex<EyeOfEnderEntityData>,
 }
 
-impl EyeOfEnderEntity {
+impl EntityTable for EyeOfEnderEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
         tick: |eye| {
             entity::tick(eye);
@@ -59,7 +60,9 @@ impl EyeOfEnderEntity {
         attackable: |_| false,
         ..EntityProps::new()
     };
+}
 
+impl EyeOfEnderEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         let mut entity_data = EyeOfEnderEntityData::new();
         entity_data.item_stack.set(Self::default_item());

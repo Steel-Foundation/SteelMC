@@ -97,7 +97,7 @@ mod tests {
         };
     }
 
-    impl TestPathfinderMob {
+    impl EntityTable for TestPathfinderMob {
         const ENTITY: EntityProps<Self> = EntityProps {
             ..mob::entity_props()
         };
@@ -123,10 +123,6 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::PIG
         }
-    }
-
-    impl EntityTable for TestPathfinderMob {
-        const ENTITY: EntityProps<Self> = Self::ENTITY;
     }
 
     impl LivingTable for TestPathfinderMob {
