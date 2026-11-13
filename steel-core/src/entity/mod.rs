@@ -483,16 +483,70 @@ fn physics_state_for_move(entity: &dyn Entity) -> EntityPhysicsState {
     })
 }
 
+/// A contiguous block of session entity IDs.
+///
+/// A multipart mob's parts take the IDs directly after their parent's: the client
+/// synthesizes them at `parent_id + 1 ..= parent_id + n` and never receives spawn
+/// packets for them. Worlds tick in parallel, so the block is one locked allocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntityIdBlock {
+    first: i32,
+    count: u32,
+}
+
+impl EntityIdBlock {
+    /// Returns the ID of the entity that owns the block.
+    #[must_use]
+    pub const fn first(self) -> i32 {
+        self.first
+    }
+
+    /// Returns how many IDs the block reserves in total, including the owner.
+    #[must_use]
+    pub const fn len(self) -> u32 {
+        self.count
+    }
+
+    /// Returns whether the block reserves no IDs at all.
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.count == 0
+    }
+
+    /// Returns the ID of the `index`-th sub-entity, `first() + index + 1`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is outside the block, rather than handing out the next entity's ID.
+    #[must_use]
+    pub const fn part(self, index: u32) -> i32 {
+        assert!(
+            index + 1 < self.count,
+            "part index outside the reserved block"
+        );
+        self.first.wrapping_add(index.wrapping_add(1) as i32)
+    }
+}
+
+/// Reserves `count` consecutive entity IDs in one lock; see [`EntityIdBlock`].
+#[must_use]
+pub fn reserve_entity_ids(count: u32) -> EntityIdBlock {
+    let mut counter = ENTITY_COUNTER.lock();
+    let first = *counter;
+    *counter = counter.wrapping_add(count as i32);
+    EntityIdBlock { first, count }
+}
+
 /// Allocates a new unique entity ID.
 ///
 /// This is the primary way to get entity IDs for spawning entities.
 /// Thread-safe through the shared counter lock.
+///
+/// Only for types without sub-entities; use [`EntityRegistry::reserve_id`] when the type
+/// may be multipart.
 #[must_use]
 pub fn next_entity_id() -> i32 {
-    let mut counter = ENTITY_COUNTER.lock();
-    let id = *counter;
-    *counter = counter.wrapping_add(1);
-    id
+    reserve_entity_ids(1).first()
 }
 
 fn apply_block_effect_segment(
@@ -778,6 +832,7 @@ mod mob;
 pub mod mob_effect;
 mod monster;
 mod movement_sync;
+mod part;
 mod potion_contents;
 pub mod projectile;
 pub(crate) mod pushing;
@@ -845,6 +900,7 @@ pub use movement_sync::{
     EntityRotationSyncState, EntityVelocitySyncState, POSITION_SYNC_THRESHOLD,
     PackedEntityRotation, ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate,
 };
+pub use part::{PartEntity, PartEntityBase};
 pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
     AbstractThrownPotion, EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection,

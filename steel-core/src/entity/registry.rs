@@ -16,8 +16,8 @@ use uuid::Uuid;
 
 use super::generated_entities::{register_entity_factories, register_spawn_rules};
 use super::{
-    EntityBaseLoad, EntityBaseSaveData, EntityFireFreezeState, EntitySpawnReason, SharedEntity,
-    next_entity_id,
+    EntityBaseLoad, EntityBaseSaveData, EntityFireFreezeState, EntityIdBlock, EntitySpawnReason,
+    SharedEntity, reserve_entity_ids,
 };
 use crate::world::{LevelReader, World};
 
@@ -62,11 +62,12 @@ pub struct EntityLoadRequest {
 }
 
 impl EntityLoadRequest {
-    fn into_base_load(self) -> (EntityTypeRef, EntityBaseLoad) {
+    /// Converts the request into base load state with an ID from [`EntityRegistry::reserve_id`].
+    fn into_base_load(self, id: i32) -> (EntityTypeRef, EntityBaseLoad) {
         (
             self.entity_type,
             EntityBaseLoad {
-                id: next_entity_id(),
+                id,
                 position: self.position,
                 uuid: self.uuid,
                 velocity: self.velocity,
@@ -87,6 +88,8 @@ struct EntityEntry {
     factory: Option<EntityFactory>,
     /// Factory function to load instances from disk.
     load_factory: Option<EntityLoadFactory>,
+    /// How many sub-entity IDs an instance reserves after its own; see [`EntityIdBlock`].
+    part_count: u32,
     /// Vanilla `SpawnPlacements` predicate, absent when vanilla registers none.
     spawn_rule: Option<SpawnRule>,
 }
@@ -121,11 +124,24 @@ impl EntityRegistry {
             .map(|_| EntityEntry {
                 factory: None,
                 load_factory: None,
+                part_count: 0,
                 spawn_rule: None,
             })
             .collect();
 
         Self { entries }
+    }
+
+    /// Declares how many sub-entities `entity_type` owns, such as the length of
+    /// `EnderDragon.subEntities`.
+    pub fn register_parts(&mut self, entity_type: EntityTypeRef, part_count: u32) {
+        self.entries[entity_type.id()].part_count = part_count;
+    }
+
+    /// Reserves the ID block a new `entity_type` instance needs, including its parts.
+    #[must_use]
+    pub fn reserve_id(&self, entity_type: EntityTypeRef) -> EntityIdBlock {
+        reserve_entity_ids(self.entries[entity_type.id()].part_count + 1)
     }
 
     /// Registers a factory function for an entity type.
@@ -222,7 +238,7 @@ impl EntityRegistry {
             return None;
         };
 
-        let (_, load) = request.into_base_load();
+        let (_, load) = request.into_base_load(self.reserve_id(entity_type).first());
         let entity = load_factory(entity_type, load);
         Self::finish_registered_load_view(&entity, &nbt.into());
         Some(entity)
@@ -237,7 +253,8 @@ impl EntityRegistry {
         let id = request.entity_type.id();
         let entry = self.entries.get(id)?;
         let load_factory = entry.load_factory?;
-        let (entity_type, load) = request.into_base_load();
+        let entity_id = self.reserve_id(request.entity_type).first();
+        let (entity_type, load) = request.into_base_load(entity_id);
         let entity = load_factory(entity_type, load);
         Self::finish_registered_load_view(&entity, nbt);
         Some(entity)

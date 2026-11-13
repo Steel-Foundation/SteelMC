@@ -523,9 +523,10 @@ fn source_scoreboard(source: &CommandSource) -> Result<&Scoreboard, CommandSynta
 }
 
 fn world_candidates(world: &World, aabb: Option<WorldAabb>) -> Vec<SharedEntity> {
+    // As in vanilla `EntitySelector`, only the bounded lookup includes multipart parts.
     aabb.map_or_else(
         || world.entity_manager().get_accessible_entities(),
-        |aabb| world.entity_manager().get_entities_in_aabb(&aabb),
+        |aabb| world.get_entities_in_aabb(&aabb),
     )
 }
 

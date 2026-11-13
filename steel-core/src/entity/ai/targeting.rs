@@ -109,6 +109,7 @@ impl TargetingConditions {
             }
         }
 
+        // Vanilla gates on `instanceof Mob`, so mobs that never pathfind are checked too.
         if self.check_line_of_sight
             && let Some(mob) = targeter.as_mob()
             && !mob.has_line_of_sight_cached(target)
