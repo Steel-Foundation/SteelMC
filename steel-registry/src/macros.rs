@@ -84,6 +84,11 @@ macro_rules! impl_standard_methods {
         $(, $duplicate_key_error:literal)?
     ) => {
         impl $Registry {
+            /// Registers an entry and returns its registry index.
+            ///
+            /// # Panics
+            /// Panics if the registry is frozen, or if duplicate-key rejection
+            /// is enabled and the key is already registered.
             pub fn register(&mut self, entry: $Entry) -> usize {
                 assert!(
                     self.$allow_registering,
@@ -106,6 +111,7 @@ macro_rules! impl_standard_methods {
                 id
             }
 
+            /// Iterates entries in registration order.
             pub fn iter(&self) -> impl Iterator<Item = (usize, $Entry)> + '_ {
                 self.$id_field
                     .iter()

@@ -152,7 +152,7 @@ impl ChiseledBookShelfBlockEntity {
             return false;
         }
 
-        let mut guard = ContainerLockGuard::lock_all(&[&self.container_ref]);
+        let mut guard = ContainerLockGuard::lock_storage(&[&self.container_ref]);
         let Some(container) = guard.get(self.container_ref.container_id()) else {
             return false;
         };
@@ -168,7 +168,7 @@ impl ChiseledBookShelfBlockEntity {
         if slot >= CHISELED_BOOKSHELF_SLOTS {
             return ItemStack::empty();
         }
-        let mut guard = ContainerLockGuard::lock_all(&[&self.container_ref]);
+        let mut guard = ContainerLockGuard::lock_storage(&[&self.container_ref]);
         guard
             .remove_item(self.container_ref.container_id(), slot, MAX_BOOKS_PER_SLOT)
             .unwrap_or_else(ItemStack::empty)

@@ -4,7 +4,7 @@ use super::super::runner::FeatureDecorationRunner;
 use smallvec::SmallVec;
 use std::f32::consts::PI;
 use std::time::Instant;
-use steel_math::trig;
+use steel_math::{round_f32, trig};
 use steel_utils::PackedSectionBlockPos;
 use steel_worldgen::state_resolver::WorldgenStateResolver;
 
@@ -348,11 +348,7 @@ impl FeatureDecorationRunner {
         random: &mut WorldgenRandom,
         max_distance: i32,
     ) -> i32 {
-        Self::java_round_f32((random.next_f32() - random.next_f32()) * max_distance as f32)
-    }
-
-    pub(in crate::worldgen::feature) fn java_round_f32(value: f32) -> i32 {
-        (value + 0.5).floor() as i32
+        round_f32((random.next_f32() - random.next_f32()) * max_distance as f32)
     }
 
     fn try_place_resolved_ore_block(
