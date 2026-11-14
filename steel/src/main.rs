@@ -190,6 +190,10 @@ fn steel_main() {
     drop(chunk_runtime);
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "startup sequencing and error handling"
+)]
 async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConfig) {
     let cancel_token = CancellationToken::new();
 
@@ -200,6 +204,15 @@ async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConf
             return;
         }
     };
+    log::info!(
+        "Console initialized in {} mode ({})",
+        if logger.is_interactive() {
+            "interactive (TUI)"
+        } else {
+            "plain (line-buffered)"
+        },
+        logger.mode_reason()
+    );
     shutdown::install(cancel_token.clone());
     let panic_token = cancel_token.clone();
     panic::set_hook(Box::new(move |panic_info| {

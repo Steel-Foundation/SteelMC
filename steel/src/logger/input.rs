@@ -111,15 +111,27 @@ impl CommandLogger {
                             }
                             if let KeyCode::Char(char) = key.code {
                                 if key.modifiers.contains(KeyModifiers::CONTROL) {
+                                    if !string.is_empty() {
+                                        tx.send(ExtendedKey::String(string)).ok();
+                                        string = String::new();
+                                    }
                                     tx.send(ExtendedKey::Ctrl(char)).ok();
                                     continue;
                                 }
                                 write!(string, "{char}").ok();
                             } else {
+                                if !string.is_empty() {
+                                    tx.send(ExtendedKey::String(string)).ok();
+                                    string = String::new();
+                                }
                                 tx.send(ExtendedKey::Generic(key)).ok();
                             }
                         }
                         Event::Resize(..) => {
+                            if !string.is_empty() {
+                                tx.send(ExtendedKey::String(string)).ok();
+                                string = String::new();
+                            }
                             tx.send(ExtendedKey::Resize).ok();
                         }
                         _ => (),
