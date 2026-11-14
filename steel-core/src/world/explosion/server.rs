@@ -5,7 +5,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use rustc_hash::FxHashMap;
 use steel_registry::vanilla_game_rules::MOB_GRIEFING;
-use steel_registry::{vanilla_damage_types, vanilla_entities, vanilla_game_events};
+use steel_registry::{vanilla_entities, vanilla_game_events};
 use steel_utils::random::{Random as _, legacy_random::LegacyRandom};
 
 use crate::entity::damage::DamageSource;
@@ -63,7 +63,7 @@ impl<'a> ServerExplosion<'a> {
             }
         });
         let damage_source = damage_source
-            .unwrap_or_else(|| default_damage_source(source.clone(), indirect_source.clone()));
+            .unwrap_or_else(|| DamageSource::explosion(source.clone(), indirect_source.clone()));
         let damage_calculator = match (damage_calculator, &source) {
             (Some(calculator), _) => SelectedDamageCalculator::Custom(calculator),
             (None, Some(source)) => SelectedDamageCalculator::Entity(Arc::clone(source)),
@@ -141,6 +141,17 @@ impl Explosion for ServerExplosion<'_> {
         self.center
     }
 
+    fn can_trigger_blocks(&self) -> bool {
+        if self.block_interaction != BlockInteraction::TriggerBlock {
+            return false;
+        }
+        let is_breeze_charge = self
+            .source
+            .as_ref()
+            .is_some_and(|source| source.entity_type() == &vanilla_entities::BREEZE_WIND_CHARGE);
+        !is_breeze_charge || self.world.get_game_rule(&MOB_GRIEFING)
+    }
+
     fn should_affect_blocklike_entities(&self) -> bool {
         let is_wind_charge = self.source.as_ref().is_some_and(|source| {
             source.entity_type() == &vanilla_entities::BREEZE_WIND_CHARGE
@@ -150,26 +161,6 @@ impl Explosion for ServerExplosion<'_> {
             && (self.world.get_game_rule(&MOB_GRIEFING)
                 || self.block_interaction.should_affect_blocklike_entities())
     }
-}
-
-/// Vanilla `DamageSources.explosion(direct, indirect)`.
-fn default_damage_source(
-    direct: Option<SharedEntity>,
-    indirect: Option<SharedEntity>,
-) -> DamageSource {
-    let damage_type = if direct.is_some() && indirect.is_some() {
-        &vanilla_damage_types::PLAYER_EXPLOSION
-    } else {
-        &vanilla_damage_types::EXPLOSION
-    };
-    let mut damage_source = DamageSource::environment(damage_type);
-    if let Some(direct) = direct {
-        damage_source = damage_source.with_direct_entity(direct);
-    }
-    if let Some(indirect) = indirect {
-        damage_source = damage_source.with_causing_entity(indirect);
-    }
-    damage_source
 }
 
 #[cfg(test)]

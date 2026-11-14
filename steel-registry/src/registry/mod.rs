@@ -322,7 +322,7 @@ impl Registry {
     #[must_use]
     pub fn new_vanilla() -> Self {
         let mut registry = Self::new_empty();
-        vanilla_advancements::register_advancements(&mut registry.advancements);
+        vanilla_advancements::register_advancements(&registry.advancements);
         vanilla_attributes::register_attributes(&mut registry.attributes);
 
         vanilla_blocks::register_blocks(&mut registry.blocks);
@@ -787,7 +787,7 @@ impl Registry {
             custom_stats: CustomStatRegistry::new(),
             stat_types: StatTypeRegistry::new(),
             ticket_types: TicketTypeRegistry::new(),
-            advancements: AdvancementRegistry::new(),
+            advancements: AdvancementRegistry::default(),
         }
     }
 }
