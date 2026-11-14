@@ -21,9 +21,16 @@ const fn chunk_max_block_z(pos: ChunkPos) -> i32 {
 
 impl World {
     /// Initializes this world's default spawn using vanilla's first-world spawn search.
+    /// Domain random sequences must be bound before initializing a new world.
     pub async fn initialize_spawn_if_needed(self: &Arc<Self>) -> Result<(), String> {
         if self.level_data.read().data().initialized {
             return Ok(());
+        }
+
+        if self.random_sequences.read().is_none() {
+            return Err(
+                "domain random sequences must be loaded before spawn initialization".to_owned(),
+            );
         }
 
         if self.dimension_type.key != vanilla_dimension_types::OVERWORLD.key {
@@ -210,5 +217,30 @@ impl World {
 
         self.height_at(heightmap_type, x, z)
             .unwrap_or_else(|| self.get_min_y())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test_support::fresh_test_world;
+    use tokio::runtime::Builder;
+
+    #[test]
+    fn spawn_rejects_unbound_random_sequences_before_requesting_chunks() {
+        let fixture = fresh_test_world("spawn_unbound_sequences");
+        let world = &fixture.world;
+        *world.random_sequences.write() = None;
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        runtime
+            .block_on(world.initialize_spawn_if_needed())
+            .expect_err("spawn generation requires bound domain sequences");
+
+        assert!(!world.level_data.read().data().initialized);
+        assert!(world.chunk_map.chunks.is_empty());
+        world.chunk_map.stop_generation_refill_loop();
     }
 }
