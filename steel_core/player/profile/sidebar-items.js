@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_valid_player_name","offline_uuid"],"mod":["known_players","lookup"],"struct":["GameProfile"]};

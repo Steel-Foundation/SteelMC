@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ColumnBlock"],"struct":["GenerationContext","GenerationStub","TerrainProbe"],"trait":["StructureGenerationContext"]};

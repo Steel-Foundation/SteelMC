@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ARMOR_PROTECTION_DIVIDER","BASE_ARMOR_TOUGHNESS","MAX_ARMOR","MIN_ARMOR_RATIO"],"fn":["get_damage_after_absorb","get_damage_after_magic_absorb"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_nether_biome","get_nether_biome_cached","get_overworld_biome","get_overworld_biome_cached","lookup_nether_biome","lookup_overworld_biome"],"static":["NETHER_BIOME_PARAMETERS","NETHER_BIOME_POINTS","OVERWORLD_BIOME_PARAMETERS","OVERWORLD_BIOME_POINTS"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BLOCKS_PER_CHUNK","CHUNK_REQUEST_POLL_DELAY","PLAYER_SPAWN_CHUNK_RADIUS","POLL_TIME_BUDGET"],"enum":["LoadPoll","PlayerSpawnSearchPoll","SpawnCandidateKind"],"fn":["aabb_contains_any_liquid","block_bottom_center"],"mod":["candidates","chunk_load","fallback"],"struct":["PendingSpawnCandidate","PlayerSpawnSearch"]};

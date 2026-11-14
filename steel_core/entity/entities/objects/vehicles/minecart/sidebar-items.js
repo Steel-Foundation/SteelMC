@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ACTIVATOR_RAIL_DAMAGE"],"struct":["MinecartEntity"]};

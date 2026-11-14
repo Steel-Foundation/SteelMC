@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["VANILLA_HORIZONTAL_DIRECTIONS"],"fn":["make_oriented_piece_bounding_box","random_horizontal_direction"]};

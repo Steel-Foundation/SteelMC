@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PermissionResolutionSource","PermissionState"],"fn":["push_candidate","resolve_all","resolve_any"],"struct":["PermissionCandidate","PermissionEntry","PermissionResolution","PermissionSet"]};

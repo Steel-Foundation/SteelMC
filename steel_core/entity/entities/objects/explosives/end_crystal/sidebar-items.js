@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EXPLOSION_RADIUS"],"struct":["EndCrystalEntity"]};

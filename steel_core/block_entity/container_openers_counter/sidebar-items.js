@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["OPENERS_SCAN_MARGIN"],"struct":["ContainerOpenersCounter","OpenersChange","OpenersState"]};

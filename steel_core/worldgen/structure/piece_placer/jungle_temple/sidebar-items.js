@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["JUNGLE_TEMPLE_DISPENSER_LOOT","JUNGLE_TEMPLE_LOOT"],"fn":["moss_box","place_jungle_temple","redstone_all_sides","redstone_ew","redstone_n_side_s_up","redstone_ns","redstone_nw","redstone_ws","repeater","stairs","sticky_piston","tripwire_east_west","tripwire_hook","tripwire_north_south","vine"]};

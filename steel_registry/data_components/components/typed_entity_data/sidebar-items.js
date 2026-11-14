@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["read_registry_id","typed_data_id","typed_data_nbt","write_registry_id"],"struct":["BlockEntityData","EntityData"]};

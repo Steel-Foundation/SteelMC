@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SQUID_FLEE_MIN_DISTANCE","SQUID_FLEE_SPEED"],"struct":["SquidFleeGoal"]};

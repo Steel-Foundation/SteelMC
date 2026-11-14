@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_STORED_VALUES","SHARD_COUNT"],"struct":["Column","CornerColumnStore","Shard"]};

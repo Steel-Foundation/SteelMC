@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["command","command_player","domain_menu","icon","registration","switch_world","switch_world_at_location","switch_world_to","switch_world_to_location","switch_world_to_location_with_rotation","switch_world_with_rotation"],"struct":["DomainMenuKind"]};

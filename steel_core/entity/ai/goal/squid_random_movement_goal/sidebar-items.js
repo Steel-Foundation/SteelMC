@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MOVEMENT_CHANGE_INTERVAL","MOVEMENT_SPEED","MOVEMENT_VERTICAL_BASE","NO_ACTION_TIME_LIMIT"],"struct":["SquidRandomMovementGoal"]};

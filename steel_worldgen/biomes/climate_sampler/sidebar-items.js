@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["overworld_spawn_targets"],"struct":["OverworldClimateSampler","SpawnSearchResult"]};

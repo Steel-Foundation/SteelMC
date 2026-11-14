@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BLOCK_CENTER","CHUNK_WIDTH","ENTITY_Y"],"fn":["manager_with_entities"],"struct":["BenchEntity"]};

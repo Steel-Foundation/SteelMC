@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FACING","IN_WALL","OPEN","POWERED"],"struct":["FenceGateBlock"]};

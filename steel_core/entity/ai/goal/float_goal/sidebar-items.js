@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FLOAT_JUMP_CHANCE"],"struct":["FloatGoal"]};

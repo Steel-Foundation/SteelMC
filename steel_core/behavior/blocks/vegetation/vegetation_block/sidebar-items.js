@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["survival_update_shape","vegetation_can_survive"],"trait":["Vegetation"]};

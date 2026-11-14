@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["ender_pearl","eye_of_ender","firework_rocket","fishing_hook","lingering_potion","snowball","splash_potion","thrown_egg"],"struct":["EnderPearlEntity","EyeOfEnderEntity","FireworkRocketEntity","FishingHookEntity","FishingHookState","LingeringPotionEntity","SnowballEntity","SplashPotionEntity","ThrownEggEntity"]};

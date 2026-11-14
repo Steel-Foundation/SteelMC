@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CHEST_SLOTS","EVENT_SET_OPEN_COUNT"],"struct":["ChestBlockEntity"]};

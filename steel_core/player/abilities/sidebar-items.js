@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_FLYING_SPEED","DEFAULT_WALKING_SPEED"],"struct":["Abilities"]};

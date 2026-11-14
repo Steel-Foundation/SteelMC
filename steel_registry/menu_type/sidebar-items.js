@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["MenuType","MenuTypeRegistry"],"type":["MenuTypeRef"]};

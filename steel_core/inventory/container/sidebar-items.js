@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_DISTANCE_BUFFER"],"fn":["calculate_redstone_signal_from_containers","clear_or_count_matching_stack","load_all_items","matching_item_count"],"mod":["crafting","helper","result","simple"],"struct":["CraftingContainer","ResultContainer","SimpleContainer"],"trait":["Container"]};

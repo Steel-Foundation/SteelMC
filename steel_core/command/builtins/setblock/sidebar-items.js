@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SetBlockMode"],"fn":["command","registration","set_block","set_block_failed"]};

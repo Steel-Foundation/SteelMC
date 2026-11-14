@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["command","hand_swing","registration","swing_entities","swing_self","swing_targets"]};

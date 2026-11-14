@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MUD_SPLASH_PARTICLE_COUNT"],"fn":["potion_default_instance","potion_use_on"],"struct":["PotionItem"]};

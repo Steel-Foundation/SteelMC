@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["RecentDamageSource","ResolvedSourceEntity","WeakDamageSource","WeakSourceEntity"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MIN_PUSH_DISTANCE","PUSH_STRENGTH"]};

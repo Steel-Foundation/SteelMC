@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LootContextEntity"],"struct":["DamageSourceInfo","EntityEquipmentRef","EntityRef","EntityRefFlags","LootContext","WeatherState"],"type":["EntityEquipmentSlots"]};

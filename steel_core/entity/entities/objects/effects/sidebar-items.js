@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["area_effect_cloud"],"struct":["AreaEffectCloudEntity"]};

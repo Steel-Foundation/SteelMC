@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CARVING_MASK_WORDS"],"struct":["CarvingMask"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CHARGES","EXPLOSION_RADIUS"],"struct":["RespawnAnchorBlock","RespawnAnchorExplosionDamageCalculator"]};

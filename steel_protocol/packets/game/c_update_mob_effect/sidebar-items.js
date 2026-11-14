@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FLAG_AMBIENT","FLAG_BLEND","FLAG_SHOW_ICON","FLAG_VISIBLE"],"fn":["mob_effect_flags"],"struct":["CUpdateMobEffect","MobEffectPacketFlags"]};

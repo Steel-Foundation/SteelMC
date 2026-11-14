@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["Potion","PotionEffect","PotionRegistry"],"type":["PotionRef"]};

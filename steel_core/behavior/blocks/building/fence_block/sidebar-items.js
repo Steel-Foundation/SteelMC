@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EAST","HORIZONTAL_FACING","NORTH","SOUTH","WATERLOGGED","WEST"],"struct":["FenceBlock"]};

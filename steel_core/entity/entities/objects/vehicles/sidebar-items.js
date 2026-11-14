@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["abstract_minecart","chest_minecart","minecart","minecart_behavior","spawner_minecart","vehicle_entity"],"struct":["AbstractMinecartBase","ChestMinecartEntity","MinecartBehavior","MinecartEntity","SpawnerMinecartEntity"],"trait":["AbstractMinecart","VehicleEntity"]};

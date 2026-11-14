@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AdvancementHolder"],"struct":["AdvancementIdx","AdvancementNode","AdvancementRegistry","FrozenAdvancementRegistry"],"type":["AdvancementNodeRef","AdvancementRef"]};

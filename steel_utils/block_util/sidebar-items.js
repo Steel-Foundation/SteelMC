@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_largest_rectangle_around","get_limit","get_max_rectangle_location"],"struct":["FoundRectangle","IntBounds"]};

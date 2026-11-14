@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MATCH_SPLITTER"],"fn":["identifier_matches","matches_substring","matches_substring_ignore_case","suggest_list","suggest_resources"],"struct":["FixedSuggestionProvider"]};

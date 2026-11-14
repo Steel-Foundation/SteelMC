@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["command","registration"],"struct":["ReturnFail","ReturnRun","ReturnValue"]};

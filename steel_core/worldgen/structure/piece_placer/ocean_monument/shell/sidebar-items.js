@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["generate_entrance_archs","generate_entrance_wall","generate_lower_wall","generate_middle_wall","generate_roof_piece","generate_upper_wall","generate_wing","place_monument_building_shell"]};

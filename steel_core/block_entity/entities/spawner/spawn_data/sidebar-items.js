@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["normalize_entity_id"],"struct":["CustomSpawnRules","EquipmentTable","LightRange","SpawnData","WeightedSpawnData"]};

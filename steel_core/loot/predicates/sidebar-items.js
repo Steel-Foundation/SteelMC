@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["damage_has_tag","equipment_matches","item_enchantment_matches"]};

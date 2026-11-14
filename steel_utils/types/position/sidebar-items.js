@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TraversalNodeStatus"],"struct":["BetweenClosed","BlockPos","BlockPosWithinManhattan","ChunkPos","GlobalPos","SectionPos","SpiralAround"]};

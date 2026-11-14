@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["COMMAND_REQUESTS_PER_TICK","DEFAULT_COMMAND_REQUEST_CAPACITY","DEFAULT_SUGGESTION_REQUEST_CAPACITY"],"enum":["CommandRequest","PendingRequest"],"struct":["CommandQueueFull","CommandRequestQueue","PendingRequestQueues"]};

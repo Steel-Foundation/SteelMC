@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PendingPromotionCommit"],"fn":["empty_postprocessing","postprocessing_from_disk"],"struct":["Chunk","TransientGenerationState"]};

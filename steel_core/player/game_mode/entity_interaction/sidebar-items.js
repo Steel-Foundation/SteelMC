@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FULL_ATTACK_STRENGTH_SCALE_THRESHOLD"],"fn":["sound_holder_ref"]};

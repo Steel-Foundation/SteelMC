@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["AGE","MAX_AGE"],"struct":["GrowingPlantHeadBlock"],"trait":["GrowingPlantHeadBehavior"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["VANILLA_TABLES"],"struct":["LootTableBehaviorRegistry"],"type":["LootTableFunction"]};

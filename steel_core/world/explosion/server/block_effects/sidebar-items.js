@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FIRE_CHANCE_DENOMINATOR","MAX_DROPS_PER_COMBINED_STACK"],"fn":["add_or_append_stack"],"struct":["StackCollector"]};

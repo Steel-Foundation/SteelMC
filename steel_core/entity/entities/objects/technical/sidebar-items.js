@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["interaction","marker"],"struct":["InteractionEntity","InteractionEntityDataView","MarkerEntity","PlayerAction"]};
