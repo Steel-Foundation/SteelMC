@@ -365,15 +365,6 @@ fn spring_source_fluid_state_creates_vanilla_legacy_source_block() {
 }
 
 #[test]
-fn scattered_ore_offset_rounding_matches_java_math_round() {
-    assert_eq!(FeatureDecorationRunner::java_round_f32(-1.5), -1);
-    assert_eq!(FeatureDecorationRunner::java_round_f32(-0.5), 0);
-    assert_eq!(FeatureDecorationRunner::java_round_f32(0.49), 0);
-    assert_eq!(FeatureDecorationRunner::java_round_f32(0.5), 1);
-    assert_eq!(FeatureDecorationRunner::java_round_f32(1.5), 2);
-}
-
-#[test]
 fn blue_ice_horizontal_spread_radius_uses_java_integer_division() {
     assert_eq!(FeatureDecorationRunner::blue_ice_xz_diff(-5), 1);
     assert_eq!(FeatureDecorationRunner::blue_ice_xz_diff(-4), 1);

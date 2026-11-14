@@ -4,6 +4,7 @@
 //! data, and positional random sources needed by transpiled surface rules.
 
 use rustc_hash::FxHashMap;
+use steel_math::round_f32;
 use steel_registry::biome::TemperatureModifier;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_blocks;
@@ -619,14 +620,11 @@ impl SurfaceNoiseProvider for SurfaceSystem {
     }
 
     fn get_band(&self, x: i32, y: i32, z: i32) -> BlockStateId {
-        // Java: (int)Math.round(noise * 4.0)
-        let offset = (f64::from(self.clay_bands_offset_noise.get_value(
-            f64::from(x),
-            0.0,
-            f64::from(z),
-        )) * 4.0
-            + 0.5)
-            .floor() as i32;
+        let offset = round_f32(
+            self.clay_bands_offset_noise
+                .get_value(f64::from(x), 0.0, f64::from(z))
+                * 4.0,
+        );
         let index = ((y + offset) % CLAY_BAND_LENGTH as i32 + CLAY_BAND_LENGTH as i32) as usize
             % CLAY_BAND_LENGTH;
         self.clay_bands[index]

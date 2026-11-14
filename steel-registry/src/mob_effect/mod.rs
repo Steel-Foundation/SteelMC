@@ -5,6 +5,7 @@ pub mod instance;
 use crate::RegistryTags;
 use crate::attribute::{AttributeModifierOperation, AttributeRef};
 use crate::particle_type::{ColorParticleOption, ParticleData, ParticleTypeRef};
+use crate::sound_event::SoundEventRef;
 use rustc_hash::FxHashMap;
 use steel_utils::{ArgbColor, Identifier, RgbColor};
 
@@ -76,6 +77,7 @@ pub struct MobEffect {
     pub color: RgbColor,
     pub particle: MobEffectParticle,
     pub attribute_modifiers: &'static [MobEffectAttributeModifier],
+    pub sound_on_added: Option<SoundEventRef>,
 }
 
 impl MobEffect {
