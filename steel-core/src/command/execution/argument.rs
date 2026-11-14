@@ -35,7 +35,7 @@ use steel_protocol::packets::game::{
     ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
     SuggestionType as ProtocolSuggestionType,
 };
-use steel_registry::advancement::registry::AdvancementRef;
+use steel_registry::advancement::Advancement;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
     DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _,
@@ -43,7 +43,6 @@ use steel_registry::{
     entity_type::EntityTypeRef, item_stack::ItemStack, timeline::TimelineRef,
     world_clock::WorldClockRef,
 };
-use steel_utils::translations::ADVANCEMENT_ADVANCEMENT_NOT_FOUND;
 use steel_utils::{
     Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
     nbt::{NbtPath, parse_snbt_argument},
@@ -542,7 +541,7 @@ argument_value_wrapper!(
     "steel:command/value/enchantment"
 );
 argument_value_wrapper!(
-    AdvancementValue(AdvancementRef),
+    AdvancementValue(Identifier),
     "steel:command/value/advancement"
 );
 argument_value_wrapper!(
@@ -1138,14 +1137,8 @@ unit_argument_parser!(
     _source | { Ok(AdvancementValue(parse_advancement(reader)?)) },
     suggest | _context,
     builder | {
-        suggest_resources(
-            REGISTRY
-                .advancements
-                .advancements()
-                .iter()
-                .map(|adv| adv.key()),
-            builder,
-        );
+        let snap = REGISTRY.advancements.snapshot();
+        suggest_resources(snap.advancements().map(Advancement::key), builder);
     },
     protocol(
         ProtocolArgumentType::ResourceLocation,
@@ -1537,17 +1530,8 @@ fn parse_summonable_entity(
     Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))))
 }
 
-fn parse_advancement(reader: &mut StringReader<'_>) -> Result<AdvancementRef, CommandSyntaxError> {
-    parse_identifier(reader).and_then(|key| {
-        REGISTRY.advancements.by_key(&key).map_or(
-            Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
-                TextComponent::translated(
-                    ADVANCEMENT_ADVANCEMENT_NOT_FOUND.message([key.to_string()]),
-                ),
-            )))),
-            |val| Ok(val.value()),
-        )
-    })
+fn parse_advancement(reader: &mut StringReader<'_>) -> Result<Identifier, CommandSyntaxError> {
+    parse_identifier(reader)
 }
 
 fn can_summon(entity_type: EntityTypeRef) -> bool {

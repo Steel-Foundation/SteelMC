@@ -772,11 +772,9 @@ async fn disk_player_data_advancements_round_trip() {
     };
     let uuid = Uuid::from_u128(7);
 
-    let advancement = REGISTRY
-        .advancements
+    let registry = REGISTRY.advancements.snapshot();
+    let advancement = registry
         .advancements()
-        .iter()
-        .copied()
         .find(|advancement| !advancement.requirements().names().is_empty())
         .expect("vanilla registry should contain an advancement with criteria");
     let criterion = advancement
