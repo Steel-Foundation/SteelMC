@@ -4,21 +4,24 @@
 
 use std::sync::{Arc, Weak};
 
+use glam::DVec3;
 use steel_macros::block_behavior;
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
-use steel_registry::{vanilla_block_entity_types, vanilla_custom_stats};
-use steel_utils::{BlockPos, BlockStateId, translations};
-use text_components::TextComponent;
+use steel_registry::{sound_events, vanilla_block_entity_types, vanilla_custom_stats};
+use steel_utils::{BlockPos, BlockStateId, Downcast as _, translations};
 
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
-use crate::block_entity::BLOCK_ENTITIES;
-use crate::inventory::container::calculate_redstone_signal_from_container;
+use crate::block_entity::{BLOCK_ENTITIES, entities::BarrelBlockEntity};
+use crate::entity::Entity as _;
+use crate::inventory::container::calculate_redstone_signal_from_containers;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
-use crate::inventory::menu::kinds::chest;
+use crate::inventory::menu::kinds::generic_9x_menu;
+use crate::nameable::Nameable as _;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 
@@ -63,19 +66,44 @@ impl BlockBehavior for BarrelBlock {
             return InteractionResult::Pass;
         };
 
-        // Create a container reference from the block entity
-        let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
+        let Some(barrel) = block_entity.downcast_ref::<BarrelBlockEntity>() else {
+            return InteractionResult::Pass;
+        };
+        let title = barrel.name();
+        player.award_custom_stat(&vanilla_custom_stats::OPEN_BARREL);
+        if !barrel.can_open(player) {
+            if !player.is_spectator() {
+                player.send_overlay_message(
+                    &translations::CONTAINER_IS_LOCKED
+                        .message([title])
+                        .component(),
+                );
+                world.play_sound_at(
+                    &sound_events::BLOCK_CHEST_LOCKED,
+                    SoundSource::Blocks,
+                    DVec3::from(pos.get_center()),
+                    1.0,
+                    1.0,
+                    None,
+                );
+            }
+            return InteractionResult::Success;
+        }
+        if let Some(randomizable) = block_entity.as_randomizable_container()
+            && let Err(error) = randomizable.unpack_loot_table(Some(player))
+        {
+            log::error!("Could not unpack barrel loot at {pos:?}: {error}");
+            return InteractionResult::Success;
+        }
+        let Some(container_ref) = block_entity.container_ref() else {
             return InteractionResult::Pass;
         };
 
-        // Open the chest menu (3 rows for barrel)
         let inventory = Arc::clone(&player.inventory);
-        player.open_menu(
-            TextComponent::translated(translations::CONTAINER_BARREL.msg()),
-            move |context| chest(inventory, context.container_id, container_ref, 3),
-        );
+        player.open_menu(title, move |context| {
+            generic_9x_menu(inventory, context.container_id, container_ref, 3)
+        });
 
-        player.award_custom_stat(&vanilla_custom_stats::OPEN_BARREL);
         // TODO: Anger nearby piglins (PiglinAi.angerNearbyPiglins)
         // TODO: Implement ContainerOpenersCounter to track open state, play sounds,
         //       and update OPEN block property. Requires scheduled block ticks (scheduleTick)
@@ -116,11 +144,12 @@ impl BlockBehavior for BarrelBlock {
         else {
             return 0;
         };
-        let guard = ContainerLockGuard::lock_all(&[&container_ref]);
-        guard
-            .get(container_ref.container_id())
-            .map_or(0, |container| {
-                calculate_redstone_signal_from_container(container)
-            })
+        let Ok(guard) = ContainerLockGuard::lock_all(&[&container_ref]) else {
+            // TODO: Preserve vanilla access ordering so loot-generation contention
+            // cannot become a false zero comparator signal. Returning zero here
+            // also hides generation failures; distinguish them from empty contents.
+            return 0;
+        };
+        calculate_redstone_signal_from_containers(guard.get(container_ref.container_id()))
     }
 }

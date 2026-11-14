@@ -1,3 +1,4 @@
+use crate::enchantment::Enchantment;
 use rustc_hash::FxHashMap;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
@@ -37,7 +38,8 @@ impl ItemEnchantments {
         if level == 0 {
             self.levels.remove(&enchantment);
         } else {
-            self.levels.insert(enchantment, level.min(255));
+            self.levels
+                .insert(enchantment, level.min(Enchantment::MAX_LEVEL));
         }
     }
 
@@ -46,7 +48,7 @@ impl ItemEnchantments {
         if level > 0 {
             let existing = self.get_level(&enchantment);
             self.levels
-                .insert(enchantment, existing.max(level).min(255));
+                .insert(enchantment, existing.max(level).min(Enchantment::MAX_LEVEL));
         }
     }
 
@@ -99,7 +101,7 @@ impl WriteTo for ItemEnchantments {
             let id = i32::try_from(id).map_err(|_| {
                 std::io::Error::other(format!("Enchantment id out of protocol range: {id}"))
             })?;
-            if level > 255 {
+            if level > Enchantment::MAX_LEVEL {
                 return Err(std::io::Error::other(format!(
                     "Enchantment {key} has invalid level {level}"
                 )));
@@ -123,7 +125,7 @@ impl ReadFrom for ItemEnchantments {
             let id = usize::try_from(id)
                 .map_err(|_| std::io::Error::other(format!("Negative enchantment id: {id}")))?;
             let level = VarInt::read(data)?.0;
-            if !(0..=255).contains(&level) {
+            if !(0..=Enchantment::MAX_LEVEL as i32).contains(&level) {
                 return Err(std::io::Error::other(format!(
                     "Enchantment level out of range: {level}"
                 )));
@@ -157,7 +159,7 @@ impl FromNbtTag for ItemEnchantments {
             let ident = key.to_str().parse::<Identifier>().ok()?;
             REGISTRY.enchantments.by_key(&ident)?;
             let level = value.codec_i32()?;
-            if !(1..=255).contains(&level) {
+            if !(1..=Enchantment::MAX_LEVEL as i32).contains(&level) {
                 return None;
             }
             if levels.insert(ident, level as u32).is_some() {

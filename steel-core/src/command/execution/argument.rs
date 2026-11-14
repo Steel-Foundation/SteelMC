@@ -31,6 +31,7 @@ use crate::command::incorrectly_typed_argument;
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
+use steel_math::round_f32;
 use steel_protocol::packets::game::{
     ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
     SuggestionType as ProtocolSuggestionType,
@@ -1630,7 +1631,7 @@ fn parse_time(reader: &mut StringReader<'_>, minimum: i32) -> Result<i32, Comman
             ))));
         }
     };
-    let ticks = java_round(value * factor);
+    let ticks = round_f32(value * factor);
     if ticks < minimum {
         let message = translations::ARGUMENT_TIME_TICK_COUNT_TOO_LOW
             .message([minimum.to_string(), ticks.to_string()])
@@ -1652,8 +1653,4 @@ fn suggest_time_units(builder: &mut SuggestionsBuilder<'_>) {
             builder.suggest(format!("{number}{candidate}"));
         }
     }
-}
-
-fn java_round(value: f32) -> i32 {
-    (value + 0.5).floor() as i32
 }
