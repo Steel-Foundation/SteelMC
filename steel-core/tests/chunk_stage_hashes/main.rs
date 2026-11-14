@@ -6,38 +6,43 @@
 //!
 //! Tests all dimensions (overworld, nether, end) using the new JSON format
 //! with a `dimensions` wrapper.
+// Auto-trait (`Send`/`Sync`) proofs through the World/chunk type graph exceed the default depth of 128.
+#![recursion_limit = "256"]
 
 use std::env;
 use std::fmt::Write;
 use std::fs;
 use std::io::{BufReader, Cursor, Read as IoRead};
 use std::mem;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Weak};
+use std::thread;
 
-use crate::chunk::Chunk;
-use crate::chunk::chunk_generation_task::StaticCache2D;
-use crate::chunk::chunk_holder::ChunkHolder;
-use crate::chunk::chunk_pyramid::{ChunkStep, GENERATION_PYRAMID};
-use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use crate::chunk::light::{
-    BlockLightChunkEdgeChecks, DATA_LAYER_SIZE, LightCacheLayout, LightCacheSetupRadius,
-    LightLayer, LightSection, LightSectionRange, LightWorkset, SkyLightChunkEdgeChecks,
-    propagate_block_light_chunk, propagate_sky_light_chunk,
-};
-use crate::chunk::section::{ChunkSection, Sections};
-use crate::chunk::status::ChunkStatus;
-use crate::entity::damage::DamageHistory;
-use crate::level_data::{GameTimeSource, WorldGenerationSettings};
-use crate::world::{World, WorldConfig, WorldStorageConfig};
-use crate::worldgen::generator::{GenerationChunk, TerrainPhase};
-use crate::worldgen::{ChunkGenerator, ChunkGeneratorType, WorldGenContext};
 use flate2::read::GzDecoder;
 use glam::IVec3;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use serde::Deserialize;
+use steel_core::chunk::Chunk;
+use steel_core::chunk::chunk_generation_task::StaticCache2D;
+use steel_core::chunk::chunk_holder::ChunkHolder;
+use steel_core::chunk::chunk_pyramid::{ChunkStep, GENERATION_PYRAMID};
+use steel_core::chunk::chunk_ticket_manager::ChunkTicketLevel;
+use steel_core::chunk::light::{
+    BlockLightChunkEdgeChecks, DATA_LAYER_SIZE, LightCacheLayout, LightCacheSetupRadius,
+    LightLayer, LightSection, LightSectionRange, LightWorkset, SkyLightChunkEdgeChecks,
+    propagate_block_light_chunk, propagate_sky_light_chunk,
+};
+use steel_core::chunk::section::{ChunkSection, Sections};
+use steel_core::chunk::status::ChunkStatus;
+use steel_core::entity::damage::DamageHistory;
+use steel_core::level_data::{GameTimeSource, WorldGenerationSettings};
+use steel_core::world::{World, WorldConfig, WorldStorageConfig};
+use steel_core::worldgen::generator::{GenerationChunk, TerrainPhase};
+use steel_core::worldgen::{ChunkGenerator, ChunkGeneratorType, WorldGenContext};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::structure::TerrainAdjustment;
 use steel_registry::{dimension_type::DimensionTypeRef, vanilla_dimension_types};
+use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
 use steel_worldgen::density_functions::{
@@ -48,6 +53,13 @@ use steel_worldgen::structure::StructureStart;
 use tokio::runtime::Runtime;
 use toml::map::Map;
 
+mod feature_schedule;
+
+use feature_schedule::{
+    FeatureSchedule, FeatureScheduler, PARALLEL_FEATURE_THREADS, RecordedFeatureOrders,
+    generate_features_for_positions,
+};
+
 type FeatureHolderMap = Arc<FxHashMap<(i32, i32), Arc<ChunkHolder>>>;
 
 struct FeatureGenerationInputs<'a> {
@@ -57,6 +69,18 @@ struct FeatureGenerationInputs<'a> {
     feature_step: &'a ChunkStep,
     feature_cache_radius: i32,
     seed: u64,
+    scheduler: &'a FeatureScheduler,
+}
+
+/// What one run of [`chunk_stage_hashes_inner`] produced.
+#[derive(Default)]
+struct ChunkStageRun {
+    /// Hash of every checked chunk, by dimension, stage and position.
+    hashes: FxHashMap<(&'static str, &'static str, i32, i32), String>,
+    /// Orders recorded by a [`FeatureSchedule::Gate`] run, for its replay.
+    feature_orders: RecordedFeatureOrders,
+    /// Failed window reservations in a [`FeatureSchedule::Gate`] run, across dimensions.
+    window_waits: usize,
 }
 
 #[derive(Deserialize, Debug)]
@@ -877,17 +901,74 @@ fn format_light_diffs(diffs: &LightDiffs, chunk_x: i32, chunk_z: i32) -> String 
     msg
 }
 
+/// Stack size for test threads: pre-generating biome data for neighbor lookups increases
+/// stack usage enough to overflow the default in debug builds.
+const TEST_THREAD_STACK_SIZE: usize = 16 * 1024 * 1024;
+
 #[test]
 #[ignore = "This test takes too long to run for normal testing; run with --release"]
 fn chunk_stage_hashes() {
-    use std::panic;
-    use std::thread;
+    run_with_large_stack(|| {
+        chunk_stage_hashes_inner(FeatureSchedule::Serial, None);
+    });
+}
 
-    // Run on a thread with a larger stack to avoid overflow in debug builds,
-    // since pre-generating biome data for neighbor lookups increases stack usage.
+/// The same comparison with features generated on several threads. Chunks whose features can
+/// observe each other still run in vanilla's recorded order (see
+/// `feature_schedule::feature_waves`), so the hashes must match exactly; a mismatch means
+/// running features concurrently changed a result.
+///
+/// This checks that feature generation is safe to run concurrently. The window gate that
+/// orders overlapping feature steps in a live world is checked by
+/// [`chunk_stage_hashes_gate_serializable`].
+#[test]
+#[ignore = "This test takes too long to run for normal testing; run with --release"]
+fn chunk_stage_hashes_parallel_features() {
+    run_with_large_stack(|| {
+        chunk_stage_hashes_inner(FeatureSchedule::Waves, None);
+    });
+}
+
+/// Generates features on several threads kept apart only by the chunk map's features gate,
+/// with neighboring chunks started together. Vanilla's result depends on the order
+/// overlapping chunks run in, so this cannot compare with vanilla's hashes. Instead it
+/// replays, one chunk at a time, the order the gate let chunks through, and requires the
+/// same hashes; a mismatch means two chunks the gate ran together observed each other.
+#[test]
+#[ignore = "This test takes too long to run for normal testing; run with --release"]
+fn chunk_stage_hashes_gate_serializable() {
+    run_with_large_stack(|| {
+        let gated = chunk_stage_hashes_inner(FeatureSchedule::Gate, None);
+        let replayed =
+            chunk_stage_hashes_inner(FeatureSchedule::Replay, Some(gated.feature_orders));
+
+        assert!(!gated.hashes.is_empty(), "the gated run checked no chunks");
+        assert!(
+            gated.window_waits > 0,
+            "the gate never kept two chunks apart, so nothing was checked"
+        );
+        assert_eq!(gated.hashes.len(), replayed.hashes.len());
+        let mut differing = gated
+            .hashes
+            .iter()
+            .filter(|(key, hash)| replayed.hashes.get(*key) != Some(*hash))
+            .map(|(key, _)| *key)
+            .collect::<Vec<_>>();
+        differing.sort_unstable();
+        assert!(
+            differing.is_empty(),
+            "{} chunks differ between the gated run and its serial replay: {differing:?}",
+            differing.len()
+        );
+    });
+}
+
+fn run_with_large_stack(test: impl FnOnce() + Send + 'static) {
+    use std::panic;
+
     let result = thread::Builder::new()
-        .stack_size(16 * 1024 * 1024)
-        .spawn(chunk_stage_hashes_inner)
+        .stack_size(TEST_THREAD_STACK_SIZE)
+        .spawn(test)
         .expect("Failed to spawn test thread")
         .join();
 
@@ -960,48 +1041,38 @@ fn build_test_beardifier(
     (!beardifier.is_empty()).then_some(beardifier)
 }
 
-fn generate_features_for_positions(
-    positions: &[(i32, i32)],
-    generated_positions: &mut FxHashSet<(i32, i32)>,
-    inputs: FeatureGenerationInputs<'_>,
-) {
-    for &(chunk_x, chunk_z) in positions {
-        if !generated_positions.insert((chunk_x, chunk_z)) {
-            continue;
-        }
-
-        let center = ChunkPos::new(chunk_x, chunk_z);
-        let Some(center_holder) = inputs.holders.get(&(chunk_x, chunk_z)) else {
-            panic!("Missing feature center chunk ({chunk_x}, {chunk_z})");
+fn generate_features_at((chunk_x, chunk_z): (i32, i32), inputs: &FeatureGenerationInputs<'_>) {
+    let center = ChunkPos::new(chunk_x, chunk_z);
+    let Some(center_holder) = inputs.holders.get(&(chunk_x, chunk_z)) else {
+        panic!("Missing feature center chunk ({chunk_x}, {chunk_z})");
+    };
+    {
+        let Some(chunk) = center_holder.try_chunk(ChunkStatus::Terrain) else {
+            panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
         };
-        {
-            let Some(chunk) = center_holder.try_chunk(ChunkStatus::Terrain) else {
-                panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
-            };
-            chunk.prime_final_heightmaps();
-        }
-        let cache_holders = Arc::clone(inputs.holders);
-        let cache = Arc::new(StaticCache2D::create(
-            chunk_x,
-            chunk_z,
-            inputs.feature_cache_radius,
-            move |x, z| match cache_holders.get(&(x, z)) {
-                Some(holder) => Arc::clone(holder),
-                None => panic!("Missing feature dependency chunk ({x}, {z})"),
-            },
-        ));
-        let region_random = inputs
-            .generator
-            .create_worldgen_region_random(inputs.seed as i64, center);
-        let mut region = crate::worldgen::WorldGenRegion::new(
-            inputs.context,
-            inputs.feature_step,
-            &cache,
-            center,
-            region_random,
-        );
-        inputs.generator.apply_biome_decorations(&mut region);
+        chunk.prime_final_heightmaps();
     }
+    let cache_holders = Arc::clone(inputs.holders);
+    let cache = Arc::new(StaticCache2D::create(
+        chunk_x,
+        chunk_z,
+        inputs.feature_cache_radius,
+        move |x, z| match cache_holders.get(&(x, z)) {
+            Some(holder) => Arc::clone(holder),
+            None => panic!("Missing feature dependency chunk ({x}, {z})"),
+        },
+    ));
+    let region_random = inputs
+        .generator
+        .create_worldgen_region_random(inputs.seed as i64, center);
+    let mut region = steel_core::worldgen::WorldGenRegion::new(
+        inputs.context,
+        inputs.feature_step,
+        &cache,
+        center,
+        region_random,
+    );
+    inputs.generator.apply_biome_decorations(&mut region);
 }
 
 fn initialize_light_positions(
@@ -1064,14 +1135,20 @@ fn propagate_light_for_positions(
     }
 }
 
+/// Generates every tracked chunk with features scheduled by `schedule` and returns their
+/// hashes. Schedules that follow vanilla's order must match vanilla's hashes; a
+/// [`FeatureSchedule::Replay`] run takes its orders from `recorded_orders`.
 #[expect(
     clippy::too_many_lines,
     clippy::similar_names,
     reason = "large test with many hash assertions"
 )]
-fn chunk_stage_hashes_inner() {
-    use crate::bootstrap::init_globals;
-    use crate::worldgen::{EndGenerator, NetherGenerator, OverworldGenerator};
+fn chunk_stage_hashes_inner(
+    schedule: FeatureSchedule,
+    mut recorded_orders: Option<RecordedFeatureOrders>,
+) -> ChunkStageRun {
+    use steel_core::bootstrap::init_globals;
+    use steel_core::worldgen::{EndGenerator, NetherGenerator, OverworldGenerator};
     use steel_worldgen::biomes::BiomeSourceKind;
 
     init_globals();
@@ -1141,6 +1218,7 @@ fn chunk_stage_hashes_inner() {
     let debug_dimension = debug_dimension_filter();
     let debug_stage = debug_stage_filter();
     let stop_after_first_mismatch = env::var_os(DEBUG_STOP_AFTER_FIRST_MISMATCH_ENV).is_some();
+    let mut run = ChunkStageRun::default();
 
     for &dim_key in DIMENSION_ORDER {
         if debug_dimension
@@ -1209,6 +1287,30 @@ fn chunk_stage_hashes_inner() {
         let feature_context = feature_world
             .as_ref()
             .map(|world| Arc::clone(&world.chunk_map.world_gen_context));
+        let feature_scheduler = FeatureScheduler {
+            schedule,
+            pool: matches!(schedule, FeatureSchedule::Waves | FeatureSchedule::Gate).then(|| {
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(PARALLEL_FEATURE_THREADS)
+                    .stack_size(TEST_THREAD_STACK_SIZE)
+                    .thread_name(|index| format!("chunk-stage-hash-features-{index}"))
+                    .build()
+                    .expect("failed to create chunk-stage hash feature pool")
+            }),
+            gate: (schedule == FeatureSchedule::Gate).then(|| {
+                feature_world
+                    .as_ref()
+                    .and_then(|world| world.chunk_map.window_gate_for_step(feature_step))
+                    .expect("the features step should have a chunk map window gate")
+            }),
+            orders: SyncMutex::new(
+                recorded_orders
+                    .as_mut()
+                    .and_then(|orders| orders.remove(dim_key))
+                    .unwrap_or_default(),
+            ),
+            window_waits: AtomicUsize::new(0),
+        };
 
         eprintln!("{dim_key}");
 
@@ -1474,6 +1576,7 @@ fn chunk_stage_hashes_inner() {
                         feature_step,
                         feature_cache_radius,
                         seed,
+                        scheduler: &feature_scheduler,
                     },
                 );
             } else if stage == LIGHT_STAGE {
@@ -1494,6 +1597,7 @@ fn chunk_stage_hashes_inner() {
                         feature_step,
                         feature_cache_radius,
                         seed,
+                        scheduler: &feature_scheduler,
                     },
                 );
                 let extra_light_feature_positions = light_feature_positions_sorted
@@ -1511,6 +1615,7 @@ fn chunk_stage_hashes_inner() {
                         feature_step,
                         feature_cache_radius,
                         seed,
+                        scheduler: &feature_scheduler,
                     },
                 );
 
@@ -1559,6 +1664,12 @@ fn chunk_stage_hashes_inner() {
 
                     compute_block_hash(&chunk.sections)
                 };
+
+                run.hashes
+                    .insert((dim_key, stage, chunk_x, chunk_z), actual_hash.clone());
+                if !schedule.follows_vanilla_order() {
+                    continue;
+                }
 
                 let ok = actual_hash == expected_hash;
                 if (i + 1) % 10 == 0 || i + 1 == total || !ok {
@@ -1657,5 +1768,15 @@ fn chunk_stage_hashes_inner() {
 
             panic!("{msg}");
         }
+
+        let orders = feature_scheduler.orders.into_inner();
+        assert!(
+            schedule != FeatureSchedule::Replay || orders.is_empty(),
+            "feature replay left {} recorded orders unused",
+            orders.len()
+        );
+        run.feature_orders.insert(dim_key, orders);
+        run.window_waits += feature_scheduler.window_waits.into_inner();
     }
+    run
 }
