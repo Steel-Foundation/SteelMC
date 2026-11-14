@@ -174,7 +174,6 @@ fn drop_loot(transform: &BlockTransformData, context: &UseOnContext, old_state: 
         old_state,
         Some(&tool),
         Some(player),
-        &mut rand::rng(),
     );
 
     for drop in drops {

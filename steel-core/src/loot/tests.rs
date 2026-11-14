@@ -301,6 +301,33 @@ fn instrument_selection_and_signed_book_enchantment_modifiers() {
 }
 
 #[test]
+fn fishing_hook_predicates_distinguish_non_hooks_closed_water_and_open_water() {
+    let tables = tables();
+    for (open_water, expected_item) in [
+        (None, None),
+        (Some(false), Some(&*vanilla_items::GOLD_INGOT)),
+        (Some(true), Some(&*vanilla_items::DIAMOND)),
+    ] {
+        let mut rng = random(12345);
+        let entity = EntityRef {
+            fishing_hook_open_water: open_water,
+            ..EntityRef::default()
+        };
+        let mut context = LootContext::new(&mut rng).with_this_entity(entity);
+        context.tables = Some(&tables);
+        let items = fixtures::FISHING_HOOK_PREDICATES
+            .get_random_items(&mut context)
+            .expect("fishing-hook predicates");
+        // Vanilla's empty hook predicate matches any entity, including non-hooks.
+        let mut expected = vec![ItemStack::new(&vanilla_items::STONE)];
+        if let Some(item) = expected_item {
+            expected.push(ItemStack::new(item));
+        }
+        assert_eq!(items, expected);
+    }
+}
+
+#[test]
 fn sheep_shearing_uses_color_and_sheared_predicates() {
     init_vanilla_registry();
     for sheared in [false, true] {

@@ -267,6 +267,9 @@ fn advancement_rewards_continue_the_named_loot_stream() {
     assert_eq!(draw(&actual, sequence), draw(&expected, sequence));
 }
 
+#[path = "random_sequences_gameplay_tests.rs"]
+mod gameplay;
+
 #[test]
 fn domain_worlds_share_sequences_and_domains_stay_isolated() {
     use crate::server::worlds::WorldMap;

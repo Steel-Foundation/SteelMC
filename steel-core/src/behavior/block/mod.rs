@@ -1,11 +1,10 @@
 //! Block behavior trait and registry.
 
 use std::sync::{Arc, Weak};
-use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
+use steel_utils::random::legacy_random::LegacyRandom;
 
 use crate::loot::{LootContext, LootTableRef};
 use glam::DVec3;
-use rand::rngs::ThreadRng;
 use smallvec::SmallVec;
 use steel_registry::DyeColor;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
@@ -73,32 +72,40 @@ pub(crate) fn drop_from_block_interact_loot_table(
     interacted_block_state: BlockStateId,
     tool: Option<&ItemStack>,
     interacting_entity: Option<&dyn Entity>,
-    rng: &mut ThreadRng,
 ) -> Vec<ItemStack> {
-    let mut loot_rng = RandomSource::Legacy(LegacyRandom::from_seed(rand::RngExt::random(rng)));
-    let block_entity = world.get_block_entity(pos);
-    let (x, y, z) = pos.get_center();
-    let mut ctx = LootContext::new(&mut loot_rng)
-        .with_world(world)
-        .with_origin(x, y, z)
-        .with_block_state(interacted_block_state);
-    if let Some(block_entity) = block_entity.as_deref() {
-        ctx = ctx.with_block_entity(block_entity);
-    }
+    world
+        .with_loot_random(Some(key), 0, |rng| {
+            let block_entity = world.get_block_entity(pos);
+            let (x, y, z) = pos.get_center();
+            let mut ctx = LootContext::new(rng)
+                .with_world(world)
+                .with_origin(x, y, z)
+                .with_block_state(interacted_block_state);
+            if let Some(block_entity) = block_entity.as_deref() {
+                ctx = ctx.with_block_entity(block_entity);
+            }
 
-    let interacting_equipment = interacting_entity.and_then(loot_equipment);
-    if let Some(interacting_entity) = interacting_entity {
-        ctx = ctx.with_interacting_entity(entity_loot_ref(
-            interacting_entity,
-            interacting_equipment.as_ref(),
-        ));
-    }
+            let interacting_equipment = interacting_entity.and_then(loot_equipment);
+            if let Some(interacting_entity) = interacting_entity {
+                ctx = ctx.with_interacting_entity(entity_loot_ref(
+                    interacting_entity,
+                    interacting_equipment.as_ref(),
+                ));
+            }
 
-    if let Some(tool) = tool {
-        ctx = ctx.with_tool(tool);
-    }
+            if let Some(tool) = tool {
+                ctx = ctx.with_tool(tool);
+            }
 
-    key.get_random_items_or_log(&mut ctx)
+            key.get_random_items(&mut ctx)
+        })
+        .unwrap_or_else(|error| {
+            log::error!(
+                "Failed to generate block-interaction loot {}: {error}",
+                key.key
+            );
+            Vec::new()
+        })
 }
 
 /// Samples and applies enchantment effects to a block experience drop.

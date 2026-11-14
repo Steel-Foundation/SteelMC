@@ -5,9 +5,6 @@ use super::{LootError, LootResult};
 use crate::world::World;
 
 impl World {
-    // TODO: Route other gameplay loot callers through this selection, preserving
-    // explicit seeds and sharing named sequences across repeated evaluations.
-    // Death-loot contexts also need the credited player's luck.
     /// Selects the saved seed, domain sequence, or live world stream in vanilla order.
     /// Generation and container placement must both complete inside the callback.
     /// `None` represents vanilla's unregistered empty fallback table.

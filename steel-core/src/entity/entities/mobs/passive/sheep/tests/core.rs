@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::living_entity::shearing_loot_items_with_rng;
 use std::sync::Arc;
 use steel_utils::TICKS_PER_SECOND;
 use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
@@ -444,7 +445,8 @@ fn sheep_shear_loot_resolves_the_matching_color_table() {
         &vanilla_loot_tables::SHEARING_SHEEP,
         &ItemStack::new(&vanilla_items::SHEARS),
         &mut rng,
-    );
+    )
+    .expect("shearing loot");
 
     assert_ne!(drops.len(), 0);
     for drop in &drops {

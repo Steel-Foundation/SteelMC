@@ -58,6 +58,12 @@ pub(crate) struct RandomSequences {
 }
 
 impl RandomSequences {
+    #[cfg(test)]
+    pub(crate) fn new_for_test(seed: i64) -> Self {
+        Self::from_persistent(seed, PersistentRandomSequences::default())
+            .expect("empty sequence data is valid")
+    }
+
     fn from_persistent(seed: i64, persistent: PersistentRandomSequences) -> io::Result<Self> {
         let mut sequences = FxHashMap::default();
         for (key, sequence) in persistent.sequences {

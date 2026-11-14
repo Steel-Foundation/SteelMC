@@ -9,7 +9,6 @@ use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
 use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
-use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -82,16 +81,18 @@ impl CaveVinesBlock {
         if !state.get_value(BERRIES) {
             return InteractionResult::Pass;
         }
-        let mut loot_rng = RandomSource::Legacy(LegacyRandom::from_seed(rand::random()));
         let equipment = loot_equipment(source_entity);
         let (x, y, z) = pos.get_center();
-        let mut ctx = LootContext::new(&mut loot_rng)
-            .with_world(world)
-            .with_origin(x, y, z)
-            .with_block_state(state)
-            .with_interacting_entity(entity_loot_ref(source_entity, equipment.as_ref()));
-
-        let items = match vanilla_loot_tables::HARVEST_CAVE_VINE.get_random_items(&mut ctx) {
+        let table = &vanilla_loot_tables::HARVEST_CAVE_VINE;
+        let items = world.with_loot_random(Some(table), 0, |rng| {
+            let mut ctx = LootContext::new(rng)
+                .with_world(world)
+                .with_origin(x, y, z)
+                .with_block_state(state)
+                .with_interacting_entity(entity_loot_ref(source_entity, equipment.as_ref()));
+            table.get_random_items(&mut ctx)
+        });
+        let items = match items {
             Ok(items) => items,
             Err(error) => {
                 log::error!("Failed to generate cave-vine loot: {error}");

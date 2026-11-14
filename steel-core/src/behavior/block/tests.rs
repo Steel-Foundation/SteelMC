@@ -237,3 +237,64 @@ fn world_aabb_bounds_contains_all_boxes() {
 
     assert_eq!(bounds, WorldAabb::new(-1.0, 2.0, 2.0, 2.0, 5.0, 6.0));
 }
+
+#[test]
+fn block_drops_and_harvesting_continue_their_named_sequences() {
+    use crate::{
+        behavior::{BlockLootContext, init_behaviors},
+        loot::{LootContext, random_sequences::RandomSequences, vanilla_loot_tables},
+        test_support::{fresh_test_world, insert_ready_full_chunk},
+    };
+    use steel_registry::{item_stack::ItemStack, vanilla_blocks};
+    use steel_utils::random::Random;
+    use steel_utils::{BlockPos, ChunkPos};
+
+    steel_registry::init_vanilla_registry();
+    init_behaviors();
+    let fixture = fresh_test_world("block_loot_sequences");
+    let world = &fixture.world;
+    let expected = RandomSequences::new_for_test(world.level_data.read().seed());
+    let pos = BlockPos::new(8, 64, 8);
+    insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
+    let tool = ItemStack::empty();
+    let (x, y, z) = pos.get_center();
+    for (table, state, harvest) in [
+        (
+            &vanilla_loot_tables::BLOCKS_MELON,
+            vanilla_blocks::MELON.default_state(),
+            false,
+        ),
+        (
+            &vanilla_loot_tables::HARVEST_SWEET_BERRY_BUSH,
+            vanilla_blocks::SWEET_BERRY_BUSH.default_state(),
+            true,
+        ),
+    ] {
+        let sequence = table.random_sequence.as_ref().expect("named sequence");
+        for _ in 0..3 {
+            let expected_items = expected
+                .with_random(sequence, |random| {
+                    let mut context = LootContext::new(random)
+                        .with_world(world)
+                        .with_origin(x, y, z)
+                        .with_block_state(state)
+                        .with_tool(&tool);
+                    table.get_random_items(&mut context)
+                })
+                .expect("expected block loot");
+            let items = if harvest {
+                drop_from_block_interact_loot_table(table, world, pos, state, Some(&tool), None)
+            } else {
+                BlockLootContext::new(world, pos).get_drops(state)
+            };
+            assert_eq!(items, expected_items);
+            let actual = world
+                .with_loot_random(Some(table), 0, |random| Ok(random.next_i64()))
+                .expect("actual draw");
+            let expected = expected
+                .with_random(sequence, |random| Ok(random.next_i64()))
+                .expect("expected draw");
+            assert_eq!(actual, expected);
+        }
+    }
+}

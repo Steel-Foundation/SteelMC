@@ -3,7 +3,7 @@
 
 use std::str::FromStr;
 use std::sync::{Arc, Weak};
-use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
+use steel_utils::random::legacy_random::LegacyRandom;
 
 use crate::loot::vanilla_loot_tables;
 use crate::loot::{LootContext, LootTableRef};
@@ -375,19 +375,20 @@ impl ChickenEntity {
     /// Mirrors vanilla `LivingEntity.dropFromGiftLootTable` for the
     /// `gameplay/chicken_lay` table, returning whether any item was dropped.
     fn drop_gift_loot_table(&self, loot_table: LootTableRef) -> bool {
+        let Some(world) = self.level() else {
+            return false;
+        };
         let position = self.position();
-        let mut loot_rng = RandomSource::Legacy(LegacyRandom::from_seed(rand::random()));
         let equipment = living_loot_equipment(self);
-        // Vanilla `LootContextParamSets.GIFT` carries only ORIGIN and THIS_ENTITY.
-        let mut context = LootContext::new(&mut loot_rng)
-            .with_origin(position.x, position.y, position.z)
-            .with_this_entity(entity_loot_ref(self, Some(&equipment)));
-
-        let world = self.level();
-        if let Some(world) = world.as_deref() {
-            context = context.with_world(world);
-        }
-        let items = match loot_table.get_random_items(&mut context) {
+        let items = world.with_loot_random(Some(loot_table), 0, |rng| {
+            // Vanilla `LootContextParamSets.GIFT` carries only ORIGIN and THIS_ENTITY.
+            let mut context = LootContext::new(rng)
+                .with_world(&world)
+                .with_origin(position.x, position.y, position.z)
+                .with_this_entity(entity_loot_ref(self, Some(&equipment)));
+            loot_table.get_random_items(&mut context)
+        });
+        let items = match items {
             Ok(items) => items,
             Err(error) => {
                 log::error!("Failed to generate gift loot {}: {error}", loot_table.key);
