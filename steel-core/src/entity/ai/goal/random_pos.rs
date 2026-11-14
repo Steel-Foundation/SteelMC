@@ -1,6 +1,7 @@
 use std::f64::consts::{FRAC_PI_2, SQRT_2};
 
 use glam::DVec3;
+use steel_math::trig;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_utils::BlockPos;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
@@ -138,7 +139,7 @@ fn generate_random_direction_within_radians(
     z_dir: f64,
     max_xz_radians_from_dir: f64,
 ) -> Option<BlockPos> {
-    let y_radians_center = z_dir.atan2(x_dir) - FRAC_PI_2;
+    let y_radians_center = trig::atan2(z_dir, x_dir) - FRAC_PI_2;
     let y_radians =
         y_radians_center + (2.0 * f64::from(random.next_f32()) - 1.0) * max_xz_radians_from_dir;
     let dist = lerp(

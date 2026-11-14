@@ -59,7 +59,7 @@ use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
-use steel_math::{RAD_TO_DEG_F64, round_f32, round_f64};
+use steel_math::{RAD_TO_DEG_F64, round_f32, round_f64, trig};
 use steel_protocol::packets::game::{
     CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CRespawn,
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
@@ -1785,7 +1785,7 @@ impl LivingEntity for Player {
 
     fn indicate_damage(&self, xd: f64, zd: f64) {
         let (y_rot, _) = self.rotation();
-        let hurt_dir = zd.atan2(xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
+        let hurt_dir = trig::atan2(zd, xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
         self.send_packet(CHurtAnimation {
             entity_id: self.id(),
             yaw: hurt_dir as f32,

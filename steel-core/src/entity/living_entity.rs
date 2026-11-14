@@ -1,5 +1,5 @@
 use crate::loot::LOOT_TABLES;
-use steel_math::{DEGREE_90, round_f32, trig};
+use steel_math::{DEGREE_90, RAD_TO_DEG_F64, round_f32, trig};
 use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
 use steel_registry::entity_variant::MooshroomVariant;
 use steel_registry::stat::vanilla_stat_types;
@@ -3053,8 +3053,8 @@ pub trait LivingEntity: Entity {
                 );
                 let look_direction = (bed_center - stand_up).normalize_or_zero();
                 let yaw = wrap_degrees(
-                    (look_direction.z.atan2(look_direction.x).to_degrees() - f64::from(DEGREE_90))
-                        as f32,
+                    (trig::atan2(look_direction.z, look_direction.x) * RAD_TO_DEG_F64
+                        - f64::from(DEGREE_90)) as f32,
                 );
                 if let Err(error) = self.try_set_position(stand_up) {
                     log::warn!(

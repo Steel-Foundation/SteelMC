@@ -1735,7 +1735,7 @@ pub trait Mob: LivingEntity + Leashable {
             return;
         }
 
-        let y_rot = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
+        let y_rot = trig::atan2(zd, xd) as f32 * RAD_TO_DEG - DEGREE_90;
         let (_, pitch) = self.rotation();
         self.set_rotation((
             rotlerp(self.rotation().0, y_rot, MOVE_CONTROL_MAX_TURN),
@@ -1831,12 +1831,12 @@ pub trait Mob: LivingEntity + Leashable {
             let zd = wanted_position.z - position.z;
             let horizontal = xd.hypot(zd);
             if horizontal.abs() > 1.0e-5 || yd.abs() > 1.0e-5 {
-                let target_pitch = -(yd.atan2(horizontal)) as f32 * RAD_TO_DEG;
+                let target_pitch = -(trig::atan2(yd, horizontal)) as f32 * RAD_TO_DEG;
                 rotation.1 =
                     rotate_towards(rotation.1, target_pitch, look_control.x_max_rot_angle());
             }
             if zd.abs() > 1.0e-5 || xd.abs() > 1.0e-5 {
-                let target_yaw = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
+                let target_yaw = trig::atan2(zd, xd) as f32 * RAD_TO_DEG - DEGREE_90;
                 self.set_y_head_rot(rotate_towards(
                     self.y_head_rot(),
                     target_yaw,
