@@ -310,9 +310,11 @@ impl BlockBehavior for ChestBlock {
             state,
         ))
     }
+
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {
         true
     }
+
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
@@ -336,6 +338,7 @@ impl BlockBehavior for ChestBlock {
                 .filter_map(|container| guard.get(container.container_id())),
         )
     }
+
     fn affect_neighbors_after_removal(
         &self,
         state: BlockStateId,
@@ -345,6 +348,7 @@ impl BlockBehavior for ChestBlock {
     ) {
         world.update_neighbor_for_output_signal(pos, state.get_block());
     }
+
     fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if let Some(entity) = world.get_block_entity(pos)
             && let Some(chest) = entity.downcast_ref::<ChestBlockEntity>()
@@ -352,6 +356,7 @@ impl BlockBehavior for ChestBlock {
             chest.recheck_open();
         }
     }
+
     fn trigger_event(
         &self,
         _state: BlockStateId,
@@ -364,6 +369,7 @@ impl BlockBehavior for ChestBlock {
             .get_block_entity(pos)
             .is_some_and(|entity| entity.trigger_event(a, b))
     }
+
     fn is_pathfindable(&self, _state: BlockStateId, _kind: PathComputationType) -> bool {
         false
     }

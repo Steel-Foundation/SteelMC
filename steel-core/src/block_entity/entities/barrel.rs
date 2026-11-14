@@ -49,21 +49,27 @@ impl BlockEntity for BarrelBlockEntity {
     fn base(&self) -> &BlockEntityBase {
         &self.storage.base
     }
+
     fn load_additional(&self, nbt: &BaseNbtCompound<'_>) {
         self.storage.load_additional(nbt);
     }
+
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.storage.save_additional(nbt);
     }
+
     fn pre_remove_side_effects(&self, pos: BlockPos, _state: BlockStateId) {
         self.storage.pre_remove_side_effects(pos);
     }
+
     fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
         self.storage.apply_implicit_components(components);
     }
+
     fn container_ref(&self) -> Option<ContainerRef> {
         Some(self.storage.container_ref.clone())
     }
+
     fn as_randomizable_container(&self) -> Option<&dyn RandomizableContainer> {
         Some(self)
     }
@@ -73,9 +79,11 @@ impl RandomizableContainer for BarrelBlockEntity {
     fn loot_table(&self) -> Option<SeededContainerLoot> {
         self.storage.loot_table()
     }
+
     fn set_loot_table(&self, loot: Option<SeededContainerLoot>) {
         self.storage.set_loot_table(loot);
     }
+
     fn unpack_loot_table(&self, player: Option<&Player>) -> LootResult<()> {
         self.storage.unpack_loot_table(player)
     }
