@@ -8,6 +8,7 @@ use heck::ToShoutySnakeCase;
 use proc_macro2::Span;
 use serde::Deserialize;
 use std::{env, fs, path::Path, process::Command};
+use steel_utils as _;
 use syn::Ident;
 
 mod blocks;
@@ -15,6 +16,7 @@ mod candle_cakes;
 mod common;
 mod entities;
 mod items;
+mod loot_tables;
 mod skull_type;
 mod waxables;
 mod weathering;
@@ -31,6 +33,13 @@ pub fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let behavior_out_dir = format!("{manifest_dir}/src/behavior/generated");
     let entity_out_dir = format!("{manifest_dir}/src/entity/generated");
+
+    let loot_dir = format!("{manifest_dir}/src/loot/generated");
+    fs::create_dir_all(&loot_dir).unwrap_or_else(|e| panic!("{loot_dir}: {e}"));
+    write_if_changed(
+        format!("{loot_dir}/tables.rs"),
+        loot_tables::build().to_string(),
+    );
 
     let classes_json = fs::read_to_string(format!("{manifest_dir}/build/classes.json"))
         .expect("Failed to read classes.json");

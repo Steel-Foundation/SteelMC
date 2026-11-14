@@ -27,6 +27,24 @@ impl TrimPredicate {
     }
 }
 
+impl DataComponentPredicate for TrimPredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::TRIM)
+            .is_some_and(|trim| {
+                self.material().is_none_or(|materials| {
+                    trim.material()
+                        .as_reference()
+                        .is_some_and(|material| materials.contains(material))
+                }) && self.pattern().is_none_or(|patterns| {
+                    trim.pattern()
+                        .as_reference()
+                        .is_some_and(|pattern| patterns.contains(pattern))
+                })
+            })
+    }
+}
+
 impl DataComponentPredicateCodec for TrimPredicate {
     fn from_nbt_value(tag: &NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
@@ -79,6 +97,21 @@ impl JukeboxPlayablePredicate {
     }
 }
 
+impl DataComponentPredicate for JukeboxPlayablePredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::JUKEBOX_PLAYABLE)
+            .is_some_and(|playable| {
+                self.song().is_none_or(|songs| {
+                    playable
+                        .song()
+                        .as_reference()
+                        .is_some_and(|song| songs.contains(song))
+                })
+            })
+    }
+}
+
 impl DataComponentPredicateCodec for JukeboxPlayablePredicate {
     fn from_nbt_value(tag: &NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
@@ -122,6 +155,14 @@ impl VillagerTypePredicate {
     #[must_use]
     pub const fn villager_types(&self) -> &RegistryHolderSet<VillagerType> {
         &self.0
+    }
+}
+
+impl DataComponentPredicate for VillagerTypePredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::VILLAGER_VARIANT)
+            .is_some_and(|villager_type| self.villager_types().contains(villager_type.value()))
     }
 }
 

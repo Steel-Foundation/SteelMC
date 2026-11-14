@@ -12,6 +12,18 @@ pub struct AttributeModifierEntryPredicate {
 
 impl AttributeModifierEntryPredicate {
     #[must_use]
+    pub fn matches(&self, modifier: &vanilla_components::ItemAttributeModifierEntry) -> bool {
+        self.attribute()
+            .is_none_or(|attributes| attributes.contains(modifier.attribute))
+            && self.id().is_none_or(|id| id == &modifier.id)
+            && self.amount().matches(modifier.amount)
+            && self
+                .operation()
+                .is_none_or(|operation| operation == modifier.operation)
+            && self.slot().is_none_or(|slot| slot == modifier.slot)
+    }
+
+    #[must_use]
     pub const fn new(
         attribute: Option<RegistryHolderSet<Attribute>>,
         id: Option<Identifier>,
@@ -65,7 +77,8 @@ impl AttributeModifierEntryPredicate {
                 AttributeModifierOperation::by_name(&owned_string(tag)?)
             })?,
             slot: decode_optional(compound, "slot", |tag| {
-                EquipmentSlotGroup::by_name(&owned_string(tag)?)
+                let name = owned_string(tag)?;
+                EquipmentSlotGroup::by_name(&name).filter(|slot| slot.name() == name)
             })?,
         })
     }
@@ -130,6 +143,21 @@ impl AttributeModifiersPredicate {
     #[must_use]
     pub const fn modifiers(&self) -> Option<&CollectionPredicate<AttributeModifierEntryPredicate>> {
         self.0.as_ref()
+    }
+}
+
+impl DataComponentPredicate for AttributeModifiersPredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::ATTRIBUTE_MODIFIERS)
+            .is_some_and(|modifiers| {
+                self.modifiers().is_none_or(|predicate| {
+                    predicate.matches(
+                        modifiers.modifiers.iter(),
+                        AttributeModifierEntryPredicate::matches,
+                    )
+                })
+            })
     }
 }
 

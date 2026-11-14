@@ -1,6 +1,9 @@
 use steel_math::trig;
 use steel_math::{DEGREE_90, RAD_TO_DEG_F64};
+use crate::loot::LOOT_TABLES;
+use steel_math::{DEGREE_90, round_f32, trig};
 use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
+use steel_registry::entity_variant::MooshroomVariant;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
@@ -353,6 +356,11 @@ pub trait LivingEntity: Entity {
     ///
     /// Mirrors `Chicken.get(DataComponents.CHICKEN_VARIANT)` for the loot predicate.
     fn chicken_loot_variant(&self) -> Option<&Identifier> {
+        None
+    }
+
+    /// Returns the mooshroom variant component for entity loot predicates.
+    fn mooshroom_loot_variant(&self) -> Option<MooshroomVariant> {
         None
     }
 
@@ -836,7 +844,7 @@ pub trait LivingEntity: Entity {
             damage = (damage * absorb as f32 / 25.0).max(0.0);
             let damage_resisted = old_damage - damage;
             if (0.0..f32::MAX).contains(&damage_resisted) {
-                let stats_to_award = (damage_resisted * 10.0).round() as i32;
+                let stats_to_award = round_f32(damage_resisted * 10.0);
                 if let Some(player) = self.as_player() {
                     player.award_custom_stat_with_count(
                         &vanilla_custom_stats::DAMAGE_RESISTED,
@@ -886,7 +894,7 @@ pub trait LivingEntity: Entity {
         {
             player.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_DEALT_ABSORBED,
-                (absorbed_damage * 10.0).round() as i32,
+                round_f32(absorbed_damage * 10.0),
             );
         }
 
@@ -1165,7 +1173,7 @@ pub trait LivingEntity: Entity {
 
         let entity_type = self.entity_type();
         let loot_key = Identifier::vanilla(format!("entities/{}", entity_type.key.path));
-        REGISTRY.loot_tables.by_key(&loot_key)
+        LOOT_TABLES.by_key(&loot_key)
     }
 
     /// Returns the loot-table seed for this entity's death loot, if it's a mob.
@@ -1189,27 +1197,20 @@ pub trait LivingEntity: Entity {
         };
 
         let seed = self.death_loot_table_seed();
-        let drops = if seed == 0 {
-            let mut rng = rand::rng();
-            death_loot_items_with_rng(
-                self,
-                loot_table,
-                world.as_ref(),
-                source,
-                killed_by_player,
-                &mut rng,
-            )
+        let seed = if seed == 0 {
+            rand::random()
         } else {
-            let mut rng = StdRng::seed_from_u64(seed as u64);
-            death_loot_items_with_rng(
-                self,
-                loot_table,
-                world.as_ref(),
-                source,
-                killed_by_player,
-                &mut rng,
-            )
+            seed as u64
         };
+        let mut rng = RandomSource::Legacy(LegacyRandom::from_seed(seed));
+        let drops = death_loot_items_with_rng(
+            self,
+            loot_table,
+            world.as_ref(),
+            source,
+            killed_by_player,
+            &mut rng,
+        );
 
         if has_custom_death_loot_table && let Some(mob) = self.as_mob() {
             mob.clear_custom_death_loot_table();
@@ -1432,18 +1433,20 @@ pub trait LivingEntity: Entity {
             return false;
         }
         let (effect_key, amplifier) = (effect.effect(), effect.amplifier());
-        let changed = self.living_base().add_mob_effect(effect);
-        // TODO: Trigger CriteriaTriggers.EFFECTS_CHANGED with `source` when `changed`,
+        let result = self.living_base().add_mob_effect(effect);
+        // TODO: Trigger CriteriaTriggers.EFFECTS_CHANGED with `source` when `result.changed()`,
         // once the advancement-criteria foundation exists.
         let _ = source;
-        // Calls on_effect_started unconditionally, even when it didn't replace a stronger instance.
         let dyn_self = self
             .as_living_entity()
             .expect("Self implements LivingEntity");
-        MOB_EFFECT_BEHAVIORS
-            .get_behavior(effect_key)
-            .on_effect_started(dyn_self, amplifier);
-        changed
+        let behavior = MOB_EFFECT_BEHAVIORS.get_behavior(effect_key);
+        if result == MobEffectAddResult::Added {
+            behavior.on_effect_added(dyn_self, effect_key, amplifier);
+        }
+        // Calls on_effect_started unconditionally, even when it didn't replace a stronger instance.
+        behavior.on_effect_started(dyn_self, amplifier);
+        result.changed()
     }
 
     /// Sets the presence of a vanilla mob effect.
@@ -3225,13 +3228,13 @@ fn random_teleport_ground_y(world: &Arc<World>, x: f64, y: f64, z: f64) -> Optio
     None
 }
 
-fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
+fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
     entity: &E,
     loot_table: LootTableRef,
     world: &World,
     source: &DamageSource,
     killed_by_player: bool,
-    rng: &mut R,
+    rng: &mut RandomSource,
 ) -> Vec<ItemStack> {
     let causing_entity = source.causing_entity().map(AsRef::as_ref);
     let direct_entity = source.direct_entity().map(AsRef::as_ref);
@@ -3261,6 +3264,7 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
     };
 
     let mut context = LootContext::new(rng)
+        .with_world(world)
         .with_origin(position.x, position.y, position.z)
         .with_game_time(world.game_time())
         .with_killed_by_player(killed_by_player)
@@ -3276,16 +3280,16 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
         context = context.with_last_damage_player(entity);
     }
 
-    loot_table.get_random_items(&mut context)
+    loot_table.get_random_items_or_log(&mut context)
 }
 
 /// Runs vanilla `LivingEntity.dropFromShearingLootTable` for `loot_table`, returning the
 /// drops resolved with the vanilla shearing loot params (origin, entity, tool).
-pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
+pub(crate) fn shearing_loot_items_with_rng<E: LivingEntity + ?Sized>(
     entity: &E,
     loot_table: LootTableRef,
     tool: &ItemStack,
-    rng: &mut R,
+    rng: &mut RandomSource,
 ) -> Vec<ItemStack> {
     let position = entity.position();
     let equipment = living_loot_equipment(entity);
@@ -3296,8 +3300,9 @@ pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Size
             Some(&equipment),
         ))
         .with_tool(tool);
-    if let Some(level) = entity.level() {
-        context = context.with_game_time(level.game_time());
+    let level = entity.level();
+    if let Some(level) = level.as_deref() {
+        context = context.with_world(level).with_game_time(level.game_time());
     }
-    loot_table.get_random_items(&mut context)
+    loot_table.get_random_items_or_log(&mut context)
 }
