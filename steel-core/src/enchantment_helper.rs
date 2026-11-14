@@ -3,6 +3,8 @@ mod item_in_use;
 use std::sync::Arc;
 
 use item_in_use::EnchantedItemInUse;
+use steel_math::round_f32;
+use steel_utils::TICKS_PER_SECOND;
 
 use steel_registry::enchantment_effect::{
     DamageSourcePredicate, EnchantmentEffectComponent, EnchantmentEffectRequirements,
@@ -562,7 +564,7 @@ fn apply_supported_entity_effect(
             false
         }
         EnchantmentEntityEffect::Ignite { duration } => {
-            let ticks = (duration.calculate(level) * 20.0).floor() as i32;
+            let ticks = (duration.calculate(level) * TICKS_PER_SECOND as f32).floor() as i32;
             entity.ignite_for_ticks(ticks);
             false
         }
@@ -582,8 +584,8 @@ fn apply_supported_entity_effect(
             let max_amplifier = max_amplifier.calculate(level);
             let duration_seconds = random_between(min_duration, max_duration);
             let amplifier = random_between(min_amplifier, max_amplifier);
-            let duration_ticks = java_round(duration_seconds * 20.0);
-            let amplifier = java_round(amplifier).max(0);
+            let duration_ticks = round_f32(duration_seconds * TICKS_PER_SECOND as f32);
+            let amplifier = round_f32(amplifier).max(0);
             living.add_mob_effect(MobEffectInstance::with_duration(
                 effect,
                 duration_ticks,
@@ -701,10 +703,6 @@ fn apply_supported_post_piercing_entity_effect(
 
 fn random_between(min: f32, max: f32) -> f32 {
     min + rand::random::<f32>() * (max - min)
-}
-
-fn java_round(value: f32) -> i32 {
-    (value + 0.5).floor() as i32
 }
 
 fn requirements_match(

@@ -7,11 +7,12 @@ mod tests;
 
 use std::sync::{Arc, Weak};
 
+use base_spawner::EVENT_SPAWN;
 use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
 use simdnbt::owned::NbtCompound;
 use steel_registry::data_components::components::EntityData;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::vanilla_block_entity_types;
+use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
@@ -136,7 +137,7 @@ impl BlockEntity for SpawnerBlockEntity {
     }
 
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
-        self.spawner.load(nbt);
+        self.spawner.load(&nbt.into());
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -158,12 +159,15 @@ impl BlockEntity for SpawnerBlockEntity {
     }
 
     fn tick(&self, world: &Arc<World>) {
-        let result = self.spawner.server_tick(world, self.get_block_pos());
+        let pos = self.get_block_pos();
+        let result = self.spawner.server_tick(world, pos, || {
+            world.block_event(pos, &vanilla_blocks::SPAWNER, EVENT_SPAWN, 0);
+        });
         if result.state_changed {
             self.set_changed();
         }
         if result.next_spawn_data_changed {
-            world.send_block_updated(self.get_block_pos());
+            world.send_block_updated(pos);
         }
     }
 }

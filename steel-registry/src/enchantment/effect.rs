@@ -4,6 +4,7 @@ use crate::items::ItemRef;
 use crate::mob_effect::MobEffectRef;
 use crate::sound_event::SoundEventRef;
 use glam::DVec3;
+use steel_math::round_f64;
 use steel_utils::Identifier;
 use steel_utils::random::Random;
 use steel_utils::types::GameType;
@@ -196,7 +197,7 @@ fn remove_binomial(random: &mut impl Random, input: f32, chance: f32) -> f32 {
     if !(input <= 128.0) && !(input * chance < 20.0) && !(input * (1.0 - chance) < 20.0) {
         let mean = f64::from((input * chance).floor());
         let deviation = f64::from(input * chance * (1.0 - chance)).sqrt();
-        removed = (mean + random.next_gaussian() * deviation + 0.5).floor() as i32;
+        removed = round_f64(mean + random.next_gaussian() * deviation) as i32;
         removed = removed.clamp(0, input as i32);
     } else {
         let mut trial = 0;

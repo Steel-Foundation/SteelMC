@@ -30,7 +30,7 @@ struct AdvancementJson {
 struct AdvancementRewardsJson {
     #[serde(default)]
     experience: i32,
-    #[serde(default)]
+    #[serde(default, rename = "loot")]
     loots: Vec<Identifier>,
     #[serde(default)]
     recipes: Vec<Identifier>,
@@ -46,12 +46,7 @@ impl ToTokens for AdvancementRewardsJson {
                 UntypedRecipeRef { recipe: &*vanilla_recipes::#name }
             }
         });
-        let loots = generate_vec(&self.loots, |loot| {
-            let name = Ident::new(&loot.path.to_shouty_snake_case(), Span::call_site());
-            quote! {
-                &*vanilla_loot_tables::#name
-            }
-        });
+        let loots = generate_vec(&self.loots, generate_identifier);
         let function = generate_option(&self.function, generate_identifier);
         tokens.extend(quote! {
             AdvancementRewards {
@@ -128,7 +123,7 @@ pub(crate) fn build() -> TokenStream {
         use crate::advancement::display::{AdvancementType,DisplayInfo};
         use crate::advancement::{Advancement,AdvancementRewards,AdvancementRequirement};
         use crate::advancement::criterion::{Criterion,AnyCriterion,ImpossibleInstance,ImpossibleTrigger};
-        use crate::advancement::registry::AdvancementRegistry;
+        use crate::advancement::registry::{AdvancementRegistry,AdvancementHolder};
         use crate::vanilla_items;
         use crate::vanilla_recipes;
         use crate::ItemStackTemplate;
@@ -148,12 +143,12 @@ pub(crate) fn build() -> TokenStream {
         advancement_data.to_tokens(&mut stream);
         let const_ident = &advancement_data.const_ident;
         register_stream.extend(quote! {
-            registry.register(&#const_ident);
+            AdvancementHolder::from(&*#const_ident),
         });
     }
     stream.extend(quote! {
-        pub fn register_advancements(registry: &mut AdvancementRegistry) {
-            #register_stream
+        pub fn register_advancements(registry: &AdvancementRegistry) {
+            registry.register_all(&[#register_stream]);
         }
     });
     stream

@@ -5,7 +5,8 @@ use crate::entity::{
     entities::objects::vehicles::AbstractMinecart, leash::Leashable, pushing::EntityPush,
 };
 use rand::{RngExt, rng};
-use steel_math::DEGREE_90;
+use steel_math::trig;
+use steel_math::{DEGREE_90, RAD_TO_DEG_F64};
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::nbt::{NbtNumeric, nbt_collection_values};
 
@@ -1584,6 +1585,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns this entity as a projectile when it has projectile behavior.
     fn as_projectile(&self) -> Option<&dyn Projectile> {
         try_as_dyn::<Self, dyn Projectile>(self)
+    }
+
+    /// Returns this entity's container-user capability.
+    fn as_container_user(&self) -> Option<&dyn super::ContainerUser> {
+        try_as_dyn::<Self, dyn super::ContainerUser>(self)
     }
 
     /// Returns this entity as a living entity when it has living behavior.
@@ -4147,8 +4153,8 @@ pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAncho
 fn look_at_rotation(from: DVec3, target: DVec3) -> (f32, f32) {
     let delta = target - from;
     let horizontal = delta.x.hypot(delta.z);
-    let pitch = wrap_degrees(-delta.y.atan2(horizontal).to_degrees() as f32);
-    let yaw = wrap_degrees(delta.z.atan2(delta.x).to_degrees() as f32 - DEGREE_90);
+    let pitch = wrap_degrees((-trig::atan2(delta.y, horizontal) * RAD_TO_DEG_F64) as f32);
+    let yaw = wrap_degrees((trig::atan2(delta.z, delta.x) * RAD_TO_DEG_F64) as f32 - DEGREE_90);
     (yaw, pitch)
 }
 
