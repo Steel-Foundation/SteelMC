@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
+use steel_math::trig;
 use steel_math::{
     DEGREE_90, DEGREE_180, RAD_TO_DEG_F64, convert_to_rotation_segment, wrap_degrees,
 };
@@ -94,7 +95,7 @@ pub fn facing_text_slot(state: BlockStateId, pos: BlockPos, player: &Player) -> 
     let dz = player_pos.z - (f64::from(pos.0.z) + 0.5);
 
     // Calculate angle from sign to player (in degrees, -90 to account for Minecraft's coordinate system)
-    let player_angle = (dz.atan2(dx) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
+    let player_angle = (trig::atan2(dz, dx) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
 
     // Front text if the angle difference is <= 90 degrees
     if wrap_degrees(player_angle - sign_y_rot).abs() <= DEGREE_90 {
