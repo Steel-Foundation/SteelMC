@@ -102,15 +102,21 @@ pub trait Goal: Send {
     fn tick(&mut self, _mob: &dyn PathfinderMob, _entity: &SharedEntity) {}
 }
 
+/// Identifies a goal registered in a [`GoalSelector`] so it can be removed later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GoalId(u64);
+
 struct WrappedGoal {
+    id: GoalId,
     priority: i32,
     goal: Box<dyn Goal>,
     running: bool,
 }
 
 impl WrappedGoal {
-    fn new(priority: i32, goal: Box<dyn Goal>) -> Self {
+    const fn new(id: GoalId, priority: i32, goal: Box<dyn Goal>) -> Self {
         Self {
+            id,
             priority,
             goal,
             running: false,
@@ -172,6 +178,7 @@ impl WrappedGoal {
 
 pub struct GoalSelector {
     available_goals: Vec<WrappedGoal>,
+    next_goal_id: u64,
     disabled_controls: GoalControls,
 }
 
@@ -180,16 +187,37 @@ impl GoalSelector {
     pub const fn new() -> Self {
         Self {
             available_goals: Vec::new(),
+            next_goal_id: 0,
             disabled_controls: GoalControls::EMPTY,
         }
     }
 
-    pub fn add_goal<G>(&mut self, priority: i32, goal: G)
+    /// Adds a goal and returns the handle needed to remove it later.
+    pub fn add_goal<G>(&mut self, priority: i32, goal: G) -> GoalId
     where
         G: Goal + 'static,
     {
+        let id = GoalId(self.next_goal_id);
+        self.next_goal_id = self.next_goal_id.wrapping_add(1);
         self.available_goals
-            .push(WrappedGoal::new(priority, Box::new(goal)));
+            .push(WrappedGoal::new(id, priority, Box::new(goal)));
+        id
+    }
+
+    /// Stops and removes the goal with the given handle, if it is still registered.
+    pub fn remove_goal(&mut self, mob: &dyn PathfinderMob, id: GoalId) {
+        let Some(index) = self
+            .available_goals
+            .iter()
+            .position(|wrapped| wrapped.id == id)
+        else {
+            return;
+        };
+
+        if self.available_goals[index].is_running() {
+            self.available_goals[index].stop(mob);
+        }
+        self.available_goals.remove(index);
     }
 
     /// Stops and removes matching goals. `mob` supplies the stop-hook context.
@@ -352,7 +380,7 @@ impl fmt::Debug for GoalSelector {
             .field("available_goals", &self.available_goals.len())
             .field("running_goals", &self.running_goal_count())
             .field("disabled_controls", &self.disabled_controls)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -665,6 +693,26 @@ mod tests {
             !selector.is_priority_running(3),
             "the removed goal must be gone entirely"
         );
+
+        selector.tick(mob.as_ref(), &mob_entity);
+        assert_eq!(selector.running_goal_count(), 1);
+        assert!(selector.is_priority_running(7));
+    }
+
+    #[test]
+    fn remove_goal_stops_and_removes_only_the_matching_handle() {
+        let mob = Arc::new(TestPathfinderMob::new());
+        let mob_entity: SharedEntity = Arc::<TestPathfinderMob>::clone(&mob);
+        let mut selector = GoalSelector::new();
+        let first = selector.add_goal(3, StaticGoal::new(GoalControls::MOVE));
+        selector.add_goal(7, StaticGoal::new(GoalControls::MOVE));
+        selector.tick(mob.as_ref(), &mob_entity);
+        assert!(selector.is_priority_running(3));
+
+        selector.remove_goal(mob.as_ref(), first);
+
+        assert_eq!(selector.available_goal_count(), 1);
+        assert!(!selector.is_priority_running(3));
 
         selector.tick(mob.as_ref(), &mob_entity);
         assert_eq!(selector.running_goal_count(), 1);

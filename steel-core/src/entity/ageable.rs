@@ -18,7 +18,7 @@ use crate::entity::{
     next_entity_id,
 };
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 
 const BABY_START_AGE: i32 = -24_000;
 const AGE_LOCK_COOLDOWN_TICKS: i32 = 40;
@@ -236,6 +236,7 @@ pub trait AgeableMob: Mob {
     fn finalize_spawn_ageable_mob(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -249,6 +250,7 @@ pub trait AgeableMob: Mob {
 
         self.finalize_spawn_mob_base(
             world,
+            difficulty,
             spawn_reason,
             Some(SpawnGroupData::AgeableMob(group_data)),
         )

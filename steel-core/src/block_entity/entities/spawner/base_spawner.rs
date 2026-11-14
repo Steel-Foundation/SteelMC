@@ -480,7 +480,8 @@ impl BaseSpawner {
                 }
 
                 if next_spawn_data.entity_to_spawn.len() == 1 {
-                    let _ = mob.finalize_spawn(world, EntitySpawnReason::Spawner, None);
+                    let difficulty = world.get_current_difficulty_at(entity.block_position());
+                    let _ = mob.finalize_spawn(world, difficulty, EntitySpawnReason::Spawner, None);
                 }
                 if let Some(equipment) = &next_spawn_data.equipment
                     && let Err(error) = equip_from_table(world, mob, equipment)

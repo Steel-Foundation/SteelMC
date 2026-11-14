@@ -94,6 +94,11 @@ pub use region_generation::RegionGenerationError;
 const GENERATION_THREAD_MULTIPLE: usize = 2;
 // Vanilla applies this limit independently to block ticks and fluid ticks.
 const MAX_SCHEDULED_TICKS_PER_TICK: usize = 65_536;
+/// Squared block distance from a chunk center within which a non-spectator
+/// player makes that chunk a natural-spawn candidate.
+const SPAWN_CANDIDATE_PLAYER_DISTANCE_SQUARED: f64 = 16_384.0;
+/// Chunk radius around a player tracked by vanilla's natural-spawn counter.
+const NATURAL_SPAWN_CHUNK_RADIUS: i32 = 8;
 
 /// Lifetime, in ticks, of a thrown ender pearl's chunk ticket (vanilla
 /// `TicketType.ENDER_PEARL` timeout). The pearl refreshes it every
@@ -859,6 +864,63 @@ impl ChunkMap {
         }
     }
 
+    /// Advances inhabited time for loaded Full chunks that are natural-spawn candidates.
+    ///
+    /// Vanilla's spawn-candidate tracker only retains chunks near a non-spectator
+    /// player, and `collectSpawningChunks` still requires the chunk center to be
+    /// within 128 blocks of that player.
+    fn tick_spawning_chunks(&self, world: &World) {
+        let mut player_positions = Vec::new();
+        world.players.iter_players(|_, player| {
+            if !player.is_spectator() {
+                player_positions.push(player.position());
+            }
+            true
+        });
+        if player_positions.is_empty() {
+            return;
+        }
+
+        let mut candidate_chunks = FxHashSet::default();
+        for position in &player_positions {
+            let player_chunk = ChunkPos::from_entity_pos(*position);
+            for x in (player_chunk.0.x - NATURAL_SPAWN_CHUNK_RADIUS)
+                ..=(player_chunk.0.x + NATURAL_SPAWN_CHUNK_RADIUS)
+            {
+                for z in (player_chunk.0.y - NATURAL_SPAWN_CHUNK_RADIUS)
+                    ..=(player_chunk.0.y + NATURAL_SPAWN_CHUNK_RADIUS)
+                {
+                    candidate_chunks.insert(ChunkPos::new(x, z));
+                }
+            }
+        }
+
+        for pos in candidate_chunks {
+            let center_x = f64::from(pos.0.x * 16 + 8);
+            let center_z = f64::from(pos.0.y * 16 + 8);
+            let is_spawn_candidate = player_positions.iter().any(|position| {
+                let delta_x = center_x - position.x;
+                let delta_z = center_z - position.z;
+                delta_x * delta_x + delta_z * delta_z < SPAWN_CANDIDATE_PLAYER_DISTANCE_SQUARED
+            });
+            if !is_spawn_candidate {
+                continue;
+            }
+
+            let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder)) else {
+                continue;
+            };
+            if !is_block_ticking(holder.load_level())
+                || !holder.ticking_readiness_snapshot().is_block_ticking()
+            {
+                continue;
+            }
+            if let Some(chunk) = holder.try_full_chunk() {
+                chunk.common().increment_inhabited_time();
+            }
+        }
+    }
+
     /// Processes chunk updates, ticks chunks, and executes ready scheduled ticks.
     ///
     /// # Arguments
@@ -928,6 +990,10 @@ impl ChunkMap {
             timings.collect_tickable += start.elapsed();
             timings.total_chunks = self.chunks.len();
             timings.tickable_count = tickable_chunks.block.len();
+
+            if runs_normally {
+                self.tick_spawning_chunks(world);
+            }
 
             if runs_normally && random_tick_speed > 0 && !tickable_chunks.block.is_empty() {
                 let _span = tracing::trace_span!(
