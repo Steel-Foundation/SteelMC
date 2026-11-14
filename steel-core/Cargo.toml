@@ -12,6 +12,8 @@ stand-alone = []
 slow_chunk_gen = []
 test-framework = []
 benchmark-support = []
+# `ChunkMap::generate_region` for external tools; the server never calls it.
+region-generation = []
 
 [dependencies]
 # Internal crates
