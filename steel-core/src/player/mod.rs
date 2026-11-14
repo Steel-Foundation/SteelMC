@@ -59,9 +59,7 @@ use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
-use steel_math::RAD_TO_DEG_F64;
-use steel_math::trig;
-use steel_math::{RAD_TO_DEG_F64, round_f32, round_f64};
+use steel_math::{RAD_TO_DEG_F64, round_f32, round_f64, trig};
 use steel_protocol::packets::game::{
     CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CRespawn,
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,

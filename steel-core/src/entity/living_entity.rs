@@ -1,7 +1,5 @@
-use steel_math::trig;
-use steel_math::{DEGREE_90, RAD_TO_DEG_F64};
+use steel_math::{DEGREE_90, RAD_TO_DEG_F64, round_f32, trig};
 use crate::loot::LOOT_TABLES;
-use steel_math::{DEGREE_90, round_f32, trig};
 use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
 use steel_registry::entity_variant::MooshroomVariant;
 use steel_registry::stat::vanilla_stat_types;
