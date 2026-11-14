@@ -758,8 +758,7 @@ pub trait LivingEntity: Entity {
         self.resolve_player_responsible_for_damage(source);
 
         if took_full_damage {
-            // Vanilla reads the component from the stack captured before
-            // blocking, which is empty if blocking broke it.
+            // A shield broken by this block no longer runs `on_blocked`.
             let mut blocks_attacks = None;
             if blocked && let Some(active) = item_in_use {
                 self.with_equipment_slot(active.hand().into(), &mut |item| {
@@ -808,7 +807,7 @@ pub trait LivingEntity: Entity {
         {
             player.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_BLOCKED_BY_SHIELD,
-                round_f32(damage_blocked * 10.0),
+                round_f32(damage_blocked * DAMAGE_STAT_SCALE),
             );
         }
 
