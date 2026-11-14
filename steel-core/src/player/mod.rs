@@ -111,8 +111,8 @@ use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
     ActiveItemUseState, DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource,
     EntityMoveError, EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
-    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
-    apply_entity_look_at, get_kill_credit, start_riding_entities,
+    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, RiderMove,
+    SharedEntity, apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -1465,7 +1465,7 @@ impl Entity for Player {
             return false;
         }
 
-        entity_to_ride.position_rider(self.as_entity_event_source());
+        entity_to_ride.position_rider(self.as_entity_event_source(), RiderMove::SetPosition);
         let position = self.position();
         let (yaw, pitch) = self.rotation();
         if let Err(error) = self.teleport(position, yaw, pitch) {

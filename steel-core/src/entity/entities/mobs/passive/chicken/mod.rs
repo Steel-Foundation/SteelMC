@@ -39,8 +39,9 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
     EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
-    LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule,
-    entity_loot_ref, living_loot_equipment, position_rider_default, sync_dirty_mob_effects,
+    LivingEntityBase, Mob, MobBase, PathfinderMob, RiderMove, SharedEntity, SpawnGroupData,
+    SpawnRule, entity_loot_ref, living_loot_equipment, position_rider_default,
+    sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -468,8 +469,8 @@ impl Entity for ChickenEntity {
         state.next_flap = fly_dist + state.flap_speed / NEXT_FLAP_SPEED_DIVISOR;
     }
 
-    fn position_rider(&self, passenger: &dyn Entity) {
-        position_rider_default(self, passenger);
+    fn position_rider(&self, passenger: &dyn Entity, move_fn: RiderMove) {
+        position_rider_default(self, passenger, move_fn);
         if let Some(living) = passenger.as_living_entity() {
             living.set_y_body_rot(self.y_body_rot());
         }
