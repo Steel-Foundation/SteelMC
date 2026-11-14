@@ -18,7 +18,7 @@ use crate::{
     world::World,
 };
 use glam::DVec3;
-use steel_math::{DEGREE_90, RAD_TO_DEG_F64, wrap_degrees, trig};
+use steel_math::{DEGREE_90, RAD_TO_DEG_F64, trig, wrap_degrees};
 use steel_protocol::packets::game::ChatTypeBound;
 use steel_registry::{
     vanilla_game_rules::{
