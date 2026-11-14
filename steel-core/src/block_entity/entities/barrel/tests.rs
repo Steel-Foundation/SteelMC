@@ -19,6 +19,109 @@ fn pending(seed: i64) -> SeededContainerLoot {
 }
 
 #[test]
+fn locked_barrel_preserves_custom_name_and_lock_on_reload() {
+    use text_components::TextComponent;
+
+    let source = test_barrel();
+    let mut lock = NbtCompound::new();
+    lock.insert("items", "minecraft:diamond");
+    let mut nbt = NbtCompound::new();
+    nbt.insert("lock", lock);
+    nbt.insert(
+        "CustomName",
+        TextComponent::plain("Treasure").to_codec_nbt(),
+    );
+    source
+        .load_with_owned_components(&nbt)
+        .expect("load named locked barrel");
+
+    let saved = source.save_custom_only();
+    assert_eq!(saved.get("CustomName"), nbt.get("CustomName"));
+    assert_eq!(saved.get("lock"), nbt.get("lock"));
+
+    let restored = test_barrel();
+    restored
+        .load_with_owned_components(&saved)
+        .expect("reload named locked barrel");
+    assert_eq!(restored.save_custom_only(), saved);
+}
+
+#[test]
+fn placed_name_and_lock_survive_reload_and_control_opening() {
+    use crate::{
+        behavior::BlockLootContext,
+        test_support::{TestPlayerBuilder, use_block},
+    };
+    use steel_registry::{
+        RegistryHolderSet,
+        data_component_predicate::DataComponentMatchers,
+        data_components::{
+            DataComponentPatch,
+            vanilla_components::{CUSTOM_NAME, LOCK},
+        },
+        item_predicate::{IntBounds, ItemPredicate, LockCode},
+    };
+    use text_components::TextComponent;
+
+    init_vanilla_registry();
+    init_behaviors();
+    init_block_entities();
+    let fixture = fresh_test_world("named_locked_barrel");
+    let world = &fixture.world;
+    let pos = BlockPos::new(1, 64, 1);
+    insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
+    assert!(world.set_block(
+        pos,
+        vanilla_blocks::BARREL.default_state(),
+        UpdateFlags::UPDATE_NONE
+    ));
+    let owner = world.get_block_entity(pos).expect("barrel");
+    let name = TextComponent::plain("Treasure");
+    let mut patch = DataComponentPatch::new();
+    patch.set(CUSTOM_NAME, name.clone());
+    patch.set(
+        LOCK,
+        LockCode::new(ItemPredicate::new(
+            Some(RegistryHolderSet::Direct(vec![&vanilla_items::DIAMOND])),
+            IntBounds::ANY,
+            DataComponentMatchers::ANY,
+        )),
+    );
+    owner.apply_components_from_item_stack(&ItemStack::with_count_and_patch(
+        &vanilla_items::BARREL,
+        1,
+        patch,
+    ));
+    let saved = owner.save_without_metadata();
+    owner
+        .load_with_owned_components(&saved)
+        .expect("reload barrel");
+    assert_eq!(owner.as_nameable().expect("named barrel").name(), name);
+
+    let player = TestPlayerBuilder::new(Arc::clone(world), "LockedOut", 1).build();
+    player.set_client_loaded(true);
+    use_block(world, pos, &player);
+    assert!(!player.has_container_open());
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::new(&vanilla_items::STONE));
+    use_block(world, pos, &player);
+    assert!(!player.has_container_open());
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::new(&vanilla_items::DIAMOND));
+    use_block(world, pos, &player);
+    assert!(player.has_container_open());
+    player.do_close_container();
+
+    let items = BlockLootContext::new(world, pos).get_drops(world.get_block_state(pos));
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].get(CUSTOM_NAME), Some(&name));
+}
+
+#[test]
 fn pending_nbt_suppresses_items_and_round_trips_without_unpacking() {
     for seed in [0, -12345] {
         let source = test_barrel();

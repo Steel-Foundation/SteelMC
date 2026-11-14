@@ -2,10 +2,13 @@
 use crate::{
     block_entity::{
         BlockEntity, BlockEntityBase, ImplicitComponentGetter, RandomizableContainer,
+        container_properties::ContainerProperties,
         randomizable_container::RandomizableContainerStorage,
     },
+    entity::Entity as _,
     inventory::lock::ContainerRef,
     loot::LootResult,
+    nameable::Nameable,
     player::Player,
     world::World,
 };
@@ -14,7 +17,8 @@ use std::sync::Weak;
 use steel_registry::{
     data_components::vanilla_components::SeededContainerLoot, vanilla_block_entity_types,
 };
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, translations};
+use text_components::TextComponent;
 
 /// Number of slots in a barrel.
 pub const BARREL_SLOTS: usize = 27;
@@ -22,6 +26,7 @@ pub const BARREL_SLOTS: usize = 27;
 /// A barrel's independent inventory and lazy loot storage.
 pub struct BarrelBlockEntity {
     storage: RandomizableContainerStorage,
+    properties: ContainerProperties,
 }
 
 // SAFETY: This Steel-owned key uniquely identifies `BarrelBlockEntity`.
@@ -41,7 +46,13 @@ impl BarrelBlockEntity {
                 pos,
                 state,
             ),
+            properties: ContainerProperties::default(),
         }
+    }
+
+    /// Checks the lock and the spectator restriction on unopened loot.
+    pub(crate) fn can_open(&self, player: &Player) -> bool {
+        (!player.is_spectator() || self.loot_table().is_none()) && self.properties.can_open(player)
     }
 }
 
@@ -51,10 +62,12 @@ impl BlockEntity for BarrelBlockEntity {
     }
 
     fn load_additional(&self, nbt: &BaseNbtCompound<'_>) {
+        self.properties.load(nbt);
         self.storage.load_additional(nbt);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        self.properties.save(nbt);
         self.storage.save_additional(nbt);
     }
 
@@ -63,11 +76,16 @@ impl BlockEntity for BarrelBlockEntity {
     }
 
     fn apply_implicit_components(&self, components: &mut ImplicitComponentGetter<'_>) {
+        self.properties.apply_components(components);
         self.storage.apply_implicit_components(components);
     }
 
     fn container_ref(&self) -> Option<ContainerRef> {
         Some(self.storage.container_ref.clone())
+    }
+
+    fn as_nameable(&self) -> Option<&dyn Nameable> {
+        Some(self)
     }
 
     fn as_randomizable_container(&self) -> Option<&dyn RandomizableContainer> {
@@ -86,6 +104,18 @@ impl RandomizableContainer for BarrelBlockEntity {
 
     fn unpack_loot_table(&self, player: Option<&Player>) -> LootResult<()> {
         self.storage.unpack_loot_table(player)
+    }
+}
+
+impl Nameable for BarrelBlockEntity {
+    fn custom_name(&self) -> Option<TextComponent> {
+        self.properties.custom_name()
+    }
+
+    fn name(&self) -> TextComponent {
+        self.properties
+            .custom_name()
+            .unwrap_or_else(|| translations::CONTAINER_BARREL.msg().component())
     }
 }
 

@@ -1,4 +1,4 @@
-use super::chest_menu::menu_type_for_rows;
+use super::generic_9x_menu::menu_type_for_rows;
 use crate::{
     block_entity::{SharedBlockEntity, entities::CHEST_SLOTS},
     inventory::{menu::GRID_WIDTH, prelude::*},
