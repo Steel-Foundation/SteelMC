@@ -1,14 +1,13 @@
 //! Graph walks over density function trees.
 //!
 //! Utilities for flatness inference (`uses_y`, `is_flat_cached`), reference
-//! collection, and detecting `Interpolated` / `BlendedNoise` markers transitively
+//! collection, and detecting nodes transitively with `contains_function`
 //! (used to decide inlining vs function calls during codegen).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::iter::once;
 
 use crate::density::{Axis, CubicSpline, DensityFunction, MarkerType, SplineValue};
-
-use super::fingerprint::fingerprint;
 
 /// Check if a density function subtree directly uses the `y` coordinate.
 /// Does NOT recurse into References (those are handled by the flat inference loop).
@@ -85,105 +84,62 @@ pub(super) fn collect_references(df: &DensityFunction) -> Vec<String> {
 }
 
 pub(super) fn collect_refs_inner(df: &DensityFunction, refs: &mut Vec<String>) {
-    match df {
-        DensityFunction::Reference(r) if !refs.contains(&r.id) => {
+    if let DensityFunction::Reference(r) = df {
+        if !refs.contains(&r.id) {
             refs.push(r.id.clone());
         }
-        DensityFunction::Marker(m) => collect_refs_inner(&m.wrapped, refs),
-        DensityFunction::TwoArgumentSimple(t) => {
-            collect_refs_inner(&t.argument1, refs);
-            collect_refs_inner(&t.argument2, refs);
-        }
-        DensityFunction::Lerp(l) => {
-            collect_refs_inner(&l.alpha, refs);
-            collect_refs_inner(&l.first, refs);
-            collect_refs_inner(&l.second, refs);
-        }
-        DensityFunction::Mapped(m) => collect_refs_inner(&m.input, refs),
-        DensityFunction::Clamp(c) => collect_refs_inner(&c.input, refs),
-        DensityFunction::RangeChoice(rc) => {
-            collect_refs_inner(&rc.input, refs);
-            collect_refs_inner(&rc.when_in_range, refs);
-            collect_refs_inner(&rc.when_out_of_range, refs);
-        }
-        DensityFunction::IntervalSelect(interval) => {
-            collect_refs_inner(&interval.input, refs);
-            for function in &interval.functions {
-                collect_refs_inner(function, refs);
-            }
-        }
-        DensityFunction::ShiftedNoise(sn) => {
-            collect_refs_inner(&sn.shift_x, refs);
-            collect_refs_inner(&sn.shift_y, refs);
-            collect_refs_inner(&sn.shift_z, refs);
-        }
-        DensityFunction::BlendDensity(bd) => collect_refs_inner(&bd.input, refs),
-        DensityFunction::WeirdScaledSampler(ws) => collect_refs_inner(&ws.input, refs),
-        DensityFunction::Slice(s) => collect_refs_inner(&s.input, refs),
-        DensityFunction::Spline(s) => collect_spline_refs(&s.spline, refs),
-        DensityFunction::FindTopSurface(fts) => {
-            collect_refs_inner(&fts.density, refs);
-            collect_refs_inner(&fts.upper_bound, refs);
-        }
-        _ => {}
+        return;
+    }
+    for child in children(df) {
+        collect_refs_inner(child, refs);
     }
 }
 
-/// Recursively collect `Noise` nodes with `y_scale == 0.0` in a density
-/// function tree. These are Y-independent computations that can be cached
-/// per (x, z) column. Keyed by structural hash → `(noise_id, xz_scale)`.
-pub(super) fn collect_inline_flat_noises(
-    df: &DensityFunction,
-    out: &mut BTreeMap<u64, (String, f64)>,
-) {
-    if let DensityFunction::Noise(n) = df
-        && n.y_scale == 0.0
-    {
-        let fp = fingerprint(df);
-        out.entry(fp)
-            .or_insert_with(|| (n.noise_id.clone(), n.xz_scale));
-    }
-    // Recurse into children (but NOT into References — those are separate functions)
+/// The functions `df` evaluates directly, without following references. A spline's are
+/// its coordinate and those of its nested splines, in depth-first order.
+pub(super) fn children(df: &DensityFunction) -> Vec<&DensityFunction> {
     match df {
-        DensityFunction::TwoArgumentSimple(t) => {
-            collect_inline_flat_noises(&t.argument1, out);
-            collect_inline_flat_noises(&t.argument2, out);
-        }
-        DensityFunction::Lerp(l) => {
-            collect_inline_flat_noises(&l.alpha, out);
-            collect_inline_flat_noises(&l.first, out);
-            collect_inline_flat_noises(&l.second, out);
-        }
-        DensityFunction::Mapped(m) => collect_inline_flat_noises(&m.input, out),
-        DensityFunction::Clamp(c) => collect_inline_flat_noises(&c.input, out),
+        DensityFunction::TwoArgumentSimple(t) => vec![&*t.argument1, &*t.argument2],
+        DensityFunction::Lerp(l) => vec![&*l.alpha, &*l.first, &*l.second],
+        DensityFunction::Mapped(m) => vec![&*m.input],
+        DensityFunction::Clamp(c) => vec![&*c.input],
+        DensityFunction::Marker(m) => vec![&*m.wrapped],
         DensityFunction::RangeChoice(rc) => {
-            collect_inline_flat_noises(&rc.input, out);
-            collect_inline_flat_noises(&rc.when_in_range, out);
-            collect_inline_flat_noises(&rc.when_out_of_range, out);
+            vec![&*rc.input, &*rc.when_in_range, &*rc.when_out_of_range]
         }
-        DensityFunction::IntervalSelect(interval) => {
-            collect_inline_flat_noises(&interval.input, out);
-            for function in &interval.functions {
-                collect_inline_flat_noises(function, out);
-            }
+        DensityFunction::IntervalSelect(interval) => once(&*interval.input)
+            .chain(interval.functions.iter().map(|function| &**function))
+            .collect(),
+        DensityFunction::BlendDensity(bd) => vec![&*bd.input],
+        DensityFunction::WeirdScaledSampler(ws) => vec![&*ws.input],
+        DensityFunction::ShiftedNoise(sn) => vec![&*sn.shift_x, &*sn.shift_y, &*sn.shift_z],
+        DensityFunction::FindTopSurface(fts) => vec![&*fts.density, &*fts.upper_bound],
+        DensityFunction::Slice(sl) => vec![&*sl.input],
+        DensityFunction::Spline(s) => {
+            let mut coordinates = Vec::new();
+            push_spline_coordinates(&s.spline, &mut coordinates);
+            coordinates
         }
-        DensityFunction::WeirdScaledSampler(ws) => collect_inline_flat_noises(&ws.input, out),
-        DensityFunction::BlendDensity(bd) => collect_inline_flat_noises(&bd.input, out),
-        DensityFunction::Slice(s) => collect_inline_flat_noises(&s.input, out),
-        DensityFunction::Marker(m) => collect_inline_flat_noises(&m.wrapped, out),
-        DensityFunction::ShiftedNoise(sn) => {
-            collect_inline_flat_noises(&sn.shift_x, out);
-            collect_inline_flat_noises(&sn.shift_y, out);
-            collect_inline_flat_noises(&sn.shift_z, out);
-        }
-        _ => {}
+        DensityFunction::Constant(_)
+        | DensityFunction::Reference(_)
+        | DensityFunction::YClampedGradient(_)
+        | DensityFunction::Noise(_)
+        | DensityFunction::ShiftA(_)
+        | DensityFunction::ShiftB(_)
+        | DensityFunction::Shift(_)
+        | DensityFunction::BlendedNoise(_)
+        | DensityFunction::EndIslands
+        | DensityFunction::BlendAlpha(_)
+        | DensityFunction::BlendOffset(_)
+        | DensityFunction::DistanceToPoint(_) => Vec::new(),
     }
 }
-pub(super) fn collect_spline_refs(spline: &CubicSpline, refs: &mut Vec<String>) {
-    collect_refs_inner(&spline.coordinate, refs);
+
+fn push_spline_coordinates<'a>(spline: &'a CubicSpline, out: &mut Vec<&'a DensityFunction>) {
+    out.push(&spline.coordinate);
     for point in &spline.points {
         if let SplineValue::Spline(nested) = &point.value {
-            collect_spline_refs(nested, refs);
+            push_spline_coordinates(nested, out);
         }
     }
 }
@@ -278,143 +234,27 @@ pub(super) fn collect_interpolated_spline_walk(
     }
 }
 
-/// Check if a density function tree transitively contains `BlendedNoise`.
-pub(super) fn has_blended_noise(
+pub(super) fn is_interpolated_marker(df: &DensityFunction) -> bool {
+    matches!(df, DensityFunction::Marker(m) if m.kind == MarkerType::Interpolated)
+}
+
+/// Check if a density function tree transitively contains a node matching `is_target`.
+pub(super) fn contains_function(
     df: &DensityFunction,
     registry: &BTreeMap<String, DensityFunction>,
     visited: &mut BTreeSet<String>,
+    is_target: fn(&DensityFunction) -> bool,
 ) -> bool {
-    match df {
-        DensityFunction::BlendedNoise(_) => true,
-        DensityFunction::TwoArgumentSimple(t) => {
-            has_blended_noise(&t.argument1, registry, visited)
-                || has_blended_noise(&t.argument2, registry, visited)
-        }
-        DensityFunction::Mapped(m) => has_blended_noise(&m.input, registry, visited),
-        DensityFunction::Clamp(c) => has_blended_noise(&c.input, registry, visited),
-        DensityFunction::Marker(m) => has_blended_noise(&m.wrapped, registry, visited),
-        DensityFunction::RangeChoice(rc) => {
-            has_blended_noise(&rc.input, registry, visited)
-                || has_blended_noise(&rc.when_in_range, registry, visited)
-                || has_blended_noise(&rc.when_out_of_range, registry, visited)
-        }
-        DensityFunction::IntervalSelect(interval) => {
-            has_blended_noise(&interval.input, registry, visited)
-                || interval
-                    .functions
-                    .iter()
-                    .any(|function| has_blended_noise(function, registry, visited))
-        }
-        DensityFunction::BlendDensity(bd) => has_blended_noise(&bd.input, registry, visited),
-        DensityFunction::WeirdScaledSampler(ws) => has_blended_noise(&ws.input, registry, visited),
-        DensityFunction::ShiftedNoise(sn) => {
-            has_blended_noise(&sn.shift_x, registry, visited)
-                || has_blended_noise(&sn.shift_y, registry, visited)
-                || has_blended_noise(&sn.shift_z, registry, visited)
-        }
-        DensityFunction::FindTopSurface(fts) => {
-            has_blended_noise(&fts.density, registry, visited)
-                || has_blended_noise(&fts.upper_bound, registry, visited)
-        }
-        DensityFunction::Spline(s) => has_blended_noise_spline(&s.spline, registry, visited),
-        DensityFunction::Reference(r) => {
-            if visited.contains(&r.id) {
-                return false;
-            }
-            visited.insert(r.id.clone());
-            registry
-                .get(&r.id)
-                .is_some_and(|ref_df| has_blended_noise(ref_df, registry, visited))
-        }
-        _ => false,
-    }
-}
-
-pub(super) fn has_blended_noise_spline(
-    spline: &CubicSpline,
-    registry: &BTreeMap<String, DensityFunction>,
-    visited: &mut BTreeSet<String>,
-) -> bool {
-    if has_blended_noise(&spline.coordinate, registry, visited) {
+    if is_target(df) {
         return true;
     }
-    spline.points.iter().any(|p| {
-        if let SplineValue::Spline(nested) = &p.value {
-            has_blended_noise_spline(nested, registry, visited)
-        } else {
-            false
-        }
-    })
-}
-
-/// Check if a named function (transitively) contains `Interpolated` markers.
-pub(super) fn has_interpolated_markers(
-    df: &DensityFunction,
-    registry: &BTreeMap<String, DensityFunction>,
-    visited: &mut BTreeSet<String>,
-) -> bool {
-    match df {
-        DensityFunction::Marker(m) if m.kind == MarkerType::Interpolated => true,
-        DensityFunction::Marker(m) => has_interpolated_markers(&m.wrapped, registry, visited),
-        DensityFunction::TwoArgumentSimple(t) => {
-            has_interpolated_markers(&t.argument1, registry, visited)
-                || has_interpolated_markers(&t.argument2, registry, visited)
-        }
-        DensityFunction::Mapped(m) => has_interpolated_markers(&m.input, registry, visited),
-        DensityFunction::Clamp(c) => has_interpolated_markers(&c.input, registry, visited),
-        DensityFunction::RangeChoice(rc) => {
-            has_interpolated_markers(&rc.input, registry, visited)
-                || has_interpolated_markers(&rc.when_in_range, registry, visited)
-                || has_interpolated_markers(&rc.when_out_of_range, registry, visited)
-        }
-        DensityFunction::IntervalSelect(interval) => {
-            has_interpolated_markers(&interval.input, registry, visited)
-                || interval
-                    .functions
-                    .iter()
-                    .any(|function| has_interpolated_markers(function, registry, visited))
-        }
-        DensityFunction::BlendDensity(bd) => has_interpolated_markers(&bd.input, registry, visited),
-        DensityFunction::WeirdScaledSampler(ws) => {
-            has_interpolated_markers(&ws.input, registry, visited)
-        }
-        DensityFunction::ShiftedNoise(sn) => {
-            has_interpolated_markers(&sn.shift_x, registry, visited)
-                || has_interpolated_markers(&sn.shift_y, registry, visited)
-                || has_interpolated_markers(&sn.shift_z, registry, visited)
-        }
-        DensityFunction::FindTopSurface(fts) => {
-            has_interpolated_markers(&fts.density, registry, visited)
-                || has_interpolated_markers(&fts.upper_bound, registry, visited)
-        }
-        DensityFunction::Reference(r) => {
-            if visited.contains(&r.id) {
-                return false;
-            }
-            visited.insert(r.id.clone());
-            registry
+    if let DensityFunction::Reference(r) = df {
+        return visited.insert(r.id.clone())
+            && registry
                 .get(&r.id)
-                .is_some_and(|ref_df| has_interpolated_markers(ref_df, registry, visited))
-        }
-        // Splines could contain interpolated markers in theory
-        DensityFunction::Spline(s) => has_interpolated_spline(&s.spline, registry, visited),
-        _ => false,
+                .is_some_and(|ref_df| contains_function(ref_df, registry, visited, is_target));
     }
-}
-
-pub(super) fn has_interpolated_spline(
-    spline: &CubicSpline,
-    registry: &BTreeMap<String, DensityFunction>,
-    visited: &mut BTreeSet<String>,
-) -> bool {
-    if has_interpolated_markers(&spline.coordinate, registry, visited) {
-        return true;
-    }
-    spline.points.iter().any(|p| {
-        if let SplineValue::Spline(nested) = &p.value {
-            has_interpolated_spline(nested, registry, visited)
-        } else {
-            false
-        }
-    })
+    children(df)
+        .into_iter()
+        .any(|child| contains_function(child, registry, visited, is_target))
 }

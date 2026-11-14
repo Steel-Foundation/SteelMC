@@ -12,6 +12,8 @@ use rustc_hash::{FxHashMap, FxHasher};
 
 use crate::density::DensityFunction;
 
+use super::graph::children;
+
 /// Recursively collect `Noise` nodes with `y_scale == 0.0` in a density
 /// function tree. These are Y-independent computations that can be cached
 /// per (x, z) column. Keyed by structural hash → `(noise_id, xz_scale)`.
@@ -26,34 +28,8 @@ pub(super) fn collect_inline_flat_noises(
         out.entry(fp)
             .or_insert_with(|| (n.noise_id.clone(), n.xz_scale));
     }
-    // Recurse into children (but NOT into References — those are separate functions)
-    match df {
-        DensityFunction::TwoArgumentSimple(t) => {
-            collect_inline_flat_noises(&t.argument1, out);
-            collect_inline_flat_noises(&t.argument2, out);
-        }
-        DensityFunction::Mapped(m) => collect_inline_flat_noises(&m.input, out),
-        DensityFunction::Clamp(c) => collect_inline_flat_noises(&c.input, out),
-        DensityFunction::RangeChoice(rc) => {
-            collect_inline_flat_noises(&rc.input, out);
-            collect_inline_flat_noises(&rc.when_in_range, out);
-            collect_inline_flat_noises(&rc.when_out_of_range, out);
-        }
-        DensityFunction::IntervalSelect(interval) => {
-            collect_inline_flat_noises(&interval.input, out);
-            for function in &interval.functions {
-                collect_inline_flat_noises(function, out);
-            }
-        }
-        DensityFunction::WeirdScaledSampler(ws) => collect_inline_flat_noises(&ws.input, out),
-        DensityFunction::BlendDensity(bd) => collect_inline_flat_noises(&bd.input, out),
-        DensityFunction::Marker(m) => collect_inline_flat_noises(&m.wrapped, out),
-        DensityFunction::ShiftedNoise(sn) => {
-            collect_inline_flat_noises(&sn.shift_x, out);
-            collect_inline_flat_noises(&sn.shift_y, out);
-            collect_inline_flat_noises(&sn.shift_z, out);
-        }
-        _ => {}
+    for child in children(df) {
+        collect_inline_flat_noises(child, out);
     }
 }
 

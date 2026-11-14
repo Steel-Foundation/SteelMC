@@ -164,7 +164,19 @@ impl FeatureDecorationRunner {
         direction_towards_neighbor: Direction,
     ) -> bool {
         let neighbor_pos = pos.relative(direction_towards_neighbor);
-        let neighbor_state = region.block_state(neighbor_pos);
+        Self::can_attach_to_multiface_state(
+            region.block_state(neighbor_pos),
+            neighbor_pos,
+            direction_towards_neighbor,
+        )
+    }
+
+    /// [`Self::can_attach_to_multiface`] for a neighbour state the caller already read.
+    pub(in crate::worldgen::feature) fn can_attach_to_multiface_state(
+        neighbor_state: BlockStateId,
+        neighbor_pos: BlockPos,
+        direction_towards_neighbor: Direction,
+    ) -> bool {
         let support_direction = direction_towards_neighbor.opposite();
         shapes::is_offset_face_full(
             neighbor_state.get_support_shape_at(neighbor_pos),

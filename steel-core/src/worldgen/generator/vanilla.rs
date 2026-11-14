@@ -663,7 +663,7 @@ impl<N: VanillaPostNoiseStateType + NoiseSpawnTarget> ChunkGenerator for Vanilla
 
         let mut pending_writes: Vec<(usize, BlockStateId)> = Vec::new();
         let mut column_buf: Vec<BlockStateId> = Vec::new();
-        let mut material_ore_vein_results: SmallVec<[Option<BlockStateId>; 2]> = SmallVec::new();
+        let mut material_ore_vein_results = vec![None; material_ore_vein_count].into_boxed_slice();
         let condition_noise_values = N::surface_noise_ids()
             .iter()
             .map(|_| Cell::new(0.0))
@@ -829,8 +829,8 @@ impl<N: VanillaPostNoiseStateType + NoiseSpawnTarget> ChunkGenerator for Vanilla
                         PartialSurfaceOutcome::Evaluate => {}
                     }
 
-                    material_ore_vein_results.clear();
-                    material_ore_vein_results.resize(material_ore_vein_count, None);
+                    // The fill only writes placed veins.
+                    material_ore_vein_results.fill(None);
                     if let Some(ore_veinifier) = &self.ore_veinifier {
                         let offset = (relative_y * 16 * 16 + local_z * 16 + local_x)
                             * material_ore_vein_value_count;
