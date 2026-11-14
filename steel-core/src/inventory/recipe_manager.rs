@@ -111,7 +111,7 @@ mod tests {
             panic!("red and blue dye should match the purple dye recipe");
         };
 
-        let result =recipe.data().assemble(&input);
+        let result = recipe.data().assemble(&input);
 
         assert!(result.is(&vanilla_items::PURPLE_DYE));
         assert_eq!(result.get(DYE), Some(&DyeColor::Purple));
