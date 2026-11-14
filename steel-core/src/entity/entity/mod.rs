@@ -1592,6 +1592,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn super::ContainerUser>(self)
     }
 
+    /// Returns whether this entity belongs to vanilla's `AbstractWindCharge` hierarchy.
+    fn is_abstract_wind_charge(&self) -> bool {
+        try_as_dyn::<Self, dyn AbstractWindCharge>(self).is_some()
+    }
+
     /// Returns this entity as a living entity when it has living behavior.
     fn as_living_entity(&self) -> Option<&dyn LivingEntity> {
         try_as_dyn::<Self, dyn LivingEntity>(self)

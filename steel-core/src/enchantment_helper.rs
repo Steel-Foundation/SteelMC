@@ -215,10 +215,49 @@ pub(crate) fn do_post_attack_effects_from_item(
     );
 }
 
+/// Vanilla `EnchantmentHelper.doPostAttackEffects`: credits the living attacker's
+/// weapon; without a living attacker only the victim's equipment reacts.
+pub(crate) fn do_post_attack_effects(
+    world: &World,
+    victim: &(impl Entity + ?Sized),
+    context: &EnchantmentPostAttackContext<'_>,
+) {
+    let mut weapon = None;
+    if let Some(attacker) = context
+        .attacker
+        .filter(|attacker| attacker.as_living_entity().is_some())
+    {
+        attacker.with_weapon_item(&mut |item| {
+            weapon = item.map(|stack| stack.copy_with_count(stack.count()));
+        });
+    }
+    match weapon {
+        Some(weapon) => do_post_attack_effects_with_item_source(world, victim, &weapon, context),
+        None => do_post_attack_victim_effects(world, victim, context),
+    }
+}
+
 pub(crate) fn do_post_attack_effects_with_item_source(
     world: &World,
     victim: &(impl Entity + ?Sized),
     source: &ItemStack,
+    context: &EnchantmentPostAttackContext<'_>,
+) {
+    do_post_attack_victim_effects(world, victim, context);
+
+    let mut source = source.copy_with_count(source.count());
+    let _ = apply_post_attack_effects(
+        world,
+        &mut EnchantedItemInUse::Stack(&mut source),
+        Some(EquipmentSlot::MainHand),
+        EnchantmentTarget::Attacker,
+        context,
+    );
+}
+
+fn do_post_attack_victim_effects(
+    world: &World,
+    victim: &(impl Entity + ?Sized),
     context: &EnchantmentPostAttackContext<'_>,
 ) {
     if let Some(living_victim) = victim.as_living_entity() {
@@ -241,15 +280,6 @@ pub(crate) fn do_post_attack_effects_with_item_source(
             }
         }
     }
-
-    let mut source = source.copy_with_count(source.count());
-    let _ = apply_post_attack_effects(
-        world,
-        &mut EnchantedItemInUse::Stack(&mut source),
-        Some(EquipmentSlot::MainHand),
-        EnchantmentTarget::Attacker,
-        context,
-    );
 }
 
 fn apply_value_effects(

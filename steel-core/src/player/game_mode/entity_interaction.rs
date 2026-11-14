@@ -14,7 +14,12 @@ use crate::player::food_data::food_constants;
 use std::ops::Add;
 use steel_math::{round_f32, trig};
 use steel_registry::particle_type::ParticleData;
-use steel_registry::{vanilla_custom_stats, vanilla_particle_types};
+use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
+use steel_registry::{
+    REGISTRY, TaggedRegistryExt as _, vanilla_custom_stats, vanilla_particle_types,
+};
+
+use crate::entity::{EntityReference, ProjectileDeflection};
 
 /// An attack only counts as full strength once the attack strength scale exceeds this.
 const FULL_ATTACK_STRENGTH_SCALE_THRESHOLD: f32 = 0.9;
@@ -351,6 +356,9 @@ impl Player {
         let attack_strength_scale = self.attack_strength_scale(0.5);
         let magic_boost = attack_strength_scale * (enchanted_damage - base_damage);
         let base_damage = base_damage * Self::base_damage_scale_factor(attack_strength_scale);
+        if deals_knockback && self.deflect_projectile(entity) {
+            return true;
+        }
         let damage = base_damage + magic_boost;
         let old_movement = entity.velocity();
         let mut affected = deals_knockback;
@@ -392,6 +400,31 @@ impl Player {
         if let Some(world) = self.level() {
             world.play_sound_at(sound, self.sound_source(), self.position(), 1.0, 1.0, None);
         }
+    }
+
+    /// Vanilla `Player.deflectProjectile`: redirects a redirectable projectile
+    /// along this player's look direction instead of attacking it.
+    fn deflect_projectile(self: &Arc<Self>, entity: &dyn Entity) -> bool {
+        if !REGISTRY.entity_types.is_in_tag(
+            entity.entity_type(),
+            &EntityTypeTag::REDIRECTABLE_PROJECTILE,
+        ) {
+            return false;
+        }
+        let Some(projectile) = entity.as_projectile() else {
+            return false;
+        };
+        let owner: SharedEntity = Arc::<Player>::clone(self);
+        if !projectile.deflect(
+            ProjectileDeflection::AimDeflect,
+            Some(self.as_ref()),
+            Some(EntityReference::from_entity(&owner)),
+            true,
+        ) {
+            return false;
+        }
+        self.play_attack_sound(&sound_events::ENTITY_PLAYER_ATTACK_NODAMAGE);
+        true
     }
 
     fn cannot_attack(self: &Arc<Self>, entity: &dyn Entity) -> bool {
@@ -437,6 +470,9 @@ impl Player {
         let magic_boost = attack_strength_scale * (enchanted_damage - attack_damage);
         let mut base_damage = attack_damage * Self::base_damage_scale_factor(attack_strength_scale);
         self.reset_attack_strength_ticker();
+        if self.deflect_projectile(entity) {
+            return false;
+        }
 
         if base_damage <= 0.0 && magic_boost <= 0.0 {
             // Vanilla still runs post-piercing attack effects when no damage is dealt.
