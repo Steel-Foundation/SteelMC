@@ -217,7 +217,7 @@ pub(crate) fn do_post_attack_effects_from_item(
 
 pub(crate) fn do_post_attack_effects_with_item_source(
     world: &World,
-    victim: &(impl Entity + ?Sized),
+    victim: &dyn Entity,
     source: &ItemStack,
     context: &EnchantmentPostAttackContext<'_>,
 ) {
@@ -242,14 +242,116 @@ pub(crate) fn do_post_attack_effects_with_item_source(
         }
     }
 
+    let attacker = context
+        .attacker
+        .and_then(|entity| entity.as_living_entity());
+    if attacker.is_none() {
+        return;
+    }
+
     let mut source = source.copy_with_count(source.count());
-    let _ = apply_post_attack_effects(
+    let source_item = source.item;
+    let source_broke = apply_post_attack_effects(
         world,
         &mut EnchantedItemInUse::Stack(&mut source),
         Some(EquipmentSlot::MainHand),
         EnchantmentTarget::Attacker,
         context,
     );
+    if !source_broke {
+        return;
+    }
+
+    if let Some(attacker) = attacker {
+        attacker.on_equipped_item_broken(source_item, EquipmentSlot::MainHand);
+    }
+}
+
+pub(crate) fn process_ammo_use(weapon: &ItemStack, ammo: &ItemStack, amount: i32) -> i32 {
+    process_value_effects(
+        weapon,
+        EnchantmentEffectComponent::AmmoUse,
+        amount as f32,
+        |requirements, _| requirements.matches_item_context(ammo.item) == Some(true),
+    ) as i32
+}
+
+pub(crate) fn process_projectile_count(
+    weapon: &ItemStack,
+    shooter: &dyn Entity,
+    count: i32,
+) -> i32 {
+    let value = process_value_effects(
+        weapon,
+        EnchantmentEffectComponent::ProjectileCount,
+        count as f32,
+        |requirements, level| entity_requirements_match(Some(requirements), shooter, level),
+    );
+    (value as i32).max(0)
+}
+
+pub(crate) fn process_projectile_spread(
+    weapon: &ItemStack,
+    shooter: &dyn Entity,
+    angle: f32,
+) -> f32 {
+    process_value_effects(
+        weapon,
+        EnchantmentEffectComponent::ProjectileSpread,
+        angle,
+        |requirements, level| entity_requirements_match(Some(requirements), shooter, level),
+    )
+    .max(0.0)
+}
+
+pub(crate) fn get_piercing_count(weapon: &ItemStack, ammo: &ItemStack) -> i32 {
+    let value = process_value_effects(
+        weapon,
+        EnchantmentEffectComponent::ProjectilePiercing,
+        0.0,
+        |requirements, _| requirements.matches_item_context(ammo.item) == Some(true),
+    );
+    (value as i32).max(0)
+}
+
+/// Applies a weapon's value effects for `component` in enchantment iteration
+/// order.
+///
+/// `remove_binomial` effects are skipped because Steel's value-effect pipeline
+/// has no per-entity random source; no projectile enchantment uses them.
+fn process_value_effects(
+    item: &ItemStack,
+    component: EnchantmentEffectComponent,
+    input: f32,
+    mut requirements_match: impl FnMut(&'static EnchantmentEffectRequirements, i32) -> bool,
+) -> f32 {
+    let Some(enchantments) = item.get_enchantments() else {
+        return input;
+    };
+
+    let mut value = input;
+    for (key, level) in enchantments.iter() {
+        if *level == 0 {
+            continue;
+        }
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            continue;
+        };
+        let level = *level as i32;
+
+        for effect in enchantment.effects.value_effects(component) {
+            if let Some(requirements) = effect.requirements
+                && !requirements_match(requirements, level)
+            {
+                continue;
+            }
+            if let Some(updated) = effect.effect.process_without_random(level, value) {
+                value = updated;
+            }
+        }
+    }
+
+    value
 }
 
 fn apply_value_effects(
@@ -403,16 +505,16 @@ fn apply_post_attack_effects(
     enchanted_item_broke
 }
 
-/// Mirrors vanilla `EnchantmentHelper.onProjectileSpawned` after the projectile
-/// has been handed to the world.
+/// Applies projectile-spawned effects after the projectile has been handed to the
+/// world. Returns whether an effect broke the item.
 pub(crate) fn on_projectile_spawned(
     world: &World,
     weapon: &mut ItemStack,
     projectile: &dyn Entity,
     owner: Option<&SharedEntity>,
-) {
+) -> bool {
     let Some(enchantments) = weapon.get_enchantments() else {
-        return;
+        return false;
     };
     let enchantments = enchantments
         .iter()
@@ -427,11 +529,12 @@ pub(crate) fn on_projectile_spawned(
         })
         .collect::<Vec<_>>();
 
+    let mut broke = false;
     for (enchantment, level) in enchantments {
         let level = level as i32;
         for effect in enchantment.effects.projectile_spawned {
             if entity_requirements_match(effect.requirements, projectile, level) {
-                let _ = apply_entity_effect(
+                broke |= apply_entity_effect(
                     world,
                     &effect.effect,
                     level,
@@ -442,6 +545,8 @@ pub(crate) fn on_projectile_spawned(
             }
         }
     }
+
+    broke
 }
 
 pub(crate) fn do_post_piercing_attack_effects(world: &World, user: &dyn LivingEntity) {

@@ -4,10 +4,12 @@
 //! See `src/behavior/generated/items.rs` for the generated registration code.
 
 mod air;
+mod arrow;
 mod block_item;
 pub(crate) mod block_transformer;
 mod bonemeal;
 mod bottle;
+mod bow;
 mod brush;
 mod bucket;
 mod compass;
@@ -36,6 +38,7 @@ mod shield;
 mod snowball;
 mod solid_bucket_item;
 mod spawn_egg;
+mod spectral_arrow;
 mod spyglass;
 mod standing_and_wall_block_item;
 mod throw_projectile;
@@ -47,9 +50,11 @@ mod flint_and_steel;
 mod lead;
 
 pub use air::AirItem;
+pub use arrow::ArrowItem;
 pub use block_item::{BlockItem, DoubleHighBlockItem};
 pub use bonemeal::BoneMealItem;
 pub use bottle::BottleItem;
+pub use bow::BowItem;
 pub use brush::BrushItem;
 pub use bucket::BucketItem;
 pub use compass::CompassItem;
@@ -79,6 +84,7 @@ pub use shield::ShieldItem;
 pub use snowball::SnowballItem;
 pub use solid_bucket_item::SolidBucketItem;
 pub use spawn_egg::SpawnEggItem;
+pub use spectral_arrow::SpectralArrowItem;
 pub use spyglass::SpyglassItem;
 pub use standing_and_wall_block_item::StandingAndWallBlockItem;
 pub use throwable_potion::{LingeringPotionItem, SplashPotionItem};

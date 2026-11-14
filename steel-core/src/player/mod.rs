@@ -62,8 +62,8 @@ use std::time::{Duration, Instant};
 use steel_math::{RAD_TO_DEG_F64, round_f32, round_f64, trig};
 use steel_protocol::packets::game::{
     CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CRespawn,
-    CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
-    LookAtAnchor, RelativeMovement, SoundSource,
+    CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, CTakeItemEntity,
+    ClientCommandAction, LookAtAnchor, RelativeMovement, SoundSource,
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -80,7 +80,7 @@ use steel_registry::vanilla_game_rules::{
 };
 use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags,
-    vanilla_entities, vanilla_game_events,
+    vanilla_entities, vanilla_game_events, vanilla_items,
 };
 use steel_utils::{entity_events::EntityStatus, locks::Shared, translations};
 use tick_state::PlayerTickState;
@@ -427,11 +427,15 @@ impl Player {
         };
         let stack_before_using = item.clone();
         let world = self.get_world();
+        let Some(user) = LivingEntityRef::new(entity) else {
+            self.stop_using_item();
+            return;
+        };
         let apply_side_effects =
-            behavior.release_using(&mut item, &world, self, active.remaining_ticks());
+            behavior.release_using(&mut item, &world, user, active.remaining_ticks());
         let use_on_release = behavior.use_on_release(&item);
         if apply_side_effects {
-            item = apply_use_remainder(&stack_before_using, item, self);
+            item = apply_use_remainder(&stack_before_using, item, user.living());
             self.apply_item_use_cooldown(&stack_before_using);
         }
         self.inventory.lock().set_item_in_hand(hand, item);
@@ -440,6 +444,49 @@ impl Player {
             self.tick_active_item_use_with_behavior(entity, behavior, active);
         }
         self.stop_using_item();
+    }
+
+    /// Resolves the ammo stack for `held_weapon`, plus the inventory slot it came
+    /// from (or `None` for the creative-mode arrow).
+    ///
+    /// Returns `None` when `held_weapon` is not a projectile weapon.
+    pub fn get_projectile(&self, held_weapon: &ItemStack) -> Option<(ItemStack, Option<usize>)> {
+        let weapon = ITEM_BEHAVIORS
+            .get_behavior(held_weapon.item())
+            .as_projectile_weapon()?;
+
+        let inventory = self.inventory.lock();
+        let selected_slot = usize::from(inventory.get_selected_slot());
+        for slot in [PlayerInventory::SLOT_OFFHAND, selected_slot] {
+            let stack = inventory.get_item(slot);
+            if weapon.is_supported_held_projectile(stack) {
+                return Some((stack.clone(), Some(slot)));
+            }
+        }
+
+        for slot in 0..PlayerInventory::INVENTORY_SIZE {
+            let stack = inventory.get_item(slot);
+            if weapon.is_supported_projectile(stack) {
+                return Some((stack.clone(), Some(slot)));
+            }
+        }
+        drop(inventory);
+
+        self.has_infinite_materials()
+            .then(|| (ItemStack::new(&vanilla_items::ARROW), None))
+    }
+
+    /// Broadcasts the take-item animation for pickable entities and refreshes the
+    /// inventory menu.
+    pub fn take(&self, entity: &dyn Entity, org_count: i32) {
+        if !entity.is_removed() && entity.is_takeable() {
+            self.get_world().broadcast_to_nearby(
+                ChunkPos::from_entity_pos(entity.position()),
+                CTakeItemEntity::new(entity.id(), self.id(), org_count),
+                None,
+            );
+        }
+        self.broadcast_inventory_changes();
     }
 
     fn tick_active_item_use(&self, entity: &SharedEntity) {
