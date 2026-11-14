@@ -66,6 +66,24 @@ pub fn clamp(value: f64, min: f64, max: f64) -> f64 {
     }
 }
 
+/// Clamp a value to the range [min, max] (f32 version).
+///
+/// Unlike [`f32::clamp`], this does not panic on NaN or inverted bounds; a NaN
+/// `value` is returned unchanged.
+///
+/// Java reference: `Mth.clamp(float, float, float)`
+#[inline]
+#[must_use]
+pub const fn clamp_f32(value: f32, min: f32, max: f32) -> f32 {
+    if value < min {
+        min
+    } else if value > max {
+        max
+    } else {
+        value
+    }
+}
+
 /// Clamp a value to the range [min, max] (i32 version).
 #[inline]
 #[must_use]

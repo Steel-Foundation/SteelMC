@@ -7,8 +7,8 @@ use core::f64::consts::PI;
 pub use coordinate::{fast_floor, fast_floor_simd, fast_lfloor, wrap, wrap_simd};
 pub use gradient::{GRADIENT, GRADIENT_F32, corner_noise_3d, dot, grad_dot, grad_dot_simd};
 pub use interpolation::{
-    clamp, clamp_i32, clamped_lerp, clamped_lerp_simd, inverse_lerp, lerp, lerp_simd, lerp2,
-    lerp2_simd, lerp3, lerp3_simd, map, map_clamped, smoothstep, smoothstep_derivative,
+    clamp, clamp_f32, clamp_i32, clamped_lerp, clamped_lerp_simd, inverse_lerp, lerp, lerp_simd,
+    lerp2, lerp2_simd, lerp3, lerp3_simd, map, map_clamped, smoothstep, smoothstep_derivative,
     smoothstep_simd,
 };
 
