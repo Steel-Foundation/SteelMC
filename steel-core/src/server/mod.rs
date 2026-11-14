@@ -462,6 +462,7 @@ use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQu
 
 mod world_changes;
 
+use crate::command::signing_context::CommandSigningContext;
 use jobs::domain_switch::DomainSwitchJob;
 use jobs::teleport::{
     EndGatewayTeleportJob, EndPortalTeleportJob, EnderPearlRestoreJob, NetherPortalTeleportJob,
@@ -900,10 +901,12 @@ impl Server {
         &self,
         sender: CommandSender,
         command: String,
+        signing_context: Option<CommandSigningContext>,
     ) -> Result<(), CommandQueueFull> {
         self.command_requests.submit(CommandRequest::Execute {
             owner: CommandExecutionOwner::capture(sender, self),
             command,
+            signing_context,
         })
     }
 
@@ -985,5 +988,31 @@ impl Server {
                 Vec::new()
             }
         }
+    }
+
+    /// Returns whether a command requires signed arguments when parsed for the given sender.
+    pub fn command_requires_signed_arguments(
+        self: &Arc<Self>,
+        command: &str,
+        sender: CommandSender,
+    ) -> bool {
+        let source = CommandSource::new(sender, Arc::clone(self), None);
+        let dispatcher = self.command_dispatcher.read();
+        let parse = dispatcher.parse(command, source);
+        dispatcher.has_signed_arguments(&parse)
+    }
+
+    /// Inspects the parsed command nodes and collects the names and text slices
+    /// of all arguments requiring cryptographic signatures (e.g. `minecraft:message`).
+    pub fn collect_signable_arguments<'a>(
+        self: &Arc<Self>,
+        command: &'a str,
+        sender: CommandSender,
+    ) -> Vec<(String, &'a str)> {
+        let source = CommandSource::new(sender, Arc::clone(self), None);
+        let dispatcher = self.command_dispatcher.read();
+        let parse = dispatcher.parse(command, source);
+
+        dispatcher.collect_signable_arguments(&parse, command)
     }
 }
