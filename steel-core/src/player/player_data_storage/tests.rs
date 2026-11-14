@@ -2,7 +2,7 @@ use crate::entity::DEFAULT_MAX_AIR_SUPPLY;
 use crate::permission::PermissionSet;
 use crate::player::KnownPlayer;
 use crate::player::advancement::progress::AdvancementProgress;
-use crate::player::advancement::tests::advancement_with_criterion;
+use crate::player::advancement::tests::advancement_with_criteria;
 use crate::player::player_data::PersistentStat;
 use crate::player::player_data_storage::file_storage::FilePlayerDataStorage;
 use crate::player::player_data_storage::known_players::{
@@ -18,6 +18,7 @@ use std::{
     env,
     time::{SystemTime, UNIX_EPOCH},
 };
+use steel_registry::REGISTRY;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_custom_stats, vanilla_items};
 use tokio::fs;
@@ -771,17 +772,11 @@ async fn disk_player_data_advancements_round_trip() {
     };
     let uuid = Uuid::from_u128(7);
 
+    let (key, criterion) = advancement_with_criteria();
     let registry = REGISTRY.advancements.snapshot();
     let advancement = registry
-        .advancements()
-        .find(|advancement| !advancement.requirements().names().is_empty())
-        .expect("vanilla registry should contain an advancement with criteria");
-    let criterion = advancement
-        .requirements()
-        .names()
-        .into_iter()
-        .next()
-        .expect("advancement should have a criterion");
+        .value_by_key(&key)
+        .expect("helper should return a registered advancement");
     let mut progress = AdvancementProgress::default();
     progress.update(advancement.requirements());
     progress.grant_progress(&criterion);

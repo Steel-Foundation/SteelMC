@@ -308,13 +308,11 @@ impl PlayerAdvancement {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::borrow::Cow;
-
     use super::*;
     use std::borrow::Cow;
     use steel_registry::init_vanilla_registry;
 
-    fn advancement_with_criteria() -> (Identifier, Cow<'static, str>) {
+    pub(crate) fn advancement_with_criteria() -> (Identifier, Cow<'static, str>) {
         let registry = REGISTRY.advancements.snapshot();
         let advancement = registry
             .advancements()
