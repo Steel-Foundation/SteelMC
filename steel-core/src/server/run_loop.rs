@@ -16,6 +16,8 @@ use steel_registry::vanilla_custom_stats;
 use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
 use steel_utils::translations;
 
+use crate::world::WorldGameTickTimings;
+
 impl Server {
     pub(super) fn advance_server_tick(&self) -> (u64, bool) {
         let (tick_count, runs_normally) = {
@@ -246,14 +248,17 @@ impl Server {
 
             self.tick_pending_command_executions(&mut pending_command_executions);
             self.tick_command_requests(&mut pending_command_executions);
-            if let Err(error) = self
+            let world_timings = match self
                 .tick_worlds_game(&world_tick_workers, tick_count, runs_normally)
                 .await
             {
-                log::error!("World game tick failed: {error}");
-                cancel_token.cancel();
-                break;
-            }
+                Ok(timings) => timings,
+                Err(error) => {
+                    log::error!("World game tick failed: {error}");
+                    cancel_token.cancel();
+                    break;
+                }
+            };
             player_info_ticks += 1;
             if player_info_ticks > SEND_PLAYER_INFO_INTERVAL {
                 let _span = tracing::trace_span!("broadcast_latency").entered();
@@ -277,10 +282,18 @@ impl Server {
                 &mut command_data_autosaves,
             );
 
-            let tab_list_tick_stats = self.record_tick_and_capture_tab_stats(
-                tick_count,
-                tick_start.elapsed().as_nanos() as u64,
-            );
+            let tick_elapsed = tick_start.elapsed();
+            let tab_list_tick_stats =
+                self.record_tick_and_capture_tab_stats(tick_count, tick_elapsed.as_nanos() as u64);
+            if let Some(completed) = self.perf.record_tick(
+                tick_elapsed,
+                self.worlds
+                    .values()
+                    .map(|world| &world.key)
+                    .zip(world_timings),
+            ) {
+                completed.finish();
+            }
 
             if let Some(tick_stats) = tab_list_tick_stats {
                 self.broadcast_tab_list(tick_stats);
@@ -601,7 +614,7 @@ impl Server {
         workers: &WorldTickWorkers,
         tick_count: u64,
         runs_normally: bool,
-    ) -> Result<(), WorldTickWorkerError> {
+    ) -> Result<Vec<WorldGameTickTimings>, WorldTickWorkerError> {
         if runs_normally {
             self.worlds.advance_domain_game_times();
         }
@@ -647,7 +660,7 @@ impl Server {
                 "Game tick slow"
             );
         }
-        Ok(())
+        Ok(all_timings)
     }
 
     pub(super) fn tick_jobs(self: &Arc<Self>, tick_count: u64, runs_normally: bool) {

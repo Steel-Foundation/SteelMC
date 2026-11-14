@@ -233,6 +233,7 @@ async fn test_server_with_worlds(
 }
 
 mod connection_lifecycle;
+mod perf;
 mod player_limit;
 
 #[test]

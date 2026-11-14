@@ -19,6 +19,7 @@
 /config
 /.tmp
 /.logs
+/debug
 /world
 /saves
 /players
