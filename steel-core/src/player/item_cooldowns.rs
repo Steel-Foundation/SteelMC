@@ -46,6 +46,10 @@ impl ItemCooldowns {
         if duration <= 0 {
             return None;
         }
+        Some(self.add_cooldown(stack, duration))
+    }
+
+    pub(super) fn add_cooldown(&mut self, stack: &ItemStack, duration: i32) -> (Identifier, i32) {
         let group = cooldown_group(stack);
         self.cooldowns.insert(
             group.clone(),
@@ -53,7 +57,7 @@ impl ItemCooldowns {
                 end_time: self.tick_count + duration,
             },
         );
-        Some((group, duration))
+        (group, duration)
     }
 }
 
@@ -79,6 +83,15 @@ impl Player {
                 duration,
             });
         }
+    }
+
+    /// Puts the stack's cooldown group on cooldown for `duration` ticks.
+    pub fn add_item_cooldown(&self, stack: &ItemStack, duration: i32) {
+        let (cooldown_group, duration) = self.item_cooldowns.lock().add_cooldown(stack, duration);
+        self.send_packet(CCooldown {
+            cooldown_group,
+            duration,
+        });
     }
 
     pub(super) fn tick_item_cooldowns(&self) {
