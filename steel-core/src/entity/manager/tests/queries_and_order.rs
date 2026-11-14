@@ -607,7 +607,6 @@ fn spatial_query_candidates_skip_distant_entities_in_the_same_section() {
         &state,
         &WorldAabb::new(0.0, 63.0, 0.0, 2.0, 66.0, 2.0),
     )
-    .into_iter()
     .map(|entry| entry.entity.id())
     .collect::<Vec<_>>();
 

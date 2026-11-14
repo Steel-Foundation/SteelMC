@@ -279,7 +279,8 @@ impl MenuKind for EnchantmentKind {
         let enchantment_cost = offer as i32 + 1;
         let has_infinite_materials = player.has_infinite_materials();
 
-        let mut guard = ContainerLockGuard::lock_all(&[ContainerRef::from(&self.enchant_slots)]);
+        let mut guard =
+            ContainerLockGuard::lock_storage(&[ContainerRef::from(&self.enchant_slots)]);
         let container_id = ContainerId::from_arc(&self.enchant_slots);
         let Some(container) = guard.get(container_id) else {
             return false;

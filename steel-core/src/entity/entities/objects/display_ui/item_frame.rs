@@ -13,6 +13,8 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, Direction, DowncastType, DowncastTypeKey, WorldAabb, axis::Axis};
 
 use crate::entity::block_attached_entity::{BlockAttachedEntity, BlockAttachedEntityBase};
@@ -328,20 +330,20 @@ impl Entity for ItemFrameEntity {
             self.set_item_with_update(item, false);
         }
 
-        if let Some(item_rotation) = nbt.byte("ItemRotation") {
+        if let Some(item_rotation) = nbt.byte_value("ItemRotation") {
             self.entity_data
                 .lock()
                 .rotation
-                .set(i32::from(item_rotation).rem_euclid(8));
+                .set(i32::from(item_rotation) % 8);
         }
 
         let facing = nbt
-            .byte("Facing")
-            .and_then(|value| direction_from_3d_data_value(i32::from(value)))
-            .or_else(|| nbt.int("Facing").and_then(direction_from_3d_data_value));
-        if let Some(direction) = facing {
-            self.set_direction(direction);
-        }
+            .get("Facing")
+            .and_then(|tag| tag.codec_i8())
+            .map_or(Direction::Down, |value| {
+                Direction::from_3d_data_value(i32::from(value))
+            });
+        self.set_direction(facing);
 
         self.recalculate_position_or_warn();
     }
@@ -374,18 +376,6 @@ const fn direction_3d_data_value(direction: Direction) -> i32 {
     }
 }
 
-const fn direction_from_3d_data_value(value: i32) -> Option<Direction> {
-    match value {
-        0 => Some(Direction::Down),
-        1 => Some(Direction::Up),
-        2 => Some(Direction::North),
-        3 => Some(Direction::South),
-        4 => Some(Direction::West),
-        5 => Some(Direction::East),
-        _ => None,
-    }
-}
-
 const fn direction_2d_data_value(direction: Direction) -> u8 {
     match direction {
         Direction::South | Direction::Down | Direction::Up => 0,
@@ -398,8 +388,46 @@ const fn direction_2d_data_value(direction: Direction) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use simdnbt::borrow::read_compound;
+    use std::io::Cursor;
     use std::string::ToString;
     use steel_registry::{vanilla_entities, vanilla_items};
+
+    fn frame_loaded_from(nbt: &NbtCompound) -> ItemFrameEntity {
+        let frame = ItemFrameEntity::new_attached(
+            &vanilla_entities::ITEM_FRAME,
+            1,
+            BlockPos::new(12, 80, 14),
+            Direction::West,
+            Weak::new(),
+        );
+        let mut bytes = Vec::new();
+        nbt.write(&mut bytes);
+        let borrowed =
+            read_compound(&mut Cursor::new(bytes.as_slice())).expect("test NBT should reborrow");
+        frame.load_additional((&borrowed).into());
+        frame
+    }
+
+    #[test]
+    fn load_wraps_facing_and_keeps_rotation_sign_like_java() {
+        let mut nbt = NbtCompound::new();
+        nbt.insert("Facing", 7_i8);
+        nbt.insert("ItemRotation", -1_i8);
+        let frame = frame_loaded_from(&nbt);
+
+        let entity_data = frame.entity_data.lock();
+        assert_eq!(*entity_data.hanging_entity.direction.get(), Direction::Up);
+        assert_eq!(*entity_data.rotation.get(), -1);
+    }
+
+    #[test]
+    fn load_defaults_missing_facing_to_down() {
+        let frame = frame_loaded_from(&NbtCompound::new());
+
+        let entity_data = frame.entity_data.lock();
+        assert_eq!(*entity_data.hanging_entity.direction.get(), Direction::Down);
+    }
 
     #[test]
     fn item_frame_persists_structure_marker_state() {

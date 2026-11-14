@@ -1,6 +1,5 @@
 //! Vanilla Bat entity: rests on cave ceilings and flutters through the dark.
 
-use std::f32::consts::PI;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -8,7 +7,8 @@ use rand::{Rng, RngExt as _};
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
-use steel_math::wrap_degrees;
+use steel_math::trig;
+use steel_math::{RAD_TO_DEG_F64, wrap_degrees};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::sound_event::SoundEventRef;
@@ -16,15 +16,16 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::BatEntityData;
 use steel_registry::{level_events, sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose, EntitySpawnReason,
-    EntitySyncedData, LivingEntity, LivingEntityBase, LivingTravelInput, Mob, MobBase,
-    SharedEntity, SpawnRule,
+    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose,
+    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, LivingTravelInput, Mob,
+    MobBase, SharedEntity, SpawnRule,
 };
 use crate::physics::MoveResult;
 use crate::world::{LevelReader, World, is_redstone_conductor};
@@ -230,7 +231,7 @@ impl BatEntity {
             );
         self.set_velocity(new_movement);
 
-        let y_rot_d = (new_movement.z.atan2(new_movement.x) * 180.0 / f64::from(PI)) as f32 - 90.0;
+        let y_rot_d = (trig::atan2(new_movement.z, new_movement.x) * RAD_TO_DEG_F64) as f32 - 90.0;
         let (yaw, pitch) = self.rotation();
         let rot_diff = wrap_degrees(y_rot_d - yaw);
 
@@ -273,7 +274,17 @@ impl BatEntity {
     }
 }
 
+impl DefaultEntityPush for BatEntity {}
+
 impl Entity for BatEntity {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -380,7 +391,7 @@ impl Entity for BatEntity {
         self.entity_data
             .lock()
             .id_flags
-            .set(nbt.byte("BatFlags").unwrap_or(0));
+            .set(nbt.byte_value("BatFlags").unwrap_or(0));
     }
 }
 

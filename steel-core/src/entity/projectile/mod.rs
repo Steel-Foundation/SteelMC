@@ -22,7 +22,8 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_math::{DEG_TO_RAD, DEGREE_180, DEGREE_360, trig};
+use steel_math::trig;
+use steel_math::{DEG_TO_RAD, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
@@ -30,6 +31,7 @@ use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLO
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, WorldAabb};
 use uuid::Uuid;
 
@@ -401,8 +403,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.mark_velocity_sync();
 
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
-        let yaw = movement.x.atan2(movement.z).to_degrees() as f32;
-        let pitch = movement.y.atan2(horizontal).to_degrees() as f32;
+        let yaw = (trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32;
+        let pitch = (trig::atan2(movement.y, horizontal) * RAD_TO_DEG_F64) as f32;
         self.set_rotation((yaw, pitch));
         self.base().set_old_rotation_to_current();
     }
@@ -444,8 +446,14 @@ pub trait Projectile: Entity + ProjectileEventSource {
         let movement = self.velocity();
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
         let (yaw_old, pitch_old) = self.base().old_rotation();
-        let yaw = lerp_rotation(yaw_old, movement.x.atan2(movement.z).to_degrees() as f32);
-        let pitch = lerp_rotation(pitch_old, movement.y.atan2(horizontal).to_degrees() as f32);
+        let yaw = lerp_rotation(
+            yaw_old,
+            (trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32,
+        );
+        let pitch = lerp_rotation(
+            pitch_old,
+            (trig::atan2(movement.y, horizontal) * RAD_TO_DEG_F64) as f32,
+        );
         self.set_rotation((yaw, pitch));
     }
 
@@ -665,8 +673,10 @@ pub trait Projectile: Entity + ProjectileEventSource {
     fn load_projectile(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.projectile_base().state.lock();
         state.owner = EntityReference::read(&nbt, "Owner");
-        state.left_owner = nbt.byte("LeftOwner").is_some_and(|value| value != 0);
-        state.has_been_shot = nbt.byte("HasBeenShot").is_some_and(|value| value != 0);
+        state.left_owner = nbt.byte_value("LeftOwner").is_some_and(|value| value != 0);
+        state.has_been_shot = nbt
+            .byte_value("HasBeenShot")
+            .is_some_and(|value| value != 0);
     }
 }
 

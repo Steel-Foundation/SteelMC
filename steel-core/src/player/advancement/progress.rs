@@ -4,14 +4,14 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::time::SystemTime;
 use steel_registry::advancement::AdvancementRequirement;
-use steel_registry::advancement::registry::AdvancementRef;
+use steel_registry::advancement::registry::{AdvancementIdx, FrozenAdvancementRegistry};
 
 /// represent a map of all progress made for advancement of a specific player
 #[derive(Debug, Default, Clone)]
 pub struct AdvancementProgressMap {
     /// A map of all advancement progress for the player.
-    map: FxHashMap<AdvancementRef, usize>,
-    order: Vec<(AdvancementRef, AdvancementProgress)>,
+    map: FxHashMap<AdvancementIdx, usize>,
+    order: Vec<(AdvancementIdx, AdvancementProgress)>,
 }
 
 impl AdvancementProgressMap {
@@ -19,12 +19,14 @@ impl AdvancementProgressMap {
     #[must_use]
     pub fn get_mut_or_start_progress(
         &mut self,
-        advancement: AdvancementRef,
+        registry: &FrozenAdvancementRegistry,
+        advancement_idx: AdvancementIdx,
     ) -> &mut AdvancementProgress {
-        let idx = self.map.entry(advancement).or_insert_with(|| {
+        let idx = self.map.entry(advancement_idx).or_insert_with(|| {
             let mut progress = AdvancementProgress::default();
-            progress.update(advancement.requirements());
-            self.order.push((advancement, progress));
+            let advancement = registry.get_by_idx(advancement_idx);
+            progress.update(advancement.value().requirements());
+            self.order.push((advancement_idx, progress));
             self.order.len() - 1
         });
         if let Some(progress) = self.order.get_mut(*idx) {
@@ -34,18 +36,29 @@ impl AdvancementProgressMap {
         }
     }
 
+    /// Replaces the progress of an advancement with persisted state.
+    pub fn start_progress(
+        &mut self,
+        registry: &FrozenAdvancementRegistry,
+        advancement_idx: AdvancementIdx,
+        mut progress: AdvancementProgress,
+    ) {
+        let advancement = registry.get_by_idx(advancement_idx);
+        progress.update(advancement.value().requirements());
+        if let Some(&idx) = self.map.get(&advancement_idx) {
+            self.order[idx].1 = progress;
+        } else {
+            let idx = self.order.len();
+            self.order.push((advancement_idx, progress));
+            self.map.insert(advancement_idx, idx);
+        }
+    }
+
     /// clear all the progress made
     #[inline]
     pub fn clear(&mut self) {
         self.map.clear();
         self.order.clear();
-    }
-
-    /// insert a new advancement to the progress map
-    #[inline]
-    pub fn insert(&mut self, advancement: AdvancementRef, progress: AdvancementProgress) {
-        self.order.push((advancement, progress));
-        self.map.insert(advancement, self.order.len() - 1);
     }
 
     /// return the len of the map
@@ -65,19 +78,19 @@ impl AdvancementProgressMap {
     /// return whether the advancement has a progress instance
     #[must_use]
     #[inline]
-    pub fn has_progress(&self, advancement: AdvancementRef) -> bool {
+    pub fn has_progress(&self, advancement: AdvancementIdx) -> bool {
         self.map.contains_key(&advancement)
     }
 
     /// return the progress of a specific advancement
     #[must_use]
     #[inline]
-    pub fn get_progress(&self, advancement: AdvancementRef) -> Option<&AdvancementProgress> {
+    pub fn get_progress(&self, advancement: AdvancementIdx) -> Option<&AdvancementProgress> {
         self.map.get(&advancement).map(|&i| &self.order[i].1)
     }
 
     /// return an iterator over all the progress made using the order of insertion
-    pub fn iter(&self) -> impl Iterator<Item = &(AdvancementRef, AdvancementProgress)> {
+    pub fn iter(&self) -> impl Iterator<Item = &(AdvancementIdx, AdvancementProgress)> {
         self.order.iter()
     }
 }
@@ -86,15 +99,31 @@ impl AdvancementProgressMap {
 ///
 /// Tracks whether the advancement has been fully completed. In the future,
 /// this will also track specific criteria progress.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct AdvancementProgress {
     /// Indicates the different progress of all criteria currently only a boolean
-    pub criteria: FxHashMap<Cow<'static, str>, CriterionProgress>,
+    criteria: FxHashMap<Cow<'static, str>, CriterionProgress>,
     /// The Requirement for the Advancement to be mark as complete
-    pub requirements: AdvancementRequirement,
+    requirements: AdvancementRequirement,
 }
 
 impl AdvancementProgress {
+    /// Creates a new `AdvancementProgress` with the given criteria.
+    /// need to call `update` to set the requirements for the advancement
+    #[must_use]
+    pub fn new(criteria: FxHashMap<Cow<'static, str>, CriterionProgress>) -> AdvancementProgress {
+        Self {
+            criteria,
+            requirements: AdvancementRequirement::default(),
+        }
+    }
+
+    /// Returns a reference to the criteria map.
+    #[must_use]
+    pub const fn criteria(&self) -> &FxHashMap<Cow<'static, str>, CriterionProgress> {
+        &self.criteria
+    }
+
     /// Returns `true` if the advancement is done.
     #[must_use]
     pub fn is_done(&self) -> bool {
@@ -108,7 +137,7 @@ impl AdvancementProgress {
             .is_some_and(CriterionProgress::is_done)
     }
 
-    /// Returns `true` if the advancement has any progress. Currently just returns if it is fully complete.
+    /// Returns `true` if the advancement has any progress.
     #[must_use]
     pub fn has_progress(&self) -> bool {
         for value in self.criteria.values() {

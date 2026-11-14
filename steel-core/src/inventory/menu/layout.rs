@@ -36,10 +36,13 @@ impl MenuLayout {
             return;
         }
 
-        let mut guard = if return_to_inventory {
+        let guard = if return_to_inventory {
             behavior.lock_all_containers_with(ContainerRef::from(Arc::clone(&player.inventory)))
         } else {
             behavior.lock_all_containers()
+        };
+        let Ok(mut guard) = guard else {
+            return;
         };
         for range in &self.drain_sections {
             for slot_index in *range {
@@ -106,6 +109,8 @@ impl MenuLayout {
         }
 
         let slot = &behavior.slots()[slot_index];
+        let taken = clicked.copy_with_count(clicked.count - remaining.count);
+        slot.on_quick_craft(&taken, player);
         if let Some(leftover) = slot.on_take(guard, &remaining, player) {
             player.add_item_or_drop_with_guard(guard, leftover, Prediction::Predicted);
         }

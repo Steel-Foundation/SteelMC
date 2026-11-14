@@ -17,6 +17,7 @@ use steel_utils::serial::{ReadFrom, WriteTo};
 
 use crate::blocks::{Block, properties::Property};
 use crate::data_component_predicate::DataComponentMatchers;
+use crate::item_instance::ItemInstance;
 use crate::items::Item;
 use crate::{REGISTRY, RegistryHolderSet};
 
@@ -35,6 +36,12 @@ impl IntBounds {
         min: None,
         max: None,
     };
+
+    #[must_use]
+    pub fn matches(&self, value: i32) -> bool {
+        self.min.is_none_or(|minimum| value >= minimum)
+            && self.max.is_none_or(|maximum| value <= maximum)
+    }
 
     #[must_use]
     pub fn new(min: Option<i32>, max: Option<i32>) -> Option<Self> {
@@ -113,6 +120,15 @@ impl DoubleBounds {
         min: None,
         max: None,
     };
+
+    #[must_use]
+    pub fn matches(&self, value: f64) -> bool {
+        self.min
+            .is_none_or(|minimum| minimum.partial_cmp(&value) != Some(Ordering::Greater))
+            && self
+                .max
+                .is_none_or(|maximum| maximum.partial_cmp(&value) != Some(Ordering::Less))
+    }
 
     #[must_use]
     pub fn new(min: Option<f64>, max: Option<f64>) -> Option<Self> {
@@ -738,6 +754,15 @@ pub struct ItemPredicate {
 
 impl ItemPredicate {
     #[must_use]
+    pub fn matches(&self, stack: &dyn ItemInstance) -> bool {
+        self.items
+            .as_ref()
+            .is_none_or(|items| items.contains(stack.item_ref()))
+            && self.count.matches(stack.item_count())
+            && self.components.matches(stack)
+    }
+
+    #[must_use]
     pub const fn new(
         items: Option<RegistryHolderSet<Item>>,
         count: IntBounds,
@@ -1013,6 +1038,16 @@ mod tests {
         assert!(DoubleBounds::new(Some(f64::NAN), Some(f64::NAN)).is_some());
         assert!(DoubleBounds::new(Some(1.0), Some(f64::NAN)).is_some());
         assert!(DoubleBounds::new(Some(f64::NAN), Some(1.0)).is_none());
+    }
+
+    #[test]
+    fn double_bounds_matching_uses_java_nan_comparisons() {
+        let bounds = DoubleBounds::new(Some(1.0), Some(2.0)).expect("ordered bounds");
+        assert!(bounds.matches(f64::NAN));
+        assert!(DoubleBounds::exactly(f64::NAN).matches(1.0));
+        assert!(DoubleBounds::exactly(-0.0).matches(0.0));
+        assert!(!bounds.matches(0.0));
+        assert!(!bounds.matches(3.0));
     }
 
     #[test]

@@ -7,8 +7,10 @@ mod beehive;
 mod bell;
 mod brushable;
 mod campfire;
+mod chest;
 mod chiseled_bookshelf;
 mod comparator;
+mod conduit;
 mod daylight_detector;
 mod dispenser;
 mod enchanting_table;
@@ -36,8 +38,10 @@ pub use beehive::{
 pub use bell::BellBlockEntity;
 pub use brushable::BrushableBlockEntity;
 pub use campfire::{CAMPFIRE_SLOTS, CampfireBlockEntity};
+pub use chest::{CHEST_SLOTS, ChestBlockEntity};
 pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEntity};
 pub use comparator::ComparatorBlockEntity;
+pub use conduit::ConduitBlockEntity;
 pub use daylight_detector::DaylightDetectorBlockEntity;
 pub use dispenser::{
     DISPENSER_SLOTS, DispenserBlockEntity, DispenserContainer, DropperBlockEntity,

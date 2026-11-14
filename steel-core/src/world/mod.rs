@@ -42,6 +42,7 @@ use steel_protocol::{
     packets::game::CSetTime,
 };
 
+use crate::loot::{LootContext, random_sequences::RandomSequences};
 use rustc_hash::FxHashSet;
 use simdnbt::owned::NbtCompound;
 use steel_registry::biome::{BiomeRef, TemperatureModifier};
@@ -56,7 +57,6 @@ use steel_registry::game_events::GameEventRef;
 use steel_registry::game_rules::{ErasedGameRuleRef, GameRule, GameRuleValue, GameRuleValueType};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
-use steel_registry::loot_table::LootContext;
 use steel_registry::particle_type::ParticleData;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -266,6 +266,8 @@ pub struct World {
     pub(crate) game_time: Arc<GameTime>,
     /// Per-world saved data storage.
     pub(crate) saved_data: SavedDataManager,
+    pub(crate) random_sequences: SyncRwLock<Option<Arc<RandomSequences>>>,
+    pub(crate) loot_random: SyncMutex<RandomSource>,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
     /// Vanilla sleeping player counts for night-skip checks.
@@ -441,6 +443,10 @@ impl World {
                 game_time: level_data.game_time_handle(),
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
+                random_sequences: SyncRwLock::new(None),
+                loot_random: SyncMutex::new(RandomSource::Legacy(LegacyRandom::from_seed(
+                    rand::random(),
+                ))),
                 world_border: SyncMutex::new(world_border),
                 sleep_status: SyncMutex::new(sleep_status::SleepStatus::default()),
                 view_distance,
@@ -521,6 +527,20 @@ impl World {
         })
     }
 
+    /// Vanilla keeps ticking removed players from their connection. Steel ticks
+    /// players through the entity manager, which skips removed entities, so tick
+    /// them here instead. This must run before the entity tick so the removal
+    /// tick itself is not processed twice. Unlike the entity tick, this skips
+    /// `commonTick`, so `tickCount` stays frozen like vanilla.
+    fn tick_removed_players(&self) {
+        self.players.iter_players(|_, player| {
+            if player.is_removed() {
+                Arc::clone(player).tick();
+            }
+            true
+        });
+    }
+
     /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),
     /// and player logic (without chunk sending).
     ///
@@ -566,6 +586,8 @@ impl World {
 
         // Vanilla clears this before ticking entities and block entities.
         self.handling_tick.store(false, Ordering::Relaxed);
+
+        self.tick_removed_players();
 
         let entity_tick = {
             let _span = tracing::trace_span!("entity_tick").entered();

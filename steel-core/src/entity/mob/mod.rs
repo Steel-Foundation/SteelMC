@@ -10,6 +10,7 @@ use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target
 
 use std::sync::Arc;
 
+use crate::loot::{LOOT_TABLES, LootTableRef};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -24,7 +25,6 @@ use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
-use steel_registry::loot_table::LootTableRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
@@ -33,6 +33,8 @@ use steel_registry::{
     vanilla_game_rules, vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{
     BlockPos, ChunkPos, Downcast as _, Identifier, TICKS_PER_SECOND, WorldAabb, axis::Axis,
@@ -149,7 +151,10 @@ impl DropChances {
 
         let mut loaded = Self::DEFAULT;
         for slot in EquipmentSlot::ALL {
-            let Some(chance) = drop_chances.float(slot.name()) else {
+            let Some(chance) = drop_chances
+                .get(slot.name())
+                .and_then(|tag| tag.codec_f32())
+            else {
                 continue;
             };
             if !loaded.set_equipment_chance(slot, chance) {
@@ -1138,13 +1143,16 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn load_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_equipment(nbt);
-        self.set_can_pick_up_loot(nbt.byte("CanPickUpLoot").is_some_and(|value| value != 0));
+        self.set_can_pick_up_loot(
+            nbt.byte_value("CanPickUpLoot")
+                .is_some_and(|value| value != 0),
+        );
         *self.mob_base().persistence_required().lock() = nbt
-            .byte("PersistenceRequired")
+            .byte_value("PersistenceRequired")
             .is_some_and(|value| value != 0);
         *self.mob_base().drop_chances().lock() = DropChances::load(nbt);
         *self.mob_base().leash_data().lock() = LeashData::load(nbt);
-        let home_radius = nbt.int("home_radius").unwrap_or(-1);
+        let home_radius = nbt.int_value("home_radius").unwrap_or(-1);
         if home_radius >= 0 {
             let home_position = nbt
                 .int_array("home_pos")
@@ -1157,14 +1165,14 @@ pub trait Mob: LivingEntity + Leashable {
             self.clear_home();
         }
 
-        self.set_left_handed(nbt.byte("LeftHanded").is_some_and(|value| value != 0));
+        self.set_left_handed(nbt.byte_value("LeftHanded").is_some_and(|value| value != 0));
         let death_loot_table = nbt
             .string("DeathLootTable")
             .and_then(|loot_table| loot_table.to_str().as_ref().parse().ok());
         *self.mob_base().death_loot_table().lock() = death_loot_table;
         *self.mob_base().death_loot_table_seed().lock() =
-            nbt.long("DeathLootTableSeed").unwrap_or(0);
-        self.set_no_ai(nbt.byte("NoAI").is_some_and(|value| value != 0));
+            nbt.long_value("DeathLootTableSeed").unwrap_or(0);
+        self.set_no_ai(nbt.byte_value("NoAI").is_some_and(|value| value != 0));
     }
 
     fn set_death_loot_table(&self, loot_table: Option<Identifier>) {
@@ -1180,7 +1188,7 @@ pub trait Mob: LivingEntity + Leashable {
             .death_loot_table()
             .lock()
             .as_ref()
-            .and_then(|key| REGISTRY.loot_tables.by_key(key))
+            .and_then(|key| LOOT_TABLES.by_key(key))
     }
 
     fn has_custom_death_loot_table(&self) -> bool {
@@ -1727,7 +1735,7 @@ pub trait Mob: LivingEntity + Leashable {
             return;
         }
 
-        let y_rot = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
+        let y_rot = trig::atan2(zd, xd) as f32 * RAD_TO_DEG - DEGREE_90;
         let (_, pitch) = self.rotation();
         self.set_rotation((
             rotlerp(self.rotation().0, y_rot, MOVE_CONTROL_MAX_TURN),
@@ -1823,12 +1831,12 @@ pub trait Mob: LivingEntity + Leashable {
             let zd = wanted_position.z - position.z;
             let horizontal = xd.hypot(zd);
             if horizontal.abs() > 1.0e-5 || yd.abs() > 1.0e-5 {
-                let target_pitch = -(yd.atan2(horizontal)) as f32 * RAD_TO_DEG;
+                let target_pitch = -(trig::atan2(yd, horizontal)) as f32 * RAD_TO_DEG;
                 rotation.1 =
                     rotate_towards(rotation.1, target_pitch, look_control.x_max_rot_angle());
             }
             if zd.abs() > 1.0e-5 || xd.abs() > 1.0e-5 {
-                let target_yaw = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
+                let target_yaw = trig::atan2(zd, xd) as f32 * RAD_TO_DEG - DEGREE_90;
                 self.set_y_head_rot(rotate_towards(
                     self.y_head_rot(),
                     target_yaw,
