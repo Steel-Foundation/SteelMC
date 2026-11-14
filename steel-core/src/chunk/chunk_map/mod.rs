@@ -81,11 +81,15 @@ mod light_update_state;
 mod light_updates;
 mod persistence;
 mod player_tracking;
+#[cfg(feature = "region-generation")]
+mod region_generation;
 mod scheduled_ticks;
 
 #[cfg(test)]
 use light_update_state::PendingLightUpdates;
 use light_update_state::{InFlightLightUpdates, LightUpdateState, PendingChunkLightUpdates};
+#[cfg(feature = "region-generation")]
+pub use region_generation::RegionGenerationError;
 
 const GENERATION_THREAD_MULTIPLE: usize = 2;
 // Vanilla applies this limit independently to block ticks and fluid ticks.
