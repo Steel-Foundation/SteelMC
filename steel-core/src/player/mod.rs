@@ -67,6 +67,7 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::vanilla_components::BLOCKS_ATTACKS;
 use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::game_rules::GameRuleRef;
@@ -104,6 +105,7 @@ use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::LivingEntityRef;
+use crate::entity::blocks_attacks;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
@@ -389,16 +391,6 @@ impl Player {
                 .living_entity_flags
                 .set(flags);
         }
-    }
-
-    fn stop_using_item(&self) {
-        self.living_base.stop_using_item();
-        let mut entity_data = self.entity_data.lock();
-        let flags = *entity_data.living_entity().living_entity_flags.get();
-        entity_data
-            .living_entity_mut()
-            .living_entity_flags
-            .set(flags & !Self::USING_ITEM_FLAG);
     }
 
     /// Releases the currently used item and invokes its release hook.
@@ -1924,6 +1916,43 @@ impl LivingEntity for Player {
 
     fn is_using_item(&self) -> bool {
         self.living_base.is_using_item()
+    }
+
+    fn stop_using_item(&self) {
+        self.living_base.stop_using_item();
+        let mut entity_data = self.entity_data.lock();
+        let flags = *entity_data.living_entity().living_entity_flags.get();
+        entity_data
+            .living_entity_mut()
+            .living_entity_flags
+            .set(flags & !Self::USING_ITEM_FLAG);
+    }
+
+    fn block_using_item(
+        &self,
+        world: &World,
+        attacker: &dyn LivingEntity,
+        source: &DamageSource,
+        damage: f32,
+        fully_blocked: bool,
+    ) {
+        attacker.blocked_by_item(self, source, damage, fully_blocked);
+        let Some((_, blocking_with)) = self.get_item_blocking_with() else {
+            return;
+        };
+        let Some(blocks_attacks) = blocking_with.get(BLOCKS_ATTACKS) else {
+            return;
+        };
+        let seconds_to_disable_blocking = attacker.get_seconds_to_disable_blocking();
+        if seconds_to_disable_blocking > 0.0 {
+            blocks_attacks::disable(
+                blocks_attacks,
+                world,
+                self,
+                seconds_to_disable_blocking,
+                &blocking_with,
+            );
+        }
     }
 
     fn get_luck(&self) -> f32 {
