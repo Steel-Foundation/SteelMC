@@ -59,7 +59,7 @@ use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
-use steel_math::RAD_TO_DEG_F64;
+use steel_math::{RAD_TO_DEG_F64, round_f32, round_f64, trig};
 use steel_protocol::packets::game::{
     CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CRespawn,
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
@@ -877,7 +877,7 @@ impl Player {
         if (0.0..f32::MAX).contains(&absorbed_damage) {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_ABSORBED,
-                (absorbed_damage * 10.0).round() as i32,
+                round_f32(absorbed_damage * 10.0),
             );
         }
 
@@ -888,7 +888,7 @@ impl Player {
             if damage < f32::MAX {
                 self.award_custom_stat_with_count(
                     &vanilla_custom_stats::DAMAGE_TAKEN,
-                    (damage * 10.0).round() as i32,
+                    round_f32(damage * 10.0),
                 );
             }
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
@@ -1622,7 +1622,7 @@ impl Entity for Player {
         if fall_distance >= 2.0 {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::FALL_ONE_CM,
-                (fall_distance * 100.0).round() as i32,
+                round_f64(fall_distance * 100.0) as i32,
             );
         }
 
@@ -1785,7 +1785,7 @@ impl LivingEntity for Player {
 
     fn indicate_damage(&self, xd: f64, zd: f64) {
         let (y_rot, _) = self.rotation();
-        let hurt_dir = zd.atan2(xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
+        let hurt_dir = trig::atan2(zd, xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
         self.send_packet(CHurtAnimation {
             entity_id: self.id(),
             yaw: hurt_dir as f32,
@@ -2035,7 +2035,7 @@ impl LivingEntity for Player {
         let target_ref = ContainerRef::from(Arc::clone(&self.inventory));
         let source_id = source_ref.container_id();
         let target_id = target_ref.container_id();
-        let mut guard = ContainerLockGuard::lock_all(&[source_ref, target_ref]);
+        let mut guard = ContainerLockGuard::lock_storage(&[source_ref, target_ref]);
         let source_slot = match hand {
             InteractionHand::MainHand => EquipmentSlot::MainHand,
             InteractionHand::OffHand => EquipmentSlot::OffHand,

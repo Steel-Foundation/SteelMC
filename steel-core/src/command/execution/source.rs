@@ -18,7 +18,7 @@ use crate::{
     world::World,
 };
 use glam::DVec3;
-use steel_math::{DEGREE_90, wrap_degrees};
+use steel_math::{DEGREE_90, RAD_TO_DEG_F64, wrap_degrees, trig};
 use steel_protocol::packets::game::ChatTypeBound;
 use steel_registry::{
     vanilla_game_rules::{
@@ -418,8 +418,8 @@ impl CommandSource {
     pub(crate) fn facing_position(&self, target: DVec3) -> Self {
         let delta = target - self.anchor_position();
         let horizontal = delta.x.hypot(delta.z);
-        let pitch = -delta.y.atan2(horizontal).to_degrees() as f32;
-        let yaw = delta.z.atan2(delta.x).to_degrees() as f32 - DEGREE_90;
+        let pitch = (-trig::atan2(delta.y, horizontal) * RAD_TO_DEG_F64) as f32;
+        let yaw = (trig::atan2(delta.z, delta.x) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
         self.with_rotation((yaw, pitch))
     }
 

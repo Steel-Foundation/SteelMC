@@ -1,6 +1,5 @@
 use crate::advancement::criterion::AnyCriterion;
 use crate::advancement::display::DisplayInfo;
-use crate::loot_table::LootTableRef;
 use crate::recipe::UntypedRecipeRef;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -212,7 +211,7 @@ impl WriteTo for AdvancementRequirement {
 #[derive(Debug, Clone, Default)]
 pub struct AdvancementRewards {
     pub experience: i32,
-    pub loots: Vec<LootTableRef>,
+    pub loots: Vec<Identifier>,
     pub recipes: Vec<UntypedRecipeRef>,
     pub function: Option<Identifier>,
 }

@@ -53,12 +53,12 @@ pub mod game_events;
 pub mod game_profile;
 pub mod game_rules;
 pub mod instrument;
+pub mod item_instance;
 pub mod item_predicate;
 pub mod item_stack;
 pub mod item_stack_template;
 pub mod items;
 pub mod jukebox_song;
-pub mod loot_table;
 mod macros;
 pub mod map_decoration_type;
 pub mod menu_type;
@@ -395,11 +395,6 @@ pub mod vanilla_poi_type_tags;
 #[rustfmt::skip]
 #[path = "generated/vanilla_fluid_tags.rs"]
 pub mod vanilla_fluid_tags;
-
-#[expect(warnings)]
-#[rustfmt::skip]
-#[path = "generated/vanilla_loot_tables.rs"]
-pub mod vanilla_loot_tables;
 
 #[expect(warnings)]
 #[rustfmt::skip]

@@ -14,7 +14,8 @@ use crate::{
     },
     player::Player,
 };
-use steel_math::{DEGREE_90, wrap_degrees};
+use steel_math::trig;
+use steel_math::{DEGREE_90, RAD_TO_DEG_F64, wrap_degrees};
 use steel_protocol::packets::game::{CSound, SoundSource};
 use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
@@ -427,7 +428,8 @@ fn calculate_respawn_look_at_yaw(position: DVec3, look_at_block_pos: BlockPos) -
     );
     let look_direction = (bed_center - position).normalize_or_zero();
     wrap_degrees(
-        (look_direction.z.atan2(look_direction.x).to_degrees() - f64::from(DEGREE_90)) as f32,
+        (trig::atan2(look_direction.z, look_direction.x) * RAD_TO_DEG_F64 - f64::from(DEGREE_90))
+            as f32,
     )
 }
 

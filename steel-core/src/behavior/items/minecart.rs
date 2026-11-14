@@ -65,7 +65,7 @@ impl ItemBehavior for MinecartItem {
             Some(context.player),
         ) {
             Ok(cart) => cart,
-            // TODO: Place chest, furnace, TNT, hopper, spawner and command block minecarts once
+            // TODO: Place chest, furnace, TNT, hopper, and command block minecarts once
             // their entities implement `AbstractMinecart`.
             Err(CreateMinecartError::Unsupported) => return InteractionResult::Pass,
             Err(CreateMinecartError::Spawn(error)) => {

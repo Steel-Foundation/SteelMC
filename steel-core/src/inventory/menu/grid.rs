@@ -52,7 +52,8 @@ use crate::inventory::menu::builder::{
 use crate::inventory::slots::{ResultHandler, ResultSlot, Slot};
 use crate::player::Player;
 
-const GRID_WIDTH: usize = 9;
+/// Slots per row in a standard chest grid.
+pub(crate) const GRID_WIDTH: usize = 9;
 
 /// A column or row selection for [`Rect::cols`] / [`Rect::rows`]: any range or a bare index.
 pub trait SpanBounds: sealed::Sealed {
@@ -922,7 +923,7 @@ impl<'a> GridPlacer<'a> {
     fn assert_mapping(container: &ContainerRef, rect: Abs, mapping: &SlotMapping) {
         use crate::inventory::lock::ContainerLockGuard;
 
-        let size = ContainerLockGuard::lock_all(slice::from_ref(container))
+        let size = ContainerLockGuard::lock_storage(slice::from_ref(container))
             .get(container.container_id())
             .expect("container was just locked")
             .get_container_size();

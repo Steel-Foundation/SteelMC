@@ -13,7 +13,7 @@ use std::{
 #[cfg(not(target_family = "wasm"))]
 use serde::{Serialize, de::DeserializeOwned};
 #[cfg(not(target_family = "wasm"))]
-use tokio::fs;
+use tokio::{fs, io::AsyncWriteExt};
 use wincode::{SchemaRead, SchemaWrite, config::DefaultConfig};
 
 /// Built-in saved data entry names.
@@ -29,6 +29,8 @@ pub mod names {
     pub const SCOREBOARD: SavedDataName = SavedDataName::trusted("scoreboard");
     /// Domain command storage, persisted through the domain default world.
     pub const COMMAND_STORAGE: SavedDataName = SavedDataName::trusted("command_storage");
+    /// Named random sequences shared by a domain's worlds.
+    pub const RANDOM_SEQUENCES: SavedDataName = SavedDataName::trusted("random_sequences");
 }
 
 /// Name of a per-world saved data entry.
@@ -205,7 +207,7 @@ impl SavedDataManager {
         sync_fs::write(path, bytes)
     }
 
-    /// Saves a typed saved-data value.
+    /// Saves a typed value by syncing a new file before replacing the saved file.
     #[cfg(not(target_family = "wasm"))]
     pub async fn save<T>(&self, name: SavedDataName, data: &T) -> io::Result<()>
     where
@@ -220,7 +222,32 @@ impl SavedDataManager {
 
         let content = toml::to_string_pretty(data)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        fs::write(path, content).await
+        let temp_path = path.with_extension(format!("toml.{}.tmp", uuid::Uuid::new_v4()));
+        let mut file = fs::File::create_new(&temp_path).await?;
+        let result = async {
+            file.write_all(content.as_bytes()).await?;
+            file.sync_all().await?;
+            drop(file);
+            fs::rename(&temp_path, &path).await?;
+            if cfg!(unix)
+                && let Some(parent) = path.parent()
+            {
+                fs::File::open(parent).await?.sync_all().await?;
+            }
+            Ok(())
+        }
+        .await;
+        if result.is_err()
+            && let Err(error) = fs::remove_file(&temp_path).await
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            tracing::warn!(
+                %error,
+                path = %temp_path.display(),
+                "Failed to remove an uncommitted saved-data temporary file"
+            );
+        }
+        result
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -321,6 +348,76 @@ mod tests {
 
         assert_eq!(loaded, TestData { value: 42 });
         assert!(dir.join("data").join("test_data.toml").exists());
+    }
+
+    #[tokio::test]
+    async fn saving_replaces_the_file_without_modifying_the_previous_file() {
+        use std::io::Read as _;
+
+        let dir = temp_world_dir("replace");
+        let manager = SavedDataManager::new(Some(dir.as_path()));
+        manager
+            .save(TEST_DATA, &TestData { value: 42 })
+            .await
+            .expect("initial save");
+        let path = dir.join("data/test_data.toml");
+        let mut previous = sync_fs::File::open(&path).expect("open previous file");
+
+        manager
+            .save(TEST_DATA, &TestData { value: 7 })
+            .await
+            .expect("replacement save");
+
+        let mut previous_content = String::new();
+        previous
+            .read_to_string(&mut previous_content)
+            .expect("read previous file");
+        assert_eq!(
+            toml::from_str::<TestData>(&previous_content).expect("previous saved data"),
+            TestData { value: 42 }
+        );
+        assert_eq!(
+            manager
+                .load_or_default::<TestData>(TEST_DATA)
+                .await
+                .expect("load replacement"),
+            TestData { value: 7 }
+        );
+        assert_eq!(
+            sync_fs::read_dir(dir.join("data"))
+                .expect("data dir")
+                .count(),
+            1
+        );
+        drop(previous);
+        sync_fs::remove_dir_all(dir).expect("remove test world");
+    }
+
+    #[tokio::test]
+    async fn failed_replacement_preserves_destination_and_removes_temporary_file() {
+        let dir = temp_world_dir("failed-replace");
+        let manager = SavedDataManager::new(Some(dir.as_path()));
+        let path = dir.join("data/test_data.toml");
+        sync_fs::create_dir_all(&path).expect("create conflicting directory");
+        let existing = path.join("existing");
+        sync_fs::write(&existing, "preserve me").expect("write existing data");
+
+        manager
+            .save(TEST_DATA, &TestData { value: 42 })
+            .await
+            .expect_err("cannot replace a nonempty directory");
+
+        assert_eq!(
+            sync_fs::read_to_string(existing).expect("existing data"),
+            "preserve me"
+        );
+        assert_eq!(
+            sync_fs::read_dir(dir.join("data"))
+                .expect("data dir")
+                .count(),
+            1
+        );
+        sync_fs::remove_dir_all(dir).expect("remove test world");
     }
 
     #[tokio::test]

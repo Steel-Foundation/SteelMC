@@ -34,7 +34,6 @@ use crate::{
     player::Player,
     scoreboard::ScoreHolder,
 };
-use steel_registry::advancement::registry::AdvancementRef;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::data_components::vanilla_components::SwingAnimationType;
 use steel_registry::{
@@ -371,9 +370,9 @@ where
             .map(|value| value.0)
     }
 
-    pub(crate) fn advancement(&self, name: &str) -> Result<AdvancementRef, CommandSyntaxError> {
+    pub(crate) fn advancement(&self, name: &str) -> Result<Identifier, CommandSyntaxError> {
         self.typed_argument::<AdvancementValue>(name)
-            .map(|value| value.0)
+            .map(|value| value.0.clone())
     }
 
     pub(crate) fn entity_selector(
@@ -426,9 +425,9 @@ impl<S> SteelSuggestionContext<'_, S> {
     }
 
     /// Returns a parsed advancement argument.
-    pub(crate) fn advancement(&self, name: &str) -> Result<AdvancementRef, CommandSyntaxError> {
+    pub(crate) fn advancement(&self, name: &str) -> Result<Identifier, CommandSyntaxError> {
         self.typed_argument::<AdvancementValue>(name)
-            .map(|value| value.0)
+            .map(|value| value.0.clone())
     }
 }
 
