@@ -30,6 +30,10 @@ enum ExtendedKey {
 impl CommandLogger {
     /// Main entry of the input process
     pub async fn input_main(self: Arc<Self>) -> Result<()> {
+        if !self.interactive {
+            return self.plain_input_main().await;
+        }
+
         let (tx, rx) = mpsc::unbounded_channel();
         enable_raw_mode()?;
         Arc::clone(&self).input_receiver(tx);
@@ -37,6 +41,55 @@ impl CommandLogger {
         let result = self.input_key(rx).await;
         stopped.cancel();
         result
+    }
+
+    async fn plain_input_main(self: Arc<Self>) -> Result<()> {
+        use std::io::{BufRead, stdin};
+
+        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        let cancel_token = self.cancel_token.clone();
+
+        spawn_blocking(move || {
+            let stdin = stdin();
+            let lines = stdin.lock().lines();
+            for line_res in lines {
+                if cancel_token.is_cancelled() {
+                    break;
+                }
+                match line_res {
+                    Ok(line) => {
+                        let trimmed = line.trim_end_matches(['\r', '\n']);
+                        if !trimmed.is_empty()
+                            && !trimmed.chars().all(char::is_whitespace)
+                            && tx.send(trimmed.to_string()).is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        let stopped = self.stopped.clone();
+        loop {
+            tokio::select! {
+                biased;
+                cmd = rx.recv() => {
+                    if let Some(cmd) = cmd {
+                        dispatch_command(cmd);
+                    } else {
+                        self.cancel_token.cancelled().await;
+                        break;
+                    }
+                }
+                () = self.cancel_token.cancelled() => {
+                    break;
+                }
+            }
+        }
+        stopped.cancel();
+        Ok(())
     }
 
     fn input_receiver(self: Arc<Self>, tx: UnboundedSender<ExtendedKey>) {
@@ -376,14 +429,7 @@ impl CommandLogger {
     }
 }
 
-fn send_state(mut lock: RwLockWriteGuard<'_, LogState>) {
-    if lock.out.is_empty() || lock.out.text.chars().all(char::is_whitespace) {
-        return;
-    }
-    let message = lock.out.text.clone();
-    lock.history.push(message.clone());
-    lock.reset().ok();
-    drop(lock);
+pub(crate) fn dispatch_command(message: String) {
     steel_utils::console!("{}", message);
     if let Some(server) = SERVER.get()
         && server
@@ -392,6 +438,17 @@ fn send_state(mut lock: RwLockWriteGuard<'_, LogState>) {
     {
         log::warn!("Command queue is full");
     }
+}
+
+fn send_state(mut lock: RwLockWriteGuard<'_, LogState>) {
+    if lock.out.is_empty() || lock.out.text.chars().all(char::is_whitespace) {
+        return;
+    }
+    let message = lock.out.text.clone();
+    lock.history.push(message.clone());
+    lock.reset().ok();
+    drop(lock);
+    dispatch_command(message);
 }
 
 fn copy_to_clipboard(input: &mut LogState) -> Option<()> {

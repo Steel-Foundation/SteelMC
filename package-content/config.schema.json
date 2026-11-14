@@ -362,6 +362,12 @@
           "description": "Amount of console commands saved",
           "default": 50,
           "minimum": 1
+        },
+        "terminal": {
+          "type": "string",
+          "description": "Terminal display mode: 'auto' (detects TTY), 'interactive' (force TUI), or 'plain' (line-buffered console)",
+          "enum": ["auto", "interactive", "plain"],
+          "default": "auto"
         }
       },
       "additionalProperties": false

@@ -14,6 +14,7 @@ pub struct Output {
     pub replace: bool,
     /// Character width of the prefix the input is drawn after.
     pub prompt_width: usize,
+    pub interactive: bool,
     out: Stdout,
 }
 
@@ -29,9 +30,11 @@ impl Write for Output {
 
 /// Constructor
 impl Output {
-    pub fn new() -> Self {
+    pub fn new(interactive: bool) -> Self {
         let mut out = stdout();
-        let _ = write!(out, "{BlinkingBar}");
+        if interactive {
+            let _ = write!(out, "{BlinkingBar}");
+        }
 
         Self {
             text: String::new(),
@@ -40,6 +43,7 @@ impl Output {
             start: 0,
             replace: false,
             prompt_width: PROMPT.chars().count(),
+            interactive,
             out,
         }
     }
@@ -69,6 +73,9 @@ impl Output {
             .max(1)
     }
     pub fn cursor_to(&mut self, to: usize) -> Result<()> {
+        if !self.interactive {
+            return Ok(());
+        }
         if to > 0 {
             write!(self.out, "\r{}", MoveRight(to as u16))
         } else {
@@ -76,6 +83,9 @@ impl Output {
         }
     }
     pub fn cursor_to_relative(&mut self, to: usize) -> Result<()> {
+        if !self.interactive {
+            return Ok(());
+        }
         let visible_pos = to
             .saturating_sub(self.start)
             .min(self.visible_input_width());

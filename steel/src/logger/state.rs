@@ -33,6 +33,7 @@ impl LogState {
     pub async fn new(
         log_config: Option<&LogConfig>,
         cancel_token: CancellationToken,
+        interactive: bool,
     ) -> Result<Self> {
         let path = log_config.map_or_else(
             || PathBuf::from("./.tmp"),
@@ -45,7 +46,7 @@ impl LogState {
         create_dir_all(&path)?;
 
         Ok(LogState {
-            out: Output::new(),
+            out: Output::new(interactive),
             completion: Completer::new(),
             history: History::new(path.clone(), max_history).await,
             selection: Selection::new(),
@@ -165,10 +166,16 @@ impl LogState {
 /// Rendering methods
 impl LogState {
     pub fn rewrite_current_input(&mut self) -> Result<()> {
+        if !self.out.interactive {
+            return Ok(());
+        }
         self.rewrite_input(self.out.length, self.out.pos)
     }
 
     pub fn rewrite_input(&mut self, length: usize, pos: usize) -> Result<()> {
+        if !self.out.interactive {
+            return Ok(());
+        }
         self.out.cursor_to(0)?;
 
         let search_prompt = self.search.as_ref().map(ReverseSearch::prompt);

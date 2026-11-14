@@ -1,11 +1,12 @@
-use crate::config::{LogConfig, LogTimeFormat};
+use crate::config::{LogConfig, LogTimeFormat, TerminalMode};
 use chrono::Utc;
 use crossterm::{
     style::{Color::DarkGrey, ResetColor, SetForegroundColor},
     terminal::{self, Clear, ClearType, disable_raw_mode},
 };
 use std::{
-    io::Write,
+    env,
+    io::{IsTerminal, Write, stdin, stdout},
     sync::Arc,
     time::{self, Instant},
 };
@@ -43,6 +44,44 @@ pub(crate) enum Move {
     Down,
 }
 
+/// Determines whether to run in interactive terminal mode or plain non-TTY mode.
+#[must_use]
+pub fn is_interactive_terminal(config_mode: Option<TerminalMode>) -> bool {
+    // 1. Command-line flag override
+    for arg in env::args().skip(1) {
+        if arg == "--plain" || arg == "--no-terminal" || arg == "--plain-terminal" {
+            return false;
+        }
+        if arg == "--interactive" || arg == "--terminal=interactive" {
+            return true;
+        }
+        if arg == "--terminal=plain" {
+            return false;
+        }
+    }
+    let args: Vec<String> = env::args().skip(1).collect();
+    for window in args.windows(2) {
+        if window[0] == "--terminal" {
+            match window[1].as_str() {
+                "plain" => return false,
+                "interactive" => return true,
+                "auto" => break,
+                _ => {}
+            }
+        }
+    }
+
+    // 2. Configuration file override
+    match config_mode {
+        Some(TerminalMode::Plain) => return false,
+        Some(TerminalMode::Interactive) => return true,
+        Some(TerminalMode::Auto) | None => {}
+    }
+
+    // 3. Auto-detect: both stdin and stdout must be real terminals
+    stdin().is_terminal() && stdout().is_terminal()
+}
+
 /// A logger implementation with commands suggestions
 pub struct CommandLogger {
     input: Arc<AsyncRwLock<LogState>>,
@@ -52,6 +91,7 @@ pub struct CommandLogger {
     log_stopped: CancellationToken,
     start_time: Instant,
     log_config: Option<LogConfig>,
+    pub(crate) interactive: bool,
 }
 
 impl CommandLogger {
@@ -60,9 +100,10 @@ impl CommandLogger {
         cancel_token: CancellationToken,
         log_config: Option<LogConfig>,
     ) -> Result<Arc<Self>, String> {
+        let interactive = is_interactive_terminal(log_config.as_ref().map(|l| l.terminal));
         let (sender, receiver) = mpsc::unbounded_channel();
         let log_cancel_token = CancellationToken::new();
-        let input = LogState::new(log_config.as_ref(), cancel_token)
+        let input = LogState::new(log_config.as_ref(), cancel_token, interactive)
             .await
             .map_err(|err| format!("failed to initialize logger state: {err}"))?;
 
@@ -74,6 +115,7 @@ impl CommandLogger {
             log_stopped: CancellationToken::new(),
             start_time: Instant::now(),
             log_config,
+            interactive,
         });
         task::spawn(Arc::clone(&log).log_loop(receiver));
         task::spawn(Arc::clone(&log).input_main());
@@ -90,7 +132,9 @@ impl CommandLogger {
             .await
             .is_err()
         {
-            let _ = disable_raw_mode();
+            if self.interactive {
+                let _ = disable_raw_mode();
+            }
             self.stopped.cancel();
         }
         if timeout(time::Duration::from_secs(1), self.log_stopped.cancelled())
@@ -130,6 +174,21 @@ impl CommandLogger {
 
     async fn write_log_entry(&self, lvl: Level, data: LogData) -> (Level, LogData) {
         let mut input = self.input.write().await;
+
+        if !self.interactive {
+            let time_str = self.format_time();
+            let module_path_str = self.format_module_path(&data, true);
+            let extra_str = self.format_extra(&data, true);
+            if let Err(err) = writeln!(
+                input.out,
+                "{time_str}{lvl} {module_path_str}{}{extra_str}",
+                data.message
+            ) {
+                log::error!("{err}");
+            }
+            let _ = input.out.flush();
+            return (lvl, data);
+        }
 
         if let Err(err) = input.out.cursor_to(0) {
             log::error!("{err}");
@@ -314,5 +373,14 @@ mod tests {
             "first\r\nsecond"
         );
         assert_eq!(rendered_terminal_rows("12345\r\n123456", 10), 2);
+    }
+
+    #[test]
+    fn terminal_mode_config_overrides() {
+        use crate::config::TerminalMode;
+        assert!(!super::is_interactive_terminal(Some(TerminalMode::Plain)));
+        assert!(super::is_interactive_terminal(Some(
+            TerminalMode::Interactive
+        )));
     }
 }

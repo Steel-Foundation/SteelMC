@@ -9,7 +9,7 @@ mod logging;
 mod server;
 
 pub use groups::FilePermissionGroupStore;
-pub use logging::{LogConfig, LogLevel, LogTimeFormat, RotationTimeFormat};
+pub use logging::{LogConfig, LogLevel, LogTimeFormat, RotationTimeFormat, TerminalMode};
 pub use server::{ServerConfig, ThreadConfig};
 
 use std::{
