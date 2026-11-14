@@ -35,13 +35,7 @@ pub fn find_recipe(crafting: &CraftingContainer) -> Option<CraftingRecipeRef> {
 pub fn assemble_for_container(crafting: &CraftingContainer) -> Option<ItemStack> {
     let positioned = crafting.as_positioned_input();
     let recipe = find_recipe(crafting)?;
-    Some(assemble_recipe(recipe, &positioned.input))
-}
-
-/// Interprets passive vanilla crafting data for a concrete input snapshot.
-#[must_use]
-pub fn assemble_recipe(recipe: CraftingRecipeRef, input: &CraftingInput) -> ItemStack {
-    recipe.data().assemble(input)
+    Some(recipe.data().assemble(&positioned.input))
 }
 
 /// Returns crafting remainders and the positioned input used to map them back
@@ -97,7 +91,6 @@ mod tests {
     use steel_registry::recipe::{CraftingInput, vanilla_recipe_types};
     use steel_registry::{DyeColor, REGISTRY, init_vanilla_registry, vanilla_items};
 
-    use super::assemble_recipe;
     use steel_registry::item_stack::ItemStack;
 
     #[test]
@@ -118,7 +111,7 @@ mod tests {
             panic!("red and blue dye should match the purple dye recipe");
         };
 
-        let result = assemble_recipe(recipe, &input);
+        let result =recipe.data().assemble(&input);
 
         assert!(result.is(&vanilla_items::PURPLE_DYE));
         assert_eq!(result.get(DYE), Some(&DyeColor::Purple));
