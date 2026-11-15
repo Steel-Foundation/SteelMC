@@ -815,8 +815,17 @@ pub(crate) trait AbstractArrow: Projectile + Sized {
     }
 
     fn arrow_can_hit_entity(&self, entity: &dyn Entity) -> bool {
-        // TODO: vanilla also rejects player-vs-player hits when the owner is a
-        // player; `Player::can_harm_player` is not implemented yet.
+        // TODO: respect team friendly fire once scoreboard teams are supported
+        if entity.as_player().is_some()
+            && let Some(owner) = self.get_owner()
+            && let Some(owner_player) = owner.as_player()
+            && !owner_player
+                .get_world()
+                .get_game_rule(&steel_registry::vanilla_game_rules::PVP)
+        {
+            return false;
+        }
+        
         self.base_can_hit_entity(entity) && !self.arrow_base().is_ignored(entity.id())
     }
 
