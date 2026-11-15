@@ -264,6 +264,6 @@ impl Player {
     #[must_use]
     pub fn view_distance(&self) -> u8 {
         let client_view_distance = self.session.client_information.lock().view_distance;
-        client_view_distance.min(self.world.load().view_distance)
+        client_view_distance.min(self.world.view_distance)
     }
 }

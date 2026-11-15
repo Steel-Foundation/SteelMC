@@ -22,7 +22,7 @@ use crate::inventory::prelude::*;
 use crate::inventory::slots::CraftingHandler;
 use crate::permission::{PermissionExpr, PermissionKey, PermissionKeyError};
 use crate::player::player_inventory::{PlayerInventory, armor_equipment};
-use crate::player::{Player, connection::NetworkConnection};
+use crate::player::{Player, PlayerSession, connection::NetworkConnection};
 
 const INVSEE_PERMISSION: &str = "steel.command.invsee";
 const MODIFY_PERMISSION: &str = "steel.command.invsee.modify";
@@ -147,7 +147,7 @@ fn invsee(container_id: u8, source: &Arc<Player>, target: &Arc<Player>, modify: 
     }
 
     b.build(InvseeMenuKind {
-        target: Arc::downgrade(target),
+        target: Arc::downgrade(&target.session),
         target_inventory_id: ContainerId::from_arc(&target.inventory),
         domain: target.get_world().domain().into(),
         modify,
@@ -159,7 +159,8 @@ fn invsee(container_id: u8, source: &Arc<Player>, target: &Arc<Player>, modify: 
 }
 
 struct InvseeMenuKind {
-    target: Weak<Player>,
+    /// The target's session rather than its entity, which a change of world rebuilds.
+    target: Weak<PlayerSession>,
     target_inventory_id: ContainerId,
     domain: Box<str>,
     modify: bool,
@@ -240,7 +241,7 @@ impl MenuKind for InvseeMenuKind {
     }
 
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
-        let Some(target) = self.target.upgrade() else {
+        let Some(target) = self.target() else {
             return false;
         };
         let player_world = player.get_world();
@@ -254,6 +255,12 @@ impl MenuKind for InvseeMenuKind {
 }
 
 impl InvseeMenuKind {
+    /// The target's live entity, while it still owns the viewed inventory.
+    fn target(&self) -> Option<Arc<Player>> {
+        let target = self.target.upgrade()?.current_player()?;
+        (ContainerId::from_arc(&target.inventory) == self.target_inventory_id).then_some(target)
+    }
+
     fn snapshot_inventory_before_click(&mut self, guard: &ContainerLockGuard) {
         if !self.modify {
             return;
@@ -282,7 +289,7 @@ impl InvseeMenuKind {
         if changed_slots.is_empty() {
             return;
         }
-        let Some(target) = self.target.upgrade() else {
+        let Some(target) = self.target() else {
             return;
         };
         target.request_inventory_resync(changed_slots);

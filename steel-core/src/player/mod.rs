@@ -89,7 +89,6 @@ use steel_utils::{entity_events::EntityStatus, locks::Shared, translations};
 use tick_state::PlayerTickState;
 use uuid::Uuid;
 
-use arc_swap::ArcSwap;
 use steel_utils::locks::{CheckedMutex, SyncMutex};
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::resolving::TextResolutor;
@@ -189,7 +188,7 @@ pub struct Player {
     pub(crate) session: Arc<PlayerSession>,
 
     /// The world the player is in.
-    pub world: ArcSwap<World>,
+    pub world: Arc<World>,
 
     /// Reference to the server (for entity ID generation, etc.).
     pub(crate) server: Weak<Server>,
@@ -628,7 +627,7 @@ impl Player {
             connection,
             session,
 
-            world: ArcSwap::new(world),
+            world,
             server,
             config,
             base: EntityBase::with_uuid(
@@ -638,8 +637,7 @@ impl Player {
                 Self::dimensions_for_pose(EntityPose::Standing),
                 world_ref,
                 this,
-            )
-            .with_swappable_world(),
+            ),
             lifecycle: CheckedMutex::new(PlayerLifecycleState::default()),
             movement: CheckedMutex::new(MovementState::new()),
             entity_data: CheckedMutex::new(entity_data),
@@ -1001,7 +999,7 @@ impl Player {
 
     /// Returns the world the player is currently in.
     pub fn get_world(&self) -> Arc<World> {
-        self.world.load_full()
+        Arc::clone(&self.world)
     }
 
     /// Returns the server this player belongs to.

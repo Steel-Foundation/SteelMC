@@ -1,5 +1,5 @@
 use super::{
-    Abilities, Arc, ArcSwap, AtomicBool, BlockBreakingManager, BlockPos, CLevelEvent, CheckedMutex,
+    Abilities, Arc, AtomicBool, BlockBreakingManager, BlockPos, CLevelEvent, CheckedMutex,
     FoodData, HealthSyncState, ItemCooldowns, ItemStack, MovementState, Ordering, Player,
     PlayerEntityData, PlayerInventorySyncState, PlayerResidenceState, PortalTicketTarget,
     RemovalReason, ResetReason, SharedEntity, TeleportPostAction, TeleportPostTransition,
@@ -23,13 +23,10 @@ impl Player {
             gameprofile: self.gameprofile.clone(),
             connection: Arc::clone(&self.connection),
             session: Arc::clone(&self.session),
-            world: ArcSwap::new(world),
+            world,
             server: Weak::clone(&self.server),
             config: Arc::clone(&self.config),
-            base: self
-                .base
-                .moved_to_world(world_ref, this)
-                .with_swappable_world(),
+            base: self.base.moved_to_world(world_ref, this),
             lifecycle: CheckedMutex::new(*self.lifecycle.lock()),
             movement: CheckedMutex::new(self.movement.replace(MovementState::new())),
             entity_data: CheckedMutex::new(self.entity_data.replace(PlayerEntityData::new())),

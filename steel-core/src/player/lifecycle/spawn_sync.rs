@@ -9,68 +9,41 @@ use super::{
 };
 
 impl Player {
-    /// Resets the player's transient state and prepares them for a new world.
-    ///
-    /// This is the shared "clean slate" path used by initial join and world
-    /// changes that preserve the player incarnation. If the player is currently
-    /// in a different world, they are removed from the old world first.
-    pub(crate) fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
-        self.reset_inner_after(new_world, reason, false, || {});
-    }
-
-    fn reset_inner_after<F>(
-        self: &Arc<Self>,
-        new_world: Arc<World>,
-        reason: ResetReason,
-        source_world_detached: bool,
-        restore_state: F,
-    ) where
-        F: FnOnce(),
-    {
-        if reason != ResetReason::InitialJoin {
-            assert_eq!(
-                self.remove_all_menus(),
-                MenuRemovalStatus::Complete,
-                "player reset menu removal must run outside a menu callback"
-            );
-        }
-        if matches!(reason, ResetReason::Respawn | ResetReason::EndCredits) {
-            // Vanilla creates a fresh ServerPlayer and inventory menu for these paths.
-            self.inventory_menu
-                .lock()
-                .behavior_mut()
-                .reset_quick_craft();
-        }
-
-        let old_world = self.get_world();
-        let switching_worlds = !Arc::ptr_eq(&old_world, &new_world);
-
-        if switching_worlds {
-            self.send_packet(CContainerClose { container_id: 0 });
-            if !source_world_detached {
-                old_world.remove_player_for_world_change(self);
-            }
-            self.set_world(Arc::clone(&new_world));
-        } else if !source_world_detached {
-            old_world.chunk_map.remove_player(self);
-        }
-
-        // Vanilla restarts the client-load timer on join and respawn only; a
-        // world change keeps the client loaded.
-        if reason != ResetReason::WorldChange {
-            self.set_client_loaded(false);
-        }
+    /// Resets the transient state of a player about to join its world for the
+    /// first time.
+    pub(crate) fn reset_for_initial_join(self: &Arc<Self>) {
+        self.get_world().chunk_map.remove_player(self);
+        self.set_client_loaded(false);
         self.set_velocity(DVec3::ZERO);
         self.movement.lock().reset_last_known_client_movement();
         self.set_on_ground(false);
         self.reset_entity_state();
         *self.block_breaking.lock() = BlockBreakingManager::new();
+    }
 
-        restore_state();
-
-        if reason != ResetReason::InitialJoin {
-            self.send_respawn_packet(&new_world, reason);
+    /// Returns the player to admit into `world`: this one when it was built
+    /// there, otherwise its replacement. Saved data picks the world after the
+    /// player is built, so a join can land in another one.
+    ///
+    /// Returns `None`, with nothing changed, when this player no longer
+    /// controls its session.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the session handover fails after its check passed.
+    pub(crate) fn in_join_world(self: &Arc<Self>, world: &Arc<World>) -> Option<Arc<Self>> {
+        if Arc::ptr_eq(&self.get_world(), world) {
+            return Some(Arc::clone(self));
         }
+        if !self.session.is_current_player(self) {
+            return None;
+        }
+        let replacement = self.moved_to_world(Arc::clone(world));
+        assert!(
+            self.session.replace_player(self, &replacement),
+            "session handover failed after its check passed"
+        );
+        Some(replacement)
     }
 
     /// Leaves the current world and returns this player rebuilt in `new_world`,
@@ -78,7 +51,7 @@ impl Player {
     ///
     /// Returns `None`, with nothing changed, unless this is the session's live
     /// online player.
-    pub(super) fn rebuild_in_world(self: &Arc<Self>, new_world: &Arc<World>) -> Option<Arc<Self>> {
+    pub(crate) fn rebuild_in_world(self: &Arc<Self>, new_world: &Arc<World>) -> Option<Arc<Self>> {
         self.rebuild_inner(new_world, false, |_| {})
     }
 

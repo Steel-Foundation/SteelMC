@@ -1490,7 +1490,7 @@ fn command_world_scope_survives_entity_transforms() {
             "players may not project outside their initial domain"
         );
 
-        player.set_world(Arc::clone(beta));
+        let player = player.moved_to_world(Arc::clone(beta));
         let transformed = player_source.with_entity(Arc::clone(&player) as SharedEntity);
         assert!(
             transformed.with_world(Arc::clone(beta)).is_err(),

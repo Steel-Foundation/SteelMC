@@ -78,7 +78,9 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
                 .expect("tick");
         }
         assert!(player.living().last_damage_source().is_some());
-        player.reset(Arc::clone(&derived), ResetReason::WorldChange);
+        let player = player
+            .rebuild_in_world(&derived)
+            .expect("the online player can be rebuilt in another world");
         assert!(
             player.living().last_damage_source().is_some(),
             "same-domain transfer preserves history"

@@ -281,15 +281,6 @@ impl PlayerLifecycleState {
 }
 
 impl Player {
-    /// Sets the world the player is in.
-    ///
-    /// This is used when the correct world isn't known at construction time
-    /// (e.g., when loading saved player data determines the actual world).
-    pub(crate) fn set_world(&self, world: Arc<World>) {
-        self.base.set_world(Arc::downgrade(&world));
-        self.world.store(world);
-    }
-
     /// Marks the player as switching domains if they are not already in a transition.
     pub(crate) fn begin_domain_switch(&self, token: PendingWorldChangeToken) -> bool {
         self.lifecycle.lock().begin_domain_switch(token)

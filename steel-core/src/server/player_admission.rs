@@ -262,6 +262,11 @@ impl Server {
             }
         };
 
+        let Some(player) = player.in_join_world(&state.world) else {
+            self.release_player_admission(uuid, PlayerAdmissionState::Joining);
+            return;
+        };
+
         if let Err(error) = self.admit_reserved_player(Arc::clone(&player)) {
             let reason = match error {
                 PlayerJoinError::DuplicateLogin => {
@@ -279,7 +284,7 @@ impl Server {
         Self::apply_domain_player_state(&player, &state);
         self.send_login_packet(&player, &state.world);
 
-        player.reset(Arc::clone(&state.world), ResetReason::InitialJoin);
+        player.reset_for_initial_join();
         Self::apply_domain_player_state(&player, &state);
         let residence_token = player.domain_residence_token();
         let restores = self.prepare_domain_restores(&player, &state, true);

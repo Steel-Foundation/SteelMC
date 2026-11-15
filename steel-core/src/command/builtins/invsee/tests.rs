@@ -1,4 +1,5 @@
 use crate::entity::prelude::*;
+use crate::world::World;
 use std::{
     io::Cursor,
     sync::{
@@ -134,6 +135,13 @@ fn player_inventory_updates(packets: &SyncMutex<Vec<EncodedPacket>>) -> Vec<(i32
         .collect()
 }
 
+/// Rebuilds `player` in `world` and hands its session over, as a change of world does.
+fn moved_to(player: &Arc<Player>, world: &Arc<World>) -> Arc<Player> {
+    let moved = player.moved_to_world(Arc::clone(world));
+    assert!(player.session.replace_player(player, &moved));
+    moved
+}
+
 fn test_player(name: &str, entity_id: i32) -> Arc<Player> {
     TestPlayerBuilder::new(Arc::clone(test_world()), name, entity_id)
         .detached_config(test_runtime_config(2))
@@ -203,7 +211,7 @@ fn invsee_rejects_players_in_different_domains() {
 
     let target_world_fixture = fresh_test_world_in_domain("other", "invsee_target");
     let target_world = &target_world_fixture.world;
-    target.set_world(Arc::clone(target_world));
+    let target = moved_to(&target, target_world);
 
     assert!(ensure_same_domain(&source, &target).is_err());
 }
@@ -702,9 +710,9 @@ fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
 
     let target_world_fixture = fresh_test_world_in_domain("other", "invsee_viewer");
     let target_world = &target_world_fixture.world;
-    source.set_world(Arc::clone(target_world));
-    assert!(!readonly_menu.still_valid(&source));
-    source.set_world(Arc::clone(test_world()));
+    let away = moved_to(&source, target_world);
+    assert!(!readonly_menu.still_valid(&away));
+    let source = moved_to(&away, test_world());
     assert!(readonly_menu.still_valid(&source));
 
     let target_switch_token = begin_domain_switch(&target);
@@ -714,9 +722,9 @@ fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
 
     let target_world_fixture = fresh_test_world_in_domain("other", "invsee_domain");
     let target_world = &target_world_fixture.world;
-    target.set_world(Arc::clone(target_world));
+    let away = moved_to(&target, target_world);
     assert!(!readonly_menu.still_valid(&source));
-    target.set_world(Arc::clone(test_world()));
+    let target = moved_to(&away, test_world());
     assert!(readonly_menu.still_valid(&source));
 
     target.close_connection();
