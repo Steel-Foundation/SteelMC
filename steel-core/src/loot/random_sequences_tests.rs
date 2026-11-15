@@ -1,5 +1,6 @@
 use super::*;
 use crate::loot::vanilla_loot_tables;
+use crate::world::World;
 use std::env::temp_dir;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{random::Random as _, saved_data::SavedDataManager};
@@ -12,7 +13,7 @@ fn draw(sequences: &RandomSequences, key: &Identifier) -> i64 {
         .expect("sequence draw")
 }
 
-fn bound(world: &crate::world::World) -> Arc<RandomSequences> {
+fn bound(world: &World) -> Arc<RandomSequences> {
     world
         .random_sequences
         .read()
