@@ -272,6 +272,30 @@ impl DomainSwitchJob {
         })
     }
 
+    /// Rebuilds the detached player in the target world, restores the target
+    /// domain's state into the replacement and carries on with it.
+    fn rebuild_player_in_target(&mut self, state: &DomainPlayerState) -> bool {
+        let fall_flying = self.player.is_fall_flying();
+        let entry = self.entry;
+        let Some(player) =
+            self.player
+                .rebuild_after_detached_domain_restore(&state.world, |player| {
+                    Server::apply_domain_player_state(player, state);
+                    if matches!(entry, WorldEntry::Exact(_)) {
+                        // Like `/teleport`, the gliding state carries over. A glider stays
+                        // airborne, so it must not keep a saved `on_ground`.
+                        player.set_fall_flying(fall_flying);
+                        player.set_on_ground(false);
+                        player.land_after_teleport();
+                    }
+                })
+        else {
+            return false;
+        };
+        self.player = player;
+        true
+    }
+
     fn commit_target_state(&mut self, server: &Arc<Server>, state: DomainPlayerState) -> JobPoll {
         if !self
             .player
@@ -292,19 +316,11 @@ impl DomainSwitchJob {
 
         let mount_player = !matches!(self.entry, WorldEntry::Exact(_));
         let restores = server.prepare_domain_restores(&self.player, &state, mount_player);
-        let restore_player = Arc::clone(&self.player);
-        let fall_flying = self.player.is_fall_flying();
-        self.player
-            .reset_after_detached_domain_restore(Arc::clone(&state.world), || {
-                Server::apply_domain_player_state(&restore_player, &state);
-                if matches!(self.entry, WorldEntry::Exact(_)) {
-                    // Like `/teleport`, the gliding state carries over. A glider stays airborne,
-                    // so it must not keep a saved `on_ground`.
-                    restore_player.set_fall_flying(fall_flying);
-                    restore_player.set_on_ground(false);
-                    restore_player.land_after_teleport();
-                }
-            });
+        if !self.rebuild_player_in_target(&state) {
+            return self.finish_source_disconnect(Some(
+                "domain switch lost its online registration before target synchronization",
+            ));
+        }
         if !Server::install_domain_restores(&self.player, self.residence_token, &restores) {
             return self.finish_source_disconnect(Some(
                 "domain switch lost its residence before target restore installation",

@@ -18,21 +18,6 @@ impl Player {
         self.reset_inner_after(new_world, reason, false, || {});
     }
 
-    /// Resets a player already detached from its source domain and restores target-domain state.
-    pub(crate) fn reset_after_detached_domain_restore<F>(
-        self: &Arc<Self>,
-        new_world: Arc<World>,
-        restore_state: F,
-    ) where
-        F: FnOnce(),
-    {
-        self.reset_inner_after(new_world, ResetReason::WorldChange, true, || {
-            restore_state();
-            // Damage timestamps belong to the source domain's clock.
-            self.base.damage_history().clear();
-        });
-    }
-
     fn reset_inner_after<F>(
         self: &Arc<Self>,
         new_world: Arc<World>,
@@ -93,15 +78,51 @@ impl Player {
     ///
     /// Returns `None`, with nothing changed, unless this is the session's live
     /// online player.
+    pub(super) fn rebuild_in_world(self: &Arc<Self>, new_world: &Arc<World>) -> Option<Arc<Self>> {
+        self.rebuild_inner(new_world, false, |_| {})
+    }
+
+    /// Rebuilds a player already detached from its source domain in `new_world`
+    /// and restores target-domain state into the replacement.
     ///
+    /// Returns `None`, with nothing changed, unless this is the session's live
+    /// online player and its relocation is reserved.
+    pub(crate) fn rebuild_after_detached_domain_restore<F>(
+        self: &Arc<Self>,
+        new_world: &Arc<World>,
+        restore_state: F,
+    ) -> Option<Arc<Self>>
+    where
+        F: FnOnce(&Arc<Self>),
+    {
+        self.rebuild_inner(new_world, true, |replacement| {
+            restore_state(replacement);
+            // Damage timestamps belong to the source domain's clock.
+            replacement.base.damage_history().clear();
+        })
+    }
+
     /// # Panics
     ///
     /// Panics if the registry or session handover fails after its checks passed.
     /// Only the tick thread replaces an online player, so that cannot happen, and
     /// carrying on would leave the moved state unreachable from the registry.
-    pub(super) fn rebuild_in_world(self: &Arc<Self>, new_world: &Arc<World>) -> Option<Arc<Self>> {
+    fn rebuild_inner<F>(
+        self: &Arc<Self>,
+        new_world: &Arc<World>,
+        source_world_detached: bool,
+        restore_state: F,
+    ) -> Option<Arc<Self>>
+    where
+        F: FnOnce(&Arc<Self>),
+    {
         let server = self.server.upgrade()?;
-        if !server.can_replace_online_player(self) {
+        let can_replace = if source_world_detached {
+            server.can_replace_relocating_player(self)
+        } else {
+            server.can_replace_online_player(self)
+        };
+        if !can_replace {
             return None;
         }
 
@@ -111,11 +132,18 @@ impl Player {
             "player world change menu removal must run outside a menu callback"
         );
         self.send_packet(CContainerClose { container_id: 0 });
-        self.get_world().remove_player_for_world_change(self);
+        if !source_world_detached {
+            self.get_world().remove_player_for_world_change(self);
+        }
 
         let replacement = self.moved_to_world(Arc::clone(new_world));
+        let handed_over = if source_world_detached {
+            server.replace_relocating_player(self, Arc::clone(&replacement))
+        } else {
+            server.replace_online_player(self, Arc::clone(&replacement))
+        };
         assert!(
-            server.replace_online_player(self, Arc::clone(&replacement)),
+            handed_over,
             "online player handover failed after its checks passed"
         );
         assert!(
@@ -131,6 +159,9 @@ impl Player {
         replacement.set_on_ground(false);
         replacement.reset_entity_state();
         *replacement.block_breaking.lock() = BlockBreakingManager::new();
+
+        restore_state(&replacement);
+
         replacement.send_respawn_packet(new_world, ResetReason::WorldChange);
         Some(replacement)
     }

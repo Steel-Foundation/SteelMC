@@ -452,12 +452,50 @@ impl Server {
     /// Returns whether [`Self::replace_online_player`] would accept a replacement
     /// for `player`.
     pub(crate) fn can_replace_online_player(&self, player: &Arc<Player>) -> bool {
+        self.can_replace_player_under(player, None)
+    }
+
+    /// Returns whether [`Self::replace_relocating_player`] would accept a
+    /// replacement for `player`.
+    pub(crate) fn can_replace_relocating_player(&self, player: &Arc<Player>) -> bool {
+        self.can_replace_player_under(player, Some(PlayerAdmissionState::Relocating))
+    }
+
+    fn can_replace_player_under(
+        &self,
+        player: &Arc<Player>,
+        admission: Option<PlayerAdmissionState>,
+    ) -> bool {
         player.session.is_current_player(player)
             && self.owns_online_player(player)
-            && !self
+            && self
                 .player_admissions
                 .lock()
-                .contains_key(&player.gameprofile.id())
+                .get(&player.gameprofile.id())
+                .copied()
+                == admission
+    }
+
+    /// Replaces the exact online incarnation of a player whose relocation the
+    /// caller owns, keeping the relocation reserved.
+    pub(crate) fn replace_relocating_player(
+        &self,
+        expected: &Arc<Player>,
+        replacement: Arc<Player>,
+    ) -> bool {
+        if !Arc::ptr_eq(&expected.session, &replacement.session)
+            || !Arc::ptr_eq(&expected.connection, &replacement.connection)
+            || !expected.session.is_current_player(expected)
+        {
+            return false;
+        }
+
+        let admissions = self.player_admissions.lock();
+        if admissions.get(&expected.gameprofile.id()) != Some(&PlayerAdmissionState::Relocating) {
+            return false;
+        }
+
+        self.online_players.replace_player(expected, replacement)
     }
 
     /// Replaces the exact online player incarnation without changing UUID availability.

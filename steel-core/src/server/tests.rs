@@ -237,6 +237,15 @@ async fn test_server_with_worlds(
 mod connection_lifecycle;
 mod player_limit;
 
+/// The player a session controls now. A change of world or domain rebuilds the
+/// player, so a handle taken before one names the incarnation left behind.
+fn live_player(player: &Arc<Player>) -> Arc<Player> {
+    player
+        .session
+        .current_player()
+        .expect("the session keeps a live player")
+}
+
 #[test]
 #[expect(
     clippy::too_many_lines,
@@ -538,10 +547,11 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
             source_world.chunk_map.advance_scheduling();
             target_world.chunk_map.advance_scheduling();
             server.tick_jobs(tick, true);
-            if target_world.contains_player(&player) {
+            let live = live_player(&player);
+            if target_world.contains_player(&live) {
                 saw_target_admission = true;
                 assert!(
-                    !player.is_world_change_pending(),
+                    !live.is_world_change_pending(),
                     "target admission must release the relocation lease before gameplay resumes"
                 );
             }
@@ -553,6 +563,7 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
 
         assert!(server.jobs.is_empty(), "domain switch job should finish");
         assert!(saw_target_admission);
+        let player = live_player(&player);
         assert!(player.is_domain_residence_current(target_residence));
         assert!(!player.is_domain_switching());
         assert!(!player.is_world_change_pending());
@@ -1375,6 +1386,7 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         }
 
         assert!(server.jobs.is_empty(), "domain switch job should finish");
+        let player = live_player(&player);
         assert!(Arc::ptr_eq(&player.get_world(), target_world));
 
         assert!(
@@ -2055,11 +2067,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
 
         assert!(server.jobs.is_empty());
         assert!(!source_world.contains_player(&player));
-        // A change of world rebuilds the player; the session names the live one.
-        let player = player
-            .session
-            .current_player()
-            .expect("the session keeps a live player");
+        let player = live_player(&player);
         assert!(!player.is_world_change_pending());
         assert!(target_world.contains_player(&player));
         assert_eq!(player.generation(), player_generation);
@@ -2170,11 +2178,7 @@ fn same_domain_world_selection_applies_a_world_entry() {
             }
 
             assert!(server.jobs.is_empty());
-            // A change of world rebuilds the player; the session names the live one.
-            let player = player
-                .session
-                .current_player()
-                .expect("the session keeps a live player");
+            let player = live_player(&player);
             assert!(target_world.contains_player(&player));
             let (position, rotation) = match entry {
                 WorldEntry::Exact(spawn) => (spawn.position, spawn.rotation),
@@ -2424,6 +2428,7 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
 
             domains.queue_target_entry(&player, entry);
             domains.run_domain_switches().await;
+            let player = live_player(&player);
             assert!(target.contains_player(&player));
             let vehicle = target.get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid));
             match entry {
@@ -2562,6 +2567,7 @@ fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
 
             domains.queue_target_entry(&player, entry);
             domains.run_domain_switches().await;
+            let player = live_player(&player);
             assert!(domains.target.contains_player(&player), "{name}");
             match entry {
                 WorldEntry::Exact(_) => {
@@ -2615,6 +2621,7 @@ fn domain_command_accepts_its_forms_and_keeps_the_players_own_rotation() {
             &format!("execute rotated 0 0 run domain {world_key} 10 70 10"),
         );
         domains.run_domain_switches().await;
+        let player = live_player(&player);
         assert!(domains.target.contains_player(&player));
         assert_eq!(player.position(), DVec3::new(10.5, 70.0, 10.5));
         assert_eq!(player.rotation(), (77.0, 12.0));
@@ -2686,6 +2693,7 @@ fn disconnect_before_the_vehicle_restore_keeps_the_vehicle() {
         // Stop as soon as the player has arrived, before the vehicle restore job has run.
         let arrived_with_restore_pending = domains
             .tick_until(|| {
+                let player = live_player(&player);
                 target.contains_player(&player)
                     && player.pending_root_vehicle_for_current_world().is_some()
             })
@@ -2694,6 +2702,7 @@ fn disconnect_before_the_vehicle_restore_keeps_the_vehicle() {
             arrived_with_restore_pending,
             "the player should arrive while the vehicle restore is still pending"
         );
+        let player = live_player(&player);
         assert!(
             target
                 .get_entity_by_uuid(&Uuid::from_bytes(vehicle_uuid))
