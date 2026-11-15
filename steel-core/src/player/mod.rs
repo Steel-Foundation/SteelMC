@@ -475,7 +475,6 @@ impl Player {
         let use_on_release = behavior.use_on_release(&item);
         self.inventory.lock().write_use_item(hand, item);
 
-        // Like vanilla, this decrements whatever use is active now, even one the tick started.
         let Some(current) = self.living_base.decrement_active_item_use() else {
             return;
         };
