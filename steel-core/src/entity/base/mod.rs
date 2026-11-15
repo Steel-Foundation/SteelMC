@@ -17,6 +17,7 @@ pub use persistence::{EntityBaseLoad, EntityBaseSaveData};
 pub use relationships::PendingWorldChangeToken;
 use relationships::{EntityLifecycleState, EntityRelationshipState};
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -379,6 +380,9 @@ pub struct EntityBase {
     movement_trace: CheckedMutex<EntityMovementTrace>,
     /// Removal and tick bookkeeping.
     lifecycle: CheckedMutex<EntityLifecycleState>,
+    /// Whether `lifecycle` holds a removal reason. Written only while the
+    /// `lifecycle` lock is held, so [`Self::is_removed`] can skip the lock.
+    removed: AtomicBool,
     /// Passenger, vehicle, and boarding-cooldown state.
     relationships: CheckedMutex<EntityRelationshipState>,
     /// Active vanilla portal timing state.
@@ -488,6 +492,7 @@ impl EntityBase {
             save_data: CheckedMutex::new(EntityBaseSaveData::new()),
             movement_trace: CheckedMutex::new(EntityMovementTrace::default()),
             lifecycle: CheckedMutex::new(EntityLifecycleState::new()),
+            removed: AtomicBool::new(false),
             relationships: CheckedMutex::new(EntityRelationshipState::default()),
             portal_process: CheckedMutex::new(None),
             level_callback: CheckedMutex::new(Arc::new(NullEntityCallback)),
@@ -1037,7 +1042,7 @@ impl EntityBase {
     /// Returns true if the entity has been marked for removal.
     #[inline]
     pub fn is_removed(&self) -> bool {
-        self.lifecycle.lock().removal_reason.is_some()
+        self.removed.load(Ordering::Acquire)
     }
 
     /// Returns the reason this entity was removed, if it has been removed.
@@ -1071,6 +1076,7 @@ impl EntityBase {
                 (None, None)
             } else {
                 lifecycle.removal_reason = Some(reason);
+                self.removed.store(true, Ordering::Release);
                 lifecycle.pending_world_change = None;
                 (
                     Some(self.level_callback.lock().clone()),
@@ -1167,6 +1173,7 @@ impl EntityBase {
         let mut lifecycle = self.lifecycle.lock();
         let was_removed = lifecycle.removal_reason.is_some();
         lifecycle.removal_reason = None;
+        self.removed.store(false, Ordering::Release);
         lifecycle.pending_world_change = None;
         self.damage_history.clear_removed();
         was_removed
