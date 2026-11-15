@@ -6,6 +6,7 @@
 
 use std::any::type_name;
 use std::fmt::{self, Debug, Formatter};
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr;
 use std::sync::Arc;
@@ -105,6 +106,18 @@ impl<T: ?Sized> CheckedMutex<T> {
     /// Returns the value through exclusive access, without locking.
     pub const fn get_mut(&mut self) -> &mut T {
         self.inner.get_mut()
+    }
+}
+
+impl<T> CheckedMutex<T> {
+    /// Stores `value` and returns the value it replaced.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the current thread already holds this mutex.
+    #[track_caller]
+    pub fn replace(&self, value: T) -> T {
+        mem::replace(&mut *self.lock(), value)
     }
 }
 

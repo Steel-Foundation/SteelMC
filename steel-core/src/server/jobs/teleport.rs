@@ -116,15 +116,9 @@ fn finish_pending_world_change_after_transition(
     pending_token: PendingWorldChangeToken,
     changed_entity: Option<SharedEntity>,
 ) {
-    match changed_entity {
-        Some(changed_entity) if Arc::ptr_eq(entity, &changed_entity) => {
-            clear_pending_world_change(&changed_entity, pending_token);
-        }
-        Some(_) => {}
-        None => {
-            clear_pending_world_change(entity, pending_token);
-        }
-    }
+    // A rebuilt player carries the pending change with it. A rebuilt
+    // non-player entity starts without one, so clearing it does nothing.
+    clear_pending_world_change(changed_entity.as_ref().unwrap_or(entity), pending_token);
 }
 
 fn finish_portal_world_change(

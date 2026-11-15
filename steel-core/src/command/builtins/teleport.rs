@@ -280,11 +280,18 @@ fn perform_teleport(
             camera_id: player.id(),
         });
     }
-    if change_entity_world(Arc::clone(target), &transition).is_none() {
+    let Some(changed) = change_entity_world(Arc::clone(target), &transition) else {
         return;
-    }
+    };
 
-    // Vanilla applies command post-effects through the original target reference.
+    // Vanilla applies command post-effects through the original target reference,
+    // which for a player is still the live one. Steel rebuilds a player that
+    // changes world, so its effects go to the replacement.
+    let target = if changed.as_player().is_some() {
+        &changed
+    } else {
+        target
+    };
     if let Some(facing) = facing {
         match facing {
             TeleportFacing::Position(position) => target.look_at(source.anchor(), *position),

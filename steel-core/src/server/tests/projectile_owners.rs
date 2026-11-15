@@ -84,6 +84,11 @@ fn assert_pearl_impact(owner_in_nether: bool, pearl_in_nether: bool, cached: boo
         overworld.entity_manager().tick_entities(1, true);
         nether.entity_manager().tick_entities(1, true);
         assert!(pearl.is_removed());
+        // A change of world rebuilds the player; the session names the live one.
+        let player = player
+            .session
+            .current_player()
+            .expect("the session keeps a live player");
         assert!(Arc::ptr_eq(&player.get_world(), pearl_world));
         assert_eq!(player.position(), DVec3::new(0.5, 65.25, 0.5));
         assert_eq!(player.living().health(), 15.0);

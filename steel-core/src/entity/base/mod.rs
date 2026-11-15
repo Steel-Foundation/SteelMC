@@ -509,6 +509,44 @@ impl EntityBase {
         }
     }
 
+    /// Builds the base of this entity's replacement in `world` and moves this
+    /// base's state into it.
+    ///
+    /// The replacement is the same entity incarnation: it keeps the id, UUID
+    /// and generation, so damage history and a pending world change carry over.
+    /// Riding links stay behind, so the caller dismounts the entity first.
+    #[must_use]
+    pub(crate) fn moved_to_world(&self, world: Weak<World>, this: WeakSelf) -> Self {
+        let lifecycle = {
+            let mut lifecycle = self.lifecycle.lock();
+            let moved = *lifecycle;
+            lifecycle.pending_world_change = None;
+            moved
+        };
+        let boarding_cooldown = self.relationships.lock().boarding_cooldown;
+        Self {
+            damage_history: self.damage_history.take(),
+            generation: self.generation,
+            id: self.id,
+            uuid: self.uuid,
+            world: EntityWorld::Fixed(world),
+            state: CheckedMutex::new(*self.state.lock()),
+            save_data: CheckedMutex::new(self.save_data.replace(EntityBaseSaveData::new())),
+            movement_trace: CheckedMutex::new(
+                self.movement_trace.replace(EntityMovementTrace::default()),
+            ),
+            removed: AtomicBool::new(lifecycle.removal_reason.is_some()),
+            lifecycle: CheckedMutex::new(lifecycle),
+            relationships: CheckedMutex::new(EntityRelationshipState {
+                boarding_cooldown,
+                ..EntityRelationshipState::default()
+            }),
+            portal_process: CheckedMutex::new(*self.portal_process.lock()),
+            level_callback: CheckedMutex::new(Arc::new(NullEntityCallback)),
+            this,
+        }
+    }
+
     /// Lets [`Self::set_world`] replace this entity's world.
     #[must_use]
     pub(crate) fn with_swappable_world(mut self) -> Self {

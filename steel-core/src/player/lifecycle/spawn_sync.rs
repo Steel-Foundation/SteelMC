@@ -88,6 +88,53 @@ impl Player {
         }
     }
 
+    /// Leaves the current world and returns this player rebuilt in `new_world`,
+    /// with the respawn packet sent and ready to be spawned there.
+    ///
+    /// Returns `None`, with nothing changed, unless this is the session's live
+    /// online player.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the registry or session handover fails after its checks passed.
+    /// Only the tick thread replaces an online player, so that cannot happen, and
+    /// carrying on would leave the moved state unreachable from the registry.
+    pub(super) fn rebuild_in_world(self: &Arc<Self>, new_world: &Arc<World>) -> Option<Arc<Self>> {
+        let server = self.server.upgrade()?;
+        if !server.can_replace_online_player(self) {
+            return None;
+        }
+
+        assert_eq!(
+            self.remove_all_menus(),
+            MenuRemovalStatus::Complete,
+            "player world change menu removal must run outside a menu callback"
+        );
+        self.send_packet(CContainerClose { container_id: 0 });
+        self.get_world().remove_player_for_world_change(self);
+
+        let replacement = self.moved_to_world(Arc::clone(new_world));
+        assert!(
+            server.replace_online_player(self, Arc::clone(&replacement)),
+            "online player handover failed after its checks passed"
+        );
+        assert!(
+            self.session.replace_player(self, &replacement),
+            "session handover failed after its checks passed"
+        );
+
+        replacement.set_velocity(DVec3::ZERO);
+        replacement
+            .movement
+            .lock()
+            .reset_last_known_client_movement();
+        replacement.set_on_ground(false);
+        replacement.reset_entity_state();
+        *replacement.block_breaking.lock() = BlockBreakingManager::new();
+        replacement.send_respawn_packet(new_world, ResetReason::WorldChange);
+        Some(replacement)
+    }
+
     /// Prepares a newly allocated player for a death or End-credits respawn.
     pub(crate) fn prepare_respawn_replacement(&self, reason: ResetReason) {
         debug_assert!(matches!(

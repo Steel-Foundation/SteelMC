@@ -928,12 +928,10 @@ pub(crate) fn change_entity_world(
             );
             return None;
         };
-        // Vanilla `ServerPlayer.teleport` keeps the live player/connection identity
-        // and sends respawn/player-position packets instead of recreating from entity NBT.
-        if !player.change_world_within_domain(teleport_transition) {
-            return None;
-        }
-        entity
+        // Vanilla `ServerPlayer.teleport` keeps the same player object. Steel
+        // rebuilds it for a change of world and moves its state across.
+        let changed: SharedEntity = player.change_world_within_domain(teleport_transition)?;
+        changed
     } else {
         change_non_player_entity_world(entity, teleport_transition)?
     };

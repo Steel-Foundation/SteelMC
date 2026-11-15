@@ -449,6 +449,17 @@ impl Server {
         removed
     }
 
+    /// Returns whether [`Self::replace_online_player`] would accept a replacement
+    /// for `player`.
+    pub(crate) fn can_replace_online_player(&self, player: &Arc<Player>) -> bool {
+        player.session.is_current_player(player)
+            && self.owns_online_player(player)
+            && !self
+                .player_admissions
+                .lock()
+                .contains_key(&player.gameprofile.id())
+    }
+
     /// Replaces the exact online player incarnation without changing UUID availability.
     ///
     /// Respawn cannot take ownership while a join, relocation, or disconnect transition

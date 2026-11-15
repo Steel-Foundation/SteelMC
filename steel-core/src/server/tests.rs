@@ -2054,8 +2054,13 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
         }
 
         assert!(server.jobs.is_empty());
-        assert!(!player.is_world_change_pending());
         assert!(!source_world.contains_player(&player));
+        // A change of world rebuilds the player; the session names the live one.
+        let player = player
+            .session
+            .current_player()
+            .expect("the session keeps a live player");
+        assert!(!player.is_world_change_pending());
         assert!(target_world.contains_player(&player));
         assert_eq!(player.generation(), player_generation);
         assert_eq!(player.position(), DVec3::new(0.5, 66.0, 0.5));
@@ -2165,6 +2170,11 @@ fn same_domain_world_selection_applies_a_world_entry() {
             }
 
             assert!(server.jobs.is_empty());
+            // A change of world rebuilds the player; the session names the live one.
+            let player = player
+                .session
+                .current_player()
+                .expect("the session keeps a live player");
             assert!(target_world.contains_player(&player));
             let (position, rotation) = match entry {
                 WorldEntry::Exact(spawn) => (spawn.position, spawn.rotation),

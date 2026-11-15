@@ -741,6 +741,16 @@ struct EquipmentTracking {
     attribute_modifiers: [Vec<EquipmentAttributeModifierKey>; EquipmentSlot::ALL.len()],
 }
 
+impl EquipmentTracking {
+    fn new() -> Self {
+        Self {
+            last_items: array::from_fn(|_| ItemStack::empty()),
+            pending_changes: array::from_fn(|_| None),
+            attribute_modifiers: array::from_fn(|_| Vec::new()),
+        }
+    }
+}
+
 // SAFETY: This key is owned by Steel and uniquely identifies `LivingEntityBase`.
 unsafe impl DowncastType for LivingEntityBase {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity_component/living");
@@ -800,11 +810,25 @@ impl LivingEntityBase {
             attributes: CheckedMutex::new(attributes),
             effects: CheckedMutex::new(ActiveEffects::default()),
             equipment,
-            equipment_tracking: CheckedMutex::new(EquipmentTracking {
-                last_items: array::from_fn(|_| ItemStack::empty()),
-                pending_changes: array::from_fn(|_| None),
-                attribute_modifiers: array::from_fn(|_| Vec::new()),
-            }),
+            equipment_tracking: CheckedMutex::new(EquipmentTracking::new()),
+        }
+    }
+
+    /// Moves this living state into its entity's replacement, which keeps the
+    /// same equipment backing. `entity_type` supplies the attributes left behind.
+    #[must_use]
+    pub(crate) fn moved(&self, entity_type: EntityTypeRef) -> Self {
+        Self {
+            state: CheckedMutex::new(self.state.lock().clone()),
+            attributes: CheckedMutex::new(
+                self.attributes
+                    .replace(AttributeMap::new_for_entity(entity_type)),
+            ),
+            effects: CheckedMutex::new(self.effects.replace(ActiveEffects::default())),
+            equipment: Arc::clone(&self.equipment),
+            equipment_tracking: CheckedMutex::new(
+                self.equipment_tracking.replace(EquipmentTracking::new()),
+            ),
         }
     }
 
