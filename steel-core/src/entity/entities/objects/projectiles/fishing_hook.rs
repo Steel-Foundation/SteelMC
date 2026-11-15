@@ -535,15 +535,12 @@ impl FishingHookEntity {
                         let Some(world) = self.level() else {
                             return damage;
                         };
+                        let position = self.position();
                         let table = &vanilla_loot_tables::GAMEPLAY_FISHING;
                         let items = world.with_loot_random(Some(table), 0, |random| {
                             let mut loot_ctx = LootContext::new(random)
                                 .with_world(&world)
-                                .with_origin(
-                                    self.position().x,
-                                    self.position().y,
-                                    self.position().z,
-                                )
+                                .with_origin(position.x, position.y, position.z)
                                 .with_tool(rod)
                                 .with_this_entity(entity_loot_ref(self, None))
                                 .with_luck(luck as f32 + player.get_luck());
