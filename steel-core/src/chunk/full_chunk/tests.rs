@@ -5,8 +5,8 @@ use std::{
 
 use simdnbt::{borrow::BaseNbtCompound as BorrowedNbtCompound, owned::NbtCompound};
 use steel_registry::{
-    blocks::properties::BlockStateProperties, init_vanilla_registry, vanilla_biomes,
-    vanilla_block_entity_types, vanilla_blocks, vanilla_fluids,
+    blocks::properties::BlockStateProperties, init_vanilla_registry, vanilla_block_entity_types,
+    vanilla_blocks, vanilla_fluids,
 };
 use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
@@ -149,75 +149,6 @@ fn random_tick_sampling_observes_tracked_and_bulk_changes() {
     check_samples(&holder.read());
     holder.write().recalculate_counts();
     check_samples(&holder.read());
-}
-
-#[test]
-#[ignore = "manual performance measurement; run with --release --ignored --nocapture"]
-fn measure_random_tick_sampling() {
-    use crate::chunk::{
-        paletted_container::{BiomePalette, BlockPalette},
-        section::SectionHolder,
-    };
-    use std::{hint::black_box, time::Instant};
-
-    init_vanilla_registry();
-    let sections: Vec<_> = (0..16_384)
-        .map(|index| {
-            let mut cube = Box::new([[[vanilla_blocks::AIR.default_state(); 16]; 16]; 16]);
-            for (y, layer) in cube.iter_mut().enumerate() {
-                for row in layer {
-                    for (x, state) in row.iter_mut().enumerate() {
-                        *state = match index % 3 {
-                            0 if y < 3 => vanilla_blocks::DIRT.default_state(),
-                            0 if y == 3 => vanilla_blocks::GRASS_BLOCK.default_state(),
-                            1 if x == 0 => vanilla_blocks::LAVA.default_state(),
-                            1 => vanilla_blocks::STONE.default_state(),
-                            2 if (x + y) % 2 == 0 => vanilla_blocks::OAK_LEAVES.default_state(),
-                            _ => vanilla_blocks::AIR.default_state(),
-                        };
-                    }
-                }
-            }
-            let mut section = ChunkSection::new_with_biomes(
-                BlockPalette::from_cube(cube),
-                BiomePalette::Homogeneous(vanilla_biomes::PLAINS.id() as u16),
-            );
-            section.recalculate_counts();
-            SectionHolder::new(section)
-        })
-        .collect();
-    let mut checksums = Vec::new();
-    let mut timings = [Vec::new(), Vec::new(), Vec::new()];
-    for strategy in (0..3).cycle().take(15) {
-        let mut random = BlockRandomPositionGenerator::from_seed(0);
-        let mut checksum = 0;
-        let start = Instant::now();
-        for _ in 0..100 {
-            for section in &sections {
-                let section = section.read();
-                for _ in 0..3 {
-                    let (x, y, z) = random.next_local();
-                    let state = match strategy {
-                        0 => Some(section.states().get(x, y, z)),
-                        1 => (!section.stable_air_box_is_clear(x, x, y, y, z, z))
-                            .then(|| section.states().get(x, y, z)),
-                        _ => section.random_tick_sample(x, y, z),
-                    };
-                    let Some(state) = state else {
-                        continue;
-                    };
-                    checksum += usize::from(random_tick_kinds(black_box(state)).is_some());
-                }
-            }
-        }
-        timings[strategy].push(start.elapsed() / 100);
-        checksums.push(black_box(checksum));
-    }
-    for (name, mut samples) in ["palette", "air box", "air point"].into_iter().zip(timings) {
-        samples.sort_unstable();
-        eprintln!("{name}: {:?} median per pass", samples[samples.len() / 2]);
-    }
-    assert!(checksums.windows(2).all(|pair| pair[0] == pair[1]));
 }
 
 struct ActivationRecordingBlockEntity {

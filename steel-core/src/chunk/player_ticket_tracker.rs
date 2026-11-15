@@ -419,35 +419,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "manual performance measurement; run with --release --ignored --nocapture"]
-    fn measure_player_ticket_movement() {
-        use std::{hint::black_box, time::Instant};
-
-        for distance in [32, 128] {
-            for incremental in [false, true] {
-                let mut storage = ChunkTicketStorage::new();
-                let mut tracker = PlayerTicketTracker::new(distance, distance);
-                let mut previous = ChunkPos::new(0, 0);
-                let _ = tracker.add_player(&mut storage, previous, FIRST_PLAYER);
-                let start = Instant::now();
-                for step in 0..100 {
-                    let pos = ChunkPos::new((step + 1) % 2, 0);
-                    if !incremental {
-                        let _ =
-                            black_box(tracker.remove_player(&mut storage, previous, FIRST_PLAYER));
-                    }
-                    let _ = black_box(tracker.add_player(&mut storage, pos, FIRST_PLAYER));
-                    previous = pos;
-                }
-                eprintln!(
-                    "distance {distance}, incremental {incremental}: {:?} per chunk crossing",
-                    start.elapsed() / 100
-                );
-            }
-        }
-    }
-
-    #[test]
     fn colocated_players_share_center_and_loading_tickets() {
         let center = ChunkPos::new(4, -2);
         let mut storage = ChunkTicketStorage::new();
