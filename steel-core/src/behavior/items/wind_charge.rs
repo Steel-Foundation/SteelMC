@@ -1,4 +1,4 @@
-//! Wind charge item behavior (`WindChargeItem`).
+//! Wind charge item behavior.
 //!
 //! Throwing a wind charge spawns a [`WindChargeEntity`] at the player's eye,
 //! shot along their look direction, and consumes one charge unless the player

@@ -1,4 +1,4 @@
-//! Vanilla `SimpleExplosionDamageCalculator`: a fixed per-explosion policy.
+//! Explosion damage calculator with a fixed per-explosion policy.
 
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::fluid::FluidState;

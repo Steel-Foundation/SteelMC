@@ -1,5 +1,5 @@
-//! Vanilla `AbstractHurtingProjectile` — gravity-free projectiles that accelerate
-//! along their heading (fireballs, wither skulls, wind charges).
+//! Gravity-free projectiles that accelerate along their heading (fireballs,
+//! wither skulls, wind charges).
 
 use std::f32::consts::PI;
 use std::sync::Arc;
@@ -21,12 +21,11 @@ const ACCELERATION_POWER_TAG: &str = "acceleration_power";
 const DEFAULT_INERTIA: f32 = 0.95;
 const DEFAULT_LIQUID_INERTIA: f32 = 0.8;
 const ROTATION_SPEED: f32 = 0.2;
-/// Vanilla `igniteForSeconds(1.0F)`.
 const BURN_TICKS: i32 = 20;
-/// Vanilla `Vec3.normalize` returns zero below this length.
+/// Movement shorter than this normalizes to zero.
 const NORMALIZE_EPSILON: f64 = 1.0e-5_f32 as f64;
 
-/// Runtime fields shared by vanilla hurting projectiles.
+/// Runtime fields shared by hurting projectiles.
 pub struct HurtingProjectileBase {
     acceleration_power: SyncMutex<f64>,
 }
@@ -47,10 +46,10 @@ impl Default for HurtingProjectileBase {
     }
 }
 
-/// Vanilla-shaped behavior shared by entities that extend `AbstractHurtingProjectile`.
+/// Behavior shared by hurting projectiles.
 ///
 /// Implementors also override [`Projectile::hurt`] to return `false` without
-/// marking hurt, matching vanilla `AbstractHurtingProjectile.hurtServer`.
+/// marking hurt.
 pub trait AbstractHurtingProjectile: Projectile {
     /// Returns shared hurting-projectile runtime state.
     fn hurting_projectile_base(&self) -> &HurtingProjectileBase;
@@ -80,14 +79,14 @@ pub trait AbstractHurtingProjectile: Projectile {
         DEFAULT_LIQUID_INERTIA
     }
 
-    /// Vanilla `AbstractHurtingProjectile.canHitEntity`, for overrides of
+    /// Base hit check that also skips `no_physics` entities, for overrides of
     /// [`Projectile::can_hit_entity`].
     fn hurting_can_hit_entity(&self, entity: &dyn Entity) -> bool {
         self.base_can_hit_entity(entity) && !entity.no_physics()
     }
 
-    /// Vanilla `AbstractHurtingProjectile.onDeflection`, for overrides of
-    /// [`Projectile::on_deflection`].
+    /// Resets acceleration when deflected by an attack and halves it otherwise,
+    /// for overrides of [`Projectile::on_deflection`].
     fn hurting_on_deflection(&self, by_attack: bool) {
         if by_attack {
             self.set_acceleration_power(INITIAL_ACCELERATION_POWER);
@@ -96,12 +95,10 @@ pub trait AbstractHurtingProjectile: Projectile {
         }
     }
 
-    /// Vanilla `AbstractHurtingProjectile.tick`: accelerates, raycasts the move
+    /// Stores the pre-tick position and rotation, accelerates, raycasts the move
     /// vector, moves, runs the `Projectile` base tick, then resolves the hit.
     /// Discards itself once its owner is removed or its chunk is unloaded.
     fn hurting_projectile_tick(self: Arc<Self>) {
-        // Vanilla `Entity.setOldPosAndRot()` runs before ticking; capture it so
-        // `rotate_towards_movement` lerps from the pre-tick rotation.
         self.set_old_position_to_current();
         self.base().set_old_rotation_to_current();
 
@@ -142,13 +139,11 @@ pub trait AbstractHurtingProjectile: Projectile {
         {
             self.hit_target_or_deflect_self(&hit);
         }
-        // VANILLA CLIENT-LOCAL: `createParticleTrail` adds the trail particle.
     }
 
     /// Adds the acceleration along the heading, then applies air or water inertia.
     fn apply_hurting_inertia(&self) {
         let movement = self.velocity();
-        // VANILLA CLIENT-LOCAL: the in-water branch also adds bubble particles.
         let inertia = if self.is_in_water() {
             self.get_liquid_inertia()
         } else {
@@ -163,7 +158,7 @@ pub trait AbstractHurtingProjectile: Projectile {
         self.set_velocity((movement + heading * self.acceleration_power()) * f64::from(inertia));
     }
 
-    /// Vanilla `ProjectileUtil.rotateTowardsMovement`.
+    /// Lerps rotation from the old rotation toward the movement direction.
     fn rotate_towards_movement(&self, rotation_speed: f32) {
         let movement = self.velocity();
         if movement.length_squared() == 0.0 {
@@ -193,13 +188,13 @@ pub trait AbstractHurtingProjectile: Projectile {
         ));
     }
 
-    /// Saves vanilla `Projectile` and `AbstractHurtingProjectile` fields.
+    /// Saves projectile fields and acceleration power.
     fn save_hurting_projectile(&self, nbt: &mut NbtCompound) {
         self.save_projectile(nbt);
         nbt.insert(ACCELERATION_POWER_TAG, self.acceleration_power());
     }
 
-    /// Loads vanilla `Projectile` and `AbstractHurtingProjectile` fields.
+    /// Loads projectile fields and acceleration power.
     fn load_hurting_projectile(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_projectile(nbt);
         self.set_acceleration_power(

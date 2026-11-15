@@ -1,4 +1,4 @@
-//! Player-thrown wind charge projectile entity (`WindCharge`).
+//! Player-thrown wind charge projectile entity.
 //!
 //! Flies straight until it hits a block or entity (or climbs 30 blocks above
 //! the build limit), then bursts into a small wind explosion that knocks

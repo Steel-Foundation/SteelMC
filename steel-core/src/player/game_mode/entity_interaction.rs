@@ -402,8 +402,8 @@ impl Player {
         }
     }
 
-    /// Vanilla `Player.deflectProjectile`: redirects a redirectable projectile
-    /// along this player's look direction instead of attacking it.
+    /// Redirects a redirectable projectile along this player's look direction
+    /// instead of attacking it.
     fn deflect_projectile(self: &Arc<Self>, entity: &dyn Entity) -> bool {
         if !REGISTRY.entity_types.is_in_tag(
             entity.entity_type(),

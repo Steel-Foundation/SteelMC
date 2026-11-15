@@ -215,8 +215,8 @@ pub(crate) fn do_post_attack_effects_from_item(
     );
 }
 
-/// Vanilla `EnchantmentHelper.doPostAttackEffects`: credits the living attacker's
-/// weapon; without a living attacker only the victim's equipment reacts.
+/// Runs post-attack enchantment effects, crediting the living attacker's weapon;
+/// without a living attacker only the victim's equipment reacts.
 pub(crate) fn do_post_attack_effects(
     world: &World,
     victim: &(impl Entity + ?Sized),

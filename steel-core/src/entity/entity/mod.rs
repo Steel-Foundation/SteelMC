@@ -1592,7 +1592,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn super::ContainerUser>(self)
     }
 
-    /// Returns whether this entity belongs to vanilla's `AbstractWindCharge` hierarchy.
+    /// Returns whether this entity is a player or breeze wind charge.
     fn is_abstract_wind_charge(&self) -> bool {
         try_as_dyn::<Self, dyn AbstractWindCharge>(self).is_some()
     }

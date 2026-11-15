@@ -26,7 +26,7 @@ struct WeightedExplosionParticleInfo {
 pub struct ExplosionParticlePalette(Vec<WeightedExplosionParticleInfo>);
 
 impl ExplosionParticlePalette {
-    /// Returns a palette without block particles (vanilla `WeightedList.of()`).
+    /// Returns a palette without block particles.
     #[must_use]
     pub const fn empty() -> Self {
         Self(Vec::new())

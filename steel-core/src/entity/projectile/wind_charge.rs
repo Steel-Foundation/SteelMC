@@ -1,4 +1,4 @@
-//! Vanilla `AbstractWindCharge` — the shared player/breeze wind charge behavior.
+//! Behavior shared by player and breeze wind charges.
 //!
 //! Wind charges fly in a straight line (no acceleration, inertia 1), never burn,
 //! ignore other wind charges and end crystals, and burst into a block-triggering
@@ -22,10 +22,10 @@ const ENTITY_HIT_DAMAGE: f32 = 1.0;
 const BLOCK_HIT_EXPLOSION_OFFSET: f64 = 0.25;
 /// Wind charges burst on their own this many blocks above the build limit.
 const MAX_HEIGHT_ABOVE_BUILD_LIMIT: i32 = 30;
-/// Vanilla lowers the wind charge bounding box below its position by this much.
+/// How far the bounding box sits below the entity position.
 const BOUNDING_BOX_Y_OFFSET: f64 = 0.15_f32 as f64;
 
-/// Vanilla-shaped behavior shared by entities that extend `AbstractWindCharge`.
+/// Behavior shared by player and breeze wind charges.
 ///
 /// Concrete wind charges route their `Entity`/`Projectile` overrides to the
 /// `wind_charge_*` methods, since Rust trait defaults cannot override supertraits.
@@ -33,7 +33,7 @@ pub trait AbstractWindCharge: AbstractHurtingProjectile {
     /// Bursts this wind charge at `position`.
     fn explode(self: Arc<Self>, position: DVec3);
 
-    /// Vanilla `AbstractWindCharge.tick`.
+    /// Bursts once far above the build limit, otherwise ticks as a hurting projectile.
     fn wind_charge_tick(self: Arc<Self>) {
         let Some(world) = self.level() else {
             return;
@@ -48,7 +48,7 @@ pub trait AbstractWindCharge: AbstractHurtingProjectile {
         self.hurting_projectile_tick();
     }
 
-    /// Vanilla `AbstractWindCharge.makeBoundingBox`.
+    /// Entity-sized box lowered by `BOUNDING_BOX_Y_OFFSET`.
     fn wind_charge_bounding_box(&self, position: DVec3) -> WorldAabb {
         let dimensions = self.entity_type().dimensions;
         let half_width = f64::from(dimensions.width / 2.0);
@@ -63,22 +63,22 @@ pub trait AbstractWindCharge: AbstractHurtingProjectile {
         )
     }
 
-    /// Vanilla `AbstractWindCharge.canCollideWith`.
+    /// Never collides with other wind charges.
     fn wind_charge_can_collide_with(&self, other: &dyn Entity) -> bool {
         !other.is_abstract_wind_charge()
             && other.can_be_collided_with(Some(self.as_entity_event_source()))
             && !self.is_passenger_of_same_vehicle(other)
     }
 
-    /// Vanilla `AbstractWindCharge.canHitEntity`.
+    /// Never hits other wind charges or end crystals.
     fn wind_charge_can_hit_entity(&self, entity: &dyn Entity) -> bool {
         !entity.is_abstract_wind_charge()
             && entity.entity_type() != &vanilla_entities::END_CRYSTAL
             && self.hurting_can_hit_entity(entity)
     }
 
-    /// Vanilla `AbstractWindCharge.onHitEntity`: one point of wind charge
-    /// damage credited to a living owner, then a burst at this charge's position.
+    /// Deals one point of wind charge damage credited to a living owner, then
+    /// bursts at this charge's position.
     fn wind_charge_on_hit_entity(self: Arc<Self>, entity: &SharedEntity) {
         let owner = self
             .get_owner()
@@ -105,8 +105,7 @@ pub trait AbstractWindCharge: AbstractHurtingProjectile {
         self.explode(position);
     }
 
-    /// Vanilla `AbstractWindCharge.onHitBlock`: runs the block's projectile
-    /// callback, then bursts just outside the hit face.
+    /// Runs the block's projectile callback, then bursts just outside the hit face.
     fn wind_charge_on_hit_block(self: Arc<Self>, hit: &ClipHitResult) {
         self.projectile_on_hit_block(hit);
         let normal = hit.direction.offset_vec().as_dvec3() * BLOCK_HIT_EXPLOSION_OFFSET;
@@ -114,7 +113,7 @@ pub trait AbstractWindCharge: AbstractHurtingProjectile {
         self.set_removed(RemovalReason::Discarded);
     }
 
-    /// Vanilla `AbstractWindCharge.onHit`: dispatches the hit, then discards.
+    /// Dispatches the hit, then discards.
     fn wind_charge_on_hit(self: Arc<Self>, hit: &ProjectileHit) {
         Arc::clone(&self).projectile_on_hit(hit);
         self.set_removed(RemovalReason::Discarded);

@@ -462,7 +462,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.set_rotation((yaw, pitch));
     }
 
-    /// Applies a Vanilla projectile deflection, returning whether it was accepted.
+    /// Applies a projectile deflection, returning whether it was accepted.
     fn deflect(
         &self,
         deflection: ProjectileDeflection,
@@ -473,7 +473,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.base_deflect(deflection, deflecting_entity, new_owner, by_attack)
     }
 
-    /// The base `Projectile.deflect`, for overrides of [`Projectile::deflect`].
+    /// Base deflection, for overrides of [`Projectile::deflect`].
     fn base_deflect(
         &self,
         deflection: ProjectileDeflection,
@@ -743,10 +743,8 @@ where
 
 /// Shoots an already-created projectile from the source's rotation, adds it to
 /// the world, then runs the `minecraft:projectile_spawned` enchantment effects.
-///
-/// Mirrors vanilla `Projectile.spawnProjectileFromRotation` after its factory
-/// has run; the factory is responsible for the spawn position and owner.
-/// Returns `None` when the world rejects the projectile.
+/// The caller sets the spawn position and owner. Returns `None` when the world
+/// rejects the projectile.
 #[must_use]
 pub fn spawn_projectile_from_rotation<E>(
     world: &Arc<World>,
