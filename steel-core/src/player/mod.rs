@@ -378,6 +378,7 @@ impl Player {
             .get_behavior(item.item())
             .get_use_duration(&item, self);
         if self.living_base.start_using_item(hand, &item, duration) {
+            self.inventory.lock().adopt_use_item(hand);
             let mut entity_data = self.entity_data.lock();
             let flags = entity_data.living_entity().living_entity_flags.get();
             let mut flags = *flags | Self::USING_ITEM_FLAG;
@@ -409,37 +410,42 @@ impl Player {
         active: ActiveItemUseState,
     ) {
         let hand = active.hand();
-        let item_matches = {
-            let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item()
-        };
-        if !item_matches {
+        let Some(mut item) = self.adopt_use_item(hand, active) else {
             self.stop_using_item();
             return;
-        }
-        // Read a copy rather than clearing the slot,
-        // so any inventory-touching side effect from
-        // `release_using` never sees the hand as vacant.
-        let mut item = {
-            let inventory = self.inventory.lock();
-            let current = inventory.get_item_in_hand(hand);
-            current.clone()
         };
         let stack_before_using = item.clone();
         let world = self.get_world();
         let apply_side_effects =
             behavior.release_using(&mut item, &world, self, active.remaining_ticks());
         let use_on_release = behavior.use_on_release(&item);
-        if apply_side_effects {
-            item = apply_use_remainder(&stack_before_using, item, self);
+        let result = if apply_side_effects {
             self.apply_item_use_cooldown(&stack_before_using);
-        }
-        self.inventory.lock().set_item_in_hand(hand, item);
+            apply_use_remainder(&stack_before_using, item.clone(), self)
+        } else {
+            item.clone()
+        };
+        self.inventory.lock().write_use_result(hand, item, result);
         // we re-read active here since behavior.release_using might have already ended the use
         if use_on_release && let Some(active) = self.living_base.active_item_use() {
             self.tick_active_item_use_with_behavior(entity, behavior, active);
         }
         self.stop_using_item();
+    }
+
+    /// Vanilla `isSameItem(getItemInHand(hand), useItem)` followed by `useItem = getItemInHand(hand)`.
+    fn adopt_use_item(
+        &self,
+        hand: InteractionHand,
+        active: ActiveItemUseState,
+    ) -> Option<ItemStack> {
+        let mut inventory = self.inventory.lock();
+        let item = inventory.get_item_in_hand(hand).clone();
+        if item.item() != active.item() {
+            return None;
+        }
+        inventory.adopt_use_item(hand);
+        Some(item)
     }
 
     fn tick_active_item_use(&self, entity: &SharedEntity) {
@@ -457,73 +463,60 @@ impl Player {
         active: ActiveItemUseState,
     ) {
         let hand = active.hand();
-        let item_matches = {
-            let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item()
-        };
-        if !item_matches {
+        let Some(mut item) = self.adopt_use_item(hand, active) else {
             self.stop_using_item();
             return;
-        }
-
-        let stack_before_tick = {
-            let inventory = self.inventory.lock();
-            let current = inventory.get_item_in_hand(hand);
-            current.clone()
         };
-        let mut item = stack_before_tick.clone();
-
         let world = self.get_world();
         let Some(user) = LivingEntityRef::new(entity) else {
             panic!("active item use requires a living entity");
         };
-
-        let session_id_before_tick = active.session_id();
-
         behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
-
-        let current_active = self.living_base.active_item_use();
-        let Some(current_active) = current_active else {
-            let hand_stack = {
-                let inventory = self.inventory.lock();
-                inventory.get_item_in_hand(hand).clone()
-            };
-            if ItemStack::matches(&hand_stack, &stack_before_tick) {
-                self.inventory.lock().set_item_in_hand(hand, item);
-            }
-            return;
-        };
-        if current_active.session_id() != session_id_before_tick {
-            return;
-        }
-
-        let hand_stack = {
-            let inventory = self.inventory.lock();
-            let current = inventory.get_item_in_hand(hand);
-            current.clone()
-        };
-        if !ItemStack::matches(&hand_stack, &stack_before_tick) {
-            self.stop_using_item();
-            return;
-        }
-
-        if self.active_item_use_hand() != Some(hand) {
-            self.inventory.lock().set_item_in_hand(hand, item);
-            return;
-        }
-        let Some(active) = self.living_base.decrement_active_item_use() else {
-            self.inventory.lock().set_item_in_hand(hand, item);
-            return;
-        };
         let use_on_release = behavior.use_on_release(&item);
-        if active.remaining_ticks() == 0 && !use_on_release && !item.is_empty() {
-            let stack_before_finish = item.clone();
-            item = behavior.finish_using(&mut item, &world, user);
-            self.apply_item_use_cooldown(&stack_before_finish);
-            self.stop_using_item();
-        }
+        self.inventory.lock().write_use_item(hand, item);
 
-        self.inventory.lock().set_item_in_hand(hand, item);
+        // Like vanilla, this decrements whatever use is active now, even one the tick started.
+        let Some(current) = self.living_base.decrement_active_item_use() else {
+            return;
+        };
+        if current.remaining_ticks() != 0 || use_on_release {
+            return;
+        }
+        let behavior = if current.item() == active.item() {
+            behavior
+        } else {
+            ITEM_BEHAVIORS.get_behavior(current.item())
+        };
+        self.complete_using_item(entity, behavior, current);
+    }
+
+    fn complete_using_item(
+        &self,
+        entity: &SharedEntity,
+        behavior: &dyn ItemBehavior,
+        active: ActiveItemUseState,
+    ) {
+        let hand = active.hand();
+        let mut item = {
+            let inventory = self.inventory.lock();
+            if !inventory.holds_use_item(hand) {
+                drop(inventory);
+                self.release_using_item(entity);
+                return;
+            }
+            inventory.get_item_in_hand(hand).clone()
+        };
+        if item.is_empty() {
+            return;
+        }
+        let Some(user) = LivingEntityRef::new(entity) else {
+            panic!("active item use requires a living entity");
+        };
+        let stack_before_finish = item.clone();
+        let result = behavior.finish_using(&mut item, &self.get_world(), user);
+        self.apply_item_use_cooldown(&stack_before_finish);
+        self.inventory.lock().write_use_result(hand, item, result);
+        self.stop_using_item();
     }
 
     /// Returns the player's configured main arm.
@@ -2290,5 +2283,7 @@ impl TextResolutor for Player {
     }
 }
 
+#[cfg(test)]
+mod item_use_tests;
 #[cfg(test)]
 mod tests;

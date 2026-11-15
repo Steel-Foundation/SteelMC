@@ -610,19 +610,17 @@ pub struct ActiveItemUseState {
     item: ItemRef,
     duration: i32,
     remaining_ticks: i32,
-    session_id: u64,
 }
 
 impl ActiveItemUseState {
-    /// Creates active item-use state from the hand, stack snapshot, duration, and session ID.
+    /// Creates active item-use state from the hand, stack snapshot, and duration.
     #[must_use]
-    pub const fn new(hand: InteractionHand, item: ItemRef, duration: i32, session_id: u64) -> Self {
+    pub const fn new(hand: InteractionHand, item: ItemRef, duration: i32) -> Self {
         Self {
             hand,
             item,
             duration,
             remaining_ticks: duration,
-            session_id,
         }
     }
 
@@ -648,12 +646,6 @@ impl ActiveItemUseState {
     #[must_use]
     pub const fn remaining_ticks(&self) -> i32 {
         self.remaining_ticks
-    }
-
-    /// Returns the session ID of the use.
-    #[must_use]
-    pub const fn session_id(&self) -> u64 {
-        self.session_id
     }
 }
 
@@ -689,7 +681,6 @@ struct LivingEntityState {
     rotation: LivingRotationState,
     swing: LivingSwingState,
     active_item_use: Option<ActiveItemUseState>,
-    item_use_session_id: u64,
     no_jump_delay: i32,
     no_action_time: i32,
 }
@@ -729,7 +720,6 @@ impl LivingEntityState {
             active_item_use: None,
             no_jump_delay: 0,
             no_action_time: 0,
-            item_use_session_id: 0,
         }
     }
 
@@ -740,11 +730,6 @@ impl LivingEntityState {
         self.last_hurt = 0.0;
         self.absorption_amount = 0.0;
         self.skip_drop_experience = false;
-    }
-
-    const fn next_item_use_session_id(&mut self) -> u64 {
-        self.item_use_session_id = self.item_use_session_id.wrapping_add(1);
-        self.item_use_session_id
     }
 }
 
@@ -906,20 +891,11 @@ impl LivingEntityBase {
             return false;
         }
 
-        {
-            let mut state = self.state.lock();
-            if state.active_item_use.is_some() {
-                return false;
-            }
-
-            let session_id = state.next_item_use_session_id();
-            state.active_item_use = Some(ActiveItemUseState::new(
-                hand,
-                item.item(),
-                duration,
-                session_id,
-            ));
+        let mut state = self.state.lock();
+        if state.active_item_use.is_some() {
+            return false;
         }
+        state.active_item_use = Some(ActiveItemUseState::new(hand, item.item(), duration));
         true
     }
 
