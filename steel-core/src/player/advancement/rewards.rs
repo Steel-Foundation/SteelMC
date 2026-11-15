@@ -30,7 +30,7 @@ pub fn grant_reward(player: &Player, reward: &AdvancementRewards) {
             let mut ctx = LootContext::new(rng)
                 .with_world(&world)
                 .with_this_entity(entity_loot_ref(player, Some(&equipment)))
-                .with_origin(position.x, position.y, position.z);
+                .with_origin(position);
             loot_table.get_random_items(&mut ctx)
         });
         let items = match items {

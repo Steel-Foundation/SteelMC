@@ -1,5 +1,7 @@
+use crate::entity::living_entity::shearing_loot_items_with_rng;
 use std::io::Cursor;
 use std::sync::Weak;
+use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 
 use glam::DVec3;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
@@ -187,7 +189,8 @@ fn shearing_loot_matches_the_mooshroom_variant() {
             &vanilla_loot_tables::SHEARING_MOOSHROOM,
             &shears,
             &mut random,
-        );
+        )
+        .expect("shearing loot");
         assert_eq!(drops.len(), 5);
         assert!(
             drops
