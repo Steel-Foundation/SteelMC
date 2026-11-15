@@ -1262,7 +1262,7 @@ fn teleport_set_position(
 
     match commit {
         TeleportPositionCommit::Managed => entity.try_set_position(position)?,
-        TeleportPositionCommit::Local => entity.base().set_position_local(position),
+        TeleportPositionCommit::Local => entity.set_position_local(position),
     }
     entity.set_rotation(rotation);
     if let Some(living) = entity.as_living_entity() {

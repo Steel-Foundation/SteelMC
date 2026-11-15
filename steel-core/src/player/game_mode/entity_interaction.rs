@@ -555,7 +555,7 @@ impl Player {
             enchantment_helper::do_post_attack_effects_with_item_source(
                 &world,
                 entity,
-                &source_item,
+                source_item,
                 &post_attack_context,
             );
         }

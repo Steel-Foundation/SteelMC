@@ -7,7 +7,8 @@ use std::sync::Arc;
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_math::{DEGREE_180, DEGREE_360};
+use steel_math::trig;
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360};
 use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
@@ -165,8 +166,9 @@ pub trait AbstractHurtingProjectile: Projectile {
             return;
         }
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
-        let yaw = (movement.z.atan2(movement.x) * 180.0 / f64::from(PI)) as f32 + 90.0;
-        let pitch = (horizontal.atan2(movement.y) * 180.0 / f64::from(PI)) as f32 - 90.0;
+        let to_degrees = |radians: f64| (radians * f64::from(DEGREE_180) / f64::from(PI)) as f32;
+        let yaw = to_degrees(trig::atan2(movement.z, movement.x)) + DEGREE_90;
+        let pitch = to_degrees(trig::atan2(horizontal, movement.y)) - DEGREE_90;
 
         let (mut yaw_old, mut pitch_old) = self.base().old_rotation();
         while pitch - pitch_old < -DEGREE_180 {

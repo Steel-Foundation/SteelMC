@@ -232,7 +232,7 @@ pub(crate) fn do_post_attack_effects(
         });
     }
     match weapon {
-        Some(weapon) => do_post_attack_effects_with_item_source(world, victim, &weapon, context),
+        Some(weapon) => do_post_attack_effects_with_item_source(world, victim, weapon, context),
         None => do_post_attack_victim_effects(world, victim, context),
     }
 }
@@ -240,12 +240,11 @@ pub(crate) fn do_post_attack_effects(
 pub(crate) fn do_post_attack_effects_with_item_source(
     world: &World,
     victim: &(impl Entity + ?Sized),
-    source: &ItemStack,
+    mut source: ItemStack,
     context: &EnchantmentPostAttackContext<'_>,
 ) {
     do_post_attack_victim_effects(world, victim, context);
 
-    let mut source = source.copy_with_count(source.count());
     let _ = apply_post_attack_effects(
         world,
         &mut EnchantedItemInUse::Stack(&mut source),
@@ -1472,7 +1471,7 @@ mod tests {
         let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
         let source = ItemStack::empty();
 
-        do_post_attack_effects_with_item_source(test_world(), victim.as_ref(), &source, &context);
+        do_post_attack_effects_with_item_source(test_world(), victim.as_ref(), source, &context);
 
         let mut chestplate_broke = false;
         victim.with_equipment_slot(EquipmentSlot::Chest, &mut |stack| {

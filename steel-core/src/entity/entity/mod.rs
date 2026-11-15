@@ -1597,6 +1597,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn super::ContainerUser>(self)
     }
 
+    /// Returns this entity as a hurting projectile when it has hurting-projectile behavior.
+    fn as_hurting_projectile(&self) -> Option<&dyn AbstractHurtingProjectile> {
+        try_as_dyn::<Self, dyn AbstractHurtingProjectile>(self)
+    }
+
     /// Returns whether this entity is a player or breeze wind charge.
     fn is_abstract_wind_charge(&self) -> bool {
         try_as_dyn::<Self, dyn AbstractWindCharge>(self).is_some()
@@ -2699,6 +2704,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     #[must_use = "movement commits can fail when world entity state rejects the update"]
     fn try_set_position_base(&self, pos: DVec3) -> Result<(), EntityMoveError> {
         self.base().try_set_position(pos)
+    }
+
+    /// Sets the position of an entity not yet managed by a world, rebuilding its
+    /// bounding box through [`Entity::make_bounding_box_at`].
+    fn set_position_local(&self, pos: DVec3) {
+        self.base().set_position_local(pos);
+        self.base().set_bounding_box(self.make_bounding_box_at(pos));
     }
 
     /// Moves this entity to `pos`, keeping its current rotation.
@@ -3975,8 +3987,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         if let Some(position) = read_nbt_dvec3(&nbt, "Pos")
             && position.is_finite()
         {
-            self.base()
-                .set_position_local(super::clamp_loaded_entity_position(position));
+            self.set_position_local(super::clamp_loaded_entity_position(position));
         }
 
         if let Some(motion) = read_nbt_dvec3(&nbt, "Motion") {

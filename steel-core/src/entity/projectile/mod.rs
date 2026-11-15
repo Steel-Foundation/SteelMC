@@ -25,9 +25,11 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
+use simdnbt::{FromNbtTag as _, ToNbtTag as _};
 use steel_math::trig;
 use steel_math::{DEG_TO_RAD, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::AdventureModePredicate;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLOCKS};
@@ -35,6 +37,7 @@ use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
+use steel_utils::types::GameType;
 use steel_utils::{BlockPos, WorldAabb};
 use uuid::Uuid;
 
@@ -43,6 +46,7 @@ use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, EntityReference, LivingEntity, SharedEntity};
 use crate::player::Player;
+use crate::player::game_mode::predicate_matches;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
 
@@ -66,6 +70,7 @@ const MAX_ENTITY_HIT_MARGIN: f32 = 0.3;
 
 /// Vanilla `ThrowableItemProjectile` spawn offset below the shooter's eye.
 const THROWN_ITEM_SPAWN_EYE_OFFSET: f64 = 0.1;
+const CAN_BREAK_TAG: &str = "can_break";
 
 /// Returns a triangle-distributed random value.
 #[must_use]
@@ -164,6 +169,8 @@ struct ProjectileState {
     left_owner_checked: bool,
     has_been_shot: bool,
     last_deflected_by: Option<Weak<dyn Entity>>,
+    /// Blocks an adventure-restricted projectile may still break.
+    can_break: Option<AdventureModePredicate>,
 }
 
 /// Runtime fields shared by vanilla projectiles (vanilla `Projectile` fields).
@@ -182,6 +189,7 @@ impl ProjectileBase {
                 left_owner_checked: false,
                 has_been_shot: false,
                 last_deflected_by: None,
+                can_break: None,
             }),
         }
     }
@@ -292,13 +300,35 @@ pub trait Projectile: Entity + ProjectileEventSource {
         world.get_game_rule(&MOB_GRIEFING)
     }
 
-    /// Returns whether this projectile type is allowed to break the blocks
-    /// it hits, per the mobGriefing-gated `projectilesCanBreakBlocks` game rule.
-    fn may_break(&self, world: &World) -> bool {
+    /// Returns whether this projectile may break the block at `pos`: it must be an
+    /// impact projectile, `projectilesCanBreakBlocks` must be on, and adventure
+    /// rules must allow it.
+    fn may_break(&self, world: &World, pos: BlockPos) -> bool {
         REGISTRY
             .entity_types
             .is_in_tag(self.entity_type(), &EntityTypeTag::IMPACT_PROJECTILES)
             && world.get_game_rule(&PROJECTILES_CAN_BREAK_BLOCKS)
+            && self.can_break_block_in_adventure_mode(world, pos)
+    }
+
+    /// Projectiles owned by an adventure player or a non-player, or ownerless in an
+    /// adventure-default world, only break blocks matched by their `can_break` predicate.
+    fn can_break_block_in_adventure_mode(&self, world: &World, pos: BlockPos) -> bool {
+        let owner = self.get_owner();
+        let restricted = (owner.is_some() || world.default_gamemode() == GameType::Adventure)
+            && owner
+                .as_ref()
+                .and_then(|owner| owner.as_player())
+                .is_none_or(|player| player.game_mode() == GameType::Adventure);
+        if !restricted {
+            return true;
+        }
+        self.projectile_base()
+            .state
+            .lock()
+            .can_break
+            .as_ref()
+            .is_some_and(|predicate| predicate_matches(predicate, world, pos))
     }
 
     /// Returns whether `entity` is this projectile's owner.
@@ -683,6 +713,9 @@ pub trait Projectile: Entity + ProjectileEventSource {
             nbt.insert("LeftOwner", 1i8);
         }
         nbt.insert("HasBeenShot", i8::from(state.has_been_shot));
+        if let Some(can_break) = &state.can_break {
+            nbt.insert(CAN_BREAK_TAG, can_break.clone().to_nbt_tag());
+        }
     }
 
     /// Loads vanilla `Projectile` fields (`Owner`, `LeftOwner`, `HasBeenShot`).
@@ -693,6 +726,9 @@ pub trait Projectile: Entity + ProjectileEventSource {
         state.has_been_shot = nbt
             .byte_value("HasBeenShot")
             .is_some_and(|value| value != 0);
+        state.can_break = nbt
+            .get(CAN_BREAK_TAG)
+            .and_then(AdventureModePredicate::from_nbt_tag);
     }
 }
 
@@ -1066,8 +1102,8 @@ mod tests {
         );
         let ender_pearl = OwnerCollisionProjectile::new(2, DVec3::ZERO);
 
-        assert!(firework.may_break(test_world()));
-        assert!(!ender_pearl.may_break(test_world()));
+        assert!(firework.may_break(test_world(), BlockPos::ZERO));
+        assert!(!ender_pearl.may_break(test_world(), BlockPos::ZERO));
     }
 
     #[test]

@@ -1375,6 +1375,15 @@ impl Entity for Player {
         &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED
     }
 
+    /// Wind charge bursts spare fall damage down to the height the player was launched from.
+    // TODO: Track `currentExplosionImpactPos`/`currentExplosionCause` for the
+    // `fall_after_explosion` advancement trigger.
+    fn on_explosion_hit(&self, explosion_source: Option<&dyn Entity>) {
+        let caused_by_wind_charge = explosion_source
+            .is_some_and(|source| source.entity_type() == &vanilla_entities::WIND_CHARGE);
+        self.set_ignore_fall_damage_from_current_impulse(caused_by_wind_charge, self.position());
+    }
+
     fn scoreboard_name(&self) -> String {
         self.gameprofile.name().to_owned()
     }

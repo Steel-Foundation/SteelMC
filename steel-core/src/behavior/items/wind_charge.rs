@@ -1,9 +1,4 @@
 //! Wind charge item behavior.
-//!
-//! Throwing a wind charge spawns a [`WindChargeEntity`] at the player's eye,
-//! shot along their look direction, and consumes one charge unless the player
-//! has infinite materials. The item's `use_cooldown` component is applied by
-//! the shared item-use path.
 
 use std::sync::Arc;
 

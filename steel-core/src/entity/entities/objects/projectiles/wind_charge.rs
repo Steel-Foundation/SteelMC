@@ -253,6 +253,8 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
+    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+    use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities};
     use steel_utils::types::UpdateFlags;
     use steel_utils::{BlockPos, ChunkPos};
@@ -262,6 +264,9 @@ mod tests {
     use crate::entity::entities::PigEntity;
     use crate::entity::{INITIAL_ACCELERATION_POWER, LivingEntity as _, next_entity_id};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::world::LevelReader as _;
+
+    const OPEN: &BoolProperty = &BlockStateProperties::OPEN;
 
     #[test]
     fn deflection_is_refused_while_fresh_and_attacks_restore_acceleration() {
@@ -332,5 +337,98 @@ mod tests {
             "the burst should push the pig away from the impact point"
         );
         assert_eq!(pig.get_health(), health);
+    }
+
+    #[test]
+    fn burst_toggles_wind_openable_trapdoors_only() {
+        init_vanilla_registry();
+        init_behaviors();
+
+        let fixture = fresh_test_world("wind_charge_trapdoors");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        assert!(world.set_block(
+            BlockPos::new(8, 63, 8),
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let oak_pos = BlockPos::new(9, 64, 8);
+        let iron_pos = BlockPos::new(7, 64, 8);
+        for (pos, block) in [
+            (oak_pos, &vanilla_blocks::OAK_TRAPDOOR),
+            (iron_pos, &vanilla_blocks::IRON_TRAPDOOR),
+        ] {
+            assert!(world.set_block(pos, block.default_state(), UpdateFlags::UPDATE_NONE));
+        }
+
+        let charge = Arc::new(WindChargeEntity::new(
+            &vanilla_entities::WIND_CHARGE,
+            next_entity_id(),
+            DVec3::new(8.5, 65.0, 8.5),
+            Arc::downgrade(world),
+        ));
+        charge.set_velocity(DVec3::new(0.0, -1.5, 0.0));
+        world
+            .try_add_entity(Arc::clone(&charge) as SharedEntity)
+            .expect("wind charge should attach to the loaded chunk");
+
+        Arc::clone(&charge).tick();
+
+        assert!(charge.is_removed());
+        assert!(world.get_block_state(oak_pos).get_value(OPEN));
+        assert!(!world.get_block_state(iron_pos).get_value(OPEN));
+    }
+
+    #[test]
+    fn non_player_owner_restricts_block_breaking_to_can_break_predicate() {
+        init_vanilla_registry();
+
+        let fixture = fresh_test_world("wind_charge_adventure_break");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let pos = BlockPos::new(8, 64, 8);
+
+        let charge = Arc::new(WindChargeEntity::new(
+            &vanilla_entities::WIND_CHARGE,
+            next_entity_id(),
+            DVec3::new(8.5, 66.0, 8.5),
+            Arc::downgrade(world),
+        ));
+        world
+            .try_add_entity(Arc::clone(&charge) as SharedEntity)
+            .expect("wind charge should attach to the loaded chunk");
+        assert!(charge.may_break(world, pos));
+
+        let pig: SharedEntity = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            next_entity_id(),
+            DVec3::new(9.5, 64.0, 8.5),
+            Arc::downgrade(world),
+        ));
+        world
+            .try_add_entity(Arc::clone(&pig))
+            .expect("pig should attach to the loaded chunk");
+        charge.set_owner_entity(Some(&pig));
+
+        assert!(!charge.may_break(world, pos));
+    }
+
+    #[test]
+    fn local_position_keeps_lowered_bounding_box() {
+        init_vanilla_registry();
+
+        let charge = WindChargeEntity::new(
+            &vanilla_entities::WIND_CHARGE,
+            1,
+            DVec3::ZERO,
+            Weak::<World>::new(),
+        );
+        let position = DVec3::new(4.0, 70.0, -3.0);
+        charge.set_position_local(position);
+
+        assert_eq!(
+            charge.bounding_box(),
+            charge.wind_charge_bounding_box(position)
+        );
     }
 }
