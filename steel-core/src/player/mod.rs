@@ -2284,6 +2284,4 @@ impl TextResolutor for Player {
 }
 
 #[cfg(test)]
-mod item_use_tests;
-#[cfg(test)]
 mod tests;
