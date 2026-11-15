@@ -10,6 +10,7 @@ use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target
 
 use std::sync::Arc;
 
+use crate::loot::{LOOT_TABLES, LootTableRef};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -24,7 +25,6 @@ use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
-use steel_registry::loot_table::LootTableRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
@@ -1188,7 +1188,7 @@ pub trait Mob: LivingEntity + Leashable {
             .death_loot_table()
             .lock()
             .as_ref()
-            .and_then(|key| REGISTRY.loot_tables.by_key(key))
+            .and_then(|key| LOOT_TABLES.by_key(key))
     }
 
     fn has_custom_death_loot_table(&self) -> bool {
@@ -1735,7 +1735,7 @@ pub trait Mob: LivingEntity + Leashable {
             return;
         }
 
-        let y_rot = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
+        let y_rot = trig::atan2(zd, xd) as f32 * RAD_TO_DEG - DEGREE_90;
         let (_, pitch) = self.rotation();
         self.set_rotation((
             rotlerp(self.rotation().0, y_rot, MOVE_CONTROL_MAX_TURN),
@@ -1831,12 +1831,12 @@ pub trait Mob: LivingEntity + Leashable {
             let zd = wanted_position.z - position.z;
             let horizontal = xd.hypot(zd);
             if horizontal.abs() > 1.0e-5 || yd.abs() > 1.0e-5 {
-                let target_pitch = -(yd.atan2(horizontal)) as f32 * RAD_TO_DEG;
+                let target_pitch = -(trig::atan2(yd, horizontal)) as f32 * RAD_TO_DEG;
                 rotation.1 =
                     rotate_towards(rotation.1, target_pitch, look_control.x_max_rot_angle());
             }
             if zd.abs() > 1.0e-5 || xd.abs() > 1.0e-5 {
-                let target_yaw = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
+                let target_yaw = trig::atan2(zd, xd) as f32 * RAD_TO_DEG - DEGREE_90;
                 self.set_y_head_rot(rotate_towards(
                     self.y_head_rot(),
                     target_yaw,

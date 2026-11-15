@@ -53,18 +53,32 @@ jobs:
             os: ubuntu-latest
             artifact: steel
             target: ""
+            cross: false
           - name: steel-linux-musl
             os: ubuntu-latest
             artifact: steel
             target: x86_64-unknown-linux-musl
+            cross: false
           - name: steel-windows
             os: windows-latest
             artifact: steel.exe
             target: ""
+            cross: false
           - name: steel-macos
             os: macos-latest
             artifact: steel
             target: ""
+            cross: false
+          - name: steel-android-x86_64
+            os: ubuntu-latest
+            artifact: steel
+            target: x86_64-linux-android
+            cross: true
+          - name: steel-android-aarch64
+            os: ubuntu-latest
+            artifact: steel
+            target: aarch64-linux-android
+            cross: true
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
@@ -74,7 +88,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
           rustup target add ${{ matrix.target }}
+      - name: Build portable release binary(cross)
+        if: ${{ matrix.cross }}
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
+          cross build --release --target ${{ matrix.target }} --features stand-alone,deadlock_detection,tls-native --verbose
       - name: Build portable release binary
+        if: ${{ !matrix.cross }}
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
         run: cargo build --release ${{ matrix.target && format('--target {0}', matrix.target) || '' }} --features stand-alone,deadlock_detection --verbose
@@ -104,6 +126,8 @@ jobs:
           mv artifacts/steel-linux-musl/steel release/steel-linux-musl
           mv artifacts/steel-windows/steel.exe release/steel-windows.exe
           mv artifacts/steel-macos/steel release/steel-macos
+          mv artifacts/steel-android-x86_64/steel release/steel-android-x86_64
+          mv artifacts/steel-android-aarch64/steel release/steel-android-aarch64
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

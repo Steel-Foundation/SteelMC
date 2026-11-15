@@ -22,7 +22,8 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_math::{DEG_TO_RAD, DEGREE_180, DEGREE_360, trig};
+use steel_math::trig;
+use steel_math::{DEG_TO_RAD, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
@@ -402,8 +403,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.mark_velocity_sync();
 
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
-        let yaw = movement.x.atan2(movement.z).to_degrees() as f32;
-        let pitch = movement.y.atan2(horizontal).to_degrees() as f32;
+        let yaw = (trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32;
+        let pitch = (trig::atan2(movement.y, horizontal) * RAD_TO_DEG_F64) as f32;
         self.set_rotation((yaw, pitch));
         self.base().set_old_rotation_to_current();
     }
@@ -445,8 +446,14 @@ pub trait Projectile: Entity + ProjectileEventSource {
         let movement = self.velocity();
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
         let (yaw_old, pitch_old) = self.base().old_rotation();
-        let yaw = lerp_rotation(yaw_old, movement.x.atan2(movement.z).to_degrees() as f32);
-        let pitch = lerp_rotation(pitch_old, movement.y.atan2(horizontal).to_degrees() as f32);
+        let yaw = lerp_rotation(
+            yaw_old,
+            (trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32,
+        );
+        let pitch = lerp_rotation(
+            pitch_old,
+            (trig::atan2(movement.y, horizontal) * RAD_TO_DEG_F64) as f32,
+        );
         self.set_rotation((yaw, pitch));
     }
 

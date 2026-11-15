@@ -1,7 +1,6 @@
-use crate::advancement::registry::AdvancementRegistry;
+use crate::advancement::registry::{AdvancementIdx, FrozenAdvancementRegistry};
 
 pub enum PositionError {
-    InvalidRootIndex(usize),
     RootMustHaveDisplay(String),
 }
 
@@ -9,7 +8,6 @@ impl PositionError {
     #[must_use]
     pub fn get_message(&self) -> String {
         match self {
-            PositionError::InvalidRootIndex(index) => format!("Invalid root index at {index}"),
             PositionError::RootMustHaveDisplay(key) => format!("{key} must have display data"),
         }
     }
@@ -18,10 +16,11 @@ impl PositionError {
 pub type NodePositionIdx = usize;
 
 /// Calculates advancement positions using the Reingold tilford algorithm X represents display depth and Y is determined by the tree layout
-pub fn run(tree: &mut AdvancementRegistry, root_index: usize) -> Result<(), PositionError> {
-    let Some(root_node) = tree.adv_nodes.get(root_index) else {
-        return Err(PositionError::InvalidRootIndex(root_index));
-    };
+pub fn run(
+    tree: &mut FrozenAdvancementRegistry,
+    root_index: AdvancementIdx,
+) -> Result<(), PositionError> {
+    let root_node = tree.get_by_idx(root_index);
     if !root_node.has_display() {
         return Err(PositionError::RootMustHaveDisplay(
             root_node.value().key.to_string(),
@@ -66,7 +65,7 @@ pub fn run(tree: &mut AdvancementRegistry, root_index: usize) -> Result<(), Posi
 
 /// Stores tree links as vector indices
 struct TreeNodePosition {
-    node: usize,
+    node: AdvancementIdx,
     parent: Option<NodePositionIdx>,
     previous_sibling: Option<NodePositionIdx>,
     child_index: NodePositionIdx,
@@ -84,12 +83,12 @@ impl TreeNodePosition {
     /// Adds displayed children traversing through nodes without a display
     fn add_child(
         nodes: &mut Vec<TreeNodePosition>,
-        tree: &mut AdvancementRegistry,
+        tree: &FrozenAdvancementRegistry,
         parent_idx: NodePositionIdx,
-        adv_node_idx: usize,
+        adv_node_idx: AdvancementIdx,
         mut previous_idx: Option<NodePositionIdx>,
     ) -> Option<NodePositionIdx> {
-        let adv_node = tree.adv_nodes.get(adv_node_idx)?;
+        let adv_node = tree.adv_nodes.get(adv_node_idx.get())?;
         if adv_node.has_display() {
             let child_idx = nodes.len();
             let node = &mut nodes[parent_idx];
@@ -317,12 +316,13 @@ impl TreeNodePosition {
     }
 
     fn set_position(
-        tree: &mut AdvancementRegistry,
+        tree: &mut FrozenAdvancementRegistry,
         nodes: &[TreeNodePosition],
         idx: NodePositionIdx,
     ) {
-        tree.adv_nodes[nodes[idx].node].set_location(nodes[idx].x as f32, nodes[idx].y);
-        for &child_idx in &nodes[idx].children {
+        let node = &nodes[idx];
+        tree.adv_nodes[node.node].set_location(node.x as f32, node.y);
+        for &child_idx in &node.children {
             Self::set_position(tree, nodes, child_idx);
         }
     }
@@ -331,20 +331,20 @@ impl TreeNodePosition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::advancement::registry::{AdvancementNode, AdvancementRef};
+    use crate::advancement::registry::{AdvancementHolder, AdvancementNode};
     use crate::vanilla_advancements::*;
     use steel_utils::Identifier;
 
-    fn get_location(registry: &AdvancementRegistry, key: &Identifier) -> (f32, f32) {
-        let loc: Option<(f32, f32)> = registry.by_key(key).map(AdvancementNode::get_location);
+    fn get_location(registry: &FrozenAdvancementRegistry, key: &Identifier) -> (f32, f32) {
+        let loc: Option<(f32, f32)> = registry.get_by_key(key).map(AdvancementNode::get_location);
         loc.unwrap_or_else(|| panic!("unbale to get the location of {key}"))
     }
 
     #[test]
     fn single_root_no_children() {
-        let mut registry = AdvancementRegistry::default();
-        registry.register_without_load(&[&STORY_ROOT]);
-        let res = run(&mut registry, 0);
+        let mut registry = FrozenAdvancementRegistry::default();
+        registry.register_without_load(&[AdvancementHolder::Static(&STORY_ROOT)]);
+        let res = run(&mut registry, AdvancementIdx::new(0));
         assert!(res.is_ok());
         let location = get_location(&registry, &STORY_ROOT.key);
         assert_eq!(location, (0f32, 0f32));
@@ -352,12 +352,12 @@ mod tests {
 
     #[test]
     fn root_with_linear_children() {
-        let mut registry = AdvancementRegistry::default();
-        let list: &[AdvancementRef] = &[
-            &STORY_ROOT,
-            &STORY_MINE_STONE,
-            &STORY_UPGRADE_TOOLS,
-            &STORY_SMELT_IRON,
+        let mut registry = FrozenAdvancementRegistry::default();
+        let list: &[AdvancementHolder] = &[
+            AdvancementHolder::Static(&STORY_ROOT),
+            AdvancementHolder::Static(&STORY_MINE_STONE),
+            AdvancementHolder::Static(&STORY_UPGRADE_TOOLS),
+            AdvancementHolder::Static(&STORY_SMELT_IRON),
         ];
         registry.register_without_load(list);
         let idx = registry.by_key[&list[0].key];
@@ -376,14 +376,14 @@ mod tests {
 
     #[test]
     fn root_with_branching_children() {
-        let mut registry = AdvancementRegistry::default();
-        let list: &[AdvancementRef] = &[
-            &END_ROOT,
-            &END_KILL_DRAGON,
-            &END_ENTER_END_GATEWAY,
-            &END_RESPAWN_DRAGON,
-            &END_DRAGON_EGG,
-            &END_DRAGON_BREATH,
+        let mut registry = FrozenAdvancementRegistry::default();
+        let list: &[AdvancementHolder] = &[
+            AdvancementHolder::Static(&END_ROOT),
+            AdvancementHolder::Static(&END_KILL_DRAGON),
+            AdvancementHolder::Static(&END_ENTER_END_GATEWAY),
+            AdvancementHolder::Static(&END_RESPAWN_DRAGON),
+            AdvancementHolder::Static(&END_DRAGON_EGG),
+            AdvancementHolder::Static(&END_DRAGON_BREATH),
         ];
         registry.register_without_load(list);
         let idx = registry.by_key[&list[0].key];

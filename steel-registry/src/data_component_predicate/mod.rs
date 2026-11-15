@@ -14,7 +14,10 @@ use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Iden
 use text_components::TextComponent;
 
 use crate::attribute::{Attribute, AttributeModifierOperation};
-use crate::data_components::{ComponentData, ComponentEntryRef, DataComponentMap};
+use crate::data_components::{
+    ComponentData, ComponentEntryRef, DataComponentGetter, DataComponentGetterExt as _,
+    DataComponentMap, PotionContents, vanilla_components,
+};
 use crate::enchantment::Enchantment;
 use crate::equipment::EquipmentSlotGroup;
 use crate::item_predicate::{
@@ -59,3 +62,6 @@ pub use vanilla::*;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod matching_tests;

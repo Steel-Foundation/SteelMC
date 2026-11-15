@@ -11,7 +11,7 @@
 use std::io::{self, Write};
 
 use steel_macros::{ClientPacket, WriteTo};
-use steel_math::DEGREE_360;
+use steel_math::{DEGREE_360, round_f64};
 use steel_registry::packets::play::{C_MOVE_ENTITY_POS, C_MOVE_ENTITY_POS_ROT, C_MOVE_ENTITY_ROT};
 use steel_utils::codec::VarInt;
 
@@ -225,18 +225,11 @@ pub const fn to_angle_byte(degrees: f32) -> i8 {
 
 /// Encodes a position component to the protocol's fixed-point format.
 ///
-/// Mirrors vanilla's `VecDeltaCodec.encode()` which uses `Math.round()`.
-/// Java's `Math.round()` rounds half towards positive infinity (half-up),
-/// which differs from Rust's `round()` that rounds half away from zero.
+/// Rounds to the nearest step, with ties toward positive infinity.
 #[inline]
 #[must_use]
 pub const fn encode_position(value: f64) -> i64 {
-    // Java Math.round() rounds half towards positive infinity:
-    //   Math.round(0.5) = 1, Math.round(-0.5) = 0
-    // Rust round() rounds half away from zero:
-    //   (0.5).round() = 1, (-0.5).round() = -1
-    // To match Java, use floor(x + 0.5) which always rounds half-up.
-    (value * TRUNCATION_STEPS + 0.5).floor() as i64
+    round_f64(value * TRUNCATION_STEPS)
 }
 
 /// Calculates the delta for entity movement.
@@ -362,6 +355,7 @@ mod tests {
 
     #[test]
     fn test_encode_matches_java_rounding() {
+        assert_eq!(encode_position(0.5_f64.next_down() / 4096.0), 0);
         // Java Math.round() rounds half towards positive infinity
         assert_eq!(encode_position(0.5 / 4096.0), 1); // 0.5 -> 1
         assert_eq!(encode_position(-0.5 / 4096.0), 0); // -0.5 -> 0 (not -1!)
