@@ -611,7 +611,6 @@ impl Player {
             .attributes()
             .lock()
             .required_value(vanilla_attributes::MOVEMENT_SPEED);
-        // Vanilla's `Player.getSpeed` returns the attribute as a float.
         let max_speed_for_sweep_attack =
             f64::from(movement_speed as f32) * MAX_SWEEP_SPEED_MOVEMENT_SPEED_FACTOR;
         approximate_speed_sq < max_speed_for_sweep_attack * max_speed_for_sweep_attack
