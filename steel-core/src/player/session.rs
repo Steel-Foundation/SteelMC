@@ -3,11 +3,12 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use steel_utils::locks::{SyncMutex, SyncRwLock};
+use steel_utils::locks::{CheckedMutex, SyncMutex, SyncRwLock};
 
 use super::{
-    DROP_SPAM_THROTTLER_INCREMENT_STEP, DROP_SPAM_THROTTLER_THRESHOLD, Player, chat::ChatState,
-    chunk_sender::ChunkSender, spam_throttler::TickThrottler,
+    ClientInformation, DROP_SPAM_THROTTLER_INCREMENT_STEP, DROP_SPAM_THROTTLER_THRESHOLD, Player,
+    chat::ChatState, chunk_sender::ChunkSender, permissions::PlayerPermissionState,
+    spam_throttler::TickThrottler,
 };
 
 static LAST_PLAYER_SESSION_ID: AtomicU64 = AtomicU64::new(0);
@@ -24,6 +25,11 @@ pub struct PlayerSession {
     pub(crate) chat: SyncMutex<ChatState>,
     /// Vanilla keeps creative drop throttling on the connection across respawns.
     pub(super) drop_spam_throttler: SyncMutex<TickThrottler>,
+    /// The client's settings (language, view distance, chat visibility, etc.).
+    /// Written through `Player::set_client_information`, which also syncs entity data.
+    pub(super) client_information: CheckedMutex<ClientInformation>,
+    /// Assigned groups, direct overrides, and the effective permission set.
+    pub(super) permissions: CheckedMutex<PlayerPermissionState>,
 }
 
 enum CurrentPlayerSlot {
@@ -39,7 +45,11 @@ impl PlayerSession {
     ///
     /// Panics if the process exhausts the player-session ID space.
     #[must_use]
-    pub fn new(chat_spam_threshold_seconds: i32, command_spam_threshold_seconds: i32) -> Self {
+    pub fn new(
+        chat_spam_threshold_seconds: i32,
+        command_spam_threshold_seconds: i32,
+        client_information: ClientInformation,
+    ) -> Self {
         let Ok(previous) =
             LAST_PLAYER_SESSION_ID.try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                 current.checked_add(1)
@@ -60,6 +70,8 @@ impl PlayerSession {
                 DROP_SPAM_THROTTLER_INCREMENT_STEP,
                 DROP_SPAM_THROTTLER_THRESHOLD,
             )),
+            client_information: CheckedMutex::new(client_information),
+            permissions: CheckedMutex::new(PlayerPermissionState::default()),
         }
     }
 
@@ -165,7 +177,6 @@ mod tests {
             Weak::clone(&player.server),
             Arc::clone(&player.config),
             player.id(),
-            ClientInformation::default(),
         )
     }
 
@@ -195,7 +206,7 @@ mod tests {
 
     #[test]
     fn closed_session_cannot_be_bound_again() {
-        let session = Arc::new(PlayerSession::new(10, 10));
+        let session = Arc::new(PlayerSession::new(10, 10, ClientInformation::default()));
 
         let world_fixture = fresh_test_world("player_session_foreign_initial_bind");
         let world = &world_fixture.world;

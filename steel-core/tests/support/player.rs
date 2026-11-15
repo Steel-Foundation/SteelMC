@@ -97,6 +97,7 @@ impl TestPlayerBuilder {
         let session = Arc::new(PlayerSession::new(
             config.chat_spam_threshold_seconds,
             config.command_spam_threshold_seconds,
+            self.client_information,
         ));
         let player = Player::new(
             self.profile,
@@ -106,7 +107,6 @@ impl TestPlayerBuilder {
             server,
             config,
             self.entity_id,
-            self.client_information,
         );
         assert!(session.bind_initial_player(&player));
         player

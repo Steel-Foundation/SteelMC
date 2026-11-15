@@ -49,7 +49,6 @@ pub use lifecycle::PlayerRespawnConfig;
 pub(crate) use lifecycle::ResetReason;
 pub use movement::PlayerInput;
 use movement::{MovementState, TeleportState};
-use permissions::PlayerPermissionState;
 pub(crate) use profile::{GAME_PROFILE_CACHE_LIMIT, KnownPlayerNameLookup, lookup_online_profile};
 pub use profile::{
     GameProfile, KnownPlayer, KnownPlayers, ProfileLookupError, is_valid_player_name, offline_uuid,
@@ -217,9 +216,6 @@ pub struct Player {
     pub last_chunk_pos: CheckedMutex<ChunkPos>,
     /// The last chunk tracking view of the player.
     pub last_tracking_view: CheckedMutex<Option<PlayerChunkView>>,
-    /// The client's settings/information (language, view distance, chat visibility, etc.).
-    /// Updated when the client sends `SClientInformation` during config or play phase.
-    client_information: CheckedMutex<ClientInformation>,
 
     /// Current and previous game mode.
     game_modes: CheckedMutex<PlayerGameModeState>,
@@ -277,9 +273,6 @@ pub struct Player {
 
     /// The Player's Experience
     pub experience: CheckedMutex<Experience>,
-
-    /// Assigned groups, direct overrides, and the effective permission set.
-    permissions: CheckedMutex<PlayerPermissionState>,
 
     /// Whether the player has completed the vanilla End credits flow.
     seen_credits: AtomicBool,
@@ -523,7 +516,7 @@ impl Player {
     /// Returns the player's configured main arm.
     #[must_use]
     pub fn main_arm(&self) -> HumanoidArm {
-        self.client_information.lock().main_hand
+        self.session.client_information.lock().main_hand
     }
 
     #[must_use]
@@ -582,10 +575,6 @@ impl Player {
     }
 
     /// Creates a new player.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "player construction requires explicit connection, session, world, and identity owners"
-    )]
     pub fn new(
         gameprofile: GameProfile,
         connection: Arc<PlayerConnection>,
@@ -594,7 +583,6 @@ impl Player {
         server: Weak<Server>,
         config: Arc<RuntimeConfig>,
         entity_id: i32,
-        client_information: ClientInformation,
     ) -> Arc<Self> {
         Self::with_ender_chest(
             gameprofile,
@@ -604,7 +592,6 @@ impl Player {
             server,
             config,
             entity_id,
-            client_information,
             Arc::new(SyncMutex::new(PlayerEnderChestContainer::new())),
         )
     }
@@ -623,7 +610,6 @@ impl Player {
         server: Weak<Server>,
         config: Arc<RuntimeConfig>,
         entity_id: i32,
-        client_information: ClientInformation,
         ender_chest_inventory: SyncPlayerEnderChest,
     ) -> Arc<Self> {
         // Create a single shared inventory container used by both the player and inventory menu
@@ -638,7 +624,10 @@ impl Player {
             equipment,
             &mut entity_data,
         );
-        Self::apply_client_information_to_entity_data(&mut entity_data, &client_information);
+        Self::apply_client_information_to_entity_data(
+            &mut entity_data,
+            &session.client_information.lock(),
+        );
         let player_uuid = gameprofile.id();
         let world_ref = Arc::downgrade(&world);
         WeakSelf::build(|this| Self {
@@ -662,7 +651,6 @@ impl Player {
             entity_data: CheckedMutex::new(entity_data),
             last_chunk_pos: CheckedMutex::new(ChunkPos::new(0, 0)),
             last_tracking_view: CheckedMutex::new(None),
-            client_information: CheckedMutex::new(client_information),
             game_modes: CheckedMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: Arc::clone(&inventory),
             inventory_sync: CheckedMutex::new(PlayerInventorySyncState::new()),
@@ -682,7 +670,6 @@ impl Player {
             food_data: CheckedMutex::new(FoodData::new()),
             health_sync: CheckedMutex::new(HealthSyncState::new()),
             experience: CheckedMutex::new(Experience::default()),
-            permissions: CheckedMutex::new(PlayerPermissionState::default()),
             seen_credits: AtomicBool::new(false),
             spawn_extra_particles_on_fall: AtomicBool::new(false),
             won_game: AtomicBool::new(false),

@@ -6,12 +6,12 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::{
     ClientInformation, DEATH_DURATION, DROP_SPAM_THROTTLER_INCREMENT_STEP,
-    DROP_SPAM_THROTTLER_THRESHOLD, MenuRemovalStatus, Player, PlayerConnection,
-    PlayerPermissionState, ResetReason,
+    DROP_SPAM_THROTTLER_THRESHOLD, MenuRemovalStatus, Player, PlayerConnection, ResetReason,
     connection::NetworkConnection,
     experience::Experience,
     experience::first_point_level_up_sound,
     game_mode::block_breaking::BlockBreakAction,
+    permissions::PlayerPermissionState,
     player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
     player_inventory::MenuItemDisposition,
     sleep::BedSleepingProblem,

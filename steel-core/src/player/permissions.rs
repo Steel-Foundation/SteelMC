@@ -45,7 +45,7 @@ impl Player {
         effective: PermissionSet,
         effective_metadata: PermissionMetadataSet,
     ) -> u64 {
-        self.permissions.lock().replace(
+        self.session.permissions.lock().replace(
             groups,
             overrides,
             metadata_overrides,
@@ -57,13 +57,13 @@ impl Player {
     /// Returns a snapshot of effective permissions.
     #[must_use]
     pub fn permissions(&self) -> PermissionSet {
-        self.permissions.lock().effective.clone()
+        self.session.permissions.lock().effective.clone()
     }
 
     /// Returns assigned permission groups.
     #[must_use]
     pub fn permission_groups(&self) -> Vec<String> {
-        self.permissions.lock().groups.clone()
+        self.session.permissions.lock().groups.clone()
     }
 
     /// Returns whether the latest published subject state assigns the operator group.
@@ -77,19 +77,19 @@ impl Player {
     /// Returns direct permission overrides.
     #[must_use]
     pub fn permission_overrides(&self) -> PermissionSet {
-        self.permissions.lock().overrides.clone()
+        self.session.permissions.lock().overrides.clone()
     }
 
     /// Returns direct permission metadata overrides.
     #[must_use]
     pub fn permission_metadata_overrides(&self) -> PermissionMetadataSet {
-        self.permissions.lock().metadata_overrides.clone()
+        self.session.permissions.lock().metadata_overrides.clone()
     }
 
     /// Returns the current permission snapshot version.
     #[must_use]
     pub fn permission_state_version(&self) -> u64 {
-        self.permissions.lock().version
+        self.session.permissions.lock().version
     }
 
     /// Returns whether the player satisfies an expression in their current world.
@@ -107,7 +107,8 @@ impl Player {
         permission: &PermissionExpr,
         context: &PermissionContext,
     ) -> bool {
-        self.permissions
+        self.session
+            .permissions
             .lock()
             .effective
             .allows_in(permission, context)
@@ -128,7 +129,8 @@ impl Player {
         permission: &PermissionExpr,
         context: &PermissionContext,
     ) -> Option<PermissionState> {
-        self.permissions
+        self.session
+            .permissions
             .lock()
             .effective
             .resolve_in(permission, context)
@@ -149,7 +151,8 @@ impl Player {
         key: &Identifier,
         context: &PermissionContext,
     ) -> Option<PermissionMetadataValue> {
-        self.permissions
+        self.session
+            .permissions
             .lock()
             .effective_metadata
             .resolve_in(key, context)

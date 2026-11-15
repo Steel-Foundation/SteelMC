@@ -28,7 +28,6 @@ impl Player {
             Weak::clone(&self.server),
             Arc::clone(&self.config),
             self.base.id(),
-            self.client_information(),
             Arc::clone(&self.ender_chest_inventory),
         );
 
@@ -66,8 +65,6 @@ impl Player {
             }
         }
 
-        let permission_state = old_player.permissions.lock().clone();
-        *self.permissions.lock() = permission_state;
         {
             let old_stats = old_player.stats.lock();
             self.stats.lock().stats.clone_from(&old_stats.stats);
@@ -152,7 +149,7 @@ mod tests {
         },
         inventory::container::Container as _,
         level_data::RespawnData,
-        player::{ClientInformation, PlayerRespawnConfig, experience::Experience},
+        player::{PlayerRespawnConfig, experience::Experience},
         portal::{PortalKind, PortalProcessor},
         test_support::{TestPlayerBuilder, fresh_test_world},
     };
@@ -192,14 +189,8 @@ mod tests {
         let source_world = &source_world_fixture.world;
         let target_world_fixture = fresh_test_world("respawn_restore_identity_target");
         let target_world = &target_world_fixture.world;
-        let client_information = ClientInformation {
-            language: "en_gb".to_owned(),
-            view_distance: 3,
-            ..ClientInformation::default()
-        };
-        let old_player = TestPlayerBuilder::new(Arc::clone(source_world), "Respawning", ENTITY_ID)
-            .client_information(client_information)
-            .build();
+        let old_player =
+            TestPlayerBuilder::new(Arc::clone(source_world), "Respawning", ENTITY_ID).build();
         old_player.teleport_state.lock().teleport_id = 41;
 
         let replacement =
@@ -213,8 +204,6 @@ mod tests {
         assert!(Arc::ptr_eq(&replacement.session, &old_player.session));
         assert!(Arc::ptr_eq(&replacement.config, &old_player.config));
         assert!(Arc::ptr_eq(&replacement.get_world(), target_world));
-        assert_eq!(replacement.client_information().language, "en_gb");
-        assert_eq!(replacement.client_information().view_distance, 3);
         assert_eq!(replacement.teleport_state.lock().teleport_id, 41);
         replacement.synchronize_respawn_replacement(DVec3::new(1.0, 64.0, 1.0), (0.0, 0.0));
         let mut teleport_state = replacement.teleport_state.lock();
@@ -322,12 +311,6 @@ mod tests {
                 BlockPos::new(1, 64, 1),
             )));
         old_player.award_custom_stat_with_count(&vanilla_custom_stats::JUMP, 9);
-        old_player
-            .permissions
-            .lock()
-            .groups
-            .push("builders".to_owned());
-        old_player.permissions.lock().version = 7;
         old_player.set_seen_credits(true);
         old_player.set_won_game(true);
         old_player.base.add_tag("credits-return".to_owned());
@@ -384,8 +367,6 @@ mod tests {
             old_player.base.portal_process()
         );
         assert_eq!(replacement.stats(), old_player.stats());
-        assert_eq!(replacement.permissions.lock().groups, ["builders"]);
-        assert_eq!(replacement.permissions.lock().version, 7);
         assert!(replacement.has_seen_credits());
         assert_eq!(replacement.respawn_config(), Some(respawn_config));
         assert_eq!(replacement.tags(), ["credits-return"]);

@@ -119,6 +119,7 @@ impl JavaTcpClient {
         let session = Arc::new(PlayerSession::new(
             self.server.config.chat_spam_threshold_seconds,
             self.server.config.command_spam_threshold_seconds,
+            client_info,
         ));
         let java_connection = JavaConnection::new(
             self.outgoing_queue.clone(),
@@ -137,7 +138,6 @@ impl JavaTcpClient {
             Arc::downgrade(&self.server),
             Arc::clone(&self.server.config),
             entity_id,
-            client_info,
         );
         assert!(
             session.bind_initial_player(&player),

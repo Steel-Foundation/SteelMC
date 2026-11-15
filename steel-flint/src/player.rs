@@ -55,12 +55,11 @@ impl SteelTestPlayer {
         let player = Player::new(
             game_profile,
             player_connection,
-            Arc::new(PlayerSession::new(10, 10)),
+            Arc::new(PlayerSession::new(10, 10, ClientInformation::default())),
             world,
             Arc::downgrade(server),
             server.config.clone(),
             -1, // Negative entity ID for test players
-            ClientInformation::default(),
         );
         // Mark as loaded so interactions work
         player.set_client_loaded(true);

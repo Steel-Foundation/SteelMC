@@ -37,7 +37,7 @@ fn java_test_player(
     let (outgoing_packets, receiver) = mpsc::unbounded_channel();
     let cancel_token = CancellationToken::new();
     let network_writer = Arc::new(AsyncMutex::new(None));
-    let session = Arc::new(PlayerSession::new(10, 10));
+    let session = Arc::new(PlayerSession::new(10, 10, ClientInformation::default()));
     let connection = Arc::new(PlayerConnection::Java(JavaConnection::new(
         outgoing_packets,
         cancel_token,
@@ -54,7 +54,6 @@ fn java_test_player(
         Arc::downgrade(server),
         Arc::clone(&server.config),
         1,
-        ClientInformation::default(),
     );
     assert!(session.bind_initial_player(&player));
     (player, receiver, network_writer)
@@ -176,7 +175,7 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
                 closed: AtomicBool::new(false),
             },
         )));
-        let session = Arc::new(PlayerSession::new(10, 10));
+        let session = Arc::new(PlayerSession::new(10, 10, ClientInformation::default()));
         let player = Player::new(
             GameProfile::new(uuid, "TestPlayer".to_owned(), Vec::new())
                 .expect("valid test profile"),
@@ -186,7 +185,6 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
             Arc::downgrade(&server),
             Arc::clone(&server.config),
             1,
-            ClientInformation::default(),
         );
         assert!(session.bind_initial_player(&player));
 

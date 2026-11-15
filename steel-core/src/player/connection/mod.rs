@@ -248,13 +248,13 @@ impl Player {
     /// Returns the player's client information settings.
     #[must_use]
     pub fn client_information(&self) -> ClientInformation {
-        self.client_information.lock().clone()
+        self.session.client_information.lock().clone()
     }
 
     /// Updates the player's client information settings.
     pub fn set_client_information(&self, info: ClientInformation) {
         Self::apply_client_information_to_entity_data(&mut self.entity_data.lock(), &info);
-        *self.client_information.lock() = info;
+        *self.session.client_information.lock() = info;
     }
 
     /// Returns the effective view distance for this player.
@@ -263,7 +263,7 @@ impl Player {
     /// the server's configured maximum view distance.
     #[must_use]
     pub fn view_distance(&self) -> u8 {
-        let client_view_distance = self.client_information.lock().view_distance;
+        let client_view_distance = self.session.client_information.lock().view_distance;
         client_view_distance.min(self.world.load().view_distance)
     }
 }

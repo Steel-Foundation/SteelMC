@@ -1059,7 +1059,7 @@ mod tests {
     use tokio::time::timeout;
 
     use crate::{
-        player::{ClientInformation, Player, connection::ScheduledPlayPacket},
+        player::{Player, connection::ScheduledPlayPacket},
         test_support::{TestPlayerBuilder, fresh_test_world},
     };
 
@@ -1084,7 +1084,6 @@ mod tests {
             Weak::clone(&player.server),
             Arc::clone(&player.config),
             player.id(),
-            ClientInformation::default(),
         )
     }
 

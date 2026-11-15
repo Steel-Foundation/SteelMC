@@ -993,6 +993,7 @@ mod tests {
     use crate::entity::prelude::*;
     use std::array;
 
+    use crate::player::ClientInformation;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world};
     use rustc_hash::FxHashMap;
     use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
@@ -1418,7 +1419,7 @@ mod tests {
             None,
             network_writer,
             1,
-            Arc::new(PlayerSession::new(10, 10)),
+            Arc::new(PlayerSession::new(10, 10, ClientInformation::default())),
         ));
         let sender = task::spawn({
             let connection = Arc::clone(&connection);
