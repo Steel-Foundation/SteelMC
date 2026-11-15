@@ -71,12 +71,7 @@ fn mob_death_loot_continues_across_worlds_and_explicit_seeds_bypass_the_sequence
                 dropped_items(world, position).len() - before,
                 expected_items.len()
             );
-            let actual = world
-                .random_sequences
-                .read()
-                .as_ref()
-                .cloned()
-                .expect("bound");
+            let actual = bound(world);
             assert_eq!(
                 draw(&actual, sequence),
                 draw(&expected, sequence),
@@ -136,12 +131,7 @@ fn repeated_shearing_uses_the_outer_table_sequence_for_nested_color_tables() {
             dropped_items(world, position).len() - before,
             expected_count as usize
         );
-        let actual = world
-            .random_sequences
-            .read()
-            .as_ref()
-            .cloned()
-            .expect("bound");
+        let actual = bound(world);
         assert_eq!(draw(&actual, sequence), draw(&expected, sequence));
     }
 }
@@ -195,12 +185,7 @@ fn constant_mooshroom_and_egg_loot_still_register_their_named_streams() {
     let entity: SharedEntity = Arc::clone(&chicken) as SharedEntity;
     chicken.ai_step(&entity);
     assert_eq!(dropped_items(world, position).len(), 6);
-    let actual = world
-        .random_sequences
-        .read()
-        .as_ref()
-        .cloned()
-        .expect("bound");
+    let actual = bound(world);
     let (_, saved) = actual
         .pending_save()
         .expect("snapshot")

@@ -12,6 +12,15 @@ fn draw(sequences: &RandomSequences, key: &Identifier) -> i64 {
         .expect("sequence draw")
 }
 
+fn bound(world: &crate::world::World) -> Arc<RandomSequences> {
+    world
+        .random_sequences
+        .read()
+        .as_ref()
+        .cloned()
+        .expect("bound")
+}
+
 #[test]
 fn named_stream_matches_vanilla_seed_mixing_including_signed_salt_and_long_ids() {
     // Vectors from the local 26.3 RandomSequence/RandomSupport/Xoroshiro algorithms.
@@ -201,12 +210,7 @@ fn zero_seed_barrels_share_the_named_stream_for_generation_and_placement() {
             );
             drop(guard);
         }
-        let actual = primary
-            .random_sequences
-            .read()
-            .as_ref()
-            .cloned()
-            .expect("bound");
+        let actual = bound(primary);
         assert_eq!(draw(&actual, sequence), draw(&expected, sequence));
     });
 }
@@ -258,12 +262,7 @@ fn advancement_rewards_continue_the_named_loot_stream() {
         grant_reward(&player, &reward);
         assert_eq!(player.inventory.lock().items(), inventory.items());
     }
-    let actual = world
-        .random_sequences
-        .read()
-        .as_ref()
-        .cloned()
-        .expect("bound");
+    let actual = bound(world);
     assert_eq!(draw(&actual, sequence), draw(&expected, sequence));
 }
 
@@ -319,21 +318,9 @@ fn domain_worlds_share_sequences_and_domains_stay_isolated() {
         let nether = worlds
             .get(&Identifier::new_static("loot_a", "nether"))
             .expect("nether");
-        let a_sequences = a.random_sequences.read().as_ref().cloned().expect("bound");
-        let n_sequences = nether
-            .random_sequences
-            .read()
-            .as_ref()
-            .cloned()
-            .expect("bound");
-        let b_sequences = worlds
-            .default_world("loot_b")
-            .expect("default b")
-            .random_sequences
-            .read()
-            .as_ref()
-            .cloned()
-            .expect("bound");
+        let a_sequences = bound(a);
+        let n_sequences = bound(nether);
+        let b_sequences = bound(worlds.default_world("loot_b").expect("default b"));
         assert!(Arc::ptr_eq(&a_sequences, &n_sequences));
         assert!(!Arc::ptr_eq(&a_sequences, &b_sequences));
         let key = Identifier::vanilla_static("test");
