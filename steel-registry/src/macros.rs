@@ -37,12 +37,19 @@ macro_rules! impl_registry_ext {
 }
 
 /// Implements registry-identity equality for an entry type by key.
+///
+/// Registered entries are statics, so an entry is almost always compared with
+/// itself or with another static. The address settles the first case and the
+/// path, checked before the namespace, usually settles the second without
+/// comparing any string contents.
 #[macro_export]
 macro_rules! impl_registry_entry_eq {
     ($Entry:ty) => {
         impl ::core::cmp::PartialEq for $Entry {
             fn eq(&self, other: &Self) -> bool {
-                self.key == other.key
+                ::core::ptr::eq(self, other)
+                    || (self.key.path == other.key.path
+                        && self.key.namespace == other.key.namespace)
             }
         }
 
