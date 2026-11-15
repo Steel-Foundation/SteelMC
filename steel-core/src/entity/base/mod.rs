@@ -17,7 +17,7 @@ pub use persistence::{EntityBaseLoad, EntityBaseSaveData};
 pub use relationships::PendingWorldChangeToken;
 use relationships::{EntityLifecycleState, EntityRelationshipState};
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -386,6 +386,10 @@ pub struct EntityBase {
     removed: AtomicBool,
     /// Passenger, vehicle, and boarding-cooldown state.
     relationships: CheckedMutex<EntityRelationshipState>,
+    /// Whether `relationships` holds a vehicle or passengers, as `Self::HAS_*`
+    /// bits. Written only while the `relationships` lock is held, so an entity
+    /// that rides nothing and carries nothing skips the lock.
+    riding_links: AtomicU8,
     /// Active vanilla portal timing state.
     portal_process: CheckedMutex<Option<PortalProcessor>>,
     /// Callback for entity lifecycle events.
@@ -419,6 +423,11 @@ impl WeakSelf {
 }
 
 impl EntityBase {
+    /// `relationships` holds a vehicle.
+    const HAS_VEHICLE: u8 = 1 << 0;
+    /// `relationships` holds at least one passenger.
+    const HAS_PASSENGERS: u8 = 1 << 1;
+
     /// Creates a new `EntityBase` with a randomly generated UUID.
     #[must_use]
     pub fn new(
@@ -495,6 +504,7 @@ impl EntityBase {
             lifecycle: CheckedMutex::new(EntityLifecycleState::new()),
             removed: AtomicBool::new(false),
             relationships: CheckedMutex::new(EntityRelationshipState::default()),
+            riding_links: AtomicU8::new(0),
             portal_process: CheckedMutex::new(None),
             level_callback: CheckedMutex::new(Arc::new(NullEntityCallback)),
             this,
@@ -533,6 +543,7 @@ impl EntityBase {
                 boarding_cooldown,
                 ..EntityRelationshipState::default()
             }),
+            riding_links: AtomicU8::new(0),
             portal_process: CheckedMutex::new(*self.portal_process.lock()),
             level_callback: CheckedMutex::new(Arc::new(NullEntityCallback)),
             this,
@@ -790,14 +801,20 @@ impl EntityBase {
     /// Reads the push inputs under one lock, or `None` while riding so the caller
     /// falls back to the regular push callbacks.
     pub(crate) fn unmounted_push_state(&self) -> Option<EntityPushState> {
-        let mut relationships = self.relationships.lock();
-
-        if relationships.vehicle().is_some() {
-            return None;
-        }
-
-        let is_vehicle = relationships.first_passenger().is_some();
-        drop(relationships);
+        let is_vehicle = if self.riding_links.load(Ordering::Acquire) == 0 {
+            false
+        } else {
+            let (riding, is_vehicle) = self.with_riding_links(|relationships| {
+                (
+                    relationships.vehicle().is_some(),
+                    relationships.first_passenger().is_some(),
+                )
+            });
+            if riding {
+                return None;
+            }
+            is_vehicle
+        };
 
         let state = self.state.lock();
 
@@ -927,17 +944,26 @@ impl EntityBase {
 
     /// Gets the vehicle this entity is riding, if it is still loaded.
     pub fn vehicle(&self) -> Option<SharedEntity> {
-        self.relationships.lock().vehicle()
+        if !self.has_riding_link(Self::HAS_VEHICLE) {
+            return None;
+        }
+        self.with_riding_links(EntityRelationshipState::vehicle)
     }
 
     /// Gets this entity's direct passengers, pruning stale weak references.
     pub fn passengers(&self) -> Vec<SharedEntity> {
-        self.relationships.lock().passengers()
+        if !self.has_riding_link(Self::HAS_PASSENGERS) {
+            return Vec::new();
+        }
+        self.with_riding_links(EntityRelationshipState::passengers)
     }
 
     /// Gets this entity's first direct passenger, if present.
     pub fn first_passenger(&self) -> Option<SharedEntity> {
-        self.relationships.lock().first_passenger()
+        if !self.has_riding_link(Self::HAS_PASSENGERS) {
+            return None;
+        }
+        self.with_riding_links(EntityRelationshipState::first_passenger)
     }
 
     /// Returns true when this entity has at least one direct passenger.
@@ -947,7 +973,29 @@ impl EntityBase {
 
     /// Returns true when the entity ID is a direct passenger.
     pub fn has_passenger_id(&self, passenger_id: i32) -> bool {
-        self.relationships.lock().has_passenger_id(passenger_id)
+        self.has_riding_link(Self::HAS_PASSENGERS)
+            && self.with_riding_links(|relationships| relationships.has_passenger_id(passenger_id))
+    }
+
+    fn has_riding_link(&self, link: u8) -> bool {
+        self.riding_links.load(Ordering::Acquire) & link != 0
+    }
+
+    /// Runs `f` on the locked riding links, then records which links it left
+    /// behind. Every access to the vehicle or the passengers goes through here,
+    /// including reads, because reading prunes links to dropped entities.
+    fn with_riding_links<R>(&self, f: impl FnOnce(&mut EntityRelationshipState) -> R) -> R {
+        let mut relationships = self.relationships.lock();
+        let result = f(&mut relationships);
+        let mut links = 0;
+        if relationships.vehicle.is_some() {
+            links |= Self::HAS_VEHICLE;
+        }
+        if !relationships.passengers.is_empty() {
+            links |= Self::HAS_PASSENGERS;
+        }
+        self.riding_links.store(links, Ordering::Release);
+        result
     }
 
     /// Returns the vanilla boarding cooldown in ticks.
@@ -957,7 +1005,7 @@ impl EntityBase {
 
     /// Removes a direct passenger by entity ID.
     pub(crate) fn remove_passenger_id(&self, passenger_id: i32) -> bool {
-        self.relationships.lock().remove_passenger_id(passenger_id)
+        self.with_riding_links(|relationships| relationships.remove_passenger_id(passenger_id))
     }
 
     /// Stops riding the current vehicle, if any.
@@ -982,17 +1030,20 @@ impl EntityBase {
             return;
         }
 
-        passenger.base().relationships.lock().vehicle = Some(Arc::downgrade(vehicle));
+        passenger.base().with_riding_links(|relationships| {
+            relationships.vehicle = Some(Arc::downgrade(vehicle));
+        });
         let passenger_ref = Arc::downgrade(passenger);
-        let mut vehicle_relationships = vehicle.base().relationships.lock();
-        let first_passenger_is_player = vehicle_relationships
-            .first_passenger()
-            .is_some_and(|first| first.entity_type() == &vanilla_entities::PLAYER);
-        if passenger.entity_type() == &vanilla_entities::PLAYER && !first_passenger_is_player {
-            vehicle_relationships.passengers.insert(0, passenger_ref);
-        } else {
-            vehicle_relationships.passengers.push(passenger_ref);
-        }
+        vehicle.base().with_riding_links(|vehicle_relationships| {
+            let first_passenger_is_player = vehicle_relationships
+                .first_passenger()
+                .is_some_and(|first| first.entity_type() == &vanilla_entities::PLAYER);
+            if passenger.entity_type() == &vanilla_entities::PLAYER && !first_passenger_is_player {
+                vehicle_relationships.passengers.insert(0, passenger_ref);
+            } else {
+                vehicle_relationships.passengers.push(passenger_ref);
+            }
+        });
     }
 
     /// Sets the vanilla boarding cooldown in ticks.
@@ -1157,12 +1208,11 @@ impl EntityBase {
     }
 
     fn stop_riding_relationship(&self) {
-        let vehicle = {
-            let mut relationships = self.relationships.lock();
+        let vehicle = self.with_riding_links(|relationships| {
             let vehicle = relationships.vehicle();
             relationships.vehicle = None;
             vehicle
-        };
+        });
 
         if let Some(vehicle) = vehicle {
             vehicle.base().remove_passenger_id(self.id);
@@ -1171,12 +1221,11 @@ impl EntityBase {
     }
 
     fn eject_passenger_relationships(&self) {
-        let passengers = {
-            let mut relationships = self.relationships.lock();
+        let passengers = self.with_riding_links(|relationships| {
             let passengers = relationships.passengers();
             relationships.passengers.clear();
             passengers
-        };
+        });
 
         for passenger in passengers {
             if passenger.base().clear_vehicle_if(self.id) {
@@ -1186,14 +1235,13 @@ impl EntityBase {
     }
 
     fn clear_vehicle_if(&self, vehicle_id: i32) -> bool {
-        {
-            let mut relationships = self.relationships.lock();
-            let Some(vehicle) = relationships.vehicle() else {
-                return false;
-            };
-            if vehicle.id() != vehicle_id {
-                return false;
-            }
+        let rides_vehicle = |relationships: &mut EntityRelationshipState| {
+            relationships
+                .vehicle()
+                .is_some_and(|vehicle| vehicle.id() == vehicle_id)
+        };
+        if !self.with_riding_links(rides_vehicle) {
+            return false;
         }
 
         if let Err(error) = self.try_set_position(self.position()) {
@@ -1203,15 +1251,13 @@ impl EntityBase {
             );
         }
 
-        let mut relationships = self.relationships.lock();
-        let Some(vehicle) = relationships.vehicle() else {
-            return false;
-        };
-        if vehicle.id() != vehicle_id {
-            return false;
-        }
-        relationships.vehicle = None;
-        true
+        self.with_riding_links(|relationships| {
+            if !rides_vehicle(relationships) {
+                return false;
+            }
+            relationships.vehicle = None;
+            true
+        })
     }
 
     /// Clears the removed flag and returns whether the entity had been removed.

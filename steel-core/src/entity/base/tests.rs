@@ -50,16 +50,6 @@ fn assert_f64_close(left: f64, right: f64) {
     );
 }
 
-fn link_vehicle_and_passenger(vehicle: &SharedEntity, passenger: &SharedEntity) {
-    passenger.base().relationships.lock().vehicle = Some(Arc::downgrade(vehicle));
-    vehicle
-        .base()
-        .relationships
-        .lock()
-        .passengers
-        .push(Arc::downgrade(passenger));
-}
-
 struct FallDamageTestEntity {
     base: EntityBase,
     fall_damage_calls: SyncMutex<Vec<(f64, f32)>>,
@@ -734,7 +724,7 @@ fn relationship_state_tracks_direct_vehicle_and_passengers() {
     let vehicle = TestEntity::shared(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let passenger = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
 
-    link_vehicle_and_passenger(&vehicle, &passenger);
+    EntityBase::start_riding_relationship(&vehicle, &passenger);
 
     assert!(passenger.is_passenger());
     assert_eq!(passenger.vehicle().map(|entity| entity.id()), Some(1));
@@ -759,8 +749,8 @@ fn relationship_queries_follow_indirect_vehicle_chain() {
     let middle = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let passenger = TestEntity::shared(3, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
 
-    link_vehicle_and_passenger(&root, &middle);
-    link_vehicle_and_passenger(&middle, &passenger);
+    EntityBase::start_riding_relationship(&root, &middle);
+    EntityBase::start_riding_relationship(&middle, &passenger);
 
     assert_eq!(passenger.root_vehicle_id(), 1);
     assert_eq!(middle.root_vehicle_id(), 1);
@@ -775,7 +765,7 @@ fn removal_cleans_up_relationship_state() {
     let vehicle = TestEntity::shared(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let passenger = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
 
-    link_vehicle_and_passenger(&vehicle, &passenger);
+    EntityBase::start_riding_relationship(&vehicle, &passenger);
 
     vehicle.set_removed(RemovalReason::UnloadedToChunk);
 
@@ -792,7 +782,7 @@ fn base_fall_damage_propagates_to_passengers() {
     let passenger = FallDamageTestEntity::new(2, Uuid::new_v4());
     let passenger_entity: SharedEntity = Arc::<FallDamageTestEntity>::clone(&passenger);
 
-    link_vehicle_and_passenger(&vehicle, &passenger_entity);
+    EntityBase::start_riding_relationship(&vehicle, &passenger_entity);
 
     assert!(!vehicle.cause_fall_damage(
         8.0,
