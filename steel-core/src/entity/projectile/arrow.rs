@@ -830,7 +830,7 @@ pub(crate) trait AbstractArrow: Projectile + Sized {
         {
             return false;
         }
-        
+
         self.base_can_hit_entity(entity) && !self.arrow_base().is_ignored(entity.id())
     }
 
