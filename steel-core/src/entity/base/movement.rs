@@ -340,3 +340,23 @@ impl Default for EntityMovementProgress {
         Self::new()
     }
 }
+
+/// The movement state the entity tracker reads every tick, taken under one
+/// lock by [`EntityBase::tracker_snapshot`](super::EntityBase::tracker_snapshot).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EntityTrackerSnapshot {
+    /// Current position.
+    pub position: DVec3,
+    /// Current velocity in blocks per tick.
+    pub velocity: DVec3,
+    /// Yaw and pitch in degrees.
+    pub rotation: (f32, f32),
+    /// Collision and ground-contact flags from the last move.
+    pub movement_flags: EntityMovementFlags,
+    /// Whether the velocity changed enough to need syncing.
+    pub needs_velocity_sync: bool,
+    /// Whether a hurt-marked velocity sync is pending.
+    pub hurt_marked: bool,
+    /// Whether movement sync must send a full position packet.
+    pub requires_precise_position: bool,
+}

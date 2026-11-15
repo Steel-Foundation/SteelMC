@@ -11,7 +11,7 @@ mod relationships;
 pub use fire_freeze::EntityFireFreezeState;
 pub use movement::{
     EntityGroundContact, EntityMovement, EntityMovementEmission, EntityMovementFlags,
-    EntityMovementProgress, EntityVerticalMovementStateUpdate,
+    EntityMovementProgress, EntityTrackerSnapshot, EntityVerticalMovementStateUpdate,
 };
 pub use persistence::{EntityBaseLoad, EntityBaseSaveData};
 pub use relationships::PendingWorldChangeToken;
@@ -856,6 +856,21 @@ impl EntityBase {
     #[inline]
     pub fn requires_precise_position(&self) -> bool {
         self.state.lock().requires_precise_position
+    }
+
+    /// Reads the movement state the entity tracker needs under one lock.
+    #[must_use]
+    pub fn tracker_snapshot(&self) -> EntityTrackerSnapshot {
+        let state = self.state.lock();
+        EntityTrackerSnapshot {
+            position: state.position,
+            velocity: state.velocity,
+            rotation: state.rotation,
+            movement_flags: state.movement_flags,
+            needs_velocity_sync: state.needs_velocity_sync,
+            hurt_marked: state.hurt_marked,
+            requires_precise_position: state.requires_precise_position,
+        }
     }
 
     /// Sets whether tracker movement sync must send a full position packet.

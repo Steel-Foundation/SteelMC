@@ -385,23 +385,24 @@ impl EntityTracker {
 
             let dirty_entity_data = entity.pack_dirty_entity_data();
             let has_dirty_entity_data = dirty_entity_data.is_some();
+            let base = entity.base().tracker_snapshot();
             let result =
                 tracked
                     .server_entity
                     .lock()
                     .record_send_changes(ServerEntityMovementSyncUpdate {
                         entity_type: entity.entity_type(),
-                        vertical_collision: entity.vertical_collision(),
-                        horizontal_collision: entity.horizontal_collision(),
-                        requires_precise_position: entity.base().requires_precise_position(),
+                        vertical_collision: base.movement_flags.vertical_collision(),
+                        horizontal_collision: base.movement_flags.horizontal_collision(),
+                        requires_precise_position: base.requires_precise_position,
                         entity_id,
                         is_passenger: entity.is_passenger(),
-                        position: entity.position(),
-                        velocity: entity.velocity(),
-                        body_rotation: entity.rotation(),
+                        position: base.position,
+                        velocity: base.velocity,
+                        body_rotation: base.rotation,
                         head_yaw: entity.y_head_rot(),
-                        on_ground: entity.on_ground(),
-                        needs_velocity_sync: entity.needs_velocity_sync(),
+                        on_ground: base.movement_flags.on_ground(),
+                        needs_velocity_sync: base.needs_velocity_sync,
                         has_dirty_entity_data,
                         force_velocity_sync: entity.forces_fall_flying_velocity_sync(),
                     });
@@ -409,8 +410,8 @@ impl EntityTracker {
                 entity.clear_velocity_sync();
             }
             result.for_each_packet(|packet| packets_to_broadcast.push((entity_id, packet)));
-            if entity.hurt_marked() {
-                let velocity = entity.velocity();
+            if base.hurt_marked {
+                let velocity = base.velocity;
                 packets_to_broadcast.push((
                     entity_id,
                     EntityMovementSyncPacket::from(CSetEntityMotion::new(entity_id, velocity)),
