@@ -371,7 +371,7 @@ pub struct EntityBase {
     /// Persistent UUID for this entity.
     uuid: Uuid,
     /// The world this entity is in.
-    world: CheckedMutex<Weak<World>>,
+    world: EntityWorld,
     /// Current vanilla movement state.
     state: CheckedMutex<EntityBaseState>,
     /// Shared vanilla save data outside the movement snapshot.
@@ -391,6 +391,15 @@ pub struct EntityBase {
     level_callback: CheckedMutex<Arc<dyn EntityLevelCallback>>,
     /// This entity's handle to its own allocation.
     this: WeakSelf,
+}
+
+/// The world an entity belongs to.
+///
+/// Only the player switches world in place. Every other entity is rebuilt in
+/// its new world, so it reads a fixed reference without locking.
+enum EntityWorld {
+    Fixed(Weak<World>),
+    Swappable(CheckedMutex<Weak<World>>),
 }
 
 /// An entity's weak handle to its own allocation, handed to the entity while
@@ -487,7 +496,7 @@ impl EntityBase {
             generation: EntityGeneration::next(),
             id,
             uuid,
-            world: CheckedMutex::new(world),
+            world: EntityWorld::Fixed(world),
             state: CheckedMutex::new(state),
             save_data: CheckedMutex::new(EntityBaseSaveData::new()),
             movement_trace: CheckedMutex::new(EntityMovementTrace::default()),
@@ -498,6 +507,16 @@ impl EntityBase {
             level_callback: CheckedMutex::new(Arc::new(NullEntityCallback)),
             this,
         }
+    }
+
+    /// Lets [`Self::set_world`] replace this entity's world.
+    #[must_use]
+    pub(crate) fn with_swappable_world(mut self) -> Self {
+        self.world = match self.world {
+            EntityWorld::Fixed(world) => EntityWorld::Swappable(CheckedMutex::new(world)),
+            swappable @ EntityWorld::Swappable(_) => swappable,
+        };
+        self
     }
 
     /// Returns a shared handle to the entity this base belongs to.
@@ -883,7 +902,10 @@ impl EntityBase {
     /// Returns `None` if the world has been dropped.
     #[inline]
     pub fn level(&self) -> Option<Arc<World>> {
-        self.world.lock().upgrade()
+        match &self.world {
+            EntityWorld::Fixed(world) => world.upgrade(),
+            EntityWorld::Swappable(world) => world.lock().upgrade(),
+        }
     }
 
     /// Gets the vehicle this entity is riding, if it is still loaded.
@@ -1001,8 +1023,15 @@ impl EntityBase {
     }
 
     /// Updates the world reference used by this entity.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless the entity was built with [`Self::with_swappable_world`].
     pub(crate) fn set_world(&self, world: Weak<World>) {
-        *self.world.lock() = world;
+        let EntityWorld::Swappable(current) = &self.world else {
+            panic!("an entity with a fixed world cannot switch world in place");
+        };
+        *current.lock() = world;
     }
 
     /// Marks this entity as waiting for a prepared world change.

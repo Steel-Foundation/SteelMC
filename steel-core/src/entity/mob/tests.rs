@@ -173,10 +173,28 @@ impl DespawnTestMob {
         nearest_player_distance_sqr: Option<f64>,
         remove_when_far_away: bool,
     ) -> Arc<Self> {
+        Self::with_entity_type_in_world(
+            id,
+            position,
+            entity_type,
+            nearest_player_distance_sqr,
+            remove_when_far_away,
+            Weak::new(),
+        )
+    }
+
+    fn with_entity_type_in_world(
+        id: i32,
+        position: DVec3,
+        entity_type: EntityTypeRef,
+        nearest_player_distance_sqr: Option<f64>,
+        remove_when_far_away: bool,
+        world: Weak<World>,
+    ) -> Arc<Self> {
         init_vanilla_registry();
 
         WeakSelf::build(|this| Self {
-            base: EntityBase::new(id, position, entity_type.dimensions, Weak::new(), this),
+            base: EntityBase::new(id, position, entity_type.dimensions, world, this),
             entity_type,
             living_base: LivingEntityBase::without_synced_data(entity_type),
             mob_base: MobBase::new(|_| {}),
@@ -674,8 +692,14 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
         .attributes()
         .lock()
         .set_base_value(vanilla_attributes::ATTACK_DAMAGE, 4.0);
-    let target = DespawnTestMob::with_position(2, DVec3::new(1.0, 0.0, 0.0), None, false);
-    target.base().set_world(Arc::downgrade(test_world()));
+    let target = DespawnTestMob::with_entity_type_in_world(
+        2,
+        DVec3::new(1.0, 0.0, 0.0),
+        &vanilla_entities::PIG,
+        None,
+        false,
+        Arc::downgrade(test_world()),
+    );
     let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
     assert!(mob.mob().do_hurt_target(test_world(), &target_entity));
@@ -701,8 +725,14 @@ fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
         attributes.set_base_value(vanilla_attributes::ATTACK_KNOCKBACK, 2.0);
     }
     mob.set_velocity(DVec3::new(1.0, 0.0, 1.0));
-    let target = DespawnTestMob::with_position(2, DVec3::new(1.0, 0.0, 0.0), None, false);
-    target.base().set_world(Arc::downgrade(test_world()));
+    let target = DespawnTestMob::with_entity_type_in_world(
+        2,
+        DVec3::new(1.0, 0.0, 0.0),
+        &vanilla_entities::PIG,
+        None,
+        false,
+        Arc::downgrade(test_world()),
+    );
     let target_entity: SharedEntity = Arc::<DespawnTestMob>::clone(&target);
 
     assert!(mob.mob().do_hurt_target(test_world(), &target_entity));

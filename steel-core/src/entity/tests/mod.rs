@@ -95,12 +95,16 @@ struct TypedTestEntity {
 
 impl TypedTestEntity {
     fn new(id: i32, entity_type: EntityTypeRef) -> Self {
+        Self::new_in_world(id, entity_type, Weak::new())
+    }
+
+    fn new_in_world(id: i32, entity_type: EntityTypeRef, world: Weak<World>) -> Self {
         Self {
             base: EntityBase::new(
                 id,
                 DVec3::ZERO,
                 entity_type.dimensions,
-                Weak::new(),
+                world,
                 WeakSelf::detached(),
             ),
             entity_type,
@@ -351,8 +355,8 @@ fn kill_uses_vanilla_living_and_non_living_paths() {
         Arc::clone(&source_shared_listener),
     );
 
-    let non_living = TypedTestEntity::new(1, &vanilla_entities::ITEM);
-    non_living.base().set_world(Arc::downgrade(target_world));
+    let non_living =
+        TypedTestEntity::new_in_world(1, &vanilla_entities::ITEM, Arc::downgrade(target_world));
     non_living.base().set_position_local(non_living_position);
     non_living.kill(source_world);
     assert_eq!(non_living.removal_reason(), Some(RemovalReason::Killed));
@@ -770,11 +774,20 @@ struct LivingFluidTestEntity {
 
 impl LivingFluidTestEntity {
     fn new(water_height: f64, lava_height: f64, affected_by_fluids: bool) -> Self {
+        Self::with_world(water_height, lava_height, affected_by_fluids, Weak::new())
+    }
+
+    fn with_world(
+        water_height: f64,
+        lava_height: f64,
+        affected_by_fluids: bool,
+        world: Weak<World>,
+    ) -> Self {
         let base = EntityBase::new(
             1,
             DVec3::ZERO,
             vanilla_entities::PLAYER.dimensions,
-            Weak::new(),
+            world,
             WeakSelf::detached(),
         );
         base.set_fluid_contact(EntityFluidContact::from_parts(
@@ -804,9 +817,12 @@ impl LivingFluidTestEntity {
         affected_by_fluids: bool,
         world: &Arc<World>,
     ) -> Self {
-        let entity = Self::new(water_height, lava_height, affected_by_fluids);
-        entity.base.set_world(Arc::downgrade(world));
-        entity
+        Self::with_world(
+            water_height,
+            lava_height,
+            affected_by_fluids,
+            Arc::downgrade(world),
+        )
     }
 
     const fn with_standing_on_fluid(mut self) -> Self {

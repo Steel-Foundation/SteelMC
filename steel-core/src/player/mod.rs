@@ -638,7 +638,8 @@ impl Player {
                 Self::dimensions_for_pose(EntityPose::Standing),
                 world_ref,
                 this,
-            ),
+            )
+            .with_swappable_world(),
             lifecycle: CheckedMutex::new(PlayerLifecycleState::default()),
             movement: CheckedMutex::new(MovementState::new()),
             entity_data: CheckedMutex::new(entity_data),
