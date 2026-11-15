@@ -384,7 +384,7 @@ impl ChickenEntity {
             // Vanilla `LootContextParamSets.GIFT` carries only ORIGIN and THIS_ENTITY.
             let mut context = LootContext::new(rng)
                 .with_world(&world)
-                .with_origin(position.x, position.y, position.z)
+                .with_origin(position)
                 .with_this_entity(entity_loot_ref(self, Some(&equipment)));
             loot_table.get_random_items(&mut context)
         });

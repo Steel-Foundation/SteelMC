@@ -540,7 +540,7 @@ impl FishingHookEntity {
                         let items = world.with_loot_random(Some(table), 0, |random| {
                             let mut loot_ctx = LootContext::new(random)
                                 .with_world(&world)
-                                .with_origin(position.x, position.y, position.z)
+                                .with_origin(position)
                                 .with_tool(rod)
                                 .with_this_entity(entity_loot_ref(self, None))
                                 .with_luck(luck as f32 + player.get_luck());
@@ -1025,7 +1025,7 @@ mod tests {
                 .with_random(sequence, |random| {
                     let mut context = LootContext::new(random)
                         .with_world(world)
-                        .with_origin(position.x, position.y, position.z)
+                        .with_origin(position)
                         .with_tool(&rod)
                         .with_this_entity(entity_loot_ref(hook.as_ref(), None))
                         .with_luck(player.get_luck());

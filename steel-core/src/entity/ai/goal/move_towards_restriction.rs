@@ -31,9 +31,8 @@ impl Goal for MoveTowardsRestrictionGoal {
             return false;
         }
 
-        let (x, y, z) = mob.home_position().get_bottom_center();
-        let Some(position) = default_random_pos_towards(mob, 16, 7, DVec3::new(x, y, z), FRAC_PI_2)
-        else {
+        let center = mob.home_position().get_bottom_center();
+        let Some(position) = default_random_pos_towards(mob, 16, 7, center, FRAC_PI_2) else {
             return false;
         };
 

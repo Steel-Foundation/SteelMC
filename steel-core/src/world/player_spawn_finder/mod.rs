@@ -137,7 +137,7 @@ impl PlayerSpawnSearch {
         if radius.is_some_and(|radius| radius > BLOCKS_PER_CHUNK) {
             return None;
         }
-        Some(world.request_player_spawn_chunks(block_bottom_center(spawn_suggestion)))
+        Some(world.request_player_spawn_chunks(spawn_suggestion.get_bottom_center()))
     }
 
     /// Adopts a request made by [`Self::prefetch_spawn_area`].
@@ -195,7 +195,7 @@ impl PlayerSpawnSearch {
             }
             self.pending = None;
             if let Some(pos) = spot {
-                return PlayerSpawnSearchPoll::Ready(block_bottom_center(pos));
+                return PlayerSpawnSearchPoll::Ready(pos.get_bottom_center());
             }
         }
     }
@@ -214,7 +214,7 @@ impl PlayerSpawnSearch {
         {
             match self.poll_fallback_pass(world, budget) {
                 FallbackPoll::Found(pos) => {
-                    return PlayerSpawnSearchPoll::Ready(block_bottom_center(pos));
+                    return PlayerSpawnSearchPoll::Ready(pos.get_bottom_center());
                 }
                 FallbackPoll::Waiting => return PlayerSpawnSearchPoll::Pending,
                 FallbackPoll::Cancelled => return PlayerSpawnSearchPoll::Cancelled,
@@ -235,7 +235,7 @@ impl PlayerSpawnSearch {
             .flatten();
         PlayerSpawnSearchPoll::Ready(safe_pos.map_or_else(
             || world.fixup_spawn_height(self.spawn_suggestion),
-            block_bottom_center,
+            |pos| pos.get_bottom_center(),
         ))
     }
 
@@ -385,7 +385,7 @@ impl World {
             pos = pos.below();
         }
 
-        block_bottom_center(pos.above())
+        pos.above().get_bottom_center()
     }
 
     fn no_collision_no_liquid(self: &Arc<Self>, pos: BlockPos) -> bool {
@@ -425,9 +425,4 @@ pub(crate) fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> b
     }
 
     false
-}
-
-fn block_bottom_center(pos: BlockPos) -> DVec3 {
-    let (x, y, z) = pos.get_bottom_center();
-    DVec3::new(x, y, z)
 }

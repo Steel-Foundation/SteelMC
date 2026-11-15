@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::BlockRef;
@@ -45,11 +44,11 @@ impl TntBlock {
         pos: BlockPos,
         owner: Option<&dyn Entity>,
     ) -> Arc<PrimedTntEntity> {
-        let (x, y, z) = pos.get_bottom_center();
+        let center = pos.get_bottom_center();
         Arc::new(PrimedTntEntity::primed(
             &vanilla_entities::TNT,
             next_entity_id(),
-            DVec3::new(x, y, z),
+            center,
             world,
             owner,
         ))

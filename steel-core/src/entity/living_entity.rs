@@ -3466,7 +3466,7 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
     let mut context = LootContext::new(rng)
         .with_world(world)
         .with_luck(luck)
-        .with_origin(position.x, position.y, position.z)
+        .with_origin(position)
         .with_game_time(world.game_time())
         .with_killed_by_player(killed_by_player)
         .with_this_entity(this_entity)
@@ -3515,7 +3515,7 @@ pub(crate) fn shearing_loot_items_with_rng<E: LivingEntity + ?Sized>(
     let position = entity.position();
     let equipment = living_loot_equipment(entity);
     let mut context = LootContext::new(rng)
-        .with_origin(position.x, position.y, position.z)
+        .with_origin(position)
         .with_this_entity(entity_loot_ref(
             entity.as_entity_event_source(),
             Some(&equipment),

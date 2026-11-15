@@ -360,7 +360,7 @@ impl BaseSpawner {
         pos: BlockPos,
         mut broadcast_event: impl FnMut(),
     ) -> SpawnerTickResult {
-        let center = DVec3::from(pos.get_center());
+        let center = pos.get_center();
         let config = self.config();
         let Some(_) =
             world.nearest_player(center, f64::from(config.required_player_range), |player| {
@@ -638,7 +638,7 @@ fn equip_from_table(world: &World, mob: &dyn Mob, equipment: &EquipmentTable) ->
     let items = world.with_loot_random(Some(table), 0, |random| {
         let mut context = LootContext::new(random)
             .with_world(world)
-            .with_origin(position.x, position.y, position.z)
+            .with_origin(position)
             .with_this_entity(entity_ref);
         table.get_random_items(&mut context)
     })?;

@@ -215,12 +215,12 @@ impl RandomizableContainerStorage {
         };
         let result = {
             let table = LOOT_TABLES.by_key(loot.loot_table());
-            let (x, y, z) = base.pos().get_center();
+            let center = base.pos().get_center();
             let equipment = player.map(living_loot_equipment);
             world.with_loot_random(table, loot.seed(), |random| {
                 let mut context = LootContext::new(random)
                     .with_world(&world)
-                    .with_origin(x, y, z);
+                    .with_origin(center);
                 if let Some(player) = player {
                     // TODO: Trigger GENERATE_LOOT once advancement criteria exist.
                     context = context
