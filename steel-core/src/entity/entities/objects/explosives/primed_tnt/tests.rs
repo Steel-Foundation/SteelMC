@@ -19,8 +19,7 @@ use crate::test_support::{
 const TEST_TNT_BLOCK_POS: BlockPos = BlockPos::new(8, 64, 8);
 
 fn test_tnt_position() -> DVec3 {
-    let (x, y, z) = TEST_TNT_BLOCK_POS.get_bottom_center();
-    DVec3::new(x, y, z)
+    TEST_TNT_BLOCK_POS.get_bottom_center()
 }
 
 fn ready_tnt_world(key: &'static str) -> TestWorld {

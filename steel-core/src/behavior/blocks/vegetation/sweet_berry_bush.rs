@@ -154,7 +154,6 @@ impl BlockBehavior for SweetBerryBushBlock {
             state,
             None,
             Some(player),
-            &mut rng,
         );
 
         for item in items {

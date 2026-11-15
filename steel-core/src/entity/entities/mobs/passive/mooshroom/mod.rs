@@ -30,7 +30,6 @@ use steel_registry::{
     vanilla_entities, vanilla_items, vanilla_particle_types, vanilla_suspicious_stew_effects,
 };
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey};
 use uuid::Uuid;
@@ -42,7 +41,7 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::CowEntity;
-use crate::entity::living_entity::shearing_loot_items_with_rng;
+use crate::entity::living_entity::shearing_loot_items;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
     EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
@@ -232,13 +231,8 @@ impl MushroomCowEntity {
             None,
         );
 
-        let mut rng = RandomSource::Legacy(LegacyRandom::from_seed(rand::random()));
-        for drop in shearing_loot_items_with_rng(
-            self,
-            &vanilla_loot_tables::SHEARING_MOOSHROOM,
-            tool,
-            &mut rng,
-        ) {
+        for drop in shearing_loot_items(self, &vanilla_loot_tables::SHEARING_MOOSHROOM, world, tool)
+        {
             self.spawn_shearing_drop(&drop);
         }
 
