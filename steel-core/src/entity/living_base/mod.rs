@@ -5,7 +5,13 @@
 //! embed this struct and expose it via `LivingEntity::living_base()`, just like
 //! `EntityBase` is used for core `Entity` fields.
 
-use std::{array, mem, sync::Arc};
+use std::{
+    array, mem,
+    sync::{
+        Arc,
+        atomic::{AtomicU8, Ordering},
+    },
+};
 
 use glam::DVec3;
 use rustc_hash::FxHashMap;
@@ -626,7 +632,6 @@ impl ActiveItemUseState {
 
 #[derive(Debug, Clone)]
 struct LivingEntityState {
-    effects_dirty: bool,
     death_processed: bool,
     invulnerable_time: i32,
     hurt_time: i32,
@@ -663,7 +668,6 @@ struct LivingEntityState {
 impl LivingEntityState {
     const fn new(speed: f32) -> Self {
         Self {
-            effects_dirty: false,
             death_processed: false,
             invulnerable_time: 0,
             hurt_time: 0,
@@ -722,6 +726,11 @@ pub struct LivingEntityBase {
     effects: CheckedMutex<ActiveEffects>,
     equipment: Shared<dyn EntityEquipment>,
     equipment_tracking: CheckedMutex<EquipmentTracking>,
+    /// Which per-tick sync drains have work, as `Self::*_PENDING` bits. The
+    /// tracker reads this one byte for an entity with nothing to send instead
+    /// of taking each lock. A bit that mirrors locked data only changes while
+    /// that lock is held.
+    sync_pending: AtomicU8,
 }
 
 /// Active mob effects and the changes clients have not been sent yet.
@@ -765,6 +774,13 @@ struct EquipmentAttributeModifierKey {
 }
 
 impl LivingEntityBase {
+    /// Synchronized effect visibility data must be recomputed.
+    const EFFECT_DATA_PENDING: u8 = 1 << 0;
+    /// `effects` holds mob-effect changes to send.
+    const EFFECT_CHANGES_PENDING: u8 = 1 << 1;
+    /// `equipment_tracking` holds equipment changes to send.
+    const EQUIPMENT_CHANGES_PENDING: u8 = 1 << 2;
+
     /// Creates living runtime state from an entity type's default attributes and
     /// starts `entity_data` at full health.
     #[must_use]
@@ -811,6 +827,7 @@ impl LivingEntityBase {
             effects: CheckedMutex::new(ActiveEffects::default()),
             equipment,
             equipment_tracking: CheckedMutex::new(EquipmentTracking::new()),
+            sync_pending: AtomicU8::new(0),
         }
     }
 
@@ -829,6 +846,7 @@ impl LivingEntityBase {
             equipment_tracking: CheckedMutex::new(
                 self.equipment_tracking.replace(EquipmentTracking::new()),
             ),
+            sync_pending: AtomicU8::new(self.sync_pending.swap(0, Ordering::AcqRel)),
         }
     }
 
@@ -880,14 +898,25 @@ impl LivingEntityBase {
         changes: impl IntoIterator<Item = (EquipmentSlot, ItemStack)>,
     ) {
         let mut tracking = self.equipment_tracking.lock();
+        let mut queued = false;
         for (slot, item_stack) in changes {
             tracking.pending_changes[slot.index()] = Some(item_stack);
+            queued = true;
+        }
+        if queued {
+            self.sync_pending
+                .fetch_or(Self::EQUIPMENT_CHANGES_PENDING, Ordering::AcqRel);
         }
     }
 
     /// Drains equipment changes detected by the living tick.
     pub fn drain_equipment_changes(&self) -> Vec<(EquipmentSlot, ItemStack)> {
+        if !self.is_sync_pending(Self::EQUIPMENT_CHANGES_PENDING) {
+            return Vec::new();
+        }
         let mut tracking = self.equipment_tracking.lock();
+        self.sync_pending
+            .fetch_and(!Self::EQUIPMENT_CHANGES_PENDING, Ordering::AcqRel);
         EquipmentSlot::ALL
             .into_iter()
             .filter_map(|slot| {
@@ -1247,15 +1276,27 @@ impl LivingEntityBase {
 
     /// Drains pending mob-effect packet changes.
     pub fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
-        mem::take(&mut self.effects.lock().pending_sync)
+        if !self.is_sync_pending(Self::EFFECT_CHANGES_PENDING) {
+            return Vec::new();
+        }
+        let mut effects = self.effects.lock();
+        self.sync_pending
+            .fetch_and(!Self::EFFECT_CHANGES_PENDING, Ordering::AcqRel);
+        mem::take(&mut effects.pending_sync)
     }
 
     /// Returns whether synchronized effect entity data should be recomputed.
     pub fn take_effects_dirty(&self) -> bool {
-        let mut state = self.state.lock();
-        let dirty = state.effects_dirty;
-        state.effects_dirty = false;
-        dirty
+        self.is_sync_pending(Self::EFFECT_DATA_PENDING)
+            && self
+                .sync_pending
+                .fetch_and(!Self::EFFECT_DATA_PENDING, Ordering::AcqRel)
+                & Self::EFFECT_DATA_PENDING
+                != 0
+    }
+
+    fn is_sync_pending(&self, bit: u8) -> bool {
+        self.sync_pending.load(Ordering::Acquire) & bit != 0
     }
 
     /// Builds the synchronized living effect particle/glow/invisibility state.
@@ -1316,12 +1357,16 @@ impl LivingEntityBase {
     }
 
     fn queue_mob_effect_sync(&self, change: MobEffectSyncChange) {
-        self.effects.lock().pending_sync.push(change);
+        let mut effects = self.effects.lock();
+        effects.pending_sync.push(change);
+        self.sync_pending
+            .fetch_or(Self::EFFECT_CHANGES_PENDING, Ordering::AcqRel);
     }
 
     /// Marks synchronized effect visibility data for recomputation.
     pub(crate) fn mark_effects_dirty(&self) {
-        self.state.lock().effects_dirty = true;
+        self.sync_pending
+            .fetch_or(Self::EFFECT_DATA_PENDING, Ordering::AcqRel);
     }
 
     /// Gets the cached movement speed used by living movement code.
