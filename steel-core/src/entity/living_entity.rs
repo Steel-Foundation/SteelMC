@@ -1,12 +1,19 @@
-use crate::loot::LOOT_TABLES;
+use std::f32::consts::PI;
+
+use crate::loot::{LOOT_TABLES, LootResult};
 use steel_math::{DEGREE_90, RAD_TO_DEG_F64, round_f32, trig};
-use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
+use steel_registry::data_components::vanilla_components::{
+    BLOCKS_ATTACKS, DEATH_PROTECTION, USE_EFFECTS,
+};
 use steel_registry::entity_variant::MooshroomVariant;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
 use super::*;
-use crate::behavior::{BLOCK_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS};
+use crate::behavior::{
+    BLOCK_BEHAVIORS, ITEM_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS,
+};
+use crate::entity::blocks_attacks;
 use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::RecentDamageSource;
 use crate::entity::pushing::EntityPush;
@@ -716,7 +723,13 @@ pub trait LivingEntity: Entity {
             damage = 0.0;
         }
 
-        // TODO: apply item blocking before actually_hurt once shield/use-item hooks exist.
+        let item_in_use = self
+            .living_base()
+            .active_item_use()
+            .filter(|_| self.is_using_item());
+        let damage_blocked = self.apply_item_blocking(world, source, damage);
+        damage -= damage_blocked;
+        let blocked = damage_blocked > 0.0;
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FREEZING)
             && REGISTRY
                 .entity_types
@@ -745,11 +758,30 @@ pub trait LivingEntity: Entity {
         self.resolve_player_responsible_for_damage(source);
 
         if took_full_damage {
-            self.broadcast_damage_event(world, source);
-            if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT) {
+            // A shield broken by this block no longer runs `on_blocked`.
+            let mut blocks_attacks = None;
+            if blocked && let Some(active) = item_in_use {
+                self.with_equipment_slot(active.hand().into(), &mut |item| {
+                    if item.item() == active.item() {
+                        blocks_attacks = item.get(BLOCKS_ATTACKS).cloned();
+                    }
+                });
+            }
+            if let Some(blocks_attacks) = blocks_attacks {
+                blocks_attacks::on_blocked(&blocks_attacks, world, self);
+            } else {
+                self.broadcast_damage_event(world, source);
+            }
+
+            if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT)
+                && (!blocked || damage > 0.0)
+            {
                 self.mark_hurt();
             }
-            self.apply_damage_knockback(source);
+            let fully_blocked = blocked && damage <= 0.0;
+            if !fully_blocked {
+                self.apply_damage_knockback(source, blocked);
+            }
         }
 
         if self.is_dead_or_dying() {
@@ -764,9 +796,141 @@ pub trait LivingEntity: Entity {
         }
         // TODO: Play secondary hurt sounds once equipment effects expose them.
 
-        self.record_last_damage_source(source);
+        let success = !blocked || damage > 0.0;
+        if success {
+            self.record_last_damage_source(source);
+        }
 
-        true
+        if let Some(player) = self.as_player()
+            && damage_blocked > 0.0
+            && damage_blocked < DAMAGE_STAT_LIMIT
+        {
+            player.award_custom_stat_with_count(
+                &vanilla_custom_stats::DAMAGE_BLOCKED_BY_SHIELD,
+                round_f32(damage_blocked * DAMAGE_STAT_SCALE),
+            );
+        }
+
+        success
+    }
+
+    /// Reduces incoming damage with the item this entity is blocking with.
+    ///
+    /// Returns the amount of damage blocked.
+    fn apply_item_blocking(&self, world: &World, source: &DamageSource, damage: f32) -> f32 {
+        if damage <= 0.0 {
+            return 0.0;
+        }
+        let Some((hand, blocking_with)) = self.get_item_blocking_with() else {
+            return 0.0;
+        };
+        let Some(blocks_attacks) = blocking_with.get(BLOCKS_ATTACKS) else {
+            return 0.0;
+        };
+        if blocks_attacks.is_bypassed_by(source.damage_type) {
+            return 0.0;
+        }
+        // TODO: Piercing arrows bypass blocking once AbstractArrow exists.
+
+        let angle = source
+            .source_position()
+            .map_or(f64::from(PI), |source_position| {
+                let view = self.calculate_view_vector(0.0, self.y_head_rot());
+                let position = self.position();
+                let horizontal = DVec3::new(
+                    source_position.x - position.x,
+                    0.0,
+                    source_position.z - position.z,
+                );
+                let length = horizontal.length();
+                let to_source = if length < VEC3_NORMALIZE_EPSILON {
+                    DVec3::ZERO
+                } else {
+                    horizontal / length
+                };
+                to_source.dot(view).acos()
+            });
+
+        let damage_blocked =
+            blocks_attacks.resolve_blocked_damage(source.damage_type, damage, angle);
+        blocks_attacks::hurt_blocking_item(
+            blocks_attacks,
+            &blocking_with,
+            self,
+            hand,
+            damage_blocked,
+        );
+        if damage_blocked > 0.0
+            && !source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_PROJECTILE)
+            && let Some(attacker) = source
+                .direct_entity()
+                .and_then(|entity| entity.as_living_entity())
+        {
+            self.block_using_item(world, attacker, source, damage, damage_blocked >= damage);
+        }
+        damage_blocked
+    }
+
+    /// Called on the defender after it blocks a melee attack from `attacker`.
+    fn block_using_item(
+        &self,
+        _world: &World,
+        attacker: &dyn LivingEntity,
+        source: &DamageSource,
+        damage: f32,
+        fully_blocked: bool,
+    ) {
+        let Some(defender) = self.as_living_entity() else {
+            return;
+        };
+        attacker.blocked_by_item(defender, source, damage, fully_blocked);
+    }
+
+    /// Called on the attacker after `defender` blocks its attack.
+    fn blocked_by_item(
+        &self,
+        defender: &dyn LivingEntity,
+        _source: &DamageSource,
+        _damage: f32,
+        fully_blocked: bool,
+    ) {
+        if fully_blocked {
+            return;
+        }
+        let position = self.position();
+        let defender_position = defender.position();
+        defender.knockback(
+            0.5,
+            defender_position.x - position.x,
+            defender_position.z - position.z,
+        );
+    }
+
+    /// Returns how long this entity's weapon disables a blocking item it hits.
+    ///
+    /// Vanilla only counts the weapon when it is also the active item, so a
+    /// main-hand weapon does not count while the off hand is in use, or when
+    /// it replaced the item being used in the main hand.
+    fn get_seconds_to_disable_blocking(&self) -> f32 {
+        if self.is_spectator() {
+            return 0.0;
+        }
+        let active = self
+            .living_base()
+            .active_item_use()
+            .filter(|_| self.is_using_item());
+        let mut seconds = 0.0;
+        self.with_weapon_item(&mut |weapon_item| {
+            seconds = weapon_item
+                .filter(|item| {
+                    active.is_none_or(|active| {
+                        active.hand() == InteractionHand::MainHand && active.item() == item.item()
+                    })
+                })
+                .and_then(ItemStack::get_weapon)
+                .map_or(0.0, |weapon| weapon.disable_blocking_for_seconds);
+        });
+        seconds
     }
 
     /// Hook before applying damage after vanilla reductions.
@@ -904,14 +1068,18 @@ pub trait LivingEntity: Entity {
     }
 
     /// Applies vanilla hurt knockback for a damage source.
-    fn apply_damage_knockback(&self, source: &DamageSource) {
+    ///
+    /// Partially blocked hits still knock back but skip the hurt indicator.
+    fn apply_damage_knockback(&self, source: &DamageSource, blocked: bool) {
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_KNOCKBACK) {
             return;
         }
 
         let (xd, zd) = self.damage_knockback_direction(source);
         self.knockback(DAMAGE_KNOCKBACK_POWER, xd, zd);
-        self.indicate_damage(xd, zd);
+        if !blocked {
+            self.indicate_damage(xd, zd);
+        }
     }
 
     /// Returns the horizontal direction used by vanilla damage knockback.
@@ -1195,25 +1363,25 @@ pub trait LivingEntity: Entity {
         };
 
         let seed = self.death_loot_table_seed();
-        let seed = if seed == 0 {
-            rand::random()
-        } else {
-            seed as u64
-        };
-        let mut rng = RandomSource::Legacy(LegacyRandom::from_seed(seed));
-        let drops = death_loot_items_with_rng(
-            self,
-            loot_table,
-            world.as_ref(),
-            source,
-            killed_by_player,
-            &mut rng,
-        );
+        let drops = world.with_loot_random(Some(loot_table), seed, |rng| {
+            death_loot_items_with_rng(
+                self,
+                loot_table,
+                world.as_ref(),
+                source,
+                killed_by_player,
+                rng,
+            )
+        });
 
         if has_custom_death_loot_table && let Some(mob) = self.as_mob() {
             mob.clear_custom_death_loot_table();
         }
 
+        let drops = drops.unwrap_or_else(|error| {
+            log::error!("Failed to generate death loot {}: {error}", loot_table.key);
+            Vec::new()
+        });
         for item_stack in drops {
             self.spawn_at_location(item_stack, 0.0);
         }
@@ -1659,9 +1827,39 @@ pub trait LivingEntity: Entity {
         false
     }
 
+    /// Stops active item use without calling item hooks.
+    fn stop_using_item(&self) {
+        self.living_base().stop_using_item();
+    }
+
     /// Checks if the entity is blocking with a shield or similar item.
     fn is_blocking(&self) -> bool {
-        false
+        self.get_item_blocking_with().is_some()
+    }
+
+    /// Returns the hand and stack this entity is blocking with, once the
+    /// item's block delay has elapsed.
+    fn get_item_blocking_with(&self) -> Option<(InteractionHand, ItemStack)> {
+        if !self.is_using_item() {
+            return None;
+        }
+        let user = self.as_living_entity()?;
+        let active = self.living_base().active_item_use()?;
+        let mut blocking_item = None;
+        self.with_equipment_slot(active.hand().into(), &mut |item| {
+            if item.item() == active.item()
+                && let Some(blocks_attacks) = item.get(BLOCKS_ATTACKS)
+            {
+                blocking_item = Some((item.clone(), blocks_attacks.block_delay_ticks()));
+            }
+        });
+        // Use duration is read outside the equipment lock so behaviors may inspect the user.
+        let (use_item, block_delay_ticks) = blocking_item?;
+        let use_duration = ITEM_BEHAVIORS
+            .get_behavior(use_item.item())
+            .get_use_duration(&use_item, user);
+        (use_duration - active.remaining_ticks() >= block_delay_ticks)
+            .then_some((active.hand(), use_item))
     }
 
     /// Checks if the entity is fall flying (using elytra).
@@ -3233,7 +3431,7 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
     source: &DamageSource,
     killed_by_player: bool,
     rng: &mut RandomSource,
-) -> Vec<ItemStack> {
+) -> LootResult<Vec<ItemStack>> {
     let causing_entity = source.causing_entity().map(AsRef::as_ref);
     let direct_entity = source.direct_entity().map(AsRef::as_ref);
     let last_damage_player = if killed_by_player {
@@ -3246,6 +3444,10 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
     let this_equipment = living_loot_equipment(entity);
     let causing_equipment = causing_entity.and_then(loot_equipment);
     let direct_equipment = direct_entity.and_then(loot_equipment);
+    let luck = last_damage_player
+        .as_deref()
+        .and_then(Entity::as_player)
+        .map_or(0.0, Player::get_luck);
     let last_damage_player_equipment = last_damage_player.as_deref().and_then(loot_equipment);
     let this_entity = entity_loot_ref(entity.as_entity_event_source(), Some(&this_equipment));
     let causing_entity =
@@ -3263,7 +3465,8 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
 
     let mut context = LootContext::new(rng)
         .with_world(world)
-        .with_origin(position.x, position.y, position.z)
+        .with_luck(luck)
+        .with_origin(position)
         .with_game_time(world.game_time())
         .with_killed_by_player(killed_by_player)
         .with_this_entity(this_entity)
@@ -3278,7 +3481,27 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
         context = context.with_last_damage_player(entity);
     }
 
-    loot_table.get_random_items_or_log(&mut context)
+    loot_table.get_random_items(&mut context)
+}
+
+/// Selects the world's loot stream for shearing before resolving its parameters.
+pub(crate) fn shearing_loot_items<E: LivingEntity + ?Sized>(
+    entity: &E,
+    loot_table: LootTableRef,
+    world: &World,
+    tool: &ItemStack,
+) -> Vec<ItemStack> {
+    world
+        .with_loot_random(Some(loot_table), 0, |rng| {
+            shearing_loot_items_with_rng(entity, loot_table, tool, rng)
+        })
+        .unwrap_or_else(|error| {
+            log::error!(
+                "Failed to generate shearing loot {}: {error}",
+                loot_table.key
+            );
+            Vec::new()
+        })
 }
 
 /// Runs vanilla `LivingEntity.dropFromShearingLootTable` for `loot_table`, returning the
@@ -3288,11 +3511,11 @@ pub(crate) fn shearing_loot_items_with_rng<E: LivingEntity + ?Sized>(
     loot_table: LootTableRef,
     tool: &ItemStack,
     rng: &mut RandomSource,
-) -> Vec<ItemStack> {
+) -> LootResult<Vec<ItemStack>> {
     let position = entity.position();
     let equipment = living_loot_equipment(entity);
     let mut context = LootContext::new(rng)
-        .with_origin(position.x, position.y, position.z)
+        .with_origin(position)
         .with_this_entity(entity_loot_ref(
             entity.as_entity_event_source(),
             Some(&equipment),
@@ -3302,5 +3525,5 @@ pub(crate) fn shearing_loot_items_with_rng<E: LivingEntity + ?Sized>(
     if let Some(level) = level.as_deref() {
         context = context.with_world(level).with_game_time(level.game_time());
     }
-    loot_table.get_random_items_or_log(&mut context)
+    loot_table.get_random_items(&mut context)
 }

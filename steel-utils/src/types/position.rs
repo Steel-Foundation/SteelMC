@@ -421,8 +421,8 @@ impl BlockPos {
 
     /// Returns the center of this block as a floating-point position.
     #[must_use]
-    pub fn get_center(&self) -> (f64, f64, f64) {
-        (
+    pub fn get_center(&self) -> DVec3 {
+        DVec3::new(
             f64::from(self.0.x) + 0.5,
             f64::from(self.0.y) + 0.5,
             f64::from(self.0.z) + 0.5,
@@ -431,8 +431,8 @@ impl BlockPos {
 
     /// Returns the bottom center of this block (center of the bottom face).
     #[must_use]
-    pub fn get_bottom_center(&self) -> (f64, f64, f64) {
-        (
+    pub fn get_bottom_center(&self) -> DVec3 {
+        DVec3::new(
             f64::from(self.0.x) + 0.5,
             f64::from(self.0.y),
             f64::from(self.0.z) + 0.5,
@@ -442,8 +442,7 @@ impl BlockPos {
     /// Returns whether this block's center is closer than `distance` to `position`.
     #[must_use]
     pub fn closer_to_center_than(&self, position: DVec3, distance: f64) -> bool {
-        let (x, y, z) = self.get_center();
-        DVec3::new(x, y, z).distance_squared(position) < distance * distance
+        self.get_center().distance_squared(position) < distance * distance
     }
 
     /// Returns whether the squared integer distance to `other` is below `distance` squared.

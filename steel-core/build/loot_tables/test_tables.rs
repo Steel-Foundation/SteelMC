@@ -83,6 +83,14 @@ fn inputs() -> impl IntoIterator<Item = (&'static str, serde_json::Value)> {
             "ENCHANT_MISSING_COMPONENT",
             json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:loot_table","value":"minecraft:blocks/diamond_ore","modifier":{"type":"minecraft:set_enchantments","enchantments":{"minecraft:looting":{"type":"minecraft:uniform","min":1,"max":9}}}}]}]}),
         ),
+        (
+            "FISHING_HOOK_PREDICATES",
+            json!({"pools":[
+                {"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:stone","condition":{"type":"minecraft:entity_properties","entity":"this","predicate":{"minecraft:type_specific/fishing_hook":{}}}}]},
+                {"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:gold_ingot","condition":{"type":"minecraft:entity_properties","entity":"this","predicate":{"minecraft:type_specific/fishing_hook":{"in_open_water":false}}}}]},
+                {"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:diamond","condition":{"type":"minecraft:entity_properties","entity":"this","predicate":{"minecraft:type_specific/fishing_hook":{"in_open_water":true}}}}]}
+            ]}),
+        ),
     ]
 }
 

@@ -56,7 +56,7 @@ use steel_registry::{RegistryEntry, RegistryExt};
 use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
+use steel_utils::random::RandomSource;
 use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, ErasedType, Identifier,
@@ -155,6 +155,12 @@ const BUBBLE_COLUMN_INSIDE_UP_ACCELERATION: f64 = 0.06;
 const BUBBLE_COLUMN_ABOVE_UP_ACCELERATION: f64 = 0.1;
 const DAMAGE_KNOCKBACK_POWER: f64 = 0.4_f32 as f64;
 const KNOCKBACK_DIRECTION_EPSILON_SQ: f64 = 1.0e-5_f32 as f64;
+/// Below this length vanilla `Vec3.normalize` returns zero.
+const VEC3_NORMALIZE_EPSILON: f64 = 1.0e-5_f32 as f64;
+/// Damage stats are recorded in tenths of a health point.
+const DAMAGE_STAT_SCALE: f32 = 10.0;
+/// Damage stats are only awarded below vanilla's `3.4028235E37F` bound.
+const DAMAGE_STAT_LIMIT: f32 = f32::MAX / DAMAGE_STAT_SCALE;
 const MOVE_TOWARDS_CLOSEST_SPACE_DIRECTIONS: [Direction; 5] = [
     Direction::North,
     Direction::South,
@@ -751,6 +757,7 @@ pub mod attribute;
 mod base;
 mod block_attached_entity;
 mod block_effects;
+pub(crate) mod blocks_attacks;
 mod callback;
 mod combat_rules;
 pub mod consume_effect;
@@ -1412,6 +1419,7 @@ pub(crate) fn entity_loot_ref<'a>(
         custom_name: None,
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),
+        fishing_hook_open_water: entity.fishing_hook_open_water(),
         chicken_variant: living_entity.and_then(LivingEntity::chicken_loot_variant),
         mooshroom_variant: living_entity.and_then(LivingEntity::mooshroom_loot_variant),
     }
