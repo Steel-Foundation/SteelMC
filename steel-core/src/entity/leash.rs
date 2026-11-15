@@ -1,5 +1,7 @@
 use crate::entity::prelude::*;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::entity::entities::LeashFenceKnotEntity;
 use crate::entity::{Entity, SharedEntity, WeakEntity};
@@ -12,7 +14,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_game_rules::ENTITY_DROPS;
 use steel_registry::{sound_events, vanilla_items};
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
 use steel_utils::{BlockPos, Downcast as _, UuidExt as _};
 use uuid::Uuid;
 
@@ -29,20 +31,87 @@ pub const BASE_HORIZONTAL_FRICTION: f64 = 0.91;
 /// Angular leash friction in water or lava.
 pub const LEASH_LIQUID_ANGULAR_FRICTION: f64 = 0.8;
 
+/// A leashable's leash data, with a flag for whether any exists so that an
+/// unleashed entity is answered without locking.
+pub struct LeashSlot {
+    data: CheckedMutex<Option<LeashData>>,
+    /// Whether `data` holds leash data. Written only while `data` is locked.
+    present: AtomicBool,
+}
+
+impl LeashSlot {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            data: CheckedMutex::new(None),
+            present: AtomicBool::new(false),
+        }
+    }
+
+    /// Whether leash data exists, read without locking.
+    #[must_use]
+    pub fn is_present(&self) -> bool {
+        self.present.load(Ordering::Acquire)
+    }
+
+    /// Locks the leash data. The guard records whether any is left when it drops.
+    #[track_caller]
+    pub fn lock(&self) -> LeashSlotGuard<'_> {
+        LeashSlotGuard {
+            present: &self.present,
+            data: self.data.lock(),
+        }
+    }
+}
+
+impl Default for LeashSlot {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Guard of a [`LeashSlot`].
+pub struct LeashSlotGuard<'a> {
+    present: &'a AtomicBool,
+    data: CheckedMutexGuard<'a, Option<LeashData>>,
+}
+
+impl Deref for LeashSlotGuard<'_> {
+    type Target = Option<LeashData>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl DerefMut for LeashSlotGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+impl Drop for LeashSlotGuard<'_> {
+    fn drop(&mut self) {
+        self.present.store(self.data.is_some(), Ordering::Release);
+    }
+}
+
 /// Vanilla behavior shared by entities that extend `Leashable`.
 ///
 /// Leashable entities can be leashed to an entity holding a lead, or a fence holding a lead.
 pub trait Leashable: Entity {
     /// Returns the shared leash data (if any).
-    fn leash_data(&self) -> &CheckedMutex<Option<LeashData>>;
+    fn leash_data(&self) -> &LeashSlot;
 
     /// Returns whether this entity is leashed to an entity, even one that has
     /// since been dropped; vanilla checks the holder field, not its liveness.
     fn is_leashed(&self) -> bool {
-        self.leash_data()
-            .lock()
-            .as_ref()
-            .is_some_and(LeashData::has_entity_holder)
+        let leash_data = self.leash_data();
+        leash_data.is_present()
+            && leash_data
+                .lock()
+                .as_ref()
+                .is_some_and(LeashData::has_entity_holder)
     }
 
     /// Whether the holder entity has been dropped before the leash was
@@ -54,22 +123,24 @@ pub trait Leashable: Entity {
     /// Whether leash data exists, including pending save restoration.
     /// This follows vanilla's `mayBeLeashed`; permission is [`Self::can_be_leashed`].
     fn may_be_leashed(&self) -> bool {
-        self.leash_data().lock().is_some()
+        self.leash_data().is_present()
     }
 
     /// Returns the entity holding this entity with a leash, if any.
     fn leash_holder(&self) -> Option<SharedEntity> {
-        self.leash_data()
-            .lock()
-            .as_ref()
-            .and_then(LeashData::holder)
+        let leash_data = self.leash_data();
+        if !leash_data.is_present() {
+            return None;
+        }
+        leash_data.lock().as_ref().and_then(LeashData::holder)
     }
 
     fn leash_attachment(&self) -> Option<LeashAttachment> {
-        self.leash_data()
-            .lock()
-            .as_ref()
-            .and_then(LeashData::attachment)
+        let leash_data = self.leash_data();
+        if !leash_data.is_present() {
+            return None;
+        }
+        leash_data.lock().as_ref().and_then(LeashData::attachment)
     }
 
     fn set_delayed_leash_attachment(&self, attachment: LeashAttachment) {
@@ -559,4 +630,25 @@ pub(super) fn compute_dampened_spring_interaction(
 
 pub(super) fn torque_from_force(lever_arm: DVec3, force: DVec3) -> f64 {
     lever_arm.z * force.x - lever_arm.x * force.z
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::BlockPos;
+
+    use super::{LeashAttachment, LeashData, LeashSlot};
+
+    #[test]
+    fn slot_presence_follows_writes_through_the_guard() {
+        let slot = LeashSlot::new();
+        assert!(!slot.is_present());
+
+        *slot.lock() = Some(LeashData::from_delayed_attachment(
+            LeashAttachment::FenceKnot(BlockPos::new(1, 64, 1)),
+        ));
+        assert!(slot.is_present());
+
+        drop(slot.lock().take());
+        assert!(!slot.is_present());
+    }
 }

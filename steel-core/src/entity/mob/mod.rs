@@ -5,7 +5,7 @@ pub mod pathfinder;
 use crate::entity::component::props::layer_props;
 use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::entity;
-use crate::entity::leash::{LeashData, Leashable};
+use crate::entity::leash::{LeashData, LeashSlot, Leashable};
 use crate::entity::prelude::*;
 use crate::entity::{Ageable, EntityProps};
 use crate::physics::MoveResult;
@@ -171,7 +171,7 @@ pub struct MobBase {
     navigation: CheckedMutex<PathNavigation>,
     pathfinding_malus: CheckedMutex<PathfindingMalus>,
     state: CheckedMutex<MobState>,
-    leash_data: CheckedMutex<Option<LeashData>>,
+    leash_data: LeashSlot,
 }
 
 /// A mob's plain per-instance values: persistence, loot, home and timers.
@@ -224,7 +224,7 @@ impl MobBase {
                 ambient_sound_time: 0,
                 xp_reward: 0,
             }),
-            leash_data: CheckedMutex::new(None),
+            leash_data: LeashSlot::new(),
         };
         construct(&mob_base);
         mob_base
@@ -298,7 +298,7 @@ impl MobBase {
         &self.pathfinding_malus
     }
 
-    const fn leash_data(&self) -> &CheckedMutex<Option<LeashData>> {
+    const fn leash_data(&self) -> &LeashSlot {
         &self.leash_data
     }
 
@@ -2169,7 +2169,7 @@ pub const fn mob_interact<E: Parts>(
 
 // Every mob is `Leashable`.
 impl<T: MobTable> Leashable for T {
-    fn leash_data(&self) -> &CheckedMutex<Option<LeashData>> {
+    fn leash_data(&self) -> &LeashSlot {
         self.get::<MobBase>().leash_data()
     }
 
