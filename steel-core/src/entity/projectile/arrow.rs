@@ -485,6 +485,9 @@ pub(crate) trait AbstractArrow: Projectile + Sized {
             {
                 self.handle_portal();
             }
+            if self.is_world_change_pending() {
+                return;
+            }
 
             if entities_hit.is_empty() {
                 if self.is_alive() && !block_hit.miss {
