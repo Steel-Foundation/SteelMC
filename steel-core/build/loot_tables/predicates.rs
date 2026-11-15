@@ -112,23 +112,18 @@ impl Compiler {
                 checks.push(Self::expected(*value, quote! { entity.flags.#flag }));
             }
         }
-        for (key, present) in [
-            (
-                "minecraft:type_specific/cube_mob",
-                predicate.cube_mob.is_some(),
-            ),
-            (
-                "minecraft:type_specific/fishing_hook",
-                predicate.fishing_hook.is_some(),
-            ),
-            ("minecraft:type_specific/raider", predicate.raider.is_some()),
-        ] {
-            if present {
-                // TODO: Decode and match cube-mob size, fishing-hook open-water,
-                // and raider raid/captain predicates through entity capabilities.
-                let operation = format!("entity predicate {key}");
-                checks.push(quote! { ctx.unsupported::<bool>(#operation)? });
-            }
+        if predicate.cube_mob.is_some() {
+            // TODO: Match cube-mob size through its entity capability.
+            checks.push(quote! { ctx.unsupported::<bool>("entity predicate minecraft:type_specific/cube_mob")? });
+        }
+        if let Some(hook) = &predicate.fishing_hook
+            && let Some(open_water) = hook.in_open_water
+        {
+            checks.push(quote! { entity.fishing_hook_open_water == Some(#open_water) });
+        }
+        if predicate.raider.is_some() {
+            // TODO: Match raider raid/captain state through its entity capability.
+            checks.push(quote! { ctx.unsupported::<bool>("entity predicate minecraft:type_specific/raider")? });
         }
         if let Some(sheep) = &predicate.sheep {
             checks.push(sheep.sheared.map_or_else(
@@ -260,12 +255,8 @@ pub struct EntityPredicate {
         deserialize_with = "deferred_predicate"
     )]
     pub cube_mob: Option<IgnoredAny>,
-    #[serde(
-        default,
-        rename = "minecraft:type_specific/fishing_hook",
-        deserialize_with = "deferred_predicate"
-    )]
-    pub fishing_hook: Option<IgnoredAny>,
+    #[serde(rename = "minecraft:type_specific/fishing_hook")]
+    pub fishing_hook: Option<FishingHookPredicate>,
     #[serde(
         default,
         rename = "minecraft:type_specific/raider",
@@ -304,6 +295,12 @@ pub struct EntityComponents {
 #[serde(deny_unknown_fields)]
 pub struct SheepPredicate {
     pub sheared: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FishingHookPredicate {
+    pub in_open_water: Option<bool>,
 }
 
 #[derive(Deserialize)]

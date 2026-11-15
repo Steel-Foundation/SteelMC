@@ -329,6 +329,8 @@ pub(crate) fn create_test_world_with_damage_history(
     game_time_source: GameTimeSource,
     history: &Arc<DamageHistory>,
 ) -> Arc<World> {
+    use crate::loot::random_sequences::RandomSequences;
+
     init_vanilla_registry();
     let resources = test_world_resources();
     let generator = Arc::new(ChunkGeneratorType::Empty(EmptyChunkGenerator::new()));
@@ -348,7 +350,7 @@ pub(crate) fn create_test_world_with_damage_history(
         OverworldNoiseSettings::SEA_LEVEL
     };
 
-    resources
+    let world = resources
         .runtime
         .block_on(World::new_with_config(
             Arc::clone(&resources.runtime),
@@ -373,7 +375,13 @@ pub(crate) fn create_test_world_with_damage_history(
             },
             Arc::clone(&resources.generation_pool),
         ))
-        .expect("test world should initialize")
+        .expect("test world should initialize");
+    // Standalone fixtures own their streams; domain fixtures rebind through
+    // DomainRandomSequences::load, just as the server does.
+    *world.random_sequences.write() = Some(Arc::new(RandomSequences::new_for_test(
+        world.level_data.read().seed(),
+    )));
+    world
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
