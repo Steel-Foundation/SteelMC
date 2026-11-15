@@ -135,16 +135,21 @@ fn contextual_group_rules_evaluate_in_the_parsed_context() {
 
 #[test]
 fn default_config_contains_editable_operator_group() {
-    let groups = groups(PermissionGroupsConfig::default());
+    let config = PermissionGroupsConfig::default();
+    let op_group = config.op_group.clone();
+    let default_group = config.default_groups[0].clone();
+    let groups = groups(config);
 
-    assert!(groups.groups().contains_key("default"));
-    assert!(groups.groups().contains_key("op"));
-    assert_eq!(groups.default_groups(), ["default"]);
+    assert!(groups.groups().contains_key(&default_group));
+    assert!(groups.groups().contains_key(&op_group));
+    assert_eq!(groups.default_groups(), [default_group]);
+    let operator = groups
+        .groups()
+        .get(&op_group)
+        .expect("default config should contain the operator group");
     assert!(
-        groups
-            .groups()
-            .get("op")
-            .is_some_and(|group| group.permissions().allows_key(&key("steel.admin")))
+        !operator.fallback().entries().is_empty(),
+        "operator group should carry a pristine vanilla fallback"
     );
 }
 
@@ -161,10 +166,11 @@ fn group_configuration_rejects_invalid_names_and_missing_operator_group() {
     ));
 
     let mut missing_op = PermissionGroupsConfig::default();
-    missing_op.groups.remove("op");
+    let op_group = missing_op.op_group.clone();
+    missing_op.groups.remove(&op_group);
     assert_eq!(
         PermissionGroups::from_config(missing_op),
-        Err(PermissionConfigError::MissingRequiredGroup("op".to_owned()))
+        Err(PermissionConfigError::MissingRequiredGroup(op_group))
     );
 }
 
@@ -274,9 +280,11 @@ fn group_inheritance_rejects_missing_parents_and_cycles() {
 #[test]
 fn default_groups_apply_and_unknown_assignments_are_ignored() {
     let mut config = PermissionGroupsConfig::default();
-    let Some(default) = config.groups.get_mut("default") else {
+    let default_group = config.default_groups[0].clone();
+    let Some(default) = config.groups.get_mut(&default_group) else {
         panic!("default config should contain its default group");
     };
+    default.allow.clear();
     default.allow.push("steel.join".to_owned());
     let effective =
         groups(config).effective_permissions(&["deleted_group".to_owned()], &PermissionSet::new());
@@ -292,10 +300,12 @@ fn groups_config_round_trips_through_toml() {
         Ok(serialized) => serialized,
         Err(error) => panic!("default config should serialize: {error}"),
     };
-    let deserialized = match toml::from_str::<PermissionGroupsConfig>(&serialized) {
+    let mut deserialized = match toml::from_str::<PermissionGroupsConfig>(&serialized) {
         Ok(deserialized) => deserialized,
         Err(error) => panic!("serialized config should parse: {error}"),
     };
+    // Fallbacks are runtime-only and are re-applied at startup.
+    deserialized.apply_generated_groups();
 
     assert_eq!(deserialized, config);
 }

@@ -3,7 +3,7 @@
 use std::{error::Error, fmt};
 
 use crate::permission::{
-    OP_GROUP, PermissionGroupConfig, PermissionGroupsConfig, PermissionMetadataExpression,
+    PermissionGroupConfig, PermissionGroupsConfig, PermissionMetadataExpression,
     PermissionMetadataRuleConfig, PermissionMetadataValue, PermissionRuleExpression,
     PermissionState,
 };
@@ -65,7 +65,12 @@ pub(super) fn delete_group(
     config: &mut PermissionGroupsConfig,
     group: &str,
 ) -> Result<bool, PermissionGroupEditError> {
-    if group == OP_GROUP {
+    let is_required = config.op_group == group
+        || config
+            .command_block_groups
+            .iter()
+            .any(|required| required == group);
+    if is_required {
         return Err(PermissionGroupEditError::Required(group.to_owned()));
     }
     if !config.groups.contains_key(group) {
@@ -258,38 +263,22 @@ mod tests {
         let survival = permission("steel.build{domain=survival}");
 
         assert_eq!(
-            set_permission(
-                &mut config,
-                "default",
-                &global,
-                Some(PermissionState::Allow)
-            ),
+            set_permission(&mut config, "all", &global, Some(PermissionState::Allow)),
             Ok(true)
         );
         assert_eq!(
-            set_permission(
-                &mut config,
-                "default",
-                &survival,
-                Some(PermissionState::Deny)
-            ),
+            set_permission(&mut config, "all", &survival, Some(PermissionState::Deny)),
             Ok(true)
         );
-        assert_eq!(
-            set_permission(&mut config, "default", &global, None),
-            Ok(true)
-        );
-        assert_eq!(config.groups["default"].allow.len(), 0);
-        assert_eq!(
-            config.groups["default"].deny,
-            ["steel.build{domain=survival}"]
-        );
+        assert_eq!(set_permission(&mut config, "all", &global, None), Ok(true));
+        assert_eq!(config.groups["all"].allow.len(), 0);
+        assert_eq!(config.groups["all"].deny, ["steel.build{domain=survival}"]);
     }
 
     #[test]
     fn permission_edits_replace_semantically_equal_context_orderings() {
         let mut config = PermissionGroupsConfig::default();
-        let Some(group) = config.groups.get_mut("default") else {
+        let Some(group) = config.groups.get_mut("all") else {
             panic!("default permission group should exist");
         };
         group
@@ -298,17 +287,12 @@ mod tests {
         let expression = permission("steel.build{domain=survival,plugin:region=spawn}");
 
         assert_eq!(
-            set_permission(
-                &mut config,
-                "default",
-                &expression,
-                Some(PermissionState::Deny)
-            ),
+            set_permission(&mut config, "all", &expression, Some(PermissionState::Deny)),
             Ok(true)
         );
-        assert_eq!(config.groups["default"].allow.len(), 0);
+        assert_eq!(config.groups["all"].allow.len(), 0);
         assert_eq!(
-            config.groups["default"].deny,
+            config.groups["all"].deny,
             ["steel.build{domain=survival,plugin:region=spawn}"]
         );
     }
@@ -316,12 +300,13 @@ mod tests {
     #[test]
     fn required_default_and_inherited_groups_cannot_be_deleted() {
         let mut config = PermissionGroupsConfig::default();
+        let op_group = config.op_group.clone();
         assert!(matches!(
-            delete_group(&mut config, OP_GROUP),
+            delete_group(&mut config, &op_group),
             Err(PermissionGroupEditError::Required(_))
         ));
         assert!(matches!(
-            delete_group(&mut config, "default"),
+            delete_group(&mut config, "all"),
             Err(PermissionGroupEditError::Default(_))
         ));
         assert_eq!(create_group(&mut config, "parent"), Ok(true));

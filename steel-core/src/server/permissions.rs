@@ -3,7 +3,7 @@ use steel_utils::Identifier;
 use crate::permission::PermissionMetadataValue;
 
 use super::{
-    Arc, FnServerJob, OP_GROUP, PermissionGroupManager, PermissionGroupManagerError,
+    Arc, FnServerJob, PermissionGroupManager, PermissionGroupManagerError,
     PermissionGroupUpdateError, PermissionGroupsConfig, PermissionSet, PermissionSubjectState,
     Player, PlayerPermissionUpdateError, Server, ServerJobContext, Uuid,
 };
@@ -83,10 +83,11 @@ impl Server {
     /// Returns whether the latest published subject state assigns the operator group.
     #[must_use]
     pub(crate) fn is_operator(&self, uuid: Uuid) -> bool {
+        let op_group = self.permission_groups.op_group();
         self.player_permission_states
             .read()
             .get(uuid)
-            .is_some_and(|state| state.groups().iter().any(|group| group == OP_GROUP))
+            .is_some_and(|state| state.groups().iter().any(|group| group == &op_group))
     }
 
     /// Captures effective command permissions from the latest published subject and group state.

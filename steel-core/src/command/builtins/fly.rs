@@ -13,12 +13,14 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use crate::permission::GAMEMASTERS_GROUP;
 use crate::player::{Abilities, DEFAULT_FLYING_SPEED, Player};
 
 const MAX_FLY_SPEED_MULTIPLIER: f32 = 30.0;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::from_steel("fly"), |_| command())
+        .permission_group(GAMEMASTERS_GROUP)
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {

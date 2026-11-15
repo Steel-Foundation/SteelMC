@@ -11,19 +11,34 @@
         "$ref": "#/definitions/group_name"
       },
       "uniqueItems": true,
-      "default": ["default"]
+      "default": ["all"]
+    },
+    "op_group": {
+      "description": "Group assigned by /op",
+      "default": "owners",
+      "allOf": [
+        {
+          "$ref": "#/definitions/group_name"
+        }
+      ]
+    },
+    "command_block_groups": {
+      "type": "array",
+      "description": "Groups granted to command blocks",
+      "items": {
+        "$ref": "#/definitions/group_name"
+      },
+      "uniqueItems": true,
+      "default": ["gamemasters"]
     },
     "groups": {
       "type": "object",
       "description": "Permission groups keyed by group name",
-      "minProperties": 1,
-      "required": ["op"],
       "additionalProperties": {
         "$ref": "#/definitions/group"
       }
     }
   },
-  "required": ["default_groups", "groups"],
   "additionalProperties": false,
   "definitions": {
     "group_name": {

@@ -47,7 +47,7 @@ use crate::loot::random_sequences::DomainRandomSequences;
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
 use crate::permission::{
-    OP_GROUP, PermissionGroupManager, PermissionGroupManagerError, PermissionGroupUpdateError,
+    PermissionGroupManager, PermissionGroupManagerError, PermissionGroupUpdateError,
     PermissionGroupsConfig, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
     PermissionSubjectIndex, PermissionSubjectState,
 };
@@ -216,13 +216,16 @@ pub async fn test_server_with_worlds_and_config(
     let player_data_storage = PlayerDataStorage::in_memory();
     let registered_commands = create_registered_dispatcher(CommandRegistry::new())
         .map_err(|error| format!("test commands should register: {error}"))?;
+    let permission_groups = PermissionGroupManager::transient(PermissionGroupsConfig::default())
+        .map_err(|error| format!("test permission groups should resolve: {error}"))?;
+    permission_groups
+        .set_command_fallbacks(registered_commands.command_fallbacks(&permission_groups.op_group()))
+        .map_err(|error| format!("test command permission fallbacks should apply: {error}"))?;
     let command_permission_keys = registered_commands
         .permissions
         .iter()
         .map(|permission| permission.as_str().to_owned())
         .collect();
-    let permission_groups = PermissionGroupManager::transient(PermissionGroupsConfig::default())
-        .map_err(|error| format!("test permission groups should resolve: {error}"))?;
     let registry_cache = RegistryCache::new(config.compression);
     let chunk_encoding_pool = ThreadPoolBuilder::new()
         .num_threads(1)
@@ -825,6 +828,11 @@ impl Server {
         }
         let registered_commands = create_registered_dispatcher(command_registry)
             .map_err(|error| format!("failed to register commands: {error}"))?;
+        permission_groups
+            .set_command_fallbacks(
+                registered_commands.command_fallbacks(&permission_groups.op_group()),
+            )
+            .map_err(|error| format!("failed to apply command permission fallbacks: {error}"))?;
         let command_permission_keys = registered_commands
             .permissions
             .into_iter()

@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, sync::Arc};
+use std::{collections::BTreeMap, error::Error, fmt, sync::Arc};
 
 use futures::future::BoxFuture;
 use steel_utils::locks::{AsyncMutex, SyncRwLock};
@@ -44,6 +44,7 @@ impl Error for PermissionGroupStoreError {}
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PermissionGroupManagerState {
     config: PermissionGroupsConfig,
+    command_fallbacks: BTreeMap<String, Vec<String>>,
     groups: PermissionGroups,
 }
 
@@ -75,10 +76,16 @@ impl PermissionGroupManager {
         config: PermissionGroupsConfig,
         store: Option<Arc<dyn PermissionGroupStore>>,
     ) -> Result<Self, PermissionConfigError> {
-        let groups = PermissionGroups::from_config(config.clone())?;
+        let command_fallbacks = BTreeMap::new();
+        let groups =
+            PermissionGroups::from_config_with_fallbacks(config.clone(), &command_fallbacks)?;
         Ok(Self {
             updates: AsyncMutex::new(()),
-            state: SyncRwLock::new(PermissionGroupManagerState { config, groups }),
+            state: SyncRwLock::new(PermissionGroupManagerState {
+                config,
+                command_fallbacks,
+                groups,
+            }),
             store,
         })
     }
@@ -102,6 +109,35 @@ impl PermissionGroupManager {
     #[must_use]
     pub fn contains_group(&self, group: &str) -> bool {
         self.state.read().groups.contains_group(group)
+    }
+
+    /// Returns the group assigned by `/op`.
+    #[must_use]
+    pub fn op_group(&self) -> String {
+        self.state.read().config.op_group.clone()
+    }
+
+    /// Installs the command permission fallbacks declared by the command dispatcher.
+    ///
+    /// The fallback is runtime-only and never persisted. This rebuilds the resolved
+    /// groups in place and is meant to run once at startup, after commands register.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the rebuilt groups do not resolve.
+    pub fn set_command_fallbacks(
+        &self,
+        command_fallbacks: BTreeMap<String, Vec<String>>,
+    ) -> Result<(), PermissionConfigError> {
+        let config = self.state.read().config.clone();
+        let groups =
+            PermissionGroups::from_config_with_fallbacks(config.clone(), &command_fallbacks)?;
+        *self.state.write() = PermissionGroupManagerState {
+            config,
+            command_fallbacks,
+            groups,
+        };
+        Ok(())
     }
 
     /// Returns configured group names sorted by name.
@@ -195,11 +231,17 @@ impl PermissionGroupManager {
         &self,
         config: PermissionGroupsConfig,
     ) -> Result<(), PermissionGroupManagerError> {
-        let groups = PermissionGroups::from_config(config.clone())?;
+        let command_fallbacks = self.state.read().command_fallbacks.clone();
+        let groups =
+            PermissionGroups::from_config_with_fallbacks(config.clone(), &command_fallbacks)?;
         if let Some(store) = &self.store {
             store.save_groups(config.clone()).await?;
         }
-        *self.state.write() = PermissionGroupManagerState { config, groups };
+        *self.state.write() = PermissionGroupManagerState {
+            config,
+            command_fallbacks,
+            groups,
+        };
         Ok(())
     }
 }

@@ -10,12 +10,21 @@ mod rule_expression;
 mod set;
 mod subject;
 
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/groups.rs"]
+mod generated_groups;
+
+pub use generated_groups::{
+    ADMINS_GROUP, ALL_GROUP, COMMAND_BLOCK_GROUPS, DEFAULT_GROUP, GAMEMASTERS_GROUP, GROUPS,
+    MODERATORS_GROUP, OP_GROUP, OWNERS_GROUP,
+};
+
 pub use context::{
     PermissionContext, PermissionContextKey, PermissionContextKeyError, PermissionContextValue,
     PermissionDomain, PermissionRuleContext, PermissionRuleContextError, PermissionRuleContexts,
 };
 pub use expression::PermissionExpr;
-pub(crate) use groups::OP_GROUP;
 pub use groups::{
     PermissionConfigError, PermissionGroup, PermissionGroupConfig, PermissionGroups,
     PermissionGroupsConfig, PermissionMetadataRuleConfig,

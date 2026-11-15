@@ -1,18 +1,10 @@
 #:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/package-content/groups.schema.json
 # Documentation: https://steelmc.dev/configuration/permissions/
 
-default_groups = ["default"]
+# The vanilla groups (all, moderators, gamemasters, admins, owners) are added at
+# startup as empty groups. Each one derives an allow-only fallback from the vanilla
+# command permissions, consulted only for permissions left unset here.
 
-[groups.default]
-priority = 0
-inherits = []
-allow = []
-deny = []
-metadata = []
-
-[groups.op]
-priority = 0
-inherits = []
-allow = ["*"]
-deny = []
-metadata = []
+default_groups = ["all"]
+op_group = "owners"
+command_block_groups = ["gamemasters"]

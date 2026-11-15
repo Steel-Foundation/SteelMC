@@ -92,6 +92,7 @@ impl PermissionEntry {
 pub struct PermissionSet {
     entries: Vec<PermissionEntry>,
     sources: Vec<PermissionResolutionSource>,
+    fallback: Option<Box<Self>>,
 }
 
 impl PermissionSet {
@@ -101,6 +102,7 @@ impl PermissionSet {
         Self {
             entries: Vec::new(),
             sources: Vec::new(),
+            fallback: None,
         }
     }
 
@@ -109,7 +111,11 @@ impl PermissionSet {
     pub fn from_entries(entries: impl IntoIterator<Item = PermissionEntry>) -> Self {
         let entries = entries.into_iter().collect::<Vec<_>>();
         let sources = vec![PermissionResolutionSource::Subject; entries.len()];
-        Self { entries, sources }
+        Self {
+            entries,
+            sources,
+            fallback: None,
+        }
     }
 
     /// Returns all rules in insertion order.
@@ -186,6 +192,7 @@ impl PermissionSet {
     ) -> Option<PermissionState> {
         self.best_key_candidate(key, context)
             .map(|candidate| candidate.state)
+            .or_else(|| self.resolve_fallback(|fallback| fallback.resolve_key_in(key, context)))
     }
 
     /// Resolves one key globally and returns the winning rule details.
@@ -203,6 +210,11 @@ impl PermissionSet {
     ) -> Option<PermissionResolution> {
         self.best_key_candidate(key, context)
             .map(|candidate| self.permission_resolution(candidate))
+            .or_else(|| {
+                self.resolve_fallback_resolution(|fallback| {
+                    fallback.resolve_key_in_detailed(key, context)
+                })
+            })
     }
 
     /// Resolves a child key that may inherit a broad parent grant.
@@ -225,6 +237,11 @@ impl PermissionSet {
     ) -> Option<PermissionState> {
         self.best_scoped_key_candidate(parent, key, context)
             .map(|candidate| candidate.state)
+            .or_else(|| {
+                self.resolve_fallback(|fallback| {
+                    fallback.resolve_scoped_key_in(parent, key, context)
+                })
+            })
     }
 
     /// Resolves a scoped child globally and returns the winning rule details.
@@ -247,6 +264,11 @@ impl PermissionSet {
     ) -> Option<PermissionResolution> {
         self.best_scoped_key_candidate(parent, key, context)
             .map(|candidate| self.permission_resolution(candidate))
+            .or_else(|| {
+                self.resolve_fallback_resolution(|fallback| {
+                    fallback.resolve_scoped_key_in_detailed(parent, key, context)
+                })
+            })
     }
 
     /// Returns whether one global key resolves to allow.
@@ -321,6 +343,31 @@ impl PermissionSet {
                 priority: group_priority,
             },
         );
+    }
+
+    /// Attaches the allow-only fallback consulted when a permission resolves to `None`.
+    ///
+    /// An empty fallback is discarded so equivalent sets compare equal.
+    pub(super) fn set_fallback(&mut self, fallback: Self) {
+        self.fallback = if fallback.entries.is_empty() {
+            None
+        } else {
+            Some(Box::new(fallback))
+        };
+    }
+
+    fn resolve_fallback(
+        &self,
+        resolve: impl FnOnce(&Self) -> Option<PermissionState>,
+    ) -> Option<PermissionState> {
+        self.fallback.as_deref().and_then(resolve)
+    }
+
+    fn resolve_fallback_resolution(
+        &self,
+        resolve: impl FnOnce(&Self) -> Option<PermissionResolution>,
+    ) -> Option<PermissionResolution> {
+        self.fallback.as_deref().and_then(resolve)
     }
 
     fn push_with_source(&mut self, entry: PermissionEntry, source: PermissionResolutionSource) {

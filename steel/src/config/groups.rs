@@ -60,6 +60,12 @@ impl PermissionGroupStore for FilePermissionGroupStore {
 fn serialize_groups_config(config: &PermissionGroupsConfig) -> Result<String, TomlSerializeError> {
     let mut output = String::from(GROUPS_CONFIG_HEADER);
     push_toml_field(&mut output, "default_groups", &config.default_groups)?;
+    push_toml_field(&mut output, "op_group", &config.op_group)?;
+    push_toml_field(
+        &mut output,
+        "command_block_groups",
+        &config.command_block_groups,
+    )?;
 
     for (name, group) in &config.groups {
         output.push('\n');
@@ -176,7 +182,7 @@ async fn write_atomic_config(path: &Path, contents: String) -> io::Result<()> {
 }
 
 pub(super) fn load_or_create_groups(path: &Path) -> Result<PermissionGroupsConfig, String> {
-    let config: PermissionGroupsConfig = if path.exists() {
+    let mut config: PermissionGroupsConfig = if path.exists() {
         let contents = fs::read_to_string(path)
             .map_err(|error| format!("failed to read groups config {}: {error}", path.display()))?;
         toml::from_str(&contents)
@@ -188,6 +194,7 @@ pub(super) fn load_or_create_groups(path: &Path) -> Result<PermissionGroupsConfi
         toml::from_str(DEFAULT_GROUPS)
             .map_err(|error| format!("failed to parse default groups config: {error}"))?
     };
+    config.apply_generated_groups();
     PermissionGroups::from_config(config.clone()).map_err(|error| {
         format!(
             "failed to validate groups config {}: {error}",

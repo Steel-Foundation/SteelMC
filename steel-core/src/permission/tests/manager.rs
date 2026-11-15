@@ -89,14 +89,15 @@ async fn manager_keeps_state_when_validation_fails() {
         saved: Arc::clone(&saved),
     })));
     let mut invalid = PermissionGroupsConfig::default();
-    invalid.groups.remove("op");
+    let op_group = invalid.op_group.clone();
+    invalid.groups.remove(&op_group);
 
     let result = manager.replace_config(invalid).await;
     assert!(matches!(
         result,
         Err(PermissionGroupManagerError::Config(_))
     ));
-    assert!(manager.contains_group("op"));
+    assert!(manager.contains_group(&op_group));
     assert!(saved.lock().is_empty());
 }
 

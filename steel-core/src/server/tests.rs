@@ -56,7 +56,7 @@ use crate::entity::{
     SharedEntity, entities::EnderPearlEntity, init_entities, next_entity_id,
 };
 use crate::permission::{
-    OP_GROUP, PermissionEntry, PermissionExpr, PermissionGroupConfig, PermissionGroupManager,
+    PermissionEntry, PermissionExpr, PermissionGroupConfig, PermissionGroupManager,
     PermissionGroupsConfig, PermissionKey, PermissionMetadataSet, PermissionSet,
     PermissionSubjectIndex, PermissionSubjectState,
 };
@@ -2385,12 +2385,13 @@ impl TwoDomains<'_> {
 
     /// Makes `player` an operator and returns a command source for it.
     fn operator_source(&self, player: &Arc<Player>) -> CommandSource {
+        let op_group = self.server.permission_groups.op_group();
         self.server.player_permission_states.write().set(
             player.gameprofile.id(),
-            PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
+            PermissionSubjectState::new(vec![op_group.clone()], PermissionSet::new()),
         );
         player.set_permission_state(
-            vec![OP_GROUP.to_owned()],
+            vec![op_group],
             PermissionSet::new(),
             PermissionMetadataSet::new(),
             PermissionSet::new(),
@@ -4087,8 +4088,14 @@ fn permission_updates_reject_only_new_unknown_group_assignments() {
         panic!("default permission groups should resolve");
     };
 
+    let op_group = manager.op_group();
     assert!(
-        validate_player_permission_group_update::<()>(&manager, &[], &["op".to_owned()]).is_ok()
+        validate_player_permission_group_update::<()>(
+            &manager,
+            &[],
+            std::slice::from_ref(&op_group)
+        )
+        .is_ok()
     );
     assert!(
         validate_player_permission_group_update::<()>(
@@ -4121,11 +4128,12 @@ fn command_source_and_operator_checks_use_published_subject_state() {
             panic!("test server should initialize");
         };
         let player = test_player_with_uuid(&server, Arc::clone(world), uuid);
+        let op_group = server.permission_groups.op_group();
         let permission = permission_key("minecraft.command.stop");
         let stale_player_permissions =
             PermissionSet::from_entries([PermissionEntry::allow(permission.clone())]);
         player.set_permission_state(
-            vec![OP_GROUP.to_owned()],
+            vec![op_group.clone()],
             PermissionSet::new(),
             PermissionMetadataSet::new(),
             stale_player_permissions,
@@ -4144,7 +4152,7 @@ fn command_source_and_operator_checks_use_published_subject_state() {
 
         server.player_permission_states.write().set(
             uuid,
-            PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
+            PermissionSubjectState::new(vec![op_group], PermissionSet::new()),
         );
         player.set_permission_state(
             Vec::new(),

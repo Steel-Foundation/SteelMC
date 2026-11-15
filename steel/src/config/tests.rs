@@ -176,8 +176,10 @@ async fn file_permission_group_store_round_trips_typed_config() {
     let written = async_fs::read_to_string(&path)
         .await
         .expect("groups config should be written");
-    let parsed: PermissionGroupsConfig =
+    let mut parsed: PermissionGroupsConfig =
         toml::from_str(&written).expect("written config should parse");
+    // Fallbacks are runtime-only and are re-applied at startup.
+    parsed.apply_generated_groups();
 
     assert_eq!(
         written.lines().next(),

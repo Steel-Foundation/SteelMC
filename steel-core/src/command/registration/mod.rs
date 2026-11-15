@@ -1,6 +1,9 @@
 //! Stable command identities and collision-aware dispatcher construction.
 
-use std::{collections::BTreeSet, iter::once};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    iter::once,
+};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_utils::Identifier;
@@ -41,6 +44,7 @@ where
     aliases: Vec<Box<str>>,
     permission: Option<PermissionExpr>,
     subcommand_permissions: Vec<Vec<Box<str>>>,
+    group: Option<String>,
     default_access: bool,
     factory: Box<CommandFactory<S>>,
 }
@@ -59,6 +63,7 @@ where
             aliases: Vec::new(),
             permission: None,
             subcommand_permissions: Vec::new(),
+            group: None,
             default_access: false,
             factory: Box::new(factory),
         }
@@ -75,6 +80,15 @@ where
     #[must_use]
     pub(crate) const fn default_access(mut self) -> Self {
         self.default_access = true;
+        self
+    }
+
+    /// Declares the vanilla permission group that receives this command's fallback.
+    ///
+    /// Commands that do not declare a group fall back to the configured op group.
+    #[must_use]
+    pub(crate) fn permission_group(mut self, group: impl Into<String>) -> Self {
+        self.group = Some(group.into());
         self
     }
 
@@ -153,6 +167,15 @@ where
                 );
             }
         }
+        if let Some(group) = &self.group {
+            PermissionSegment::parse(group.clone()).map_err(|source| {
+                CommandRegistrationError::InvalidPermissionGroup {
+                    id: self.id.clone(),
+                    group: group.clone(),
+                    source,
+                }
+            })?;
+        }
         Ok(())
     }
 }
@@ -174,6 +197,27 @@ where
 {
     pub(crate) dispatcher: CommandDispatcher<S, SteelCommandRuntime>,
     pub(crate) permissions: Vec<PermissionKey>,
+    command_groups: Vec<(String, Option<String>)>,
+}
+
+impl<S> RegisteredCommandDispatcher<S>
+where
+    S: CommandPermissionSource,
+{
+    /// Groups each command's derived permission key by its declared vanilla group.
+    ///
+    /// Commands without a declared group are assigned to `default_group`.
+    pub(crate) fn command_fallbacks(&self, default_group: &str) -> BTreeMap<String, Vec<String>> {
+        let mut fallbacks = BTreeMap::<String, Vec<String>>::new();
+        for (key, group) in &self.command_groups {
+            let group = group.as_deref().unwrap_or(default_group);
+            fallbacks
+                .entry(group.to_owned())
+                .or_default()
+                .push(key.clone());
+        }
+        fallbacks
+    }
 }
 
 impl<S> CommandDispatcherBuilder<S>
@@ -246,6 +290,7 @@ where
         let dispatcher_root = dispatcher.root();
         let mut resolved = Vec::with_capacity(self.registrations.len());
         let mut permissions = self.declared_permissions;
+        let mut command_groups = Vec::with_capacity(self.registrations.len());
 
         for registration in self.registrations {
             let CommandRegistration {
@@ -253,15 +298,20 @@ where
                 aliases,
                 permission,
                 subcommand_permissions,
+                group,
                 default_access,
                 factory,
             } = registration;
+            let derived_key = derived_command_permission_key(&id)?;
             let (root_permission, derived_root) = if let Some(permission) = permission {
                 (permission, None)
             } else {
-                let key = derived_command_permission_key(&id)?;
-                (PermissionExpr::key(key.clone()), Some(key))
+                (
+                    PermissionExpr::key(derived_key.clone()),
+                    Some(derived_key.clone()),
+                )
             };
+            command_groups.push((derived_key.as_str().to_owned(), group));
             collect_permission_keys(&root_permission, &mut permissions);
             let root = apply_registration_requirements(
                 factory(dispatcher_root),
@@ -313,6 +363,7 @@ where
         Ok(RegisteredCommandDispatcher {
             dispatcher,
             permissions: permissions.into_iter().collect(),
+            command_groups,
         })
     }
 }
@@ -596,6 +647,13 @@ pub(crate) enum CommandRegistrationError {
     #[error("command '{id}' has an invalid explicit permission: {source}")]
     InvalidExplicitPermission {
         id: Identifier,
+        #[source]
+        source: PermissionKeyError,
+    },
+    #[error("command '{id}' declares invalid permission group '{group}': {source}")]
+    InvalidPermissionGroup {
+        id: Identifier,
+        group: String,
         #[source]
         source: PermissionKeyError,
     },
