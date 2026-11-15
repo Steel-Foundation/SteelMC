@@ -3,6 +3,7 @@
 
 use super::{vanilla::fixtures, *};
 use crate::inventory::container::{Container, SimpleContainer};
+use glam::DVec3;
 use steel_registry::vanilla_enchantments;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, init_vanilla_registry, item_stack::ItemStack, vanilla_items,
@@ -167,7 +168,7 @@ fn damage_source_condition_requires_origin_and_damage_source() {
             let mut rng = random(12345);
             let mut ctx = LootContext::new(&mut rng);
             if has_origin {
-                ctx = ctx.with_origin(0.0, 0.0, 0.0);
+                ctx = ctx.with_origin(DVec3::ZERO);
             }
             if has_damage_source {
                 ctx = ctx.with_damage_source(DamageSourceInfo {
@@ -355,7 +356,6 @@ fn looting_uses_attacker_equipment_and_limits_the_final_count() {
     use crate::entity::{
         LivingEntity, entities::PigEntity, entity_loot_ref, living_loot_equipment,
     };
-    use glam::DVec3;
     use std::sync::Weak;
     use steel_registry::{equipment::EquipmentSlot, vanilla_entities};
     let tables = tables();

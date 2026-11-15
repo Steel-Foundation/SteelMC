@@ -4,7 +4,6 @@
 
 use std::sync::{Arc, Weak};
 
-use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::BlockRef;
@@ -81,7 +80,7 @@ impl BlockBehavior for BarrelBlock {
                 world.play_sound_at(
                     &sound_events::BLOCK_CHEST_LOCKED,
                     SoundSource::Blocks,
-                    DVec3::from(pos.get_center()),
+                    pos.get_center(),
                     1.0,
                     1.0,
                     None,

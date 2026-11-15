@@ -48,7 +48,7 @@ fn mob_death_loot_continues_across_worlds_and_explicit_seeds_bypass_the_sequence
             let generate = |rng: &mut RandomSource| {
                 let mut context = LootContext::new(rng)
                     .with_world(world)
-                    .with_origin(position.x, position.y, position.z)
+                    .with_origin(position)
                     .with_this_entity(entity_loot_ref(&pig, Some(&equipment)))
                     .with_damage_source(DamageSourceInfo {
                         damage_type: Some(&source.damage_type.key),
@@ -117,7 +117,7 @@ fn repeated_shearing_uses_the_outer_table_sequence_for_nested_color_tables() {
             .with_random(sequence, |random| {
                 let mut context = LootContext::new(random)
                     .with_world(world)
-                    .with_origin(position.x, position.y, position.z)
+                    .with_origin(position)
                     .with_this_entity(entity_loot_ref(&sheep, Some(&equipment)))
                     .with_tool(&tool);
                 table.get_random_items(&mut context)

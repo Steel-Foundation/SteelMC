@@ -82,12 +82,11 @@ impl CaveVinesBlock {
             return InteractionResult::Pass;
         }
         let equipment = loot_equipment(source_entity);
-        let (x, y, z) = pos.get_center();
         let table = &vanilla_loot_tables::HARVEST_CAVE_VINE;
         let items = world.with_loot_random(Some(table), 0, |rng| {
             let mut ctx = LootContext::new(rng)
                 .with_world(world)
-                .with_origin(x, y, z)
+                .with_origin(pos.get_center())
                 .with_block_state(state)
                 .with_interacting_entity(entity_loot_ref(source_entity, equipment.as_ref()));
             table.get_random_items(&mut ctx)

@@ -1996,8 +1996,7 @@ pub fn block_pos_distance_sqr(a: BlockPos, b: BlockPos) -> f64 {
 }
 
 pub fn block_center_distance_sqr(pos: BlockPos, target: DVec3) -> f64 {
-    let (x, y, z) = pos.get_center();
-    DVec3::new(x, y, z).distance_squared(target)
+    pos.get_center().distance_squared(target)
 }
 
 fn home_radius_sqr(radius: i32) -> f64 {

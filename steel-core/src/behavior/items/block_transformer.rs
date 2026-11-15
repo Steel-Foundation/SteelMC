@@ -1,4 +1,3 @@
-use glam::DVec3;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::block_transformer::{
     BlockTransformData, DropStrategy, TransformParticle, TransformType,
@@ -84,11 +83,10 @@ pub(crate) fn use_on(context: &mut UseOnContext) -> InteractionResult {
             .world
             .set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
 
-        let (x, y, z) = pos.get_center();
         context.world.play_sound_holder_at(
             &transform.sound,
             SoundSource::Blocks,
-            DVec3::new(x, y, z),
+            pos.get_center(),
             1.0,
             1.0,
             Some(context.player.id()),

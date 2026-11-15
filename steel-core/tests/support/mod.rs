@@ -691,7 +691,7 @@ pub(crate) fn use_block(world: &Arc<World>, pos: BlockPos, player: &Player) {
     use steel_utils::{Direction, types::InteractionHand};
     let state = world.get_block_state(pos);
     let hit = BlockHitResult {
-        location: DVec3::from(pos.get_center()),
+        location: pos.get_center(),
         direction: Direction::Up,
         block_pos: pos,
         miss: false,

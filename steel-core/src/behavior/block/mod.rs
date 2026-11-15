@@ -76,10 +76,9 @@ pub(crate) fn drop_from_block_interact_loot_table(
     world
         .with_loot_random(Some(key), 0, |rng| {
             let block_entity = world.get_block_entity(pos);
-            let (x, y, z) = pos.get_center();
             let mut ctx = LootContext::new(rng)
                 .with_world(world)
-                .with_origin(x, y, z)
+                .with_origin(pos.get_center())
                 .with_block_state(interacted_block_state);
             if let Some(block_entity) = block_entity.as_deref() {
                 ctx = ctx.with_block_entity(block_entity);
