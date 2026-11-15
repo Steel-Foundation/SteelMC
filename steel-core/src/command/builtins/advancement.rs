@@ -160,7 +160,7 @@ impl Action {
         advancements: &[AdvancementRef],
         show_advancement: bool,
     ) -> i32 {
-        let mut guard = player.advancements.lock();
+        let mut guard = player.session.advancements.lock();
         if !show_advancement {
             guard.flush_dirty(player, true);
         }
@@ -180,7 +180,7 @@ impl Action {
         advancement: &'static Advancement,
         criterion: &str,
     ) -> bool {
-        let mut guard = player.advancements.lock();
+        let mut guard = player.session.advancements.lock();
         match self {
             Self::Grant => guard.award(player, advancement, criterion),
             Self::Revoke => guard.revoke(advancement, criterion),

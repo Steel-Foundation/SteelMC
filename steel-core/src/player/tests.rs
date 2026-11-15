@@ -1112,6 +1112,7 @@ fn player_attack_applies_thorns_damage_and_breaks_enchanted_armor() {
     );
     assert_eq!(
         victim
+            .session
             .stats
             .lock()
             .get(&vanilla_stat_types::ITEM_BROKEN.get(&vanilla_items::DIAMOND_CHESTPLATE)),
@@ -1830,7 +1831,7 @@ fn throttle_player_dropping_items_from_creative_menu() {
             expected_count as usize,
             "entity counts in the world did not match"
         );
-        let stats = player.stats.lock();
+        let stats = player.session.stats.lock();
         assert_eq!(
             stats.get(&item_dropped_stat),
             expected_count,

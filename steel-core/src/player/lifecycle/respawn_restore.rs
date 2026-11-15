@@ -65,11 +65,6 @@ impl Player {
             }
         }
 
-        {
-            let old_stats = old_player.stats.lock();
-            self.stats.lock().stats.clone_from(&old_stats.stats);
-        }
-        *self.advancements.lock() = old_player.advancements.lock().clone();
         self.set_seen_credits(old_player.has_seen_credits());
         let residence = old_player.residence.lock().clone();
         *self.residence.lock() = residence;
@@ -136,8 +131,8 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::{
-        init_vanilla_registry, item_stack::ItemStack, vanilla_attributes, vanilla_custom_stats,
-        vanilla_items, vanilla_mob_effects,
+        init_vanilla_registry, item_stack::ItemStack, vanilla_attributes, vanilla_items,
+        vanilla_mob_effects,
     };
     use steel_utils::{BlockPos, Identifier, types::GameType};
 
@@ -310,7 +305,6 @@ mod tests {
                 PortalKind::Nether,
                 BlockPos::new(1, 64, 1),
             )));
-        old_player.award_custom_stat_with_count(&vanilla_custom_stats::JUMP, 9);
         old_player.set_seen_credits(true);
         old_player.set_won_game(true);
         old_player.base.add_tag("credits-return".to_owned());
@@ -366,7 +360,6 @@ mod tests {
             replacement.base.portal_process(),
             old_player.base.portal_process()
         );
-        assert_eq!(replacement.stats(), old_player.stats());
         assert!(replacement.has_seen_credits());
         assert_eq!(replacement.respawn_config(), Some(respawn_config));
         assert_eq!(replacement.tags(), ["credits-return"]);

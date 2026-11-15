@@ -1402,7 +1402,11 @@ fn first_advancement_flush_resets_client_without_progress() {
         .build();
     sent_packets.lock().clear();
 
-    player.advancements.lock().flush_dirty(&player, true);
+    player
+        .session
+        .advancements
+        .lock()
+        .flush_dirty(&player, true);
 
     let packets = sent_packets.lock();
     assert_eq!(packets.len(), 1, "the first flush must reach the client");

@@ -171,13 +171,13 @@ impl Player {
 
     /// Awards a given amount of a particular stat to this player.
     pub(crate) fn award_erased_stat_with_count(&self, stat: Stat, count: i32) {
-        self.stats.lock().increment(stat, count);
+        self.session.stats.lock().increment(stat, count);
         // TODO: Add score to the objectives having the criterion of this stat for the player.
     }
 
     /// Resets the counter of a stat from this player to zero.
     pub fn reset_stat(&self, stat: Stat) {
-        self.stats.lock().set(stat, 0);
+        self.session.stats.lock().set(stat, 0);
         // TODO: Reset score of the objectives having the criterion of this stat for the player.
     }
 
@@ -189,13 +189,13 @@ impl Player {
     /// Marks all the stat counters of this player to be dirty. This means that the next time
     /// statistics are requested, all tracked stat counters will be sent to the client.
     pub fn mark_all_stats_dirty(&self) {
-        self.stats.lock().mark_all_dirty();
+        self.session.stats.lock().mark_all_dirty();
     }
 
     /// Sends all the dirty stats of this player to their client, and removes
     /// the dirty flag from all of them.
     pub fn send_stats(&self) {
-        let stats = self.stats.lock().get_dirty_and_clear();
+        let stats = self.session.stats.lock().get_dirty_and_clear();
         self.send_packet(CAwardStats { stats });
     }
 
@@ -203,7 +203,8 @@ impl Player {
     /// This excludes stats marked as reset (from transferring domains).
     #[must_use]
     pub fn stats(&self) -> Vec<(Stat, i32)> {
-        self.stats
+        self.session
+            .stats
             .lock()
             .stats
             .iter()

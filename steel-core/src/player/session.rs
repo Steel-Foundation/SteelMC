@@ -7,8 +7,8 @@ use steel_utils::locks::{CheckedMutex, SyncMutex, SyncRwLock};
 
 use super::{
     ClientInformation, DROP_SPAM_THROTTLER_INCREMENT_STEP, DROP_SPAM_THROTTLER_THRESHOLD, Player,
-    chat::ChatState, chunk_sender::ChunkSender, permissions::PlayerPermissionState,
-    spam_throttler::TickThrottler,
+    advancement::PlayerAdvancement, chat::ChatState, chunk_sender::ChunkSender,
+    permissions::PlayerPermissionState, spam_throttler::TickThrottler, stats_counter::StatsCounter,
 };
 
 static LAST_PLAYER_SESSION_ID: AtomicU64 = AtomicU64::new(0);
@@ -30,6 +30,12 @@ pub struct PlayerSession {
     pub(super) client_information: CheckedMutex<ClientInformation>,
     /// Assigned groups, direct overrides, and the effective permission set.
     pub(super) permissions: CheckedMutex<PlayerPermissionState>,
+    /// The counter keeping track of this player's statistics. Vanilla keeps it
+    /// on `PlayerList`, outside the player entity.
+    pub(crate) stats: CheckedMutex<StatsCounter>,
+    /// This player's advancement progress, kept outside the entity as vanilla's
+    /// `PlayerList` does.
+    pub(crate) advancements: CheckedMutex<PlayerAdvancement>,
 }
 
 enum CurrentPlayerSlot {
@@ -72,6 +78,8 @@ impl PlayerSession {
             )),
             client_information: CheckedMutex::new(client_information),
             permissions: CheckedMutex::new(PlayerPermissionState::default()),
+            stats: CheckedMutex::new(StatsCounter::new()),
+            advancements: CheckedMutex::new(PlayerAdvancement::default()), // TODO save the advancement
         }
     }
 

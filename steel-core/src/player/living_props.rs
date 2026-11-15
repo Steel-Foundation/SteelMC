@@ -82,7 +82,7 @@ impl Player {
             self.block_breaking.lock().tick(self, &world);
 
             self.update_player_attributes();
-            self.advancements.lock().flush_dirty(self, true);
+            self.session.advancements.lock().flush_dirty(self, true);
             self.living_base.refresh_speed_from_attributes();
             self.tick_food_data();
 

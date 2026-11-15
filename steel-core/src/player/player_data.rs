@@ -252,7 +252,7 @@ impl PersistentPlayerData {
             .or_else(|| player.pending_root_vehicle_for_current_world());
         let ender_pearls = Self::ender_pearls_from_player(player);
         let stats = Self::stats_from_player(player);
-        let advancements = player.advancements.lock().persisted_progress();
+        let advancements = player.session.advancements.lock().persisted_progress();
 
         Self {
             pos: [pos.x, pos.y, pos.z],
@@ -366,8 +366,8 @@ impl Player {
         *self.inventory.lock() = PlayerInventory::new();
         *self.ender_chest_inventory.lock() = PlayerEnderChestContainer::new();
         *self.food_data.lock() = FoodData::new();
-        self.stats.lock().reset();
-        *self.advancements.lock() = PlayerAdvancement::default();
+        self.session.stats.lock().reset();
+        *self.session.advancements.lock() = PlayerAdvancement::default();
 
         let mut experience = Experience::default();
         experience.dirty = true;
@@ -536,7 +536,7 @@ impl PersistentPlayerData {
 
         // Statistics
         {
-            let mut stats = player.stats.lock();
+            let mut stats = player.session.stats.lock();
 
             // This resets all counters to zero, but also marks them as non-persistent. However, they still need
             // to be sent to the client the next time they are queried.
@@ -550,6 +550,7 @@ impl PersistentPlayerData {
         }
 
         player
+            .session
             .advancements
             .lock()
             .apply_persisted_progress(self.advancements.iter().cloned());

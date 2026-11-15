@@ -510,7 +510,10 @@ impl Player {
         if let Opened(tab_id) = packet {
             let advancement = REGISTRY.advancements.value_by_key(&tab_id);
             if advancement.is_some() {
-                self.advancements.lock().set_selected_tab(self, advancement);
+                self.session
+                    .advancements
+                    .lock()
+                    .set_selected_tab(self, advancement);
             }
         }
     }

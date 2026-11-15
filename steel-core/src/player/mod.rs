@@ -170,9 +170,7 @@ static INTENTIONAL_GAME_DESIGN_STYLE: LazyLock<Interactivity> = LazyLock::new(||
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::{EntityProps, living_entity};
 use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
-use crate::player::advancement::PlayerAdvancement;
 use crate::player::chunk_sender::ChunkSender;
-use crate::player::stats_counter::StatsCounter;
 use crate::portal::{
     PortalTicketTarget, TeleportPostAction, TeleportPostTransition, TeleportTransition,
 };
@@ -294,14 +292,9 @@ pub struct Player {
 
     /// Active fishing hook, kept weakly because the world owns live entities.
     fishing: CheckedMutex<Option<Weak<FishingHookEntity>>>,
-    /// The counter keeping track of this player's statistics.
-    stats: CheckedMutex<StatsCounter>,
 
     /// The last action time of this player.
     last_action_time: CheckedMutex<Instant>,
-
-    /// Manage the advancements of the player
-    pub advancements: CheckedMutex<PlayerAdvancement>,
 }
 
 #[derive(Clone)]
@@ -677,9 +670,7 @@ impl Player {
             residence: CheckedMutex::new(PlayerResidenceState::new()),
             ender_pearls: CheckedMutex::new(Vec::new()),
             fishing: CheckedMutex::new(None),
-            stats: CheckedMutex::new(StatsCounter::new()),
             last_action_time: CheckedMutex::new(Instant::now()),
-            advancements: CheckedMutex::new(PlayerAdvancement::default()), // TODO save the advancement
         })
     }
 
@@ -737,7 +728,7 @@ impl Player {
         // These stats are expressed in ticks.
         // We batch the stats so that the mutex for stats is only
         // locked once.
-        let mut stats = self.stats.lock();
+        let mut stats = self.session.stats.lock();
         stats.increment(
             vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::PLAY_TIME),
             1,
