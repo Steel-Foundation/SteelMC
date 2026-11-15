@@ -741,7 +741,9 @@ pub(crate) trait AbstractArrow: Projectile + Sized {
         }
 
         let movement = horizontal / length * scale;
-        mob.push_impulse(DVec3::new(movement.x, KNOCKBACK_LIFT, movement.z));
+        if movement.length_squared() > 0.0 {
+            mob.push_impulse(DVec3::new(movement.x, KNOCKBACK_LIFT, movement.z));
+        }
     }
 
     fn arrow_do_post_hurt_effects(self: Arc<Self>, _mob: &dyn LivingEntity) {}
