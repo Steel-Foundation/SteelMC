@@ -209,9 +209,8 @@ impl World {
         particle_pos: DVec3,
         override_limiter: bool,
     ) -> bool {
-        let center = player_block_pos.get_center();
         let radius = if override_limiter { 512.0 } else { 32.0 };
-        center.distance_squared(particle_pos) < radius * radius
+        player_block_pos.get_center().distance_squared(particle_pos) < radius * radius
     }
 
     /// Sends bubble column particles at the position
@@ -432,13 +431,12 @@ impl World {
             .with_loot_random(Some(loot_table), 0, |rng| {
                 let empty_tool = ItemStack::empty();
                 let block_entity = context.world().get_block_entity(context.pos());
-                let center = context.pos().get_center();
                 let mut ctx = LootContext::new(rng)
                     .with_world(context.world())
                     .with_tool(context.tool().unwrap_or(&empty_tool))
                     .with_luck(context.luck())
                     .with_block_state(state)
-                    .with_origin(center);
+                    .with_origin(context.pos().get_center());
                 if let Some(block_entity) = &block_entity {
                     ctx = ctx.with_block_entity(block_entity.as_ref());
                 }

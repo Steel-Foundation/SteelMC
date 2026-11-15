@@ -218,13 +218,12 @@ impl BrushableBlockEntity {
             .by_key(key)
             .ok_or_else(|| LootError::MissingTable(key.clone()))?;
         let equipment = living_loot_equipment(player);
-        let center = self.get_block_pos().get_center();
         let items = world.with_loot_random(Some(table), state.loot_table_seed, |rng| {
             let mut ctx = LootContext::new(rng)
                 .with_world(world)
                 .with_luck(player.get_luck())
                 .with_tool(brush)
-                .with_origin(center)
+                .with_origin(self.get_block_pos().get_center())
                 .with_this_entity(entity_loot_ref(player, Some(&equipment)));
             table.get_random_items(&mut ctx)
         })?;
@@ -408,11 +407,10 @@ mod tests {
         );
         for seed in [0, 42, 0, -17, 0] {
             let equipment = living_loot_equipment(player.as_ref());
-            let center = entity.get_block_pos().get_center();
             let generate = |random: &mut RandomSource| {
                 let mut context = LootContext::new(random)
                     .with_world(world)
-                    .with_origin(center)
+                    .with_origin(entity.get_block_pos().get_center())
                     .with_luck(player.get_luck())
                     .with_tool(&brush)
                     .with_this_entity(entity_loot_ref(player.as_ref(), Some(&equipment)));

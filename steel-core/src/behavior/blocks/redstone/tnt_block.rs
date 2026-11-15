@@ -44,11 +44,10 @@ impl TntBlock {
         pos: BlockPos,
         owner: Option<&dyn Entity>,
     ) -> Arc<PrimedTntEntity> {
-        let center = pos.get_bottom_center();
         Arc::new(PrimedTntEntity::primed(
             &vanilla_entities::TNT,
             next_entity_id(),
-            center,
+            pos.get_bottom_center(),
             world,
             owner,
         ))

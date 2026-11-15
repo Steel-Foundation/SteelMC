@@ -257,7 +257,6 @@ fn block_drops_and_harvesting_continue_their_named_sequences() {
     let pos = BlockPos::new(8, 64, 8);
     insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
     let tool = ItemStack::empty();
-    let center = pos.get_center();
     for (table, state, harvest) in [
         (
             &vanilla_loot_tables::BLOCKS_MELON,
@@ -276,7 +275,7 @@ fn block_drops_and_harvesting_continue_their_named_sequences() {
                 .with_random(sequence, |random| {
                     let mut context = LootContext::new(random)
                         .with_world(world)
-                        .with_origin(center)
+                        .with_origin(pos.get_center())
                         .with_block_state(state)
                         .with_tool(&tool);
                     table.get_random_items(&mut context)

@@ -83,11 +83,10 @@ pub(crate) fn use_on(context: &mut UseOnContext) -> InteractionResult {
             .world
             .set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
 
-        let center = pos.get_center();
         context.world.play_sound_holder_at(
             &transform.sound,
             SoundSource::Blocks,
-            center,
+            pos.get_center(),
             1.0,
             1.0,
             Some(context.player.id()),
