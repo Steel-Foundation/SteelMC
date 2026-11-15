@@ -59,7 +59,7 @@ use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::{Duration, Instant};
-use steel_math::RAD_TO_DEG_F64;
+use steel_math::{RAD_TO_DEG_F64, round_f32, round_f64, trig};
 use steel_protocol::packets::game::{
     CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CRespawn,
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
@@ -67,6 +67,7 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::vanilla_components::BLOCKS_ATTACKS;
 use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::game_rules::GameRuleRef;
@@ -104,6 +105,7 @@ use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::LivingEntityRef;
+use crate::entity::blocks_attacks;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
@@ -389,16 +391,6 @@ impl Player {
                 .living_entity_flags
                 .set(flags);
         }
-    }
-
-    fn stop_using_item(&self) {
-        self.living_base.stop_using_item();
-        let mut entity_data = self.entity_data.lock();
-        let flags = *entity_data.living_entity().living_entity_flags.get();
-        entity_data
-            .living_entity_mut()
-            .living_entity_flags
-            .set(flags & !Self::USING_ITEM_FLAG);
     }
 
     /// Releases the currently used item and invokes its release hook.
@@ -877,7 +869,7 @@ impl Player {
         if (0.0..f32::MAX).contains(&absorbed_damage) {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_ABSORBED,
-                (absorbed_damage * 10.0).round() as i32,
+                round_f32(absorbed_damage * 10.0),
             );
         }
 
@@ -888,7 +880,7 @@ impl Player {
             if damage < f32::MAX {
                 self.award_custom_stat_with_count(
                     &vanilla_custom_stats::DAMAGE_TAKEN,
-                    (damage * 10.0).round() as i32,
+                    round_f32(damage * 10.0),
                 );
             }
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
@@ -1622,7 +1614,7 @@ impl Entity for Player {
         if fall_distance >= 2.0 {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::FALL_ONE_CM,
-                (fall_distance * 100.0).round() as i32,
+                round_f64(fall_distance * 100.0) as i32,
             );
         }
 
@@ -1785,7 +1777,7 @@ impl LivingEntity for Player {
 
     fn indicate_damage(&self, xd: f64, zd: f64) {
         let (y_rot, _) = self.rotation();
-        let hurt_dir = zd.atan2(xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
+        let hurt_dir = trig::atan2(zd, xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
         self.send_packet(CHurtAnimation {
             entity_id: self.id(),
             yaw: hurt_dir as f32,
@@ -1926,6 +1918,43 @@ impl LivingEntity for Player {
         self.living_base.is_using_item()
     }
 
+    fn stop_using_item(&self) {
+        self.living_base.stop_using_item();
+        let mut entity_data = self.entity_data.lock();
+        let flags = *entity_data.living_entity().living_entity_flags.get();
+        entity_data
+            .living_entity_mut()
+            .living_entity_flags
+            .set(flags & !Self::USING_ITEM_FLAG);
+    }
+
+    fn block_using_item(
+        &self,
+        world: &World,
+        attacker: &dyn LivingEntity,
+        source: &DamageSource,
+        damage: f32,
+        fully_blocked: bool,
+    ) {
+        attacker.blocked_by_item(self, source, damage, fully_blocked);
+        let Some((_, blocking_with)) = self.get_item_blocking_with() else {
+            return;
+        };
+        let Some(blocks_attacks) = blocking_with.get(BLOCKS_ATTACKS) else {
+            return;
+        };
+        let seconds_to_disable_blocking = attacker.get_seconds_to_disable_blocking();
+        if seconds_to_disable_blocking > 0.0 {
+            blocks_attacks::disable(
+                blocks_attacks,
+                world,
+                self,
+                seconds_to_disable_blocking,
+                &blocking_with,
+            );
+        }
+    }
+
     fn get_luck(&self) -> f32 {
         self.attributes()
             .lock()
@@ -2035,7 +2064,7 @@ impl LivingEntity for Player {
         let target_ref = ContainerRef::from(Arc::clone(&self.inventory));
         let source_id = source_ref.container_id();
         let target_id = target_ref.container_id();
-        let mut guard = ContainerLockGuard::lock_all(&[source_ref, target_ref]);
+        let mut guard = ContainerLockGuard::lock_storage(&[source_ref, target_ref]);
         let source_slot = match hand {
             InteractionHand::MainHand => EquipmentSlot::MainHand,
             InteractionHand::OffHand => EquipmentSlot::OffHand,

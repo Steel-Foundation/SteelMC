@@ -110,6 +110,9 @@ fn tag_ref(tag: &Identifier) -> String {
 }
 
 impl Enchantment {
+    /// Highest vanilla component level, independent of an enchantment's own maximum.
+    pub const MAX_LEVEL: u32 = 255;
+
     #[must_use]
     pub fn matching_slot(&self, slot: EquipmentSlot) -> bool {
         self.slots.iter().any(|group| group.test(slot))

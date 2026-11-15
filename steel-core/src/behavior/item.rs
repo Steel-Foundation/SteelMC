@@ -83,8 +83,8 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Called when this item is used (e.g. right click in air).
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
-        // TODO: Mirror Item.use for BLOCKS_ATTACKS and KINETIC_WEAPON so
-        // specialized behaviors inherit the complete Vanilla base path.
+        // TODO: Mirror Item.use for KINETIC_WEAPON so specialized behaviors
+        // inherit the complete Vanilla base path.
         let (consume_ticks, can_eat) = context.inv.with_item(|item| {
             let can_eat = item
                 .get(FOOD)
@@ -110,11 +110,23 @@ pub trait ItemBehavior: Send + Sync {
             return InteractionResult::Consume;
         }
 
-        let Some(equippable) = context.inv.with_item(|item| item.get_equippable().cloned()) else {
+        let (equippable, blocks_attacks) = context.inv.with_item(|item| {
+            (
+                item.get_equippable()
+                    .filter(|equippable| equippable.swappable)
+                    .cloned(),
+                item.has(BLOCKS_ATTACKS),
+            )
+        });
+        let Some(equippable) = equippable else {
+            if blocks_attacks {
+                context.player.start_using_item(context.hand);
+                return InteractionResult::Consume;
+            }
             return InteractionResult::Pass;
         };
 
-        if !equippable.swappable || !equippable.can_be_equipped_by(context.player.entity_type()) {
+        if !equippable.can_be_equipped_by(context.player.entity_type()) {
             return InteractionResult::Pass;
         }
 
@@ -300,7 +312,7 @@ fn should_emit_consume_particles_and_sounds(consumable: &Consumable, ticks_remai
 fn emit_consume_particles_and_sounds(consumable: &Consumable, user: &dyn LivingEntity) {
     // TODO: spawn item-crumb particles when `has_consume_particles()` is set.
     let (volume, pitch) = if consumable.animation() == ItemUseAnimation::Drink {
-        (0.5, 0.9 + rand::random::<f32>() * 0.1)
+        (0.5, rand::random_range(0.9..1.0))
     } else {
         let volume = if rand::random::<bool>() { 0.5 } else { 1.0 };
         let pitch = 1.0 + 0.2 * (rand::random::<f32>() - rand::random::<f32>());
@@ -347,8 +359,7 @@ pub(crate) fn finish_consuming_stack(
                 SoundSource::Players,
                 player.position(),
                 0.5,
-                // Java `Mth.randomBetween(random, 0.9, 1.0)`.
-                0.9 + rand::random::<f32>() * 0.1,
+                rand::random_range(0.9..1.0),
                 None,
             );
         }

@@ -7,6 +7,8 @@ mod perf;
 mod pregen;
 /// The registry cache for the server.
 pub mod registry_cache;
+/// Reloadable server resources.
+pub mod resources;
 mod run_loop;
 mod service_keys;
 mod tick_overload;
@@ -41,6 +43,7 @@ use crate::entity::damage::DamageHistory;
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
+use crate::loot::random_sequences::DomainRandomSequences;
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
@@ -125,7 +128,7 @@ use uuid::Uuid;
 const TAB_LIST_UPDATE_INTERVAL: u64 = 20;
 /// Interval in ticks between player info broadcasts (600 ticks = 30 seconds).
 const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
-/// Wall-clock interval between saves of command-owned persistent server data.
+/// Wall-clock interval between saves of domain persistent server data.
 /// Matches vanilla's intended five-minute autosave cadence.
 const COMMAND_DATA_AUTOSAVE_INTERVAL: Duration = Duration::from_secs(300);
 
@@ -148,12 +151,14 @@ impl TabListTickStats {
     }
 }
 
-/// Results from saving every command-owned persistent data set.
+/// Results from saving domain persistent data, including loot random sequences.
 pub struct CommandDataSaveResults {
     /// Number of dirty domain scoreboards written, or the save error.
     pub scoreboards: io::Result<usize>,
     /// Number of dirty domain command-storage values written, or the save error.
     pub storage: io::Result<usize>,
+    /// Number of dirty domain random-sequence collections written, or the save error.
+    pub random_sequences: io::Result<usize>,
 }
 
 mod known_players;
@@ -207,6 +212,9 @@ pub async fn test_server_with_worlds_and_config(
     let command_storage = DomainCommandStorage::load(&worlds)
         .await
         .map_err(|error| format!("test command storage should load: {error}"))?;
+    let random_sequences = DomainRandomSequences::load(&worlds)
+        .await
+        .map_err(|error| format!("test random sequences should load: {error}"))?;
     let player_data_storage = PlayerDataStorage::in_memory();
     let registered_commands = create_registered_dispatcher(CommandRegistry::new())
         .map_err(|error| format!("test commands should register: {error}"))?;
@@ -254,6 +262,7 @@ pub async fn test_server_with_worlds_and_config(
         perf: PerfRecorder::new(),
         scoreboards,
         command_storage,
+        random_sequences,
         command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
         command_permission_keys,
         command_requests: CommandRequestQueue::new(),
@@ -497,6 +506,7 @@ pub struct Server {
     pub scoreboards: DomainScoreboards,
     /// Command NBT storage isolated by Steel domain.
     pub(crate) command_storage: DomainCommandStorage,
+    random_sequences: DomainRandomSequences,
     /// Saves and dispatches commands to appropriate handlers.
     command_dispatcher: SyncRwLock<CommandDispatcher>,
     /// Steel-owned permission keys exposed for command autocomplete.
@@ -770,12 +780,9 @@ impl Server {
             )
             .await
             .map_err(|e| format!("failed to create world {}: {e}", world_entry.key))?;
-            world
-                .initialize_spawn_if_needed()
-                .await
-                .map_err(|e| format!("failed to initialize spawn for {}: {e}", world_entry.key))?;
             Ok(world)
         };
+        let mut spawn_worlds = Vec::with_capacity(resolved_worlds.worlds.len());
         for domain in &resolved_worlds.domains {
             let primary_config = resolved_worlds
                 .worlds
@@ -789,6 +796,7 @@ impl Server {
                 })?;
             let primary = construct_world(primary_config, GameTimeSource::Primary).await?;
             let clock = Arc::clone(&primary.game_time);
+            spawn_worlds.push(Arc::clone(&primary));
             worlds.insert(primary_config.key.clone(), primary);
             for world_entry in resolved_worlds
                 .worlds
@@ -798,6 +806,7 @@ impl Server {
                 let world =
                     construct_world(world_entry, GameTimeSource::Derived(Arc::clone(&clock)))
                         .await?;
+                spawn_worlds.push(Arc::clone(&world));
                 worlds.insert(world_entry.key.clone(), world);
             }
         }
@@ -809,6 +818,16 @@ impl Server {
         let command_storage = DomainCommandStorage::load(&worlds)
             .await
             .map_err(|error| format!("failed to load domain command storage: {error}"))?;
+        let random_sequences = DomainRandomSequences::load(&worlds)
+            .await
+            .map_err(|error| format!("failed to load domain random sequences: {error}"))?;
+        // Spawn chunk postprocessing can evaluate loot. Bind domain services first,
+        // then initialize spawns in primary-first construction order.
+        for world in spawn_worlds {
+            world.initialize_spawn_if_needed().await.map_err(|error| {
+                format!("failed to initialize spawn for {}: {error}", world.key)
+            })?;
+        }
         let registered_commands = create_registered_dispatcher(command_registry)
             .map_err(|error| format!("failed to register commands: {error}"))?;
         let command_permission_keys = registered_commands
@@ -840,6 +859,7 @@ impl Server {
             player_idle_timeout: AtomicI32::new(0),
             scoreboards,
             command_storage,
+            random_sequences,
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
             command_requests: CommandRequestQueue::new(),
@@ -878,11 +898,12 @@ impl Server {
         self.command_storage.save(&self.worlds).await
     }
 
-    /// Saves all command-owned persistent data while allowing each data set to fail independently.
+    /// Saves domain command data and loot streams, allowing each data set to fail independently.
     pub async fn save_command_data(&self) -> CommandDataSaveResults {
         CommandDataSaveResults {
             scoreboards: self.scoreboards.save(&self.worlds).await,
             storage: self.save_command_storage().await,
+            random_sequences: self.random_sequences.save(&self.worlds).await,
         }
     }
 

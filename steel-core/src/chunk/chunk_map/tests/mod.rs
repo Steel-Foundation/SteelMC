@@ -286,6 +286,8 @@ fn unloaded_full_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
 mod light_updates;
 mod persistence_unloads;
 mod player_tracking;
+#[cfg(feature = "region-generation")]
+mod region_generation;
 mod request_cleanup;
 mod scheduled_ticks;
 mod simulation_tickets;

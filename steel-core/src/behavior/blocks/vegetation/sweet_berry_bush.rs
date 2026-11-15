@@ -1,3 +1,4 @@
+use crate::loot::vanilla_loot_tables;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -12,7 +13,6 @@ use steel_registry::{
     item_stack::ItemStack,
     items::item::BlockHitResult,
     sound_events, vanilla_damage_types, vanilla_entities, vanilla_items,
-    vanilla_loot_tables::{self},
 };
 use steel_utils::{
     BlockPos, BlockStateId,
@@ -149,11 +149,11 @@ impl BlockBehavior for SweetBerryBushBlock {
 
         let items = drop_from_block_interact_loot_table(
             &vanilla_loot_tables::HARVEST_SWEET_BERRY_BUSH,
+            world,
+            pos,
             state,
-            world.get_block_entity(pos),
             None,
             Some(player),
-            &mut rng,
         );
 
         for item in items {
