@@ -1523,7 +1523,11 @@ impl<'a> Mob<'a> {
             return;
         }
 
-        let is_persistent = self.is_persistence_required() || self.requires_custom_persistence();
+        if self.is_persistence_required() || self.requires_custom_persistence() {
+            self.set_no_action_time(0);
+            return;
+        }
+
         let Some(nearest_player_dist_sqr) = nearest_player_dist_sqr else {
             return;
         };
@@ -1531,8 +1535,7 @@ impl<'a> Mob<'a> {
         let mob_category = self.entity_type().mob_category;
         let despawn_distance = mob_category.despawn_distance();
         let despawn_distance_sqr = despawn_distance * despawn_distance;
-        if !is_persistent
-            && nearest_player_dist_sqr > f64::from(despawn_distance_sqr)
+        if nearest_player_dist_sqr > f64::from(despawn_distance_sqr)
             && self.remove_when_far_away(nearest_player_dist_sqr)
         {
             self.set_removed(RemovalReason::Discarded);
@@ -1541,8 +1544,7 @@ impl<'a> Mob<'a> {
 
         let no_despawn_distance = mob_category.no_despawn_distance();
         let no_despawn_distance_sqr = no_despawn_distance * no_despawn_distance;
-        if !is_persistent
-            && self.no_action_time() > 600
+        if self.no_action_time() > 600
             && nearest_player_dist_sqr > f64::from(no_despawn_distance_sqr)
             && self.remove_when_far_away(nearest_player_dist_sqr)
         {
