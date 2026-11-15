@@ -487,15 +487,6 @@ impl Player {
         } else {
             ITEM_BEHAVIORS.get_behavior(current.item())
         };
-        self.complete_using_item(entity, behavior, current);
-    }
-
-    fn complete_using_item(
-        &self,
-        entity: &SharedEntity,
-        behavior: &dyn ItemBehavior,
-        active: ActiveItemUseState,
-    ) {
         let hand = active.hand();
         let mut item = {
             let inventory = self.inventory.lock();
