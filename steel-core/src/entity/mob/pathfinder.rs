@@ -12,7 +12,7 @@ use steel_utils::{BlockPos, ChunkPos};
 
 use super::{Mob, MobProps, Parts, TARGET_REACH_DISTANCE_SQR};
 use crate::entity::EntitySpawnReason;
-use crate::entity::ai::goal::{Goal, GoalControl, GoalSelector};
+use crate::entity::ai::goal::{Goal, GoalControl};
 use crate::entity::ai::navigation::{
     NavigationPathRequest, NavigationRecomputeRequest, NavigationTickContext,
 };
@@ -266,10 +266,7 @@ impl Mob<'_> {
     }
 
     pub fn is_panicking(&self) -> bool {
-        self.mob_base()
-            .goal_selector()
-            .lock()
-            .has_running_panic_goal()
+        self.mob_base().goal_selector().has_running_panic_goal()
     }
 
     pub fn when_leashed_to_pathfinder(&self, holder: &dyn Entity) {
@@ -289,7 +286,6 @@ impl Mob<'_> {
 
         self.mob_base()
             .goal_selector()
-            .lock()
             .enable_control(GoalControl::Move);
         let offset = holder.position() - self.position();
         // `Entity.distanceTo` works in floats.
@@ -306,7 +302,9 @@ impl Mob<'_> {
     where
         Self: Sized,
     {
-        GoalSelector::remove_all_goals(self.mob_base().goal_selector(), self, predicate);
+        self.mob_base()
+            .goal_selector()
+            .remove_all_goals(self, predicate);
     }
 
     pub fn remove_free_will(&self)

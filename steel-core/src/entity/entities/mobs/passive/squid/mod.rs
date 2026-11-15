@@ -150,7 +150,7 @@ impl SquidEntity {
     }
 
     fn register_goals(mob_base: &MobBase) {
-        let mut goal_selector = mob_base.goal_selector().lock();
+        let goal_selector = mob_base.goal_selector();
         goal_selector.add_goal(0, SquidRandomMovementGoal);
         goal_selector.add_goal(1, SquidFleeGoal::new());
     }

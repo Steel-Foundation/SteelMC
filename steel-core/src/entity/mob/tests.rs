@@ -27,7 +27,7 @@ use super::{
 };
 use crate::behavior::init_behaviors;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
-use crate::entity::ai::goal::{Goal, GoalControl, GoalControls, GoalSelector};
+use crate::entity::ai::goal::{Goal, GoalControl, GoalControls};
 use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
 use crate::entity::component::Has;
@@ -430,7 +430,7 @@ fn mob_server_ai_step_increments_no_action_time() {
 fn mob_control_flags_enable_goals_without_controller_or_boat() {
     let mob = DespawnTestMob::new(None, false);
     {
-        let mut selector = mob.mob().mob_base().goal_selector().lock();
+        let selector = mob.mob().mob_base().goal_selector();
         selector.disable_control(GoalControl::Move);
         selector.disable_control(GoalControl::Jump);
         selector.disable_control(GoalControl::Look);
@@ -438,7 +438,7 @@ fn mob_control_flags_enable_goals_without_controller_or_boat() {
 
     mob.mob().update_control_flags();
 
-    let selector = mob.mob().mob_base().goal_selector().lock();
+    let selector = mob.mob().mob_base().goal_selector();
     assert!(!selector.is_control_disabled(GoalControl::Move));
     assert!(!selector.is_control_disabled(GoalControl::Jump));
     assert!(!selector.is_control_disabled(GoalControl::Look));
@@ -452,7 +452,7 @@ fn mob_control_flags_disable_goals_for_mob_controller() {
 
     mob.mob().update_control_flags();
 
-    let selector = mob.mob().mob_base().goal_selector().lock();
+    let selector = mob.mob().mob_base().goal_selector();
     assert!(selector.is_control_disabled(GoalControl::Move));
     assert!(selector.is_control_disabled(GoalControl::Jump));
     assert!(selector.is_control_disabled(GoalControl::Look));
@@ -467,7 +467,7 @@ fn mob_control_flags_disable_jump_when_riding_boat() {
 
     mob.mob().update_control_flags();
 
-    let selector = mob.mob().mob_base().goal_selector().lock();
+    let selector = mob.mob().mob_base().goal_selector();
     assert!(!selector.is_control_disabled(GoalControl::Move));
     assert!(selector.is_control_disabled(GoalControl::Jump));
     assert!(!selector.is_control_disabled(GoalControl::Look));
@@ -805,7 +805,6 @@ fn mob_leash_snap_drops_leash_and_disables_move_control() {
         mob.mob()
             .mob_base()
             .goal_selector()
-            .lock()
             .is_control_disabled(GoalControl::Move),
         "vanilla `Mob.leashTooFarBehaviour` disables the MOVE goal control"
     );
@@ -908,7 +907,6 @@ fn pathfinder_close_range_leash_navigates_toward_holder() {
         !mob.mob()
             .mob_base()
             .goal_selector()
-            .lock()
             .is_control_disabled(GoalControl::Move),
         "close-range leash behaviour re-enables the MOVE goal control"
     );
@@ -939,15 +937,13 @@ fn pathfinder_close_range_leash_skips_following_while_panicking() {
     mob.mob()
         .mob_base()
         .goal_selector()
-        .lock()
         .add_goal(1, TestPanicGoal);
-    GoalSelector::tick(mob.mob().mob_base().goal_selector(), &mob.mob());
+    mob.mob().mob_base().goal_selector().tick(&mob.mob());
     assert!(mob.mob().is_panicking());
 
     mob.mob()
         .mob_base()
         .goal_selector()
-        .lock()
         .disable_control(GoalControl::Move);
     mob.close_range_leash_behaviour(holder.as_ref());
 
@@ -956,7 +952,6 @@ fn pathfinder_close_range_leash_skips_following_while_panicking() {
         mob.mob()
             .mob_base()
             .goal_selector()
-            .lock()
             .is_control_disabled(GoalControl::Move)
     );
 }

@@ -115,16 +115,15 @@ impl EndermiteEntity {
 
     /// `Endermite.registerGoals`.
     fn register_goals(mob_base: &MobBase) {
-        let mut goal_selector = mob_base.goal_selector().lock();
+        let goal_selector = mob_base.goal_selector();
         goal_selector.add_goal(1, FloatGoal::new(mob_base));
         goal_selector.add_goal(1, ClimbOnTopOfPowderSnowGoal::new());
         goal_selector.add_goal(2, MeleeAttackGoal::new(1.0, false));
         goal_selector.add_goal(3, WaterAvoidingRandomStrollGoal::new(1.0));
         goal_selector.add_goal(7, LookAtPlayerGoal::new(8.0));
         goal_selector.add_goal(8, RandomLookAroundGoal::new());
-        drop(goal_selector);
 
-        let mut target_selector = mob_base.target_selector().lock();
+        let target_selector = mob_base.target_selector();
         target_selector.add_goal(1, HurtByTargetGoal::new().set_alert_others([]));
         target_selector.add_goal(
             2,

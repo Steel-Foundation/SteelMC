@@ -121,7 +121,7 @@ impl PigEntity {
 
     /// `Pig.registerGoals`.
     fn register_goals(mob_base: &MobBase) {
-        let mut goal_selector = mob_base.goal_selector().lock();
+        let goal_selector = mob_base.goal_selector();
         goal_selector.add_goal(0, FloatGoal::new(mob_base));
         goal_selector.add_goal(1, PanicGoal::new(1.25));
         goal_selector.add_goal(3, BreedGoal::new(1.0));

@@ -163,8 +163,8 @@ impl DropChances {
 }
 
 pub struct MobBase {
-    goal_selector: CheckedMutex<GoalSelector>,
-    target_selector: CheckedMutex<GoalSelector>,
+    goal_selector: GoalSelector,
+    target_selector: GoalSelector,
     target: CheckedMutex<Option<WeakEntity>>,
     sensing: CheckedMutex<Sensing>,
     controls: CheckedMutex<MobControls>,
@@ -207,8 +207,8 @@ impl MobBase {
     #[must_use]
     pub fn new(construct: fn(&Self)) -> Self {
         let mob_base = Self {
-            goal_selector: CheckedMutex::new(GoalSelector::new()),
-            target_selector: CheckedMutex::new(GoalSelector::new()),
+            goal_selector: GoalSelector::new(),
+            target_selector: GoalSelector::new(),
             target: CheckedMutex::new(None),
             sensing: CheckedMutex::new(Sensing::new()),
             controls: CheckedMutex::new(MobControls::new()),
@@ -231,12 +231,12 @@ impl MobBase {
     }
 
     #[must_use]
-    pub const fn goal_selector(&self) -> &CheckedMutex<GoalSelector> {
+    pub const fn goal_selector(&self) -> &GoalSelector {
         &self.goal_selector
     }
 
     #[must_use]
-    pub const fn target_selector(&self) -> &CheckedMutex<GoalSelector> {
+    pub const fn target_selector(&self) -> &GoalSelector {
         &self.target_selector
     }
 
@@ -817,11 +817,11 @@ impl<'a> Mob<'a> {
         let target_selector = self.mob_base().target_selector();
         let goal_selector = self.mob_base().goal_selector();
         if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
-            GoalSelector::tick_running_goals(target_selector, self, false);
-            GoalSelector::tick_running_goals(goal_selector, self, false);
+            target_selector.tick_running_goals(self, false);
+            goal_selector.tick_running_goals(self, false);
         } else {
-            GoalSelector::tick(target_selector, self);
-            GoalSelector::tick(goal_selector, self);
+            target_selector.tick(self);
+            goal_selector.tick(self);
         }
     }
 
@@ -2091,7 +2091,7 @@ impl<'a> Mob<'a> {
             .vehicle()
             .is_none_or(|vehicle| !vehicle.entity_type().is_abstract_boat);
 
-        let mut selector = self.mob_base().goal_selector().lock();
+        let selector = self.mob_base().goal_selector();
         selector.set_control(GoalControl::Move, no_controller);
         selector.set_control(GoalControl::Jump, no_controller && not_in_boat);
         selector.set_control(GoalControl::Look, no_controller);
@@ -2189,7 +2189,6 @@ impl<T: MobTable> Leashable for T {
         self.drop_leash();
         self.get::<MobBase>()
             .goal_selector()
-            .lock()
             .disable_control(GoalControl::Move);
     }
 
