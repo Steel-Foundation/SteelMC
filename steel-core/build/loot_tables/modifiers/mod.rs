@@ -17,12 +17,12 @@ mod count;
 mod deferred;
 
 pub use bonus::ApplyBonus;
-pub use components::{CopyComponents, SetEnchantments, SetInstrument};
+pub use components::{CopyComponents, SetEnchantments, SetInstrument, SetPotion};
 pub use control::{Discard, ExplosionDecay, Filtered, FurnaceSmelt, Sequence};
 pub use count::{EnchantedCountIncrease, LimitCount, SetCount, SetOminousBottleAmplifier};
 pub use deferred::{
     CopyState, EnchantRandomly, EnchantWithLevels, ExplorationMap, SetComponents, SetDamage,
-    SetName, SetPotion, SetStewEffect,
+    SetName, SetStewEffect,
 };
 
 impl Compiler {
@@ -173,6 +173,8 @@ pub enum ModifierFunction {
     SetOminousBottleAmplifier(SetOminousBottleAmplifier),
     #[serde(rename = "minecraft:set_instrument")]
     SetInstrument(SetInstrument),
+    #[serde(rename = "minecraft:set_potion")]
+    SetPotion(SetPotion),
     #[serde(rename = "minecraft:set_enchantments")]
     SetEnchantments(SetEnchantments),
     #[serde(rename = "minecraft:filtered")]
@@ -197,8 +199,6 @@ pub enum ModifierFunction {
     ExplorationMap(ExplorationMap),
     #[serde(rename = "minecraft:set_name")]
     SetName(SetName),
-    #[serde(rename = "minecraft:set_potion")]
-    SetPotion(SetPotion),
     #[serde(rename = "minecraft:set_stew_effect")]
     SetStewEffect(SetStewEffect),
 }

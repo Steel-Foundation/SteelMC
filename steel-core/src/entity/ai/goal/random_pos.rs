@@ -110,7 +110,7 @@ fn generate_random_pos(
         }
     }
 
-    best_pos.map(block_bottom_center)
+    best_pos.map(|pos| pos.get_bottom_center())
 }
 
 fn generate_random_direction(
@@ -281,14 +281,8 @@ fn is_solid(mob: &(impl PathfinderMob + ?Sized), pos: BlockPos) -> bool {
         .is_some_and(|world| world.get_block_state(pos).is_solid())
 }
 
-fn block_bottom_center(pos: BlockPos) -> DVec3 {
-    let (x, y, z) = pos.get_bottom_center();
-    DVec3::new(x, y, z)
-}
-
 fn block_center_distance_sqr(pos: BlockPos, target: DVec3) -> f64 {
-    let (x, y, z) = pos.get_center();
-    DVec3::new(x, y, z).distance_squared(target)
+    pos.get_center().distance_squared(target)
 }
 
 fn lerp(delta: f64, start: f64, end: f64) -> f64 {

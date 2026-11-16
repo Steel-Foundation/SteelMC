@@ -68,8 +68,7 @@ impl BedBlock {
             world.remove_block(foot_pos, false);
         }
 
-        let (x, y, z) = head_pos.get_center();
-        let center = DVec3::new(x, y, z);
+        let center = head_pos.get_center();
         let mut options =
             ExplosionOptions::new(center, EXPLOSION_RADIUS, ExplosionInteraction::Block);
         options.damage_source = Some(

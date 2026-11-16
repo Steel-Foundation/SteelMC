@@ -1591,6 +1591,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.entity_type().is_abstract_arrow
     }
 
+    /// Returns open-water fishing state, or `None` for entities without fishing-hook behavior.
+    fn fishing_hook_open_water(&self) -> Option<bool> {
+        None
+    }
+
     /// Returns this entity as a projectile when it has projectile behavior.
     fn as_projectile(&self) -> Option<&dyn Projectile> {
         try_as_dyn::<Self, dyn Projectile>(self)
