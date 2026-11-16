@@ -23,7 +23,7 @@ use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::BLOCK_ENTITIES;
 use crate::block_entity::entities::{DispenserBlockEntity, DropperBlockEntity};
-use crate::inventory::container::{Container, calculate_redstone_signal_from_container};
+use crate::inventory::container::{Container, calculate_redstone_signal_from_containers};
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::kinds::generic_3x3_menu;
 use crate::player::Player;
@@ -70,7 +70,14 @@ impl DropperBlock {
         if let Some(target_block_entity) = world.get_block_entity(target_pos)
             && let Some(target_container_ref) = ContainerRef::from_block_entity(target_block_entity)
         {
-            let mut guard = ContainerLockGuard::lock_all(&[&target_container_ref]);
+            let Ok(mut guard) = ContainerLockGuard::lock_all(&[&target_container_ref]) else {
+                // Loot preparation failed (already logged); keep the item in the dropper.
+                let leftover = dropper.state.insert_item_back(item);
+                if !leftover.is_empty() {
+                    world.drop_item_stack(target_pos, leftover);
+                }
+                return;
+            };
             if let Some(target_container) = guard.get_mut(target_container_ref.container_id()) {
                 let remaining = insert_item_into_container(&mut *target_container, item);
                 if remaining.is_empty() {
@@ -223,13 +230,10 @@ impl DispenserBlock {
         let remaining = behavior.dispense(world, pos, state, item);
 
         if !remaining.is_empty() {
-            let mut guard = ContainerLockGuard::lock_all(&[&dispenser.state.container_ref]);
-            if let Some(container) = guard.get_mut(dispenser.state.container_ref.container_id()) {
-                let dropped = insert_item_into_container(&mut *container, remaining);
-                if !dropped.is_empty() {
-                    let facing = state.get_value(FACING);
-                    world.drop_item_stack(pos.relative(facing), dropped);
-                }
+            let dropped = dispenser.state.insert_item_back(remaining);
+            if !dropped.is_empty() {
+                let facing = state.get_value(FACING);
+                world.drop_item_stack(pos.relative(facing), dropped);
             }
         }
     }
@@ -341,12 +345,12 @@ fn get_analog_signal(world: &World, pos: BlockPos) -> i32 {
     let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
         return 0;
     };
-    let guard = ContainerLockGuard::lock_all(&[&container_ref]);
-    guard
-        .get(container_ref.container_id())
-        .map_or(0, |container| {
-            calculate_redstone_signal_from_container(container)
-        })
+    let Ok(guard) = ContainerLockGuard::lock_all(&[&container_ref]) else {
+        // TODO: Preserve vanilla access ordering so loot-generation contention
+        // cannot become a false zero comparator signal.
+        return 0;
+    };
+    calculate_redstone_signal_from_containers(guard.get(container_ref.container_id()))
 }
 
 /// Helper function to insert an item into a container respecting slot limits and stack sizes.

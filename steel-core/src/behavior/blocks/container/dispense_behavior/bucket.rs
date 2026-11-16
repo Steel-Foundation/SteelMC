@@ -4,7 +4,9 @@ use log::info;
 use std::sync::Arc;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
+use steel_registry::{
+    sound_events, vanilla_blocks, vanilla_fluids, vanilla_game_events, vanilla_items,
+};
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
@@ -82,15 +84,17 @@ impl DispenseItemBehavior for FilledBucketDispenseBehavior {
             return ItemStack::new(&vanilla_items::BUCKET);
         }
 
-        let (fluid_block, empty_sound, is_water_bucket) =
+        let (fluid, fluid_block, empty_sound, is_water_bucket) =
             if item.item() == &*vanilla_items::WATER_BUCKET {
                 (
+                    &vanilla_fluids::WATER,
                     &vanilla_blocks::WATER,
                     &sound_events::ITEM_BUCKET_EMPTY,
                     true,
                 )
             } else if item.item() == &*vanilla_items::LAVA_BUCKET {
                 (
+                    &vanilla_fluids::LAVA,
                     &vanilla_blocks::LAVA,
                     &sound_events::ITEM_BUCKET_EMPTY_LAVA,
                     false,
@@ -99,7 +103,7 @@ impl DispenseItemBehavior for FilledBucketDispenseBehavior {
                 return DefaultDispenseBehavior.dispense(world, pos, state, item);
             };
 
-        let can_replace = target_state.can_be_replaced_by_fluid(fluid_block);
+        let can_replace = target_state.can_be_replaced_by_fluid(fluid);
         if can_replace {
             if world.dimension_type.water_evaporates && is_water_bucket {
                 world.play_block_sound(
