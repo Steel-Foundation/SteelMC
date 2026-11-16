@@ -105,6 +105,52 @@ fn block_random_positions_match_vanilla_lcg_layout() {
     assert_eq!(positions.next_local(), (9, 12, 1));
 }
 
+#[test]
+fn random_tick_sampling_observes_tracked_and_bulk_changes() {
+    fn check_samples(section: &ChunkSection) {
+        for y in 0..16 {
+            for z in 0..16 {
+                for x in 0..16 {
+                    let expected = section.states().get(x, y, z);
+                    let sampled = section.random_tick_sample(x, y, z);
+                    assert_eq!(
+                        sampled.filter(|state| random_tick_kinds(*state).is_some()),
+                        random_tick_kinds(expected).map(|_| expected),
+                    );
+                }
+            }
+        }
+    }
+
+    init_vanilla_registry();
+    let sections = Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice());
+    let holder = &sections.sections[0];
+    check_samples(&holder.read());
+
+    sections.write_block_batch(&[
+        (2, 3, 4, vanilla_blocks::GRASS_BLOCK.default_state()),
+        (7, 11, 12, vanilla_blocks::LAVA.default_state()),
+        (5, 6, 7, vanilla_blocks::CAVE_AIR.default_state()),
+        (9, 10, 11, vanilla_blocks::WATER.default_state()),
+    ]);
+    check_samples(&holder.read());
+    holder.write().recalculate_counts();
+    check_samples(&holder.read());
+
+    holder
+        .write()
+        .set_block_state(7, 11, 12, vanilla_blocks::AIR.default_state());
+    holder
+        .write()
+        .set_block_state(5, 6, 7, vanilla_blocks::OAK_LEAVES.default_state());
+    check_samples(&holder.read());
+
+    sections.write_column_blocks(5, 7, &[(6, vanilla_blocks::VOID_AIR.default_state())]);
+    check_samples(&holder.read());
+    holder.write().recalculate_counts();
+    check_samples(&holder.read());
+}
+
 struct ActivationRecordingBlockEntity {
     base: BlockEntityBase,
     events: SyncMutex<Vec<&'static str>>,
