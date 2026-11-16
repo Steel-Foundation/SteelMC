@@ -613,7 +613,7 @@ impl InventoryAccess {
     /// must interoperate with APIs that require `ContainerLockGuard`.
     pub fn with_guard<R>(&self, f: impl FnOnce(&mut ContainerLockGuard) -> R) -> R {
         let inv_ref = ContainerRef::from(Arc::clone(&self.inventory));
-        let mut guard = ContainerLockGuard::lock_all(&[&inv_ref]);
+        let mut guard = ContainerLockGuard::lock_storage(&[&inv_ref]);
         f(&mut guard)
     }
 }

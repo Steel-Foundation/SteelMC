@@ -178,6 +178,12 @@ pub trait Slot: ErasedType + Send + Sync {
         None
     }
 
+    /// Called when a hotbar swap takes items from this slot.
+    fn on_swap_craft(&self, _count: i32) {}
+
+    /// Called after a shift-click moves items out of this slot.
+    fn on_quick_craft(&self, _stack: &ItemStack, _player: &Player) {}
+
     /// Takes items with all checks and callbacks. Returns the items taken.
     fn safe_take(
         &self,
@@ -320,7 +326,8 @@ mod tests {
             called: Arc::clone(&called),
         });
         assert!(slot.downcast_ref::<SafeInsertOverrideSlot>().is_some());
-        let mut guard = ContainerLockGuard::lock_all(&[container_ref]);
+        let mut guard = ContainerLockGuard::lock_all(&[container_ref])
+            .expect("container access should succeed");
 
         let remaining = slot.safe_insert(&mut guard, ItemStack::new(&vanilla_items::STONE), 1);
 

@@ -1,5 +1,6 @@
 use super::*;
 use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270, wrap_degrees};
+use steel_utils::nbt::NbtNumeric;
 
 impl StructureTemplate {
     pub(crate) fn bounding_box(&self, pos: BlockPos, rotation: Rotation) -> BoundingBox {
@@ -99,22 +100,9 @@ impl StructureTemplate {
     }
 
     pub(super) fn entity_facing(nbt: &NbtCompound) -> Option<Direction> {
-        nbt.byte("Facing")
-            .map(i32::from)
-            .or_else(|| nbt.int("Facing"))
-            .and_then(Self::direction_from_entity_facing)
-    }
-
-    const fn direction_from_entity_facing(value: i32) -> Option<Direction> {
-        match value {
-            0 => Some(Direction::Down),
-            1 => Some(Direction::Up),
-            2 => Some(Direction::North),
-            3 => Some(Direction::South),
-            4 => Some(Direction::West),
-            5 => Some(Direction::East),
-            _ => None,
-        }
+        nbt.get("Facing")
+            .and_then(NbtNumeric::codec_i8)
+            .map(|value| Direction::from_3d_data_value(i32::from(value)))
     }
 
     pub(super) const fn entity_facing_value(direction: Direction) -> i8 {

@@ -9,6 +9,7 @@ use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt};
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::nbt::{NbtNumeric, merge_nbt_compounds, nbt_collection_values};
 use steel_utils::{BlockPos, Identifier, UuidExt, WorldAabb, axis::Axis, types::Difficulty};
 use text_components::TextComponent;
@@ -224,7 +225,7 @@ fn load_entity_recursive_inner(
         fall_distance: nbt
             .get("fall_distance")
             .and_then(|tag| tag.codec_f64())
-            .or_else(|| nbt.double("FallDistance"))
+            .or_else(|| nbt.double_value("FallDistance"))
             .unwrap_or(0.0),
         fire_freeze: EntityFireFreezeState::from_parts(
             nbt.get("Fire")

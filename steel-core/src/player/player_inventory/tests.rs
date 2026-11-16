@@ -25,7 +25,8 @@ use simdnbt::owned::{NbtList, NbtTag};
 use steel_protocol::{
     packet_traits::{CompressionInfo, EncodedPacket},
     packets::game::{
-        ClickType, HashedStack, SContainerButtonClick, SContainerClick, SSetCreativeModeSlot,
+        ClickType, HashedStack, PlayerAction, SContainerButtonClick, SContainerClick,
+        SPlayerAction, SSetCreativeModeSlot,
     },
 };
 use steel_registry::{
@@ -33,7 +34,8 @@ use steel_registry::{
     vanilla_menu_types, vanilla_mob_effects,
 };
 use steel_utils::{
-    ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, Identifier, WorldAabb,
+    BlockPos, ChunkPos, Direction, Downcast as _, DowncastType, DowncastTypeKey, Identifier,
+    WorldAabb,
     locks::{IntoShared as _, Shared, SyncMutex},
     types::{GameType, InteractionHand},
 };
@@ -1345,6 +1347,36 @@ fn dead_player_container_click_only_resynchronizes() {
     assert!(player.inventory_menu.lock().behavior().carried().is_empty());
 }
 
+/// Vanilla rejects these through `markClientUnloadedAfterDeath`; Steel's death
+/// path keeps the client loaded, so `can_drop_items` is the guard.
+#[test]
+fn dead_player_cannot_drop_selected_item() {
+    init_vanilla_registry();
+    let player = test_player(Arc::clone(test_world()));
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::new(&vanilla_items::DIAMOND));
+    player.set_health(0.0);
+
+    for action in [PlayerAction::DropItem, PlayerAction::DropAllItems] {
+        player.handle_player_action(SPlayerAction {
+            action,
+            pos: BlockPos::ZERO,
+            direction: Direction::Down,
+            sequence: 0,
+        });
+    }
+
+    assert!(
+        player
+            .inventory
+            .lock()
+            .get_selected_item()
+            .is(&vanilla_items::DIAMOND)
+    );
+}
+
 #[test]
 fn malformed_quickcraft_encoding_resets_active_drag() {
     init_vanilla_registry();
@@ -1938,7 +1970,10 @@ fn creative_crafting_grid_updates_the_result_slot() {
 
     {
         let menu = player.inventory_menu.lock();
-        let guard = menu.behavior().lock_all_containers();
+        let guard = menu
+            .behavior()
+            .lock_all_containers()
+            .expect("container access should succeed");
         let result = guard
             .get(crafting.result_id())
             .expect("result container is registered with the menu");
@@ -1953,7 +1988,10 @@ fn creative_crafting_grid_updates_the_result_slot() {
 
     {
         let menu = player.inventory_menu.lock();
-        let guard = menu.behavior().lock_all_containers();
+        let guard = menu
+            .behavior()
+            .lock_all_containers()
+            .expect("container access should succeed");
         let result = guard
             .get(crafting.result_id())
             .expect("result container is registered with the menu");

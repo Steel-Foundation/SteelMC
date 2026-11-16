@@ -16,6 +16,7 @@ use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_registry::{vanilla_custom_stats, vanilla_damage_types};
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
@@ -765,13 +766,13 @@ impl Entity for ItemEntity {
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         // Match vanilla's ItemEntity.readAdditionalSaveData
         let mut state = self.item_state.lock();
-        if let Some(health) = nbt.short("Health") {
+        if let Some(health) = nbt.short_value("Health") {
             state.health = i32::from(health);
         }
-        if let Some(age) = nbt.short("Age") {
+        if let Some(age) = nbt.short_value("Age") {
             state.age = i32::from(age);
         }
-        if let Some(pickup_delay) = nbt.short("PickupDelay") {
+        if let Some(pickup_delay) = nbt.short_value("PickupDelay") {
             state.pickup_delay = i32::from(pickup_delay);
         }
 

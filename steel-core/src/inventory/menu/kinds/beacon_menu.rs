@@ -384,7 +384,10 @@ mod tests {
         click_into_payment(&mut menu, &player, ItemStack::new(&vanilla_items::DIRT));
         assert!(menu.behavior().carried().is(&vanilla_items::DIRT));
         assert!({
-            let guard = menu.behavior().lock_all_containers();
+            let guard = menu
+                .behavior()
+                .lock_all_containers()
+                .expect("container access should succeed");
             guard
                 .get(payment_id)
                 .expect("payment container locked")
@@ -399,7 +402,10 @@ mod tests {
         );
         assert_eq!(menu.behavior().carried().count(), 1);
         assert!({
-            let guard = menu.behavior().lock_all_containers();
+            let guard = menu
+                .behavior()
+                .lock_all_containers()
+                .expect("container access should succeed");
             guard
                 .get(payment_id)
                 .expect("payment container locked")
@@ -411,7 +417,10 @@ mod tests {
 
         menu.update_effects(Some(vanilla_mob_effects::SPEED), None, &player.connection);
         assert!({
-            let guard = menu.behavior().lock_all_containers();
+            let guard = menu
+                .behavior()
+                .lock_all_containers()
+                .expect("container access should succeed");
             guard
                 .get(payment_id)
                 .expect("payment container locked")
@@ -455,7 +464,10 @@ mod tests {
             .player_main
             .start();
         {
-            let mut guard = menu.behavior().lock_all_containers();
+            let mut guard = menu
+                .behavior()
+                .lock_all_containers()
+                .expect("container access should succeed");
             menu.behavior().slots()[main_slot]
                 .set_item(&mut guard, ItemStack::new(&vanilla_items::IRON_INGOT));
         }
@@ -464,7 +476,10 @@ mod tests {
 
         assert!(
             {
-                let guard = menu.behavior().lock_all_containers();
+                let guard = menu
+                    .behavior()
+                    .lock_all_containers()
+                    .expect("container access should succeed");
                 menu.behavior().slots()[main_slot]
                     .get_item(&guard)
                     .is_empty()
@@ -472,7 +487,10 @@ mod tests {
             "shift-clicked ingot should have left the main inventory slot"
         );
         assert!({
-            let guard = menu.behavior().lock_all_containers();
+            let guard = menu
+                .behavior()
+                .lock_all_containers()
+                .expect("container access should succeed");
             guard
                 .get(payment_id)
                 .expect("payment container locked")

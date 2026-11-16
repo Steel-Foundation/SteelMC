@@ -4,7 +4,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, damage_type::DamageScaling, damage_type::DamageType,
-    vanilla_damage_type_tags,
+    vanilla_damage_type_tags, vanilla_damage_types,
 };
 
 use crate::entity::SharedEntity;
@@ -42,6 +42,25 @@ impl DamageSource {
             damage_type,
             causing_entity: Some(Arc::clone(&entity)),
             direct_entity: Some(entity),
+            source_position: None,
+        }
+    }
+
+    /// Explosion damage directly from `direct`, credited to `cause`.
+    ///
+    /// Vanilla `DamageSources.explosion(entity, cause)`: only a blast with both entities
+    /// uses `player_explosion`, whatever the cause actually is.
+    #[must_use]
+    pub fn explosion(direct: Option<SharedEntity>, cause: Option<SharedEntity>) -> Self {
+        let damage_type = if direct.is_some() && cause.is_some() {
+            &vanilla_damage_types::PLAYER_EXPLOSION
+        } else {
+            &vanilla_damage_types::EXPLOSION
+        };
+        Self {
+            damage_type,
+            causing_entity: cause,
+            direct_entity: direct,
             source_position: None,
         }
     }

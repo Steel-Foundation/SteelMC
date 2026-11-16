@@ -11,6 +11,7 @@ use steel_registry::vanilla_game_events;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt as _, vanilla_blocks, vanilla_entity_type_tags::EntityTypeTag,
 };
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::random::xoroshiro::Xoroshiro;
 use steel_utils::random::{PositionalRandom, Random, RandomSource, RandomSplitter};
 use steel_utils::types::UpdateFlags;
@@ -251,7 +252,7 @@ impl BlockEntity for PotentSulfurBlockEntity {
 
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
-        if let Some(countdown) = nbt.int("countdown") {
+        if let Some(countdown) = nbt.int_value("countdown") {
             self.sulfur.lock().waiting_countdown = countdown;
         }
     }

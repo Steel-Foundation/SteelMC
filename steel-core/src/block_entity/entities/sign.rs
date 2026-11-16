@@ -19,6 +19,8 @@ use steel_registry::sound_events::{
     BLOCK_HANGING_SIGN_WAXED_INTERACT_FAIL, BLOCK_SIGN_WAXED_INTERACT_FAIL,
 };
 use steel_registry::{DyeColor, vanilla_block_entity_types};
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{
     BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex, types::SignTextSlot,
 };
@@ -130,8 +132,8 @@ impl SignText {
         }
 
         // Load glow
-        if let Some(glow) = nbt.byte("has_glowing_text") {
-            self.has_glowing_text = glow != 0;
+        if let Some(glow) = nbt.get("has_glowing_text").and_then(|tag| tag.codec_bool()) {
+            self.has_glowing_text = glow;
         }
     }
 
@@ -331,7 +333,7 @@ impl BlockEntity for SignBlockEntity {
         }
 
         // Load waxed state
-        if let Some(waxed) = nbt_view.byte("is_waxed") {
+        if let Some(waxed) = nbt_view.byte_value("is_waxed") {
             sign.is_waxed = waxed != 0;
         }
     }

@@ -16,4 +16,4 @@ pub use crate::angle::{
     RAD_TO_DEG_F64, convert_to_rotation_segment, wrap_degrees,
 };
 pub use crate::noise_math::*;
-pub use crate::rounding::round_f32;
+pub use crate::rounding::{round_f32, round_f64};

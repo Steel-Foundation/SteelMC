@@ -1,5 +1,8 @@
 //! This module contains entity-related traits and types.
 
+mod container_user;
+pub use container_user::ContainerUser;
+
 use std::sync::Weak;
 use std::{
     any::try_as_dyn,
@@ -7,8 +10,12 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use crate::loot::LootTableRef;
+use crate::loot::{
+    DamageSourceInfo, EntityEquipmentRef, EntityEquipmentSlots, EntityRef, EntityRefFlags,
+    LootContext,
+};
 use glam::DVec3;
-use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
@@ -32,10 +39,6 @@ use steel_registry::fluid::{FluidState, FluidStateExt as _};
 use steel_registry::game_events::GameEventRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
-use steel_registry::loot_table::{
-    DamageSourceInfo, EntityEquipmentRef, EntityEquipmentSlots, EntityRef, EntityRefFlags,
-    LootContext, LootTableRef,
-};
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::particle_type::{BlockParticleOption, ParticleData};
 use steel_registry::sound_event::SoundEventRef;
@@ -53,6 +56,7 @@ use steel_registry::{RegistryEntry, RegistryExt};
 use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
+use steel_utils::random::RandomSource;
 use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, ErasedType, Identifier,
@@ -151,6 +155,12 @@ const BUBBLE_COLUMN_INSIDE_UP_ACCELERATION: f64 = 0.06;
 const BUBBLE_COLUMN_ABOVE_UP_ACCELERATION: f64 = 0.1;
 const DAMAGE_KNOCKBACK_POWER: f64 = 0.4_f32 as f64;
 const KNOCKBACK_DIRECTION_EPSILON_SQ: f64 = 1.0e-5_f32 as f64;
+/// Below this length vanilla `Vec3.normalize` returns zero.
+const VEC3_NORMALIZE_EPSILON: f64 = 1.0e-5_f32 as f64;
+/// Damage stats are recorded in tenths of a health point.
+const DAMAGE_STAT_SCALE: f32 = 10.0;
+/// Damage stats are only awarded below vanilla's `3.4028235E37F` bound.
+const DAMAGE_STAT_LIMIT: f32 = f32::MAX / DAMAGE_STAT_SCALE;
 const MOVE_TOWARDS_CLOSEST_SPACE_DIRECTIONS: [Direction; 5] = [
     Direction::North,
     Direction::South,
@@ -434,12 +444,12 @@ pub(crate) fn get_input_vector(input: DVec3, speed: f32, yaw_degrees: f32) -> DV
         input
     } * f64::from(speed);
     let yaw = yaw_degrees.to_radians();
-    let sin = trig::sin(yaw);
-    let cos = trig::cos(yaw);
+    let sin = f64::from(trig::sin(yaw));
+    let cos = f64::from(trig::cos(yaw));
     DVec3::new(
-        movement.x * f64::from(cos) - movement.z * f64::from(sin),
+        movement.x * cos - movement.z * sin,
         movement.y,
-        movement.z * f64::from(cos) + movement.x * f64::from(sin),
+        movement.z * cos + movement.x * sin,
     )
 }
 
@@ -801,6 +811,7 @@ pub mod attribute;
 mod base;
 mod block_attached_entity;
 mod block_effects;
+pub(crate) mod blocks_attacks;
 mod callback;
 mod combat_rules;
 pub mod consume_effect;
@@ -880,8 +891,8 @@ pub use item_frame::ItemFrame;
 pub use living_base::{
     ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION,
     HURT_DURATION_TICKS, LivingEntityBase, LivingRotationState, LivingSwingState,
-    LivingTravelInput, MobEffectInstance, MobEffectSyncChange, MobEffectSyncPacket,
-    sync_dirty_mob_effects,
+    LivingTravelInput, MobEffectAddResult, MobEffectInstance, MobEffectSyncChange,
+    MobEffectSyncPacket, sync_dirty_mob_effects,
 };
 pub use living_entity::LivingEntity;
 pub(crate) use manager::EntityCollisionCandidates;
@@ -913,9 +924,9 @@ pub use reference::EntityReference;
 pub(crate) use registry::SpawnRule;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
-    AgeableMobGroupData, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest,
-    SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
-    create_entity_instance, load_entity_recursive_owned, spawn_entity,
+    AgeableMobGroupData, EntitySpawnError, EntitySpawnPlacement, EntitySpawnReason,
+    EntitySpawnRequest, SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
+    apply_item_stack_components, create_entity_instance, load_entity_recursive_owned, spawn_entity,
 };
 pub(crate) use spawn_placements::SpawnPlacements;
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
@@ -1433,7 +1444,6 @@ fn remove_after_changing_dimensions(entity: &dyn Entity) {
 ///
 /// Locks the entity's equipment (a player's inventory), so callers must not already hold it.
 pub(crate) fn living_loot_equipment<E: LivingEntity + ?Sized>(entity: &E) -> EntityEquipmentSlots {
-    // TODO: Read live equipment once loot contexts can do so safely.
     entity.living_base().equipment().lock().snapshot()
 }
 
@@ -1449,6 +1459,7 @@ pub(crate) fn entity_loot_ref<'a>(
     let living_entity = entity.as_living_entity();
     let sheep = living_entity.and_then(LivingEntity::sheep_loot_state);
     EntityRef {
+        entity: Some(entity),
         entity_type: Some(&entity.entity_type().key),
         flags: EntityRefFlags {
             is_on_fire: entity.is_on_fire(),
@@ -1462,7 +1473,9 @@ pub(crate) fn entity_loot_ref<'a>(
         custom_name: None,
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),
+        fishing_hook_open_water: entity.fishing_hook_open_water(),
         chicken_variant: living_entity.and_then(LivingEntity::chicken_loot_variant),
+        mooshroom_variant: living_entity.and_then(LivingEntity::mooshroom_loot_variant),
     }
 }
 

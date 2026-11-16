@@ -100,7 +100,7 @@ cargo build          # Build
 cargo run            # Run
 cargo check          # Fast compile check
 cargo test           # Tests
-cargo clippy -r --all-targets --all-features  # CI lint
+cargo clippy -r --workspace --all-targets --all-features  # CI lint
 cargo check -p steel-core          # Fast game/worldgen check
 cargo fmt --all --check            # CI formatting
 typos                               # CI spelling

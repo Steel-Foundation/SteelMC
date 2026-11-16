@@ -11,6 +11,8 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, PistonType};
 use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
 use steel_utils::axis::Axis;
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{
     BlockLocalAabb, BlockPos, BlockStateId, DowncastType, DowncastTypeKey, WorldAabb,
@@ -610,12 +612,15 @@ impl BlockEntity for PistonMovingBlockEntity {
             .compound("blockState")
             .and_then(block_state_nbt::load)
             .unwrap_or_else(|| vanilla_blocks::AIR.default_state());
-        moving.direction =
-            PistonMovingState::direction_from_legacy_id(view.byte("facing").unwrap_or(0));
-        moving.progress = view.float("progress").unwrap_or(0.0);
+        moving.direction = PistonMovingState::direction_from_legacy_id(
+            view.get("facing")
+                .and_then(|tag| tag.codec_i8())
+                .unwrap_or(0),
+        );
+        moving.progress = view.float_value("progress").unwrap_or(0.0);
         moving.progress_o = moving.progress;
-        moving.extending = view.byte("extending").is_some_and(|value| value != 0);
-        moving.source_piston = view.byte("source").is_some_and(|value| value != 0);
+        moving.extending = view.byte_value("extending").is_some_and(|value| value != 0);
+        moving.source_piston = view.byte_value("source").is_some_and(|value| value != 0);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

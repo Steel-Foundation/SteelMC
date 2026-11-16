@@ -5,6 +5,7 @@ use std::sync::Weak;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::vanilla_block_entity_types;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
@@ -55,7 +56,7 @@ impl BlockEntity for ComparatorBlockEntity {
 
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
-        self.state.lock().output_signal = nbt.int("OutputSignal").unwrap_or(0);
+        self.state.lock().output_signal = nbt.int_value("OutputSignal").unwrap_or(0);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -89,6 +90,19 @@ mod tests {
         source.save_additional(&mut nbt);
         assert_eq!(nbt.int("OutputSignal"), Some(11));
 
+        let mut bytes = Vec::new();
+        nbt.write(&mut bytes);
+        let borrowed = read_borrowed_compound(&mut Cursor::new(bytes.as_slice()))
+            .expect("test NBT should reborrow");
+        let loaded = comparator();
+        loaded.load_additional(&borrowed);
+        assert_eq!(loaded.output_signal(), 11);
+    }
+
+    #[test]
+    fn output_signal_loads_from_any_numeric_tag() {
+        let mut nbt = NbtCompound::new();
+        nbt.insert("OutputSignal", 11i8);
         let mut bytes = Vec::new();
         nbt.write(&mut bytes);
         let borrowed = read_borrowed_compound(&mut Cursor::new(bytes.as_slice()))

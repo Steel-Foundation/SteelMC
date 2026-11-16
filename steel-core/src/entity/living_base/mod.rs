@@ -339,6 +339,29 @@ enum MobEffectTickResult {
     Expired,
 }
 
+/// How [`LivingEntityBase::add_mob_effect`] changed the active-effect map.
+///
+/// Steel-specific: vanilla `LivingEntity.addEffect` branches inline on insert vs
+/// `MobEffectInstance.update`. Steel splits the map update from behavior dispatch,
+/// so the branch taken is returned to drive `on_effect_added`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MobEffectAddResult {
+    /// The effect was not active and has been inserted.
+    Added,
+    /// An already active instance was upgraded or extended.
+    Updated,
+    /// An already active instance was kept as is.
+    Unchanged,
+}
+
+impl MobEffectAddResult {
+    /// Returns whether the active-effect map changed.
+    #[must_use]
+    pub const fn changed(self) -> bool {
+        !matches!(self, Self::Unchanged)
+    }
+}
+
 /// A queued mob-effect packet change produced by living effect state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MobEffectSyncChange {
@@ -1081,7 +1104,7 @@ impl LivingEntityBase {
     }
 
     /// Adds or updates active vanilla mob-effect state.
-    pub fn add_mob_effect(&self, effect: MobEffectInstance) -> bool {
+    pub fn add_mob_effect(&self, effect: MobEffectInstance) -> MobEffectAddResult {
         let effect_key = effect.effect;
         let mut existing_effect = None;
         let mut changed_effect = None;
@@ -1104,7 +1127,7 @@ impl LivingEntityBase {
                 effect,
                 blend_for_self: true,
             });
-            return true;
+            return MobEffectAddResult::Added;
         }
 
         if let Some(effect) = changed_effect {
@@ -1114,10 +1137,10 @@ impl LivingEntityBase {
                 effect,
                 blend_for_self: false,
             });
-            return true;
+            return MobEffectAddResult::Updated;
         }
 
-        false
+        MobEffectAddResult::Unchanged
     }
 
     /// Sets active vanilla mob-effect state.

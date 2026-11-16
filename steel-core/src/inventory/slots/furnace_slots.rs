@@ -1,6 +1,9 @@
 //! Furnace-specific input, fuel, and result slots.
 
+use std::sync::atomic::{AtomicI32, Ordering};
+
 use steel_registry::item_stack::ItemStack;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_items;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
@@ -73,9 +76,13 @@ impl Slot for FurnaceFuelSlot {
     }
 }
 
-/// Rejects insertion and awards accumulated cooking XP when output is taken.
+/// Rejects insertion and awards accumulated cooking XP and crafted stats when
+/// output is taken.
+///
+/// Output taken by a hotbar swap awards no crafted stat, matching vanilla.
 pub struct FurnaceResultSlot {
     base: NormalSlot,
+    remove_count: AtomicI32,
 }
 
 // SAFETY: This Steel-owned key uniquely identifies furnace result slots.
@@ -89,6 +96,14 @@ impl FurnaceResultSlot {
     pub fn new(container: impl Into<ContainerRef>, index: usize) -> Self {
         Self {
             base: NormalSlot::new(container, index),
+            remove_count: AtomicI32::new(0),
+        }
+    }
+
+    fn check_take_achievements(&self, stack: &ItemStack, player: &Player) {
+        let count = self.remove_count.swap(0, Ordering::Relaxed);
+        if count > 0 {
+            player.award_stat_with_count(&vanilla_stat_types::ITEM_CRAFTED, stack.item(), count);
         }
     }
 }
@@ -126,13 +141,31 @@ impl Slot for FurnaceResultSlot {
         self.base.get_container_slot()
     }
 
+    fn on_quick_craft(&self, stack: &ItemStack, player: &Player) {
+        self.remove_count
+            .fetch_add(stack.count(), Ordering::Relaxed);
+        self.check_take_achievements(stack, player);
+    }
+
+    fn remove(&self, guard: &mut ContainerLockGuard, amount: i32) -> ItemStack {
+        let item = self.get_item_mut(guard);
+        if item.is_empty() || amount <= 0 {
+            return ItemStack::empty();
+        }
+        let removed = item.split(amount);
+        self.remove_count
+            .fetch_add(removed.count(), Ordering::Relaxed);
+        removed
+    }
+
     fn on_take(
         &self,
         guard: &mut ContainerLockGuard,
-        _stack: &ItemStack,
+        stack: &ItemStack,
         player: &Player,
     ) -> Option<ItemStack> {
-        // TODO: Award crafted stats/recipes and trigger RECIPE_CRAFTED once supported.
+        self.check_take_achievements(stack, player);
+        // TODO: Award used recipes and trigger RECIPE_CRAFTED once supported.
         let (container, _) = self.storage().physical_backing()?;
         let container_id = container.container_id();
         let recipes = guard

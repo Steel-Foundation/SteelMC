@@ -548,7 +548,7 @@ impl PathNavigation {
             f64::midpoint(f64::from(target.z), mob_position.z),
         );
         let distance = (path.node_count() - path.next_node_index()) as f64;
-        block_center(pos).distance_squared(middle_pos) < distance * distance
+        pos.get_center().distance_squared(middle_pos) < distance * distance
     }
 
     fn next_path_move_target(&mut self, context: NavigationTickContext) -> Option<(DVec3, f64)> {
@@ -641,7 +641,7 @@ impl PathNavigation {
             self.timeout_timer += game_time - self.last_timeout_check;
         } else {
             self.timeout_cached_node = current_node_pos;
-            let dist_to_node = mob_position.distance(block_bottom_center(current_node_pos));
+            let dist_to_node = mob_position.distance(current_node_pos.get_bottom_center());
             self.timeout_limit = if mob_speed > 0.0 {
                 dist_to_node / f64::from(mob_speed) * 20.0
             } else {
@@ -678,7 +678,7 @@ fn should_target_next_node_in_direction(path: &Path, mob_position: DVec3) -> boo
     let Some(current_node_pos) = path.next_node_pos() else {
         return false;
     };
-    let current_node = block_bottom_center(current_node_pos);
+    let current_node = current_node_pos.get_bottom_center();
     if mob_position.distance_squared(current_node) >= 4.0 {
         return false;
     }
@@ -686,7 +686,7 @@ fn should_target_next_node_in_direction(path: &Path, mob_position: DVec3) -> boo
     let Some(next_node_pos) = path.node_pos(next_node_index + 1) else {
         return false;
     };
-    let next_node = block_bottom_center(next_node_pos);
+    let next_node = next_node_pos.get_bottom_center();
     let mob_to_current = current_node - mob_position;
     let mob_to_next = next_node - mob_position;
     let mob_to_current_sqr = mob_to_current.length_squared();
@@ -698,16 +698,6 @@ fn should_target_next_node_in_direction(path: &Path, mob_position: DVec3) -> boo
     }
 
     mob_to_next.dot(mob_to_current) < 0.0
-}
-
-fn block_bottom_center(pos: BlockPos) -> DVec3 {
-    let (x, y, z) = pos.get_bottom_center();
-    DVec3::new(x, y, z)
-}
-
-fn block_center(pos: BlockPos) -> DVec3 {
-    let (x, y, z) = pos.get_center();
-    DVec3::new(x, y, z)
 }
 
 fn path_move_target(path: &Path, mob_bounding_box_width: f64) -> Option<DVec3> {

@@ -31,7 +31,7 @@ use crate::{
     behavior::blocks::ShulkerBoxBlock,
     block_entity::{BlockEntity, BlockEntityBase, ImplicitComponentGetter},
     inventory::{
-        container::Container,
+        container::{Container, load_all_items},
         lock::{ContainerRef, SharedContainer},
     },
     physics::{CollisionWorld as _, MoverType, WorldCollisionProvider},
@@ -174,7 +174,7 @@ impl ShulkerBoxBlockEntity {
                 direction,
                 animation.old_progress(),
                 animation.progress(),
-                DVec3::from(pos.get_bottom_center()),
+                pos.get_bottom_center(),
             )
         };
 
@@ -255,14 +255,9 @@ impl ShulkerBoxBlockEntity {
 
         let direction = state.get_value(ShulkerBoxBlock::FACING);
 
-        let lid_open_bounding_box: WorldAabb = Self::get_progress_delta_aabb(
-            1.0,
-            direction,
-            0.0,
-            0.5,
-            DVec3::from(pos.get_bottom_center()),
-        )
-        .deflate(1.0E-6);
+        let lid_open_bounding_box: WorldAabb =
+            Self::get_progress_delta_aabb(1.0, direction, 0.0, 0.5, pos.get_bottom_center())
+                .deflate(1.0E-6);
 
         let collision = WorldCollisionProvider::new(world);
         !collision.has_block_collision(&lid_open_bounding_box)
@@ -345,25 +340,7 @@ impl BlockEntity for ShulkerBoxBlockEntity {
         let mut container = self.container.lock();
         container.items.fill(ItemStack::empty());
 
-        let Some(items_list) = nbt_view.list("Items") else {
-            return;
-        };
-        let Some(compounds) = items_list.compounds() else {
-            return;
-        };
-
-        for compound in compounds {
-            let Some(slot) = compound.byte("Slot") else {
-                continue;
-            };
-            let slot = slot as usize;
-            if slot >= SHULKER_BOX_SLOTS {
-                continue;
-            }
-            if let Some(item) = ItemStack::from_borrowed_compound(&compound) {
-                container.items[slot] = item;
-            }
-        }
+        load_all_items(nbt_view, &mut container.items);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

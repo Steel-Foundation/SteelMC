@@ -8,18 +8,16 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_utils::Identifier;
 use steel_utils::axis::Axis;
 use steel_utils::block_util::FoundRectangle;
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission,
-    reset_forward_direction_of_relative_portal_position,
-};
-use crate::portal::portal_shape::PortalShape;
+use super::abstract_minecart::minecart_relative_portal_position;
+use super::vehicle_entity::{VEHICLE_DIMENSION_CHANGING_DELAY, vehicle_ignores_explosion};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityMovementEmission};
 use crate::world::{Explosion, World};
 
 /// Chest minecart entity state used by mineshaft generation.
@@ -115,23 +113,15 @@ impl Entity for ChestMinecartEntity {
     }
 
     fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
-        !explosion.world().get_game_rule(&MOB_GRIEFING)
-            && explosion
-                .indirect_source_entity()
-                .is_some_and(|entity| entity.as_mob().is_some())
+        vehicle_ignores_explosion(explosion)
     }
 
     fn dimension_changing_delay(&self) -> i32 {
-        10
+        VEHICLE_DIMENSION_CHANGING_DELAY
     }
 
     fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
-        reset_forward_direction_of_relative_portal_position(PortalShape::get_relative_position(
-            portal_area,
-            axis,
-            self.position(),
-            self.dimensions_for_pose(self.pose()),
-        ))
+        minecart_relative_portal_position(self, axis, portal_area)
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -152,11 +142,9 @@ impl Entity for ChestMinecartEntity {
             .string("LootTable")
             .and_then(|value| Identifier::from_str(&value.to_string()).ok());
         let mut state = self.state.lock();
-        if let Some(first_tick) = nbt.byte("HasTicked") {
-            state.first_tick = first_tick != 0;
-        }
+        state.first_tick = nbt.byte_value("HasTicked").is_some_and(|value| value != 0);
         state.loot_table = loot_table;
-        state.loot_table_seed = nbt.long("LootTableSeed").unwrap_or(0);
+        state.loot_table_seed = nbt.long_value("LootTableSeed").unwrap_or(0);
     }
 }
 

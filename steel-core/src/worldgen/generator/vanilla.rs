@@ -37,8 +37,8 @@ use crate::worldgen::generator::{
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::{StructureGenerator, create_structures};
 use crate::worldgen::surface::SurfaceSystem;
-use steel_worldgen::biomes::BiomeSourceKind;
 use steel_worldgen::biomes::obfuscate_biome_seed;
+use steel_worldgen::biomes::{BiomeSourceKind, OverworldClimateSampler};
 use steel_worldgen::noise::Beardifier;
 use steel_worldgen::noise::NoiseChunk;
 use steel_worldgen::noise::OreVeinifier;
@@ -69,6 +69,29 @@ pub trait VanillaPostNoiseStateType: DimensionNoises + 'static {
     /// dense ore values from `Settings::MIN_Y`, up to `material_ore_vein_value_height`
     fn material_ore_vein_values(state: &mut Self::State) -> Arc<[f32]>;
 }
+
+/// Where a dimension's spawn search starts: vanilla's `NoiseBasedChunkGenerator.getOrigin`,
+/// which reads the noise settings' spawn target rather than the biome source.
+pub trait NoiseSpawnTarget {
+    /// Defaults to the origin, for settings without a spawn target.
+    #[must_use]
+    fn initial_spawn_search_origin(_biome_source: &BiomeSourceKind, _seed: u64) -> BlockPos {
+        BlockPos::new(0, 0, 0)
+    }
+}
+
+impl NoiseSpawnTarget for OverworldNoises {
+    fn initial_spawn_search_origin(biome_source: &BiomeSourceKind, seed: u64) -> BlockPos {
+        match biome_source {
+            BiomeSourceKind::Overworld(source) => source.climate_sampler().find_spawn_position(),
+            _ => OverworldClimateSampler::new(seed).find_spawn_position(),
+        }
+    }
+}
+
+impl NoiseSpawnTarget for NetherNoises {}
+
+impl NoiseSpawnTarget for EndNoises {}
 
 /// Steel-owned post-Noise state for the built-in dimensions.
 #[doc(hidden)]
@@ -308,7 +331,7 @@ impl<N: VanillaPostNoiseStateType> VanillaGenerator<N> {
     }
 }
 
-impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
+impl<N: VanillaPostNoiseStateType + NoiseSpawnTarget> ChunkGenerator for VanillaGenerator<N> {
     fn min_y(&self) -> i32 {
         N::Settings::MIN_Y
     }
@@ -323,8 +346,8 @@ impl<N: VanillaPostNoiseStateType> ChunkGenerator for VanillaGenerator<N> {
             .sample(quart_x, quart_y, quart_z)
     }
 
-    fn initial_spawn_search_origin(&self) -> steel_utils::BlockPos {
-        self.biome_source.initial_spawn_search_origin()
+    fn initial_spawn_search_origin(&self) -> BlockPos {
+        N::initial_spawn_search_origin(&self.biome_source, self.seed as u64)
     }
 
     fn structure_generator(&self) -> Option<&StructureGenerator> {
@@ -1202,6 +1225,21 @@ mod tests {
     use crate::worldgen::generator::{
         ChunkGenerator as _, GenerationChunk, TerrainPhase, context::OverworldGenerator,
     };
+
+    #[test]
+    fn fixed_biome_overworld_keeps_climate_spawn_origin() {
+        use super::{NoiseSpawnTarget as _, OverworldNoises};
+        use steel_registry::vanilla_biomes;
+
+        let seed = 12_345;
+        assert_eq!(
+            OverworldNoises::initial_spawn_search_origin(
+                &BiomeSourceKind::fixed(&vanilla_biomes::LUSH_CAVES),
+                seed
+            ),
+            OverworldNoises::initial_spawn_search_origin(&BiomeSourceKind::overworld(seed), seed),
+        );
+    }
 
     fn make_overworld_chunk() -> Chunk {
         let dimension = &vanilla_dimension_types::OVERWORLD;

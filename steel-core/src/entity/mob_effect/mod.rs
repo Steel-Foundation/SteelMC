@@ -31,6 +31,8 @@ pub use weaving::WeavingBehavior;
 pub use wind_charged::WindChargedBehavior;
 pub use wither::WitherBehavior;
 
+use steel_registry::mob_effect::MobEffectRef;
+
 use crate::entity::LivingEntity;
 use crate::entity::SharedEntity;
 use crate::world::World;
@@ -58,6 +60,17 @@ pub trait MobEffectBehavior: Send + Sync {
 
     /// Called when the effect starts.
     fn on_effect_started(&self, _user: &dyn LivingEntity, _amplifier: i32) {}
+
+    /// Called when `effect` is newly added to `user`
+    fn on_effect_added(&self, user: &dyn LivingEntity, effect: MobEffectRef, _amplifier: i32) {
+        let Some(sound) = effect.sound_on_added else {
+            return;
+        };
+        let Some(world) = user.level() else {
+            return;
+        };
+        world.play_sound_at(sound, user.sound_source(), user.position(), 1.0, 1.0, None);
+    }
 }
 
 /// The instantaneous-only half of a [`MobEffectBehavior`] that also extends
