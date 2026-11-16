@@ -32,7 +32,8 @@ const MAX_SWEEP_SPEED_MOVEMENT_SPEED_FACTOR: f64 = 2.5;
 const SWEEP_AREA_INFLATE_XZ: f64 = 1.0;
 const SWEEP_AREA_INFLATE_Y: f64 = 0.25;
 const SWEEP_MAX_DISTANCE_SQ: f64 = 9.0;
-const SWEEP_KNOCKBACK: f64 = 0.4;
+/// Vanilla passes `0.4F` to a `double` parameter, widening the `f32` approximation.
+const SWEEP_KNOCKBACK: f64 = 0.4_f32 as f64;
 
 /// The kind of melee hit, which selects its attack sound.
 ///
@@ -82,6 +83,13 @@ impl Player {
         DVec3::new(position.x, self.get_eye_y(), position.z)
     }
 
+    /// Returns a copy of the current main-hand item.
+    fn weapon_item(&self) -> ItemStack {
+        let inventory = self.inventory.lock();
+        let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
+        stack.copy_with_count(stack.count())
+    }
+
     fn damage_source_for_attack_type(
         self: &Arc<Self>,
         damage_type: &'static DamageType,
@@ -107,11 +115,7 @@ impl Player {
     pub(in crate::player) fn tick_attack_strength(&self) {
         self.tick_state.lock().advance_attack_strength_ticker();
 
-        let main_hand_item = {
-            let inventory = self.inventory.lock();
-            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
-            stack.copy_with_count(stack.count())
-        };
+        let main_hand_item = self.weapon_item();
 
         let mut last_item = self.last_item_in_main_hand.lock();
         if ItemStack::matches(&last_item, &main_hand_item) {
@@ -323,6 +327,9 @@ impl Player {
             && !target.is_invulnerable()
             && target.is_alive()
             && target.can_be_hit_by_projectile()
+            && target
+                .as_player()
+                .is_none_or(|target_player| self.can_harm_player(target_player))
             && !self.is_passenger_of_same_vehicle(target)
     }
 
@@ -373,11 +380,7 @@ impl Player {
             return false;
         }
 
-        let attacking_item = {
-            let inventory = self.inventory.lock();
-            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
-            stack.copy_with_count(stack.count())
-        };
+        let attacking_item = self.weapon_item();
         let damage_source = self.attack_damage_source(&attacking_item);
         let enchantment_context = EnchantmentDamageContext::new(
             entity.entity_type(),
@@ -418,7 +421,7 @@ impl Player {
         }
 
         self.attack_visual_effects(entity, AttackVisualKind::Stab, magic_boost);
-        self.item_attack_interaction(target, &damage_source, damage_dealt);
+        self.item_attack_interaction(target, &attacking_item, &damage_source, damage_dealt);
         self.set_last_hurt_mob(Some(target));
         self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         true
@@ -477,11 +480,7 @@ impl Player {
             return false;
         }
 
-        let attacking_item = {
-            let inventory = self.inventory.lock();
-            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
-            stack.copy_with_count(stack.count())
-        };
+        let attacking_item = self.weapon_item();
         let (attack_damage, attack_speed, attack_knockback) = {
             let attributes = self.attributes().lock();
             (
@@ -554,19 +553,13 @@ impl Player {
                 old_movement,
             );
             if sweep_attack {
-                self.do_sweep_attack(
-                    entity,
-                    &attacking_item,
-                    base_damage,
-                    &damage_source,
-                    attack_strength_scale,
-                );
+                self.do_sweep_attack(entity, base_damage, &damage_source, attack_strength_scale);
             }
             let visual_kind =
                 AttackVisualKind::melee(critical_attack, sweep_attack, full_strength_attack);
             self.attack_visual_effects(entity, visual_kind, magic_boost);
             self.set_last_hurt_mob(Some(target));
-            self.item_attack_interaction(target, &damage_source, true);
+            self.item_attack_interaction(target, &attacking_item, &damage_source, true);
             self.damage_stats_and_hearts(entity, old_entity_living_health);
             self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         } else {
@@ -622,7 +615,6 @@ impl Player {
     fn do_sweep_attack(
         &self,
         target: &dyn Entity,
-        weapon: &ItemStack,
         base_damage: f32,
         damage_source: &DamageSource,
         attack_strength_scale: f32,
@@ -660,6 +652,8 @@ impl Player {
                 continue;
             };
 
+            // Re-read per target: an earlier sweep hit can change the hand (e.g. thorns death).
+            let weapon = self.weapon_item();
             let enchantment_context = EnchantmentDamageContext::new(
                 nearby.entity_type(),
                 Some(self.entity_type()),
@@ -667,7 +661,7 @@ impl Player {
                 damage_source,
             );
             let enchanted_damage =
-                enchantment_helper::modify_damage(weapon, &enchantment_context, sweep_damage)
+                enchantment_helper::modify_damage(&weapon, &enchantment_context, sweep_damage)
                     * attack_strength_scale;
             if !nearby.hurt(&world, damage_source, enchanted_damage) {
                 continue;
@@ -677,7 +671,7 @@ impl Player {
             enchantment_helper::do_post_attack_effects_with_item_source(
                 &world,
                 nearby.as_ref(),
-                weapon,
+                &weapon,
                 &post_attack_context,
             );
         }
@@ -724,23 +718,23 @@ impl Player {
     fn item_attack_interaction(
         &self,
         target: &SharedEntity,
+        attacking_item: &ItemStack,
         damage_source: &DamageSource,
         apply_to_target: bool,
     ) {
         let entity = target.as_ref();
         let post_attack_context = EnchantmentPostAttackContext::new(target, damage_source);
-        let (source_item, item_hurt_enemy) = {
+        let item_hurt_enemy = {
             let mut inventory = self.inventory.lock();
             inventory.mutate_item_in_hand(InteractionHand::MainHand, |stack| {
                 if stack.is_empty() {
-                    return (ItemStack::empty(), false);
+                    return false;
                 }
                 let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
                 if let Some(living_target) = entity.as_living_entity() {
                     behavior.hurt_enemy(stack, living_target, self);
                 }
-                let source_item = stack.copy_with_count(stack.count());
-                (source_item, stack.get_weapon().is_some())
+                stack.get_weapon().is_some()
             })
         };
 
@@ -749,7 +743,7 @@ impl Player {
             enchantment_helper::do_post_attack_effects_with_item_source(
                 &world,
                 entity,
-                source_item,
+                attacking_item,
                 &post_attack_context,
             );
         }
@@ -858,11 +852,7 @@ impl Player {
             return;
         }
 
-        let main_hand_item = {
-            let inventory = self.inventory.lock();
-            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
-            stack.copy_with_count(stack.count())
-        };
+        let main_hand_item = self.weapon_item();
 
         if !self.is_within_attack_range_with_buffer(
             &main_hand_item,
