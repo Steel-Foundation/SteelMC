@@ -1003,7 +1003,7 @@ fn mob_despawn_resets_no_action_time_near_player() {
 
     mob.living().set_no_action_time(42);
     mob.mob()
-        .check_mob_despawn_with(mob.nearest_player_distance_sqr);
+        .check_mob_despawn_with(|| mob.nearest_player_distance_sqr);
 
     assert_eq!(mob.living().no_action_time(), 0);
     assert!(!mob.is_removed());
@@ -1014,27 +1014,22 @@ fn mob_despawn_discards_far_removable_mob() {
     let mob = DespawnTestMob::new(Some(129.0 * 129.0), true);
 
     mob.mob()
-        .check_mob_despawn_with(mob.nearest_player_distance_sqr);
+        .check_mob_despawn_with(|| mob.nearest_player_distance_sqr);
 
     assert!(mob.is_removed());
 }
 
 #[test]
-fn mob_persistence_blocks_removal_and_resets_idle_time_without_nearby_players() {
+fn mob_persistence_skips_player_scan_and_resets_idle_time() {
     let mob = DespawnTestMob::new(Some(129.0 * 129.0), true);
 
     mob.living().set_no_action_time(42);
     mob.mob().set_persistence_required();
     mob.mob()
-        .check_mob_despawn_with(mob.nearest_player_distance_sqr);
+        .check_mob_despawn_with(|| panic!("persistent mobs must not scan for players"));
 
     assert_eq!(mob.living().no_action_time(), 0);
     assert!(!mob.is_removed());
-
-    mob.living().set_no_action_time(42);
-    mob.mob().check_mob_despawn_with(None);
-
-    assert_eq!(mob.living().no_action_time(), 0);
 }
 
 #[test]

@@ -612,7 +612,7 @@ pub fn controlling_passenger<E: Parts>(entity: &E) -> Option<SharedEntity> {
 /// `Mob`'s [`EntityProps::check_despawn`].
 pub fn check_despawn<E: Parts>(entity: &E) {
     let mob = &entity.mob();
-    mob.check_mob_despawn_with(mob.nearest_player_distance_sqr());
+    mob.check_mob_despawn_with(|| mob.nearest_player_distance_sqr());
 }
 
 /// `Mob`'s [`EntityProps::is_effective_ai`].
@@ -1511,9 +1511,12 @@ impl<'a> Mob<'a> {
         self.home_radius() != -1
     }
 
-    /// [`Self::check_mob_despawn`] given the squared distance to the nearest
-    /// player, if any.
-    pub(crate) fn check_mob_despawn_with(&self, nearest_player_dist_sqr: Option<f64>) {
+    /// Vanilla `Mob.checkDespawn`. `nearest_player_dist_sqr` is only called
+    /// once persistence allows despawning, so persistent mobs skip the player scan.
+    pub(crate) fn check_mob_despawn_with(
+        &self,
+        nearest_player_dist_sqr: impl FnOnce() -> Option<f64>,
+    ) {
         if self
             .level()
             .is_some_and(|world| world.difficulty() == Difficulty::Peaceful)
@@ -1528,7 +1531,7 @@ impl<'a> Mob<'a> {
             return;
         }
 
-        let Some(nearest_player_dist_sqr) = nearest_player_dist_sqr else {
+        let Some(nearest_player_dist_sqr) = nearest_player_dist_sqr() else {
             return;
         };
 
