@@ -466,8 +466,8 @@ impl ItemBehaviorRegistry {
             .unwrap_or_else(|| self.get_behavior(stack.item()).get_name(stack))
     }
 
-    /// Returns vanilla `ItemStack.getDisplayName`: the hover name wrapped in
-    /// square brackets, with custom-name italics, rarity color, and item hover.
+    /// Returns the bracketed hover name, colored by rarity and carrying an item
+    /// hover event.
     #[must_use]
     pub fn display_name(&self, stack: &ItemStack) -> TextComponent {
         let mut hover_name = TextComponent {

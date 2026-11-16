@@ -8,6 +8,7 @@ use steel_registry::data_components::vanilla_components::{
 use steel_registry::entity_variant::MooshroomVariant;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
+use steel_utils::TICKS_PER_SECOND;
 use text_components::TextComponent;
 
 use super::*;
@@ -2320,7 +2321,7 @@ pub trait LivingEntity: Entity {
         self.living_base().tick_last_hurt_by_player_memory();
         self.living_base()
             .tick_living_combat_memory(self.tick_count());
-        if self.tick_count() % 20 == 0 {
+        if self.tick_count() % TICKS_PER_SECOND == 0 {
             self.recheck_combat_status();
         }
     }
