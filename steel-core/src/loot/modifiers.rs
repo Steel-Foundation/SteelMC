@@ -1,8 +1,11 @@
 //! Shared operations used by compiled item modifier functions.
 use steel_registry::recipe::{SingleItemRecipeInput, vanilla_recipe_types};
 use steel_registry::{
-    REGISTRY, data_components::vanilla_components::CUSTOM_NAME, enchantment::Enchantment,
+    REGISTRY,
+    data_components::vanilla_components::{CUSTOM_NAME, POTION_CONTENTS, PotionContents},
+    enchantment::Enchantment,
     item_stack::ItemStack,
+    potion::PotionRef,
 };
 use steel_utils::{
     Identifier,
@@ -45,6 +48,11 @@ pub(super) fn set_enchantment(item: &mut ItemStack, key: Identifier, level: i32,
         )],
         false,
     );
+}
+
+pub(super) fn set_potion(item: &mut ItemStack, potion: PotionRef) {
+    let contents = item.get_or_default(POTION_CONTENTS, PotionContents::empty());
+    item.set(POTION_CONTENTS, contents.with_potion(potion));
 }
 
 pub(super) fn smelt(item: &mut ItemStack, use_input_count: bool) {
