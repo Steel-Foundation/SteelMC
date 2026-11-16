@@ -524,6 +524,15 @@ impl<I: Space> Aabb<DVec3, I> {
         }
     }
 
+    /// Creates a 1x1 block AABB
+    pub fn single(pos: IVec3) -> Self {
+        Self {
+            min: pos.as_dvec3(),
+            max: (pos + IVec3::ONE).as_dvec3(),
+            p: PhantomData,
+        }
+    }
+
     /// Creates a box centered at `center` with the supplied side lengths.
     ///
     /// Vanilla equivalent: `AABB.ofSize(center, sizeX, sizeY, sizeZ)`.

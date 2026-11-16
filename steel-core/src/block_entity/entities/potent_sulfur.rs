@@ -8,6 +8,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, PotentSulfurState};
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::vanilla_game_events;
+use steel_registry::vanilla_mob_effects::NAUSEA;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt as _, vanilla_blocks, vanilla_entity_type_tags::EntityTypeTag,
 };
@@ -16,11 +17,12 @@ use steel_utils::random::xoroshiro::Xoroshiro;
 use steel_utils::random::{PositionalRandom, Random, RandomSource, RandomSplitter};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{
-    BlockPos, BlockStateId, DowncastType, DowncastTypeKey, WorldAabb, locks::SyncMutex,
+    BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey, WorldAabb, locks::SyncMutex,
 };
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
+use crate::entity::MobEffectInstance;
 use crate::fluid::FluidStateExt as _;
 use crate::world::World;
 
@@ -115,16 +117,16 @@ impl PotentSulfurBlockEntity {
             let fluid = state.get_fluid_state();
             let is_water_source = fluid.is_source() && fluid.is_water();
 
+            if state.is_air() || Self::is_geyser_passable(world, pos, geyser_position_context) {
+                return Some(pos);
+            }
+
             if is_water_source
                 && (state.get_block() == &vanilla_blocks::WATER
                     || Self::is_geyser_passable(world, pos, geyser_position_context))
             {
-                pos = BlockPos::new(pos.x(), pos.y() + 1, pos.z());
+                pos = pos.relative(Direction::Up);
                 continue;
-            }
-
-            if state.is_air() || Self::is_geyser_passable(world, pos, geyser_position_context) {
-                return Some(pos);
             }
 
             break; // Solid obstruction
@@ -243,6 +245,25 @@ impl PotentSulfurBlockEntity {
             entity.mark_velocity_sync();
         }
     }
+
+    fn tick_nausea(world: &Arc<World>, pos: BlockPos) {
+        if world.game_time() % 10 != 0 {
+            return;
+        }
+        let Some(source) = Self::find_source_block(world, pos) else {
+            return;
+        };
+        let aabb = WorldAabb::single(source.0).inflate_xyz(2.5, 0.0, 2.5);
+        for entity in world.get_entities_in_aabb(&aabb) {
+            if !entity.is_alive() || entity.is_spectator() {
+                continue;
+            }
+            let Some(e) = entity.as_living_entity() else {
+                continue;
+            };
+            e.add_mob_effect(MobEffectInstance::with_duration(NAUSEA, 80, 0).with_ambient(true));
+        }
+    }
 }
 
 impl BlockEntity for PotentSulfurBlockEntity {
@@ -289,11 +310,14 @@ impl BlockEntity for PotentSulfurBlockEntity {
             None
         };
 
-        if matches!(
-            &current,
-            PotentSulfurState::Erupting | PotentSulfurState::Continuous
-        ) {
-            Self::tick_launch(world, pos);
+        match &current {
+            PotentSulfurState::Erupting | PotentSulfurState::Continuous => {
+                Self::tick_launch(world, pos);
+            }
+            PotentSulfurState::Dormant | PotentSulfurState::Wet => {
+                Self::tick_nausea(world, pos);
+            }
+            PotentSulfurState::Dry => {}
         }
 
         if let Some((new_state, deactivates)) = action {
