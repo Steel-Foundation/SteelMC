@@ -1,14 +1,13 @@
 //! Gravity-free projectiles that accelerate along their heading (fireballs,
 //! wither skulls, wind charges).
 
-use std::f32::consts::PI;
 use std::sync::Arc;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_math::trig;
-use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360};
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64};
 use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
@@ -166,9 +165,8 @@ pub trait AbstractHurtingProjectile: Projectile {
             return;
         }
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
-        let to_degrees = |radians: f64| (radians * f64::from(DEGREE_180) / f64::from(PI)) as f32;
-        let yaw = to_degrees(trig::atan2(movement.z, movement.x)) + DEGREE_90;
-        let pitch = to_degrees(trig::atan2(horizontal, movement.y)) - DEGREE_90;
+        let yaw = (trig::atan2(movement.z, movement.x) * RAD_TO_DEG_F64) as f32 + DEGREE_90;
+        let pitch = (trig::atan2(horizontal, movement.y) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
 
         let (mut yaw_old, mut pitch_old) = self.base().old_rotation();
         while pitch - pitch_old < -DEGREE_180 {
