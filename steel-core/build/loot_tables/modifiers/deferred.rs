@@ -74,10 +74,6 @@ deferred!(SetName, "minecraft:set_name" {
     target: Option<String>,
 });
 
-// TODO: Resolve the typed potion and update potion_contents while
-// preserving its other fields.
-deferred!(SetPotion, "minecraft:set_potion" { id: Option<String> });
-
 // TODO: Select a stew effect with the loot RNG, evaluate its duration with
 // vanilla instant-effect units, and append it to suspicious-stew effects.
 deferred!(SetStewEffect, "minecraft:set_stew_effect" { effects: Option<Vec<StewEffect>> });
