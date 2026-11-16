@@ -325,6 +325,9 @@ impl Player {
     fn can_piercing_hit_entity(&self, target: &dyn Entity) -> bool {
         target.id() != self.id()
             && !target.is_invulnerable()
+            && !target
+                .as_living_entity()
+                .is_some_and(|living| living.invulnerable_time() > 0)
             && target.is_alive()
             && target.can_be_hit_by_projectile()
             && target
