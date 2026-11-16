@@ -3,7 +3,7 @@ use super::*;
 use steel_registry::entity_type::EntityDimensions;
 
 use crate::entity::{EntityVisibility, PartEntity, PartEntityBase, reserve_entity_ids};
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
 const PART_COUNT: u32 = 2;
 
@@ -78,13 +78,6 @@ impl Entity for MultipartTestPart {
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::ITEM
     }
-
-    fn is_same_entity(&self, other: &dyn Entity) -> bool {
-        self.id() == other.id()
-            || self
-                .parent()
-                .is_some_and(|parent| parent.id() == other.id())
-    }
 }
 
 impl PartEntity for MultipartTestPart {
@@ -96,25 +89,32 @@ impl PartEntity for MultipartTestPart {
 /// Somewhere inside the single chunk the tests make ready.
 const SPAWN: DVec3 = DVec3::new(8.5, 64.0, 8.5);
 
-fn spawn_multipart(world: &Arc<World>) -> SharedEntity {
+fn spawn_multipart(test_name: &'static str) -> (TestWorld, SharedEntity) {
+    init_vanilla_registry();
+    let world_fixture = fresh_test_world(test_name);
+    let world = &world_fixture.world;
     insert_ready_full_chunk(world, ChunkPos::from_entity_pos(SPAWN));
     let entity = MultipartTestEntity::shared(SPAWN, Arc::downgrade(world));
     world
         .try_add_entity(Arc::clone(&entity))
         .expect("multipart entity should be addable");
-    entity
+    (world_fixture, entity)
+}
+
+fn box_around(center: DVec3, half_size: f64) -> WorldAabb {
+    WorldAabb::new(
+        center.x - half_size,
+        center.y - half_size,
+        center.z - half_size,
+        center.x + half_size,
+        center.y + half_size,
+        center.z + half_size,
+    )
 }
 
 /// A box comfortably containing [`SPAWN`] and everything spawned there.
 fn spawn_area() -> WorldAabb {
-    WorldAabb::new(
-        SPAWN.x - 4.0,
-        SPAWN.y - 4.0,
-        SPAWN.z - 4.0,
-        SPAWN.x + 4.0,
-        SPAWN.y + 4.0,
-        SPAWN.z + 4.0,
-    )
+    box_around(SPAWN, 4.0)
 }
 
 fn part_ids(entity: &SharedEntity) -> Vec<i32> {
@@ -123,10 +123,7 @@ fn part_ids(entity: &SharedEntity) -> Vec<i32> {
 
 #[test]
 fn parts_take_the_ids_directly_after_their_parent() {
-    init_vanilla_registry();
-    let world_fixture = fresh_test_world("multipart_part_ids");
-    let world = &world_fixture.world;
-    let entity = spawn_multipart(world);
+    let (_world_fixture, entity) = spawn_multipart("multipart_part_ids");
 
     for (index, part) in entity.parts().iter().enumerate() {
         assert_eq!(part.id(), entity.id() + index as i32 + 1);
@@ -135,10 +132,8 @@ fn parts_take_the_ids_directly_after_their_parent() {
 
 #[test]
 fn tracking_a_multipart_entity_publishes_its_parts() {
-    init_vanilla_registry();
-    let world_fixture = fresh_test_world("multipart_registers_parts");
+    let (world_fixture, entity) = spawn_multipart("multipart_registers_parts");
     let world = &world_fixture.world;
-    let entity = spawn_multipart(world);
 
     for part in entity.parts() {
         let found = world
@@ -150,10 +145,8 @@ fn tracking_a_multipart_entity_publishes_its_parts() {
 
 #[test]
 fn parts_are_not_reachable_through_the_plain_entity_lookup() {
-    init_vanilla_registry();
-    let world_fixture = fresh_test_world("multipart_plain_lookup");
+    let (world_fixture, entity) = spawn_multipart("multipart_plain_lookup");
     let world = &world_fixture.world;
-    let entity = spawn_multipart(world);
     let part_id = entity.parts()[0].id();
 
     assert!(world.get_entity_by_id(part_id).is_none());
@@ -162,10 +155,7 @@ fn parts_are_not_reachable_through_the_plain_entity_lookup() {
 
 #[test]
 fn parts_bind_their_parent_when_tracking_starts() {
-    init_vanilla_registry();
-    let world_fixture = fresh_test_world("multipart_binds_parent");
-    let world = &world_fixture.world;
-    let entity = spawn_multipart(world);
+    let (_world_fixture, entity) = spawn_multipart("multipart_binds_parent");
 
     for part in entity.parts() {
         let parent = part.parent().expect("part should know its parent");
@@ -176,10 +166,8 @@ fn parts_bind_their_parent_when_tracking_starts() {
 
 #[test]
 fn parts_appear_in_bounding_box_queries() {
-    init_vanilla_registry();
-    let world_fixture = fresh_test_world("multipart_aabb_query");
+    let (world_fixture, entity) = spawn_multipart("multipart_aabb_query");
     let world = &world_fixture.world;
-    let entity = spawn_multipart(world);
 
     let found = world.get_entities_in_aabb(&spawn_area());
 
@@ -194,10 +182,8 @@ fn parts_appear_in_bounding_box_queries() {
 
 #[test]
 fn bounding_box_queries_can_exclude_a_parent_and_its_parts() {
-    init_vanilla_registry();
-    let world_fixture = fresh_test_world("multipart_aabb_excluding");
+    let (world_fixture, entity) = spawn_multipart("multipart_aabb_excluding");
     let world = &world_fixture.world;
-    let entity = spawn_multipart(world);
 
     let found = world.get_entities_in_aabb_excluding(&spawn_area(), entity.as_ref(), |_| true);
 
@@ -206,10 +192,8 @@ fn bounding_box_queries_can_exclude_a_parent_and_its_parts() {
 
 #[test]
 fn parts_are_removed_when_the_parent_stops_being_tracked() {
-    init_vanilla_registry();
-    let world_fixture = fresh_test_world("multipart_unregisters_parts");
+    let (world_fixture, entity) = spawn_multipart("multipart_unregisters_parts");
     let world = &world_fixture.world;
-    let entity = spawn_multipart(world);
     let part_ids = part_ids(&entity);
 
     // Losing chunk visibility ends tracking, which unregisters the parts.
@@ -225,11 +209,85 @@ fn parts_are_removed_when_the_parent_stops_being_tracked() {
 }
 
 #[test]
-fn parts_are_never_tracked_for_clients() {
-    init_vanilla_registry();
-    let world_fixture = fresh_test_world("multipart_not_tracked");
+fn parts_are_removed_when_the_parent_is_discarded() {
+    let (world_fixture, entity) = spawn_multipart("multipart_discard_unregisters_parts");
     let world = &world_fixture.world;
-    let entity = spawn_multipart(world);
+    let part_ids = part_ids(&entity);
+
+    // Removal goes through the entity callback, not a lifecycle batch.
+    entity.set_removed(RemovalReason::Discarded);
+
+    for part_id in part_ids {
+        assert!(
+            world.get_accessible_entity_or_part_by_id(part_id).is_none(),
+            "part {part_id} should be gone once its parent is discarded"
+        );
+    }
+}
+
+/// Moves the first part away from its parent and returns a small box around it only.
+fn separate_first_part(entity: &SharedEntity) -> WorldAabb {
+    let offset = SPAWN + DVec3::new(4.0, 0.0, 4.0);
+    entity.parts()[0].set_part_position(offset);
+    box_around(offset, 0.5)
+}
+
+#[test]
+fn class_queries_skip_parts_whose_parent_is_outside_the_box() {
+    let (world_fixture, entity) = spawn_multipart("multipart_class_query_needs_parent");
+    let world = &world_fixture.world;
+    let part_only = separate_first_part(&entity);
+
+    assert!(
+        !world.get_entities_in_aabb(&part_only).is_empty(),
+        "the predicate query tests each part's own box"
+    );
+    assert!(
+        world
+            .get_entities_of_class_matching(&part_only, |_| true)
+            .is_empty(),
+        "a lone part must not match without its parent"
+    );
+}
+
+#[test]
+fn class_queries_reach_every_part_through_a_parent_in_the_box() {
+    let (world_fixture, entity) = spawn_multipart("multipart_class_query_via_parent");
+    let world = &world_fixture.world;
+    separate_first_part(&entity);
+
+    let found_ids = world
+        .get_entities_of_class_matching(&box_around(SPAWN, 0.5), |_| true)
+        .iter()
+        .map(|entity| entity.id())
+        .collect::<Vec<_>>();
+
+    assert!(found_ids.contains(&entity.id()));
+    for part_id in part_ids(&entity) {
+        assert!(
+            found_ids.contains(&part_id),
+            "part {part_id} should be reached through its parent"
+        );
+    }
+}
+
+#[test]
+fn refreshing_a_part_keeps_its_own_size() {
+    let (_world_fixture, entity) = spawn_multipart("multipart_part_dimensions");
+    let part = &entity.parts()[0];
+
+    part.refresh_dimensions();
+
+    let size = part.part_base().size();
+    let dimensions = part.base().dimensions();
+    assert!((dimensions.width - size.width).abs() < f32::EPSILON);
+    assert!((dimensions.height - size.height).abs() < f32::EPSILON);
+}
+
+#[test]
+fn parts_are_never_tracked_for_clients() {
+    let (world_fixture, entity) = spawn_multipart("multipart_not_tracked");
+    let world = &world_fixture.world;
 
     for part in entity.parts() {
         assert!(
@@ -243,30 +301,9 @@ fn parts_are_never_tracked_for_clients() {
 }
 
 #[test]
-fn a_multipart_entity_does_not_collide_with_its_own_parts() {
-    init_vanilla_registry();
-    let world_fixture = fresh_test_world("multipart_self_collision");
-    let world = &world_fixture.world;
-    let entity = spawn_multipart(world);
-
-    // The collision predicate relies on `is_same_entity` to skip the mover's own parts.
-    for part in entity.parts() {
-        assert!(
-            part.is_same_entity(entity.as_ref()),
-            "a part must report its parent as itself so collision can exclude it"
-        );
-    }
-
-    let found = world.get_entities_in_aabb_excluding(&spawn_area(), entity.as_ref(), |_| true);
-    assert!(found.is_empty());
-}
-
-#[test]
 fn removed_parts_drop_out_of_queries() {
-    init_vanilla_registry();
-    let world_fixture = fresh_test_world("multipart_removed_parts");
+    let (world_fixture, entity) = spawn_multipart("multipart_removed_parts");
     let world = &world_fixture.world;
-    let entity = spawn_multipart(world);
     let removed = &entity.parts()[0];
     let surviving = entity.parts()[1].id();
 
@@ -285,4 +322,10 @@ fn removed_parts_drop_out_of_queries() {
 #[should_panic(expected = "part index outside the reserved block")]
 fn reading_past_the_reserved_block_is_rejected() {
     let _ = reserve_entity_ids(PART_COUNT + 1).part(PART_COUNT);
+}
+
+#[test]
+#[should_panic(expected = "part index outside the reserved block")]
+fn the_largest_part_index_is_rejected_instead_of_wrapping() {
+    let _ = reserve_entity_ids(PART_COUNT + 1).part(u32::MAX);
 }

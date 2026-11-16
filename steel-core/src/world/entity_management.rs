@@ -71,7 +71,9 @@ impl World {
         self.entity_manager.commit_bounding_box_change(entity.id());
     }
 
+    /// Starts tracking `entity`, as in vanilla `ServerLevel.EntityCallbacks.onTrackingStart`.
     pub(crate) fn add_entity_to_tracker(self: &Arc<Self>, entity: &SharedEntity) {
+        self.register_entity_parts(entity);
         self.entity_tracker.add(
             entity,
             |chunk| self.get_packet_tracking_players(chunk),
@@ -80,7 +82,9 @@ impl World {
         self.track_navigating_mob(entity);
     }
 
+    /// Stops tracking an entity, as in vanilla `ServerLevel.EntityCallbacks.onTrackingEnd`.
     pub(crate) fn remove_entity_from_tracker(&self, entity_id: i32) {
+        self.unregister_entity_parts(entity_id);
         self.entity_tracker.remove(entity_id, |player_id| {
             self.players.get_by_entity_id(player_id)
         });
@@ -92,16 +96,14 @@ impl World {
         changes: EntityLifecycleChanges,
     ) {
         for entity in changes.tracking_stopped {
-            self.unregister_entity_parts(&entity);
             self.remove_entity_from_tracker(entity.id());
         }
         for entity in changes.tracking_started {
-            self.register_entity_parts(&entity);
             self.add_entity_to_tracker(&entity);
         }
     }
 
-    /// Publishes `entity`'s parts and binds them to it, as in vanilla `ServerLevel.onTrackingStart`.
+    /// Publishes `entity`'s parts and binds them to it.
     fn register_entity_parts(&self, entity: &SharedEntity) {
         let parts = entity.parts();
         if parts.is_empty() {
@@ -115,17 +117,11 @@ impl World {
         }
     }
 
-    /// Removes `entity`'s parts, as in vanilla `ServerLevel.onTrackingEnd`.
-    fn unregister_entity_parts(&self, entity: &SharedEntity) {
-        let parts = entity.parts();
-        if parts.is_empty() {
-            return;
-        }
-
-        let mut entity_parts = self.entity_parts.lock();
-        for part in parts {
-            entity_parts.remove(&part.id());
-        }
+    /// Removes the parts of the entity with `parent_id`, and any whose parent is gone.
+    fn unregister_entity_parts(&self, parent_id: i32) {
+        self.entity_parts
+            .lock()
+            .retain(|_, part| part.parent().is_some_and(|parent| parent.id() != parent_id));
     }
 
     pub(super) fn track_navigating_mob(&self, entity: &SharedEntity) {
@@ -617,6 +613,31 @@ impl World {
         entities
     }
 
+    /// Gets entities intersecting `aabb` and matching `predicate`, reaching parts only
+    /// through a parent in `aabb` without testing their own boxes (vanilla
+    /// `Level.getEntitiesOfClass` and its `EntityTypeTest` overload).
+    ///
+    /// Only returns entities in loaded chunks.
+    #[must_use]
+    pub fn get_entities_of_class_matching(
+        &self,
+        aabb: &WorldAabb,
+        mut predicate: impl FnMut(&dyn Entity) -> bool,
+    ) -> Vec<SharedEntity> {
+        let mut output = Vec::new();
+        for entity in self.entity_manager.get_entities_in_aabb(aabb) {
+            if predicate(entity.as_ref()) {
+                output.push(Arc::clone(&entity));
+            }
+            for part in entity.parts() {
+                if predicate(part.as_ref()) {
+                    output.push(Arc::clone(part) as SharedEntity);
+                }
+            }
+        }
+        output
+    }
+
     /// Gets entities in `aabb` matching `predicate`, excluding `except` and its parts
     /// (vanilla `Level.getEntities(Entity, AABB, Predicate)`).
     #[must_use]
@@ -637,8 +658,7 @@ impl World {
     }
 
     /// Visits the parts intersecting `aabb` and matching `predicate`, skipping `except_id`
-    /// and its parts. Each part's own box is tested, as in vanilla's predicate overload;
-    /// its `EntityTypeTest` overload skips that test and can return parts outside the query.
+    /// and its parts. Each part's own box is tested, as in vanilla's predicate overload.
     fn visit_parts_in_aabb(
         &self,
         aabb: &WorldAabb,

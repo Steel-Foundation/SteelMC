@@ -526,7 +526,7 @@ fn world_candidates(world: &World, aabb: Option<WorldAabb>) -> Vec<SharedEntity>
     // As in vanilla `EntitySelector`, only the bounded lookup includes multipart parts.
     aabb.map_or_else(
         || world.entity_manager().get_accessible_entities(),
-        |aabb| world.get_entities_in_aabb(&aabb),
+        |aabb| world.get_entities_of_class_matching(&aabb, |_| true),
     )
 }
 

@@ -43,8 +43,8 @@ use steel_protocol::{
     packets::game::CSetTime,
 };
 
-use rustc_hash::{FxHashMap, FxHashSet};
 use crate::loot::{LootContext, random_sequences::RandomSequences};
+use rustc_hash::{FxHashMap, FxHashSet};
 use simdnbt::owned::NbtCompound;
 use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;

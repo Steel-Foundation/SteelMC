@@ -416,12 +416,11 @@ pub(crate) fn generate_arg(
 struct BehaviorArgs {
     class_name: Option<String>,
     spawn_rule: bool,
-    /// How many sub-entities the type owns, from `parts = N`.
     part_count: u32,
 }
 
-/// Unrecognized keys are consumed and ignored so each behavior kind can carry keys
-/// the others do not use.
+/// Unknown keys fail the build, so a typo such as `part = 8` cannot silently skip
+/// the ID reservation.
 fn parse_behavior_args(attr: &syn::Attribute, attribute_name: &str) -> BehaviorArgs {
     let mut args = BehaviorArgs::default();
     let syn::Meta::List(meta) = &attr.meta else {
@@ -436,13 +435,9 @@ fn parse_behavior_args(attr: &syn::Attribute, attribute_name: &str) -> BehaviorA
         } else if meta.path.is_ident("spawn_rule") {
             args.spawn_rule = true;
         } else if meta.path.is_ident("parts") {
-            args.part_count = meta
-                .value()?
-                .parse::<syn::LitInt>()?
-                .base10_parse()
-                .unwrap_or_else(|e| panic!("Failed to parse {attribute_name} parts count: {e}"));
-        } else if let Ok(value) = meta.value() {
-            let _: syn::Expr = value.parse()?;
+            args.part_count = meta.value()?.parse::<syn::LitInt>()?.base10_parse()?;
+        } else {
+            return Err(meta.error("unknown behavior argument"));
         }
         Ok(())
     })

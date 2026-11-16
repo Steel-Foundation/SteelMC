@@ -83,12 +83,7 @@ pub(crate) fn convert_to(
     if !entity_type.allowed_in_peaceful && world.difficulty() == Difficulty::Peaceful {
         return None;
     }
-    let Some(to) = ENTITIES.create(
-        entity_type,
-        ENTITIES.reserve_id(entity_type).first(),
-        from.position(),
-        Arc::downgrade(&world),
-    ) else {
+    let Some(to) = ENTITIES.create(entity_type, from.position(), Arc::downgrade(&world)) else {
         log::warn!(
             "cannot convert {} to {}: no entity factory is registered",
             from.entity_type().key,

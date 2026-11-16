@@ -24,8 +24,8 @@ use crate::world::{LevelReader, World};
 /// Factory function type for creating entities.
 ///
 /// Takes the entity type, entity ID, spawn position, and world reference.
-/// Returns a new entity instance. The entity ID should be obtained from
-/// `next_entity_id()`.
+/// Returns a new entity instance. [`EntityRegistry::create`] reserves the ID block,
+/// so a multipart factory can derive its part IDs from the ID it is given.
 pub type EntityFactory = fn(EntityTypeRef, i32, DVec3, Weak<World>) -> SharedEntity;
 
 /// Factory function type for loading entities from disk.
@@ -62,7 +62,7 @@ pub struct EntityLoadRequest {
 }
 
 impl EntityLoadRequest {
-    /// Converts the request into base load state with an ID from [`EntityRegistry::reserve_id`].
+    /// Converts the request into base load state with the given entity ID.
     fn into_base_load(self, id: i32) -> (EntityTypeRef, EntityBaseLoad) {
         (
             self.entity_type,
@@ -200,22 +200,23 @@ impl EntityRegistry {
         self.entries.get(entity_type.id())?.spawn_rule
     }
 
-    /// Creates a new entity instance.
+    /// Creates a new entity instance, reserving its ID block (see [`Self::reserve_id`]).
     ///
     /// Returns `None` if no factory is registered for the given type.
     #[must_use]
     pub fn create(
         &self,
         entity_type: EntityTypeRef,
-        entity_id: i32,
         pos: DVec3,
         world: Weak<World>,
     ) -> Option<SharedEntity> {
-        let id = entity_type.id();
-        self.entries
-            .get(id)?
-            .factory
-            .map(|f| f(entity_type, entity_id, pos, world))
+        let factory = self.entries.get(entity_type.id())?.factory?;
+        Some(factory(
+            entity_type,
+            self.reserve_id(entity_type).first(),
+            pos,
+            world,
+        ))
     }
 
     /// Creates an entity from persisted data.
@@ -238,10 +239,7 @@ impl EntityRegistry {
             return None;
         };
 
-        let (_, load) = request.into_base_load(self.reserve_id(entity_type).first());
-        let entity = load_factory(entity_type, load);
-        Self::finish_registered_load_view(&entity, &nbt.into());
-        Some(entity)
+        Some(self.load_with(load_factory, request, &nbt.into()))
     }
 
     /// Creates an entity for the normal spawner path from an already borrowed NBT view.
@@ -253,11 +251,21 @@ impl EntityRegistry {
         let id = request.entity_type.id();
         let entry = self.entries.get(id)?;
         let load_factory = entry.load_factory?;
+        Some(self.load_with(load_factory, request, nbt))
+    }
+
+    /// Builds an entity from `request` with a freshly reserved ID block, then applies `nbt`.
+    fn load_with(
+        &self,
+        load_factory: EntityLoadFactory,
+        request: EntityLoadRequest,
+        nbt: &BorrowedNbtCompoundView<'_, '_>,
+    ) -> SharedEntity {
         let entity_id = self.reserve_id(request.entity_type).first();
         let (entity_type, load) = request.into_base_load(entity_id);
         let entity = load_factory(entity_type, load);
         Self::finish_registered_load_view(&entity, nbt);
-        Some(entity)
+        entity
     }
 
     /// Returns whether a factory is registered for the given type.
@@ -314,7 +322,7 @@ impl EntityRegistryLock {
 
 /// Global entity registry.
 ///
-/// Access via deref: `ENTITIES.create(type, entity_id, pos)`
+/// Access via deref: `ENTITIES.create(type, pos, world)`
 pub static ENTITIES: EntityRegistryLock = EntityRegistryLock(OnceLock::new());
 
 /// Initializes the global entity registry, once the main registry is frozen.
@@ -423,8 +431,7 @@ mod tests {
             |entity_type, id, pos, world| TestEntity::shared(id, pos, world, entity_type),
         );
 
-        let Some(entity) =
-            registry.create(&vanilla_entities::OAK_BOAT, 5, DVec3::ZERO, Weak::new())
+        let Some(entity) = registry.create(&vanilla_entities::OAK_BOAT, DVec3::ZERO, Weak::new())
         else {
             panic!("registered entity factory should create an entity");
         };

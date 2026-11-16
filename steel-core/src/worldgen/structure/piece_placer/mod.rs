@@ -63,12 +63,7 @@ impl StructurePiecePlacer {
         world: Weak<World>,
         persistence_required: bool,
     ) -> Option<SharedEntity> {
-        let Some(entity) = ENTITIES.create(
-            entity_type,
-            ENTITIES.reserve_id(entity_type).first(),
-            position,
-            world,
-        ) else {
+        let Some(entity) = ENTITIES.create(entity_type, position, world) else {
             log::warn!(
                 "Skipping unsupported structure entity spawn for {} at {position:?}",
                 entity_type.key

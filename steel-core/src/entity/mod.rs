@@ -531,7 +531,7 @@ impl EntityIdBlock {
     #[must_use]
     pub const fn part(self, index: u32) -> i32 {
         assert!(
-            index + 1 < self.count,
+            index < self.count.saturating_sub(1),
             "part index outside the reserved block"
         );
         self.first.wrapping_add(index.wrapping_add(1) as i32)
@@ -552,7 +552,7 @@ pub fn reserve_entity_ids(count: u32) -> EntityIdBlock {
 /// This is the primary way to get entity IDs for spawning entities.
 /// Thread-safe through the shared counter lock.
 ///
-/// Only for types without sub-entities; use [`EntityRegistry::reserve_id`] when the type
+/// Only for types without sub-entities; use [`EntityRegistry::create`] when the type
 /// may be multipart.
 #[must_use]
 pub fn next_entity_id() -> i32 {

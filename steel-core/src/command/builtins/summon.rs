@@ -70,12 +70,7 @@ pub(super) fn create_entity(
         ));
     }
 
-    let Some(entity) = ENTITIES.create(
-        entity_type,
-        ENTITIES.reserve_id(entity_type).first(),
-        position,
-        Arc::downgrade(world),
-    ) else {
+    let Some(entity) = ENTITIES.create(entity_type, position, Arc::downgrade(world)) else {
         return Err(command_failed(&translations::COMMANDS_SUMMON_FAILED));
     };
 

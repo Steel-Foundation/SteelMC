@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::entity::PartEntity;
+
 use super::{
     ATTACK_RANGE_BUFFER, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
@@ -498,6 +500,9 @@ impl Player {
         apply_to_target: bool,
     ) {
         let entity = target.as_ref();
+        // Vanilla hands a part's `parentMob` to the weapon hooks; enchantments keep the part.
+        let parent = entity.as_part_entity().and_then(PartEntity::parent);
+        let hurt_target = parent.as_deref().unwrap_or(entity);
         let post_attack_context = EnchantmentPostAttackContext::new(target, damage_source);
         let (source_item, item_hurt_enemy) = {
             let mut inventory = self.inventory.lock();
@@ -506,7 +511,7 @@ impl Player {
                     return (ItemStack::empty(), false);
                 }
                 let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
-                if let Some(living_target) = entity.as_living_entity() {
+                if let Some(living_target) = hurt_target.as_living_entity() {
                     behavior.hurt_enemy(stack, living_target, self);
                 }
                 let source_item = stack.copy_with_count(stack.count());
@@ -528,7 +533,7 @@ impl Player {
             return;
         }
 
-        let Some(living_target) = entity.as_living_entity() else {
+        let Some(living_target) = hurt_target.as_living_entity() else {
             return;
         };
         let has_infinite_materials = self.has_infinite_materials();

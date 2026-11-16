@@ -131,12 +131,7 @@ pub(crate) fn create_entity_instance(
     }
 
     ENTITIES
-        .create(
-            entity_type,
-            ENTITIES.reserve_id(entity_type).first(),
-            position,
-            Arc::downgrade(world),
-        )
+        .create(entity_type, position, Arc::downgrade(world))
         .ok_or(EntitySpawnError::MissingFactory)
 }
 

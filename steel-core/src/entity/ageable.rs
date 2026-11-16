@@ -301,12 +301,7 @@ pub trait AgeableMob: Mob {
 
     /// Creates a same-type offspring using the registered entity factory.
     fn create_breed_offspring(&self, world: &Arc<World>) -> Option<SharedEntity> {
-        ENTITIES.create(
-            self.entity_type(),
-            ENTITIES.reserve_id(self.entity_type()).first(),
-            self.position(),
-            Arc::downgrade(world),
-        )
+        ENTITIES.create(self.entity_type(), self.position(), Arc::downgrade(world))
     }
 
     /// Creates this animal's vanilla breeding offspring.
