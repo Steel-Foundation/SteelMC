@@ -68,7 +68,6 @@ impl BlockBehavior for PumpkinBlock {
             state,
             Some(&shears),
             Some(player),
-            &mut rng,
         );
 
         let clicked_direction = hit_result.direction;

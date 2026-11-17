@@ -134,7 +134,7 @@ impl ChestBlockEntity {
         else {
             return;
         };
-        let mut center = DVec3::from(self.get_block_pos().get_center());
+        let mut center = self.get_block_pos().get_center();
         if chest_type == ChestType::Right {
             center += DVec3::from(ChestBlock::connected_direction(state).offset_vec()) * 0.5;
         }

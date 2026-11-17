@@ -3,6 +3,7 @@
 
 use super::{vanilla::fixtures, *};
 use crate::inventory::container::{Container, SimpleContainer};
+use glam::DVec3;
 use steel_registry::vanilla_enchantments;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, init_vanilla_registry, item_stack::ItemStack, vanilla_items,
@@ -167,7 +168,7 @@ fn damage_source_condition_requires_origin_and_damage_source() {
             let mut rng = random(12345);
             let mut ctx = LootContext::new(&mut rng);
             if has_origin {
-                ctx = ctx.with_origin(0.0, 0.0, 0.0);
+                ctx = ctx.with_origin(DVec3::ZERO);
             }
             if has_damage_source {
                 ctx = ctx.with_damage_source(DamageSourceInfo {
@@ -301,6 +302,62 @@ fn instrument_selection_and_signed_book_enchantment_modifiers() {
 }
 
 #[test]
+fn set_potion_replaces_base_potion_and_keeps_custom_contents() {
+    use steel_registry::data_components::{PotionContents, vanilla_components::POTION_CONTENTS};
+    use steel_registry::{
+        MobEffectInstance, RegistryReference, vanilla_mob_effects, vanilla_potions,
+    };
+    let items = generate(&fixtures::POTION, 12345);
+    assert_eq!(
+        items[0].get(POTION_CONTENTS),
+        Some(&PotionContents::of(&vanilla_potions::STRONG_SLOWNESS))
+    );
+
+    let custom = |potion| {
+        PotionContents::new(
+            Some(RegistryReference::new(potion)),
+            Some(0x12_34_56),
+            vec![MobEffectInstance::simple(vanilla_mob_effects::LUCK, 200, 1)],
+            Some("custom".to_owned()),
+        )
+    };
+    let mut item = ItemStack::new(&vanilla_items::TIPPED_ARROW);
+    item.set(POTION_CONTENTS, custom(&vanilla_potions::SWIFTNESS));
+    super::modifiers::set_potion(&mut item, &vanilla_potions::POISON);
+    assert_eq!(
+        item.get(POTION_CONTENTS),
+        Some(&custom(&vanilla_potions::POISON))
+    );
+}
+
+#[test]
+fn fishing_hook_predicates_distinguish_non_hooks_closed_water_and_open_water() {
+    let tables = tables();
+    for (open_water, expected_item) in [
+        (None, None),
+        (Some(false), Some(&*vanilla_items::GOLD_INGOT)),
+        (Some(true), Some(&*vanilla_items::DIAMOND)),
+    ] {
+        let mut rng = random(12345);
+        let entity = EntityRef {
+            fishing_hook_open_water: open_water,
+            ..EntityRef::default()
+        };
+        let mut context = LootContext::new(&mut rng).with_this_entity(entity);
+        context.tables = Some(&tables);
+        let items = fixtures::FISHING_HOOK_PREDICATES
+            .get_random_items(&mut context)
+            .expect("fishing-hook predicates");
+        // Vanilla's empty hook predicate matches any entity, including non-hooks.
+        let mut expected = vec![ItemStack::new(&vanilla_items::STONE)];
+        if let Some(item) = expected_item {
+            expected.push(ItemStack::new(item));
+        }
+        assert_eq!(items, expected);
+    }
+}
+
+#[test]
 fn sheep_shearing_uses_color_and_sheared_predicates() {
     init_vanilla_registry();
     for sheared in [false, true] {
@@ -328,7 +385,6 @@ fn looting_uses_attacker_equipment_and_limits_the_final_count() {
     use crate::entity::{
         LivingEntity, entities::PigEntity, entity_loot_ref, living_loot_equipment,
     };
-    use glam::DVec3;
     use std::sync::Weak;
     use steel_registry::{equipment::EquipmentSlot, vanilla_entities};
     let tables = tables();

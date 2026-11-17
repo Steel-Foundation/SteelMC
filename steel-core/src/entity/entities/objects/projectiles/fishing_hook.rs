@@ -34,7 +34,7 @@ use steel_registry::{
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::Random;
-use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
+use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Downcast, DowncastType, DowncastTypeKey};
 
@@ -532,24 +532,21 @@ impl FishingHookEntity {
                     };
 
                     if let Some(luck) = luck {
-                        let mut rng = rng();
-
-                        let mut loot_rng =
-                            RandomSource::Legacy(LegacyRandom::from_seed(rng.random()));
-                        // This is equivalent to `LootParams params` in the java src.
-                        let mut loot_ctx = LootContext::new(&mut loot_rng)
-                            .with_origin(self.position().x, self.position().y, self.position().z)
-                            .with_tool(rod)
-                            .with_this_entity(entity_loot_ref(self, None))
-                            .with_luck(luck as f32 + player.get_luck());
-
-                        let level = self.level();
-                        if let Some(world) = level.as_deref() {
-                            loot_ctx = loot_ctx.with_world(world);
-                        }
-                        let items = match vanilla_loot_tables::GAMEPLAY_FISHING
-                            .get_random_items(&mut loot_ctx)
-                        {
+                        let Some(world) = self.level() else {
+                            return damage;
+                        };
+                        let position = self.position();
+                        let table = &vanilla_loot_tables::GAMEPLAY_FISHING;
+                        let items = world.with_loot_random(Some(table), 0, |random| {
+                            let mut loot_ctx = LootContext::new(random)
+                                .with_world(&world)
+                                .with_origin(position)
+                                .with_tool(rod)
+                                .with_this_entity(entity_loot_ref(self, None))
+                                .with_luck(luck as f32 + player.get_luck());
+                            table.get_random_items(&mut loot_ctx)
+                        });
+                        let items = match items {
                             Ok(items) => items,
                             Err(error) => {
                                 log::error!("Failed to generate fishing loot: {error}");
@@ -558,10 +555,6 @@ impl FishingHookEntity {
                         };
 
                         // TODO: criteria triggers (advancements)
-
-                        let Some(world) = self.level() else {
-                            return damage;
-                        };
 
                         self.spawn_loot_award_stat(items, &world, owner.as_ref());
 
@@ -841,6 +834,10 @@ impl FishingHookEntity {
 }
 
 impl Entity for FishingHookEntity {
+    fn fishing_hook_open_water(&self) -> Option<bool> {
+        Some(self.hook_state.lock().open_water)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -993,6 +990,59 @@ mod tests {
             DVec3::ZERO,
             Arc::downgrade(world),
         ))
+    }
+
+    #[test]
+    fn catches_continue_the_named_fishing_sequence() {
+        use crate::loot::random_sequences::RandomSequences;
+        use crate::test_support::{dropped_items, insert_ready_full_chunk};
+        use steel_utils::ChunkPos;
+
+        steel_registry::init_vanilla_registry();
+        init_behaviors();
+        let fixture = fresh_test_world("fishing_sequence");
+        let world = &fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Angler", next_entity_id()).build();
+        let rod = ItemStack::new(&vanilla_items::FISHING_ROD);
+        player.inventory.lock().set_selected_item(rod.clone());
+        let owner: SharedEntity = Arc::clone(&player) as SharedEntity;
+        let position = player.position();
+        insert_ready_full_chunk(world, ChunkPos::from_entity_pos(position));
+        let expected = RandomSequences::new_for_test(world.level_data.read().seed());
+        let table = &vanilla_loot_tables::GAMEPLAY_FISHING;
+        let sequence = table.random_sequence.as_ref().expect("named sequence");
+
+        for _ in 0..3 {
+            let hook = Arc::new(FishingHookEntity::new(
+                &vanilla_entities::FISHING_BOBBER,
+                next_entity_id(),
+                position,
+                Arc::downgrade(world),
+            ));
+            hook.set_owner(&owner);
+            hook.hook_state.lock().nibble = 1;
+            let items = expected
+                .with_random(sequence, |random| {
+                    let mut context = LootContext::new(random)
+                        .with_world(world)
+                        .with_origin(position)
+                        .with_tool(&rod)
+                        .with_this_entity(entity_loot_ref(hook.as_ref(), None))
+                        .with_luck(player.get_luck());
+                    table.get_random_items(&mut context)
+                })
+                .expect("expected catch");
+            let before = dropped_items(world, position).len();
+            assert_eq!(hook.retrieve(&rod), DMG_CAUGHT);
+            assert_eq!(dropped_items(world, position).len() - before, items.len());
+            let actual = world
+                .with_loot_random(Some(table), 0, |random| Ok(random.next_i64()))
+                .expect("actual draw");
+            let expected = expected
+                .with_random(sequence, |random| Ok(random.next_i64()))
+                .expect("expected draw");
+            assert_eq!(actual, expected);
+        }
     }
 
     #[test]

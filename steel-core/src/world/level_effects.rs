@@ -1,7 +1,6 @@
 use crate::loot::LOOT_TABLES;
 use std::{borrow::Cow, ptr};
 use steel_utils::Identifier;
-use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockLootContext, BlockPos, BlockStateExt, BlockStateId, CLevelEvent,
@@ -210,9 +209,8 @@ impl World {
         particle_pos: DVec3,
         override_limiter: bool,
     ) -> bool {
-        let (x, y, z) = player_block_pos.get_center();
         let radius = if override_limiter { 512.0 } else { 32.0 };
-        DVec3::new(x, y, z).distance_squared(particle_pos) < radius * radius
+        player_block_pos.get_center().distance_squared(particle_pos) < radius * radius
     }
 
     /// Sends bubble column particles at the position
@@ -428,28 +426,34 @@ impl World {
             return Vec::new();
         };
 
-        let mut loot_rng = RandomSource::Legacy(LegacyRandom::from_seed(rand::random()));
-        let empty_tool = ItemStack::empty();
-        let block_entity = context.world().get_block_entity(context.pos());
-        let (x, y, z) = context.pos().get_center();
-        let mut ctx = LootContext::new(&mut loot_rng)
-            .with_world(context.world())
-            .with_tool(context.tool().unwrap_or(&empty_tool))
-            .with_luck(context.luck())
-            .with_block_state(state)
-            .with_origin(x, y, z);
-        if let Some(block_entity) = &block_entity {
-            ctx = ctx.with_block_entity(block_entity.as_ref());
-        }
-        let entity_equipment = context.entity().and_then(loot_equipment);
-        if let Some(entity) = context.entity() {
-            ctx = ctx.with_this_entity(entity_loot_ref(entity, entity_equipment.as_ref()));
-        }
-        if let Some(radius) = context.explosion_radius() {
-            ctx = ctx.with_explosion(radius);
-        }
+        context
+            .world()
+            .with_loot_random(Some(loot_table), 0, |rng| {
+                let empty_tool = ItemStack::empty();
+                let block_entity = context.world().get_block_entity(context.pos());
+                let mut ctx = LootContext::new(rng)
+                    .with_world(context.world())
+                    .with_tool(context.tool().unwrap_or(&empty_tool))
+                    .with_luck(context.luck())
+                    .with_block_state(state)
+                    .with_origin(context.pos().get_center());
+                if let Some(block_entity) = &block_entity {
+                    ctx = ctx.with_block_entity(block_entity.as_ref());
+                }
+                let entity_equipment = context.entity().and_then(loot_equipment);
+                if let Some(entity) = context.entity() {
+                    ctx = ctx.with_this_entity(entity_loot_ref(entity, entity_equipment.as_ref()));
+                }
+                if let Some(radius) = context.explosion_radius() {
+                    ctx = ctx.with_explosion(radius);
+                }
 
-        loot_table.get_random_items_or_log(&mut ctx)
+                loot_table.get_random_items(&mut ctx)
+            })
+            .unwrap_or_else(|error| {
+                log::error!("Failed to generate block loot {}: {error}", loot_table.key);
+                Vec::new()
+            })
     }
 
     /// Plays a sound at a specific position, broadcasting to nearby players.
