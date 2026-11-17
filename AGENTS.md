@@ -40,6 +40,7 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
  - Avoid raw `BlockStateId` in generated registry data. Use `BlockRef` plus explicit properties/default-state resolution so registry ordering can still evolve for plugin support.
 
 **Code standard**
+ - No magic numbers. Name unexplained literals with a constant or typed value stating meaning and unit; reuse vanilla/extracted constants when they exist. Obvious literals (`0`/`1`, index math) need no constant unless the unit is unclear.
  - Use vanilla names unless they are misleading or a Rust design is explicitly approved. Document intentional differences on the relevant struct, method, or module.
  - Minimize duplication when it reduces maintenance risk, but a few local lines are usually fine.
  - Keep files focused and reasonably sized. Split a file once it contains distinct responsibilities or becomes difficult to navigate.
