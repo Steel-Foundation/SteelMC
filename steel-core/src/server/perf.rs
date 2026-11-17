@@ -17,7 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Local, SecondsFormat};
 use serde::Serialize;
 use steel_registry::REGISTRY;
 use steel_utils::{Identifier, locks::SyncRwLock, translations};
@@ -40,7 +40,7 @@ const PROFILING_RESULTS_DIR: &str = "debug/profiling";
 
 /// Tracks a `/perf` run and hands back a completed recording when it ends.
 pub(crate) struct PerfRecorder {
-    active: SyncRwLock<Option<ActivePerfRecording>>,
+    active: SyncRwLock<Option<PerfRecording>>,
     results_dir: SyncRwLock<PathBuf>,
 }
 
@@ -63,19 +63,25 @@ impl PerfRecorder {
         self.begin(Some(sender))
     }
 
+    /// Starts a recording without command feedback; the result is only logged.
     pub(crate) fn begin(&self, sender: Option<CommandSender>) -> bool {
         let mut active = self.active.write();
         if active.is_some() {
             return false;
         }
-        let results_dir = self.results_dir.read().clone();
-        *active = Some(ActivePerfRecording::new(sender, results_dir));
+        *active = Some(PerfRecording {
+            started_at: Instant::now(),
+            started_at_local: Local::now(),
+            sender,
+            tick_time: Vec::new(),
+            worlds: BTreeMap::new(),
+        });
         true
     }
 
     /// Stops an active recording early.
-    pub(crate) fn stop(&self) -> Option<CompletedPerfRecording> {
-        self.active.write().take().map(CompletedPerfRecording::from)
+    pub(crate) fn stop(&self) -> Option<PerfRecording> {
+        self.active.write().take()
     }
 
     /// Adds one tick sample, returning the finished recording once the window ends.
@@ -83,7 +89,7 @@ impl PerfRecorder {
         &self,
         total: Duration,
         worlds: impl IntoIterator<Item = (&'a Identifier, WorldGameTickTimings)>,
-    ) -> Option<CompletedPerfRecording> {
+    ) -> Option<PerfRecording> {
         // Keep the idle path to one uncontended read lock.
         if self.active.read().is_none() {
             return None;
@@ -91,137 +97,84 @@ impl PerfRecorder {
 
         let mut active = self.active.write();
         let recording = active.as_mut()?;
-
-        recording.samples.push(PerfSample {
-            total,
-            worlds: worlds
-                .into_iter()
-                .map(|(key, timings)| WorldPerfSample {
-                    key: key.clone(),
-                    timings,
-                })
-                .collect(),
-        });
+        recording.tick_time.push(total);
+        for (key, timings) in worlds {
+            recording
+                .worlds
+                .entry(key.clone())
+                .or_default()
+                .push(timings);
+        }
 
         if recording.started_at.elapsed() < PERF_RECORDING_DURATION {
             return None;
         }
-
-        active.take().map(CompletedPerfRecording::from)
+        active.take()
     }
 }
 
-struct ActivePerfRecording {
+/// A `/perf` run, aggregated per tick so finishing only sorts and summarizes.
+pub(crate) struct PerfRecording {
     started_at: Instant,
-    started_at_utc: DateTime<Utc>,
+    started_at_local: DateTime<Local>,
     sender: Option<CommandSender>,
-    results_dir: PathBuf,
-    samples: Vec<PerfSample>,
+    tick_time: Vec<Duration>,
+    worlds: BTreeMap<Identifier, WorldTimingAccumulator>,
 }
 
-impl ActivePerfRecording {
-    fn new(sender: Option<CommandSender>, results_dir: PathBuf) -> Self {
-        Self {
-            started_at: Instant::now(),
-            started_at_utc: Utc::now(),
-            sender,
-            results_dir,
-            samples: Vec::new(),
-        }
-    }
-}
-
-struct PerfSample {
-    total: Duration,
-    worlds: Vec<WorldPerfSample>,
-}
-
-struct WorldPerfSample {
-    key: Identifier,
-    timings: WorldGameTickTimings,
-}
-
-/// A recording that has ended and is ready to be summarized and persisted.
-pub(crate) struct CompletedPerfRecording {
-    started_at: DateTime<Utc>,
-    duration: Duration,
-    results_dir: PathBuf,
-    samples: Vec<PerfSample>,
-    sender: Option<CommandSender>,
-}
-
-impl From<ActivePerfRecording> for CompletedPerfRecording {
-    fn from(recording: ActivePerfRecording) -> Self {
-        Self {
-            started_at: recording.started_at_utc,
-            duration: recording.started_at.elapsed(),
-            results_dir: recording.results_dir,
-            samples: recording.samples,
-            sender: recording.sender,
-        }
-    }
-}
-
-impl CompletedPerfRecording {
-    /// Sends the vanilla stop summary, then writes and reports the JSON report off-thread.
+impl PerfRecording {
+    /// Sends the vanilla stop summary, then builds and writes the JSON report
+    /// off the tick thread. Only the metadata snapshot needs the server.
     pub(crate) fn finish(self, server: &Server) {
         let Self {
             started_at,
-            duration,
-            results_dir,
-            samples,
+            started_at_local,
             sender,
+            tick_time,
+            worlds,
         } = self;
-
-        let ticks = samples.len();
+        let duration = started_at.elapsed();
+        let ticks = tick_time.len();
         let seconds = duration.as_secs_f64();
-        let ticks_per_second = if seconds > 0.0 {
-            ticks as f64 / seconds
-        } else {
-            0.0
-        };
 
         if let Some(sender) = &sender {
-            let message = translations::COMMANDS_PERF_STOPPED
-                .message([
-                    format!("{seconds:.2}"),
-                    ticks.to_string(),
-                    format!("{ticks_per_second:.2}"),
-                ])
-                .component();
-            send_success(sender, &message);
+            send_success(
+                sender,
+                &translations::COMMANDS_PERF_STOPPED
+                    .message([
+                        format!("{seconds:.2}"),
+                        ticks.to_string(),
+                        format!("{:.2}", PerfReport::ticks_per_second(ticks, seconds)),
+                    ])
+                    .component(),
+            );
         }
 
         let metadata = PerfMetadata::capture(server);
-        let report = PerfReport::from_recording(started_at, duration, samples, metadata);
+        let results_dir = server.perf.results_dir.read().clone();
         tokio::spawn(async move {
-            let result = spawn_blocking(move || report.save(&results_dir)).await;
-            match result {
-                Ok(Ok(path)) => {
-                    if let Some(sender) = sender {
-                        let message = translations::COMMANDS_PERF_REPORT_SAVED
-                            .message([path.display().to_string()])
-                            .component();
-                        send_success(&sender, &message);
-                    } else {
-                        log::info!("Created performance report at {}", path.display());
-                    }
+            let result = spawn_blocking(move || {
+                PerfReport::new(started_at_local, duration, tick_time, worlds, metadata)
+                    .save(&results_dir)
+            })
+            .await
+            .unwrap_or_else(|error| Err(io::Error::other(error)));
+            match (result, sender) {
+                (Ok(path), Some(sender)) => send_success(
+                    &sender,
+                    &translations::COMMANDS_PERF_REPORT_SAVED
+                        .message([path.display().to_string()])
+                        .component(),
+                ),
+                (Ok(path), None) => {
+                    log::info!("Created performance report at {}", path.display());
                 }
-                Ok(Err(error)) => {
+                (Err(error), sender) => {
                     log::error!("Failed to create performance report: {error}");
                     if let Some(sender) = sender {
-                        send_failure(
-                            &sender,
-                            TextComponent::from(&translations::COMMANDS_PERF_REPORT_FAILED),
-                        );
-                    }
-                }
-                Err(error) => {
-                    log::error!("Performance report task failed: {error}");
-                    if let Some(sender) = sender {
-                        send_failure(
-                            &sender,
-                            TextComponent::from(&translations::COMMANDS_PERF_REPORT_FAILED),
+                        sender.send_message(
+                            &TextComponent::from(&translations::COMMANDS_PERF_REPORT_FAILED)
+                                .color(Color::Red),
                         );
                     }
                 }
@@ -230,18 +183,12 @@ impl CompletedPerfRecording {
     }
 }
 
-/// Delivers the command feedback a recording still owes its initiator.
-///
-/// The sender outlives the command execution, so these mirror
-/// [`crate::command::execution::CommandSource`]'s success and failure output.
+/// Mirrors [`crate::command::execution::CommandSource::send_success`], since the
+/// sender outlives the command execution that started the recording.
 fn send_success(sender: &CommandSender, message: &TextComponent) {
     if sender.accepts_command_feedback() {
         sender.send_message(message);
     }
-}
-
-fn send_failure(sender: &CommandSender, message: TextComponent) {
-    sender.send_message(&message.color(Color::Red));
 }
 
 /// Server, system and per-world context captured when a recording finishes.
@@ -249,7 +196,7 @@ fn send_failure(sender: &CommandSender, message: TextComponent) {
 struct PerfMetadata {
     system: PerfSystemReport,
     server: PerfServerReport,
-    worlds: BTreeMap<String, WorldMetadataReport>,
+    worlds: BTreeMap<Identifier, WorldMetadataReport>,
 }
 
 impl PerfMetadata {
@@ -287,7 +234,7 @@ impl PerfMetadata {
             worlds: server
                 .worlds
                 .values()
-                .map(|world| (world.key.to_string(), WorldMetadataReport::capture(world)))
+                .map(|world| (world.key.clone(), WorldMetadataReport::capture(world)))
                 .collect(),
         }
     }
@@ -362,6 +309,10 @@ impl WorldMetadataReport {
 
 #[derive(Debug, Serialize)]
 struct PerfReport {
+    /// Vanilla's report name: `yyyy-MM-dd_HH.mm.ss-<level>-<version>`, minus the
+    /// level name since a Steel report covers every world.
+    #[serde(skip)]
+    file_stem: String,
     steel_version: &'static str,
     minecraft_version: &'static str,
     started_at: String,
@@ -371,52 +322,50 @@ struct PerfReport {
     tick_time: TimingStats,
     system: PerfSystemReport,
     server: PerfServerReport,
-    worlds: BTreeMap<String, WorldPerfReport>,
+    worlds: BTreeMap<Identifier, WorldPerfReport>,
 }
 
 impl PerfReport {
     #[expect(
         clippy::cast_precision_loss,
-        reason = "report fields are intentionally summary floating-point values"
+        reason = "ticks per second is a summary floating-point value"
     )]
-    fn from_recording(
-        started_at: DateTime<Utc>,
+    fn ticks_per_second(ticks: usize, seconds: f64) -> f64 {
+        if seconds > 0.0 {
+            ticks as f64 / seconds
+        } else {
+            0.0
+        }
+    }
+
+    fn new(
+        started_at: DateTime<Local>,
         duration: Duration,
-        samples: Vec<PerfSample>,
+        tick_time: Vec<Duration>,
+        worlds: BTreeMap<Identifier, WorldTimingAccumulator>,
         metadata: PerfMetadata,
     ) -> Self {
-        let ticks = samples.len();
+        let ticks = tick_time.len();
         let seconds = duration.as_secs_f64();
-        let mut tick_times = Vec::with_capacity(ticks);
-        let mut worlds = BTreeMap::<String, WorldTimingAccumulator>::new();
         let PerfMetadata {
             system,
             server,
             worlds: mut world_metadata,
         } = metadata;
 
-        for sample in samples {
-            tick_times.push(sample.total);
-            for world in sample.worlds {
-                worlds
-                    .entry(world.key.to_string())
-                    .or_default()
-                    .push(world.timings);
-            }
-        }
-
         Self {
+            file_stem: format!(
+                "{}-{}",
+                started_at.format("%Y-%m-%d_%H.%M.%S"),
+                steel_utils::MC_VERSION
+            ),
             steel_version: env!("CARGO_PKG_VERSION"),
             minecraft_version: steel_utils::MC_VERSION,
             started_at: started_at.to_rfc3339_opts(SecondsFormat::Millis, true),
             duration_seconds: seconds,
             ticks,
-            ticks_per_second: if seconds > 0.0 {
-                ticks as f64 / seconds
-            } else {
-                0.0
-            },
-            tick_time: TimingStats::from(tick_times),
+            ticks_per_second: Self::ticks_per_second(ticks, seconds),
+            tick_time: TimingStats::from(tick_time),
             system,
             server,
             worlds: worlds
@@ -432,7 +381,7 @@ impl PerfReport {
     fn save(self, directory: &Path) -> io::Result<PathBuf> {
         fs::create_dir_all(directory)?;
         let json = serde_json::to_vec_pretty(&self).map_err(io::Error::other)?;
-        let stem = self.report_stem();
+        let stem = &self.file_stem;
         let mut suffix = 0;
         loop {
             let path = directory.join(match suffix {
@@ -441,53 +390,39 @@ impl PerfReport {
             });
             // `create_new` claims the name atomically, so overlapping report
             // writes cannot both pick the same file.
-            match fs::OpenOptions::new()
+            let mut file = match fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .open(&path)
             {
-                Ok(mut file) => match file.write_all(&json) {
-                    Ok(()) => return Ok(path),
-                    Err(error) => {
-                        drop(file);
-                        if let Err(remove_error) = fs::remove_file(&path) {
-                            log::warn!(
-                                "Failed to remove incomplete performance report {}: {remove_error}",
-                                path.display()
-                            );
-                        }
-                        return Err(error);
-                    }
-                },
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => suffix += 1,
-                Err(error) => return Err(error),
-            }
-        }
-    }
-
-    fn report_stem(&self) -> String {
-        self.started_at
-            .chars()
-            .map(|value| {
-                if value.is_ascii_alphanumeric() || matches!(value, '-' | '_' | '.') {
-                    value
-                } else {
-                    '_'
+                Ok(file) => file,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                    suffix += 1;
+                    continue;
                 }
-            })
-            .collect()
+                Err(error) => return Err(error),
+            };
+            if let Err(error) = file.write_all(&json) {
+                drop(file);
+                if let Err(remove_error) = fs::remove_file(&path) {
+                    log::warn!(
+                        "Failed to remove incomplete performance report {}: {remove_error}",
+                        path.display()
+                    );
+                }
+                return Err(error);
+            }
+            return Ok(path);
+        }
     }
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
 struct WorldPerfReport {
+    #[serde(flatten)]
+    metadata: WorldMetadataReport,
     tick_time: TimingStats,
     entity_tick: TimingStats,
-    seed: i64,
-    difficulty: &'static str,
-    difficulty_locked: bool,
-    default_gamemode: &'static str,
-    gamerules: BTreeMap<String, serde_json::Value>,
     chunk_map: BTreeMap<&'static str, TimingStats>,
     counts: BTreeMap<&'static str, CountStats>,
 }
@@ -590,13 +525,9 @@ impl WorldTimingAccumulator {
 
     fn finish(self, metadata: WorldMetadataReport) -> WorldPerfReport {
         WorldPerfReport {
+            metadata,
             tick_time: TimingStats::from(self.tick_time),
             entity_tick: TimingStats::from(self.entity_tick),
-            seed: metadata.seed,
-            difficulty: metadata.difficulty,
-            difficulty_locked: metadata.difficulty_locked,
-            default_gamemode: metadata.default_gamemode,
-            gamerules: metadata.gamerules,
             chunk_map: self
                 .chunk_map
                 .into_iter()
@@ -752,10 +683,11 @@ mod tests {
         );
 
         let completed = recorder.stop().expect("recording should be active");
-        let report = PerfReport::from_recording(
-            completed.started_at,
-            completed.duration,
-            completed.samples,
+        let report = PerfReport::new(
+            completed.started_at_local,
+            completed.started_at.elapsed(),
+            completed.tick_time,
+            completed.worlds,
             PerfMetadata::default(),
         );
 
@@ -764,7 +696,7 @@ mod tests {
 
         let world = report
             .worlds
-            .get("minecraft:overworld")
+            .get(&overworld)
             .expect("overworld should be reported");
         assert!((world.tick_time.mean_ms - 30.0).abs() < f64::EPSILON);
         assert!((world.entity_tick.mean_ms - 10.0).abs() < f64::EPSILON);
@@ -792,13 +724,13 @@ mod tests {
             assert_eq!(error.kind(), io::ErrorKind::NotFound);
         }
 
-        let started_at =
-            DateTime::from_timestamp(0, 0).expect("the unix epoch should be representable");
+        let started_at = Local::now();
         let save = || {
-            PerfReport::from_recording(
+            PerfReport::new(
                 started_at,
                 Duration::from_secs(1),
                 Vec::new(),
+                BTreeMap::new(),
                 PerfMetadata::default(),
             )
             .save(&directory)
@@ -819,11 +751,12 @@ mod tests {
     fn recording_auto_stops_after_the_profiling_window() {
         let recorder = PerfRecorder::new();
         let overworld = Identifier::new_static("minecraft", "overworld");
-        let mut recording = ActivePerfRecording::new(None, PathBuf::from(PROFILING_RESULTS_DIR));
-        recording.started_at = Instant::now()
-            .checked_sub(PERF_RECORDING_DURATION)
-            .expect("the profiling window should fit before now");
-        *recorder.active.write() = Some(recording);
+        assert!(recorder.begin(None));
+        if let Some(recording) = recorder.active.write().as_mut() {
+            recording.started_at = Instant::now()
+                .checked_sub(PERF_RECORDING_DURATION)
+                .expect("the profiling window should fit before now");
+        }
 
         let completed =
             recorder.record_tick(Duration::from_millis(20), [(&overworld, timings(20, 5, 8))]);
