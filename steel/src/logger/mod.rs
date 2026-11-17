@@ -44,13 +44,6 @@ pub(crate) enum Move {
     Down,
 }
 
-/// Returns whether to run the interactive TUI. Only the `--plain` CLI flag selects
-/// the plain line-buffered console.
-#[must_use]
-pub fn terminal_mode_decision() -> bool {
-    !env::args().skip(1).any(|arg| arg == "--plain")
-}
-
 /// A logger implementation with commands suggestions
 pub struct CommandLogger {
     input: Arc<AsyncRwLock<LogState>>,
@@ -75,7 +68,7 @@ impl CommandLogger {
         cancel_token: CancellationToken,
         log_config: Option<LogConfig>,
     ) -> Result<Arc<Self>, String> {
-        let interactive = terminal_mode_decision();
+        let interactive = !env::args().any(|arg| arg == "--plain");
         let (sender, receiver) = mpsc::unbounded_channel();
         let log_cancel_token = CancellationToken::new();
         let input = LogState::new(log_config.as_ref(), cancel_token, interactive)
@@ -107,9 +100,7 @@ impl CommandLogger {
             .await
             .is_err()
         {
-            if self.interactive {
-                let _ = disable_raw_mode();
-            }
+            let _ = disable_raw_mode();
             self.stopped.cancel();
         }
         if timeout(time::Duration::from_secs(1), self.log_stopped.cancelled())

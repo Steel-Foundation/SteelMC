@@ -12,7 +12,8 @@ use crossterm::{
 use std::time::Duration;
 use std::{
     fmt::Write as _,
-    io::{Result, Write},
+    io::{Result, Write, stdin},
+    mem,
     sync::Arc,
 };
 use steel_core::command::sender::CommandSender;
@@ -44,51 +45,20 @@ impl CommandLogger {
     }
 
     async fn plain_input_main(self: Arc<Self>) -> Result<()> {
-        use std::io::{BufRead, stdin};
-
-        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
         let cancel_token = self.cancel_token.clone();
-
         spawn_blocking(move || {
-            let stdin = stdin();
-            let lines = stdin.lock().lines();
-            for line_res in lines {
+            for line in stdin().lines().map_while(Result::ok) {
                 if cancel_token.is_cancelled() {
                     break;
                 }
-                match line_res {
-                    Ok(line) => {
-                        let trimmed = line.trim_end_matches(['\r', '\n']);
-                        if !trimmed.is_empty()
-                            && !trimmed.chars().all(char::is_whitespace)
-                            && tx.send(trimmed.to_string()).is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
+                let line = line.trim_end_matches('\r');
+                if !line.trim().is_empty() {
+                    dispatch_command(line.to_owned());
                 }
             }
         });
-
-        let stopped = self.stopped.clone();
-        loop {
-            tokio::select! {
-                biased;
-                cmd = rx.recv() => {
-                    if let Some(cmd) = cmd {
-                        dispatch_command(cmd);
-                    } else {
-                        self.cancel_token.cancelled().await;
-                        break;
-                    }
-                }
-                () = self.cancel_token.cancelled() => {
-                    break;
-                }
-            }
-        }
-        stopped.cancel();
+        self.cancel_token.cancelled().await;
+        self.stopped.cancel();
         Ok(())
     }
 
@@ -102,6 +72,12 @@ impl CommandLogger {
 
                 if let Ok(true) = poll(Duration::from_millis(50)) {
                     let event = read().expect("Event bug; Cannot read event.");
+                    // Flush typed chars before any non-char key so Enter sees them.
+                    let typed_char = matches!(event, Event::Key(KeyEvent { code: KeyCode::Char(_), modifiers, .. })
+                        if !modifiers.contains(KeyModifiers::CONTROL));
+                    if !typed_char && !string.is_empty() {
+                        tx.send(ExtendedKey::String(mem::take(&mut string))).ok();
+                    }
                     // On Windows, crossterm sends both Press and Release events.
                     // Only handle Press events to avoid duplicate input.
                     match event {
@@ -111,27 +87,15 @@ impl CommandLogger {
                             }
                             if let KeyCode::Char(char) = key.code {
                                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                    if !string.is_empty() {
-                                        tx.send(ExtendedKey::String(string)).ok();
-                                        string = String::new();
-                                    }
                                     tx.send(ExtendedKey::Ctrl(char)).ok();
                                     continue;
                                 }
                                 write!(string, "{char}").ok();
                             } else {
-                                if !string.is_empty() {
-                                    tx.send(ExtendedKey::String(string)).ok();
-                                    string = String::new();
-                                }
                                 tx.send(ExtendedKey::Generic(key)).ok();
                             }
                         }
                         Event::Resize(..) => {
-                            if !string.is_empty() {
-                                tx.send(ExtendedKey::String(string)).ok();
-                                string = String::new();
-                            }
                             tx.send(ExtendedKey::Resize).ok();
                         }
                         _ => (),
@@ -441,17 +405,6 @@ impl CommandLogger {
     }
 }
 
-pub(crate) fn dispatch_command(message: String) {
-    steel_utils::console!("{}", message);
-    if let Some(server) = SERVER.get()
-        && server
-            .submit_command(CommandSender::Console, message)
-            .is_err()
-    {
-        log::warn!("Command queue is full");
-    }
-}
-
 fn send_state(mut lock: RwLockWriteGuard<'_, LogState>) {
     if lock.out.is_empty() || lock.out.text.chars().all(char::is_whitespace) {
         return;
@@ -461,6 +414,17 @@ fn send_state(mut lock: RwLockWriteGuard<'_, LogState>) {
     lock.reset().ok();
     drop(lock);
     dispatch_command(message);
+}
+
+fn dispatch_command(message: String) {
+    steel_utils::console!("{}", message);
+    if let Some(server) = SERVER.get()
+        && server
+            .submit_command(CommandSender::Console, message)
+            .is_err()
+    {
+        log::warn!("Command queue is full");
+    }
 }
 
 fn copy_to_clipboard(input: &mut LogState) -> Option<()> {

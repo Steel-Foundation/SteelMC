@@ -166,16 +166,10 @@ impl LogState {
 /// Rendering methods
 impl LogState {
     pub fn rewrite_current_input(&mut self) -> Result<()> {
-        if !self.out.interactive {
-            return Ok(());
-        }
         self.rewrite_input(self.out.length, self.out.pos)
     }
 
     pub fn rewrite_input(&mut self, length: usize, pos: usize) -> Result<()> {
-        if !self.out.interactive {
-            return Ok(());
-        }
         self.out.cursor_to(0)?;
 
         let search_prompt = self.search.as_ref().map(ReverseSearch::prompt);

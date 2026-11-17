@@ -118,9 +118,6 @@ impl Completer {
     }
 
     pub fn rewrite(&mut self, out: &mut Output, dir: Move) -> Result<()> {
-        if !out.interactive {
-            return Ok(());
-        }
         out.cursor_to_relative(out.pos)?;
         if out.is_at_end() {
             write!(out, "{}", Clear(ClearType::UntilNewLine))?;
