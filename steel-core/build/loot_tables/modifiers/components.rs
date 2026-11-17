@@ -83,7 +83,7 @@ impl CompileModifier for SetDamage {
                 let damage = #damage;
                 crate::loot::modifiers::set_damage(item, damage, #add);
             } else {
-                log::warn!("Couldn't set damage of loot item {}", item.item.key);
+                log::warn!("Couldn't set damage of loot item {} {}", item.count(), item.item().key);
             }
         }
     }
