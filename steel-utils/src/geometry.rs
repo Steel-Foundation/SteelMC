@@ -524,7 +524,10 @@ impl<I: Space> Aabb<DVec3, I> {
         }
     }
 
-    /// Creates a 1x1 block AABB
+    /// Creates the unit-cube box covering the block at `pos`.
+    ///
+    /// Vanilla equivalent: `new AABB(BlockPos)`.
+    #[must_use]
     pub fn single(pos: IVec3) -> Self {
         Self {
             min: pos.as_dvec3(),

@@ -1,9 +1,10 @@
 //! `PotentSulfurBlockEntity` for geyser eruption
 
+use std::sync::{Arc, Weak};
+
 use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
-use std::sync::{Arc, Weak};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, PotentSulfurState};
 use steel_registry::vanilla_block_entity_types;
@@ -33,6 +34,9 @@ const BASE_VELOCITY_THRESHOLD: f64 = 0.3;
 const VELOCITY_THRESHOLD_SCALE: f64 = 0.1;
 const MAX_WATER_BLOCKS_ABOVE: i32 = 4;
 const FORCE_HEIGHT_MULTIPLIER: i32 = 6;
+const EFFECT_APPLICATION_FREQUENCY_TICKS: i64 = 10;
+const EFFECT_DURATION_IN_TICKS: i32 = 80;
+const EFFECT_RANGE: f64 = 3.0;
 
 /// Block entity for `potent_sulfur` blocks
 pub struct PotentSulfurBlockEntity {
@@ -200,17 +204,14 @@ impl PotentSulfurBlockEntity {
         };
 
         let water_blocks = source.y() - pos.y() - 1;
-        let above = BlockPos::new(pos.x(), pos.y() + 1, pos.z());
+        let above = pos.above();
         let force_height = Self::unobstructed_block_count(world, above, water_blocks);
 
-        let aabb = WorldAabb::new(
-            f64::from(pos.x()),
-            f64::from(pos.y() + 1),
-            f64::from(pos.z()),
-            f64::from(pos.x() + 1),
-            f64::from(pos.y() + 1) + f64::from(force_height),
-            f64::from(pos.z() + 1),
-        );
+        let aabb = WorldAabb::single(above.0).expand_towards(DVec3::new(
+            0.0,
+            f64::from(force_height - 1),
+            0.0,
+        ));
 
         let velocity_threshold =
             BASE_VELOCITY_THRESHOLD + f64::from(water_blocks) * VELOCITY_THRESHOLD_SCALE;
@@ -241,19 +242,20 @@ impl PotentSulfurBlockEntity {
                 continue;
             }
 
-            entity.set_velocity(glam::DVec3::new(vel.x, vel.y + LAUNCH_FORCE, vel.z));
+            entity.set_velocity(DVec3::new(vel.x, vel.y + LAUNCH_FORCE, vel.z));
             entity.mark_velocity_sync();
         }
     }
 
-    fn tick_nausea(world: &Arc<World>, pos: BlockPos) {
-        if world.game_time() % 10 != 0 {
+    fn tick_nausea(world: &World, pos: BlockPos) {
+        if world.game_time() % EFFECT_APPLICATION_FREQUENCY_TICKS != 0 {
             return;
         }
         let Some(source) = Self::find_source_block(world, pos) else {
             return;
         };
-        let aabb = WorldAabb::single(source.0).inflate_xyz(2.5, 0.0, 2.5);
+        let aabb =
+            WorldAabb::single(source.0).inflate_xyz(EFFECT_RANGE - 0.5, 0.0, EFFECT_RANGE - 0.5);
         for entity in world.get_entities_in_aabb(&aabb) {
             if !entity.is_alive() || entity.is_spectator() {
                 continue;
@@ -261,22 +263,23 @@ impl PotentSulfurBlockEntity {
             let Some(e) = entity.as_living_entity() else {
                 continue;
             };
-            if !Self::can_get_nausea(
-                world,
-                source,
-                e.position() + DVec3::new(0.0, e.get_eye_height(), 0.0),
-            ) {
+            let feet = e.position();
+            let eye = DVec3::new(feet.x, e.get_eye_y(), feet.z);
+            if !Self::can_get_nausea(world, source, eye) {
                 continue;
             }
-            e.add_mob_effect(MobEffectInstance::with_duration(NAUSEA, 80, 0).with_ambient(true));
+            e.add_mob_effect(
+                MobEffectInstance::with_duration(NAUSEA, EFFECT_DURATION_IN_TICKS, 0)
+                    .with_ambient(true),
+            );
         }
     }
 
-    fn can_get_nausea(world: &Arc<World>, source: BlockPos, eye: DVec3) -> bool {
+    fn can_get_nausea(world: &World, source: BlockPos, eye: DVec3) -> bool {
         let eye_pos = BlockPos::from(eye);
         let ctx = BlockCollisionContext::position_context(f64::from(eye_pos.y() - 1));
         if !Self::is_geyser_passable(world, eye_pos, ctx)
-            || eye.distance_squared(source.get_center()) > 9.0
+            || eye.distance_squared(source.get_center()) > EFFECT_RANGE * EFFECT_RANGE
         {
             return false;
         }
