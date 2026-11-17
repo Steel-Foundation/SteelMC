@@ -100,9 +100,7 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
     );
 
     // boat
-    // TODO: boats (boat.rs) — spawn position/water checks are ported but
-    // entity spawning itself is unfinished; currently falls through to
-    // DefaultDispenseBehavior (or silently consumes the item over water).
+    // TODO: boats and rafts - need the boat entities.
 
     // bucket
     registry.set_behavior(
@@ -139,7 +137,8 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         &vanilla_items::GLOWSTONE,
         Box::new(GlowstoneDispenseBehavior),
     );
-    // TODO: carved pumpkin — see consumables.rs
+    // TODO: carved pumpkin - see consumables.rs
+    // TODO: wither skeleton skull - needs the Wither entity for the summon pattern.
 
     // potion
     registry.set_behavior(
@@ -208,6 +207,9 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         ),
     );
 
+    // TODO: experience bottle, fire charge, wind charge - need their projectile
+    // entities. Firework rocket - entity exists; needs its custom projectile config.
+
     registry.set_behavior(&vanilla_items::TNT, Box::new(TntDispenseBehavior));
 
     // tools
@@ -226,12 +228,15 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
     }
     // TODO: chest - equips tamed donkeys/mules/llamas; needs those entities.
 
-    // minecarts (blocked - see minecarts.rs plan in PR)
-    // TODO: minecart, chest/furnace/hopper/tnt/command-block minecarts -
-    // need minecart entities plus rail-slope detection for the
-    // drop-vs-place branch, neither of which is ported yet.
+    // minecart
+    // TODO: minecart and chest minecart - entities exist; port
+    // MinecartDispenseItemBehavior. Furnace/hopper/tnt/command-block
+    // minecarts also need their entities.
 
-    // spawn_egg (blocked - see spawn_egg.rs plan in PR)
+    // spawn egg
+    // TODO: spawn eggs with ENTITY_DATA - vanilla resolves these per stack in
+    // DispenserBlock.getDefaultDispenseMethod, which this item-keyed registry
+    // can't express yet.
     // TODO: armor stand - needs the ArmorStand entity.
 
     registry
