@@ -25,7 +25,7 @@ use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
 use crate::entity::MobEffectInstance;
 use crate::fluid::FluidStateExt as _;
-use crate::world::{ClipBlockShape, ClipFluid, LevelReader, World};
+use crate::world::{LevelReader, World};
 
 const GEYSER_SALT: i64 = -904_011_478;
 const COUNTDOWN_FREQUENCY_TICKS: i64 = 20;
@@ -106,7 +106,7 @@ impl PotentSulfurBlockEntity {
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         behavior
-            .get_collision_shape(state, world, pos, context)
+            .get_collision_boxes(state, world, pos, context)
             .is_empty()
     }
 
@@ -289,14 +289,11 @@ impl PotentSulfurBlockEntity {
             .get_fluid_state();
         f_state.is_source()
             && f_state.is_water()
-            && world
-                .clip(
-                    source.below().get_center(),
-                    eye_below,
-                    ClipBlockShape::Collider,
-                    ClipFluid::None,
-                )
-                .miss
+            && world.is_block_collision_path_clear(
+                source.below().get_center(),
+                eye_below,
+                BlockCollisionContext::empty(),
+            )
     }
 }
 
