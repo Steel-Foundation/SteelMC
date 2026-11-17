@@ -1,6 +1,7 @@
 use std::io::{Cursor, Result, Write};
 
 use glam::DVec3;
+use steel_math::round_f64;
 
 use crate::{
     codec::VarInt,
@@ -87,7 +88,7 @@ fn sanitize(value: f64) -> f64 {
 }
 
 fn pack(value: f64) -> i64 {
-    ((value * 0.5 + 0.5) * MAX_QUANTIZED_VALUE).round() as i64
+    round_f64((value * 0.5 + 0.5) * MAX_QUANTIZED_VALUE)
 }
 
 fn unpack(value: u64) -> f64 {

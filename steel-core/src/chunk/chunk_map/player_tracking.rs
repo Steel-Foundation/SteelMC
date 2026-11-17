@@ -17,10 +17,6 @@ impl ChunkMap {
             if let Some(last_view) = last_view_guard.as_ref() {
                 if last_view.center != new_view.center {
                     let _ = self.scheduling.queue_player_ticket_operations([
-                        PlayerTicketOperation::Remove {
-                            pos: last_view.center,
-                            player_id,
-                        },
                         PlayerTicketOperation::Add {
                             pos: new_view.center,
                             player_id,

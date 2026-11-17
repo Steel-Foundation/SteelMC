@@ -11,8 +11,7 @@ use crate::player::Player;
 use crate::player::advancement::PlayerAdvancement;
 use std::sync::Arc;
 use steel_registry::REGISTRY;
-use steel_registry::advancement::Advancement;
-use steel_registry::advancement::registry::{AdvancementNode, AdvancementRef};
+use steel_registry::advancement::registry::{AdvancementNode, FrozenAdvancementRegistry};
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 
@@ -30,11 +29,14 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                         argument("advancement", SteelArgumentType::advancement())
                         .executes(
                             |c| {
+                                let snap = &REGISTRY.advancements.snapshot();
                                 perform_and_show(
                                     c.source(),
+                                    snap,
                                     &c.players("targets")?,
                                     $action,
                                     &get_advancements(
+                                        snap,
                                         c.advancement("advancement")?,
                                         Mode::Only,
                                     ),
@@ -47,16 +49,19 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                                 |c: &SteelSuggestionContext<'_, CommandSource>,
                                 b: &mut SuggestionsBuilder<'_>| {
                                     if let Ok(advancement) = c.advancement("advancement")  {
-                                        suggest_list(b, advancement.criteria_ids());
+                                        REGISTRY.advancements.with_value_by_key(&advancement,
+                                        |adv| suggest_list(b,adv.criteria_ids()));
                                     };
                                 },
                             )
                             .executes(|c| {
+                                let snap = &REGISTRY.advancements.snapshot();
                                 perform_criterion(
                                     c.source(),
+                                    snap,
                                     &c.players("targets")?,
                                     $action,
-                                    c.advancement("advancement")?,
+                                    &c.advancement("advancement")?,
                                     c.string("criterion")?,
                                 )
                             }),
@@ -65,40 +70,48 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                 )
                 .then(literal("from").then(
                     argument("advancement", SteelArgumentType::advancement()).executes(|c| {
+                        let snap = &REGISTRY.advancements.snapshot();
                         perform_and_show(
                             c.source(),
+                            snap,
                             &c.players("targets")?,
                             $action,
-                            &get_advancements(c.advancement("advancement")?, Mode::From),
+                            &get_advancements(snap,c.advancement("advancement")?, Mode::From),
                         )
                     }),
                 ))
                 .then(literal("until").then(
                     argument("advancement", SteelArgumentType::advancement()).executes(|c| {
+                        let snap = &REGISTRY.advancements.snapshot();
                         perform_and_show(
                             c.source(),
+                            snap,
                             &c.players("targets")?,
                             $action,
-                            &get_advancements(c.advancement("advancement")?, Mode::Until),
+                            &get_advancements(snap,c.advancement("advancement")?, Mode::Until),
                         )
                     }),
                 ))
                 .then(literal("through").then(
                     argument("advancement", SteelArgumentType::advancement()).executes(|c| {
+                        let snap = &REGISTRY.advancements.snapshot();
                         perform_and_show(
                             c.source(),
+                            snap,
                             &c.players("targets")?,
                             $action,
-                            &get_advancements(c.advancement("advancement")?, Mode::Through),
+                            &get_advancements(snap,c.advancement("advancement")?, Mode::Through),
                         )
                     }),
                 ))
                 .then(literal("everything").executes(|c| {
+                    let snap = &REGISTRY.advancements.snapshot();
                     perform(
                         c.source(),
+                        snap,
                         &c.players("targets")?,
                         $action,
-                        REGISTRY.advancements.advancements(),
+                        &snap.get_all_key(),
                         false,
                     )
                 })))
@@ -121,9 +134,14 @@ impl Action {
         self,
         player: &Player,
         guard: &mut PlayerAdvancement,
-        advancement: AdvancementRef,
+        advancement: &Identifier,
     ) -> bool {
-        let progress = guard.progress.get_mut_or_start_progress(advancement);
+        let Some(advancement_idx) = guard.registry().get_idx_by_key(advancement) else {
+            return false;
+        };
+        let progress = guard
+            .progress
+            .get_mut_or_start_progress(&Arc::clone(guard.registry()), advancement_idx);
         match self {
             Self::Grant => {
                 if progress.is_done() {
@@ -157,7 +175,7 @@ impl Action {
     fn perform(
         self,
         player: &Arc<Player>,
-        advancements: &[AdvancementRef],
+        advancements: &[Identifier],
         show_advancement: bool,
     ) -> i32 {
         let mut guard = player.advancements.lock();
@@ -177,7 +195,7 @@ impl Action {
     fn perform_criterion(
         self,
         player: &Arc<Player>,
-        advancement: &'static Advancement,
+        advancement: &Identifier,
         criterion: &str,
     ) -> bool {
         let mut guard = player.advancements.lock();
@@ -214,67 +232,75 @@ impl Mode {
     }
 }
 
-fn get_advancements(target: AdvancementRef, mode: Mode) -> Vec<AdvancementRef> {
-    let tree = &REGISTRY.advancements;
-    let target_node = tree.by_key(target.key());
+fn get_advancements(
+    registry: &FrozenAdvancementRegistry,
+    target: Identifier,
+    mode: Mode,
+) -> Vec<Identifier> {
+    let target_node = registry.get_by_key(&target);
     target_node.map_or_else(
-        || vec![target],
+        || vec![target.clone()],
         |target_node| {
             let mut advancements = Vec::new();
             if mode.parents() {
                 let mut parent = target_node.parent();
                 while let Some(parent_id) = parent {
-                    let current_node = tree
-                        .get_by_idx(parent_id)
-                        .expect("unable to get the parent node");
-                    advancements.push(current_node.value());
+                    let current_node = registry.get_by_idx(parent_id);
+                    advancements.push(current_node.value().key().clone());
                     parent = current_node.parent();
                 }
             }
-            advancements.push(target);
+            advancements.push(target.clone());
             if mode.children() {
-                add_children(target_node, &mut advancements);
+                add_children(registry, target_node, &mut advancements);
             }
             advancements
         },
     )
 }
 
-fn add_children(parent: &AdvancementNode, output: &mut Vec<&Advancement>) {
+fn add_children(
+    registry: &FrozenAdvancementRegistry,
+    parent: &AdvancementNode,
+    output: &mut Vec<Identifier>,
+) {
     for child in parent.children() {
-        let node = REGISTRY
-            .advancements
-            .get_by_idx(child)
-            .expect("invalid child index in the parent node");
-        output.push(node.value());
-        add_children(node, output);
+        let node = registry.get_by_idx(child);
+        output.push(node.value().key().clone());
+        add_children(registry, node, output);
     }
 }
 
 #[inline]
 fn perform_and_show(
     context: &CommandSource,
+    registry: &FrozenAdvancementRegistry,
     players: &[Arc<Player>],
     action: Action,
-    advancements: &[AdvancementRef],
+    advancements: &[Identifier],
 ) -> Result<i32, CommandSyntaxError> {
-    perform(context, players, action, advancements, true)
+    perform(context, registry, players, action, advancements, true)
 }
 
 #[inline]
 fn perform_error_generator(
+    registry: &FrozenAdvancementRegistry,
     targets: &[Arc<Player>],
     action: Action,
-    advancements: &[AdvancementRef],
+    advancements: &[Identifier],
 ) -> Result<i32, CommandSyntaxError> {
-    if let [first_advancement] = advancements[..] {
+    if let [first_advancement] = &advancements {
+        let advancement_name = registry.get_by_key(first_advancement).map_or_else(
+            || first_advancement.to_string().into(),
+            |adv| adv.value().name(),
+        );
         if let [first_player] = targets {
             Err(CommandSyntaxError::dynamic(
                 match action {
                     Action::Grant => &translations::COMMANDS_ADVANCEMENT_GRANT_ONE_TO_ONE_FAILURE,
                     Action::Revoke => &translations::COMMANDS_ADVANCEMENT_REVOKE_ONE_TO_ONE_FAILURE,
                 }
-                .message([first_advancement.name(), first_player.display_name()]),
+                .message([advancement_name, first_player.display_name()]),
             ))
         } else {
             Err(CommandSyntaxError::dynamic(
@@ -284,7 +310,7 @@ fn perform_error_generator(
                         &translations::COMMANDS_ADVANCEMENT_REVOKE_ONE_TO_MANY_FAILURE
                     }
                 }
-                .message([first_advancement.name(), targets.len().to_string().into()]),
+                .message([advancement_name, targets.len().to_string().into()]),
             ))
         }
     } else if let [first_player] = targets {
@@ -313,9 +339,10 @@ fn perform_error_generator(
 }
 fn perform(
     context: &CommandSource,
+    registry: &FrozenAdvancementRegistry,
     targets: &[Arc<Player>],
     action: Action,
-    advancements: &[AdvancementRef],
+    advancements: &[Identifier],
     show_advancement: bool,
 ) -> Result<i32, CommandSyntaxError> {
     let mut player_count = 0;
@@ -330,22 +357,26 @@ fn perform(
         advancement_count += count;
     }
     if advancement_count == 0 {
-        return perform_error_generator(targets, action, advancements);
+        return perform_error_generator(registry, targets, action, advancements);
     }
-    let translate = if let [first_advancement] = advancements[..] {
+    let translate = if let [first_advancement] = &advancements {
+        let advancement_name = registry.get_by_key(first_advancement).map_or_else(
+            || first_advancement.to_string().into(),
+            |adv| adv.value().name(),
+        );
         if let [first_player] = players[..] {
             match action {
                 Action::Grant => &translations::COMMANDS_ADVANCEMENT_GRANT_ONE_TO_ONE_SUCCESS,
                 Action::Revoke => &translations::COMMANDS_ADVANCEMENT_REVOKE_ONE_TO_ONE_SUCCESS,
             }
-            .message([first_advancement.name(), first_player.display_name()])
+            .message([advancement_name, first_player.display_name()])
             .component()
         } else {
             match action {
                 Action::Grant => &translations::COMMANDS_ADVANCEMENT_GRANT_ONE_TO_MANY_SUCCESS,
                 Action::Revoke => &translations::COMMANDS_ADVANCEMENT_REVOKE_ONE_TO_MANY_SUCCESS,
             }
-            .message([first_advancement.name(), player_count.to_string().into()])
+            .message([advancement_name, player_count.to_string().into()])
             .component()
         }
     } else if let [first_player] = players[..] {
@@ -375,11 +406,20 @@ fn perform(
 
 pub fn perform_criterion(
     context: &CommandSource,
+    registry: &FrozenAdvancementRegistry,
     targets: &[Arc<Player>],
     action: Action,
-    advancement: AdvancementRef,
+    advancement_key: &Identifier,
     criterion: &str,
 ) -> Result<i32, CommandSyntaxError> {
+    let Some(advancement) = registry.value_by_key(advancement_key) else {
+        return Err(CommandSyntaxError::dynamic(
+            translations::ARGUMENT_RESOURCE_NOT_FOUND.message([
+                TextComponent::from("advancement"),
+                advancement_key.to_string().into(),
+            ]),
+        ));
+    };
     if !advancement.has_criterion(criterion) {
         return Err(CommandSyntaxError::dynamic(
             translations::COMMANDS_ADVANCEMENT_CRITERION_NOT_FOUND
@@ -389,7 +429,7 @@ pub fn perform_criterion(
 
     let changed_targets = targets
         .iter()
-        .filter(|player| action.perform_criterion(player, advancement, criterion))
+        .filter(|player| action.perform_criterion(player, advancement_key, criterion))
         .collect::<Vec<_>>();
     let player_count = changed_targets.len() as i32;
 

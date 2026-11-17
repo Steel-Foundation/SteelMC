@@ -5,7 +5,8 @@ use std::sync::Arc;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::inventory::ender_chest::{ENDER_CHEST_SLOTS, SyncPlayerEnderChest};
-use crate::inventory::menu::kinds::chest_menu::chest_with_kind;
+use crate::inventory::menu::GRID_WIDTH;
+use crate::inventory::menu::kinds::generic_9x_menu::generic_9x_menu_with_kind;
 use crate::inventory::prelude::*;
 use crate::player::player_inventory::PlayerInventory;
 
@@ -16,11 +17,11 @@ pub fn ender_chest(
     container_id: u8,
     container: SyncPlayerEnderChest,
 ) -> Menu {
-    chest_with_kind(
+    generic_9x_menu_with_kind(
         inventory,
         container_id,
         Arc::clone(&container),
-        ENDER_CHEST_SLOTS / 9,
+        ENDER_CHEST_SLOTS / GRID_WIDTH,
         EnderChestKind { container },
     )
 }
