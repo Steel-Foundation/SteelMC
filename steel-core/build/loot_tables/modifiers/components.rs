@@ -49,6 +49,20 @@ impl CompileModifier for SetInstrument {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SetPotion {
+    pub id: String,
+    pub condition: Option<Holder<Condition>>,
+}
+
+impl CompileModifier for SetPotion {
+    fn compile(&self, _compiler: &mut Compiler) -> TokenStream {
+        let potion = ident(&self.id);
+        quote! { crate::loot::modifiers::set_potion(item, &steel_registry::vanilla_potions::#potion); }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SetEnchantments {
     // TODO: Default an omitted enchantments map to an empty map, as vanilla does.
     pub enchantments: BTreeMap<String, ContextIntProvider>,
