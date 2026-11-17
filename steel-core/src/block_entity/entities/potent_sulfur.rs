@@ -1,9 +1,9 @@
 //! `PotentSulfurBlockEntity` for geyser eruption
 
-use std::sync::{Arc, Weak};
-
+use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
+use std::sync::{Arc, Weak};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, PotentSulfurState};
 use steel_registry::vanilla_block_entity_types;
@@ -24,7 +24,7 @@ use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
 use crate::entity::MobEffectInstance;
 use crate::fluid::FluidStateExt as _;
-use crate::world::World;
+use crate::world::{ClipBlockShape, ClipFluid, LevelReader, World};
 
 const GEYSER_SALT: i64 = -904_011_478;
 const COUNTDOWN_FREQUENCY_TICKS: i64 = 20;
@@ -117,16 +117,16 @@ impl PotentSulfurBlockEntity {
             let fluid = state.get_fluid_state();
             let is_water_source = fluid.is_source() && fluid.is_water();
 
-            if state.is_air() || Self::is_geyser_passable(world, pos, geyser_position_context) {
-                return Some(pos);
-            }
-
             if is_water_source
                 && (state.get_block() == &vanilla_blocks::WATER
                     || Self::is_geyser_passable(world, pos, geyser_position_context))
             {
                 pos = pos.relative(Direction::Up);
                 continue;
+            }
+
+            if state.is_air() || Self::is_geyser_passable(world, pos, geyser_position_context) {
+                return Some(pos);
             }
 
             break; // Solid obstruction
@@ -261,8 +261,39 @@ impl PotentSulfurBlockEntity {
             let Some(e) = entity.as_living_entity() else {
                 continue;
             };
+            if !Self::can_get_nausea(
+                world,
+                source,
+                e.position() + DVec3::new(0.0, e.get_eye_height(), 0.0),
+            ) {
+                continue;
+            }
             e.add_mob_effect(MobEffectInstance::with_duration(NAUSEA, 80, 0).with_ambient(true));
         }
+    }
+
+    fn can_get_nausea(world: &Arc<World>, source: BlockPos, eye: DVec3) -> bool {
+        let eye_pos = BlockPos::from(eye);
+        let ctx = BlockCollisionContext::position_context(f64::from(eye_pos.y() - 1));
+        if !Self::is_geyser_passable(world, eye_pos, ctx)
+            || eye.distance_squared(source.get_center()) > 9.0
+        {
+            return false;
+        }
+        let eye_below = eye - DVec3::new(0.0, 1.0, 0.0);
+        let f_state = world
+            .get_block_state(BlockPos::from(eye_below))
+            .get_fluid_state();
+        f_state.is_source()
+            && f_state.is_water()
+            && world
+                .clip(
+                    source.below().get_center(),
+                    eye_below,
+                    ClipBlockShape::Collider,
+                    ClipFluid::None,
+                )
+                .miss
     }
 }
 
@@ -297,8 +328,6 @@ impl BlockEntity for PotentSulfurBlockEntity {
         }
 
         let game_time = world.game_time();
-
-        // TODO: Add nausea ticker (WET / DORMANT states, every 10 ticks) after the mob-effect refactor adds timed instances and sync.
 
         let action = if matches!(
             &current,
