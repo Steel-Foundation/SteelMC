@@ -133,6 +133,15 @@ impl<T: Entity> EntityEventSource for T {
     }
 }
 
+/// Position setter used when repositioning a rider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RiderMove {
+    /// Keeps the old position so the move is interpolated.
+    SetPosition,
+    /// Resets the old position so the move is not interpolated.
+    Snap,
+}
+
 /// A trait for entities.
 ///
 /// This trait provides the core functionality for entities.
@@ -838,8 +847,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Repositions a direct passenger from this vehicle's attachment point.
-    fn position_rider(&self, passenger: &dyn Entity) {
-        position_rider_default(self, passenger);
+    fn position_rider(&self, passenger: &dyn Entity, move_behavior: RiderMove) {
+        position_rider_default(self, passenger, move_behavior);
     }
 
     /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.
@@ -1011,7 +1020,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.set_velocity(DVec3::ZERO);
         Arc::clone(&self).tick();
         if let Some(vehicle) = self.vehicle() {
-            vehicle.position_rider(self.as_entity_event_source());
+            vehicle.position_rider(self.as_entity_event_source(), RiderMove::SetPosition);
         }
     }
 
@@ -1595,6 +1604,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns this entity's container-user capability.
     fn as_container_user(&self) -> Option<&dyn super::ContainerUser> {
         try_as_dyn::<Self, dyn super::ContainerUser>(self)
+    }
+
+    /// Returns this entity as a hurting projectile when it has hurting-projectile behavior.
+    fn as_hurting_projectile(&self) -> Option<&dyn AbstractHurtingProjectile> {
+        try_as_dyn::<Self, dyn AbstractHurtingProjectile>(self)
+    }
+
+    /// Returns whether this entity is a player or breeze wind charge.
+    fn is_abstract_wind_charge(&self) -> bool {
+        try_as_dyn::<Self, dyn AbstractWindCharge>(self).is_some()
     }
 
     /// Returns this entity as a living entity when it has living behavior.
@@ -2696,12 +2715,21 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().try_set_position(pos)
     }
 
+    /// Sets the position of an entity not yet managed by a world, rebuilding its
+    /// bounding box through [`Entity::make_bounding_box_at`].
+    fn set_position_local(&self, pos: DVec3) {
+        self.base().set_position_local(pos);
+        self.base().set_bounding_box(self.make_bounding_box_at(pos));
+    }
+
     /// Moves this entity to `pos`, keeping its current rotation.
-    // TODO: Recursively reposition this entity's passengers (vanilla
-    // `Entity.teleportPassengers`, via `getSelfAndPassengers`)
     #[must_use = "movement commits can fail when world entity state rejects the update"]
     fn teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
-        self.try_set_position(pos)
+        self.try_set_position(pos)?;
+        self.set_old_position_to_current();
+        self.base().set_old_rotation_to_current();
+        teleport_passengers(self.as_entity_event_source());
+        Ok(())
     }
 
     /// Sets the vanilla movement-trace old position to the current position.
@@ -3970,8 +3998,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         if let Some(position) = read_nbt_dvec3(&nbt, "Pos")
             && position.is_finite()
         {
-            self.base()
-                .set_position_local(super::clamp_loaded_entity_position(position));
+            self.set_position_local(super::clamp_loaded_entity_position(position));
         }
 
         if let Some(motion) = read_nbt_dvec3(&nbt, "Motion") {
@@ -4129,7 +4156,11 @@ fn compute_modified_friction(friction: f64, modifier: f64) -> f64 {
 ///
 /// Shared between the [`Entity::position_rider`] default and entity overrides that
 /// extend it (e.g. `Chicken` mirroring the rider's body yaw).
-pub(crate) fn position_rider_default<E: Entity + ?Sized>(entity: &E, passenger: &dyn Entity) {
+pub(crate) fn position_rider_default<E: Entity + ?Sized>(
+    entity: &E,
+    passenger: &dyn Entity,
+    move_behavior: RiderMove,
+) {
     if !entity.has_passenger(passenger) {
         return;
     }
@@ -4142,6 +4173,22 @@ pub(crate) fn position_rider_default<E: Entity + ?Sized>(entity: &E, passenger: 
             passenger.id(),
             entity.id()
         );
+        return;
+    }
+    if move_behavior == RiderMove::Snap {
+        passenger.set_old_position_to_current();
+        passenger.base().set_old_rotation_to_current();
+    }
+}
+
+/// Positions direct passengers before recursing so nested riders land on the moved seat.
+fn teleport_passengers(vehicle: &dyn Entity) {
+    let passengers = vehicle.passengers();
+    for passenger in &passengers {
+        vehicle.position_rider(passenger.as_ref(), RiderMove::Snap);
+    }
+    for passenger in passengers {
+        teleport_passengers(passenger.as_ref());
     }
 }
 
