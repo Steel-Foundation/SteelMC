@@ -239,44 +239,90 @@ impl_predicate_downcast_type!(
     "steel:data_component_predicate/stored_enchantments"
 );
 
-/// Accepted registered potion values.
+/// Accepted registered potions and/or potion effect predicates.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PotionsPredicate(RegistryHolderSet<Potion>);
+pub struct PotionsPredicate {
+    potions: Option<RegistryHolderSet<Potion>>,
+    effects: Option<CollectionPredicate<MobEffectsPredicate>>,
+}
 
 impl PotionsPredicate {
     #[must_use]
-    pub const fn new(potions: RegistryHolderSet<Potion>) -> Self {
-        Self(potions)
+    pub const fn new(
+        potions: Option<RegistryHolderSet<Potion>>,
+        effects: Option<CollectionPredicate<MobEffectsPredicate>>,
+    ) -> Self {
+        Self { potions, effects }
     }
 
     #[must_use]
-    pub const fn potions(&self) -> &RegistryHolderSet<Potion> {
-        &self.0
+    pub const fn of_potions(potions: RegistryHolderSet<Potion>) -> Self {
+        Self::new(Some(potions), None)
+    }
+
+    #[must_use]
+    pub const fn potions(&self) -> Option<&RegistryHolderSet<Potion>> {
+        self.potions.as_ref()
+    }
+
+    #[must_use]
+    pub const fn effects(&self) -> Option<&CollectionPredicate<MobEffectsPredicate>> {
+        self.effects.as_ref()
     }
 }
 
 impl DataComponentPredicate for PotionsPredicate {
     fn matches(&self, components: &dyn DataComponentGetter) -> bool {
-        components
-            .component(vanilla_components::POTION_CONTENTS)
-            .and_then(PotionContents::potion)
-            .is_some_and(|potion| self.potions().contains(potion.value()))
+        let Some(contents) = components.component(vanilla_components::POTION_CONTENTS) else {
+            return false;
+        };
+        if let Some(potions) = &self.potions {
+            let Some(potion) = contents.potion() else {
+                return false;
+            };
+            if !potions.contains(potion.value()) {
+                return false;
+            }
+        }
+        let Some(effects) = &self.effects else {
+            return true;
+        };
+        let all_effects = contents.all_effects();
+        effects.matches(all_effects.iter(), |predicate, instance| {
+            predicate.test(instance)
+        })
     }
 }
 
 impl DataComponentPredicateCodec for PotionsPredicate {
     fn from_nbt_value(tag: &NbtTag) -> Option<Self> {
-        RegistryHolderSet::from_owned_nbt(tag).map(Self)
+        let compound = tag.compound()?;
+        Some(Self::new(
+            decode_optional(compound, "potions", RegistryHolderSet::from_owned_nbt)?,
+            decode_optional(compound, "effects", |tag| {
+                CollectionPredicate::from_nbt_with(tag, MobEffectsPredicate::from_owned_nbt)
+            })?,
+        ))
     }
 
     fn to_nbt_value(&self) -> NbtTag {
-        self.0.clone().to_nbt_tag()
+        let mut compound = NbtCompound::new();
+        if let Some(potions) = &self.potions {
+            compound.insert("potions", potions.clone().to_nbt_tag());
+        }
+        if let Some(effects) = &self.effects {
+            compound.insert(
+                "effects",
+                effects.to_nbt_with(MobEffectsPredicate::to_nbt_value),
+            );
+        }
+        NbtTag::Compound(compound)
     }
 }
 
 impl HashComponent for PotionsPredicate {
     fn hash_component(&self, hasher: &mut ComponentHasher) {
-        self.0.hash_component(hasher);
+        hash_nbt_codec(self, hasher);
     }
 }
 

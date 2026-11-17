@@ -6,6 +6,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use serde_json::Value;
 
+mod brewing;
 mod cooking;
 mod crafting;
 mod serializer;
@@ -28,8 +29,6 @@ pub(crate) fn build() -> TokenStream {
     println!("cargo:rerun-if-changed={}", recipe_dir.display());
 
     let mut recipes = read_recipes(recipe_dir);
-    // TODO: generate `minecraft:brewing` recipes once brewing stands are implemented.
-    recipes.retain(|recipe| string_field(&recipe.value, "type") != "minecraft:brewing");
     recipes.sort_by(|left, right| left.name.cmp(&right.name));
 
     let declarations: Vec<_> = recipes.iter().map(generate_declaration).collect();
@@ -47,11 +46,12 @@ pub(crate) fn build() -> TokenStream {
         use steel_utils::Identifier;
 
         use crate::{
+            data_component_predicate::PotionsPredicate,
             data_components::{DataComponentPatch, vanilla_components},
             item_stack_template::ItemStackTemplate,
             recipe::*,
-            RegistryReference, vanilla_items, vanilla_mob_effects, vanilla_potions,
-            vanilla_trim_patterns,
+            RegistryHolderSet, RegistryReference, vanilla_items, vanilla_mob_effects,
+            vanilla_potions, vanilla_trim_patterns,
         };
         use crate::data_components::vanilla_components::{
             FireworkExplosionShape, PotionContents, SuspiciousStewEffect, SuspiciousStewEffects,

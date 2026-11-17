@@ -170,20 +170,78 @@ pub(super) fn swing_animation_component_token(value: &Value) -> Option<TokenStre
     })
 }
 
+/// Reads one extracted context provider so literal providers can be folded into
+/// the generated component.
+///
+/// Steel has no runtime context-provider registry, so providers that are not a
+/// plain number stay as `ResolvableInt`/`ResolvableFloat` references. Vanilla
+/// brewing fuel only uses literal providers; cooking fuel references a
+/// conditional provider that depends on the block being used.
+fn context_provider(kind: &str, key: &str, field: &str) -> Option<Value> {
+    let (namespace, path) = split_identifier(key);
+    if namespace != "minecraft" {
+        return None;
+    }
+    let path =
+        format!("../steel-utils/build_assets/builtin_datapacks/minecraft/{kind}/{path}.json");
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+        panic!("{field} references {kind} {key:?}, which could not be read from {path}: {error}")
+    });
+    let value = serde_json::from_str(&text)
+        .unwrap_or_else(|error| panic!("{field} references malformed {kind} {key:?}: {error}"));
+    Some(value)
+}
+
+pub(super) fn resolvable_int_token(value: &Value, field: &str) -> TokenStream {
+    if let Some(value) = value.as_i64() {
+        let value =
+            i32::try_from(value).unwrap_or_else(|_| panic!("{field} is outside the i32 range"));
+        return quote! { vanilla_components::ResolvableInt::constant(#value) };
+    }
+    let key = value
+        .as_str()
+        .unwrap_or_else(|| panic!("{field} must be an integer or an identifier string"));
+    if let Some(provider) = context_provider("context_int_provider", key, field)
+        && let Some(provider) = provider.as_i64()
+    {
+        let provider = i32::try_from(provider)
+            .unwrap_or_else(|_| panic!("{field} provider {key:?} is outside the i32 range"));
+        return quote! { vanilla_components::ResolvableInt::constant(#provider) };
+    }
+    let key = identifier_token(key);
+    quote! { vanilla_components::ResolvableInt::reference(#key) }
+}
+
+pub(super) fn resolvable_float_token(value: &Value, field: &str) -> TokenStream {
+    if let Some(value) = value.as_f64() {
+        let value = value as f32;
+        return quote! { vanilla_components::ResolvableFloat::constant(#value) };
+    }
+    let key = value
+        .as_str()
+        .unwrap_or_else(|| panic!("{field} must be a number or an identifier string"));
+    if let Some(provider) = context_provider("context_float_provider", key, field)
+        && let Some(provider) = provider.as_f64()
+    {
+        let provider = provider as f32;
+        return quote! { vanilla_components::ResolvableFloat::constant(#provider) };
+    }
+    let key = identifier_token(key);
+    quote! { vanilla_components::ResolvableFloat::reference(#key) }
+}
+
 pub(super) fn cooking_fuel_component_token(value: &Value) -> TokenStream {
     let object = value
         .as_object()
         .unwrap_or_else(|| panic!("cooking_fuel component must be an object"));
-    let burn_time = object
-        .get("burn_time")
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("cooking_fuel.burn_time must be an identifier string"));
-    let speed_multiplier = object
-        .get("speed_multiplier")
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("cooking_fuel.speed_multiplier must be an identifier string"));
-    let burn_time = identifier_token(burn_time);
-    let speed_multiplier = identifier_token(speed_multiplier);
+    let burn_time = object.get("burn_time").map_or_else(
+        || panic!("cooking_fuel.burn_time must be present"),
+        |value| resolvable_int_token(value, "cooking_fuel.burn_time"),
+    );
+    let speed_multiplier = object.get("speed_multiplier").map_or_else(
+        || panic!("cooking_fuel.speed_multiplier must be present"),
+        |value| resolvable_float_token(value, "cooking_fuel.speed_multiplier"),
+    );
     quote! {
         vanilla_components::CookingFuel::new(#burn_time, #speed_multiplier)
     }
@@ -214,16 +272,14 @@ pub(super) fn brewing_fuel_component_token(value: &Value) -> TokenStream {
     let object = value
         .as_object()
         .unwrap_or_else(|| panic!("brewing_fuel component must be an object"));
-    let uses = object
-        .get("uses")
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("brewing_fuel.uses must be an identifier string"));
-    let speed_multiplier = object
-        .get("speed_multiplier")
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("brewing_fuel.speed_multiplier must be an identifier string"));
-    let uses = identifier_token(uses);
-    let speed_multiplier = identifier_token(speed_multiplier);
+    let uses = object.get("uses").map_or_else(
+        || panic!("brewing_fuel.uses must be present"),
+        |value| resolvable_int_token(value, "brewing_fuel.uses"),
+    );
+    let speed_multiplier = object.get("speed_multiplier").map_or_else(
+        || panic!("brewing_fuel.speed_multiplier must be present"),
+        |value| resolvable_float_token(value, "brewing_fuel.speed_multiplier"),
+    );
     quote! {
         vanilla_components::BrewingFuel::new(#uses, #speed_multiplier)
     }

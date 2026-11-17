@@ -1,12 +1,15 @@
 //! Heterogeneous recipe storage with typed per-type views.
 
-use rustc_hash::FxHashMap;
+use std::sync::OnceLock;
+
+use rustc_hash::{FxHashMap, FxHashSet};
 use steel_utils::{Downcast as _, DowncastType, Identifier};
 
 use super::{
-    ErasedRecipe, Recipe, RecipeData, RecipeInput, RecipeMatches, RecipeType, RecipeTypeEntryRef,
-    RecipeTypeRegistry,
+    BrewingRecipe, ErasedRecipe, Ingredient, Recipe, RecipeData, RecipeInput, RecipeMatches,
+    RecipeType, RecipeTypeEntryRef, RecipeTypeRegistry, vanilla_recipe_types,
 };
+use crate::{RegistryEntry, items::ItemRef};
 
 /// Type-erased recipe reference returned by all-recipe and key lookup APIs.
 #[derive(Clone, Copy)]
@@ -178,6 +181,8 @@ pub struct RecipeRegistry {
     recipes: Vec<UntypedRecipeRef>,
     by_key: FxHashMap<Identifier, usize>,
     by_type: FxHashMap<Identifier, Vec<usize>>,
+    brewing_inputs: OnceLock<FxHashSet<usize>>,
+    brewing_reagents: OnceLock<FxHashSet<usize>>,
     allows_registering: bool,
 }
 
@@ -188,6 +193,8 @@ impl RecipeRegistry {
             recipes: Vec::new(),
             by_key: FxHashMap::default(),
             by_type: FxHashMap::default(),
+            brewing_inputs: OnceLock::new(),
+            brewing_reagents: OnceLock::new(),
             allows_registering: true,
         }
     }
@@ -303,6 +310,37 @@ impl RecipeRegistry {
                 .get(recipe_type.key())
                 .map_or(&[], Vec::as_slice),
         }
+    }
+
+    /// Returns whether `item` can be placed in a brewing-stand potion slot.
+    ///
+    /// Derived from the input ingredient of every registered brewing recipe.
+    #[must_use]
+    pub fn is_brewing_input(&self, item: ItemRef) -> bool {
+        self.brewing_inputs
+            .get_or_init(|| self.brewing_property_set(|recipe| &recipe.input.ingredient))
+            .contains(&item.id())
+    }
+
+    /// Returns whether `item` can be placed in a brewing-stand ingredient slot.
+    ///
+    /// Derived from the reagent ingredient of every registered brewing recipe.
+    #[must_use]
+    pub fn is_brewing_reagent(&self, item: ItemRef) -> bool {
+        self.brewing_reagents
+            .get_or_init(|| self.brewing_property_set(|recipe| &recipe.reagent.ingredient))
+            .contains(&item.id())
+    }
+
+    fn brewing_property_set(
+        &self,
+        ingredient: impl Fn(&BrewingRecipe) -> &Ingredient,
+    ) -> FxHashSet<usize> {
+        self.by_type(&vanilla_recipe_types::BREWING)
+            .iter()
+            .flat_map(|recipe| ingredient(recipe.data()).get_items())
+            .map(RegistryEntry::id)
+            .collect()
     }
 
     /// Iterates every matching recipe in deterministic key order.
@@ -437,8 +475,8 @@ mod tests {
     fn every_extracted_recipe_is_present_in_its_operational_type_bucket() {
         init_vanilla_registry();
 
-        assert_eq!(REGISTRY.recipe_types.len(), 7);
-        assert_eq!(REGISTRY.recipes.len(), 1_763);
+        assert_eq!(REGISTRY.recipe_types.len(), 8);
+        assert_eq!(REGISTRY.recipes.len(), 2_042);
         assert_eq!(
             REGISTRY
                 .recipes
@@ -487,6 +525,13 @@ mod tests {
                 .by_type(&vanilla_recipe_types::SMITHING)
                 .len(),
             30
+        );
+        assert_eq!(
+            REGISTRY
+                .recipes
+                .by_type(&vanilla_recipe_types::BREWING)
+                .len(),
+            279
         );
     }
 
