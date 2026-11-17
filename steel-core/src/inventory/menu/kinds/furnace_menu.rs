@@ -207,7 +207,7 @@ impl MenuKind for FurnaceMenuKind {
         let taken = clicked.copy_with_count(clicked.count - remaining.count);
         let slot = &behavior.slots()[slot_index];
         slot.on_quick_craft(&taken, player);
-        if let Some(remainder) = slot.on_take(guard, &remaining, player) {
+        if let Some(remainder) = slot.on_take(guard, &taken, player) {
             player.add_item_or_drop_with_guard(guard, remainder, Prediction::Predicted);
         }
         Some(clicked)
