@@ -220,7 +220,7 @@ struct FluidInfo {
 impl SpeleothemBlockBehavior {
     fn projectile_can_break(projectile: &dyn Projectile, world: &World, pos: BlockPos) -> bool {
         projectile.projectile_may_interact(world, pos)
-            && projectile.may_break(world)
+            && projectile.may_break(world, pos)
             && projectile.entity_type() == &vanilla_entities::TRIDENT
             && projectile.velocity().length() > 0.6
     }

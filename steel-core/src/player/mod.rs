@@ -111,8 +111,8 @@ use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
     ActiveItemUseState, DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource,
     EntityMoveError, EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
-    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
-    apply_entity_look_at, get_kill_credit, start_riding_entities,
+    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, RiderMove,
+    SharedEntity, apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -378,6 +378,7 @@ impl Player {
             .get_behavior(item.item())
             .get_use_duration(&item, self);
         if self.living_base.start_using_item(hand, &item, duration) {
+            self.inventory.lock().adopt_use_item(hand);
             let mut entity_data = self.entity_data.lock();
             let flags = entity_data.living_entity().living_entity_flags.get();
             let mut flags = *flags | Self::USING_ITEM_FLAG;
@@ -409,37 +410,42 @@ impl Player {
         active: ActiveItemUseState,
     ) {
         let hand = active.hand();
-        let item_matches = {
-            let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item()
-        };
-        if !item_matches {
+        let Some(mut item) = self.adopt_use_item(hand, active) else {
             self.stop_using_item();
             return;
-        }
-        // Read a copy rather than clearing the slot,
-        // so any inventory-touching side effect from
-        // `release_using` never sees the hand as vacant.
-        let mut item = {
-            let inventory = self.inventory.lock();
-            let current = inventory.get_item_in_hand(hand);
-            current.clone()
         };
         let stack_before_using = item.clone();
         let world = self.get_world();
         let apply_side_effects =
             behavior.release_using(&mut item, &world, self, active.remaining_ticks());
         let use_on_release = behavior.use_on_release(&item);
-        if apply_side_effects {
-            item = apply_use_remainder(&stack_before_using, item, self);
+        let result = if apply_side_effects {
             self.apply_item_use_cooldown(&stack_before_using);
-        }
-        self.inventory.lock().set_item_in_hand(hand, item);
+            apply_use_remainder(&stack_before_using, item.clone(), self)
+        } else {
+            item.clone()
+        };
+        self.inventory.lock().write_use_result(hand, item, result);
         // we re-read active here since behavior.release_using might have already ended the use
         if use_on_release && let Some(active) = self.living_base.active_item_use() {
             self.tick_active_item_use_with_behavior(entity, behavior, active);
         }
         self.stop_using_item();
+    }
+
+    /// Vanilla `isSameItem(getItemInHand(hand), useItem)` followed by `useItem = getItemInHand(hand)`.
+    fn adopt_use_item(
+        &self,
+        hand: InteractionHand,
+        active: ActiveItemUseState,
+    ) -> Option<ItemStack> {
+        let mut inventory = self.inventory.lock();
+        let item = inventory.get_item_in_hand(hand).clone();
+        if item.item() != active.item() {
+            return None;
+        }
+        inventory.adopt_use_item(hand);
+        Some(item)
     }
 
     fn tick_active_item_use(&self, entity: &SharedEntity) {
@@ -457,42 +463,50 @@ impl Player {
         active: ActiveItemUseState,
     ) {
         let hand = active.hand();
-        let item_matches = {
-            let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item()
-        };
-        if !item_matches {
+        let Some(mut item) = self.adopt_use_item(hand, active) else {
             self.stop_using_item();
             return;
-        }
-        let mut item = {
-            let inventory = self.inventory.lock();
-            let current = inventory.get_item_in_hand(hand);
-            current.clone()
         };
         let world = self.get_world();
         let Some(user) = LivingEntityRef::new(entity) else {
             panic!("active item use requires a living entity");
         };
         behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
+        let use_on_release = behavior.use_on_release(&item);
+        self.inventory.lock().write_use_item(hand, item);
 
-        if self.active_item_use_hand() != Some(hand) {
-            self.inventory.lock().set_item_in_hand(hand, item);
-            return;
-        }
-        let Some(active) = self.living_base.decrement_active_item_use() else {
-            self.inventory.lock().set_item_in_hand(hand, item);
+        let Some(current) = self.living_base.decrement_active_item_use() else {
             return;
         };
-        let use_on_release = behavior.use_on_release(&item);
-        if active.remaining_ticks() == 0 && !use_on_release && !item.is_empty() {
-            let stack_before_finish = item.clone();
-            item = behavior.finish_using(&mut item, &world, user);
-            self.apply_item_use_cooldown(&stack_before_finish);
-            self.stop_using_item();
+        if current.remaining_ticks() != 0 || use_on_release {
+            return;
         }
-
-        self.inventory.lock().set_item_in_hand(hand, item);
+        let behavior = if current.item() == active.item() {
+            behavior
+        } else {
+            ITEM_BEHAVIORS.get_behavior(current.item())
+        };
+        let hand = active.hand();
+        let mut item = {
+            let inventory = self.inventory.lock();
+            if !inventory.holds_use_item(hand) {
+                drop(inventory);
+                self.release_using_item(entity);
+                return;
+            }
+            inventory.get_item_in_hand(hand).clone()
+        };
+        if item.is_empty() {
+            return;
+        }
+        let Some(user) = LivingEntityRef::new(entity) else {
+            panic!("active item use requires a living entity");
+        };
+        let stack_before_finish = item.clone();
+        let result = behavior.finish_using(&mut item, &self.get_world(), user);
+        self.apply_item_use_cooldown(&stack_before_finish);
+        self.inventory.lock().write_use_result(hand, item, result);
+        self.stop_using_item();
     }
 
     /// Returns the player's configured main arm.
@@ -1361,6 +1375,15 @@ impl Entity for Player {
         &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED
     }
 
+    /// Wind charge bursts spare fall damage down to the height the player was launched from.
+    // TODO: Track `currentExplosionImpactPos`/`currentExplosionCause` for the
+    // `fall_after_explosion` advancement trigger.
+    fn on_explosion_hit(&self, explosion_source: Option<&dyn Entity>) {
+        let caused_by_wind_charge = explosion_source
+            .is_some_and(|source| source.entity_type() == &vanilla_entities::WIND_CHARGE);
+        self.set_ignore_fall_damage_from_current_impulse(caused_by_wind_charge, self.position());
+    }
+
     fn scoreboard_name(&self) -> String {
         self.gameprofile.name().to_owned()
     }
@@ -1465,7 +1488,7 @@ impl Entity for Player {
             return false;
         }
 
-        entity_to_ride.position_rider(self.as_entity_event_source());
+        entity_to_ride.position_rider(self.as_entity_event_source(), RiderMove::SetPosition);
         let position = self.position();
         let (yaw, pitch) = self.rotation();
         if let Err(error) = self.teleport(position, yaw, pitch) {

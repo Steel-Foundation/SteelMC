@@ -12,7 +12,8 @@ use crossterm::{
 use std::time::Duration;
 use std::{
     fmt::Write as _,
-    io::{Result, Write},
+    io::{Result, Write, stdin},
+    mem,
     sync::Arc,
 };
 use steel_core::command::sender::CommandSender;
@@ -30,6 +31,10 @@ enum ExtendedKey {
 impl CommandLogger {
     /// Main entry of the input process
     pub async fn input_main(self: Arc<Self>) -> Result<()> {
+        if !self.interactive {
+            return self.plain_input_main().await;
+        }
+
         let (tx, rx) = mpsc::unbounded_channel();
         enable_raw_mode()?;
         Arc::clone(&self).input_receiver(tx);
@@ -37,6 +42,24 @@ impl CommandLogger {
         let result = self.input_key(rx).await;
         stopped.cancel();
         result
+    }
+
+    async fn plain_input_main(self: Arc<Self>) -> Result<()> {
+        let cancel_token = self.cancel_token.clone();
+        spawn_blocking(move || {
+            for line in stdin().lines().map_while(Result::ok) {
+                if cancel_token.is_cancelled() {
+                    break;
+                }
+                let line = line.trim_end_matches('\r');
+                if !line.trim().is_empty() {
+                    dispatch_command(line.to_owned());
+                }
+            }
+        });
+        self.cancel_token.cancelled().await;
+        self.stopped.cancel();
+        Ok(())
     }
 
     fn input_receiver(self: Arc<Self>, tx: UnboundedSender<ExtendedKey>) {
@@ -49,6 +72,12 @@ impl CommandLogger {
 
                 if let Ok(true) = poll(Duration::from_millis(50)) {
                     let event = read().expect("Event bug; Cannot read event.");
+                    // Flush typed chars before any non-char key so Enter sees them.
+                    let typed_char = matches!(event, Event::Key(KeyEvent { code: KeyCode::Char(_), modifiers, .. })
+                        if !modifiers.contains(KeyModifiers::CONTROL));
+                    if !typed_char && !string.is_empty() {
+                        tx.send(ExtendedKey::String(mem::take(&mut string))).ok();
+                    }
                     // On Windows, crossterm sends both Press and Release events.
                     // Only handle Press events to avoid duplicate input.
                     match event {
@@ -384,6 +413,10 @@ fn send_state(mut lock: RwLockWriteGuard<'_, LogState>) {
     lock.history.push(message.clone());
     lock.reset().ok();
     drop(lock);
+    dispatch_command(message);
+}
+
+fn dispatch_command(message: String) {
     steel_utils::console!("{}", message);
     if let Some(server) = SERVER.get()
         && server
