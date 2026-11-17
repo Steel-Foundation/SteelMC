@@ -115,6 +115,11 @@ pub struct RecipeProperties {
 }
 
 impl RecipeProperties {
+    /// Properties for recipes that never appear in the recipe book.
+    ///
+    /// Vanilla special recipes still report a recipe-book category (for example
+    /// brewing uses `CRAFTING_MISC`), but Steel has no recipe-book display
+    /// pipeline yet, so no category is recorded.
     #[must_use]
     pub const fn special() -> Self {
         Self {

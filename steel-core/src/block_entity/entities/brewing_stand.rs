@@ -173,7 +173,8 @@ impl BrewingStandContainer {
         // folds literal providers and only preserves non-literal ones as
         // references. A reference falls back to the defaults below; every
         // built-in brewing fuel provider is literal, so this only affects
-        // plugin fuel data.
+        // plugin fuel data. The fallbacks match vanilla's `getUses` (0) and
+        // `getSpeedMultiplier` (1.0) defaults.
         self.fuel = brewing_fuel.uses.constant_value().unwrap_or(0);
         self.total_fuel = self.fuel;
         self.speed_multiplier = brewing_fuel
@@ -201,11 +202,11 @@ impl BrewingStandContainer {
         let mut brewed = false;
         let mut dropped = SmallVec::new();
 
-        let fuel = self.items[SLOT_FUEL].clone();
+        let brewing_fuel = self.items[SLOT_FUEL].get(BREWING_FUEL).cloned();
         if self.fuel <= 0
-            && let Some(brewing_fuel) = fuel.get(BREWING_FUEL)
+            && let Some(brewing_fuel) = brewing_fuel
         {
-            self.consume_fuel(brewing_fuel, &mut dropped);
+            self.consume_fuel(&brewing_fuel, &mut dropped);
             changed = true;
         }
 

@@ -10,6 +10,10 @@ use crate::{REGISTRY, TaggedRegistryExt as _, vanilla_item_tags};
 use super::{Ingredient, RecipeData, RecipeInput, RecipeMatches, RecipeProperties};
 
 /// Brewing stand input snapshot: the potion slot stack and the reagent stack.
+///
+/// Vanilla passes stack references into its brewing input. Steel owns the
+/// snapshot, like the other recipe inputs, so matching can run while the
+/// container is mutably borrowed for the cached recipe check.
 #[derive(Debug, Clone)]
 pub struct BrewingInput {
     pub input: ItemStack,

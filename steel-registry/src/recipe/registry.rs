@@ -181,7 +181,9 @@ pub struct RecipeRegistry {
     recipes: Vec<UntypedRecipeRef>,
     by_key: FxHashMap<Identifier, usize>,
     by_type: FxHashMap<Identifier, Vec<usize>>,
+    /// Item ids accepted by brewing potion slots, derived from recipe inputs.
     brewing_inputs: OnceLock<FxHashSet<usize>>,
+    /// Item ids accepted by brewing reagent slots, derived from recipe reagents.
     brewing_reagents: OnceLock<FxHashSet<usize>>,
     allows_registering: bool,
 }
@@ -283,6 +285,15 @@ impl RecipeRegistry {
                 .push(index);
         }
         self.allows_registering = false;
+
+        // Rebuild the derived brewing sets from the frozen recipe order so a
+        // lazy lookup made before freeze cannot keep a partial set.
+        self.brewing_inputs = OnceLock::new();
+        self.brewing_reagents = OnceLock::new();
+        let inputs = self.brewing_property_set(|recipe| &recipe.input.ingredient);
+        let reagents = self.brewing_property_set(|recipe| &recipe.reagent.ingredient);
+        let _ = self.brewing_inputs.set(inputs);
+        let _ = self.brewing_reagents.set(reagents);
     }
 
     #[must_use]
