@@ -1,8 +1,11 @@
 //! Shared operations used by compiled item modifier functions.
 use steel_registry::recipe::{SingleItemRecipeInput, vanilla_recipe_types};
 use steel_registry::{
-    REGISTRY, data_components::vanilla_components::CUSTOM_NAME, enchantment::Enchantment,
+    REGISTRY,
+    data_components::vanilla_components::{CUSTOM_NAME, POTION_CONTENTS, PotionContents},
+    enchantment::Enchantment,
     item_stack::ItemStack,
+    potion::PotionRef,
 };
 use steel_utils::{
     Identifier,
@@ -45,6 +48,26 @@ pub(super) fn set_enchantment(item: &mut ItemStack, key: Identifier, level: i32,
         )],
         false,
     );
+}
+
+pub(super) fn set_potion(item: &mut ItemStack, potion: PotionRef) {
+    let contents = item.get_or_default(POTION_CONTENTS, PotionContents::empty());
+    item.set(POTION_CONTENTS, contents.with_potion(potion));
+}
+
+/// Sets a damageable item's remaining durability to the `damage` fraction,
+/// added to its current fraction when `add` is set.
+pub(super) fn set_damage(item: &mut ItemStack, damage: f32, add: bool) {
+    // Vanilla evaluates this provider with `getFloat`, which maps non-finite results to zero.
+    let damage = if damage.is_finite() { damage } else { 0.0 };
+    let max_damage = item.get_max_damage();
+    let base = if add {
+        1.0 - item.get_damage_value() as f32 / max_damage as f32
+    } else {
+        0.0
+    };
+    let pct = 1.0 - steel_math::clamp_f32(damage + base, 0.0, 1.0);
+    item.set_damage_value((pct * max_damage as f32).floor() as i32);
 }
 
 pub(super) fn smelt(item: &mut ItemStack, use_input_count: bool) {

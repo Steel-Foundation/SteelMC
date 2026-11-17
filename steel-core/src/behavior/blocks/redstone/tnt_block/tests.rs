@@ -48,11 +48,11 @@ fn explosion_replaces_tnt_with_a_short_fuse_entity_owned_by_the_igniter() {
         UpdateFlags::UPDATE_NONE,
     ));
     let owner = TestPlayerBuilder::new(Arc::clone(world), "ChainOwner", next_entity_id()).build();
-    let (x, y, z) = pos.offset(4, 0, 0).get_bottom_center();
-    owner.base().set_position_local(DVec3::new(x, y, z));
+    owner
+        .base()
+        .set_position_local(pos.offset(4, 0, 0).get_bottom_center());
     assert!(world.add_player(Arc::clone(&owner), ResetReason::InitialJoin));
-    let (x, y, z) = pos.get_center();
-    let mut options = ExplosionOptions::new(DVec3::new(x, y, z), 4.0, ExplosionInteraction::Tnt);
+    let mut options = ExplosionOptions::new(pos.get_center(), 4.0, ExplosionInteraction::Tnt);
     options.source = Some(Arc::clone(&owner) as SharedEntity);
 
     world.explode(options);

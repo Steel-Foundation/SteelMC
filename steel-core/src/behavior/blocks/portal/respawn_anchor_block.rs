@@ -251,8 +251,7 @@ impl RespawnAnchorBlock {
             anchor_pos: pos,
             in_water: Self::is_in_water(world, pos),
         };
-        let (x, y, z) = pos.get_center();
-        let center = DVec3::new(x, y, z);
+        let center = pos.get_center();
         let mut options =
             ExplosionOptions::new(center, EXPLOSION_RADIUS, ExplosionInteraction::Block);
         options.damage_source = Some(

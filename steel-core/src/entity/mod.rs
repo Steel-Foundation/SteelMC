@@ -56,7 +56,7 @@ use steel_registry::{RegistryEntry, RegistryExt};
 use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
+use steel_utils::random::RandomSource;
 use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, ErasedType, Identifier,
@@ -824,7 +824,7 @@ pub(crate) use entity::apply_entity_look_at;
 pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
-    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
+    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource, RiderMove,
 };
 pub use fluid_contact::EntityFluidContact;
 pub use identity::EntityGeneration;
@@ -858,10 +858,12 @@ pub use movement_sync::{
 };
 pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
-    AbstractThrownPotion, EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection,
-    ProjectileEventSource, ProjectileHit, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ,
-    SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
-    compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
+    AbstractHurtingProjectile, AbstractThrownPotion, AbstractWindCharge, EntityHitResult,
+    HurtingProjectileBase, INITIAL_ACCELERATION_POWER, Projectile, ProjectileBase,
+    ProjectileDeflection, ProjectileEventSource, ProjectileHit, SPLASH_HORIZONTAL_REACH,
+    SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile,
+    ViewVectorHitResult, compute_margin, get_hit_result_on_view_vector,
+    spawn_projectile_from_rotation, spawn_throwable_item_projectile,
 };
 pub use pushing::{DefaultEntityPush, EntityPushSnapshot};
 pub use reference::EntityReference;
@@ -1260,7 +1262,7 @@ fn teleport_set_position(
 
     match commit {
         TeleportPositionCommit::Managed => entity.try_set_position(position)?,
-        TeleportPositionCommit::Local => entity.base().set_position_local(position),
+        TeleportPositionCommit::Local => entity.set_position_local(position),
     }
     entity.set_rotation(rotation);
     if let Some(living) = entity.as_living_entity() {
@@ -1417,6 +1419,7 @@ pub(crate) fn entity_loot_ref<'a>(
         custom_name: None,
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),
+        fishing_hook_open_water: entity.fishing_hook_open_water(),
         chicken_variant: living_entity.and_then(LivingEntity::chicken_loot_variant),
         mooshroom_variant: living_entity.and_then(LivingEntity::mooshroom_loot_variant),
     }

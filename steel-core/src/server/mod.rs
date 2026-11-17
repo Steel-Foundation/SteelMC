@@ -775,12 +775,9 @@ impl Server {
             )
             .await
             .map_err(|e| format!("failed to create world {}: {e}", world_entry.key))?;
-            world
-                .initialize_spawn_if_needed()
-                .await
-                .map_err(|e| format!("failed to initialize spawn for {}: {e}", world_entry.key))?;
             Ok(world)
         };
+        let mut spawn_worlds = Vec::with_capacity(resolved_worlds.worlds.len());
         for domain in &resolved_worlds.domains {
             let primary_config = resolved_worlds
                 .worlds
@@ -794,6 +791,7 @@ impl Server {
                 })?;
             let primary = construct_world(primary_config, GameTimeSource::Primary).await?;
             let clock = Arc::clone(&primary.game_time);
+            spawn_worlds.push(Arc::clone(&primary));
             worlds.insert(primary_config.key.clone(), primary);
             for world_entry in resolved_worlds
                 .worlds
@@ -803,6 +801,7 @@ impl Server {
                 let world =
                     construct_world(world_entry, GameTimeSource::Derived(Arc::clone(&clock)))
                         .await?;
+                spawn_worlds.push(Arc::clone(&world));
                 worlds.insert(world_entry.key.clone(), world);
             }
         }
@@ -817,6 +816,13 @@ impl Server {
         let random_sequences = DomainRandomSequences::load(&worlds)
             .await
             .map_err(|error| format!("failed to load domain random sequences: {error}"))?;
+        // Spawn chunk postprocessing can evaluate loot. Bind domain services first,
+        // then initialize spawns in primary-first construction order.
+        for world in spawn_worlds {
+            world.initialize_spawn_if_needed().await.map_err(|error| {
+                format!("failed to initialize spawn for {}: {error}", world.key)
+            })?;
+        }
         let registered_commands = create_registered_dispatcher(command_registry)
             .map_err(|error| format!("failed to register commands: {error}"))?;
         let command_permission_keys = registered_commands

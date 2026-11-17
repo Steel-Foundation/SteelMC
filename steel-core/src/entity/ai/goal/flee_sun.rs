@@ -99,8 +99,7 @@ fn get_hide_pos_with(
             )
         };
         if !can_see_sky(random_pos) && walk_target_value(random_pos) < 0.0 {
-            let (x, y, z) = random_pos.get_bottom_center();
-            return Some(DVec3::new(x, y, z));
+            return Some(random_pos.get_bottom_center());
         }
     }
 
@@ -152,8 +151,7 @@ mod tests {
         );
 
         assert_eq!(visited.len(), 1);
-        let (x, y, z) = visited[0].get_bottom_center();
-        assert_eq!(pos, Some(DVec3::new(x, y, z)));
+        assert_eq!(pos, Some(visited[0].get_bottom_center()));
     }
 
     #[test]

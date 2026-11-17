@@ -1,9 +1,6 @@
 use super::super::{
     Compiler, TokenStream,
-    model::{
-        CompileModifier, Condition, ContextFloatProvider, ContextIntProvider, Holder, HolderSet,
-        StewEffect,
-    },
+    model::{CompileModifier, Condition, ContextIntProvider, Holder, HolderSet, StewEffect},
 };
 use serde::Deserialize;
 use serde::de::IgnoredAny;
@@ -49,14 +46,6 @@ deferred!(CopyState, "minecraft:copy_state" {
 // TODO: Decode typed component patches and apply them with item validation.
 deferred!(SetComponents, "minecraft:set_components" { components: Option<IgnoredAny> });
 
-// TODO: Apply remaining-durability fractions with vanilla additive mode,
-// clamping, rounding, and damageable-item checks.
-deferred!(SetDamage, "minecraft:set_damage" {
-    damage: Option<ContextFloatProvider>,
-    #[serde(default)]
-    add: bool,
-});
-
 // TODO: Decode destination holder sets and search_radius; locate and claim
 // structures from the loot origin, create saved map data, render its biome
 // preview, and add the configured target decoration and zoom.
@@ -73,10 +62,6 @@ deferred!(SetName, "minecraft:set_name" {
     name: Option<IgnoredAny>,
     target: Option<String>,
 });
-
-// TODO: Resolve the typed potion and update potion_contents while
-// preserving its other fields.
-deferred!(SetPotion, "minecraft:set_potion" { id: Option<String> });
 
 // TODO: Select a stew effect with the loot RNG, evaluate its duration with
 // vanilla instant-effect units, and append it to suspicious-stew effects.
