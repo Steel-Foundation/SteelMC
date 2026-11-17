@@ -29,9 +29,11 @@ impl Write for Output {
 
 /// Constructor
 impl Output {
-    pub fn new() -> Self {
+    pub fn new(interactive: bool) -> Self {
         let mut out = stdout();
-        let _ = write!(out, "{BlinkingBar}");
+        if interactive {
+            let _ = write!(out, "{BlinkingBar}");
+        }
 
         Self {
             text: String::new(),
