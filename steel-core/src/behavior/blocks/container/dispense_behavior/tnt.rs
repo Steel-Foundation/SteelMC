@@ -1,4 +1,3 @@
-use glam::DVec3;
 use std::sync::Arc;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -34,12 +33,11 @@ impl DispenseItemBehavior for TntDispenseBehavior {
         // TODO: sulfur cube - vanilla first tries SulfurCubeBlockDispenseItemBehavior.dispenseBlock.
         let facing = state.get_value(FACING);
         let target_pos = pos.relative(facing);
-        let (x, y, z) = target_pos.get_bottom_center();
 
         let tnt = Arc::new(PrimedTntEntity::primed(
             &vanilla_entities::TNT,
             next_entity_id(),
-            DVec3::new(x, y, z),
+            target_pos.get_bottom_center(),
             world,
             None,
         ));
