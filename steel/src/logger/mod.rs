@@ -6,7 +6,7 @@ use crossterm::{
 };
 use std::{
     env,
-    io::Write,
+    io::{IsTerminal, Write, stdin, stdout},
     sync::Arc,
     time::{self, Instant},
 };
@@ -68,7 +68,11 @@ impl CommandLogger {
         cancel_token: CancellationToken,
         log_config: Option<LogConfig>,
     ) -> Result<Arc<Self>, String> {
-        let interactive = !env::args().any(|arg| arg == "--plain");
+        // Plain mode for `--plain`, `TERM=dumb` (see term(7)), or when stdin/stdout isn't a terminal.
+        let interactive = !env::args().any(|arg| arg == "--plain")
+            && env::var("TERM").as_deref() != Ok("dumb")
+            && stdin().is_terminal()
+            && stdout().is_terminal();
         let (sender, receiver) = mpsc::unbounded_channel();
         let log_cancel_token = CancellationToken::new();
         let input = LogState::new(log_config.as_ref(), cancel_token, interactive)
