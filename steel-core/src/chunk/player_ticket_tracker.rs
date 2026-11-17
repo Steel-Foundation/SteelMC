@@ -64,12 +64,15 @@ impl PlayerTicketTracker {
     ) -> SourceProjectionChanges {
         let mut changes = SourceProjectionChanges::default();
 
+        let mut removed_center = None;
         if let Some(previous_pos) = self.player_positions.get(&player_id).copied() {
             if previous_pos == pos {
                 return changes;
             }
 
-            self.remove_player_from_center(storage, previous_pos, player_id, &mut changes);
+            if self.remove_player_from_center(storage, previous_pos, player_id, &mut changes) {
+                removed_center = Some(previous_pos);
+            }
             self.player_positions.remove(&player_id);
         }
 
@@ -87,9 +90,30 @@ impl PlayerTicketTracker {
         if was_empty {
             changes
                 .merge(storage.add_ticket(pos, player_simulation_ticket(self.simulation_distance)));
-            Self::for_each_square_position(pos, self.view_distance, |covered_pos| {
-                self.increment_loading_coverage(storage, covered_pos, &mut changes);
-            });
+        }
+
+        match (removed_center, was_empty) {
+            (Some(previous), true) => {
+                // Retain coverage in the overlap instead of tearing down and
+                // recreating its tickets on every chunk crossing.
+                Self::for_each_square_difference(previous, pos, self.view_distance, |covered| {
+                    self.decrement_loading_coverage(storage, covered, &mut changes);
+                });
+                Self::for_each_square_difference(pos, previous, self.view_distance, |covered| {
+                    self.increment_loading_coverage(storage, covered, &mut changes);
+                });
+            }
+            (Some(previous), false) => {
+                Self::for_each_square_position(previous, self.view_distance, |covered| {
+                    self.decrement_loading_coverage(storage, covered, &mut changes);
+                });
+            }
+            (None, true) => {
+                Self::for_each_square_position(pos, self.view_distance, |covered| {
+                    self.increment_loading_coverage(storage, covered, &mut changes);
+                });
+            }
+            (None, false) => {}
         }
 
         changes
@@ -107,7 +131,11 @@ impl PlayerTicketTracker {
         }
 
         let mut changes = SourceProjectionChanges::default();
-        self.remove_player_from_center(storage, pos, player_id, &mut changes);
+        if self.remove_player_from_center(storage, pos, player_id, &mut changes) {
+            Self::for_each_square_position(pos, self.view_distance, |covered| {
+                self.decrement_loading_coverage(storage, covered, &mut changes);
+            });
+        }
         self.player_positions.remove(&player_id);
         changes
     }
@@ -172,7 +200,7 @@ impl PlayerTicketTracker {
         pos: ChunkPos,
         player_id: Uuid,
         changes: &mut SourceProjectionChanges,
-    ) {
+    ) -> bool {
         let center_became_empty = {
             let Some(players) = self.players_by_pos.get_mut(&pos) else {
                 panic!("player position index references a missing center");
@@ -185,15 +213,13 @@ impl PlayerTicketTracker {
         };
 
         if !center_became_empty {
-            return;
+            return false;
         }
 
         self.players_by_pos.remove(&pos);
         changes
             .merge(storage.remove_ticket(pos, player_simulation_ticket(self.simulation_distance)));
-        Self::for_each_square_position(pos, self.view_distance, |covered_pos| {
-            self.decrement_loading_coverage(storage, covered_pos, changes);
-        });
+        true
     }
 
     fn increment_loading_coverage(
@@ -251,6 +277,45 @@ impl PlayerTicketTracker {
         }
     }
 
+    fn for_each_square_difference(
+        center: ChunkPos,
+        other: ChunkPos,
+        distance: u8,
+        mut visit: impl FnMut(ChunkPos),
+    ) {
+        // Relative wrapping coordinates preserve the square iterator's behavior
+        // at i32 boundaries. Widen before computing the overlap bounds.
+        let delta_x = i64::from(other.0.x.wrapping_sub(center.0.x));
+        let delta_z = i64::from(other.0.y.wrapping_sub(center.0.y));
+        let radius = i64::from(distance);
+        let overlap_min_z = (-radius).max(delta_z - radius);
+        let overlap_max_z = radius.min(delta_z + radius);
+
+        for offset_x in -radius..=radius {
+            let mut visit_z = |offset_z: i64| {
+                visit(ChunkPos::new(
+                    center.0.x.wrapping_add(offset_x as i32),
+                    center.0.y.wrapping_add(offset_z as i32),
+                ));
+            };
+            if offset_x < delta_x - radius
+                || offset_x > delta_x + radius
+                || overlap_min_z > overlap_max_z
+            {
+                for offset_z in -radius..=radius {
+                    visit_z(offset_z);
+                }
+                continue;
+            }
+            for offset_z in -radius..overlap_min_z {
+                visit_z(offset_z);
+            }
+            for offset_z in overlap_max_z + 1..=radius {
+                visit_z(offset_z);
+            }
+        }
+    }
+
     fn for_each_square_ring(
         center: ChunkPos,
         inner_distance: u8,
@@ -282,6 +347,76 @@ mod tests {
 
     const FIRST_PLAYER: Uuid = Uuid::from_u128(1);
     const SECOND_PLAYER: Uuid = Uuid::from_u128(2);
+
+    #[test]
+    fn movement_changes_only_leaving_and_entering_loading_strips() {
+        let mut storage = ChunkTicketStorage::new();
+        let mut tracker = PlayerTicketTracker::new(128, 128);
+        let _ = tracker.add_player(&mut storage, ChunkPos::new(0, 0), FIRST_PLAYER);
+
+        let changes = tracker.add_player(&mut storage, ChunkPos::new(1, 0), FIRST_PLAYER);
+
+        assert_eq!(changes.load_positions.len(), 2 * 257);
+        assert!(
+            changes
+                .load_positions
+                .iter()
+                .all(|pos| { pos.0.x == -128 || pos.0.x == 129 })
+        );
+        assert_eq!(tracker.loading_coverage.len(), 257 * 257);
+    }
+
+    #[test]
+    fn moving_shared_centers_and_wrapping_teleports_match_remove_then_add() {
+        for distance in [0, 2, 32, 128] {
+            let mut storage = ChunkTicketStorage::new();
+            let mut tracker = PlayerTicketTracker::new(distance, distance);
+            let mut reference_storage = ChunkTicketStorage::new();
+            let mut reference = PlayerTicketTracker::new(distance, distance);
+            let moves = [
+                (FIRST_PLAYER, ChunkPos::new(0, 0)),
+                (SECOND_PLAYER, ChunkPos::new(0, 0)),
+                (FIRST_PLAYER, ChunkPos::new(1, -1)),
+                (SECOND_PLAYER, ChunkPos::new(1, -1)),
+                (FIRST_PLAYER, ChunkPos::new(-2, 3)),
+                (FIRST_PLAYER, ChunkPos::new(i32::MAX, i32::MIN)),
+                (FIRST_PLAYER, ChunkPos::new(i32::MIN, i32::MAX)),
+                (SECOND_PLAYER, ChunkPos::new(i32::MIN, i32::MAX)),
+                (SECOND_PLAYER, ChunkPos::new(i32::MIN + 1, i32::MAX - 1)),
+            ];
+            for (player, pos) in moves {
+                if let Some(previous) = reference.player_positions.get(&player).copied() {
+                    let _ = reference.remove_player(&mut reference_storage, previous, player);
+                }
+                let _ = reference.add_player(&mut reference_storage, pos, player);
+                let changes = tracker.add_player(&mut storage, pos, player);
+
+                assert_eq!(tracker.player_positions, reference.player_positions);
+                assert_eq!(tracker.players_by_pos, reference.players_by_pos);
+                assert_eq!(tracker.loading_coverage, reference.loading_coverage);
+                for &covered in reference
+                    .loading_coverage
+                    .keys()
+                    .chain(&changes.load_positions)
+                {
+                    assert_eq!(
+                        storage.load_source_level(covered),
+                        reference_storage.load_source_level(covered)
+                    );
+                }
+                for &center in reference
+                    .players_by_pos
+                    .keys()
+                    .chain(&changes.simulation_positions)
+                {
+                    assert_eq!(
+                        storage.simulation_source_level(center),
+                        reference_storage.simulation_source_level(center)
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn colocated_players_share_center_and_loading_tickets() {

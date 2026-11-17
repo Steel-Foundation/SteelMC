@@ -218,10 +218,12 @@ impl FullChunkRef<'_> {
 
             for _ in 0..random_tick_speed {
                 let (local_x, local_y, local_z) = random_positions.next_local();
-                let state = section_guard
+                let Some(state) = section_guard
                     .get_or_insert_with(|| section.read())
-                    .states()
-                    .get(local_x, local_y, local_z);
+                    .random_tick_sample(local_x, local_y, local_z)
+                else {
+                    continue;
+                };
                 let Some((tick_block, tick_fluid)) = random_tick_kinds(state) else {
                     continue;
                 };

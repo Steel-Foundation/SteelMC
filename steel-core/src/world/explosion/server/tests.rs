@@ -5,7 +5,7 @@ use std::sync::{
 
 use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, PistonType};
+use steel_registry::blocks::properties::{AttachFace, BlockStateProperties, PistonType};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{
     entity_type::EntityTypeRef, fluid::FluidState, init_vanilla_registry, vanilla_blocks,
@@ -671,3 +671,86 @@ fn destructive_explosion_removes_stone_and_spawns_its_loot() {
             .is_some_and(|item| item.get_item().is(&vanilla_items::COBBLESTONE))
     }));
 }
+
+#[test]
+fn trigger_explosion_flips_a_lever_without_breaking_blocks() {
+    let fixture = ready_world("explosion_trigger_lever");
+    let world = &fixture.world;
+    let support = BlockPos::new(0, 63, 0);
+    let lever_pos = BlockPos::new(0, 64, 0);
+    let unpowered_lever = vanilla_blocks::LEVER
+        .default_state()
+        .set_value(&BlockStateProperties::ATTACH_FACE, AttachFace::Floor)
+        .set_value(&BlockStateProperties::POWERED, false);
+    assert!(world.set_block(
+        support,
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    assert!(world.set_block(lever_pos, unpowered_lever, UpdateFlags::UPDATE_ALL));
+
+    world.explode(ExplosionOptions::new(
+        TEST_BLOCK_CENTER,
+        ENTITY_EFFECT_TEST_RADIUS,
+        ExplosionInteraction::Trigger,
+    ));
+
+    let lever = world.get_block_state(lever_pos);
+    assert_eq!(lever.get_block(), &vanilla_blocks::LEVER);
+    assert!(lever.get_value(&BlockStateProperties::POWERED));
+    assert_eq!(
+        world.get_block_state(support).get_block(),
+        &vanilla_blocks::STONE
+    );
+    let drops = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-4.0, 60.0, -4.0, 5.0, 69.0, 5.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert!(drops.is_empty());
+}
+
+#[test]
+fn trigger_explosion_extinguishes_lit_candles_and_candle_cakes() {
+    let fixture = ready_world("explosion_trigger_candles");
+    let world = &fixture.world;
+    let candle_pos = BlockPos::new(0, 64, 0);
+    let cake_pos = BlockPos::new(1, 64, 0);
+    let lit = &BlockStateProperties::LIT;
+    for pos in [candle_pos, cake_pos] {
+        assert!(world.set_block(
+            pos.below(),
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+    }
+    assert!(world.set_block(
+        candle_pos,
+        vanilla_blocks::CANDLE.default_state().set_value(lit, true),
+        UpdateFlags::UPDATE_ALL,
+    ));
+    assert!(
+        world.set_block(
+            cake_pos,
+            vanilla_blocks::CANDLE_CAKE
+                .default_state()
+                .set_value(lit, true),
+            UpdateFlags::UPDATE_ALL,
+        )
+    );
+
+    world.explode(ExplosionOptions::new(
+        TEST_BLOCK_CENTER,
+        ENTITY_EFFECT_TEST_RADIUS,
+        ExplosionInteraction::Trigger,
+    ));
+
+    let candle = world.get_block_state(candle_pos);
+    assert_eq!(candle.get_block(), &vanilla_blocks::CANDLE);
+    assert!(!candle.get_value(lit));
+    let cake = world.get_block_state(cake_pos);
+    assert_eq!(cake.get_block(), &vanilla_blocks::CANDLE_CAKE);
+    assert!(!cake.get_value(lit));
+}
+
+// TODO: Once the breeze wind charge entity exists, test that its trigger explosions
+// only trigger blocks while `mobGriefing` is enabled, and other sources stay ungated.
