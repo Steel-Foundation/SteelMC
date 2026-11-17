@@ -879,7 +879,7 @@ pub(crate) use entity::apply_entity_look_at;
 pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
-    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
+    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource, RiderMove,
 };
 pub use fluid_contact::EntityFluidContact;
 pub use identity::EntityGeneration;
@@ -914,10 +914,12 @@ pub use movement_sync::{
 pub use part::{PartEntity, PartEntityBase};
 pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
-    AbstractThrownPotion, EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection,
-    ProjectileEventSource, ProjectileHit, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ,
-    SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
-    compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
+    AbstractHurtingProjectile, AbstractThrownPotion, AbstractWindCharge, EntityHitResult,
+    HurtingProjectileBase, INITIAL_ACCELERATION_POWER, Projectile, ProjectileBase,
+    ProjectileDeflection, ProjectileEventSource, ProjectileHit, SPLASH_HORIZONTAL_REACH,
+    SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile,
+    ViewVectorHitResult, compute_margin, get_hit_result_on_view_vector,
+    spawn_projectile_from_rotation, spawn_throwable_item_projectile,
 };
 pub use pushing::{DefaultEntityPush, EntityPushSnapshot};
 pub use reference::EntityReference;
@@ -1316,7 +1318,7 @@ fn teleport_set_position(
 
     match commit {
         TeleportPositionCommit::Managed => entity.try_set_position(position)?,
-        TeleportPositionCommit::Local => entity.base().set_position_local(position),
+        TeleportPositionCommit::Local => entity.set_position_local(position),
     }
     entity.set_rotation(rotation);
     if let Some(living) = entity.as_living_entity() {

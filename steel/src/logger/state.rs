@@ -33,6 +33,7 @@ impl LogState {
     pub async fn new(
         log_config: Option<&LogConfig>,
         cancel_token: CancellationToken,
+        interactive: bool,
     ) -> Result<Self> {
         let path = log_config.map_or_else(
             || PathBuf::from("./.tmp"),
@@ -45,7 +46,7 @@ impl LogState {
         create_dir_all(&path)?;
 
         Ok(LogState {
-            out: Output::new(),
+            out: Output::new(interactive),
             completion: Completer::new(),
             history: History::new(path.clone(), max_history).await,
             selection: Selection::new(),

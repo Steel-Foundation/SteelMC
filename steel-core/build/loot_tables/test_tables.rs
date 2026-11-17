@@ -68,6 +68,10 @@ fn inputs() -> impl IntoIterator<Item = (&'static str, serde_json::Value)> {
             json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:goat_horn","modifier":{"type":"minecraft:set_instrument","options":"#minecraft:regular_goat_horns"}}]}]}),
         ),
         (
+            "POTION",
+            json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:tipped_arrow","modifier":{"type":"minecraft:set_potion","id":"minecraft:strong_slowness"}}]}]}),
+        ),
+        (
             "BOOK_ENCHANTMENT",
             json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:book","modifier":[{"type":"minecraft:set_enchantments","enchantments":{"minecraft:sharpness":10}},{"type":"minecraft:set_enchantments","enchantments":{"minecraft:sharpness":-4},"add":true}]}]}]}),
         ),

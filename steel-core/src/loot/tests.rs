@@ -302,6 +302,35 @@ fn instrument_selection_and_signed_book_enchantment_modifiers() {
 }
 
 #[test]
+fn set_potion_replaces_base_potion_and_keeps_custom_contents() {
+    use steel_registry::data_components::{PotionContents, vanilla_components::POTION_CONTENTS};
+    use steel_registry::{
+        MobEffectInstance, RegistryReference, vanilla_mob_effects, vanilla_potions,
+    };
+    let items = generate(&fixtures::POTION, 12345);
+    assert_eq!(
+        items[0].get(POTION_CONTENTS),
+        Some(&PotionContents::of(&vanilla_potions::STRONG_SLOWNESS))
+    );
+
+    let custom = |potion| {
+        PotionContents::new(
+            Some(RegistryReference::new(potion)),
+            Some(0x12_34_56),
+            vec![MobEffectInstance::simple(vanilla_mob_effects::LUCK, 200, 1)],
+            Some("custom".to_owned()),
+        )
+    };
+    let mut item = ItemStack::new(&vanilla_items::TIPPED_ARROW);
+    item.set(POTION_CONTENTS, custom(&vanilla_potions::SWIFTNESS));
+    super::modifiers::set_potion(&mut item, &vanilla_potions::POISON);
+    assert_eq!(
+        item.get(POTION_CONTENTS),
+        Some(&custom(&vanilla_potions::POISON))
+    );
+}
+
+#[test]
 fn fishing_hook_predicates_distinguish_non_hooks_closed_water_and_open_water() {
     let tables = tables();
     for (open_water, expected_item) in [

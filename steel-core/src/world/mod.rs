@@ -156,6 +156,7 @@ use entity_management::nearest_player_distance_in_range;
 pub use explosion::{
     BlockInteraction, DefaultExplosionDamageCalculator, EntityBasedExplosionDamageCalculator,
     Explosion, ExplosionDamageCalculator, ExplosionInteraction, ExplosionOptions, ExplosionOutcome,
+    SimpleExplosionDamageCalculator,
 };
 pub(crate) use explosion::{ExplosionBlockReader, ImmutableExplosionBlockCalculator};
 pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
@@ -629,7 +630,7 @@ impl World {
                         let Some(player) = self.players.get_by_entity_id(player_id) else {
                             return;
                         };
-                        player.connection.send_encoded(encoded);
+                        encoded.send_to(&player);
                     },
                     entity_data: |entity_id, dirty_entity_data| {
                         let packet = CSetEntityData::new(entity_id, dirty_entity_data);
