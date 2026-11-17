@@ -205,13 +205,12 @@ async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConf
         }
     };
     log::info!(
-        "Console initialized in {} mode ({})",
+        "Console initialized in {} mode",
         if logger.is_interactive() {
             "interactive (TUI)"
         } else {
             "plain (line-buffered)"
-        },
-        logger.mode_reason()
+        }
     );
     shutdown::install(cancel_token.clone());
     let panic_token = cancel_token.clone();

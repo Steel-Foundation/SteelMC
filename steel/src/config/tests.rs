@@ -482,5 +482,4 @@ fn log_config_defaults_for_older_configs() {
     assert!(log_config.log_file);
     assert_eq!(log_config.rotation_time, RotationTimeFormat::Daily);
     assert_eq!(log_config.max_history, 50);
-    assert_eq!(log_config.terminal, super::TerminalMode::Auto);
 }

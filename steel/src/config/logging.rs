@@ -42,27 +42,11 @@ pub struct LogConfig {
     /// Amount of console commands saved
     #[serde(default = "default_max_history")]
     pub max_history: usize,
-    /// Terminal mode: "auto" (default, detects TTY), "interactive" (force TUI), or "plain" (line-buffered console)
-    #[serde(default)]
-    pub terminal: TerminalMode,
 }
 
 impl LogConfig {
     /// Default console command history length when logging config is absent.
     pub const DEFAULT_MAX_HISTORY: usize = 50;
-}
-
-/// Terminal display mode
-#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum TerminalMode {
-    /// Automatically detect whether standard I/O is a terminal
-    #[default]
-    Auto,
-    /// Force full interactive terminal (raw mode, suggestions, prompt bar)
-    Interactive,
-    /// Force plain line-buffered console (non-TTY friendly)
-    Plain,
 }
 
 /// Time format for log entries

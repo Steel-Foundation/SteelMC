@@ -1,4 +1,4 @@
-use crate::config::{LogConfig, LogTimeFormat, TerminalMode};
+use crate::config::{LogConfig, LogTimeFormat};
 use chrono::Utc;
 use crossterm::{
     style::{Color::DarkGrey, ResetColor, SetForegroundColor},
@@ -6,7 +6,7 @@ use crossterm::{
 };
 use std::{
     env,
-    io::{IsTerminal, Write, stdin, stdout},
+    io::Write,
     sync::Arc,
     time::{self, Instant},
 };
@@ -44,85 +44,11 @@ pub(crate) enum Move {
     Down,
 }
 
-/// Determines whether to run in interactive terminal mode or plain non-TTY mode,
-/// returning the boolean and a short description of the reason.
+/// Returns whether to run the interactive TUI. Only the `--plain` CLI flag selects
+/// the plain line-buffered console.
 #[must_use]
-pub fn terminal_mode_decision(config_mode: Option<TerminalMode>) -> (bool, &'static str) {
-    // 1. Command-line flag override
-    let mut args = env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--plain" | "-plain" | "plain" | "--no-terminal" | "-no-terminal" | "no-terminal"
-            | "--plain-terminal" | "--terminal=plain" | "-terminal=plain" | "nogui" | "-nogui"
-            | "--nogui" | "--no-gui" | "nojline" | "-nojline" | "--nojline" => {
-                return (false, "CLI flag");
-            }
-            "--interactive" | "-interactive" | "interactive" | "--terminal=interactive"
-            | "-terminal=interactive" => {
-                return (true, "CLI flag");
-            }
-            "--terminal" | "-terminal" => {
-                if let Some(next_arg) = args.next() {
-                    match next_arg.as_str() {
-                        "plain" => return (false, "CLI flag '--terminal plain'"),
-                        "interactive" => return (true, "CLI flag '--terminal interactive'"),
-                        _ => {}
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    // 2. Environment variables
-    if let Ok(val) = env::var("STEEL_TERMINAL") {
-        match val.to_ascii_lowercase().as_str() {
-            "plain" | "0" | "false" | "off" => return (false, "STEEL_TERMINAL env var"),
-            "interactive" | "1" | "true" | "on" => return (true, "STEEL_TERMINAL env var"),
-            _ => {}
-        }
-    }
-    if env::var("TERM").as_deref() == Ok("dumb") {
-        return (false, "TERM=dumb");
-    }
-    if let Ok(ci) = env::var("CI")
-        && (ci == "true" || ci == "1")
-    {
-        return (false, "CI environment");
-    }
-    if let Ok(ptdl) = env::var("PTERODACTYL")
-        && (ptdl == "true" || ptdl == "1")
-    {
-        return (false, "PTERODACTYL env var");
-    }
-    // Detect Pterodactyl container environment (Wings sets USER=container and HOME=/home/container)
-    if env::var("USER").as_deref() == Ok("container")
-        && env::var("HOME").as_deref() == Ok("/home/container")
-    {
-        return (false, "Pterodactyl container detected (USER=container)");
-    }
-
-    // 3. Configuration file override
-    match config_mode {
-        Some(TerminalMode::Plain) => return (false, "config.toml (terminal = \"plain\")"),
-        Some(TerminalMode::Interactive) => {
-            return (true, "config.toml (terminal = \"interactive\")");
-        }
-        Some(TerminalMode::Auto) | None => {}
-    }
-
-    // 4. Auto-detect: both stdin and stdout must be real terminals
-    if stdin().is_terminal() && stdout().is_terminal() {
-        (true, "auto-detected TTY")
-    } else {
-        (false, "auto-detected non-TTY")
-    }
-}
-
-/// Determines whether to run in interactive terminal mode or plain non-TTY mode.
-#[must_use]
-pub fn is_interactive_terminal(config_mode: Option<TerminalMode>) -> bool {
-    terminal_mode_decision(config_mode).0
+pub fn terminal_mode_decision() -> bool {
+    !env::args().skip(1).any(|arg| arg == "--plain")
 }
 
 /// A logger implementation with commands suggestions
@@ -135,7 +61,6 @@ pub struct CommandLogger {
     start_time: Instant,
     log_config: Option<LogConfig>,
     interactive: bool,
-    mode_reason: &'static str,
 }
 
 impl CommandLogger {
@@ -145,18 +70,12 @@ impl CommandLogger {
         self.interactive
     }
 
-    /// Returns the reason why interactive or plain mode was chosen.
-    #[must_use]
-    pub const fn mode_reason(&self) -> &'static str {
-        self.mode_reason
-    }
     /// Initializes the `CommandLogger`
     pub async fn init(
         cancel_token: CancellationToken,
         log_config: Option<LogConfig>,
     ) -> Result<Arc<Self>, String> {
-        let (interactive, mode_reason) =
-            terminal_mode_decision(log_config.as_ref().map(|l| l.terminal));
+        let interactive = terminal_mode_decision();
         let (sender, receiver) = mpsc::unbounded_channel();
         let log_cancel_token = CancellationToken::new();
         let input = LogState::new(log_config.as_ref(), cancel_token, interactive)
@@ -172,7 +91,6 @@ impl CommandLogger {
             start_time: Instant::now(),
             log_config,
             interactive,
-            mode_reason,
         });
         task::spawn(Arc::clone(&log).log_loop(receiver));
         task::spawn(Arc::clone(&log).input_main());
@@ -430,22 +348,5 @@ mod tests {
             "first\r\nsecond"
         );
         assert_eq!(rendered_terminal_rows("12345\r\n123456", 10), 2);
-    }
-
-    #[test]
-    fn terminal_mode_config_overrides() {
-        use crate::config::TerminalMode;
-        assert!(!super::is_interactive_terminal(Some(TerminalMode::Plain)));
-        assert!(super::is_interactive_terminal(Some(
-            TerminalMode::Interactive
-        )));
-        let (plain, plain_reason) = super::terminal_mode_decision(Some(TerminalMode::Plain));
-        assert!(!plain);
-        assert!(plain_reason.contains("plain"));
-
-        let (interactive, interactive_reason) =
-            super::terminal_mode_decision(Some(TerminalMode::Interactive));
-        assert!(interactive);
-        assert!(interactive_reason.contains("interactive"));
     }
 }
