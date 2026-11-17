@@ -112,6 +112,10 @@ impl MenuKind for BrewingStandMenuKind {
         self.update_data(behavior, guard);
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "mirrors vanilla's linear brewing quick-move branch order"
+    )]
     fn quick_move(
         &mut self,
         behavior: &mut MenuBehavior,
