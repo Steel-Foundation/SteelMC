@@ -424,7 +424,7 @@ impl Player {
         }
 
         self.attack_visual_effects(entity, AttackVisualKind::Stab, magic_boost);
-        self.item_attack_interaction(target, &attacking_item, &damage_source, damage_dealt);
+        self.item_attack_interaction(target, attacking_item, &damage_source, damage_dealt);
         self.set_last_hurt_mob(Some(target));
         self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         true
@@ -562,7 +562,7 @@ impl Player {
                 AttackVisualKind::melee(critical_attack, sweep_attack, full_strength_attack);
             self.attack_visual_effects(entity, visual_kind, magic_boost);
             self.set_last_hurt_mob(Some(target));
-            self.item_attack_interaction(target, &attacking_item, &damage_source, true);
+            self.item_attack_interaction(target, attacking_item, &damage_source, true);
             self.damage_stats_and_hearts(entity, old_entity_living_health);
             self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         } else {
@@ -674,7 +674,7 @@ impl Player {
             enchantment_helper::do_post_attack_effects_with_item_source(
                 &world,
                 nearby.as_ref(),
-                &weapon,
+                weapon,
                 &post_attack_context,
             );
         }
@@ -721,7 +721,7 @@ impl Player {
     fn item_attack_interaction(
         &self,
         target: &SharedEntity,
-        attacking_item: &ItemStack,
+        attacking_item: ItemStack,
         damage_source: &DamageSource,
         apply_to_target: bool,
     ) {
