@@ -50,7 +50,7 @@ pub use tools::FlintAndSteelDispenseBehavior;
 pub(crate) enum DispenseResult {
     Success,
     Failure,
-    Projectile,
+    Projectile(i32),
     Byproduct(ItemStack),
 }
 
@@ -59,7 +59,7 @@ impl DispenseResult {
         match self {
             Self::Success | Self::Byproduct(_) => level_events::SOUND_DISPENSER_DISPENSE,
             Self::Failure => level_events::SOUND_DISPENSER_FAIL,
-            Self::Projectile => level_events::SOUND_DISPENSER_PROJECTILE_LAUNCH,
+            Self::Projectile(sound) => *sound,
         }
     }
 }
@@ -252,8 +252,12 @@ pub(crate) static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyL
         ),
     );
 
+    registry.set_behavior(
+        &vanilla_items::FIREWORK_ROCKET,
+        Box::new(ProjectileDispenseBehavior::firework()),
+    );
+
     // TODO: Experience bottle and fire charge need their projectile entities.
-    // TODO: Firework rockets need their angled launch setup and sound.
     // TODO: Wind charges need their dispenser-specific spawn position, velocity, and sound.
 
     // explosives
