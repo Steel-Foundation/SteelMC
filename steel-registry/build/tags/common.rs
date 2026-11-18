@@ -64,7 +64,7 @@ pub fn resolve_tag(
     }
 
     assert!(
-        !visiting.contains(&tag_name.to_string()),
+        !visiting.iter().any(|i| i == tag_name),
         "Circular tag dependency detected: {visiting:?}"
     );
 
