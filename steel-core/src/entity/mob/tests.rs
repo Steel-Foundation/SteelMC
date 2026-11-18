@@ -14,6 +14,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Downcast as _, Identifier};
 use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
+use super::spawn_armor::VANILLA_SPAWN_ARMOR_TIERS;
 use super::{
     can_attempt_equipment_drop, find_ground_path_target_surface, path_end_node_can_reach_target,
 };
@@ -66,6 +67,56 @@ fn equipment_drop_attempt_gate_matches_vanilla_conditions() {
     assert!(!can_attempt_equipment_drop(0.085, false, false));
     assert!(can_attempt_equipment_drop(0.085, false, true));
     assert!(can_attempt_equipment_drop(2.0, true, false));
+}
+
+#[test]
+fn spawn_armor_tiers_map_to_vanilla_materials() {
+    let tiers = [
+        (
+            0,
+            &vanilla_items::LEATHER_HELMET,
+            &vanilla_items::LEATHER_CHESTPLATE,
+            &vanilla_items::LEATHER_LEGGINGS,
+            &vanilla_items::LEATHER_BOOTS,
+        ),
+        (
+            5,
+            &vanilla_items::DIAMOND_HELMET,
+            &vanilla_items::DIAMOND_CHESTPLATE,
+            &vanilla_items::DIAMOND_LEGGINGS,
+            &vanilla_items::DIAMOND_BOOTS,
+        ),
+    ];
+
+    for (index, head, chest, legs, feet) in tiers {
+        let tier = VANILLA_SPAWN_ARMOR_TIERS
+            .get(index)
+            .copied()
+            .expect("spawn armor tier");
+        assert_eq!(
+            tier.item_for(EquipmentSlot::Head).map(|item| &item.key),
+            Some(&head.key)
+        );
+        assert_eq!(
+            tier.item_for(EquipmentSlot::Chest).map(|item| &item.key),
+            Some(&chest.key)
+        );
+        assert_eq!(
+            tier.item_for(EquipmentSlot::Legs).map(|item| &item.key),
+            Some(&legs.key)
+        );
+        assert_eq!(
+            tier.item_for(EquipmentSlot::Feet).map(|item| &item.key),
+            Some(&feet.key)
+        );
+    }
+
+    assert!(VANILLA_SPAWN_ARMOR_TIERS.get(6).is_none());
+    assert!(
+        VANILLA_SPAWN_ARMOR_TIERS[0]
+            .item_for(EquipmentSlot::MainHand)
+            .is_none()
+    );
 }
 
 struct SurfaceLevel {
