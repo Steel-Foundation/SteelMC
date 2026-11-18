@@ -2,12 +2,11 @@ use std::sync::Arc;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::level_events;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::Direction;
 
-use super::DispenseItemBehavior;
+use super::{DispenseItemBehavior, DispenseResult};
 use crate::behavior::blocks::container::dispenser_block::FACING;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::items::BlockItem;
@@ -29,8 +28,8 @@ impl DispenseItemBehavior for ShulkerBoxDispenseBehavior {
         world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
-        mut item: ItemStack,
-    ) -> ItemStack {
+        item: &mut ItemStack,
+    ) -> DispenseResult {
         let facing = state.get_value(FACING);
         let target_pos = pos.relative(facing);
         let clicked_face = if world.get_block_state(target_pos.below()).is_air() {
@@ -39,15 +38,12 @@ impl DispenseItemBehavior for ShulkerBoxDispenseBehavior {
             Direction::Up
         };
 
-        let context =
-            BlockPlaceContext::directional(world, target_pos, facing, &mut item, clicked_face);
-        let placed = BlockItem::new(self.block).place(context).consumes_action();
-
-        if !placed {
-            world.level_event(level_events::SOUND_DISPENSER_FAIL, pos, 0, None);
+        let context = BlockPlaceContext::directional(world, target_pos, facing, item, clicked_face);
+        if BlockItem::new(self.block).place(context).consumes_action() {
+            DispenseResult::Success
+        } else {
+            DispenseResult::Failure
         }
-
-        item
     }
 }
 
@@ -56,11 +52,12 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
     use steel_utils::{ChunkPos, types::UpdateFlags};
 
-    use crate::behavior::blocks::container::dispenser_block::DispenserBlock;
+    use crate::behavior::blocks::container::dispenser_block::{
+        DispenserBlock, tests::with_inventory,
+    };
     use crate::behavior::init_behaviors;
     use crate::block_entity::entities::DispenserBlockEntity;
     use crate::block_entity::init_block_entities;
-    use crate::inventory::container::Container;
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     use super::*;
@@ -85,17 +82,18 @@ mod tests {
             dispenser_pos,
             state,
         ));
-        entity
-            .state
-            .container()
-            .lock()
-            .set_item(0, ItemStack::with_count(&vanilla_items::SHULKER_BOX, 1));
+        with_inventory(entity.as_ref(), |inventory| {
+            inventory.set_item(0, ItemStack::with_count(&vanilla_items::SHULKER_BOX, 1));
+        });
         world.set_block(dispenser_pos, state, UpdateFlags::UPDATE_ALL);
         world.set_block_entity(Arc::<DispenserBlockEntity>::clone(&entity));
 
         DispenserBlock::dispense_from(world, dispenser_pos, state);
 
-        assert_eq!(entity.state.container().lock().get_item(0).count(), 0);
+        assert_eq!(
+            with_inventory(entity.as_ref(), |inventory| inventory.get_item(0).count()),
+            0
+        );
         assert_eq!(
             world.get_block_state(target_pos).get_block(),
             &vanilla_blocks::SHULKER_BOX

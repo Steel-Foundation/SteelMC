@@ -15,8 +15,7 @@ use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
 
-use super::DefaultDispenseBehavior;
-use super::DispenseItemBehavior;
+use super::{DispenseItemBehavior, DispenseResult, eject_item, nested_default_dispense};
 use crate::behavior::blocks::container::dispenser_block::FACING;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
@@ -31,9 +30,11 @@ impl DispenseItemBehavior for GlassBottleDispenseBehavior {
         world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
-        item: ItemStack,
-    ) -> ItemStack {
-        let target_pos = pos.relative(state.get_value(FACING));
+        item: &mut ItemStack,
+    ) -> DispenseResult {
+        let facing = state.get_value(FACING);
+        let target_pos = pos.relative(facing);
+
         // TODO: honey bottle from a beehive with honey_level >= 5 — needs
         // beehive honey-level tracking, which isn't ported yet.
         if world
@@ -44,15 +45,17 @@ impl DispenseItemBehavior for GlassBottleDispenseBehavior {
             world.game_event(
                 &vanilla_game_events::FLUID_PICKUP,
                 pos,
-                &GameEventContext::new(None, None),
+                &GameEventContext::default(),
             );
-            return PotionContents::create_item_stack(
+
+            return DispenseResult::Byproduct(PotionContents::create_item_stack(
                 &vanilla_items::POTION,
                 &vanilla_potions::WATER,
-            );
+            ));
         }
 
-        DefaultDispenseBehavior.dispense(world, pos, state, item)
+        eject_item(world, pos, facing, item.split(1));
+        DispenseResult::Failure
     }
 }
 
@@ -68,13 +71,13 @@ impl DispenseItemBehavior for PotionDispenseBehavior {
         world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
-        item: ItemStack,
-    ) -> ItemStack {
+        item: &mut ItemStack,
+    ) -> DispenseResult {
         if !item
             .get_or_default(POTION_CONTENTS, PotionContents::empty())
             .is(&vanilla_potions::WATER)
         {
-            return DefaultDispenseBehavior.dispense(world, pos, state, item);
+            return nested_default_dispense(world, pos, state, item);
         }
 
         let target_pos = pos.relative(state.get_value(FACING));
@@ -83,7 +86,7 @@ impl DispenseItemBehavior for PotionDispenseBehavior {
             .get_block()
             .has_tag(&BlockTag::CONVERTIBLE_TO_MUD)
         {
-            return DefaultDispenseBehavior.dispense(world, pos, state, item);
+            return nested_default_dispense(world, pos, state, item);
         }
 
         for _ in 0..MUD_SPLASH_PARTICLE_COUNT {
@@ -99,11 +102,12 @@ impl DispenseItemBehavior for PotionDispenseBehavior {
                 1.0,
             );
         }
+
         world.play_block_sound(&sound_events::ITEM_BOTTLE_EMPTY, pos, 1.0, 1.0, None);
         world.game_event(
             &vanilla_game_events::FLUID_PLACE,
             pos,
-            &GameEventContext::new(None, None),
+            &GameEventContext::default(),
         );
         world.set_block(
             target_pos,
@@ -111,6 +115,6 @@ impl DispenseItemBehavior for PotionDispenseBehavior {
             UpdateFlags::UPDATE_ALL,
         );
 
-        ItemStack::new(&vanilla_items::GLASS_BOTTLE)
+        DispenseResult::Byproduct(ItemStack::new(&vanilla_items::GLASS_BOTTLE))
     }
 }

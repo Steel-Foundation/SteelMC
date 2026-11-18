@@ -62,6 +62,7 @@ pub use ender_eye::EnderEyeItem;
 pub use ender_pearl::EnderPearlItem;
 pub use firework_rocket::FireworkRocketItem;
 pub use fishing_rod::FishingRodItem;
+pub(crate) use flint_and_steel::can_light;
 pub use flint_and_steel::{FireChargeItem, FlintAndSteelItem};
 pub use food_on_a_stick::FoodOnAStickItem;
 pub use hanging_sign_item::HangingSignItem;

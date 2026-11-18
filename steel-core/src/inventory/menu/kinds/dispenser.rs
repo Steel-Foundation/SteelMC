@@ -4,6 +4,7 @@
 
 use steel_registry::vanilla_menu_types;
 
+use crate::block_entity::entities::DISPENSER_SLOTS;
 use crate::inventory::prelude::*;
 use crate::player::player_inventory::PlayerInventory;
 
@@ -17,7 +18,7 @@ pub fn generic_3x3_menu(
     let container = container.into();
 
     let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_3X3, container_id);
-    let dispenser = builder.section(&container, 9);
+    let dispenser = builder.section(&container, DISPENSER_SLOTS);
     let player = builder.player_inventory(&inventory);
 
     builder.route(dispenser, player.all(), FillDirection::Backward);

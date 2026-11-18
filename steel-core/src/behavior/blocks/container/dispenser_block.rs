@@ -3,9 +3,15 @@
 //! Redstone-activated containers that can eject items into the world or
 //! insert them into adjacent containers in the direction it faces.
 
-use crate::behavior::blocks::container::dispense_behavior::DISPENSE_BEHAVIORS;
+use super::ChestBlock;
+use super::dispense_behavior::{
+    DISPENSE_BEHAVIORS, DefaultDispenseBehavior, DispenseItemBehavior, DispenseResult, eject_item,
+    play_feedback,
+};
 use std::sync::{Arc, Weak};
 
+use rand::seq::IteratorRandom as _;
+use smallvec::SmallVec;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -13,7 +19,10 @@ use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty,
 };
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{level_events, vanilla_block_entity_types, vanilla_custom_stats};
+use steel_registry::{
+    level_events, sound_events, vanilla_block_entity_types, vanilla_blocks, vanilla_custom_stats,
+    vanilla_game_events,
+};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, translations};
 use text_components::TextComponent;
@@ -21,16 +30,20 @@ use text_components::TextComponent;
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
-use crate::block_entity::BLOCK_ENTITIES;
 use crate::block_entity::entities::{DispenserBlockEntity, DropperBlockEntity};
+use crate::block_entity::{BLOCK_ENTITIES, BlockEntity};
+use crate::entity::Entity as _;
 use crate::inventory::container::{Container, calculate_redstone_signal_from_containers};
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::kinds::generic_3x3_menu;
+use crate::nameable::Nameable as _;
 use crate::player::Player;
+use crate::world::game_event::GameEventContext;
 use crate::world::{SignalGetter as _, World};
 
 pub(crate) const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
 const TRIGGERED: &BoolProperty = &BlockStateProperties::TRIGGERED;
+const DISPENSE_DELAY_TICKS: i32 = 4;
 
 /// Behavior for dropper blocks.
 #[block_behavior]
@@ -47,51 +60,76 @@ impl DropperBlock {
 
     /// Ejects an item or pushes it into an adjacent container.
     pub fn dispense_from(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
-        let Some(block_entity) = world.get_block_entity(pos) else {
-            return;
-        };
-        let Some(dropper) = block_entity.downcast_ref::<DropperBlockEntity>() else {
+        let Some(source) = world
+            .get_block_entity(pos)
+            .and_then(|entity| entity.downcast_ref::<DropperBlockEntity>()?.container_ref())
+        else {
             return;
         };
 
-        let Some(slot) = dropper.state.get_random_non_empty_slot() else {
+        let source_id = source.container_id();
+        let Ok(guard) = ContainerLockGuard::lock_all(&[&source]) else {
+            return;
+        };
+        let Some(slot) = guard.get(source_id).and_then(random_slot) else {
             world.level_event(level_events::SOUND_DISPENSER_FAIL, pos, 0, None);
             return;
         };
-        let item = dropper.state.take_single_item(slot);
-        if item.is_empty() {
-            world.level_event(level_events::SOUND_DISPENSER_FAIL, pos, 0, None);
+
+        drop(guard);
+        let facing = state.get_value(FACING);
+        let targets = target_containers(world, pos.relative(facing));
+
+        if targets.is_empty() {
+            let mut guard = ContainerLockGuard::lock_storage(&[&source]);
+            if let Some(mut item) = guard.remove_item(source_id, slot, 1) {
+                if item.is_empty() {
+                    return;
+                }
+
+                guard.run_unlocked(|| {
+                    let outcome = DefaultDispenseBehavior.dispense(world, pos, state, &mut item);
+                    play_feedback(world, pos, state, outcome.sound());
+                });
+            }
+
             return;
         }
 
-        let facing = state.get_value(FACING);
-        let target_pos = pos.relative(facing);
-
-        if let Some(target_block_entity) = world.get_block_entity(target_pos)
-            && let Some(target_container_ref) = ContainerRef::from_block_entity(target_block_entity)
-        {
-            let Ok(mut guard) = ContainerLockGuard::lock_all(&[&target_container_ref]) else {
-                // Loot preparation failed (already logged); keep the item in the dropper.
-                let leftover = dropper.state.insert_item_back(item);
-                if !leftover.is_empty() {
-                    world.drop_item_stack(target_pos, leftover);
-                }
+        for (index, target) in targets.iter().enumerate() {
+            let target_id = target.container_id();
+            let Ok(mut guard) = ContainerLockGuard::lock_all(&[&source, target]) else {
                 return;
             };
-            if let Some(target_container) = guard.get_mut(target_container_ref.container_id()) {
-                let remaining = insert_item_into_container(&mut *target_container, item);
-                if remaining.is_empty() {
-                    world.level_event(level_events::SOUND_DISPENSER_DISPENSE, pos, 0, None);
-                    return;
-                }
-                world.drop_item_stack(target_pos, remaining);
-                world.level_event(level_events::SOUND_DISPENSER_DISPENSE, pos, 0, None);
+
+            if index == 0
+                && let Some(second) = targets.get(1)
+                && guard.get(target_id).is_some_and(Container::is_empty)
+                && guard
+                    .run_unlocked(|| ContainerLockGuard::lock_all(&[second]).map(drop))
+                    .is_err()
+            {
+                return;
+            }
+
+            let Some([source, target]) = guard.get_disjoint_mut([source_id, target_id]) else {
+                continue;
+            };
+
+            let mut item = source.get_item(slot).copy_with_count(1);
+            if item.is_empty() {
+                return;
+            }
+
+            insert_item(target, &mut item, Some(facing.opposite()));
+            if item.is_empty() {
+                source.remove_item(slot, 1);
+                guard.set_changed(target_id);
+                guard.set_changed(source_id);
+
                 return;
             }
         }
-
-        world.drop_item_stack(target_pos, item);
-        world.level_event(level_events::SOUND_DISPENSER_DISPENSE, pos, 0, None);
     }
 }
 
@@ -119,19 +157,20 @@ impl BlockBehavior for DropperBlock {
             return InteractionResult::Pass;
         };
 
-        let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
+        let Some(container) = block_entity.downcast_ref::<DropperBlockEntity>() else {
             return InteractionResult::Pass;
         };
 
-        let inventory = Arc::clone(&player.inventory);
-        player.open_menu(
-            TextComponent::translated(translations::CONTAINER_DROPPER.msg()),
-            move |context| generic_3x3_menu(inventory, context.container_id, container_ref),
-        );
-
+        let title = container.name();
         player.award_custom_stat(&vanilla_custom_stats::INSPECT_DROPPER);
-
-        InteractionResult::Success
+        open_menu(
+            block_entity.as_ref(),
+            player,
+            world,
+            pos,
+            title,
+            container.can_open(player),
+        )
     }
 
     fn new_block_entity(
@@ -156,27 +195,21 @@ impl BlockBehavior for DropperBlock {
         _source_block: BlockRef,
         _moved_by_piston: bool,
     ) {
-        let is_powered = world.has_neighbor_signal(pos) || world.has_neighbor_signal(pos.above());
-        let is_triggered = state.get_value(TRIGGERED);
-
-        if is_powered && !is_triggered {
-            world.schedule_block_tick_default(pos, self.block, 4);
-            world.set_block(
-                pos,
-                state.set_value(TRIGGERED, true),
-                UpdateFlags::UPDATE_CLIENTS,
-            );
-        } else if !is_powered && is_triggered {
-            world.set_block(
-                pos,
-                state.set_value(TRIGGERED, false),
-                UpdateFlags::UPDATE_CLIENTS,
-            );
-        }
+        update_trigger(world, pos, state, self.block);
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         Self::dispense_from(world, pos, state);
+    }
+
+    fn affect_neighbors_after_removal(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        _moved_by_piston: bool,
+    ) {
+        world.update_neighbor_for_output_signal(pos, self.block);
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {
@@ -207,35 +240,68 @@ impl DispenserBlock {
         Self { block }
     }
 
-    /// Ejects an item or pushes it into an adjacent container.
+    /// runs the behavior for the selected stack
     pub fn dispense_from(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
-        let Some(block_entity) = world.get_block_entity(pos) else {
-            return;
-        };
-        let Some(dispenser) = block_entity.downcast_ref::<DispenserBlockEntity>() else {
+        let Some(source) = world.get_block_entity(pos).and_then(|entity| {
+            entity
+                .downcast_ref::<DispenserBlockEntity>()?
+                .container_ref()
+        }) else {
             return;
         };
 
-        let Some(slot) = dispenser.state.get_random_non_empty_slot() else {
-            world.level_event(level_events::SOUND_DISPENSER_FAIL, pos, 0, None);
+        let source_id = source.container_id();
+        let Ok(mut guard) = ContainerLockGuard::lock_all(&[&source]) else {
             return;
         };
-        let item = dispenser.state.take_single_item(slot);
-        if item.is_empty() {
-            world.level_event(level_events::SOUND_DISPENSER_FAIL, pos, 0, None);
+        let Some(container) = guard.get_mut(source_id) else {
             return;
-        }
+        };
+        let Some(slot) = random_slot(container) else {
+            guard.run_unlocked(|| {
+                world.level_event(level_events::SOUND_DISPENSER_FAIL, pos, 0, None);
+                world.game_event(
+                    &vanilla_game_events::BLOCK_ACTIVATE,
+                    pos,
+                    &GameEventContext::new(None, Some(state)),
+                );
+            });
+            return;
+        };
 
-        let behavior = DISPENSE_BEHAVIORS.get_behavior(item.item());
-        let remaining = behavior.dispense(world, pos, state, item);
+        let mut stack = container.remove_item_no_update(slot);
+        let outcome = guard.run_unlocked(|| {
+            DISPENSE_BEHAVIORS
+                .get_behavior(&stack)
+                .dispense(world, pos, state, &mut stack)
+        });
 
-        if !remaining.is_empty() {
-            let dropped = dispenser.state.insert_item_back(remaining);
-            if !dropped.is_empty() {
-                let facing = state.get_value(FACING);
-                world.drop_item_stack(pos.relative(facing), dropped);
+        let sound = outcome.sound();
+        let mut overflow = ItemStack::empty();
+        if let DispenseResult::Byproduct(byproduct) = outcome {
+            stack.shrink(1);
+            if stack.is_empty() {
+                stack = byproduct;
+            } else {
+                overflow = byproduct;
             }
         }
+
+        if let Some(container) = guard.get_mut(source_id) {
+            container.set_item(slot, stack);
+            if !overflow.is_empty() {
+                insert_item(container, &mut overflow, None);
+            }
+            guard.set_changed(source_id);
+        }
+
+        guard.run_unlocked(|| {
+            if !overflow.is_empty() {
+                eject_item(world, pos, state.get_value(FACING), overflow);
+                play_feedback(world, pos, state, level_events::SOUND_DISPENSER_DISPENSE);
+            }
+            play_feedback(world, pos, state, sound);
+        });
     }
 }
 
@@ -263,19 +329,19 @@ impl BlockBehavior for DispenserBlock {
             return InteractionResult::Pass;
         };
 
-        let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
+        let Some(container) = block_entity.downcast_ref::<DispenserBlockEntity>() else {
             return InteractionResult::Pass;
         };
-
-        let inventory = Arc::clone(&player.inventory);
-        player.open_menu(
-            TextComponent::translated(translations::CONTAINER_DISPENSER.msg()),
-            move |context| generic_3x3_menu(inventory, context.container_id, container_ref),
-        );
-
+        let title = container.name();
         player.award_custom_stat(&vanilla_custom_stats::INSPECT_DISPENSER);
-
-        InteractionResult::Success
+        open_menu(
+            block_entity.as_ref(),
+            player,
+            world,
+            pos,
+            title,
+            container.can_open(player),
+        )
     }
 
     fn new_block_entity(
@@ -300,27 +366,21 @@ impl BlockBehavior for DispenserBlock {
         _source_block: BlockRef,
         _moved_by_piston: bool,
     ) {
-        let is_powered = world.has_neighbor_signal(pos) || world.has_neighbor_signal(pos.above());
-        let is_triggered = state.get_value(TRIGGERED);
-
-        if is_powered && !is_triggered {
-            world.schedule_block_tick_default(pos, self.block, 4);
-            world.set_block(
-                pos,
-                state.set_value(TRIGGERED, true),
-                UpdateFlags::UPDATE_CLIENTS,
-            );
-        } else if !is_powered && is_triggered {
-            world.set_block(
-                pos,
-                state.set_value(TRIGGERED, false),
-                UpdateFlags::UPDATE_CLIENTS,
-            );
-        }
+        update_trigger(world, pos, state, self.block);
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         Self::dispense_from(world, pos, state);
+    }
+
+    fn affect_neighbors_after_removal(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        _moved_by_piston: bool,
+    ) {
+        world.update_neighbor_for_output_signal(pos, self.block);
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {
@@ -346,71 +406,155 @@ fn get_analog_signal(world: &World, pos: BlockPos) -> i32 {
         return 0;
     };
     let Ok(guard) = ContainerLockGuard::lock_all(&[&container_ref]) else {
-        // TODO: Preserve vanilla access ordering so loot-generation contention
-        // cannot become a false zero comparator signal.
+        // Match other randomizable containers while loot access fails.
         return 0;
     };
     calculate_redstone_signal_from_containers(guard.get(container_ref.container_id()))
 }
 
-/// Helper function to insert an item into a container respecting slot limits and stack sizes.
-fn insert_item_into_container(container: &mut dyn Container, mut item: ItemStack) -> ItemStack {
-    if item.is_empty() {
-        return ItemStack::empty();
+fn update_trigger(world: &Arc<World>, pos: BlockPos, state: BlockStateId, block: BlockRef) {
+    let powered = world.has_neighbor_signal(pos) || world.has_neighbor_signal(pos.above());
+    if powered == state.get_value(TRIGGERED) {
+        return;
     }
+
+    if powered {
+        world.schedule_block_tick_default(pos, block, DISPENSE_DELAY_TICKS);
+    }
+    world.set_block(
+        pos,
+        state.set_value(TRIGGERED, powered),
+        UpdateFlags::UPDATE_CLIENTS,
+    );
+}
+
+fn open_menu(
+    entity: &dyn BlockEntity,
+    player: &Player,
+    world: &World,
+    pos: BlockPos,
+    title: TextComponent,
+    can_open: bool,
+) -> InteractionResult {
+    if !can_open {
+        if !player.is_spectator() {
+            player.send_overlay_message(
+                &translations::CONTAINER_IS_LOCKED
+                    .message([title])
+                    .component(),
+            );
+            world.play_block_sound(&sound_events::BLOCK_CHEST_LOCKED, pos, 1.0, 1.0, None);
+        }
+
+        return InteractionResult::Success;
+    }
+
+    if let Some(randomizable) = entity.as_randomizable_container()
+        && let Err(error) = randomizable.unpack_loot_table(Some(player))
+    {
+        log::error!("Could not unpack dispenser or dropper loot at {pos:?}: {error}");
+        return InteractionResult::Success;
+    }
+
+    let Some(container) = entity.container_ref() else {
+        return InteractionResult::Pass;
+    };
+
+    let inventory = Arc::clone(&player.inventory);
+    player.open_menu(title, move |context| {
+        generic_3x3_menu(inventory, context.container_id, container)
+    });
+
+    InteractionResult::Success
+}
+
+fn random_slot(container: &dyn Container) -> Option<usize> {
+    container
+        .items()
+        .iter()
+        .enumerate()
+        .filter_map(|(slot, item)| (!item.is_empty()).then_some(slot))
+        .choose(&mut rand::rng())
+}
+
+fn target_containers(world: &World, pos: BlockPos) -> SmallVec<[ContainerRef; 2]> {
+    let state = world.get_block_state(pos);
+    if [&vanilla_blocks::CHEST, &vanilla_blocks::TRAPPED_CHEST].contains(&state.get_block()) {
+        return ChestBlock::get_container(state, world, pos, true)
+            .map_or_else(SmallVec::new, |chest| chest.containers);
+    }
+
+    world
+        .get_block_entity(pos)
+        .and_then(ContainerRef::from_block_entity)
+        .into_iter()
+        .collect()
+}
+
+fn insert_item(container: &mut dyn Container, item: &mut ItemStack, face: Option<Direction>) {
+    let slots = face.and_then(|face| container.slots_for_face(face));
     let size = container.get_container_size();
-
-    for slot in 0..size {
-        let current = container.get_item(slot);
-        if !current.is_empty() && ItemStack::is_same_item_same_components(current, &item) {
-            let max_stack = container
-                .get_max_stack_size_for_item(current)
-                .min(current.max_stack_size());
-            let available = max_stack - current.count();
-            if available > 0 {
-                let to_add = item.count().min(available);
-                let mut updated = current.clone();
-                updated.set_count(current.count() + to_add);
-                container.set_item(slot, updated);
-                item.set_count(item.count() - to_add);
-                if item.is_empty() {
-                    return ItemStack::empty();
-                }
-            }
+    let insert_at = |slot| {
+        if !container.can_place_item(slot, item)
+            || face.is_some_and(|face| !container.can_place_item_through_face(slot, item, face))
+        {
+            return false;
         }
-    }
 
-    for slot in 0..size {
-        let current = container.get_item(slot);
-        if current.is_empty() {
-            let max_stack = container
-                .get_max_stack_size_for_item(&item)
-                .min(item.max_stack_size());
-            if item.count() <= max_stack {
-                container.set_item(slot, item);
-                return ItemStack::empty();
+        let stored = container.get_item(slot);
+        let capacity = container.get_max_stack_size_for_item(item);
+        if stored.is_empty() {
+            let count = item.count().min(capacity);
+            if count <= 0 {
+                return false;
             }
-            let split = item.split(max_stack);
-            container.set_item(slot, split);
-            if item.is_empty() {
-                return ItemStack::empty();
+
+            container.set_item(slot, item.copy_with_count(count));
+            let inserted = container.get_item(slot);
+
+            if ItemStack::is_same_item_same_components(inserted, item) {
+                item.shrink(inserted.count().min(count));
             }
+        } else if ItemStack::is_same_item_same_components(stored, item) && stored.count() < capacity
+        {
+            let count = item.count().min(capacity - stored.count());
+            container.get_item_mut(slot).grow(count);
+            item.shrink(count);
         }
-    }
 
-    item
+        item.is_empty()
+    };
+
+    if let Some(slots) = slots {
+        slots.iter().copied().any(insert_at);
+    } else {
+        (0..size).any(insert_at);
+    }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
-    use crate::entity::init_entities;
+    use crate::entity::{entities::ItemEntity, init_entities};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
-    use steel_utils::ChunkPos;
+    use steel_utils::{BlockLocalAabb, ChunkPos};
+
+    pub(crate) fn with_inventory<T>(
+        entity: &dyn BlockEntity,
+        access: impl FnOnce(&mut dyn Container) -> T,
+    ) -> T {
+        let container = entity.container_ref().expect("test container");
+        let mut guard = ContainerLockGuard::lock_all(&[&container]).expect("test inventory");
+        access(
+            guard
+                .get_mut(container.container_id())
+                .expect("locked test inventory"),
+        )
+    }
 
     #[test]
     fn dropper_and_dispenser_placement_and_analog_output() {
@@ -477,11 +621,9 @@ mod tests {
             dropper_pos,
             dropper_state,
         ));
-        dropper_entity
-            .state
-            .container()
-            .lock()
-            .set_item(0, ItemStack::with_count(&vanilla_items::DIAMOND, 5));
+        with_inventory(dropper_entity.as_ref(), |inventory| {
+            inventory.set_item(0, ItemStack::with_count(&vanilla_items::DIAMOND, 5));
+        });
 
         let target_entity = Arc::new(DropperBlockEntity::new(
             Arc::downgrade(world),
@@ -501,21 +643,27 @@ mod tests {
         DropperBlock::dispense_from(world, dropper_pos, dropper_state);
 
         assert_eq!(
-            dropper_entity.state.container().lock().get_item(0).count(),
+            with_inventory(dropper_entity.as_ref(), |inventory| inventory
+                .get_item(0)
+                .count()),
             4
         );
         assert_eq!(
-            target_entity.state.container().lock().get_item(0).count(),
+            with_inventory(target_entity.as_ref(), |inventory| inventory
+                .get_item(0)
+                .count()),
             1
         );
         assert_eq!(
-            target_entity.state.container().lock().get_item(0).item(),
+            with_inventory(target_entity.as_ref(), |inventory| inventory
+                .get_item(0)
+                .item()),
             &*vanilla_items::DIAMOND
         );
     }
 
     #[test]
-    fn dispenser_eject_into_world() {
+    fn dispenser_ejects_arrow_item() {
         init_vanilla_registry();
         init_block_entities();
         init_behaviors();
@@ -523,7 +671,7 @@ mod tests {
 
         let world_fixture = fresh_test_world("dispenser_eject_test");
         let world = &world_fixture.world;
-        let pos = BlockPos::new(0, 64, 0);
+        let pos = BlockPos::new(8, 64, 8);
         let _holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         let state = vanilla_blocks::DISPENSER
@@ -531,21 +679,35 @@ mod tests {
             .set_value(FACING, Direction::North);
 
         let entity = Arc::new(DispenserBlockEntity::new(Arc::downgrade(world), pos, state));
-        entity
-            .state
-            .container()
-            .lock()
-            .set_item(0, ItemStack::with_count(&vanilla_items::ARROW, 10));
+        with_inventory(entity.as_ref(), |inventory| {
+            inventory.set_item(0, ItemStack::with_count(&vanilla_items::ARROW, 10));
+        });
 
         world.set_block(pos, state, UpdateFlags::UPDATE_ALL);
         world.set_block_entity(Arc::<DispenserBlockEntity>::clone(&entity));
 
         DispenserBlock::dispense_from(world, pos, state);
 
-        assert_eq!(entity.state.container().lock().get_item(0).count(), 9);
         assert_eq!(
-            entity.state.container().lock().get_item(0).item(),
+            with_inventory(entity.as_ref(), |inventory| inventory.get_item(0).count()),
+            9
+        );
+        assert_eq!(
+            with_inventory(entity.as_ref(), |inventory| inventory.get_item(0).item()),
             &*vanilla_items::ARROW
         );
+
+        let target = pos.relative(Direction::North);
+        let bounds = BlockLocalAabb::FULL_BLOCK.at_block(target);
+        let items: Vec<_> = world
+            .get_entities_in_aabb(&bounds)
+            .iter()
+            .filter_map(|entity| {
+                entity
+                    .downcast_ref::<ItemEntity>()
+                    .map(ItemEntity::get_item)
+            })
+            .collect();
+        assert_eq!(items, [ItemStack::new(&vanilla_items::ARROW)]);
     }
 }

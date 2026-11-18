@@ -43,9 +43,7 @@ pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEnt
 pub use comparator::ComparatorBlockEntity;
 pub use conduit::ConduitBlockEntity;
 pub use daylight_detector::DaylightDetectorBlockEntity;
-pub use dispenser::{
-    DISPENSER_SLOTS, DispenserBlockEntity, DispenserContainer, DropperBlockEntity,
-};
+pub use dispenser::{DISPENSER_SLOTS, DispenserBlockEntity, DropperBlockEntity};
 pub use enchanting_table::EnchantingTableBlockEntity;
 pub use end_gateway::EndGatewayBlockEntity;
 pub use end_portal::EndPortalBlockEntity;

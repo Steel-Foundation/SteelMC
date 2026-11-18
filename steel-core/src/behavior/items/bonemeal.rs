@@ -8,7 +8,7 @@ use steel_registry::{
     item_stack::ItemStack,
     level_events, vanilla_blocks, vanilla_game_events,
 };
-use steel_utils::{BlockPos, Direction, types::UpdateFlags};
+use steel_utils::{BlockPos, types::UpdateFlags};
 
 use crate::{
     behavior::{BLOCK_BEHAVIORS, InteractionResult, ItemBehavior, UseOnContext},
@@ -21,6 +21,8 @@ use crate::{
 pub struct BoneMealItem;
 
 impl BoneMealItem {
+    pub(crate) const PLANT_GROWTH_EVENT_DATA: i32 = 15;
+
     fn cause_finish_use_vibration(context: &UseOnContext<'_>) {
         let interact_vibrations = context.inv.with_item(|item| {
             item.get(USE_EFFECTS)
@@ -34,7 +36,7 @@ impl BoneMealItem {
     }
 
     /// Attempts to grow the block at the given position.
-    pub fn grow(world: &Arc<World>, pos: BlockPos) -> bool {
+    pub(crate) fn grow(world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
         let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(state) else {
             return false;
@@ -54,7 +56,7 @@ impl BoneMealItem {
         false
     }
 
-    fn grow_water_plant(world: &Arc<World>, pos: BlockPos, _clicked_face: Direction) -> bool {
+    pub(crate) fn grow_water_plant(world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
         if state.get_block() != &vanilla_blocks::WATER || !state.get_fluid_state().is_full() {
             return false;
@@ -122,7 +124,7 @@ impl ItemBehavior for BoneMealItem {
             context.world.level_event(
                 level_events::PARTICLES_AND_SOUND_PLANT_GROWTH,
                 context.hit_result.block_pos,
-                15,
+                Self::PLANT_GROWTH_EVENT_DATA,
                 None,
             );
             return InteractionResult::Success;
@@ -140,7 +142,6 @@ impl ItemBehavior for BoneMealItem {
                     .hit_result
                     .block_pos
                     .relative(context.hit_result.direction),
-                context.hit_result.direction,
             )
         {
             context.inv.with_item(ItemStack::shrink_one);
@@ -151,7 +152,7 @@ impl ItemBehavior for BoneMealItem {
                     .hit_result
                     .block_pos
                     .relative(context.hit_result.direction),
-                15,
+                Self::PLANT_GROWTH_EVENT_DATA,
                 None,
             );
             return InteractionResult::Success;

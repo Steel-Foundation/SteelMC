@@ -1,21 +1,26 @@
-use std::sync::{Arc, LazyLock};
-use steel_registry::data_components::vanilla_components::EQUIPPABLE;
+
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
+use steel_registry::level_events;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_items;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt};
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
-use steel_utils::Downcast as _;
-
-use crate::entity::entities::{LingeringPotionEntity, SplashPotionEntity, ThrownEggEntity};
+use crate::entity::entities::{
+    LingeringPotionEntity, SnowballEntity, SplashPotionEntity, ThrownEggEntity,
+};
 use crate::entity::projectile::ThrowableItemProjectile;
 use crate::world::World;
 
+const DEFAULT_PROJECTILE_POWER: f32 = 1.1;
+const DEFAULT_PROJECTILE_SPREAD: f32 = 6.0;
+const POTION_PROJECTILE_POWER: f32 = 1.375;
+const POTION_PROJECTILE_SPREAD: f32 = 3.0;
+
 pub mod armor;
-pub mod arrow;
 pub mod bucket;
 pub mod consumables;
 pub mod container;
@@ -25,79 +30,93 @@ pub mod projectile;
 pub mod tnt;
 pub mod tools;
 
-pub use armor::ArmorDispenseBehavior;
-pub use arrow::ArrowDispenseBehavior;
-pub use bucket::{EmptyBucketDispenseBehavior, FilledBucketDispenseBehavior};
-pub use consumables::{
-    BoneMealDispenseBehavior, GlowstoneDispenseBehavior, HoneycombDispenseBehavior,
 };
-pub use container::ShulkerBoxDispenseBehavior;
-pub use default::DefaultDispenseBehavior;
+pub(crate) use default::eject_item;
 pub use potion::{GlassBottleDispenseBehavior, PotionDispenseBehavior};
 pub use projectile::ProjectileDispenseBehavior;
 pub use tnt::TntDispenseBehavior;
 pub use tools::FlintAndSteelDispenseBehavior;
 
-pub trait DispenseItemBehavior: Send + Sync {
+pub(crate) enum DispenseResult {
+    Success,
+    Failure,
+    Projectile,
+    Byproduct(ItemStack),
+}
+
+impl DispenseResult {
+    pub(crate) const fn sound(&self) -> i32 {
+        match self {
+            Self::Success | Self::Byproduct(_) => level_events::SOUND_DISPENSER_DISPENSE,
+            Self::Failure => level_events::SOUND_DISPENSER_FAIL,
+            Self::Projectile => level_events::SOUND_DISPENSER_PROJECTILE_LAUNCH,
+        }
+    }
+}
+
+pub(crate) fn play_feedback(world: &World, pos: BlockPos, state: BlockStateId, sound: i32) {
+    let facing = state.get_value(super::dispenser_block::FACING);
+    world.level_event(sound, pos, 0, None);
+    world.level_event(
+        level_events::PARTICLES_SHOOT_SMOKE,
+        pos,
+        facing.get_3d_data_value(),
+        None,
+    );
+}
+
+fn nested_default_dispense(
+    world: &Arc<World>,
+    pos: BlockPos,
+    state: BlockStateId,
+    item: &mut ItemStack,
+) -> DispenseResult {
+    let outcome = DefaultDispenseBehavior.dispense(world, pos, state, item);
+    play_feedback(world, pos, state, outcome.sound());
+
+    outcome
+}
+
+pub(crate) trait DispenseItemBehavior: Send + Sync {
     fn dispense(
         &self,
         world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
-        item: ItemStack,
-    ) -> ItemStack;
+        item: &mut ItemStack,
+    ) -> DispenseResult;
 }
 
-pub struct DispenseBehaviorRegistry {
-    behaviors: Vec<Box<dyn DispenseItemBehavior>>,
+pub(crate) struct DispenseBehaviorRegistry {
+    behaviors: Vec<Option<Box<dyn DispenseItemBehavior>>>,
 }
 
 impl DispenseBehaviorRegistry {
     pub fn new() -> Self {
         let item_count = REGISTRY.items.len();
-        let behaviors = (0..item_count)
-            .map(|_| Box::new(DefaultDispenseBehavior) as Box<dyn DispenseItemBehavior>)
-            .collect();
+        let behaviors = (0..item_count).map(|_| None).collect();
 
         Self { behaviors }
     }
 
-    pub fn set_behavior(&mut self, item: ItemRef, behavior: Box<dyn DispenseItemBehavior>) {
-        let id = item.id();
-        self.behaviors[id] = behavior;
+    self.behaviors[id] = Some(behavior);
     }
 
-    pub fn get_behavior(&self, item: ItemRef) -> &dyn DispenseItemBehavior {
-        let id = item.id();
-        self.behaviors[id].as_ref()
+    pub fn get_behavior(&self, stack: &ItemStack) -> &dyn DispenseItemBehavior {
+        if let Some(behavior) = self.behaviors[stack.item().id()].as_deref() {
+            behavior
+        } else if stack.get_equippable().is_some() {
+            &ArmorDispenseBehavior
+        } else {
+            &DefaultDispenseBehavior
+        }
     }
 }
 
-pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::new(|| {
+pub(crate) static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::new(|| {
     let mut registry = DispenseBehaviorRegistry::new();
 
-    // armor
-    for (_, item) in REGISTRY.items.iter() {
-        if item.components.has(EQUIPPABLE) {
-            registry.set_behavior(item, Box::new(ArmorDispenseBehavior));
-        }
-    }
-
-    // arrow
-    registry.set_behavior(
-        &vanilla_items::ARROW,
-        Box::new(ArrowDispenseBehavior::new(&vanilla_entities::ARROW)),
-    );
-    registry.set_behavior(
-        &vanilla_items::SPECTRAL_ARROW,
-        Box::new(ArrowDispenseBehavior::new(
-            &vanilla_entities::SPECTRAL_ARROW,
-        )),
-    );
-    registry.set_behavior(
-        &vanilla_items::TIPPED_ARROW,
-        Box::new(ArrowDispenseBehavior::new(&vanilla_entities::ARROW)),
-    );
+    // TODO: register arrow dispense behaviors once the arrow entities are available
 
     // boat
     // TODO: boats and rafts - need the boat entities.
@@ -154,62 +173,69 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
         &vanilla_items::BROWN_EGG,
     ] {
         registry.set_behavior(
-            egg,
-            Box::new(
-                ProjectileDispenseBehavior::new(&vanilla_entities::EGG, 1.1, 6.0).with_item_setter(
-                    |entity, item| {
-                        if let Some(egg) = entity.downcast_ref::<ThrownEggEntity>() {
-                            egg.set_item_clamped(item.clone());
-                        }
-                    },
-                ),
+            ProjectileDispenseBehavior::new(
+                    &vanilla_entities::EGG,
+                    DEFAULT_PROJECTILE_POWER,
+                    DEFAULT_PROJECTILE_SPREAD,
+                )
+                .with_item_setter(|entity, item| {
+                    if let Some(egg) = entity.downcast_ref::<ThrownEggEntity>() {
+                        egg.set_item_clamped(item.clone());
+                    }
+                }),
             ),
         );
     }
     registry.set_behavior(
         &vanilla_items::SNOWBALL,
-        Box::new(ProjectileDispenseBehavior::new(
-            &vanilla_entities::SNOWBALL,
-            1.1,
-            6.0,
-        )),
-    );
-    registry.set_behavior(
-        &vanilla_items::ENDER_PEARL,
-        Box::new(ProjectileDispenseBehavior::new(
-            &vanilla_entities::ENDER_PEARL,
-            1.1,
-            6.0,
-        )),
+        Box::new(
+            ProjectileDispenseBehavior::new(
+                &vanilla_entities::SNOWBALL,
+                DEFAULT_PROJECTILE_POWER,
+                DEFAULT_PROJECTILE_SPREAD,
+            )
+            .with_item_setter(|entity, item| {
+                if let Some(snowball) = entity.downcast_ref::<SnowballEntity>() {
+                    snowball.set_item_clamped(item.clone());
+                }
+            }),
+        ),
     );
 
     registry.set_behavior(
         &vanilla_items::SPLASH_POTION,
         Box::new(
-            ProjectileDispenseBehavior::new(&vanilla_entities::SPLASH_POTION, 1.375, 3.0)
-                .with_item_setter(|entity, item| {
-                    if let Some(potion) = entity.downcast_ref::<SplashPotionEntity>() {
-                        potion.set_item_clamped(item.clone());
-                    }
-                }),
+            ProjectileDispenseBehavior::new(
+                &vanilla_entities::SPLASH_POTION,
+                POTION_PROJECTILE_POWER,
+                POTION_PROJECTILE_SPREAD,
+            )
+            .with_item_setter(|entity, item| {
+                if let Some(potion) = entity.downcast_ref::<SplashPotionEntity>() {
+                    potion.set_item_clamped(item.clone());
+                }
+            }),
         ),
     );
 
     registry.set_behavior(
-        &vanilla_items::LINGERING_POTION,
-        Box::new(
-            ProjectileDispenseBehavior::new(&vanilla_entities::LINGERING_POTION, 1.375, 3.0)
-                .with_item_setter(|entity, item| {
-                    if let Some(potion) = entity.downcast_ref::<LingeringPotionEntity>() {
-                        potion.set_item_clamped(item.clone());
-                    }
-                }),
+        ProjectileDispenseBehavior::new(
+                &vanilla_entities::LINGERING_POTION,
+                POTION_PROJECTILE_POWER,
+                POTION_PROJECTILE_SPREAD,
+            )
+            .with_item_setter(|entity, item| {
+                if let Some(potion) = entity.downcast_ref::<LingeringPotionEntity>() {
+                    potion.set_item_clamped(item.clone());
+                }
+            }),
         ),
     );
 
-    // TODO: experience bottle, fire charge, wind charge - need their projectile
-    // entities. Firework rocket - entity exists; needs its custom projectile config.
+    // TODO: Experience bottle and fire charge need their projectile entities.
+    // wind charge and firework still need their dispenser launch config
 
+    // explosives
     registry.set_behavior(&vanilla_items::TNT, Box::new(TntDispenseBehavior));
 
     // tools
@@ -234,10 +260,7 @@ pub static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::ne
     // minecarts also need their entities.
 
     // spawn egg
-    // TODO: spawn eggs with ENTITY_DATA - vanilla resolves these per stack in
-    // DispenserBlock.getDefaultDispenseMethod, which this item-keyed registry
-    // can't express yet.
-    // TODO: armor stand - needs the ArmorStand entity.
+    // TODO: Dispense spawn eggs with ENTITY_DATA using their configured entity
 
     registry
 });

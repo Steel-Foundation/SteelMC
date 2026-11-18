@@ -11,10 +11,7 @@ use crate::world::{ScheduledTickAccess, World};
 use std::sync::Arc;
 
 /// Behavior for grass blocks.
-// TODO: Bonemeal behavior — vanilla's GrassBlock.performBonemeal places grass
-// via a biome's configured/placed vegetation features (VegetationPlacements
-// .GRASS_BONEMEAL + the biome's bone-meal feature list). Steel has no
-// world-gen feature-placement system yet, so this can't be ported as-is.
+// TODO: Use biome vegetation features for bone meal during gameplay
 #[block_behavior]
 pub struct GrassBlock {
     block: BlockRef,

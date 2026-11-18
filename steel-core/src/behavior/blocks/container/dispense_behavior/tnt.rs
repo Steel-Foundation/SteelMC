@@ -2,13 +2,11 @@ use std::sync::Arc;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{
-    level_events, sound_events, vanilla_entities, vanilla_game_events, vanilla_game_rules,
-};
+use steel_registry::{sound_events, vanilla_entities, vanilla_game_events, vanilla_game_rules};
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
-use super::DispenseItemBehavior;
+use super::{DispenseItemBehavior, DispenseResult};
 use crate::behavior::blocks::container::dispenser_block::FACING;
 use crate::entity::{Entity, entities::PrimedTntEntity, next_entity_id};
 
@@ -23,11 +21,10 @@ impl DispenseItemBehavior for TntDispenseBehavior {
         world: &Arc<World>,
         pos: BlockPos,
         state: BlockStateId,
-        mut item: ItemStack,
-    ) -> ItemStack {
+        item: &mut ItemStack,
+    ) -> DispenseResult {
         if !world.get_game_rule(&vanilla_game_rules::TNT_EXPLODES) {
-            world.level_event(level_events::SOUND_DISPENSER_FAIL, pos, 0, None);
-            return item;
+            return DispenseResult::Failure;
         }
 
         // TODO: sulfur cube - vanilla first tries SulfurCubeBlockDispenseItemBehavior.dispenseBlock.
@@ -56,9 +53,8 @@ impl DispenseItemBehavior for TntDispenseBehavior {
             target_pos,
             &GameEventContext::default(),
         );
-        item.shrink(1);
-        world.level_event(level_events::SOUND_DISPENSER_DISPENSE, pos, 0, None);
 
-        item
+        item.shrink(1);
+        DispenseResult::Success
     }
 }
