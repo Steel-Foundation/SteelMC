@@ -47,8 +47,8 @@ use crate::loot::random_sequences::DomainRandomSequences;
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
 use crate::permission::{
-    PermissionGroupManager, PermissionGroupManagerError, PermissionGroupUpdateError,
-    PermissionGroupsConfig, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
+    PermissionGroupManagerError, PermissionGroupUpdateError, PermissionGroupsConfig,
+    PermissionManager, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
     PermissionSubjectIndex, PermissionSubjectState,
 };
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
@@ -218,13 +218,13 @@ pub async fn test_server_with_worlds_and_config(
     let player_data_storage = PlayerDataStorage::in_memory();
     let registered_commands = create_registered_dispatcher(CommandRegistry::new())
         .map_err(|error| format!("test commands should register: {error}"))?;
-    let permission_groups = PermissionGroupManager::transient(
+    let permission_groups = PermissionManager::transient(
         PermissionGroupsConfig::default(),
         PermissionCollectionsConfig::default(),
     )
     .map_err(|error| format!("test permission groups should resolve: {error}"))?;
     permission_groups
-        .set_command_collections(registered_commands.command_collections())
+        .set_declared_collections(registered_commands.declared_collections())
         .map_err(|error| format!("test command permission collections should apply: {error}"))?;
     let command_permission_keys = registered_commands
         .permissions
@@ -483,7 +483,7 @@ pub struct Server {
     /// Runtime configuration (view distance, compression, etc.).
     pub config: Arc<RuntimeConfig>,
     /// Runtime permission groups and their persistence boundary.
-    pub permission_groups: PermissionGroupManager,
+    pub permission_groups: PermissionManager,
     /// The cancellation token for graceful shutdown.
     pub cancel_token: CancellationToken,
     /// The key store for the server.
@@ -594,7 +594,7 @@ impl Server {
             .iter()
             .cloned()
             .collect::<BTreeSet<_>>();
-        let config = self.permission_groups.config_snapshot();
+        let config = self.permission_groups.group_config_snapshot();
         for group in config.groups.values() {
             suggestions.extend(group.allow.iter().cloned());
             suggestions.extend(group.deny.iter().cloned());
@@ -610,7 +610,7 @@ impl Server {
 
     pub(crate) fn permission_metadata_suggestions(&self) -> Vec<String> {
         let mut suggestions = BTreeSet::new();
-        let config = self.permission_groups.config_snapshot();
+        let config = self.permission_groups.group_config_snapshot();
         for group in config.groups.values() {
             suggestions.extend(group.metadata.iter().map(|rule| rule.key.clone()));
         }
@@ -629,7 +629,7 @@ impl Server {
         cancel_token: CancellationToken,
         config: RuntimeConfig,
         worlds_config: WorldsConfig,
-        permission_groups: PermissionGroupManager,
+        permission_groups: PermissionManager,
     ) -> Result<Self, String> {
         Self::new_with_commands(
             chunk_runtime,
@@ -652,7 +652,7 @@ impl Server {
         cancel_token: CancellationToken,
         config: RuntimeConfig,
         worlds_config: WorldsConfig,
-        permission_groups: PermissionGroupManager,
+        permission_groups: PermissionManager,
         command_registry: CommandRegistry,
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
@@ -834,7 +834,7 @@ impl Server {
         let registered_commands = create_registered_dispatcher(command_registry)
             .map_err(|error| format!("failed to register commands: {error}"))?;
         permission_groups
-            .set_command_collections(registered_commands.command_collections())
+            .set_declared_collections(registered_commands.declared_collections())
             .map_err(|error| format!("failed to apply command permission collections: {error}"))?;
         let command_permission_keys = registered_commands
             .permissions

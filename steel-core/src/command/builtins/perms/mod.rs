@@ -15,8 +15,8 @@ use super::super::{
 };
 use crate::command::missing_argument;
 use crate::permission::{
-    PermissionContext, PermissionEntry, PermissionGroupRule, PermissionKey,
-    PermissionMetadataEntry, PermissionMetadataExpression, PermissionMetadataValue,
+    PermissionCollectionMember, PermissionContext, PermissionEntry, PermissionGroupRule,
+    PermissionKey, PermissionMetadataEntry, PermissionMetadataExpression, PermissionMetadataValue,
     PermissionResolutionSource, PermissionRuleExpression, PermissionState, PermissionSubjectState,
 };
 use steel_utils::Identifier;
@@ -56,6 +56,8 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
         .subcommand_permission(["groups", "default", "remove"])
         .subcommand_permission(["collection", "info"])
         .subcommand_permission(["collection", "export"])
+        .subcommand_permission(["collection", "add"])
+        .subcommand_permission(["collection", "remove"])
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -221,7 +223,19 @@ fn collection_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime
         )
         .then(
             argument("collection", SteelArgumentType::permission_collection())
-                .then(literal("info").executes_suspended(collection_info)),
+                .then(literal("info").executes_suspended(collection_info))
+                .then(
+                    literal("add").then(
+                        argument("member", SteelArgumentType::permission_collection_member())
+                            .executes_suspended(collection_add),
+                    ),
+                )
+                .then(
+                    literal("remove").then(
+                        argument("member", SteelArgumentType::permission_collection_member())
+                            .executes_suspended(collection_remove),
+                    ),
+                ),
         )
 }
 
@@ -313,6 +327,11 @@ enum Operation {
     },
     CollectionInfo(Identifier),
     CollectionExport(Option<Identifier>),
+    CollectionMember {
+        collection: Identifier,
+        member: PermissionCollectionMember,
+        add: bool,
+    },
 }
 
 impl Operation {
@@ -335,7 +354,8 @@ impl Operation {
             | Self::GroupInheritance { .. }
             | Self::GroupMetadata { .. }
             | Self::DefaultGroup { .. }
-            | Self::CollectionExport(_) => CommandSuspensionOrder::Global,
+            | Self::CollectionExport(_)
+            | Self::CollectionMember { .. } => CommandSuspensionOrder::Global,
         }
     }
 }
@@ -615,6 +635,38 @@ fn collection_export(
     start(context, Operation::CollectionExport(Some(collection)))
 }
 
+fn collection_add(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<PermsCommandSuspension, CommandSyntaxError> {
+    collection_member(context, true)
+}
+
+fn collection_remove(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<PermsCommandSuspension, CommandSyntaxError> {
+    collection_member(context, false)
+}
+
+fn collection_member(
+    context: &SteelCommandContext<CommandSource>,
+    add: bool,
+) -> Result<PermsCommandSuspension, CommandSyntaxError> {
+    let collection = context
+        .permission_collection("collection")?
+        .as_identifier()
+        .clone();
+    require_collection_management(context.source(), &collection)?;
+    let member = context.permission_collection_member("member")?.clone();
+    start(
+        context,
+        Operation::CollectionMember {
+            collection,
+            member,
+            add,
+        },
+    )
+}
+
 fn default_group_add(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<PermsCommandSuspension, CommandSyntaxError> {
@@ -829,6 +881,11 @@ async fn run_operation(
         Operation::CollectionExport(collection) => {
             collection_export_operation(source, collection).await
         }
+        Operation::CollectionMember {
+            collection,
+            member,
+            add,
+        } => collection_member_operation(source, collection, member, add).await,
     }
 }
 
@@ -1147,7 +1204,7 @@ fn group_info_operation(
     source: &CommandSource,
     group: String,
 ) -> Result<OperationResult, CommandSyntaxError> {
-    let config = source.server().permission_groups.config_snapshot();
+    let config = source.server().permission_groups.group_config_snapshot();
     let Some(group_config) = config.groups.get(&group) else {
         return Err(CommandSyntaxError::dynamic(format!(
             "Unknown permission group '{group}'"
@@ -1266,7 +1323,7 @@ fn group_inheritance_list_operation(
     source: &CommandSource,
     group: String,
 ) -> Result<OperationResult, CommandSyntaxError> {
-    let config = source.server().permission_groups.config_snapshot();
+    let config = source.server().permission_groups.group_config_snapshot();
     let Some(group_config) = config.groups.get(&group) else {
         return Err(CommandSyntaxError::dynamic(format!(
             "Unknown permission group '{group}'"
@@ -1337,7 +1394,7 @@ async fn group_metadata_operation(
 }
 
 fn groups_list_operation(source: &CommandSource) -> OperationResult {
-    let config = source.server().permission_groups.config_snapshot();
+    let config = source.server().permission_groups.group_config_snapshot();
     let defaults = config
         .default_groups
         .iter()
@@ -1450,6 +1507,56 @@ async fn collection_export_operation(
     let mut result = change_result(changed, format!("Exported {target} to collections.toml"));
     result.messages.push(TextComponent::plain(
         "Exported collections are stored in collections.toml and are no longer updated automatically",
+    ));
+    Ok(result)
+}
+
+async fn collection_member_operation(
+    source: &CommandSource,
+    collection: Identifier,
+    member: PermissionCollectionMember,
+    add: bool,
+) -> Result<OperationResult, CommandSyntaxError> {
+    let collections = source.server().permission_groups.collections_snapshot();
+    let Some(entry) = collections.get(&collection) else {
+        return Err(CommandSyntaxError::dynamic(format!(
+            "Unknown permission collection '{collection}'"
+        )));
+    };
+
+    let mut members = entry.members().to_vec();
+    if !config::edit_collection_members(&mut members, &member, add) {
+        return Ok(change_result(
+            false,
+            format!(
+                "Collection '{collection}': member '{member}' {}",
+                if add {
+                    "already present"
+                } else {
+                    "not present"
+                }
+            ),
+        ));
+    }
+
+    let stored_id = collection.clone();
+    source
+        .server()
+        .update_permission_collections(move |config| {
+            config::set_collection_members(config, &stored_id, &members);
+        })
+        .await
+        .map_err(dynamic_error)?;
+
+    let mut result = change_result(
+        true,
+        format!(
+            "Collection '{collection}': {} member '{member}'",
+            if add { "added" } else { "removed" }
+        ),
+    );
+    result.messages.push(TextComponent::plain(
+        "Edited collections are stored in collections.toml and are no longer updated automatically",
     ));
     Ok(result)
 }
@@ -1626,6 +1733,13 @@ mod tests {
         let groups = child(&dispatcher, perms, "groups");
         child(&dispatcher, groups, "list");
         child(&dispatcher, groups, "default");
+
+        let collection = child(&dispatcher, perms, "collection");
+        child(&dispatcher, collection, "export");
+        let collection_name = child(&dispatcher, collection, "collection");
+        for name in ["info", "add", "remove"] {
+            child(&dispatcher, collection_name, name);
+        }
     }
 
     #[test]
@@ -1647,6 +1761,7 @@ mod tests {
             "steel:command.perms.user.allow",
             "steel:command.perms.user.metadata.set",
             "steel:command.perms.group.inherit.add",
+            "steel:command.perms.collection.add",
         ] {
             assert!(permissions.contains(&expected), "missing {expected}");
         }

@@ -1,9 +1,11 @@
 //! Permission group config editing helpers.
 
+use steel_utils::Identifier;
+
 use crate::permission::{
-    PermissionGroupConfig, PermissionGroupRule, PermissionGroupsConfig,
-    PermissionMetadataExpression, PermissionMetadataRuleConfig, PermissionMetadataValue,
-    PermissionState,
+    PermissionCollectionMember, PermissionCollectionsConfig, PermissionGroupConfig,
+    PermissionGroupRule, PermissionGroupsConfig, PermissionMetadataExpression,
+    PermissionMetadataRuleConfig, PermissionMetadataValue, PermissionState,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -160,6 +162,46 @@ pub(super) fn set_metadata(
 
 fn group_rule_matches(configured: &str, rule: &PermissionGroupRule) -> bool {
     PermissionGroupRule::parse(configured).is_ok_and(|parsed| parsed == *rule)
+}
+
+/// Applies one add/remove edit to an in-memory collection member list.
+///
+/// Returns whether the list changed.
+pub(super) fn edit_collection_members(
+    members: &mut Vec<PermissionCollectionMember>,
+    member: &PermissionCollectionMember,
+    add: bool,
+) -> bool {
+    if add {
+        if members.contains(member) {
+            return false;
+        }
+        members.push(member.clone());
+        true
+    } else {
+        let before = members.len();
+        members.retain(|existing| existing != member);
+        members.len() != before
+    }
+}
+
+/// Replaces the configured members of `collection` with a full snapshot.
+///
+/// Editing a collection makes it config-owned, so the whole effective list is
+/// written instead of appending to a previously stored one.
+pub(super) fn set_collection_members(
+    config: &mut PermissionCollectionsConfig,
+    collection: &Identifier,
+    members: &[PermissionCollectionMember],
+) {
+    config
+        .collections
+        .entry(collection.namespace.to_string())
+        .or_default()
+        .insert(
+            collection.path.to_string(),
+            members.iter().map(ToString::to_string).collect(),
+        );
 }
 
 fn permission_metadata_matches(
@@ -324,5 +366,65 @@ mod tests {
             delete_group(&mut config, "parent"),
             Err(PermissionGroupEditError::InheritedBy { .. })
         ));
+    }
+
+    fn member(value: &str) -> PermissionCollectionMember {
+        match PermissionCollectionMember::parse(value) {
+            Ok(member) => member,
+            Err(error) => panic!("test collection member should parse: {error}"),
+        }
+    }
+
+    #[test]
+    fn collection_member_edits_ignore_duplicates_and_absences() {
+        let mut members = vec![member("steel:build")];
+
+        assert!(!edit_collection_members(
+            &mut members,
+            &member("steel:build"),
+            true
+        ));
+        assert!(!edit_collection_members(
+            &mut members,
+            &member("steel:mine"),
+            false
+        ));
+        assert!(edit_collection_members(
+            &mut members,
+            &member("#minecraft:gamemasters"),
+            true
+        ));
+        assert_eq!(
+            members,
+            [member("steel:build"), member("#minecraft:gamemasters")]
+        );
+        assert!(edit_collection_members(
+            &mut members,
+            &member("steel:build"),
+            false
+        ));
+        assert_eq!(members, [member("#minecraft:gamemasters")]);
+    }
+
+    #[test]
+    fn set_collection_members_replaces_the_configured_snapshot() {
+        let mut config = PermissionCollectionsConfig::default();
+        let collection = Identifier::new("minecraft", "gamemasters");
+        config
+            .collections
+            .entry("minecraft".to_owned())
+            .or_default()
+            .insert("gamemasters".to_owned(), vec!["steel:stale".to_owned()]);
+
+        set_collection_members(
+            &mut config,
+            &collection,
+            &[member("steel:build"), member("#minecraft:all")],
+        );
+
+        assert_eq!(
+            config.collections["minecraft"]["gamemasters"],
+            ["steel:build", "#minecraft:all"]
+        );
     }
 }

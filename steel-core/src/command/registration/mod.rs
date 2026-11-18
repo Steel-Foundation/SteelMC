@@ -1,9 +1,6 @@
 //! Stable command identities and collision-aware dispatcher construction.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    iter::once,
-};
+use std::{collections::BTreeSet, iter::once};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_utils::Identifier;
@@ -17,8 +14,8 @@ use super::{
     execution::{CommandPermissionSource, SteelCommandRuntime},
 };
 use crate::permission::{
-    OWNERS_COLLECTION, PermissionExpr, PermissionKey, PermissionKeyError, PermissionSegment,
-    PermissionState,
+    OWNERS_COLLECTION, PermissionCollectionMember, PermissionCollections, PermissionExpr,
+    PermissionKey, PermissionKeyError, PermissionSegment, PermissionState,
 };
 
 type CommandFactory<S> =
@@ -181,6 +178,7 @@ where
     registrations: Vec<CommandRegistration<S>>,
     ids: FxHashSet<Identifier>,
     declared_permissions: BTreeSet<PermissionKey>,
+    declared_collections: PermissionCollections,
 }
 
 /// Built dispatcher and its discovery-only permission declarations.
@@ -190,26 +188,19 @@ where
 {
     pub(crate) dispatcher: CommandDispatcher<S, SteelCommandRuntime>,
     pub(crate) permissions: Vec<PermissionKey>,
-    command_collections: Vec<(Identifier, Identifier)>,
+    declared_collections: PermissionCollections,
 }
 
 impl<S> RegisteredCommandDispatcher<S>
 where
     S: CommandPermissionSource,
 {
-    /// Groups each command's derived permission by its declared collection.
+    /// Returns the permission collections declared by code at runtime.
     ///
-    /// Commands without a declared collection are assigned to
-    /// [`DEFAULT_COMMAND_COLLECTION`].
-    pub(crate) fn command_collections(&self) -> BTreeMap<Identifier, Vec<Identifier>> {
-        let mut collections = BTreeMap::<Identifier, Vec<Identifier>>::new();
-        for (collection, permission) in &self.command_collections {
-            let permissions = collections.entry(collection.clone()).or_default();
-            if !permissions.contains(permission) {
-                permissions.push(permission.clone());
-            }
-        }
-        collections
+    /// Command-derived permissions and explicit extension declarations are merged
+    /// into one set keyed by collection id.
+    pub(crate) fn declared_collections(&self) -> PermissionCollections {
+        self.declared_collections.clone()
     }
 }
 
@@ -222,6 +213,7 @@ where
             registrations: Vec::new(),
             ids: FxHashSet::default(),
             declared_permissions: BTreeSet::new(),
+            declared_collections: PermissionCollections::new(),
         }
     }
 
@@ -235,6 +227,22 @@ where
             CommandRegistrationError::InvalidInternalPermission { value, source }
         })?;
         self.declared_permissions.insert(permission);
+        Ok(())
+    }
+
+    /// Adds a permission or nested collection to a code-declared collection.
+    ///
+    /// Declarations are independent of commands: any permission can be contributed
+    /// to any collection, including the generated vanilla collections.
+    pub(crate) fn declare_collection_member(
+        &mut self,
+        collection: Identifier,
+        member: PermissionCollectionMember,
+    ) -> Result<(), CommandRegistrationError> {
+        if !Identifier::validate(&collection.namespace, &collection.path) {
+            return Err(CommandRegistrationError::InvalidDeclaredCollection { collection });
+        }
+        self.declared_collections.push(collection, member);
         Ok(())
     }
 
@@ -257,9 +265,11 @@ where
         let Self {
             registrations,
             declared_permissions,
+            declared_collections,
             ..
         } = other;
         self.declared_permissions.extend(declared_permissions);
+        self.declared_collections.extend(&declared_collections);
         for registration in registrations {
             self.register(registration)?;
         }
@@ -283,7 +293,7 @@ where
         let dispatcher_root = dispatcher.root();
         let mut resolved = Vec::with_capacity(self.registrations.len());
         let mut permissions = self.declared_permissions;
-        let mut command_collections = Vec::with_capacity(self.registrations.len());
+        let mut declared_collections = self.declared_collections;
 
         for registration in self.registrations {
             let CommandRegistration {
@@ -303,10 +313,10 @@ where
                     Some(derived_key.clone()),
                 )
             };
-            command_collections.push((
+            declared_collections.push(
                 collection.unwrap_or(DEFAULT_COMMAND_COLLECTION),
-                derived_key,
-            ));
+                PermissionCollectionMember::Permission(derived_key),
+            );
             collect_permission_keys(&root_permission, &mut permissions);
             let root = apply_registration_requirements(
                 factory(dispatcher_root),
@@ -357,7 +367,7 @@ where
         Ok(RegisteredCommandDispatcher {
             dispatcher,
             permissions: permissions.into_iter().collect(),
-            command_collections,
+            declared_collections,
         })
     }
 }
@@ -619,6 +629,8 @@ pub(crate) enum CommandRegistrationError {
         id: Identifier,
         collection: Identifier,
     },
+    #[error("declared permission collection '{collection}' is invalid")]
+    InvalidDeclaredCollection { collection: Identifier },
     #[error("command '{id}' cannot combine explicit and derived subcommand permissions")]
     SubcommandPermissionsRequireDerivedRoot { id: Identifier },
     #[error("command '{id}' has an empty subcommand permission path")]

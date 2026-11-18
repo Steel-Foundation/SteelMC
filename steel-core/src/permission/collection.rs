@@ -209,28 +209,35 @@ impl PermissionCollections {
         Ok(Self { collections })
     }
 
-    /// Merges generated vanilla collections, runtime command contributions, and config overrides.
+    /// Merges generated vanilla collections, code-declared contributions, and config overrides.
     ///
-    /// Runtime contributions extend the built-in collection with the same id. A config
+    /// Declared contributions extend the built-in collection with the same id. A config
     /// collection replaces the built-in collection with the same id entirely.
     #[must_use]
-    pub fn effective(
-        command_collections: &BTreeMap<Identifier, Vec<Identifier>>,
-        overrides: &Self,
-    ) -> Self {
+    pub fn effective(declared: &Self, overrides: &Self) -> Self {
         let mut collections = Self::vanilla();
-        for (id, permissions) in command_collections {
-            let collection = collections.collections.entry(id.clone()).or_default();
-            for permission in permissions {
-                collection.push_permission(permission.clone());
-            }
-        }
+        collections.extend(declared);
         for (id, collection) in &overrides.collections {
             collections
                 .collections
                 .insert(id.clone(), collection.clone());
         }
         collections
+    }
+
+    /// Adds a member to the collection `id`, creating it when absent.
+    pub fn push(&mut self, id: Identifier, member: PermissionCollectionMember) {
+        self.collections.entry(id).or_default().push(member);
+    }
+
+    /// Additively merges the members of `other` into this set.
+    pub fn extend(&mut self, other: &Self) {
+        for (id, collection) in &other.collections {
+            let target = self.collections.entry(id.clone()).or_default();
+            for member in collection.members() {
+                target.push(member.clone());
+            }
+        }
     }
 }
 

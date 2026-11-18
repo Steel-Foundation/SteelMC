@@ -707,7 +707,7 @@ impl CommandArgumentSource for CommandSource {
         }
         self.server
             .permission_groups
-            .config_snapshot()
+            .group_config_snapshot()
             .groups
             .get(group)
             .into_iter()
@@ -727,7 +727,7 @@ impl CommandArgumentSource for CommandSource {
         }
         self.server
             .permission_groups
-            .config_snapshot()
+            .group_config_snapshot()
             .groups
             .get(group)
             .into_iter()

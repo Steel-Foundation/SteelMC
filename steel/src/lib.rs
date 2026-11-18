@@ -11,7 +11,7 @@ use std::{
 };
 
 use steel_core::{
-    GIT_HASH_SHORT, command::CommandRegistry, permission::PermissionGroupManager, server::Server,
+    GIT_HASH_SHORT, command::CommandRegistry, permission::PermissionManager, server::Server,
 };
 use steel_login::{JavaTcpClient, ServerConnectionSession};
 use tokio::{net::TcpListener, runtime::Runtime, select};
@@ -101,7 +101,7 @@ impl SteelServer {
         let permission_group_store = steel_config.permission_group_store();
         let server_port = steel_config.server.server_port;
         let worlds_config = steel_config.worlds;
-        let permission_groups = PermissionGroupManager::new(
+        let permission_groups = PermissionManager::new(
             steel_config.groups,
             steel_config.collections,
             permission_group_store,

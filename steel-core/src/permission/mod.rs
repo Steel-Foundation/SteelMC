@@ -38,8 +38,8 @@ pub use groups::{
 };
 pub use key::{PermissionKey, PermissionKeyError, PermissionSegment};
 pub use manager::{
-    PermissionGroupManager, PermissionGroupManagerError, PermissionGroupStore,
-    PermissionGroupStoreError, PermissionGroupUpdateError,
+    PermissionGroupManagerError, PermissionGroupStore, PermissionGroupStoreError,
+    PermissionGroupUpdateError, PermissionManager,
 };
 pub use metadata::{
     PermissionMetadataEntry, PermissionMetadataExpression, PermissionMetadataExpressionError,

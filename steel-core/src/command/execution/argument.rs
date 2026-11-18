@@ -12,8 +12,8 @@ use super::{
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     nbt::parse_nbt_path,
     permission::{
-        PermissionCollectionParser, PermissionGroupParser, PermissionGroupRuleParser,
-        PermissionMetadataParser, PermissionRuleParser,
+        PermissionCollectionMemberParser, PermissionCollectionParser, PermissionGroupParser,
+        PermissionGroupRuleParser, PermissionMetadataParser, PermissionRuleParser,
     },
     profile::{GameProfileParser, GameProfileSuggestionMode},
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
@@ -289,6 +289,10 @@ impl SteelArgumentType {
 
     pub(crate) fn permission_collection() -> Self {
         Self::new(PermissionCollectionParser)
+    }
+
+    pub(crate) fn permission_collection_member() -> Self {
+        Self::new(PermissionCollectionMemberParser::new())
     }
 
     pub(crate) fn score_holders() -> Self {

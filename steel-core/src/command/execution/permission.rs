@@ -1,9 +1,6 @@
 //! Permission command arguments and discovery-only suggestions.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    str::FromStr,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 use steel_protocol::packets::game::{
     ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
@@ -16,14 +13,14 @@ use crate::{
         CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
     },
     permission::{
-        PermissionGroupRule, PermissionMetadataExpression, PermissionRuleContext,
-        PermissionRuleExpression, PermissionSegment,
+        PermissionCollectionMember, PermissionGroupRule, PermissionMetadataExpression,
+        PermissionRuleContext, PermissionRuleExpression, PermissionSegment,
     },
 };
 
 use super::{
     CommandArgumentSource,
-    argument::{SteelArgumentParser, SteelArgumentSuggestionContext},
+    argument::{SteelArgumentParser, SteelArgumentSuggestionContext, parse_identifier},
 };
 
 // SAFETY: This Steel-owned key uniquely identifies the concrete parsed value.
@@ -73,6 +70,12 @@ impl PermissionCollectionName {
 unsafe impl DowncastType for PermissionCollectionName {
     const TYPE_KEY: DowncastTypeKey =
         DowncastTypeKey::new("steel:command/value/permission_collection");
+}
+
+// SAFETY: This Steel-owned key uniquely identifies the concrete parsed value.
+unsafe impl DowncastType for PermissionCollectionMember {
+    const TYPE_KEY: DowncastTypeKey =
+        DowncastTypeKey::new("steel:command/value/permission_collection_member");
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -369,13 +372,10 @@ impl SteelArgumentParser for PermissionCollectionParser {
         reader: &mut StringReader<'_>,
         source: &dyn CommandArgumentSource,
     ) -> Result<Self::Value, CommandSyntaxError> {
-        let value = reader.read_unquoted_string();
-        let identifier = Identifier::from_str(value).map_err(|error| {
-            reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(error.into())))
-        })?;
+        let identifier = parse_identifier(reader)?;
         if !source.permission_collection_names().contains(&identifier) {
             return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
-                format!("Unknown permission collection '{value}'").into(),
+                format!("Unknown permission collection '{identifier}'").into(),
             ))));
         }
         Ok(PermissionCollectionName(identifier))
@@ -396,7 +396,64 @@ impl SteelArgumentParser for PermissionCollectionParser {
     }
 
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
-        permission_group_argument()
+        (
+            ProtocolArgumentType::ResourceLocation,
+            Some(ProtocolSuggestionType::AskServer),
+        )
+    }
+}
+
+/// Parser for one collection member: a concrete permission or a `#namespace:name`
+/// nested collection reference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PermissionCollectionMemberParser;
+
+impl PermissionCollectionMemberParser {
+    pub(super) const fn new() -> Self {
+        Self
+    }
+}
+
+// SAFETY: This Steel-owned key uniquely identifies the concrete parser.
+unsafe impl DowncastType for PermissionCollectionMemberParser {
+    const TYPE_KEY: DowncastTypeKey =
+        DowncastTypeKey::new("steel:command/parser/permission_collection_member");
+}
+
+impl SteelArgumentParser for PermissionCollectionMemberParser {
+    type Value = PermissionCollectionMember;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        let value = reader.read_unquoted_token();
+        PermissionCollectionMember::parse(value).map_err(|error| {
+            reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+                error.to_string().into(),
+            )))
+        })
+    }
+
+    fn list_suggestions(
+        &self,
+        context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        let mut expressions = context.source().permission_rule_suggestions();
+        expressions.extend(
+            context
+                .source()
+                .permission_collection_names()
+                .into_iter()
+                .map(|collection| format!("#{collection}")),
+        );
+        suggest_expression(builder, context.source(), expressions);
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        permission_expression_argument()
     }
 }
 

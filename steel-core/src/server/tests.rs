@@ -57,8 +57,8 @@ use crate::entity::{
 };
 use crate::permission::{
     PermissionCollectionsConfig, PermissionEntry, PermissionExpr, PermissionGroupConfig,
-    PermissionGroupManager, PermissionGroupsConfig, PermissionKey, PermissionMetadataSet,
-    PermissionSet, PermissionSubjectIndex, PermissionSubjectState,
+    PermissionGroupsConfig, PermissionKey, PermissionManager, PermissionMetadataSet, PermissionSet,
+    PermissionSubjectIndex, PermissionSubjectState,
 };
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::PersistentSlot;
@@ -4085,7 +4085,7 @@ fn known_player_cache_closes_only_after_the_worker_is_idle() {
 
 #[test]
 fn permission_updates_reject_only_new_unknown_group_assignments() {
-    let manager = PermissionGroupManager::transient(
+    let manager = PermissionManager::transient(
         PermissionGroupsConfig::default(),
         PermissionCollectionsConfig::default(),
     );
@@ -4229,7 +4229,7 @@ async fn effective_permissions_reflect_published_group_revocation() {
             ..PermissionGroupConfig::default()
         },
     );
-    let manager = PermissionGroupManager::transient(config, PermissionCollectionsConfig::default());
+    let manager = PermissionManager::transient(config, PermissionCollectionsConfig::default());
     let Ok(manager) = manager else {
         panic!("test permission groups should resolve");
     };
@@ -4239,7 +4239,7 @@ async fn effective_permissions_reflect_published_group_revocation() {
         manager.effective_permissions(subject.groups(), subject.overrides());
     assert!(stale_player_snapshot.allows_key(&permission));
 
-    let mut revoked = manager.config_snapshot();
+    let mut revoked = manager.group_config_snapshot();
     let Some(staff) = revoked.groups.get_mut("staff") else {
         panic!("test staff group should exist");
     };
@@ -4592,7 +4592,7 @@ default = true
         CancellationToken::new(),
         config,
         worlds_config,
-        PermissionGroupManager::transient(
+        PermissionManager::transient(
             PermissionGroupsConfig::default(),
             PermissionCollectionsConfig::default(),
         )

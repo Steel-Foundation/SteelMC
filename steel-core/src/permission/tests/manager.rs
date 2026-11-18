@@ -4,9 +4,9 @@ use futures::future::BoxFuture;
 use steel_utils::locks::SyncMutex;
 
 use super::super::{
-    PermissionCollectionsConfig, PermissionGroupConfig, PermissionGroupManager,
-    PermissionGroupManagerError, PermissionGroupStore, PermissionGroupStoreError,
-    PermissionGroupUpdateError, PermissionGroupsConfig,
+    PermissionCollectionsConfig, PermissionGroupConfig, PermissionGroupManagerError,
+    PermissionGroupStore, PermissionGroupStoreError, PermissionGroupUpdateError,
+    PermissionGroupsConfig, PermissionManager,
 };
 
 #[derive(Debug)]
@@ -53,8 +53,8 @@ impl PermissionGroupStore for FailingStore {
     }
 }
 
-fn manager(store: Option<Arc<dyn PermissionGroupStore>>) -> PermissionGroupManager {
-    match PermissionGroupManager::new(
+fn manager(store: Option<Arc<dyn PermissionGroupStore>>) -> PermissionManager {
+    match PermissionManager::new(
         PermissionGroupsConfig::default(),
         PermissionCollectionsConfig::default(),
         store,
@@ -97,7 +97,12 @@ async fn manager_keeps_state_when_store_fails() {
     let result = manager.replace_config(config_with_builder()).await;
     assert!(matches!(result, Err(PermissionGroupManagerError::Store(_))));
     assert!(!manager.contains_group("builder"));
-    assert!(!manager.config_snapshot().groups.contains_key("builder"));
+    assert!(
+        !manager
+            .group_config_snapshot()
+            .groups
+            .contains_key("builder")
+    );
 }
 
 #[tokio::test]
@@ -160,7 +165,7 @@ async fn manager_updates_the_latest_config_under_one_lock() {
     };
     assert_eq!(first, Ok(()));
     assert_eq!(second, Ok(()));
-    let config = manager.config_snapshot();
+    let config = manager.group_config_snapshot();
     assert!(config.groups.contains_key("first"));
     assert!(config.groups.contains_key("second"));
     assert_eq!(saved.lock().len(), 2);

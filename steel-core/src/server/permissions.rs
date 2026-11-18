@@ -3,16 +3,16 @@ use steel_utils::Identifier;
 use crate::permission::{PermissionCollectionsConfig, PermissionMetadataValue};
 
 use super::{
-    Arc, FnServerJob, PermissionGroupManager, PermissionGroupManagerError,
-    PermissionGroupUpdateError, PermissionGroupsConfig, PermissionSet, PermissionSubjectState,
-    Player, PlayerPermissionUpdateError, Server, ServerJobContext, Uuid,
+    Arc, FnServerJob, PermissionGroupManagerError, PermissionGroupUpdateError,
+    PermissionGroupsConfig, PermissionManager, PermissionSet, PermissionSubjectState, Player,
+    PlayerPermissionUpdateError, Server, ServerJobContext, Uuid,
 };
 
 const BYPASSES_PLAYER_LIMIT: Identifier =
     Identifier::new_static(Identifier::STEEL_NAMESPACE, "bypasses_player_limit");
 
 pub(super) fn validate_player_permission_group_update<E>(
-    manager: &PermissionGroupManager,
+    manager: &PermissionManager,
     previous_groups: &[String],
     updated_groups: &[String],
 ) -> Result<(), PlayerPermissionUpdateError<E>> {

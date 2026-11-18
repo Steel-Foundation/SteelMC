@@ -136,7 +136,7 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
             collections_path.display()
         )
     })?;
-    let collections = PermissionCollections::effective(&BTreeMap::new(), &overrides);
+    let collections = PermissionCollections::effective(&PermissionCollections::new(), &overrides);
     config.collections_path = Some(collections_path);
     let groups_path = permission_dir.join("groups.toml");
     config.groups = load_or_create_groups(&groups_path, &collections)?;

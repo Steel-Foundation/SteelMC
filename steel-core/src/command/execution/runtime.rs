@@ -29,7 +29,10 @@ use crate::command::incorrectly_typed_argument;
 use crate::{
     chunk::heightmap::HeightmapType,
     entity::{EntityAnchor, SharedEntity},
-    permission::{PermissionGroupRule, PermissionMetadataExpression, PermissionRuleExpression},
+    permission::{
+        PermissionCollectionMember, PermissionGroupRule, PermissionMetadataExpression,
+        PermissionRuleExpression,
+    },
     player::Player,
     scoreboard::ScoreHolder,
 };
@@ -420,6 +423,13 @@ where
         &self,
         name: &str,
     ) -> Result<&PermissionCollectionName, CommandSyntaxError> {
+        self.typed_argument(name)
+    }
+
+    pub(crate) fn permission_collection_member(
+        &self,
+        name: &str,
+    ) -> Result<&PermissionCollectionMember, CommandSyntaxError> {
         self.typed_argument(name)
     }
 }

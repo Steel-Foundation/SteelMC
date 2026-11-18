@@ -1,13 +1,11 @@
-use std::collections::BTreeMap;
-
 use steel_utils::Identifier;
 
 use super::super::{
-    PermissionCollections, PermissionConfigError, PermissionEntry, PermissionGroupConfig,
-    PermissionGroups, PermissionGroupsConfig, PermissionKey, PermissionMetadataEntry,
-    PermissionMetadataRuleConfig, PermissionMetadataSet, PermissionMetadataValue,
-    PermissionRuleContext, PermissionRuleExpression, PermissionRuleExpressionError, PermissionSet,
-    PermissionState, parse_permission_metadata_key,
+    PermissionCollectionMember, PermissionCollections, PermissionConfigError, PermissionEntry,
+    PermissionGroupConfig, PermissionGroups, PermissionGroupsConfig, PermissionKey,
+    PermissionMetadataEntry, PermissionMetadataRuleConfig, PermissionMetadataSet,
+    PermissionMetadataValue, PermissionRuleContext, PermissionRuleExpression,
+    PermissionRuleExpressionError, PermissionSet, PermissionState, parse_permission_metadata_key,
 };
 
 fn key(value: &str) -> PermissionKey {
@@ -311,14 +309,13 @@ fn groups_config_round_trips_through_toml() {
 }
 
 #[test]
-fn runtime_command_collections_reach_inheriting_groups() {
-    let mut command_collections = BTreeMap::new();
-    command_collections.insert(
+fn runtime_declared_collections_reach_inheriting_groups() {
+    let mut declared = PermissionCollections::new();
+    declared.push(
         Identifier::new("minecraft", "gamemasters"),
-        vec![Identifier::new("steel", "command.fly")],
+        PermissionCollectionMember::Permission(Identifier::new("steel", "command.fly")),
     );
-    let collections =
-        PermissionCollections::effective(&command_collections, &PermissionCollections::new());
+    let collections = PermissionCollections::effective(&declared, &PermissionCollections::new());
 
     let config = PermissionGroupsConfig::default();
     let op_group = config.op_group.clone();

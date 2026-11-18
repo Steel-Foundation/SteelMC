@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use futures::future::BoxFuture;
 use steel_utils::{
@@ -44,22 +44,22 @@ impl PermissionGroupStoreError {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct PermissionGroupManagerState {
-    config: PermissionGroupsConfig,
+struct PermissionManagerState {
+    group_config: PermissionGroupsConfig,
     collections_config: PermissionCollectionsConfig,
-    command_collections: BTreeMap<Identifier, Vec<Identifier>>,
+    declared_collections: PermissionCollections,
     collections: PermissionCollections,
     groups: PermissionGroups,
 }
 
 /// Runtime permission groups and collections with serialized, persistence-first updates.
-pub struct PermissionGroupManager {
+pub struct PermissionManager {
     updates: AsyncMutex<()>,
-    state: SyncRwLock<PermissionGroupManagerState>,
+    state: SyncRwLock<PermissionManagerState>,
     store: Option<Arc<dyn PermissionGroupStore>>,
 }
 
-impl fmt::Debug for PermissionGroupManager {
+impl fmt::Debug for PermissionManager {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("PermissionGroupManager")
@@ -70,7 +70,7 @@ impl fmt::Debug for PermissionGroupManager {
     }
 }
 
-impl PermissionGroupManager {
+impl PermissionManager {
     /// Builds a manager from typed config and an optional persistence store.
     ///
     /// # Errors
@@ -81,15 +81,15 @@ impl PermissionGroupManager {
         collections_config: PermissionCollectionsConfig,
         store: Option<Arc<dyn PermissionGroupStore>>,
     ) -> Result<Self, PermissionConfigError> {
-        let command_collections = BTreeMap::new();
-        let collections = resolve_collections(&collections_config, &command_collections)?;
+        let declared_collections = PermissionCollections::new();
+        let collections = resolve_collections(&collections_config, &declared_collections)?;
         let groups = PermissionGroups::from_config(config.clone(), &collections)?;
         Ok(Self {
             updates: AsyncMutex::new(()),
-            state: SyncRwLock::new(PermissionGroupManagerState {
-                config,
+            state: SyncRwLock::new(PermissionManagerState {
+                group_config: config,
                 collections_config,
-                command_collections,
+                declared_collections,
                 collections,
                 groups,
             }),
@@ -111,8 +111,8 @@ impl PermissionGroupManager {
 
     /// Returns a typed snapshot of the current groups config.
     #[must_use]
-    pub fn config_snapshot(&self) -> PermissionGroupsConfig {
-        self.state.read().config.clone()
+    pub fn group_config_snapshot(&self) -> PermissionGroupsConfig {
+        self.state.read().group_config.clone()
     }
 
     /// Returns a typed snapshot of the current collections config.
@@ -142,33 +142,33 @@ impl PermissionGroupManager {
     /// Returns the group assigned by `/op`.
     #[must_use]
     pub fn op_group(&self) -> String {
-        self.state.read().config.op_group.clone()
+        self.state.read().group_config.op_group.clone()
     }
 
-    /// Installs the permission collections declared by the command dispatcher.
+    /// Installs the permission collections declared by code at runtime.
     ///
-    /// The runtime contributions are never persisted. This rebuilds the resolved
+    /// Declared contributions are never persisted. This rebuilds the resolved
     /// groups and collections in place and is meant to run once at startup, after
-    /// commands register.
+    /// commands register and extensions declare their collections.
     ///
     /// # Errors
     ///
     /// Returns an error when the rebuilt groups do not resolve.
-    pub fn set_command_collections(
+    pub fn set_declared_collections(
         &self,
-        command_collections: BTreeMap<Identifier, Vec<Identifier>>,
+        declared_collections: PermissionCollections,
     ) -> Result<(), PermissionConfigError> {
         let state = self.state.read();
-        let config = state.config.clone();
+        let config = state.group_config.clone();
         let collections_config = state.collections_config.clone();
         drop(state);
 
-        let collections = resolve_collections(&collections_config, &command_collections)?;
+        let collections = resolve_collections(&collections_config, &declared_collections)?;
         let groups = PermissionGroups::from_config(config.clone(), &collections)?;
-        *self.state.write() = PermissionGroupManagerState {
-            config,
+        *self.state.write() = PermissionManagerState {
+            group_config: config,
             collections_config,
-            command_collections,
+            declared_collections,
             collections,
             groups,
         };
@@ -241,7 +241,7 @@ impl PermissionGroupManager {
         update: impl FnOnce(&mut PermissionGroupsConfig) + Send,
     ) -> Result<(), PermissionGroupManagerError> {
         let _guard = self.updates.lock().await;
-        let mut config = self.state.read().config.clone();
+        let mut config = self.state.read().group_config.clone();
         update(&mut config);
         self.replace_config_locked(config).await
     }
@@ -260,7 +260,7 @@ impl PermissionGroupManager {
         E: Send,
     {
         let _guard = self.updates.lock().await;
-        let current = self.state.read().config.clone();
+        let current = self.state.read().group_config.clone();
         let mut config = current.clone();
         let result = update(&mut config).map_err(PermissionGroupUpdateError::Edit)?;
         if config == current {
@@ -292,23 +292,23 @@ impl PermissionGroupManager {
         &self,
         config: PermissionGroupsConfig,
     ) -> Result<(), PermissionGroupManagerError> {
-        let (collections_config, command_collections) = {
+        let (collections_config, declared_collections) = {
             let state = self.state.read();
             (
                 state.collections_config.clone(),
-                state.command_collections.clone(),
+                state.declared_collections.clone(),
             )
         };
 
-        let collections = resolve_collections(&collections_config, &command_collections)?;
+        let collections = resolve_collections(&collections_config, &declared_collections)?;
         let groups = PermissionGroups::from_config(config.clone(), &collections)?;
         if let Some(store) = &self.store {
             store.save_groups(config.clone()).await?;
         }
-        *self.state.write() = PermissionGroupManagerState {
-            config,
+        *self.state.write() = PermissionManagerState {
+            group_config: config,
             collections_config,
-            command_collections,
+            declared_collections,
             collections,
             groups,
         };
@@ -319,20 +319,23 @@ impl PermissionGroupManager {
         &self,
         collections_config: PermissionCollectionsConfig,
     ) -> Result<(), PermissionGroupManagerError> {
-        let (config, command_collections) = {
+        let (config, declared_collections) = {
             let state = self.state.read();
-            (state.config.clone(), state.command_collections.clone())
+            (
+                state.group_config.clone(),
+                state.declared_collections.clone(),
+            )
         };
 
-        let collections = resolve_collections(&collections_config, &command_collections)?;
+        let collections = resolve_collections(&collections_config, &declared_collections)?;
         let groups = PermissionGroups::from_config(config.clone(), &collections)?;
         if let Some(store) = &self.store {
             store.save_collections(collections_config.clone()).await?;
         }
-        *self.state.write() = PermissionGroupManagerState {
-            config,
+        *self.state.write() = PermissionManagerState {
+            group_config: config,
             collections_config,
-            command_collections,
+            declared_collections,
             collections,
             groups,
         };
@@ -342,11 +345,11 @@ impl PermissionGroupManager {
 
 fn resolve_collections(
     config: &PermissionCollectionsConfig,
-    command_collections: &BTreeMap<Identifier, Vec<Identifier>>,
+    declared_collections: &PermissionCollections,
 ) -> Result<PermissionCollections, PermissionConfigError> {
     let overrides = PermissionCollections::from_config(config)?;
     Ok(PermissionCollections::effective(
-        command_collections,
+        declared_collections,
         &overrides,
     ))
 }
