@@ -79,6 +79,18 @@ impl ChunkPos {
         Self::from_block_pos(BlockPos::from(pos))
     }
 
+    /// Block X coordinate of this chunk's middle column.
+    #[must_use]
+    pub const fn middle_block_x(self) -> i32 {
+        SectionPos::section_to_block_coord(self.0.x, SectionPos::SECTION_SIZE / 2)
+    }
+
+    /// Block Z coordinate of this chunk's middle column.
+    #[must_use]
+    pub const fn middle_block_z(self) -> i32 {
+        SectionPos::section_to_block_coord(self.0.y, SectionPos::SECTION_SIZE / 2)
+    }
+
     /// Checks if the given chunk coordinates are within valid bounds.
     /// Uses `Mth.absMax(x, z) <= MAX_COORDINATE_VALUE`.
     #[must_use]
@@ -679,6 +691,13 @@ impl SectionPos {
     #[inline]
     pub const fn block_to_section_coord(block_coord: i32) -> i32 {
         block_coord >> Self::SECTION_BITS
+    }
+
+    /// Converts a section coordinate plus a block offset within it to a block coordinate.
+    #[must_use]
+    #[inline]
+    pub const fn section_to_block_coord(section_coord: i32, offset: i32) -> i32 {
+        (section_coord << Self::SECTION_BITS) + offset
     }
 
     /// Creates a `SectionPos` from a `BlockPos`.

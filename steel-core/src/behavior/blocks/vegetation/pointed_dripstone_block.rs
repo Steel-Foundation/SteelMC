@@ -220,7 +220,7 @@ struct FluidInfo {
 impl SpeleothemBlockBehavior {
     fn projectile_can_break(projectile: &dyn Projectile, world: &World, pos: BlockPos) -> bool {
         projectile.projectile_may_interact(world, pos)
-            && projectile.may_break(world)
+            && projectile.may_break(world, pos)
             && projectile.entity_type() == &vanilla_entities::TRIDENT
             && projectile.velocity().length() > 0.6
     }
@@ -842,10 +842,8 @@ impl SpeleothemBlockBehavior {
             block == &vanilla_blocks::CAULDRON
                 || (block == &vanilla_blocks::WATER_CAULDRON
                     && state.get_value(LEVEL_CAULDRON) < LEVEL_CAULDRON.max)
-        } else if fluid == &vanilla_fluids::LAVA {
-            block == &vanilla_blocks::CAULDRON
         } else {
-            false
+            fluid == &vanilla_fluids::LAVA && block == &vanilla_blocks::CAULDRON
         }
     }
 

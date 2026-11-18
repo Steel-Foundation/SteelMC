@@ -39,12 +39,13 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
     EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
-    LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule,
-    entity_loot_ref, living_loot_equipment, position_rider_default, sync_dirty_mob_effects,
+    LivingEntityBase, Mob, MobBase, PathfinderMob, RiderMove, SharedEntity, SpawnGroupData,
+    SpawnRule, entity_loot_ref, living_loot_equipment, position_rider_default,
+    sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 
 const CHICKEN_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.375, 0.0)];
@@ -469,8 +470,8 @@ impl Entity for ChickenEntity {
         state.next_flap = fly_dist + state.flap_speed / NEXT_FLAP_SPEED_DIVISOR;
     }
 
-    fn position_rider(&self, passenger: &dyn Entity) {
-        position_rider_default(self, passenger);
+    fn position_rider(&self, passenger: &dyn Entity, move_behavior: RiderMove) {
+        position_rider_default(self, passenger, move_behavior);
         if let Some(living) = passenger.as_living_entity() {
             living.set_y_body_rot(self.y_body_rot());
         }
@@ -654,6 +655,7 @@ impl Mob for ChickenEntity {
     fn finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -678,7 +680,7 @@ impl Mob for ChickenEntity {
             self.set_sound_variant(sound_variant);
         }
 
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(world, difficulty, spawn_reason, group_data)
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

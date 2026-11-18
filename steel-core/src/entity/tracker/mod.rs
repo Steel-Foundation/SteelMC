@@ -21,8 +21,8 @@ use steel_utils::locks::{SyncMutex, SyncRwLock};
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::leash::Leashable;
 use crate::entity::{
-    Entity, EntityMovementSyncPacket, MobEffectSyncPacket, ServerEntityMovementSyncState,
-    ServerEntityMovementSyncUpdate, SharedEntity, WeakEntity,
+    AbstractHurtingProjectile, Entity, EntityMovementSyncPacket, MobEffectSyncPacket,
+    ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate, SharedEntity, WeakEntity,
 };
 use crate::player::Player;
 
@@ -403,6 +403,9 @@ impl EntityTracker {
                         needs_velocity_sync: entity.needs_velocity_sync(),
                         has_dirty_entity_data,
                         force_velocity_sync: entity.forces_fall_flying_velocity_sync(),
+                        projectile_acceleration_power: entity
+                            .as_hurting_projectile()
+                            .map(AbstractHurtingProjectile::acceleration_power),
                     });
             if result.should_clear_velocity_sync() {
                 entity.clear_velocity_sync();

@@ -228,6 +228,7 @@ fn full_chunk_postprocessing_roundtrips_through_persistent_chunk() {
         &[],
         &[],
         &[],
+        0,
         Vec::new(),
         Vec::new(),
         Vec::new(),

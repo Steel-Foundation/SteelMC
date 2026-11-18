@@ -113,6 +113,7 @@ mod block_updates;
 mod border;
 mod broadcasts;
 pub(crate) mod clock;
+mod difficulty;
 mod domain_entity_directory;
 mod entity_management;
 mod environment;
@@ -148,6 +149,7 @@ use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
 pub(crate) use border::{MAX_CENTER_COORDINATE, MAX_SIZE};
 use border::{WorldBorder, WorldBorderSnapshot};
+pub use difficulty::DifficultyInstance;
 pub(crate) use domain_entity_directory::DomainEntityDirectory;
 use entity_management::NavigatingMobTracker;
 #[cfg(test)]
@@ -155,6 +157,7 @@ use entity_management::nearest_player_distance_in_range;
 pub use explosion::{
     BlockInteraction, DefaultExplosionDamageCalculator, EntityBasedExplosionDamageCalculator,
     Explosion, ExplosionDamageCalculator, ExplosionInteraction, ExplosionOptions, ExplosionOutcome,
+    SimpleExplosionDamageCalculator,
 };
 pub(crate) use explosion::{ExplosionBlockReader, ImmutableExplosionBlockCalculator};
 pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
@@ -624,7 +627,7 @@ impl World {
                         let Some(player) = self.players.get_by_entity_id(player_id) else {
                             return;
                         };
-                        player.connection.send_encoded(encoded);
+                        encoded.send_to(&player);
                     },
                     entity_data: |entity_id, dirty_entity_data| {
                         let packet = CSetEntityData::new(entity_id, dirty_entity_data);

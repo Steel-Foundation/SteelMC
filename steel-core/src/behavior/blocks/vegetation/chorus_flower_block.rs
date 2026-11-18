@@ -46,7 +46,7 @@ impl ChorusFlowerBlock {
     }
 
     fn projectile_can_break(projectile: &dyn Projectile, world: &World, pos: BlockPos) -> bool {
-        projectile.projectile_may_interact(world, pos) && projectile.may_break(world)
+        projectile.projectile_may_interact(world, pos) && projectile.may_break(world, pos)
     }
 
     fn all_neighbors_empty(
