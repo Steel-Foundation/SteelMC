@@ -450,15 +450,7 @@ impl BaseSpawner {
             let entity = &loaded.root;
 
             let entity_class = entity.downcast_type_key();
-            let nearby_box = WorldAabb::new(
-                f64::from(pos.x()),
-                f64::from(pos.y()),
-                f64::from(pos.z()),
-                f64::from(pos.x() + 1),
-                f64::from(pos.y() + 1),
-                f64::from(pos.z() + 1),
-            )
-            .inflate(f64::from(spawn_range));
+            let nearby_box = WorldAabb::single(pos.0).inflate(f64::from(spawn_range));
             let nearby_count = world
                 .get_entities_in_aabb_matching(&nearby_box, |candidate| {
                     !candidate.is_spectator() && candidate.downcast_type_key() == entity_class

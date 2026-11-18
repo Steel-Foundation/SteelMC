@@ -76,7 +76,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
     DROWNING_DAMAGE, FALL_DAMAGE, FIRE_DAMAGE, FREEZE_DAMAGE, IMMEDIATE_RESPAWN, KEEP_INVENTORY,
-    SHOW_DEATH_MESSAGES,
+    PVP, SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags,
@@ -807,12 +807,28 @@ impl Player {
         self.movement.lock().finish_client_tick();
     }
 
+    /// Returns whether this player and `target` may damage each other.
+    #[must_use]
+    pub fn can_harm_player(&self, _target: &Player) -> bool {
+        // TODO: Check scoreboard team friendly fire once teams exist.
+        self.get_world().get_game_rule(&PVP)
+    }
+
     /// Main entry point for dealing damage. Returns `true` if damage was applied.
     ///
     /// `world` is vanilla's explicit `ServerLevel` argument and controls
     /// difficulty scaling and damage gamerules.
     pub fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         if LivingEntity::is_invulnerable_to(self, world, source) {
+            return false;
+        }
+
+        // TODO: Also reject arrows owned by players that cannot harm this player.
+        if let Some(attacker) = source
+            .causing_entity()
+            .and_then(|entity| entity.as_player())
+            && !self.can_harm_player(attacker)
+        {
             return false;
         }
 
