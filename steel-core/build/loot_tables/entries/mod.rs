@@ -103,7 +103,7 @@ impl Compiler {
             let expression = expansion.into_expression();
             expansion = EntryExpansion::Expression(quote! {{
                 let passes = #condition;
-                if passes { #expression } else { false }
+                passes && { #expression }
             }});
         }
         expansion

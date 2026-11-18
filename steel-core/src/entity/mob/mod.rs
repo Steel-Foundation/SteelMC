@@ -868,10 +868,9 @@ pub trait Mob: LivingEntity + Leashable {
             true
         } else if slot.is_armor() {
             self.compare_armor(new_item_stack, current_item_stack, slot)
-        } else if slot == EquipmentSlot::MainHand {
-            self.compare_weapons(new_item_stack, current_item_stack, slot)
         } else {
-            false
+            slot == EquipmentSlot::MainHand
+                && self.compare_weapons(new_item_stack, current_item_stack, slot)
         }
     }
 
