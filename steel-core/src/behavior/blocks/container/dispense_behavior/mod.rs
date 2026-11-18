@@ -120,6 +120,7 @@ impl DispenseBehaviorRegistry {
         } else if stack.get_equippable().is_some() {
             &ArmorDispenseBehavior
         } else {
+            // TODO: Offer swallowable items to sulfur cubes in the target block before ejecting them.
             &DefaultDispenseBehavior
         }
     }
@@ -130,6 +131,8 @@ pub(crate) static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyL
 
     // TODO: Launch arrows, tipped arrows, and spectral arrows once their entities exist.
     // These items currently use the default ejection behavior.
+
+    // TODO: Place armor stands facing the dispenser's output once their entity is implemented.
 
     // boat
     // TODO: boats and rafts - need the boat entities.

@@ -29,6 +29,7 @@ impl DispenseItemBehavior for FlintAndSteelDispenseBehavior {
         let target_pos = pos.relative(facing);
         let target_state = world.get_block_state(target_pos);
 
+        // TODO: Prime explosive sulfur cubes at the target before trying to light blocks.
         if FireBlock::can_be_placed_at(world, target_pos, facing) {
             world.set_block(
                 target_pos,
