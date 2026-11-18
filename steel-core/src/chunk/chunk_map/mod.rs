@@ -877,36 +877,28 @@ impl ChunkMap {
             }
             true
         });
-        if player_positions.is_empty() {
-            return;
-        }
-
-        let mut candidate_chunks = FxHashSet::default();
-        for position in &player_positions {
-            let player_chunk = ChunkPos::from_entity_pos(*position);
-            for x in (player_chunk.0.x - NATURAL_SPAWN_CHUNK_RADIUS)
-                ..=(player_chunk.0.x + NATURAL_SPAWN_CHUNK_RADIUS)
-            {
-                for z in (player_chunk.0.y - NATURAL_SPAWN_CHUNK_RADIUS)
-                    ..=(player_chunk.0.y + NATURAL_SPAWN_CHUNK_RADIUS)
+        // The radius square bounds every chunk within spawn distance, so checking
+        // distance against the producing player yields the full spawning set.
+        let mut spawning_chunks = FxHashSet::default();
+        for &position in &player_positions {
+            let ChunkPos(center) = ChunkPos::from_entity_pos(position);
+            for x in center.x - NATURAL_SPAWN_CHUNK_RADIUS..=center.x + NATURAL_SPAWN_CHUNK_RADIUS {
+                for z in
+                    center.y - NATURAL_SPAWN_CHUNK_RADIUS..=center.y + NATURAL_SPAWN_CHUNK_RADIUS
                 {
-                    candidate_chunks.insert(ChunkPos::new(x, z));
+                    let pos = ChunkPos::new(x, z);
+                    let delta_x = f64::from(pos.middle_block_x()) - position.x;
+                    let delta_z = f64::from(pos.middle_block_z()) - position.z;
+                    if delta_x * delta_x + delta_z * delta_z
+                        < SPAWN_CANDIDATE_PLAYER_DISTANCE_SQUARED
+                    {
+                        spawning_chunks.insert(pos);
+                    }
                 }
             }
         }
 
-        for pos in candidate_chunks {
-            let center_x = f64::from(pos.0.x * 16 + 8);
-            let center_z = f64::from(pos.0.y * 16 + 8);
-            let is_spawn_candidate = player_positions.iter().any(|position| {
-                let delta_x = center_x - position.x;
-                let delta_z = center_z - position.z;
-                delta_x * delta_x + delta_z * delta_z < SPAWN_CANDIDATE_PLAYER_DISTANCE_SQUARED
-            });
-            if !is_spawn_candidate {
-                continue;
-            }
-
+        for pos in spawning_chunks {
             let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder)) else {
                 continue;
             };
