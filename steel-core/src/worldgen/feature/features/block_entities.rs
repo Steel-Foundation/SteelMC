@@ -107,7 +107,8 @@ impl FeatureDecorationRunner {
         pos: BlockPos,
         state: BlockStateId,
     ) -> bool {
-        Self::feature_can_replace(region.block_state(pos)) && region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS)
+        Self::feature_can_replace(region.block_state(pos))
+            && region.set_block_state(pos, state, UpdateFlags::UPDATE_CLIENTS)
     }
 
     pub(in crate::worldgen::feature) fn feature_can_replace(state: BlockStateId) -> bool {
