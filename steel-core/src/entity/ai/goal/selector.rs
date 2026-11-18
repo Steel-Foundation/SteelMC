@@ -106,6 +106,12 @@ pub trait Goal: Send {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GoalId(u64);
 
+impl GoalId {
+    const fn next(self) -> Self {
+        Self(self.0.wrapping_add(1))
+    }
+}
+
 struct WrappedGoal {
     id: GoalId,
     priority: i32,
@@ -198,7 +204,7 @@ impl GoalSelector {
         G: Goal + 'static,
     {
         let id = self.next_goal_id;
-        self.next_goal_id = GoalId(id.0.wrapping_add(1));
+        self.next_goal_id = id.next();
         self.available_goals
             .push(WrappedGoal::new(id, priority, Box::new(goal)));
         id
