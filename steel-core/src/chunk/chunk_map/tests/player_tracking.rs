@@ -75,6 +75,42 @@ fn players_at_same_position_share_loading_and_simulation_sources() {
 }
 
 #[test]
+fn inhabited_time_increments_only_for_near_block_ticking_chunks() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("spawn_candidate_inhabited_time");
+    let world = &world_fixture.world;
+    let near = insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let unready = insert_unready_full_chunk(world, ChunkPos::new(1, 0));
+    let not_block_ticking = insert_active_full_holder(
+        world,
+        ChunkPos::new(2, 0),
+        ChunkTicketLevel::FULL_CHUNK,
+        Vec::new(),
+    );
+    let far = insert_ready_full_chunk(world, ChunkPos::new(9, 0));
+
+    let player = TestPlayerBuilder::new(Arc::clone(world), "SpawnCandidate", 1).build();
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+
+    world.chunk_map.tick_spawning_chunks(world);
+
+    let inhabited_time = |holder: &Arc<ChunkHolder>| {
+        holder
+            .try_full_chunk()
+            .expect("test holder should remain Full")
+            .common()
+            .inhabited_time()
+    };
+    assert_eq!(inhabited_time(&near), 1);
+    assert_eq!(inhabited_time(&unready), 0);
+    assert_eq!(inhabited_time(&not_block_ticking), 0);
+    assert_eq!(inhabited_time(&far), 0);
+
+    stop_chunk_tasks(world);
+}
+
+#[test]
 fn player_simulation_removal_applies_at_the_next_world_tick() {
     init_vanilla_registry();
     init_behaviors();
