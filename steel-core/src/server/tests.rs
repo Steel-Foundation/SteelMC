@@ -30,7 +30,7 @@ use steel_registry::{
     init_vanilla_registry, stat::vanilla_stat_types, vanilla_blocks, vanilla_custom_stats,
     vanilla_dimension_types, vanilla_entities, vanilla_game_rules::RESPAWN_RADIUS, vanilla_items,
 };
-use steel_utils::{BlockPos, ChunkPos, UuidExt as _, translations, types::UpdateFlags};
+use steel_utils::{BlockPos, ChunkPos, Identifier, UuidExt as _, translations, types::UpdateFlags};
 use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
 use text_components::TextComponent;
 use tokio::{
@@ -56,9 +56,9 @@ use crate::entity::{
     SharedEntity, entities::EnderPearlEntity, init_entities, next_entity_id,
 };
 use crate::permission::{
-    PermissionEntry, PermissionExpr, PermissionGroupConfig, PermissionGroupManager,
-    PermissionGroupsConfig, PermissionKey, PermissionMetadataSet, PermissionSet,
-    PermissionSubjectIndex, PermissionSubjectState,
+    PermissionCollectionsConfig, PermissionEntry, PermissionExpr, PermissionGroupConfig,
+    PermissionGroupManager, PermissionGroupsConfig, PermissionKey, PermissionMetadataSet,
+    PermissionSet, PermissionSubjectIndex, PermissionSubjectState,
 };
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::PersistentSlot;
@@ -1605,8 +1605,8 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
     };
     runtime.block_on(async {
         let initiator_uuid = Uuid::from_u128(31);
-        let invsee = PermissionExpr::key(permission_key("steel.command.invsee"));
-        let modify_key = permission_key("steel.command.invsee.modify");
+        let invsee = PermissionExpr::key(Identifier::new("steel", "command.invsee"));
+        let modify_key = Identifier::new("steel", "command.invsee.modify");
         let modify = PermissionExpr::key(modify_key.clone());
         let access = PermissionExpr::Any(vec![invsee, modify.clone()]);
         let mut published_states = PermissionSubjectIndex::new();
@@ -1614,7 +1614,9 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
             initiator_uuid,
             PermissionSubjectState::new(
                 Vec::new(),
-                PermissionSet::from_entries([PermissionEntry::allow(modify_key)]),
+                PermissionSet::from_entries([PermissionEntry::allow(
+                    PermissionKey::from_identifier(&modify_key),
+                )]),
             ),
         );
         let server = test_server(Arc::clone(world), published_states).await;
@@ -4083,19 +4085,18 @@ fn known_player_cache_closes_only_after_the_worker_is_idle() {
 
 #[test]
 fn permission_updates_reject_only_new_unknown_group_assignments() {
-    let manager = PermissionGroupManager::transient(PermissionGroupsConfig::default());
+    let manager = PermissionGroupManager::transient(
+        PermissionGroupsConfig::default(),
+        PermissionCollectionsConfig::default(),
+    );
     let Ok(manager) = manager else {
         panic!("default permission groups should resolve");
     };
 
     let op_group = manager.op_group();
     assert!(
-        validate_player_permission_group_update::<()>(
-            &manager,
-            &[],
-            std::slice::from_ref(&op_group)
-        )
-        .is_ok()
+        validate_player_permission_group_update::<()>(&manager, &[], slice::from_ref(&op_group))
+            .is_ok()
     );
     assert!(
         validate_player_permission_group_update::<()>(
@@ -4129,9 +4130,10 @@ fn command_source_and_operator_checks_use_published_subject_state() {
         };
         let player = test_player_with_uuid(&server, Arc::clone(world), uuid);
         let op_group = server.permission_groups.op_group();
-        let permission = permission_key("minecraft.command.stop");
-        let stale_player_permissions =
-            PermissionSet::from_entries([PermissionEntry::allow(permission.clone())]);
+        let permission = Identifier::new("minecraft", "command.stop");
+        let stale_player_permissions = PermissionSet::from_entries([PermissionEntry::allow(
+            PermissionKey::from_identifier(&permission),
+        )]);
         player.set_permission_state(
             vec![op_group.clone()],
             PermissionSet::new(),
@@ -4223,16 +4225,16 @@ async fn effective_permissions_reflect_published_group_revocation() {
     config.groups.insert(
         "staff".to_owned(),
         PermissionGroupConfig {
-            allow: vec!["minecraft.command.stop".to_owned()],
+            allow: vec!["minecraft:command.stop".to_owned()],
             ..PermissionGroupConfig::default()
         },
     );
-    let manager = PermissionGroupManager::transient(config);
+    let manager = PermissionGroupManager::transient(config, PermissionCollectionsConfig::default());
     let Ok(manager) = manager else {
         panic!("test permission groups should resolve");
     };
     let subject = PermissionSubjectState::new(vec!["staff".to_owned()], PermissionSet::new());
-    let permission = permission_key("minecraft.command.stop");
+    let permission = permission_key("minecraft:command.stop");
     let stale_player_snapshot =
         manager.effective_permissions(subject.groups(), subject.overrides());
     assert!(stale_player_snapshot.allows_key(&permission));
@@ -4590,8 +4592,11 @@ default = true
         CancellationToken::new(),
         config,
         worlds_config,
-        PermissionGroupManager::transient(PermissionGroupsConfig::default())
-            .expect("default permission groups should resolve"),
+        PermissionGroupManager::transient(
+            PermissionGroupsConfig::default(),
+            PermissionCollectionsConfig::default(),
+        )
+        .expect("default permission groups should resolve"),
     )
     .await
 }

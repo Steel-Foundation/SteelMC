@@ -1,52 +1,26 @@
 //! Permission group config editing helpers.
 
-use std::{error::Error, fmt};
-
 use crate::permission::{
-    PermissionGroupConfig, PermissionGroupsConfig, PermissionMetadataExpression,
-    PermissionMetadataRuleConfig, PermissionMetadataValue, PermissionRuleExpression,
+    PermissionGroupConfig, PermissionGroupRule, PermissionGroupsConfig,
+    PermissionMetadataExpression, PermissionMetadataRuleConfig, PermissionMetadataValue,
     PermissionState,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub(super) enum PermissionGroupEditError {
+    #[error("permission group '{0}' already exists")]
     AlreadyExists(String),
+    #[error("unknown permission group '{0}'")]
     Missing(String),
+    #[error("permission group '{0}' is required")]
     Required(String),
+    #[error("permission group '{0}' is still a default group")]
     Default(String),
+    #[error("permission group '{group}' is inherited by '{child}'")]
     InheritedBy { group: String, child: String },
+    #[error("permission group '{0}' cannot inherit itself")]
     SelfInheritance(String),
 }
-
-impl fmt::Display for PermissionGroupEditError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::AlreadyExists(group) => {
-                write!(formatter, "permission group '{group}' already exists")
-            }
-            Self::Missing(group) => write!(formatter, "unknown permission group '{group}'"),
-            Self::Required(group) => write!(formatter, "permission group '{group}' is required"),
-            Self::Default(group) => write!(
-                formatter,
-                "permission group '{group}' is still a default group"
-            ),
-            Self::InheritedBy { group, child } => {
-                write!(
-                    formatter,
-                    "permission group '{group}' is inherited by '{child}'"
-                )
-            }
-            Self::SelfInheritance(group) => {
-                write!(
-                    formatter,
-                    "permission group '{group}' cannot inherit itself"
-                )
-            }
-        }
-    }
-}
-
-impl Error for PermissionGroupEditError {}
 
 pub(super) fn create_group(
     config: &mut PermissionGroupsConfig,
@@ -119,29 +93,29 @@ pub(super) fn set_default_group(
 pub(super) fn set_permission(
     config: &mut PermissionGroupsConfig,
     group: &str,
-    expression: &PermissionRuleExpression,
+    rule: &PermissionGroupRule,
     state: Option<PermissionState>,
 ) -> Result<bool, PermissionGroupEditError> {
     let Some(group_config) = config.groups.get_mut(group) else {
         return Err(PermissionGroupEditError::Missing(group.to_owned()));
     };
-    let value = expression.to_string();
+    let value = rule.to_string();
     let allow_count = group_config
         .allow
         .iter()
-        .filter(|rule| permission_rule_matches(rule, expression))
+        .filter(|configured| group_rule_matches(configured, rule))
         .count();
     let deny_count = group_config
         .deny
         .iter()
-        .filter(|rule| permission_rule_matches(rule, expression))
+        .filter(|configured| group_rule_matches(configured, rule))
         .count();
     group_config
         .allow
-        .retain(|rule| !permission_rule_matches(rule, expression));
+        .retain(|configured| !group_rule_matches(configured, rule));
     group_config
         .deny
-        .retain(|rule| !permission_rule_matches(rule, expression));
+        .retain(|configured| !group_rule_matches(configured, rule));
     match state {
         Some(PermissionState::Allow) => {
             group_config.allow.push(value);
@@ -184,8 +158,8 @@ pub(super) fn set_metadata(
     Ok(changed)
 }
 
-fn permission_rule_matches(configured: &str, expression: &PermissionRuleExpression) -> bool {
-    PermissionRuleExpression::parse(configured).is_ok_and(|parsed| parsed == *expression)
+fn group_rule_matches(configured: &str, rule: &PermissionGroupRule) -> bool {
+    PermissionGroupRule::parse(configured).is_ok_and(|parsed| parsed == *rule)
 }
 
 fn permission_metadata_matches(
@@ -249,16 +223,20 @@ pub(super) fn set_inheritance(
 mod tests {
     use super::*;
 
-    fn permission(value: &str) -> PermissionRuleExpression {
-        match PermissionRuleExpression::parse(value) {
-            Ok(expression) => expression,
-            Err(error) => panic!("test permission expression should parse: {error}"),
+    fn permission(value: &str) -> PermissionGroupRule {
+        match PermissionGroupRule::parse(value) {
+            Ok(rule) => rule,
+            Err(error) => panic!("test permission rule should parse: {error}"),
         }
     }
 
     #[test]
     fn permission_edits_replace_the_exact_context_only() {
         let mut config = PermissionGroupsConfig::default();
+        let Some(group) = config.groups.get_mut("all") else {
+            panic!("default permission group should exist");
+        };
+        group.allow.clear();
         let global = permission("steel.build");
         let survival = permission("steel.build{domain=survival}");
 
@@ -276,11 +254,38 @@ mod tests {
     }
 
     #[test]
+    fn permission_edits_replace_collection_references_by_id() {
+        let mut config = PermissionGroupsConfig::default();
+        let Some(group) = config.groups.get_mut("all") else {
+            panic!("default permission group should exist");
+        };
+        group.allow.clear();
+        let collection = permission("#minecraft:all");
+
+        assert_eq!(
+            set_permission(
+                &mut config,
+                "all",
+                &collection,
+                Some(PermissionState::Allow)
+            ),
+            Ok(true)
+        );
+        assert_eq!(
+            set_permission(&mut config, "all", &collection, Some(PermissionState::Deny)),
+            Ok(true)
+        );
+        assert_eq!(config.groups["all"].allow.len(), 0);
+        assert_eq!(config.groups["all"].deny, ["#minecraft:all"]);
+    }
+
+    #[test]
     fn permission_edits_replace_semantically_equal_context_orderings() {
         let mut config = PermissionGroupsConfig::default();
         let Some(group) = config.groups.get_mut("all") else {
             panic!("default permission group should exist");
         };
+        group.allow.clear();
         group
             .allow
             .push("steel.build{plugin:region=spawn,domain=survival}".to_owned());

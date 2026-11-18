@@ -1,18 +1,18 @@
 use std::ops::{BitAnd, BitOr};
 
-use super::PermissionKey;
+use steel_utils::Identifier;
 
 /// Boolean permission expression evaluated with tri-state allow/deny/unset semantics.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PermissionExpr {
-    /// Resolves one permission key.
-    Key(PermissionKey),
+    /// Resolves one concrete permission.
+    Key(Identifier),
     /// A child permission that may also inherit a broader parent grant.
     ScopedKey {
-        /// Broad permission accepted as a fallback grant.
-        parent: PermissionKey,
-        /// Specific child permission being checked.
-        key: PermissionKey,
+        /// Broad concrete permission accepted as a fallback grant.
+        parent: Identifier,
+        /// Specific concrete permission being checked.
+        key: Identifier,
     },
     /// Requires every nested expression to allow.
     All(Vec<Self>),
@@ -21,15 +21,15 @@ pub enum PermissionExpr {
 }
 
 impl PermissionExpr {
-    /// Creates a single-key expression.
+    /// Creates a single-permission expression.
     #[must_use]
-    pub const fn key(key: PermissionKey) -> Self {
+    pub const fn key(key: Identifier) -> Self {
         Self::Key(key)
     }
 
     /// Creates a child expression with a broad parent fallback.
     #[must_use]
-    pub const fn scoped_key(parent: PermissionKey, key: PermissionKey) -> Self {
+    pub const fn scoped_key(parent: Identifier, key: Identifier) -> Self {
         Self::ScopedKey { parent, key }
     }
 }

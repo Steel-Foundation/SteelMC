@@ -15,17 +15,17 @@ use super::super::{
 };
 use crate::command::missing_argument;
 use crate::permission::{
-    PermissionContext, PermissionEntry, PermissionExpr, PermissionKey, PermissionMetadataEntry,
-    PermissionMetadataExpression, PermissionMetadataValue, PermissionResolutionSource,
-    PermissionRuleExpression, PermissionState, PermissionSubjectState,
+    PermissionContext, PermissionEntry, PermissionGroupRule, PermissionKey,
+    PermissionMetadataEntry, PermissionMetadataExpression, PermissionMetadataValue,
+    PermissionResolutionSource, PermissionRuleExpression, PermissionState, PermissionSubjectState,
 };
 use steel_utils::Identifier;
 use text_components::TextComponent;
 use tokio::{sync::oneshot, task::JoinHandle};
 
-pub(super) const MANAGE_ALL_PERMISSION: &str = "steel.permission.manage.*";
-pub(super) const GROUP_ALL_PERMISSION: &str = "steel.permission.group.*";
-pub(super) const METADATA_PERMISSION: &str = "steel.permission.metadata";
+pub(super) const MANAGE_ALL_PERMISSION: &str = "steel:permission.manage.*";
+pub(super) const GROUP_ALL_PERMISSION: &str = "steel:permission.group.*";
+pub(super) const METADATA_PERMISSION: &str = "steel:permission.metadata";
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::from_steel("perms"), |_| command())
@@ -54,6 +54,8 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
         .subcommand_permission(["groups", "list"])
         .subcommand_permission(["groups", "default", "add"])
         .subcommand_permission(["groups", "default", "remove"])
+        .subcommand_permission(["collection", "info"])
+        .subcommand_permission(["collection", "export"])
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -61,6 +63,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
         .then(user_command())
         .then(group_command())
         .then(groups_command())
+        .then(collection_command())
 }
 
 fn user_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -135,19 +138,19 @@ fn group_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
             .then(literal("delete").executes_suspended(group_delete))
             .then(
                 literal("allow").then(
-                    argument("permission", SteelArgumentType::permission_rule())
+                    argument("permission", SteelArgumentType::group_rule())
                         .executes_suspended(group_allow),
                 ),
             )
             .then(
                 literal("deny").then(
-                    argument("permission", SteelArgumentType::permission_rule())
+                    argument("permission", SteelArgumentType::group_rule())
                         .executes_suspended(group_deny),
                 ),
             )
             .then(
                 literal("unset").then(
-                    argument("permission", SteelArgumentType::group_permission_rule())
+                    argument("permission", SteelArgumentType::group_rule())
                         .executes_suspended(group_unset),
                 ),
             )
@@ -203,6 +206,22 @@ fn groups_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                             .executes_suspended(default_group_remove),
                     ),
                 ),
+        )
+}
+
+fn collection_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
+    literal("collection")
+        .then(
+            literal("export")
+                .executes_suspended(collection_export_all)
+                .then(
+                    argument("collection", SteelArgumentType::permission_collection())
+                        .executes_suspended(collection_export),
+                ),
+        )
+        .then(
+            argument("collection", SteelArgumentType::permission_collection())
+                .then(literal("info").executes_suspended(collection_info)),
         )
 }
 
@@ -269,7 +288,7 @@ enum Operation {
     GroupDelete(String),
     GroupPermission {
         group: String,
-        expression: PermissionRuleExpression,
+        rule: PermissionGroupRule,
         state: Option<PermissionState>,
     },
     GroupPriority {
@@ -292,6 +311,8 @@ enum Operation {
         group: String,
         add: bool,
     },
+    CollectionInfo(Identifier),
+    CollectionExport(Option<Identifier>),
 }
 
 impl Operation {
@@ -302,6 +323,7 @@ impl Operation {
             | Self::UserMetadataCheck { .. }
             | Self::GroupInfo(_)
             | Self::GroupInheritanceList(_)
+            | Self::CollectionInfo(_)
             | Self::GroupsList => CommandSuspensionOrder::Source,
             Self::UserPermission { .. }
             | Self::UserMetadata { .. }
@@ -312,7 +334,8 @@ impl Operation {
             | Self::GroupPriority { .. }
             | Self::GroupInheritance { .. }
             | Self::GroupMetadata { .. }
-            | Self::DefaultGroup { .. } => CommandSuspensionOrder::Global,
+            | Self::DefaultGroup { .. }
+            | Self::CollectionExport(_) => CommandSuspensionOrder::Global,
         }
     }
 }
@@ -488,16 +511,9 @@ fn group_permission(
     state: Option<PermissionState>,
 ) -> Result<PermsCommandSuspension, CommandSyntaxError> {
     let group = managed_group(context)?;
-    let expression = permission_expression(context)?;
-    require_permission_management(context.source(), expression.key())?;
-    start(
-        context,
-        Operation::GroupPermission {
-            group,
-            expression,
-            state,
-        },
-    )
+    let rule = context.permission_group_rule("permission")?.clone();
+    require_group_rule_management(context.source(), &rule)?;
+    start(context, Operation::GroupPermission { group, rule, state })
 }
 
 fn group_priority(
@@ -569,6 +585,34 @@ fn groups_list(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<PermsCommandSuspension, CommandSyntaxError> {
     start(context, Operation::GroupsList)
+}
+
+fn collection_info(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<PermsCommandSuspension, CommandSyntaxError> {
+    let collection = context
+        .permission_collection("collection")?
+        .as_identifier()
+        .clone();
+    require_collection_management(context.source(), &collection)?;
+    start(context, Operation::CollectionInfo(collection))
+}
+
+fn collection_export_all(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<PermsCommandSuspension, CommandSyntaxError> {
+    start(context, Operation::CollectionExport(None))
+}
+
+fn collection_export(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<PermsCommandSuspension, CommandSyntaxError> {
+    let collection = context
+        .permission_collection("collection")?
+        .as_identifier()
+        .clone();
+    require_collection_management(context.source(), &collection)?;
+    start(context, Operation::CollectionExport(Some(collection)))
 }
 
 fn default_group_add(
@@ -646,33 +690,64 @@ fn require_permission_management(
     source: &CommandSource,
     permission: &PermissionKey,
 ) -> Result<(), CommandSyntaxError> {
-    require_dynamic_permission(
-        source,
-        format!("steel.permission.manage.{}", permission.as_str()),
-    )
+    require_pattern_permission(source, &permission.manage_authority())
+}
+
+fn require_group_rule_management(
+    source: &CommandSource,
+    rule: &PermissionGroupRule,
+) -> Result<(), CommandSyntaxError> {
+    if source.can_manage_group_rule(rule) {
+        return Ok(());
+    }
+    Err(CommandSyntaxError::dynamic(format!(
+        "Requires permission {}",
+        group_rule_authority(rule)
+    )))
+}
+
+fn require_collection_management(
+    source: &CommandSource,
+    collection: &Identifier,
+) -> Result<(), CommandSyntaxError> {
+    require_permission_management(source, &PermissionKey::from_identifier(collection))
 }
 
 fn require_group_management(source: &CommandSource, group: &str) -> Result<(), CommandSyntaxError> {
-    require_dynamic_permission(source, format!("steel.permission.group.{group}"))
+    let key = management_key(format!("steel:permission.group.{group}"))?;
+    require_pattern_permission(source, &key)
 }
 
 fn require_metadata_management(source: &CommandSource) -> Result<(), CommandSyntaxError> {
-    require_dynamic_permission(source, METADATA_PERMISSION.to_owned())
+    let key = management_key(METADATA_PERMISSION.to_owned())?;
+    require_pattern_permission(source, &key)
 }
 
-fn require_dynamic_permission(
-    source: &CommandSource,
-    value: String,
-) -> Result<(), CommandSyntaxError> {
-    let key = PermissionKey::parse(value.clone()).map_err(|error| {
+fn management_key(value: String) -> Result<PermissionKey, CommandSyntaxError> {
+    PermissionKey::parse(value.clone()).map_err(|error| {
         CommandSyntaxError::dynamic(format!("Invalid management permission '{value}': {error}"))
-    })?;
-    if CommandPermissionSource::has_permission(source, &PermissionExpr::key(key)) {
+    })
+}
+
+fn require_pattern_permission(
+    source: &CommandSource,
+    key: &PermissionKey,
+) -> Result<(), CommandSyntaxError> {
+    if source.has_permission_pattern(key) {
         Ok(())
     } else {
         Err(CommandSyntaxError::dynamic(format!(
-            "Requires permission {value}"
+            "Requires permission {key}"
         )))
+    }
+}
+
+fn group_rule_authority(rule: &PermissionGroupRule) -> PermissionKey {
+    match rule {
+        PermissionGroupRule::Expression(expression) => expression.key().manage_authority(),
+        PermissionGroupRule::Collection(collection) => {
+            PermissionKey::from_identifier(collection).manage_authority()
+        }
     }
 }
 
@@ -733,11 +808,9 @@ async fn run_operation(
         Operation::GroupInfo(group) => group_info_operation(source, group),
         Operation::GroupCreate(group) => group_create_operation(source, group).await,
         Operation::GroupDelete(group) => group_delete_operation(source, group).await,
-        Operation::GroupPermission {
-            group,
-            expression,
-            state,
-        } => group_permission_operation(source, group, expression, state).await,
+        Operation::GroupPermission { group, rule, state } => {
+            group_permission_operation(source, group, rule, state).await
+        }
         Operation::GroupPriority { group, priority } => {
             group_priority_operation(source, group, priority).await
         }
@@ -752,6 +825,10 @@ async fn run_operation(
         } => group_metadata_operation(source, group, expression, value).await,
         Operation::GroupsList => Ok(groups_list_operation(source)),
         Operation::DefaultGroup { group, add } => default_group_operation(source, group, add).await,
+        Operation::CollectionInfo(collection) => collection_info_operation(source, collection),
+        Operation::CollectionExport(collection) => {
+            collection_export_operation(source, collection).await
+        }
     }
 }
 
@@ -777,7 +854,7 @@ async fn user_info_operation(
             .overrides()
             .entries()
             .iter()
-            .filter(|entry| can_manage_permission(source, entry.key()))
+            .filter(|entry| source.can_manage_permission(entry.key()))
             .map(|entry| {
                 format!(
                     "{}={}",
@@ -1145,22 +1222,22 @@ async fn group_delete_operation(
 async fn group_permission_operation(
     source: &CommandSource,
     group: String,
-    expression: PermissionRuleExpression,
+    rule: PermissionGroupRule,
     state: Option<PermissionState>,
 ) -> Result<OperationResult, CommandSyntaxError> {
     let edit_group = group.clone();
-    let edit_expression = expression.clone();
+    let edit_rule = rule.clone();
     let changed = source
         .server()
         .try_update_permission_groups(move |config| {
-            config::set_permission(config, &edit_group, &edit_expression, state)
+            config::set_permission(config, &edit_group, &edit_rule, state)
         })
         .await
         .map_err(dynamic_error)?;
     Ok(change_result(
         changed,
         format!(
-            "Group '{group}': {} {expression}",
+            "Group '{group}': {} {rule}",
             state.map_or("unset", state_name)
         ),
     ))
@@ -1283,6 +1360,100 @@ fn groups_list_operation(source: &CommandSource) -> OperationResult {
     }
 }
 
+fn collection_info_operation(
+    source: &CommandSource,
+    collection: Identifier,
+) -> Result<OperationResult, CommandSyntaxError> {
+    let collections = source.server().permission_groups.collections_snapshot();
+    let Some(entry) = collections.get(&collection) else {
+        return Err(CommandSyntaxError::dynamic(format!(
+            "Unknown permission collection '{collection}'"
+        )));
+    };
+    let members = entry
+        .members()
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    Ok(OperationResult {
+        result: count(members.len()),
+        messages: vec![TextComponent::plain(format!(
+            "Collection '{collection}': [{}]",
+            members.join(", ")
+        ))],
+    })
+}
+
+async fn collection_export_operation(
+    source: &CommandSource,
+    collection: Option<Identifier>,
+) -> Result<OperationResult, CommandSyntaxError> {
+    let collections = source.server().permission_groups.collections_snapshot();
+    let ids = match &collection {
+        Some(id) => {
+            if !collections.contains(id) {
+                return Err(CommandSyntaxError::dynamic(format!(
+                    "Unknown permission collection '{id}'"
+                )));
+            }
+            vec![id.clone()]
+        }
+        None => collections.ids().cloned().collect::<Vec<_>>(),
+    };
+    if ids.is_empty() {
+        return Ok(change_result(
+            false,
+            "No permission collections to export".to_owned(),
+        ));
+    }
+
+    let mut exported = Vec::with_capacity(ids.len());
+    for id in &ids {
+        let Some(entry) = collections.get(id) else {
+            continue;
+        };
+        let members = entry
+            .members()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        exported.push((id.clone(), members));
+    }
+
+    let before = source
+        .server()
+        .permission_groups
+        .collections_config_snapshot();
+    source
+        .server()
+        .update_permission_collections(move |config| {
+            for (id, members) in exported {
+                config
+                    .collections
+                    .entry(id.namespace.to_string())
+                    .or_default()
+                    .insert(id.path.to_string(), members);
+            }
+        })
+        .await
+        .map_err(dynamic_error)?;
+    let changed = before
+        != source
+            .server()
+            .permission_groups
+            .collections_config_snapshot();
+
+    let target = collection.map_or_else(
+        || format!("{} permission collections", ids.len()),
+        |id| format!("permission collection '{id}'"),
+    );
+    let mut result = change_result(changed, format!("Exported {target} to collections.toml"));
+    result.messages.push(TextComponent::plain(
+        "Exported collections are stored in collections.toml and are no longer updated automatically",
+    ));
+    Ok(result)
+}
+
 async fn default_group_operation(
     source: &CommandSource,
     group: String,
@@ -1306,24 +1477,15 @@ async fn default_group_operation(
 }
 
 fn manageable_expression(source: &CommandSource, expression: &str) -> bool {
-    PermissionRuleExpression::parse(expression)
-        .is_ok_and(|expression| can_manage_permission(source, expression.key()))
-}
-
-fn can_manage_permission(source: &CommandSource, permission: &PermissionKey) -> bool {
-    has_dynamic_permission(
-        source,
-        &format!("steel.permission.manage.{}", permission.as_str()),
-    )
+    source.can_manage_rule(expression)
 }
 
 fn can_manage_group(source: &CommandSource, group: &str) -> bool {
-    has_dynamic_permission(source, &format!("steel.permission.group.{group}"))
+    has_dynamic_permission(source, &format!("steel:permission.group.{group}"))
 }
 
 fn has_dynamic_permission(source: &CommandSource, value: &str) -> bool {
-    PermissionKey::parse(value)
-        .is_ok_and(|key| CommandPermissionSource::has_permission(source, &PermissionExpr::key(key)))
+    PermissionKey::parse(value).is_ok_and(|key| source.has_permission_pattern(&key))
 }
 
 const fn state_name(state: PermissionState) -> &'static str {
@@ -1482,9 +1644,9 @@ mod tests {
             MANAGE_ALL_PERMISSION,
             GROUP_ALL_PERMISSION,
             METADATA_PERMISSION,
-            "steel.command.perms.user.allow",
-            "steel.command.perms.user.metadata.set",
-            "steel.command.perms.group.inherit.add",
+            "steel:command.perms.user.allow",
+            "steel:command.perms.user.metadata.set",
+            "steel:command.perms.group.inherit.add",
         ] {
             assert!(permissions.contains(&expected), "missing {expected}");
         }

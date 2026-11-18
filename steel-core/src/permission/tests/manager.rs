@@ -4,9 +4,9 @@ use futures::future::BoxFuture;
 use steel_utils::locks::SyncMutex;
 
 use super::super::{
-    PermissionGroupConfig, PermissionGroupManager, PermissionGroupManagerError,
-    PermissionGroupStore, PermissionGroupStoreError, PermissionGroupUpdateError,
-    PermissionGroupsConfig,
+    PermissionCollectionsConfig, PermissionGroupConfig, PermissionGroupManager,
+    PermissionGroupManagerError, PermissionGroupStore, PermissionGroupStoreError,
+    PermissionGroupUpdateError, PermissionGroupsConfig,
 };
 
 #[derive(Debug)]
@@ -25,6 +25,13 @@ impl PermissionGroupStore for CapturingStore {
             Ok(())
         })
     }
+
+    fn save_collections(
+        &self,
+        _config: PermissionCollectionsConfig,
+    ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 #[derive(Debug)]
@@ -37,10 +44,21 @@ impl PermissionGroupStore for FailingStore {
     ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>> {
         Box::pin(async { Err(PermissionGroupStoreError::new("test store failure")) })
     }
+
+    fn save_collections(
+        &self,
+        _config: PermissionCollectionsConfig,
+    ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>> {
+        Box::pin(async { Err(PermissionGroupStoreError::new("test store failure")) })
+    }
 }
 
 fn manager(store: Option<Arc<dyn PermissionGroupStore>>) -> PermissionGroupManager {
-    match PermissionGroupManager::new(PermissionGroupsConfig::default(), store) {
+    match PermissionGroupManager::new(
+        PermissionGroupsConfig::default(),
+        PermissionCollectionsConfig::default(),
+        store,
+    ) {
         Ok(manager) => manager,
         Err(error) => panic!("default permission groups should resolve: {error}"),
     }
@@ -51,7 +69,7 @@ fn config_with_builder() -> PermissionGroupsConfig {
     config.groups.insert(
         "builder".to_owned(),
         PermissionGroupConfig {
-            allow: vec!["steel.build".to_owned()],
+            allow: vec!["steel:build".to_owned()],
             ..PermissionGroupConfig::default()
         },
     );

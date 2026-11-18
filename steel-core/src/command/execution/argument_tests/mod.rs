@@ -36,7 +36,7 @@ use text_components::{TextComponent, content::Content};
 
 use crate::bootstrap::init_globals;
 use crate::entity::EntityAnchor;
-use crate::permission::{PermissionExpr, PermissionState};
+use crate::permission::{PermissionExpr, PermissionKey, PermissionState};
 
 use super::argument::SteelArgumentParser;
 
@@ -155,6 +155,10 @@ impl CommandArgumentSource for TestSource {
 
 impl CommandPermissionSource for TestSource {
     fn permission_state(&self, _permission: &PermissionExpr) -> Option<PermissionState> {
+        Some(PermissionState::Allow)
+    }
+
+    fn permission_pattern_state(&self, _key: &PermissionKey) -> Option<PermissionState> {
         Some(PermissionState::Allow)
     }
 }

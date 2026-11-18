@@ -56,13 +56,6 @@ impl CommandRegistration {
         self
     }
 
-    /// Allows an unset root permission while still respecting an explicit deny.
-    #[must_use]
-    pub fn default_access(mut self) -> Self {
-        self.inner = self.inner.default_access();
-        self
-    }
-
     /// Replaces the permission expression derived from the command ID.
     #[must_use]
     pub fn permission(mut self, permission: PermissionExpr) -> Self {

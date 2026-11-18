@@ -1,16 +1,18 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    error::Error,
     fmt,
+    str::FromStr,
 };
 
 use serde::{Deserialize, Serialize};
+use steel_utils::Identifier;
 
 use super::{
-    PermissionEntry, PermissionKeyError, PermissionMetadataEntry, PermissionMetadataExpression,
+    PermissionCollectionError, PermissionCollections, PermissionEntry, PermissionKey,
+    PermissionKeyError, PermissionMetadataEntry, PermissionMetadataExpression,
     PermissionMetadataExpressionError, PermissionMetadataSet, PermissionMetadataValue,
     PermissionRuleExpression, PermissionRuleExpressionError, PermissionSegment, PermissionSet,
-    generated_groups,
+    PermissionState, generated_collections,
 };
 
 /// Parsed `groups.toml` permission configuration.
@@ -27,29 +29,17 @@ pub struct PermissionGroupsConfig {
     pub groups: BTreeMap<String, PermissionGroupConfig>,
 }
 
-impl PermissionGroupsConfig {
-    /// Inserts the generated vanilla groups as empty configurable groups.
-    ///
-    /// Existing groups keep their configured edits. The vanilla defaults are
-    /// provided by the derived fallback, not by these groups' own rules.
-    pub fn apply_generated_groups(&mut self) {
-        generated_groups::insert_groups(&mut self.groups);
-    }
-}
-
 impl Default for PermissionGroupsConfig {
     fn default() -> Self {
-        let mut config = Self {
-            default_groups: vec![generated_groups::DEFAULT_GROUP.to_owned()],
-            op_group: generated_groups::OP_GROUP.to_owned(),
-            command_block_groups: generated_groups::COMMAND_BLOCK_GROUPS
+        Self {
+            default_groups: vec![generated_collections::DEFAULT_GROUP.to_owned()],
+            op_group: generated_collections::OP_GROUP.to_owned(),
+            command_block_groups: generated_collections::COMMAND_BLOCK_GROUPS
                 .iter()
                 .map(|group| (*group).to_owned())
                 .collect(),
-            groups: BTreeMap::new(),
-        };
-        config.apply_generated_groups();
-        config
+            groups: generated_collections::default_groups(),
+        }
     }
 }
 
@@ -61,9 +51,9 @@ pub struct PermissionGroupConfig {
     pub priority: i32,
     /// Parent groups inherited by this group.
     pub inherits: Vec<String>,
-    /// Permission rule expressions explicitly allowed by this group.
+    /// Permission rule expressions or collection references explicitly allowed by this group.
     pub allow: Vec<String>,
-    /// Permission rule expressions explicitly denied by this group.
+    /// Permission rule expressions or collection references explicitly denied by this group.
     pub deny: Vec<String>,
     /// Ordered permission metadata rules.
     pub metadata: Vec<PermissionMetadataRuleConfig>,
@@ -79,6 +69,79 @@ pub struct PermissionMetadataRuleConfig {
     pub value: PermissionMetadataValue,
 }
 
+/// One `allow`/`deny` rule inside a permission group.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PermissionGroupRule {
+    /// A reference to a code-owned permission collection.
+    Collection(Identifier),
+    /// A permission rule expression.
+    Expression(PermissionRuleExpression),
+}
+
+impl PermissionGroupRule {
+    /// Parses a collection reference (`#namespace:name`) or a permission rule expression.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the collection reference or rule expression is invalid.
+    pub fn parse(value: impl Into<String>) -> Result<Self, PermissionGroupRuleError> {
+        let value = value.into();
+        if let Some(reference) = value.strip_prefix('#') {
+            return Identifier::from_str(reference)
+                .map(Self::Collection)
+                .map_err(
+                    |reason| PermissionGroupRuleError::InvalidCollectionReference { value, reason },
+                );
+        }
+        PermissionRuleExpression::parse(value)
+            .map(Self::Expression)
+            .map_err(PermissionGroupRuleError::from)
+    }
+
+    /// Returns the permission rule expression, or `None` for a collection reference.
+    #[must_use]
+    pub const fn expression(&self) -> Option<&PermissionRuleExpression> {
+        match self {
+            Self::Expression(expression) => Some(expression),
+            Self::Collection(_) => None,
+        }
+    }
+
+    /// Returns the referenced collection, or `None` for a permission rule expression.
+    #[must_use]
+    pub const fn collection(&self) -> Option<&Identifier> {
+        match self {
+            Self::Collection(identifier) => Some(identifier),
+            Self::Expression(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for PermissionGroupRule {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Collection(identifier) => write!(formatter, "#{identifier}"),
+            Self::Expression(expression) => expression.fmt(formatter),
+        }
+    }
+}
+
+/// Invalid permission group rule.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum PermissionGroupRuleError {
+    /// The permission rule expression is invalid.
+    #[error(transparent)]
+    InvalidExpression(#[from] PermissionRuleExpressionError),
+    /// The collection reference is invalid.
+    #[error("invalid permission collection reference '{value}': {reason}")]
+    InvalidCollectionReference {
+        /// Invalid rule text.
+        value: String,
+        /// Identifier parse failure reason.
+        reason: &'static str,
+    },
+}
+
 /// Validated, parsed permission groups.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PermissionGroups {
@@ -87,26 +150,14 @@ pub struct PermissionGroups {
 }
 
 impl PermissionGroups {
-    /// Validates and parses permission group configuration without command fallbacks.
+    /// Validates and parses permission group configuration, expanding collection references.
     ///
     /// # Errors
     ///
     /// Returns an error for invalid names, rules, default groups, or inheritance.
-    pub fn from_config(config: PermissionGroupsConfig) -> Result<Self, PermissionConfigError> {
-        Self::from_config_with_fallbacks(config, &BTreeMap::new())
-    }
-
-    /// Validates and parses permission group configuration.
-    ///
-    /// `command_fallbacks` maps a vanilla group name to the command permission keys
-    /// declared for it. Those keys join the group's derived allow-only fallback.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for invalid names, rules, default groups, or inheritance.
-    pub fn from_config_with_fallbacks(
+    pub fn from_config(
         config: PermissionGroupsConfig,
-        command_fallbacks: &BTreeMap<String, Vec<String>>,
+        collections: &PermissionCollections,
     ) -> Result<Self, PermissionConfigError> {
         for group in &config.default_groups {
             validate_group_name(group)?;
@@ -129,13 +180,8 @@ impl PermissionGroups {
         let mut groups = BTreeMap::new();
         for (name, group) in config.groups {
             validate_group_name(&name)?;
-            let permissions = parse_group_permissions(&name, group.allow, group.deny)?;
+            let permissions = parse_group_permissions(&name, group.allow, group.deny, collections)?;
             let metadata = parse_group_metadata(&name, group.metadata)?;
-            let fallback = parse_group_fallback(
-                &name,
-                group.priority,
-                command_fallbacks.get(&name).map(Vec::as_slice),
-            )?;
             groups.insert(
                 name,
                 PermissionGroup {
@@ -143,7 +189,6 @@ impl PermissionGroups {
                     inherits: group.inherits,
                     permissions,
                     metadata,
-                    fallback,
                 },
             );
         }
@@ -174,8 +219,6 @@ impl PermissionGroups {
     /// Builds effective permissions from defaults, assigned groups, and subject overrides.
     ///
     /// Unknown assigned groups have no effect. Each inherited group contributes at most once.
-    /// A permission unset by every group and override resolves against the groups' pristine
-    /// allow-only fallbacks.
     #[must_use]
     pub fn effective_permissions(
         &self,
@@ -184,21 +227,16 @@ impl PermissionGroups {
     ) -> PermissionSet {
         let mut effective = PermissionSet::new();
         let mut appended_groups = BTreeSet::new();
-        let mut fallback = PermissionSet::new();
-        let mut appended_fallbacks = BTreeSet::new();
 
         for group in &self.default_groups {
             self.append_group(group, &mut effective, &mut appended_groups);
-            self.append_group_fallback(group, &mut fallback, &mut appended_fallbacks);
         }
         for group in assigned_groups {
             self.append_group(group, &mut effective, &mut appended_groups);
-            self.append_group_fallback(group, &mut fallback, &mut appended_fallbacks);
         }
         for entry in subject_permissions.entries() {
             effective.push(entry.clone());
         }
-        effective.set_fallback(fallback);
         effective
     }
 
@@ -265,83 +303,62 @@ impl PermissionGroups {
             effective.push_group(entry.clone(), group_name, group.priority);
         }
     }
-
-    fn append_group_fallback(
-        &self,
-        group_name: &str,
-        fallback: &mut PermissionSet,
-        appended_groups: &mut BTreeSet<String>,
-    ) {
-        if !appended_groups.insert(group_name.to_owned()) {
-            return;
-        }
-        let Some(group) = self.groups.get(group_name) else {
-            return;
-        };
-        for parent in &group.inherits {
-            self.append_group_fallback(parent, fallback, appended_groups);
-        }
-        for entry in group.fallback.entries() {
-            fallback.push_group(entry.clone(), group_name, group.priority);
-        }
-    }
 }
 
 fn parse_group_permissions(
     group: &str,
     allow: Vec<String>,
     deny: Vec<String>,
+    collections: &PermissionCollections,
 ) -> Result<PermissionSet, PermissionConfigError> {
     let mut permissions = PermissionSet::new();
     for rule in allow {
-        let expression = parse_group_rule(group, rule)?;
-        let (key, context) = expression.into_parts();
-        permissions.push(PermissionEntry::allow_with_context(key, context));
+        push_group_rule(
+            &mut permissions,
+            group,
+            rule,
+            PermissionState::Allow,
+            collections,
+        )?;
     }
     for rule in deny {
-        let expression = parse_group_rule(group, rule)?;
-        let (key, context) = expression.into_parts();
-        permissions.push(PermissionEntry::deny_with_context(key, context));
+        push_group_rule(
+            &mut permissions,
+            group,
+            rule,
+            PermissionState::Deny,
+            collections,
+        )?;
     }
     Ok(permissions)
 }
 
-/// Builds a group's derived allow-only fallback from the generated vanilla
-/// defaults and the command permissions declared for the group.
-fn parse_group_fallback(
+fn push_group_rule(
+    permissions: &mut PermissionSet,
     group: &str,
-    priority: i32,
-    command_keys: Option<&[String]>,
-) -> Result<PermissionSet, PermissionConfigError> {
-    let mut fallback = PermissionSet::new();
-    if let Some(keys) = generated_groups::fallback(group) {
-        push_fallback_rules(
-            &mut fallback,
-            group,
-            priority,
-            keys.iter().map(|key| (*key).to_owned()),
-        )?;
-    }
-    if let Some(keys) = command_keys {
-        push_fallback_rules(&mut fallback, group, priority, keys.iter().cloned())?;
-    }
-    Ok(fallback)
-}
-
-fn push_fallback_rules(
-    fallback: &mut PermissionSet,
-    group: &str,
-    priority: i32,
-    rules: impl IntoIterator<Item = String>,
+    rule: String,
+    state: PermissionState,
+    collections: &PermissionCollections,
 ) -> Result<(), PermissionConfigError> {
-    for rule in rules {
-        let expression = parse_group_rule(group, rule)?;
-        let (key, context) = expression.into_parts();
-        fallback.push_group(
-            PermissionEntry::allow_with_context(key, context),
-            group,
-            priority,
-        );
+    let rule = PermissionGroupRule::parse(rule).map_err(|source| {
+        PermissionConfigError::InvalidPermissionExpression {
+            group: group.to_owned(),
+            source,
+        }
+    })?;
+    match rule {
+        PermissionGroupRule::Expression(expression) => {
+            let (key, context) = expression.into_parts();
+            permissions.push(PermissionEntry::new_with_context(key, context, state));
+        }
+        PermissionGroupRule::Collection(identifier) => {
+            for permission in collections.expand(&identifier) {
+                permissions.push(PermissionEntry::new(
+                    PermissionKey::from_identifier(&permission),
+                    state,
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -364,18 +381,6 @@ fn parse_group_metadata(
         ));
     }
     Ok(metadata)
-}
-
-fn parse_group_rule(
-    group: &str,
-    rule: String,
-) -> Result<PermissionRuleExpression, PermissionConfigError> {
-    PermissionRuleExpression::parse(rule).map_err(|source| {
-        PermissionConfigError::InvalidPermissionExpression {
-            group: group.to_owned(),
-            source,
-        }
-    })
 }
 
 fn validate_group_name(group: &str) -> Result<(), PermissionConfigError> {
@@ -454,7 +459,6 @@ pub struct PermissionGroup {
     inherits: Vec<String>,
     permissions: PermissionSet,
     metadata: PermissionMetadataSet,
-    fallback: PermissionSet,
 }
 
 impl PermissionGroup {
@@ -481,22 +485,19 @@ impl PermissionGroup {
     pub const fn metadata(&self) -> &PermissionMetadataSet {
         &self.metadata
     }
-
-    /// Returns this group's pristine allow-only fallback entries.
-    #[must_use]
-    pub const fn fallback(&self) -> &PermissionSet {
-        &self.fallback
-    }
 }
 
 /// Invalid permission group configuration.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PermissionConfigError {
     /// A default group does not exist in the group map.
+    #[error("default permission group '{0}' is not configured")]
     MissingDefaultGroup(String),
     /// A built-in required group does not exist in the group map.
+    #[error("required permission group '{0}' is not configured")]
     MissingRequiredGroup(String),
     /// A group inherits a group that does not exist.
+    #[error("permission group '{group}' inherits unknown group '{inherited}'")]
     MissingInheritedGroup {
         /// Group containing the invalid edge.
         group: String,
@@ -504,15 +505,18 @@ pub enum PermissionConfigError {
         inherited: String,
     },
     /// Group inheritance contains a cycle, including the repeated final name.
+    #[error("permission group inheritance cycle: {}", .0.join(" -> "))]
     InheritedGroupCycle(Vec<String>),
     /// A group contains an invalid permission rule expression.
+    #[error("permission group '{group}' contains invalid permission expression: {source}")]
     InvalidPermissionExpression {
         /// Group containing the invalid expression.
         group: String,
         /// Parse error.
-        source: PermissionRuleExpressionError,
+        source: PermissionGroupRuleError,
     },
     /// A group contains an invalid metadata expression.
+    #[error("permission group '{group}' contains invalid metadata expression: {source}")]
     InvalidMetadataExpression {
         /// Group containing the invalid expression.
         group: String,
@@ -520,54 +524,14 @@ pub enum PermissionConfigError {
         source: PermissionMetadataExpressionError,
     },
     /// A group name is not a valid command-usable segment.
+    #[error("permission group name '{group}' is invalid: {source}")]
     InvalidGroupName {
         /// Invalid group name.
         group: String,
         /// Parse error.
         source: PermissionKeyError,
     },
+    /// A permission collection configuration or reference is invalid.
+    #[error(transparent)]
+    Collection(#[from] PermissionCollectionError),
 }
-
-impl fmt::Display for PermissionConfigError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingDefaultGroup(group) => {
-                write!(
-                    formatter,
-                    "default permission group '{group}' is not configured"
-                )
-            }
-            Self::MissingRequiredGroup(group) => {
-                write!(
-                    formatter,
-                    "required permission group '{group}' is not configured"
-                )
-            }
-            Self::MissingInheritedGroup { group, inherited } => write!(
-                formatter,
-                "permission group '{group}' inherits unknown group '{inherited}'"
-            ),
-            Self::InheritedGroupCycle(cycle) => write!(
-                formatter,
-                "permission group inheritance cycle: {}",
-                cycle.join(" -> ")
-            ),
-            Self::InvalidPermissionExpression { group, source } => write!(
-                formatter,
-                "permission group '{group}' contains invalid permission expression: {source}"
-            ),
-            Self::InvalidMetadataExpression { group, source } => write!(
-                formatter,
-                "permission group '{group}' contains invalid metadata expression: {source}"
-            ),
-            Self::InvalidGroupName { group, source } => {
-                write!(
-                    formatter,
-                    "permission group name '{group}' is invalid: {source}"
-                )
-            }
-        }
-    }
-}
-
-impl Error for PermissionConfigError {}

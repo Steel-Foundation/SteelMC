@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs,
-};
+use std::{collections::BTreeMap, fs};
 
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -18,10 +15,10 @@ struct Group {
 
 /// Compiles the extracted vanilla permission levels into a Rust module.
 ///
-/// The generated module exposes the vanilla group names, a cumulative allow-only
-/// fallback per group, and a helper that inserts the vanilla groups as empty
-/// configurable groups. Configured groups win over the fallback, which only fills
-/// permissions left unset by configuration.
+/// The generated module exposes the vanilla group names, one collection identifier
+/// constant per level, one code-owned collection per level, and a helper that builds
+/// the default vanilla groups referencing those collections. Collections hold the
+/// level's own commands; cumulative behaviour comes from the group inheritance chain.
 pub fn build() -> String {
     println!("cargo:rerun-if-changed=build/permissions_group.json");
     let json = fs::read_to_string("build/permissions_group.json")
@@ -48,32 +45,23 @@ pub fn build() -> String {
         .collect::<BTreeMap<_, _>>();
     let group_names = groups.keys().cloned().collect::<Vec<_>>();
 
-    let mut group_constants = TokenStream::new();
-    for name in &group_names {
-        let constant = level_constant(name);
-        group_constants.extend(quote! {
-            #[doc = #name]
-            #[doc = "permission level group name."]
-            pub static #constant: &str = #name;
-        });
-    }
-
-    let mut fallback_arms = TokenStream::new();
-    for name in &group_names {
-        let fallback = cumulative_fallback(name, &groups);
-        fallback_arms.extend(quote! {
-            #name => Some(&[#(#fallback),*]),
-        });
-    }
+    let group_constants = group_name_constants(&group_names);
+    let collection_constants = collection_identifier_constants(&group_names);
+    let collection_entries = collection_entries(&group_names, &groups);
+    let default_group_entries = default_group_entries(&group_names, &groups);
 
     let output = quote! {
-        //! Generated vanilla permission groups. Do not edit by hand.
+        //! Generated vanilla permission groups and collections. Do not edit by hand.
 
         use std::collections::BTreeMap;
+
+        use steel_utils::Identifier;
 
         use crate::permission::PermissionGroupConfig;
 
         #group_constants
+
+        #collection_constants
 
         /// Vanilla permission level applied to every player by default.
         pub static DEFAULT_GROUP: &str = #default;
@@ -84,30 +72,105 @@ pub fn build() -> String {
         /// Vanilla permission level names.
         pub static GROUPS: &[&str] = &[#(#group_names),*];
 
-        /// Returns the cumulative vanilla command fallback for `group`.
+        /// Returns the code-owned vanilla collections, keyed by `minecraft:<level>`.
         ///
-        /// The fallback is allow-only and resolved through the vanilla inheritance
-        /// chain, so a level already contains the commands of every level below it.
-        pub fn fallback(group: &str) -> Option<&'static [&'static str]> {
-            match group {
-                #fallback_arms
-                _ => None,
-            }
+        /// Each collection holds the commands declared for that level only. Levels
+        /// inherit cumulatively through the generated default groups.
+        pub fn collections() -> Vec<(Identifier, Vec<Identifier>)> {
+            vec![
+                #collection_entries
+            ]
         }
 
-        /// Inserts the vanilla groups as empty configurable groups.
-        ///
-        /// Existing groups keep their configured edits. The vanilla defaults come
-        /// from [`fallback`], not from these groups' own rules.
-        pub fn insert_groups(groups: &mut BTreeMap<String, PermissionGroupConfig>) {
-            for name in GROUPS {
-                groups
-                    .entry((*name).to_owned())
-                    .or_insert_with(PermissionGroupConfig::default);
-            }
+        /// Returns the default vanilla groups referencing the generated collections.
+        pub fn default_groups() -> BTreeMap<String, PermissionGroupConfig> {
+            let mut groups = BTreeMap::new();
+            #default_group_entries
+            groups
         }
     };
     output.to_string()
+}
+
+/// Emits the `&str` constants holding each vanilla permission level name.
+fn group_name_constants(group_names: &[String]) -> TokenStream {
+    let mut tokens = TokenStream::new();
+    for name in group_names {
+        let constant = level_constant(name);
+        tokens.extend(quote! {
+            #[doc = #name]
+            #[doc = "permission level group name."]
+            pub static #constant: &str = #name;
+        });
+    }
+    tokens
+}
+
+/// Emits the `Identifier` constants for each vanilla permission collection.
+fn collection_identifier_constants(group_names: &[String]) -> TokenStream {
+    let mut tokens = TokenStream::new();
+    for name in group_names {
+        let collection = collection_constant(name);
+        tokens.extend(quote! {
+            #[doc = #name]
+            #[doc = "vanilla permission collection identifier."]
+            pub const #collection: Identifier = Identifier::new_static("minecraft", #name);
+        });
+    }
+    tokens
+}
+
+/// Emits the `(Identifier, Vec<Identifier>)` entries for the code-owned collections.
+fn collection_entries(group_names: &[String], groups: &BTreeMap<String, Group>) -> TokenStream {
+    let mut tokens = TokenStream::new();
+    for name in group_names {
+        let collection = collection_constant(name);
+        let permissions = groups.get(name).map_or_else(Vec::new, |group| {
+            group
+                .allow
+                .iter()
+                .map(|key| permission_identifier(key))
+                .collect()
+        });
+        let permissions = permissions
+            .iter()
+            .map(|(namespace, path)| quote! { Identifier::new_static(#namespace, #path) })
+            .collect::<Vec<_>>();
+        tokens.extend(quote! {
+            (
+                #collection,
+                vec![#(#permissions),*],
+            ),
+        });
+    }
+    tokens
+}
+
+/// Emits the default vanilla group configs referencing the generated collections.
+fn default_group_entries(group_names: &[String], groups: &BTreeMap<String, Group>) -> TokenStream {
+    let mut tokens = TokenStream::new();
+    for name in group_names {
+        let inherits = groups
+            .get(name)
+            .and_then(|group| group.inherits.clone())
+            .into_iter()
+            .collect::<Vec<_>>();
+        let has_allow = groups
+            .get(name)
+            .is_some_and(|group| !group.allow.is_empty());
+        let allow = has_allow.then(|| format!("#minecraft:{name}")).into_iter();
+        tokens.extend(quote! {
+            groups.insert(
+                #name.to_owned(),
+                PermissionGroupConfig {
+                    inherits: vec![#(#inherits.to_owned()),*],
+                    allow: vec![#(#allow.to_owned()),*],
+                    ..PermissionGroupConfig::default()
+                },
+            );
+        });
+    }
+    tokens
 }
 
 fn read_string(root: &serde_json::Map<String, Value>, key: &str) -> String {
@@ -125,31 +188,17 @@ fn level_constant(name: &str) -> Ident {
     )
 }
 
-fn cumulative_fallback(name: &str, groups: &BTreeMap<String, Group>) -> Vec<String> {
-    let mut fallback = Vec::new();
-    let mut visited = BTreeSet::new();
-    collect_fallback(name, groups, &mut visited, &mut fallback);
-    fallback
+fn collection_constant(name: &str) -> Ident {
+    Ident::new(
+        &format!("{}_COLLECTION", name.to_shouty_snake_case()),
+        Span::call_site(),
+    )
 }
 
-fn collect_fallback(
-    name: &str,
-    groups: &BTreeMap<String, Group>,
-    visited: &mut BTreeSet<String>,
-    fallback: &mut Vec<String>,
-) {
-    if !visited.insert(name.to_owned()) {
-        return;
-    }
-    let Some(group) = groups.get(name) else {
-        return;
-    };
-    if let Some(parent) = &group.inherits {
-        collect_fallback(parent, groups, visited, fallback);
-    }
-    for rule in &group.allow {
-        if !fallback.contains(rule) {
-            fallback.push(rule.clone());
-        }
+/// Splits a dotted extracted permission key into its namespace and path.
+fn permission_identifier(key: &str) -> (String, String) {
+    match key.split_once('.') {
+        Some((namespace, path)) => (namespace.to_owned(), path.to_owned()),
+        None => ("minecraft".to_owned(), key.to_owned()),
     }
 }

@@ -1,20 +1,23 @@
 //! Permission command arguments and discovery-only suggestions.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    str::FromStr,
+};
 
 use steel_protocol::packets::game::{
     ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
     SuggestionType as ProtocolSuggestionType,
 };
-use steel_utils::{DowncastType, DowncastTypeKey};
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 use crate::{
     command::brigadier::{
         CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
     },
     permission::{
-        PermissionMetadataExpression, PermissionRuleContext, PermissionRuleExpression,
-        PermissionSegment,
+        PermissionGroupRule, PermissionMetadataExpression, PermissionRuleContext,
+        PermissionRuleExpression, PermissionSegment,
     },
 };
 
@@ -35,6 +38,12 @@ unsafe impl DowncastType for PermissionMetadataExpression {
         DowncastTypeKey::new("steel:command/value/permission_metadata_expression");
 }
 
+// SAFETY: This Steel-owned key uniquely identifies the concrete parsed value.
+unsafe impl DowncastType for PermissionGroupRule {
+    const TYPE_KEY: DowncastTypeKey =
+        DowncastTypeKey::new("steel:command/value/permission_group_rule");
+}
+
 /// Validated permission group name.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PermissionGroupName(Box<str>);
@@ -48,6 +57,22 @@ impl PermissionGroupName {
 // SAFETY: This Steel-owned key uniquely identifies the concrete parsed value.
 unsafe impl DowncastType for PermissionGroupName {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:command/value/permission_group");
+}
+
+/// Validated permission collection id.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PermissionCollectionName(Identifier);
+
+impl PermissionCollectionName {
+    pub(crate) const fn as_identifier(&self) -> &Identifier {
+        &self.0
+    }
+}
+
+// SAFETY: This Steel-owned key uniquely identifies the concrete parsed value.
+unsafe impl DowncastType for PermissionCollectionName {
+    const TYPE_KEY: DowncastTypeKey =
+        DowncastTypeKey::new("steel:command/value/permission_collection");
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,12 +97,6 @@ impl PermissionRuleParser {
     pub(super) const fn user_owned() -> Self {
         Self {
             suggestions: PermissionSuggestionScope::UserOwned,
-        }
-    }
-
-    pub(super) const fn group_owned() -> Self {
-        Self {
-            suggestions: PermissionSuggestionScope::GroupOwned,
         }
     }
 }
@@ -127,6 +146,68 @@ impl SteelArgumentParser for PermissionRuleParser {
                         .group_permission_rule_suggestions(group.as_str())
                 }),
         };
+        suggest_expression(builder, context.source(), expressions);
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        permission_expression_argument()
+    }
+}
+
+/// Parser for one group `allow`/`deny`/`unset` rule: a permission rule
+/// expression or a `#namespace:name` collection reference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PermissionGroupRuleParser;
+
+impl PermissionGroupRuleParser {
+    pub(super) const fn new() -> Self {
+        Self
+    }
+}
+
+// SAFETY: This Steel-owned key uniquely identifies the concrete parser.
+unsafe impl DowncastType for PermissionGroupRuleParser {
+    const TYPE_KEY: DowncastTypeKey =
+        DowncastTypeKey::new("steel:command/parser/permission_group_rule");
+}
+
+impl SteelArgumentParser for PermissionGroupRuleParser {
+    type Value = PermissionGroupRule;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        let value = reader.read_unquoted_token();
+        PermissionGroupRule::parse(value).map_err(|error| {
+            reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+                error.to_string().into(),
+            )))
+        })
+    }
+
+    fn list_suggestions(
+        &self,
+        context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        let mut expressions = context
+            .argument("group")
+            .ok()
+            .and_then(|value| value.downcast_ref::<PermissionGroupName>())
+            .map_or_else(Vec::new, |group| {
+                context
+                    .source()
+                    .group_permission_rule_suggestions(group.as_str())
+            });
+        expressions.extend(
+            context
+                .source()
+                .permission_collection_names()
+                .into_iter()
+                .map(|collection| format!("#{collection}")),
+        );
         suggest_expression(builder, context.source(), expressions);
     }
 
@@ -262,6 +343,54 @@ impl SteelArgumentParser for PermissionGroupParser {
         for group in context.source().permission_group_names() {
             if group.to_lowercase().starts_with(&prefix) {
                 builder.suggest(group);
+            }
+        }
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        permission_group_argument()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PermissionCollectionParser;
+
+// SAFETY: This Steel-owned key uniquely identifies the concrete parser.
+unsafe impl DowncastType for PermissionCollectionParser {
+    const TYPE_KEY: DowncastTypeKey =
+        DowncastTypeKey::new("steel:command/parser/permission_collection");
+}
+
+impl SteelArgumentParser for PermissionCollectionParser {
+    type Value = PermissionCollectionName;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        let value = reader.read_unquoted_string();
+        let identifier = Identifier::from_str(value).map_err(|error| {
+            reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(error.into())))
+        })?;
+        if !source.permission_collection_names().contains(&identifier) {
+            return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
+                format!("Unknown permission collection '{value}'").into(),
+            ))));
+        }
+        Ok(PermissionCollectionName(identifier))
+    }
+
+    fn list_suggestions(
+        &self,
+        context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        let prefix = builder.remaining_lowercase().to_owned();
+        for collection in context.source().permission_collection_names() {
+            let text = collection.to_string();
+            if text.to_lowercase().starts_with(&prefix) {
+                builder.suggest(text);
             }
         }
     }

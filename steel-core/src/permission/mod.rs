@@ -1,5 +1,6 @@
 //! Steel's internal permission evaluation model.
 
+mod collection;
 mod context;
 mod expression;
 mod groups;
@@ -12,12 +13,17 @@ mod subject;
 
 #[expect(warnings)]
 #[rustfmt::skip]
-#[path = "generated/groups.rs"]
-mod generated_groups;
+#[path = "generated/collections.rs"]
+mod generated_collections;
 
-pub use generated_groups::{
-    ADMINS_GROUP, ALL_GROUP, COMMAND_BLOCK_GROUPS, DEFAULT_GROUP, GAMEMASTERS_GROUP, GROUPS,
-    MODERATORS_GROUP, OP_GROUP, OWNERS_GROUP,
+pub use collection::{
+    PermissionCollection, PermissionCollectionError, PermissionCollectionMember,
+    PermissionCollections, PermissionCollectionsConfig,
+};
+pub use generated_collections::{
+    ADMINS_COLLECTION, ADMINS_GROUP, ALL_COLLECTION, ALL_GROUP, COMMAND_BLOCK_GROUPS,
+    DEFAULT_GROUP, GAMEMASTERS_COLLECTION, GAMEMASTERS_GROUP, GROUPS, MODERATORS_COLLECTION,
+    MODERATORS_GROUP, OP_GROUP, OWNERS_COLLECTION, OWNERS_GROUP,
 };
 
 pub use context::{
@@ -26,8 +32,9 @@ pub use context::{
 };
 pub use expression::PermissionExpr;
 pub use groups::{
-    PermissionConfigError, PermissionGroup, PermissionGroupConfig, PermissionGroups,
-    PermissionGroupsConfig, PermissionMetadataRuleConfig,
+    PermissionConfigError, PermissionGroup, PermissionGroupConfig, PermissionGroupRule,
+    PermissionGroupRuleError, PermissionGroups, PermissionGroupsConfig,
+    PermissionMetadataRuleConfig,
 };
 pub use key::{PermissionKey, PermissionKeyError, PermissionSegment};
 pub use manager::{

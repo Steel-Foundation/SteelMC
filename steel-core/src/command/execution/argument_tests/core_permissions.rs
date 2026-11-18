@@ -181,12 +181,12 @@ fn owned_permission_arguments_scope_unset_suggestions_to_prior_arguments() {
     );
     assert!(
         dispatcher
-            .register(literal("group").then(
-                argument("group", SteelArgumentType::permission_group(true)).then(argument(
-                    "permission",
-                    SteelArgumentType::group_permission_rule(),
-                )),
-            ))
+            .register(
+                literal("group").then(
+                    argument("group", SteelArgumentType::permission_group(true))
+                        .then(argument("permission", SteelArgumentType::group_rule(),)),
+                )
+            )
             .is_ok()
     );
 

@@ -6,7 +6,7 @@ use super::super::{
     execution::{CommandSource, SteelCommandContext, SteelCommandRuntime, literal},
     registration::CommandRegistration,
 };
-use crate::permission::{PermissionContext, PermissionExpr, PermissionKey, PermissionKeyError};
+use crate::permission::{PermissionContext, PermissionExpr};
 use crate::player::Player;
 use crate::world::World;
 
@@ -15,19 +15,12 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 pub(crate) fn player_can_change_difficulty(player: &Player, world: &World) -> bool {
-    let permission = match difficulty_permission() {
-        Ok(permission) => permission,
-        Err(error) => {
-            log::error!("invalid built-in difficulty permission key: {error}");
-            return false;
-        }
-    };
     let context = PermissionContext::for_world(world.key.clone());
-    player.has_permission_in(&permission, &context)
+    player.has_permission_in(&difficulty_permission(), &context)
 }
 
-fn difficulty_permission() -> Result<PermissionExpr, PermissionKeyError> {
-    PermissionKey::parse("minecraft.command.difficulty").map(PermissionExpr::key)
+const fn difficulty_permission() -> PermissionExpr {
+    PermissionExpr::key(Identifier::vanilla_static("command.difficulty"))
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -102,13 +95,13 @@ mod tests {
 
     #[test]
     fn client_difficulty_permission_uses_the_command_root() {
-        let permission = difficulty_permission().expect("permission should build");
+        let permission = difficulty_permission();
         let allowed = PermissionSet::from_entries([PermissionEntry::allow(
-            PermissionKey::parse("minecraft.command.difficulty")
+            PermissionKey::parse("minecraft:command.difficulty")
                 .expect("test permission should parse"),
         )]);
         let gamemode_only = PermissionSet::from_entries([PermissionEntry::allow(
-            PermissionKey::parse("minecraft.command.gamemode")
+            PermissionKey::parse("minecraft:command.gamemode")
                 .expect("test permission should parse"),
         )]);
 

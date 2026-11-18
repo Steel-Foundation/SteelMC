@@ -199,6 +199,8 @@ pub async fn test_server_with_worlds_and_config(
     player_permission_states: PermissionSubjectIndex,
     config: Arc<RuntimeConfig>,
 ) -> Result<Arc<Server>, String> {
+    use crate::permission::PermissionCollectionsConfig;
+
     let mut worlds = WorldMap::new(default_domain, domains, &[]);
     for world in loaded_worlds {
         worlds.insert(world.key.clone(), Arc::clone(world));
@@ -216,11 +218,14 @@ pub async fn test_server_with_worlds_and_config(
     let player_data_storage = PlayerDataStorage::in_memory();
     let registered_commands = create_registered_dispatcher(CommandRegistry::new())
         .map_err(|error| format!("test commands should register: {error}"))?;
-    let permission_groups = PermissionGroupManager::transient(PermissionGroupsConfig::default())
-        .map_err(|error| format!("test permission groups should resolve: {error}"))?;
+    let permission_groups = PermissionGroupManager::transient(
+        PermissionGroupsConfig::default(),
+        PermissionCollectionsConfig::default(),
+    )
+    .map_err(|error| format!("test permission groups should resolve: {error}"))?;
     permission_groups
-        .set_command_fallbacks(registered_commands.command_fallbacks(&permission_groups.op_group()))
-        .map_err(|error| format!("test command permission fallbacks should apply: {error}"))?;
+        .set_command_collections(registered_commands.command_collections())
+        .map_err(|error| format!("test command permission collections should apply: {error}"))?;
     let command_permission_keys = registered_commands
         .permissions
         .iter()
@@ -829,10 +834,8 @@ impl Server {
         let registered_commands = create_registered_dispatcher(command_registry)
             .map_err(|error| format!("failed to register commands: {error}"))?;
         permission_groups
-            .set_command_fallbacks(
-                registered_commands.command_fallbacks(&permission_groups.op_group()),
-            )
-            .map_err(|error| format!("failed to apply command permission fallbacks: {error}"))?;
+            .set_command_collections(registered_commands.command_collections())
+            .map_err(|error| format!("failed to apply command permission collections: {error}"))?;
         let command_permission_keys = registered_commands
             .permissions
             .into_iter()

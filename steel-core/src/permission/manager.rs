@@ -1,24 +1,34 @@
-use std::{collections::BTreeMap, error::Error, fmt, sync::Arc};
+use std::{collections::BTreeMap, fmt, sync::Arc};
 
 use futures::future::BoxFuture;
-use steel_utils::locks::{AsyncMutex, SyncRwLock};
-
-use super::{
-    PermissionConfigError, PermissionGroups, PermissionGroupsConfig, PermissionMetadataSet,
-    PermissionSet,
+use steel_utils::{
+    Identifier,
+    locks::{AsyncMutex, SyncRwLock},
 };
 
-/// Persists permission group configuration owned outside `steel-core`.
+use super::{
+    PermissionCollections, PermissionCollectionsConfig, PermissionConfigError, PermissionGroups,
+    PermissionGroupsConfig, PermissionMetadataSet, PermissionSet,
+};
+
+/// Persists permission configuration owned outside `steel-core`.
 pub trait PermissionGroupStore: Send + Sync {
     /// Saves the complete permission group configuration.
     fn save_groups(
         &self,
         config: PermissionGroupsConfig,
     ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>>;
+
+    /// Saves the complete permission collection configuration.
+    fn save_collections(
+        &self,
+        config: PermissionCollectionsConfig,
+    ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>>;
 }
 
-/// Permission group persistence failure.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Permission persistence failure.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
 pub struct PermissionGroupStoreError {
     message: String,
 }
@@ -33,22 +43,16 @@ impl PermissionGroupStoreError {
     }
 }
 
-impl fmt::Display for PermissionGroupStoreError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl Error for PermissionGroupStoreError {}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PermissionGroupManagerState {
     config: PermissionGroupsConfig,
-    command_fallbacks: BTreeMap<String, Vec<String>>,
+    collections_config: PermissionCollectionsConfig,
+    command_collections: BTreeMap<Identifier, Vec<Identifier>>,
+    collections: PermissionCollections,
     groups: PermissionGroups,
 }
 
-/// Runtime permission groups with serialized, persistence-first updates.
+/// Runtime permission groups and collections with serialized, persistence-first updates.
 pub struct PermissionGroupManager {
     updates: AsyncMutex<()>,
     state: SyncRwLock<PermissionGroupManagerState>,
@@ -71,19 +75,22 @@ impl PermissionGroupManager {
     ///
     /// # Errors
     ///
-    /// Returns an error when the initial config does not resolve.
+    /// Returns an error when the initial config or collections do not resolve.
     pub fn new(
         config: PermissionGroupsConfig,
+        collections_config: PermissionCollectionsConfig,
         store: Option<Arc<dyn PermissionGroupStore>>,
     ) -> Result<Self, PermissionConfigError> {
-        let command_fallbacks = BTreeMap::new();
-        let groups =
-            PermissionGroups::from_config_with_fallbacks(config.clone(), &command_fallbacks)?;
+        let command_collections = BTreeMap::new();
+        let collections = resolve_collections(&collections_config, &command_collections)?;
+        let groups = PermissionGroups::from_config(config.clone(), &collections)?;
         Ok(Self {
             updates: AsyncMutex::new(()),
             state: SyncRwLock::new(PermissionGroupManagerState {
                 config,
-                command_fallbacks,
+                collections_config,
+                command_collections,
+                collections,
                 groups,
             }),
             store,
@@ -94,15 +101,30 @@ impl PermissionGroupManager {
     ///
     /// # Errors
     ///
-    /// Returns an error when the initial config does not resolve.
-    pub fn transient(config: PermissionGroupsConfig) -> Result<Self, PermissionConfigError> {
-        Self::new(config, None)
+    /// Returns an error when the initial config or collections do not resolve.
+    pub fn transient(
+        config: PermissionGroupsConfig,
+        collections_config: PermissionCollectionsConfig,
+    ) -> Result<Self, PermissionConfigError> {
+        Self::new(config, collections_config, None)
     }
 
-    /// Returns a typed snapshot of the current config.
+    /// Returns a typed snapshot of the current groups config.
     #[must_use]
     pub fn config_snapshot(&self) -> PermissionGroupsConfig {
         self.state.read().config.clone()
+    }
+
+    /// Returns a typed snapshot of the current collections config.
+    #[must_use]
+    pub fn collections_config_snapshot(&self) -> PermissionCollectionsConfig {
+        self.state.read().collections_config.clone()
+    }
+
+    /// Returns the effective permission collections.
+    #[must_use]
+    pub fn collections_snapshot(&self) -> PermissionCollections {
+        self.state.read().collections.clone()
     }
 
     /// Returns whether a configured group exists.
@@ -111,30 +133,43 @@ impl PermissionGroupManager {
         self.state.read().groups.contains_group(group)
     }
 
+    /// Returns whether an effective collection exists.
+    #[must_use]
+    pub fn contains_collection(&self, collection: &Identifier) -> bool {
+        self.state.read().collections.contains(collection)
+    }
+
     /// Returns the group assigned by `/op`.
     #[must_use]
     pub fn op_group(&self) -> String {
         self.state.read().config.op_group.clone()
     }
 
-    /// Installs the command permission fallbacks declared by the command dispatcher.
+    /// Installs the permission collections declared by the command dispatcher.
     ///
-    /// The fallback is runtime-only and never persisted. This rebuilds the resolved
-    /// groups in place and is meant to run once at startup, after commands register.
+    /// The runtime contributions are never persisted. This rebuilds the resolved
+    /// groups and collections in place and is meant to run once at startup, after
+    /// commands register.
     ///
     /// # Errors
     ///
     /// Returns an error when the rebuilt groups do not resolve.
-    pub fn set_command_fallbacks(
+    pub fn set_command_collections(
         &self,
-        command_fallbacks: BTreeMap<String, Vec<String>>,
+        command_collections: BTreeMap<Identifier, Vec<Identifier>>,
     ) -> Result<(), PermissionConfigError> {
-        let config = self.state.read().config.clone();
-        let groups =
-            PermissionGroups::from_config_with_fallbacks(config.clone(), &command_fallbacks)?;
+        let state = self.state.read();
+        let config = state.config.clone();
+        let collections_config = state.collections_config.clone();
+        drop(state);
+
+        let collections = resolve_collections(&collections_config, &command_collections)?;
+        let groups = PermissionGroups::from_config(config.clone(), &collections)?;
         *self.state.write() = PermissionGroupManagerState {
             config,
-            command_fallbacks,
+            collections_config,
+            command_collections,
+            collections,
             groups,
         };
         Ok(())
@@ -144,6 +179,17 @@ impl PermissionGroupManager {
     #[must_use]
     pub fn group_names(&self) -> Vec<String> {
         self.state.read().groups.groups().keys().cloned().collect()
+    }
+
+    /// Returns effective collection ids sorted by name.
+    #[must_use]
+    pub fn collection_names(&self) -> Vec<Identifier> {
+        self.state
+            .read()
+            .collections
+            .ids()
+            .cloned()
+            .collect::<Vec<_>>()
     }
 
     /// Builds an effective permission set from the current group snapshot.
@@ -172,7 +218,7 @@ impl PermissionGroupManager {
             .effective_metadata(assigned_groups, subject_metadata)
     }
 
-    /// Replaces the complete config after validation and optional persistence.
+    /// Replaces the complete groups config after validation and optional persistence.
     ///
     /// # Errors
     ///
@@ -185,7 +231,7 @@ impl PermissionGroupManager {
         self.replace_config_locked(config).await
     }
 
-    /// Updates the latest config under the manager update lock.
+    /// Updates the latest groups config under the manager update lock.
     ///
     /// # Errors
     ///
@@ -200,7 +246,7 @@ impl PermissionGroupManager {
         self.replace_config_locked(config).await
     }
 
-    /// Updates the latest config with a fallible caller-owned edit.
+    /// Updates the latest groups config with a fallible caller-owned edit.
     ///
     /// # Errors
     ///
@@ -227,79 +273,102 @@ impl PermissionGroupManager {
         Ok(result)
     }
 
+    /// Updates the latest collections config under the manager update lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the updated config is invalid or cannot be persisted.
+    pub async fn update_collections(
+        &self,
+        update: impl FnOnce(&mut PermissionCollectionsConfig) + Send,
+    ) -> Result<(), PermissionGroupManagerError> {
+        let _guard = self.updates.lock().await;
+        let mut collections_config = self.state.read().collections_config.clone();
+        update(&mut collections_config);
+        self.replace_collections_locked(collections_config).await
+    }
+
     async fn replace_config_locked(
         &self,
         config: PermissionGroupsConfig,
     ) -> Result<(), PermissionGroupManagerError> {
-        let command_fallbacks = self.state.read().command_fallbacks.clone();
-        let groups =
-            PermissionGroups::from_config_with_fallbacks(config.clone(), &command_fallbacks)?;
+        let (collections_config, command_collections) = {
+            let state = self.state.read();
+            (
+                state.collections_config.clone(),
+                state.command_collections.clone(),
+            )
+        };
+
+        let collections = resolve_collections(&collections_config, &command_collections)?;
+        let groups = PermissionGroups::from_config(config.clone(), &collections)?;
         if let Some(store) = &self.store {
             store.save_groups(config.clone()).await?;
         }
         *self.state.write() = PermissionGroupManagerState {
             config,
-            command_fallbacks,
+            collections_config,
+            command_collections,
+            collections,
+            groups,
+        };
+        Ok(())
+    }
+
+    async fn replace_collections_locked(
+        &self,
+        collections_config: PermissionCollectionsConfig,
+    ) -> Result<(), PermissionGroupManagerError> {
+        let (config, command_collections) = {
+            let state = self.state.read();
+            (state.config.clone(), state.command_collections.clone())
+        };
+
+        let collections = resolve_collections(&collections_config, &command_collections)?;
+        let groups = PermissionGroups::from_config(config.clone(), &collections)?;
+        if let Some(store) = &self.store {
+            store.save_collections(collections_config.clone()).await?;
+        }
+        *self.state.write() = PermissionGroupManagerState {
+            config,
+            collections_config,
+            command_collections,
+            collections,
             groups,
         };
         Ok(())
     }
 }
 
+fn resolve_collections(
+    config: &PermissionCollectionsConfig,
+    command_collections: &BTreeMap<Identifier, Vec<Identifier>>,
+) -> Result<PermissionCollections, PermissionConfigError> {
+    let overrides = PermissionCollections::from_config(config)?;
+    Ok(PermissionCollections::effective(
+        command_collections,
+        &overrides,
+    ))
+}
+
 /// Permission group manager update failure.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PermissionGroupManagerError {
     /// The candidate config is invalid.
-    Config(PermissionConfigError),
+    #[error("invalid permission groups config: {0}")]
+    Config(#[from] PermissionConfigError),
     /// The candidate config could not be persisted.
-    Store(PermissionGroupStoreError),
-}
-
-impl fmt::Display for PermissionGroupManagerError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Config(error) => write!(formatter, "invalid permission groups config: {error}"),
-            Self::Store(error) => write!(formatter, "failed to store permission groups: {error}"),
-        }
-    }
-}
-
-impl Error for PermissionGroupManagerError {}
-
-impl From<PermissionConfigError> for PermissionGroupManagerError {
-    fn from(value: PermissionConfigError) -> Self {
-        Self::Config(value)
-    }
-}
-
-impl From<PermissionGroupStoreError> for PermissionGroupManagerError {
-    fn from(value: PermissionGroupStoreError) -> Self {
-        Self::Store(value)
-    }
+    #[error("failed to store permission groups: {0}")]
+    Store(#[from] PermissionGroupStoreError),
 }
 
 /// Fallible edit failure from `PermissionGroupManager::try_update_config`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PermissionGroupUpdateError<E> {
     /// The caller rejected its edit before persistence.
+    #[error("{0}")]
     Edit(E),
     /// The edited config failed validation or persistence.
-    Manager(PermissionGroupManagerError),
-}
-
-impl<E: fmt::Display> fmt::Display for PermissionGroupUpdateError<E> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Edit(error) => error.fmt(formatter),
-            Self::Manager(error) => error.fmt(formatter),
-        }
-    }
-}
-
-impl<E> Error for PermissionGroupUpdateError<E> where E: Error + 'static {}
-
-impl<E> From<PermissionGroupManagerError> for PermissionGroupUpdateError<E> {
-    fn from(value: PermissionGroupManagerError) -> Self {
-        Self::Manager(value)
-    }
+    #[error(transparent)]
+    Manager(#[from] PermissionGroupManagerError),
 }

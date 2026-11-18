@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, error::Error, fmt};
+use std::{cmp::Ordering, fmt};
 
 use steel_utils::Identifier;
 
@@ -494,19 +494,25 @@ fn validate_namespaced_context_key(value: &str) -> Result<(), PermissionContextK
 }
 
 /// Invalid rule-side or active permission context.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PermissionRuleContextError {
     /// A domain name is not a valid identifier namespace.
+    #[error("invalid permission context domain '{0}'")]
     InvalidDomain(String),
     /// A custom value cannot be represented by the expression syntax.
+    #[error("invalid permission context value '{0}'")]
     InvalidValue(String),
     /// One chain binds two different domains.
+    #[error("domain permission context cannot have multiple values")]
     DuplicateDomain,
     /// One chain binds two different loaded worlds.
+    #[error("world permission context cannot have multiple values")]
     DuplicateWorld,
     /// One custom key is bound to two different values.
+    #[error("custom permission context key '{}' cannot have multiple values", .0.as_str())]
     DuplicateCustomKey(PermissionContextKey),
     /// A world identifier and explicit domain name disagree.
+    #[error("permission context domain '{domain}' conflicts with world domain '{world_domain}'")]
     WorldDomainMismatch {
         /// Explicit domain constraint.
         domain: String,
@@ -515,73 +521,25 @@ pub enum PermissionRuleContextError {
     },
 }
 
-impl fmt::Display for PermissionRuleContextError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidDomain(domain) => {
-                write!(formatter, "invalid permission context domain '{domain}'")
-            }
-            Self::InvalidValue(value) => {
-                write!(formatter, "invalid permission context value '{value}'")
-            }
-            Self::DuplicateDomain => {
-                formatter.write_str("domain permission context cannot have multiple values")
-            }
-            Self::DuplicateWorld => {
-                formatter.write_str("world permission context cannot have multiple values")
-            }
-            Self::DuplicateCustomKey(key) => write!(
-                formatter,
-                "custom permission context key '{}' cannot have multiple values",
-                key.as_str()
-            ),
-            Self::WorldDomainMismatch {
-                domain,
-                world_domain,
-            } => write!(
-                formatter,
-                "permission context domain '{domain}' conflicts with world domain '{world_domain}'"
-            ),
-        }
-    }
-}
-
-impl Error for PermissionRuleContextError {}
-
 /// Invalid custom permission context key.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PermissionContextKeyError {
     /// A namespaced key does not use one `namespace:path` separator.
+    #[error("context key must be a name or namespaced id")]
     InvalidFormat,
     /// The namespace before `:` is empty.
+    #[error("context key namespace is empty")]
     EmptyNamespace,
     /// The path after `:` is empty.
+    #[error("context key path is empty")]
     EmptyPath,
     /// The namespace is not a valid identifier namespace.
+    #[error("context key namespace contains invalid characters")]
     InvalidNamespace,
     /// The path is not a valid identifier path.
+    #[error("context key path contains invalid characters")]
     InvalidPath,
     /// An unqualified key is not a valid permission segment.
-    InvalidUnqualified(PermissionKeyError),
+    #[error(transparent)]
+    InvalidUnqualified(#[from] PermissionKeyError),
 }
-
-impl fmt::Display for PermissionContextKeyError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidFormat => {
-                formatter.write_str("context key must be a name or namespaced id")
-            }
-            Self::EmptyNamespace => formatter.write_str("context key namespace is empty"),
-            Self::EmptyPath => formatter.write_str("context key path is empty"),
-            Self::InvalidNamespace => {
-                formatter.write_str("context key namespace contains invalid characters")
-            }
-            Self::InvalidPath => {
-                formatter.write_str("context key path contains invalid characters")
-            }
-            Self::InvalidUnqualified(source) => source.fmt(formatter),
-        }
-    }
-}
-
-impl Error for PermissionContextKeyError {}

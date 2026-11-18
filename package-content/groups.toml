@@ -1,10 +1,50 @@
 #:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/package-content/groups.schema.json
 # Documentation: https://steelmc.dev/configuration/permissions/
 
-# The vanilla groups (all, moderators, gamemasters, admins, owners) are added at
-# startup as empty groups. Each one derives an allow-only fallback from the vanilla
-# command permissions, consulted only for permissions left unset here.
+# Permission groups assign permissions to players. Each group lists permission rule
+# expressions in `allow` and `deny`, and may reference a code-owned permission
+# collection with `#namespace:name`.
+#
+# The vanilla groups below mirror the vanilla permission levels. Each level inherits
+# from the level below it and adds the `#minecraft:<level>` collection of vanilla
+# command permissions. The server keeps those collections up to date; the groups
+# themselves are only read from this file.
 
 default_groups = ["all"]
 op_group = "owners"
 command_block_groups = ["gamemasters"]
+
+[groups.all]
+priority = 0
+inherits = []
+allow = ["#minecraft:all"]
+deny = []
+metadata = []
+
+[groups.moderators]
+priority = 0
+inherits = ["all"]
+allow = []
+deny = []
+metadata = []
+
+[groups.gamemasters]
+priority = 0
+inherits = ["moderators"]
+allow = ["#minecraft:gamemasters"]
+deny = []
+metadata = []
+
+[groups.admins]
+priority = 0
+inherits = ["gamemasters"]
+allow = ["#minecraft:admins"]
+deny = []
+metadata = []
+
+[groups.owners]
+priority = 0
+inherits = ["admins"]
+allow = ["#minecraft:owners"]
+deny = []
+metadata = []

@@ -1,6 +1,6 @@
 use steel_utils::Identifier;
 
-use crate::permission::PermissionMetadataValue;
+use crate::permission::{PermissionCollectionsConfig, PermissionMetadataValue};
 
 use super::{
     Arc, FnServerJob, PermissionGroupManager, PermissionGroupManagerError,
@@ -164,6 +164,20 @@ impl Server {
         update: impl FnOnce(&mut PermissionGroupsConfig) + Send,
     ) -> Result<(), PermissionGroupManagerError> {
         self.permission_groups.update_config(update).await?;
+        self.queue_online_permission_group_refresh();
+        Ok(())
+    }
+
+    /// Edits the latest permission collections config and refreshes online players.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when validation or persistence fails.
+    pub async fn update_permission_collections(
+        self: &Arc<Self>,
+        update: impl FnOnce(&mut PermissionCollectionsConfig) + Send,
+    ) -> Result<(), PermissionGroupManagerError> {
+        self.permission_groups.update_collections(update).await?;
         self.queue_online_permission_group_refresh();
         Ok(())
     }

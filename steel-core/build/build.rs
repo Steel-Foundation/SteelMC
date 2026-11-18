@@ -79,7 +79,7 @@ pub fn main() {
         skull_type::build(),
     );
     write_if_changed(
-        format!("{permission_out_dir}/groups.rs"),
+        format!("{permission_out_dir}/collections.rs"),
         permissions_group::build(),
     );
 

@@ -17,22 +17,25 @@ use super::{
     execution::{CommandPermissionSource, SteelCommandRuntime},
 };
 use crate::permission::{
-    PermissionExpr, PermissionKey, PermissionKeyError, PermissionSegment, PermissionState,
+    OWNERS_COLLECTION, PermissionExpr, PermissionKey, PermissionKeyError, PermissionSegment,
+    PermissionState,
 };
 
 type CommandFactory<S> =
     dyn FnOnce(NodeId) -> CommandNodeBuilder<S, SteelCommandRuntime> + Send + 'static;
 
-pub(crate) const ENTITY_SELECTOR_PERMISSION_KEY: &str = "minecraft.selector";
-pub(crate) const ENTITY_SELECTOR_ADVANCED_PERMISSION_KEY: &str = "minecraft.selector.advanced";
+pub(crate) const ENTITY_SELECTOR_PERMISSION_KEY: &str = "minecraft:selector";
+pub(crate) const ENTITY_SELECTOR_ADVANCED_PERMISSION_KEY: &str = "minecraft:selector.advanced";
 
-pub(crate) fn entity_selector_permission_expr() -> Result<PermissionExpr, PermissionKeyError> {
-    PermissionKey::parse(ENTITY_SELECTOR_PERMISSION_KEY).map(PermissionExpr::key)
+/// Permission collection that receives commands that declare no collection.
+const DEFAULT_COMMAND_COLLECTION: Identifier = OWNERS_COLLECTION;
+
+pub(crate) const fn entity_selector_permission_expr() -> PermissionExpr {
+    PermissionExpr::key(Identifier::vanilla_static("selector"))
 }
 
-pub(crate) fn entity_selector_advanced_permission_expr()
--> Result<PermissionExpr, PermissionKeyError> {
-    PermissionKey::parse(ENTITY_SELECTOR_ADVANCED_PERMISSION_KEY).map(PermissionExpr::key)
+pub(crate) const fn entity_selector_advanced_permission_expr() -> PermissionExpr {
+    PermissionExpr::key(Identifier::vanilla_static("selector.advanced"))
 }
 
 /// One complete command tree and its stable owner identity.
@@ -44,8 +47,7 @@ where
     aliases: Vec<Box<str>>,
     permission: Option<PermissionExpr>,
     subcommand_permissions: Vec<Vec<Box<str>>>,
-    group: Option<String>,
-    default_access: bool,
+    collection: Option<Identifier>,
     factory: Box<CommandFactory<S>>,
 }
 
@@ -63,8 +65,7 @@ where
             aliases: Vec::new(),
             permission: None,
             subcommand_permissions: Vec::new(),
-            group: None,
-            default_access: false,
+            collection: None,
             factory: Box::new(factory),
         }
     }
@@ -76,19 +77,12 @@ where
         self
     }
 
-    /// Allows an unset root permission while still respecting an explicit deny.
-    #[must_use]
-    pub(crate) const fn default_access(mut self) -> Self {
-        self.default_access = true;
-        self
-    }
-
-    /// Declares the vanilla permission group that receives this command's fallback.
+    /// Declares the permission collection that grants this command's derived permission.
     ///
-    /// Commands that do not declare a group fall back to the configured op group.
+    /// Commands that do not declare a collection fall back to [`DEFAULT_COMMAND_COLLECTION`].
     #[must_use]
-    pub(crate) fn permission_group(mut self, group: impl Into<String>) -> Self {
-        self.group = Some(group.into());
+    pub(crate) fn permission_collection(mut self, collection: Identifier) -> Self {
+        self.collection = Some(collection);
         self
     }
 
@@ -167,14 +161,13 @@ where
                 );
             }
         }
-        if let Some(group) = &self.group {
-            PermissionSegment::parse(group.clone()).map_err(|source| {
-                CommandRegistrationError::InvalidPermissionGroup {
-                    id: self.id.clone(),
-                    group: group.clone(),
-                    source,
-                }
-            })?;
+        if let Some(collection) = &self.collection
+            && !Identifier::validate(&collection.namespace, &collection.path)
+        {
+            return Err(CommandRegistrationError::InvalidPermissionCollection {
+                id: self.id.clone(),
+                collection: collection.clone(),
+            });
         }
         Ok(())
     }
@@ -197,26 +190,26 @@ where
 {
     pub(crate) dispatcher: CommandDispatcher<S, SteelCommandRuntime>,
     pub(crate) permissions: Vec<PermissionKey>,
-    command_groups: Vec<(String, Option<String>)>,
+    command_collections: Vec<(Identifier, Identifier)>,
 }
 
 impl<S> RegisteredCommandDispatcher<S>
 where
     S: CommandPermissionSource,
 {
-    /// Groups each command's derived permission key by its declared vanilla group.
+    /// Groups each command's derived permission by its declared collection.
     ///
-    /// Commands without a declared group are assigned to `default_group`.
-    pub(crate) fn command_fallbacks(&self, default_group: &str) -> BTreeMap<String, Vec<String>> {
-        let mut fallbacks = BTreeMap::<String, Vec<String>>::new();
-        for (key, group) in &self.command_groups {
-            let group = group.as_deref().unwrap_or(default_group);
-            fallbacks
-                .entry(group.to_owned())
-                .or_default()
-                .push(key.clone());
+    /// Commands without a declared collection are assigned to
+    /// [`DEFAULT_COMMAND_COLLECTION`].
+    pub(crate) fn command_collections(&self) -> BTreeMap<Identifier, Vec<Identifier>> {
+        let mut collections = BTreeMap::<Identifier, Vec<Identifier>>::new();
+        for (collection, permission) in &self.command_collections {
+            let permissions = collections.entry(collection.clone()).or_default();
+            if !permissions.contains(permission) {
+                permissions.push(permission.clone());
+            }
         }
-        fallbacks
+        collections
     }
 }
 
@@ -290,7 +283,7 @@ where
         let dispatcher_root = dispatcher.root();
         let mut resolved = Vec::with_capacity(self.registrations.len());
         let mut permissions = self.declared_permissions;
-        let mut command_groups = Vec::with_capacity(self.registrations.len());
+        let mut command_collections = Vec::with_capacity(self.registrations.len());
 
         for registration in self.registrations {
             let CommandRegistration {
@@ -298,8 +291,7 @@ where
                 aliases,
                 permission,
                 subcommand_permissions,
-                group,
-                default_access,
+                collection,
                 factory,
             } = registration;
             let derived_key = derived_command_permission_key(&id)?;
@@ -311,7 +303,10 @@ where
                     Some(derived_key.clone()),
                 )
             };
-            command_groups.push((derived_key.as_str().to_owned(), group));
+            command_collections.push((
+                collection.unwrap_or(DEFAULT_COMMAND_COLLECTION),
+                derived_key,
+            ));
             collect_permission_keys(&root_permission, &mut permissions);
             let root = apply_registration_requirements(
                 factory(dispatcher_root),
@@ -319,7 +314,6 @@ where
                 root_permission,
                 derived_root.as_ref(),
                 &subcommand_permissions,
-                default_access,
                 &mut permissions,
             )?;
             let Some(root_name) = root.literal_name() else {
@@ -363,7 +357,7 @@ where
         Ok(RegisteredCommandDispatcher {
             dispatcher,
             permissions: permissions.into_iter().collect(),
-            command_groups,
+            command_collections,
         })
     }
 }
@@ -372,20 +366,15 @@ fn apply_registration_requirements<S>(
     mut root: CommandNodeBuilder<S, SteelCommandRuntime>,
     id: &Identifier,
     root_permission: PermissionExpr,
-    derived_root: Option<&PermissionKey>,
+    derived_root: Option<&Identifier>,
     subcommand_permissions: &[Vec<Box<str>>],
-    default_access: bool,
     permissions: &mut BTreeSet<PermissionKey>,
 ) -> Result<CommandNodeBuilder<S, SteelCommandRuntime>, CommandRegistrationError>
 where
     S: CommandPermissionSource,
 {
     if subcommand_permissions.is_empty() {
-        return Ok(root.also_requires(root_permission_requirement(
-            root_permission,
-            Vec::new(),
-            default_access,
-        )));
+        return Ok(root.also_requires(root_permission_requirement(root_permission, Vec::new())));
     }
     let Some(derived_root) = derived_root else {
         return Err(
@@ -396,7 +385,7 @@ where
     let mut scoped_permissions = Vec::with_capacity(subcommand_permissions.len());
     for path in subcommand_permissions {
         let permission = derived_subcommand_permission(id, derived_root, path)?;
-        permissions.insert(permission.clone());
+        permissions.insert(PermissionKey::from_identifier(&permission));
         match root.literal_path_match_count(path) {
             1 => scoped_permissions.push(permission),
             0 => {
@@ -426,12 +415,12 @@ where
             let traversal = if let Some(index) = governing_scope {
                 scoped_permission_requirement(derived_root, &scoped_permissions[index], descendants)
             } else {
-                root_permission_requirement(root_permission.clone(), descendants, default_access)
+                root_permission_requirement(root_permission.clone(), descendants)
             };
             let execution = if let Some(index) = governing_scope {
                 scoped_permission_requirement(derived_root, &scoped_permissions[index], Vec::new())
             } else {
-                root_permission_requirement(root_permission.clone(), Vec::new(), default_access)
+                root_permission_requirement(root_permission.clone(), Vec::new())
             };
             CommandRequirementRoute::new(traversal, execution)
         },
@@ -466,23 +455,26 @@ where
     }
 }
 
-fn derived_command_permission_key(
-    id: &Identifier,
-) -> Result<PermissionKey, CommandRegistrationError> {
-    PermissionKey::parse(format!("{}.command.{}", id.namespace, id.path)).map_err(|source| {
+fn derived_command_permission_key(id: &Identifier) -> Result<Identifier, CommandRegistrationError> {
+    let value = format!("{}.command.{}", id.namespace, id.path);
+    PermissionKey::parse(value).map_err(|source| {
         CommandRegistrationError::InvalidDerivedPermission {
             id: id.clone(),
             source,
         }
-    })
+    })?;
+    Ok(Identifier::new(
+        id.namespace.clone(),
+        format!("command.{}", id.path),
+    ))
 }
 
 fn derived_subcommand_permission(
     id: &Identifier,
-    root: &PermissionKey,
+    root: &Identifier,
     path: &[Box<str>],
-) -> Result<PermissionKey, CommandRegistrationError> {
-    let mut permission = root.clone();
+) -> Result<Identifier, CommandRegistrationError> {
+    let mut permission = root.path.to_string();
     for segment in path {
         let segment = PermissionSegment::parse(segment.to_string()).map_err(|source| {
             CommandRegistrationError::InvalidSubcommandPermissionPath {
@@ -491,41 +483,19 @@ fn derived_subcommand_permission(
                 source,
             }
         })?;
-        permission = permission.child(&segment).map_err(|source| {
-            CommandRegistrationError::InvalidSubcommandPermissionPath {
-                id: id.clone(),
-                path: display_permission_path(path),
-                source,
-            }
-        })?;
+        permission.push('.');
+        permission.push_str(segment.as_str());
     }
-    Ok(permission)
+    Ok(Identifier::new(root.namespace.clone(), permission))
 }
 
 fn root_permission_requirement<S>(
     root: PermissionExpr,
-    alternatives: Vec<PermissionKey>,
-    default_access: bool,
+    alternatives: Vec<Identifier>,
 ) -> CommandRequirement<S>
 where
     S: CommandPermissionSource,
 {
-    if default_access {
-        let alternatives = if alternatives.is_empty() {
-            None
-        } else {
-            Some(PermissionExpr::Any(
-                alternatives.into_iter().map(PermissionExpr::key).collect(),
-            ))
-        };
-        return CommandRequirement::contextual(move |source: &S| {
-            source.permission_state(&root) != Some(PermissionState::Deny)
-                || alternatives.as_ref().is_some_and(|alternatives| {
-                    source.permission_state(alternatives) == Some(PermissionState::Allow)
-                })
-        });
-    }
-
     let permission = alternatives
         .into_iter()
         .fold(root, |permission, alternative| {
@@ -544,9 +514,9 @@ where
 }
 
 fn scoped_permission_requirement<S>(
-    root: &PermissionKey,
-    scoped: &PermissionKey,
-    alternatives: Vec<PermissionKey>,
+    root: &Identifier,
+    scoped: &Identifier,
+    alternatives: Vec<Identifier>,
 ) -> CommandRequirement<S>
 where
     S: CommandPermissionSource,
@@ -560,12 +530,12 @@ where
 
 fn collect_permission_keys(expression: &PermissionExpr, keys: &mut BTreeSet<PermissionKey>) {
     match expression {
-        PermissionExpr::Key(key) => {
-            keys.insert(key.clone());
+        PermissionExpr::Key(identifier) => {
+            keys.insert(PermissionKey::from_identifier(identifier));
         }
         PermissionExpr::ScopedKey { parent, key } => {
-            keys.insert(parent.clone());
-            keys.insert(key.clone());
+            keys.insert(PermissionKey::from_identifier(parent));
+            keys.insert(PermissionKey::from_identifier(key));
         }
         PermissionExpr::All(expressions) | PermissionExpr::Any(expressions) => {
             for expression in expressions {
@@ -644,18 +614,10 @@ pub(crate) enum CommandRegistrationError {
         #[source]
         source: PermissionKeyError,
     },
-    #[error("command '{id}' has an invalid explicit permission: {source}")]
-    InvalidExplicitPermission {
+    #[error("command '{id}' declares invalid permission collection '{collection}'")]
+    InvalidPermissionCollection {
         id: Identifier,
-        #[source]
-        source: PermissionKeyError,
-    },
-    #[error("command '{id}' declares invalid permission group '{group}': {source}")]
-    InvalidPermissionGroup {
-        id: Identifier,
-        group: String,
-        #[source]
-        source: PermissionKeyError,
+        collection: Identifier,
     },
     #[error("command '{id}' cannot combine explicit and derived subcommand permissions")]
     SubcommandPermissionsRequireDerivedRoot { id: Identifier },
