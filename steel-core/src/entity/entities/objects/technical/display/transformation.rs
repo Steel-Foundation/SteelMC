@@ -69,8 +69,17 @@ impl Transformation {
         Givens::from_unnormalized(sin_half, cos_half)
     }
 
+    fn joml_mul(left: Mat3, right: Mat3) -> Mat3 {
+        let column = |v: Vec3| left.x_axis * v.x + (left.y_axis * v.y + left.z_axis * v.z);
+        Mat3::from_cols(
+            column(right.x_axis),
+            column(right.y_axis),
+            column(right.z_axis),
+        )
+    }
+
     fn similarity_transform(a: &mut Mat3, q: Mat3) {
-        *a = q.transpose() * *a * q;
+        *a = Self::joml_mul(q.transpose(), Self::joml_mul(*a, q));
     }
 
     fn step_jacobi(m: &mut Mat3, result: &mut Quat) {
@@ -124,7 +133,7 @@ impl Transformation {
 
         let mat = Mat3::from_mat4(input);
 
-        let mut ata = mat.transpose() * mat;
+        let mut ata = Self::joml_mul(mat.transpose(), mat);
 
         // Approximate the eigendecomposition of ata.
         // This is achieved by using 5 Jacobi iterations.
@@ -139,7 +148,26 @@ impl Transformation {
         let zero_column_1 = f64::from(ata.col(1)[1]) < DECOMPOSITION_EPSILON_F64;
 
         // Get a matrix that can be reduced to a diagonal form.
-        let u012s = mat * Mat3::from_quat(right_rotation);
+        let [x, y, z, w] = right_rotation.to_array();
+        let (ww, xx, yy, zz) = (w * w, x * x, y * y, z * z);
+        let (zw, xy, xz, yw, yz, xw) = (
+            2.0 * (z * w),
+            2.0 * (x * y),
+            2.0 * (x * z),
+            2.0 * (y * w),
+            2.0 * (y * z),
+            2.0 * (x * w),
+        );
+
+        let u012s = Self::joml_mul(
+            mat,
+            Mat3::from_cols(
+                Vec3::new(ww + xx - zz - yy, xy + zw, xz - yw),
+                Vec3::new(xy - zw, yy - zz + ww - xx, yz + xw),
+                Vec3::new(yw + xz, yz - xw, zz - yy - xx + ww),
+            ),
+        );
+
         let mut left_rotation = Quat::IDENTITY;
 
         // Now, calculate the 3 Givens rotations.
@@ -153,7 +181,7 @@ impl Transformation {
         };
         let mut u12s = givens.around_z_mat();
         left_rotation *= givens.around_z_quat();
-        u12s = u12s.transpose() * u012s;
+        u12s = Self::joml_mul(u12s.transpose(), u012s);
 
         // 2) Along the Y axis
         let givens = if zero_column_0 {
@@ -164,7 +192,7 @@ impl Transformation {
         .inverse();
         let mut u2s = givens.around_y_mat();
         left_rotation *= givens.around_y_quat();
-        u2s = u2s.transpose() * u12s;
+        u2s = Self::joml_mul(u2s.transpose(), u12s);
 
         // 3) Along the X axis
         let givens = if zero_column_1 {
@@ -174,7 +202,7 @@ impl Transformation {
         };
         let mut sm = givens.around_x_mat();
         left_rotation *= givens.around_x_quat();
-        sm = sm.transpose() * u2s;
+        sm = Self::joml_mul(sm.transpose(), u2s);
 
         // Get the scale components from sm, which should approximately be a diagonal matrix.
         let scale = Vec3::new(sm.col(0)[0], sm.col(1)[1], sm.col(2)[2]);

@@ -11,6 +11,7 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::vanilla_entity_data::DisplayEntityData;
+use steel_utils::nbt::{NbtNumeric as _, NbtValueInput as _};
 
 /// The default interpolation duration of a display entity.
 pub const DEFAULT_TRANSFORMATION_INTERPOLATION_DURATION: i32 = 0;
@@ -102,15 +103,15 @@ pub trait Display: Entity {
         );
 
         view.set_transformation_interpolation_duration(
-            nbt.int("interpolation_duration")
+            nbt.int_value("interpolation_duration")
                 .unwrap_or(DEFAULT_TRANSFORMATION_INTERPOLATION_DURATION),
         );
         view.set_transformation_interpolation_delay(
-            nbt.int("start_interpolation")
+            nbt.int_value("start_interpolation")
                 .unwrap_or(DEFAULT_TRANSFORMATION_INTERPOLATION_DELAY),
         );
         view.set_pos_rot_interpolation_duration(
-            nbt.int("teleport_duration")
+            nbt.int_value("teleport_duration")
                 .unwrap_or(DEFAULT_POS_ROT_INTERPOLATION_DURATION)
                 .clamp(0, 59),
         );
@@ -119,16 +120,19 @@ pub trait Display: Entity {
                 .and_then(BillboardConstraints::from_nbt_tag)
                 .unwrap_or(DEFAULT_BILLBOARD_CONSTRAINTS),
         );
-        view.set_view_range(nbt.float("view_range").unwrap_or(DEFAULT_VIEW_RANGE));
-        view.set_shadow_radius(nbt.float("shadow_radius").unwrap_or(DEFAULT_SHADOW_RADIUS));
+        view.set_view_range(nbt.float_value("view_range").unwrap_or(DEFAULT_VIEW_RANGE));
+        view.set_shadow_radius(
+            nbt.float_value("shadow_radius")
+                .unwrap_or(DEFAULT_SHADOW_RADIUS),
+        );
         view.set_shadow_strength(
-            nbt.float("shadow_strength")
+            nbt.float_value("shadow_strength")
                 .unwrap_or(DEFAULT_SHADOW_STRENGTH),
         );
-        view.set_width(nbt.float("width").unwrap_or(DEFAULT_WIDTH));
-        view.set_height(nbt.float("height").unwrap_or(DEFAULT_HEIGHT));
+        view.set_width(nbt.float_value("width").unwrap_or(DEFAULT_WIDTH));
+        view.set_height(nbt.float_value("height").unwrap_or(DEFAULT_HEIGHT));
         view.set_synced_glow_color_override(
-            nbt.int("glow_color_override")
+            nbt.int_value("glow_color_override")
                 .unwrap_or(DEFAULT_GLOW_COLOR_OVERRIDE),
         );
         view.set_brightness_override(nbt.get("brightness").and_then(Brightness::from_nbt_tag));
@@ -463,15 +467,17 @@ impl ToNbtTag for Brightness {
 impl FromNbtTag for Brightness {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
-        let block = compound.get("block")?.int()?;
+        let block = compound.get("block")?.codec_i32()?;
         let range = 0..=15;
         if !range.contains(&block) {
             return None;
         }
-        let sky = compound.get("sky")?.int()?;
+
+        let sky = compound.get("sky")?.codec_i32()?;
         if !range.contains(&sky) {
             return None;
         }
+
         Some(Self { block, sky })
     }
 }

@@ -15,8 +15,8 @@ use std::sync::{Arc, Weak};
 use steel_macros::entity_behavior;
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_data::{BlockDisplayEntityData, DisplayEntityData};
+use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockStateId, DowncastType, DowncastTypeKey};
 
@@ -106,6 +106,11 @@ impl Entity for BlockDisplayEntity {
             view.set_block_state(
                 nbt.compound("block_state")
                     .and_then(block_state_nbt::load)
+                    .or_else(|| {
+                        let id = BlockStateId(u16::try_from(nbt.int("block_state")?).ok()?);
+
+                        REGISTRY.blocks.by_state_id(id).map(|_| id)
+                    })
                     .unwrap_or(vanilla_blocks::AIR.default_state()),
             );
         });

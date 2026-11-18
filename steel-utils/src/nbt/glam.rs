@@ -1,33 +1,21 @@
+use std::f32::consts::{FRAC_PI_2, PI, TAU};
+
 use glam::{Mat4, Quat, Vec3};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 
-use crate::nbt::NbtNumeric;
+use crate::nbt::{NbtNumeric, nbt_collection_values};
 use simdnbt::borrow::NbtTag as BorrowedNbtTag;
 
 fn numeric_f32_list(tag: BorrowedNbtTag, len: usize) -> Option<Vec<f32>> {
-    if let Some(list) = tag.list() {
-        return list
-            .to_owned()
-            .as_nbt_tags()
-            .iter()
-            .map(NbtNumeric::codec_f32)
-            .take(len)
-            .collect::<Option<Vec<_>>>()
-            .filter(|v| v.len() >= len);
-    }
+    let values = nbt_collection_values(&tag.to_owned())?;
+    let values: Vec<_> = values
+        .iter()
+        .filter_map(NbtNumeric::codec_f32)
+        .take(len)
+        .collect();
 
-    tag.byte_array()
-        .map(|v| v.iter().map(|&v| f32::from(v as i8)).collect::<Vec<_>>())
-        .or_else(|| {
-            tag.int_array()
-                .map(|v| v.into_iter().map(|v| v as f32).collect::<Vec<_>>())
-        })
-        .or_else(|| {
-            tag.long_array()
-                .map(|v| v.into_iter().map(|v| v as f32).collect::<Vec<_>>())
-        })
-        .filter(|v| v.len() >= len)
+    (values.len() == len).then_some(values)
 }
 
 /// Converts a [`Vec3`] to its NBT representation (recreates `ExtraCodecs.VECTOR3F`).
@@ -65,7 +53,7 @@ impl FromNbtTag for AxisAngle4f {
     fn from_nbt_tag(tag: BorrowedNbtTag) -> Option<Self> {
         let compound = tag.compound()?;
         Some(Self {
-            angle: f32::from_nbt_tag(compound.get("angle")?)?,
+            angle: compound.get("angle")?.codec_f32()?,
             axis: vec3_from_nbt_tag(compound.get("axis")?)?,
         })
     }
@@ -73,9 +61,27 @@ impl FromNbtTag for AxisAngle4f {
 
 impl From<AxisAngle4f> for Quat {
     fn from(value: AxisAngle4f) -> Self {
-        let half_angle = value.angle / 2.0;
-        let sin = half_angle.sin();
-        let cos = half_angle.cos();
+        let angle = if value.angle < 0.0 {
+            (TAU + value.angle % TAU) % TAU
+        } else {
+            value.angle % TAU
+        };
+
+        let half_angle = angle * 0.5;
+        let sin = f64::from(half_angle).sin() as f32;
+
+        let mut cos = f64::from(1.0 - sin * sin).sqrt() as f32;
+        let shift = half_angle + FRAC_PI_2;
+        let mut quadrant = shift - (shift / TAU) as i32 as f32 * TAU;
+
+        if quadrant < 0.0 {
+            quadrant = TAU + quadrant;
+        }
+
+        if quadrant >= PI {
+            cos = -cos;
+        }
+
         Self::from_xyzw(
             value.axis.x * sin,
             value.axis.y * sin,
@@ -96,7 +102,16 @@ pub fn quat_to_nbt_tag(quat: Quat) -> NbtTag {
 pub fn quat_from_nbt_tag(tag: BorrowedNbtTag) -> Option<Quat> {
     // One of the two: 4 floats or AxisAngle4f
     if let Some(l) = numeric_f32_list(tag, 4) {
-        return Some(Quat::from_xyzw(l[0], l[1], l[2], l[3]).normalize());
+        let (x, y, z, w) = (l[0], l[1], l[2], l[3]);
+        let length_squared = x * x + (y * y + (z * z + w * w));
+        let inv_sqrt = 1.0 / (f64::from(length_squared).sqrt() as f32);
+
+        return Some(Quat::from_xyzw(
+            x * inv_sqrt,
+            y * inv_sqrt,
+            z * inv_sqrt,
+            w * inv_sqrt,
+        ));
     }
     Some(AxisAngle4f::from_nbt_tag(tag)?.into())
 }

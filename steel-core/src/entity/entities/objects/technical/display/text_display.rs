@@ -18,6 +18,7 @@ use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entity_data::{DisplayEntityData, TextDisplayEntityData};
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{DowncastType, DowncastTypeKey};
 use text_components::TextComponent;
 
@@ -131,18 +132,24 @@ impl Entity for TextDisplayEntity {
         self.with_view(|mut view| {
             <Self as Display>::load_display(&mut view, nbt);
 
-            view.set_line_width(nbt.int("line_width").unwrap_or(DEFAULT_LINE_WIDTH));
-            view.set_text_opacity(nbt.byte("text_opacity").unwrap_or(DEFAULT_TEXT_OPACITY) as u8);
-            view.set_background_color(nbt.int("background").unwrap_or(DEFAULT_BACKGROUND_COLOR));
+            view.set_line_width(nbt.int_value("line_width").unwrap_or(DEFAULT_LINE_WIDTH));
+            view.set_text_opacity(
+                nbt.byte_value("text_opacity")
+                    .unwrap_or(DEFAULT_TEXT_OPACITY) as u8,
+            );
+            view.set_background_color(
+                nbt.int_value("background")
+                    .unwrap_or(DEFAULT_BACKGROUND_COLOR),
+            );
 
             let mut flags = TextDisplayFlags::empty();
-            if nbt.byte("shadow").is_some_and(|v| v != 0) {
+            if nbt.byte_value("shadow").is_some_and(|v| v != 0) {
                 flags.insert(TextDisplayFlags::SHADOW);
             }
-            if nbt.byte("see_through").is_some_and(|v| v != 0) {
+            if nbt.byte_value("see_through").is_some_and(|v| v != 0) {
                 flags.insert(TextDisplayFlags::SEE_THROUGH);
             }
-            if nbt.byte("default_background").is_some_and(|v| v != 0) {
+            if nbt.byte_value("default_background").is_some_and(|v| v != 0) {
                 flags.insert(TextDisplayFlags::USE_DEFAULT_BACKGROUND);
             }
             view.set_flags(flags);
@@ -218,9 +225,7 @@ impl TextDisplayView<'_> {
 
     /// Gets the text opacity of this text display.
     ///
-    /// Values from `0` to `3`, inclusive, result in **fully opaque** text due to Minecraft's rendering.
-    /// Values starting from `4` act as normal: a higher value means a higher opacity, where `255`
-    /// represents full opacity.
+    /// The client uses this value as the glyph alpha with `255` representing full opacity
     ///
     /// **Note:** This property is interpolated.
     #[must_use]
@@ -230,9 +235,7 @@ impl TextDisplayView<'_> {
 
     /// Sets the opacity of this text display to `opacity`.
     ///
-    /// Values from `0` to `3`, inclusive, result in **fully opaque** text due to Minecraft's rendering.
-    /// Values starting from `4` act as normal: a higher value means a higher opacity, where `255`
-    /// represents full opacity.
+    /// The client uses this value as the glyph alpha with `255` representing full opacity
     ///
     /// **Note:** This property is interpolated.
     pub fn set_text_opacity(&mut self, opacity: u8) {
