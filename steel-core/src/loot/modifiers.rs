@@ -55,6 +55,21 @@ pub(super) fn set_potion(item: &mut ItemStack, potion: PotionRef) {
     item.set(POTION_CONTENTS, contents.with_potion(potion));
 }
 
+/// Sets a damageable item's remaining durability to the `damage` fraction,
+/// added to its current fraction when `add` is set.
+pub(super) fn set_damage(item: &mut ItemStack, damage: f32, add: bool) {
+    // Vanilla evaluates this provider with `getFloat`, which maps non-finite results to zero.
+    let damage = if damage.is_finite() { damage } else { 0.0 };
+    let max_damage = item.get_max_damage();
+    let base = if add {
+        1.0 - item.get_damage_value() as f32 / max_damage as f32
+    } else {
+        0.0
+    };
+    let pct = 1.0 - steel_math::clamp_f32(damage + base, 0.0, 1.0);
+    item.set_damage_value((pct * max_damage as f32).floor() as i32);
+}
+
 pub(super) fn smelt(item: &mut ItemStack, use_input_count: bool) {
     if item.is_empty() {
         return;

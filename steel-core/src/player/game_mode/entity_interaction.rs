@@ -15,16 +15,51 @@ use super::{
 use crate::player::food_data::food_constants;
 use std::ops::Add;
 use steel_math::{round_f32, trig};
+use steel_protocol::packets::game::CAnimate;
 use steel_registry::particle_type::ParticleData;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
+use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt as _, vanilla_custom_stats, vanilla_particle_types,
+    REGISTRY, TaggedRegistryExt as _, vanilla_custom_stats, vanilla_mob_effects,
+    vanilla_particle_types,
 };
 
 use crate::entity::{EntityReference, ProjectileDeflection};
 
 /// An attack only counts as full strength once the attack strength scale exceeds this.
 const FULL_ATTACK_STRENGTH_SCALE_THRESHOLD: f32 = 0.9;
+const CRITICAL_ATTACK_DAMAGE_MULTIPLIER: f32 = 1.5;
+/// Sweeps are only allowed while moving slower than this multiple of movement speed.
+const MAX_SWEEP_SPEED_MOVEMENT_SPEED_FACTOR: f64 = 2.5;
+const SWEEP_AREA_INFLATE_XZ: f64 = 1.0;
+const SWEEP_AREA_INFLATE_Y: f64 = 0.25;
+const SWEEP_MAX_DISTANCE_SQ: f64 = 9.0;
+/// Vanilla passes `0.4F` to a `double` parameter, widening the `f32` approximation.
+const SWEEP_KNOCKBACK: f64 = 0.4_f32 as f64;
+
+/// The kind of melee hit, which selects its attack sound.
+///
+/// Vanilla passes these as separate flags to `attackVisualEffects`, but they are
+/// mutually exclusive: sweeps require a non-critical hit, and stabs are their own path.
+#[derive(Clone, Copy)]
+enum AttackVisualKind {
+    Critical,
+    Sweep,
+    Stab,
+    Normal { full_strength: bool },
+}
+
+impl AttackVisualKind {
+    const fn melee(critical: bool, sweep: bool, full_strength: bool) -> Self {
+        if critical {
+            Self::Critical
+        } else if sweep {
+            Self::Sweep
+        } else {
+            Self::Normal { full_strength }
+        }
+    }
+}
 
 const fn sound_holder_ref(holder: &SoundEventHolder) -> Option<SoundEventRef> {
     match holder {
@@ -48,6 +83,13 @@ impl Player {
     fn eye_position(&self) -> DVec3 {
         let position = self.position();
         DVec3::new(position.x, self.get_eye_y(), position.z)
+    }
+
+    /// Returns a copy of the current main-hand item.
+    fn weapon_item(&self) -> ItemStack {
+        let inventory = self.inventory.lock();
+        let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
+        stack.copy_with_count(stack.count())
     }
 
     fn damage_source_for_attack_type(
@@ -75,11 +117,7 @@ impl Player {
     pub(in crate::player) fn tick_attack_strength(&self) {
         self.tick_state.lock().advance_attack_strength_ticker();
 
-        let main_hand_item = {
-            let inventory = self.inventory.lock();
-            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
-            stack.copy_with_count(stack.count())
-        };
+        let main_hand_item = self.weapon_item();
 
         let mut last_item = self.last_item_in_main_hand.lock();
         if ItemStack::matches(&last_item, &main_hand_item) {
@@ -289,8 +327,14 @@ impl Player {
     fn can_piercing_hit_entity(&self, target: &dyn Entity) -> bool {
         target.id() != self.id()
             && !target.is_invulnerable()
+            && target
+                .as_living_entity()
+                .is_some_and(|living| living.invulnerable_time() > 0)
             && target.is_alive()
             && target.can_be_hit_by_projectile()
+            && target
+                .as_player()
+                .is_none_or(|target_player| self.can_harm_player(target_player))
             && !self.is_passenger_of_same_vehicle(target)
     }
 
@@ -341,11 +385,7 @@ impl Player {
             return false;
         }
 
-        let attacking_item = {
-            let inventory = self.inventory.lock();
-            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
-            stack.copy_with_count(stack.count())
-        };
+        let attacking_item = self.weapon_item();
         let damage_source = self.attack_damage_source(&attacking_item);
         let enchantment_context = EnchantmentDamageContext::new(
             entity.entity_type(),
@@ -385,7 +425,8 @@ impl Player {
             return false;
         }
 
-        self.item_attack_interaction(target, &damage_source, damage_dealt);
+        self.attack_visual_effects(entity, AttackVisualKind::Stab, magic_boost);
+        self.item_attack_interaction(target, attacking_item, &damage_source, damage_dealt);
         self.set_last_hurt_mob(Some(target));
         self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         true
@@ -444,11 +485,7 @@ impl Player {
             return false;
         }
 
-        let attacking_item = {
-            let inventory = self.inventory.lock();
-            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
-            stack.copy_with_count(stack.count())
-        };
+        let attacking_item = self.weapon_item();
         let (attack_damage, attack_speed, attack_knockback) = {
             let attributes = self.attributes().lock();
             (
@@ -491,13 +528,22 @@ impl Player {
         base_damage += ITEM_BEHAVIORS
             .get_behavior(attacking_item.item())
             .get_attack_damage_bonus(self.as_ref(), entity, base_damage, &damage_source);
+        let critical_attack = full_strength_attack && self.can_critical_attack(entity);
+        if critical_attack {
+            base_damage *= CRITICAL_ATTACK_DAMAGE_MULTIPLIER;
+        }
         let total_damage = base_damage + magic_boost;
+        let sweep_attack = self.is_sweep_attack(
+            &attacking_item,
+            full_strength_attack,
+            critical_attack,
+            knockback_attack,
+        );
 
         let old_entity_living_health = entity
             .as_living_entity()
             .map_or(0.0, LivingEntity::get_health);
 
-        // TODO: Apply crits and sweep attacks.
         let old_movement = entity.velocity();
         let Some(target_world) = entity.level() else {
             return false;
@@ -511,13 +557,14 @@ impl Player {
                     + sprint_knockback,
                 old_movement,
             );
-            if full_strength_attack {
-                self.play_attack_sound(&sound_events::ENTITY_PLAYER_ATTACK_STRONG);
-            } else {
-                self.play_attack_sound(&sound_events::ENTITY_PLAYER_ATTACK_WEAK);
+            if sweep_attack {
+                self.do_sweep_attack(entity, base_damage, &damage_source, attack_strength_scale);
             }
+            let visual_kind =
+                AttackVisualKind::melee(critical_attack, sweep_attack, full_strength_attack);
+            self.attack_visual_effects(entity, visual_kind, magic_boost);
             self.set_last_hurt_mob(Some(target));
-            self.item_attack_interaction(target, &damage_source, true);
+            self.item_attack_interaction(target, attacking_item, &damage_source, true);
             self.damage_stats_and_hearts(entity, old_entity_living_health);
             self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         } else {
@@ -529,9 +576,154 @@ impl Player {
         was_hurt
     }
 
+    fn can_critical_attack(&self, target: &dyn Entity) -> bool {
+        self.fall_distance() > 0.0
+            && !self.on_ground()
+            && !self.on_climbable()
+            && !self.is_in_water()
+            && !self.is_mobility_restricted()
+            && !self.is_passenger()
+            && target.as_living_entity().is_some()
+            && !self.is_sprinting()
+    }
+
+    fn is_mobility_restricted(&self) -> bool {
+        self.has_mob_effect(vanilla_mob_effects::BLINDNESS)
+    }
+
+    fn is_sweep_attack(
+        &self,
+        main_hand_item: &ItemStack,
+        full_strength_attack: bool,
+        critical_attack: bool,
+        knockback_attack: bool,
+    ) -> bool {
+        if !full_strength_attack || critical_attack || knockback_attack || !self.on_ground() {
+            return false;
+        }
+
+        let known_movement = self.known_movement();
+        let approximate_speed_sq =
+            known_movement.x * known_movement.x + known_movement.z * known_movement.z;
+        let movement_speed = self
+            .attributes()
+            .lock()
+            .required_value(vanilla_attributes::MOVEMENT_SPEED);
+        let max_speed_for_sweep_attack =
+            f64::from(movement_speed as f32) * MAX_SWEEP_SPEED_MOVEMENT_SPEED_FACTOR;
+        approximate_speed_sq < max_speed_for_sweep_attack * max_speed_for_sweep_attack
+            && REGISTRY
+                .items
+                .is_in_tag(main_hand_item.item(), &ItemTag::SWORDS)
+    }
+
+    fn do_sweep_attack(
+        &self,
+        target: &dyn Entity,
+        base_damage: f32,
+        damage_source: &DamageSource,
+        attack_strength_scale: f32,
+    ) {
+        self.play_attack_sound(&sound_events::ENTITY_PLAYER_ATTACK_SWEEP);
+        let world = self.get_world();
+        let sweeping_damage_ratio =
+            self.attributes()
+                .lock()
+                .required_value(vanilla_attributes::SWEEPING_DAMAGE_RATIO) as f32;
+        let sweep_damage = 1.0 + sweeping_damage_ratio * base_damage;
+        let yaw_radians = self.rotation().0.to_radians();
+        let yaw_sin = f64::from(trig::sin(yaw_radians));
+        let yaw_cos = f64::from(trig::cos(yaw_radians));
+
+        let sweep_area = target.bounding_box().inflate_xyz(
+            SWEEP_AREA_INFLATE_XZ,
+            SWEEP_AREA_INFLATE_Y,
+            SWEEP_AREA_INFLATE_XZ,
+        );
+        let nearby_entities = world.get_entities_in_aabb_matching(&sweep_area, |nearby| {
+            nearby.as_living_entity().is_some() && !nearby.is_spectator()
+        });
+        let position = self.position();
+        for nearby in nearby_entities {
+            if nearby.id() == self.id()
+                || nearby.id() == target.id()
+                || self.is_allied_to(nearby.as_ref())
+                || nearby.is_marker_armor_stand()
+                || nearby.distance_to_sqr(position) >= SWEEP_MAX_DISTANCE_SQ
+            {
+                continue;
+            }
+            let Some(living_nearby) = nearby.as_living_entity() else {
+                continue;
+            };
+
+            // Re-read per target: an earlier sweep hit can change the hand (e.g. thorns death).
+            let weapon = self.weapon_item();
+            let enchantment_context = EnchantmentDamageContext::new(
+                nearby.entity_type(),
+                Some(self.entity_type()),
+                Some(self.entity_type()),
+                damage_source,
+            );
+            let enchanted_damage =
+                enchantment_helper::modify_damage(&weapon, &enchantment_context, sweep_damage)
+                    * attack_strength_scale;
+            if !nearby.hurt(&world, damage_source, enchanted_damage) {
+                continue;
+            }
+            living_nearby.knockback(SWEEP_KNOCKBACK, yaw_sin, -yaw_cos);
+            let post_attack_context = EnchantmentPostAttackContext::new(&nearby, damage_source);
+            enchantment_helper::do_post_attack_effects_with_item_source(
+                &world,
+                nearby.as_ref(),
+                weapon,
+                &post_attack_context,
+            );
+        }
+
+        let dx = -yaw_sin;
+        let dz = yaw_cos;
+        let height = f64::from(self.base().dimensions().height);
+        world.send_particles(
+            ParticleData::simple(&vanilla_particle_types::SWEEP_ATTACK),
+            DVec3::new(position.x + dx, position.y + height * 0.5, position.z + dz),
+            0,
+            DVec3::new(dx, 0.0, dz),
+            0.0,
+        );
+    }
+
+    fn attack_visual_effects(&self, target: &dyn Entity, kind: AttackVisualKind, magic_boost: f32) {
+        match kind {
+            AttackVisualKind::Critical => {
+                self.play_attack_sound(&sound_events::ENTITY_PLAYER_ATTACK_CRIT);
+                self.send_to_tracking_players_and_self(CAnimate::critical_hit(target.id()));
+            }
+            AttackVisualKind::Normal { full_strength } => {
+                self.play_attack_sound(if full_strength {
+                    &sound_events::ENTITY_PLAYER_ATTACK_STRONG
+                } else {
+                    &sound_events::ENTITY_PLAYER_ATTACK_WEAK
+                });
+            }
+            AttackVisualKind::Sweep | AttackVisualKind::Stab => {}
+        }
+
+        if magic_boost > 0.0 {
+            self.send_to_tracking_players_and_self(CAnimate::magic_critical_hit(target.id()));
+        }
+    }
+
+    fn send_to_tracking_players_and_self(&self, packet: CAnimate) {
+        self.get_world()
+            .broadcast_to_entity_trackers(self.id(), packet.clone(), None);
+        self.send_packet(packet);
+    }
+
     fn item_attack_interaction(
         &self,
         target: &SharedEntity,
+        attacking_item: ItemStack,
         damage_source: &DamageSource,
         apply_to_target: bool,
     ) {
@@ -540,18 +732,17 @@ impl Player {
         let parent = entity.as_part_entity().and_then(PartEntity::parent);
         let hurt_target = parent.as_deref().unwrap_or(entity);
         let post_attack_context = EnchantmentPostAttackContext::new(target, damage_source);
-        let (source_item, item_hurt_enemy) = {
+        let item_hurt_enemy = {
             let mut inventory = self.inventory.lock();
             inventory.mutate_item_in_hand(InteractionHand::MainHand, |stack| {
                 if stack.is_empty() {
-                    return (ItemStack::empty(), false);
+                    return false;
                 }
                 let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
                 if let Some(living_target) = hurt_target.as_living_entity() {
                     behavior.hurt_enemy(stack, living_target, self);
                 }
-                let source_item = stack.copy_with_count(stack.count());
-                (source_item, stack.get_weapon().is_some())
+                stack.get_weapon().is_some()
             })
         };
 
@@ -560,7 +751,7 @@ impl Player {
             enchantment_helper::do_post_attack_effects_with_item_source(
                 &world,
                 entity,
-                source_item,
+                attacking_item,
                 &post_attack_context,
             );
         }
@@ -669,11 +860,7 @@ impl Player {
             return;
         }
 
-        let main_hand_item = {
-            let inventory = self.inventory.lock();
-            let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
-            stack.copy_with_count(stack.count())
-        };
+        let main_hand_item = self.weapon_item();
 
         if !self.is_within_attack_range_with_buffer(
             &main_hand_item,
