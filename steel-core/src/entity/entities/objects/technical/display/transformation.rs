@@ -10,13 +10,12 @@ use steel_utils::nbt::{
     mat4_from_nbt_tag, quat_from_nbt_tag, quat_to_nbt_tag, vec3_from_nbt_tag, vec3_to_nbt_tag,
 };
 
-pub const DECOMPOSITION_EPSILON: f32 = 1.0e-6;
-pub const DECOMPOSITION_EPSILON_F64: f64 = 1.0e-6;
+const DECOMPOSITION_EPSILON: f32 = 1.0e-6;
+const DECOMPOSITION_EPSILON_F64: f64 = 1.0e-6;
 
 /// A structure describing an affine transformation in 3D space.
 ///
-/// Transformations are applied in the following order:
-/// `translation` -> `left_rotation` -> `scale` -> `right_rotation`
+/// The matrix is `T * L * S * R`. Applied to a point, the right rotation acts first.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transformation {
     /// The translation (displacement) applied by this transformation.
@@ -118,7 +117,7 @@ impl Transformation {
         }
     }
 
-    /// Decomposes a [`Matrix4f`] to form a transformation.
+    /// Decomposes a [`Mat4`] to form a transformation.
     ///
     /// This function uses *singular value decomposition* (or SVD) to split the matrix
     /// into a set of transformation values.
@@ -141,13 +140,11 @@ impl Transformation {
         for _ in 0..5 {
             Self::step_jacobi(&mut ata, &mut right_rotation);
         }
-        // Use the resulting quaternion to get the right rotation's conjugate.
         right_rotation = right_rotation.normalize();
 
         let zero_column_0 = f64::from(ata.col(0)[0]) < DECOMPOSITION_EPSILON_F64;
         let zero_column_1 = f64::from(ata.col(1)[1]) < DECOMPOSITION_EPSILON_F64;
 
-        // Get a matrix that can be reduced to a diagonal form.
         let [x, y, z, w] = right_rotation.to_array();
         let (ww, xx, yy, zz) = (w * w, x * x, y * y, z * z);
         let (zw, xy, xz, yw, yz, xw) = (
@@ -296,7 +293,7 @@ impl Givens {
 }
 
 impl From<Mat4> for Transformation {
-    /// Decomposes a [`Matrix4f`] to form a [`Transformation`].
+    /// Decomposes a [`Mat4`] to form a [`Transformation`].
     fn from(matrix: Mat4) -> Self {
         Transformation::decompose(matrix)
     }
@@ -310,17 +307,6 @@ impl From<Transformation> for Mat4 {
 }
 
 struct NormalTransformation(Transformation);
-impl From<Transformation> for NormalTransformation {
-    fn from(t: Transformation) -> Self {
-        Self(t)
-    }
-}
-impl From<NormalTransformation> for Transformation {
-    fn from(t: NormalTransformation) -> Self {
-        t.0
-    }
-}
-
 // Recreates Vanilla's `Transformation.CODEC`.
 impl ToNbtTag for NormalTransformation {
     fn to_nbt_tag(self) -> NbtTag {

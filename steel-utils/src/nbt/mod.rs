@@ -11,8 +11,7 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 
 pub use codec::NbtNumeric;
 pub use glam::{
-    mat4_from_nbt_tag, mat4_to_nbt_tag, quat_from_nbt_tag, quat_to_nbt_tag, vec3_from_nbt_tag,
-    vec3_to_nbt_tag,
+    mat4_from_nbt_tag, quat_from_nbt_tag, quat_to_nbt_tag, vec3_from_nbt_tag, vec3_to_nbt_tag,
 };
 pub use path::{
     NbtPath, NbtPathError, NbtPathErrorKind, NbtPathMutationError, parse_nbt_path,

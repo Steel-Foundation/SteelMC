@@ -1,9 +1,7 @@
 //! Vanilla's item display implementation.
 
+use super::{Display, DisplayView, PrivateDisplayView, modify_display_entity_base};
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::objects::technical::display::{
-    Display, DisplayView, PrivateDisplayView, modify_display_entity_base,
-};
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 use glam::DVec3;
@@ -81,12 +79,15 @@ impl Entity for ItemDisplayEntity {
     fn tick(self: Arc<Self>) {
         self.tick_display();
     }
+
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         self.hurt_display(world, source, amount)
     }
+
     fn piston_push_reaction(&self) -> PushReaction {
         self.piston_push_reaction_display()
     }
+
     fn is_ignoring_block_triggers(&self) -> bool {
         self.is_ignoring_block_triggers_display()
     }
@@ -121,7 +122,7 @@ impl Entity for ItemDisplayEntity {
         });
     }
 
-    // TODO: Add `getItemStack` and `setItemStack` overrides.
+    // TODO: Expose slot 0 once entity slot access is available to /item
 }
 
 impl Display for ItemDisplayEntity {
@@ -248,7 +249,7 @@ impl ToNbtTag for ItemDisplayContext {
 
 impl FromNbtTag for ItemDisplayContext {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        match tag.string()?.to_string().as_str() {
+        match tag.string()?.to_str().as_ref() {
             "none" => Some(Self::None),
             "thirdperson_lefthand" => Some(Self::ThirdPersonLeftHand),
             "thirdperson_righthand" => Some(Self::ThirdPersonRightHand),

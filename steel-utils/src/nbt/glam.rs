@@ -1,8 +1,8 @@
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use glam::{Mat4, Quat, Vec3};
-use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-use simdnbt::{FromNbtTag, ToNbtTag};
+use simdnbt::FromNbtTag;
+use simdnbt::owned::{NbtList, NbtTag};
 
 use crate::nbt::{NbtNumeric, nbt_collection_values};
 use simdnbt::borrow::NbtTag as BorrowedNbtTag;
@@ -34,19 +34,9 @@ pub fn vec3_from_nbt_tag(tag: BorrowedNbtTag) -> Option<Vec3> {
 ///
 /// This is only used to provide a more accurate codec implementation
 /// for quaternions (`Quat`s).
-#[derive(Debug, Clone, Copy, PartialEq)]
 struct AxisAngle4f {
-    pub angle: f32,
-    pub axis: Vec3,
-}
-
-impl ToNbtTag for AxisAngle4f {
-    fn to_nbt_tag(self) -> NbtTag {
-        let mut compound = NbtCompound::new();
-        compound.insert("angle", self.angle);
-        compound.insert("axis", vec3_to_nbt_tag(self.axis));
-        NbtTag::Compound(compound)
-    }
+    angle: f32,
+    axis: Vec3,
 }
 
 impl FromNbtTag for AxisAngle4f {
@@ -75,7 +65,7 @@ impl From<AxisAngle4f> for Quat {
         let mut quadrant = shift - (shift / TAU) as i32 as f32 * TAU;
 
         if quadrant < 0.0 {
-            quadrant = TAU + quadrant;
+            quadrant += TAU;
         }
 
         if quadrant >= PI {
@@ -114,13 +104,6 @@ pub fn quat_from_nbt_tag(tag: BorrowedNbtTag) -> Option<Quat> {
         ));
     }
     Some(AxisAngle4f::from_nbt_tag(tag)?.into())
-}
-
-/// Tries to convert a [`Mat4`] from its NBT representation (recreates `ExtraCodecs.MATRIX4F`).
-#[must_use]
-pub fn mat4_to_nbt_tag(mat: Mat4) -> NbtTag {
-    let elements = mat.transpose().to_cols_array();
-    NbtList::Float(elements.to_vec()).into()
 }
 
 /// Tries to convert a [`Mat4`] from its NBT representation (recreates `ExtraCodecs.MATRIX4F`).

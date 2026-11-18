@@ -1,9 +1,7 @@
 //! Vanilla's text display implementation.
 
+use super::{Display, DisplayView, PrivateDisplayView, modify_display_entity_base};
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::objects::technical::display::{
-    Display, DisplayView, PrivateDisplayView, modify_display_entity_base,
-};
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 use bitflags::bitflags;
@@ -94,12 +92,15 @@ impl Entity for TextDisplayEntity {
     fn tick(self: Arc<Self>) {
         self.tick_display();
     }
+
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         self.hurt_display(world, source, amount)
     }
+
     fn piston_push_reaction(&self) -> PushReaction {
         self.piston_push_reaction_display()
     }
+
     fn is_ignoring_block_triggers(&self) -> bool {
         self.is_ignoring_block_triggers_display()
     }
@@ -108,21 +109,14 @@ impl Entity for TextDisplayEntity {
         self.with_view(|view| {
             <Self as Display>::save_display(&view, nbt);
 
-            nbt.insert("text", *view.text());
+            nbt.insert("text", view.text_ref());
             nbt.insert("line_width", view.line_width());
             nbt.insert("background", view.background_color());
             nbt.insert("text_opacity", view.text_opacity());
 
-            nbt.insert("shadow", view.flags().contains(TextDisplayFlags::SHADOW));
-            nbt.insert(
-                "see_through",
-                view.flags().contains(TextDisplayFlags::SEE_THROUGH),
-            );
-            nbt.insert(
-                "default_background",
-                view.flags()
-                    .contains(TextDisplayFlags::USE_DEFAULT_BACKGROUND),
-            );
+            nbt.insert("shadow", view.shadow());
+            nbt.insert("see_through", view.see_through());
+            nbt.insert("default_background", view.default_background());
 
             nbt.insert("alignment", view.alignment());
         });
@@ -225,7 +219,7 @@ impl TextDisplayView<'_> {
 
     /// Gets the text opacity of this text display.
     ///
-    /// The client uses this value as the glyph alpha with `255` representing full opacity
+    /// The client uses this value as the glyph alpha, with `255` representing full opacity.
     ///
     /// **Note:** This property is interpolated.
     #[must_use]
@@ -235,7 +229,7 @@ impl TextDisplayView<'_> {
 
     /// Sets the opacity of this text display to `opacity`.
     ///
-    /// The client uses this value as the glyph alpha with `255` representing full opacity
+    /// The client uses this value as the glyph alpha, with `255` representing full opacity.
     ///
     /// **Note:** This property is interpolated.
     pub fn set_text_opacity(&mut self, opacity: u8) {
@@ -384,7 +378,7 @@ impl ToNbtTag for Alignment {
 
 impl FromNbtTag for Alignment {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        match tag.string()?.to_string().as_str() {
+        match tag.string()?.to_str().as_ref() {
             "center" => Some(Self::Center),
             "left" => Some(Self::Left),
             "right" => Some(Self::Right),

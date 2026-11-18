@@ -15,9 +15,8 @@ pub use objects::projectiles::{
     LingeringPotionEntity, SnowballEntity, SplashPotionEntity, ThrownEggEntity, WindChargeEntity,
 };
 pub use objects::technical::{
-    Alignment, BillboardConstraints, BlockDisplayEntity, BlockDisplayView, Brightness,
-    ItemDisplayContext, ItemDisplayEntity, ItemDisplayView, TextDisplayEntity, TextDisplayView,
-    Transformation,
+    Alignment, BillboardConstraints, BlockDisplayEntity, BlockDisplayView, Brightness, Display,
+    DisplayView, InteractionEntity, ItemDisplayContext, ItemDisplayEntity, ItemDisplayView,
+    MarkerEntity, TextDisplayEntity, TextDisplayView, Transformation,
 };
-pub use objects::technical::{InteractionEntity, MarkerEntity};
 pub use objects::vehicles::{ChestMinecartEntity, MinecartEntity, SpawnerMinecartEntity};

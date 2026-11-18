@@ -1,8 +1,8 @@
 //! Vanilla's abstract `Display` implementation.
 //!
 
+pub use self::transformation::Transformation;
 use crate::entity::damage::DamageSource;
-pub use crate::entity::entities::objects::technical::display::transformation::Transformation;
 use crate::entity::{Entity, EntityBase};
 use crate::world::World;
 use glam::Mat4;
@@ -21,6 +21,7 @@ pub const DEFAULT_TRANSFORMATION_INTERPOLATION_DELAY: i32 = 0;
 
 /// The default teleport duration of a display entity.
 pub const DEFAULT_POS_ROT_INTERPOLATION_DURATION: i32 = 0;
+const MAX_POS_ROT_INTERPOLATION_DURATION: i32 = 59;
 
 /// The default [`BillboardConstraints`] of a display entity.
 pub const DEFAULT_BILLBOARD_CONSTRAINTS: BillboardConstraints = BillboardConstraints::Fixed;
@@ -49,17 +50,17 @@ pub const DEFAULT_GLOW_COLOR_OVERRIDE: i32 = -1;
 /// - A [`Transformation`] (containing how the display of the entity is transformed)
 /// - A billboard value to control how a display entity looks at players.
 /// - A brightness and glow color override.
-/// - A maximum and minimum height and width (if set).
+/// - Width and height for the client culling box.
 /// - Interpolation properties, like the duration of a transformation interpolation, its delay and the duration
 ///   of a teleport interpolation.
 /// - A shadow radius and strength.
-/// - A maximum view range.
+/// - A client view range multiplier.
 ///
 /// To **access** or **modify** the data of a display entity, you will need to use [`Display::with_view`].
 /// This method takes a function with a [`DisplayView`] as a parameter, which can be used within the function.
 pub trait Display: Entity {
     /// The type of [`DisplayView`] implementation associated with this entity.
-    type View<'a>;
+    type View<'a>: DisplayView<'a>;
 
     /// The base `tick()` method for display entities.
     fn tick_display(&self) {
@@ -113,7 +114,7 @@ pub trait Display: Entity {
         view.set_pos_rot_interpolation_duration(
             nbt.int_value("teleport_duration")
                 .unwrap_or(DEFAULT_POS_ROT_INTERPOLATION_DURATION)
-                .clamp(0, 59),
+                .clamp(0, MAX_POS_ROT_INTERPOLATION_DURATION),
         );
         view.set_billboard_constraints(
             nbt.get("billboard")
@@ -155,7 +156,8 @@ pub trait Display: Entity {
         nbt.insert("height", view.height());
         nbt.insert(
             "glow_color_override",
-            view.glow_color_override().unwrap_or(-1),
+            view.glow_color_override()
+                .unwrap_or(DEFAULT_GLOW_COLOR_OVERRIDE),
         );
         if let Some(brightness) = view.brightness_override() {
             nbt.insert("brightness", brightness);
@@ -232,11 +234,9 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
             .set(duration);
     }
 
-    /// Gets the display entity's *start interpolation delay* (the time to interpolate to a new position due to a teleport), in ticks.
+    /// Gets the delay before starting a transformation interpolation, in ticks.
     ///
-    /// Values are clamped to be between `0` and `59` ticks, inclusive.
-    ///
-    /// **Note:** This property is not saved to disk.
+    /// This value is not saved to disk.
     fn transformation_interpolation_delay(&self) -> i32 {
         *self
             .display_data()
@@ -244,24 +244,23 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
             .get()
     }
 
-    /// Sets the display entity's *start interpolation delay* (the delay in starting an interpolation), in ticks, to `duration`,
-    /// and restarts the transformation animation (regardless of what `duration` is).
+    /// Sets the delay before starting a transformation interpolation, in ticks.
     ///
-    /// If this is set to `0`, interpolation starts immediately.
-    ///
-    /// **Note:** This property is not saved to disk.
+    /// Sending the same delay still restarts the animation. This value is not saved to disk.
     fn set_transformation_interpolation_delay(&mut self, duration: i32) {
         self.display_data_mut()
             .transformation_interpolation_start_delta_ticks
             .set_and_force_dirty(duration, true);
     }
 
-    /// Gets the display entity's *start interpolation delay* (the delay in starting an interpolation), in ticks.
+    /// Gets the position and rotation interpolation duration, in ticks.
     fn pos_rot_interpolation_duration(&self) -> i32 {
         *self.display_data().pos_rot_interpolation_duration.get()
     }
 
-    /// Sets the display entity's *start interpolation delay* (the time to interpolate to a new position due to a teleport), in ticks, to `duration`.
+    /// Sets the position and rotation interpolation duration, in ticks.
+    ///
+    /// Display NBT clamps this value to `0..=59` when loading.
     fn set_pos_rot_interpolation_duration(&mut self, duration: i32) {
         self.display_data_mut()
             .pos_rot_interpolation_duration
@@ -281,22 +280,23 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
             .set(constraints as i8);
     }
 
-    /// Gets the display entity's billboard constraints.
+    /// Gets the packed-light override as block and sky light levels.
     fn brightness_override(&self) -> Option<Brightness> {
         let synced = *self.display_data().brightness_override.get();
         (synced != -1).then(|| Brightness::unpack(synced))
     }
+
     /// Sets the display entity's brightness override to `brightness`.
     fn set_brightness_override(&mut self, brightness: Option<Brightness>) {
         self.set_synced_brightness_override(brightness.map_or(-1, Brightness::pack));
     }
 
-    /// Gets the display entity's maximum view range.
+    /// Gets the display entity's client view range multiplier.
     fn view_range(&self) -> f32 {
         *self.display_data().view_range.get()
     }
 
-    /// Sets the display entity's maximum view range to `range`.
+    /// Sets the display entity's client view range multiplier to `range`.
     fn set_view_range(&mut self, range: f32) {
         self.display_data_mut().view_range.set(range);
     }
@@ -315,40 +315,40 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
         self.display_data_mut().shadow_radius.set(size);
     }
 
-    /// Sets the display entity's shadow strength (which affects the opacity of the display entity's shadow depending on its distance to the block below).
+    /// Gets the display entity's shadow strength.
     ///
     /// **Note:** This property is interpolated.
     fn shadow_strength(&self) -> f32 {
         *self.display_data().shadow_strength.get()
     }
 
-    /// Sets the display entity's shadow strength (which affects the opacity of the display entity's shadow depending on its distance to the block below) to `strength`.
+    /// Sets the display entity's shadow strength to `strength`.
     ///
     /// **Note:** This property is interpolated.
     fn set_shadow_strength(&mut self, strength: f32) {
         self.display_data_mut().shadow_strength.set(strength);
     }
 
-    /// Gets the display entity's maximum width.
+    /// Gets the width of the client culling box.
     fn width(&self) -> f32 {
         *self.display_data().width.get()
     }
 
-    /// Sets the display entity's maximum width to `width`.
+    /// Sets the width of the client culling box.
     ///
-    /// Setting this to `0` indicates no culling on the horizontal axis.
+    /// A zero width or height disables frustum culling.
     fn set_width(&mut self, width: f32) {
         self.display_data_mut().width.set(width);
     }
 
-    /// Gets the display entity's maximum height.
+    /// Gets the height of the client culling box.
     fn height(&self) -> f32 {
         *self.display_data().height.get()
     }
 
-    /// Sets the display entity's maximum height to `height`.
+    /// Sets the height of the client culling box.
     ///
-    /// Setting this to `0` indicates no culling on the vertical axis.
+    /// A zero width or height disables frustum culling.
     fn set_height(&mut self, height: f32) {
         self.display_data_mut().height.set(height);
     }
@@ -358,14 +358,14 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
     /// **Note:** This has no effect on *text displays*.
     fn glow_color_override(&self) -> Option<i32> {
         let color = *self.display_data().glow_color_override.get();
-        (color != -1).then_some(color)
+        (color != DEFAULT_GLOW_COLOR_OVERRIDE).then_some(color)
     }
 
     /// Sets the display entity's glow color override to `value`. If this is `None`, the entity glows according to its team's color.
     ///
     /// **Note:** This has no effect on *text displays*.
     fn set_glow_color_override(&mut self, value: Option<i32>) {
-        self.set_synced_glow_color_override(value.unwrap_or(-1));
+        self.set_synced_glow_color_override(value.unwrap_or(DEFAULT_GLOW_COLOR_OVERRIDE));
     }
 }
 
@@ -417,7 +417,7 @@ impl ToNbtTag for BillboardConstraints {
 
 impl FromNbtTag for BillboardConstraints {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        match tag.string()?.to_string().as_str() {
+        match tag.string()?.to_str().as_ref() {
             "fixed" => Some(Self::Fixed),
             "vertical" => Some(Self::Vertical),
             "horizontal" => Some(Self::Horizontal),

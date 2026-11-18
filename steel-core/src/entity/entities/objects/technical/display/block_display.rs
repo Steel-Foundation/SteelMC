@@ -1,10 +1,8 @@
 //! Vanilla's block display implementation.
 
+use super::{Display, DisplayView, PrivateDisplayView, modify_display_entity_base};
 use crate::block_entity::block_state_nbt;
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::objects::technical::display::{
-    Display, DisplayView, PrivateDisplayView, modify_display_entity_base,
-};
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 use glam::DVec3;
@@ -81,12 +79,15 @@ impl Entity for BlockDisplayEntity {
     fn tick(self: Arc<Self>) {
         self.tick_display();
     }
+
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         self.hurt_display(world, source, amount)
     }
+
     fn piston_push_reaction(&self) -> PushReaction {
         self.piston_push_reaction_display()
     }
+
     fn is_ignoring_block_triggers(&self) -> bool {
         self.is_ignoring_block_triggers_display()
     }
@@ -102,7 +103,7 @@ impl Entity for BlockDisplayEntity {
         self.with_view(|mut view| {
             <Self as Display>::load_display(&mut view, nbt);
 
-            // TODO: Make this function more accurate to BlockState.CODEC
+            // TODO: Support compact default states and the property fallback from BlockState.CODEC
             view.set_block_state(
                 nbt.compound("block_state")
                     .and_then(block_state_nbt::load)
