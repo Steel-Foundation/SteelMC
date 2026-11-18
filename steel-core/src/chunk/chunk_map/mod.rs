@@ -879,6 +879,7 @@ impl ChunkMap {
         });
         // The radius square bounds every chunk within spawn distance, so checking
         // distance against the producing player yields the full spawning set.
+        // The set dedups chunks near several players so each ticks once.
         let mut spawning_chunks = FxHashSet::default();
         for &position in &player_positions {
             let ChunkPos(center) = ChunkPos::from_entity_pos(position);
@@ -891,25 +892,26 @@ impl ChunkMap {
                     let delta_z = f64::from(pos.middle_block_z()) - position.z;
                     if delta_x * delta_x + delta_z * delta_z
                         < SPAWN_CANDIDATE_PLAYER_DISTANCE_SQUARED
+                        && spawning_chunks.insert(pos)
                     {
-                        spawning_chunks.insert(pos);
+                        self.tick_spawning_chunk(pos);
                     }
                 }
             }
         }
+    }
 
-        for pos in spawning_chunks {
-            let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder)) else {
-                continue;
-            };
-            if !is_block_ticking(holder.load_level())
-                || !holder.ticking_readiness_snapshot().is_block_ticking()
-            {
-                continue;
-            }
-            if let Some(chunk) = holder.try_full_chunk() {
-                chunk.common().increment_inhabited_time();
-            }
+    fn tick_spawning_chunk(&self, pos: ChunkPos) {
+        let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder)) else {
+            return;
+        };
+        if !is_block_ticking(holder.load_level())
+            || !holder.ticking_readiness_snapshot().is_block_ticking()
+        {
+            return;
+        }
+        if let Some(chunk) = holder.try_full_chunk() {
+            chunk.common().increment_inhabited_time();
         }
     }
 
