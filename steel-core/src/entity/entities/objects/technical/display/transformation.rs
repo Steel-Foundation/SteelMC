@@ -140,12 +140,16 @@ impl Transformation {
         for _ in 0..5 {
             Self::step_jacobi(&mut ata, &mut right_rotation);
         }
-        right_rotation = right_rotation.normalize();
+        let [x, y, z, w] = right_rotation.to_array();
+        let length_squared = x * x + (y * y + (z * z + w * w));
+        let inv_sqrt = 1.0 / (f64::from(length_squared).sqrt() as f32);
+        let [x, y, z, w] = [x, y, z, w].map(|component| component * inv_sqrt);
+
+        right_rotation = Quat::from_xyzw(x, y, z, w);
 
         let zero_column_0 = f64::from(ata.col(0)[0]) < DECOMPOSITION_EPSILON_F64;
         let zero_column_1 = f64::from(ata.col(1)[1]) < DECOMPOSITION_EPSILON_F64;
 
-        let [x, y, z, w] = right_rotation.to_array();
         let (ww, xx, yy, zz) = (w * w, x * x, y * y, z * z);
         let (zw, xy, xz, yw, yz, xw) = (
             2.0 * (z * w),
@@ -156,13 +160,17 @@ impl Transformation {
             2.0 * (x * w),
         );
 
-        let u012s = Self::joml_mul(
-            mat,
-            Mat3::from_cols(
-                Vec3::new(ww + xx - zz - yy, xy + zw, xz - yw),
-                Vec3::new(xy - zw, yy - zz + ww - xx, yz + xw),
-                Vec3::new(yw + xz, yz - xw, zz - yy - xx + ww),
-            ),
+        let rotation = Mat3::from_cols(
+            Vec3::new(ww + xx - zz - yy, xy + zw, xz - yw),
+            Vec3::new(xy - zw, yy - zz + ww - xx, yz + xw),
+            Vec3::new(yw + xz, yz - xw, zz - yy - xx + ww),
+        );
+
+        let column = |v: Vec3| (mat.x_axis * v.x + mat.y_axis * v.y) + mat.z_axis * v.z;
+        let u012s = Mat3::from_cols(
+            column(rotation.x_axis),
+            column(rotation.y_axis),
+            column(rotation.z_axis),
         );
 
         let mut left_rotation = Quat::IDENTITY;
@@ -401,22 +409,34 @@ mod tests {
             ),
         );
 
-        check_transformation(
-            Transformation {
-                translation: Vec3::new(-99.0, 25.0, 3000.0),
-                left_rotation: Quat::from_axis_angle(Vec3::new(4.0, -55.0, 6.0).normalize(), 0.2),
-                scale: Vec3::new(33.0, 32.0, 31.0),
-                right_rotation: Quat::from_axis_angle(
-                    Vec3::new(7.0, 8.0, -99.0).normalize(),
-                    -1.24,
-                ),
-            },
-            Mat4::from_cols(
-                Vec4::new(9.745_661, 30.406_546, 3.377_947_8, 0.0),
-                Vec4::new(-29.800_283, 9.970_775, -9.624_349, 0.0),
-                Vec4::new(-10.048_495, -0.186_506_54, 29.358_908, 0.0),
-                Vec4::new(-99.0, 25.0, 3000.0, 1.0),
-            ),
+        let transformation = Transformation {
+            translation: Vec3::new(-99.0, 25.0, 3000.0),
+            left_rotation: Quat::from_axis_angle(Vec3::new(4.0, -55.0, 6.0).normalize(), 0.2),
+            scale: Vec3::new(33.0, 32.0, 31.0),
+            right_rotation: Quat::from_axis_angle(Vec3::new(7.0, 8.0, -99.0).normalize(), -1.24),
+        };
+        let vanilla_matrix = Mat4::from_cols(
+            Vec4::new(9.745_661, 30.406_546, 3.377_947_8, 0.0),
+            Vec4::new(-29.800_283, 9.970_775, -9.624_349, 0.0),
+            Vec4::new(-10.048_495, -0.186_506_54, 29.358_908, 0.0),
+            Vec4::new(-99.0, 25.0, 3000.0, 1.0),
+        );
+        assert!(transformation.compose().abs_diff_eq(vanilla_matrix, 1.0e-5));
+
+        // These bits come from decomposing vanilla_matrix in the 26.3 server.
+        let decoded = Transformation::decompose(vanilla_matrix);
+        assert_eq!(decoded.translation, transformation.translation);
+        assert_eq!(
+            decoded.left_rotation.to_array().map(f32::to_bits),
+            [0xbd84_ebff, 0xbd99_c5d9, 0x3f36_11d7, 0x3f32_290b],
+        );
+        assert_eq!(
+            decoded.scale.to_array().map(f32::to_bits),
+            [0x4200_0001, 0x4204_0001, 0x41f8_0006],
+        );
+        assert_eq!(
+            decoded.right_rotation.to_array().map(f32::to_bits),
+            [0x3d7d_8581, 0x3b87_3545, 0x3e2b_0033, 0xbf7b_e7bd],
         );
     }
 }
