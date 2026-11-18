@@ -57,7 +57,7 @@ mod player_methods;
 mod raycast;
 mod swing;
 
-pub(crate) use adventure_mode::can_break;
+pub(crate) use adventure_mode::{can_break, predicate_matches};
 pub(super) use block_breaking::BlockBreakingManager;
 pub use item_interaction::{use_item, use_item_on};
 
