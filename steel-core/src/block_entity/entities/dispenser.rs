@@ -147,10 +147,8 @@ impl_dispenser_like_entity!(
 mod tests {
     use super::*;
     use crate::inventory::lock::ContainerLockGuard;
-    use simdnbt::owned::NbtTag;
     use steel_registry::{
-        data_components::vanilla_components::MAX_STACK_SIZE, init_vanilla_registry,
-        item_stack::ItemStack, vanilla_blocks, vanilla_items,
+        init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_items,
     };
 
     fn test_dropper() -> DropperBlockEntity {
