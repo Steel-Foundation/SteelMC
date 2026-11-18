@@ -59,7 +59,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v21: Matched vanilla scheduled-tick persistence by rebuilding sub-tick order on load.
 /// v22: Preserve Vanilla pending `DUMMY` block entities across chunk stages.
 /// v23: Replaced Noise, Surface, and Carvers with Terrain status; removed persisted carving masks.
-pub const FORMAT_VERSION: u16 = 23;
+/// v24: Added chunk inhabited-time persistence.
+pub const FORMAT_VERSION: u16 = 24;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -364,6 +365,8 @@ impl PersistentLightSection {
 pub struct PersistentChunk<'a> {
     /// Unix timestamp of last modification.
     pub last_modified: u32,
+    /// Game ticks this chunk spent as a natural-spawn candidate.
+    pub inhabited_time: i64,
     /// Block states used in this chunk. Sections reference indices into this.
     pub block_states: Vec<PersistentBlockState<'a>>,
     /// Biomes used in this chunk. Sections reference indices into this.
