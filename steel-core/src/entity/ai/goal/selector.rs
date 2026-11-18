@@ -178,7 +178,7 @@ impl WrappedGoal {
 
 pub struct GoalSelector {
     available_goals: Vec<WrappedGoal>,
-    next_goal_id: u64,
+    next_goal_id: GoalId,
     disabled_controls: GoalControls,
 }
 
@@ -187,7 +187,7 @@ impl GoalSelector {
     pub const fn new() -> Self {
         Self {
             available_goals: Vec::new(),
-            next_goal_id: 0,
+            next_goal_id: GoalId(0),
             disabled_controls: GoalControls::EMPTY,
         }
     }
@@ -197,8 +197,8 @@ impl GoalSelector {
     where
         G: Goal + 'static,
     {
-        let id = GoalId(self.next_goal_id);
-        self.next_goal_id = self.next_goal_id.wrapping_add(1);
+        let id = self.next_goal_id;
+        self.next_goal_id = GoalId(id.0.wrapping_add(1));
         self.available_goals
             .push(WrappedGoal::new(id, priority, Box::new(goal)));
         id
