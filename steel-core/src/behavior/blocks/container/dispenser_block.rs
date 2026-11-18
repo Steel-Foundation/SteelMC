@@ -478,6 +478,8 @@ fn random_slot(container: &dyn Container) -> Option<usize> {
 }
 
 fn target_containers(world: &World, pos: BlockPos) -> SmallVec<[ContainerRef; 2]> {
+    // TODO: Resolve composter inventories and container entities such as chest minecarts.
+    // The dropper currently ejects the item if either is its only target.
     let state = world.get_block_state(pos);
     if [&vanilla_blocks::CHEST, &vanilla_blocks::TRAPPED_CHEST].contains(&state.get_block()) {
         return ChestBlock::get_container(state, world, pos, true)

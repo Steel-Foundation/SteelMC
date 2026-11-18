@@ -127,7 +127,8 @@ impl DispenseBehaviorRegistry {
 pub(crate) static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyLock::new(|| {
     let mut registry = DispenseBehaviorRegistry::new();
 
-    // TODO: register arrow dispense behaviors once the arrow entities are available
+    // TODO: Launch arrows, tipped arrows, and spectral arrows once their entities exist.
+    // These items currently use the default ejection behavior.
 
     // boat
     // TODO: boats and rafts - need the boat entities.
