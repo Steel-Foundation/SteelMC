@@ -4,9 +4,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_utils::types::Difficulty;
 
 use crate::entity::registry::ENTITIES;
-use crate::entity::{
-    Entity, Mob, RemovalReason, SharedEntity, next_entity_id, start_riding_entities,
-};
+use crate::entity::{Entity, Mob, RemovalReason, SharedEntity, start_riding_entities};
 use crate::inventory::equipment::EquipmentSlot;
 
 /// Finalizes a freshly converted mob.
@@ -85,12 +83,7 @@ pub(crate) fn convert_to(
     if !entity_type.allowed_in_peaceful && world.difficulty() == Difficulty::Peaceful {
         return None;
     }
-    let Some(to) = ENTITIES.create(
-        entity_type,
-        next_entity_id(),
-        from.position(),
-        Arc::downgrade(&world),
-    ) else {
+    let Some(to) = ENTITIES.create(entity_type, from.position(), Arc::downgrade(&world)) else {
         log::warn!(
             "cannot convert {} to {}: no entity factory is registered",
             from.entity_type().key,

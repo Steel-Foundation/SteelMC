@@ -2,6 +2,7 @@
 
 use std::{
     io, mem,
+    ops::ControlFlow,
     path::Path,
     sync::{
         Arc, LazyLock, Weak,
@@ -43,7 +44,7 @@ use steel_protocol::{
 };
 
 use crate::loot::{LootContext, random_sequences::RandomSequences};
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use simdnbt::owned::NbtCompound;
 use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -93,7 +94,7 @@ use crate::{
     entity::{
         AddEntityError, Entity, EntityChangeSenders, EntityChunkCallback, EntityLifecycleChanges,
         EntityMovementSyncPacket, EntityOwnership, EntityTracker, EntityVisibility,
-        InactiveEntityCallback, MobEffectSyncPacket, RemovalReason, SharedEntity,
+        InactiveEntityCallback, MobEffectSyncPacket, PartEntity, RemovalReason, SharedEntity,
         WorldEntityManager,
         entities::{ExperienceOrbEntity, ItemEntity},
         entity_loot_ref,
@@ -323,6 +324,9 @@ pub struct World {
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
     /// World-change requests queued by world-local ticks for server safe-point processing.
     pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
+    /// Live multipart sub-entities by session ID (vanilla `ServerLevel.dragonParts`), kept
+    /// out of the entity manager.
+    entity_parts: SyncMutex<FxHashMap<i32, Arc<dyn PartEntity>>>,
 }
 
 impl World {
@@ -477,6 +481,7 @@ impl World {
                 scheduled_fluid_ticks_this_tick: SyncMutex::new(None),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 pending_world_changes: SyncMutex::new(Vec::new()),
+                entity_parts: SyncMutex::new(FxHashMap::default()),
             }
         }))
     }

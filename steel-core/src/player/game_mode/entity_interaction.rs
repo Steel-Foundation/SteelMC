@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::entity::PartEntity;
+
 use super::{
     ATTACK_RANGE_BUFFER, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
@@ -726,6 +728,9 @@ impl Player {
         apply_to_target: bool,
     ) {
         let entity = target.as_ref();
+        // Vanilla hands a part's `parentMob` to the weapon hooks; enchantments keep the part.
+        let parent = entity.as_part_entity().and_then(PartEntity::parent);
+        let hurt_target = parent.as_deref().unwrap_or(entity);
         let post_attack_context = EnchantmentPostAttackContext::new(target, damage_source);
         let item_hurt_enemy = {
             let mut inventory = self.inventory.lock();
@@ -734,7 +739,7 @@ impl Player {
                     return false;
                 }
                 let behavior = ITEM_BEHAVIORS.get_behavior(stack.item());
-                if let Some(living_target) = entity.as_living_entity() {
+                if let Some(living_target) = hurt_target.as_living_entity() {
                     behavior.hurt_enemy(stack, living_target, self);
                 }
                 stack.get_weapon().is_some()
@@ -755,7 +760,7 @@ impl Player {
             return;
         }
 
-        let Some(living_target) = entity.as_living_entity() else {
+        let Some(living_target) = hurt_target.as_living_entity() else {
             return;
         };
         let has_infinite_materials = self.has_infinite_materials();
@@ -840,7 +845,7 @@ impl Player {
         }
 
         let world = self.get_world();
-        let Some(target) = world.get_accessible_entity_by_id(packet.entity_id) else {
+        let Some(target) = world.get_accessible_entity_or_part_by_id(packet.entity_id) else {
             return;
         };
 
@@ -916,7 +921,7 @@ impl Player {
 
         let world = self.get_world();
         self.reset_last_action_time();
-        let target = world.get_accessible_entity_by_id(packet.entity_id);
+        let target = world.get_accessible_entity_or_part_by_id(packet.entity_id);
         self.set_crouching(packet.using_secondary_action);
         let Some(target) = target else {
             return;
