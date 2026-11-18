@@ -3881,6 +3881,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         self.reset_fall_distance();
+
+        if let Some(living) = self.as_living_entity() {
+            living.set_last_climbable_pos(None);
+        }
     }
 
     /// Computes vanilla support state for an on-ground update.
