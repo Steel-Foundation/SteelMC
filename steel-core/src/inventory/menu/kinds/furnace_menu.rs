@@ -184,17 +184,16 @@ impl MenuKind for FurnaceMenuKind {
                 self.player.hotbar().end(),
                 FillDirection::Forward,
             )
-        } else if self.player.hotbar().contains(slot_index) {
-            behavior.move_item_stack_to(
-                guard,
-                slot_index,
-                &mut remaining,
-                self.player.main().start(),
-                self.player.main().end(),
-                FillDirection::Forward,
-            )
         } else {
-            false
+            self.player.hotbar().contains(slot_index)
+                && behavior.move_item_stack_to(
+                    guard,
+                    slot_index,
+                    &mut remaining,
+                    self.player.main().start(),
+                    self.player.main().end(),
+                    FillDirection::Forward,
+                )
         };
 
         if !moved {

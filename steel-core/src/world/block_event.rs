@@ -68,7 +68,7 @@ impl BlockEventQueue {
     }
 
     #[cfg(test)]
-    fn len(&self) -> usize {
+    const fn len(&self) -> usize {
         self.events.len()
     }
 }
