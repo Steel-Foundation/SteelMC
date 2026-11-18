@@ -331,6 +331,30 @@ fn set_potion_replaces_base_potion_and_keeps_custom_contents() {
 }
 
 #[test]
+fn set_damage_rolls_only_for_damageable_items() {
+    use steel_registry::data_components::vanilla_components::DAMAGE;
+    let (items, mut rng) = generate_with_rng(&fixtures::DAMAGE, 12345);
+    assert!(items[0].is(&vanilla_items::STONE_PICKAXE));
+    assert_eq!(items[0].get_damage_value(), 98);
+    assert!(items[1].is(&vanilla_items::STONE));
+    assert!(!items[1].has(DAMAGE));
+    assert_eq!(rng.next_i64(), random(12345).next_i64());
+}
+
+#[test]
+fn set_damage_adds_clamps_and_zeroes_non_finite_fractions() {
+    let mut pickaxe = ItemStack::new(&vanilla_items::STONE_PICKAXE);
+    super::modifiers::set_damage(&mut pickaxe, 0.25, false);
+    assert_eq!(pickaxe.get_damage_value(), 98);
+    super::modifiers::set_damage(&mut pickaxe, 0.5, true);
+    assert_eq!(pickaxe.get_damage_value(), 32);
+    super::modifiers::set_damage(&mut pickaxe, 1.0, true);
+    assert_eq!(pickaxe.get_damage_value(), 0);
+    super::modifiers::set_damage(&mut pickaxe, f32::INFINITY, false);
+    assert_eq!(pickaxe.get_damage_value(), pickaxe.get_max_damage());
+}
+
+#[test]
 fn fishing_hook_predicates_distinguish_non_hooks_closed_water_and_open_water() {
     let tables = tables();
     for (open_water, expected_item) in [
