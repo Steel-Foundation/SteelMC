@@ -2,9 +2,9 @@
 //!
 //! Vanilla profiles JVM metrics and writes a zip. Steel instead samples the
 //! per-tick and per-phase timings that the game loop already computes and
-//! writes one JSON report, so the command stays cheap and portable. The report
-//! also carries the server, system and per-world context that vanilla writes to
-//! `system.txt`, `server.properties.txt` and `gamerules.txt`.
+//! writes them as raw per-tick JSON samples, leaving statistics to external
+//! tools. The report also carries the server, system and per-world context that
+//! vanilla writes to `system.txt`, `server.properties.txt` and `gamerules.txt`.
 
 use std::{
     collections::BTreeMap,
@@ -37,6 +37,12 @@ const PERF_RECORDING_DURATION: Duration = Duration::from_secs(10);
 
 /// Vanilla's profiling output directory.
 const PROFILING_RESULTS_DIR: &str = "debug/profiling";
+
+/// Chunk-map phase timings recorded for every world tick.
+const CHUNK_MAP_PHASE_COUNT: usize = 14;
+
+/// Chunk-map counters recorded for every world tick.
+const CHUNK_MAP_COUNT_COUNT: usize = 17;
 
 /// Tracks a `/perf` run and hands back a completed recording when it ends.
 pub(crate) struct PerfRecorder {
@@ -73,8 +79,7 @@ impl PerfRecorder {
             started_at: Instant::now(),
             started_at_local: Local::now(),
             sender,
-            tick_time: Vec::new(),
-            worlds: BTreeMap::new(),
+            samples: Vec::new(),
         });
         true
     }
@@ -97,14 +102,13 @@ impl PerfRecorder {
 
         let mut active = self.active.write();
         let recording = active.as_mut()?;
-        recording.tick_time.push(total);
-        for (key, timings) in worlds {
-            recording
-                .worlds
-                .entry(key.clone())
-                .or_default()
-                .push(timings);
-        }
+        recording.samples.push(TickSample {
+            total,
+            worlds: worlds
+                .into_iter()
+                .map(|(key, timings)| (key.clone(), WorldTickSample::capture(timings)))
+                .collect(),
+        });
 
         if recording.started_at.elapsed() < PERF_RECORDING_DURATION {
             return None;
@@ -113,13 +117,38 @@ impl PerfRecorder {
     }
 }
 
-/// A `/perf` run, aggregated per tick so finishing only sorts and summarizes.
+/// A `/perf` run, keeping one raw sample per tick.
 pub(crate) struct PerfRecording {
     started_at: Instant,
     started_at_local: DateTime<Local>,
     sender: Option<CommandSender>,
-    tick_time: Vec<Duration>,
-    worlds: BTreeMap<Identifier, WorldTimingAccumulator>,
+    samples: Vec<TickSample>,
+}
+
+/// One tick's measured timings, before the report converts them to milliseconds.
+struct TickSample {
+    total: Duration,
+    worlds: BTreeMap<Identifier, WorldTickSample>,
+}
+
+/// One world's measured timings within a single tick.
+struct WorldTickSample {
+    tick_time: Duration,
+    entity_tick: Duration,
+    chunk_map: [(&'static str, Duration); CHUNK_MAP_PHASE_COUNT],
+    counts: [(&'static str, usize); CHUNK_MAP_COUNT_COUNT],
+}
+
+impl WorldTickSample {
+    const fn capture(timings: WorldGameTickTimings) -> Self {
+        let metrics = ChunkMapMetrics::extract(&timings.chunk_map);
+        Self {
+            tick_time: timings.elapsed,
+            entity_tick: timings.entity_tick,
+            chunk_map: metrics.phases,
+            counts: metrics.counts,
+        }
+    }
 }
 
 impl PerfRecording {
@@ -130,11 +159,10 @@ impl PerfRecording {
             started_at,
             started_at_local,
             sender,
-            tick_time,
-            worlds,
+            samples,
         } = self;
         let duration = started_at.elapsed();
-        let ticks = tick_time.len();
+        let ticks = samples.len();
         let seconds = duration.as_secs_f64();
 
         if let Some(sender) = &sender {
@@ -154,8 +182,7 @@ impl PerfRecording {
         let results_dir = server.perf.results_dir.read().clone();
         tokio::spawn(async move {
             let result = spawn_blocking(move || {
-                PerfReport::new(started_at_local, duration, tick_time, worlds, metadata)
-                    .save(&results_dir)
+                PerfReport::new(started_at_local, duration, samples, metadata).save(&results_dir)
             })
             .await
             .unwrap_or_else(|error| Err(io::Error::other(error)));
@@ -317,12 +344,13 @@ struct PerfReport {
     minecraft_version: &'static str,
     started_at: String,
     duration_seconds: f64,
-    ticks: usize,
+    tick_count: usize,
     ticks_per_second: f64,
-    tick_time: TimingStats,
     system: PerfSystemReport,
     server: PerfServerReport,
-    worlds: BTreeMap<Identifier, WorldPerfReport>,
+    worlds: BTreeMap<Identifier, WorldMetadataReport>,
+    /// One entry per recorded tick, in recording order.
+    samples: Vec<TickSampleReport>,
 }
 
 impl PerfReport {
@@ -341,16 +369,15 @@ impl PerfReport {
     fn new(
         started_at: DateTime<Local>,
         duration: Duration,
-        tick_time: Vec<Duration>,
-        worlds: BTreeMap<Identifier, WorldTimingAccumulator>,
+        samples: Vec<TickSample>,
         metadata: PerfMetadata,
     ) -> Self {
-        let ticks = tick_time.len();
+        let tick_count = samples.len();
         let seconds = duration.as_secs_f64();
         let PerfMetadata {
             system,
             server,
-            worlds: mut world_metadata,
+            worlds,
         } = metadata;
 
         Self {
@@ -363,18 +390,12 @@ impl PerfReport {
             minecraft_version: steel_utils::MC_VERSION,
             started_at: started_at.to_rfc3339_opts(SecondsFormat::Millis, true),
             duration_seconds: seconds,
-            ticks,
-            ticks_per_second: Self::ticks_per_second(ticks, seconds),
-            tick_time: TimingStats::from(tick_time),
+            tick_count,
+            ticks_per_second: Self::ticks_per_second(tick_count, seconds),
             system,
             server,
-            worlds: worlds
-                .into_iter()
-                .map(|(key, accumulator)| {
-                    let metadata = world_metadata.remove(&key).unwrap_or_default();
-                    (key, accumulator.finish(metadata))
-                })
-                .collect(),
+            worlds,
+            samples: samples.into_iter().map(TickSampleReport::from).collect(),
         }
     }
 
@@ -417,135 +438,58 @@ impl PerfReport {
     }
 }
 
+/// One recorded tick: the full server tick time plus every world ticked in it.
 #[derive(Debug, Serialize)]
-struct WorldPerfReport {
-    #[serde(flatten)]
-    metadata: WorldMetadataReport,
-    tick_time: TimingStats,
-    entity_tick: TimingStats,
-    chunk_map: BTreeMap<&'static str, TimingStats>,
-    counts: BTreeMap<&'static str, CountStats>,
+struct TickSampleReport {
+    tick_ms: f64,
+    worlds: BTreeMap<Identifier, WorldTickSampleReport>,
 }
 
-#[derive(Debug, Default, Serialize)]
-struct TimingStats {
-    mean_ms: f64,
-    p50_ms: f64,
-    p95_ms: f64,
-    p99_ms: f64,
-    max_ms: f64,
-}
-
-impl From<Vec<Duration>> for TimingStats {
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "duration distributions are summarized as floating-point milliseconds"
-    )]
-    fn from(mut samples: Vec<Duration>) -> Self {
-        if samples.is_empty() {
-            return Self::default();
-        }
-
-        samples.sort_unstable();
-        let len = samples.len();
-        let total_nanos: u128 = samples.iter().map(Duration::as_nanos).sum();
-
+impl From<TickSample> for TickSampleReport {
+    fn from(sample: TickSample) -> Self {
         Self {
-            mean_ms: Self::to_millis(total_nanos as f64 / len as f64),
-            p50_ms: Self::to_millis(Self::percentile_nanos(&samples, 50)),
-            p95_ms: Self::to_millis(Self::percentile_nanos(&samples, 95)),
-            p99_ms: Self::to_millis(Self::percentile_nanos(&samples, 99)),
-            max_ms: Self::to_millis(samples[len - 1].as_nanos() as f64),
+            tick_ms: millis(sample.total),
+            worlds: sample
+                .worlds
+                .into_iter()
+                .map(|(key, sample)| (key, WorldTickSampleReport::from(sample)))
+                .collect(),
         }
     }
 }
 
-impl TimingStats {
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "percentile values are converted to floating-point milliseconds"
-    )]
-    fn percentile_nanos(samples: &[Duration], percent: usize) -> f64 {
-        let index = (samples.len() * percent / 100).min(samples.len() - 1);
-        samples[index].as_nanos() as f64
-    }
-
-    fn to_millis(nanos: f64) -> f64 {
-        nanos / 1_000_000.0
-    }
+#[derive(Debug, Serialize)]
+struct WorldTickSampleReport {
+    tick_ms: f64,
+    entity_tick_ms: f64,
+    chunk_map: BTreeMap<&'static str, f64>,
+    counts: BTreeMap<&'static str, usize>,
 }
 
-#[derive(Debug, Default, Serialize)]
-struct CountStats {
-    mean: f64,
-    min: usize,
-    max: usize,
-}
-
-impl From<Vec<usize>> for CountStats {
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "count distributions are summarized as floating-point means"
-    )]
-    fn from(samples: Vec<usize>) -> Self {
-        if samples.is_empty() {
-            return Self::default();
-        }
-
-        let total: u64 = samples.iter().map(|&value| value as u64).sum();
+impl From<WorldTickSample> for WorldTickSampleReport {
+    fn from(sample: WorldTickSample) -> Self {
         Self {
-            mean: total as f64 / samples.len() as f64,
-            min: samples.iter().copied().min().unwrap_or_default(),
-            max: samples.iter().copied().max().unwrap_or_default(),
-        }
-    }
-}
-
-#[derive(Default)]
-struct WorldTimingAccumulator {
-    tick_time: Vec<Duration>,
-    entity_tick: Vec<Duration>,
-    chunk_map: BTreeMap<&'static str, Vec<Duration>>,
-    counts: BTreeMap<&'static str, Vec<usize>>,
-}
-
-impl WorldTimingAccumulator {
-    fn push(&mut self, timings: WorldGameTickTimings) {
-        self.tick_time.push(timings.elapsed);
-        self.entity_tick.push(timings.entity_tick);
-
-        let metrics = ChunkMapMetrics::extract(&timings.chunk_map);
-        for (name, duration) in metrics.phases {
-            self.chunk_map.entry(name).or_default().push(duration);
-        }
-        for (name, count) in metrics.counts {
-            self.counts.entry(name).or_default().push(count);
-        }
-    }
-
-    fn finish(self, metadata: WorldMetadataReport) -> WorldPerfReport {
-        WorldPerfReport {
-            metadata,
-            tick_time: TimingStats::from(self.tick_time),
-            entity_tick: TimingStats::from(self.entity_tick),
-            chunk_map: self
+            tick_ms: millis(sample.tick_time),
+            entity_tick_ms: millis(sample.entity_tick),
+            chunk_map: sample
                 .chunk_map
                 .into_iter()
-                .map(|(name, samples)| (name, TimingStats::from(samples)))
+                .map(|(name, duration)| (name, millis(duration)))
                 .collect(),
-            counts: self
-                .counts
-                .into_iter()
-                .map(|(name, samples)| (name, CountStats::from(samples)))
-                .collect(),
+            counts: sample.counts.into_iter().collect(),
         }
     }
+}
+
+/// Converts a measured duration to the millisecond unit used throughout the report.
+fn millis(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1_000.0
 }
 
 /// Every timing and count reported for one chunk-map tick sample.
 struct ChunkMapMetrics {
-    phases: [(&'static str, Duration); 14],
-    counts: [(&'static str, usize); 17],
+    phases: [(&'static str, Duration); CHUNK_MAP_PHASE_COUNT],
+    counts: [(&'static str, usize); CHUNK_MAP_COUNT_COUNT],
 }
 
 impl ChunkMapMetrics {
@@ -662,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn recording_aggregates_tick_and_world_phase_timings() {
+    fn recording_keeps_raw_tick_and_world_phase_samples() {
         let recorder = PerfRecorder::new();
         let overworld = Identifier::new_static("minecraft", "overworld");
 
@@ -686,35 +630,24 @@ mod tests {
         let report = PerfReport::new(
             completed.started_at_local,
             completed.started_at.elapsed(),
-            completed.tick_time,
-            completed.worlds,
+            completed.samples,
             PerfMetadata::default(),
         );
 
-        assert_eq!(report.ticks, 2);
-        assert!((report.tick_time.mean_ms - 50.0).abs() < f64::EPSILON);
+        assert_eq!(report.tick_count, 2);
+        assert_eq!(report.samples.len(), 2);
+        assert!((report.samples[0].tick_ms - 40.0).abs() < f64::EPSILON);
+        assert!((report.samples[1].tick_ms - 60.0).abs() < f64::EPSILON);
 
-        let world = report
+        let world = report.samples[1]
             .worlds
             .get(&overworld)
-            .expect("overworld should be reported");
-        assert!((world.tick_time.mean_ms - 30.0).abs() < f64::EPSILON);
-        assert!((world.entity_tick.mean_ms - 10.0).abs() < f64::EPSILON);
-        assert!((world.chunk_map["tick_chunks"].mean_ms - 10.0).abs() < f64::EPSILON);
-        assert!((world.counts["tickable_chunks"].mean - 3.0).abs() < f64::EPSILON);
-        assert!((world.counts["total_chunks"].mean - 10.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn timing_stats_use_millisecond_percentiles_and_max() {
-        let samples: Vec<Duration> = (1..=100).map(Duration::from_millis).collect();
-        let stats = TimingStats::from(samples);
-
-        assert!((stats.mean_ms - 50.5).abs() < f64::EPSILON);
-        assert!((stats.p50_ms - 51.0).abs() < f64::EPSILON);
-        assert!((stats.p95_ms - 96.0).abs() < f64::EPSILON);
-        assert!((stats.p99_ms - 100.0).abs() < f64::EPSILON);
-        assert!((stats.max_ms - 100.0).abs() < f64::EPSILON);
+            .expect("overworld should be sampled");
+        assert!((world.tick_ms - 40.0).abs() < f64::EPSILON);
+        assert!((world.entity_tick_ms - 15.0).abs() < f64::EPSILON);
+        assert!((world.chunk_map["tick_chunks"] - 12.0).abs() < f64::EPSILON);
+        assert_eq!(world.counts["tickable_chunks"], 3);
+        assert_eq!(world.counts["total_chunks"], 10);
     }
 
     #[test]
@@ -730,7 +663,6 @@ mod tests {
                 started_at,
                 Duration::from_secs(1),
                 Vec::new(),
-                BTreeMap::new(),
                 PerfMetadata::default(),
             )
             .save(&directory)

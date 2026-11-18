@@ -54,22 +54,34 @@ fn perf_start_stop_writes_a_json_report() {
         run_command(&server, source, "perf stop");
 
         let report = wait_for_report(&results_dir).await;
-        assert_eq!(report["ticks"], 1);
+        assert_eq!(report["tick_count"], 1);
         assert_eq!(report["system"]["operating_system"], OS);
         assert_eq!(
             report["server"]["view_distance"],
             server.config.view_distance
         );
         let world_key = world.key.to_string();
-        let world_report = &report["worlds"][world_key.as_str()];
+        let sample = &report["samples"][0];
         assert!(
-            world_report["tick_time"]["mean_ms"]
+            sample["tick_ms"]
                 .as_f64()
                 .is_some_and(|value| (value - 42.0).abs() < f64::EPSILON)
         );
-        assert!(world_report["chunk_map"]["tick_chunks"].is_object());
-        assert!(world_report["counts"]["tickable_chunks"].is_object());
-        assert!(world_report["counts"]["readiness_lookup_evictions"].is_object());
+        let world_sample = &sample["worlds"][world_key.as_str()];
+        assert!(
+            world_sample["tick_ms"]
+                .as_f64()
+                .is_some_and(|value| (value - 42.0).abs() < f64::EPSILON)
+        );
+        assert!(
+            world_sample["entity_tick_ms"]
+                .as_f64()
+                .is_some_and(|value| (value - 3.0).abs() < f64::EPSILON)
+        );
+        assert!(world_sample["chunk_map"]["tick_chunks"].is_number());
+        assert!(world_sample["counts"]["tickable_chunks"].is_number());
+        assert!(world_sample["counts"]["readiness_lookup_evictions"].is_number());
+        let world_report = &report["worlds"][world_key.as_str()];
         assert!(world_report["difficulty"].is_string());
         // Captured from the loaded level data, not left at the empty default.
         assert!(world_report["gamerules"]["random_tick_speed"].is_number());
