@@ -35,8 +35,7 @@ impl DispenseItemBehavior for GlassBottleDispenseBehavior {
         let facing = state.get_value(FACING);
         let target_pos = pos.relative(facing);
 
-        // TODO: honey bottle from a beehive with honey_level >= 5 — needs
-        // beehive honey-level tracking, which isn't ported yet.
+        // TODO: Harvest full hives once they can release bees and reset the honey level.
         if world
             .get_block_state(target_pos)
             .get_fluid_state()

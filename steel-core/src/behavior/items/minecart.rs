@@ -1,13 +1,13 @@
 use glam::DVec3;
 use steel_macros::item_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events;
 
-use crate::behavior::{BLOCK_BEHAVIORS, InteractionResult, ItemBehavior, UseOnContext};
+use crate::behavior::blocks::BaseRailBlock;
+use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
 use crate::entity::entities::objects::vehicles::{CreateMinecartError, create_minecart};
 use crate::world::game_event::GameEventContext;
 
@@ -39,13 +39,7 @@ impl ItemBehavior for MinecartItem {
             return InteractionResult::Fail;
         }
 
-        let shape = if BLOCK_BEHAVIORS.get_behavior(block).as_rail().is_some() {
-            state.get_value(&BlockStateProperties::RAIL_SHAPE)
-        } else {
-            RailShape::NorthSouth
-        };
-
-        let offset = if shape.is_slope() {
+        let offset = if BaseRailBlock::is_slope(state) {
             SLOPED_RAIL_HEIGHT_OFFSET
         } else {
             0.0

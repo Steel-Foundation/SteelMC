@@ -65,9 +65,7 @@ impl DispenseItemBehavior for FlintAndSteelDispenseBehavior {
     }
 }
 
-// TODO: ShearsDispenseBehavior — needs beehive honey-level tracking
-// (beehive_block.rs has none yet) and a generic Shearable dispatch covering
-// sheep/mooshroom/snow golem/bogged, which doesn't exist. Only Sheep has its
-// own shear() today; that alone would silently diverge from vanilla.
+// TODO: Shears need beehive harvesting with bee release and honey-level reset,
+// plus entity targeting for leash cutting and shearable mobs.
 
 // TODO: BrushDispenseBehavior — needs the Armadillo entity, which doesn't exist.

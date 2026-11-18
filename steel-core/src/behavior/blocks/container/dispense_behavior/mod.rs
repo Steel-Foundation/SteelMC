@@ -28,6 +28,7 @@ pub mod bucket;
 pub mod consumables;
 pub mod container;
 pub mod default;
+mod minecart;
 pub mod potion;
 pub mod projectile;
 pub mod tnt;
@@ -249,7 +250,8 @@ pub(crate) static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyL
     );
 
     // TODO: Experience bottle and fire charge need their projectile entities.
-    // wind charge and firework still need their dispenser launch config
+    // TODO: Firework rockets need their angled launch setup and sound.
+    // TODO: Wind charges need their dispenser-specific spawn position, velocity, and sound.
 
     // explosives
     registry.set_behavior(&vanilla_items::TNT, Box::new(TntDispenseBehavior));
@@ -271,9 +273,12 @@ pub(crate) static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyL
     // TODO: chest - equips tamed donkeys/mules/llamas; needs those entities.
 
     // minecart
-    // TODO: minecart and chest minecart - entities exist; port
-    // MinecartDispenseItemBehavior. Furnace/hopper/tnt/command-block
-    // minecarts also need their entities.
+    registry.set_behavior(
+        &vanilla_items::MINECART,
+        Box::new(minecart::MinecartDispenseBehavior),
+    );
+    // TODO: Chest minecarts need AbstractMinecart support. Furnace, hopper,
+    // TNT, and command block minecarts need their entities.
 
     // spawn egg
     // TODO: Dispense spawn eggs with ENTITY_DATA using their configured entity
