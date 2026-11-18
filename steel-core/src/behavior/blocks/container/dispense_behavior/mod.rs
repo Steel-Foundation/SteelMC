@@ -1,3 +1,4 @@
+use std::sync::{Arc, LazyLock};
 
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
@@ -9,6 +10,8 @@ use steel_registry::vanilla_items;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt};
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
+use steel_utils::Downcast as _;
+
 use crate::entity::entities::{
     LingeringPotionEntity, SnowballEntity, SplashPotionEntity, ThrownEggEntity,
 };
@@ -30,7 +33,13 @@ pub mod projectile;
 pub mod tnt;
 pub mod tools;
 
+pub use armor::ArmorDispenseBehavior;
+pub use bucket::{EmptyBucketDispenseBehavior, FilledBucketDispenseBehavior};
+pub use consumables::{
+    BoneMealDispenseBehavior, GlowstoneDispenseBehavior, HoneycombDispenseBehavior,
 };
+pub use container::ShulkerBoxDispenseBehavior;
+pub use default::DefaultDispenseBehavior;
 pub(crate) use default::eject_item;
 pub use potion::{GlassBottleDispenseBehavior, PotionDispenseBehavior};
 pub use projectile::ProjectileDispenseBehavior;
@@ -99,7 +108,9 @@ impl DispenseBehaviorRegistry {
         Self { behaviors }
     }
 
-    self.behaviors[id] = Some(behavior);
+    pub fn set_behavior(&mut self, item: ItemRef, behavior: Box<dyn DispenseItemBehavior>) {
+        let id = item.id();
+        self.behaviors[id] = Some(behavior);
     }
 
     pub fn get_behavior(&self, stack: &ItemStack) -> &dyn DispenseItemBehavior {
@@ -173,7 +184,9 @@ pub(crate) static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyL
         &vanilla_items::BROWN_EGG,
     ] {
         registry.set_behavior(
-            ProjectileDispenseBehavior::new(
+            egg,
+            Box::new(
+                ProjectileDispenseBehavior::new(
                     &vanilla_entities::EGG,
                     DEFAULT_PROJECTILE_POWER,
                     DEFAULT_PROJECTILE_SPREAD,
@@ -219,7 +232,9 @@ pub(crate) static DISPENSE_BEHAVIORS: LazyLock<DispenseBehaviorRegistry> = LazyL
     );
 
     registry.set_behavior(
-        ProjectileDispenseBehavior::new(
+        &vanilla_items::LINGERING_POTION,
+        Box::new(
+            ProjectileDispenseBehavior::new(
                 &vanilla_entities::LINGERING_POTION,
                 POTION_PROJECTILE_POWER,
                 POTION_PROJECTILE_SPREAD,
