@@ -842,11 +842,7 @@ impl SpeleothemBlockBehavior {
             block == &vanilla_blocks::CAULDRON
                 || (block == &vanilla_blocks::WATER_CAULDRON
                     && state.get_value(LEVEL_CAULDRON) < LEVEL_CAULDRON.max)
-        } else if fluid == &vanilla_fluids::LAVA {
-            block == &vanilla_blocks::CAULDRON
-        } else {
-            false
-        }
+        } else { fluid == &vanilla_fluids::LAVA && block == &vanilla_blocks::CAULDRON }
     }
 
     fn thickness(state: BlockStateId) -> SpeleothemThickness {

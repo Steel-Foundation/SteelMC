@@ -1049,6 +1049,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::{
+        cmp::Reverse,
         sync::{Arc, Weak, mpsc},
         thread,
         time::Duration,
@@ -1273,8 +1274,8 @@ mod tests {
                 .expect("replacement session lane should remain");
             assert_eq!(replacement_lane.outstanding_packets, 1);
             assert_eq!(replacement_lane.outstanding_bytes, 1);
-            assert!(queue_state.serialized.is_empty());
-            assert!(queue_state.exclusive.is_empty());
+            assert_eq!(queue_state.serialized.as_slice(), [] as [Reverse<u64>; 0]);
+            assert_eq!(queue_state.exclusive.as_slice(), [] as [Reverse<u64>; 0]);
         }
 
         queue.open();
@@ -1532,10 +1533,10 @@ mod tests {
 
         {
             let state = queue.state.lock();
-            assert!(state.serialized.is_empty());
-            assert!(state.exclusive.is_empty());
-            assert!(state.serialized_ready.is_empty());
-            assert!(state.exclusive_ready.is_empty());
+            assert_eq!(state.serialized.as_slice(), [] as [Reverse<u64>; 0]);
+            assert_eq!(state.exclusive.as_slice(), [] as [Reverse<u64>; 0]);
+            assert_eq!(state.serialized_ready.as_slice(), [] as [Reverse<(u64, i32)>; 0]);
+            assert_eq!(state.exclusive_ready.as_slice(), [] as [Reverse<(u64, i32)>; 0]);
             let Some(lane) = state.lanes.get(&1) else {
                 panic!("active attacker lane should remain");
             };
@@ -1571,9 +1572,9 @@ mod tests {
             let other = state.lanes.get(&2).expect("other lane should remain");
             assert_eq!(other.outstanding_packets, 1);
             assert_eq!(other.outstanding_bytes, 1);
-            assert!(state.exclusive_ready.is_empty());
-            assert!(state.exclusive.is_empty());
-            assert!(state.serialized.is_empty());
+            assert_eq!(state.exclusive_ready.as_slice(), [] as [Reverse<(u64, i32)>; 0]);
+            assert_eq!(state.exclusive.as_slice(), [] as [Reverse<u64>; 0]);
+            assert_eq!(state.serialized.as_slice(), [] as [Reverse<u64>; 0]);
         }
 
         queue.open();
@@ -2039,11 +2040,11 @@ mod tests {
             let state = queue.state.lock();
             assert_eq!(state.active, 2);
             assert!(state.serialized_active);
-            assert!(state.player_local_ready.is_empty());
-            assert!(state.serialized_ready.is_empty());
-            assert!(state.exclusive_ready.is_empty());
-            assert!(state.serialized.is_empty());
-            assert!(state.exclusive.is_empty());
+            assert_eq!(state.player_local_ready.as_slice(), [] as [Reverse<(u64, i32)>; 0]);
+            assert_eq!(state.serialized_ready.as_slice(), [] as [Reverse<(u64, i32)>; 0]);
+            assert_eq!(state.exclusive_ready.as_slice(), [] as [Reverse<(u64, i32)>; 0]);
+            assert_eq!(state.serialized.as_slice(), [] as [Reverse<u64>; 0]);
+            assert_eq!(state.exclusive.as_slice(), [] as [Reverse<u64>; 0]);
             assert_eq!(state.lanes.len(), 2);
             for key in [1, 2] {
                 let lane = state.lanes.get(&key).expect("active lane should remain");

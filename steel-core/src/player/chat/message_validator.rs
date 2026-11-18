@@ -65,7 +65,7 @@ impl LastSeenMessagesValidator {
 
     /// Gets the number of tracked messages
     #[must_use]
-    pub fn tracked_count(&self) -> usize {
+    pub const fn tracked_count(&self) -> usize {
         self.tracked_messages.len()
     }
 
