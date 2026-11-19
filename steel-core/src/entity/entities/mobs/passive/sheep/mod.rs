@@ -262,7 +262,7 @@ impl Entity for SheepEntity {
         let WorldgenSpawnProperties::Sheep(color) = properties else {
             panic!("worldgen spawn properties do not match a sheep");
         };
-        
+
         self.set_color(color);
     }
 
