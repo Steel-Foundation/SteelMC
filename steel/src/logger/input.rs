@@ -102,8 +102,7 @@ impl CommandLogger {
                     }
                 }
                 if !string.is_empty() {
-                    tx.send(ExtendedKey::String(string.clone())).ok();
-                    string = String::new();
+                    tx.send(ExtendedKey::String(mem::take(&mut string))).ok();
                 }
             }
         });

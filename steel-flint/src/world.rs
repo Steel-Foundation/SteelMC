@@ -30,7 +30,7 @@ use steel_core::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState, Ch
 use steel_core::chunk::status::ChunkStatus;
 use steel_core::config::{ResolvedDomainConfig, RuntimeConfig};
 use steel_core::entity::damage::DamageHistory;
-use steel_core::entity::{ENTITIES, Entity, SharedEntity, next_entity_id};
+use steel_core::entity::{ENTITIES, Entity, SharedEntity};
 use steel_core::level_data::{GameTimeSource, WorldGenerationSettings};
 use steel_core::permission::PermissionSubjectIndex;
 use steel_core::server::{Server, test_server_with_worlds_and_config};
@@ -389,7 +389,6 @@ impl FlintWorld for SteelTestWorld {
         let entity = ENTITIES
             .create(
                 entity_type,
-                next_entity_id(),
                 DVec3::new(pos[0], pos[1], pos[2]),
                 Arc::downgrade(&self.world),
             )

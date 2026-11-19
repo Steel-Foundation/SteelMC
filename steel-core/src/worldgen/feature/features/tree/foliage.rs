@@ -1199,10 +1199,8 @@ impl FeatureDecorationRunner {
         let (dx, dz) = Self::foliage_signed_distances(dx, dz, double_trunk);
         if y == -1 && !double_trunk {
             dx == current_radius && dz == current_radius
-        } else if y == 1 {
-            dx + dz > current_radius * 2 - 2
         } else {
-            false
+            y == 1 && dx + dz > current_radius * 2 - 2
         }
     }
 

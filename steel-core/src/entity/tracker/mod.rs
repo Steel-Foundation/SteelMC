@@ -135,6 +135,12 @@ impl EntityTracker {
         get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
         get_player: impl Fn(i32) -> Option<Arc<Player>>,
     ) {
+        // A part reports its parent's type and would get a live tracking range, so skip it
+        // as vanilla's `ChunkMap.addEntity` does.
+        if entity.as_part_entity().is_some() {
+            return;
+        }
+
         assert!(
             !entity.is_removed(),
             "cannot add removed entity {} to tracker",
