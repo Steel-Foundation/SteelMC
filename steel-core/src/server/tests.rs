@@ -1817,6 +1817,7 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             };
             let owner = match request {
                 CommandRequest::Execute { owner, .. }
+                | CommandRequest::Chat { owner, .. }
                 | CommandRequest::ChatSessionUpdate { owner, .. }
                 | CommandRequest::Suggestions { owner, .. } => owner,
             };

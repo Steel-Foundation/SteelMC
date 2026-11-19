@@ -4,6 +4,7 @@ use steel_utils::locks::SyncMutex;
 
 use crate::command::sender::{CommandExecutionOwner, CommandSuggestionKey};
 use crate::command::signing_context::CommandSigningContext;
+use crate::player::chat::OutgoingChatMessage;
 use crate::player::chat::profile_key::RemoteChatSession;
 use crate::server::PlayerPacketTransition;
 
@@ -19,6 +20,10 @@ pub(crate) enum CommandRequest {
         owner: CommandExecutionOwner,
         command: String,
         signing_context: Option<CommandSigningContext>,
+    },
+    Chat {
+        owner: CommandExecutionOwner,
+        message: OutgoingChatMessage,
     },
     ChatSessionUpdate {
         owner: CommandExecutionOwner,
@@ -149,7 +154,9 @@ impl CommandRequestQueue {
     pub(crate) fn submit(&self, request: CommandRequest) -> Result<(), CommandQueueFull> {
         let mut queued = self.queued.lock();
         match request {
-            request @ CommandRequest::Execute { .. } => queued.submit_execution(request),
+            request @ (CommandRequest::Execute { .. } | CommandRequest::Chat { .. }) => {
+                queued.submit_execution(request)
+            }
             request @ CommandRequest::ChatSessionUpdate { .. } => {
                 queued.executions.push_back(request);
 
@@ -179,6 +186,7 @@ impl CommandRequestQueue {
             .lock()
             .pop_front_where(|request| match request {
                 CommandRequest::Execute { owner, .. }
+                | CommandRequest::Chat { owner, .. }
                 | CommandRequest::ChatSessionUpdate { owner, .. } => execution_allowed(owner),
                 CommandRequest::Suggestions { .. } => false,
             })?;

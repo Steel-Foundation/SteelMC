@@ -21,7 +21,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
         |ctx: &SteelCommandContext<CommandSource>| {
             let source = ctx.source();
 
-            let message = ctx.message("message")?.to_string();
+            let message = ctx.message("message")?.resolve_component(source)?;
 
             let chat_type = source.bind_chat_type(vanilla_chat_types::SAY_COMMAND.id() as i32);
             let outgoing = OutgoingChatMessage::from_command(source, "message", message);

@@ -10,6 +10,7 @@ use super::{
     },
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
+    message::Message,
     nbt::parse_nbt_path,
     permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
@@ -585,7 +586,7 @@ argument_value_wrapper!(
     "steel:command/value/world_clock"
 );
 argument_value_wrapper!(TimelineValue(TimelineRef), "steel:command/value/timeline");
-argument_value_wrapper!(MessageValue(Box<str>), "steel:command/value/message");
+argument_value_wrapper!(MessageValue(Message), "steel:command/value/message");
 
 macro_rules! unit_argument_parser {
     // Pattern without 'is_signed': forwards with default value 'false'
@@ -1308,7 +1309,7 @@ unit_argument_parser!(
     "steel:command/parser/message",
     MessageValue,
     parse | reader,
-    _source | { Ok(MessageValue(reader.read_remaining().into())) },
+    source | { Message::parse(reader, source).map(MessageValue) },
     suggest | _context,
     _builder | {},
     protocol(ProtocolArgumentType::Message, None,),

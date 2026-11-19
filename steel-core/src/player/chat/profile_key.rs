@@ -349,7 +349,7 @@ pub(super) fn system_time_from_millis(millis: i64) -> SystemTime {
     }
 }
 
-fn system_time_to_millis(time: SystemTime) -> i64 {
+pub(super) fn system_time_to_millis(time: SystemTime) -> i64 {
     match time.duration_since(UNIX_EPOCH) {
         Ok(duration) => i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
         Err(error) => match i64::try_from(error.duration().as_millis()) {

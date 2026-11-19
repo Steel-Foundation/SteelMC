@@ -12,7 +12,7 @@ use super::{
     command_suggestions_packet, sleep, spawn_blocking,
 };
 use crate::command::signing_context::CommandSigningContext;
-use steel_registry::vanilla_custom_stats;
+use steel_registry::{RegistryEntry, vanilla_chat_types, vanilla_custom_stats};
 use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
 use steel_utils::translations;
 
@@ -407,6 +407,15 @@ impl Server {
                         continue;
                     }
                     self.execute_command_request(pending, owner, &command, signing_context);
+                }
+                CommandRequest::Chat { owner, message } => {
+                    if owner.is_current(self)
+                        && let Some(player) = owner.sender().get_player()
+                    {
+                        let chat_type = player.bind_chat_type(vanilla_chat_types::CHAT.id() as i32);
+                        self.broadcast_chat(&message, &chat_type);
+                        player.detect_chat_rate_spam();
+                    }
                 }
                 CommandRequest::ChatSessionUpdate {
                     owner,

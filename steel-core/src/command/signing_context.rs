@@ -8,8 +8,10 @@ use uuid::Uuid;
 pub struct SignedArgument {
     /// Monotonically increasing index in the player's secure chat session chain.
     pub index: i32,
-    /// Raw cryptographic signature of the argument content.
-    pub signature: MessageSignature,
+    /// the original argument before resolving selectors
+    pub content: Box<str>,
+    /// cryptographic signature absent when the unsigned decoder supplied this argument
+    pub signature: Option<MessageSignature>,
 }
 
 /// Signing metadata and argument signatures associated with an executed command.
@@ -17,11 +19,11 @@ pub struct SignedArgument {
 pub struct CommandSigningContext {
     /// Id of the current chat session.
     pub session_id: Uuid,
-    /// Client-side emission timestamp in epoch milliseconds.
-    pub timestamp: u64,
+    /// signed timestamp or unsigned decoding time in epoch milliseconds
+    pub timestamp: i64,
     /// Random 64-bit salt used to prevent signature replay attacks.
     pub salt: i64,
-    /// Map associating each signed Brigadier argument name with its signature and chain index.
+    /// decoded messages keyed by their signable Brigadier argument name
     pub argument_signatures: FxHashMap<Box<str>, SignedArgument>,
     /// Window of previously received message signatures acknowledged by the client.
     pub last_seen: LastSeen,
@@ -31,7 +33,7 @@ impl CommandSigningContext {
     /// Creates a new signing context with the given timestamp, salt, and argument signatures.
     pub fn new(
         session_id: Uuid,
-        timestamp: u64,
+        timestamp: i64,
         salt: i64,
         signatures: impl IntoIterator<Item = (impl Into<Box<str>>, SignedArgument)>,
         last_seen: LastSeen,
@@ -50,7 +52,7 @@ impl CommandSigningContext {
     pub fn get_argument_signature(&self, argument_name: &str) -> Option<&MessageSignature> {
         self.argument_signatures
             .get(argument_name)
-            .map(|arg| &arg.signature)
+            .and_then(|arg| arg.signature.as_ref())
     }
 
     /// Returns the signed argument metadata (signature and chain index) for a specific argument name, if present.
@@ -62,6 +64,8 @@ impl CommandSigningContext {
     /// Returns whether this context contains at least one signed argument.
     #[must_use]
     pub fn has_signatures(&self) -> bool {
-        !self.argument_signatures.is_empty()
+        self.argument_signatures
+            .values()
+            .any(|arg| arg.signature.is_some())
     }
 }

@@ -51,7 +51,7 @@ use crate::permission::{
     PermissionGroupsConfig, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
     PermissionSubjectIndex, PermissionSubjectState,
 };
-use crate::player::chat::profile_key::RemoteChatSession;
+use crate::player::chat::{OutgoingChatMessage, profile_key::RemoteChatSession};
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
 use crate::player::connection::ScheduledPlayPacket;
@@ -921,6 +921,18 @@ impl Server {
             owner: CommandExecutionOwner::capture(sender, self),
             command,
             signing_context,
+        })
+    }
+
+    /// publishes chat through the same queue as signed cmds and session annoucnement
+    pub(crate) fn queue_player_chat(
+        &self,
+        player: &Arc<Player>,
+        message: OutgoingChatMessage,
+    ) -> Result<(), CommandQueueFull> {
+        self.command_requests.submit(CommandRequest::Chat {
+            owner: CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(player)), self),
+            message,
         })
     }
 

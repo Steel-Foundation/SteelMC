@@ -2,24 +2,45 @@ use std::io::Cursor;
 
 use steel_macros::{ReadFrom, ServerPacket};
 use steel_utils::codec::VarInt;
+use steel_utils::serial::{ReadFrom, prefixed_read::read_utf};
 
-#[derive(ReadFrom, ServerPacket, Clone, Debug)]
+use super::LastSeenMessagesUpdate;
+
+const MAX_CHAT_LENGTH: usize = 256;
+
+#[derive(ServerPacket, Clone, Debug)]
 pub struct SChat {
-    #[read(as = Prefixed(VarInt), bound = 256)]
     pub message: String,
-
     pub timestamp: i64,
-
     pub salt: i64,
-
     pub signature: Option<[u8; 256]>,
-
-    #[read(as = VarInt)]
     pub offset: i32,
-
     pub acknowledged: [u8; 3],
-
     pub checksum: u8,
+}
+
+impl ReadFrom for SChat {
+    fn read(reader: &mut Cursor<&[u8]>) -> std::io::Result<Self> {
+        let message = read_utf(reader, MAX_CHAT_LENGTH)?;
+        let timestamp = i64::read(reader)?;
+        let salt = i64::read(reader)?;
+        let signature = Option::read(reader)?;
+        let LastSeenMessagesUpdate {
+            offset: VarInt(offset),
+            acknowledged,
+            checksum,
+        } = LastSeenMessagesUpdate::read(reader)?;
+
+        Ok(Self {
+            message,
+            timestamp,
+            salt,
+            signature,
+            offset,
+            acknowledged,
+            checksum,
+        })
+    }
 }
 
 /// Client -> Server: Acknowledges messages received from the server.
@@ -28,16 +49,8 @@ pub struct SChat {
 /// messages up to the specified offset.
 ///
 /// Equivalent to `ServerboundChatAckPacket` in Minecraft.
-#[derive(ServerPacket, Clone, Debug)]
+#[derive(ReadFrom, ServerPacket, Clone, Debug)]
 pub struct SChatAck {
     /// The message offset being acknowledged
     pub offset: VarInt,
-}
-
-impl steel_utils::serial::ReadFrom for SChatAck {
-    fn read(reader: &mut Cursor<&[u8]>) -> std::io::Result<Self> {
-        Ok(Self {
-            offset: VarInt::read(reader)?,
-        })
-    }
 }

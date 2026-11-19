@@ -128,12 +128,14 @@ impl steel_utils::serial::WriteTo for CPlayerChat {
             None => false.write(writer)?,
         }
 
-        VarInt(match self.filter_type {
-            FilterType::PassThrough => 0,
-            FilterType::FullyFiltered => 1,
-            FilterType::PartiallyFiltered(_) => 2,
-        })
-        .write(writer)?;
+        match &self.filter_type {
+            FilterType::PassThrough => VarInt(0).write(writer)?,
+            FilterType::FullyFiltered => VarInt(1).write(writer)?,
+            FilterType::PartiallyFiltered(mask) => {
+                VarInt(2).write(writer)?;
+                mask.write(writer)?;
+            }
+        }
 
         self.chat_type.write(writer)?;
         Ok(())
