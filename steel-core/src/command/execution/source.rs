@@ -316,10 +316,6 @@ impl CommandSource {
         }
     }
 
-    #[expect(
-        dead_code,
-        reason = "source-aware runtime extensions need access to the original sender"
-    )]
     pub(crate) const fn sender(&self) -> &CommandSender {
         &self.sender
     }
@@ -463,10 +459,7 @@ impl CommandSource {
             return;
         }
 
-        let accepts_success = self
-            .sender
-            .get_player()
-            .is_none_or(|player| player.get_world().get_game_rule(&SEND_COMMAND_FEEDBACK));
+        let accepts_success = self.sender.accepts_command_feedback();
         if accepts_success {
             self.sender.send_message(message);
         }
