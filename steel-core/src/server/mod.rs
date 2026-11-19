@@ -53,6 +53,7 @@ use crate::permission::{
     PermissionGroupsConfig, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
     PermissionSubjectIndex, PermissionSubjectState,
 };
+use crate::player::chat::{OutgoingChatMessage, profile_key::RemoteChatSession};
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
 use crate::player::connection::ScheduledPlayPacket;
@@ -476,6 +477,7 @@ use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQu
 
 mod world_changes;
 
+use crate::command::signing_context::CommandSigningContext;
 use jobs::domain_switch::DomainSwitchJob;
 use jobs::teleport::{
     EndGatewayTeleportJob, EndPortalTeleportJob, EnderPearlRestoreJob, NetherPortalTeleportJob,
@@ -933,12 +935,63 @@ impl Server {
     pub fn submit_command(
         &self,
         sender: CommandSender,
+        mut command: String,
+        signing_context: Option<CommandSigningContext>,
+    ) -> Result<(), CommandQueueFull> {
+        if command.starts_with('/') {
+            command.remove(0);
+        }
+
+        self.queue_command(sender, command, signing_context)
+    }
+
+    pub(crate) fn queue_command(
+        &self,
+        sender: CommandSender,
         command: String,
+        signing_context: Option<CommandSigningContext>,
     ) -> Result<(), CommandQueueFull> {
         self.command_requests.submit(CommandRequest::Execute {
             owner: CommandExecutionOwner::capture(sender, self),
             command,
+            signing_context,
         })
+    }
+
+    /// publishes chat through the same queue as signed cmds and session announcement
+    pub(crate) fn queue_player_chat(
+        &self,
+        player: &Arc<Player>,
+        message: OutgoingChatMessage,
+    ) -> Result<(), CommandQueueFull> {
+        self.command_requests.submit(CommandRequest::Chat {
+            owner: CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(player)), self),
+            message,
+        })
+    }
+
+    pub(crate) fn queue_chat_session_update(
+        &self,
+        player: &Arc<Player>,
+        session: RemoteChatSession,
+    ) {
+        let Some(transition) = self.begin_player_packet_transition(player) else {
+            return;
+        };
+
+        let owner = CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(player)), self);
+        if self
+            .command_requests
+            .submit(CommandRequest::ChatSessionUpdate {
+                owner,
+                session: Box::new(session),
+                transition,
+            })
+            .is_err()
+        {
+            self.finish_player_packet_transition(transition);
+            tracing::error!("failed to queue chat session update");
+        }
     }
 
     pub(crate) fn submit_command_suggestions(
@@ -965,7 +1018,7 @@ impl Server {
             .schedule(player, packet, payload_bytes);
     }
 
-    /// Pauses later packets while `player` is replaced by a new incarnation.
+    /// pauses later packets until the current playersession transition is complete
     pub(crate) fn begin_player_packet_transition(
         &self,
         player: &Arc<Player>,
@@ -976,7 +1029,7 @@ impl Server {
         self.packet_processor.pause_player_session(&player.session)
     }
 
-    /// Resumes packets retained by an exact player-replacement transition.
+    /// resumes packets retained by this playersession transition
     pub(crate) fn finish_player_packet_transition(
         &self,
         transition: PlayerPacketTransition,
@@ -1019,5 +1072,31 @@ impl Server {
                 Vec::new()
             }
         }
+    }
+
+    /// Returns whether a command requires signed arguments when parsed for the given sender.
+    pub fn command_requires_signed_arguments(
+        self: &Arc<Self>,
+        command: &str,
+        sender: CommandSender,
+    ) -> bool {
+        let source = CommandSource::new(sender, Arc::clone(self));
+        let dispatcher = self.command_dispatcher.read();
+        let parse = dispatcher.parse(command, source);
+        dispatcher.has_signed_arguments(&parse)
+    }
+
+    /// Inspects the parsed command nodes and collects the names and text slices
+    /// of all arguments requiring cryptographic signatures (e.g. `minecraft:message`).
+    pub fn collect_signable_arguments<'a>(
+        self: &Arc<Self>,
+        command: &'a str,
+        sender: CommandSender,
+    ) -> Vec<(String, &'a str)> {
+        let source = CommandSource::new(sender, Arc::clone(self));
+        let dispatcher = self.command_dispatcher.read();
+        let parse = dispatcher.parse(command, source);
+
+        dispatcher.collect_signable_arguments(&parse, command)
     }
 }
