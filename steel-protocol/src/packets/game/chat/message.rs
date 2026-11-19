@@ -14,31 +14,17 @@ pub struct SChat {
     pub timestamp: i64,
     pub salt: i64,
     pub signature: Option<[u8; MessageSignature::BYTES]>,
-    pub offset: i32,
-    pub acknowledged: [u8; LastSeenMessagesUpdate::ACKNOWLEDGED_BYTES],
-    pub checksum: u8,
+    pub last_seen: LastSeenMessagesUpdate,
 }
 
 impl ReadFrom for SChat {
     fn read(reader: &mut Cursor<&[u8]>) -> std::io::Result<Self> {
-        let message = read_utf(reader, MAX_CHAT_LENGTH)?;
-        let timestamp = i64::read(reader)?;
-        let salt = i64::read(reader)?;
-        let signature = Option::read(reader)?;
-        let LastSeenMessagesUpdate {
-            offset: VarInt(offset),
-            acknowledged,
-            checksum,
-        } = LastSeenMessagesUpdate::read(reader)?;
-
         Ok(Self {
-            message,
-            timestamp,
-            salt,
-            signature,
-            offset,
-            acknowledged,
-            checksum,
+            message: read_utf(reader, MAX_CHAT_LENGTH)?,
+            timestamp: i64::read(reader)?,
+            salt: i64::read(reader)?,
+            signature: Option::read(reader)?,
+            last_seen: LastSeenMessagesUpdate::read(reader)?,
         })
     }
 }
