@@ -1561,7 +1561,6 @@ fn command_world_scope_survives_entity_transforms() {
         let player_source = CommandSource::new(
             CommandSender::Player(Arc::clone(&player)),
             Arc::clone(&server),
-            None,
         );
 
         assert!(
@@ -1580,9 +1579,9 @@ fn command_world_scope_survives_entity_transforms() {
             "changing the execution entity must not change the initiating domain"
         );
 
-        let console_source = CommandSource::new(CommandSender::Console, Arc::clone(&server), None);
+        let console_source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
         assert!(console_source.with_world(Arc::clone(beta)).is_ok());
-        let rcon_source = CommandSource::new(CommandSender::Rcon, Arc::clone(&server), None);
+        let rcon_source = CommandSource::new(CommandSender::Rcon, Arc::clone(&server));
         assert!(rcon_source.with_world(Arc::clone(beta)).is_ok());
 
         drop((
@@ -1636,7 +1635,6 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
         let initiating_source = CommandSource::new(
             CommandSender::Player(Arc::clone(&initiator)),
             Arc::clone(&server),
-            None,
         );
         server
             .player_permission_states
@@ -1660,7 +1658,6 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
         let receiver_source = CommandSource::new(
             CommandSender::Player(Arc::clone(&receiver)),
             Arc::clone(&server),
-            None,
         );
         assert!(!CommandPermissionSource::has_permission(
             &receiver_source,
@@ -1747,7 +1744,7 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         let Ok(spatial_selector) = spatial_selector else {
             panic!("spatial all-player selector should parse");
         };
-        let source = CommandSource::new(CommandSender::Console, Arc::clone(&server), None);
+        let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
         let transformed = source.with_entity(Arc::<Player>::clone(&player));
         let owner =
             CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(&player)), &server);
@@ -2406,7 +2403,6 @@ impl TwoDomains<'_> {
         CommandSource::new(
             CommandSender::Player(Arc::clone(player)),
             Arc::clone(&self.server),
-            None,
         )
     }
 
@@ -4144,7 +4140,6 @@ fn command_source_and_operator_checks_use_published_subject_state() {
         let revoked_source = CommandSource::new(
             CommandSender::Player(Arc::clone(&player)),
             Arc::clone(&server),
-            None,
         );
         assert!(!CommandPermissionSource::has_permission(
             &revoked_source,
@@ -4167,7 +4162,6 @@ fn command_source_and_operator_checks_use_published_subject_state() {
         let granted_source = CommandSource::new(
             CommandSender::Player(Arc::clone(&player)),
             Arc::clone(&server),
-            None,
         );
         assert!(CommandPermissionSource::has_permission(
             &granted_source,
@@ -4350,7 +4344,7 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
         target.set_client_loaded(true);
         attacker.set_client_loaded(true);
 
-        let source = CommandSource::new(CommandSender::Console, Arc::clone(&server), None);
+        let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
         run_command(
             &server,
             source,
@@ -4446,7 +4440,7 @@ fn title_command_delivers_vanilla_packets_to_recorded_connections() {
             let callback = CommandResultCallback::new(move |success, value| {
                 *result_for_callback.lock() = Some((success, value));
             });
-            let mut source = CommandSource::new(CommandSender::Console, Arc::clone(&server), None);
+            let mut source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
             if let Some(source_entity) = source_entity {
                 source = source.with_entity(source_entity);
             }
@@ -4534,7 +4528,7 @@ fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
         };
 
         let run = |command: &str| {
-            let source = CommandSource::new(CommandSender::Console, Arc::clone(&server), None);
+            let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
             run_command(&server, source, command);
         };
 

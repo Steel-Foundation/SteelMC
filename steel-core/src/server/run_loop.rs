@@ -465,7 +465,8 @@ impl Server {
         command: &str,
         signing_context: Option<CommandSigningContext>,
     ) {
-        let source = CommandSource::new(owner.sender().clone(), Arc::clone(self), signing_context);
+        let source = CommandSource::new(owner.sender().clone(), Arc::clone(self))
+            .with_signing_context(signing_context);
         let chain = {
             let dispatcher = self.command_dispatcher.read();
             let parse = dispatcher.parse(command, source.clone());
@@ -511,7 +512,7 @@ impl Server {
         sender: CommandSender,
         input: &str,
     ) -> Result<Suggestions, SuggestionError> {
-        let source = CommandSource::new(sender, Arc::clone(self), None);
+        let source = CommandSource::new(sender, Arc::clone(self));
         let mut reader = StringReader::new(input);
         if reader.peek() == Some('/') {
             reader.skip();

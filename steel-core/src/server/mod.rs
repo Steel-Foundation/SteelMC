@@ -1046,7 +1046,7 @@ impl Server {
         command: &str,
         sender: CommandSender,
     ) -> bool {
-        let source = CommandSource::new(sender, Arc::clone(self), None);
+        let source = CommandSource::new(sender, Arc::clone(self));
         let dispatcher = self.command_dispatcher.read();
         let parse = dispatcher.parse(command, source);
         dispatcher.has_signed_arguments(&parse)
@@ -1059,7 +1059,7 @@ impl Server {
         command: &'a str,
         sender: CommandSender,
     ) -> Vec<(String, &'a str)> {
-        let source = CommandSource::new(sender, Arc::clone(self), None);
+        let source = CommandSource::new(sender, Arc::clone(self));
         let dispatcher = self.command_dispatcher.read();
         let parse = dispatcher.parse(command, source);
 

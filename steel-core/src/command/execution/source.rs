@@ -264,11 +264,7 @@ pub(crate) struct CommandSource {
 }
 
 impl CommandSource {
-    pub(crate) fn new(
-        sender: CommandSender,
-        server: Arc<Server>,
-        signing_context: Option<CommandSigningContext>,
-    ) -> Self {
+    pub(crate) fn new(sender: CommandSender, server: Arc<Server>) -> Self {
         let player = sender.get_player().cloned();
         let world = player.as_ref().map_or_else(
             || Arc::clone(server.overworld()),
@@ -319,7 +315,7 @@ impl CommandSource {
             effective_player_residence,
             callback: CommandResultCallback::empty(),
             silent: false,
-            signing_context: signing_context.map(Arc::new),
+            signing_context: None,
         }
     }
 
@@ -452,6 +448,11 @@ impl CommandSource {
     )]
     pub(crate) const fn is_silent(&self) -> bool {
         self.silent
+    }
+
+    pub(crate) fn with_signing_context(mut self, context: Option<CommandSigningContext>) -> Self {
+        self.signing_context = context.map(Arc::new);
+        self
     }
 
     #[must_use]
