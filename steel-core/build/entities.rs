@@ -48,7 +48,15 @@ pub fn build(entities: &[EntityClass]) -> String {
             args.push(common::generate_arg(field, &entity.extra, &entity.name));
         }
 
+        let parts_registration = (info.part_count > 0).then(|| {
+            let part_count = info.part_count;
+            quote! {
+                registry.register_parts(&vanilla_entities::#entity_type_ident, #part_count);
+            }
+        });
+
         let registration = quote! {
+            #parts_registration
             registry.register(
                 &vanilla_entities::#entity_type_ident,
                 |entity_type, id, pos, world| {

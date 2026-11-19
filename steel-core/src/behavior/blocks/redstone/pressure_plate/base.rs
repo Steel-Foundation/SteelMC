@@ -91,7 +91,7 @@ impl BasePressurePlateBlock {
             f64::from(pos.z() + 1) - TOUCH_INSET,
         );
         world
-            .get_entities_in_aabb_matching(&bounds, |entity| {
+            .get_entities_of_class_matching(&bounds, |entity| {
                 !entity.is_spectator()
                     && !entity.is_ignoring_block_triggers()
                     && class_filter(entity)
