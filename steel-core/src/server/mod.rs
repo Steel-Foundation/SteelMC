@@ -924,7 +924,7 @@ impl Server {
         })
     }
 
-    /// publishes chat through the same queue as signed cmds and session annoucnement
+    /// publishes chat through the same queue as signed cmds and session announcement
     pub(crate) fn queue_player_chat(
         &self,
         player: &Arc<Player>,
