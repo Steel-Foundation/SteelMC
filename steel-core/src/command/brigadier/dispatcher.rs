@@ -450,20 +450,13 @@ mod tests {
     #[test]
     fn test_utf16_range_to_byte_range_ascii() {
         let text = "hello world";
-        // "world" -> [6, 11]
         assert_eq!(StringRange::between(6, 11).byte_range(text), Some(6..11));
         assert_eq!(&text[6..11], "world");
     }
 
     #[test]
     fn test_utf16_range_to_byte_range_multibyte_accents() {
-        // 'é' is 2 bytes in UTF-8, but 1 code unit in UTF-16
         let text = "café noir";
-        // UTF-16 lengths:
-        // 'c' (1), 'a' (1), 'f' (1), 'é' (1), ' ' (1), 'n' (1), 'o' (1), 'i' (1), 'r' (1)
-        // "noir" starts at UTF-16 index 5 and ends at 9
-        // In UTF-8 bytes:
-        // 'c' (0), 'a' (1), 'f' (2), 'é' (3..5), ' ' (5), "noir" (6..10)
         let range = StringRange::between(5, 9).byte_range(text);
         assert_eq!(range, Some(6..10));
         assert_eq!(&text[range.expect("Invalid UTF-16 range")], "noir");
@@ -471,19 +464,12 @@ mod tests {
 
     #[test]
     fn test_utf16_range_to_byte_range_surrogate_pair_emoji() {
-        // '🎮' (U+1F3AE) is 4 bytes in UTF-8, but 2 code units in UTF-16 (surrogate pair)
         let text = "play 🎮 now";
-        // UTF-16 offsets:
-        // "play " = 5 code units
-        // '🎮' = 2 code units (indices 5..7)
-        // " now" = 4 code units (indices 7..11)
 
-        // Slicing the emoji itself
         let emoji_range = StringRange::between(5, 7).byte_range(text);
         assert_eq!(emoji_range, Some(5..9));
         assert_eq!(&text[emoji_range.expect("Invalid UTF-16 range")], "🎮");
 
-        // Slicing "now" after the emoji
         let now_range = StringRange::between(8, 11).byte_range(text);
         assert_eq!(now_range, Some(10..13));
         assert_eq!(&text[now_range.expect("Invalid UTF-16 range")], "now");
@@ -492,11 +478,9 @@ mod tests {
     #[test]
     fn test_utf16_range_to_byte_range_invalid_bounds() {
         let text = "test";
-        // Out of bounds
         assert_eq!(StringRange::between(0, 10).byte_range(text), None);
 
-        // Splitting a surrogate pair should be rejected / return None
-        let emoji_text = "🎮"; // 2 UTF-16 code units
+        let emoji_text = "🎮";
         assert_eq!(StringRange::between(0, 1).byte_range(emoji_text), None);
     }
 }
