@@ -203,10 +203,12 @@ impl OutgoingChatMessage {
     #[must_use]
     pub fn plain_content(&self) -> Cow<'_, str> {
         match self {
-            Self::Player { packet, .. } => packet.unsigned_content.as_ref().map_or_else(
-                || Cow::Borrowed(packet.message.as_str()),
-                |content| Cow::Owned(content.to_plain(&DisplayResolutor)),
-            ),
+            Self::Player { packet, .. } => packet
+                .unsigned_content
+                .as_ref()
+                .map_or(Cow::Borrowed(packet.message.as_str()), |content| {
+                    Cow::Owned(content.to_plain(&DisplayResolutor))
+                }),
             Self::Disguised { content } => Cow::Owned(content.to_plain(&DisplayResolutor)),
         }
     }
