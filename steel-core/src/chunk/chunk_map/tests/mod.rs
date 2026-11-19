@@ -12,7 +12,9 @@ use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk_saver::RamOnlyStorage;
 use crate::player::connection::NetworkConnection;
 use crate::player::{PlayerConnection, ResetReason};
-use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{
+    TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, insert_unready_full_chunk,
+};
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, SavedTick, TickPriority};
 use crate::worldgen::EmptyChunkGenerator;
 use std::io::Cursor;
@@ -176,6 +178,7 @@ fn insert_active_full_holder_with_ticks(
         Arc::downgrade(world),
         block_ticks,
         FluidTickList::new(),
+        0,
         ChunkHeightmaps::new(min_y, height),
         postprocessing,
         StructureStartMap::default(),
@@ -243,6 +246,7 @@ fn unloaded_light_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
         Vec::new(),
         BlockTickList::new(),
         FluidTickList::new(),
+        0,
         Weak::new(),
         ChunkLightData::for_valid_world_height(0, 16),
     );
@@ -266,6 +270,7 @@ fn unloaded_full_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
         Weak::new(),
         BlockTickList::new(),
         FluidTickList::new(),
+        0,
         ChunkHeightmaps::new(0, 16),
         Vec::new(),
         StructureStartMap::default(),

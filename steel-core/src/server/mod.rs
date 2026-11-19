@@ -3,6 +3,7 @@ mod broadcasting;
 /// Tick-polled server jobs.
 pub mod jobs;
 mod packet_processor;
+mod perf;
 mod pregen;
 /// The registry cache for the server.
 pub mod registry_cache;
@@ -82,6 +83,7 @@ use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
 use crossbeam::queue::SegQueue;
 use glam::DVec3;
+use perf::PerfRecorder;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use rustc_hash::FxHashMap;
 use std::sync::atomic::AtomicI32;
@@ -258,6 +260,7 @@ pub async fn test_server_with_worlds_and_config(
         player_admission_changed: Notify::new(),
         server_tick_changed: Notify::new(),
         tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
+        perf: PerfRecorder::new(),
         scoreboards,
         command_storage,
         random_sequences,
@@ -496,6 +499,8 @@ pub struct Server {
     server_tick_changed: Notify,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
+    /// Tick-phase recorder behind `/perf`.
+    pub(crate) perf: PerfRecorder,
     /// The number of minutes required for a player to be idle for them to be kicked (timed out) from the server.
     /// If this is equal to 0, no kicking will happen.
     pub player_idle_timeout: AtomicI32,
@@ -777,12 +782,9 @@ impl Server {
             )
             .await
             .map_err(|e| format!("failed to create world {}: {e}", world_entry.key))?;
-            world
-                .initialize_spawn_if_needed()
-                .await
-                .map_err(|e| format!("failed to initialize spawn for {}: {e}", world_entry.key))?;
             Ok(world)
         };
+        let mut spawn_worlds = Vec::with_capacity(resolved_worlds.worlds.len());
         for domain in &resolved_worlds.domains {
             let primary_config = resolved_worlds
                 .worlds
@@ -796,6 +798,7 @@ impl Server {
                 })?;
             let primary = construct_world(primary_config, GameTimeSource::Primary).await?;
             let clock = Arc::clone(&primary.game_time);
+            spawn_worlds.push(Arc::clone(&primary));
             worlds.insert(primary_config.key.clone(), primary);
             for world_entry in resolved_worlds
                 .worlds
@@ -805,6 +808,7 @@ impl Server {
                 let world =
                     construct_world(world_entry, GameTimeSource::Derived(Arc::clone(&clock)))
                         .await?;
+                spawn_worlds.push(Arc::clone(&world));
                 worlds.insert(world_entry.key.clone(), world);
             }
         }
@@ -819,6 +823,13 @@ impl Server {
         let random_sequences = DomainRandomSequences::load(&worlds)
             .await
             .map_err(|error| format!("failed to load domain random sequences: {error}"))?;
+        // Spawn chunk postprocessing can evaluate loot. Bind domain services first,
+        // then initialize spawns in primary-first construction order.
+        for world in spawn_worlds {
+            world.initialize_spawn_if_needed().await.map_err(|error| {
+                format!("failed to initialize spawn for {}: {error}", world.key)
+            })?;
+        }
         let registered_commands = create_registered_dispatcher(command_registry)
             .map_err(|error| format!("failed to register commands: {error}"))?;
         let command_permission_keys = registered_commands
@@ -846,6 +857,7 @@ impl Server {
             server_tick_changed: Notify::new(),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
+            perf: PerfRecorder::new(),
             player_idle_timeout: AtomicI32::new(0),
             scoreboards,
             command_storage,

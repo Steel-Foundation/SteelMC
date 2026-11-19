@@ -228,7 +228,7 @@ fn gateway_transition(
     let is_ender_pearl = entity.entity_type() == &vanilla_entities::ENDER_PEARL;
     TeleportTransition {
         target_world: Arc::clone(world),
-        position: block_bottom_center(destination),
+        position: destination.get_bottom_center(),
         rotation: (0.0, 0.0),
         velocity: DVec3::ZERO,
         relatives: if is_ender_pearl {
@@ -285,11 +285,6 @@ fn xz_direction(pos: BlockPos) -> DVec3 {
     } else {
         vector / length
     }
-}
-
-fn block_bottom_center(pos: BlockPos) -> DVec3 {
-    let (x, y, z) = pos.get_bottom_center();
-    DVec3::new(x, y, z)
 }
 
 #[cfg(test)]

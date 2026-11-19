@@ -8,6 +8,11 @@ use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent};
 use steel_utils::serial::{ReadFrom, WriteTo};
 
+use crate::REGISTRY;
+use crate::data_components::vanilla_components::DYE;
+use crate::item_stack::ItemStack;
+use crate::recipe::{CraftingInput, vanilla_recipe_types};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DyeColor {
     White,
@@ -210,6 +215,63 @@ impl DyeColor {
             .into_iter()
             .find(|dye| dye.firework_color() == color)
     }
+
+    /// Vanilla `DyeColor.getMixedColor`: looks up a 2x1 dye-mixing crafting
+    /// recipe and falls back to a random parent color when none exists.
+    ///
+    /// Vanilla reads recipes from the level and rolls from its random source;
+    /// Steel uses the global recipe registry and runtime RNG, so live gameplay
+    /// randomness stays unseeded while the observable result is unchanged.
+    #[must_use]
+    pub fn get_mixed_color(color1: Self, color2: Self) -> Self {
+        Self::find_color_mix_in_recipes(color1, color2).unwrap_or_else(|| {
+            if rand::random::<bool>() {
+                color1
+            } else {
+                color2
+            }
+        })
+    }
+
+    fn find_color_mix_in_recipes(color1: Self, color2: Self) -> Option<Self> {
+        let dye1: Vec<_> = REGISTRY
+            .items
+            .iter()
+            .filter_map(|(_, item)| (item.components.get(DYE) == Some(color1)).then_some(item))
+            .collect();
+        if dye1.is_empty() {
+            return None;
+        }
+        let dye2: Vec<_> = REGISTRY
+            .items
+            .iter()
+            .filter_map(|(_, item)| (item.components.get(DYE) == Some(color2)).then_some(item))
+            .collect();
+        if dye2.is_empty() {
+            return None;
+        }
+
+        for dye1_item in &dye1 {
+            for dye2_item in &dye2 {
+                let input = CraftingInput::new(
+                    2,
+                    1,
+                    vec![ItemStack::new(dye1_item), ItemStack::new(dye2_item)],
+                );
+                let Some(recipe) = REGISTRY
+                    .recipes
+                    .find_match(&vanilla_recipe_types::CRAFTING, &input)
+                else {
+                    continue;
+                };
+                if let Some(color) = recipe.data().assemble(&input).get(DYE).copied() {
+                    return Some(color);
+                }
+            }
+        }
+
+        None
+    }
 }
 
 const fn opaque(rgb: i32) -> i32 {
@@ -298,6 +360,31 @@ mod tests {
             DyeColor::by_firework_color(DyeColor::Cyan.firework_color()),
             Some(DyeColor::Cyan)
         );
+    }
+
+    #[test]
+    fn mixed_colors_use_dye_recipes_and_fall_back_to_a_parent() {
+        use crate::init_vanilla_registry;
+
+        init_vanilla_registry();
+
+        for (color1, color2, expected) in [
+            (DyeColor::White, DyeColor::Red, DyeColor::Pink),
+            (DyeColor::Red, DyeColor::Blue, DyeColor::Purple),
+            (DyeColor::Blue, DyeColor::White, DyeColor::LightBlue),
+            (DyeColor::Yellow, DyeColor::Red, DyeColor::Orange),
+        ] {
+            assert_eq!(DyeColor::get_mixed_color(color1, color2), expected);
+            assert_eq!(DyeColor::get_mixed_color(color2, color1), expected);
+        }
+
+        for _ in 0..32 {
+            let mixed = DyeColor::get_mixed_color(DyeColor::Green, DyeColor::Black);
+            assert!(
+                matches!(mixed, DyeColor::Green | DyeColor::Black),
+                "colors without a mix recipe fall back to a parent color"
+            );
+        }
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use super::{LootError, LootResult, LootTableBehaviorRegistry};
 use crate::{block_entity::BlockEntity, entity::Entity, world::World};
+use glam::DVec3;
 use steel_registry::{
     DyeColor, REGISTRY, RegistryExt, entity_variant::MooshroomVariant, equipment::EquipmentSlot,
     item_stack::ItemStack,
@@ -44,7 +45,7 @@ pub struct LootContext<'a> {
     pub killed_by_player: bool,
 
     /// World position where the loot is generated (block position or entity death location).
-    pub origin: Option<(f64, f64, f64)>,
+    pub origin: Option<DVec3>,
     /// Current game time in ticks (for `TimeCheck` condition).
     pub game_time: Option<i64>,
     /// Current weather state.
@@ -95,6 +96,8 @@ pub struct EntityRef<'a> {
     /// Vanilla `minecraft:type_specific/sheep.sheared`. `None` when the entity is
     /// not a sheep, matching vanilla `SheepPredicate.matches`' non-sheep rejection.
     pub sheep_sheared: Option<bool>,
+    /// Fishing-hook open-water state; `None` for other entity kinds.
+    pub fishing_hook_open_water: Option<bool>,
     /// Vanilla `minecraft:components.chicken/variant` entity data component key.
     pub chicken_variant: Option<&'a Identifier>,
     /// Vanilla `minecraft:mooshroom/variant` entity data component.
@@ -237,8 +240,8 @@ impl<'a> LootContext<'a> {
 
     /// Set the world origin position.
     #[must_use]
-    pub const fn with_origin(mut self, x: f64, y: f64, z: f64) -> Self {
-        self.origin = Some((x, y, z));
+    pub const fn with_origin(mut self, origin: DVec3) -> Self {
+        self.origin = Some(origin);
         self
     }
 

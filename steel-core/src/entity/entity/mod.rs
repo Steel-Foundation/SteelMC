@@ -133,6 +133,15 @@ impl<T: Entity> EntityEventSource for T {
     }
 }
 
+/// Position setter used when repositioning a rider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RiderMove {
+    /// Keeps the old position so the move is interpolated.
+    SetPosition,
+    /// Resets the old position so the move is not interpolated.
+    Snap,
+}
+
 /// A trait for entities.
 ///
 /// This trait provides the core functionality for entities.
@@ -838,8 +847,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Repositions a direct passenger from this vehicle's attachment point.
-    fn position_rider(&self, passenger: &dyn Entity) {
-        position_rider_default(self, passenger);
+    fn position_rider(&self, passenger: &dyn Entity, move_behavior: RiderMove) {
+        position_rider_default(self, passenger, move_behavior);
     }
 
     /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.
@@ -1011,7 +1020,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.set_velocity(DVec3::ZERO);
         Arc::clone(&self).tick();
         if let Some(vehicle) = self.vehicle() {
-            vehicle.position_rider(self.as_entity_event_source());
+            vehicle.position_rider(self.as_entity_event_source(), RiderMove::SetPosition);
         }
     }
 
@@ -1582,6 +1591,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.entity_type().is_abstract_arrow
     }
 
+    /// Returns open-water fishing state, or `None` for entities without fishing-hook behavior.
+    fn fishing_hook_open_water(&self) -> Option<bool> {
+        None
+    }
+
     /// Returns this entity as a projectile when it has projectile behavior.
     fn as_projectile(&self) -> Option<&dyn Projectile> {
         try_as_dyn::<Self, dyn Projectile>(self)
@@ -1592,6 +1606,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn super::ContainerUser>(self)
     }
 
+    /// Returns this entity as a hurting projectile when it has hurting-projectile behavior.
+    fn as_hurting_projectile(&self) -> Option<&dyn AbstractHurtingProjectile> {
+        try_as_dyn::<Self, dyn AbstractHurtingProjectile>(self)
+    }
+
+    /// Returns whether this entity is a player or breeze wind charge.
+    fn is_abstract_wind_charge(&self) -> bool {
+        try_as_dyn::<Self, dyn AbstractWindCharge>(self).is_some()
+    }
+
     /// Returns this entity as a living entity when it has living behavior.
     fn as_living_entity(&self) -> Option<&dyn LivingEntity> {
         try_as_dyn::<Self, dyn LivingEntity>(self)
@@ -1600,6 +1624,27 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns this entity as an item frame when it has item-frame behavior.
     fn as_item_frame(&self) -> Option<&dyn ItemFrame> {
         try_as_dyn::<Self, dyn ItemFrame>(self)
+    }
+
+    /// Returns this entity as a multipart sub-entity, in place of vanilla's
+    /// `instanceof EnderDragonPart` checks.
+    fn as_part_entity(&self) -> Option<&dyn PartEntity> {
+        try_as_dyn::<Self, dyn PartEntity>(self)
+    }
+
+    /// Returns this entity's multipart sub-entities (vanilla `EnderDragon.getSubEntities`,
+    /// on `Entity` as `NeoForge` does), or an empty slice.
+    fn parts(&self) -> &[Arc<dyn PartEntity>] {
+        &[]
+    }
+
+    /// Vanilla `Entity.is`: identity, except that a multipart part also counts as its parent.
+    fn is_same_entity(&self, other: &dyn Entity) -> bool {
+        self.id() == other.id()
+            || self
+                .as_part_entity()
+                .and_then(PartEntity::parent)
+                .is_some_and(|parent| parent.id() == other.id())
     }
 
     /// Returns this entity as a player when it is the concrete server player.
@@ -2691,12 +2736,21 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().try_set_position(pos)
     }
 
+    /// Sets the position of an entity not yet managed by a world, rebuilding its
+    /// bounding box through [`Entity::make_bounding_box_at`].
+    fn set_position_local(&self, pos: DVec3) {
+        self.base().set_position_local(pos);
+        self.base().set_bounding_box(self.make_bounding_box_at(pos));
+    }
+
     /// Moves this entity to `pos`, keeping its current rotation.
-    // TODO: Recursively reposition this entity's passengers (vanilla
-    // `Entity.teleportPassengers`, via `getSelfAndPassengers`)
     #[must_use = "movement commits can fail when world entity state rejects the update"]
     fn teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
-        self.try_set_position(pos)
+        self.try_set_position(pos)?;
+        self.set_old_position_to_current();
+        self.base().set_old_rotation_to_current();
+        teleport_passengers(self.as_entity_event_source());
+        Ok(())
     }
 
     /// Sets the vanilla movement-trace old position to the current position.
@@ -2837,7 +2891,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns vanilla dimensions for a physical pose.
+    ///
+    /// A multipart part reports its parent's type, so it returns its own fixed size
+    /// instead, as vanilla `EnderDragonPart.getDimensions` does.
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
+        if let Some(part) = self.as_part_entity() {
+            return part.part_base().size();
+        }
         let dimensions = self.entity_type().dimensions;
         let Some(living) = self.as_living_entity() else {
             return dimensions;
@@ -3848,6 +3908,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         self.reset_fall_distance();
+
+        if let Some(living) = self.as_living_entity() {
+            living.set_last_climbable_pos(None);
+        }
     }
 
     /// Computes vanilla support state for an on-ground update.
@@ -3965,8 +4029,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         if let Some(position) = read_nbt_dvec3(&nbt, "Pos")
             && position.is_finite()
         {
-            self.base()
-                .set_position_local(super::clamp_loaded_entity_position(position));
+            self.set_position_local(super::clamp_loaded_entity_position(position));
         }
 
         if let Some(motion) = read_nbt_dvec3(&nbt, "Motion") {
@@ -4124,7 +4187,11 @@ fn compute_modified_friction(friction: f64, modifier: f64) -> f64 {
 ///
 /// Shared between the [`Entity::position_rider`] default and entity overrides that
 /// extend it (e.g. `Chicken` mirroring the rider's body yaw).
-pub(crate) fn position_rider_default<E: Entity + ?Sized>(entity: &E, passenger: &dyn Entity) {
+pub(crate) fn position_rider_default<E: Entity + ?Sized>(
+    entity: &E,
+    passenger: &dyn Entity,
+    move_behavior: RiderMove,
+) {
     if !entity.has_passenger(passenger) {
         return;
     }
@@ -4137,6 +4204,22 @@ pub(crate) fn position_rider_default<E: Entity + ?Sized>(entity: &E, passenger: 
             passenger.id(),
             entity.id()
         );
+        return;
+    }
+    if move_behavior == RiderMove::Snap {
+        passenger.set_old_position_to_current();
+        passenger.base().set_old_rotation_to_current();
+    }
+}
+
+/// Positions direct passengers before recursing so nested riders land on the moved seat.
+fn teleport_passengers(vehicle: &dyn Entity) {
+    let passengers = vehicle.passengers();
+    for passenger in &passengers {
+        vehicle.position_rider(passenger.as_ref(), RiderMove::Snap);
+    }
+    for passenger in passengers {
+        teleport_passengers(passenger.as_ref());
     }
 }
 

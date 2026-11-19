@@ -360,13 +360,12 @@ impl BaseSpawner {
         pos: BlockPos,
         mut broadcast_event: impl FnMut(),
     ) -> SpawnerTickResult {
-        let center = DVec3::from(pos.get_center());
         let config = self.config();
-        let Some(_) =
-            world.nearest_player(center, f64::from(config.required_player_range), |player| {
-                player.is_alive() && !player.is_spectator()
-            })
-        else {
+        let Some(_) = world.nearest_player(
+            pos.get_center(),
+            f64::from(config.required_player_range),
+            |player| player.is_alive() && !player.is_spectator(),
+        ) else {
             return SpawnerTickResult::default();
         };
         if !world.get_game_rule(&vanilla_game_rules::SPAWNER_BLOCKS_WORK) {
@@ -451,15 +450,7 @@ impl BaseSpawner {
             let entity = &loaded.root;
 
             let entity_class = entity.downcast_type_key();
-            let nearby_box = WorldAabb::new(
-                f64::from(pos.x()),
-                f64::from(pos.y()),
-                f64::from(pos.z()),
-                f64::from(pos.x() + 1),
-                f64::from(pos.y() + 1),
-                f64::from(pos.z() + 1),
-            )
-            .inflate(f64::from(spawn_range));
+            let nearby_box = WorldAabb::single(pos.0).inflate(f64::from(spawn_range));
             let nearby_count = world
                 .get_entities_in_aabb_matching(&nearby_box, |candidate| {
                     !candidate.is_spectator() && candidate.downcast_type_key() == entity_class
@@ -480,7 +471,8 @@ impl BaseSpawner {
                 }
 
                 if next_spawn_data.entity_to_spawn.len() == 1 {
-                    let _ = mob.finalize_spawn(world, EntitySpawnReason::Spawner, None);
+                    let difficulty = world.get_current_difficulty_at(entity.block_position());
+                    let _ = mob.finalize_spawn(world, difficulty, EntitySpawnReason::Spawner, None);
                 }
                 if let Some(equipment) = &next_spawn_data.equipment
                     && let Err(error) = equip_from_table(world, mob, equipment)
@@ -638,7 +630,7 @@ fn equip_from_table(world: &World, mob: &dyn Mob, equipment: &EquipmentTable) ->
     let items = world.with_loot_random(Some(table), 0, |random| {
         let mut context = LootContext::new(random)
             .with_world(world)
-            .with_origin(position.x, position.y, position.z)
+            .with_origin(position)
             .with_this_entity(entity_ref);
         table.get_random_items(&mut context)
     })?;
