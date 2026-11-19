@@ -1,6 +1,7 @@
 //! Block entity implementations.
 
 mod abstract_furnace;
+mod banner;
 mod barrel;
 mod beacon;
 mod beehive;
@@ -29,6 +30,7 @@ pub use abstract_furnace::{
     BlastFurnaceBlockEntity, FurnaceBlockEntity, FurnaceKind, SmokerBlockEntity,
 };
 pub(crate) use abstract_furnace::{FurnaceContainer, pop_furnace_experience};
+pub use banner::BannerBlockEntity;
 pub use barrel::{BARREL_SLOTS, BarrelBlockEntity};
 pub use beacon::{BeaconBlockEntity, BeaconState};
 pub use beehive::{

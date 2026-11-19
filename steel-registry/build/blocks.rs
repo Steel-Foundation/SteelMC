@@ -629,6 +629,10 @@ pub(crate) fn build() -> TokenStream {
     println!("cargo:rerun-if-changed=build_assets/blocks.json");
     let block_assets: BlockAssets =
         serde_json::from_str(&fs::read_to_string("build_assets/blocks.json").unwrap()).unwrap();
+    println!("cargo:rerun-if-changed=build_assets/block_map_colors.json");
+    let map_colors: std::collections::BTreeMap<String, Vec<String>> =
+        serde_json::from_str(&fs::read_to_string("build_assets/block_map_colors.json").unwrap())
+            .unwrap();
 
     // Create default properties for comparison
     let default_props = BlockConfig::new();
@@ -891,6 +895,22 @@ pub(crate) fn build() -> TokenStream {
 
         // Generate default state if block has properties
         let default_state = generate_default_state(block);
+        let colors = map_colors
+            .get(&format!("minecraft:{}", block.name))
+            .unwrap_or_else(|| panic!("Missing map colors for {}", block.name));
+        assert!(!colors.is_empty(), "Empty map colors for {}", block.name);
+        let default_color = Ident::new(&colors[0], Span::call_site());
+        let color_overrides = colors
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter(|(_, color)| **color != colors[0])
+            .map(|(offset, color)| {
+                let offset = u16::try_from(offset).expect("block state offset fits u16");
+                let color = Ident::new(color, Span::call_site());
+                quote! { #offset => crate::vanilla_map_colors::#color, }
+            })
+            .collect::<Vec<_>>();
 
         let suffocating_default = block.suffocating.default;
         let suffocating_overwrites = block
@@ -1009,7 +1029,10 @@ pub(crate) fn build() -> TokenStream {
                 &[
                     #(#properties),*
                 ],
-            ).with_light_properties(
+            ).with_map_color(|offset| match offset {
+                #(#color_overrides)*
+                _ => crate::vanilla_map_colors::#default_color,
+            }).with_light_properties(
                 #light_fn,
             ).with_shapes(
                 #collision_fn,

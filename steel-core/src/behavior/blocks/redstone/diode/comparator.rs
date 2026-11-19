@@ -387,9 +387,11 @@ impl BlockBehavior for ComparatorBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::HangingEntity;
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::init_vanilla_registry;
+    use steel_registry::item_stack::ItemStack;
     use steel_registry::{vanilla_blocks, vanilla_entities};
     use steel_utils::ChunkPos;
 
@@ -415,9 +417,19 @@ mod tests {
         }
     }
 
-    impl ItemFrame for TestItemFrame {
+    impl HangingEntity for TestItemFrame {
+        fn pop_box(&self) -> WorldAabb {
+            self.bounding_box()
+        }
+
         fn direction(&self) -> Direction {
             self.direction
+        }
+    }
+
+    impl ItemFrame for TestItemFrame {
+        fn item(&self) -> ItemStack {
+            ItemStack::empty()
         }
 
         fn analog_output(&self) -> i32 {

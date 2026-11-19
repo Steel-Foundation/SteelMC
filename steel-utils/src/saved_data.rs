@@ -31,6 +31,10 @@ pub mod names {
     pub const COMMAND_STORAGE: SavedDataName = SavedDataName::trusted("command_storage");
     /// Named random sequences shared by a domain's worlds.
     pub const RANDOM_SEQUENCES: SavedDataName = SavedDataName::trusted("random_sequences");
+    /// Domain map ID allocation and the list of persisted maps.
+    pub const MAP_INDEX: SavedDataName = SavedDataName::trusted("maps");
+    /// Individual domain map pixels and persistent markers.
+    pub const MAP_DATA: WincodeSavedDataName = WincodeSavedDataName::trusted("map", *b"STLM", 1);
 }
 
 /// Name of a per-world saved data entry.
@@ -63,6 +67,7 @@ impl SavedDataName {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WincodeSavedDataName {
     name: &'static str,
+    index: Option<i32>,
     magic: [u8; 4],
     version: u16,
 }
@@ -73,6 +78,7 @@ impl WincodeSavedDataName {
     pub(crate) const fn trusted(name: &'static str, magic: [u8; 4], version: u16) -> Self {
         Self {
             name,
+            index: None,
             magic,
             version,
         }
@@ -83,6 +89,7 @@ impl WincodeSavedDataName {
         if is_valid_saved_data_name(name) {
             Ok(Self {
                 name,
+                index: None,
                 magic,
                 version,
             })
@@ -92,7 +99,17 @@ impl WincodeSavedDataName {
     }
 
     fn file_name(self) -> String {
-        format!("{}.bin", self.name)
+        match self.index {
+            Some(index) => format!("{}_{index}.bin", self.name),
+            None => format!("{}.bin", self.name),
+        }
+    }
+
+    /// Selects an indexed member without permitting caller-supplied paths.
+    #[must_use]
+    pub const fn with_index(mut self, index: i32) -> Self {
+        self.index = Some(index);
+        self
     }
 }
 
@@ -110,6 +127,41 @@ pub struct SavedDataManager {
 }
 
 impl SavedDataManager {
+    /// Loads an optional binary entry without blocking the game tick on disk I/O.
+    #[cfg(not(target_family = "wasm"))]
+    pub async fn load_wincode<T>(&self, name: WincodeSavedDataName) -> io::Result<Option<T>>
+    where
+        for<'de> T: SchemaRead<'de, DefaultConfig, Dst = T>,
+    {
+        let Some(path) = self.wincode_path_for(name) else {
+            return Ok(None);
+        };
+        let bytes = match fs::read(&path).await {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        Self::decode_wincode(&path, &bytes, name).map(Some)
+    }
+
+    /// Atomically persists an indexed or singleton binary entry.
+    #[cfg(not(target_family = "wasm"))]
+    pub async fn save_wincode<T>(&self, name: WincodeSavedDataName, data: &T) -> io::Result<()>
+    where
+        T: SchemaWrite<DefaultConfig, Src = T>,
+    {
+        let Some(path) = self.wincode_path_for(name) else {
+            return Ok(());
+        };
+        let payload = wincode::serialize(data)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+        let mut bytes = Vec::with_capacity(6 + payload.len());
+        bytes.extend_from_slice(&name.magic);
+        bytes.extend_from_slice(&name.version.to_le_bytes());
+        bytes.extend_from_slice(&payload);
+        Self::write_atomic(&path, &bytes).await
+    }
+
     /// Creates saved-data storage rooted at `world_dir/data`.
     ///
     /// `None` means the world is ephemeral, matching Steel's RAM-only storage.
@@ -134,18 +186,25 @@ impl SavedDataManager {
         }
 
         let bytes = sync_fs::read(&path)?;
+        Self::decode_wincode(&path, &bytes, name).map(Some)
+    }
+
+    fn decode_wincode<T>(path: &Path, bytes: &[u8], name: WincodeSavedDataName) -> io::Result<T>
+    where
+        for<'de> T: SchemaRead<'de, DefaultConfig, Dst = T>,
+    {
         let Some((magic, remainder)) = bytes.split_first_chunk::<4>() else {
-            return Err(invalid_binary_data(&path, "missing magic header"));
+            return Err(invalid_binary_data(path, "missing magic header"));
         };
         if magic != &name.magic {
-            return Err(invalid_binary_data(&path, "unexpected magic header"));
+            return Err(invalid_binary_data(path, "unexpected magic header"));
         }
         let Some((version, payload)) = remainder.split_first_chunk::<2>() else {
-            return Err(invalid_binary_data(&path, "missing format version"));
+            return Err(invalid_binary_data(path, "missing format version"));
         };
         if u16::from_le_bytes(*version) != name.version {
             return Err(invalid_binary_data(
-                &path,
+                path,
                 format!(
                     "unsupported format version {}",
                     u16::from_le_bytes(*version)
@@ -153,14 +212,12 @@ impl SavedDataManager {
             ));
         }
 
-        wincode::deserialize_exact(payload)
-            .map(Some)
-            .map_err(|error| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Invalid binary saved data {}: {error}", path.display()),
-                )
-            })
+        wincode::deserialize_exact(payload).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid binary saved data {}: {error}", path.display()),
+            )
+        })
     }
 
     /// Loads saved data, or returns `T::default()` when the data file is absent
@@ -216,16 +273,20 @@ impl SavedDataManager {
         let Some(path) = self.path_for(name) else {
             return Ok(());
         };
+        let content = toml::to_string_pretty(data)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        Self::write_atomic(&path, content.as_bytes()).await
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    async fn write_atomic(path: &Path, content: &[u8]) -> io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).await?;
         }
-
-        let content = toml::to_string_pretty(data)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        let temp_path = path.with_extension(format!("toml.{}.tmp", uuid::Uuid::new_v4()));
+        let temp_path = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
         let mut file = fs::File::create_new(&temp_path).await?;
         let result = async {
-            file.write_all(content.as_bytes()).await?;
+            file.write_all(content).await?;
             file.sync_all().await?;
             drop(file);
             fs::rename(&temp_path, &path).await?;

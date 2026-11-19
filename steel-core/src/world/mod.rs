@@ -19,6 +19,7 @@ use crate::chunk::light::{
 };
 use crate::chunk::status::ChunkStatus;
 use crate::entity::damage::DamageHistory;
+use crate::maps::MapStorage;
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
 use crate::world::game_event::{
@@ -272,6 +273,7 @@ pub struct World {
     pub(crate) saved_data: SavedDataManager,
     pub(crate) random_sequences: SyncRwLock<Option<Arc<RandomSequences>>>,
     pub(crate) loot_random: SyncMutex<RandomSource>,
+    pub(crate) maps: SyncRwLock<Arc<MapStorage>>,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
     /// Vanilla sleeping player counts for night-skip checks.
@@ -451,6 +453,7 @@ impl World {
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
                 random_sequences: SyncRwLock::new(None),
+                maps: SyncRwLock::new(Arc::new(MapStorage::default())),
                 loot_random: SyncMutex::new(RandomSource::Legacy(LegacyRandom::from_seed(
                     rand::random(),
                 ))),
