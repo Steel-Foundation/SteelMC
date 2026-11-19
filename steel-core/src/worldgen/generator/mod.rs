@@ -111,6 +111,11 @@ pub trait ChunkGenerator: Send + Sync {
 
     /// Applies structure piece placement and biome feature decorations.
     fn apply_biome_decorations(&self, region: &mut WorldGenRegion<'_>);
+
+    /// returns the biome zoom seed if this generator spawns original mobs
+    fn original_mob_spawn_biome_seed(&self) -> Option<i64> {
+        None
+    }
 }
 
 pub(crate) fn worldgen_region_random_from_splitter(

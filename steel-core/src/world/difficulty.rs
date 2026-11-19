@@ -97,6 +97,22 @@ impl DifficultyInstance {
 }
 
 impl World {
+    /// difficulty used while generating a chunk before it accumulates inhabited time
+    #[must_use]
+    pub(crate) fn worldgen_difficulty(&self) -> DifficultyInstance {
+        let level_data = self.level_data.read();
+        let clocks = level_data.world_clocks();
+
+        DifficultyInstance::new(
+            level_data.data().difficulty,
+            clocks
+                .total_ticks(&vanilla_world_clocks::OVERWORLD)
+                .unwrap_or(0),
+            0,
+            environment::moon_brightness(self.dimension_type, clocks),
+        )
+    }
+
     /// Returns vanilla difficulty scaling for a block position.
     ///
     /// Vanilla only contributes moon brightness and chunk time when the chunk is

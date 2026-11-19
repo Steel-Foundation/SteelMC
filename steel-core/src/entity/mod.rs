@@ -856,6 +856,7 @@ mod storage;
 mod synced_data;
 mod ticking;
 mod tracker;
+mod worldgen_spawn;
 
 use crate::portal::{
     PortalKind, PortalProcessResult, PortalProcessor, PortalTicketTarget, TeleportPostAction,
@@ -902,7 +903,7 @@ pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
 };
-pub(crate) use mob::{Mob, MobBase, PathfinderMob};
+pub(crate) use mob::{Mob, MobBase, MobSpawnState, PathfinderMob};
 pub(crate) use monster::{Enemy, Monster};
 pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
@@ -935,6 +936,7 @@ pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
 pub(crate) use ticking::{snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_if};
 pub use tracker::{EntityChangeSenders, EntityTracker};
+pub use worldgen_spawn::{HorseMarkings, PandaGene, WorldgenSpawnProperties};
 
 #[cfg(test)]
 macro_rules! impl_test_downcast_type {

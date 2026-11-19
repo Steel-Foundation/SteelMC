@@ -1,0 +1,8876 @@
+{
+  "overrides": {
+    "minecraft:bedrock": [],
+    "minecraft:oak_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:spruce_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:birch_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:jungle_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:acacia_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:cherry_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:dark_oak_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:pale_oak_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:mangrove_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:red_poplar_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:orange_poplar_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:yellow_poplar_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:azalea_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:flowering_azalea_leaves": [
+      "minecraft:ocelot",
+      "minecraft:parrot"
+    ],
+    "minecraft:glass": [],
+    "minecraft:moving_piston": [],
+    "minecraft:ice": [
+      "minecraft:polar_bear"
+    ],
+    "minecraft:soul_sand": true,
+    "minecraft:carved_pumpkin": true,
+    "minecraft:jack_o_lantern": true,
+    "minecraft:white_stained_glass": [],
+    "minecraft:orange_stained_glass": [],
+    "minecraft:magenta_stained_glass": [],
+    "minecraft:light_blue_stained_glass": [],
+    "minecraft:yellow_stained_glass": [],
+    "minecraft:lime_stained_glass": [],
+    "minecraft:pink_stained_glass": [],
+    "minecraft:gray_stained_glass": [],
+    "minecraft:light_gray_stained_glass": [],
+    "minecraft:cyan_stained_glass": [],
+    "minecraft:purple_stained_glass": [],
+    "minecraft:blue_stained_glass": [],
+    "minecraft:brown_stained_glass": [],
+    "minecraft:green_stained_glass": [],
+    "minecraft:red_stained_glass": [],
+    "minecraft:black_stained_glass": [],
+    "minecraft:oak_trapdoor": [],
+    "minecraft:spruce_trapdoor": [],
+    "minecraft:birch_trapdoor": [],
+    "minecraft:jungle_trapdoor": [],
+    "minecraft:acacia_trapdoor": [],
+    "minecraft:cherry_trapdoor": [],
+    "minecraft:dark_oak_trapdoor": [],
+    "minecraft:pale_oak_trapdoor": [],
+    "minecraft:mangrove_trapdoor": [],
+    "minecraft:poplar_trapdoor": [],
+    "minecraft:bamboo_trapdoor": [],
+    "minecraft:redstone_lamp": true,
+    "minecraft:barrier": [],
+    "minecraft:iron_trapdoor": [],
+    "minecraft:chorus_flower": [],
+    "minecraft:frosted_ice": [
+      "minecraft:polar_bear"
+    ],
+    "minecraft:magma_block": [
+      "minecraft:area_effect_cloud",
+      "minecraft:blaze",
+      "minecraft:ender_dragon",
+      "minecraft:end_crystal",
+      "minecraft:ghast",
+      "minecraft:magma_cube",
+      "minecraft:shulker",
+      "minecraft:strider",
+      "minecraft:tnt",
+      "minecraft:vex",
+      "minecraft:warden",
+      "minecraft:wither",
+      "minecraft:wither_skeleton",
+      "minecraft:zoglin",
+      "minecraft:zombified_piglin"
+    ],
+    "minecraft:scaffolding": [],
+    "minecraft:crimson_trapdoor": [],
+    "minecraft:warped_trapdoor": [],
+    "minecraft:tinted_glass": [],
+    "minecraft:copper_trapdoor": [],
+    "minecraft:exposed_copper_trapdoor": [],
+    "minecraft:weathered_copper_trapdoor": [],
+    "minecraft:oxidized_copper_trapdoor": [],
+    "minecraft:waxed_copper_trapdoor": [],
+    "minecraft:waxed_exposed_copper_trapdoor": [],
+    "minecraft:waxed_weathered_copper_trapdoor": [],
+    "minecraft:waxed_oxidized_copper_trapdoor": [],
+    "minecraft:copper_grate": [],
+    "minecraft:exposed_copper_grate": [],
+    "minecraft:weathered_copper_grate": [],
+    "minecraft:oxidized_copper_grate": [],
+    "minecraft:waxed_copper_grate": [],
+    "minecraft:waxed_exposed_copper_grate": [],
+    "minecraft:waxed_weathered_copper_grate": [],
+    "minecraft:waxed_oxidized_copper_grate": [],
+    "minecraft:mud": true
+  },
+  "signal_sources": [
+    "minecraft:detector_rail",
+    "minecraft:redstone_wire",
+    "minecraft:lever",
+    "minecraft:stone_pressure_plate",
+    "minecraft:oak_pressure_plate",
+    "minecraft:spruce_pressure_plate",
+    "minecraft:birch_pressure_plate",
+    "minecraft:jungle_pressure_plate",
+    "minecraft:acacia_pressure_plate",
+    "minecraft:cherry_pressure_plate",
+    "minecraft:dark_oak_pressure_plate",
+    "minecraft:pale_oak_pressure_plate",
+    "minecraft:mangrove_pressure_plate",
+    "minecraft:poplar_pressure_plate",
+    "minecraft:bamboo_pressure_plate",
+    "minecraft:redstone_torch",
+    "minecraft:redstone_wall_torch",
+    "minecraft:stone_button",
+    "minecraft:jukebox",
+    "minecraft:repeater",
+    "minecraft:tripwire_hook",
+    "minecraft:oak_button",
+    "minecraft:spruce_button",
+    "minecraft:birch_button",
+    "minecraft:jungle_button",
+    "minecraft:acacia_button",
+    "minecraft:cherry_button",
+    "minecraft:dark_oak_button",
+    "minecraft:pale_oak_button",
+    "minecraft:mangrove_button",
+    "minecraft:poplar_button",
+    "minecraft:bamboo_button",
+    "minecraft:trapped_chest",
+    "minecraft:light_weighted_pressure_plate",
+    "minecraft:heavy_weighted_pressure_plate",
+    "minecraft:comparator",
+    "minecraft:daylight_detector",
+    "minecraft:redstone_block",
+    "minecraft:observer",
+    "minecraft:lectern",
+    "minecraft:crimson_pressure_plate",
+    "minecraft:warped_pressure_plate",
+    "minecraft:crimson_button",
+    "minecraft:warped_button",
+    "minecraft:target",
+    "minecraft:polished_blackstone_pressure_plate",
+    "minecraft:polished_blackstone_button",
+    "minecraft:sculk_sensor",
+    "minecraft:calibrated_sculk_sensor",
+    "minecraft:lightning_rod",
+    "minecraft:exposed_lightning_rod",
+    "minecraft:weathered_lightning_rod",
+    "minecraft:oxidized_lightning_rod",
+    "minecraft:waxed_lightning_rod",
+    "minecraft:waxed_exposed_lightning_rod",
+    "minecraft:waxed_weathered_lightning_rod",
+    "minecraft:waxed_oxidized_lightning_rod"
+  ],
+  "land_pathfinding": {
+    "minecraft:white_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:orange_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:magenta_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_blue_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:yellow_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:lime_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pink_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:gray_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_gray_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cyan_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:purple_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:blue_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:brown_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:green_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:black_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:straw_bed": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sticky_piston": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:piston": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:piston_head": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:white_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:orange_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:magenta_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_blue_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:yellow_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:lime_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pink_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:gray_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_gray_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cyan_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:purple_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:blue_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:brown_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:green_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:black_wool_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:white_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:orange_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:magenta_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_blue_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:yellow_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:lime_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pink_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:gray_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_gray_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cyan_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:purple_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:blue_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:brown_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:green_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:black_wool_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:moving_piston": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:acacia_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:bamboo_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:birch_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cherry_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:crimson_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:dark_oak_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:jungle_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mangrove_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oak_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pale_oak_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:poplar_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:spruce_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:warped_shelf": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oak_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:chest": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:farmland": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oak_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:cobblestone_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oak_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:spruce_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:birch_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:acacia_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cherry_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:jungle_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:dark_oak_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pale_oak_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mangrove_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:poplar_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:crimson_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:warped_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:bamboo_wall_hanging_sign": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:iron_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:snow": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:cactus": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oak_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:soul_sand": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oak_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:spruce_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:birch_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:jungle_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:acacia_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:cherry_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:dark_oak_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:pale_oak_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:mangrove_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:poplar_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:bamboo_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:iron_bars": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:copper_bars": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:exposed_copper_bars": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:weathered_copper_bars": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oxidized_copper_bars": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_copper_bars": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_exposed_copper_bars": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_weathered_copper_bars": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_oxidized_copper_bars": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:iron_chain": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:copper_chain": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:exposed_copper_chain": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:weathered_copper_chain": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oxidized_copper_chain": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_copper_chain": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_exposed_copper_chain": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_weathered_copper_chain": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_oxidized_copper_chain": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oak_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:stone_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mud_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:resin_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:resin_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:resin_brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:nether_brick_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:nether_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:enchanting_table": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:brewing_stand": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cauldron": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:water_cauldron": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:lava_cauldron": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:powder_snow_cauldron": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:end_portal_frame": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:dragon_egg": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cocoa": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:shelf_mushroom": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sandstone_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:ender_chest": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:spruce_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:birch_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:jungle_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cobblestone_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mossy_cobblestone_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:flower_pot": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_torchflower": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_oak_sapling": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_spruce_sapling": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_birch_sapling": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_jungle_sapling": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_acacia_sapling": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_cherry_sapling": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_dark_oak_sapling": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_pale_oak_sapling": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_poplar_sapling": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_mangrove_propagule": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_fern": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_dandelion": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_golden_dandelion": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_poppy": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_blue_orchid": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_allium": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_azure_bluet": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_red_tulip": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_orange_tulip": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_white_tulip": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_pink_tulip": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_oxeye_daisy": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_cornflower": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_lily_of_the_valley": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_wither_rose": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_red_mushroom": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_brown_mushroom": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_dead_bush": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_cactus": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:skeleton_skull": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:skeleton_wall_skull": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:wither_skeleton_skull": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:wither_skeleton_wall_skull": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:zombie_head": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:zombie_wall_head": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:player_head": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:player_wall_head": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:creeper_head": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:creeper_wall_head": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:dragon_head": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:dragon_wall_head": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:piglin_head": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:piglin_wall_head": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:anvil": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:chipped_anvil": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:damaged_anvil": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:trapped_chest": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:hopper": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:quartz_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:white_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:orange_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:magenta_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_blue_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:yellow_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:lime_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pink_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:gray_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_gray_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cyan_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:purple_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:blue_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:brown_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:green_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:black_stained_glass_pane": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:acacia_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cherry_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:dark_oak_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pale_oak_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mangrove_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:poplar_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:bamboo_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:bamboo_mosaic_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:iron_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:prismarine_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:prismarine_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:dark_prismarine_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:prismarine_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:prismarine_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:dark_prismarine_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_sandstone_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oak_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:spruce_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:birch_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:jungle_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:acacia_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cherry_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:dark_oak_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pale_oak_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mangrove_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:poplar_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:bamboo_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:bamboo_mosaic_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:stone_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sandstone_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cut_sandstone_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:petrified_oak_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cobblestone_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:stone_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mud_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:nether_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:quartz_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_sandstone_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cut_red_sandstone_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:smooth_stone_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:spruce_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:birch_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:jungle_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:acacia_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:cherry_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:dark_oak_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:pale_oak_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:mangrove_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:poplar_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:bamboo_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:spruce_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:birch_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:jungle_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:acacia_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cherry_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:dark_oak_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pale_oak_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mangrove_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:poplar_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:bamboo_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:spruce_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:birch_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:jungle_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:acacia_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:cherry_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:dark_oak_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:pale_oak_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:mangrove_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:poplar_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:bamboo_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:end_rod": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:chorus_plant": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:purpur_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:purpur_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:dirt_path": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:white_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:orange_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:magenta_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_blue_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:yellow_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:lime_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pink_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:gray_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_gray_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cyan_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:purple_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:blue_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:brown_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:green_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:black_concrete_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:white_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:orange_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:magenta_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_blue_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:yellow_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:lime_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pink_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:gray_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_gray_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cyan_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:purple_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:blue_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:brown_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:green_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:black_concrete_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sniffer_egg": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:dried_ghast": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sea_pickle": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:conduit": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:bamboo": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_bamboo": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_granite_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:smooth_red_sandstone_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mossy_stone_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_diorite_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mossy_cobblestone_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:end_stone_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:stone_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:smooth_sandstone_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:smooth_quartz_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:granite_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:andesite_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_nether_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_andesite_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:diorite_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_granite_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:smooth_red_sandstone_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mossy_stone_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_diorite_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mossy_cobblestone_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:end_stone_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:smooth_sandstone_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:smooth_quartz_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:granite_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:andesite_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_nether_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_andesite_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:diorite_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:prismarine_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_sandstone_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mossy_stone_brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:granite_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:stone_brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mud_brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:nether_brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:andesite_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_nether_brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sandstone_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:end_stone_brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:diorite_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:grindstone": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:lectern": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:stonecutter": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:bell": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:lantern": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:soul_lantern": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:copper_lantern": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:exposed_copper_lantern": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:weathered_copper_lantern": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oxidized_copper_lantern": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_copper_lantern": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_exposed_copper_lantern": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_weathered_copper_lantern": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_oxidized_copper_lantern": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:campfire": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:soul_campfire": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:crimson_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:warped_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:crimson_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:warped_fence": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:crimson_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:warped_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:crimson_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:warped_fence_gate": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:crimson_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:warped_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:crimson_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:warped_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:composter": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_crimson_fungus": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_warped_fungus": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_crimson_roots": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_warped_roots": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:blackstone_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:blackstone_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:blackstone_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_blackstone_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_blackstone_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_blackstone_brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_blackstone_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_blackstone_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_blackstone_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:white_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:orange_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:magenta_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_blue_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:yellow_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:lime_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pink_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:gray_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:light_gray_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cyan_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:purple_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:blue_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:brown_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:green_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:red_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:black_candle_cake": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:tuff_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:tuff_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:tuff_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_tuff_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_tuff_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_tuff_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:tuff_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:tuff_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:tuff_brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sulfur_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sulfur_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sulfur_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_sulfur_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_sulfur_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_sulfur_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sulfur_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sulfur_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sulfur_brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cinnabar_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cinnabar_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cinnabar_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_cinnabar_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_cinnabar_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_cinnabar_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cinnabar_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cinnabar_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cinnabar_brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sculk_sensor": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:calibrated_sculk_sensor": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cut_copper_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:exposed_cut_copper_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:weathered_cut_copper_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oxidized_cut_copper_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_cut_copper_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_exposed_cut_copper_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_weathered_cut_copper_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_oxidized_cut_copper_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cut_copper_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:exposed_cut_copper_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:weathered_cut_copper_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oxidized_cut_copper_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_cut_copper_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_exposed_cut_copper_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_weathered_cut_copper_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_oxidized_cut_copper_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:copper_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:exposed_copper_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:weathered_copper_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:oxidized_copper_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:waxed_copper_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:waxed_exposed_copper_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:waxed_weathered_copper_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:waxed_oxidized_copper_door": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 4,
+          "value": true
+        },
+        {
+          "offset": 5,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 12,
+          "value": true
+        },
+        {
+          "offset": 13,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 20,
+          "value": true
+        },
+        {
+          "offset": 21,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 28,
+          "value": true
+        },
+        {
+          "offset": 29,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 36,
+          "value": true
+        },
+        {
+          "offset": 37,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 44,
+          "value": true
+        },
+        {
+          "offset": 45,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 52,
+          "value": true
+        },
+        {
+          "offset": 53,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 60,
+          "value": true
+        },
+        {
+          "offset": 61,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:copper_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:exposed_copper_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:weathered_copper_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:oxidized_copper_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:waxed_copper_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:waxed_exposed_copper_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:waxed_weathered_copper_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:waxed_oxidized_copper_trapdoor": {
+      "default": false,
+      "overwrites": [
+        {
+          "offset": 0,
+          "value": true
+        },
+        {
+          "offset": 1,
+          "value": true
+        },
+        {
+          "offset": 2,
+          "value": true
+        },
+        {
+          "offset": 3,
+          "value": true
+        },
+        {
+          "offset": 8,
+          "value": true
+        },
+        {
+          "offset": 9,
+          "value": true
+        },
+        {
+          "offset": 10,
+          "value": true
+        },
+        {
+          "offset": 11,
+          "value": true
+        },
+        {
+          "offset": 16,
+          "value": true
+        },
+        {
+          "offset": 17,
+          "value": true
+        },
+        {
+          "offset": 18,
+          "value": true
+        },
+        {
+          "offset": 19,
+          "value": true
+        },
+        {
+          "offset": 24,
+          "value": true
+        },
+        {
+          "offset": 25,
+          "value": true
+        },
+        {
+          "offset": 26,
+          "value": true
+        },
+        {
+          "offset": 27,
+          "value": true
+        },
+        {
+          "offset": 32,
+          "value": true
+        },
+        {
+          "offset": 33,
+          "value": true
+        },
+        {
+          "offset": 34,
+          "value": true
+        },
+        {
+          "offset": 35,
+          "value": true
+        },
+        {
+          "offset": 40,
+          "value": true
+        },
+        {
+          "offset": 41,
+          "value": true
+        },
+        {
+          "offset": 42,
+          "value": true
+        },
+        {
+          "offset": 43,
+          "value": true
+        },
+        {
+          "offset": 48,
+          "value": true
+        },
+        {
+          "offset": 49,
+          "value": true
+        },
+        {
+          "offset": 50,
+          "value": true
+        },
+        {
+          "offset": 51,
+          "value": true
+        },
+        {
+          "offset": 56,
+          "value": true
+        },
+        {
+          "offset": 57,
+          "value": true
+        },
+        {
+          "offset": 58,
+          "value": true
+        },
+        {
+          "offset": 59,
+          "value": true
+        }
+      ]
+    },
+    "minecraft:copper_chest": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:exposed_copper_chest": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:weathered_copper_chest": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oxidized_copper_chest": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_copper_chest": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_exposed_copper_chest": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_weathered_copper_chest": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_oxidized_copper_chest": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:copper_golem_statue": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:exposed_copper_golem_statue": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:weathered_copper_golem_statue": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oxidized_copper_golem_statue": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_copper_golem_statue": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_exposed_copper_golem_statue": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_weathered_copper_golem_statue": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_oxidized_copper_golem_statue": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:lightning_rod": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:exposed_lightning_rod": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:weathered_lightning_rod": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:oxidized_lightning_rod": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_lightning_rod": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_exposed_lightning_rod": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_weathered_lightning_rod": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:waxed_oxidized_lightning_rod": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:pointed_dripstone": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:sulfur_spike": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:azalea": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:flowering_azalea": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:mud": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cobbled_deepslate_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cobbled_deepslate_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:cobbled_deepslate_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_deepslate_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_deepslate_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:polished_deepslate_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:deepslate_tile_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:deepslate_tile_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:deepslate_tile_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:deepslate_brick_stairs": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:deepslate_brick_slab": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:deepslate_brick_wall": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_azalea_bush": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_flowering_azalea_bush": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:decorated_pot": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:heavy_core": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_open_eyeblossom": {
+      "default": false,
+      "overwrites": []
+    },
+    "minecraft:potted_closed_eyeblossom": {
+      "default": false,
+      "overwrites": []
+    }
+  }
+}

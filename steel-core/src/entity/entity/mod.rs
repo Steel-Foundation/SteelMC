@@ -4022,6 +4022,15 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors the overridable part of vanilla's `Entity.applyImplicitComponents`.
     fn apply_implicit_item_components(&self, _item_stack: &ItemStack) {}
 
+    /// applies species specific props sampled by the worldgen spawner
+    fn apply_worldgen_spawn_properties(&self, properties: WorldgenSpawnProperties) {
+        assert!(
+            matches!(properties, WorldgenSpawnProperties::None),
+            "unhandled worldgen spawn properties for {}",
+            self.entity_type().key
+        );
+    }
+
     /// Spawn-item data is merged into the entity's current save state before it
     /// is loaded. Keeping that merge at the entity boundary preserves defaults
     /// and entity-specific state when the component only overrides one field.

@@ -1059,6 +1059,10 @@ impl<N: VanillaPostNoiseStateType + NoiseSpawnTarget> ChunkGenerator for Vanilla
         worldgen_region_random_from_splitter(&self.splitter, center)
     }
 
+    fn original_mob_spawn_biome_seed(&self) -> Option<i64> {
+        (!N::Settings::DISABLE_MOB_GENERATION).then_some(self.biome_zoom_seed)
+    }
+
     fn apply_biome_decorations(&self, region: &mut WorldGenRegion<'_>) {
         self.feature_runner
             .decorate(region, &REGISTRY, self.seed, self.biome_zoom_seed);

@@ -283,6 +283,7 @@ struct NoiseSettingsJson {
     aquifers: Option<AquifersJson>,
     #[serde(default)]
     legacy_random_source: bool,
+    disable_mob_generation: bool,
     default_block: String,
     default_fluid: String,
     noise: NoiseConfigJson,
@@ -1114,6 +1115,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
     let material_ore_veins_enabled = !material_ore_veins.is_empty();
     let material_ore_vein_value_count = material_ore_veins.len() * 2;
     let legacy_random_source = settings.legacy_random_source;
+    let disable_mob_generation = settings.disable_mob_generation;
 
     let registry: BTreeMap<String, DensityFunction> = read_density_function_registry()
         .iter()
@@ -1306,6 +1308,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             const ORE_VEINS_ENABLED: bool = #ore_veins_enabled;
             const MATERIAL_ORE_VEINS_ENABLED: bool = #material_ore_veins_enabled;
             const LEGACY_RANDOM_SOURCE: bool = #legacy_random_source;
+            const DISABLE_MOB_GENERATION: bool = #disable_mob_generation;
 
             #[inline]
             fn default_block_id() -> steel_utils::BlockStateId {

@@ -100,6 +100,14 @@ impl EntityStorage {
         entities.into_values().collect()
     }
 
+    #[cfg(feature = "benchmark-support")]
+    pub(crate) fn clear_for_benchmark(&self) {
+        let mut state = self.state.write();
+        if let EntityStorageState::Open(entities) = &mut *state {
+            *entities = FxHashMap::default();
+        }
+    }
+
     /// Returns all staged entities.
     #[must_use]
     pub(crate) fn get_all(&self) -> Vec<SharedEntity> {

@@ -36,12 +36,7 @@ impl WorldgenRandom {
     /// Vanilla's `WorldgenRandom.setDecorationSeed`.
     pub fn set_decoration_seed(&mut self, seed: i64, block_x: i32, block_z: i32) -> i64 {
         self.set_seed(seed);
-        let x_scale = self.next_i64() | 1;
-        let z_scale = self.next_i64() | 1;
-        let decoration_seed = i64::from(block_x)
-            .wrapping_mul(x_scale)
-            .wrapping_add(i64::from(block_z).wrapping_mul(z_scale))
-            ^ seed;
+        let decoration_seed = decoration_seed(self, seed, block_x, block_z);
         self.set_seed(decoration_seed);
         decoration_seed
     }
@@ -57,6 +52,16 @@ impl WorldgenRandom {
     fn next_bits(&mut self, bits: u64) -> u64 {
         self.source.next_i64() as u64 >> (64 - bits)
     }
+}
+
+pub(super) fn decoration_seed(random: &mut impl Random, seed: i64, x: i32, z: i32) -> i64 {
+    let x_scale = random.next_i64() | 1;
+    let z_scale = random.next_i64() | 1;
+
+    i64::from(x)
+        .wrapping_mul(x_scale)
+        .wrapping_add(i64::from(z).wrapping_mul(z_scale))
+        ^ seed
 }
 
 impl MarsagliaPolarGaussian for WorldgenRandom {

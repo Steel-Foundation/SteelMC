@@ -35,7 +35,7 @@ use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
     EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
     LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule,
-    sync_dirty_mob_effects,
+    WorldgenSpawnProperties, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -256,6 +256,14 @@ impl Entity for SheepEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn apply_worldgen_spawn_properties(&self, properties: WorldgenSpawnProperties) {
+        let WorldgenSpawnProperties::Sheep(color) = properties else {
+            panic!("worldgen spawn properties do not match a sheep");
+        };
+        
+        self.set_color(color);
     }
 
     fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
