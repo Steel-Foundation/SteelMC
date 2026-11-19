@@ -104,7 +104,7 @@ impl ResultHandler for GrindstoneResultHandler {
     ) -> Option<ItemStack> {
         // Read before the inputs are cleared below.
         let experience = self.get_experience_amount(guard);
-        ExperienceOrbEntity::award(&self.world, self.block_pos.get_center().into(), experience);
+        ExperienceOrbEntity::award(&self.world, self.block_pos.get_center(), experience);
 
         self.world
             .level_event(level_events::SOUND_GRINDSTONE_USED, self.block_pos, 0, None);

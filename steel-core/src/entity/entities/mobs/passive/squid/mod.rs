@@ -6,7 +6,8 @@ use std::{
 use glam::DVec3;
 use simdnbt::{borrow, owned};
 use steel_macros::entity_behavior;
-use steel_math::{angle::DEGREE_90, vector};
+use steel_math::trig;
+use steel_math::{RAD_TO_DEG_F64, angle::DEGREE_90, vector};
 use steel_registry::{
     entity_data::{EntityPose, ParticleData},
     entity_type::{EntityAttachments, EntityDimensions, EntityTypeRef},
@@ -28,7 +29,7 @@ use crate::{
         ai::goal::SquidRandomMovementGoal,
     },
     physics::{MoveResult, MoverType},
-    world::World,
+    world::{DifficultyInstance, World},
 };
 use crate::{
     entity::{
@@ -244,12 +245,14 @@ impl SquidEntity {
 
             let y_body_rot = self.living_rotation_state().y_body_rot();
             let y_body_rot = y_body_rot
-                + (-(movement.x.atan2(movement.z) as f32).to_degrees() - y_body_rot) * 0.1;
+                + (-(trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32 - y_body_rot)
+                    * 0.1;
 
             self.set_y_body_rot(y_body_rot);
             self.set_rotation((y_body_rot, self.rotation().1));
-            state.x_body_rot +=
-                (-(horizontal.atan2(movement.y) as f32).to_degrees() - state.x_body_rot) * 0.1;
+            state.x_body_rot += (-(trig::atan2(horizontal, movement.y) * RAD_TO_DEG_F64) as f32
+                - state.x_body_rot)
+                * 0.1;
         } else {
             state.x_body_rot += (-DEGREE_90 - state.x_body_rot) * 0.02;
         }
@@ -488,10 +491,11 @@ impl Mob for SquidEntity {
     fn finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(world, difficulty, spawn_reason, group_data)
     }
 }
 

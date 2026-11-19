@@ -12,6 +12,8 @@ stand-alone = []
 slow_chunk_gen = []
 test-framework = []
 benchmark-support = []
+# `ChunkMap::generate_region` for external tools; the server never calls it.
+region-generation = []
 
 [dependencies]
 # Internal crates
@@ -79,6 +81,10 @@ simdnbt.workspace = true
 tracing.workspace = true
 
 [build-dependencies]
+# Extract vanilla datapacks before compiling loot tables.
+steel-utils.workspace = true
+
+enum_dispatch.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 proc-macro2.workspace = true

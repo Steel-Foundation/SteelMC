@@ -2,8 +2,9 @@
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    CEntityPositionSync, CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, CRotateHead,
-    CSetEntityMotion, PackedEntityDelta, PositionPath, VecDelta, calc_delta, to_angle_byte,
+    CEntityPositionSync, CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, CProjectilePower,
+    CRotateHead, CSetEntityMotion, PackedEntityDelta, PositionPath, VecDelta, calc_delta,
+    to_angle_byte,
 };
 use steel_registry::{entity_type::EntityTypeRef, vanilla_entities};
 
@@ -147,6 +148,8 @@ pub enum EntityMovementSyncPacket {
     PositionSync(CEntityPositionSync),
     /// Velocity sync.
     Velocity(CSetEntityMotion),
+    /// Velocity sync bundled with a hurting projectile's acceleration power.
+    ProjectileVelocity(CSetEntityMotion, CProjectilePower),
 }
 
 impl From<EntityPositionSyncPacket> for EntityMovementSyncPacket {
@@ -510,6 +513,8 @@ pub struct ServerEntityMovementSyncUpdate {
     pub has_dirty_entity_data: bool,
     /// Vanilla living fall-flying velocity sync exception.
     pub force_velocity_sync: bool,
+    /// Hurting-projectile acceleration power, sent alongside every velocity sync.
+    pub projectile_acceleration_power: Option<f64>,
 }
 
 impl ServerEntityMovementSyncUpdate {
@@ -667,7 +672,17 @@ impl ServerEntityMovementSyncState {
                 .velocity
                 .record_velocity_sync(update.entity_id, update.velocity)
         {
-            result.packets.push(EntityMovementSyncPacket::from(packet));
+            let packet = match update.projectile_acceleration_power {
+                Some(acceleration_power) => EntityMovementSyncPacket::ProjectileVelocity(
+                    packet,
+                    CProjectilePower {
+                        entity_id: update.entity_id,
+                        acceleration_power,
+                    },
+                ),
+                None => EntityMovementSyncPacket::from(packet),
+            };
+            result.packets.push(packet);
         }
 
         if force_full || full_precision_required {
@@ -1103,6 +1118,7 @@ mod tests {
             needs_velocity_sync: false,
             has_dirty_entity_data: false,
             force_velocity_sync: false,
+            projectile_acceleration_power: None,
         }
     }
 
@@ -1125,6 +1141,30 @@ mod tests {
         assert_eq!(packets.len(), 2);
         assert!(matches!(packets[0], EntityMovementSyncPacket::Velocity(_)));
         assert!(matches!(packets[1], EntityMovementSyncPacket::Position(_)));
+    }
+
+    #[test]
+    fn hurting_projectile_velocity_sync_carries_acceleration_power() {
+        let mut state = ServerEntityMovementSyncState::new(
+            DVec3::ZERO,
+            DVec3::ZERO,
+            false,
+            (0.0, 0.0),
+            0.0,
+            20,
+            true,
+        );
+        let mut update = server_update(DVec3::ZERO, DVec3::new(0.5, 0.0, 0.0));
+        update.projectile_acceleration_power = Some(0.1);
+        let packets = collect_server_packets(&mut state, update);
+
+        let Some(EntityMovementSyncPacket::ProjectileVelocity(motion, power)) = packets.first()
+        else {
+            panic!("expected a bundled projectile velocity sync, got {packets:?}");
+        };
+        assert_eq!(motion.vel, DVec3::new(0.5, 0.0, 0.0));
+        assert_eq!(power.entity_id, 12);
+        assert_eq!(power.acceleration_power, 0.1);
     }
 
     #[test]

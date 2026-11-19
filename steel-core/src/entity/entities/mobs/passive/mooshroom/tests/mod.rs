@@ -1,5 +1,7 @@
+use crate::entity::living_entity::shearing_loot_items_with_rng;
 use std::io::Cursor;
 use std::sync::Weak;
+use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 
 use glam::DVec3;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
@@ -168,6 +170,34 @@ fn mooshroom_thunder_hit_swaps_variant() {
     let bolt2 = Uuid::new_v4();
     mooshroom.thunder_hit(bolt2);
     assert_eq!(mooshroom.variant(), MooshroomVariant::Red);
+}
+
+#[test]
+fn shearing_loot_matches_the_mooshroom_variant() {
+    init_vanilla_registry();
+    let mooshroom =
+        MushroomCowEntity::new(&vanilla_entities::MOOSHROOM, 1, DVec3::ZERO, Weak::new());
+    let shears = ItemStack::new(&vanilla_items::SHEARS);
+    for (variant, expected) in [
+        (MooshroomVariant::Red, &*vanilla_items::RED_MUSHROOM),
+        (MooshroomVariant::Brown, &*vanilla_items::BROWN_MUSHROOM),
+    ] {
+        mooshroom.set_variant(variant);
+        let mut random = RandomSource::Legacy(LegacyRandom::from_seed(1));
+        let drops = shearing_loot_items_with_rng(
+            &mooshroom,
+            &vanilla_loot_tables::SHEARING_MOOSHROOM,
+            &shears,
+            &mut random,
+        )
+        .expect("shearing loot");
+        assert_eq!(drops.len(), 5);
+        assert!(
+            drops
+                .iter()
+                .all(|drop| drop.is(expected) && drop.count() == 1)
+        );
+    }
 }
 
 #[test]

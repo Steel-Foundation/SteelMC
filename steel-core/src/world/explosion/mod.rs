@@ -24,8 +24,10 @@ use crate::player::connection::NetworkConnection as _;
 use crate::world::World;
 
 use server::ServerExplosion;
+pub use simple::SimpleExplosionDamageCalculator;
 
 mod server;
+mod simple;
 
 const MAX_PACKET_DISTANCE_SQUARED: f64 = 64.0 * 64.0;
 
@@ -40,6 +42,8 @@ pub enum ExplosionInteraction {
     Mob,
     /// A TNT explosion governed by `tnt_explosion_drop_decay`.
     Tnt,
+    /// Lets blocks react without being destroyed, as wind charges do.
+    Trigger,
 }
 
 /// How an explosion interacts with blocks after its affected positions are calculated.
@@ -51,6 +55,8 @@ pub enum BlockInteraction {
     Destroy,
     /// Destroy affected blocks with the explosion radius in their loot context.
     DestroyWithDecay,
+    /// Preserve blocks, but let them react (levers flip, buttons press).
+    TriggerBlock,
 }
 
 impl BlockInteraction {
@@ -77,6 +83,8 @@ pub trait Explosion {
     fn radius(&self) -> f32;
     /// Returns the exact explosion center.
     fn center(&self) -> DVec3;
+    /// Returns whether blocks may react to this explosion without being destroyed.
+    fn can_trigger_blocks(&self) -> bool;
     /// Returns whether block-like entities may be affected.
     fn should_affect_blocklike_entities(&self) -> bool;
 }
@@ -494,7 +502,6 @@ impl World {
         }
     }
 
-    // TODO: Add trigger branch with windcharges
     fn resolve_block_interaction(&self, interaction: ExplosionInteraction) -> BlockInteraction {
         match interaction {
             ExplosionInteraction::None => BlockInteraction::Keep,
@@ -507,6 +514,7 @@ impl World {
                 }
             }
             ExplosionInteraction::Tnt => self.destroy_interaction(&TNT_EXPLOSION_DROP_DECAY),
+            ExplosionInteraction::Trigger => BlockInteraction::TriggerBlock,
         }
     }
 
