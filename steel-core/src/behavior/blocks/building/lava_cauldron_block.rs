@@ -1,3 +1,4 @@
+use crate::loot::OperationResult;
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -66,8 +67,8 @@ impl BlockBehavior for LavaCauldronBlock {
         _world: &World,
         _pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
-        3
+    ) -> OperationResult<i32> {
+        Ok(3)
     }
 
     fn is_pathfindable(
@@ -138,12 +139,14 @@ mod tests {
 
         assert!(behavior.has_analog_output_signal(state));
         assert_eq!(
-            behavior.get_analog_output_signal(
-                state,
-                world.world.as_ref(),
-                BlockPos::ZERO,
-                Direction::North,
-            ),
+            behavior
+                .get_analog_output_signal(
+                    state,
+                    world.world.as_ref(),
+                    BlockPos::ZERO,
+                    Direction::North,
+                )
+                .expect("analog output"),
             3,
         );
     }

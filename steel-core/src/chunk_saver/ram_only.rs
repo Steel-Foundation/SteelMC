@@ -5,7 +5,7 @@ use steel_utils::{ChunkPos, locks::AsyncRwLock};
 
 use crate::world::World;
 
-use super::{ChunkStorage, LoadedChunk, PreparedChunkSave};
+use super::{ChunkStorage, ChunkStructureInfo, LoadedChunk, PreparedChunkSave};
 
 /// In-memory chunk storage.
 ///
@@ -31,6 +31,12 @@ pub struct SimpleRAMChunk {
 }
 
 impl RamOnlyStorage {
+    pub(super) async fn read_structure_info(&self, pos: ChunkPos) -> Option<ChunkStructureInfo> {
+        self.saved_chunks.read().await.get(&pos).and_then(|saved| {
+            ChunkStructureInfo::from_persistent(&saved.prepared.persistent, saved.prepared.status)
+        })
+    }
+
     /// Creates a new RAM-only storage which can be used for minigames, etc.
     ///
     /// This should be used for a RAM storage solution of a map and every world generation should be supported

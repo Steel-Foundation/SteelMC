@@ -17,12 +17,12 @@ use steel_utils::{Downcast as _, DowncastType, locks::SyncMutex};
 use crate::{
     block_entity::{BlockEntityBase, SharedBlockEntity},
     inventory::container::Container,
-    loot::LootResult,
+    loot::OperationResult,
     player::{Player, player_inventory::PlayerInventory},
 };
 use steel_registry::item_stack::ItemStack;
 
-type ContainerAccessCallback = Arc<dyn Fn() -> LootResult<()> + Send + Sync>;
+type ContainerAccessCallback = Arc<dyn Fn() -> OperationResult<()> + Send + Sync>;
 
 type ContainerChangedCallback = Arc<dyn Fn() + Send + Sync>;
 
@@ -226,10 +226,10 @@ impl ContainerLockGuard {
     ///
     /// # Errors
     /// Returns a loot preparation error before acquiring the group's locks if a
-    /// callback fails. `LootResult` describes this preparation, not mutex locking.
+    /// callback fails. `OperationResult` describes this preparation, not mutex locking.
     /// Preparation can currently fail on loot-generation or RNG contention;
     /// callers must not treat that failure as evidence of an empty inventory.
-    pub fn lock_all<C>(containers: &[C]) -> LootResult<Self>
+    pub fn lock_all<C>(containers: &[C]) -> OperationResult<Self>
     where
         C: Borrow<ContainerRef>,
     {
@@ -237,7 +237,6 @@ impl ContainerLockGuard {
             if let Some(prepare) = &container.borrow().before_access
                 && let Err(error) = prepare()
             {
-                log::error!("Could not prepare container access: {error}");
                 return Err(error);
             }
         }
@@ -301,7 +300,7 @@ impl ContainerLockGuard {
     ///
     /// This should only be called when you need to add more containers
     /// mid-operation. All existing references from `get()`/`get_mut()` are invalidated.
-    pub fn relock(self, containers: &[&ContainerRef]) -> LootResult<Self> {
+    pub fn relock(self, containers: &[&ContainerRef]) -> OperationResult<Self> {
         // Drop self, releasing all locks
         drop(self);
         // Lock new set
@@ -499,7 +498,7 @@ mod tests {
     };
     use crate::inventory::container::{Container, CraftingContainer, ResultContainer};
     use crate::inventory::slots::{NormalSlot, Slot as _};
-    use crate::loot::LootError;
+    use crate::loot::OperationError;
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     #[test]
@@ -512,7 +511,7 @@ mod tests {
             ContainerRef::from(Arc::clone(&crafting)).with_access_callback(Arc::new(move || {
                 assert!(crafting_storage.try_lock().is_some());
                 assert!(result_storage.try_lock().is_some());
-                Err(LootError::ContainerChanged)
+                Err(OperationError::ContainerChanged)
             }));
         let other = ContainerRef::from(Arc::clone(&result));
         assert!(ContainerLockGuard::lock_all(&[&other, &lazy]).is_err());
@@ -635,7 +634,8 @@ mod tests {
                 world.as_ref(),
                 barrel_pos,
                 Direction::West,
-            );
+            )
+            .expect("analog output");
         assert_eq!(analog, 1);
         assert!(
             world.has_scheduled_block_tick(comparator_pos, &vanilla_blocks::COMPARATOR),

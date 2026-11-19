@@ -1,5 +1,6 @@
 //! Vanilla copper-bulb edge-triggered behavior.
 
+use crate::loot::OperationResult;
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -113,8 +114,8 @@ impl BlockBehavior for CopperBulbBlock {
         world: &World,
         pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
-        Self::analog_output(world, pos)
+    ) -> OperationResult<i32> {
+        Ok(Self::analog_output(world, pos))
     }
 }
 
@@ -178,8 +179,8 @@ impl BlockBehavior for WeatheringCopperBulbBlock {
         world: &World,
         pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
-        CopperBulbBlock::analog_output(world, pos)
+    ) -> OperationResult<i32> {
+        Ok(CopperBulbBlock::analog_output(world, pos))
     }
 }
 
@@ -218,7 +219,9 @@ mod tests {
         assert!(first_rise.get_value(LIT));
         let behavior = BLOCK_BEHAVIORS.get_behavior(first_rise.get_block());
         assert_eq!(
-            behavior.get_analog_output_signal(first_rise, world.as_ref(), pos, Direction::North),
+            behavior
+                .get_analog_output_signal(first_rise, world.as_ref(), pos, Direction::North)
+                .expect("analog output"),
             15
         );
 

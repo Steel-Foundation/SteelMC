@@ -25,7 +25,7 @@ use crate::{
     },
     entity::{ContainerUser, Entity},
     inventory::lock::ContainerRef,
-    loot::LootResult,
+    loot::OperationResult,
     nameable::Nameable,
     player::Player,
     world::{World, game_event::GameEventContext},
@@ -213,7 +213,7 @@ impl RandomizableContainer for ChestBlockEntity {
     fn set_loot_table(&self, loot: Option<SeededContainerLoot>) {
         self.storage.set_loot_table(loot);
     }
-    fn unpack_loot_table(&self, player: Option<&Player>) -> LootResult<()> {
+    fn unpack_loot_table(&self, player: Option<&Player>) -> OperationResult<()> {
         self.storage.unpack_loot_table(player)
     }
 }

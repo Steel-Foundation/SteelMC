@@ -1,5 +1,6 @@
 //! Vanilla chiseled bookshelf placement, interaction, and comparator behavior.
 
+use crate::loot::OperationResult;
 use crate::player::player_inventory::Prediction;
 use std::sync::{Arc, Weak};
 
@@ -270,8 +271,8 @@ impl BlockBehavior for ChiseledBookShelfBlock {
         world: &World,
         pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
-        world
+    ) -> OperationResult<i32> {
+        Ok(world
             .get_block_entity(pos)
             .and_then(|block_entity| {
                 block_entity
@@ -280,7 +281,7 @@ impl BlockBehavior for ChiseledBookShelfBlock {
             })
             .map_or(Self::NO_COMPARATOR_OUTPUT, |slot| {
                 slot + Self::COMPARATOR_SLOT_INDEX_OFFSET
-            })
+            }))
     }
 }
 
@@ -549,12 +550,14 @@ mod tests {
                 .get_value(&BlockStateProperties::SLOT_0_OCCUPIED)
         );
         assert_eq!(
-            behavior.get_analog_output_signal(
-                world.get_block_state(TEST_POS),
-                world,
-                TEST_POS,
-                ARBITRARY_COMPARATOR_QUERY_DIRECTION,
-            ),
+            behavior
+                .get_analog_output_signal(
+                    world.get_block_state(TEST_POS),
+                    world,
+                    TEST_POS,
+                    ARBITRARY_COMPARATOR_QUERY_DIRECTION,
+                )
+                .expect("analog output"),
             expected_comparator_output(TOP_LEFT_SLOT),
         );
         assert!(
@@ -568,6 +571,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one interaction sequence checks the slots, block state, and comparator notifications together"
+    )]
     fn interactions_update_inventory_occupied_state_and_comparator() {
         init_globals();
         let world_fixture = fresh_test_world("chiseled_bookshelf_interactions");
@@ -613,12 +620,14 @@ mod tests {
         );
         assert!(holder.packet_content_revision() > revision);
         assert_eq!(
-            behavior.get_analog_output_signal(
-                world.get_block_state(TEST_POS),
-                world.as_ref(),
-                TEST_POS,
-                ARBITRARY_COMPARATOR_QUERY_DIRECTION,
-            ),
+            behavior
+                .get_analog_output_signal(
+                    world.get_block_state(TEST_POS),
+                    world.as_ref(),
+                    TEST_POS,
+                    ARBITRARY_COMPARATOR_QUERY_DIRECTION,
+                )
+                .expect("analog output"),
             expected_comparator_output(TOP_LEFT_SLOT),
         );
 
@@ -663,12 +672,14 @@ mod tests {
             assert!(bookshelf.insert_book(slot, ItemStack::new(&vanilla_items::BOOK)));
             assert!(world.get_block_state(TEST_POS).get_value(*property));
             assert_eq!(
-                behavior.get_analog_output_signal(
-                    world.get_block_state(TEST_POS),
-                    world.as_ref(),
-                    TEST_POS,
-                    ARBITRARY_COMPARATOR_QUERY_DIRECTION,
-                ),
+                behavior
+                    .get_analog_output_signal(
+                        world.get_block_state(TEST_POS),
+                        world.as_ref(),
+                        TEST_POS,
+                        ARBITRARY_COMPARATOR_QUERY_DIRECTION,
+                    )
+                    .expect("analog output"),
                 expected_comparator_output(slot),
             );
         }

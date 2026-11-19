@@ -583,12 +583,17 @@ impl Server {
         &self,
         player: Arc<Player>,
     ) -> Option<PendingPlayerDisconnect> {
+        let world = player.get_world();
+        let lifecycle = Arc::clone(&world.loot_lifecycle.read());
+        let Some(_barrier) = lifecycle.try_save_barrier() else {
+            // The online-player scan retries closed connections next tick.
+            return None;
+        };
         let uuid = player.gameprofile.id();
         if !self.reserve_player_disconnect(&player) {
             return None;
         }
 
-        let world = player.get_world();
         let (player, domain, player_data) = world.detach_player_for_disconnect(player);
 
         // Vanilla broadcasts before removing the player from its global player list.

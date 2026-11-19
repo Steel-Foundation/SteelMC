@@ -1,5 +1,5 @@
 use steel_registry::item_stack::ItemStack;
-use steel_utils::random::{Random, RandomSource};
+use steel_utils::random::Random;
 
 use crate::inventory::container::Container;
 
@@ -9,11 +9,11 @@ use crate::inventory::container::Container;
 /// Owners must use the existing container notification path after releasing locks.
 pub struct GeneratedLoot<'a> {
     items: Vec<ItemStack>,
-    random: &'a mut RandomSource,
+    random: &'a mut (dyn Random + Send),
 }
 
 impl<'a> GeneratedLoot<'a> {
-    pub(crate) const fn new(items: Vec<ItemStack>, random: &'a mut RandomSource) -> Self {
+    pub(crate) const fn new(items: Vec<ItemStack>, random: &'a mut (dyn Random + Send)) -> Self {
         Self { items, random }
     }
 
@@ -77,7 +77,7 @@ impl<'a> GeneratedLoot<'a> {
         self.items = single;
     }
 
-    fn shuffle<T>(items: &mut [T], random: &mut RandomSource) {
+    fn shuffle<T>(items: &mut [T], random: &mut (dyn Random + Send)) {
         for end in (2..=items.len()).rev() {
             let index = random.next_i32_bounded(end as i32) as usize;
             items.swap(end - 1, index);

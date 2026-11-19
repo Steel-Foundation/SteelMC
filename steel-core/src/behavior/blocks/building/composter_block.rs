@@ -3,6 +3,7 @@
 //! Composting interactions and hopper automation are independent mechanics;
 //! comparators read the block-state fill level directly in vanilla.
 
+use crate::loot::OperationResult;
 use steel_macros::block_behavior;
 use steel_registry::blocks::{
     BlockRef,
@@ -48,8 +49,8 @@ impl BlockBehavior for ComposterBlock {
         _world: &World,
         _pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
-        i32::from(state.get_value(LEVEL_COMPOSTER))
+    ) -> OperationResult<i32> {
+        Ok(i32::from(state.get_value(LEVEL_COMPOSTER)))
     }
 
     fn is_pathfindable(
@@ -83,12 +84,14 @@ mod tests {
 
         assert!(behavior.has_analog_output_signal(state));
         assert_eq!(
-            behavior.get_analog_output_signal(
-                state,
-                world.world.as_ref(),
-                BlockPos::ZERO,
-                Direction::North,
-            ),
+            behavior
+                .get_analog_output_signal(
+                    state,
+                    world.world.as_ref(),
+                    BlockPos::ZERO,
+                    Direction::North,
+                )
+                .expect("analog output"),
             i32::from(LEVEL_COMPOSTER.max),
         );
     }

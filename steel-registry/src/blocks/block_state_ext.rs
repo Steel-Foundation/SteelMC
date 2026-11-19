@@ -14,6 +14,8 @@ use steel_utils::BlockStateId;
 
 pub trait BlockStateExt {
     fn get_block(&self) -> BlockRef;
+    /// Returns the state's cached terrain-map color.
+    fn get_map_color(&self) -> crate::map_color::MapColor;
     fn is_air(&self) -> bool;
     /// Returns Vanilla's immutable cached fluid/random-tick metadata for this state.
     fn get_ticking_metadata(&self) -> BlockStateTickingMetadata;
@@ -88,6 +90,10 @@ pub trait BlockStateExt {
 }
 
 impl BlockStateExt for BlockStateId {
+    fn get_map_color(&self) -> crate::map_color::MapColor {
+        REGISTRY.blocks.get_map_color(*self)
+    }
+
     fn get_block(&self) -> BlockRef {
         REGISTRY
             .blocks

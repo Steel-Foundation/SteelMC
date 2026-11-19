@@ -112,6 +112,7 @@ fn partial_composites_keep_modifier_scopes_and_continue_with_siblings() {
 
 #[test]
 fn expanded_tag_items_each_receive_their_own_weight() {
+    init_vanilla_registry();
     let members = REGISTRY
         .items
         .get_tag(&Identifier::vanilla_static("creeper_drop_music_discs"))
@@ -152,9 +153,9 @@ fn unsupported_operations_are_errors_only_when_executed() {
         .get_random_items(&mut ctx)
         .expect_err("unsupported function");
     assert!(
-        matches!(error,LootError::Unsupported{table:Some(key),operation:"minecraft:enchant_randomly"} if key == fixtures::UNSUPPORTED_AFTER_OUTPUT.key)
+        matches!(error,OperationError::Unsupported{table:Some(key),operation:"minecraft:enchant_randomly"} if key == fixtures::UNSUPPORTED_AFTER_OUTPUT.key)
     );
-    assert_eq!(ctx.visited, []);
+    assert!(ctx.visited.current().is_none());
     assert_eq!(generate(&fixtures::CONDITIONAL_UNSUPPORTED, 12345).len(), 1);
 }
 
@@ -196,7 +197,7 @@ fn recursion_skips_the_active_table_and_restores_visitation() {
         param_set: Identifier::vanilla_static("generic"),
         random_sequence: None,
     };
-    fn recursive(ctx: &mut LootContext<'_>, output: &mut LootOutput<'_>) -> LootResult<()> {
+    fn recursive(ctx: &mut LootContext<'_>, output: &mut LootOutput<'_>) -> OperationResult<()> {
         RECURSIVE.emit_raw(ctx, output)?;
         output(ctx, ItemStack::new(&vanilla_items::DIAMOND))
     }
@@ -213,7 +214,7 @@ fn recursion_skips_the_active_table_and_restores_visitation() {
                 .len(),
             1
         );
-        assert_eq!(ctx.visited, []);
+        assert!(ctx.visited.current().is_none());
     }
 }
 
@@ -469,7 +470,7 @@ fn missing_enchantment_component_skips_provider_and_component_creation() {
     fn without_enchantments(
         ctx: &mut LootContext<'_>,
         output: &mut LootOutput<'_>,
-    ) -> LootResult<()> {
+    ) -> OperationResult<()> {
         let mut item = ItemStack::new(&vanilla_items::DIAMOND);
         item.remove(ENCHANTMENTS);
         output(ctx, item)

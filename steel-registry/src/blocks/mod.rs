@@ -206,6 +206,8 @@ pub struct Block {
     pub randomly_ticking: StateBooleanData,
     /// Extracted vanilla light properties indexed by block-local state offset.
     pub light_properties: LightPropertiesFn,
+    /// Cached per-state map colors; plugins can supply their own state function.
+    pub map_color: fn(u16) -> crate::map_color::MapColor,
     /// Function to get collision shape for a state offset
     pub collision_shape: ShapeFn,
     /// Function to get block support shape for a state offset
@@ -266,6 +268,7 @@ impl Block {
             fluid_state: StateFluidData::EMPTY,
             randomly_ticking,
             light_properties: opaque_full_block_light_properties,
+            map_color: |_| crate::vanilla_map_colors::NONE,
             collision_shape: full_block_shape,
             support_shape: full_block_shape,
             outline_shape: full_block_shape,
@@ -323,6 +326,15 @@ impl Block {
     /// Sets the extracted vanilla light properties for this block.
     pub const fn with_light_properties(mut self, light_properties: LightPropertiesFn) -> Self {
         self.light_properties = light_properties;
+        self
+    }
+
+    /// Sets the cached map-color function for this block's state offsets.
+    pub const fn with_map_color(
+        mut self,
+        map_color: fn(u16) -> crate::map_color::MapColor,
+    ) -> Self {
+        self.map_color = map_color;
         self
     }
 
@@ -1141,6 +1153,15 @@ impl BlockRegistry {
             return BlockLightProperties::OPAQUE_FULL_BLOCK;
         };
         block.get_light_properties(offset)
+    }
+
+    /// Returns the cached map color using a block-local state offset.
+    #[must_use]
+    pub fn get_map_color(&self, state_id: BlockStateId) -> crate::map_color::MapColor {
+        let Some((block, offset)) = self.block_and_state_offset(state_id) else {
+            panic!("invalid block state id {}", state_id.0);
+        };
+        (block.map_color)(offset)
     }
 
     pub fn copy_matching_properties(&self, source: BlockStateId, target: BlockRef) -> BlockStateId {

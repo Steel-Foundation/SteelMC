@@ -9,7 +9,7 @@ mod stats;
 #[cfg(test)]
 mod tests;
 
-use std::{io::Cursor, path::PathBuf};
+use std::{io::Cursor, path::PathBuf, sync::Arc};
 
 use simdnbt::{ToNbtTag, borrow::read_compound as read_borrowed_compound, owned::NbtTag};
 use tokio::io;
@@ -188,6 +188,9 @@ impl PlayerDataStorage {
 
     /// Saves a player's data for a specific domain.
     pub async fn save_domain(&self, domain: &str, player: &Player) -> io::Result<()> {
+        let world = player.get_world();
+        let lifecycle = Arc::clone(&world.loot_lifecycle.read());
+        let _barrier = lifecycle.save_barrier().await;
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.save_domain(domain, player).await,
             PlayerDataStorageBackend::Memory(storage) => {

@@ -68,6 +68,7 @@ mod instruments;
 mod items;
 mod jukebox_songs;
 mod level_events;
+mod map_colors;
 mod map_decoration_types;
 mod menu_types;
 mod mob_effects;
@@ -147,6 +148,7 @@ const DIALOG_TAGS: &str = "dialog_tags";
 const MENU_TYPES: &str = "menu_types";
 const MOB_EFFECTS: &str = "mob_effects";
 const MAP_DECORATION_TYPES: &str = "map_decoration_types";
+const MAP_COLORS: &str = "map_colors";
 const POTIONS: &str = "potions";
 const POTION_TAGS: &str = "potion_tags";
 const TIMELINES: &str = "timelines";
@@ -236,6 +238,7 @@ pub fn main() {
         (menu_types::build(), MENU_TYPES),
         (mob_effects::build(), MOB_EFFECTS),
         (map_decoration_types::build(), MAP_DECORATION_TYPES),
+        (map_colors::build(), MAP_COLORS),
         (potions::build(), POTIONS),
         (timelines::build(), TIMELINES),
         (tags::timeline(), TIMELINE_TAGS),

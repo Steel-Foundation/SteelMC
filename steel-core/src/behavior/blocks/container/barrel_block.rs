@@ -2,6 +2,7 @@
 //!
 //! Opens a 27-slot container menu when right-clicked.
 
+use crate::loot::OperationResult;
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
@@ -88,19 +89,21 @@ impl BlockBehavior for BarrelBlock {
             }
             return InteractionResult::Success;
         }
-        if let Some(randomizable) = block_entity.as_randomizable_container()
-            && let Err(error) = randomizable.unpack_loot_table(Some(player))
-        {
-            log::error!("Could not unpack barrel loot at {pos:?}: {error}");
-            return InteractionResult::Success;
-        }
         let Some(container_ref) = block_entity.container_ref() else {
             return InteractionResult::Pass;
         };
 
         let inventory = Arc::clone(&player.inventory);
-        player.open_menu(title, move |context| {
-            generic_9x_menu(inventory, context.container_id, container_ref, 3)
+        player.open_loot_container_menu(vec![Arc::clone(&block_entity)], move |player| {
+            if !block_entity
+                .downcast_ref::<BarrelBlockEntity>()
+                .is_some_and(|barrel| barrel.can_open(player))
+            {
+                return;
+            }
+            player.open_menu(title, move |context| {
+                generic_9x_menu(inventory, context.container_id, container_ref, 3)
+            });
         });
 
         // TODO: Anger nearby piglins (PiglinAi.angerNearbyPiglins)
@@ -135,20 +138,17 @@ impl BlockBehavior for BarrelBlock {
         world: &World,
         pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
+    ) -> OperationResult<i32> {
         // Get the block entity and calculate signal from container contents
         let Some(container_ref) = world
             .get_block_entity(pos)
             .and_then(ContainerRef::from_block_entity)
         else {
-            return 0;
+            return Ok(0);
         };
-        let Ok(guard) = ContainerLockGuard::lock_all(&[&container_ref]) else {
-            // TODO: Preserve vanilla access ordering so loot-generation contention
-            // cannot become a false zero comparator signal. Returning zero here
-            // also hides generation failures; distinguish them from empty contents.
-            return 0;
-        };
-        calculate_redstone_signal_from_containers(guard.get(container_ref.container_id()))
+        let guard = ContainerLockGuard::lock_all(&[&container_ref])?;
+        Ok(calculate_redstone_signal_from_containers(
+            guard.get(container_ref.container_id()),
+        ))
     }
 }

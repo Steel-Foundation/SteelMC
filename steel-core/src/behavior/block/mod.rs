@@ -1,5 +1,6 @@
 //! Block behavior trait and registry.
 
+use crate::loot::OperationResult;
 use std::sync::{Arc, Weak};
 use steel_utils::random::legacy_random::LegacyRandom;
 
@@ -1208,6 +1209,11 @@ pub trait BlockBehavior: Send + Sync {
         None
     }
 
+    /// Base cloth color exposed by standing and wall banners.
+    fn banner_color(&self) -> Option<DyeColor> {
+        None
+    }
+
     /// Returns the server ticker selected by this live block state and entity type.
     ///
     /// Mirrors Vanilla `EntityBlock.getTicker`. Selection runs without chunk,
@@ -1302,8 +1308,8 @@ pub trait BlockBehavior: Send + Sync {
         world: &World,
         pos: BlockPos,
         direction: Direction,
-    ) -> i32 {
-        0
+    ) -> OperationResult<i32> {
+        Ok(0)
     }
 
     /// Vanilla parity: whether this block implements `LiquidBlockContainer`.

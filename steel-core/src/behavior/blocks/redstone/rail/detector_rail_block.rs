@@ -1,3 +1,4 @@
+use crate::loot::OperationResult;
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -225,11 +226,13 @@ impl BlockBehavior for DetectorRailBlock {
         _world: &World,
         _pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
-        // Command success counts and container fullness require concrete
-        // minecart capabilities. No currently implemented Steel minecart
-        // exposes either, for which vanilla's observable result is zero.
-        MIN_REDSTONE_SIGNAL
+    ) -> OperationResult<i32> {
+        Ok(
+            // Command success counts and container fullness require concrete
+            // minecart capabilities. No currently implemented Steel minecart
+            // exposes either, for which vanilla's observable result is zero.
+            MIN_REDSTONE_SIGNAL,
+        )
     }
 
     fn as_rail(&self) -> Option<&dyn RailBehavior> {

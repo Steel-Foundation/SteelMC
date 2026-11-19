@@ -64,12 +64,14 @@ fn access(world: &Arc<World>, pos: BlockPos, ignore_blocked: bool) -> Option<Che
 }
 
 fn signal(world: &Arc<World>, pos: BlockPos) -> i32 {
-    behavior().get_analog_output_signal(
-        world.get_block_state(pos),
-        world.as_ref(),
-        pos,
-        Direction::North,
-    )
+    behavior()
+        .get_analog_output_signal(
+            world.get_block_state(pos),
+            world.as_ref(),
+            pos,
+            Direction::North,
+        )
+        .expect("analog output")
 }
 
 fn set_item(container: &ContainerRef, slot: usize, item: ItemStack) {

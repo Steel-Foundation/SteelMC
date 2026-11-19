@@ -1,10 +1,18 @@
 use steel_registry::{
-    REGISTRY, RegistryExt, TaggedRegistryExt, equipment::EquipmentSlot, item_stack::ItemStack,
+    REGISTRY, RegistryExt, TaggedRegistryExt, biome::BiomeRef, equipment::EquipmentSlot,
+    item_stack::ItemStack,
 };
-use steel_utils::Identifier;
+use steel_utils::{BlockPos, ChunkPos, Identifier};
 
 use super::{DamageSourceInfo, EntityRef};
-use crate::entity::Entity;
+use crate::{entity::Entity, world::World};
+
+pub(super) fn location_biome(world: &World, pos: BlockPos) -> Option<BiomeRef> {
+    if !world.is_in_valid_bounds(pos) || !world.chunk_map.has_chunk(ChunkPos::from_block_pos(pos)) {
+        return None;
+    }
+    world.biome_at(pos)
+}
 
 pub(super) fn damage_has_tag(source: DamageSourceInfo<'_>, tag: &Identifier) -> bool {
     if let Some(kind) = source

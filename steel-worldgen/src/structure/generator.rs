@@ -208,6 +208,7 @@ pub struct StructureLocatePlan {
 /// A structure placement that can produce the requested structure.
 #[derive(Debug, Clone)]
 pub struct StructureLocatePlacement {
+    structure_set: Identifier,
     placement: StructurePlacement,
     ring_positions: Option<Vec<ChunkPos>>,
     structures: Vec<Identifier>,
@@ -216,7 +217,7 @@ pub struct StructureLocatePlacement {
 /// Candidate chunk and locate position for a structure search.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StructureLocateCandidate {
-    /// Chunk that must be generated through `StructureStarts`.
+    /// Chunk whose structure starts are queried.
     pub chunk_pos: ChunkPos,
     /// Position reported if the structure is present.
     pub locate_pos: BlockPos,
@@ -256,6 +257,15 @@ impl StructureLocatePlan {
     /// Ring-placement candidates ordered by vanilla's stronghold distance pre-check.
     #[must_use]
     pub fn ring_candidates(&self, origin: BlockPos) -> Vec<StructureLocateCandidate> {
+        let mut candidates = self.ring_candidates_in_placement_order();
+        candidates.sort_by_key(|candidate| candidate.ring_distance_squared(origin));
+        candidates
+    }
+
+    /// Preserves each ring placement's original position order. Reference-creating
+    /// searches must retain every successively closer claim made by vanilla.
+    #[must_use]
+    pub fn ring_candidates_in_placement_order(&self) -> Vec<StructureLocateCandidate> {
         let mut candidates = Vec::new();
         for (scan_id, placement) in self.placements.iter().enumerate() {
             let Some(ring_positions) = &placement.ring_positions else {
@@ -269,7 +279,6 @@ impl StructureLocatePlan {
                 ));
             }
         }
-        candidates.sort_by_key(|candidate| candidate.ring_distance_squared(origin));
         candidates
     }
 
@@ -360,7 +369,9 @@ impl StructureLocateCandidate {
         self.scan_id
     }
 
-    fn ring_distance_squared(&self, origin: BlockPos) -> i64 {
+    /// Distance pre-check used by vanilla's ring-placement search.
+    #[must_use]
+    pub fn ring_distance_squared(&self, origin: BlockPos) -> i64 {
         squared_distance(self.ring_distance_pos, origin)
     }
 }
@@ -780,6 +791,7 @@ impl StructureGenerator {
             }
 
             placements.push(StructureLocatePlacement {
+                structure_set: set_key.clone(),
                 placement: set.placement.clone(),
                 ring_positions: self.ring_positions.get(set_key).cloned(),
                 structures: matching_structures,
@@ -790,6 +802,23 @@ impl StructureGenerator {
             seed: self.seed,
             placements,
         })
+    }
+
+    /// Tests the candidate's own placement, including frequency and exclusion
+    /// restrictions, without creating any structure starts or gameplay chunks.
+    #[must_use]
+    pub fn locate_candidate_is_structure_chunk(
+        &self,
+        plan: &StructureLocatePlan,
+        candidate: StructureLocateCandidate,
+    ) -> Option<bool> {
+        let placement = plan.placements.get(candidate.scan_id)?;
+        Some(self.is_structure_chunk_for_set(
+            &placement.structure_set,
+            candidate.chunk_pos.0.x,
+            candidate.chunk_pos.0.y,
+            &mut Vec::new(),
+        ))
     }
 
     /// Generates structure starts for one chunk.
@@ -1005,6 +1034,7 @@ mod tests {
         StructureLocatePlan {
             seed: 0,
             placements: vec![StructureLocatePlacement {
+                structure_set: Identifier::new("test", "placement"),
                 placement: StructurePlacement {
                     salt: 10_387_312,
                     frequency: 1.0,
@@ -1397,10 +1427,38 @@ mod tests {
     }
 
     #[test]
+    fn locate_preflight_tests_each_placement_even_when_another_set_can_generate() {
+        let structure = Identifier::new("test", "structure");
+        let mut rejected = test_structure_set(every_chunk_placement(None));
+        rejected.structures[0].structure = structure.clone();
+        rejected.placement.frequency = 0.0;
+        let mut allowed = test_structure_set(every_chunk_placement(None));
+        allowed.structures[0].structure = structure.clone();
+        let generator = generator_with_sets(vec![
+            (Identifier::new("test", "rejected"), rejected),
+            (Identifier::new("test", "allowed"), allowed),
+        ]);
+        let plan = generator
+            .locate_plan_for_structures(&[structure])
+            .expect("placements");
+        let candidates = plan.random_spread_candidates_at_radius(BlockPos::new(0, 0, 0), 0);
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(
+            generator.locate_candidate_is_structure_chunk(&plan, candidates[0]),
+            Some(false)
+        );
+        assert_eq!(
+            generator.locate_candidate_is_structure_chunk(&plan, candidates[1]),
+            Some(true)
+        );
+    }
+
+    #[test]
     fn ring_candidates_are_ordered_by_vanilla_distance_probe() {
         let plan = StructureLocatePlan {
             seed: 0,
             placements: vec![StructureLocatePlacement {
+                structure_set: Identifier::new("test", "placement"),
                 placement: StructurePlacement {
                     salt: 0,
                     frequency: 1.0,

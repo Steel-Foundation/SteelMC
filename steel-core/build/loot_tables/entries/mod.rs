@@ -72,22 +72,22 @@ impl Compiler {
             .collect::<Vec<_>>();
         let modifier = self.modifier(pool.modifier.as_ref());
         let name = self.name("pool");
-        self.definitions.extend(quote! {
-            fn #name(ctx: &mut LootContext<'_>, output: &mut LootOutput<'_>) -> LootResult<()> {
-                #guard
-                with_modifier(ctx, output, #modifier, |ctx, output| {
-                    let rolls = #rolls;
-                    let bonus = #bonus;
-                    let rolls = rolls.wrapping_add((bonus * ctx.luck).floor() as i32);
-                    for _ in 0..rolls {
-                        let mut candidates = Vec::new();
-                        #(#entries)*
-                        LootCandidate::select(&candidates, ctx, output)?;
-                    }
-                    Ok(())
-                })
-            }
-        });
+        let select = self.call(quote! { LootCandidate::select(&candidates, ctx, output) });
+        let body = self.decorated_output(
+            &modifier,
+            quote! {
+                        let rolls = #rolls;
+                        let bonus = #bonus;
+                        let rolls = rolls.wrapping_add((bonus * ctx.luck).floor() as i32);
+                        for _ in 0..rolls {
+                            let mut candidates = Vec::new();
+                            #(#entries)*
+                            #select?;
+                        }
+                        Ok(())
+            },
+        );
+        self.output_function(&name, quote! { #guard #body });
         name
     }
 

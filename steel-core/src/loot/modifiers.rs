@@ -7,16 +7,13 @@ use steel_registry::{
     item_stack::ItemStack,
     potion::PotionRef,
 };
-use steel_utils::{
-    Identifier,
-    random::{Random, RandomSource},
-};
+use steel_utils::{Identifier, random::Random};
 
 /// The supported custom-name projection of a block entity's collected components.
 pub(super) fn copy_block_entity_name(
     ctx: &super::LootContext<'_>,
     item: &mut ItemStack,
-) -> super::LootResult<()> {
+) -> super::OperationResult<()> {
     let Some(block_entity) = ctx.block_entity else {
         return Ok(());
     };
@@ -100,7 +97,7 @@ pub(super) fn smelt(item: &mut ItemStack, use_input_count: bool) {
 
 pub(super) fn uniform_bonus(
     item: &mut ItemStack,
-    random: &mut RandomSource,
+    random: &mut (dyn Random + Send),
     level: i32,
     multiplier: i32,
 ) {

@@ -1,5 +1,6 @@
 //! End portal frame block implementation.
 
+use crate::loot::OperationResult;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -57,8 +58,8 @@ impl BlockBehavior for EndPortalFrameBlock {
         _world: &World,
         _pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
-        Self::analog_output_signal(state.get_value(EYE))
+    ) -> OperationResult<i32> {
+        Ok(Self::analog_output_signal(state.get_value(EYE)))
     }
 }
 

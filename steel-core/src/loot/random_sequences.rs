@@ -13,12 +13,15 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use steel_utils::{
     Identifier,
-    locks::{AsyncMutex, SyncMutex, SyncRwLock},
+    locks::{AsyncMutex, SyncRwLock},
     random::{RandomSource, xoroshiro::Xoroshiro},
     saved_data::names as saved_data_names,
 };
 
-use super::{LootError, LootResult};
+use super::{
+    LootLifecycle, OperationResult,
+    random_stream::{RandomRequest, RandomStream},
+};
 use crate::server::worlds::WorldMap;
 
 #[derive(Deserialize, Serialize)]
@@ -48,12 +51,13 @@ impl Default for PersistentRandomSequences {
 
 /// Saved vanilla Xoroshiro streams for one domain, using its default world's seed.
 pub(crate) struct RandomSequences {
+    pub(super) lifecycle: Arc<LootLifecycle>,
     seed: i64,
     salt: i32,
     include_world_seed: bool,
     include_sequence_id: bool,
-    sequences: SyncRwLock<FxHashMap<Identifier, Arc<SyncMutex<RandomSource>>>>,
-    revision: AtomicU64,
+    sequences: SyncRwLock<FxHashMap<Identifier, Arc<RandomStream>>>,
+    revision: Arc<AtomicU64>,
     saved_revision: AtomicU64,
 }
 
@@ -65,6 +69,7 @@ impl RandomSequences {
     }
 
     fn from_persistent(seed: i64, persistent: PersistentRandomSequences) -> io::Result<Self> {
+        let revision = Arc::new(AtomicU64::new(0));
         let mut sequences = FxHashMap::default();
         for (key, sequence) in persistent.sequences {
             let key = key
@@ -73,16 +78,20 @@ impl RandomSequences {
             let random = Xoroshiro::from_state(sequence.source.map(i64::cast_unsigned));
             sequences.insert(
                 key,
-                Arc::new(SyncMutex::new(RandomSource::Xoroshiro(random))),
+                Arc::new(RandomStream::new(
+                    RandomSource::Xoroshiro(random),
+                    Arc::clone(&revision),
+                )),
             );
         }
         Ok(Self {
+            lifecycle: Arc::new(LootLifecycle::default()),
             seed,
             salt: persistent.salt,
             include_world_seed: persistent.include_world_seed,
             include_sequence_id: persistent.include_sequence_id,
             sequences: SyncRwLock::new(sequences),
-            revision: AtomicU64::new(0),
+            revision,
             saved_revision: AtomicU64::new(0),
         })
     }
@@ -109,32 +118,33 @@ impl RandomSequences {
         RandomSource::Xoroshiro(random)
     }
 
+    fn sequence(&self, key: &Identifier) -> Arc<RandomStream> {
+        if let Some(existing) = self.sequences.read().get(key) {
+            return Arc::clone(existing);
+        }
+        Arc::clone(
+            self.sequences
+                .write()
+                .entry(key.clone())
+                .or_insert_with(|| {
+                    Arc::new(RandomStream::new(
+                        self.create_sequence(key),
+                        Arc::clone(&self.revision),
+                    ))
+                }),
+        )
+    }
+
+    pub(super) fn request(&self, key: &Identifier) -> RandomRequest {
+        self.sequence(key).request()
+    }
+
     pub(crate) fn with_random<T>(
         &self,
         key: &Identifier,
-        use_random: impl FnOnce(&mut RandomSource) -> LootResult<T>,
-    ) -> LootResult<T> {
-        let existing = self.sequences.read().get(key).cloned();
-        let source = existing.unwrap_or_else(|| {
-            Arc::clone(
-                self.sequences
-                    .write()
-                    .entry(key.clone())
-                    .or_insert_with(|| Arc::new(SyncMutex::new(self.create_sequence(key)))),
-            )
-        });
-        // Handwritten tables may re-enter loot generation. Never wait on a stream
-        // already borrowed by that call (or another domain world worker).
-        // TODO: Coordinate shared-sequence access across world workers without
-        // turning contention into failed gameplay operations or zero signals.
-        let Some(mut random) = source.try_lock() else {
-            return Err(LootError::RandomUnavailable(
-                "named sequence is already in use",
-            ));
-        };
-        let result = use_random(&mut random);
-        self.revision.fetch_add(1, Ordering::Release);
-        result
+        use_random: impl FnOnce(&mut RandomSource) -> OperationResult<T>,
+    ) -> OperationResult<T> {
+        self.sequence(key).try_with_random(use_random)
     }
 
     fn pending_save(&self) -> io::Result<Option<(u64, PersistentRandomSequences)>> {
@@ -152,17 +162,10 @@ impl RandomSequences {
             .collect();
         let mut sequences = BTreeMap::new();
         for (key, source) in sources {
-            let random = source.lock();
-            let RandomSource::Xoroshiro(random) = &*random else {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("named sequence {key} was replaced with a non-Xoroshiro source"),
-                ));
-            };
             sequences.insert(
                 key,
                 PersistentSequence {
-                    source: random.state().map(u64::cast_signed),
+                    source: source.persistent_state()?,
                 },
             );
         }
@@ -202,6 +205,7 @@ impl DomainRandomSequences {
             let sequences = Arc::new(RandomSequences::from_persistent(seed, persistent)?);
             for world in worlds.values().filter(|world| world.domain() == domain) {
                 *world.random_sequences.write() = Some(Arc::clone(&sequences));
+                *world.loot_lifecycle.write() = Arc::clone(&sequences.lifecycle);
             }
             domains.insert(domain.to_owned(), sequences);
         }
@@ -215,6 +219,7 @@ impl DomainRandomSequences {
         let _save_guard = self.save_lock.lock().await;
         let mut saved = 0;
         for (domain, sequences) in &self.domains {
+            let _barrier = sequences.lifecycle.save_barrier().await;
             let Some((revision, persistent)) = sequences.pending_save()? else {
                 continue;
             };

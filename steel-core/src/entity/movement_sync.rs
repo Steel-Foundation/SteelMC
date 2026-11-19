@@ -581,6 +581,11 @@ impl ServerEntityMovementSyncState {
         }
     }
 
+    /// Number of completed movement synchronization passes.
+    pub(crate) const fn tick_count(&self) -> i32 {
+        self.tick_count
+    }
+
     /// Selects packets for a vanilla `ServerEntity.sendChanges` movement pass.
     #[must_use]
     pub fn record_send_changes(

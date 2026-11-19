@@ -19,7 +19,7 @@ pub struct ItemEntry {
 }
 
 impl CompileEntry for ItemEntry {
-    fn compile_expansion(&self, _compiler: &mut Compiler) -> EntryExpansion {
+    fn compile_expansion(&self, compiler: &mut Compiler) -> EntryExpansion {
         let Self {
             name,
             weight,
@@ -27,11 +27,9 @@ impl CompileEntry for ItemEntry {
             ..
         } = self;
         let item = ident(name);
-        Compiler::weighted_candidate(
-            *weight,
-            *quality,
-            quote! { |ctx, output| output(ctx, ItemStack::new(&vanilla_items::#item)) },
-        )
+        let emit = compiler.emit(quote! { ItemStack::new(&vanilla_items::#item) });
+        let create = compiler.continuation(emit);
+        Compiler::weighted_candidate(*weight, *quality, quote! { |ctx, output| #create })
     }
 }
 
@@ -48,7 +46,7 @@ pub struct DynamicEntry {
 }
 
 impl CompileEntry for DynamicEntry {
-    fn compile_expansion(&self, _compiler: &mut Compiler) -> EntryExpansion {
+    fn compile_expansion(&self, compiler: &mut Compiler) -> EntryExpansion {
         let Self {
             name,
             weight,
@@ -60,11 +58,8 @@ impl CompileEntry for DynamicEntry {
         );
         // TODO: Emit context-provided named dynamic drops when selected, including
         // decorated-pot sherds, instead of rejecting every dynamic entry.
-        Compiler::weighted_candidate(
-            *weight,
-            *quality,
-            quote! { |ctx, _| ctx.unsupported(#operation) },
-        )
+        let create = compiler.continuation(quote! { ctx.unsupported(#operation) });
+        Compiler::weighted_candidate(*weight, *quality, quote! { |ctx, _| #create })
     }
 }
 
@@ -91,13 +86,18 @@ impl CompileEntry for LootTableEntry {
         let create = match value {
             Holder::Reference(key) => {
                 let table = ident(key);
-                quote! { vanilla_loot_tables::#table.emit_raw(ctx, output) }
+                if compiler.resumable {
+                    quote! { vanilla_loot_tables::#table.emit_raw_async(ctx, output).await }
+                } else {
+                    quote! { vanilla_loot_tables::#table.emit_raw(ctx, output) }
+                }
             }
             Holder::Inline(table) => {
                 let function = compiler.table(table);
-                quote! { #function(ctx, output) }
+                compiler.call(quote! { #function(ctx, output) })
             }
         };
+        let create = compiler.continuation(create);
         Compiler::weighted_candidate(*weight, *quality, quote! { |ctx, output| #create })
     }
 }
@@ -114,8 +114,9 @@ pub struct EmptyEntry {
 }
 
 impl CompileEntry for EmptyEntry {
-    fn compile_expansion(&self, _compiler: &mut Compiler) -> EntryExpansion {
-        Compiler::weighted_candidate(self.weight, self.quality, quote! { |_, _| Ok(()) })
+    fn compile_expansion(&self, compiler: &mut Compiler) -> EntryExpansion {
+        let create = compiler.continuation(quote! { Ok(()) });
+        Compiler::weighted_candidate(self.weight, self.quality, quote! { |_, _| #create })
     }
 }
 
@@ -135,7 +136,7 @@ pub struct TagEntry {
 }
 
 impl CompileEntry for TagEntry {
-    fn compile_expansion(&self, _compiler: &mut Compiler) -> EntryExpansion {
+    fn compile_expansion(&self, compiler: &mut Compiler) -> EntryExpansion {
         let Self {
             items,
             expand,
@@ -145,34 +146,25 @@ impl CompileEntry for TagEntry {
         } = self;
         let Some(tag_name) = items.strip_prefix('#') else {
             panic!(
-                "minecraft:tag entry has unsupported 'items' value {items:?}: \
-                 expected a named item tag starting with '#'; direct item holder sets are not implemented"
+                "minecraft:tag entry has unsupported 'items' value {items:?}: expected a named item tag starting with '#'; direct item holder sets are not implemented"
             );
         };
         let tag = identifier(tag_name);
         let missing_tag = format!("minecraft:tag entry: item tag '{items}' is not registered");
+        let emit = compiler.emit(quote! { ItemStack::new(item) });
         if *expand {
+            let create = compiler.continuation(emit);
             EntryExpansion::Statements(quote! {{
-                let Some(items) = REGISTRY.items.get_tag(&#tag) else {
-                    return ctx.unsupported(#missing_tag);
-                };
-                for item in items {
-                    candidates.push(LootCandidate::new(#weight, #quality, ctx.luck, move |ctx, output| output(ctx, ItemStack::new(item))));
-                }
+                let Some(items) = REGISTRY.items.get_tag(&#tag) else { return ctx.unsupported(#missing_tag); };
+                for item in items { candidates.push(LootCandidate::new(#weight, #quality, ctx.luck, move |ctx, output| #create)); }
             }})
         } else {
-            Compiler::weighted_candidate(
-                *weight,
-                *quality,
-                quote! { |ctx, output| {
-                        let Some(items) = REGISTRY.items.get_tag(&#tag) else {
-                            return ctx.unsupported(#missing_tag);
-                        };
-                        for item in items { output(ctx, ItemStack::new(item))?; }
-                        Ok(())
-                    }
-                },
-            )
+            let create = compiler.continuation(quote! {
+                let Some(items) = REGISTRY.items.get_tag(&#tag) else { return ctx.unsupported(#missing_tag); };
+                for item in items { #emit?; }
+                Ok(())
+            });
+            Compiler::weighted_candidate(*weight, *quality, quote! { |ctx, output| #create })
         }
     }
 }

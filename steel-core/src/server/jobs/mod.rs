@@ -64,6 +64,11 @@ pub trait ServerJob: Send {
 
     /// Cancels the job before it finishes.
     fn cancel(&mut self) {}
+
+    /// Whether the job must finish before shutdown can save its affected data.
+    fn must_complete_before_shutdown(&self) -> bool {
+        false
+    }
 }
 
 /// Tick-owned job queue.
@@ -99,6 +104,14 @@ where
 }
 
 impl ServerJobQueue {
+    /// Checks whether shutdown must keep advancing chunk I/O and retained jobs.
+    pub fn has_required_shutdown_work(&self) -> bool {
+        self.jobs
+            .lock()
+            .iter()
+            .any(|job| job.must_complete_before_shutdown())
+    }
+
     /// Creates an empty job queue.
     #[must_use]
     pub const fn new() -> Self {
@@ -142,6 +155,20 @@ impl ServerJobQueue {
         for mut job in jobs {
             job.cancel();
         }
+    }
+
+    /// Cancels optional work while retaining operations required for persistence.
+    pub fn cancel_optional(&self) {
+        let jobs = mem::take(&mut *self.jobs.lock());
+        let mut retained = Vec::new();
+        for mut job in jobs {
+            if job.must_complete_before_shutdown() {
+                retained.push(job);
+            } else {
+                job.cancel();
+            }
+        }
+        self.jobs.lock().extend(retained);
     }
 
     /// Polls queued jobs from the server game tick.

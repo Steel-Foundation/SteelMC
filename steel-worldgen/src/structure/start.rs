@@ -32,6 +32,17 @@ pub struct StructureStart {
 }
 
 impl StructureStart {
+    /// Whether map location may create another reference to this start.
+    #[must_use]
+    pub const fn can_be_referenced(&self) -> bool {
+        self.references < 1
+    }
+
+    /// Records a map/locate claim, distinct from per-chunk structure references.
+    pub const fn add_reference(&mut self) {
+        self.references = self.references.wrapping_add(1);
+    }
+
     /// Creates a start, computing the inflated piece-union bounding box up-front.
     #[must_use]
     pub fn new(

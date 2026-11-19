@@ -46,23 +46,6 @@ deferred!(CopyState, "minecraft:copy_state" {
 // TODO: Decode typed component patches and apply them with item validation.
 deferred!(SetComponents, "minecraft:set_components" { components: Option<IgnoredAny> });
 
-// TODO: Decode destination holder sets and search_radius; locate and claim
-// structures from the loot origin, create saved map data, render its biome
-// preview, and add the configured target decoration and zoom.
-deferred!(ExplorationMap, "minecraft:exploration_map" {
-    destination: Option<String>,
-    decoration: Option<String>,
-    zoom: Option<i32>,
-    skip_existing_chunks: Option<bool>,
-});
-
-// TODO: Decode and resolve text against the selected context entity, then
-// apply it to the configured item-name or custom-name component.
-deferred!(SetName, "minecraft:set_name" {
-    name: Option<IgnoredAny>,
-    target: Option<String>,
-});
-
 // TODO: Select a stew effect with the loot RNG, evaluate its duration with
 // vanilla instant-effect units, and append it to suspicious-stew effects.
 deferred!(SetStewEffect, "minecraft:set_stew_effect" { effects: Option<Vec<StewEffect>> });
