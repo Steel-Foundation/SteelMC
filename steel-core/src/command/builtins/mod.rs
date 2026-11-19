@@ -19,6 +19,7 @@ mod kill;
 mod list;
 mod locate;
 mod operator;
+mod perf;
 mod perms;
 mod playsound;
 mod position;
@@ -92,6 +93,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(list::registration())?;
     builder.register(locate::registration())?;
     builder.register(operator::op_registration())?;
+    builder.register(perf::registration())?;
     builder.register(perms::registration())?;
     builder.register(playsound::registration())?;
     builder.register(reload::registration())?;
@@ -179,6 +181,7 @@ mod tests {
                 "list",
                 "locate",
                 "op",
+                "perf",
                 "perms",
                 "playsound",
                 "reload",

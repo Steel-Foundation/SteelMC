@@ -33,7 +33,7 @@ use crate::entity::entities::EndermiteEntity;
 use crate::entity::{
     ENTITIES, Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, Projectile,
     ProjectileBase, ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile,
-    ThrowableProjectile, change_entity_world, next_entity_id,
+    ThrowableProjectile, change_entity_world,
 };
 use crate::player::Player;
 use crate::portal::{TeleportPostTransition, TeleportTransition};
@@ -191,7 +191,6 @@ impl EnderPearlEntity {
         if world.get_game_rule(&SPAWN_MOBS) && rand::random::<f32>() < ENDERMITE_SPAWN_CHANCE {
             let endermite = ENTITIES.create(
                 &vanilla_entities::ENDERMITE,
-                next_entity_id(),
                 teleport_pos,
                 Arc::downgrade(world),
             );

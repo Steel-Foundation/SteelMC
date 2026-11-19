@@ -69,6 +69,11 @@ impl Player {
             old_world.chunk_map.remove_player(self);
         }
 
+        let combat_ended = switching_worlds
+            && self
+                .living_base
+                .recheck_combat_status(Entity::tick_count(self.as_ref()), false);
+
         self.set_client_loaded(false);
         self.set_velocity(DVec3::ZERO);
         self.movement.lock().reset_last_known_client_movement();
@@ -80,6 +85,9 @@ impl Player {
 
         if reason != ResetReason::InitialJoin {
             self.send_respawn_packet(&new_world, reason);
+            if combat_ended {
+                self.on_leave_combat();
+            }
         }
     }
 

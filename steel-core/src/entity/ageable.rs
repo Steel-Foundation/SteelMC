@@ -15,10 +15,9 @@ use steel_utils::types::InteractionHand;
 use crate::behavior::InteractionResult;
 use crate::entity::{
     AgeableMobGroupData, ENTITIES, Entity, EntitySpawnReason, Mob, SharedEntity, SpawnGroupData,
-    next_entity_id,
 };
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 
 const BABY_START_AGE: i32 = -24_000;
 const AGE_LOCK_COOLDOWN_TICKS: i32 = 40;
@@ -236,6 +235,7 @@ pub trait AgeableMob: Mob {
     fn finalize_spawn_ageable_mob(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -249,6 +249,7 @@ pub trait AgeableMob: Mob {
 
         self.finalize_spawn_mob_base(
             world,
+            difficulty,
             spawn_reason,
             Some(SpawnGroupData::AgeableMob(group_data)),
         )
@@ -302,12 +303,7 @@ pub trait AgeableMob: Mob {
 
     /// Creates a same-type offspring using the registered entity factory.
     fn create_breed_offspring(&self, world: &Arc<World>) -> Option<SharedEntity> {
-        ENTITIES.create(
-            self.entity_type(),
-            next_entity_id(),
-            self.position(),
-            Arc::downgrade(world),
-        )
+        ENTITIES.create(self.entity_type(), self.position(), Arc::downgrade(world))
     }
 
     /// Creates this animal's vanilla breeding offspring.
