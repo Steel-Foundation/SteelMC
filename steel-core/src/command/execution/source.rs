@@ -532,19 +532,13 @@ impl CommandSource {
         }
     }
 
-    pub fn sender_name(&self) -> TextComponent {
-        match self.player() {
-            Some(player) => player.interactive_name(),
-            None => TextComponent::plain(self.sender.to_string()),
-        }
-    }
-
     pub fn bind_chat_type(&self, registry_id: i32) -> ChatTypeBound {
-        ChatTypeBound {
-            registry_id,
-            sender_name: self.sender_name(),
-            target_name: None,
-        }
+        let sender_name = self.player().map_or_else(
+            || TextComponent::plain(self.sender.to_string()),
+            |player| player.display_name(),
+        );
+
+        ChatTypeBound::new(registry_id, sender_name)
     }
 }
 

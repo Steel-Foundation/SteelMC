@@ -991,7 +991,9 @@ mod tests {
     };
     use rustc_hash::FxHashMap;
     use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
-    use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};
+    use steel_protocol::packets::game::{
+        ClickType, ClientCommandAction, HashedStack, LastSeenMessagesUpdate,
+    };
     use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
     use steel_utils::{BlockPos, codec::VarInt, types::SignTextSlot};
     use tokio::{
@@ -1245,9 +1247,11 @@ mod tests {
                 timestamp: 0,
                 salt: 0,
                 signature: None,
-                offset: 0,
-                acknowledged: [0; 3],
-                checksum: 0,
+                last_seen: LastSeenMessagesUpdate {
+                    offset: VarInt(0),
+                    acknowledged: [0; LastSeenMessagesUpdate::ACKNOWLEDGED_BYTES],
+                    checksum: 0,
+                },
             }))),
             ScheduledPacketExecution::Serialized
         );

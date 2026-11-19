@@ -386,15 +386,7 @@ where
     }
 
     pub(crate) fn has_signed_arguments(&self, parse: &ParseResults<'_, S, R>) -> bool {
-        for parsed_node in parse.context().nodes() {
-            if let Some(node) = self.node(parsed_node.node())
-                && let CommandNodeData::Argument(_, arg_data) = &node.data
-                && arg_data.argument_type().is_signed()
-            {
-                return true;
-            }
-        }
-        false
+        self.signable_arguments(parse).next().is_some()
     }
 
     pub(crate) fn collect_signable_arguments<'a>(
@@ -402,19 +394,27 @@ where
         parse: &ParseResults<'_, S, R>,
         command: &'a str,
     ) -> Vec<(String, &'a str)> {
-        let mut signable_args = Vec::new();
+        self.signable_arguments(parse)
+            .filter_map(|(name, range)| {
+                Some((name.to_owned(), &command[range.byte_range(command)?]))
+            })
+            .collect()
+    }
 
-        for parsed_node in parse.context().nodes() {
-            if let Some(node) = self.node(parsed_node.node())
-                && let CommandNodeData::Argument(name, arg_data) = &node.data
-                && arg_data.argument_type().is_signed()
-                && let Some(byte_range) = parsed_node.range().byte_range(command)
-            {
-                signable_args.push((name.to_string(), &command[byte_range]));
-            }
-        }
+    fn signable_arguments<'a>(
+        &'a self,
+        parse: &'a ParseResults<'_, S, R>,
+    ) -> impl Iterator<Item = (&'a str, StringRange)> {
+        parse.context().nodes().iter().filter_map(|parsed| {
+            let CommandNodeData::Argument(name, argument) = &self.node(parsed.node())?.data else {
+                return None;
+            };
 
-        signable_args
+            argument
+                .argument_type()
+                .is_signed()
+                .then_some((name.as_ref(), parsed.range()))
+        })
     }
 }
 

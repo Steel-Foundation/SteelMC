@@ -25,18 +25,26 @@ pub struct ChatTypeBound {
     pub target_name: Option<TextComponent>,
 }
 
-impl Default for ChatTypeBound {
-    fn default() -> Self {
+impl ChatTypeBound {
+    /// binds a chat type with a sender and no target
+    #[must_use]
+    pub const fn new(registry_id: i32, sender_name: TextComponent) -> Self {
         Self {
-            registry_id: vanilla_chat_types::CHAT.id() as i32,
-            sender_name: TextComponent::new(),
+            registry_id,
+            sender_name,
             target_name: None,
         }
     }
 }
 
+impl Default for ChatTypeBound {
+    fn default() -> Self {
+        Self::new(vanilla_chat_types::CHAT.id() as i32, TextComponent::new())
+    }
+}
+
 /// A fixed width RSA signature for player msg
-#[derive(Clone, Debug)]
+#[derive(WriteTo, Clone, Debug)]
 pub struct MessageSignature(pub [u8; MessageSignature::BYTES]);
 
 impl MessageSignature {
@@ -115,14 +123,7 @@ impl CPlayerChat {
         self.sender.write(writer)?;
         VarInt(self.index).write(writer)?;
 
-        match &self.message_signature {
-            Some(sig) => {
-                true.write(writer)?;
-                writer.write_all(&sig.0)?;
-            }
-            None => false.write(writer)?,
-        }
-
+        self.message_signature.write(writer)?;
         self.message.write_prefixed::<VarInt>(writer)?;
         self.timestamp.write(writer)?;
         self.salt.write(writer)?;
@@ -142,14 +143,7 @@ impl CPlayerChat {
             }
         }
 
-        match &self.unsigned_content {
-            Some(content) => {
-                true.write(writer)?;
-                content.write(writer)?;
-            }
-            None => false.write(writer)?,
-        }
-
+        self.unsigned_content.write(writer)?;
         match &self.filter_type {
             FilterType::PassThrough => VarInt(0).write(writer)?,
             FilterType::FullyFiltered => VarInt(1).write(writer)?,

@@ -14,7 +14,6 @@ pub use signature_cache::{LastSeen, MessageCache};
 use crate::command::execution::CommandSource;
 use crate::command::sender::CommandSender;
 use crate::command::signing_context::{CommandSigningContext, SignedArgument};
-use crate::entity::Entity;
 use crate::player::Player;
 use crate::player::spam_throttler::TickThrottler;
 use crate::server::Server;
@@ -45,7 +44,7 @@ use text_components::Modifier;
 use text_components::TextComponent;
 use text_components::content::Content;
 use text_components::format::{Color, Format};
-use text_components::interactivity::{ClickEvent, HoverEvent, Interactivity};
+use text_components::interactivity::Interactivity;
 use uuid::Uuid;
 
 const MESSAGE_EXPIRES_AFTER_SERVER: Duration = Duration::from_mins(5);
@@ -349,22 +348,18 @@ impl Player {
 
     /// Applies Vanilla command spam accounting after a command is handled
     pub fn detect_command_rate_spam(&self) {
-        let is_operator = self.is_operator();
-        let should_disconnect = {
-            let mut chat = self.chat().lock();
-            Self::should_disconnect_for_rate_spam(&mut chat.command_spam_throttler, is_operator)
-        };
-
-        if should_disconnect {
-            self.disconnect(translations::DISCONNECT_SPAM.msg());
-        }
+        self.detect_rate_spam(|chat| &mut chat.command_spam_throttler);
     }
 
     pub(crate) fn detect_chat_rate_spam(&self) {
+        self.detect_rate_spam(|chat| &mut chat.chat_spam_throttler);
+    }
+
+    fn detect_rate_spam(&self, throttler: impl FnOnce(&mut ChatState) -> &mut TickThrottler) {
         let is_operator = self.is_operator();
         let should_disconnect = {
             let mut chat = self.chat().lock();
-            Self::should_disconnect_for_rate_spam(&mut chat.chat_spam_throttler, is_operator)
+            Self::should_disconnect_for_rate_spam(throttler(&mut chat), is_operator)
         };
 
         if should_disconnect {
@@ -387,6 +382,10 @@ impl Player {
         last_seen: &LastSeen,
         signature: &[u8; MessageSignature::BYTES],
     ) -> Result<message_chain::SignedMessageLink, ChatValidationError> {
+        if session.has_expired() {
+            return Err(ChatValidationError::ExpiredProfileKey);
+        }
+
         let chain = chain
             .as_mut()
             .ok_or(ChatValidationError::MissingProfileKey)?;
@@ -426,41 +425,28 @@ impl Player {
         let validator = session.profile_public_key.create_signature_validator();
 
         match SignatureValidator::validate(&validator, &updater, signature) {
-            Ok(true) => Ok(link),
-            Ok(false) => {
-                chain.break_chain();
-                Err(ChatValidationError::InvalidSignature)
-            }
+            Ok(true) => return Ok(link),
+            Ok(false) => {}
             Err(err) => {
                 log::error!("Signature cryptographic evaluation failed: {err}");
-                chain.break_chain();
-                Err(ChatValidationError::InvalidSignature)
             }
         }
+
+        chain.break_chain();
+        Err(ChatValidationError::InvalidSignature)
     }
 
-    fn apply_chat_last_seen(
-        &self,
-        acknowledged: [u8; LastSeenMessagesUpdate::ACKNOWLEDGED_BYTES],
-        offset: i32,
-        checksum: u8,
-    ) -> Option<LastSeen> {
-        let result =
-            self.chat()
-                .lock()
-                .message_validator
-                .apply_update(acknowledged, offset, checksum);
-        match result {
-            Ok(signatures) => Some(LastSeen::new(signatures)),
-            Err(error) => {
-                warn!(
-                    "Failed to validate message acknowledgements from {}: {error}",
-                    self.gameprofile.name()
-                );
-                self.disconnect(MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED.msg());
-                None
-            }
-        }
+    fn apply_chat_last_seen(&self, update: &LastSeenMessagesUpdate) -> Option<LastSeen> {
+        let result = self.chat().lock().message_validator.apply_update(
+            update.acknowledged,
+            update.offset.0,
+            update.checksum,
+        );
+
+        result
+            .inspect_err(|error| self.disconnect_for_invalid_chat_ack(error))
+            .ok()
+            .map(LastSeen::new)
     }
 
     fn handle_message_decode_failure(&self, error: ChatValidationError) {
@@ -498,10 +484,6 @@ impl Player {
             .as_ref()
             .ok_or(ChatValidationError::MissingProfileKey)?;
 
-        if session.has_expired() {
-            return Err(ChatValidationError::ExpiredProfileKey);
-        }
-
         Self::verify_and_advance_chain(
             message_chain,
             session,
@@ -514,35 +496,9 @@ impl Player {
         .map(Some)
     }
 
-    /// Add interaction to the message, by :
-    /// - Adding a click event, which suggests `/tell {player}`
-    /// - Adding a hover event, which shows the player's name
-    pub fn interactive_name(&self) -> TextComponent {
-        let name = self.gameprofile.name().to_owned();
-        TextComponent::plain(name.clone())
-            .insertion(name.clone())
-            .click_event(ClickEvent::suggest_command(format!("/tell {name} ")))
-            .hover_event(HoverEvent::show_entity(
-                "minecraft:player",
-                self.uuid(),
-                Some(name),
-            ))
-    }
-
-    /// Binds a vanilla chat type to this player as the sender.
-    pub fn bind_chat_type(&self, registry_id: i32) -> ChatTypeBound {
-        ChatTypeBound {
-            registry_id,
-            sender_name: self.interactive_name(),
-            target_name: None,
-        }
-    }
-
     /// Handles a chat message from the player.
     pub fn handle_chat(self: &Arc<Self>, packet: SChat) {
-        let Some(last_seen) =
-            self.apply_chat_last_seen(packet.acknowledged, packet.offset, packet.checksum)
-        else {
+        let Some(last_seen) = self.apply_chat_last_seen(&packet.last_seen) else {
             return;
         };
 
@@ -753,14 +709,18 @@ impl Player {
             .lock()
             .message_validator
             .apply_offset(packet.offset.0);
-        if let Err(err) = applied {
-            log::warn!(
-                "Player {} sent invalid chat acknowledgment: {err}",
-                self.gameprofile.name()
-            );
-
-            self.disconnect(MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED.msg());
+        if let Err(error) = applied {
+            self.disconnect_for_invalid_chat_ack(&error);
         }
+    }
+
+    fn disconnect_for_invalid_chat_ack(&self, error: &str) {
+        warn!(
+            "Invalid chat acknowledgement from {}: {error}",
+            self.gameprofile.name()
+        );
+
+        self.disconnect(MULTIPLAYER_DISCONNECT_CHAT_VALIDATION_FAILED.msg());
     }
 
     fn validate_chat_characters(&self, message: &str) -> bool {
@@ -806,18 +766,7 @@ impl Player {
             return;
         }
 
-        if server
-            .queue_command(
-                CommandSender::Player(Arc::clone(self)),
-                packet.command,
-                None,
-            )
-            .is_err()
-        {
-            self.send_message(
-                &TextComponent::const_plain("Command queue is full").color(Color::Red),
-            );
-        }
+        self.queue_chat_command(server, packet.command, None);
     }
 
     fn verify_command_signatures(
@@ -871,10 +820,6 @@ impl Player {
             };
 
             let (index, signature) = if let Some(session) = session {
-                if session.has_expired() {
-                    return Err(ChatValidationError::ExpiredProfileKey);
-                }
-
                 let link = Self::verify_and_advance_chain(
                     message_chain,
                     session,
@@ -937,11 +882,7 @@ impl Player {
         packet: SChatCommandSigned,
         server: &Arc<Server>,
     ) {
-        let Some(last_seen) = self.apply_chat_last_seen(
-            packet.last_seen.acknowledged,
-            packet.last_seen.offset.0,
-            packet.last_seen.checksum,
-        ) else {
+        let Some(last_seen) = self.apply_chat_last_seen(&packet.last_seen) else {
             return;
         };
 
@@ -965,10 +906,20 @@ impl Player {
                 }
             };
 
+        self.queue_chat_command(server, packet.command, signing_context);
+        self.detect_command_rate_spam();
+    }
+
+    fn queue_chat_command(
+        self: &Arc<Self>,
+        server: &Server,
+        command: String,
+        signing_context: Option<CommandSigningContext>,
+    ) {
         if server
             .queue_command(
                 CommandSender::Player(Arc::clone(self)),
-                packet.command,
+                command,
                 signing_context,
             )
             .is_err()
@@ -977,8 +928,6 @@ impl Player {
                 &TextComponent::const_plain("Command queue is full").color(Color::Red),
             );
         }
-
-        self.detect_command_rate_spam();
     }
 }
 
