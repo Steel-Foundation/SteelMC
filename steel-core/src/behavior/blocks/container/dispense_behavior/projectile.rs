@@ -13,7 +13,7 @@ use super::{DispenseItemBehavior, DispenseResult};
 use crate::behavior::blocks::container::dispenser_block::FACING;
 use crate::enchantment_helper;
 use crate::entity::entities::FireworkRocketEntity;
-use crate::entity::{ENTITIES, Entity, next_entity_id};
+use crate::entity::{ENTITIES, Entity};
 use crate::world::World;
 
 const PROJECTILE_Y_OFFSET: f64 = 0.1;
@@ -84,8 +84,7 @@ impl DispenseItemBehavior for ProjectileDispenseBehavior {
 
         let spawn_pos = (self.spawn_position)(pos, facing);
 
-        let id = next_entity_id();
-        let Some(entity) = ENTITIES.create(self.entity_type, id, spawn_pos, Arc::downgrade(world))
+        let Some(entity) = ENTITIES.create(self.entity_type, spawn_pos, Arc::downgrade(world))
         else {
             return DefaultDispenseBehavior.dispense(world, pos, state, item);
         };
