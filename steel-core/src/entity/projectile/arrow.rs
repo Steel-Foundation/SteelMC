@@ -18,6 +18,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
 use steel_registry::vanilla_entity_data::AbstractArrowEntityData;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
+use steel_registry::vanilla_game_rules::PVP;
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, sound_events, vanilla_damage_types};
 use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
@@ -671,7 +672,7 @@ pub(crate) trait AbstractArrow: Projectile + Sized {
                 enchantment_helper::do_post_attack_effects_with_item_source(
                     &world,
                     entity.as_ref(),
-                    weapon_item.as_ref(),
+                    weapon_item,
                     &context,
                 );
 
@@ -824,9 +825,7 @@ pub(crate) trait AbstractArrow: Projectile + Sized {
         if entity.as_player().is_some()
             && let Some(owner) = self.get_owner()
             && let Some(owner_player) = owner.as_player()
-            && !owner_player
-                .get_world()
-                .get_game_rule(&steel_registry::vanilla_game_rules::PVP)
+            && !owner_player.get_world().get_game_rule(&PVP)
         {
             return false;
         }
