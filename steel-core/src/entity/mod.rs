@@ -56,7 +56,7 @@ use steel_registry::{RegistryEntry, RegistryExt};
 use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
-use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
+use steel_utils::random::RandomSource;
 use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, ErasedType, Identifier,
@@ -493,16 +493,70 @@ fn physics_state_for_move(entity: &dyn Entity) -> EntityPhysicsState {
     })
 }
 
+/// A contiguous block of session entity IDs.
+///
+/// A multipart mob's parts take the IDs directly after their parent's: the client
+/// synthesizes them at `parent_id + 1 ..= parent_id + n` and never receives spawn
+/// packets for them. Worlds tick in parallel, so the block is one locked allocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntityIdBlock {
+    first: i32,
+    count: u32,
+}
+
+impl EntityIdBlock {
+    /// Returns the ID of the entity that owns the block.
+    #[must_use]
+    pub const fn first(self) -> i32 {
+        self.first
+    }
+
+    /// Returns how many IDs the block reserves in total, including the owner.
+    #[must_use]
+    pub const fn len(self) -> u32 {
+        self.count
+    }
+
+    /// Returns whether the block reserves no IDs at all.
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.count == 0
+    }
+
+    /// Returns the ID of the `index`-th sub-entity, `first() + index + 1`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is outside the block, rather than handing out the next entity's ID.
+    #[must_use]
+    pub const fn part(self, index: u32) -> i32 {
+        assert!(
+            index < self.count.saturating_sub(1),
+            "part index outside the reserved block"
+        );
+        self.first.wrapping_add(index.wrapping_add(1) as i32)
+    }
+}
+
+/// Reserves `count` consecutive entity IDs in one lock; see [`EntityIdBlock`].
+#[must_use]
+pub fn reserve_entity_ids(count: u32) -> EntityIdBlock {
+    let mut counter = ENTITY_COUNTER.lock();
+    let first = *counter;
+    *counter = counter.wrapping_add(count as i32);
+    EntityIdBlock { first, count }
+}
+
 /// Allocates a new unique entity ID.
 ///
 /// This is the primary way to get entity IDs for spawning entities.
 /// Thread-safe through the shared counter lock.
+///
+/// Only for types without sub-entities; use [`EntityRegistry::create`] when the type
+/// may be multipart.
 #[must_use]
 pub fn next_entity_id() -> i32 {
-    let mut counter = ENTITY_COUNTER.lock();
-    let id = *counter;
-    *counter = counter.wrapping_add(1);
-    id
+    reserve_entity_ids(1).first()
 }
 
 fn apply_block_effect_segment(
@@ -789,6 +843,7 @@ mod mob;
 pub mod mob_effect;
 mod monster;
 mod movement_sync;
+mod part;
 mod potion_contents;
 pub mod projectile;
 pub(crate) mod pushing;
@@ -824,7 +879,7 @@ pub(crate) use entity::apply_entity_look_at;
 pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
 pub use entity::{
-    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
+    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource, RiderMove,
 };
 pub use fluid_contact::EntityFluidContact;
 pub use identity::EntityGeneration;
@@ -856,12 +911,15 @@ pub use movement_sync::{
     EntityRotationSyncState, EntityVelocitySyncState, POSITION_SYNC_THRESHOLD,
     PackedEntityRotation, ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate,
 };
+pub use part::{PartEntity, PartEntityBase};
 pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
-    AbstractThrownPotion, EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection,
-    ProjectileEventSource, ProjectileHit, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ,
-    SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
-    compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
+    AbstractHurtingProjectile, AbstractThrownPotion, AbstractWindCharge, EntityHitResult,
+    HurtingProjectileBase, INITIAL_ACCELERATION_POWER, Projectile, ProjectileBase,
+    ProjectileDeflection, ProjectileEventSource, ProjectileHit, SPLASH_HORIZONTAL_REACH,
+    SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile,
+    ViewVectorHitResult, compute_margin, get_hit_result_on_view_vector,
+    spawn_projectile_from_rotation, spawn_throwable_item_projectile,
 };
 pub use pushing::{DefaultEntityPush, EntityPushSnapshot};
 pub use reference::EntityReference;
@@ -1260,7 +1318,7 @@ fn teleport_set_position(
 
     match commit {
         TeleportPositionCommit::Managed => entity.try_set_position(position)?,
-        TeleportPositionCommit::Local => entity.base().set_position_local(position),
+        TeleportPositionCommit::Local => entity.set_position_local(position),
     }
     entity.set_rotation(rotation);
     if let Some(living) = entity.as_living_entity() {
@@ -1417,6 +1475,7 @@ pub(crate) fn entity_loot_ref<'a>(
         custom_name: None,
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),
+        fishing_hook_open_water: entity.fishing_hook_open_water(),
         chicken_variant: living_entity.and_then(LivingEntity::chicken_loot_variant),
         mooshroom_variant: living_entity.and_then(LivingEntity::mooshroom_loot_variant),
     }

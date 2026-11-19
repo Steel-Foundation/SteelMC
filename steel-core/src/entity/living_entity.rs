@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use crate::loot::LOOT_TABLES;
+use crate::loot::{LOOT_TABLES, LootResult};
 use steel_math::{DEGREE_90, RAD_TO_DEG_F64, round_f32, trig};
 use steel_registry::data_components::vanilla_components::{
     BLOCKS_ATTACKS, DEATH_PROTECTION, USE_EFFECTS,
@@ -8,6 +8,8 @@ use steel_registry::data_components::vanilla_components::{
 use steel_registry::entity_variant::MooshroomVariant;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
+use steel_utils::TICKS_PER_SECOND;
+use text_components::TextComponent;
 
 use super::*;
 use crate::behavior::{
@@ -16,7 +18,7 @@ use crate::behavior::{
 };
 use crate::entity::blocks_attacks;
 use crate::entity::consume_effect::apply_consume_effect;
-use crate::entity::damage::RecentDamageSource;
+use crate::entity::damage::{FallLocation, RecentDamageSource, death_message};
 use crate::entity::pushing::EntityPush;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
@@ -1070,10 +1072,79 @@ pub trait LivingEntity: Entity {
         }
 
         if damage != 0.0 {
+            self.record_combat_damage(source, damage);
             self.set_health(self.get_health() - damage);
             self.set_absorption_amount(self.get_absorption_amount() - damage);
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
         }
+    }
+
+    /// Records damage and enters combat when a living entity caused it.
+    fn record_combat_damage(&self, source: &DamageSource, damage: f32) {
+        self.recheck_combat_status();
+
+        let tick_count = self.tick_count();
+        self.living_base().record_combat_damage(
+            source,
+            damage,
+            self.current_fall_location(),
+            self.fall_distance() as f32,
+            tick_count,
+        );
+
+        let caused_by_living = source
+            .causing_entity()
+            .is_some_and(|entity| entity.as_living_entity().is_some());
+        if caused_by_living && Entity::is_alive(self) && self.living_base().enter_combat(tick_count)
+        {
+            self.on_enter_combat();
+        }
+    }
+
+    /// Resets expired combat state, notifying when combat ends.
+    fn recheck_combat_status(&self) {
+        if self
+            .living_base()
+            .recheck_combat_status(self.tick_count(), Entity::is_alive(self))
+        {
+            self.on_leave_combat();
+        }
+    }
+
+    /// Returns the combat duration in ticks.
+    fn combat_duration(&self) -> i32 {
+        self.living_base().combat_duration(self.tick_count())
+    }
+
+    /// Returns where this entity was climbing or swimming, if anywhere.
+    fn current_fall_location(&self) -> Option<FallLocation> {
+        if let Some(pos) = self.last_climbable_pos() {
+            self.level()
+                .map(|world| FallLocation::from_block_state(world.get_block_state(pos)))
+        } else if self.is_in_water() {
+            Some(FallLocation::Water)
+        } else {
+            None
+        }
+    }
+
+    /// Called when this entity enters combat.
+    fn on_enter_combat(&self) {}
+
+    /// Called when this entity leaves combat.
+    fn on_leave_combat(&self) {}
+
+    /// Returns the death message built from this entity's combat entries.
+    fn get_death_message(&self) -> TextComponent {
+        death_message(self)
+    }
+
+    /// Drops recorded combat entries without changing combat status.
+    ///
+    /// Entries retain strong damage-source references, so entities leaving the
+    /// world must release them to avoid mutual ownership cycles.
+    fn clear_combat_history(&self) {
+        self.living_base().clear_combat_history();
     }
 
     /// Applies vanilla hurt knockback for a damage source.
@@ -1372,25 +1443,25 @@ pub trait LivingEntity: Entity {
         };
 
         let seed = self.death_loot_table_seed();
-        let seed = if seed == 0 {
-            rand::random()
-        } else {
-            seed as u64
-        };
-        let mut rng = RandomSource::Legacy(LegacyRandom::from_seed(seed));
-        let drops = death_loot_items_with_rng(
-            self,
-            loot_table,
-            world.as_ref(),
-            source,
-            killed_by_player,
-            &mut rng,
-        );
+        let drops = world.with_loot_random(Some(loot_table), seed, |rng| {
+            death_loot_items_with_rng(
+                self,
+                loot_table,
+                world.as_ref(),
+                source,
+                killed_by_player,
+                rng,
+            )
+        });
 
         if has_custom_death_loot_table && let Some(mob) = self.as_mob() {
             mob.clear_custom_death_loot_table();
         }
 
+        let drops = drops.unwrap_or_else(|error| {
+            log::error!("Failed to generate death loot {}: {error}", loot_table.key);
+            Vec::new()
+        });
         for item_stack in drops {
             self.spawn_at_location(item_stack, 0.0);
         }
@@ -2261,6 +2332,12 @@ pub trait LivingEntity: Entity {
             .tick_fall_flying_state(self.is_fall_flying());
         self.refresh_dirty_attributes();
         self.living_base().tick_post_impulse_grace_time();
+        self.living_base().tick_last_hurt_by_player_memory();
+        self.living_base()
+            .tick_living_combat_memory(self.tick_count());
+        if self.tick_count() % TICKS_PER_SECOND == 0 {
+            self.recheck_combat_status();
+        }
     }
 
     /// Returns whether the given item in the given slot allows elytra-style gliding.
@@ -2347,8 +2424,8 @@ pub trait LivingEntity: Entity {
         self.living_base().last_climbable_pos()
     }
 
-    /// Records the last climbable block position this living entity touched.
-    fn set_last_climbable_pos(&self, pos: BlockPos) {
+    /// Records or clears the last climbable block position this living entity touched.
+    fn set_last_climbable_pos(&self, pos: Option<BlockPos>) {
         self.living_base().set_last_climbable_pos(pos);
     }
 
@@ -2375,7 +2452,7 @@ pub trait LivingEntity: Entity {
                 && trapdoor_usable_as_ladder_state(state, world.get_block_state(pos.below()));
 
         if climbable {
-            self.set_last_climbable_pos(pos);
+            self.set_last_climbable_pos(Some(pos));
         }
 
         climbable
@@ -3468,7 +3545,7 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
     source: &DamageSource,
     killed_by_player: bool,
     rng: &mut RandomSource,
-) -> Vec<ItemStack> {
+) -> LootResult<Vec<ItemStack>> {
     let causing_entity = source.causing_entity().map(AsRef::as_ref);
     let direct_entity = source.direct_entity().map(AsRef::as_ref);
     let last_damage_player = if killed_by_player {
@@ -3481,6 +3558,10 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
     let this_equipment = living_loot_equipment(entity);
     let causing_equipment = causing_entity.and_then(loot_equipment);
     let direct_equipment = direct_entity.and_then(loot_equipment);
+    let luck = last_damage_player
+        .as_deref()
+        .and_then(Entity::as_player)
+        .map_or(0.0, Player::get_luck);
     let last_damage_player_equipment = last_damage_player.as_deref().and_then(loot_equipment);
     let this_entity = entity_loot_ref(entity.as_entity_event_source(), Some(&this_equipment));
     let causing_entity =
@@ -3498,7 +3579,8 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
 
     let mut context = LootContext::new(rng)
         .with_world(world)
-        .with_origin(position.x, position.y, position.z)
+        .with_luck(luck)
+        .with_origin(position)
         .with_game_time(world.game_time())
         .with_killed_by_player(killed_by_player)
         .with_this_entity(this_entity)
@@ -3513,7 +3595,27 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
         context = context.with_last_damage_player(entity);
     }
 
-    loot_table.get_random_items_or_log(&mut context)
+    loot_table.get_random_items(&mut context)
+}
+
+/// Selects the world's loot stream for shearing before resolving its parameters.
+pub(crate) fn shearing_loot_items<E: LivingEntity + ?Sized>(
+    entity: &E,
+    loot_table: LootTableRef,
+    world: &World,
+    tool: &ItemStack,
+) -> Vec<ItemStack> {
+    world
+        .with_loot_random(Some(loot_table), 0, |rng| {
+            shearing_loot_items_with_rng(entity, loot_table, tool, rng)
+        })
+        .unwrap_or_else(|error| {
+            log::error!(
+                "Failed to generate shearing loot {}: {error}",
+                loot_table.key
+            );
+            Vec::new()
+        })
 }
 
 /// Runs vanilla `LivingEntity.dropFromShearingLootTable` for `loot_table`, returning the
@@ -3523,11 +3625,11 @@ pub(crate) fn shearing_loot_items_with_rng<E: LivingEntity + ?Sized>(
     loot_table: LootTableRef,
     tool: &ItemStack,
     rng: &mut RandomSource,
-) -> Vec<ItemStack> {
+) -> LootResult<Vec<ItemStack>> {
     let position = entity.position();
     let equipment = living_loot_equipment(entity);
     let mut context = LootContext::new(rng)
-        .with_origin(position.x, position.y, position.z)
+        .with_origin(position)
         .with_this_entity(entity_loot_ref(
             entity.as_entity_event_source(),
             Some(&equipment),
@@ -3537,5 +3639,5 @@ pub(crate) fn shearing_loot_items_with_rng<E: LivingEntity + ?Sized>(
     if let Some(level) = level.as_deref() {
         context = context.with_world(level).with_game_time(level.game_time());
     }
-    loot_table.get_random_items_or_log(&mut context)
+    loot_table.get_random_items(&mut context)
 }

@@ -215,10 +215,29 @@ pub(crate) fn do_post_attack_effects_from_item(
     );
 }
 
+/// Runs post-attack enchantment effects, crediting the living attacker's weapon;
+/// without a living attacker only the victim's equipment reacts.
+pub(crate) fn do_post_attack_effects(
+    world: &World,
+    victim: &(impl Entity + ?Sized),
+    context: &EnchantmentPostAttackContext<'_>,
+) {
+    let mut weapon = None;
+    if let Some(attacker) = context
+        .attacker
+        .filter(|attacker| attacker.as_living_entity().is_some())
+    {
+        attacker.with_weapon_item(&mut |item| {
+            weapon = item.map(|stack| stack.copy_with_count(stack.count()));
+        });
+    }
+    do_post_attack_effects_with_item_source(world, victim, weapon, context);
+}
+
 pub(crate) fn do_post_attack_effects_with_item_source(
     world: &World,
-    victim: &dyn Entity,
-    source: Option<&ItemStack>,
+    victim: &(impl Entity + ?Sized),
+    source: Option<ItemStack>,
     context: &EnchantmentPostAttackContext<'_>,
 ) {
     if let Some(living_victim) = victim.as_living_entity() {
@@ -241,18 +260,16 @@ pub(crate) fn do_post_attack_effects_with_item_source(
             }
         }
     }
-
-    let Some(source) = source else {
+    let Some(mut source) = source else {
         return;
     };
-    let attacker = context
+    let Some(attacker) = context
         .attacker
-        .and_then(|entity| entity.as_living_entity());
-    if attacker.is_none() {
+        .and_then(|entity| entity.as_living_entity())
+    else {
         return;
-    }
+    };
 
-    let mut source = source.copy_with_count(source.count());
     let source_item = source.item;
     let source_broke = apply_post_attack_effects(
         world,
@@ -261,11 +278,7 @@ pub(crate) fn do_post_attack_effects_with_item_source(
         EnchantmentTarget::Attacker,
         context,
     );
-    if !source_broke {
-        return;
-    }
-
-    if let Some(attacker) = attacker {
+    if source_broke {
         attacker.on_equipped_item_broken(source_item, EquipmentSlot::MainHand);
     }
 }
@@ -1553,7 +1566,7 @@ mod tests {
         do_post_attack_effects_with_item_source(
             test_world(),
             victim.as_ref(),
-            Some(&source),
+            Some(source),
             &context,
         );
 

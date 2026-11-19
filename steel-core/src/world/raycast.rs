@@ -817,7 +817,8 @@ impl World {
     }
 
     /// Returns whether a collider-only, fluid-free clip misses every block.
-    #[cfg(test)]
+    ///
+    /// Uses live collision boxes, so dynamic shapes like moving pistons count.
     pub(crate) fn is_block_collision_path_clear(
         &self,
         start_pos: DVec3,

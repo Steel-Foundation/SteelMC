@@ -57,13 +57,13 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
 use std::ptr;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use steel_math::{RAD_TO_DEG_F64, round_f32, round_f64, trig};
 use steel_protocol::packets::game::{
-    CEntityEvent, CHurtAnimation, CPlayerCombatKill, CPlayerLookAt, CRespawn,
-    CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, CTakeItemEntity,
-    ClientCommandAction, LookAtAnchor, RelativeMovement, SoundSource,
+    CEntityEvent, CHurtAnimation, CPlayerCombatEnd, CPlayerCombatEnter, CPlayerCombatKill,
+    CPlayerLookAt, CRespawn, CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers,
+    CTakeItemEntity, ClientCommandAction, LookAtAnchor, RelativeMovement, SoundSource,
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -76,7 +76,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
     DROWNING_DAMAGE, FALL_DAMAGE, FIRE_DAMAGE, FREEZE_DAMAGE, IMMEDIATE_RESPAWN, KEEP_INVENTORY,
-    SHOW_DEATH_MESSAGES,
+    PVP, SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags,
@@ -90,10 +90,9 @@ use arc_swap::ArcSwap;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::resolving::TextResolutor;
-use text_components::translation::TranslatedMessage;
 use text_components::{
     Modifier as _, TextComponent,
-    interactivity::{ClickEvent, HoverEvent, Interactivity},
+    interactivity::{ClickEvent, HoverEvent},
 };
 use text_components::{content::Resolvable, custom::CustomData};
 
@@ -111,8 +110,8 @@ use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
     ActiveItemUseState, DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource,
     EntityMoveError, EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
-    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
-    apply_entity_look_at, get_kill_credit, start_riding_entities,
+    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, RiderMove,
+    SharedEntity, apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -144,7 +143,6 @@ use steel_protocol::packets::{
     game::{CContainerClose, CGameEvent, CSystemChat, GameEventType},
 };
 use steel_registry::RegistryEntry;
-use steel_registry::damage_type::DeathMessageType;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
@@ -158,14 +156,6 @@ const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
 const DROP_SPAM_THROTTLER_INCREMENT_STEP: i32 = 20;
 const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
-
-static INTENTIONAL_GAME_DESIGN_STYLE: LazyLock<Interactivity> = LazyLock::new(|| Interactivity {
-    click: Some(ClickEvent::open_url(
-        "https://bugs.mojang.com/browse/MCPE-28723",
-    )),
-    hover: Some(HoverEvent::show_text("MCPE-28723")),
-    ..Interactivity::new()
-});
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::entities::objects::projectiles::FishingHookEntity;
@@ -378,6 +368,7 @@ impl Player {
             .get_behavior(item.item())
             .get_use_duration(&item, self);
         if self.living_base.start_using_item(hand, &item, duration) {
+            self.inventory.lock().adopt_use_item(hand);
             let mut entity_data = self.entity_data.lock();
             let flags = entity_data.living_entity().living_entity_flags.get();
             let mut flags = *flags | Self::USING_ITEM_FLAG;
@@ -409,21 +400,9 @@ impl Player {
         active: ActiveItemUseState,
     ) {
         let hand = active.hand();
-        let item_matches = {
-            let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item()
-        };
-        if !item_matches {
+        let Some(mut item) = self.adopt_use_item(hand, active) else {
             self.stop_using_item();
             return;
-        }
-        // Read a copy rather than clearing the slot,
-        // so any inventory-touching side effect from
-        // `release_using` never sees the hand as vacant.
-        let mut item = {
-            let inventory = self.inventory.lock();
-            let current = inventory.get_item_in_hand(hand);
-            current.clone()
         };
         let stack_before_using = item.clone();
         let world = self.get_world();
@@ -434,11 +413,13 @@ impl Player {
         let apply_side_effects =
             behavior.release_using(&mut item, &world, user, active.remaining_ticks());
         let use_on_release = behavior.use_on_release(&item);
-        if apply_side_effects {
-            item = apply_use_remainder(&stack_before_using, item, user.living());
+        let result = if apply_side_effects {
             self.apply_item_use_cooldown(&stack_before_using);
-        }
-        self.inventory.lock().set_item_in_hand(hand, item);
+            apply_use_remainder(&stack_before_using, item.clone(), user.living())
+        } else {
+            item.clone()
+        };
+        self.inventory.lock().write_use_result(hand, item, result);
         // we re-read active here since behavior.release_using might have already ended the use
         if use_on_release && let Some(active) = self.living_base.active_item_use() {
             self.tick_active_item_use_with_behavior(entity, behavior, active);
@@ -489,6 +470,21 @@ impl Player {
         self.broadcast_inventory_changes();
     }
 
+    /// Vanilla `isSameItem(getItemInHand(hand), useItem)` followed by `useItem = getItemInHand(hand)`.
+    fn adopt_use_item(
+        &self,
+        hand: InteractionHand,
+        active: ActiveItemUseState,
+    ) -> Option<ItemStack> {
+        let mut inventory = self.inventory.lock();
+        let item = inventory.get_item_in_hand(hand).clone();
+        if item.item() != active.item() {
+            return None;
+        }
+        inventory.adopt_use_item(hand);
+        Some(item)
+    }
+
     fn tick_active_item_use(&self, entity: &SharedEntity) {
         let Some(active) = self.living_base.active_item_use() else {
             return;
@@ -504,42 +500,50 @@ impl Player {
         active: ActiveItemUseState,
     ) {
         let hand = active.hand();
-        let item_matches = {
-            let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item()
-        };
-        if !item_matches {
+        let Some(mut item) = self.adopt_use_item(hand, active) else {
             self.stop_using_item();
             return;
-        }
-        let mut item = {
-            let inventory = self.inventory.lock();
-            let current = inventory.get_item_in_hand(hand);
-            current.clone()
         };
         let world = self.get_world();
         let Some(user) = LivingEntityRef::new(entity) else {
             panic!("active item use requires a living entity");
         };
         behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
+        let use_on_release = behavior.use_on_release(&item);
+        self.inventory.lock().write_use_item(hand, item);
 
-        if self.active_item_use_hand() != Some(hand) {
-            self.inventory.lock().set_item_in_hand(hand, item);
-            return;
-        }
-        let Some(active) = self.living_base.decrement_active_item_use() else {
-            self.inventory.lock().set_item_in_hand(hand, item);
+        let Some(current) = self.living_base.decrement_active_item_use() else {
             return;
         };
-        let use_on_release = behavior.use_on_release(&item);
-        if active.remaining_ticks() == 0 && !use_on_release && !item.is_empty() {
-            let stack_before_finish = item.clone();
-            item = behavior.finish_using(&mut item, &world, user);
-            self.apply_item_use_cooldown(&stack_before_finish);
-            self.stop_using_item();
+        if current.remaining_ticks() != 0 || use_on_release {
+            return;
         }
-
-        self.inventory.lock().set_item_in_hand(hand, item);
+        let behavior = if current.item() == active.item() {
+            behavior
+        } else {
+            ITEM_BEHAVIORS.get_behavior(current.item())
+        };
+        let hand = active.hand();
+        let mut item = {
+            let inventory = self.inventory.lock();
+            if !inventory.holds_use_item(hand) {
+                drop(inventory);
+                self.release_using_item(entity);
+                return;
+            }
+            inventory.get_item_in_hand(hand).clone()
+        };
+        if item.is_empty() {
+            return;
+        }
+        let Some(user) = LivingEntityRef::new(entity) else {
+            panic!("active item use requires a living entity");
+        };
+        let stack_before_finish = item.clone();
+        let result = behavior.finish_using(&mut item, &self.get_world(), user);
+        self.apply_item_use_cooldown(&stack_before_finish);
+        self.inventory.lock().write_use_result(hand, item, result);
+        self.stop_using_item();
     }
 
     /// Returns the player's configured main arm.
@@ -840,12 +844,28 @@ impl Player {
         self.movement.lock().finish_client_tick();
     }
 
+    /// Returns whether this player and `target` may damage each other.
+    #[must_use]
+    pub fn can_harm_player(&self, _target: &Player) -> bool {
+        // TODO: Check scoreboard team friendly fire once teams exist.
+        self.get_world().get_game_rule(&PVP)
+    }
+
     /// Main entry point for dealing damage. Returns `true` if damage was applied.
     ///
     /// `world` is vanilla's explicit `ServerLevel` argument and controls
     /// difficulty scaling and damage gamerules.
     pub fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         if LivingEntity::is_invulnerable_to(self, world, source) {
+            return false;
+        }
+
+        // TODO: Also reject arrows owned by players that cannot harm this player.
+        if let Some(attacker) = source
+            .causing_entity()
+            .and_then(|entity| entity.as_player())
+            && !self.can_harm_player(attacker)
+        {
             return false;
         }
 
@@ -920,9 +940,9 @@ impl Player {
             );
         }
 
-        // TODO: combat tracker (getCombatTracker().recordDamage)
         if damage != 0.0 {
             self.cause_food_exhaustion(source.damage_type.exhaustion);
+            self.record_combat_damage(source, damage);
             self.set_health(self.get_health() - damage);
             if damage < f32::MAX {
                 self.award_custom_stat_with_count(
@@ -934,39 +954,16 @@ impl Player {
         }
     }
 
-    fn get_death_message(&self, source: &DamageSource) -> TextComponent {
-        let death_key = format!("death.attack.{}", source.damage_type.message_id);
-        match source.damage_type.death_message_type {
-            DeathMessageType::IntentionalGameDesign => {
-                let mut link = translations::CHAT_SQUARE_BRACKETS
-                    .message([TranslatedMessage {
-                        key: format!("{death_key}.link").into(),
-                        fallback: None,
-                        args: None,
-                    }
-                    .component()])
-                    .component();
-                link.interactions = INTENTIONAL_GAME_DESIGN_STYLE.clone();
+    /// Sends vanilla `ClientboundPlayerCombatEnterPacket`.
+    fn on_enter_combat(&self) {
+        self.send_packet(CPlayerCombatEnter);
+    }
 
-                TranslatedMessage {
-                    key: format!("{death_key}.message").into(),
-                    fallback: None,
-                    args: Some(Box::new([self.display_name(), link])),
-                }
-                .component()
-            }
-            DeathMessageType::Default | DeathMessageType::FallVariants => {
-                // TODO: use CombatTracker for killer name items and fall variants
-                TranslatedMessage {
-                    key: death_key.into(),
-                    fallback: None,
-                    args: Some(Box::new([TextComponent::plain(
-                        self.gameprofile.name().to_owned(),
-                    )])),
-                }
-                .component()
-            }
-        }
+    /// Sends vanilla `ClientboundPlayerCombatEndPacket`.
+    fn on_leave_combat(&self) {
+        self.send_packet(CPlayerCombatEnd {
+            duration: self.combat_duration(),
+        });
     }
 
     /// Vanilla: `ServerPlayer.die()` (does NOT call `super.die()`).
@@ -1001,7 +998,7 @@ impl Player {
 
         let show_death_messages = world.get_game_rule(&SHOW_DEATH_MESSAGES);
 
-        let death_message = self.get_death_message(source);
+        let death_message = self.get_death_message();
 
         self.send_packet(CPlayerCombatKill {
             player_id: self.id(),
@@ -1045,6 +1042,7 @@ impl Player {
 
         self.clear_fire();
         self.set_ticks_frozen(0);
+        self.recheck_combat_status();
 
         if world.get_game_rule(&IMMEDIATE_RESPAWN) {
             self.respawn();
@@ -1408,6 +1406,15 @@ impl Entity for Player {
         &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED
     }
 
+    /// Wind charge bursts spare fall damage down to the height the player was launched from.
+    // TODO: Track `currentExplosionImpactPos`/`currentExplosionCause` for the
+    // `fall_after_explosion` advancement trigger.
+    fn on_explosion_hit(&self, explosion_source: Option<&dyn Entity>) {
+        let caused_by_wind_charge = explosion_source
+            .is_some_and(|source| source.entity_type() == &vanilla_entities::WIND_CHARGE);
+        self.set_ignore_fall_damage_from_current_impulse(caused_by_wind_charge, self.position());
+    }
+
     fn scoreboard_name(&self) -> String {
         self.gameprofile.name().to_owned()
     }
@@ -1512,7 +1519,7 @@ impl Entity for Player {
             return false;
         }
 
-        entity_to_ride.position_rider(self.as_entity_event_source());
+        entity_to_ride.position_rider(self.as_entity_event_source(), RiderMove::SetPosition);
         let position = self.position();
         let (yaw, pitch) = self.rotation();
         if let Err(error) = self.teleport(position, yaw, pitch) {
@@ -2044,6 +2051,14 @@ impl LivingEntity for Player {
 
     fn actually_hurt(&self, world: &World, source: &DamageSource, amount: f32) {
         Player::actually_hurt(self, world, source, amount);
+    }
+
+    fn on_enter_combat(&self) {
+        Player::on_enter_combat(self);
+    }
+
+    fn on_leave_combat(&self) {
+        Player::on_leave_combat(self);
     }
 
     fn hurt_broadcast_chunk(&self) -> ChunkPos {

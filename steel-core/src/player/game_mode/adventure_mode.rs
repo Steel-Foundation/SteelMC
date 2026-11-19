@@ -34,17 +34,23 @@ impl Player {
 #[must_use]
 pub(crate) fn can_break(item: &ItemStack, world: &World, pos: BlockPos) -> bool {
     item.get(CAN_BREAK)
-        .is_some_and(|predicate| matches(predicate, world, pos))
+        .is_some_and(|predicate| predicate_matches(predicate, world, pos))
 }
 
 /// Can you place it on something?
 #[must_use]
 pub(super) fn can_place_on(item: &ItemStack, world: &World, pos: BlockPos) -> bool {
     item.get(CAN_PLACE_ON)
-        .is_some_and(|predicate| matches(predicate, world, pos))
+        .is_some_and(|predicate| predicate_matches(predicate, world, pos))
 }
 
-pub(crate) fn matches(predicate: &AdventureModePredicate, world: &World, pos: BlockPos) -> bool {
+/// Does any block predicate match the block at `pos`?
+#[must_use]
+pub(crate) fn predicate_matches(
+    predicate: &AdventureModePredicate,
+    world: &World,
+    pos: BlockPos,
+) -> bool {
     predicate
         .predicates()
         .iter()

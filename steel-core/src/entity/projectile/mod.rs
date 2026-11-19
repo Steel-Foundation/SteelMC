@@ -5,9 +5,11 @@
 //! delegate to. The block and entity raycasts follow `ProjectileUtil`.
 
 mod arrow;
+mod hurting;
 mod throwable;
 mod throwable_item;
 mod thrown_potion;
+mod wind_charge;
 
 #[cfg(test)]
 mod owner_tests;
@@ -38,7 +40,7 @@ use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, EntityReference, LivingEntity, SharedEntity};
 use crate::player::Player;
-use crate::player::game_mode::adventure_mode;
+use crate::player::game_mode::predicate_matches;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
 
@@ -48,11 +50,13 @@ use super::{
 };
 
 pub(crate) use arrow::{ARROW_GRAVITY, AbstractArrow, ArrowBase, ArrowPickup};
+pub use hurting::{AbstractHurtingProjectile, HurtingProjectileBase, INITIAL_ACCELERATION_POWER};
 pub use throwable::ThrowableProjectile;
 pub use throwable_item::ThrowableItemProjectile;
 pub use thrown_potion::{
     AbstractThrownPotion, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH,
 };
+pub use wind_charge::AbstractWindCharge;
 
 /// Per-axis spread scale of `Projectile.shoot` (`0.0172275 * uncertainty`).
 const SHOOT_INACCURACY_SCALE: f64 = 0.0172_275;
@@ -80,6 +84,7 @@ const ROTATION_LERP_FACTOR: f32 = 0.2;
 
 /// Spawn offset below the shooter's eye for thrown item projectiles.
 const THROWN_ITEM_SPAWN_EYE_OFFSET: f64 = 0.1;
+const CAN_BREAK_TAG: &str = "can_break";
 
 /// Returns a triangle-distributed random value.
 #[must_use]
@@ -200,8 +205,9 @@ struct ProjectileState {
     left_owner: bool,
     left_owner_checked: bool,
     has_been_shot: bool,
-    can_break: Option<AdventureModePredicate>,
     last_deflected_by: Option<Weak<dyn Entity>>,
+    /// Blocks an adventure-restricted projectile may still break.
+    can_break: Option<AdventureModePredicate>,
 }
 
 /// Runtime state shared by all projectiles.
@@ -219,8 +225,8 @@ impl ProjectileBase {
                 left_owner: false,
                 left_owner_checked: false,
                 has_been_shot: false,
-                can_break: None,
                 last_deflected_by: None,
+                can_break: None,
             }),
         }
     }
@@ -342,9 +348,9 @@ pub trait Projectile: Entity + ProjectileEventSource {
         world.get_game_rule(&MOB_GRIEFING)
     }
 
-    /// Returns whether this projectile type is allowed to break the block at
-    /// `pos`, per the `projectilesCanBreakBlocks` game rule and the adventure
-    /// `can_break` predicate copied from the item that spawned it.
+    /// Returns whether this projectile may break the block at `pos`: it must be an
+    /// impact projectile, `projectilesCanBreakBlocks` must be on, and adventure
+    /// rules must allow it.
     fn may_break(&self, world: &World, pos: BlockPos) -> bool {
         REGISTRY
             .entity_types
@@ -353,19 +359,16 @@ pub trait Projectile: Entity + ProjectileEventSource {
             && self.can_break_block_in_adventure_mode(world, pos)
     }
 
-    /// Mirrors vanilla `Projectile.canBreakBlockInAdventureMode`.
+    /// Projectiles owned by an adventure player or a non-player, or ownerless in an
+    /// adventure-default world, only break blocks matched by their `can_break` predicate.
     fn can_break_block_in_adventure_mode(&self, world: &World, pos: BlockPos) -> bool {
         let owner = self.get_owner();
         let restricted = (owner.is_some() || world.default_gamemode() == GameType::Adventure)
-            && !owner
+            && owner
                 .as_ref()
                 .and_then(|owner| owner.as_player())
-                .is_some_and(|player| player.game_mode() != GameType::Adventure);
-        if !restricted {
-            return true;
-        }
-
-        self.can_break_block(world, pos)
+                .is_none_or(|player| player.game_mode() == GameType::Adventure);
+        !restricted || self.can_break_block(world, pos)
     }
 
     /// Tests only the `can_break` predicate copied from the spawn stack,
@@ -376,7 +379,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
             .lock()
             .can_break
             .as_ref()
-            .is_some_and(|predicate| adventure_mode::matches(predicate, world, pos))
+            .is_some_and(|predicate| predicate_matches(predicate, world, pos))
     }
 
     /// Applies projectile-specific implicit item components.
@@ -558,8 +561,20 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.set_rotation((yaw, pitch));
     }
 
-    /// Applies a deflection and replaces the stored owner.
+    /// Applies a projectile deflection, returning whether it was accepted.
     fn deflect(
+        &self,
+        deflection: ProjectileDeflection,
+        deflecting_entity: Option<&dyn Entity>,
+        new_owner: Option<EntityReference>,
+        by_attack: bool,
+        power: DVec3,
+    ) -> bool {
+        self.base_deflect(deflection, deflecting_entity, new_owner, by_attack, power)
+    }
+
+    /// Base deflection, for overrides of [`Projectile::deflect`].
+    fn base_deflect(
         &self,
         deflection: ProjectileDeflection,
         deflecting_entity: Option<&dyn Entity>,
@@ -824,7 +839,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
         }
         nbt.insert("HasBeenShot", i8::from(state.has_been_shot));
         if let Some(can_break) = &state.can_break {
-            nbt.insert("can_break", can_break.clone().to_nbt_tag());
+            nbt.insert(CAN_BREAK_TAG, can_break.clone().to_nbt_tag());
         }
     }
 
@@ -837,7 +852,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
             .byte_value("HasBeenShot")
             .is_some_and(|value| value != 0);
         state.can_break = nbt
-            .get("can_break")
+            .get(CAN_BREAK_TAG)
             .and_then(AdventureModePredicate::from_nbt_tag);
     }
 }
@@ -873,19 +888,46 @@ where
     entity.set_owner_entity(Some(&owner));
     entity.set_item_clamped(item_stack.clone());
 
-    let (yaw, player_pitch) = player.rotation();
-    entity.shoot_from_rotation(
-        player.as_ref(),
-        player_pitch,
+    spawn_projectile_from_rotation(
+        world,
+        player,
+        item_stack,
+        pitch_offset,
+        power,
+        uncertainty,
+        entity,
+    )
+}
+
+/// Shoots an already-created projectile from the source's rotation, adds it to
+/// the world, then runs the `minecraft:projectile_spawned` enchantment effects.
+/// The caller sets the spawn position and owner. Returns `None` when the world
+/// rejects the projectile.
+#[must_use]
+pub fn spawn_projectile_from_rotation<E>(
+    world: &Arc<World>,
+    source: &Arc<Player>,
+    item_stack: &mut ItemStack,
+    pitch_offset: f32,
+    power: f32,
+    uncertainty: f32,
+    projectile: E,
+) -> Option<SharedEntity>
+where
+    E: Projectile + Entity + 'static,
+{
+    let (yaw, pitch) = source.rotation();
+    projectile.shoot_from_rotation(
+        source.as_ref(),
+        pitch,
         yaw,
         pitch_offset,
         power,
         uncertainty,
     );
-
-    let entity: SharedEntity = Arc::new(entity);
+    let entity: SharedEntity = Arc::new(projectile);
     if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
-        log::debug!("failed to spawn throwable item projectile: {error}");
+        log::debug!("failed to spawn projectile: {error}");
         return None;
     }
     if let Some(projectile) = entity.as_projectile() {

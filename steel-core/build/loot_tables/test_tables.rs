@@ -68,6 +68,14 @@ fn inputs() -> impl IntoIterator<Item = (&'static str, serde_json::Value)> {
             json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:goat_horn","modifier":{"type":"minecraft:set_instrument","options":"#minecraft:regular_goat_horns"}}]}]}),
         ),
         (
+            "POTION",
+            json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:tipped_arrow","modifier":{"type":"minecraft:set_potion","id":"minecraft:strong_slowness"}}]}]}),
+        ),
+        (
+            "DAMAGE",
+            json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:stone_pickaxe","modifier":{"type":"minecraft:set_damage","damage":0.25}}]},{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:stone","modifier":{"type":"minecraft:set_damage","damage":{"type":"minecraft:uniform","min":0.0,"max":1.0}}}]}]}),
+        ),
+        (
             "BOOK_ENCHANTMENT",
             json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:book","modifier":[{"type":"minecraft:set_enchantments","enchantments":{"minecraft:sharpness":10}},{"type":"minecraft:set_enchantments","enchantments":{"minecraft:sharpness":-4},"add":true}]}]}]}),
         ),
@@ -82,6 +90,14 @@ fn inputs() -> impl IntoIterator<Item = (&'static str, serde_json::Value)> {
         (
             "ENCHANT_MISSING_COMPONENT",
             json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:loot_table","value":"minecraft:blocks/diamond_ore","modifier":{"type":"minecraft:set_enchantments","enchantments":{"minecraft:looting":{"type":"minecraft:uniform","min":1,"max":9}}}}]}]}),
+        ),
+        (
+            "FISHING_HOOK_PREDICATES",
+            json!({"pools":[
+                {"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:stone","condition":{"type":"minecraft:entity_properties","entity":"this","predicate":{"minecraft:type_specific/fishing_hook":{}}}}]},
+                {"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:gold_ingot","condition":{"type":"minecraft:entity_properties","entity":"this","predicate":{"minecraft:type_specific/fishing_hook":{"in_open_water":false}}}}]},
+                {"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:diamond","condition":{"type":"minecraft:entity_properties","entity":"this","predicate":{"minecraft:type_specific/fishing_hook":{"in_open_water":true}}}}]}
+            ]}),
         ),
     ]
 }

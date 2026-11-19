@@ -1,6 +1,8 @@
 use super::super::{
     Compiler, TokenStream, ident, identifier,
-    model::{CompileModifier, Condition, ContextIntProvider, Holder, HolderSet},
+    model::{
+        CompileModifier, Condition, ContextFloatProvider, ContextIntProvider, Holder, HolderSet,
+    },
     quote,
 };
 use serde::Deserialize;
@@ -42,6 +44,46 @@ impl CompileModifier for SetInstrument {
             if !options.is_empty() { let index = ctx.rng.next_i32_bounded(options.len() as i32) as usize;
                 item.set(steel_registry::data_components::vanilla_components::INSTRUMENT,
                     steel_registry::data_components::InstrumentComponent::new(steel_registry::RegistryHolder::reference(options[index])));
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetPotion {
+    pub id: String,
+    pub condition: Option<Holder<Condition>>,
+}
+
+impl CompileModifier for SetPotion {
+    fn compile(&self, _compiler: &mut Compiler) -> TokenStream {
+        let potion = ident(&self.id);
+        quote! { crate::loot::modifiers::set_potion(item, &steel_registry::vanilla_potions::#potion); }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetDamage {
+    pub damage: ContextFloatProvider,
+    #[serde(default)]
+    pub add: bool,
+    pub condition: Option<Holder<Condition>>,
+}
+
+impl CompileModifier for SetDamage {
+    fn compile(&self, compiler: &mut Compiler) -> TokenStream {
+        let Self { damage, add, .. } = self;
+        let damage = compiler.float_provider(damage);
+        // Vanilla only evaluates the provider for damageable items, so others
+        // must not consume loot RNG.
+        quote! {
+            if item.is_damageable_item() {
+                let damage = #damage;
+                crate::loot::modifiers::set_damage(item, damage, #add);
+            } else {
+                log::warn!("Couldn't set damage of loot item {} {}", item.count(), item.item().key);
             }
         }
     }

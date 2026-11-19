@@ -2,6 +2,7 @@
 
 use std::{
     io, mem,
+    ops::ControlFlow,
     path::Path,
     sync::{
         Arc, LazyLock, Weak,
@@ -43,7 +44,7 @@ use steel_protocol::{
 };
 
 use crate::loot::{LootContext, random_sequences::RandomSequences};
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use simdnbt::owned::NbtCompound;
 use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -93,7 +94,7 @@ use crate::{
     entity::{
         AddEntityError, Entity, EntityChangeSenders, EntityChunkCallback, EntityLifecycleChanges,
         EntityMovementSyncPacket, EntityOwnership, EntityTracker, EntityVisibility,
-        InactiveEntityCallback, MobEffectSyncPacket, RemovalReason, SharedEntity,
+        InactiveEntityCallback, MobEffectSyncPacket, PartEntity, RemovalReason, SharedEntity,
         WorldEntityManager,
         entities::{ExperienceOrbEntity, ItemEntity},
         entity_loot_ref,
@@ -113,6 +114,7 @@ mod block_updates;
 mod border;
 mod broadcasts;
 pub(crate) mod clock;
+mod difficulty;
 mod domain_entity_directory;
 mod entity_management;
 mod environment;
@@ -148,6 +150,7 @@ use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
 pub(crate) use border::{MAX_CENTER_COORDINATE, MAX_SIZE};
 use border::{WorldBorder, WorldBorderSnapshot};
+pub use difficulty::DifficultyInstance;
 pub(crate) use domain_entity_directory::DomainEntityDirectory;
 use entity_management::NavigatingMobTracker;
 #[cfg(test)]
@@ -155,6 +158,7 @@ use entity_management::nearest_player_distance_in_range;
 pub use explosion::{
     BlockInteraction, DefaultExplosionDamageCalculator, EntityBasedExplosionDamageCalculator,
     Explosion, ExplosionDamageCalculator, ExplosionInteraction, ExplosionOptions, ExplosionOutcome,
+    SimpleExplosionDamageCalculator,
 };
 pub(crate) use explosion::{ExplosionBlockReader, ImmutableExplosionBlockCalculator};
 pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
@@ -320,6 +324,9 @@ pub struct World {
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
     /// World-change requests queued by world-local ticks for server safe-point processing.
     pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
+    /// Live multipart sub-entities by session ID (vanilla `ServerLevel.dragonParts`), kept
+    /// out of the entity manager.
+    entity_parts: SyncMutex<FxHashMap<i32, Arc<dyn PartEntity>>>,
 }
 
 impl World {
@@ -474,6 +481,7 @@ impl World {
                 scheduled_fluid_ticks_this_tick: SyncMutex::new(None),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 pending_world_changes: SyncMutex::new(Vec::new()),
+                entity_parts: SyncMutex::new(FxHashMap::default()),
             }
         }))
     }
@@ -624,7 +632,7 @@ impl World {
                         let Some(player) = self.players.get_by_entity_id(player_id) else {
                             return;
                         };
-                        player.connection.send_encoded(encoded);
+                        encoded.send_to(&player);
                     },
                     entity_data: |entity_id, dirty_entity_data| {
                         let packet = CSetEntityData::new(entity_id, dirty_entity_data);

@@ -1,6 +1,6 @@
 //! Vanilla Sheep entity with wool color, shearing, and breeding parity.
 use std::sync::{Arc, Weak};
-use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
+use steel_utils::random::legacy_random::LegacyRandom;
 
 use crate::loot::vanilla_loot_tables;
 use glam::DVec3;
@@ -30,7 +30,7 @@ use crate::entity::ai::goal::{
     RandomLookAroundGoal, TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::damage::DamageSource;
-use crate::entity::living_entity::shearing_loot_items_with_rng;
+use crate::entity::living_entity::shearing_loot_items;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
     EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
@@ -39,7 +39,7 @@ use crate::entity::{
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 
 use color_spawn_rules::TEMPERATE_SPAWN_CONFIGURATION;
 mod color_spawn_rules;
@@ -215,10 +215,7 @@ impl SheepEntity {
             None,
         );
 
-        let mut rng = RandomSource::Legacy(LegacyRandom::from_seed(rand::random()));
-        for drop in
-            shearing_loot_items_with_rng(self, &vanilla_loot_tables::SHEARING_SHEEP, tool, &mut rng)
-        {
+        for drop in shearing_loot_items(self, &vanilla_loot_tables::SHEARING_SHEEP, world, tool) {
             self.spawn_shearing_drop(&drop);
         }
 
@@ -441,6 +438,7 @@ impl Mob for SheepEntity {
     fn finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -452,7 +450,7 @@ impl Mob for SheepEntity {
 
         self.set_color(color);
 
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(world, difficulty, spawn_reason, group_data)
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
