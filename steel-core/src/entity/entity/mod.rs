@@ -1626,6 +1626,27 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn ItemFrame>(self)
     }
 
+    /// Returns this entity as a multipart sub-entity, in place of vanilla's
+    /// `instanceof EnderDragonPart` checks.
+    fn as_part_entity(&self) -> Option<&dyn PartEntity> {
+        try_as_dyn::<Self, dyn PartEntity>(self)
+    }
+
+    /// Returns this entity's multipart sub-entities (vanilla `EnderDragon.getSubEntities`,
+    /// on `Entity` as `NeoForge` does), or an empty slice.
+    fn parts(&self) -> &[Arc<dyn PartEntity>] {
+        &[]
+    }
+
+    /// Vanilla `Entity.is`: identity, except that a multipart part also counts as its parent.
+    fn is_same_entity(&self, other: &dyn Entity) -> bool {
+        self.id() == other.id()
+            || self
+                .as_part_entity()
+                .and_then(PartEntity::parent)
+                .is_some_and(|parent| parent.id() == other.id())
+    }
+
     /// Returns this entity as a player when it is the concrete server player.
     fn as_player(&self) -> Option<&Player> {
         self.downcast_ref::<Player>()
@@ -2870,7 +2891,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns vanilla dimensions for a physical pose.
+    ///
+    /// A multipart part reports its parent's type, so it returns its own fixed size
+    /// instead, as vanilla `EnderDragonPart.getDimensions` does.
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
+        if let Some(part) = self.as_part_entity() {
+            return part.part_base().size();
+        }
         let dimensions = self.entity_type().dimensions;
         let Some(living) = self.as_living_entity() else {
             return dimensions;

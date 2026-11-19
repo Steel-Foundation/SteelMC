@@ -15,7 +15,7 @@ use steel_utils::{BlockPos, Identifier, UuidExt, WorldAabb, axis::Axis, types::D
 use text_components::TextComponent;
 use uuid::Uuid;
 
-use super::{AddEntityError, ENTITIES, SharedEntity, next_entity_id};
+use super::{AddEntityError, ENTITIES, SharedEntity};
 use crate::entity::entity::{read_nbt_dvec3, read_nbt_rotation, sanitize_nbt_motion};
 use crate::entity::{EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest};
 use crate::physics::{CollisionWorld, WorldCollisionProvider, collide};
@@ -131,12 +131,7 @@ pub(crate) fn create_entity_instance(
     }
 
     ENTITIES
-        .create(
-            entity_type,
-            next_entity_id(),
-            position,
-            Arc::downgrade(world),
-        )
+        .create(entity_type, position, Arc::downgrade(world))
         .ok_or(EntitySpawnError::MissingFactory)
 }
 
