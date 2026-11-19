@@ -914,7 +914,7 @@ pub use movement_sync::{
 pub use part::{PartEntity, PartEntityBase};
 pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
-    AbstractHurtingProjectile, AbstractThrownPotion, AbstractWindCharge, EntityHitResult,
+    AbstractHurtingProjectile, AbstractThrownPotion, AbstractWindCharge, EntityHitResult, Fireball,
     HurtingProjectileBase, INITIAL_ACCELERATION_POWER, Projectile, ProjectileBase,
     ProjectileDeflection, ProjectileEventSource, ProjectileHit, SPLASH_HORIZONTAL_REACH,
     SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile,

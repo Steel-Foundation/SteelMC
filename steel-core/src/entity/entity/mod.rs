@@ -2228,6 +2228,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().is_on_fire(self.fire_immune())
     }
 
+    /// Returns vanilla `Entity.getLightLevelDependentMagicValue`: the curved
+    /// brightness at this entity's eye, or `0.0` when its chunk is unavailable.
+    fn get_light_level_dependent_magic_value(&self) -> f32 {
+        let Some(world) = self.level() else {
+            return 0.0;
+        };
+
+        let position = self.position();
+        let block_pos = BlockPos::new(
+            position.x.floor() as i32,
+            self.get_eye_y().floor() as i32,
+            position.z.floor() as i32,
+        );
+        if !world.is_full_chunk_loaded_at(block_pos) {
+            return 0.0;
+        }
+
+        world.light_level_dependent_magic_value(block_pos)
+    }
+
     /// Returns whether this entity currently renders as visually on fire.
     fn has_visual_fire(&self) -> bool {
         self.base().has_visual_fire()

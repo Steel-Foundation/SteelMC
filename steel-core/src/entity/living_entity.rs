@@ -21,6 +21,8 @@ use crate::entity::damage::{FallLocation, RecentDamageSource, death_message};
 use crate::entity::pushing::EntityPush;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
+/// Vanilla `LivingEntity.aiStep` water damage for water-sensitive entities.
+const WATER_SENSITIVE_DAMAGE: f32 = 1.0;
 
 /// A trait for living entities that can take damage, heal, and die.
 ///
@@ -1883,6 +1885,11 @@ pub trait LivingEntity: Entity {
         self.tick_living_air_supply();
     }
 
+    /// Returns whether water or rain damages this entity each AI tick.
+    fn is_sensitive_to_water(&self) -> bool {
+        self.entity_type().flags.is_sensitive_to_water
+    }
+
     /// Returns whether this entity is affected by fluid physics; true by default.
     fn is_affected_by_fluids(&self) -> bool {
         true
@@ -2725,6 +2732,16 @@ pub trait LivingEntity: Entity {
         self.apply_effects_from_blocks();
         self.tick_freezing();
         self.push_entities();
+        if self.is_sensitive_to_water()
+            && self.is_in_water_or_rain()
+            && let Some(world) = self.level()
+        {
+            self.hurt(
+                &world,
+                &DamageSource::environment(&vanilla_damage_types::DROWN),
+                WATER_SENSITIVE_DAMAGE,
+            );
+        }
         result
     }
 
