@@ -104,7 +104,12 @@ impl LastSeenMessagesValidator {
             acknowledged
         );
 
-        // First apply the offset to remove old messages
+        if acknowledged[2] >> (MAX_TRACKED_MESSAGES % 8) != 0 {
+            return Err(format!(
+                "Last seen update contained acknowledgements outside the {MAX_TRACKED_MESSAGES}-message window"
+            ));
+        }
+
         self.apply_offset(offset)?;
 
         let mut acknowledged_signatures = Vec::new();
@@ -160,10 +165,18 @@ impl LastSeenMessagesValidator {
             acknowledged_signatures.len()
         );
 
-        // TODO: Verify checksum if needed (checksum == 0 means skip validation)
         if checksum != 0 {
-            // For now, we skip checksum validation
-            // In a full implementation, compute checksum of acknowledged_signatures and compare
+            let computed = acknowledged_signatures.iter().fold(1_u8, |sum, signature| {
+                let hash = signature
+                    .iter()
+                    .fold(1_u8, |hash, byte| hash.wrapping_mul(31).wrapping_add(*byte));
+                sum.wrapping_mul(31).wrapping_add(hash)
+            });
+
+            let expected = if computed == 0 { 1 } else { computed };
+            if checksum != expected {
+                return Err("Checksum mismatch on last seen update".to_owned());
+            }
         }
 
         Ok(acknowledged_signatures)

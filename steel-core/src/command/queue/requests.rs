@@ -4,6 +4,8 @@ use steel_utils::locks::SyncMutex;
 
 use crate::command::sender::{CommandExecutionOwner, CommandSuggestionKey};
 use crate::command::signing_context::CommandSigningContext;
+use crate::player::chat::profile_key::RemoteChatSession;
+use crate::server::PlayerPacketTransition;
 
 const DEFAULT_COMMAND_REQUEST_CAPACITY: usize = 1024;
 const DEFAULT_SUGGESTION_REQUEST_CAPACITY: usize = 1024;
@@ -17,6 +19,11 @@ pub(crate) enum CommandRequest {
         owner: CommandExecutionOwner,
         command: String,
         signing_context: Option<CommandSigningContext>,
+    },
+    ChatSessionUpdate {
+        owner: CommandExecutionOwner,
+        session: Box<RemoteChatSession>,
+        transition: PlayerPacketTransition,
     },
     Suggestions {
         owner: CommandExecutionOwner,
@@ -143,6 +150,11 @@ impl CommandRequestQueue {
         let mut queued = self.queued.lock();
         match request {
             request @ CommandRequest::Execute { .. } => queued.submit_execution(request),
+            request @ CommandRequest::ChatSessionUpdate { .. } => {
+                queued.executions.push_back(request);
+
+                Ok(())
+            }
             CommandRequest::Suggestions {
                 owner,
                 transaction_id,
@@ -162,12 +174,15 @@ impl CommandRequestQueue {
         &self,
         mut execution_allowed: impl FnMut(&CommandExecutionOwner) -> bool,
     ) -> Option<CommandRequest> {
-        let request = self.queued.lock().pop_front_where(|request| {
-            let CommandRequest::Execute { owner, .. } = request else {
-                return false;
-            };
-            execution_allowed(owner)
-        })?;
+        let request = self
+            .queued
+            .lock()
+            .pop_front_where(|request| match request {
+                CommandRequest::Execute { owner, .. }
+                | CommandRequest::ChatSessionUpdate { owner, .. } => execution_allowed(owner),
+                CommandRequest::Suggestions { .. } => false,
+            })?;
+
         match request {
             PendingRequest::Execute(request) | PendingRequest::Suggestions(request) => {
                 Some(request)

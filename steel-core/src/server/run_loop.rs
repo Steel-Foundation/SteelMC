@@ -383,7 +383,7 @@ impl Server {
         }
     }
 
-    fn tick_command_requests(
+    pub(super) fn tick_command_requests(
         self: &Arc<Self>,
         pending: &mut PendingCommandExecutionQueue<CommandSource>,
     ) {
@@ -407,6 +407,20 @@ impl Server {
                         continue;
                     }
                     self.execute_command_request(pending, owner, &command, signing_context);
+                }
+                CommandRequest::ChatSessionUpdate {
+                    owner,
+                    session,
+                    transition,
+                } => {
+                    if let Some(player) = owner.sender().get_player()
+                        && let Some(current_player) = player.session.current_player()
+                        && !current_player.connection.closed()
+                    {
+                        current_player.set_chat_session(*session);
+                    }
+
+                    self.finish_player_packet_transition(transition);
                 }
                 CommandRequest::Suggestions {
                     owner,
@@ -438,7 +452,6 @@ impl Server {
         signing_context: Option<CommandSigningContext>,
     ) {
         let source = CommandSource::new(owner.sender().clone(), Arc::clone(self), signing_context);
-        let command = command.strip_prefix('/').unwrap_or(command);
         let chain = {
             let dispatcher = self.command_dispatcher.read();
             let parse = dispatcher.parse(command, source.clone());
