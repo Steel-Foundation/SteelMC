@@ -453,7 +453,7 @@ impl<'source> CommandSource<'source> {
 
     /// Return the signing context (salt, timestamp, ...) of this command source (if it exists)
     #[must_use]
-    pub const fn signing_context(self) -> Option<&'source CommandSigningContext> {
+    pub fn signing_context(self) -> Option<&'source CommandSigningContext> {
         self.inner.signing_context()
     }
 }

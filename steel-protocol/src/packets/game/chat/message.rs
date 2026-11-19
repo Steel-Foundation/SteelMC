@@ -4,7 +4,7 @@ use steel_macros::{ReadFrom, ServerPacket};
 use steel_utils::codec::VarInt;
 use steel_utils::serial::{ReadFrom, prefixed_read::read_utf};
 
-use super::LastSeenMessagesUpdate;
+use super::{LastSeenMessagesUpdate, MessageSignature};
 
 const MAX_CHAT_LENGTH: usize = 256;
 
@@ -13,9 +13,9 @@ pub struct SChat {
     pub message: String,
     pub timestamp: i64,
     pub salt: i64,
-    pub signature: Option<[u8; 256]>,
+    pub signature: Option<[u8; MessageSignature::BYTES]>,
     pub offset: i32,
-    pub acknowledged: [u8; 3],
+    pub acknowledged: [u8; LastSeenMessagesUpdate::ACKNOWLEDGED_BYTES],
     pub checksum: u8,
 }
 

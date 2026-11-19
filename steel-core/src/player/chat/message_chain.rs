@@ -9,8 +9,6 @@ use steel_crypto::{CryptError, SignatureUpdater, signature::SignatureOutput};
 use thiserror::Error;
 use uuid::Uuid;
 
-use super::signature_cache::LastSeen;
-
 /// A link in the signed message chain.
 ///
 /// Equivalent to `SignedMessageLink` in Minecraft.
@@ -95,25 +93,25 @@ impl SignedMessageLink {
 ///
 /// Equivalent to `SignedMessageBody` in Minecraft.
 #[derive(Clone, Debug)]
-pub struct SignedMessageBody {
-    /// The message content (max 256 UTF-8 chars)
-    pub content: String,
+pub struct SignedMessageBody<'a> {
+    /// The message content.
+    pub content: &'a str,
     /// When the message was created
     pub time_stamp: SystemTime,
     /// Random salt for uniqueness
     pub salt: i64,
     /// Previously seen message signatures
-    pub last_seen: LastSeen,
+    pub last_seen: &'a [Box<[u8]>],
 }
 
-impl SignedMessageBody {
+impl<'a> SignedMessageBody<'a> {
     /// Creates a new signed message body
     #[must_use]
     pub const fn new(
-        content: String,
+        content: &'a str,
         time_stamp: SystemTime,
         salt: i64,
-        last_seen: LastSeen,
+        last_seen: &'a [Box<[u8]>],
     ) -> Self {
         Self {
             content,
@@ -125,12 +123,12 @@ impl SignedMessageBody {
 
     /// Creates an unsigned message body (salt = 0, no last seen)
     #[must_use]
-    pub fn unsigned(content: String) -> Self {
+    pub fn unsigned(content: &'a str) -> Self {
         Self {
             content,
             time_stamp: SystemTime::now(),
             salt: 0,
-            last_seen: LastSeen::default(),
+            last_seen: &[],
         }
     }
 
@@ -158,7 +156,7 @@ impl SignedMessageBody {
         output.update(content_bytes)?;
 
         // Last seen signatures
-        update_last_seen_signature(&self.last_seen, output)?;
+        update_last_seen_signature(self.last_seen, output)?;
 
         Ok(())
     }
@@ -166,14 +164,14 @@ impl SignedMessageBody {
 
 /// Helper to update signature with last seen messages
 fn update_last_seen_signature(
-    last_seen: &LastSeen,
+    last_seen: &[Box<[u8]>],
     output: &mut (impl SignatureOutput + ?Sized),
 ) -> Result<(), CryptError> {
     // Number of signatures (4 bytes, i32 big-endian)
     output.update(&(last_seen.len() as i32).to_be_bytes())?;
 
     // All signature bytes
-    for signature in last_seen.as_slice() {
+    for signature in last_seen {
         output.update(signature)?;
     }
 
@@ -258,7 +256,7 @@ impl SignedMessageChain {
     /// Returns `ChainError` if validation fails
     pub fn validate_and_advance(
         &mut self,
-        body: &SignedMessageBody,
+        body: &SignedMessageBody<'_>,
     ) -> Result<SignedMessageLink, ChainError> {
         // Check chain not broken
         let link = self.next_link.clone().ok_or(ChainError::ChainBroken)?;
@@ -286,13 +284,13 @@ impl SignedMessageChain {
 /// Helper struct to update signature with complete message data
 pub struct MessageSignatureUpdater<'a> {
     link: &'a SignedMessageLink,
-    body: &'a SignedMessageBody,
+    body: &'a SignedMessageBody<'a>,
 }
 
 impl<'a> MessageSignatureUpdater<'a> {
     /// Creates a new message signature updater
     #[must_use]
-    pub const fn new(link: &'a SignedMessageLink, body: &'a SignedMessageBody) -> Self {
+    pub const fn new(link: &'a SignedMessageLink, body: &'a SignedMessageBody<'a>) -> Self {
         Self { link, body }
     }
 }
@@ -351,13 +349,13 @@ mod tests {
         let session = Uuid::new_v4();
         let mut chain = SignedMessageChain::new(sender, session);
 
-        let body = SignedMessageBody::unsigned("Hello".to_string());
+        let body = SignedMessageBody::unsigned("Hello");
         let link = chain
             .validate_and_advance(&body)
             .expect("First message should validate");
         assert_eq!(link.index, 0);
 
-        let body2 = SignedMessageBody::unsigned("World".to_string());
+        let body2 = SignedMessageBody::unsigned("World");
         let link2 = chain
             .validate_and_advance(&body2)
             .expect("Second message should validate");
@@ -370,14 +368,13 @@ mod tests {
         let session = Uuid::new_v4();
         let mut chain = SignedMessageChain::new(sender, session);
 
-        let body1 = SignedMessageBody::unsigned("First".to_string());
+        let body1 = SignedMessageBody::unsigned("First");
         chain
             .validate_and_advance(&body1)
             .expect("First message should validate");
 
         // Create a message with an older timestamp
-        let body2 =
-            SignedMessageBody::new("Second".to_string(), UNIX_EPOCH, 0, LastSeen::default());
+        let body2 = SignedMessageBody::new("Second", UNIX_EPOCH, 0, &[]);
 
         let result = chain.validate_and_advance(&body2);
         assert!(matches!(result, Err(ChainError::OutOfOrderChat)));

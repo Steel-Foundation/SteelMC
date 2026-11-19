@@ -260,7 +260,7 @@ pub(crate) struct CommandSource {
     effective_player_residence: Option<DomainResidenceToken>,
     callback: CommandResultCallback,
     silent: bool,
-    signing_context: Option<CommandSigningContext>,
+    signing_context: Option<Arc<CommandSigningContext>>,
 }
 
 impl CommandSource {
@@ -319,7 +319,7 @@ impl CommandSource {
             effective_player_residence,
             callback: CommandResultCallback::empty(),
             silent: false,
-            signing_context,
+            signing_context: signing_context.map(Arc::new),
         }
     }
 
@@ -455,8 +455,8 @@ impl CommandSource {
     }
 
     #[must_use]
-    pub const fn signing_context(&self) -> Option<&CommandSigningContext> {
-        self.signing_context.as_ref()
+    pub fn signing_context(&self) -> Option<&CommandSigningContext> {
+        self.signing_context.as_deref()
     }
 
     /// Sends informational command output straight to the sender.

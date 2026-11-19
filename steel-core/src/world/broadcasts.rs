@@ -75,12 +75,15 @@ impl World {
     }
 
     /// Broadcasts an unsigned player chat message to all players.
-    pub fn broadcast_unsigned_chat(&self, mut packet: CPlayerChat) {
+    pub fn broadcast_unsigned_chat(&self, packet: CPlayerChat) {
         self.players.iter_players(|_, recipient| {
             let messages_received = recipient.get_and_increment_messages_received();
-            packet.global_index = messages_received;
+            recipient.send_packet(packet.for_recipient(
+                messages_received,
+                &packet.previous_messages,
+                &packet.chat_type,
+            ));
 
-            recipient.send_packet(packet.clone());
             true
         });
     }

@@ -10,7 +10,6 @@ use super::{
     node::{CommandNode, CommandNodeData, UnregisteredCommandNode},
 };
 use crate::command::brigadier::node::ArgumentData;
-use std::ops::Range;
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
@@ -409,68 +408,13 @@ where
             if let Some(node) = self.node(parsed_node.node())
                 && let CommandNodeData::Argument(name, arg_data) = &node.data
                 && arg_data.argument_type().is_signed()
+                && let Some(byte_range) = parsed_node.range().byte_range(command)
             {
-                let range = parsed_node.range();
-
-                // Map UTF-16 code unit offsets to valid UTF-8 byte bounds
-                if let Some(byte_range) =
-                    utf16_range_to_byte_range(command, range.start(), range.end())
-                {
-                    let slice = &command[byte_range];
-                    signable_args.push((name.to_string(), slice));
-                }
+                signable_args.push((name.to_string(), &command[byte_range]));
             }
         }
 
         signable_args
-    }
-}
-
-/// Maps a UTF-16 code unit range (from Brigadier) to a byte range in a UTF-8 string.
-/// Returns `None` if the indices are inverted, out of bounds, or bisect a surrogate pair.
-fn utf16_range_to_byte_range(
-    s: &str,
-    start_utf16: usize,
-    end_utf16: usize,
-) -> Option<Range<usize>> {
-    if start_utf16 > end_utf16 {
-        return None;
-    }
-
-    let mut current_utf16 = 0;
-    let mut byte_start = None;
-    let mut byte_end = None;
-
-    if start_utf16 == 0 {
-        byte_start = Some(0);
-    }
-    if end_utf16 == 0 {
-        byte_end = Some(0);
-    }
-
-    for (byte_idx, ch) in s.char_indices() {
-        if current_utf16 == start_utf16 {
-            byte_start = Some(byte_idx);
-        }
-        if current_utf16 == end_utf16 {
-            byte_end = Some(byte_idx);
-            break;
-        }
-
-        current_utf16 += ch.len_utf16();
-    }
-
-    // Check if bounds align with the end of the string
-    if current_utf16 == start_utf16 && byte_start.is_none() {
-        byte_start = Some(s.len());
-    }
-    if current_utf16 == end_utf16 && byte_end.is_none() {
-        byte_end = Some(s.len());
-    }
-
-    match (byte_start, byte_end) {
-        (Some(start), Some(end)) if start <= end && end <= s.len() => Some(start..end),
-        _ => None,
     }
 }
 
@@ -501,13 +445,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::utf16_range_to_byte_range;
+    use super::StringRange;
 
     #[test]
     fn test_utf16_range_to_byte_range_ascii() {
         let text = "hello world";
         // "world" -> [6, 11]
-        assert_eq!(utf16_range_to_byte_range(text, 6, 11), Some(6..11));
+        assert_eq!(StringRange::between(6, 11).byte_range(text), Some(6..11));
         assert_eq!(&text[6..11], "world");
     }
 
@@ -520,7 +464,7 @@ mod tests {
         // "noir" starts at UTF-16 index 5 and ends at 9
         // In UTF-8 bytes:
         // 'c' (0), 'a' (1), 'f' (2), 'é' (3..5), ' ' (5), "noir" (6..10)
-        let range = utf16_range_to_byte_range(text, 5, 9);
+        let range = StringRange::between(5, 9).byte_range(text);
         assert_eq!(range, Some(6..10));
         assert_eq!(&text[range.expect("Invalid UTF-16 range")], "noir");
     }
@@ -535,12 +479,12 @@ mod tests {
         // " now" = 4 code units (indices 7..11)
 
         // Slicing the emoji itself
-        let emoji_range = utf16_range_to_byte_range(text, 5, 7);
+        let emoji_range = StringRange::between(5, 7).byte_range(text);
         assert_eq!(emoji_range, Some(5..9));
         assert_eq!(&text[emoji_range.expect("Invalid UTF-16 range")], "🎮");
 
         // Slicing "now" after the emoji
-        let now_range = utf16_range_to_byte_range(text, 8, 11);
+        let now_range = StringRange::between(8, 11).byte_range(text);
         assert_eq!(now_range, Some(10..13));
         assert_eq!(&text[now_range.expect("Invalid UTF-16 range")], "now");
     }
@@ -548,14 +492,11 @@ mod tests {
     #[test]
     fn test_utf16_range_to_byte_range_invalid_bounds() {
         let text = "test";
-        // Inverted range
-        assert_eq!(utf16_range_to_byte_range(text, 3, 2), None);
-
         // Out of bounds
-        assert_eq!(utf16_range_to_byte_range(text, 0, 10), None);
+        assert_eq!(StringRange::between(0, 10).byte_range(text), None);
 
         // Splitting a surrogate pair should be rejected / return None
         let emoji_text = "🎮"; // 2 UTF-16 code units
-        assert_eq!(utf16_range_to_byte_range(emoji_text, 0, 1), None);
+        assert_eq!(StringRange::between(0, 1).byte_range(emoji_text), None);
     }
 }

@@ -2,23 +2,16 @@
 
 use std::collections::VecDeque;
 
-/// Maximum number of tracked messages for acknowledgement validation (Vanilla: 20)
-const MAX_TRACKED_MESSAGES: usize = 20;
+use steel_protocol::packets::game::LastSeenMessagesUpdate;
+
+const CHECKSUM_HASH_MULTIPLIER: u8 = 31;
+const NO_CHECKSUM: u8 = 0;
 
 /// Entry tracking a sent message signature
 #[derive(Debug, Clone)]
 struct TrackedEntry {
     signature: Option<Box<[u8]>>,
     pending: bool, // true if not yet acknowledged by client
-}
-
-impl TrackedEntry {
-    fn acknowledge(self) -> Self {
-        Self {
-            signature: self.signature,
-            pending: false,
-        }
-    }
 }
 
 /// Validates that the client is properly acknowledging messages sent by the server
@@ -38,8 +31,8 @@ impl LastSeenMessagesValidator {
     /// Creates a new validator
     #[must_use]
     pub fn new() -> Self {
-        let mut tracked_messages = VecDeque::with_capacity(MAX_TRACKED_MESSAGES);
-        for _ in 0..MAX_TRACKED_MESSAGES {
+        let mut tracked_messages = VecDeque::with_capacity(LastSeenMessagesUpdate::MAX_ENTRIES);
+        for _ in 0..LastSeenMessagesUpdate::MAX_ENTRIES {
             tracked_messages.push_back(None);
         }
         Self {
@@ -74,7 +67,7 @@ impl LastSeenMessagesValidator {
         let removable = self
             .tracked_messages
             .len()
-            .saturating_sub(MAX_TRACKED_MESSAGES);
+            .saturating_sub(LastSeenMessagesUpdate::MAX_ENTRIES);
         if offset < 0 || offset as usize > removable {
             return Err(format!(
                 "Advanced last seen window by {offset} messages, but expected at most {removable}"
@@ -92,88 +85,71 @@ impl LastSeenMessagesValidator {
     /// checksum: Optional checksum for validation (0 = skip checksum)
     pub fn apply_update(
         &mut self,
-        acknowledged: [u8; 3], // 3 bytes = 24 bits, using 20
+        acknowledged: [u8; LastSeenMessagesUpdate::ACKNOWLEDGED_BYTES],
         offset: i32,
         checksum: u8,
     ) -> Result<Vec<Box<[u8]>>, String> {
-        log::debug!(
-            "apply_update: offset={}, checksum={}, tracked_messages.len()={}, acknowledged={:?}",
-            offset,
-            checksum,
-            self.tracked_messages.len(),
-            acknowledged
-        );
-
-        if acknowledged[2] >> (MAX_TRACKED_MESSAGES % 8) != 0 {
+        let max_entries = LastSeenMessagesUpdate::MAX_ENTRIES;
+        let bits_per_byte = u8::BITS as usize;
+        let used_bits_in_last_byte = max_entries % bits_per_byte;
+        let last_byte = acknowledged[LastSeenMessagesUpdate::ACKNOWLEDGED_BYTES - 1];
+        if used_bits_in_last_byte != 0 && last_byte >> used_bits_in_last_byte != 0 {
             return Err(format!(
-                "Last seen update contained acknowledgements outside the {MAX_TRACKED_MESSAGES}-message window"
+                "Last seen update contained acknowledgements outside the {max_entries}-message window"
             ));
         }
 
         self.apply_offset(offset)?;
 
-        let mut acknowledged_signatures = Vec::new();
+        let count = acknowledged
+            .iter()
+            .map(|byte| byte.count_ones())
+            .sum::<u32>() as usize;
+        let mut acknowledged_signatures = Vec::with_capacity(count);
 
-        // Process acknowledgements for the tracked window
-        for i in 0..MAX_TRACKED_MESSAGES.min(self.tracked_messages.len()) {
-            let bit_index = i;
-            let byte_index = bit_index / 8;
-            let bit_offset = bit_index % 8;
-            let is_acknowledged = (acknowledged[byte_index] & (1 << bit_offset)) != 0;
+        for (index, tracked) in self
+            .tracked_messages
+            .iter_mut()
+            .take(max_entries)
+            .enumerate()
+        {
+            let is_acknowledged =
+                (acknowledged[index / bits_per_byte] & (1 << (index % bits_per_byte))) != 0;
 
-            if let Some(entry_opt) = self.tracked_messages.get_mut(i) {
-                if is_acknowledged {
-                    // Client acknowledged this message
-                    if let Some(entry) = entry_opt {
-                        log::debug!(
-                            "Index {}: Client acknowledged message (pending={})",
-                            i,
-                            entry.pending
-                        );
-                        let acknowledged_entry = entry.clone().acknowledge();
-                        if let Some(sig) = &entry.signature {
-                            acknowledged_signatures.push(sig.clone());
-                        }
-                        *entry_opt = Some(acknowledged_entry);
-                    } else {
-                        log::error!(
-                            "Index {i}: Client acknowledged unknown/ignored message! tracked_messages[{i}] = None"
-                        );
-                        return Err(format!(
-                            "Last seen update acknowledged unknown or previously ignored message at index {i}"
-                        ));
-                    }
-                } else {
-                    // Client did not acknowledge this message
-                    if let Some(entry) = entry_opt
-                        && !entry.pending
-                    {
-                        log::error!("Index {i}: Client ignored previously acknowledged message!");
-                        return Err(format!(
-                            "Last seen update ignored previously acknowledged message at index {i}"
-                        ));
-                    }
-                    log::debug!("Index {i}: Client did not acknowledge (setting to None)");
-                    // Set to None if not acknowledged
-                    *entry_opt = None;
+            if is_acknowledged {
+                let Some(entry) = tracked else {
+                    return Err(format!(
+                        "Last seen update acknowledged unknown or previously ignored message at index {index}"
+                    ));
+                };
+
+                entry.pending = false;
+                if let Some(signature) = &entry.signature {
+                    acknowledged_signatures.push(signature.clone());
                 }
+            } else {
+                if tracked.as_ref().is_some_and(|entry| !entry.pending) {
+                    return Err(format!(
+                        "Last seen update ignored previously acknowledged message at index {index}"
+                    ));
+                }
+
+                *tracked = None;
             }
         }
 
-        log::debug!(
-            "apply_update: Successfully acknowledged {} signatures",
-            acknowledged_signatures.len()
-        );
-
-        if checksum != 0 {
+        if checksum != NO_CHECKSUM {
             let computed = acknowledged_signatures.iter().fold(1_u8, |sum, signature| {
-                let hash = signature
-                    .iter()
-                    .fold(1_u8, |hash, byte| hash.wrapping_mul(31).wrapping_add(*byte));
-                sum.wrapping_mul(31).wrapping_add(hash)
+                let hash = signature.iter().fold(1_u8, |hash, byte| {
+                    hash.wrapping_mul(CHECKSUM_HASH_MULTIPLIER)
+                        .wrapping_add(*byte)
+                });
+
+                sum.wrapping_mul(CHECKSUM_HASH_MULTIPLIER)
+                    .wrapping_add(hash)
             });
 
-            let expected = if computed == 0 { 1 } else { computed };
+            let expected = if computed == NO_CHECKSUM { 1 } else { computed };
             if checksum != expected {
                 return Err("Checksum mismatch on last seen update".to_owned());
             }

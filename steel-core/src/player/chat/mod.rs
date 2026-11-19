@@ -22,14 +22,17 @@ use log::warn;
 use message_chain::SignedMessageChain;
 use profile_key::RemoteChatSession;
 use rustc_hash::FxHashMap;
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use steel_crypto::{SignatureValidator, public_key_from_bytes};
 use steel_protocol::packets::common::ChatVisibility;
 use steel_protocol::packets::game::{
-    CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound, MessageSignature,
-    SChat, SChatAck, SChatCommand, SChatCommandSigned, SChatSessionUpdate,
+    CDisguisedChat, CPlayerChat, CPlayerInfoUpdate, CSystemChat, ChatTypeBound,
+    LastSeenMessagesUpdate, MessageSignature, SChat, SChatAck, SChatCommand, SChatCommandSigned,
+    SChatSessionUpdate,
 };
+use steel_utils::TICKS_PER_SECOND;
 use steel_utils::text::DisplayResolutor;
 use steel_utils::translations;
 use steel_utils::translations::{
@@ -46,6 +49,8 @@ use text_components::interactivity::{ClickEvent, HoverEvent, Interactivity};
 use uuid::Uuid;
 
 const MESSAGE_EXPIRES_AFTER_SERVER: Duration = Duration::from_mins(5);
+const TRACKED_MESSAGE_DISCONNECT_THRESHOLD: usize = 4096;
+const SPAM_INCREMENT: i32 = 20;
 
 /// All chat-related state for a player.
 ///
@@ -102,6 +107,12 @@ fn validate_chat_session_update(
 }
 
 impl ChatState {
+    const fn next_received_message_index(&mut self) -> i32 {
+        let index = self.messages_received;
+        self.messages_received = index.wrapping_add(1);
+        index
+    }
+
     /// Creates empty chat state with the configured Vanilla spam thresholds.
     #[must_use]
     pub fn new(chat_spam_threshold_seconds: i32, command_spam_threshold_seconds: i32) -> Self {
@@ -113,12 +124,12 @@ impl ChatState {
             chat_session: None,
             message_chain: None,
             chat_spam_throttler: TickThrottler::new(
-                20,
-                chat_spam_threshold_seconds.wrapping_mul(20),
+                SPAM_INCREMENT,
+                chat_spam_threshold_seconds.wrapping_mul(TICKS_PER_SECOND),
             ),
             command_spam_throttler: TickThrottler::new(
-                20,
-                command_spam_threshold_seconds.wrapping_mul(20),
+                SPAM_INCREMENT,
+                command_spam_threshold_seconds.wrapping_mul(TICKS_PER_SECOND),
             ),
         }
     }
@@ -191,13 +202,13 @@ impl OutgoingChatMessage {
 
     /// Returns the plain textual content of the message.
     #[must_use]
-    pub fn plain_content(&self) -> String {
+    pub fn plain_content(&self) -> Cow<'_, str> {
         match self {
             Self::Player { packet, .. } => packet.unsigned_content.as_ref().map_or_else(
-                || packet.message.clone(),
-                |content| content.to_plain(&DisplayResolutor),
+                || Cow::Borrowed(packet.message.as_str()),
+                |content| Cow::Owned(content.to_plain(&DisplayResolutor)),
             ),
-            Self::Disguised { content } => content.to_plain(&DisplayResolutor),
+            Self::Disguised { content } => Cow::Owned(content.to_plain(&DisplayResolutor)),
         }
     }
 
@@ -214,13 +225,14 @@ impl OutgoingChatMessage {
                 packet,
                 sender_last_seen,
             } => {
-                let signature = packet.message_signature.as_ref();
-                let mut packet = packet.as_ref().clone();
-                let messages_received = recipient.get_and_increment_messages_received();
-                packet.global_index = messages_received;
-
-                // Override with the contextual chat type (e.g., SAY_COMMAND)
-                packet.chat_type = chat_type.clone();
+                let (messages_received, previous_messages) = {
+                    let mut chat = recipient.chat().lock();
+                    (
+                        chat.next_received_message_index(),
+                        chat.signature_cache
+                            .index_previous_messages(sender_last_seen),
+                    )
+                };
 
                 log::debug!(
                     "Broadcasting to player {} (UUID: {}), global_index={}",
@@ -229,15 +241,13 @@ impl OutgoingChatMessage {
                     messages_received
                 );
 
-                // This matches vanilla's order: pack() then push()
-                packet.previous_messages = {
-                    let chat = recipient.chat().lock();
-                    chat.signature_cache
-                        .index_previous_messages(sender_last_seen)
-                };
+                recipient.send_packet(packet.for_recipient(
+                    messages_received,
+                    &previous_messages,
+                    chat_type,
+                ));
 
-                recipient.send_packet(packet);
-                if let Some(signature) = signature {
+                if let Some(signature) = &packet.message_signature {
                     let mut chat = recipient.chat().lock();
                     chat.signature_cache
                         .push(sender_last_seen, Some(&signature.0));
@@ -250,7 +260,7 @@ impl OutgoingChatMessage {
                     let pending_count = chat.message_validator.tracked_count();
                     drop(chat);
 
-                    if pending_count > 4096 {
+                    if pending_count > TRACKED_MESSAGE_DISCONNECT_THRESHOLD {
                         recipient.disconnect(
                             translations::MULTIPLAYER_DISCONNECT_TOO_MANY_PENDING_CHATS.msg(),
                         );
@@ -364,10 +374,7 @@ impl Player {
 
     /// Gets the next `messages_received` counter and increments it
     pub fn get_and_increment_messages_received(&self) -> i32 {
-        let mut chat = self.chat().lock();
-        let val = chat.messages_received;
-        chat.messages_received += 1;
-        val
+        self.chat().lock().next_received_message_index()
     }
 
     /// Verify signature, advance chain, and handle breaking on error
@@ -377,8 +384,8 @@ impl Player {
         content: &str,
         timestamp: i64,
         salt: i64,
-        last_seen: LastSeen,
-        signature: &[u8; 256],
+        last_seen: &LastSeen,
+        signature: &[u8; MessageSignature::BYTES],
     ) -> Result<message_chain::SignedMessageLink, ChatValidationError> {
         let chain = chain
             .as_mut()
@@ -399,10 +406,10 @@ impl Player {
         }
 
         let body = message_chain::SignedMessageBody::new(
-            content.to_string(),
+            content,
             message_time,
             salt,
-            last_seen,
+            last_seen.as_slice(),
         );
 
         let link = chain.validate_and_advance(&body).map_err(|err| match err {
@@ -434,7 +441,7 @@ impl Player {
 
     fn apply_chat_last_seen(
         &self,
-        acknowledged: [u8; 3],
+        acknowledged: [u8; LastSeenMessagesUpdate::ACKNOWLEDGED_BYTES],
         offset: i32,
         checksum: u8,
     ) -> Option<LastSeen> {
@@ -501,7 +508,7 @@ impl Player {
             &packet.message,
             packet.timestamp,
             packet.salt,
-            last_seen.clone(),
+            last_seen,
             signature,
         )
         .map(Some)
@@ -874,7 +881,7 @@ impl Player {
                     argument_value,
                     packet.timestamp,
                     packet.salt,
-                    last_seen.clone(),
+                    &last_seen,
                     &entry.signature,
                 )?;
 
@@ -992,6 +999,7 @@ mod tests {
     use steel_crypto::{
         CryptError, SignatureValidator, generate_key_pair, signature::SignatureUpdater,
     };
+    use steel_protocol::packets::game::MessageSignature;
     use uuid::Uuid;
 
     struct FixedValidator(bool);
@@ -1155,8 +1163,8 @@ mod tests {
             "test message",
             now_ms,
             0,
-            LastSeen::default(),
-            &[0u8; 256],
+            &LastSeen::default(),
+            &[0; MessageSignature::BYTES],
         );
 
         assert!(res.is_err());
@@ -1176,7 +1184,7 @@ mod tests {
             .as_millis() as i64;
 
         // Dummy invalid signature bytes
-        let bogus_signature = [0x55u8; 256];
+        let bogus_signature = [0x55; MessageSignature::BYTES];
 
         let res = Player::verify_and_advance_chain(
             &mut chat.message_chain,
@@ -1184,7 +1192,7 @@ mod tests {
             "forged message",
             now_ms,
             0,
-            LastSeen::default(),
+            &LastSeen::default(),
             &bogus_signature,
         );
 
@@ -1210,7 +1218,7 @@ mod tests {
             "next message",
             now_ms,
             0,
-            LastSeen::default(),
+            &LastSeen::default(),
             &bogus_signature,
         );
         assert_eq!(
@@ -1235,8 +1243,8 @@ mod tests {
             "no profile",
             now_ms,
             0,
-            LastSeen::default(),
-            &[0u8; 256],
+            &LastSeen::default(),
+            &[0; MessageSignature::BYTES],
         );
 
         assert_eq!(
