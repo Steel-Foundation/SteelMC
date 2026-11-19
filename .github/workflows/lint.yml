@@ -5,6 +5,8 @@ on:
   pull_request:
 
 env:
+  # Limit concurrent compiler processes to reduce peak memory use.
+  CARGO_BUILD_JOBS: "1"
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-Dwarnings"
 
