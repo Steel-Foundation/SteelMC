@@ -191,6 +191,8 @@ mod tests {
                 "list",
                 "locate",
                 "msg",
+                "tell",
+                "w",
                 "op",
                 "perf",
                 "perms",
