@@ -49,7 +49,6 @@ fn factory_cart_round_trips_minecart_and_spawner_data_together() {
     let loaded = ENTITIES
         .create(
             &vanilla_entities::SPAWNER_MINECART,
-            next_entity_id(),
             DVec3::ZERO,
             Weak::new(),
         )
@@ -99,13 +98,13 @@ fn spawner_uses_the_post_movement_block_position_and_obeys_the_game_rule() {
     });
     cart.spawner().set_spawn_delay(2);
 
-    Arc::clone(&cart).tick();
+    cart.tick();
 
     assert_eq!(cart.block_position().x(), 9);
     assert_eq!(cart.spawner().spawn_delay(), 1);
 
     assert!(world.set_game_rule(&vanilla_game_rules::SPAWNER_BLOCKS_WORK, false));
     cart.set_velocity(DVec3::ZERO);
-    Arc::clone(&cart).tick();
+    cart.tick();
     assert_eq!(cart.spawner().spawn_delay(), 1);
 }

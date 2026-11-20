@@ -124,7 +124,7 @@ fn entity_calls(source: &SourceTree, ty: &'static TypeDecl, out: &mut String) {
         }
     }
     for nested in &ty.nested {
-        if let Some(nested) = source.load_fqn(nested) {
+        if let Some(nested) = source.member_type(ty, nested) {
             entity_calls(source, nested, out);
         }
     }
@@ -135,7 +135,7 @@ fn source_label(src: &Path) -> String {
     let version = Command::new("git")
         .arg("-C")
         .arg(src)
-        .args(["log", "-1", "--format=%s"])
+        .args(["log", "-1", "--format=%s", "--", "."])
         .output()
         .ok()
         .filter(|o| o.status.success())

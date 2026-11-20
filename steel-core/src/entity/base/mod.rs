@@ -17,9 +17,11 @@ pub use persistence::{EntityBaseLoad, EntityBaseSaveData};
 pub use relationships::PendingWorldChangeToken;
 use relationships::{EntityLifecycleState, EntityRelationshipState};
 
+use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
+use arc_swap::ArcSwap;
 use glam::DVec3;
 use simdnbt::owned::NbtCompound;
 use smallvec::SmallVec;
@@ -68,7 +70,7 @@ fn normalize_rotation(rotation: (f32, f32)) -> (f32, f32) {
     );
     (
         rotation.0 % DEGREE_360,
-        rotation.1.clamp(-DEGREE_90, DEGREE_90) % DEGREE_360,
+        (rotation.1 % DEGREE_360).clamp(-DEGREE_90, DEGREE_90),
     )
 }
 
@@ -240,6 +242,7 @@ pub struct EntityBaseState {
     needs_velocity_sync: bool,
     hurt_marked: bool,
     requires_precise_position: bool,
+    sync_position: bool,
 }
 
 impl EntityBaseState {
@@ -275,6 +278,7 @@ impl EntityBaseState {
             needs_velocity_sync: false,
             hurt_marked: false,
             requires_precise_position: false,
+            sync_position: false,
         }
     }
 
@@ -358,6 +362,11 @@ impl EntityBaseState {
     }
 }
 
+enum EntityWorld {
+    Fixed(Weak<World>),
+    Player(Arc<ArcSwap<World>>),
+}
+
 /// Common fields and methods shared by all entities.
 ///
 /// Entities embed this struct for core identity, position, and lifecycle
@@ -370,9 +379,7 @@ pub struct EntityBase {
     id: i32,
     /// Persistent UUID for this entity.
     uuid: Uuid,
-    /// The world this entity is in. It never changes: an entity that moves to
-    /// another world is rebuilt there.
-    world: Weak<World>,
+    world: EntityWorld,
     /// Current vanilla movement state.
     state: CheckedMutex<EntityBaseState>,
     /// Shared vanilla save data outside the movement snapshot.
@@ -483,57 +490,51 @@ impl EntityBase {
         world: Weak<World>,
         this: WeakSelf,
     ) -> Self {
+        Self::with_world(
+            id,
+            uuid,
+            CheckedMutex::new(state),
+            EntityWorld::Fixed(world),
+            this,
+        )
+    }
+
+    pub(crate) fn for_player(
+        id: i32,
+        uuid: Uuid,
+        dimensions: EntityDimensions,
+        world: Arc<ArcSwap<World>>,
+        this: WeakSelf,
+    ) -> Self {
+        Self::with_world(
+            id,
+            uuid,
+            CheckedMutex::new(EntityBaseState::new(DVec3::ZERO, dimensions)),
+            EntityWorld::Player(world),
+            this,
+        )
+    }
+
+    fn with_world(
+        id: i32,
+        uuid: Uuid,
+        state: CheckedMutex<EntityBaseState>,
+        world: EntityWorld,
+        this: WeakSelf,
+    ) -> Self {
         Self {
             damage_history: DamageHistoryBinding::default(),
             generation: EntityGeneration::next(),
             id,
             uuid,
             world,
-            state: CheckedMutex::new(state),
+            state,
             save_data: CheckedMutex::new(EntityBaseSaveData::new()),
             movement_trace: CheckedMutex::new(EntityMovementTrace::default()),
             lifecycle: CheckedMutex::new(EntityLifecycleState::new()),
             removed: AtomicBool::new(false),
             relationships: CheckedMutex::new(EntityRelationshipState::default()),
             portal_process: CheckedMutex::new(None),
-            level_callback: CheckedMutex::new(Arc::new(NullEntityCallback)),
-            this,
-        }
-    }
-
-    /// Builds the base of this entity's replacement in `world` and moves this
-    /// base's state into it.
-    ///
-    /// The replacement is the same entity incarnation: it keeps the id, UUID
-    /// and generation, so damage history and a pending world change carry over.
-    /// Riding links stay behind, so the caller dismounts the entity first.
-    #[must_use]
-    pub(crate) fn moved_to_world(&self, world: Weak<World>, this: WeakSelf) -> Self {
-        let lifecycle = {
-            let mut lifecycle = self.lifecycle.lock();
-            let moved = *lifecycle;
-            lifecycle.pending_world_change = None;
-            moved
-        };
-        let boarding_cooldown = self.relationships.lock().boarding_cooldown;
-        Self {
-            damage_history: self.damage_history.take(),
-            generation: self.generation,
-            id: self.id,
-            uuid: self.uuid,
-            world,
-            state: CheckedMutex::new(*self.state.lock()),
-            save_data: CheckedMutex::new(self.save_data.replace(EntityBaseSaveData::new())),
-            movement_trace: CheckedMutex::new(
-                self.movement_trace.replace(EntityMovementTrace::default()),
-            ),
-            removed: AtomicBool::new(lifecycle.removal_reason.is_some()),
-            lifecycle: CheckedMutex::new(lifecycle),
-            relationships: CheckedMutex::new(EntityRelationshipState {
-                boarding_cooldown,
-                ..EntityRelationshipState::default()
-            }),
-            portal_process: CheckedMutex::new(*self.portal_process.lock()),
             level_callback: CheckedMutex::new(Arc::new(NullEntityCallback)),
             this,
         }
@@ -897,10 +898,14 @@ impl EntityBase {
         self.state.lock().requires_precise_position
     }
 
-    /// Reads the movement state the entity tracker needs under one lock.
+    pub(crate) fn request_position_sync(&self) {
+        self.state.lock().sync_position = true;
+    }
+
+    /// Consumes the pending position sync.
     #[must_use]
-    pub fn tracker_snapshot(&self) -> EntityTrackerSnapshot {
-        let state = self.state.lock();
+    pub fn take_tracker_snapshot(&self) -> EntityTrackerSnapshot {
+        let mut state = self.state.lock();
         EntityTrackerSnapshot {
             position: state.position,
             velocity: state.velocity,
@@ -909,6 +914,7 @@ impl EntityBase {
             needs_velocity_sync: state.needs_velocity_sync,
             hurt_marked: state.hurt_marked,
             requires_precise_position: state.requires_precise_position,
+            sync_position: mem::take(&mut state.sync_position),
         }
     }
 
@@ -922,7 +928,10 @@ impl EntityBase {
     /// Returns `None` if the world has been dropped.
     #[inline]
     pub fn level(&self) -> Option<Arc<World>> {
-        self.world.upgrade()
+        match &self.world {
+            EntityWorld::Fixed(world) => world.upgrade(),
+            EntityWorld::Player(world) => Some(world.load_full()),
+        }
     }
 
     /// Gets the vehicle this entity is riding, if it is still loaded.
@@ -1041,22 +1050,16 @@ impl EntityBase {
 
     /// Marks this entity as waiting for a prepared world change.
     pub fn begin_pending_world_change(&self) -> Option<PendingWorldChangeToken> {
-        let mut lifecycle = self.lifecycle.lock();
-        if lifecycle.removal_reason.is_some() || lifecycle.pending_world_change.is_some() {
-            return None;
-        }
-        let token = lifecycle.next_world_change_token();
-        lifecycle.pending_world_change = Some(token);
-        Some(token)
+        self.reserve_world_change(None)
     }
 
-    /// Marks a live or killed player as waiting for respawn preparation.
-    ///
-    /// Killed players remain eligible because their async spawn search may need
-    /// to be retried after the death animation removes their live entity.
-    pub(crate) fn begin_pending_player_respawn(&self) -> Option<PendingWorldChangeToken> {
+    /// End credits can detach the player before respawn.
+    pub(crate) fn reserve_world_change(
+        &self,
+        allowed_removal: Option<RemovalReason>,
+    ) -> Option<PendingWorldChangeToken> {
         let mut lifecycle = self.lifecycle.lock();
-        if !matches!(lifecycle.removal_reason, None | Some(RemovalReason::Killed))
+        if lifecycle.removal_reason.is_some() && lifecycle.removal_reason != allowed_removal
             || lifecycle.pending_world_change.is_some()
         {
             return None;
@@ -1300,9 +1303,13 @@ impl EntityBase {
         state.old_rotation.0 = state.rotation.0;
     }
 
-    /// Sets the old-rotation snapshot explicitly, normalizing the angles.
+    /// Keeps full turns for interpolation.
+    ///
+    /// # Panics
+    /// Panics if either angle is non-finite.
     pub fn set_old_rotation(&self, old_rotation: (f32, f32)) {
-        self.state.lock().old_rotation = normalize_rotation(old_rotation);
+        assert!(old_rotation.0.is_finite() && old_rotation.1.is_finite());
+        self.state.lock().old_rotation = old_rotation;
     }
 
     /// Records a movement segment for vanilla block-contact effects.
@@ -1443,6 +1450,16 @@ impl EntityBase {
     /// Sets the entity's rotation as (yaw, pitch) in degrees.
     pub fn set_rotation(&self, rotation: (f32, f32)) {
         self.state.lock().rotation = normalize_rotation(rotation);
+    }
+
+    pub(crate) fn set_y_rot(&self, yaw: f32) {
+        assert!(yaw.is_finite(), "entity yaw must be finite: {yaw:?}");
+        self.state.lock().rotation.0 = yaw;
+    }
+
+    pub(crate) fn set_x_rot(&self, pitch: f32) {
+        assert!(pitch.is_finite(), "entity pitch must be finite: {pitch:?}");
+        self.state.lock().rotation.1 = (pitch % DEGREE_360).clamp(-DEGREE_90, DEGREE_90);
     }
 
     /// Sets whether this entity bypasses collision physics.

@@ -359,4 +359,6 @@ pub struct EntityTrackerSnapshot {
     pub hurt_marked: bool,
     /// Whether movement sync must send a full position packet.
     pub requires_precise_position: bool,
+    /// Advance the movement tracker to its next interval.
+    pub sync_position: bool,
 }

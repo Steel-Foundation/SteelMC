@@ -12,7 +12,7 @@ use text_components::TextComponent;
 use text_components::format::Color;
 use text_components::translation::Translation;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct DisplayInfo {
     pub title: TextComponent,
     pub description: TextComponent,

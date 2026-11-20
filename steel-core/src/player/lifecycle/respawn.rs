@@ -4,6 +4,7 @@ use std::sync::atomic::Ordering;
 
 use super::*;
 use crate::entity::PendingWorldChangeToken;
+use crate::entity::living_entity::yaw_towards_spawn_block;
 use crate::player::connection::NetworkConnection as _;
 use crate::{
     behavior::{
@@ -16,7 +17,6 @@ use crate::{
     },
     player::Player,
 };
-use steel_math::{DEGREE_90, wrap_degrees};
 use steel_protocol::packets::game::{CSound, SoundSource};
 use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
@@ -75,6 +75,15 @@ struct PlayerRespawnJob {
 enum RespawnRequestKind {
     Death,
     EndCredits,
+}
+
+impl RespawnRequestKind {
+    const fn removal_reason(self) -> RemovalReason {
+        match self {
+            Self::Death => RemovalReason::Killed,
+            Self::EndCredits => RemovalReason::ChangedWorld,
+        }
+    }
 }
 
 enum RespawnFinish {
@@ -325,11 +334,7 @@ impl PlayerRespawnJob {
 
         match outcome {
             RespawnFinish::Completed => {
-                let removal_reason = match self.kind {
-                    RespawnRequestKind::Death => RemovalReason::Killed,
-                    RespawnRequestKind::EndCredits => RemovalReason::ChangedWorld,
-                };
-                self.player.set_removed(removal_reason);
+                self.player.set_removed(self.kind.removal_reason());
                 self.finish_packet_transition();
             }
             RespawnFinish::Aborted => self.finish_packet_transition(),
@@ -359,7 +364,7 @@ impl PlayerRespawnJob {
             }
             return Some(DeathRespawnSpawn {
                 position,
-                rotation: (calculate_respawn_look_at_yaw(position, pos), 0.0),
+                rotation: (yaw_towards_spawn_block(position, pos), 0.0),
                 anchor_deplete_sound_pos: Some(pos),
                 missing_respawn_block: false,
             });
@@ -381,7 +386,7 @@ impl PlayerRespawnJob {
             )?;
             return Some(DeathRespawnSpawn {
                 position,
-                rotation: (calculate_respawn_look_at_yaw(position, pos), 0.0),
+                rotation: (yaw_towards_spawn_block(position, pos), 0.0),
                 anchor_deplete_sound_pos: None,
                 missing_respawn_block: false,
             });
@@ -421,21 +426,11 @@ impl PlayerRespawnJob {
     }
 }
 
-fn calculate_respawn_look_at_yaw(position: DVec3, look_at_block_pos: BlockPos) -> f32 {
-    let bed_center = DVec3::new(
-        f64::from(look_at_block_pos.x()) + 0.5,
-        f64::from(look_at_block_pos.y()),
-        f64::from(look_at_block_pos.z()) + 0.5,
-    );
-    let look_direction = (bed_center - position).normalize_or_zero();
-    wrap_degrees(
-        (look_direction.z.atan2(look_direction.x).to_degrees() - f64::from(DEGREE_90)) as f32,
-    )
-}
-
 impl Player {
-    fn begin_respawn_request(&self) -> Option<PendingWorldChangeToken> {
-        let token = self.base.begin_pending_player_respawn()?;
+    fn begin_respawn_request(&self, kind: RespawnRequestKind) -> Option<PendingWorldChangeToken> {
+        let token = self
+            .base
+            .reserve_world_change(Some(kind.removal_reason()))?;
         if self.begin_respawn_transition(token) {
             return Some(token);
         }
@@ -463,7 +458,7 @@ impl Player {
         if !ptr::eq(player_arc.as_ref(), self) {
             return;
         }
-        let Some(pending_token) = self.begin_respawn_request() else {
+        let Some(pending_token) = self.begin_respawn_request(RespawnRequestKind::Death) else {
             if self.is_world_change_pending() {
                 self.defer_death_respawn();
             }
@@ -762,6 +757,8 @@ impl Player {
             return;
         }
 
+        player.set_removed(RemovalReason::ChangedWorld);
+        player.living().recheck_combat_status();
         player.set_won_game(true);
         player.send_packet(CGameEvent {
             event: GameEventType::WinGame,
@@ -786,7 +783,7 @@ impl Player {
         if !server.owns_online_player(self) {
             return;
         }
-        let Some(pending_token) = self.begin_respawn_request() else {
+        let Some(pending_token) = self.begin_respawn_request(RespawnRequestKind::EndCredits) else {
             return;
         };
         let (target_world, respawn_data) =

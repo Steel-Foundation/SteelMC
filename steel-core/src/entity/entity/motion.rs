@@ -321,9 +321,6 @@ pub trait EntityMotion: Entity {
         self.base().try_set_position(pos)
     }
 
-    /// Default for [`EntityMethods::teleport_to`].
-    // TODO: Recursively reposition this entity's passengers (vanilla
-    // `Entity.teleportPassengers`, via `getSelfAndPassengers`)
     /// Sets the vanilla movement-trace old position to the current position.
     fn set_old_position_to_current(&self) {
         self.base().set_old_position_to_current();
@@ -481,8 +478,10 @@ pub trait EntityMotion: Entity {
                 self.id()
             );
         }
-        self.set_rotation((yaw, pitch));
+        self.base().set_y_rot(yaw);
+        self.base().set_x_rot(pitch);
         self.set_old_position_to_current();
+        self.base().set_old_rotation_to_current();
     }
 }
 
@@ -603,7 +602,11 @@ pub fn try_set_position<E: Entity + ?Sized>(entity: &E, pos: DVec3) -> Result<()
 /// `Entity`'s [`EntityProps::teleport_to`].
 #[must_use = "movement commits can fail when world entity state rejects the update"]
 pub fn teleport_to<E: Entity + ?Sized>(entity: &E, pos: DVec3) -> Result<(), EntityMoveError> {
-    entity.try_set_position(pos)
+    entity.try_set_position(pos)?;
+    entity.set_old_position_to_current();
+    entity.base().set_old_rotation_to_current();
+    super::teleport_passengers(entity.as_entity());
+    Ok(())
 }
 
 /// `Entity`'s [`EntityProps::max_up_step`].
@@ -631,16 +634,7 @@ pub fn effective_gravity<E: Entity + ?Sized>(entity: &E) -> f64 {
     entity.gravity()
 }
 
-/// `Entity`'s [`EntityProps::move_entity`].
-///
-/// Moves the entity with collision detection.
-///
-/// Updates position, `on_ground`, velocity (on collision), and returns collision info.
-/// Default for [`EntityMethods::move_entity`].
-#[expect(
-    clippy::too_many_lines,
-    reason = "keeps vanilla movement phases in order"
-)]
+/// Moves the entity and applies the resulting collisions.
 pub fn move_entity<E: Entity + ?Sized>(
     this: &E,
     mover_type: MoverType,
@@ -712,52 +706,10 @@ pub fn move_entity<E: Entity + ?Sized>(
         return Some(result);
     }
 
-    // Vanilla: Entity.move() zeros velocity components on collision.
-    // Horizontal collision zeros X/Z individually based on which axis collided.
-    // Vertical collision calls Block.updateEntityMovementAfterFallOn.
-    // The default block behavior zeros Y velocity; block-specific behavior
-    // can override this for slime, beds, and similar landing surfaces.
-    if result.horizontal_collision {
-        let vel = this.velocity();
-        this.set_velocity(DVec3::new(
-            if result.x_collision { 0.0 } else { vel.x },
-            vel.y,
-            if result.z_collision { 0.0 } else { vel.z },
-        ));
-    }
-    if result.vertical_collision && this.can_simulate_movement() {
-        let velocity = this.velocity();
-        let landing_context = EntityLandingContext::new(
-            velocity,
-            result.actual_movement.y,
-            this.is_living_entity(),
-            this.is_suppressing_bounce(),
-            this.effective_gravity(),
-            f64::from(this.air_drag()),
-        );
-
-        let next_velocity = if let Some(effect_pos) = this.block_pos_below_that_affects_movement() {
-            let effect_state = world.get_block_state(effect_pos);
-            let behavior = BLOCK_BEHAVIORS.get_behavior(effect_state.get_block());
-            let (res, bounced) = behavior.update_entity_movement_after_fall_on(
-                effect_state,
-                &world,
-                effect_pos,
-                landing_context,
-            );
-            if bounced {
-                behavior.bounce_on(
-                    effect_state,
-                    &world,
-                    effect_pos,
-                    EntityFallOnContext::from_entity(this.fall_distance(), this.as_entity()),
-                );
-            }
-            res
-        } else {
-            landing_context.default_velocity_after_fall_on()
-        };
-        this.set_velocity(next_velocity);
+    if this.can_simulate_movement()
+        && (result.horizontal_collision || result.vertical_collision && movement.y != 0.0)
+    {
+        restitute_movement_after_collisions(this.as_entity(), &world, &result);
     }
 
     this.apply_movement_side_effects_after_move(&world, result.actual_movement);
@@ -771,6 +723,67 @@ pub fn move_entity<E: Entity + ?Sized>(
     ));
 
     Some(result)
+}
+
+fn restitute_movement_after_collisions(
+    entity: &dyn Entity,
+    world: &Arc<World>,
+    result: &MoveResult,
+) {
+    let suppresses_bounce = entity.is_suppressing_bounce();
+    let entity_restitution = if suppresses_bounce {
+        0.0
+    } else {
+        entity.as_living_entity().map_or(0.0, |living| {
+            living
+                .attributes()
+                .lock()
+                .required_value(vanilla_attributes::BOUNCINESS)
+        })
+    };
+    let mut velocity = entity.velocity();
+    if result.x_collision {
+        velocity.x = -velocity.x * entity_restitution;
+    }
+    if result.z_collision {
+        velocity.z = -velocity.z * entity_restitution;
+    }
+    let mut bounced = entity_restitution > 0.0 && result.horizontal_collision;
+    if result.vertical_collision || bounced {
+        let Some(state_pos) = entity.on_pos_legacy() else {
+            return;
+        };
+        let state = world.get_block_state(state_pos);
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+
+        if result.vertical_collision {
+            let context = EntityLandingContext {
+                velocity,
+                achieved_movement_y: result.actual_movement.y,
+                is_living_entity: entity.is_living_entity(),
+                vertical_collision_below: result.on_ground,
+                entity_restitution,
+                suppresses_bounce,
+                gravity: entity.effective_gravity(),
+                air_drag: f64::from(entity.air_drag()),
+            };
+            let (after_fall, bounced_vertically) =
+                behavior.update_entity_movement_after_fall_on(state, world, state_pos, context);
+            velocity = after_fall;
+            bounced |= bounced_vertically;
+        }
+        if bounced && let Some(pos) = entity.block_pos_below_that_affects_movement() {
+            behavior.bounce_on(
+                state,
+                world,
+                pos,
+                EntityFallOnContext::from_entity(entity.fall_distance(), entity),
+            );
+            entity.game_event(&vanilla_game_events::BOUNCE);
+            entity.base().request_position_sync();
+        }
+    }
+    entity.set_velocity(velocity);
 }
 
 /// `Entity`'s [`EntityProps::check_fall_damage`].

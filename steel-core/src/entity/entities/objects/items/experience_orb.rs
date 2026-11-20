@@ -411,7 +411,6 @@ impl EntityTable for ExperienceOrbEntity {
         // `ExperienceOrb.doWaterSplashEffect` does nothing.
         do_water_splash_effect: |_| {},
         is_hard_collision_relevant: |_| false,
-        // Vanilla `ExperienceOrb` overrides this with an empty body.
         movement_emission: |_| EntityMovementEmission::None,
         default_gravity: |_| 0.03,
         block_pos_below_that_affects_movement: |entity| entity.on_pos(0.999_999),
@@ -426,7 +425,6 @@ impl ExperienceOrbEntity {
     /// `ExperienceOrb.tick`.
     fn entity_tick(&self) {
         entity::tick(self);
-        self.set_old_position_to_current();
 
         let Some(world) = self.level() else {
             return;

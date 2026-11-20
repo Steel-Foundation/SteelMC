@@ -816,7 +816,7 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
                 .source
             {
                 Some(source) => {
-                    entity.id() != source.id()
+                    !entity.is_same_entity(source)
                         && !entity.is_removed()
                         && !entity.is_spectator()
                         && source.can_collide_with(entity)
@@ -843,7 +843,7 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
             .has_movement_collision_in_aabb_matching(&query, candidates, |entity| {
                 match self.source {
                     Some(source) => {
-                        entity.id() != source.id()
+                        !entity.is_same_entity(source)
                             && !entity.is_removed()
                             && !entity.is_spectator()
                             && source.can_collide_with(entity)

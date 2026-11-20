@@ -87,7 +87,6 @@ impl BlockDisplayEntity {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
@@ -147,7 +146,7 @@ mod tests {
         EntityBase::restore_passenger_relationship(&vehicle, &display);
         vehicle.set_removed(RemovalReason::Discarded);
 
-        Arc::clone(&display).tick();
+        display.tick();
         assert!(display.vehicle().is_none());
     }
 }

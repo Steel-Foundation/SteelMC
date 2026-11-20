@@ -394,6 +394,18 @@ impl StableAirOccupancy {
         }
     }
 
+    fn contains(&self, x: usize, y: usize, z: usize) -> bool {
+        debug_assert!(x < BlockPalette::SIZE);
+        debug_assert!(y < BlockPalette::SIZE);
+        debug_assert!(z < BlockPalette::SIZE);
+
+        match self {
+            Self::Unknown | Self::Full => true,
+            Self::Empty => false,
+            Self::Mixed { rows, .. } => rows[y * BlockPalette::SIZE + z] & (1_u16 << x) != 0,
+        }
+    }
+
     fn box_is_clear(
         &self,
         min_x: usize,
@@ -745,6 +757,18 @@ impl ChunkSection {
     #[must_use]
     pub(crate) const fn states(&self) -> &BlockPalette {
         &self.states
+    }
+
+    /// Reads a random-tick sample, skipping certified immutable Vanilla air.
+    ///
+    /// The occupancy rows avoid touching the much larger block cube for air
+    /// samples. Unknown occupancy still reads the live palette.
+    #[must_use]
+    pub(crate) fn random_tick_sample(&self, x: usize, y: usize, z: usize) -> Option<BlockStateId> {
+        if !self.stable_air_occupancy.contains(x, y, z) {
+            return None;
+        }
+        Some(self.states.get(x, y, z))
     }
 
     /// Returns true if this section contains no non-air blocks.

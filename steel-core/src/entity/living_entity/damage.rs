@@ -1,6 +1,13 @@
 //! Living damage, death and loot.
 
+use steel_math::round_f32;
+use steel_registry::data_components::vanilla_components::BLOCKS_ATTACKS;
+use text_components::TextComponent;
+
 use super::*;
+use crate::entity::blocks_attacks;
+use crate::entity::damage::{FallLocation, death_message};
+use crate::loot::{LOOT_TABLES, LootContext, LootResult, LootTableRef};
 
 impl Living<'_> {
     /// Returns whether this entity may attack `target`: never a player on
@@ -38,6 +45,65 @@ impl Living<'_> {
             panic!("recording living damage requires a live server damage history");
         };
         history.record(self.base(), source, &world.game_time);
+    }
+
+    /// Records damage and enters combat when a living entity caused it.
+    pub fn record_combat_damage(&self, source: &DamageSource, damage: f32) {
+        self.recheck_combat_status();
+        let tick_count = self.tick_count();
+        self.living_base().record_combat_damage(
+            source,
+            damage,
+            self.current_fall_location(),
+            self.fall_distance() as f32,
+            tick_count,
+        );
+        if source
+            .causing_entity()
+            .is_some_and(|entity| entity.is_living_entity())
+            && EntityMethods::is_alive(self.entity())
+            && self.living_base().enter_combat(tick_count)
+        {
+            self.on_enter_combat();
+        }
+    }
+
+    /// Expires stale damage entries and sends the combat-end notification when needed.
+    pub fn recheck_combat_status(&self) {
+        if self
+            .living_base()
+            .recheck_combat_status(self.tick_count(), EntityMethods::is_alive(self.entity()))
+        {
+            self.on_leave_combat();
+        }
+    }
+
+    /// Returns the combat duration in ticks.
+    #[must_use]
+    pub fn combat_duration(&self) -> i32 {
+        self.living_base().combat_duration(self.tick_count())
+    }
+
+    fn current_fall_location(&self) -> Option<FallLocation> {
+        if let Some(pos) = self.last_climbable_pos() {
+            self.level()
+                .map(|world| FallLocation::from_block_state(world.get_block_state(pos)))
+        } else if self.is_in_water() {
+            Some(FallLocation::Water)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the death message built from this entity's combat entries.
+    #[must_use]
+    pub fn get_death_message(&self) -> TextComponent {
+        death_message(self)
+    }
+
+    /// Releases damage-source references when the entity leaves gameplay.
+    pub fn clear_combat_history(&self) {
+        self.living_base().clear_combat_history();
     }
 
     /// Records the player that last hurt this entity.
@@ -258,7 +324,7 @@ impl Living<'_> {
             damage = (damage * absorb as f32 / 25.0).max(0.0);
             let damage_resisted = old_damage - damage;
             if (0.0..f32::MAX).contains(&damage_resisted) {
-                let stats_to_award = (damage_resisted * 10.0).round() as i32;
+                let stats_to_award = round_f32(damage_resisted * DAMAGE_STAT_SCALE);
                 if let Some(player) = self.as_player() {
                     player.award_custom_stat_with_count(
                         &vanilla_custom_stats::DAMAGE_RESISTED,
@@ -289,15 +355,17 @@ impl Living<'_> {
         damage
     }
 
-    /// Applies vanilla hurt knockback for a damage source.
-    pub fn apply_damage_knockback(&self, source: &DamageSource) {
+    /// Applies hurt knockback, omitting the hurt indicator for partial blocks.
+    fn apply_damage_knockback(&self, source: &DamageSource, blocked: bool) {
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_KNOCKBACK) {
             return;
         }
 
         let (xd, zd) = self.damage_knockback_direction(source);
         self.knockback(DAMAGE_KNOCKBACK_POWER, xd, zd);
-        self.indicate_damage(xd, zd);
+        if !blocked {
+            self.indicate_damage(xd, zd);
+        }
     }
 
     /// Returns the horizontal direction used by vanilla damage knockback.
@@ -488,7 +556,7 @@ impl Living<'_> {
 
         let entity_type = self.entity_type();
         let loot_key = Identifier::vanilla(format!("entities/{}", entity_type.key.path));
-        REGISTRY.loot_tables.by_key(&loot_key)
+        LOOT_TABLES.by_key(&loot_key)
     }
 
     /// Returns the loot-table seed for this entity's death loot, if it's a mob.
@@ -513,33 +581,25 @@ impl Living<'_> {
             return;
         };
 
-        let seed = self.death_loot_table_seed();
-        let drops = if seed == 0 {
-            let mut rng = rand::rng();
+        let drops = world.with_loot_random(Some(loot_table), self.death_loot_table_seed(), |rng| {
             death_loot_items_with_rng(
                 self,
                 loot_table,
                 world.as_ref(),
                 source,
                 killed_by_player,
-                &mut rng,
+                rng,
             )
-        } else {
-            let mut rng = StdRng::seed_from_u64(seed as u64);
-            death_loot_items_with_rng(
-                self,
-                loot_table,
-                world.as_ref(),
-                source,
-                killed_by_player,
-                &mut rng,
-            )
-        };
+        });
 
         if has_custom_death_loot_table && let Some(mob) = self.as_mob() {
             mob.clear_custom_death_loot_table();
         }
 
+        let drops = drops.unwrap_or_else(|error| {
+            log::error!("Failed to generate death loot {}: {error}", loot_table.key);
+            Vec::new()
+        });
         for item_stack in drops {
             self.spawn_at_location(item_stack, 0.0);
         }
@@ -558,17 +618,20 @@ impl Living<'_> {
     /// `loot_table` with the shearing context (origin, this entity and `tool`).
     #[must_use]
     pub fn shearing_loot(&self, loot_table: LootTableRef, tool: &ItemStack) -> Vec<ItemStack> {
-        let position = self.position();
-        let mut rng = rand::rng();
-        let equipment = living_loot_equipment(self);
-        let mut context = LootContext::new(&mut rng)
-            .with_origin(position.x, position.y, position.z)
-            .with_this_entity(entity_loot_ref(self.entity(), Some(&equipment)))
-            .with_tool(tool);
-        if let Some(world) = self.level() {
-            context = context.with_game_time(world.game_time());
-        }
-        loot_table.get_random_items(&mut context)
+        let Some(world) = self.level() else {
+            return Vec::new();
+        };
+        world
+            .with_loot_random(Some(loot_table), 0, |rng| {
+                shearing_loot_items_with_rng(self, loot_table, tool, rng)
+            })
+            .unwrap_or_else(|error| {
+                log::error!(
+                    "Failed to generate shearing loot {}: {error}",
+                    loot_table.key
+                );
+                Vec::new()
+            })
     }
 
     /// `LivingEntity.dropFromGiftLootTable`: rolls `loot_table` with the gift
@@ -576,14 +639,26 @@ impl Living<'_> {
     /// whether anything dropped.
     #[must_use]
     pub fn drop_from_gift_loot_table(&self, loot_table: LootTableRef) -> bool {
-        let position = self.position();
-        let mut rng = rand::rng();
+        let Some(world) = self.level() else {
+            return false;
+        };
         let equipment = living_loot_equipment(self);
-        let mut context = LootContext::new(&mut rng)
-            .with_origin(position.x, position.y, position.z)
-            .with_this_entity(entity_loot_ref(self.entity(), Some(&equipment)));
 
-        let items = loot_table.get_random_items(&mut context);
+        let items = world.with_loot_random(Some(loot_table), 0, |rng| {
+            let mut context = LootContext::new(rng)
+                .with_world(world.as_ref())
+                .with_game_time(world.game_time())
+                .with_origin(self.position())
+                .with_this_entity(entity_loot_ref(self.entity(), Some(&equipment)));
+            loot_table.get_random_items(&mut context)
+        });
+        let items = match items {
+            Ok(items) => items,
+            Err(error) => {
+                log::error!("Failed to generate gift loot {}: {error}", loot_table.key);
+                return false;
+            }
+        };
         let dropped_any = !items.is_empty();
         for item in items {
             self.spawn_at_location(item, 0.0);
@@ -629,25 +704,15 @@ pub fn hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource, amount: 
         damage = 0.0;
     }
 
-    // TODO: apply item blocking before actually_hurt once shield/use-item hooks exist.
-    if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FREEZING)
-        && REGISTRY.entity_types.is_in_tag(
-            living.entity_type(),
-            &EntityTypeTag::FREEZE_HURTS_EXTRA_TYPES,
-        )
-    {
-        damage *= 5.0;
-    }
-    if source.is(&vanilla_damage_type_tags::DamageTypeTag::DAMAGES_HELMET) {
-        let mut wears_helmet = false;
-        living.with_equipment_slot(EquipmentSlot::Head, &mut |item| {
-            wears_helmet = !item.is_empty();
-        });
-        if wears_helmet {
-            living.hurt_helmet(source, damage);
-            damage *= 0.75;
-        }
-    }
+    let item_in_use = living
+        .living_base()
+        .active_item_use()
+        .filter(|_| living.is_using_item());
+    let damage_blocked = living.apply_item_blocking(world, source, damage);
+    damage -= damage_blocked;
+    let blocked = damage_blocked > 0.0;
+
+    damage = damage_after_source_effects(living, source, damage);
     if !damage.is_finite() {
         damage = f32::MAX;
     }
@@ -668,11 +733,27 @@ pub fn hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource, amount: 
     living.resolve_player_responsible_for_damage(source);
 
     if took_full_damage {
-        living.broadcast_damage_event(world, source);
-        if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT) {
+        let mut blocks_attacks = None;
+        if blocked && let Some(active) = item_in_use {
+            living.with_equipment_slot(active.hand().into(), &mut |item| {
+                if !item.is_empty() && item.item() == active.item() {
+                    blocks_attacks = item.get(BLOCKS_ATTACKS).cloned();
+                }
+            });
+        }
+        if let Some(blocks_attacks) = blocks_attacks {
+            blocks_attacks::on_blocked(&blocks_attacks, world, living);
+        } else {
+            living.broadcast_damage_event(world, source);
+        }
+        if !source.is(&vanilla_damage_type_tags::DamageTypeTag::NO_IMPACT)
+            && (!blocked || damage > 0.0)
+        {
             living.mark_hurt();
         }
-        living.apply_damage_knockback(source);
+        if !blocked || damage > 0.0 {
+            living.apply_damage_knockback(source, blocked);
+        }
     }
 
     if living.is_dead_or_dying() {
@@ -687,9 +768,43 @@ pub fn hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource, amount: 
     }
     // TODO: Play secondary hurt sounds once equipment effects expose them.
 
-    living.record_last_damage_source(source);
+    let success = !blocked || damage > 0.0;
+    if success {
+        living.record_last_damage_source(source);
+    }
+    if let Some(player) = living.as_player()
+        && damage_blocked > 0.0
+        && damage_blocked < DAMAGE_STAT_LIMIT
+    {
+        player.award_custom_stat_with_count(
+            &vanilla_custom_stats::DAMAGE_BLOCKED_BY_SHIELD,
+            round_f32(damage_blocked * DAMAGE_STAT_SCALE),
+        );
+    }
 
-    true
+    success
+}
+
+fn damage_after_source_effects(living: &Living<'_>, source: &DamageSource, mut damage: f32) -> f32 {
+    if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FREEZING)
+        && REGISTRY.entity_types.is_in_tag(
+            living.entity_type(),
+            &EntityTypeTag::FREEZE_HURTS_EXTRA_TYPES,
+        )
+    {
+        damage *= 5.0;
+    }
+    if source.is(&vanilla_damage_type_tags::DamageTypeTag::DAMAGES_HELMET) {
+        let mut wears_helmet = false;
+        living.with_equipment_slot(EquipmentSlot::Head, &mut |item| {
+            wears_helmet = !item.is_empty();
+        });
+        if wears_helmet {
+            living.hurt_helmet(source, damage);
+            damage *= 0.75;
+        }
+    }
+    damage
 }
 
 /// `LivingEntity`'s [`LivingProps::is_invulnerable_to`].
@@ -734,16 +849,23 @@ pub fn actually_hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource,
     {
         player.award_custom_stat_with_count(
             &vanilla_custom_stats::DAMAGE_DEALT_ABSORBED,
-            (absorbed_damage * 10.0).round() as i32,
+            round_f32(absorbed_damage * DAMAGE_STAT_SCALE),
         );
     }
 
     if damage != 0.0 {
+        living.record_combat_damage(source, damage);
         living.set_health(living.health() - damage);
         living.set_absorption_amount(living.absorption_amount() - damage);
         living.game_event(&vanilla_game_events::ENTITY_DAMAGE);
     }
 }
+
+/// Default for entities with no combat-session start notification.
+pub const fn on_enter_combat<E: Parts>(_entity: &E) {}
+
+/// Default for entities with no combat-session end notification.
+pub const fn on_leave_combat<E: Parts>(_entity: &E) {}
 
 /// `LivingEntity`'s [`LivingProps::indicate_damage`].
 ///
@@ -771,6 +893,7 @@ pub fn die<E: Parts>(this: &E, source: &DamageSource) {
         return;
     }
 
+    living.stop_using_item();
     living.handle_killing_blow();
 
     // Can't directly use &living for &Living<'_>, as the compiler doesn't know if it's Sized.
@@ -849,14 +972,14 @@ pub fn set_absorption_amount<E: Parts>(entity: &E, amount: f32) {
     living.living_base().set_absorption_amount(amount);
 }
 
-fn death_loot_items_with_rng<R: rand::Rng>(
+fn death_loot_items_with_rng(
     entity: &Living<'_>,
     loot_table: LootTableRef,
     world: &World,
     source: &DamageSource,
     killed_by_player: bool,
-    rng: &mut R,
-) -> Vec<ItemStack> {
+    rng: &mut RandomSource,
+) -> LootResult<Vec<ItemStack>> {
     let causing_entity = source.causing_entity().map(AsRef::as_ref);
     let direct_entity = source.direct_entity().map(AsRef::as_ref);
     let last_damage_player = if killed_by_player {
@@ -869,6 +992,10 @@ fn death_loot_items_with_rng<R: rand::Rng>(
     let this_equipment = living_loot_equipment(entity);
     let causing_equipment = causing_entity.and_then(loot_equipment);
     let direct_equipment = direct_entity.and_then(loot_equipment);
+    let luck = last_damage_player
+        .as_ref()
+        .and_then(|player| player.as_living_entity())
+        .map_or(0.0, |player| player.luck());
     let last_damage_player_equipment = last_damage_player.as_deref().and_then(loot_equipment);
     let this_entity = entity_loot_ref(entity.as_entity(), Some(&this_equipment));
     let causing_entity =
@@ -885,7 +1012,9 @@ fn death_loot_items_with_rng<R: rand::Rng>(
     };
 
     let mut context = LootContext::new(rng)
-        .with_origin(position.x, position.y, position.z)
+        .with_world(world)
+        .with_luck(luck)
+        .with_origin(position)
         .with_game_time(world.game_time())
         .with_killed_by_player(killed_by_player)
         .with_this_entity(this_entity)
@@ -900,5 +1029,24 @@ fn death_loot_items_with_rng<R: rand::Rng>(
         context = context.with_last_damage_player(entity);
     }
 
+    loot_table.get_random_items(&mut context)
+}
+
+/// Rolls shearing loot using the caller's selected random stream.
+pub(crate) fn shearing_loot_items_with_rng(
+    entity: &Living<'_>,
+    loot_table: LootTableRef,
+    tool: &ItemStack,
+    rng: &mut RandomSource,
+) -> LootResult<Vec<ItemStack>> {
+    let equipment = living_loot_equipment(entity);
+    let mut context = LootContext::new(rng)
+        .with_origin(entity.position())
+        .with_this_entity(entity_loot_ref(entity.entity(), Some(&equipment)))
+        .with_tool(tool);
+    let world = entity.level();
+    if let Some(world) = world.as_deref() {
+        context = context.with_world(world).with_game_time(world.game_time());
+    }
     loot_table.get_random_items(&mut context)
 }

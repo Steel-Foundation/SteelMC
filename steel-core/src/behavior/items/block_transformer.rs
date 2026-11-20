@@ -1,5 +1,4 @@
-use crate::entity::prelude::*;
-use glam::DVec3;
+use crate::entity::LivingParts as _;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::block_transformer::{
     BlockTransformData, DropStrategy, TransformParticle, TransformType,
@@ -19,6 +18,7 @@ use crate::behavior::{InteractionResult, UseOnContext};
 use crate::block_state_provider::BlockStateProviderEvaluator;
 use crate::entity::Entity as _;
 use crate::inventory::equipment::EquipmentSlot;
+use crate::loot::LOOT_TABLES;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 
@@ -84,11 +84,10 @@ pub(crate) fn use_on(context: &mut UseOnContext) -> InteractionResult {
             .world
             .set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
 
-        let (x, y, z) = pos.get_center();
         context.world.play_sound_holder_at(
             &transform.sound,
             SoundSource::Blocks,
-            DVec3::new(x, y, z),
+            pos.get_center(),
             1.0,
             1.0,
             Some(context.player.id()),
@@ -159,7 +158,7 @@ fn drop_loot(transform: &BlockTransformData, context: &UseOnContext, old_state: 
         return;
     };
 
-    let Some(table) = REGISTRY.loot_tables.by_key(loot) else {
+    let Some(table) = LOOT_TABLES.by_key(loot) else {
         return;
     };
 
@@ -169,11 +168,11 @@ fn drop_loot(transform: &BlockTransformData, context: &UseOnContext, old_state: 
     let player: &Player = context.player;
     let drops = drop_from_block_interact_loot_table(
         table,
+        context.world,
+        pos,
         old_state,
-        context.world.get_block_entity(pos),
         Some(&tool),
         Some(player),
-        &mut rand::rng(),
     );
 
     for drop in drops {

@@ -21,8 +21,7 @@ use crate::test_support::{
 const TEST_TNT_BLOCK_POS: BlockPos = BlockPos::new(8, 64, 8);
 
 fn test_tnt_position() -> DVec3 {
-    let (x, y, z) = TEST_TNT_BLOCK_POS.get_bottom_center();
-    DVec3::new(x, y, z)
+    TEST_TNT_BLOCK_POS.get_bottom_center()
 }
 
 fn ready_tnt_world(key: &'static str) -> TestWorld {
@@ -114,7 +113,7 @@ fn cross_world_recreation_preserves_owner_and_explosion_attribution() {
         .try_add_entity(Arc::<ChickenEntity>::clone(&victim))
         .expect("victim should enter the loaded target chunk");
     recreated_tnt.set_fuse(1);
-    Arc::clone(&recreated).tick();
+    recreated.tick();
 
     // The damage source retains the discarded TNT and the owner resolved from another world.
     let source = victim
@@ -171,9 +170,9 @@ fn flowing_water_pushes_primed_tnt_trajectory() {
     let entity = primed_tnt(world, test_tnt_position());
 
     // TNT skips the base tick, so currents come only from its post-move fluid update.
-    Arc::clone(&entity).tick();
+    entity.tick();
     assert!(entity.velocity().x > 0.0);
-    Arc::clone(&entity).tick();
+    entity.tick();
     assert!(entity.position().x > test_tnt_position().x);
 }
 
@@ -189,14 +188,14 @@ fn colliding_tnt_requests_precise_position_sync_only_while_colliding() {
     let entity = primed_tnt(world, test_tnt_position());
     entity.set_velocity(DVec3::new(0.0, -0.1, 0.0));
 
-    Arc::clone(&entity).tick();
+    entity.tick();
     assert!(entity.base().requires_precise_position());
 
     entity
         .base()
         .set_position_local(test_tnt_position() + DVec3::new(0.0, 4.0, 0.0));
     entity.set_velocity(DVec3::ZERO);
-    Arc::clone(&entity).tick();
+    entity.tick();
     assert!(!entity.base().requires_precise_position());
 }
 

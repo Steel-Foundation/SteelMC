@@ -7,6 +7,7 @@ mod beehive;
 mod bell;
 mod brushable;
 mod campfire;
+mod chest;
 mod chiseled_bookshelf;
 mod comparator;
 mod conduit;
@@ -36,6 +37,7 @@ pub use beehive::{
 pub use bell::BellBlockEntity;
 pub use brushable::BrushableBlockEntity;
 pub use campfire::{CAMPFIRE_SLOTS, CampfireBlockEntity};
+pub use chest::{CHEST_SLOTS, ChestBlockEntity};
 pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEntity};
 pub use comparator::ComparatorBlockEntity;
 pub use conduit::ConduitBlockEntity;

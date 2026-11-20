@@ -673,14 +673,14 @@ fn navigating_mob_tracker_tracks_only_pathfinder_mobs() {
 
     let tracker = NavigatingMobTracker::new();
     let non_pathfinder = TrackerTestEntity::shared(1);
-    let pig: SharedEntity =
+    let chicken: SharedEntity =
         ChickenEntity::new(&vanilla_entities::CHICKEN, 2, DVec3::ZERO, Weak::new());
 
     tracker.track(&non_pathfinder);
     assert_eq!(tracker.ids().len(), 0);
 
-    tracker.track(&pig);
-    tracker.track(&pig);
+    tracker.track(&chicken);
+    tracker.track(&chicken);
     assert_eq!(tracker.ids(), [2]);
 
     tracker.untrack(2);

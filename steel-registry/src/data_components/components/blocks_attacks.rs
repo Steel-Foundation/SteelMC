@@ -4,7 +4,8 @@ use std::io::{Cursor, Error, Result, Write};
 
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
-use steel_math::DEGREE_90;
+use steel_math::{DEG_TO_RAD, DEGREE_90, clamp_f32, round_f32};
+use steel_utils::TICKS_PER_SECOND;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
@@ -71,6 +72,24 @@ impl DamageReduction {
     #[must_use]
     pub const fn factor(&self) -> f32 {
         self.factor
+    }
+
+    /// Returns how much of `dealt_damage` this rule blocks for an attack
+    /// arriving `angle` radians away from the blocker's horizontal view.
+    #[must_use]
+    pub fn resolve(&self, damage_type: &'static DamageType, dealt_damage: f32, angle: f64) -> f32 {
+        let max_angle = DEG_TO_RAD * self.horizontal_blocking_angle;
+        if angle > f64::from(max_angle) {
+            return 0.0;
+        }
+        if self
+            .damage_types
+            .as_ref()
+            .is_some_and(|types| !types.contains(damage_type))
+        {
+            return 0.0;
+        }
+        clamp_f32(self.base + self.factor * dealt_damage, 0.0, dealt_damage)
     }
 
     fn to_nbt_compound(&self) -> NbtCompound {
@@ -221,6 +240,15 @@ impl ItemDamageFunction {
         self.factor
     }
 
+    /// Returns the durability damage for blocking `dealt_damage`.
+    #[must_use]
+    pub fn apply(self, dealt_damage: f32) -> i32 {
+        if dealt_damage < self.threshold {
+            return 0;
+        }
+        (self.base + self.factor * dealt_damage).floor() as i32
+    }
+
     fn to_nbt_compound(self) -> NbtCompound {
         let mut compound = NbtCompound::new();
         compound.insert("threshold", self.threshold);
@@ -366,6 +394,48 @@ impl BlocksAttacks {
     #[must_use]
     pub const fn disabled_sound(&self) -> Option<&SoundEventHolder> {
         self.disabled_sound.as_ref()
+    }
+
+    /// Returns ticks of active use required before this item starts blocking.
+    #[must_use]
+    pub const fn block_delay_ticks(&self) -> i32 {
+        round_f32(self.block_delay_seconds * TICKS_PER_SECOND as f32)
+    }
+
+    /// Returns the cooldown applied when an attack disables blocking for
+    /// `base_seconds`, or 0 when blocking is not disabled.
+    #[must_use]
+    pub const fn disable_blocking_for_ticks(&self, base_seconds: f32) -> i32 {
+        let seconds = base_seconds * self.disable_cooldown_scale;
+        if seconds > 0.0 {
+            round_f32(seconds * TICKS_PER_SECOND as f32)
+        } else {
+            0
+        }
+    }
+
+    /// Returns whether `damage_type` ignores this item's blocking entirely.
+    #[must_use]
+    pub fn is_bypassed_by(&self, damage_type: &'static DamageType) -> bool {
+        self.bypassed_by
+            .as_ref()
+            .is_some_and(|bypassed_by| bypassed_by.contains(damage_type))
+    }
+
+    /// Sums every reduction rule, clamped to the dealt damage.
+    #[must_use]
+    pub fn resolve_blocked_damage(
+        &self,
+        damage_type: &'static DamageType,
+        dealt_damage: f32,
+        angle: f64,
+    ) -> f32 {
+        let blocked_damage = self
+            .damage_reductions
+            .iter()
+            .map(|reduction| reduction.resolve(damage_type, dealt_damage, angle))
+            .fold(0.0, |total, blocked| total + blocked);
+        clamp_f32(blocked_damage, 0.0, dealt_damage)
     }
 
     fn to_nbt_tag_ref(&self) -> NbtTag {

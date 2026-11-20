@@ -1,9 +1,9 @@
+use super::throw_projectile::throw_sound_pitch;
 use crate::behavior::{InteractionResult, ItemBehavior, UseItemContext};
 use crate::entity::entities::FishingHookEntity;
 use crate::entity::prelude::*;
 use crate::entity::{RemovalReason, SharedEntity, next_entity_id};
 use glam::DVec3;
-use rand::{RngExt, rng};
 use std::sync::Arc;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
@@ -38,8 +38,6 @@ impl ItemBehavior for FishingRodItem {
         let world = context.world;
         let item = context.inv.with_item(|item| item.clone());
 
-        let pitch = 0.4 / rng().random_range(0.8..1.2);
-
         if let Some(fishing) = player.fishing_hook() {
             if item.is(&vanilla_items::FISHING_ROD) {
                 let damage = fishing.retrieve(&item);
@@ -54,7 +52,7 @@ impl ItemBehavior for FishingRodItem {
                 SoundSource::Neutral,
                 player.position(),
                 1.0,
-                pitch,
+                throw_sound_pitch(),
                 None,
             );
             Self::cause_use_vibration(context, &vanilla_game_events::ITEM_INTERACT_FINISH);
@@ -64,7 +62,7 @@ impl ItemBehavior for FishingRodItem {
                 SoundSource::Neutral,
                 player.position(),
                 0.5,
-                pitch,
+                throw_sound_pitch(),
                 None,
             );
 

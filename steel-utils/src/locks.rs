@@ -6,7 +6,6 @@
 
 use std::any::type_name;
 use std::fmt::{self, Debug, Formatter};
-use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr;
 use std::sync::Arc;
@@ -109,18 +108,6 @@ impl<T: ?Sized> CheckedMutex<T> {
     }
 }
 
-impl<T> CheckedMutex<T> {
-    /// Stores `value` and returns the value it replaced.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the current thread already holds this mutex.
-    #[track_caller]
-    pub fn replace(&self, value: T) -> T {
-        mem::replace(&mut *self.lock(), value)
-    }
-}
-
 impl<T: Debug> Debug for CheckedMutex<T> {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         formatter
@@ -155,9 +142,16 @@ impl<'a, T: ?Sized> CheckedMutexGuard<'a, T> {
         f: impl FnOnce(&mut T) -> &mut U,
     ) -> MappedCheckedMutexGuard<'a, U> {
         let Self { owner, guard } = this;
+        let mut mapped_owner = None;
+        let guard = MutexGuard::map(guard, |value| {
+            // If the projection unwinds, drop the owner before map unlocks.
+            let projected = f(value);
+            mapped_owner = Some(owner);
+            projected
+        });
         MappedCheckedMutexGuard {
-            _owner: owner,
-            guard: MutexGuard::map(guard, f),
+            _owner: mapped_owner,
+            guard,
         }
     }
 }
@@ -179,7 +173,7 @@ impl<T: ?Sized> DerefMut for CheckedMutexGuard<'_, T> {
 /// A [`CheckedMutexGuard`] narrowed with [`CheckedMutexGuard::map`].
 pub struct MappedCheckedMutexGuard<'a, T: ?Sized> {
     // Only dropped; declared first for the same unlock order as the guard.
-    _owner: OwnerReset<'a>,
+    _owner: Option<OwnerReset<'a>>,
     guard: MappedMutexGuard<'a, T>,
 }
 

@@ -76,12 +76,12 @@ fn spawn_pairing_includes_live_mob_leash_link_packet() {
     init_vanilla_registry();
 
     let tracker = EntityTracker::new();
-    let pig_typed = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+    let chicken_typed = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
     let holder: SharedEntity = PairingTestEntity::new(2, Vec::new());
-    assert!(pig_typed.set_leashed_to(&holder));
-    let pig: SharedEntity = pig_typed;
+    assert!(chicken_typed.set_leashed_to(&holder));
+    let chicken: SharedEntity = chicken_typed;
 
-    let pairing = tracker.spawn_pairing(&pig, 99);
+    let pairing = tracker.spawn_pairing(&chicken, 99);
 
     assert_eq!(pairing.entity_link_packet, Some(CSetEntityLink::new(1, 2)));
 }
@@ -91,12 +91,12 @@ fn send_changes_broadcasts_leash_link_changes_once() {
     init_vanilla_registry();
 
     let tracker = EntityTracker::new();
-    let pig: SharedEntity =
+    let chicken: SharedEntity =
         ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
     let holder: SharedEntity = PairingTestEntity::new(2, Vec::new());
-    track_entity_for_player(&tracker, &pig, 99);
-    let Some(pig_mob) = pig.as_mob() else {
-        panic!("pig should expose mob behavior");
+    track_entity_for_player(&tracker, &chicken, 99);
+    let Some(chicken_mob) = chicken.as_mob() else {
+        panic!("chicken should expose mob behavior");
     };
 
     let mut updates = Vec::new();
@@ -116,7 +116,7 @@ fn send_changes_broadcasts_leash_link_changes_once() {
     );
     assert_eq!(updates.len(), 0);
 
-    assert!(pig_mob.leashable().set_leashed_to(&holder));
+    assert!(chicken_mob.leashable().set_leashed_to(&holder));
     tracker.send_changes(
         |_| Vec::new(),
         |_| None,
@@ -150,7 +150,7 @@ fn send_changes_broadcasts_leash_link_changes_once() {
     );
     assert_eq!(updates.len(), 0);
 
-    pig_mob.leashable().remove_leash_state();
+    chicken_mob.leashable().remove_leash_state();
     tracker.send_changes(
         |_| Vec::new(),
         |_| None,

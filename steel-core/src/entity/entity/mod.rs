@@ -1,6 +1,7 @@
 //! Vanilla `Entity`: the trait every entity implements, and one function per
 //! method subclasses override holding `Entity`'s own body (`entity::tick`).
 
+use crate::entity::component::Components as _;
 use std::collections::BTreeSet;
 
 use super::*;
@@ -8,6 +9,7 @@ use crate::entity::shearable::Shearable;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use rand::{RngExt, rng};
 use steel_math::DEGREE_90;
+use steel_math::trig;
 use steel_utils::DowncastTypeKey;
 use steel_utils::nbt::{NbtNumeric, nbt_collection_values};
 
@@ -36,8 +38,8 @@ pub use block_contact::{
     movement_emission, on_climbable,
 };
 pub use body::{
-    dimensions_for_pose, is_crouching, is_in_wall, look_at, look_at_entity, motion_direction,
-    refresh_dimensions,
+    dimensions_for_pose, is_crouching, is_in_wall, look_at, look_at_entity, make_bounding_box_at,
+    motion_direction, refresh_dimensions,
 };
 pub use combat::{
     attackable, award_kill_score, block_explosion_resistance, can_be_hit_by_projectile,
@@ -185,6 +187,15 @@ impl<T: Entity> AsEntity for T {
     fn as_entity(&self) -> &dyn Entity {
         self
     }
+}
+
+/// Position setter used when repositioning a rider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RiderMove {
+    /// Keeps the old position so the move is interpolated.
+    SetPosition,
+    /// Resets the old position so the move is not interpolated.
+    Snap,
 }
 
 /// A trait for entities.
@@ -462,6 +473,21 @@ pub trait Entity: EntityMethods + AsEntity + ErasedType + Send + Sync + 'static 
         Projectile::of(self.as_entity())
     }
 
+    /// Returns this entity's container-user capability.
+    fn as_container_user(&self) -> Option<&dyn super::ContainerUser> {
+        try_as_dyn::<Self, dyn super::ContainerUser>(self)
+    }
+
+    /// Returns this entity as a hurting projectile when it has hurting-projectile behavior.
+    fn as_hurting_projectile(&self) -> Option<&HurtingProjectileBase> {
+        self.as_entity().query::<HurtingProjectileBase>()
+    }
+
+    /// Returns whether this entity is a player or breeze wind charge.
+    fn is_abstract_wind_charge(&self) -> bool {
+        try_as_dyn::<Self, dyn AbstractWindCharge>(self).is_some()
+    }
+
     /// Returns this entity as a living entity when it has living behavior.
     fn as_living_entity(&self) -> Option<Living<'_>> {
         Living::of(self.as_entity())
@@ -470,6 +496,33 @@ pub trait Entity: EntityMethods + AsEntity + ErasedType + Send + Sync + 'static 
     /// Returns this entity as an item frame when it has item-frame behavior.
     fn as_item_frame(&self) -> Option<&dyn ItemFrame> {
         try_as_dyn::<Self, dyn ItemFrame>(self)
+    }
+
+    /// Returns this entity as a multipart sub-entity, in place of vanilla's
+    /// `instanceof EnderDragonPart` checks.
+    fn as_part_entity(&self) -> Option<&dyn PartEntity> {
+        try_as_dyn::<Self, dyn PartEntity>(self)
+    }
+
+    /// Returns this entity's multipart sub-entities (vanilla `EnderDragon.getSubEntities`,
+    /// on `Entity` as `NeoForge` does), or an empty slice.
+    fn parts(&self) -> &[Arc<dyn PartEntity>] {
+        &[]
+    }
+
+    /// Vanilla `Entity.is`: identity, except that a multipart part also counts as its parent.
+    fn is_same_entity(&self, other: &dyn Entity) -> bool {
+        self.id() == other.id()
+            || self
+                .as_part_entity()
+                .and_then(PartEntity::parent)
+                .is_some_and(|parent| parent.id() == other.id())
+    }
+
+    /// Sets position before the entity is transferred to its world manager.
+    fn set_position_local(&self, pos: DVec3) {
+        self.base().set_position_local(pos);
+        self.base().set_bounding_box(self.make_bounding_box_at(pos));
     }
 
     /// Returns this entity as a player when it is the concrete server player.
@@ -580,7 +633,7 @@ pub trait Entity: EntityMethods + AsEntity + ErasedType + Send + Sync + 'static 
 
     /// Gets the entity's rotation as (yaw, pitch) in degrees.
     ///
-    /// Yaw is horizontal rotation (0-360), pitch is vertical (-90 to 90).
+    /// Yaw can span multiple turns. Pitch is clamped to ±90 degrees.
     fn rotation(&self) -> (f32, f32) {
         self.base().rotation()
     }
@@ -824,7 +877,11 @@ pub const fn set_y_body_rot<E: Entity + ?Sized>(_entity: &E, _y_body_rot: f32) {
 
 /// `Entity`'s [`EntityProps::position_rider`]: repositions a direct
 /// passenger from this vehicle's attachment point.
-pub fn position_rider<E: Entity + ?Sized>(this: &E, passenger: &dyn Entity) {
+pub fn position_rider<E: Entity + ?Sized>(
+    this: &E,
+    passenger: &dyn Entity,
+    move_behavior: RiderMove,
+) {
     if !this.has_passenger(passenger) {
         return;
     }
@@ -837,7 +894,28 @@ pub fn position_rider<E: Entity + ?Sized>(this: &E, passenger: &dyn Entity) {
             passenger.id(),
             this.id()
         );
+        return;
     }
+    if move_behavior == RiderMove::Snap {
+        passenger.set_old_position_to_current();
+        passenger.base().set_old_rotation_to_current();
+    }
+}
+
+/// Positions direct passengers before recursing so nested riders land on the moved seat.
+fn teleport_passengers(vehicle: &dyn Entity) {
+    let passengers = vehicle.passengers();
+    for passenger in &passengers {
+        vehicle.position_rider(passenger.as_ref(), RiderMove::Snap);
+    }
+    for passenger in passengers {
+        teleport_passengers(passenger.as_ref());
+    }
+}
+
+/// Returns the open-water state for fishing hooks.
+pub const fn fishing_hook_open_water<E: Entity + ?Sized>(_entity: &E) -> Option<bool> {
+    None
 }
 
 /// `Entity`'s [`EntityProps::controlling_passenger`]: entities have none.
@@ -937,9 +1015,9 @@ pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAncho
 
 fn look_at_rotation(from: DVec3, target: DVec3) -> (f32, f32) {
     let delta = target - from;
-    let horizontal = delta.x.hypot(delta.z);
-    let pitch = wrap_degrees(-delta.y.atan2(horizontal).to_degrees() as f32);
-    let yaw = wrap_degrees(delta.z.atan2(delta.x).to_degrees() as f32 - DEGREE_90);
+    let horizontal = (delta.x * delta.x + delta.z * delta.z).sqrt();
+    let pitch = wrap_degrees(-trig::atan2_degrees(delta.y, horizontal));
+    let yaw = wrap_degrees(trig::atan2_degrees(delta.z, delta.x) - DEGREE_90);
     (yaw, pitch)
 }
 

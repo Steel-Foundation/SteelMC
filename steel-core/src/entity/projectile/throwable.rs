@@ -44,11 +44,6 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
 /// the first hit on the move vector, runs `super.tick()`, then resolves the hit.
 pub fn tick<E: Parts>(entity: &E) {
     let this = &entity.projectile();
-    // Vanilla's level stores the old position and rotation before ticking;
-    // `onHit` (teleports) and `updateRotation` read them.
-    this.set_old_position_to_current();
-    this.base().set_old_rotation_to_current();
-
     handle_first_tick_bubble_column(this);
     this.apply_gravity();
     apply_inertia(this);
@@ -173,7 +168,7 @@ mod tests {
 
         assert!(snowball.is_first_tick());
 
-        Arc::clone(&snowball).tick();
+        snowball.tick();
 
         assert!(!snowball.is_first_tick());
         assert!(
@@ -186,7 +181,7 @@ mod tests {
             .expect("snowball should return to its initial position");
         snowball.set_velocity(DVec3::ZERO);
 
-        Arc::clone(&snowball).tick();
+        snowball.tick();
 
         assert!(
             snowball.position().y < initial_position.y,

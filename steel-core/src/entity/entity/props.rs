@@ -275,6 +275,8 @@ entity_props! {
     fn teleport_to(pos: DVec3) -> Result<(), EntityMoveError>;
     /// Returns the block position used for movement-affecting block properties.
     fn block_pos_below_that_affects_movement() -> Option<BlockPos>;
+    /// Builds the entity's bounding box at the given position.
+    fn make_bounding_box_at(position: DVec3) -> WorldAabb;
     /// Returns vanilla dimensions for a physical pose.
     fn dimensions_for_pose(
         pose: EntityPose,
@@ -454,7 +456,9 @@ entity_props! {
     fn set_y_body_rot(y_body_rot: f32);
     /// Vanilla `Entity.positionRider`: places a direct passenger on this
     /// vehicle.
-    fn position_rider(passenger: &dyn Entity);
+    fn position_rider(passenger: &dyn Entity, move_behavior: RiderMove);
+    /// Returns whether a fishing hook is in open water.
+    fn fishing_hook_open_water() -> Option<bool>;
     /// Vanilla `Entity.getControllingPassenger`: the passenger steering
     /// this entity.
     fn controlling_passenger() -> Option<SharedEntity>;

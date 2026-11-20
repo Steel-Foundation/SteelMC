@@ -1,5 +1,7 @@
 use super::*;
+use crate::entity::living_entity::shearing_loot_items_with_rng;
 use crate::test_support::load_additional;
+use steel_utils::random::{RandomSource, legacy_random::LegacyRandom};
 
 #[test]
 fn sheep_initializes_vanilla_living_attributes_and_health() {
@@ -57,12 +59,15 @@ fn eating_grass_regrows_wool_and_speeds_up_a_lamb() {
 fn dye_colors_mix_through_crafting_recipes() {
     init_globals();
 
-    assert_eq!(mixed_color(DyeColor::Red, DyeColor::White), DyeColor::Pink);
     assert_eq!(
-        mixed_color(DyeColor::Red, DyeColor::Yellow),
+        DyeColor::get_mixed_color(DyeColor::Red, DyeColor::White),
+        DyeColor::Pink
+    );
+    assert_eq!(
+        DyeColor::get_mixed_color(DyeColor::Red, DyeColor::Yellow),
         DyeColor::Orange
     );
-    let unmixable = mixed_color(DyeColor::Black, DyeColor::Brown);
+    let unmixable = DyeColor::get_mixed_color(DyeColor::Black, DyeColor::Brown);
     assert!(unmixable == DyeColor::Black || unmixable == DyeColor::Brown);
 }
 
@@ -133,4 +138,41 @@ fn dye_recolors_an_unsheared_sheep_and_is_used_up() {
         );
     assert_eq!(result, InteractionResult::Pass);
     assert_eq!(sheep.color(), DyeColor::Red);
+}
+
+#[test]
+fn sheep_shear_loot_resolves_the_matching_color_table() {
+    init_vanilla_registry();
+
+    let world_fixture = fresh_test_world("sheep_shear_loot");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let sheep = SheepEntity::new(
+        &vanilla_entities::SHEEP,
+        1,
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(world),
+    );
+    sheep.set_color(DyeColor::Red);
+    let shared: SharedEntity = sheep;
+    world
+        .try_add_entity(Arc::clone(&shared))
+        .expect("sheep should attach to the loaded test chunk");
+    let sheep = shared
+        .downcast_ref::<SheepEntity>()
+        .expect("shared entity should be a sheep");
+
+    let mut rng = RandomSource::Legacy(LegacyRandom::from_seed(12345));
+    let drops = shearing_loot_items_with_rng(
+        &sheep.living(),
+        &vanilla_loot_tables::SHEARING_SHEEP,
+        &ItemStack::new(&vanilla_items::SHEARS),
+        &mut rng,
+    )
+    .expect("shearing loot");
+
+    assert_ne!(drops.len(), 0);
+    for drop in &drops {
+        assert!(drop.is(&vanilla_items::RED_WOOL));
+    }
 }

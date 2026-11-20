@@ -5,7 +5,8 @@ use crossterm::{
     terminal::{self, Clear, ClearType, disable_raw_mode},
 };
 use std::{
-    io::Write,
+    env,
+    io::{IsTerminal, Write, stdin, stdout},
     sync::Arc,
     time::{self, Instant},
 };
@@ -52,17 +53,29 @@ pub struct CommandLogger {
     log_stopped: CancellationToken,
     start_time: Instant,
     log_config: Option<LogConfig>,
+    interactive: bool,
 }
 
 impl CommandLogger {
+    /// Returns whether the logger is running in interactive TUI mode.
+    #[must_use]
+    pub const fn is_interactive(&self) -> bool {
+        self.interactive
+    }
+
     /// Initializes the `CommandLogger`
     pub async fn init(
         cancel_token: CancellationToken,
         log_config: Option<LogConfig>,
     ) -> Result<Arc<Self>, String> {
+        // Plain mode for `--plain`, `TERM=dumb` (see term(7)), or when stdin/stdout isn't a terminal.
+        let interactive = !env::args().any(|arg| arg == "--plain")
+            && env::var("TERM").as_deref() != Ok("dumb")
+            && stdin().is_terminal()
+            && stdout().is_terminal();
         let (sender, receiver) = mpsc::unbounded_channel();
         let log_cancel_token = CancellationToken::new();
-        let input = LogState::new(log_config.as_ref(), cancel_token)
+        let input = LogState::new(log_config.as_ref(), cancel_token, interactive)
             .await
             .map_err(|err| format!("failed to initialize logger state: {err}"))?;
 
@@ -74,6 +87,7 @@ impl CommandLogger {
             log_stopped: CancellationToken::new(),
             start_time: Instant::now(),
             log_config,
+            interactive,
         });
         task::spawn(Arc::clone(&log).log_loop(receiver));
         task::spawn(Arc::clone(&log).input_main());
@@ -130,6 +144,21 @@ impl CommandLogger {
 
     async fn write_log_entry(&self, lvl: Level, data: LogData) -> (Level, LogData) {
         let mut input = self.input.write().await;
+
+        if !self.interactive {
+            let time_str = self.format_time();
+            let module_path_str = self.format_module_path(&data, true);
+            let extra_str = self.format_extra(&data, true);
+            if let Err(err) = writeln!(
+                input.out,
+                "{time_str}{lvl} {module_path_str}{}{extra_str}",
+                data.message
+            ) {
+                log::error!("{err}");
+            }
+            let _ = input.out.flush();
+            return (lvl, data);
+        }
 
         if let Err(err) = input.out.cursor_to(0) {
             log::error!("{err}");

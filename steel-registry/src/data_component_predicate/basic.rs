@@ -24,6 +24,19 @@ impl DamagePredicate {
     }
 }
 
+impl DataComponentPredicate for DamagePredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        let Some(damage) = components.component(vanilla_components::DAMAGE).copied() else {
+            return false;
+        };
+        let maximum = components
+            .component(vanilla_components::MAX_DAMAGE)
+            .copied()
+            .unwrap_or(0);
+        self.durability().matches(maximum - damage) && self.damage().matches(damage)
+    }
+}
+
 impl DataComponentPredicateCodec for DamagePredicate {
     fn from_nbt_value(tag: &NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
@@ -65,6 +78,26 @@ pub struct EnchantmentPredicate {
 }
 
 impl EnchantmentPredicate {
+    #[must_use]
+    pub fn contained_in(&self, enchantments: &vanilla_components::ItemEnchantments) -> bool {
+        enchantments.iter().any(|(key, level)| {
+            self.enchantments().is_none_or(|expected| {
+                *level != 0
+                    && REGISTRY
+                        .enchantments
+                        .by_key(key)
+                        .is_some_and(|enchantment| expected.contains(enchantment))
+            }) && self
+                .levels()
+                .min()
+                .is_none_or(|minimum| i64::from(*level) >= i64::from(minimum))
+                && self
+                    .levels()
+                    .max()
+                    .is_none_or(|maximum| i64::from(*level) <= i64::from(maximum))
+        })
+    }
+
     #[must_use]
     pub const fn new(
         enchantments: Option<RegistryHolderSet<Enchantment>>,
@@ -124,6 +157,18 @@ impl EnchantmentsPredicate {
     }
 }
 
+impl DataComponentPredicate for EnchantmentsPredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::ENCHANTMENTS)
+            .is_some_and(|enchantments| {
+                self.enchantments()
+                    .iter()
+                    .all(|predicate| predicate.contained_in(enchantments))
+            })
+    }
+}
+
 impl DataComponentPredicateCodec for EnchantmentsPredicate {
     fn from_nbt_value(tag: &NbtTag) -> Option<Self> {
         decode_list(tag, EnchantmentPredicate::from_nbt_value).map(Self)
@@ -158,6 +203,18 @@ impl StoredEnchantmentsPredicate {
     #[must_use]
     pub fn enchantments(&self) -> &[EnchantmentPredicate] {
         &self.0
+    }
+}
+
+impl DataComponentPredicate for StoredEnchantmentsPredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::STORED_ENCHANTMENTS)
+            .is_some_and(|enchantments| {
+                self.enchantments()
+                    .iter()
+                    .all(|predicate| predicate.contained_in(enchantments))
+            })
     }
 }
 
@@ -198,6 +255,15 @@ impl PotionsPredicate {
     }
 }
 
+impl DataComponentPredicate for PotionsPredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::POTION_CONTENTS)
+            .and_then(PotionContents::potion)
+            .is_some_and(|potion| self.potions().contains(potion.value()))
+    }
+}
+
 impl DataComponentPredicateCodec for PotionsPredicate {
     fn from_nbt_value(tag: &NbtTag) -> Option<Self> {
         RegistryHolderSet::from_owned_nbt(tag).map(Self)
@@ -235,6 +301,16 @@ impl CustomDataPredicate {
     }
 }
 
+impl DataComponentPredicate for CustomDataPredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::CUSTOM_DATA)
+            .cloned()
+            .unwrap_or_default()
+            .matched_by(self.value().tag())
+    }
+}
+
 impl DataComponentPredicateCodec for CustomDataPredicate {
     fn from_nbt_value(tag: &NbtTag) -> Option<Self> {
         NbtPredicate::from_owned_nbt(tag).map(Self)
@@ -269,6 +345,21 @@ impl ContainerPredicate {
     #[must_use]
     pub const fn items(&self) -> Option<&CollectionPredicate<ItemPredicate>> {
         self.0.as_ref()
+    }
+}
+
+impl DataComponentPredicate for ContainerPredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::CONTAINER)
+            .is_some_and(|contents| {
+                self.items().is_none_or(|items| {
+                    items.matches(
+                        contents.items().iter().filter_map(Option::as_ref),
+                        |predicate, item| predicate.matches(item),
+                    )
+                })
+            })
     }
 }
 
@@ -315,6 +406,20 @@ impl BundlePredicate {
     #[must_use]
     pub const fn items(&self) -> Option<&CollectionPredicate<ItemPredicate>> {
         self.0.as_ref()
+    }
+}
+
+impl DataComponentPredicate for BundlePredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::BUNDLE_CONTENTS)
+            .is_some_and(|contents| {
+                self.items().is_none_or(|items| {
+                    items.matches(contents.items().iter(), |predicate, item| {
+                        predicate.matches(item)
+                    })
+                })
+            })
     }
 }
 

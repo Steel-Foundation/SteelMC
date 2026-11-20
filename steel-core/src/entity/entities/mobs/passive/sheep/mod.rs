@@ -17,20 +17,18 @@ use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::InteractionHand;
 
+use crate::loot::vanilla_loot_tables;
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
-use steel_registry::data_components::vanilla_components::{DYE, SHEEP_COLOR};
+use steel_registry::data_components::vanilla_components::SHEEP_COLOR;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::recipe::{CraftingInput, vanilla_recipe_types};
 use steel_registry::vanilla_entity_data::SheepEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
-use steel_registry::{
-    DyeColor, REGISTRY, TaggedRegistryExt, sound_events, vanilla_items, vanilla_loot_tables,
-};
+use steel_registry::{DyeColor, REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
 use steel_utils::Downcast as _;
 use steel_utils::locks::CheckedMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -48,8 +46,7 @@ use crate::entity::{
     DefaultEntityPush, EntityBase, EntityProps, LivingEntityBase, LivingProps, MobBase, MobProps,
     SharedEntity, SpawnRule,
 };
-use crate::inventory::recipe_manager;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 
 /// Low 4 bits of the synced wool byte: the wool color id.
 const COLOR_ID_MASK: i8 = 0x0F;
@@ -221,7 +218,7 @@ impl SheepEntity {
             partner.entity().downcast_ref::<Self>().map(Self::color),
             offspring.downcast_ref::<Self>(),
         ) {
-            lamb.set_color(mixed_color(self.color(), mate_color));
+            lamb.set_color(DyeColor::get_mixed_color(self.color(), mate_color));
         }
         Some(offspring)
     }
@@ -250,11 +247,12 @@ impl SheepEntity {
     fn mob_finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
         self.pick_spawn_color(world);
-        ageable::finalize_spawn(self, world, reason, group_data)
+        ageable::finalize_spawn(self, world, difficulty, reason, group_data)
     }
 }
 
@@ -265,47 +263,6 @@ impl LivingTable for SheepEntity {
         sheep_loot_state: |sheep| Some((sheep.color(), sheep.is_sheared())),
         ..animal::living_props()
     };
-}
-
-/// `DyeColor.getMixedColor`: the color two dyes craft into, or either parent's
-/// color at random when they do not combine.
-fn mixed_color(color1: DyeColor, color2: DyeColor) -> DyeColor {
-    crafted_mix(color1, color2).unwrap_or_else(|| {
-        if rand::random::<bool>() {
-            color1
-        } else {
-            color2
-        }
-    })
-}
-
-/// Crafts every dye of `color1` with every dye of `color2` in a 2x1 grid and
-/// returns the first resulting dye color.
-fn crafted_mix(color1: DyeColor, color2: DyeColor) -> Option<DyeColor> {
-    let dyes_of = |color: DyeColor| {
-        REGISTRY
-            .items
-            .iter()
-            .filter_map(move |(_, item)| (item.components.get(DYE) == Some(color)).then_some(item))
-    };
-    for dye1 in dyes_of(color1) {
-        for dye2 in dyes_of(color2) {
-            let input = CraftingInput::new(2, 1, vec![ItemStack::new(dye1), ItemStack::new(dye2)]);
-            let Some(recipe) = REGISTRY
-                .recipes
-                .find_match(&vanilla_recipe_types::CRAFTING, &input)
-            else {
-                continue;
-            };
-            if let Some(color) = recipe_manager::assemble_recipe(recipe, &input)
-                .get(DYE)
-                .copied()
-            {
-                return Some(color);
-            }
-        }
-    }
-    None
 }
 
 impl Shearable for SheepEntity {

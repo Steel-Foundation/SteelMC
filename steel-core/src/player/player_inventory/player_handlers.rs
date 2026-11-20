@@ -2,7 +2,7 @@ use crate::entity::prelude::*;
 use std::{f32::consts::TAU, mem, sync::Arc};
 
 use crate::{
-    entity::{Entity, RemovalReason, entities::ItemEntity},
+    entity::{ContainerUser, Entity, RemovalReason, entities::ItemEntity},
     inventory::{
         click::Click,
         container::{Container, CraftingContainer, clear_or_count_matching_stack},
@@ -70,6 +70,7 @@ impl Player {
         open_menu.dispatch = Some(OpenMenuDispatch {
             container_id,
             overrides_player_slots,
+            opened_containers: menu.kind().opened_containers(),
             actions: Vec::new(),
         });
         Ok(menu)
@@ -508,13 +509,12 @@ impl Player {
     /// Set the selected advancement
     pub fn handle_seen_advancement(&self, packet: SSeenAdvancement) {
         if let Opened(tab_id) = packet {
-            let advancement = REGISTRY.advancements.value_by_key(&tab_id);
-            if advancement.is_some() {
+            REGISTRY.advancements.with_value_by_key(&tab_id, |adv| {
                 self.session
                     .advancements
                     .lock()
-                    .set_selected_tab(self, advancement);
-            }
+                    .set_selected_tab(self, Some(adv));
+            });
         }
     }
 
@@ -647,6 +647,7 @@ impl Player {
             open_menu.dispatch = Some(OpenMenuDispatch {
                 container_id: menu.container_id(),
                 overrides_player_slots: menu.overrides_player_slots(),
+                opened_containers: menu.kind().opened_containers(),
                 actions: Vec::new(),
             });
             break;
@@ -824,6 +825,7 @@ impl Player {
             open_menu.dispatch = Some(OpenMenuDispatch {
                 container_id: menu.container_id(),
                 overrides_player_slots: menu.overrides_player_slots(),
+                opened_containers: menu.kind().opened_containers(),
                 actions: Vec::new(),
             });
             menu
@@ -1209,5 +1211,22 @@ impl Player {
         if should_drop {
             let _ = guard.run_unlocked(|| self.drop_item(item, false, prediction));
         }
+    }
+}
+
+impl ContainerUser for Player {
+    fn has_container_open_for(&self, container: ContainerId) -> bool {
+        let state = self.open_menu.lock();
+        if let Some(menu) = &state.menu {
+            return menu.kind().opened_containers().contains(&container);
+        }
+        state
+            .dispatch
+            .as_ref()
+            .is_some_and(|dispatch| dispatch.opened_containers.contains(&container))
+    }
+
+    fn container_interaction_range(&self) -> f64 {
+        self.block_interaction_range()
     }
 }

@@ -127,7 +127,7 @@ fn compute_margin_matches_vanilla_float_widening() {
 #[test]
 fn clip_segment_hits_box_in_path() {
     let aabb = WorldAabb::new(4.0, -0.5, -0.5, 5.0, 0.5, 0.5);
-    let hit = clip_segment(aabb, DVec3::ZERO, DVec3::new(10.0, 0.0, 0.0))
+    let hit = World::clip_entity_box(aabb, DVec3::ZERO, DVec3::new(10.0, 0.0, 0.0))
         .expect("ray along +x should enter the box");
     assert!((hit.x - 4.0).abs() < 1.0e-6);
 }
@@ -136,9 +136,17 @@ fn clip_segment_hits_box_in_path() {
 fn clip_segment_misses_when_starting_inside() {
     let aabb = WorldAabb::new(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
     assert_eq!(
-        clip_segment(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0)),
+        World::clip_entity_box(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0)),
         None
     );
+}
+
+#[test]
+fn shooting_with_a_subthreshold_direction_keeps_the_projectile_still() {
+    init_vanilla_registry();
+    let projectile = OwnerCollisionProjectile::new(1, DVec3::ZERO);
+    projectile.projectile().shoot(DVec3::X * 1.0e-6, 1.0, 0.0);
+    assert_eq!(projectile.velocity(), DVec3::ZERO);
 }
 
 #[test]
@@ -185,8 +193,16 @@ fn may_break_requires_impact_projectile_tag() {
     );
     let ender_pearl = OwnerCollisionProjectile::new(2, DVec3::ZERO);
 
-    assert!(firework.projectile().may_break(test_world()));
-    assert!(!ender_pearl.projectile().may_break(test_world()));
+    assert!(
+        firework
+            .projectile()
+            .may_break(test_world(), BlockPos::ZERO)
+    );
+    assert!(
+        !ender_pearl
+            .projectile()
+            .may_break(test_world(), BlockPos::ZERO)
+    );
 }
 
 #[test]

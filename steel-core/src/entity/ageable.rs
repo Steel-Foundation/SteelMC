@@ -33,9 +33,8 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 use crate::behavior::InteractionResult;
 use crate::entity::component::props::layer_props;
 use crate::entity::component::{Component, Components as _, Has};
-use crate::entity::next_entity_id;
 use crate::entity::{AgeableMobGroupData, ENTITIES, Entity, SharedEntity, SpawnGroupData, mob};
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 
 /// Age assigned to a newly spawned or bred baby (`AgeableMob.BABY_START_AGE`).
 pub const BABY_START_AGE: i32 = -24_000;
@@ -285,7 +284,6 @@ impl<'a> Ageable<'a> {
     pub fn create_offspring(&self, world: &Arc<World>) -> Option<SharedEntity> {
         ENTITIES.create(
             self.entity.entity_type(),
-            next_entity_id(),
             self.entity.position(),
             Arc::downgrade(world),
         )
@@ -402,6 +400,7 @@ pub fn mob_interact<E: Parts>(
 pub fn finalize_spawn<E: Parts>(
     entity: &E,
     world: &Arc<World>,
+    difficulty: DifficultyInstance,
     reason: EntitySpawnReason,
     group_data: Option<SpawnGroupData>,
 ) -> Option<SpawnGroupData> {
@@ -415,6 +414,7 @@ pub fn finalize_spawn<E: Parts>(
     mob::finalize_spawn(
         entity,
         world,
+        difficulty,
         reason,
         Some(SpawnGroupData::AgeableMob(group_data)),
     )

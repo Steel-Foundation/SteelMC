@@ -2,6 +2,8 @@
 
 use super::*;
 
+const HORIZONTAL_AIR_DRAG: f32 = 0.91;
+
 impl Living<'_> {
     /// Returns whether this entity is suppressing sliding down a ladder (sneaking on one).
     #[must_use]
@@ -119,11 +121,15 @@ impl Living<'_> {
         let world = self.level()?;
         let pos_below = self.block_pos_below_that_affects_movement()?;
         let block_friction = if self.on_ground() {
-            world.get_block_state(pos_below).get_block().config.friction
+            let base_friction = world.get_block_state(pos_below).get_block().config.friction;
+            let modifier =
+                self.attributes()
+                    .lock()
+                    .required_value(vanilla_attributes::FRICTION_MODIFIER) as f32;
+            compute_modified_friction(base_friction, modifier)
         } else {
             1.0
         };
-        let horizontal_friction = block_friction * 0.91;
         let (movement, result) =
             self.handle_relative_friction_and_calculate_movement(input, block_friction)?;
         let movement_y = if let Some(levitation_y) = self.levitation_travel_y_delta(movement.y) {
@@ -135,7 +141,14 @@ impl Living<'_> {
         if self.should_discard_friction() {
             self.set_velocity(DVec3::new(movement.x, movement_y, movement.z));
         } else {
-            let vertical_friction = self.air_travel_vertical_friction(horizontal_friction);
+            let modifier =
+                self.attributes()
+                    .lock()
+                    .required_value(vanilla_attributes::AIR_DRAG_MODIFIER) as f32;
+            let horizontal_friction =
+                block_friction * compute_modified_friction(HORIZONTAL_AIR_DRAG, modifier);
+            let vertical_friction = compute_modified_friction(self.base_air_drag(), modifier);
+
             self.set_velocity(DVec3::new(
                 movement.x * f64::from(horizontal_friction),
                 movement_y * f64::from(vertical_friction),
@@ -437,13 +450,9 @@ pub fn flying_speed<E: Parts>(entity: &E) -> f32 {
     }
 }
 
-/// `LivingEntity`'s [`LivingProps::air_travel_vertical_friction`].
-///
-/// Returns the vertical friction used by `travelInAir`.
-#[must_use]
-pub const fn air_travel_vertical_friction<E: Parts>(_entity: &E, _horizontal_friction: f32) -> f32 {
-    // TODO: FlyingAnimal uses horizontal friction here once animal types exist.
-    0.98
+/// Vertical air drag for ordinary living entities.
+pub const fn base_air_drag<E: Parts>(_entity: &E) -> f32 {
+    DEFAULT_AIR_DRAG
 }
 
 /// `LivingEntity`'s [`LivingProps::travel`].

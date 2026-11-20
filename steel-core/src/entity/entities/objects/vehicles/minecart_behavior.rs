@@ -2,7 +2,9 @@
 
 use glam::DVec3;
 use glam::Vec3Swizzles;
-use steel_math::{DEGREE_180, DEGREE_360, RAD_TO_DEG_F64, trig::atan2, wrap_degrees};
+use std::f64::consts::PI;
+use steel_math::trig;
+use steel_math::{DEGREE_180, DEGREE_360, wrap_degrees};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, EnumProperty, RailShape,
@@ -388,7 +390,9 @@ impl MinecartBehavior {
             }
         } else {
             let entities =
-                world.get_entities_in_aabb_matching(&hitbox, |entity| entity.id() != minecart.id());
+                world.get_entities_in_aabb_excluding(&hitbox, minecart.entity(), |entity| {
+                    !entity.is_spectator()
+                });
 
             for entity in entities {
                 if !minecart.has_passenger(entity.as_ref())
@@ -408,10 +412,11 @@ impl MinecartBehavior {
         let (old_position, position) = (minecart.old_position(), minecart.position());
         let (x_diff, z_diff) = (old_position.x - position.x, old_position.z - position.z);
         if x_diff * x_diff + z_diff * z_diff > MIN_ROTATION_DISTANCE_SQUARED {
-            let mut yaw = (atan2(z_diff, x_diff) * RAD_TO_DEG_F64) as f32;
+            let mut yaw = (trig::atan2(z_diff, x_diff) * f64::from(DEGREE_180) / PI) as f32;
             if minecart.is_flipped() {
                 yaw += DEGREE_180;
             }
+
             minecart.set_rotation((yaw, minecart.rotation().1));
         }
 

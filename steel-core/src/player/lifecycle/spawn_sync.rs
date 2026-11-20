@@ -14,129 +14,83 @@ impl Player {
     pub(crate) fn reset_for_initial_join(self: &Arc<Self>) {
         self.get_world().chunk_map.remove_player(self);
         self.set_client_loaded(false);
+        self.reset_transient_state();
+    }
+
+    fn reset_transient_state(&self) {
         self.set_velocity(DVec3::ZERO);
         self.movement.lock().reset_last_known_client_movement();
         self.set_on_ground(false);
-        self.reset_entity_state();
+        self.set_shared_swimming(false);
+        self.set_shared_shift_key_down(false);
+        self.living().clear_sleeping_pos();
+        self.set_fall_flying(false);
+        self.living().set_sprinting(false);
         *self.block_breaking.lock() = BlockBreakingManager::new();
     }
 
-    /// Returns the player to admit into `world`: this one when it was built
-    /// there, otherwise its replacement. Saved data picks the world after the
-    /// player is built, so a join can land in another one.
-    ///
-    /// Returns `None`, with nothing changed, when this player no longer
-    /// controls its session.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the session handover fails after its check passed.
-    pub(crate) fn in_join_world(self: &Arc<Self>, world: &Arc<World>) -> Option<Arc<Self>> {
-        if Arc::ptr_eq(&self.get_world(), world) {
-            return Some(Arc::clone(self));
-        }
-        if !self.session.is_current_player(self) {
-            return None;
-        }
-        let replacement = self.moved_to_world(Arc::clone(world));
-        assert!(
-            self.session.replace_player(self, &replacement),
-            "session handover failed after its check passed"
-        );
-        Some(replacement)
-    }
-
-    /// Leaves the current world and returns this player rebuilt in `new_world`,
-    /// with the respawn packet sent and ready to be spawned there.
-    ///
-    /// Returns `None`, with nothing changed, unless this is the session's live
-    /// online player.
-    pub(crate) fn rebuild_in_world(self: &Arc<Self>, new_world: &Arc<World>) -> Option<Arc<Self>> {
-        self.rebuild_inner(new_world, false, |_| {})
-    }
-
-    /// Rebuilds a player already detached from its source domain in `new_world`
-    /// and restores target-domain state into the replacement.
-    ///
-    /// Returns `None`, with nothing changed, unless this is the session's live
-    /// online player and its relocation is reserved.
-    pub(crate) fn rebuild_after_detached_domain_restore<F>(
-        self: &Arc<Self>,
-        new_world: &Arc<World>,
-        restore_state: F,
-    ) -> Option<Arc<Self>>
-    where
-        F: FnOnce(&Arc<Self>),
-    {
-        self.rebuild_inner(new_world, true, |replacement| {
-            restore_state(replacement);
-            // Damage timestamps belong to the source domain's clock.
-            replacement.base.damage_history().clear();
-        })
-    }
-
-    /// # Panics
-    ///
-    /// Panics if the registry or session handover fails after its checks passed.
-    /// Only the tick thread replaces an online player, so that cannot happen, and
-    /// carrying on would leave the moved state unreachable from the registry.
-    fn rebuild_inner<F>(
-        self: &Arc<Self>,
-        new_world: &Arc<World>,
-        source_world_detached: bool,
-        restore_state: F,
-    ) -> Option<Arc<Self>>
-    where
-        F: FnOnce(&Arc<Self>),
-    {
-        let server = self.server.upgrade()?;
-        let can_replace = if source_world_detached {
-            server.can_replace_relocating_player(self)
-        } else {
-            server.can_replace_online_player(self)
+    pub(crate) fn move_to_world(self: &Arc<Self>, world: &Arc<World>) -> bool {
+        let Some(server) = self.server.upgrade() else {
+            return false;
         };
-        if !can_replace {
-            return None;
+
+        if !server.owns_player_for_world_change(self, false) {
+            return false;
         }
 
+        self.close_menus_for_world_change();
+        self.send_respawn_packet(world, ResetReason::WorldChange);
+        self.get_world().remove_player_for_world_change(self);
+
+        if self
+            .living_base
+            .recheck_combat_status(self.tick_count(), false)
+        {
+            self.on_leave_combat();
+        }
+
+        self.set_world(Arc::clone(world));
+
+        true
+    }
+
+    pub(crate) fn enter_domain_world(
+        self: &Arc<Self>,
+        world: &Arc<World>,
+        restore: impl FnOnce(&Arc<Self>),
+    ) -> bool {
+        let Some(server) = self.server.upgrade() else {
+            return false;
+        };
+
+        if !server.owns_player_for_world_change(self, true) {
+            return false;
+        }
+
+        self.close_menus_for_world_change();
+        let combat_ended = self
+            .living_base
+            .recheck_combat_status(self.tick_count(), false);
+        self.set_world(Arc::clone(world));
+        self.reset_transient_state();
+        restore(self);
+
+        self.base.damage_history().clear();
+        self.send_respawn_packet(world, ResetReason::WorldChange);
+        if combat_ended {
+            self.on_leave_combat();
+        }
+
+        true
+    }
+
+    fn close_menus_for_world_change(self: &Arc<Self>) {
         assert_eq!(
             self.remove_all_menus(),
             MenuRemovalStatus::Complete,
             "player world change menu removal must run outside a menu callback"
         );
         self.send_packet(CContainerClose { container_id: 0 });
-        if !source_world_detached {
-            self.get_world().remove_player_for_world_change(self);
-        }
-
-        let replacement = self.moved_to_world(Arc::clone(new_world));
-        let handed_over = if source_world_detached {
-            server.replace_relocating_player(self, Arc::clone(&replacement))
-        } else {
-            server.replace_online_player(self, Arc::clone(&replacement))
-        };
-        assert!(
-            handed_over,
-            "online player handover failed after its checks passed"
-        );
-        assert!(
-            self.session.replace_player(self, &replacement),
-            "session handover failed after its checks passed"
-        );
-
-        replacement.set_velocity(DVec3::ZERO);
-        replacement
-            .movement
-            .lock()
-            .reset_last_known_client_movement();
-        replacement.set_on_ground(false);
-        replacement.reset_entity_state();
-        *replacement.block_breaking.lock() = BlockBreakingManager::new();
-
-        restore_state(&replacement);
-
-        replacement.send_respawn_packet(new_world, ResetReason::WorldChange);
-        Some(replacement)
     }
 
     /// Prepares a newly allocated player for a death or End-credits respawn.
@@ -150,9 +104,6 @@ impl Player {
     }
 
     fn send_respawn_packet(&self, world: &World, reason: ResetReason) {
-        // 0x01 = keep attributes, 0x02 = keep entity data
-        let data_kept = reason.respawn_data_kept();
-
         self.send_packet(CRespawn {
             common_player_spawn_info: CommonPlayerSpawnInfo {
                 dimension_type: world.dimension_type.id() as i32,
@@ -166,7 +117,7 @@ impl Player {
                 portal_cooldown: self.portal_cooldown(),
                 sea_level: world.sea_level,
             },
-            data_kept,
+            data_kept: reason.respawn_data_kept(),
         });
     }
 
@@ -224,7 +175,8 @@ impl Player {
         packet_velocity: DVec3,
         relatives: RelativeMovement,
     ) -> bool {
-        let world = self.synchronize_spawn_with_velocity_packet(
+        let world = self.get_world();
+        self.synchronize_spawn_position(
             position,
             velocity,
             rotation,
@@ -232,21 +184,25 @@ impl Player {
             packet_velocity,
             packet_rotation,
             relatives,
-            true,
         );
 
-        // Add to world / re-enter chunk tracking
-        match reason {
-            ResetReason::InitialJoin | ResetReason::WorldChange => {
-                if reason == ResetReason::WorldChange {
-                    log::info!(
-                        "Player {} changed world to {}",
-                        self.gameprofile.name(),
-                        world.key
-                    );
-                }
-                world.add_player(Arc::clone(self), reason)
+        if reason == ResetReason::WorldChange {
+            if !world.add_player(Arc::clone(self), reason) {
+                return false;
             }
+            self.stop_using_item();
+            log::info!(
+                "Player {} changed world to {}",
+                self.gameprofile.name(),
+                world.key
+            );
+        }
+
+        self.synchronize_spawn_state(&world, true);
+
+        match reason {
+            ResetReason::WorldChange => true,
+            ResetReason::InitialJoin => world.add_player(Arc::clone(self), reason),
             ResetReason::Respawn | ResetReason::EndCredits => {
                 if world.players.get_by_entity_id(self.id()).is_none() {
                     return world.add_respawned_player(Arc::clone(self));
@@ -274,7 +230,7 @@ impl Player {
         position: DVec3,
         rotation: (f32, f32),
     ) {
-        self.synchronize_spawn_with_velocity_packet(
+        self.synchronize_spawn_position(
             position,
             DVec3::ZERO,
             rotation,
@@ -282,16 +238,17 @@ impl Player {
             DVec3::ZERO,
             rotation,
             RelativeMovement::NONE,
-            false,
         );
+
+        self.synchronize_spawn_state(&self.get_world(), false);
     }
 
     #[expect(
         clippy::too_many_arguments,
         reason = "packet-relative teleports must keep resolved and protocol values separate"
     )]
-    fn synchronize_spawn_with_velocity_packet(
-        self: &Arc<Self>,
+    fn synchronize_spawn_position(
+        &self,
         position: DVec3,
         velocity: DVec3,
         rotation: (f32, f32),
@@ -299,15 +256,7 @@ impl Player {
         packet_velocity: DVec3,
         packet_rotation: (f32, f32),
         relatives: RelativeMovement,
-        resend_player_context: bool,
-    ) -> Arc<World> {
-        let world = self.get_world();
-
-        self.base.set_position_local(position);
-        self.set_rotation(rotation);
-        self.set_old_position_to_current();
-        self.movement.lock().reset_for_position_sync(position);
-
+    ) {
         if let Err(error) = self.teleport_with_velocity_packet(
             position,
             velocity,
@@ -322,14 +271,17 @@ impl Player {
                 self.id()
             );
         }
+        self.movement.lock().reset_for_position_sync(position);
         self.reset_flying_ticks();
-        self.send_spawn_state_packets(&world);
+    }
+
+    fn synchronize_spawn_state(self: &Arc<Self>, world: &World, resend_player_context: bool) {
+        self.send_spawn_state_packets(world);
         self.reset_sent_info();
         if resend_player_context {
             self.server().resend_player_context(self);
         }
         self.send_active_effects_for_self();
-        world
     }
 
     fn send_spawn_state_packets(&self, world: &World) {

@@ -5,6 +5,9 @@ use crate::world::World;
 use glam::DVec3;
 use steel_utils::BlockPos;
 
+const DEFAULT_RECALCULATE_PATH_INTERVAL: i32 = 40;
+const DEFAULT_ACCEPTED_DISTANCE: f64 = 1.0;
+
 const GIVE_UP_TICKS: i32 = 1200;
 const STAY_TICKS: i32 = 1200;
 const INTERVAL_TICKS: i32 = 200;
@@ -57,8 +60,8 @@ impl MoveToBlockGoal {
             search_range,
             vertical_search_range,
             vertical_search_start: 0,
-            accepted_distance: 1.0,
-            recalculate_path_interval: 40,
+            accepted_distance: DEFAULT_ACCEPTED_DISTANCE,
+            recalculate_path_interval: DEFAULT_RECALCULATE_PATH_INTERVAL,
         }
     }
 
@@ -259,9 +262,9 @@ mod tests {
     fn move_to_block_goal_requires_world_after_start_delay() {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
-        let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+        let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.can_use(&pig.mob()));
+        assert!(!goal.can_use(&chicken.mob()));
     }
 
     #[test]
@@ -269,9 +272,9 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
         goal.next_start_tick = 2;
-        let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+        let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.can_use(&pig.mob()));
+        assert!(!goal.can_use(&chicken.mob()));
 
         assert_eq!(goal.next_start_tick, 1);
     }
@@ -305,14 +308,14 @@ mod tests {
         init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| false);
         goal.block_pos = BlockPos::new(0, -1, 0);
-        let pig = ChickenEntity::new(
+        let chicken = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             1,
             DVec3::new(0.5, 0.5, 0.5),
             Weak::new(),
         );
 
-        goal.tick(&pig.mob());
+        goal.tick(&chicken.mob());
 
         assert!(goal.is_reached_target());
         assert_eq!(goal.try_ticks, -1);

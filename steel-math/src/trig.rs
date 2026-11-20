@@ -133,6 +133,13 @@ pub fn atan2(mut y: f64, mut x: f64) -> f64 {
     theta
 }
 
+/// Heading in degrees using vanilla's widened f32 multiplier.
+#[inline]
+#[must_use]
+pub fn atan2_degrees(y: f64, x: f64) -> f32 {
+    (atan2(y, x) * f64::from(crate::RAD_TO_DEG)) as f32
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

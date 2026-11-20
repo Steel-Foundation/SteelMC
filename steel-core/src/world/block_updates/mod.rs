@@ -345,13 +345,13 @@ impl World {
         }
 
         let game_time = self.game_time();
-        for entity_id in self.navigating_mob_ids() {
+        for entity_id in self.navigating_mobs.ids() {
             let Some(entity) = self.entity_manager.get_by_id(entity_id) else {
-                self.untrack_navigating_mob(entity_id);
+                self.navigating_mobs.untrack(entity_id);
                 continue;
             };
             let Some(pathfinder) = entity.as_pathfinder_mob() else {
-                self.untrack_navigating_mob(entity_id);
+                self.navigating_mobs.untrack(entity_id);
                 continue;
             };
             if !pathfinder.is_path_finding() {
@@ -374,10 +374,6 @@ impl World {
                 pathfinder.recompute_path(request);
             }
         }
-    }
-
-    pub(super) fn navigating_mob_ids(&self) -> Vec<i32> {
-        self.navigating_mobs.ids()
     }
 
     pub(super) fn block_collision_shape_changed(

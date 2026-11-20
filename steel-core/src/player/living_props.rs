@@ -3,11 +3,19 @@
 use super::*;
 use crate::entity::LivingTable;
 use crate::entity::prelude::*;
+use crate::physics::MoveResult;
+use steel_utils::TICKS_PER_SECOND;
+
+const STEEP_DIVE_LOOK_Y: f64 = -0.2;
+const DIVE_VERTICAL_ACCELERATION: f64 = 0.085;
+const SWIM_VERTICAL_ACCELERATION: f64 = 0.06;
+const SWIM_FLUID_CHECK_INSET: f64 = 0.1;
+const FLIGHT_VERTICAL_DRAG: f64 = 0.6;
 
 impl Player {
     fn living_indicate_damage(&self, xd: f64, zd: f64) {
         let (y_rot, _) = self.rotation();
-        let hurt_dir = zd.atan2(xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
+        let hurt_dir = trig::atan2(zd, xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
         self.send_packet(CHurtAnimation {
             entity_id: self.id(),
             yaw: hurt_dir as f32,
@@ -22,22 +30,15 @@ impl Player {
         self.check_idle_timeout();
         self.tick_client_load_timeout();
         self.tick_sleep_counter();
-        if self.living().is_sleeping() {
+        if let Some(pos) = self.living().sleeping_pos() {
             let world = self.get_world();
-            let state = self
-                .living()
-                .sleeping_pos()
-                .map(|pos| world.get_block_state(pos));
-            if state.is_some_and(|state| {
-                !self.bed_rule_value_allows(Self::bed_rule_for(&world, state).can_sleep)
-            }) {
+            let state = world.get_block_state(pos);
+            if !Self::bed_rule_value_allows_in_world(
+                &world,
+                Self::bed_rule_for(&world, state).can_sleep,
+            ) {
                 self.stop_sleep_in_bed(false, true);
-            } else if !self.can_interact_with_level()
-                || self
-                    .living()
-                    .sleeping_pos()
-                    .is_none_or(|pos| !world.get_block_state(pos).is_bed())
-            {
+            } else if !self.can_interact_with_level() || !state.is_bed() {
                 self.stop_sleep_in_bed(true, true);
             }
         }
@@ -55,6 +56,9 @@ impl Player {
 
         self.base_tick();
         self.living().detect_equipment_updates();
+        if self.tick_count() % TICKS_PER_SECOND == 0 {
+            self.living().recheck_combat_status();
+        }
         if !self.is_removed() {
             let _movement = self.living().ai_step();
         }
@@ -132,6 +136,33 @@ impl Player {
 
     fn living_is_using_item(&self) -> bool {
         self.living_base.is_using_item()
+    }
+
+    fn living_block_using_item(
+        &self,
+        world: &World,
+        attacker: &Living<'_>,
+        source: &DamageSource,
+        damage: f32,
+        fully_blocked: bool,
+    ) {
+        living_entity::block_using_item(self, world, attacker, source, damage, fully_blocked);
+        let Some((_, blocking_with)) = self.living().item_blocking_with() else {
+            return;
+        };
+        let Some(blocks_attacks) = blocking_with.get(BLOCKS_ATTACKS) else {
+            return;
+        };
+        let seconds = attacker.seconds_to_disable_blocking();
+        if seconds > 0.0 {
+            blocks_attacks::disable(
+                blocks_attacks,
+                world,
+                &self.living(),
+                seconds,
+                &blocking_with,
+            );
+        }
     }
 
     fn living_get_luck(&self) -> f32 {
@@ -237,7 +268,7 @@ impl Player {
         let target_ref = ContainerRef::from(Arc::clone(&self.inventory));
         let source_id = source_ref.container_id();
         let target_id = target_ref.container_id();
-        let mut guard = ContainerLockGuard::lock_all(&[source_ref, target_ref]);
+        let mut guard = ContainerLockGuard::lock_storage(&[source_ref, target_ref]);
         let source_slot = match hand {
             InteractionHand::MainHand => EquipmentSlot::MainHand,
             InteractionHand::OffHand => EquipmentSlot::OffHand,
@@ -347,8 +378,7 @@ impl Player {
 
         let result = living_entity::ai_step(self);
         self.living().set_y_head_rot(self.rotation().0);
-        // Pickup uses the simulated position; `tick_living_entity` restores the
-        // authoritative tick position after this returns.
+        // Pick up items before the server restores the client position.
         if self.living().health() > 0.0 {
             self.touch_nearby_items();
         }
@@ -364,13 +394,23 @@ impl Player {
 
         if self.is_swimming() {
             let look_angle_y = self.look_angle().y;
-            let multiplier = if look_angle_y < -0.2 { 0.085 } else { 0.06 };
-            let has_fluid_above = self.level().is_some_and(|world| {
-                let position = self.position();
-                let pos = BlockPos::containing(position.x, position.y + 0.9, position.z);
-                !get_fluid_state(&world, pos).is_empty()
-            });
-            if look_angle_y <= 0.0 || self.living().is_jumping() || has_fluid_above {
+            if look_angle_y <= 0.0
+                || self.living().is_jumping()
+                || self.level().is_some_and(|world| {
+                    let position = self.position();
+                    let pos = BlockPos::containing(
+                        position.x,
+                        position.y + 1.0 - SWIM_FLUID_CHECK_INSET,
+                        position.z,
+                    );
+                    !get_fluid_state(&world, pos).is_empty()
+                })
+            {
+                let multiplier = if look_angle_y < STEEP_DIVE_LOOK_Y {
+                    DIVE_VERTICAL_ACCELERATION
+                } else {
+                    SWIM_VERTICAL_ACCELERATION
+                };
                 let velocity = self.velocity();
                 self.set_velocity(
                     velocity + DVec3::new(0.0, (look_angle_y - velocity.y) * multiplier, 0.0),
@@ -384,7 +424,7 @@ impl Player {
             let velocity = self.velocity();
             self.set_velocity(DVec3::new(
                 velocity.x,
-                original_movement_y * 0.6,
+                original_movement_y * FLIGHT_VERTICAL_DRAG,
                 velocity.z,
             ));
             result
@@ -445,9 +485,13 @@ impl LivingTable for Player {
         },
         indicate_damage: Self::living_indicate_damage,
         is_using_item: Self::living_is_using_item,
+        stop_using_item: Self::stop_using_item,
+        block_using_item: Self::living_block_using_item,
         luck: Self::living_get_luck,
         hurt_armor: Self::living_hurt_armor,
         actually_hurt: Self::living_actually_hurt,
+        on_enter_combat: Self::on_enter_combat,
+        on_leave_combat: Self::on_leave_combat,
         hurt_broadcast_chunk: Self::living_hurt_broadcast_chunk,
         die: Self::living_die,
         tick_equipment: Self::living_tick_equipment,

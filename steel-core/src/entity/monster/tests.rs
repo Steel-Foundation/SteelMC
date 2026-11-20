@@ -162,7 +162,7 @@ fn enemy_monsters_cannot_be_leashed() {
         DVec3::ZERO,
         Arc::downgrade(world),
     );
-    let pig: SharedEntity = ChickenEntity::new(
+    let chicken: SharedEntity = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         next_entity_id(),
         DVec3::new(2.0, 0.0, 0.0),
@@ -170,7 +170,10 @@ fn enemy_monsters_cannot_be_leashed() {
     );
 
     assert!(hostile.is_enemy(), "monsters are vanilla `Enemy`s");
-    assert!(!pig.is_enemy(), "a passive animal is not a vanilla `Enemy`");
+    assert!(
+        !chicken.is_enemy(),
+        "a passive animal is not a vanilla `Enemy`"
+    );
     let hostile_leashable = hostile
         .as_leashable()
         .expect("a hostile mob implements Leashable");
@@ -178,21 +181,23 @@ fn enemy_monsters_cannot_be_leashed() {
         !hostile_leashable.can_be_leashed(),
         "enemy mobs must not be leashable"
     );
-    let pig_leashable = pig.as_leashable().expect("a pig implements Leashable");
+    let chicken_leashable = chicken
+        .as_leashable()
+        .expect("a chicken implements Leashable");
     assert!(
-        pig_leashable.can_be_leashed(),
+        chicken_leashable.can_be_leashed(),
         "non-enemy mobs keep their existing leashability"
     );
     assert!(
-        !hostile_leashable.can_have_a_leash_attached_to(pig.as_ref()),
+        !hostile_leashable.can_have_a_leash_attached_to(chicken.as_ref()),
         "a lead must not attach to a hostile mob"
     );
     assert!(
-        pig_leashable.can_have_a_leash_attached_to(hostile.as_ref()),
+        chicken_leashable.can_have_a_leash_attached_to(hostile.as_ref()),
         "a lead should still attach to a non-enemy mob in reach"
     );
     assert!(
-        !pig_leashable.can_have_a_leash_attached_to(pig.as_ref()),
+        !chicken_leashable.can_have_a_leash_attached_to(chicken.as_ref()),
         "an entity can never leash to itself"
     );
 }

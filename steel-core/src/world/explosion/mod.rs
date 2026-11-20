@@ -25,8 +25,10 @@ use crate::player::connection::NetworkConnection as _;
 use crate::world::World;
 
 use server::ServerExplosion;
+pub use simple::SimpleExplosionDamageCalculator;
 
 mod server;
+mod simple;
 
 const MAX_PACKET_DISTANCE_SQUARED: f64 = 64.0 * 64.0;
 

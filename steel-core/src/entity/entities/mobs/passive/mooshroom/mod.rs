@@ -4,6 +4,7 @@
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
 use crate::entity::prelude::*;
+use crate::loot::vanilla_loot_tables;
 use crate::player::Player;
 use std::sync::Arc;
 use steel_utils::types::InteractionHand;
@@ -27,8 +28,8 @@ use steel_registry::particle_type::{ParticleData, SpellParticleOption};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::MooshroomEntityData;
 use steel_registry::{
-    sound_events, vanilla_blocks, vanilla_entities, vanilla_items, vanilla_loot_tables,
-    vanilla_particle_types, vanilla_suspicious_stew_effects,
+    sound_events, vanilla_blocks, vanilla_entities, vanilla_items, vanilla_particle_types,
+    vanilla_suspicious_stew_effects,
 };
 use steel_utils::color::RgbColor;
 use steel_utils::locks::CheckedMutex;
@@ -308,6 +309,7 @@ impl MushroomCowEntity {
 
 impl LivingTable for MushroomCowEntity {
     const LIVING: LivingProps<Self> = LivingProps {
+        mooshroom_loot_variant: |cow| Some(cow.variant()),
         ..abstract_cow::living_props()
     };
 }

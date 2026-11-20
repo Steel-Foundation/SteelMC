@@ -22,6 +22,7 @@ pub mod fluid;
 pub mod inventory;
 pub(crate) mod java_block_pos_set;
 pub mod level_data;
+pub mod nameable;
 pub mod permission;
 pub mod physics;
 pub mod player;
@@ -29,6 +30,7 @@ pub mod poi;
 pub(crate) mod portal;
 pub mod scoreboard;
 pub mod server;
+pub mod special_dates;
 #[cfg(test)]
 #[path = "../tests/support/mod.rs"]
 pub(crate) mod test_support;
@@ -39,3 +41,6 @@ pub mod worldgen;
 pub const GIT_HASH: &str = env!("GIT_HASH");
 /// The short hash of the commit this build was made from.
 pub const GIT_HASH_SHORT: &str = env!("GIT_HASH_SHORT");
+
+/// Compiled loot generation and container filling.
+pub mod loot;

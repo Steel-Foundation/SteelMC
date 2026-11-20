@@ -155,14 +155,14 @@ fn overloads_are_chosen_by_argument_types() {
         (
             "p/A.java",
             "package p; public class A { public void put(int v) {} public void put(String v) {} \
-             public void put(Base v) {} public Object level() { return null; } }",
+             public void put(long v) {} public void put(byte v) {} public void put(Base v) {} public Object level() { return null; } }",
         ),
         ("p/Base.java", "package p; public class Base {}"),
         ("p/Sub.java", "package p; public class Sub extends Base {}"),
         (
             "p/B.java",
             "package p; public class B extends A { \
-             public void put(String v) { super.put(1); super.put(v); } \
+             public void put(String v) { super.put(1 << 1L); super.put(-(byte)1); super.put(v); } \
              public void put(Base v) { if (this.level() instanceof Sub sub && v != null) { super.put(sub); } } }",
         ),
     ]);
@@ -182,7 +182,10 @@ fn overloads_are_chosen_by_argument_types() {
             })
             .collect()
     };
-    assert_eq!(params_of(&b.methods[0]), ["put(int)", "put(String)"]);
+    assert_eq!(
+        params_of(&b.methods[0]),
+        ["put(int)", "put(int)", "put(String)"]
+    );
     // `sub` is a pattern variable declared in the condition, used in the body.
     assert_eq!(params_of(&b.methods[1]), ["put(Base)"]);
 }
@@ -272,4 +275,39 @@ fn constructor_chains_follow_this_and_implicit_super() {
         .expect("implicit super");
     assert!(second.node.is_none());
     assert!(matches!(second.outcome, CtorOutcome::Resolved(target) if target.params.is_empty()));
+}
+
+#[test]
+fn abstract_overrides_hide_inherited_bodies() {
+    let f = Fixture::new(&[
+        ("p/I.java", "package p; interface I { default void a() {} }"),
+        ("p/J.java", "package p; interface J extends I { void a(); }"),
+        ("p/A.java", "package p; class A { public void b() {} }"),
+        (
+            "p/B.java",
+            "package p; abstract class B extends A implements J { public abstract void b(); }",
+        ),
+    ]);
+    let h = f.hierarchy("p.B");
+    for slot in &h.slots {
+        assert!(matches!(h.effective(slot), Implementation::Abstract(_)));
+    }
+}
+
+#[test]
+fn entity_calls_include_nested_classes() {
+    let f = Fixture::new(&[
+        (
+            "p/Entity.java",
+            "package p; class Entity { void move() {} }",
+        ),
+        (
+            "p/A.java",
+            "package p; class A { class B { void tick(Entity e) { e.move(); } } }",
+        ),
+    ]);
+    let ty = f.source.find_class("p.A").expect("fixture class");
+    let mut out = String::new();
+    crate::entity_calls(&f.source, ty, &mut out);
+    assert!(out.contains("A.B\ttick(Entity)\tEntity\tmove"), "{out}");
 }

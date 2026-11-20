@@ -7,6 +7,15 @@ use crate::entity::ai::path::Path;
 use crate::entity::entity_selector;
 use crate::entity::{Living, Mob, SharedEntity};
 
+const PATH_RECALC_BASE_TICKS: i32 = 4;
+const PATH_RECALC_RANDOM_TICKS: i32 = 7;
+const PATH_RECALC_LONG_DISTANCE_SQR: f64 = 1024.0;
+const PATH_RECALC_MEDIUM_DISTANCE_SQR: f64 = 256.0;
+const PATH_RECALC_LONG_DISTANCE_PENALTY: i32 = 10;
+const PATH_RECALC_MEDIUM_DISTANCE_PENALTY: i32 = 5;
+const PATH_RECALC_FAILED_MOVE_PENALTY: i32 = 15;
+const RANDOM_PATH_RECALC_CHANCE: f32 = 0.05;
+
 const COOLDOWN_BETWEEN_CAN_USE_CHECKS: i64 = 20;
 
 pub(crate) struct MeleeAttackGoal {
@@ -93,23 +102,23 @@ impl MeleeAttackGoal {
             return true;
         }
 
-        rand::random::<f32>() < 0.05
+        rand::random::<f32>() < RANDOM_PATH_RECALC_CHANCE
     }
 
     fn recalculate_path(&mut self, mob: &Mob<'_>, target: &SharedEntity) {
         self.pathed_target = target.position();
-        let random_delay = rand::random_range(0..7);
-        self.ticks_until_next_path_recalculation = 4 + random_delay;
+        let random_delay = rand::random_range(0..PATH_RECALC_RANDOM_TICKS);
+        self.ticks_until_next_path_recalculation = PATH_RECALC_BASE_TICKS + random_delay;
 
         let target_distance_sqr = mob.position().distance_squared(target.position());
-        if target_distance_sqr > 1024.0 {
-            self.ticks_until_next_path_recalculation += 10;
-        } else if target_distance_sqr > 256.0 {
-            self.ticks_until_next_path_recalculation += 5;
+        if target_distance_sqr > PATH_RECALC_LONG_DISTANCE_SQR {
+            self.ticks_until_next_path_recalculation += PATH_RECALC_LONG_DISTANCE_PENALTY;
+        } else if target_distance_sqr > PATH_RECALC_MEDIUM_DISTANCE_SQR {
+            self.ticks_until_next_path_recalculation += PATH_RECALC_MEDIUM_DISTANCE_PENALTY;
         }
 
         if !mob.move_to_pos_with_reach(target.position(), 0, self.speed_modifier) {
-            self.ticks_until_next_path_recalculation += 15;
+            self.ticks_until_next_path_recalculation += PATH_RECALC_FAILED_MOVE_PENALTY;
         }
 
         self.ticks_until_next_path_recalculation =

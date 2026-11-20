@@ -37,7 +37,7 @@ use steel_utils::{
     types::UpdateFlags,
 };
 
-use crate::entity::{ENTITIES, SharedEntity, next_entity_id};
+use crate::entity::{ENTITIES, SharedEntity};
 use crate::world::World;
 use crate::worldgen::region::WorldGenRegion;
 use steel_worldgen::structure::{
@@ -64,7 +64,7 @@ impl StructurePiecePlacer {
         world: Weak<World>,
         persistence_required: bool,
     ) -> Option<SharedEntity> {
-        let Some(entity) = ENTITIES.create(entity_type, next_entity_id(), position, world) else {
+        let Some(entity) = ENTITIES.create(entity_type, position, world) else {
             log::warn!(
                 "Skipping unsupported structure entity spawn for {} at {position:?}",
                 entity_type.key
