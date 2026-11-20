@@ -186,11 +186,9 @@ impl PlayerMap {
     /// Publishes an iteration snapshot without `slot`. Callers hold `mutations`.
     fn remove_from_order(&self, slot: &Arc<PlayerSlot>) {
         self.order.rcu(|order| {
+            let mut order = Vec::clone(order);
+            order.retain(|indexed| !Arc::ptr_eq(indexed, slot));
             order
-                .iter()
-                .filter(|indexed| !Arc::ptr_eq(indexed, slot))
-                .cloned()
-                .collect::<Vec<_>>()
         });
     }
 
