@@ -47,6 +47,7 @@ thread_local! {
 }
 
 /// A non-zero value unique to the current thread while it runs.
+#[inline]
 fn thread_token() -> usize {
     THREAD_TOKEN.with(|token| ptr::from_ref(token).addr())
 }
@@ -122,6 +123,7 @@ impl<T: Debug> Debug for CheckedMutex<T> {
 struct OwnerReset<'a>(&'a AtomicUsize);
 
 impl Drop for OwnerReset<'_> {
+    #[inline]
     fn drop(&mut self) {
         self.0.store(0, Ordering::Relaxed);
     }
