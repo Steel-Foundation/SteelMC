@@ -1053,14 +1053,14 @@ fn mob_despawn_discards_far_removable_mob() {
 }
 
 #[test]
-fn mob_persistence_resets_no_action_time_and_blocks_removal() {
+fn persistent_mob_keeps_idle_time_outside_player_range() {
     let mob = DespawnTestMob::new(Some(129.0 * 129.0), true);
 
     mob.set_no_action_time(42);
     mob.set_persistence_required();
     mob.check_mob_despawn();
 
-    assert_eq!(mob.no_action_time(), 0);
+    assert_eq!(mob.no_action_time(), 42);
     assert!(!mob.is_removed());
 }
 

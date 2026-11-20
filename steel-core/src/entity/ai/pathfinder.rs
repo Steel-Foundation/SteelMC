@@ -97,35 +97,33 @@ impl PathFinder {
 
             let neighbors = evaluator.get_neighbors(context, collision, current_hash);
             for neighbor_hash in neighbors.iter() {
-                let Some(neighbor_data) =
-                    evaluator.node(neighbor_hash).map(NodeSearchData::from_node)
-                else {
+                let Some(neighbor) = evaluator.node_mut(neighbor_hash) else {
                     continue;
                 };
-                let distance = current_data.point.distance_to(neighbor_data.point);
-                let walked_distance = current_data.walked_distance + distance;
-                let tentative_g_score = current_data.g + distance + neighbor_data.cost_malus;
-                if walked_distance >= request.max_path_length {
-                    continue;
-                }
-                if neighbor_data.in_open_set && tentative_g_score >= neighbor_data.g {
+
+                let distance = current_data
+                    .point
+                    .distance_to(NodePoint::from_node(neighbor));
+
+                neighbor.walked_distance = current_data.walked_distance + distance;
+                let tentative_g_score = current_data.g + distance + neighbor.cost_malus;
+                if neighbor.walked_distance >= request.max_path_length {
                     continue;
                 }
 
-                let h =
-                    Self::get_best_h(evaluator.node(neighbor_hash)?, &mut target_entries) * FUDGING;
+                let in_open_set = neighbor.in_open_set();
+                if in_open_set && tentative_g_score >= neighbor.g {
+                    continue;
+                }
+
+                let h = Self::get_best_h(neighbor, &mut target_entries) * FUDGING;
                 let f = tentative_g_score + h;
-                {
-                    let Some(neighbor) = evaluator.node_mut(neighbor_hash) else {
-                        continue;
-                    };
-                    neighbor.came_from = Some(current_hash);
-                    neighbor.g = tentative_g_score;
-                    neighbor.h = h;
-                    neighbor.walked_distance = walked_distance;
-                }
 
-                if neighbor_data.in_open_set {
+                neighbor.came_from = Some(current_hash);
+                neighbor.g = tentative_g_score;
+                neighbor.h = h;
+
+                if in_open_set {
                     if !self
                         .open_set
                         .change_cost(evaluator.nodes_mut(), neighbor_hash, f)
@@ -133,9 +131,6 @@ impl PathFinder {
                         return None;
                     }
                 } else {
-                    let Some(neighbor) = evaluator.node_mut(neighbor_hash) else {
-                        continue;
-                    };
                     neighbor.f = f;
                     if !self.open_set.insert(evaluator.nodes_mut(), neighbor_hash) {
                         return None;
@@ -187,9 +182,11 @@ impl PathFinder {
     }
 
     fn get_best_h(from: &Node, targets: &mut [PathTarget]) -> f32 {
+        let from_point = NodePoint::from_node(from);
         let mut best_h = f32::MAX;
+
         for target in targets {
-            let h = from.distance_to(target.target.node());
+            let h = from_point.distance_to(NodePoint::from_node(target.target.node()));
             target.target.update_best(h, from);
             best_h = best_h.min(h);
         }
@@ -306,7 +303,8 @@ impl NodePoint {
         let xd = (other.x - self.x) as f32;
         let yd = (other.y - self.y) as f32;
         let zd = (other.z - self.z) as f32;
-        xd.mul_add(xd, yd.mul_add(yd, zd * zd)).sqrt()
+
+        (xd * xd + yd * yd + zd * zd).sqrt()
     }
 
     fn manhattan_to_node(self, other: &Node) -> f32 {
@@ -321,8 +319,6 @@ struct NodeSearchData {
     point: NodePoint,
     g: f32,
     walked_distance: f32,
-    cost_malus: f32,
-    in_open_set: bool,
 }
 
 impl NodeSearchData {
@@ -331,8 +327,6 @@ impl NodeSearchData {
             point: NodePoint::from_node(node),
             g: node.g,
             walked_distance: node.walked_distance,
-            cost_malus: node.cost_malus,
-            in_open_set: node.in_open_set(),
         }
     }
 }

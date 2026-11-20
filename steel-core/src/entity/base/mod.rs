@@ -1338,6 +1338,16 @@ impl EntityBase {
         self.state.lock().rotation = normalize_rotation(rotation);
     }
 
+    pub(crate) fn set_y_rot(&self, yaw: f32) {
+        assert!(yaw.is_finite(), "entity yaw must be finite: {yaw:?}");
+        self.state.lock().rotation.0 = yaw;
+    }
+
+    pub(crate) fn set_x_rot(&self, pitch: f32) {
+        assert!(pitch.is_finite(), "entity pitch must be finite: {pitch:?}");
+        self.state.lock().rotation.1 = (pitch % DEGREE_360).clamp(-DEGREE_90, DEGREE_90);
+    }
+
     /// Sets whether this entity bypasses collision physics.
     pub fn set_no_physics(&self, no_physics: bool) {
         self.state.lock().no_physics = no_physics;
