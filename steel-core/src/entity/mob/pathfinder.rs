@@ -3,7 +3,8 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_math::fast_floor;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::{vanilla_attributes, vanilla_blocks};
+use steel_registry::vanilla_attributes;
+use steel_registry::vanilla_fluid_tags::FluidTag;
 use steel_utils::{BlockPos, ChunkPos};
 
 use super::{Mob, TARGET_REACH_DISTANCE_SQR};
@@ -18,6 +19,7 @@ use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
 
 pub(super) const LEASH_CLOSE_RANGE_WANTED_DISTANCE: f64 = 2.0;
+const MAX_FLOATABLE_SURFACE_SCAN_BLOCKS: usize = 16;
 
 pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
     mob: &M,
@@ -32,7 +34,7 @@ pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
         let context = NavigationTickContext {
             ground_mob_position,
             mob_position: mob.position(),
-            mob_bounding_box_width: mob.bounding_box().width(),
+            mob_bounding_box_width: mob.base().dimensions().width,
             mob_speed: mob.get_speed(),
             game_time,
         };
@@ -74,29 +76,19 @@ fn ground_navigation_surface_y<M: Mob + ?Sized>(mob: &M, world: &World, can_floa
         return fast_floor(mob.position().y + 0.5);
     }
 
-    let position = mob.position();
-    let block_y = mob.block_position().y();
-    let mut surface = block_y;
-    let mut state = world.get_block_state(BlockPos::containing(
-        position.x,
-        f64::from(surface),
-        position.z,
-    ));
-    let mut steps = 0;
-    while state.get_block() == &vanilla_blocks::WATER {
-        surface += 1;
-        state = world.get_block_state(BlockPos::containing(
-            position.x,
-            f64::from(surface),
-            position.z,
-        ));
-        steps += 1;
-        if steps > 16 {
-            return block_y;
+    let block_pos = mob.block_position();
+    let mut surface = block_pos;
+
+    for _ in 0..=MAX_FLOATABLE_SURFACE_SCAN_BLOCKS {
+        let fluid = world.get_block_state(surface).get_fluid_state();
+        if !fluid.fluid_id.has_tag(&FluidTag::ENTITY_FLOATABLE) {
+            return surface.y();
         }
+
+        surface = surface.above();
     }
 
-    surface
+    block_pos.y()
 }
 
 pub trait PathfinderMob: Mob {
