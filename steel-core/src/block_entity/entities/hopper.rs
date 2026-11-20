@@ -306,7 +306,7 @@ impl HopperBlockEntity {
 }
 
 /// Vanilla `HopperBlockEntity.getContainerAt` for block containers.
-fn get_block_container(
+pub(crate) fn get_block_container(
     world: &Arc<World>,
     pos: BlockPos,
 ) -> Option<(ContainerRef, SharedBlockEntity)> {
@@ -317,7 +317,7 @@ fn get_block_container(
 
 /// Vanilla `HopperBlockEntity.addItem(from, container, stack, direction)` plus the
 /// receiving hopper's cooldown bookkeeping from `tryMoveInItem`.
-fn insert_stack(
+pub(crate) fn insert_stack(
     to: &mut dyn Container,
     stack: ItemStack,
     direction: Option<Direction>,
