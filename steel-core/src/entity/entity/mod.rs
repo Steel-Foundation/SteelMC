@@ -1586,7 +1586,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.as_living_entity().is_some()
     }
 
-    /// Whether vanilla `createInterpolationHandler` returns a `SteppedInterpolationHandler`.
+    /// Whether clients replay this entity's movement as a path of timed steps.
     fn uses_stepped_interpolation(&self) -> bool {
         // TODO: move the shulker exception into an override once Shulker is implemented.
         self.is_living_entity() && self.entity_type() != &vanilla_entities::SHULKER
@@ -3624,7 +3624,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         delta: DVec3,
     ) -> Option<MoveResult> {
         let world = self.level()?;
-        // TODO: vanilla also predicts `SELF` movement of `SERVER_AND_CLIENT` entities.
+        // TODO: also predict self movement of entities simulated on both sides.
         let predicted = mover_type != MoverType::SelfMovement && self.uses_stepped_interpolation();
 
         if self.no_physics() {

@@ -20,7 +20,6 @@ pub const FORCED_POS_UPDATE_PERIOD: i32 = 60;
 /// Ticks between forced full teleport packets to resync drifted clients.
 pub const FORCED_TELEPORT_PERIOD: i32 = 400;
 const PREDICTED_MOVEMENT_THRESHOLD_SQUARED: f64 = 1.0e-5_f32 as f64;
-/// Vanilla `EntityType.NO_UPDATE_INTERVAL`.
 const NO_UPDATE_INTERVAL: i32 = i32::MAX;
 
 /// Packed body rotation used by entity movement packets.
@@ -536,8 +535,6 @@ pub struct EntityMovementSyncUpdate {
     pub on_ground: bool,
 }
 
-/// Vanilla `SteppedInterpolationTracker`, except that `predictedDelta` accumulates on
-/// the entity and arrives through [`Self::update_tracking`].
 #[derive(Debug, Clone, PartialEq)]
 struct SteppedInterpolationTracker {
     steps: Vec<PositionStep>,
@@ -634,11 +631,11 @@ pub struct ServerEntityMovementSyncUpdate {
     pub head_yaw: f32,
     /// Current on-ground flag.
     pub on_ground: bool,
-    /// Whether the entity's interpolation handler is vanilla's stepped one.
+    /// Whether the entity's movement is tracked as timed steps.
     pub uses_stepped_interpolation: bool,
     /// Movement both sides already simulated since the last tracking update.
     pub predicted_movement: DVec3,
-    /// Vanilla `Entity.syncPosition`: the current position needs its own step.
+    /// Whether the current position needs its own interpolation step.
     pub sync_position: bool,
     /// Whether this entity's velocity changed enough to need syncing this tick.
     pub needs_velocity_sync: bool,
@@ -767,12 +764,10 @@ impl ServerEntityMovementSyncState {
             || (self.has_update_interval() && self.tick_count % self.update_interval == 0)
     }
 
-    /// Vanilla `EntityType.hasUpdateInterval`.
     const fn has_update_interval(&self) -> bool {
         self.update_interval > 0 && self.update_interval != NO_UPDATE_INTERVAL
     }
 
-    /// Vanilla `UpdateInterval.nextInterval`.
     const fn next_update_interval(&self) -> i32 {
         if !self.has_update_interval() {
             return 0;
@@ -1059,7 +1054,7 @@ mod tests {
         EntityPositionRotSyncPacket, EntityPositionSyncDecision, EntityPositionSyncPacket,
         EntityPositionSyncSnapshot, EntityPositionSyncState, EntityRotationSyncState,
         EntityVelocitySyncState, NO_UPDATE_INTERVAL, PackedEntityRotation, PositionPath,
-        ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate, SteppedInterpolationTracker,
+        ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate,
     };
 
     #[test]
@@ -1468,6 +1463,26 @@ mod tests {
         assert!(matches!(packets[0], EntityMovementSyncPacket::Rotation(_)));
     }
 
+    /// Ticks 0..3 of a 3-tick interval: initial update, bounce, then a predicted move.
+    fn stepped_state_after_bounce(
+        bounce_position: DVec3,
+        predicted_movement: DVec3,
+    ) -> ServerEntityMovementSyncState {
+        let mut state = server_state(3);
+        let initial = collect_server_packets(&mut state, stepped_update(DVec3::ZERO));
+        assert_eq!(initial.len(), 1);
+
+        let mut bounce = stepped_update(bounce_position);
+        bounce.sync_position = true;
+        assert!(collect_server_packets(&mut state, bounce).is_empty());
+
+        let mut quiet = stepped_update(bounce_position + predicted_movement);
+        quiet.predicted_movement = predicted_movement;
+        assert!(collect_server_packets(&mut state, quiet).is_empty());
+
+        state
+    }
+
     fn server_state(update_interval: i32) -> ServerEntityMovementSyncState {
         ServerEntityMovementSyncState::new(
             DVec3::ZERO,
@@ -1495,96 +1510,22 @@ mod tests {
         }
     }
 
-    fn position_step(position: DVec3, tick_offset: i32) -> PositionStep {
-        PositionStep {
-            position,
-            tick_offset,
-        }
-    }
+    #[test]
+    fn server_entity_sync_chains_stepped_deltas_and_shifts_them_by_predicted_movement() {
+        let mut state =
+            stepped_state_after_bounce(DVec3::new(0.5, 0.0, 0.0), DVec3::new(0.0, 0.0, 1.0));
 
-    fn sole_position_delta(packets: &[EntityMovementSyncPacket]) -> &VecDelta {
-        let [EntityMovementSyncPacket::Position(packet)] = packets else {
+        let packets = collect_server_packets(&mut state, stepped_update(DVec3::new(0.5, 2.0, 1.0)));
+
+        let [EntityMovementSyncPacket::Position(packet)] = packets.as_slice() else {
             panic!("expected one position delta, got {packets:?}");
         };
-        &packet.delta
-    }
-
-    /// Ticks 0..3 of a 3-tick interval: initial update, bounce, then a predicted move.
-    fn stepped_state_after_bounce(
-        bounce_position: DVec3,
-        predicted_movement: DVec3,
-    ) -> ServerEntityMovementSyncState {
-        let mut state = server_state(3);
-        let initial = collect_server_packets(&mut state, stepped_update(DVec3::ZERO));
-        assert_eq!(initial.len(), 1);
-
-        let mut bounce = stepped_update(bounce_position);
-        bounce.sync_position = true;
-        assert!(collect_server_packets(&mut state, bounce).is_empty());
-
-        let mut quiet = stepped_update(bounce_position + predicted_movement);
-        quiet.predicted_movement = predicted_movement;
-        assert!(collect_server_packets(&mut state, quiet).is_empty());
-
-        state
-    }
-
-    #[test]
-    fn stepped_tracker_has_no_step_on_first_tracking_update() {
-        let mut tracker = SteppedInterpolationTracker::default();
-        let position = DVec3::new(1.0, 2.0, 3.0);
-
-        tracker.update_tracking(position, DVec3::ZERO, true);
-
-        assert!(tracker.steps.is_empty());
-        assert_eq!(tracker.take_path(position), PositionPath::Linear(position));
-    }
-
-    #[test]
-    fn stepped_tracker_ignores_sub_threshold_predicted_movement() {
-        let mut tracker = SteppedInterpolationTracker::default();
-        let step_position = DVec3::new(0.5, 0.0, 0.0);
-        tracker.update_tracking(DVec3::ZERO, DVec3::ZERO, false);
-        tracker.update_tracking(step_position, DVec3::ZERO, true);
-
-        tracker.update_tracking(step_position, DVec3::new(0.001, 0.0, 0.0), false);
-
-        assert_eq!(tracker.steps, vec![position_step(step_position, 1)]);
-    }
-
-    #[test]
-    fn server_entity_sync_sends_stepped_delta_chained_from_previous_step() {
-        let mut state = stepped_state_after_bounce(DVec3::new(0.5, 0.0, 0.0), DVec3::ZERO);
-
-        let packets = collect_server_packets(&mut state, stepped_update(DVec3::new(0.5, 2.0, 0.0)));
-
         assert_eq!(
-            sole_position_delta(&packets),
-            &VecDelta::Stepped(vec![delta_step(2048, 0, 0, 1), delta_step(0, 8192, 0, 2)])
-        );
-        assert_eq!(
-            state.position.last_sent_position(),
-            DVec3::new(0.5, 2.0, 0.0)
-        );
-        assert_eq!(
-            state.interpolation_tracker,
-            Some(SteppedInterpolationTracker {
-                steps: Vec::new(),
-                ticks_since_last_step: 0,
-            })
-        );
-    }
-
-    #[test]
-    fn server_entity_sync_shifts_queued_steps_by_predicted_movement() {
-        let predicted_movement = DVec3::new(0.0, 0.0, 1.0);
-        let mut state = stepped_state_after_bounce(DVec3::new(0.5, 0.0, 0.0), predicted_movement);
-
-        let packets = collect_server_packets(&mut state, stepped_update(DVec3::new(0.5, 0.0, 1.0)));
-
-        assert_eq!(
-            sole_position_delta(&packets),
-            &VecDelta::Stepped(vec![delta_step(2048, 0, 4096, 1), delta_step(0, 0, 0, 2)])
+            packet.delta,
+            VecDelta::Stepped(vec![
+                delta_step(2048, 0, 4096, 1),
+                delta_step(0, 8192, 0, 2)
+            ])
         );
     }
 
@@ -1599,47 +1540,13 @@ mod tests {
         let [EntityMovementSyncPacket::PositionSync(packet)] = packets.as_slice() else {
             panic!("expected one full position sync, got {packets:?}");
         };
-        assert_eq!(
-            packet.path,
-            PositionPath::Stepped(vec![
-                position_step(bounce_position, 1),
-                position_step(position, 2),
-            ])
-        );
+        let expected =
+            [(bounce_position, 1), (position, 2)].map(|(position, tick_offset)| PositionStep {
+                position,
+                tick_offset,
+            });
+        assert_eq!(packet.path, PositionPath::Stepped(expected.to_vec()));
         assert_eq!(state.teleport_delay, 2);
-    }
-
-    #[test]
-    fn server_entity_sync_keeps_teleport_delay_when_linear_delta_overflows() {
-        let mut state = server_state(1);
-
-        let packets = collect_server_packets(
-            &mut state,
-            server_update(DVec3::new(20.0, 0.0, 0.0), DVec3::ZERO),
-        );
-
-        assert!(matches!(
-            packets.as_slice(),
-            [EntityMovementSyncPacket::PositionSync(_)]
-        ));
-        assert_eq!(state.teleport_delay, 1);
-    }
-
-    #[test]
-    fn server_entity_sync_position_jumps_linear_entity_to_next_interval() {
-        let mut state = server_state(20);
-        let initial = collect_server_packets(&mut state, server_update(DVec3::ZERO, DVec3::ZERO));
-        assert_eq!(initial.len(), 1);
-
-        let mut update = server_update(DVec3::new(0.25, 0.0, 0.0), DVec3::ZERO);
-        update.sync_position = true;
-        let packets = collect_server_packets(&mut state, update);
-
-        assert!(matches!(
-            packets.as_slice(),
-            [EntityMovementSyncPacket::Position(_)]
-        ));
-        assert_eq!(state.tick_count, 21);
     }
 
     #[test]

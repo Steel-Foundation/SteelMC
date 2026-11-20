@@ -834,12 +834,10 @@ impl EntityBase {
         self.state.lock().requires_precise_position = requires_precise_position;
     }
 
-    /// Vanilla `SteppedInterpolationTracker.applyPredictedMovement`.
     pub(crate) fn record_predicted_movement(&self, movement: DVec3) {
         self.state.lock().predicted_movement += movement;
     }
 
-    /// Sets vanilla `Entity.syncPosition`.
     pub(crate) fn mark_position_for_interpolation(&self) {
         self.state.lock().sync_position = true;
     }
