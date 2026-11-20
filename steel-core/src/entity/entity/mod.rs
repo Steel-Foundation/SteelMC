@@ -3563,15 +3563,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// get the air drag value of the entity
     fn get_air_drag(&self) -> f64 {
         let Some(entity) = self.as_living_entity() else {
-            return DEFAULT_AIR_DRAG;
+            return f64::from(DEFAULT_AIR_DRAG as f32);
         };
-        compute_modified_friction(
-            DEFAULT_AIR_DRAG,
+
+        f64::from(compute_modified_friction(
+            DEFAULT_AIR_DRAG as f32,
             entity
                 .attributes()
                 .lock()
-                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER),
-        )
+                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER) as f32,
+        ))
     }
 
     /// Applies gravity to the entity's velocity.
@@ -3705,11 +3706,20 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         if result.horizontal_collision {
             let vel = self.velocity();
             self.set_velocity(DVec3::new(
-                if result.x_collision { 0.0 } else { vel.x },
+                if result.x_collision {
+                    0.0_f64.copysign(-vel.x)
+                } else {
+                    vel.x
+                },
                 vel.y,
-                if result.z_collision { 0.0 } else { vel.z },
+                if result.z_collision {
+                    0.0_f64.copysign(-vel.z)
+                } else {
+                    vel.z
+                },
             ));
         }
+
         if result.vertical_collision && self.can_simulate_movement() {
             let velocity = self.velocity();
             let landing_context = EntityLandingContext::new(
@@ -3742,7 +3752,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                                 self.as_entity_event_source(),
                             ),
                         );
+                        self.game_event(&vanilla_game_events::BOUNCE);
                     }
+
                     res
                 } else {
                     landing_context.default_velocity_after_fall_on()
@@ -4219,7 +4231,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 }
 
-fn compute_modified_friction(friction: f64, modifier: f64) -> f64 {
+pub(super) fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
     (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
 }
 

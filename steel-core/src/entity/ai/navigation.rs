@@ -32,7 +32,7 @@ pub struct NavigationTickContext {
     pub ground_mob_position: DVec3,
     /// The mob's true position, which the waypoint distance is measured from.
     pub mob_position: DVec3,
-    pub mob_bounding_box_width: f64,
+    pub mob_bounding_box_width: f32,
     pub mob_speed: f32,
     pub game_time: i64,
 }
@@ -573,9 +573,10 @@ impl PathNavigation {
             let y_distance = (context.mob_position.y - f64::from(current_node_pos.y())).abs();
             let z_distance =
                 (context.mob_position.z - (f64::from(current_node_pos.z()) + 0.5)).abs();
-            let is_close_enough_to_current_node = x_distance < max_distance_to_waypoint
-                && z_distance < max_distance_to_waypoint
+            let is_close_enough_to_current_node = x_distance < f64::from(max_distance_to_waypoint)
+                && z_distance < f64::from(max_distance_to_waypoint)
                 && y_distance < 1.0;
+
             let should_cut_corner = path
                 .next_node()
                 .is_some_and(|node| can_cut_corner(node.path_type))
@@ -700,9 +701,10 @@ fn should_target_next_node_in_direction(path: &Path, mob_position: DVec3) -> boo
     mob_to_next.dot(mob_to_current) < 0.0
 }
 
-fn path_move_target(path: &Path, mob_bounding_box_width: f64) -> Option<DVec3> {
+fn path_move_target(path: &Path, mob_bounding_box_width: f32) -> Option<DVec3> {
     path.next_node().map(|node| {
-        let offset = f64::from(fast_floor(mob_bounding_box_width + 1.0)) * 0.5;
+        let offset = f64::from((mob_bounding_box_width + 1.0) as i32) * 0.5;
+
         DVec3::new(
             f64::from(node.x) + offset,
             f64::from(node.y),
