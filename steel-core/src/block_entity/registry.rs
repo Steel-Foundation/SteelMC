@@ -198,6 +198,11 @@ pub fn init_block_entities() {
             Arc::new(ChestBlockEntity::new(level, pos, state))
         });
 
+        // Register hopper block entity factory
+        registry.register(&vanilla_block_entity_types::HOPPER, |level, pos, state| {
+            Arc::new(HopperBlockEntity::new(level, pos, state))
+        });
+
         // Register barrel block entity factory
         registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
             Arc::new(BarrelBlockEntity::new(level, pos, state))
