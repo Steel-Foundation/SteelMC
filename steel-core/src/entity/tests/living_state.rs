@@ -13,7 +13,7 @@ fn default_entity_tick_dispatches_living_tick() {
     let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0));
     let entity_ref: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
 
-    Arc::clone(&entity_ref).tick();
+    entity_ref.tick();
 
     assert_eq!(entity.living().living_base().death_time(), 1);
 }
@@ -69,12 +69,17 @@ fn kill_credit_follows_the_player_across_worlds_until_memory_expires() {
         ));
 
     world.remove_player_for_world_change(&player);
-    let replacement = player.moved_to_world(Arc::clone(target));
-    assert!(target.add_player(Arc::clone(&replacement), ResetReason::WorldChange));
-    let replacement_entity: SharedEntity = Arc::<Player>::clone(&replacement);
+    player.set_world(Arc::clone(target));
+    assert!(target.add_player(Arc::clone(&player), ResetReason::WorldChange));
+    let player_entity: SharedEntity = Arc::<Player>::clone(&player);
     assert!(Arc::ptr_eq(
         &get_kill_credit(&victim.living(), world).expect("kill credit after changing worlds"),
-        &replacement_entity,
+        &player_entity,
+    ));
+    victim.living().set_last_hurt_by_player(player.uuid(), 100);
+    assert!(Arc::ptr_eq(
+        &get_kill_credit(&victim.living(), world).expect("kill credit from the saved UUID"),
+        &player_entity,
     ));
     victim
         .living()
@@ -85,7 +90,7 @@ fn kill_credit_follows_the_player_across_worlds_until_memory_expires() {
         .living()
         .resolve_player_responsible_for_damage(&DamageSource::direct(
             &vanilla_damage_types::PLAYER_ATTACK,
-            replacement_entity,
+            player_entity,
         ));
     for _ in 0..=100 {
         victim
@@ -94,7 +99,7 @@ fn kill_credit_follows_the_player_across_worlds_until_memory_expires() {
             .tick_last_hurt_by_player_memory();
     }
     assert!(get_kill_credit(&victim.living(), world).is_none());
-    target.remove_player_for_world_change(&replacement);
+    target.remove_player_for_world_change(&player);
 }
 
 #[test]
@@ -224,26 +229,28 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
 fn living_death_loot_table_uses_default_and_custom_mob_tables() {
     init_vanilla_registry();
 
-    let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    let Some(default_table) = pig.living().death_loot_table() else {
-        panic!("pig should resolve its default entity loot table");
+    let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+    let Some(default_table) = chicken.living().death_loot_table() else {
+        panic!("chicken should resolve its default entity loot table");
     };
     assert_eq!(
         &default_table.key,
         &vanilla_loot_tables::ENTITIES_CHICKEN.key
     );
 
-    pig.mob()
+    chicken
+        .mob()
         .set_death_loot_table(Some(Identifier::vanilla_static("entities/cow")));
-    let Some(custom_table) = pig.living().death_loot_table() else {
+    let Some(custom_table) = chicken.living().death_loot_table() else {
         panic!("custom cow loot table should resolve");
     };
     assert_eq!(&custom_table.key, &vanilla_loot_tables::ENTITIES_COW.key);
-    assert_eq!(pig.living().death_loot_table_seed(), 0);
+    assert_eq!(chicken.living().death_loot_table_seed(), 0);
 
-    pig.mob()
+    chicken
+        .mob()
         .set_death_loot_table(Some(Identifier::vanilla_static("entities/not_real")));
-    assert!(pig.living().death_loot_table().is_none());
+    assert!(chicken.living().death_loot_table().is_none());
 }
 
 #[test]

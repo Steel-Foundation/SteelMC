@@ -11,7 +11,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use rand::{RngExt, rng};
 use steel_macros::entity_behavior;
-use steel_math::{DEG_TO_RAD, DEGREE_360, RAD_TO_DEG_F64, trig, vector};
+use steel_math::{DEG_TO_RAD, DEGREE_360, trig, vector};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidStateExt;
@@ -182,9 +182,10 @@ impl FishingHookEntity {
 
         let horizontal_distance = (movement.x * movement.x + movement.z * movement.z).sqrt();
         self.set_rotation((
-            (trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32,
-            (trig::atan2(movement.y, horizontal_distance) * RAD_TO_DEG_F64) as f32,
+            trig::atan2_degrees(movement.x, movement.z),
+            trig::atan2_degrees(movement.y, horizontal_distance),
         ));
+
         self.base().set_old_rotation_to_current();
     }
 

@@ -6,6 +6,12 @@ use crate::entity::prelude::*;
 use crate::physics::MoveResult;
 use steel_utils::TICKS_PER_SECOND;
 
+const STEEP_DIVE_LOOK_Y: f64 = -0.2;
+const DIVE_VERTICAL_ACCELERATION: f64 = 0.085;
+const SWIM_VERTICAL_ACCELERATION: f64 = 0.06;
+const SWIM_FLUID_CHECK_INSET: f64 = 0.1;
+const FLIGHT_VERTICAL_DRAG: f64 = 0.6;
+
 impl Player {
     fn living_indicate_damage(&self, xd: f64, zd: f64) {
         let (y_rot, _) = self.rotation();
@@ -24,22 +30,15 @@ impl Player {
         self.check_idle_timeout();
         self.tick_client_load_timeout();
         self.tick_sleep_counter();
-        if self.living().is_sleeping() {
+        if let Some(pos) = self.living().sleeping_pos() {
             let world = self.get_world();
-            let state = self
-                .living()
-                .sleeping_pos()
-                .map(|pos| world.get_block_state(pos));
-            if state.is_some_and(|state| {
-                !self.bed_rule_value_allows(Self::bed_rule_for(&world, state).can_sleep)
-            }) {
+            let state = world.get_block_state(pos);
+            if !Self::bed_rule_value_allows_in_world(
+                &world,
+                Self::bed_rule_for(&world, state).can_sleep,
+            ) {
                 self.stop_sleep_in_bed(false, true);
-            } else if !self.can_interact_with_level()
-                || self
-                    .living()
-                    .sleeping_pos()
-                    .is_none_or(|pos| !world.get_block_state(pos).is_bed())
-            {
+            } else if !self.can_interact_with_level() || !state.is_bed() {
                 self.stop_sleep_in_bed(true, true);
             }
         }
@@ -379,8 +378,7 @@ impl Player {
 
         let result = living_entity::ai_step(self);
         self.living().set_y_head_rot(self.rotation().0);
-        // Pickup uses the simulated position; `tick_living_entity` restores the
-        // authoritative tick position after this returns.
+        // Pick up items before the server restores the client position.
         if self.living().health() > 0.0 {
             self.touch_nearby_items();
         }
@@ -396,13 +394,23 @@ impl Player {
 
         if self.is_swimming() {
             let look_angle_y = self.look_angle().y;
-            let multiplier = if look_angle_y < -0.2 { 0.085 } else { 0.06 };
-            let has_fluid_above = self.level().is_some_and(|world| {
-                let position = self.position();
-                let pos = BlockPos::containing(position.x, position.y + 0.9, position.z);
-                !get_fluid_state(&world, pos).is_empty()
-            });
-            if look_angle_y <= 0.0 || self.living().is_jumping() || has_fluid_above {
+            if look_angle_y <= 0.0
+                || self.living().is_jumping()
+                || self.level().is_some_and(|world| {
+                    let position = self.position();
+                    let pos = BlockPos::containing(
+                        position.x,
+                        position.y + 1.0 - SWIM_FLUID_CHECK_INSET,
+                        position.z,
+                    );
+                    !get_fluid_state(&world, pos).is_empty()
+                })
+            {
+                let multiplier = if look_angle_y < STEEP_DIVE_LOOK_Y {
+                    DIVE_VERTICAL_ACCELERATION
+                } else {
+                    SWIM_VERTICAL_ACCELERATION
+                };
                 let velocity = self.velocity();
                 self.set_velocity(
                     velocity + DVec3::new(0.0, (look_angle_y - velocity.y) * multiplier, 0.0),
@@ -416,7 +424,7 @@ impl Player {
             let velocity = self.velocity();
             self.set_velocity(DVec3::new(
                 velocity.x,
-                original_movement_y * 0.6,
+                original_movement_y * FLIGHT_VERTICAL_DRAG,
                 velocity.z,
             ));
             result

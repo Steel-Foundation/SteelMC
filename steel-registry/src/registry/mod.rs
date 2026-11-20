@@ -182,7 +182,13 @@ pub trait SoundVariantRegistry: RegistryExt {
     fn pick_random(
         &self,
         random: &mut impl steel_utils::random::Random,
-    ) -> Option<&'static Self::Entry>;
+    ) -> Option<&'static Self::Entry> {
+        let bound = i32::try_from(self.len()).ok()?;
+        if bound == 0 {
+            return None;
+        }
+        self.by_id(random.next_i32_bounded(bound) as usize)
+    }
 }
 
 /// Trait for registries that support tagging entries.

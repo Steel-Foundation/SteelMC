@@ -391,7 +391,7 @@ impl EntityTracker {
 
             let dirty_entity_data = entity.pack_dirty_entity_data();
             let has_dirty_entity_data = dirty_entity_data.is_some();
-            let base = entity.base().tracker_snapshot();
+            let base = entity.base().take_tracker_snapshot();
             let result =
                 tracked
                     .server_entity
@@ -401,6 +401,7 @@ impl EntityTracker {
                         vertical_collision: base.movement_flags.vertical_collision(),
                         horizontal_collision: base.movement_flags.horizontal_collision(),
                         requires_precise_position: base.requires_precise_position,
+                        sync_position: base.sync_position,
                         entity_id,
                         is_passenger: entity.is_passenger(),
                         position: base.position,

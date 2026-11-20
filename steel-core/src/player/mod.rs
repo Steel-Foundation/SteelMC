@@ -34,6 +34,7 @@ mod title;
 use crate::entity::prelude::*;
 use crate::player::player_inventory::Prediction;
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
+use arc_swap::ArcSwap;
 use chat::ChatState;
 pub use chat::{LastSeen, LastSeenMessagesValidator, MessageCache};
 use connection::NetworkConnection as _;
@@ -179,7 +180,7 @@ pub struct Player {
     pub(crate) session: Arc<PlayerSession>,
 
     /// The world the player is in.
-    pub world: Arc<World>,
+    world: Arc<ArcSwap<World>>,
 
     /// Reference to the server (for entity ID generation, etc.).
     pub(crate) server: Weak<Server>,
@@ -611,8 +612,6 @@ impl Player {
         // Create a single shared inventory container used by both the player and inventory menu
         let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
 
-        let pos = DVec3::new(0.0, 0.0, 0.0);
-
         let equipment = Arc::clone(&inventory);
         let mut entity_data = PlayerEntityData::new();
         let living_base = LivingEntityBase::with_equipment(
@@ -625,21 +624,20 @@ impl Player {
             &session.client_information.lock(),
         );
         let player_uuid = gameprofile.id();
-        let world_ref = Arc::downgrade(&world);
+        let world = Arc::new(ArcSwap::from(world));
         WeakSelf::build(|this| Self {
             gameprofile,
             connection,
             session,
 
-            world,
+            world: Arc::clone(&world),
             server,
             config,
-            base: EntityBase::with_uuid(
+            base: EntityBase::for_player(
                 entity_id,
                 player_uuid,
-                pos,
                 Self::dimensions_for_pose(EntityPose::Standing),
-                world_ref,
+                world,
                 this,
             ),
             lifecycle: CheckedMutex::new(PlayerLifecycleState::default()),
@@ -1006,7 +1004,12 @@ impl Player {
 
     /// Returns the world the player is currently in.
     pub fn get_world(&self) -> Arc<World> {
-        Arc::clone(&self.world)
+        self.world.load_full()
+    }
+
+    /// Call while detached from world indexes.
+    pub(crate) fn set_world(&self, world: Arc<World>) {
+        self.world.store(world);
     }
 
     /// Returns the server this player belongs to.

@@ -147,10 +147,6 @@ impl WrappedGoal {
         }
     }
 
-    const fn is_running(&self) -> bool {
-        self.running
-    }
-
     /// Panics while the goal is checked out: like vanilla's goal set, the
     /// selector cannot be ticked or have goals removed from inside its own goals.
     fn goal(&self) -> &dyn Goal {
@@ -158,10 +154,6 @@ impl WrappedGoal {
             panic!("goal selector used from inside one of its goals");
         };
         goal.as_ref()
-    }
-
-    const fn is_panic_goal(&self) -> bool {
-        self.panic_goal
     }
 }
 
@@ -194,8 +186,7 @@ struct GoalSet {
 /// read its own mob's selector, change the disabled controls (the rest of the
 /// tick sees the change) and add goals (they take part from the next tick).
 /// Removing goals or ticking the selector from a callback panics, as vanilla's
-/// goal set would. A running state changes in the selector as soon as the goal
-/// has started or stopped.
+/// goal set would. Start and stop callbacks see the new running state.
 pub struct GoalSelector {
     set: CheckedMutex<GoalSet>,
     /// The disabled [`GoalControls`] bits, outside the lock so a tick reads
@@ -257,8 +248,8 @@ impl GoalSelector {
             if !goal.running || !predicate(goal.id, goal.goal.as_ref()) {
                 continue;
             }
-            goal.goal.stop(mob);
             self.set_running(goal, false);
+            goal.goal.stop(mob);
         }
         self.check_in(goals);
 
@@ -277,18 +268,17 @@ impl GoalSelector {
         }
         let mut goals = self.check_out(|_| true);
 
-        let disabled_controls = self.disabled_controls();
         for goal in &mut goals {
             if !goal.running {
                 continue;
             }
-            if !goal.goal.controls().intersects(disabled_controls)
+            if !goal.goal.controls().intersects(self.disabled_controls())
                 && goal.goal.can_continue_to_use(mob)
             {
                 continue;
             }
-            goal.goal.stop(mob);
             self.set_running(goal, false);
+            goal.goal.stop(mob);
         }
 
         for index in 0..goals.len() {
@@ -306,12 +296,12 @@ impl GoalSelector {
                     continue;
                 };
                 let current = &mut goals[current_index];
-                current.goal.stop(mob);
                 self.set_running(current, false);
+                current.goal.stop(mob);
             }
             let candidate = &mut goals[index];
-            candidate.goal.start(mob);
             self.set_running(candidate, true);
+            candidate.goal.start(mob);
         }
 
         for goal in &mut goals {
@@ -327,7 +317,7 @@ impl GoalSelector {
             return;
         }
         let mut goals = self.check_out(|wrapped| {
-            wrapped.is_running()
+            wrapped.running
                 && (force_tick_all_running_goals || wrapped.goal().requires_update_every_tick())
         });
         if goals.is_empty() {
@@ -417,7 +407,7 @@ impl GoalSelector {
             .lock()
             .goals
             .iter()
-            .filter(|goal| goal.is_running())
+            .filter(|goal| goal.running)
             .count()
     }
 
@@ -432,7 +422,7 @@ impl GoalSelector {
             .lock()
             .goals
             .iter()
-            .any(|goal| goal.is_running() && goal.is_panic_goal())
+            .any(|goal| goal.running && goal.panic_goal)
     }
 
     #[cfg(test)]
@@ -489,7 +479,7 @@ impl GoalSelector {
             .lock()
             .goals
             .iter()
-            .any(|goal| goal.priority == priority && goal.is_running())
+            .any(|goal| goal.priority == priority && goal.running)
     }
 }
 
@@ -876,8 +866,6 @@ mod tests {
         }
     }
 
-    /// A goal is running from the end of its `start` to the end of its `stop`,
-    /// as each callback sees it.
     #[test]
     fn callbacks_see_running_state_change_as_goals_start_and_stop() {
         let mob = Arc::new(TestPathfinderMob::new());
@@ -909,8 +897,8 @@ mod tests {
             [
                 ("low", "can_continue_to_use", 1),
                 ("high", "can_use", 1),
-                ("low", "stop", 1),
-                ("high", "start", 0),
+                ("low", "stop", 0),
+                ("high", "start", 1),
                 ("high", "tick", 1),
             ]
         );

@@ -17,7 +17,12 @@ use crate::world::World;
 
 const THROW_PITCH_NUMERATOR: f32 = 0.4;
 const THROW_PITCH_DIVISOR_MIN: f32 = 0.8;
-const THROW_PITCH_DIVISOR_MAX: f32 = 1.2;
+const THROW_PITCH_VARIATION: f32 = 0.4;
+
+pub(super) fn throw_sound_pitch() -> f32 {
+    THROW_PITCH_NUMERATOR
+        / (rand::random::<f32>() * THROW_PITCH_VARIATION + THROW_PITCH_DIVISOR_MIN)
+}
 
 /// The per-item constants of vanilla's throw `use`.
 pub(super) struct ThrowParams {
@@ -79,14 +84,12 @@ pub(super) fn throw_projectile(
     let world = context.world;
 
     let play_sound = || {
-        let pitch = THROW_PITCH_NUMERATOR
-            / rand::random_range(THROW_PITCH_DIVISOR_MIN..THROW_PITCH_DIVISOR_MAX);
         world.play_sound_at(
             params.sound,
             params.sound_source,
             player.position(),
             params.sound_volume,
-            pitch,
+            throw_sound_pitch(),
             None,
         );
     };

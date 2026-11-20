@@ -175,7 +175,7 @@ impl SourceTree {
             .find_map(|prefix| self.load_fqn(&format!("{prefix}.{name}")))
     }
 
-    fn member_type(&self, outer: &'static TypeDecl, name: &str) -> Option<&'static TypeDecl> {
+    pub fn member_type(&self, outer: &'static TypeDecl, name: &str) -> Option<&'static TypeDecl> {
         if !outer.nested.iter().any(|nested| nested == name) {
             return None;
         }
@@ -689,13 +689,6 @@ pub fn erase(file: &JavaFile, node: Node, type_params: &[String]) -> String {
             let dims = node
                 .child_by_field_name("dimensions")
                 .map_or(1, |d| file.text(d).matches('[').count());
-            // Arrays of type variables still erase to the bound's array type,
-            // which is not known here.
-            let element = if element == "*" {
-                "*".to_owned()
-            } else {
-                element
-            };
             format!("{element}{}", "[]".repeat(dims))
         }
         _ => file.text(node).split_whitespace().collect(),

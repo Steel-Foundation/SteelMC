@@ -25,15 +25,14 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use simdnbt::{FromNbtTag as _, ToNbtTag as _};
-use steel_math::trig;
-use steel_math::{DEG_TO_RAD, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64};
+use steel_math::{DEG_TO_RAD, DEGREE_180, DEGREE_360};
+use steel_math::{trig, vector};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::data_components::{AdventureModePredicate, vanilla_components::CAN_BREAK};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLOCKS};
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_damage_types, vanilla_game_events};
-use steel_utils::axis::Axis;
 use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
 use steel_utils::types::GameType;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, WorldAabb};
@@ -70,14 +69,14 @@ pub fn triangle_random(mode: f64, deviation: f64) -> f64 {
 
 /// Result of a projectile move-vector raycast (vanilla `HitResult`).
 pub enum ProjectileHit {
-    /// The pearl's path entered a block collider.
+    /// Block or world border.
     Block {
         /// Exact entry location.
         location: DVec3,
         /// The underlying block clip result.
         hit: ClipHitResult,
     },
-    /// The pearl's path intersected an entity.
+    /// Entity hit.
     Entity(EntityHitResult),
 }
 
@@ -125,8 +124,9 @@ impl ProjectileDeflection {
             Self::Reverse => {
                 let rotation = rand::random_range(170.0..190.0);
                 projectile.set_velocity(projectile.velocity() * (power * -0.5));
-                let (yaw, pitch) = projectile.rotation();
-                projectile.set_rotation((yaw + rotation, pitch));
+                projectile
+                    .base()
+                    .set_y_rot(projectile.rotation().0 + rotation);
                 let (old_yaw, old_pitch) = projectile.base().old_rotation();
                 projectile
                     .base()
@@ -589,7 +589,7 @@ impl<'a> Projectile<'a> {
             triangle_random(0.0, deviation),
             triangle_random(0.0, deviation),
         );
-        (direction.normalize_or_zero() + jitter) * f64::from(power)
+        (vector::normalize(direction) + jitter) * f64::from(power)
     }
 
     /// Sets this projectile's velocity and facing toward `direction` at
@@ -600,8 +600,8 @@ impl<'a> Projectile<'a> {
         self.mark_velocity_sync();
 
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
-        let yaw = (trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32;
-        let pitch = (trig::atan2(movement.y, horizontal) * RAD_TO_DEG_F64) as f32;
+        let yaw = trig::atan2_degrees(movement.x, movement.z);
+        let pitch = trig::atan2_degrees(movement.y, horizontal);
         self.set_rotation((yaw, pitch));
         self.base().set_old_rotation_to_current();
     }
@@ -643,15 +643,10 @@ impl<'a> Projectile<'a> {
         let movement = self.velocity();
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
         let (yaw_old, pitch_old) = self.base().old_rotation();
-        let yaw = lerp_rotation(
-            yaw_old,
-            (trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32,
-        );
-        let pitch = lerp_rotation(
-            pitch_old,
-            (trig::atan2(movement.y, horizontal) * RAD_TO_DEG_F64) as f32,
-        );
-        self.set_rotation((yaw, pitch));
+        let yaw = lerp_rotation(yaw_old, trig::atan2_degrees(movement.x, movement.z));
+        let pitch = lerp_rotation(pitch_old, trig::atan2_degrees(movement.y, horizontal));
+        self.base().set_y_rot(yaw);
+        self.base().set_x_rot(pitch);
     }
 
     /// Deflects with unit power and hands the projectile to `new_owner` when accepted.
@@ -676,41 +671,15 @@ impl<'a> Projectile<'a> {
     /// `canHitEntity`: the nearest block or entity on the move vector.
     #[must_use]
     pub fn hit_result_on_move_vector(&self) -> Option<ProjectileHit> {
-        const EPSILON: f64 = 1.0e-12;
         let world = self.level()?;
-        let from = self.position();
-        let delta = self.velocity();
-        if delta.length_squared() < EPSILON {
-            return None;
-        }
-        let to = from + delta;
-
-        let block_hit =
-            world.clip_including_border(from, to, ClipBlockShape::Collider, ClipFluid::None);
-        let entity_end = if block_hit.is_miss() {
-            to
-        } else {
-            block_hit.location
-        };
-
-        let search_box = self.bounding_box().expand_towards(delta).inflate(1.0);
-        let margin = compute_margin(self.tick_count());
-        let self_id = self.id();
-        let entity_hit =
-            get_entity_hit_result(world.as_ref(), from, entity_end, search_box, margin, |e| {
-                e.id() != self_id && self.can_hit_entity(e)
-            });
-
-        if let Some(hit) = entity_hit {
-            return Some(ProjectileHit::Entity(hit));
-        }
-        if !block_hit.is_miss() {
-            return Some(ProjectileHit::Block {
-                location: block_hit.location,
-                hit: block_hit,
-            });
-        }
-        None
+        hit_result_on_segment(
+            &world,
+            self.entity(),
+            self.position(),
+            self.velocity(),
+            compute_margin(self.tick_count()),
+            |entity| self.can_hit_entity(entity),
+        )
     }
 
     /// `Projectile.hitTargetOrDeflectSelf`: deflects this projectile off an
@@ -1000,38 +969,53 @@ pub fn get_hit_result_on_view_vector(
     distance: f64,
     matching: impl Fn(&dyn Entity) -> bool,
 ) -> ViewVectorHitResult {
-    let position = source.position();
-    let from = DVec3::new(position.x, source.eye_y(), position.z);
-    let delta = source.look_angle() * distance;
-    let to = from + delta;
+    let (yaw, pitch) = source.base().old_rotation();
+    let view_yaw = source
+        .as_living_entity()
+        .map_or(yaw, |living| living.living_rotation_state().y_head_rot_o());
+    let delta = source.calculate_view_vector(pitch, view_yaw) * distance;
+    let eye = source.position().with_y(source.eye_y());
 
-    let block_hit =
-        world.clip_including_border(from, to, ClipBlockShape::Collider, ClipFluid::None);
-    let entity_end = if block_hit.is_miss() {
-        to
-    } else {
-        block_hit.location
-    };
-
-    let search_box = source.bounding_box().expand_towards(delta).inflate(1.0);
-    let source_id = source.id();
-    let entity_hit = get_entity_hit_result(world, from, entity_end, search_box, 0.0, |entity| {
-        entity.id() != source_id && matching(entity)
-    });
-
-    if let Some(hit) = entity_hit {
-        return ViewVectorHitResult::Entity(hit);
+    match hit_result_on_segment(world, source, eye, delta, 0.0, matching) {
+        Some(ProjectileHit::Block { hit, .. }) => ViewVectorHitResult::Block(hit),
+        Some(ProjectileHit::Entity(hit)) => ViewVectorHitResult::Entity(hit),
+        None => ViewVectorHitResult::Miss,
     }
-    if !block_hit.is_miss() {
-        return ViewVectorHitResult::Block(block_hit);
-    }
-    ViewVectorHitResult::Miss
 }
 
-/// Vanilla `ProjectileUtil.getEntityHitResult` (entity-margin overload): returns
-/// the nearest entity whose inflated box the segment `from -> to` enters.
+fn hit_result_on_segment(
+    world: &World,
+    source: &dyn Entity,
+    from: DVec3,
+    delta: DVec3,
+    margin: f64,
+    matching: impl Fn(&dyn Entity) -> bool,
+) -> Option<ProjectileHit> {
+    let to = from + delta;
+    let hit = world.clip_including_border(from, to, ClipBlockShape::Collider, ClipFluid::None);
+
+    let search_box = source.bounding_box().expand_towards(delta).inflate(1.0);
+    if let Some(entity_hit) = get_entity_hit_result(
+        world,
+        source,
+        from,
+        hit.location,
+        search_box,
+        margin,
+        matching,
+    ) {
+        return Some(ProjectileHit::Entity(entity_hit));
+    }
+
+    (!hit.is_miss()).then_some(ProjectileHit::Block {
+        location: hit.location,
+        hit,
+    })
+}
+
 fn get_entity_hit_result(
     world: &World,
+    source: &dyn Entity,
     from: DVec3,
     to: DVec3,
     search_box: WorldAabb,
@@ -1041,12 +1025,9 @@ fn get_entity_hit_result(
     let mut nearest: Option<EntityHitResult> = None;
     let mut nearest_dist_sq = f64::MAX;
 
-    for entity in world.get_entities_in_aabb(&search_box) {
-        if !predicate(entity.as_ref()) {
-            continue;
-        }
+    for entity in world.get_entities_in_aabb_excluding(&search_box, source, predicate) {
         let target_box = entity.bounding_box().inflate(margin);
-        let Some(location) = clip_segment(target_box, from, to) else {
+        let Some(location) = World::clip_entity_box(target_box, from, to) else {
             continue;
         };
         let dist_sq = from.distance_squared(location);
@@ -1059,56 +1040,6 @@ fn get_entity_hit_result(
     nearest
 }
 
-/// Vanilla `AABB.clip`: where the segment `from -> to` enters `aabb` through a
-/// face. A segment that starts inside the box enters no face and misses.
-fn clip_segment(aabb: WorldAabb, from: DVec3, to: DVec3) -> Option<DVec3> {
-    const EPSILON: f64 = 1.0e-7;
-
-    let delta = to - from;
-    let mut scale = 1.0;
-    let mut hit = false;
-    // `AABB.clipPoint` for the face at `point` on axis `a`, bounded on `b` and `c`.
-    let mut clip_point = |[da, db, dc]: [f64; 3],
-                          point: f64,
-                          [min_b, max_b]: [f64; 2],
-                          [min_c, max_c]: [f64; 2],
-                          [from_a, from_b, from_c]: [f64; 3]| {
-        let s = (point - from_a) / da;
-        let pb = from_b + s * db;
-        let pc = from_c + s * dc;
-        if 0.0 < s
-            && s < scale
-            && min_b - EPSILON < pb
-            && pb < max_b + EPSILON
-            && min_c - EPSILON < pc
-            && pc < max_c + EPSILON
-        {
-            scale = s;
-            hit = true;
-        }
-    };
-
-    let x = [aabb.min(Axis::X), aabb.max(Axis::X)];
-    let y = [aabb.min(Axis::Y), aabb.max(Axis::Y)];
-    let z = [aabb.min(Axis::Z), aabb.max(Axis::Z)];
-    let (dx, dy, dz) = (delta.x, delta.y, delta.z);
-    if dx.abs() > EPSILON {
-        let plane = if dx > 0.0 { x[0] } else { x[1] };
-        clip_point([dx, dy, dz], plane, y, z, [from.x, from.y, from.z]);
-    }
-    if dy.abs() > EPSILON {
-        let plane = if dy > 0.0 { y[0] } else { y[1] };
-        clip_point([dy, dz, dx], plane, z, x, [from.y, from.z, from.x]);
-    }
-    if dz.abs() > EPSILON {
-        let plane = if dz > 0.0 { z[0] } else { z[1] };
-        clip_point([dz, dx, dy], plane, x, y, [from.z, from.x, from.y]);
-    }
-
-    hit.then(|| from + DVec3::new(scale * dx, scale * dy, scale * dz))
-}
-
-/// Vanilla `Mth.lerp(0.2, rotO, rot)` after wrapping the old angle into range.
 fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
     while rot - rot_old < -DEGREE_180 {
         rot_old -= DEGREE_360;

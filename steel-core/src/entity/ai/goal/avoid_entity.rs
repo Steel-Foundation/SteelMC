@@ -143,9 +143,9 @@ mod tests {
     #[test]
     fn avoid_entity_default_selector_allows_non_player_living_entities() {
         init_vanilla_registry();
-        let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+        let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-        assert!(entity_selector::no_creative_or_spectator(&*pig));
+        assert!(entity_selector::no_creative_or_spectator(&*chicken));
     }
 
     #[test]

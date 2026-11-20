@@ -12,7 +12,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_math::trig;
+use steel_math::{trig, vector};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{Direction, RailShape};
 use steel_registry::entity_data::EntityPose;
@@ -658,10 +658,14 @@ impl AbstractMinecart<'_> {
         let xo = other.position().x - self.position().x;
         let zo = other.position().z - self.position().z;
 
-        let dir = DVec3::new(xo, 0.0, zo).normalize_or_zero();
+        let dir = vector::normalize(DVec3::new(xo, 0.0, zo));
         let yaw = f64::from(self.rotation().0.to_radians());
-        let facing = DVec3::new(f64::from(trig::cos(yaw)), 0.0, f64::from(trig::sin(yaw)))
-            .normalize_or_zero();
+        let facing = vector::normalize(DVec3::new(
+            f64::from(trig::cos(yaw)),
+            0.0,
+            f64::from(trig::sin(yaw)),
+        ));
+
         if dir.dot(facing).abs() < f64::from(MIN_COLLISION_ALIGNMENT) {
             return;
         }

@@ -75,10 +75,6 @@ impl Player {
         }
     }
 
-    pub(super) fn bed_rule_value_allows(&self, value: BedRuleValue) -> bool {
-        Self::bed_rule_value_allows_in_world(&self.get_world(), value)
-    }
-
     fn bed_rule_problem_message(rule: &BedRule) -> Option<TextComponent> {
         rule.error_message.map(|message| message())
     }
@@ -166,8 +162,8 @@ impl Player {
             return Err(BedSleepingProblem::OtherProblem);
         }
 
-        let can_sleep = self.bed_rule_value_allows(rule.can_sleep);
-        let can_set_spawn = self.bed_rule_value_allows(rule.can_set_spawn);
+        let can_sleep = Self::bed_rule_value_allows_in_world(&world, rule.can_sleep);
+        let can_set_spawn = Self::bed_rule_value_allows_in_world(&world, rule.can_set_spawn);
         if !self.bed_in_range(pos, direction) {
             return Err(BedSleepingProblem::Message(Box::new(
                 TranslatedMessage {

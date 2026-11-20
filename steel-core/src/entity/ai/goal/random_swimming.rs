@@ -8,6 +8,8 @@ use crate::behavior::BlockStateBehaviorExt as _;
 use crate::entity::Mob;
 use crate::entity::ai::path::PathComputationType;
 
+const RANDOM_SWIMMING_RETRIES: i32 = 10;
+
 const RANDOM_SWIMMING_HORIZONTAL_RANGE: i32 = 10;
 const RANDOM_SWIMMING_VERTICAL_RANGE: i32 = 7;
 
@@ -72,7 +74,7 @@ fn retry_random_swimmable_pos(
     let mut count = 0;
     loop {
         let pos = target_pos?;
-        if is_water_pathfindable(pos) || count >= 10 {
+        if is_water_pathfindable(pos) || count >= RANDOM_SWIMMING_RETRIES {
             return Some(pos);
         }
 

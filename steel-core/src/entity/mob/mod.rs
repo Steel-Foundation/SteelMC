@@ -25,7 +25,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_math::trig;
-use steel_math::{DEG_TO_RAD, DEGREE_90, DEGREE_360, RAD_TO_DEG, fast_floor, wrap_degrees};
+use steel_math::{DEG_TO_RAD, DEGREE_90, DEGREE_360, fast_floor, wrap_degrees};
 use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::attribute::AttributeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -79,6 +79,10 @@ use crate::world::{DifficultyInstance, LevelReader, World};
 const MOB_FLAG_NO_AI: i8 = 1;
 const MOB_FLAG_LEFT_HANDED: i8 = 2;
 const MOB_FLAG_AGGRESSIVE: i8 = 4;
+const MIN_MOVEMENT_DISTANCE_SQUARED: f64 = 2.500_000_3e-7_f32 as f64;
+const LOOK_CONTROL_MIN_DELTA: f64 = 1.0e-5_f32 as f64;
+const RANDOM_DESPAWN_MIN_IDLE_TICKS: i32 = 600;
+const RANDOM_DESPAWN_CHANCE_BOUND: i32 = 800;
 const MOVE_CONTROL_MAX_TURN: f32 = DEGREE_90;
 const DEFAULT_EQUIPMENT_DROP_CHANCE: f32 = 0.085;
 const PRESERVE_ITEM_DROP_CHANCE_THRESHOLD: f32 = 1.0;
@@ -1524,8 +1528,6 @@ impl<'a> Mob<'a> {
         self.home_radius() != -1
     }
 
-    /// [`Self::check_mob_despawn`] given the squared distance to the nearest
-    /// player, if any.
     pub(crate) fn check_mob_despawn_with(&self, nearest_player_dist_sqr: Option<f64>) {
         if self
             .level()
@@ -1536,11 +1538,7 @@ impl<'a> Mob<'a> {
             return;
         }
 
-        if self.is_persistence_required() || self.requires_custom_persistence() {
-            self.set_no_action_time(0);
-            return;
-        }
-
+        let is_persistent = self.is_persistence_required() || self.requires_custom_persistence();
         let Some(nearest_player_dist_sqr) = nearest_player_dist_sqr else {
             return;
         };
@@ -1548,23 +1546,22 @@ impl<'a> Mob<'a> {
         let mob_category = self.entity_type().mob_category;
         let despawn_distance = mob_category.despawn_distance();
         let despawn_distance_sqr = despawn_distance * despawn_distance;
-        if nearest_player_dist_sqr > f64::from(despawn_distance_sqr)
+        if !is_persistent
+            && nearest_player_dist_sqr > f64::from(despawn_distance_sqr)
             && self.remove_when_far_away(nearest_player_dist_sqr)
         {
             self.set_removed(RemovalReason::Discarded);
-            return;
         }
 
         let no_despawn_distance = mob_category.no_despawn_distance();
         let no_despawn_distance_sqr = no_despawn_distance * no_despawn_distance;
-        if self.no_action_time() > 600
+        if !is_persistent
+            && self.no_action_time() > RANDOM_DESPAWN_MIN_IDLE_TICKS
+            && rand::random_range(0..RANDOM_DESPAWN_CHANCE_BOUND) == 0
             && nearest_player_dist_sqr > f64::from(no_despawn_distance_sqr)
             && self.remove_when_far_away(nearest_player_dist_sqr)
         {
-            let should_discard = rand::random_range(0..800) == 0;
-            if should_discard {
-                self.set_removed(RemovalReason::Discarded);
-            }
+            self.set_removed(RemovalReason::Discarded);
         } else if nearest_player_dist_sqr < f64::from(no_despawn_distance_sqr) {
             self.set_no_action_time(0);
         }
@@ -1886,7 +1883,7 @@ impl<'a> Mob<'a> {
         let yd = wanted_position.y - position.y;
         let zd = wanted_position.z - position.z;
         let dd = xd * xd + yd * yd + zd * zd;
-        if dd < 2.500_000_3e-7 {
+        if dd < MIN_MOVEMENT_DISTANCE_SQUARED {
             let input = self.travel_input();
             self.set_travel_input(LivingTravelInput::new(
                 input.sideways(),
@@ -1896,12 +1893,9 @@ impl<'a> Mob<'a> {
             return;
         }
 
-        let y_rot = trig::atan2(zd, xd) as f32 * RAD_TO_DEG - DEGREE_90;
-        let (_, pitch) = self.rotation();
-        self.set_rotation((
-            rotlerp(self.rotation().0, y_rot, MOVE_CONTROL_MAX_TURN),
-            pitch,
-        ));
+        let y_rot = trig::atan2_degrees(zd, xd) - DEGREE_90;
+        self.base()
+            .set_y_rot(rotlerp(self.rotation().0, y_rot, MOVE_CONTROL_MAX_TURN));
         let movement_speed = self
             .attributes()
             .lock()
@@ -1980,22 +1974,20 @@ impl<'a> Mob<'a> {
             look_control
         };
 
-        let mut rotation = self.rotation();
-        rotation.1 = 0.0;
+        let mut pitch = 0.0;
         if look_control.is_looking_at_target() {
             let position = self.position();
             let wanted_position = look_control.wanted_position();
             let xd = wanted_position.x - position.x;
             let yd = wanted_position.y - self.eye_y();
             let zd = wanted_position.z - position.z;
-            let horizontal = xd.hypot(zd);
-            if horizontal.abs() > 1.0e-5 || yd.abs() > 1.0e-5 {
-                let target_pitch = -(trig::atan2(yd, horizontal)) as f32 * RAD_TO_DEG;
-                rotation.1 =
-                    rotate_towards(rotation.1, target_pitch, look_control.x_max_rot_angle());
+            let horizontal = (xd * xd + zd * zd).sqrt();
+            if horizontal > LOOK_CONTROL_MIN_DELTA || yd.abs() > LOOK_CONTROL_MIN_DELTA {
+                let target_pitch = -trig::atan2_degrees(yd, horizontal);
+                pitch = rotate_towards(0.0, target_pitch, look_control.x_max_rot_angle());
             }
-            if zd.abs() > 1.0e-5 || xd.abs() > 1.0e-5 {
-                let target_yaw = trig::atan2(zd, xd) as f32 * RAD_TO_DEG - DEGREE_90;
+            if zd.abs() > LOOK_CONTROL_MIN_DELTA || xd.abs() > LOOK_CONTROL_MIN_DELTA {
+                let target_yaw = trig::atan2_degrees(zd, xd) - DEGREE_90;
                 self.set_y_head_rot(rotate_towards(
                     self.y_head_rot(),
                     target_yaw,
@@ -2006,7 +1998,7 @@ impl<'a> Mob<'a> {
             self.set_y_head_rot(rotate_towards(self.y_head_rot(), self.y_body_rot(), 10.0));
         }
 
-        self.set_rotation(rotation);
+        self.base().set_x_rot(pitch);
         self.clamp_head_rotation_to_body_when_pathing();
     }
 
@@ -2044,7 +2036,7 @@ impl<'a> Mob<'a> {
     pub fn tick_body_rotation_control(&self) {
         let moving = {
             let delta = self.position() - self.old_position();
-            delta.x * delta.x + delta.z * delta.z > 2.500_000_3e-7
+            delta.x * delta.x + delta.z * delta.z > MIN_MOVEMENT_DISTANCE_SQUARED
         };
         let carrying_mob_passenger = self
             .first_passenger()
@@ -2242,7 +2234,7 @@ fn default_attack_reach() -> f64 {
 
 fn should_jump_to_wanted_position(mob: &Mob<'_>, xd: f64, yd: f64, zd: f64) -> bool {
     let max_up_step = f64::from(mob.max_up_step());
-    if yd > max_up_step && xd * xd + zd * zd < mob.bounding_box().width().max(1.0) {
+    if yd > max_up_step && xd * xd + zd * zd < f64::from(mob.base().dimensions().width.max(1.0)) {
         return true;
     }
 

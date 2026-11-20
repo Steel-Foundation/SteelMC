@@ -57,7 +57,8 @@ pub use movement::{
     is_immobile, jump_from_ground, push_entities, ridden_input, ridden_speed, server_ai_step,
 };
 pub use sleeping::stop_sleeping;
-pub use travel::{air_travel_vertical_friction, flying_speed, travel, water_slow_down};
+pub(crate) use sleeping::yaw_towards_spawn_block;
+pub use travel::{base_air_drag, flying_speed, travel, water_slow_down};
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
 /// `LivingEntity.SLEEPING_DIMENSIONS`.
@@ -181,8 +182,8 @@ layer_props! {
         fn ridden_speed(controller: &Player) -> f32;
         /// Returns the water-movement slowdown multiplier.
         fn water_slow_down() -> f32;
-        /// Returns the vertical friction used by `travelInAir`.
-        fn air_travel_vertical_friction(horizontal_friction: f32) -> f32;
+        /// Vertical drag before attribute modifiers.
+        fn base_air_drag() -> f32;
         /// `LivingEntity.aiStep`, with the movement it performed.
         fn ai_step() -> Option<MoveResult>;
         /// `LivingEntity.travel`, with the movement it performed.
@@ -445,7 +446,7 @@ pub fn is_in_wall<E: Parts>(living: &E) -> bool {
 /// `LivingEntity`'s [`EntityProps::air_drag`].
 pub fn air_drag<E: Parts>(living: &E) -> f32 {
     compute_modified_friction(
-        DEFAULT_AIR_DRAG,
+        living.living().base_air_drag(),
         living
             .living()
             .attributes()
@@ -497,6 +498,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         y_head_rot: y_head_rot::<E>,
         set_y_head_rot: set_y_head_rot::<E>,
         is_in_wall: is_in_wall::<E>,
+        on_climbable: |entity| entity.living().default_living_on_climbable(),
         air_drag: air_drag::<E>,
         effective_gravity: effective_gravity::<E>,
         with_weapon_item: with_weapon_item::<E>,

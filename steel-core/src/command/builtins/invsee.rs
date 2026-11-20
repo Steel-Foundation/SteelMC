@@ -159,7 +159,7 @@ fn invsee(container_id: u8, source: &Arc<Player>, target: &Arc<Player>, modify: 
 }
 
 struct InvseeMenuKind {
-    /// The target's session rather than its entity, which a change of world rebuilds.
+    /// The session identifies the active player across respawns.
     target: Weak<PlayerSession>,
     target_inventory_id: ContainerId,
     domain: Box<str>,

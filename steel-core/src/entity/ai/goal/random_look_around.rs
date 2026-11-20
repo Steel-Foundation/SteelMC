@@ -7,6 +7,8 @@ use crate::entity::Mob;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
 
+const RANDOM_LOOK_AROUND_CHANCE: f32 = 0.02;
+
 pub struct RandomLookAroundGoal {
     rel_x: f64,
     rel_z: f64,
@@ -36,7 +38,7 @@ impl Goal for RandomLookAroundGoal {
     }
 
     fn can_use(&mut self, _mob: &Mob<'_>) -> bool {
-        rand::random::<f32>() < 0.02
+        rand::random::<f32>() < RANDOM_LOOK_AROUND_CHANCE
     }
 
     fn can_continue_to_use(&mut self, _mob: &Mob<'_>) -> bool {

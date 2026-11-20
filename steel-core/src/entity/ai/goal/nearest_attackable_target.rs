@@ -4,7 +4,7 @@ use glam::DVec3;
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use super::target_goal::{TargetGoalBase, follow_distance};
-use crate::entity::ai::targeting::TargetingConditions;
+use crate::entity::ai::targeting::{TargetingConditions, UNBOUNDED_PLAYER_SEARCH_DISTANCE};
 use crate::entity::{Living, Mob, SharedEntity};
 use crate::world::World;
 
@@ -102,7 +102,7 @@ impl NearestAttackableTargetGoal {
 
         self.target = match self.search {
             TargetSearch::Players => level
-                .nearest_player(origin, follow, |player| {
+                .nearest_player(origin, UNBOUNDED_PLAYER_SEARCH_DISTANCE, |player| {
                     target_conditions.test(level, Some(&mob.living()), &player.living())
                 })
                 .map(|player| -> SharedEntity { player }),
@@ -162,47 +162,42 @@ mod tests {
     use super::*;
 
     use crate::behavior::init_behaviors;
-    use crate::entity::entities::ChickenEntity;
+    use crate::entity::entities::{CowEntity, PigEntity};
     use crate::entity::{Animal, Entity};
     use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     fn animal_fixture(
         name: &'static str,
-    ) -> (
-        TestWorld,
-        Arc<ChickenEntity>,
-        Arc<ChickenEntity>,
-        Arc<ChickenEntity>,
-    ) {
+    ) -> (TestWorld, Arc<PigEntity>, Arc<PigEntity>, Arc<CowEntity>) {
         init_vanilla_registry();
         init_behaviors();
         let world_fixture = fresh_test_world(name);
         let world = &world_fixture.world;
         insert_ready_full_chunk(world, ChunkPos::new(0, 0));
 
-        let pig_hunter = ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
+        let pig_hunter = PigEntity::new(
+            &vanilla_entities::PIG,
             1,
             DVec3::new(8.0, 65.0, 8.0),
             Arc::downgrade(world),
         );
-        let nearer_pig = ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
+        let nearer_pig = PigEntity::new(
+            &vanilla_entities::PIG,
             2,
             DVec3::new(9.0, 65.0, 8.0),
             Arc::downgrade(world),
         );
-        let farther_cow = ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
+        let farther_cow = CowEntity::new(
+            &vanilla_entities::COW,
             3,
             DVec3::new(10.0, 65.0, 8.0),
             Arc::downgrade(world),
         );
 
         let entities: [SharedEntity; 3] = [
-            Arc::<ChickenEntity>::clone(&pig_hunter),
-            Arc::<ChickenEntity>::clone(&nearer_pig),
-            Arc::<ChickenEntity>::clone(&farther_cow),
+            Arc::<PigEntity>::clone(&pig_hunter),
+            Arc::<PigEntity>::clone(&nearer_pig),
+            Arc::<CowEntity>::clone(&farther_cow),
         ];
         for entity in entities {
             world

@@ -8,8 +8,8 @@ use super::*;
 use crate::entity::shearable::Shearable;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use rand::{RngExt, rng};
+use steel_math::DEGREE_90;
 use steel_math::trig;
-use steel_math::{DEGREE_90, RAD_TO_DEG_F64};
 use steel_utils::DowncastTypeKey;
 use steel_utils::nbt::{NbtNumeric, nbt_collection_values};
 
@@ -633,7 +633,7 @@ pub trait Entity: EntityMethods + AsEntity + ErasedType + Send + Sync + 'static 
 
     /// Gets the entity's rotation as (yaw, pitch) in degrees.
     ///
-    /// Yaw is horizontal rotation (0-360), pitch is vertical (-90 to 90).
+    /// Yaw can span multiple turns. Pitch is clamped to ±90 degrees.
     fn rotation(&self) -> (f32, f32) {
         self.base().rotation()
     }
@@ -1015,9 +1015,9 @@ pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAncho
 
 fn look_at_rotation(from: DVec3, target: DVec3) -> (f32, f32) {
     let delta = target - from;
-    let horizontal = delta.x.hypot(delta.z);
-    let pitch = wrap_degrees((-trig::atan2(delta.y, horizontal) * RAD_TO_DEG_F64) as f32);
-    let yaw = wrap_degrees((trig::atan2(delta.z, delta.x) * RAD_TO_DEG_F64) as f32 - DEGREE_90);
+    let horizontal = (delta.x * delta.x + delta.z * delta.z).sqrt();
+    let pitch = wrap_degrees(-trig::atan2_degrees(delta.y, horizontal));
+    let yaw = wrap_degrees(trig::atan2_degrees(delta.z, delta.x) - DEGREE_90);
     (yaw, pitch)
 }
 

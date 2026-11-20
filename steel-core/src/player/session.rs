@@ -79,7 +79,7 @@ impl PlayerSession {
             client_information: CheckedMutex::new(client_information),
             permissions: CheckedMutex::new(PlayerPermissionState::default()),
             stats: CheckedMutex::new(StatsCounter::new()),
-            advancements: CheckedMutex::new(PlayerAdvancement::default()), // TODO save the advancement
+            advancements: CheckedMutex::new(PlayerAdvancement::default()),
         }
     }
 

@@ -270,7 +270,7 @@ mod tests {
     use super::{ConversionParams, ConversionType};
     use crate::behavior::init_behaviors;
     use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
-    use crate::entity::entities::ChickenEntity;
+    use crate::entity::entities::PigEntity;
     use crate::entity::mob_effect::ABSORPTION_PER_LEVEL;
     use crate::entity::{
         Ageable, Mob, MobEffectInstance, SharedEntity, init_entities, next_entity_id,
@@ -280,14 +280,12 @@ mod tests {
     use crate::world::World;
 
     fn conversion_world() -> TestWorld {
-        let world_fixture = fresh_loaded_test_world("conversion");
-        let _world = &world_fixture.world;
-        world_fixture
+        fresh_loaded_test_world("conversion")
     }
 
     fn add_pig(world: &Arc<World>) -> SharedEntity {
-        let pig: SharedEntity = ChickenEntity::new(
-            &vanilla_entities::CHICKEN,
+        let pig: SharedEntity = PigEntity::new(
+            &vanilla_entities::PIG,
             next_entity_id(),
             DVec3::new(1.0, 64.0, 1.0),
             Arc::downgrade(world),
@@ -357,17 +355,17 @@ mod tests {
         pig_ageable.set_age(-24_000);
 
         let cow = pig
-            .downcast_ref::<ChickenEntity>()
+            .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .mob()
             .convert_to(
-                &vanilla_entities::CHICKEN,
+                &vanilla_entities::COW,
                 ConversionParams::single(true, true),
                 None,
             )
             .expect("pig should convert to cow");
 
-        assert_eq!(cow.entity_type(), &vanilla_entities::CHICKEN);
+        assert_eq!(cow.entity_type(), &vanilla_entities::COW);
         assert!(pig.is_removed(), "single conversion discards the source");
         assert!(
             world_fixture.world.get_entity_by_id(cow.id()).is_some(),
@@ -437,11 +435,11 @@ mod tests {
         assert_eq!(pig.first_passenger().map(|p| p.id()), Some(passenger.id()));
 
         let cow = pig
-            .downcast_ref::<ChickenEntity>()
+            .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .mob()
             .convert_to(
-                &vanilla_entities::CHICKEN,
+                &vanilla_entities::COW,
                 ConversionParams::single(false, false),
                 None,
             )
@@ -476,11 +474,11 @@ mod tests {
         };
 
         let converted = pig
-            .downcast_ref::<ChickenEntity>()
+            .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .mob()
             .convert_to(
-                &vanilla_entities::CHICKEN,
+                &vanilla_entities::COW,
                 ConversionParams::single(true, false),
                 Some(&after_conversion),
             );
@@ -496,11 +494,11 @@ mod tests {
         let pig = add_pig(world);
 
         let cow = pig
-            .downcast_ref::<ChickenEntity>()
+            .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .mob()
             .convert_to(
-                &vanilla_entities::CHICKEN,
+                &vanilla_entities::COW,
                 ConversionParams {
                     conversion_type: ConversionType::SplitOnDeath,
                     keep_equipment: false,
@@ -510,7 +508,7 @@ mod tests {
             )
             .expect("split conversion should create the cow");
 
-        assert_eq!(cow.entity_type(), &vanilla_entities::CHICKEN);
+        assert_eq!(cow.entity_type(), &vanilla_entities::COW);
         assert!(world.get_entity_by_id(cow.id()).is_some());
         assert!(!pig.is_removed(), "split-on-death keeps the source living");
     }
@@ -524,7 +522,7 @@ mod tests {
         let pig = add_pig(world);
 
         let converted = pig
-            .downcast_ref::<ChickenEntity>()
+            .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .mob()
             .convert_to(
@@ -557,7 +555,7 @@ mod tests {
         );
 
         let converted = source
-            .downcast_ref::<ChickenEntity>()
+            .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .mob()
             .convert_to(
@@ -592,7 +590,7 @@ mod tests {
         );
 
         let converted = source
-            .downcast_ref::<ChickenEntity>()
+            .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .mob()
             .convert_to(
@@ -628,7 +626,7 @@ mod tests {
         );
 
         let converted = source
-            .downcast_ref::<ChickenEntity>()
+            .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .mob()
             .convert_to(
@@ -666,11 +664,11 @@ mod tests {
         );
 
         let cow = pig
-            .downcast_ref::<ChickenEntity>()
+            .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .mob()
             .convert_to(
-                &vanilla_entities::CHICKEN,
+                &vanilla_entities::COW,
                 ConversionParams::single(false, true),
                 None,
             )
@@ -692,16 +690,16 @@ mod tests {
         let pig = add_pig(world);
         let finalized = Cell::new(false);
         let after_conversion = |mob: &Mob<'_>| {
-            assert_eq!(mob.entity_type(), &vanilla_entities::CHICKEN);
+            assert_eq!(mob.entity_type(), &vanilla_entities::COW);
             finalized.set(true);
         };
 
         let cow = pig
-            .downcast_ref::<ChickenEntity>()
+            .downcast_ref::<PigEntity>()
             .expect("pig is concrete")
             .mob()
             .convert_to(
-                &vanilla_entities::CHICKEN,
+                &vanilla_entities::COW,
                 ConversionParams::single(false, false),
                 Some(&after_conversion),
             )
@@ -711,7 +709,7 @@ mod tests {
             finalized.get(),
             "the after-conversion callback runs on the new mob"
         );
-        assert_eq!(cow.entity_type(), &vanilla_entities::CHICKEN);
+        assert_eq!(cow.entity_type(), &vanilla_entities::COW);
     }
 
     #[test]
@@ -725,7 +723,7 @@ mod tests {
         let pig = add_pig(world);
         let pig_mob = pig.as_mob().expect("pig is a mob");
         assert!(
-            pig.downcast_ref::<ChickenEntity>()
+            pig.downcast_ref::<PigEntity>()
                 .expect("pig is concrete")
                 .mob()
                 .convert_to(
@@ -745,7 +743,7 @@ mod tests {
         let other_pig = add_pig(world);
         assert!(
             other_pig
-                .downcast_ref::<ChickenEntity>()
+                .downcast_ref::<PigEntity>()
                 .expect("pig is concrete")
                 .mob()
                 .convert_to(

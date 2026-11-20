@@ -28,7 +28,7 @@ use steel_utils::{TICKS_PER_SECOND, translations};
 
 use crate::entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityMoveError,
-    get_input_vector,
+    apply_teleport_motion, get_input_vector,
 };
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
@@ -859,7 +859,7 @@ impl Player {
         if world.entity_manager().get_by_id(self.id()).is_some() {
             world.chunk_map.update_player_status(self);
         }
-        self.set_velocity(velocity);
+        apply_teleport_motion(self, rotation, velocity);
 
         let new_id = {
             let mut tp = self.teleport_state.lock();
@@ -869,8 +869,6 @@ impl Player {
             id
         };
 
-        self.set_rotation(rotation);
-        self.set_old_position_to_current();
         {
             let mut movement = self.movement.lock();
             movement.reset_last_known_client_movement();

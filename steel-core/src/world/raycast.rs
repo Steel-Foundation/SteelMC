@@ -1163,7 +1163,14 @@ impl World {
         result
     }
 
-    /// Mirrors Minecraft  `AABB.getDirection` for one block-local shape box.
+    /// Entry point on the box, if the segment crosses a face.
+    pub(crate) fn clip_entity_box(aabb: WorldAabb, from: DVec3, to: DVec3) -> Option<DVec3> {
+        let (scale, _) =
+            Self::intersects_aabb_with_t(from, to, aabb.min_corner(), aabb.max_corner())?;
+        Some(from + (to - from) * scale)
+    }
+
+    /// Entry fraction and face.
     pub(super) fn intersects_aabb_with_t(
         start: DVec3,
         end: DVec3,

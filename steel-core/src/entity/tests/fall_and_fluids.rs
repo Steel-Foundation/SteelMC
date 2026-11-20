@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::entities::PigEntity;
 use std::sync::Arc;
 use steel_utils::types::UpdateFlags;
 
@@ -97,6 +98,28 @@ fn stop_fall_flying_toggles_shared_state_back_to_false() {
 }
 
 #[test]
+fn pig_records_a_climbable_block_through_entity_dispatch() {
+    init_vanilla_registry();
+    init_behaviors();
+    let fixture = fresh_loaded_test_world("pig_climbable");
+    let pos = BlockPos::new(8, 80, 8);
+    let pig = PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::new(8.5, 80.0, 8.5),
+        Arc::downgrade(&fixture.world),
+    );
+
+    assert!(fixture.world.set_block(
+        pos,
+        vanilla_blocks::LADDER.default_state(),
+        UpdateFlags::UPDATE_NONE
+    ));
+    assert!(pig.on_climbable());
+    assert_eq!(pig.living().last_climbable_pos(), Some(pos));
+}
+
+#[test]
 fn lava_contact_is_ignored_until_after_first_tick() {
     init_vanilla_registry();
     init_behaviors();
@@ -120,7 +143,7 @@ fn lava_contact_is_ignored_until_after_first_tick() {
     assert!(entity.is_first_tick());
     assert!(!entity.is_in_lava());
 
-    Arc::clone(&entity).tick();
+    entity.tick();
 
     assert!(!entity.is_first_tick());
     assert!(entity.is_in_lava());

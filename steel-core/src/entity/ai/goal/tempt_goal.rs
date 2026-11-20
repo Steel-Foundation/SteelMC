@@ -7,7 +7,7 @@ use steel_registry::vanilla_attributes;
 
 use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
-use crate::entity::ai::targeting::TargetingConditions;
+use crate::entity::ai::targeting::{TargetingConditions, UNBOUNDED_PLAYER_SEARCH_DISTANCE};
 use crate::entity::{Entity, Living, Mob};
 use crate::player::Player;
 
@@ -121,11 +121,14 @@ impl Goal for TemptGoal {
             .attributes()
             .lock()
             .required_value(vanilla_attributes::TEMPT_RANGE);
+
         let targeting_conditions = Self::targeting_conditions(range);
-        self.player = world.nearest_player(mob.position(), range, |player| {
-            targeting_conditions.test(world.as_ref(), Some(&mob.living()), &player.living())
-                && self.should_follow(&player.living())
-        });
+        self.player =
+            world.nearest_player(mob.position(), UNBOUNDED_PLAYER_SEARCH_DISTANCE, |player| {
+                targeting_conditions.test(world.as_ref(), Some(&mob.living()), &player.living())
+                    && self.should_follow(&player.living())
+            });
+
         self.player.is_some()
     }
 
@@ -201,15 +204,16 @@ mod tests {
             |item_stack| item_stack.is(&vanilla_items::CARROT),
             false,
         );
-        let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+        let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
 
-        assert!(!goal.should_follow(&pig.living()));
+        assert!(!goal.should_follow(&chicken.living()));
 
-        pig.living()
+        chicken
+            .living()
             .with_equipment_slot_mut(EquipmentSlot::OffHand, &mut |item_stack| {
                 *item_stack = ItemStack::new(&vanilla_items::CARROT);
             });
 
-        assert!(goal.should_follow(&pig.living()));
+        assert!(goal.should_follow(&chicken.living()));
     }
 }

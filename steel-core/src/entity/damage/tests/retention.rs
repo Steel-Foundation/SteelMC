@@ -5,28 +5,28 @@ use super::*;
 use std::ptr;
 use steel_registry::vanilla_damage_type_tags::DamageTypeTag;
 
-fn live_pig(world: &Arc<World>, id: i32) -> Arc<ChickenEntity> {
+fn live_chicken(world: &Arc<World>, id: i32) -> Arc<ChickenEntity> {
     let chunk = steel_utils::ChunkPos::new(0, 0);
     if !world.has_full_chunk(chunk) {
         insert_ready_full_chunk(world, chunk);
     }
-    let pig = ChickenEntity::new(
+    let chicken = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         id,
         DVec3::ZERO,
         Arc::downgrade(world),
     );
     world
-        .try_add_entity(Arc::<ChickenEntity>::clone(&pig))
-        .expect("register pig");
-    pig
+        .try_add_entity(Arc::<ChickenEntity>::clone(&chicken))
+        .expect("register chicken");
+    chicken
 }
 
 #[test]
 fn removed_history_resolves_shooter_after_projectile_is_released_without_rebinding() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "removed_projectile_history");
-    let victim = live_pig(&world, 1);
+    let victim = live_chicken(&world, 1);
     let shooter = TestPlayerBuilder::new(Arc::clone(&world), "Shooter", 2).build();
     assert!(world.players.insert(Arc::clone(&shooter)));
     let projectile = TestEntity::shared(3, DVec3::ZERO, Weak::new(), &vanilla_entities::SNOWBALL);
@@ -86,9 +86,9 @@ fn removed_history_resolves_shooter_after_projectile_is_released_without_rebindi
 fn active_history_retains_removed_attacker_but_not_its_removed_attacker() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "transitive_damage_history");
-    let victim = live_pig(&world, 1);
-    let first = live_pig(&world, 2);
-    let second = live_pig(&world, 3);
+    let victim = live_chicken(&world, 1);
+    let first = live_chicken(&world, 2);
+    let second = live_chicken(&world, 3);
     victim
         .living()
         .record_last_damage_source(&DamageSource::direct(
@@ -139,7 +139,7 @@ fn active_history_retains_removed_attacker_but_not_its_removed_attacker() {
 fn final_removal_cannot_be_undone_by_a_late_history_write() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "late_damage_record");
-    let victim = live_pig(&world, 1);
+    let victim = live_chicken(&world, 1);
     let _owner = victim.base().damage_history().retain_owner();
     victim.set_removed(RemovalReason::Discarded);
     let attacker = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
@@ -191,7 +191,7 @@ fn final_removal_cannot_be_undone_by_a_late_history_write() {
 fn world_teardown_releases_self_history_on_the_frozen_ownership_sweep() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "history_world_teardown");
-    let victim = live_pig(&world, 1);
+    let victim = live_chicken(&world, 1);
     victim
         .living()
         .record_last_damage_source(&DamageSource::direct(
@@ -216,7 +216,7 @@ fn world_teardown_releases_self_history_on_the_frozen_ownership_sweep() {
 fn chunk_recovery_preserves_history_until_final_unload() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "history_chunk_recovery");
-    let victim = live_pig(&world, 1);
+    let victim = live_chicken(&world, 1);
     let attacker = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let weak = Arc::downgrade(&attacker);
     victim
@@ -247,7 +247,7 @@ fn chunk_recovery_preserves_history_until_final_unload() {
 fn weak_history_preserves_live_position_and_explicit_position_semantics() {
     let history = Arc::new(DamageHistory::default());
     let world = history_world(&history, "weak_history_position");
-    let victim = live_pig(&world, 1);
+    let victim = live_chicken(&world, 1);
     let direct = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC)
         .with_direct_entity(Arc::clone(&direct));

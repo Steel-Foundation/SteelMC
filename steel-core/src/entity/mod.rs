@@ -3,6 +3,7 @@
 mod container_user;
 pub use container_user::ContainerUser;
 
+use std::ptr;
 use std::sync::Weak;
 use std::{
     any::try_as_dyn,
@@ -213,7 +214,7 @@ pub(crate) const fn select_swimming_state(
 }
 
 fn horizontal_distance(vector: DVec3) -> f64 {
-    vector.x.hypot(vector.z)
+    (vector.x * vector.x + vector.z * vector.z).sqrt()
 }
 
 const fn world_aabb_center(aabb: WorldAabb) -> DVec3 {
@@ -985,18 +986,22 @@ pub(crate) fn change_entity_world(
         return None;
     }
 
-    let changed = if entity.as_player().is_some() {
-        let Some(player) = source_world.players.get_by_entity_id(entity.id()) else {
+    let changed = if let Some(expected) = entity.as_player() {
+        let Some(player) = source_world
+            .players
+            .get_by_entity_id(entity.id())
+            .filter(|player| ptr::eq(player.as_ref(), expected))
+        else {
             tracing::error!(
                 entity_id = entity.id(),
                 "Refusing player world change for an unregistered player entity"
             );
             return None;
         };
-        // Vanilla `ServerPlayer.teleport` keeps the same player object. Steel
-        // rebuilds it for a change of world and moves its state across.
-        let changed: SharedEntity = player.change_world_within_domain(teleport_transition)?;
-        changed
+        if !player.change_world_within_domain(teleport_transition) {
+            return None;
+        }
+        entity
     } else {
         change_non_player_entity_world(entity, teleport_transition)?
     };
@@ -1257,13 +1262,18 @@ fn teleport_set_position(
         TeleportPositionCommit::Managed => entity.try_set_position(position)?,
         TeleportPositionCommit::Local => entity.set_position_local(position),
     }
-    entity.set_rotation(rotation);
+    apply_teleport_motion(entity, rotation, velocity);
+    Ok(())
+}
+
+pub(crate) fn apply_teleport_motion(entity: &dyn Entity, rotation: (f32, f32), velocity: DVec3) {
+    entity.base().set_y_rot(rotation.0);
     entity.set_y_head_rot(rotation.0);
+    entity.base().set_x_rot(rotation.1);
     entity.set_old_position_to_current();
     entity.base().set_old_rotation_to_current();
     entity.set_velocity(velocity);
     entity.base().clear_movement_this_tick();
-    Ok(())
 }
 
 fn passenger_transition(

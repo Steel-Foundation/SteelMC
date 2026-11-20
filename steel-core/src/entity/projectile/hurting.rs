@@ -2,7 +2,7 @@
 
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64};
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360};
 use steel_math::{trig, vector};
 use steel_utils::locks::CheckedMutex;
 use steel_utils::nbt::NbtValueInput as _;
@@ -171,8 +171,8 @@ fn rotate_towards_movement(projectile: &Projectile<'_>) {
         return;
     }
     let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
-    let yaw = (trig::atan2(movement.z, movement.x) * RAD_TO_DEG_F64) as f32 + DEGREE_90;
-    let pitch = (trig::atan2(horizontal, movement.y) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
+    let yaw = trig::atan2_degrees(movement.z, movement.x) + DEGREE_90;
+    let pitch = trig::atan2_degrees(horizontal, movement.y) - DEGREE_90;
     let (mut yaw_old, mut pitch_old) = projectile.base().old_rotation();
     while pitch - pitch_old < -DEGREE_180 {
         pitch_old -= DEGREE_360;
@@ -187,8 +187,10 @@ fn rotate_towards_movement(projectile: &Projectile<'_>) {
         yaw_old += DEGREE_360;
     }
     projectile.base().set_old_rotation((yaw_old, pitch_old));
-    projectile.set_rotation((
-        yaw_old + ROTATION_SPEED * (yaw - yaw_old),
-        pitch_old + ROTATION_SPEED * (pitch - pitch_old),
-    ));
+    projectile
+        .base()
+        .set_y_rot(yaw_old + ROTATION_SPEED * (yaw - yaw_old));
+    projectile
+        .base()
+        .set_x_rot(pitch_old + ROTATION_SPEED * (pitch - pitch_old));
 }

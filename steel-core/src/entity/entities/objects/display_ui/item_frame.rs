@@ -26,6 +26,11 @@ use crate::entity::{
 };
 use crate::world::World;
 
+const FRAME_WALL_OFFSET: f64 = 0.46875;
+const FRAME_WIDTH: f64 = 0.75;
+const FRAME_THICKNESS: f64 = 0.0625;
+const FRAME_ROTATIONS: i32 = 8;
+
 /// An item frame with its framed item, rotation and facing.
 ///
 /// TODO: add the `HangingEntity` support checks, interaction, drops, fixed
@@ -47,7 +52,7 @@ pub struct ItemFrameEntity {
 
 impl EntityTable for ItemFrameEntity {
     const ENTITY: EntityProps<Self> = EntityProps {
-        spawn_data: |frame| direction_3d_data_value(frame.direction()),
+        spawn_data: |frame| frame.direction().get_3d_data_value(),
         ..block_attached::entity_props()
     };
 }
@@ -155,7 +160,7 @@ impl ItemFrameEntity {
     }
 
     fn frame_center(block_pos: BlockPos, direction: Direction) -> DVec3 {
-        let off = direction.offset_vec().as_dvec3() * 0.46875;
+        let off = direction.offset_vec().as_dvec3() * FRAME_WALL_OFFSET;
         block_pos.0.as_dvec3() + DVec3::splat(0.5) - off
     }
 
@@ -163,10 +168,9 @@ impl ItemFrameEntity {
         match direction {
             Direction::Up => (0.0, -DEGREE_90),
             Direction::Down => (0.0, DEGREE_90),
-            Direction::North | Direction::South | Direction::West | Direction::East => (
-                f32::from(direction_2d_data_value(direction)) * DEGREE_90,
-                0.0,
-            ),
+            Direction::North | Direction::South | Direction::West | Direction::East => {
+                (direction.to_yaw(), 0.0)
+            }
         }
     }
 
@@ -176,22 +180,19 @@ impl ItemFrameEntity {
         has_framed_map: bool,
     ) -> WorldAabb {
         let center = Self::frame_center(block_pos, direction);
-        let size = if has_framed_map { 1.0 } else { 0.75 };
+        let size = if has_framed_map { 1.0 } else { FRAME_WIDTH };
         let axis_size = |axis| {
             if direction.axis() == axis {
-                0.0625
+                FRAME_THICKNESS
             } else {
                 size
             }
         };
-        let half = DVec3::new(axis_size(Axis::X), axis_size(Axis::Y), axis_size(Axis::Z)) / 2.0;
-        WorldAabb::new(
-            center.x - half.x,
-            center.y - half.y,
-            center.z - half.z,
-            center.x + half.x,
-            center.y + half.y,
-            center.z + half.z,
+        WorldAabb::of_size(
+            center,
+            axis_size(Axis::X),
+            axis_size(Axis::Y),
+            axis_size(Axis::Z),
         )
     }
 
@@ -205,7 +206,11 @@ impl ItemFrameEntity {
         nbt.insert("ItemDropChance", 1.0_f32);
         nbt.insert(
             "Facing",
-            direction_3d_data_value(*entity_data.hanging_entity.direction.get()) as i8,
+            entity_data
+                .hanging_entity
+                .direction
+                .get()
+                .get_3d_data_value() as i8,
         );
         nbt.insert("Invisible", 0_i8);
         nbt.insert("Fixed", 0_i8);
@@ -222,7 +227,7 @@ impl ItemFrameEntity {
             self.entity_data
                 .lock()
                 .rotation
-                .set(i32::from(item_rotation) % 8);
+                .set(i32::from(item_rotation) % FRAME_ROTATIONS);
         }
         let facing = nbt
             .get("Facing")
@@ -231,7 +236,6 @@ impl ItemFrameEntity {
                 Direction::from_3d_data_value(i32::from(value))
             });
         self.set_direction(facing);
-        self.recalculate_position_or_warn();
     }
 }
 
@@ -245,7 +249,7 @@ impl ItemFrame for ItemFrameEntity {
         if entity_data.item.get().is_empty() {
             0
         } else {
-            *entity_data.rotation.get() % 8 + 1
+            *entity_data.rotation.get() % FRAME_ROTATIONS + 1
         }
     }
 }
@@ -267,26 +271,6 @@ impl block_attached::Parts for ItemFrameEntity {
             self.has_framed_map(),
         ));
         Ok(())
-    }
-}
-
-const fn direction_3d_data_value(direction: Direction) -> i32 {
-    match direction {
-        Direction::Down => 0,
-        Direction::Up => 1,
-        Direction::North => 2,
-        Direction::South => 3,
-        Direction::West => 4,
-        Direction::East => 5,
-    }
-}
-
-const fn direction_2d_data_value(direction: Direction) -> u8 {
-    match direction {
-        Direction::South | Direction::Down | Direction::Up => 0,
-        Direction::West => 1,
-        Direction::North => 2,
-        Direction::East => 3,
     }
 }
 

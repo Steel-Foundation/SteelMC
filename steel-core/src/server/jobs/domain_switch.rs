@@ -272,28 +272,16 @@ impl DomainSwitchJob {
         })
     }
 
-    /// Rebuilds the detached player in the target world, restores the target
-    /// domain's state into the replacement and carries on with it.
-    fn rebuild_player_in_target(&mut self, state: &DomainPlayerState) -> bool {
+    fn restore_player_in_target(&self, state: &DomainPlayerState) -> bool {
         let fall_flying = self.player.is_fall_flying();
-        let entry = self.entry;
-        let Some(player) =
-            self.player
-                .rebuild_after_detached_domain_restore(&state.world, |player| {
-                    Server::apply_domain_player_state(player, state);
-                    if matches!(entry, WorldEntry::Exact(_)) {
-                        // Like `/teleport`, the gliding state carries over. A glider stays
-                        // airborne, so it must not keep a saved `on_ground`.
-                        player.set_fall_flying(fall_flying);
-                        player.set_on_ground(false);
-                        player.land_after_teleport();
-                    }
-                })
-        else {
-            return false;
-        };
-        self.player = player;
-        true
+        self.player.enter_domain_world(&state.world, |player| {
+            Server::apply_domain_player_state(player, state);
+            if matches!(self.entry, WorldEntry::Exact(_)) {
+                player.set_fall_flying(fall_flying);
+                player.set_on_ground(false);
+                player.land_after_teleport();
+            }
+        })
     }
 
     fn commit_target_state(&mut self, server: &Arc<Server>, state: DomainPlayerState) -> JobPoll {
@@ -316,7 +304,7 @@ impl DomainSwitchJob {
 
         let mount_player = !matches!(self.entry, WorldEntry::Exact(_));
         let restores = server.prepare_domain_restores(&self.player, &state, mount_player);
-        if !self.rebuild_player_in_target(&state) {
+        if !self.restore_player_in_target(&state) {
             return self.finish_source_disconnect(Some(
                 "domain switch lost its online registration before target synchronization",
             ));

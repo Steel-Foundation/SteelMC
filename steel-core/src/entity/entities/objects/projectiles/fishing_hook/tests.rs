@@ -218,7 +218,7 @@ fn grounded_hook_does_not_hook_owner_when_player_stands_on_it() {
     hook.try_set_position(player.position())
         .expect("should position hook");
 
-    Arc::clone(&hook).tick();
+    hook.tick();
 
     let hooked_entity = hook.hook_state.lock().hooked_entity.clone();
     assert!(
@@ -263,7 +263,7 @@ fn submerged_hook_in_water_experiences_upward_buoyancy() {
     hook.set_velocity(DVec3::ZERO);
     hook.hook_state.lock().bobber_state = BobberState::Bobbing;
 
-    Arc::clone(&hook).tick();
+    hook.tick();
 
     assert!(
         hook.velocity().y > 0.0,

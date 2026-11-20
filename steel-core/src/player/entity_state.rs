@@ -111,14 +111,6 @@ impl Player {
         )
     }
 
-    pub(super) fn reset_entity_state(&self) {
-        self.set_shared_swimming(false);
-        self.set_shared_shift_key_down(false);
-        self.living().clear_sleeping_pos();
-        self.set_fall_flying(false);
-        self.living().set_sprinting(false);
-    }
-
     /// Returns true if the player is shifting (sneaking).
     pub fn is_crouching(&self) -> bool {
         self.synced_data()

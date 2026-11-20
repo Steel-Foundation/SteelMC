@@ -13,7 +13,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_math::trig;
-use steel_math::{RAD_TO_DEG_F64, wrap_degrees};
+use steel_math::{DEGREE_90, wrap_degrees};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -24,7 +24,7 @@ use steel_utils::locks::CheckedMutex;
 
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::EntityTable;
-use crate::entity::ai::targeting::TargetingConditions;
+use crate::entity::ai::targeting::{TargetingConditions, UNBOUNDED_PLAYER_SEARCH_DISTANCE};
 use crate::entity::mob;
 use crate::entity::prelude::*;
 use crate::entity::{
@@ -183,10 +183,13 @@ impl BatEntity {
             let conditions = TargetingConditions::for_non_combat().range(RESTING_TARGETING_RANGE);
             let living = self.living();
             let player_near = world
-                .nearest_player(self.position(), RESTING_TARGETING_RANGE, |player| {
-                    conditions.test(world, Some(&living), &player.living())
-                })
+                .nearest_player(
+                    self.position(),
+                    UNBOUNDED_PLAYER_SEARCH_DISTANCE,
+                    |player| conditions.test(world, Some(&living), &player.living()),
+                )
                 .is_some();
+
             if !player_near {
                 return;
             }
@@ -232,8 +235,8 @@ impl BatEntity {
             );
         self.set_velocity(new_movement);
 
-        let y_rot = (trig::atan2(new_movement.z, new_movement.x) * RAD_TO_DEG_F64) as f32 - 90.0;
-        let (yaw, pitch) = self.rotation();
+        let y_rot = trig::atan2_degrees(new_movement.z, new_movement.x) - DEGREE_90;
+        let yaw = self.rotation().0;
         let rot_diff = wrap_degrees(y_rot - yaw);
         let living = self.living();
         let input = living.travel_input();
@@ -242,7 +245,8 @@ impl BatEntity {
             input.vertical(),
             0.5,
         ));
-        self.set_rotation((yaw + rot_diff, pitch));
+
+        self.base().set_y_rot(yaw + rot_diff);
 
         if rand::random_range(0..100) == 0
             && is_redstone_conductor(world, world.get_block_state(above), above)
@@ -254,9 +258,9 @@ impl BatEntity {
     fn random_target_position(&self) -> BlockPos {
         let position = self.position();
         BlockPos::containing(
-            position.x + f64::from(rand::random_range(0..7) - rand::random_range(0..7)),
+            position.x + f64::from(rand::random_range(0..7)) - f64::from(rand::random_range(0..7)),
             position.y + f64::from(rand::random_range(0..6)) - 2.0,
-            position.z + f64::from(rand::random_range(0..7) - rand::random_range(0..7)),
+            position.z + f64::from(rand::random_range(0..7)) - f64::from(rand::random_range(0..7)),
         )
     }
 

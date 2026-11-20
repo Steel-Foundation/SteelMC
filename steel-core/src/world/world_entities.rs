@@ -140,7 +140,7 @@ impl World {
         // them before this player leaves the world so disconnecting players
         // cannot keep each other alive.
         player.living().clear_combat_history();
-        self.remove_entity_from_tracker(entity_id);
+        self.remove_entity_from_tracker(player);
 
         self.entity_manager()
             .remove_live_entity(entity_id, RemovalReason::ChangedWorld);
@@ -254,7 +254,6 @@ impl World {
         let Some(player) = self.take_player_for_removal(player) else {
             return;
         };
-        player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
         self.unride_player_for_removal(&player, false);
         self.unregister_player_entity(&player);
         self.entity_tracker().on_player_leave(&player);

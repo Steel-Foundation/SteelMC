@@ -28,7 +28,7 @@ fn ticket_renewal_registers_the_pearl_with_its_player_owner() {
         .expect("test pearl should be added");
 
     assert!(player.ender_pearls().is_empty());
-    Arc::clone(&shared).tick();
+    shared.tick();
 
     let registered = player.ender_pearls();
     assert_eq!(registered.len(), 1);

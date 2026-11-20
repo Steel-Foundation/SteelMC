@@ -648,7 +648,7 @@ impl ActiveItemUseState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct LivingEntityState {
     effects_dirty: bool,
     death_processed: bool,
@@ -837,24 +837,6 @@ impl LivingEntityBase {
             effects: CheckedMutex::new(ActiveEffects::default()),
             equipment,
             equipment_tracking: CheckedMutex::new(EquipmentTracking::new()),
-        }
-    }
-
-    /// Moves this living state into its entity's replacement, which keeps the
-    /// same equipment backing. `entity_type` supplies the attributes left behind.
-    #[must_use]
-    pub(crate) fn moved(&self, entity_type: EntityTypeRef) -> Self {
-        Self {
-            state: CheckedMutex::new(self.state.lock().clone()),
-            attributes: CheckedMutex::new(
-                self.attributes
-                    .replace(AttributeMap::new_for_entity(entity_type)),
-            ),
-            effects: CheckedMutex::new(self.effects.replace(ActiveEffects::default())),
-            equipment: Arc::clone(&self.equipment),
-            equipment_tracking: CheckedMutex::new(
-                self.equipment_tracking.replace(EquipmentTracking::new()),
-            ),
         }
     }
 

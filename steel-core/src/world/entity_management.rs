@@ -80,16 +80,23 @@ impl World {
             |chunk| self.get_packet_tracking_players(chunk),
             |id| self.players.get_by_entity_id(id),
         );
-        self.track_navigating_mob(entity);
+        self.navigating_mobs.track(entity);
     }
 
     /// Stops tracking an entity, as in vanilla `ServerLevel.EntityCallbacks.onTrackingEnd`.
-    pub(crate) fn remove_entity_from_tracker(&self, entity_id: i32) {
-        self.unregister_entity_parts(entity_id);
+    pub(crate) fn remove_entity_from_tracker(&self, entity: &dyn Entity) {
+        let entity_id = entity.id();
+        let parts = entity.parts();
+        if !parts.is_empty() {
+            let mut entity_parts = self.entity_parts.lock();
+            for part in parts {
+                entity_parts.remove(&part.id());
+            }
+        }
         self.entity_tracker.remove(entity_id, |player_id| {
             self.players.get_by_entity_id(player_id)
         });
-        self.untrack_navigating_mob(entity_id);
+        self.navigating_mobs.untrack(entity_id);
     }
 
     pub(crate) fn apply_entity_lifecycle_changes(
@@ -97,7 +104,7 @@ impl World {
         changes: EntityLifecycleChanges,
     ) {
         for entity in changes.tracking_stopped {
-            self.remove_entity_from_tracker(entity.id());
+            self.remove_entity_from_tracker(entity.as_ref());
         }
         for entity in changes.tracking_started {
             self.add_entity_to_tracker(&entity);
@@ -116,21 +123,6 @@ impl World {
             part.part_base().bind_parent(entity);
             entity_parts.insert(part.id(), Arc::clone(part));
         }
-    }
-
-    /// Removes the parts of the entity with `parent_id`, and any whose parent is gone.
-    fn unregister_entity_parts(&self, parent_id: i32) {
-        self.entity_parts
-            .lock()
-            .retain(|_, part| part.parent().is_some_and(|parent| parent.id() != parent_id));
-    }
-
-    pub(super) fn track_navigating_mob(&self, entity: &SharedEntity) {
-        self.navigating_mobs.track(entity);
-    }
-
-    pub(super) fn untrack_navigating_mob(&self, entity_id: i32) {
-        self.navigating_mobs.untrack(entity_id);
     }
 
     pub(crate) fn register_loaded_entity(
@@ -859,7 +851,7 @@ impl World {
         pusher: &dyn Entity,
         aabb: &WorldAabb,
     ) -> Vec<SharedEntity> {
-        Self::filter_pushable_entities(pusher, self.get_entities_in_aabb(aabb))
+        self.get_entities_in_aabb_excluding(aabb, pusher, EntitySelector::pushable_by(pusher))
     }
 
     pub(crate) fn filter_pushable_entities(

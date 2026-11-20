@@ -1134,13 +1134,12 @@ pub trait BlockBehavior: Send + Sync {
         pos: BlockPos,
         context: EntityLandingContext,
     ) -> (DVec3, bool) {
-        let restitution = state.get_block().config.bounce_restitution;
-        if context.velocity.y >= 0.0
-            || restitution <= 0.0
-            || context.suppresses_bounce
-            || state.get_block().has_tag(&BlockTag::SUPPRESSES_BOUNCE)
-            || -context.velocity.y <= context.gravity
-        {
+        let block = state.get_block();
+        let restitution = context.restitution(
+            block.config.bounce_restitution,
+            block.has_tag(&BlockTag::SUPPRESSES_BOUNCE),
+        );
+        if restitution == 0.0 {
             (
                 self.default_update_entity_movement_after_fall_on(state, world, pos, context),
                 false,

@@ -1,9 +1,18 @@
 //! `Player`'s overrides of the entity properties.
 
+use steel_utils::TICKS_PER_SECOND;
+
 use super::*;
 use crate::entity::entity;
 use crate::entity::prelude::*;
 use crate::entity::{EntityTable, RiderMove};
+
+const DIMENSION_CHANGE_COOLDOWN_TICKS: i32 = 10;
+const MIN_TRACKED_FALL_DISTANCE: f64 = 2.0;
+const SMASH_PARTICLES_PER_BLOCK_FALLEN: f64 = 50.0;
+const MAX_SMASH_PARTICLES: f64 = 200.0;
+const SMASH_PARTICLE_SPREAD: f32 = 0.3;
+const SMASH_PARTICLE_SPEED: f32 = 0.15;
 
 impl EntityTable for Player {
     const ENTITY: EntityProps<Self> = EntityProps {
@@ -21,7 +30,7 @@ impl EntityTable for Player {
         do_water_splash_effect: Self::entity_do_water_splash_effect,
         update_swimming: Self::entity_update_swimming,
         make_stuck_in_block: Self::entity_make_stuck_in_block,
-        dimension_changing_delay: |_| 10,
+        dimension_changing_delay: |_| DIMENSION_CHANGE_COOLDOWN_TICKS,
         on_explosion_hit: Self::entity_on_explosion_hit,
         swim_splash_sound: |_| &sound_events::ENTITY_PLAYER_SPLASH,
         swim_high_speed_splash_sound: |_| &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED,
@@ -48,7 +57,7 @@ impl EntityTable for Player {
         is_spectator: |entity| entity.game_mode() == GameType::Spectator,
         on_above_bubble_column: Self::entity_on_above_bubble_column,
         on_inside_bubble_column: Self::entity_on_inside_bubble_column,
-        fire_immune_ticks: |_| 20,
+        fire_immune_ticks: |_| TICKS_PER_SECOND,
         remaining_fire_ticks_cap: |entity| entity.abilities.lock().invulnerable.then_some(1),
         fire_ignite_extra_ticks: |_| rand::random_range(1..=2),
         can_be_hit_by_projectile: Self::entity_can_be_hit_by_projectile,
@@ -86,7 +95,7 @@ impl Player {
         if self.abilities.lock().may_fly {
             return false;
         }
-        if fall_distance >= 2.0 {
+        if fall_distance >= MIN_TRACKED_FALL_DISTANCE {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::FALL_ONE_CM,
                 round_f64(fall_distance * 100.0) as i32,
@@ -148,21 +157,17 @@ impl Player {
     ) {
         let fall_distance = self.fall_distance();
         if on_ground && fall_distance > 0.0 && self.spawn_extra_particles_on_fall() {
-            let count = (50.0 * fall_distance).clamp(0.0, 200.0) as i32;
-            let spread = f64::from(0.3_f32);
+            let count = (SMASH_PARTICLES_PER_BLOCK_FALLEN * fall_distance)
+                .clamp(0.0, MAX_SMASH_PARTICLES) as i32;
             world.send_particles(
                 ParticleData::new(
                     &vanilla_particle_types::BLOCK,
                     BlockParticleOption::new(on_state),
                 ),
-                DVec3::new(
-                    f64::from(pos.x()) + 0.5,
-                    f64::from(pos.y()) + 1.0,
-                    f64::from(pos.z()) + 0.5,
-                ),
+                pos.get_center() + DVec3::Y * 0.5,
                 count,
-                DVec3::splat(spread),
-                f64::from(0.15_f32),
+                DVec3::splat(f64::from(SMASH_PARTICLE_SPREAD)),
+                f64::from(SMASH_PARTICLE_SPEED),
             );
             self.set_spawn_extra_particles_on_fall(false);
         }

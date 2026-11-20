@@ -7,7 +7,7 @@ use super::{
     EnchantmentPostAttackContext, Entity, EntityTypeRef, GameType, ITEM_BEHAVIORS, InteractionHand,
     InteractionResult, InventoryAccess, ItemStack, PiercingWeapon, Player, SAttack, SInteract,
     SharedEntity, SoundEventHolder, SoundEventRef, TextComponent, TranslatedMessage, World,
-    WorldAabb, enchantment_helper, piercing_ray_hit_t, sound_events, vanilla_attributes,
+    WorldAabb, enchantment_helper, piercing_ray_hits, sound_events, vanilla_attributes,
     vanilla_damage_types, vanilla_entities,
 };
 
@@ -288,18 +288,19 @@ impl Player {
     }
 
     fn piercing_hit_entities(&self, item_stack: &ItemStack, world: &World) -> Vec<SharedEntity> {
-        let look = self.look_angle();
-        if look.length_squared() <= f64::EPSILON {
-            return Vec::new();
-        }
-
+        let look = self.calculate_view_vector(self.rotation().1, self.y_head_rot());
         let (min_reach, max_reach, hitbox_margin) = self.attack_range_for_item(item_stack);
         let eye_position = self.eye_position();
         let from = eye_position + look * min_reach;
         let movement_extension = self.known_movement().dot(look).max(0.0);
         let mut to = eye_position + look * (max_reach + movement_extension);
 
-        let block_hit = world.clip(eye_position, to, ClipBlockShape::Collider, ClipFluid::None);
+        let block_hit = world.clip_including_border(
+            eye_position,
+            to,
+            ClipBlockShape::Collider,
+            ClipFluid::None,
+        );
         if !block_hit.is_miss() {
             to = block_hit.location;
             if eye_position.distance_squared(to) < eye_position.distance_squared(from) {
@@ -307,22 +308,13 @@ impl Player {
             }
         }
 
-        let search_area = WorldAabb::new(from.x, from.y, from.z, from.x, from.y, from.z)
-            .inflate_xyz(hitbox_margin, hitbox_margin, hitbox_margin)
+        let search_area = WorldAabb::of_size(from, hitbox_margin, hitbox_margin, hitbox_margin)
             .expand_towards(to - from)
             .inflate(1.0);
-        let mut hits = world
-            .get_entities_in_aabb_matching(&search_area, |entity| {
-                self.can_piercing_hit_entity(entity)
-            })
-            .into_iter()
-            .filter_map(|entity| {
-                piercing_ray_hit_t(world, entity.bounding_box(), from, to, hitbox_margin)
-                    .map(|hit_t| (hit_t, entity))
-            })
-            .collect::<Vec<_>>();
-        hits.sort_by(|(left, _), (right, _)| left.total_cmp(right));
-        hits.into_iter().map(|(_, entity)| entity).collect()
+        world.get_entities_in_aabb_excluding(&search_area, self, |entity| {
+            self.can_piercing_hit_entity(entity)
+                && piercing_ray_hits(world, entity.bounding_box(), from, to, hitbox_margin)
+        })
     }
 
     fn can_piercing_hit_entity(&self, target: &dyn Entity) -> bool {

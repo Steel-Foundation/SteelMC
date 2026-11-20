@@ -14,6 +14,8 @@ use super::selector::{Goal, GoalControls};
 use crate::entity::{Animal, Mob};
 use crate::world::LevelAccessor;
 
+const EAT_BLOCK_TICK: i32 = 4;
+
 /// Constant mirroring vanilla `EatBlockGoal.EAT_ANIMATION_TICKS`, the full animation
 /// length before the goal's tick reaches the block-eating step.
 const EAT_ANIMATION_TICKS: i32 = 40;
@@ -86,7 +88,7 @@ impl Goal for EatBlockGoal {
 
     fn tick(&mut self, mob: &Mob<'_>) {
         self.eat_animation_tick = (self.eat_animation_tick - 1).max(0);
-        if self.eat_animation_tick != reduced_tick_delay(4) {
+        if self.eat_animation_tick != reduced_tick_delay(EAT_BLOCK_TICK) {
             return;
         }
 

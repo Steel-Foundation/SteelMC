@@ -493,6 +493,8 @@ pub struct ServerEntityMovementSyncUpdate {
     pub horizontal_collision: bool,
     /// Whether the entity requested a full-precision position sync.
     pub requires_precise_position: bool,
+    /// Advance to the next tracking interval.
+    pub sync_position: bool,
     /// Entity network id.
     pub entity_id: i32,
     /// Whether the entity is currently riding another entity.
@@ -572,7 +574,11 @@ impl ServerEntityMovementSyncState {
             position: EntityPositionSyncState::new(position, on_ground),
             rotation: EntityRotationSyncState::new(body_rotation, head_yaw),
             velocity: EntityVelocitySyncState::new(velocity),
-            update_interval,
+            update_interval: if update_interval == i32::MAX {
+                0
+            } else {
+                update_interval
+            },
             track_delta,
             tick_count: 0,
             teleport_delay: 0,
@@ -587,6 +593,14 @@ impl ServerEntityMovementSyncState {
         &mut self,
         update: ServerEntityMovementSyncUpdate,
     ) -> ServerEntityMovementSyncResult {
+        if update.sync_position {
+            self.tick_count = if self.update_interval > 0 {
+                (self.tick_count / self.update_interval * self.update_interval)
+                    .wrapping_add(self.update_interval)
+            } else {
+                0
+            };
+        }
         let mut result = ServerEntityMovementSyncResult::default();
         let should_process =
             self.should_process(update.needs_velocity_sync, update.has_dirty_entity_data);
@@ -1108,6 +1122,7 @@ mod tests {
             vertical_collision: false,
             horizontal_collision: false,
             requires_precise_position: false,
+            sync_position: false,
             entity_id: 12,
             is_passenger: false,
             position,
@@ -1209,6 +1224,29 @@ mod tests {
         assert_eq!(packets.len(), 2);
         assert!(matches!(packets[0], EntityMovementSyncPacket::Velocity(_)));
         assert!(matches!(packets[1], EntityMovementSyncPacket::Position(_)));
+    }
+
+    #[test]
+    fn bounce_starts_a_new_tracking_interval() {
+        let mut state = ServerEntityMovementSyncState::new(
+            DVec3::ZERO,
+            DVec3::ZERO,
+            false,
+            (0.0, 0.0),
+            0.0,
+            3,
+            false,
+        );
+        let mut update = server_update(DVec3::ZERO, DVec3::ZERO);
+        let _ = state.record_send_changes(update);
+        update.sync_position = true;
+        update.position.x = 1.0;
+        assert_eq!(collect_server_packets(&mut state, update).len(), 1);
+        update.sync_position = false;
+        update.position.x = 2.0;
+        assert!(collect_server_packets(&mut state, update).is_empty());
+        assert!(collect_server_packets(&mut state, update).is_empty());
+        assert_eq!(collect_server_packets(&mut state, update).len(), 1);
     }
 
     #[test]

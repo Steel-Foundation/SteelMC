@@ -3,7 +3,6 @@
 //! This module implements the logic from Java's `ServerPlayerGameMode`, particularly
 //! the `useItemOn` method that handles block placement and block interactions.
 
-use std::mem::swap;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -103,7 +102,7 @@ impl PlayerGameModeState {
     }
 }
 
-use raycast::piercing_ray_hit_t;
+use raycast::piercing_ray_hits;
 
 const CREATIVE_BLOCK_RANGE_MODIFIER_AMOUNT: f64 = 0.5;
 const CREATIVE_ENTITY_RANGE_MODIFIER_AMOUNT: f64 = 2.0;

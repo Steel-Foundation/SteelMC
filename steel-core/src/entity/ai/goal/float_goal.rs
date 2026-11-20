@@ -2,6 +2,8 @@ use crate::entity::ai::goal::selector::{Goal, GoalControls};
 use crate::entity::prelude::*;
 use crate::entity::{Mob, MobBase};
 
+const FLOAT_JUMP_CHANCE: f32 = 0.8;
+
 pub struct FloatGoal;
 
 impl FloatGoal {
@@ -27,7 +29,7 @@ impl Goal for FloatGoal {
     }
 
     fn tick(&mut self, mob: &Mob<'_>) {
-        if rand::random::<f32>() < 0.8 {
+        if rand::random::<f32>() < FLOAT_JUMP_CHANCE {
             mob.mob_base().controls().lock().jump_control.jump();
         }
     }
