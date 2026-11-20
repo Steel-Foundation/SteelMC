@@ -174,7 +174,7 @@ impl ShulkerBoxBlockEntity {
                 direction,
                 animation.old_progress(),
                 animation.progress(),
-                DVec3::from(pos.get_bottom_center()),
+                pos.get_bottom_center(),
             )
         };
 
@@ -255,14 +255,9 @@ impl ShulkerBoxBlockEntity {
 
         let direction = state.get_value(ShulkerBoxBlock::FACING);
 
-        let lid_open_bounding_box: WorldAabb = Self::get_progress_delta_aabb(
-            1.0,
-            direction,
-            0.0,
-            0.5,
-            DVec3::from(pos.get_bottom_center()),
-        )
-        .deflate(1.0E-6);
+        let lid_open_bounding_box: WorldAabb =
+            Self::get_progress_delta_aabb(1.0, direction, 0.0, 0.5, pos.get_bottom_center())
+                .deflate(1.0E-6);
 
         let collision = WorldCollisionProvider::new(world);
         !collision.has_block_collision(&lid_open_bounding_box)

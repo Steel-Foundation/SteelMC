@@ -1967,7 +1967,10 @@ fn creative_crafting_grid_updates_the_result_slot() {
 
     {
         let menu = player.inventory_menu.lock();
-        let guard = menu.behavior().lock_all_containers();
+        let guard = menu
+            .behavior()
+            .lock_all_containers()
+            .expect("container access should succeed");
         let result = guard
             .get(crafting.result_id())
             .expect("result container is registered with the menu");
@@ -1982,7 +1985,10 @@ fn creative_crafting_grid_updates_the_result_slot() {
 
     {
         let menu = player.inventory_menu.lock();
-        let guard = menu.behavior().lock_all_containers();
+        let guard = menu
+            .behavior()
+            .lock_all_containers()
+            .expect("container access should succeed");
         let result = guard
             .get(crafting.result_id())
             .expect("result container is registered with the menu");

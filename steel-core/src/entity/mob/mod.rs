@@ -1,6 +1,7 @@
 //! Vanilla-shaped mob foundations.
 
 pub mod pathfinder;
+mod spawn_armor;
 
 use crate::entity::component::props::layer_props;
 use crate::entity::component::{Component, Components as _, Has};
@@ -12,12 +13,14 @@ use crate::physics::MoveResult;
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
 use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target};
+use spawn_armor::VANILLA_SPAWN_ARMOR_TIERS;
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::nbt::NbtValueInput as _;
 
 use std::ops::Deref;
 use std::sync::Arc;
 
+use crate::loot::{LOOT_TABLES, LootTableRef};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -32,7 +35,6 @@ use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
-use steel_registry::loot_table::LootTableRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::MobEntityData;
@@ -72,7 +74,7 @@ use crate::entity::{
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
-use crate::world::{LevelReader, World};
+use crate::world::{DifficultyInstance, LevelReader, World};
 
 const MOB_FLAG_NO_AI: i8 = 1;
 const MOB_FLAG_LEFT_HANDED: i8 = 2;
@@ -82,7 +84,17 @@ const DEFAULT_EQUIPMENT_DROP_CHANCE: f32 = 0.085;
 const PRESERVE_ITEM_DROP_CHANCE_THRESHOLD: f32 = 1.0;
 const PRESERVE_ITEM_DROP_CHANCE: f32 = 2.0;
 const TARGET_REACH_DISTANCE_SQR: f64 = 2.25;
-const RANDOM_SPAWN_BONUS_ID: Identifier = Identifier::vanilla_static("random_spawn_bonus");
+const DEFAULT_ATTACK_REACH_BASE: f32 = 2.04;
+const DEFAULT_ATTACK_REACH_OFFSET: f32 = 0.6;
+pub(crate) const RANDOM_SPAWN_BONUS_ID: Identifier =
+    Identifier::vanilla_static("random_spawn_bonus");
+const RANDOM_SPAWN_BONUS_SCALE: f64 = 0.114_850_000_000_000_01;
+const LEFT_HANDED_SPAWN_CHANCE: f32 = 0.05;
+const MAX_WEARING_ARMOR_CHANCE: f32 = 0.15;
+const WEARING_ARMOR_UPGRADE_MATERIAL_CHANCE: f32 = 0.1087;
+const WEARING_ARMOR_UPGRADE_MATERIAL_ATTEMPTS: i32 = 3;
+const HARD_ARMOR_PARTIAL_CHANCE: f32 = 0.1;
+const OTHER_ARMOR_PARTIAL_CHANCE: f32 = 0.25;
 /// Vanilla `Mob.ITEM_PICKUP_REACH`: the per-axis distance the item-pickup search
 /// box is inflated by when a mob looks for nearby dropped items to collect.
 const ITEM_PICKUP_REACH: DVec3 = DVec3::new(1.0, 0.0, 1.0);
@@ -397,9 +409,16 @@ layer_props! {
         /// `Mob.mobInteract`: the type's own interaction, tried after leashing
         /// and spawn eggs.
         fn mob_interact(player: &Player, hand: InteractionHand) -> InteractionResult;
+        /// `Mob.doHurtTarget`: attacks a target with this mob's equipped weapon.
+        fn do_hurt_target(world: &World, target: &SharedEntity) -> bool;
+        /// `Mob.populateDefaultEquipmentSlots`: rolls difficulty-scaled spawn armor.
+        fn populate_default_equipment_slots(difficulty: DifficultyInstance);
+        /// Runs after a player spawns this mob's offspring with a spawn egg.
+        fn on_offspring_spawned_from_egg(spawner: &Player, offspring: &SharedEntity);
         /// `Mob.finalizeSpawn`; returns the group data for the next group member.
         fn finalize_spawn(
             world: &Arc<World>,
+            difficulty: DifficultyInstance,
             reason: EntitySpawnReason,
             group_data: Option<SpawnGroupData>,
         ) -> Option<SpawnGroupData>;
@@ -1147,10 +1166,9 @@ impl<'a> Mob<'a> {
             true
         } else if slot.is_armor() {
             self.compare_armor(new_item_stack, current_item_stack, slot)
-        } else if slot == EquipmentSlot::MainHand {
-            self.compare_weapons(new_item_stack, current_item_stack, slot)
         } else {
-            false
+            slot == EquipmentSlot::MainHand
+                && self.compare_weapons(new_item_stack, current_item_stack, slot)
         }
     }
 
@@ -1460,7 +1478,7 @@ impl<'a> Mob<'a> {
             .lock()
             .death_loot_table
             .as_ref()
-            .and_then(|key| REGISTRY.loot_tables.by_key(key))
+            .and_then(|key| LOOT_TABLES.by_key(key))
     }
 
     pub fn has_custom_death_loot_table(&self) -> bool {
@@ -1591,77 +1609,6 @@ impl<'a> Mob<'a> {
 
     pub fn is_aggressive(&self) -> bool {
         self.mob_flags() & MOB_FLAG_AGGRESSIVE != 0
-    }
-
-    /// Performs this mob's melee attack against `target`: computes weapon
-    /// damage and knockback, applies enchantment effects, and returns whether
-    /// the target was hurt.
-    #[must_use]
-    pub fn do_hurt_target(&self, world: &World, target: &SharedEntity) -> bool {
-        let Some(attacker) = self.as_entity().as_living_entity() else {
-            return false;
-        };
-        let Some(this) = self.shared() else {
-            return false;
-        };
-        let weapon_item = {
-            let mut main_hand = ItemStack::empty();
-            self.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
-                main_hand = item_stack.copy_with_count(item_stack.count());
-            });
-            main_hand
-        };
-        let attack_damage = self
-            .attributes()
-            .lock()
-            .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32;
-        let damage_source = Self::mob_attack_damage_source(&weapon_item, &this);
-        let enchantment_context = EnchantmentDamageContext::new(
-            target.entity_type(),
-            Some(self.entity_type()),
-            Some(self.entity_type()),
-            &damage_source,
-        );
-        let mut damage =
-            enchantment_helper::modify_damage(&weapon_item, &enchantment_context, attack_damage);
-        damage += ITEM_BEHAVIORS
-            .get_behavior(weapon_item.item())
-            .get_attack_damage_bonus(&attacker, target.as_ref(), damage, &damage_source);
-
-        let old_movement = target.velocity();
-        let was_hurt = target.hurt(world, &damage_source, damage);
-        if was_hurt {
-            self.cause_extra_knockback(
-                target.as_ref(),
-                self.attack_knockback(target.as_ref(), &weapon_item, &damage_source),
-                old_movement,
-            );
-            self.with_equipment_slot_mut(EquipmentSlot::MainHand, &mut |stack| {
-                if stack.is_empty() {
-                    return;
-                }
-                if let Some(living_target) = target.as_living_entity() {
-                    ITEM_BEHAVIORS.get_behavior(stack.item()).hurt_enemy(
-                        stack,
-                        &living_target,
-                        &attacker,
-                    );
-                }
-            });
-            let post_attack_context = EnchantmentPostAttackContext::new(target, &damage_source);
-            enchantment_helper::do_post_attack_effects_from_item(
-                world,
-                &weapon_item,
-                &post_attack_context,
-            );
-            self.set_last_hurt_mob(Some(target));
-            self.play_attack_sound();
-        }
-
-        if let Some(user) = self.as_entity().as_living_entity() {
-            enchantment_helper::do_post_piercing_attack_effects(world, &user);
-        }
-        was_hurt
     }
 
     /// Builds the damage source for this mob's melee attack: the weapon's
@@ -1954,7 +1901,7 @@ impl<'a> Mob<'a> {
             return;
         }
 
-        let y_rot = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
+        let y_rot = trig::atan2(zd, xd) as f32 * RAD_TO_DEG - DEGREE_90;
         let (_, pitch) = self.rotation();
         self.set_rotation((
             rotlerp(self.rotation().0, y_rot, MOVE_CONTROL_MAX_TURN),
@@ -2048,12 +1995,12 @@ impl<'a> Mob<'a> {
             let zd = wanted_position.z - position.z;
             let horizontal = xd.hypot(zd);
             if horizontal.abs() > 1.0e-5 || yd.abs() > 1.0e-5 {
-                let target_pitch = -(yd.atan2(horizontal)) as f32 * RAD_TO_DEG;
+                let target_pitch = -(trig::atan2(yd, horizontal)) as f32 * RAD_TO_DEG;
                 rotation.1 =
                     rotate_towards(rotation.1, target_pitch, look_control.x_max_rot_angle());
             }
             if zd.abs() > 1.0e-5 || xd.abs() > 1.0e-5 {
-                let target_yaw = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
+                let target_yaw = trig::atan2(zd, xd) as f32 * RAD_TO_DEG - DEGREE_90;
                 self.set_y_head_rot(rotate_towards(
                     self.y_head_rot(),
                     target_yaw,
@@ -2129,10 +2076,89 @@ impl<'a> Mob<'a> {
 /// `Mob`'s [`MobProps::custom_server_ai_step`].
 pub const fn custom_server_ai_step<E: Parts>(_entity: &E) {}
 
+/// Default body for `Mob.doHurtTarget`.
+#[must_use]
+pub fn do_hurt_target<E: Parts>(entity: &E, world: &World, target: &SharedEntity) -> bool {
+    let mob = entity.mob();
+    let Some(attacker) = mob.as_entity().as_living_entity() else {
+        return false;
+    };
+    let Some(this) = mob.shared() else {
+        return false;
+    };
+    let weapon_item = {
+        let mut main_hand = ItemStack::empty();
+        mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+            main_hand = item_stack.copy_with_count(item_stack.count());
+        });
+        main_hand
+    };
+    let attack_damage = mob
+        .attributes()
+        .lock()
+        .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32;
+    let damage_source = Mob::mob_attack_damage_source(&weapon_item, &this);
+    let enchantment_context = EnchantmentDamageContext::new(
+        target.entity_type(),
+        Some(mob.entity_type()),
+        Some(mob.entity_type()),
+        &damage_source,
+    );
+    let mut damage =
+        enchantment_helper::modify_damage(&weapon_item, &enchantment_context, attack_damage);
+    damage += ITEM_BEHAVIORS
+        .get_behavior(weapon_item.item())
+        .get_attack_damage_bonus(&attacker, target.as_ref(), damage, &damage_source);
+
+    let old_movement = target.velocity();
+    let was_hurt = target.hurt(world, &damage_source, damage);
+    if was_hurt {
+        mob.cause_extra_knockback(
+            target.as_ref(),
+            mob.attack_knockback(target.as_ref(), &weapon_item, &damage_source),
+            old_movement,
+        );
+        mob.with_equipment_slot_mut(EquipmentSlot::MainHand, &mut |stack| {
+            if stack.is_empty() {
+                return;
+            }
+            if let Some(living_target) = target.as_living_entity() {
+                ITEM_BEHAVIORS.get_behavior(stack.item()).hurt_enemy(
+                    stack,
+                    &living_target,
+                    &attacker,
+                );
+            }
+        });
+        let post_attack_context = EnchantmentPostAttackContext::new(target, &damage_source);
+        enchantment_helper::do_post_attack_effects_from_item(
+            world,
+            &weapon_item,
+            &post_attack_context,
+        );
+        mob.set_last_hurt_mob(Some(target));
+        mob.play_attack_sound();
+    }
+
+    if let Some(user) = mob.as_entity().as_living_entity() {
+        enchantment_helper::do_post_piercing_attack_effects(world, &user);
+    }
+    was_hurt
+}
+
+/// Default body for the offspring-spawned hook.
+pub const fn on_offspring_spawned_from_egg<E: Parts>(
+    _entity: &E,
+    _spawner: &Player,
+    _offspring: &SharedEntity,
+) {
+}
+
 /// `Mob`'s [`MobProps::finalize_spawn`].
 pub fn finalize_spawn<E: Parts>(
     entity: &E,
     _world: &Arc<World>,
+    _difficulty: DifficultyInstance,
     _spawn_reason: EntitySpawnReason,
     group_data: Option<SpawnGroupData>,
 ) -> Option<SpawnGroupData> {
@@ -2142,8 +2168,8 @@ pub fn finalize_spawn<E: Parts>(
         .lock()
         .has_modifier(vanilla_attributes::FOLLOW_RANGE, &RANDOM_SPAWN_BONUS_ID);
     let random_spawn_bonus = needs_random_spawn_bonus
-        .then(|| 0.114_850_000_000_000_01 * (rand::random::<f64>() - rand::random::<f64>()));
-    let left_handed = rand::random::<f32>() < 0.05;
+        .then(|| RANDOM_SPAWN_BONUS_SCALE * (rand::random::<f64>() - rand::random::<f64>()));
+    let left_handed = rand::random::<f32>() < LEFT_HANDED_SPAWN_CHANCE;
 
     if let Some(amount) = random_spawn_bonus {
         mob.attributes().lock().add_modifier(
@@ -2167,6 +2193,50 @@ pub const fn mob_interact<E: Parts>(
     _hand: InteractionHand,
 ) -> InteractionResult {
     InteractionResult::Pass
+}
+
+/// Shared implementation of vanilla `Mob.populateDefaultEquipmentSlots`.
+pub fn populate_default_equipment_slots<E: Parts>(entity: &E, difficulty: DifficultyInstance) {
+    let mob = entity.mob();
+    if rand::random::<f32>() >= MAX_WEARING_ARMOR_CHANCE * difficulty.special_multiplier() {
+        return;
+    }
+
+    let mut armor_type = rand::random_range(0..3);
+    for _ in 0..WEARING_ARMOR_UPGRADE_MATERIAL_ATTEMPTS {
+        if rand::random::<f32>() < WEARING_ARMOR_UPGRADE_MATERIAL_CHANCE {
+            armor_type += 1;
+        }
+    }
+
+    let partial_chance = if difficulty.difficulty() == Difficulty::Hard {
+        HARD_ARMOR_PARTIAL_CHANCE
+    } else {
+        OTHER_ARMOR_PARTIAL_CHANCE
+    };
+    let mut first = true;
+    for slot in EquipmentSlot::ARMOR_SLOTS {
+        if !first && rand::random::<f32>() < partial_chance {
+            break;
+        }
+        first = false;
+        if !mob.equipment_in_slot(slot).is_empty() {
+            continue;
+        }
+        let Some(tier) = usize::try_from(armor_type)
+            .ok()
+            .and_then(|index| VANILLA_SPAWN_ARMOR_TIERS.get(index))
+        else {
+            continue;
+        };
+        let Some(item) = tier.item_for(slot) else {
+            continue;
+        };
+        mob.living_base()
+            .equipment()
+            .lock()
+            .set(slot, ItemStack::new(item));
+    }
 }
 
 // Every mob is `Leashable`.
@@ -2216,7 +2286,7 @@ fn can_attempt_equipment_drop(drop_chance: f32, preserve: bool, killed_by_player
 }
 
 fn default_attack_reach() -> f64 {
-    f64::from(2.04_f32).sqrt() - f64::from(0.6_f32)
+    f64::from(DEFAULT_ATTACK_REACH_BASE).sqrt() - f64::from(DEFAULT_ATTACK_REACH_OFFSET)
 }
 
 fn should_jump_to_wanted_position(mob: &Mob<'_>, xd: f64, yd: f64, zd: f64) -> bool {
@@ -2257,8 +2327,7 @@ pub fn block_pos_distance_sqr(a: BlockPos, b: BlockPos) -> f64 {
 }
 
 pub fn block_center_distance_sqr(pos: BlockPos, target: DVec3) -> f64 {
-    let (x, y, z) = pos.get_center();
-    DVec3::new(x, y, z).distance_squared(target)
+    pos.get_center().distance_squared(target)
 }
 
 fn home_radius_sqr(radius: i32) -> f64 {

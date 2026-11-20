@@ -1,5 +1,7 @@
 //! Sleeping in beds.
 
+use steel_math::RAD_TO_DEG_F64;
+
 use super::*;
 
 impl Living<'_> {
@@ -107,8 +109,8 @@ pub fn stop_sleeping<E: Parts>(entity: &E) {
             );
             let look_direction = (bed_center - stand_up).normalize_or_zero();
             let yaw = wrap_degrees(
-                (look_direction.z.atan2(look_direction.x).to_degrees() - f64::from(DEGREE_90))
-                    as f32,
+                (trig::atan2(look_direction.z, look_direction.x) * RAD_TO_DEG_F64
+                    - f64::from(DEGREE_90)) as f32,
             );
             if let Err(error) = living.try_set_position(stand_up) {
                 log::warn!(

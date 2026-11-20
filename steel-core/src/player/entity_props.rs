@@ -1,9 +1,9 @@
 //! `Player`'s overrides of the entity properties.
 
 use super::*;
-use crate::entity::EntityTable;
 use crate::entity::entity;
 use crate::entity::prelude::*;
+use crate::entity::{EntityTable, RiderMove};
 
 impl EntityTable for Player {
     const ENTITY: EntityProps<Self> = EntityProps {
@@ -89,7 +89,7 @@ impl Player {
         if fall_distance >= 2.0 {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::FALL_ONE_CM,
-                (fall_distance * 100.0).round() as i32,
+                round_f64(fall_distance * 100.0) as i32,
             );
         }
         living_entity::cause_fall_damage(self, fall_distance, damage_modifier, source)
@@ -279,7 +279,7 @@ impl Player {
             return false;
         }
 
-        entity_to_ride.position_rider(self.as_entity());
+        entity_to_ride.position_rider(self.as_entity(), RiderMove::SetPosition);
         let position = self.position();
         let (yaw, pitch) = self.rotation();
         if let Err(error) = self.teleport(position, yaw, pitch) {

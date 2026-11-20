@@ -8,6 +8,7 @@ use super::super::{
     vanilla_entities,
 };
 use super::{JobPoll, ServerJob, ServerJobContext};
+use crate::entity::RiderMove;
 use crate::entity::prelude::*;
 use crate::world::player_spawn_finder::POLL_TIME_BUDGET;
 
@@ -867,7 +868,7 @@ fn restore_root_vehicle_for_player(
     if mount_player {
         let player_entity: SharedEntity = Arc::<Player>::clone(player);
         EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
-        attach_entity.position_rider(player.as_ref());
+        attach_entity.position_rider(player.as_ref(), RiderMove::SetPosition);
         player.send_restored_vehicle_mount_sync(attach_entity.as_ref());
     }
 

@@ -9,7 +9,7 @@ use crate::entity::MobTable;
 use crate::entity::SpawnGroupData;
 use crate::entity::ageable;
 use crate::entity::prelude::*;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 
 use steel_macros::entity_behavior;
 use steel_registry::cow_sound_variant::{CowSoundVariantRef, CowSoundVariantRegistry};
@@ -100,11 +100,12 @@ impl CowEntity {
     fn mob_finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
         variant::pick_spawn_variants(self, world);
-        ageable::finalize_spawn(self, world, reason, group_data)
+        ageable::finalize_spawn(self, world, difficulty, reason, group_data)
     }
 }
 

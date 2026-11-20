@@ -19,6 +19,7 @@ use text_components::TextComponent;
 
 use super::*;
 use crate::{
+    behavior::init_behaviors,
     entity::PendingWorldChangeToken,
     inventory::{
         container::{Container as _, SimpleContainer},
@@ -87,6 +88,8 @@ struct RecordingPlayer {
 }
 
 fn recording_player(name: &str, entity_id: i32) -> RecordingPlayer {
+    let world = Arc::clone(test_world());
+    init_behaviors();
     let packets = Arc::new(SyncMutex::new(Vec::new()));
     let inventories = Arc::new(SyncMutex::new(Vec::new()));
     let callbacks_saw_unlocked_inventories = Arc::new(AtomicBool::new(true));
@@ -95,7 +98,7 @@ fn recording_player(name: &str, entity_id: i32) -> RecordingPlayer {
         inventories: Arc::clone(&inventories),
         callbacks_saw_unlocked_inventories: Arc::clone(&callbacks_saw_unlocked_inventories),
     })));
-    let player = TestPlayerBuilder::new(Arc::clone(test_world()), name, entity_id)
+    let player = TestPlayerBuilder::new(world, name, entity_id)
         .detached_config(test_runtime_config(2))
         .connection(connection)
         .build();
@@ -617,7 +620,10 @@ fn modify_view_extracts_but_cannot_insert_crafting_items() {
     menu.on_open(&source);
 
     {
-        let guard = menu.behavior().lock_all_containers();
+        let guard = menu
+            .behavior()
+            .lock_all_containers()
+            .expect("container access should succeed");
         let result = guard
             .get(handler.result_id())
             .expect("result container is registered with the menu");
@@ -634,7 +640,10 @@ fn modify_view_extracts_but_cannot_insert_crafting_items() {
     );
     assert!(handler.crafting_container().lock().get_item(0).is_empty());
     {
-        let guard = menu.behavior().lock_all_containers();
+        let guard = menu
+            .behavior()
+            .lock_all_containers()
+            .expect("container access should succeed");
         let result = guard
             .get(handler.result_id())
             .expect("result container is registered with the menu");

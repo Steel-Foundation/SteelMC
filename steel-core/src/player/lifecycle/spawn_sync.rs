@@ -109,6 +109,9 @@ impl Player {
             self.get_world().remove_player_for_world_change(self);
         }
 
+        let combat_ended = self
+            .living_base
+            .recheck_combat_status(self.tick_count(), false);
         let replacement = self.moved_to_world(Arc::clone(new_world));
         let handed_over = if source_world_detached {
             server.replace_relocating_player(self, Arc::clone(&replacement))
@@ -136,6 +139,9 @@ impl Player {
         restore_state(&replacement);
 
         replacement.send_respawn_packet(new_world, ResetReason::WorldChange);
+        if combat_ended {
+            replacement.on_leave_combat();
+        }
         Some(replacement)
     }
 

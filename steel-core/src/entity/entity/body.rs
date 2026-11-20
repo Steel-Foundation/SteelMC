@@ -7,18 +7,6 @@ use super::*;
 /// Implemented for every [`Entity`]; entity types change behavior through
 /// [`EntityProps`], never by implementing this trait.
 pub trait EntityBody: Entity {
-    /// Builds this entity's default bounding box at `position`.
-    fn make_bounding_box_at(&self, position: DVec3) -> WorldAabb {
-        let dimensions = self.base().dimensions();
-        WorldAabb::entity_box(
-            position.x,
-            position.y,
-            position.z,
-            f64::from(dimensions.half_width()),
-            f64::from(dimensions.height),
-        )
-    }
-
     /// Returns true when vanilla collision context should treat the entity as descending.
     fn is_descending(&self) -> bool {
         self.synced_data()
@@ -267,7 +255,10 @@ pub fn is_in_wall<E: Entity + ?Sized>(entity: &E) -> bool {
 
 /// `Entity`'s [`EntityProps::dimensions_for_pose`].
 pub fn dimensions_for_pose<E: Entity + ?Sized>(entity: &E, _pose: EntityPose) -> EntityDimensions {
-    entity.entity_type().dimensions
+    entity.as_part_entity().map_or_else(
+        || entity.entity_type().dimensions,
+        |part| part.part_base().size(),
+    )
 }
 
 /// `Entity`'s [`EntityProps::refresh_dimensions`].
@@ -294,4 +285,15 @@ pub fn refresh_dimensions<E: Entity + ?Sized>(entity: &E) {
 /// `Entity`'s [`EntityProps::is_crouching`].
 pub fn is_crouching<E: Entity + ?Sized>(entity: &E) -> bool {
     entity.pose() == EntityPose::Sneaking
+}
+/// Builds this entity's default bounding box at `position`.
+pub fn make_bounding_box_at<E: Entity + ?Sized>(entity: &E, position: DVec3) -> WorldAabb {
+    let dimensions = entity.base().dimensions();
+    WorldAabb::entity_box(
+        position.x,
+        position.y,
+        position.z,
+        f64::from(dimensions.half_width()),
+        f64::from(dimensions.height),
+    )
 }

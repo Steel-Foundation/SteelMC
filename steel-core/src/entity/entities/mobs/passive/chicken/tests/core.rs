@@ -144,9 +144,10 @@ fn chicken_finalize_spawn_assigns_registered_variant_and_sound_variant() {
         Arc::downgrade(world),
     );
 
+    let difficulty = world.get_current_difficulty_at(chicken.block_position());
     let _ = chicken
         .mob()
-        .finalize_spawn(world, EntitySpawnReason::Natural, None);
+        .finalize_spawn(world, difficulty, EntitySpawnReason::Natural, None);
 
     assert!(
         REGISTRY

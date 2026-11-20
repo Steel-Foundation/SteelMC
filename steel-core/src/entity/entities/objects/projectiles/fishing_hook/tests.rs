@@ -16,6 +16,59 @@ fn test_hook(world: &Arc<World>, id: i32) -> Arc<FishingHookEntity> {
 }
 
 #[test]
+fn catches_continue_the_named_fishing_sequence() {
+    use crate::loot::random_sequences::RandomSequences;
+    use crate::test_support::{dropped_items, insert_ready_full_chunk};
+    use steel_utils::ChunkPos;
+
+    steel_registry::init_vanilla_registry();
+    init_behaviors();
+    let fixture = fresh_test_world("fishing_sequence");
+    let world = &fixture.world;
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Angler", next_entity_id()).build();
+    let rod = ItemStack::new(&vanilla_items::FISHING_ROD);
+    player.inventory.lock().set_selected_item(rod.clone());
+    let owner: SharedEntity = Arc::<Player>::clone(&player);
+    let position = player.position();
+    insert_ready_full_chunk(world, ChunkPos::from_entity_pos(position));
+    let expected = RandomSequences::new_for_test(world.level_data.read().seed());
+    let table = &vanilla_loot_tables::GAMEPLAY_FISHING;
+    let sequence = table.random_sequence.as_ref().expect("named sequence");
+
+    for _ in 0..3 {
+        let hook = FishingHookEntity::new(
+            &vanilla_entities::FISHING_BOBBER,
+            next_entity_id(),
+            position,
+            Arc::downgrade(world),
+        );
+        hook.set_owner(&owner);
+        hook.hook_state.lock().nibble = 1;
+        let items = expected
+            .with_random(sequence, |random| {
+                let mut context = LootContext::new(random)
+                    .with_world(world)
+                    .with_origin(position)
+                    .with_tool(&rod)
+                    .with_this_entity(entity_loot_ref(hook.as_ref(), None))
+                    .with_luck(player.living().luck());
+                table.get_random_items(&mut context)
+            })
+            .expect("expected catch");
+        let before = dropped_items(world, position).len();
+        assert_eq!(hook.retrieve(&rod), 1);
+        assert_eq!(dropped_items(world, position).len() - before, items.len());
+        let actual = world
+            .with_loot_random(Some(table), 0, |random| Ok(random.next_i64()))
+            .expect("actual draw");
+        let expected = expected
+            .with_random(sequence, |random| Ok(random.next_i64()))
+            .expect("expected draw");
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
 fn spawn_data_identifies_the_owning_player() {
     let world_fixture = fresh_test_world("fishing_hook_spawn_data");
     let world = &world_fixture.world;

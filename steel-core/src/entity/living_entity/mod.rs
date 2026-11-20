@@ -1,8 +1,10 @@
 use steel_math::{DEGREE_90, trig};
 use steel_registry::data_components::vanilla_components::{DEATH_PROTECTION, USE_EFFECTS};
 use steel_registry::entity_data::ParticleList;
+use steel_registry::entity_variant::MooshroomVariant;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
+use steel_utils::TICKS_PER_SECOND;
 use steel_utils::locks::CheckedMutex;
 
 use std::ops::Deref;
@@ -21,6 +23,7 @@ use crate::entity::entity::{
 };
 use crate::entity::pushing::EntityPush;
 
+mod blocking;
 mod damage;
 mod dismount;
 mod effects;
@@ -30,10 +33,14 @@ mod movement;
 mod sleeping;
 mod travel;
 
+pub use blocking::{block_using_item, blocked_by_item};
+#[cfg(test)]
+pub(crate) use damage::shearing_loot_items_with_rng;
 pub use damage::{
     absorption_amount, actually_hurt, die, drop_custom_death_loot, handle_killing_blow, hurt,
     hurt_armor, hurt_broadcast_chunk, hurt_helmet, indicate_damage, is_always_experience_dropper,
-    is_invulnerable_to, set_absorption_amount, should_drop_experience, should_drop_loot,
+    is_invulnerable_to, on_enter_combat, on_leave_combat, set_absorption_amount,
+    should_drop_experience, should_drop_loot,
 };
 pub use dismount::dismount_poses;
 pub use effects::can_be_affected;
@@ -43,7 +50,7 @@ pub use environment::{
 pub use equipment::{
     does_emit_equip_event, equip_sound, handle_extra_items_created_on_use, has_infinite_materials,
     interact_living_entity_with_equippable, is_blocking, is_using_item, on_equipped_item_broken,
-    tick_equipment, with_equipment_slot, with_equipment_slot_mut,
+    stop_using_item, tick_equipment, with_equipment_slot, with_equipment_slot_mut,
 };
 pub use movement::{
     ai_step, block_speed_factor, can_glide, can_glide_using, cause_fall_damage, check_fall_damage,
@@ -74,6 +81,16 @@ layer_props! {
         fn indicate_damage(xd: f64, zd: f64);
         /// `LivingEntity.isUsingItem`.
         fn is_using_item() -> bool;
+        /// Stops using the active item without calling its release hook.
+        fn stop_using_item();
+        /// Reacts on the defender after an item blocks an attack.
+        fn block_using_item(world: &World, attacker: &Living<'_>, source: &DamageSource, damage: f32, fully_blocked: bool);
+        /// Reacts on the attacker after the defender blocks its attack.
+        fn blocked_by_item(defender: &Living<'_>, source: &DamageSource, damage: f32, fully_blocked: bool);
+        /// Reports the start of a combat session.
+        fn on_enter_combat();
+        /// Reports the end of a combat session.
+        fn on_leave_combat();
         /// `LivingEntity.getLuck`.
         fn luck() -> f32;
         /// `LivingEntity.hurtArmor`.
@@ -115,6 +132,8 @@ layer_props! {
         // TODO: replace with vanilla `Entity.get(DataComponentType)` once loot
         // predicates match entity components generally.
         fn chicken_loot_variant() -> Option<&'static Identifier>;
+        /// This entity's mooshroom variant for entity loot predicates.
+        fn mooshroom_loot_variant() -> Option<MooshroomVariant>;
         /// `LivingEntity.serverAiStep`.
         fn server_ai_step();
         /// `LivingEntity.canBeAffected`.
@@ -259,6 +278,9 @@ pub fn tick<E: Parts>(entity: &E) {
 
     living.tick_mob_effects();
     living.detect_equipment_updates();
+    if living.tick_count() % TICKS_PER_SECOND == 0 {
+        living.recheck_combat_status();
+    }
 
     if !living.is_removed() {
         let _movement = living.ai_step();
@@ -1038,6 +1060,12 @@ pub const fn sheep_loot_state<E: Parts>(_entity: &E) -> Option<(DyeColor, bool)>
 /// Mirrors `Chicken.get(DataComponents.CHICKEN_VARIANT)` for the loot predicate.
 #[must_use]
 pub const fn chicken_loot_variant<E: Parts>(_entity: &E) -> Option<&'static Identifier> {
+    None
+}
+
+/// Supplies the default loot-predicate value for entities without a mooshroom variant.
+#[must_use]
+pub const fn mooshroom_loot_variant<E: Parts>(_entity: &E) -> Option<MooshroomVariant> {
     None
 }
 

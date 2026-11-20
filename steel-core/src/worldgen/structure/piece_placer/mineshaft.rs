@@ -602,7 +602,7 @@ impl MineshaftPlacer<'_, '_> {
         let chest = ChestMinecartEntity::new(
             &vanilla_entities::CHEST_MINECART,
             next_entity_id(),
-            pos.get_center().into(),
+            pos.get_center(),
             self.region.weak_world(),
         );
         chest.set_loot_table(ABANDONED_MINESHAFT_LOOT, loot_seed);

@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_macros::entity_behavior;
-use steel_math::{DEGREE_90, vector};
+use steel_math::{DEGREE_90, RAD_TO_DEG_F64, trig, vector};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::ParticleData;
 use steel_registry::entity_type::EntityTypeRef;
@@ -256,13 +256,15 @@ impl SquidEntity {
             let living = self.living();
             let y_body_rot = living.y_body_rot();
             let y_body_rot = y_body_rot
-                + (-(movement.x.atan2(movement.z) as f32).to_degrees() - y_body_rot) * 0.1;
+                + (-(trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32 - y_body_rot)
+                    * 0.1;
             living.set_y_body_rot(y_body_rot);
             self.set_rotation((y_body_rot, self.rotation().1));
             let horizontal = movement.x.hypot(movement.z);
             let mut swimming = self.swimming.lock();
-            swimming.x_body_rot +=
-                (-(horizontal.atan2(movement.y) as f32).to_degrees() - swimming.x_body_rot) * 0.1;
+            swimming.x_body_rot += (-(trig::atan2(horizontal, movement.y) * RAD_TO_DEG_F64) as f32
+                - swimming.x_body_rot)
+                * 0.1;
         } else {
             let y = match self.living().mob_effect(LEVITATION) {
                 Some(levitation) => 0.05 * f64::from(levitation.amplifier() + 1),

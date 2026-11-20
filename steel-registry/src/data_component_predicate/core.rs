@@ -1,14 +1,27 @@
 use super::*;
 
+/// A partial component condition evaluated against effective component values.
+pub trait DataComponentPredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool;
+}
+
 /// Typed payload behavior for a registered partial component predicate.
 pub trait DataComponentPredicateCodec:
-    DowncastType + Clone + Debug + PartialEq + HashComponent + Send + Sync + 'static
+    DataComponentPredicate
+    + DowncastType
+    + Clone
+    + Debug
+    + PartialEq
+    + HashComponent
+    + Send
+    + Sync
+    + 'static
 {
     fn from_nbt_value(tag: &NbtTag) -> Option<Self>;
     fn to_nbt_value(&self) -> NbtTag;
 }
 
-trait ErasedDataComponentPredicate: ErasedType + Debug + Send + Sync {
+trait ErasedDataComponentPredicate: DataComponentPredicate + ErasedType + Debug + Send + Sync {
     fn clone_predicate(&self) -> Box<dyn ErasedDataComponentPredicate>;
     fn predicate_eq(&self, other: &dyn ErasedDataComponentPredicate) -> bool;
 }
@@ -133,6 +146,17 @@ impl DataComponentPredicateData {
     }
 
     #[must_use]
+    pub fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        match (self.discriminator, self.value.as_deref()) {
+            (PredicateDiscriminator::Concrete(_), Some(value)) => value.matches(components),
+            (PredicateDiscriminator::Any(component), None) => {
+                components.effective_value_raw(&component.key).is_some()
+            }
+            _ => panic!("component predicate discriminator and value disagree"),
+        }
+    }
+
+    #[must_use]
     pub fn downcast_ref<T: DowncastType>(&self) -> Option<&T> {
         self.value.as_deref()?.downcast_ref::<T>()
     }
@@ -142,7 +166,9 @@ impl DataComponentPredicateData {
         self.discriminator.key()
     }
 
-    pub(super) fn from_persistent_entry(key: &Identifier, tag: &NbtTag) -> Option<Self> {
+    /// Decodes a registered predicate or component-presence condition from NBT.
+    #[must_use]
+    pub fn from_persistent_entry(key: &Identifier, tag: &NbtTag) -> Option<Self> {
         if let Some(predicate_type) = REGISTRY.data_component_predicate_types.by_key(key) {
             return Some(Self {
                 discriminator: PredicateDiscriminator::Concrete(predicate_type),
@@ -286,6 +312,13 @@ impl Debug for DataComponentExactPredicate {
 impl DataComponentExactPredicate {
     pub const EMPTY: Self = Self { values: Vec::new() };
 
+    #[must_use]
+    pub fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        self.values
+            .iter()
+            .all(|(entry, expected)| components.effective_value_raw(&entry.key) == Some(expected))
+    }
+
     /// Creates an exact predicate only when every persistent value can round-trip.
     ///
     /// Vanilla's direct stream codec can admit values rejected by a component's
@@ -414,6 +447,15 @@ impl DataComponentMatchers {
         exact: DataComponentExactPredicate::EMPTY,
         partial: Vec::new(),
     };
+
+    #[must_use]
+    pub fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        self.exact.matches(components)
+            && self
+                .partial
+                .iter()
+                .all(|predicate| predicate.matches(components))
+    }
 
     #[must_use]
     pub fn new(

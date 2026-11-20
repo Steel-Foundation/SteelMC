@@ -185,8 +185,16 @@ fn may_break_requires_impact_projectile_tag() {
     );
     let ender_pearl = OwnerCollisionProjectile::new(2, DVec3::ZERO);
 
-    assert!(firework.projectile().may_break(test_world()));
-    assert!(!ender_pearl.projectile().may_break(test_world()));
+    assert!(
+        firework
+            .projectile()
+            .may_break(test_world(), BlockPos::ZERO)
+    );
+    assert!(
+        !ender_pearl
+            .projectile()
+            .may_break(test_world(), BlockPos::ZERO)
+    );
 }
 
 #[test]

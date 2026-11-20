@@ -160,7 +160,7 @@ impl Living<'_> {
     }
 
     /// Records the last climbable block position this living entity touched.
-    pub fn set_last_climbable_pos(&self, pos: BlockPos) {
+    pub fn set_last_climbable_pos(&self, pos: Option<BlockPos>) {
         self.living_base().set_last_climbable_pos(pos);
     }
 
@@ -188,7 +188,7 @@ impl Living<'_> {
                 && trapdoor_usable_as_ladder_state(state, world.get_block_state(pos.below()));
 
         if climbable {
-            self.set_last_climbable_pos(pos);
+            self.set_last_climbable_pos(Some(pos));
         }
 
         climbable

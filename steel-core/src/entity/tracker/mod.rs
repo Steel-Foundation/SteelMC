@@ -22,8 +22,8 @@ use steel_utils::locks::{SyncMutex, SyncRwLock};
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::leash::Leashable;
 use crate::entity::{
-    Entity, EntityMovementSyncPacket, MobEffectSyncPacket, ServerEntityMovementSyncState,
-    ServerEntityMovementSyncUpdate, SharedEntity, WeakEntity,
+    Entity, EntityMovementSyncPacket, HurtingProjectileBase, MobEffectSyncPacket,
+    ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate, SharedEntity, WeakEntity,
 };
 use crate::player::Player;
 
@@ -136,6 +136,12 @@ impl EntityTracker {
         get_players_in_chunk: impl Fn(ChunkPos) -> Vec<i32>,
         get_player: impl Fn(i32) -> Option<Arc<Player>>,
     ) {
+        // A part reports its parent's type and would get a live tracking range, so skip it
+        // as vanilla's `ChunkMap.addEntity` does.
+        if entity.as_part_entity().is_some() {
+            return;
+        }
+
         assert!(
             !entity.is_removed(),
             "cannot add removed entity {} to tracker",
@@ -405,6 +411,9 @@ impl EntityTracker {
                         needs_velocity_sync: base.needs_velocity_sync,
                         has_dirty_entity_data,
                         force_velocity_sync: entity.forces_fall_flying_velocity_sync(),
+                        projectile_acceleration_power: entity
+                            .as_hurting_projectile()
+                            .map(HurtingProjectileBase::acceleration_power),
                     });
             if result.should_clear_velocity_sync() {
                 entity.clear_velocity_sync();

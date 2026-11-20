@@ -4,7 +4,6 @@ use crate::entity::DamageSource;
 use crate::entity::LivingTable;
 use crate::entity::MobTable;
 use crate::entity::living_entity;
-use std::f32::consts::PI;
 use steel_registry::sound_event::SoundEventRef;
 use steel_utils::nbt::NbtValueInput as _;
 
@@ -13,7 +12,8 @@ use rand::RngExt as _;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
-use steel_math::wrap_degrees;
+use steel_math::trig;
+use steel_math::{RAD_TO_DEG_F64, wrap_degrees};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -232,7 +232,7 @@ impl BatEntity {
             );
         self.set_velocity(new_movement);
 
-        let y_rot = (new_movement.z.atan2(new_movement.x) * 180.0 / f64::from(PI)) as f32 - 90.0;
+        let y_rot = (trig::atan2(new_movement.z, new_movement.x) * RAD_TO_DEG_F64) as f32 - 90.0;
         let (yaw, pitch) = self.rotation();
         let rot_diff = wrap_degrees(y_rot - yaw);
         let living = self.living();

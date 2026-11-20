@@ -235,6 +235,7 @@ async fn test_server_with_worlds(
 }
 
 mod connection_lifecycle;
+mod perf;
 mod player_limit;
 
 /// The player a session controls now. A change of world or domain rebuilds the
@@ -1695,7 +1696,8 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             server
                 .submit_command(
                     CommandSender::Player(Arc::clone(&player)),
-                    "list".to_owned()
+                    "list".to_owned(),
+                    None,
                 )
                 .is_ok()
         );
@@ -1731,6 +1733,8 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             };
             let owner = match request {
                 CommandRequest::Execute { owner, .. }
+                | CommandRequest::Chat { owner, .. }
+                | CommandRequest::ChatSessionUpdate { owner, .. }
                 | CommandRequest::Suggestions { owner, .. } => owner,
             };
             assert!(
@@ -1765,7 +1769,8 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             server
                 .submit_command(
                     CommandSender::Player(Arc::clone(&player)),
-                    "list".to_owned()
+                    "list".to_owned(),
+                    None
                 )
                 .is_ok()
         );

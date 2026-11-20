@@ -250,6 +250,6 @@ pub fn ride_tick<E: Entity + ?Sized>(entity: &E) {
     entity.set_velocity(DVec3::ZERO);
     entity.tick();
     if let Some(vehicle) = entity.vehicle() {
-        vehicle.position_rider(entity.as_entity());
+        vehicle.position_rider(entity.as_entity(), RiderMove::SetPosition);
     }
 }

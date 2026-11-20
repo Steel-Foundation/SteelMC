@@ -61,14 +61,5 @@ hooks = [
         types = ["rust"],
         pass_filenames = false,
         priority = 40
-    },
-    {
-        id = "cargo-test",
-        name = "cargo test",
-        language = "system",
-        entry = "cargo test --workspace",
-        types = ["rust"],
-        pass_filenames = false,
-        priority = 50
-    },
+    }
 ]

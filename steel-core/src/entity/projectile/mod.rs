@@ -9,9 +9,11 @@
 //!
 //! The block + entity move-vector raycast mirrors `ProjectileUtil`.
 
+pub mod hurting;
 pub mod throwable;
 pub mod throwable_item;
 pub mod thrown_potion;
+pub mod wind_charge;
 
 use crate::entity::entity;
 use crate::entity::prelude::*;
@@ -22,14 +24,18 @@ use steel_utils::nbt::NbtValueInput as _;
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_math::{DEG_TO_RAD, DEGREE_180, DEGREE_360, trig};
+use simdnbt::{FromNbtTag as _, ToNbtTag as _};
+use steel_math::trig;
+use steel_math::{DEG_TO_RAD, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::{AdventureModePredicate, vanilla_components::CAN_BREAK};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLOCKS};
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_damage_types, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
+use steel_utils::types::GameType;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, WorldAabb};
 use uuid::Uuid;
 
@@ -40,6 +46,7 @@ use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, EntityProps, EntityReference, Living, SharedEntity};
 use crate::player::Player;
+use crate::player::game_mode::predicate_matches;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
 
@@ -48,7 +55,12 @@ use super::{
     BUBBLE_COLUMN_INSIDE_UP_ACCELERATION,
 };
 
+pub use hurting::{HurtingProjectileBase, INITIAL_ACCELERATION_POWER};
 pub use thrown_potion::{SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH};
+pub use wind_charge::AbstractWindCharge;
+
+const CAN_BREAK_TAG: &str = "can_break";
+const WORLD_BORDER_REVERSE_POWER: DVec3 = DVec3::splat(0.2);
 
 /// Returns a triangle-distributed random value.
 #[must_use]
@@ -102,12 +114,17 @@ pub enum ProjectileDeflection {
 }
 
 impl ProjectileDeflection {
-    fn apply(self, projectile: &Projectile<'_>, deflecting_entity: Option<&dyn Entity>) {
+    fn apply(
+        self,
+        projectile: &Projectile<'_>,
+        deflecting_entity: Option<&dyn Entity>,
+        power: DVec3,
+    ) {
         match self {
             Self::None => {}
             Self::Reverse => {
                 let rotation = rand::random_range(170.0..190.0);
-                projectile.set_velocity(projectile.velocity() * -0.5);
+                projectile.set_velocity(projectile.velocity() * (power * -0.5));
                 let (yaw, pitch) = projectile.rotation();
                 projectile.set_rotation((yaw + rotation, pitch));
                 let (old_yaw, old_pitch) = projectile.base().old_rotation();
@@ -120,7 +137,7 @@ impl ProjectileDeflection {
                 let Some(entity) = deflecting_entity else {
                     return;
                 };
-                projectile.set_velocity(entity.look_angle());
+                projectile.set_velocity(entity.look_angle() * power);
                 projectile.mark_velocity_sync();
             }
             Self::MomentumDeflect => {
@@ -134,7 +151,7 @@ impl ProjectileDeflection {
                 } else {
                     movement / length
                 };
-                projectile.set_velocity(normalized);
+                projectile.set_velocity(normalized * power);
                 projectile.mark_velocity_sync();
             }
         }
@@ -147,6 +164,8 @@ struct ProjectileState {
     left_owner_checked: bool,
     has_been_shot: bool,
     last_deflected_by: Option<Weak<dyn Entity>>,
+    /// Blocks an adventure-restricted projectile may still break.
+    can_break: Option<AdventureModePredicate>,
 }
 
 /// State of a vanilla `Projectile`: its owner and whether it has been shot
@@ -166,6 +185,7 @@ impl ProjectileBase {
                 left_owner_checked: false,
                 has_been_shot: false,
                 last_deflected_by: None,
+                can_break: None,
             }),
         }
     }
@@ -192,6 +212,9 @@ impl Component for ProjectileBase {
             nbt.insert("LeftOwner", 1i8);
         }
         nbt.insert("HasBeenShot", i8::from(state.has_been_shot));
+        if let Some(can_break) = &state.can_break {
+            nbt.insert(CAN_BREAK_TAG, can_break.clone().to_nbt_tag());
+        }
     }
 
     fn load(&self, _owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
@@ -201,6 +224,9 @@ impl Component for ProjectileBase {
         state.has_been_shot = nbt
             .byte_value("HasBeenShot")
             .is_some_and(|value| value != 0);
+        state.can_break = nbt
+            .get(CAN_BREAK_TAG)
+            .and_then(AdventureModePredicate::from_nbt_tag);
     }
 }
 
@@ -210,6 +236,14 @@ layer_props! {
     where E: Parts,
     table ProjectileTable::PROJECTILE,
     component ProjectileBase {
+        /// `Projectile.deflect` with the strength of the deflection on each axis.
+        fn deflect_with_power(
+            deflection: ProjectileDeflection,
+            deflecting_entity: Option<&dyn Entity>,
+            new_owner: Option<EntityReference>,
+            by_attack: bool,
+            power: DVec3,
+        ) -> bool;
         /// `Projectile.onDeflection`.
         fn on_deflection(by_attack: bool);
         /// `Projectile.shouldBounceOnWorldBorder`.
@@ -365,6 +399,14 @@ pub fn restore_owner_reference<E: Parts>(projectile: &E, owner: &SharedEntity) {
     projectile.projectile().cache_owner(owner);
 }
 
+/// Copies the item's adventure block-breaking predicate when the item creates a projectile.
+pub fn apply_implicit_item_components<E: Parts>(projectile: &E, item_stack: &ItemStack) {
+    if let Some(can_break) = item_stack.get(CAN_BREAK) {
+        projectile.projectile().state().can_break = Some(can_break.clone());
+    }
+    entity::apply_implicit_item_components(projectile, item_stack);
+}
+
 /// `Projectile`'s overrides of the entity properties.
 #[must_use]
 pub const fn entity_props<E: Parts>() -> EntityProps<E> {
@@ -378,6 +420,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         on_inside_bubble_column: on_inside_bubble_column::<E>,
         spawn_data: spawn_data::<E>,
         restore_owner_reference: restore_owner_reference::<E>,
+        apply_implicit_item_components: apply_implicit_item_components::<E>,
         ..EntityProps::new()
     }
 }
@@ -444,14 +487,34 @@ impl<'a> Projectile<'a> {
         world.get_game_rule(&MOB_GRIEFING)
     }
 
-    /// Whether this projectile may break the blocks it hits.
-    // TODO: check the `can_break` component (`canBreakBlockInAdventureMode`).
+    /// Returns whether this projectile may break the block at `pos`: it must be an
+    /// impact projectile, `projectilesCanBreakBlocks` must be on, and adventure
+    /// rules must allow it.
     #[must_use]
-    pub fn may_break(&self, world: &World) -> bool {
+    pub fn may_break(&self, world: &World, pos: BlockPos) -> bool {
         REGISTRY
             .entity_types
             .is_in_tag(self.entity_type(), &EntityTypeTag::IMPACT_PROJECTILES)
             && world.get_game_rule(&PROJECTILES_CAN_BREAK_BLOCKS)
+            && self.can_break_block_in_adventure_mode(world, pos)
+    }
+
+    /// Projectiles owned by an adventure player or a non-player, or ownerless in an
+    /// adventure-default world, only break blocks matched by their `can_break` predicate.
+    fn can_break_block_in_adventure_mode(&self, world: &World, pos: BlockPos) -> bool {
+        let owner = self.owner();
+        let restricted = (owner.is_some() || world.default_gamemode() == GameType::Adventure)
+            && owner
+                .as_ref()
+                .and_then(|owner| owner.as_player())
+                .is_none_or(|player| player.game_mode() == GameType::Adventure);
+        if !restricted {
+            return true;
+        }
+        self.state()
+            .can_break
+            .as_ref()
+            .is_some_and(|predicate| predicate_matches(predicate, world, pos))
     }
 
     /// Returns whether `entity` is this projectile's owner.
@@ -537,8 +600,8 @@ impl<'a> Projectile<'a> {
         self.mark_velocity_sync();
 
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
-        let yaw = movement.x.atan2(movement.z).to_degrees() as f32;
-        let pitch = movement.y.atan2(horizontal).to_degrees() as f32;
+        let yaw = (trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32;
+        let pitch = (trig::atan2(movement.y, horizontal) * RAD_TO_DEG_F64) as f32;
         self.set_rotation((yaw, pitch));
         self.base().set_old_rotation_to_current();
     }
@@ -580,22 +643,33 @@ impl<'a> Projectile<'a> {
         let movement = self.velocity();
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
         let (yaw_old, pitch_old) = self.base().old_rotation();
-        let yaw = lerp_rotation(yaw_old, movement.x.atan2(movement.z).to_degrees() as f32);
-        let pitch = lerp_rotation(pitch_old, movement.y.atan2(horizontal).to_degrees() as f32);
+        let yaw = lerp_rotation(
+            yaw_old,
+            (trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32,
+        );
+        let pitch = lerp_rotation(
+            pitch_old,
+            (trig::atan2(movement.y, horizontal) * RAD_TO_DEG_F64) as f32,
+        );
         self.set_rotation((yaw, pitch));
     }
 
-    /// Deflects this projectile and hands it to `new_owner`.
+    /// Deflects with unit power and hands the projectile to `new_owner` when accepted.
+    #[must_use]
     pub fn deflect(
         &self,
         deflection: ProjectileDeflection,
         deflecting_entity: Option<&dyn Entity>,
         new_owner: Option<EntityReference>,
         by_attack: bool,
-    ) {
-        deflection.apply(self, deflecting_entity);
-        self.state().owner = new_owner;
-        self.on_deflection(by_attack);
+    ) -> bool {
+        self.deflect_with_power(
+            deflection,
+            deflecting_entity,
+            new_owner,
+            by_attack,
+            DVec3::ONE,
+        )
     }
 
     /// `ProjectileUtil.getHitResultOnMoveVector` with this projectile's
@@ -652,21 +726,34 @@ impl<'a> Projectile<'a> {
                     .and_then(Weak::upgrade)
                     .is_some_and(|last| Arc::ptr_eq(&last, &entity_hit.entity));
                 let owner = self.state().owner.clone();
-                if !already_deflected {
-                    self.deflect(deflection, Some(entity_hit.entity.as_ref()), owner, false);
+                if !already_deflected
+                    && self.deflect(deflection, Some(entity_hit.entity.as_ref()), owner, false)
+                {
                     self.state().last_deflected_by = Some(Arc::downgrade(&entity_hit.entity));
                 }
                 return deflection;
             }
-        } else if let ProjectileHit::Block { hit, .. } = hit
-            && self.should_bounce_on_world_border()
-            && hit.world_border_hit
-        {
-            let deflection = ProjectileDeflection::Reverse;
-            let owner = self.state().owner.clone();
-            self.deflect(deflection, None, owner, false);
-            self.set_velocity(self.velocity() * 0.2);
-            return deflection;
+        } else if let ProjectileHit::Block { hit, .. } = hit {
+            if !hit.world_border_hit {
+                if self
+                    .level()
+                    .is_some_and(|world| world.get_block_state(hit.block_pos).is_air())
+                {
+                    return ProjectileDeflection::None;
+                }
+            } else if self.should_bounce_on_world_border() {
+                let deflection = ProjectileDeflection::Reverse;
+                let owner = self.state().owner.clone();
+                if self.deflect_with_power(
+                    deflection,
+                    None,
+                    owner,
+                    false,
+                    WORLD_BORDER_REVERSE_POWER,
+                ) {
+                    return deflection;
+                }
+            }
         }
 
         self.on_hit(hit);
@@ -726,6 +813,22 @@ pub fn can_hit_entity<E: Parts>(entity: &E, target: &dyn Entity) -> bool {
     projectile.left_owner() || !owner.is_passenger_of_same_vehicle(target)
 }
 
+/// Applies the deflection and updates the owner before running the subclass hook.
+pub fn deflect_with_power<E: Parts>(
+    entity: &E,
+    deflection: ProjectileDeflection,
+    deflecting_entity: Option<&dyn Entity>,
+    new_owner: Option<EntityReference>,
+    by_attack: bool,
+    power: DVec3,
+) -> bool {
+    let projectile = entity.projectile();
+    deflection.apply(&projectile, deflecting_entity, power);
+    projectile.state().owner = new_owner;
+    projectile.on_deflection(by_attack);
+    true
+}
+
 /// `Projectile`'s [`ProjectileProps::on_deflection`].
 pub const fn on_deflection<E: Parts>(_entity: &E, _by_attack: bool) {}
 
@@ -747,7 +850,7 @@ pub fn on_hit<E: Parts>(this: &E, hit: &ProjectileHit) {
             {
                 let owner_entity = projectile.owner();
                 let owner = projectile.state().owner.clone();
-                target.deflect(
+                let _ = target.deflect(
                     ProjectileDeflection::AimDeflect,
                     owner_entity.as_deref(),
                     owner,
@@ -821,22 +924,52 @@ pub fn spawn_throwable_item_projectile<E: throwable_item::Parts>(
     projectile.set_owner(Some(&owner));
     entity.throwable_item().set_item(item_stack);
 
-    let (yaw, player_pitch) = player.rotation();
+    spawn_projectile_from_rotation(
+        world,
+        player,
+        item_stack,
+        pitch_offset,
+        power,
+        uncertainty,
+        entity,
+    )
+}
+
+/// Shoots an already-created projectile from the source's rotation, adds it to
+/// the world, then runs the `minecraft:projectile_spawned` enchantment effects.
+/// The caller sets the spawn position and owner. Returns `None` when the world
+/// rejects the projectile.
+#[must_use]
+pub fn spawn_projectile_from_rotation<E>(
+    world: &Arc<World>,
+    source: &Arc<Player>,
+    item_stack: &mut ItemStack,
+    pitch_offset: f32,
+    power: f32,
+    uncertainty: f32,
+    entity: Arc<E>,
+) -> Option<SharedEntity>
+where
+    E: Parts,
+{
+    let projectile = entity.projectile();
+    let (yaw, pitch) = source.rotation();
     projectile.shoot_from_rotation(
-        player.as_ref(),
-        player_pitch,
+        source.as_ref(),
+        pitch,
         yaw,
         pitch_offset,
         power,
         uncertainty,
     );
+    let owner = projectile.owner();
 
     let entity: SharedEntity = entity;
     if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
-        log::debug!("failed to spawn throwable item projectile: {error}");
+        log::debug!("failed to spawn projectile: {error}");
         return None;
     }
-    enchantment_helper::on_projectile_spawned(world, item_stack, entity.as_ref(), Some(&owner));
+    enchantment_helper::on_projectile_spawned(world, item_stack, entity.as_ref(), owner.as_ref());
 
     Some(entity)
 }

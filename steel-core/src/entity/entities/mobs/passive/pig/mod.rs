@@ -11,7 +11,7 @@ use crate::entity::living_entity;
 use crate::entity::mob;
 use crate::entity::prelude::*;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 use steel_registry::sound_event::SoundEventRef;
 use steel_utils::types::InteractionHand;
 
@@ -226,11 +226,12 @@ impl PigEntity {
     fn mob_finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
         variant::pick_spawn_variants(self, world);
-        ageable::finalize_spawn(self, world, reason, group_data)
+        ageable::finalize_spawn(self, world, difficulty, reason, group_data)
     }
 }
 

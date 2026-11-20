@@ -321,9 +321,6 @@ pub trait EntityMotion: Entity {
         self.base().try_set_position(pos)
     }
 
-    /// Default for [`EntityMethods::teleport_to`].
-    // TODO: Recursively reposition this entity's passengers (vanilla
-    // `Entity.teleportPassengers`, via `getSelfAndPassengers`)
     /// Sets the vanilla movement-trace old position to the current position.
     fn set_old_position_to_current(&self) {
         self.base().set_old_position_to_current();
@@ -429,6 +426,9 @@ pub trait EntityMotion: Entity {
         );
         if !hit.is_miss() {
             self.reset_fall_distance();
+            if let Some(living) = self.as_living_entity() {
+                living.living_base().set_last_climbable_pos(None);
+            }
         }
     }
 
@@ -603,7 +603,11 @@ pub fn try_set_position<E: Entity + ?Sized>(entity: &E, pos: DVec3) -> Result<()
 /// `Entity`'s [`EntityProps::teleport_to`].
 #[must_use = "movement commits can fail when world entity state rejects the update"]
 pub fn teleport_to<E: Entity + ?Sized>(entity: &E, pos: DVec3) -> Result<(), EntityMoveError> {
-    entity.try_set_position(pos)
+    entity.try_set_position(pos)?;
+    entity.set_old_position_to_current();
+    entity.base().set_old_rotation_to_current();
+    super::teleport_passengers(entity.as_entity());
+    Ok(())
 }
 
 /// `Entity`'s [`EntityProps::max_up_step`].

@@ -49,7 +49,6 @@ fn factory_cart_round_trips_minecart_and_spawner_data_together() {
     let loaded = ENTITIES
         .create(
             &vanilla_entities::SPAWNER_MINECART,
-            next_entity_id(),
             DVec3::ZERO,
             Weak::new(),
         )

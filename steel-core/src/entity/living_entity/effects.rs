@@ -2,8 +2,9 @@
 
 use super::Parts;
 use super::{
-    ActiveMobEffect, Entity, EntityTypeTag, Living, MOB_EFFECT_BEHAVIORS, MobEffectInstance,
-    MobEffectRef, ParticleList, REGISTRY, TaggedRegistryExt, vanilla_mob_effects,
+    ActiveMobEffect, Entity, EntityTypeTag, Living, MOB_EFFECT_BEHAVIORS, MobEffectAddResult,
+    MobEffectInstance, MobEffectRef, ParticleList, REGISTRY, TaggedRegistryExt,
+    vanilla_mob_effects,
 };
 
 impl Living<'_> {
@@ -90,16 +91,16 @@ impl Living<'_> {
             return false;
         }
         let (effect_key, amplifier) = (effect.effect(), effect.amplifier());
-        let changed = self.living_base().add_mob_effect(effect);
-        // TODO: Trigger CriteriaTriggers.EFFECTS_CHANGED with `source` when `changed`,
+        let result = self.living_base().add_mob_effect(effect);
+        // TODO: Trigger CriteriaTriggers.EFFECTS_CHANGED with `source` when `result.changed()`,
         // once the advancement-criteria foundation exists.
         let _ = source;
-        // Calls on_effect_started unconditionally, even when it didn't replace a stronger instance.
-        let dyn_self = *self;
-        MOB_EFFECT_BEHAVIORS
-            .get_behavior(effect_key)
-            .on_effect_started(&dyn_self, amplifier);
-        changed
+        let behavior = MOB_EFFECT_BEHAVIORS.get_behavior(effect_key);
+        if result == MobEffectAddResult::Added {
+            behavior.on_effect_added(self, effect_key, amplifier);
+        }
+        behavior.on_effect_started(self, amplifier);
+        result.changed()
     }
 
     /// Sets the presence of a vanilla mob effect.

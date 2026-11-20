@@ -11,7 +11,6 @@ use simdnbt::owned::{NbtCompound, NbtList};
 use steel_math::DEGREE_360;
 use steel_registry::data_components::components::EntityData;
 use steel_registry::entity_type::{EntityTypeRef, MobCategory};
-use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::{
     REGISTRY, RegistryExt, level_events, vanilla_game_events, vanilla_game_rules,
 };
@@ -27,6 +26,7 @@ use crate::entity::{
     load_entity_recursive_owned, nbt_dvec3,
 };
 use crate::inventory::equipment::EquipmentSlot;
+use crate::loot::{LOOT_TABLES, LootContext, LootResult};
 use crate::physics::{WorldCollisionProvider, has_collision};
 use crate::world::World;
 
@@ -361,13 +361,12 @@ impl BaseSpawner {
         pos: BlockPos,
         mut broadcast_event: impl FnMut(),
     ) -> SpawnerTickResult {
-        let center = DVec3::from(pos.get_center());
         let config = self.config();
-        let Some(_) =
-            world.nearest_player(center, f64::from(config.required_player_range), |player| {
-                player.is_alive() && !player.is_spectator()
-            })
-        else {
+        let Some(_) = world.nearest_player(
+            pos.get_center(),
+            f64::from(config.required_player_range),
+            |player| player.is_alive() && !player.is_spectator(),
+        ) else {
             return SpawnerTickResult::default();
         };
         if !world.get_game_rule(&vanilla_game_rules::SPAWNER_BLOCKS_WORK) {
@@ -452,15 +451,7 @@ impl BaseSpawner {
             let entity = &loaded.root;
 
             let entity_class = entity.downcast_type_key();
-            let nearby_box = WorldAabb::new(
-                f64::from(pos.x()),
-                f64::from(pos.y()),
-                f64::from(pos.z()),
-                f64::from(pos.x() + 1),
-                f64::from(pos.y() + 1),
-                f64::from(pos.z() + 1),
-            )
-            .inflate(f64::from(spawn_range));
+            let nearby_box = WorldAabb::single(pos.0).inflate(f64::from(spawn_range));
             let nearby_count = world
                 .get_entities_in_aabb_matching(&nearby_box, |candidate| {
                     !candidate.is_spectator() && candidate.downcast_type_key() == entity_class
@@ -481,10 +472,13 @@ impl BaseSpawner {
                 }
 
                 if next_spawn_data.entity_to_spawn.len() == 1 {
-                    let _ = mob.finalize_spawn(world, EntitySpawnReason::Spawner, None);
+                    let difficulty = world.get_current_difficulty_at(entity.block_position());
+                    let _ = mob.finalize_spawn(world, difficulty, EntitySpawnReason::Spawner, None);
                 }
-                if let Some(equipment) = &next_spawn_data.equipment {
-                    equip_from_table(&mob, equipment);
+                if let Some(equipment) = &next_spawn_data.equipment
+                    && let Err(error) = equip_from_table(world, &mob, equipment)
+                {
+                    log::error!("Failed to generate spawner equipment: {error}");
                 }
             }
 
@@ -626,20 +620,23 @@ fn random_spawn_position<R: Rng + ?Sized>(
     )
 }
 
-fn equip_from_table(mob: &Mob<'_>, equipment: &EquipmentTable) {
-    let Some(table): Option<LootTableRef> = REGISTRY.loot_tables.by_key(&equipment.loot_table)
-    else {
-        return;
+fn equip_from_table(world: &World, mob: &Mob<'_>, equipment: &EquipmentTable) -> LootResult<()> {
+    let Some(table) = LOOT_TABLES.by_key(&equipment.loot_table) else {
+        return Ok(());
     };
 
-    let mut random = rng();
     let mob_equipment = living_loot_equipment(&mob.living());
     let entity_ref = entity_loot_ref(mob.as_entity(), Some(&mob_equipment));
-    let mut context = LootContext::new(&mut random)
-        .with_origin(mob.position().x, mob.position().y, mob.position().z)
-        .with_this_entity(entity_ref);
+    let position = mob.position();
+    let items = world.with_loot_random(Some(table), 0, |random| {
+        let mut context = LootContext::new(random)
+            .with_world(world)
+            .with_origin(position)
+            .with_this_entity(entity_ref);
+        table.get_random_items(&mut context)
+    })?;
     let mut inserted = [false; EquipmentSlot::ALL.len()];
-    for mut item in table.get_random_items(&mut context) {
+    for mut item in items {
         if item.is_empty() {
             continue;
         }
@@ -660,6 +657,7 @@ fn equip_from_table(mob: &Mob<'_>, equipment: &EquipmentTable) {
         }
         inserted[slot.index()] = true;
     }
+    Ok(())
 }
 
 fn replace_entity_id(entity: &mut NbtCompound, entity_type: EntityTypeRef) {

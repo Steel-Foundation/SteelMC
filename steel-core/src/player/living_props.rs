@@ -3,11 +3,13 @@
 use super::*;
 use crate::entity::LivingTable;
 use crate::entity::prelude::*;
+use crate::physics::MoveResult;
+use steel_utils::TICKS_PER_SECOND;
 
 impl Player {
     fn living_indicate_damage(&self, xd: f64, zd: f64) {
         let (y_rot, _) = self.rotation();
-        let hurt_dir = zd.atan2(xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
+        let hurt_dir = trig::atan2(zd, xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
         self.send_packet(CHurtAnimation {
             entity_id: self.id(),
             yaw: hurt_dir as f32,
@@ -55,6 +57,9 @@ impl Player {
 
         self.base_tick();
         self.living().detect_equipment_updates();
+        if self.tick_count() % TICKS_PER_SECOND == 0 {
+            self.living().recheck_combat_status();
+        }
         if !self.is_removed() {
             let _movement = self.living().ai_step();
         }
@@ -132,6 +137,33 @@ impl Player {
 
     fn living_is_using_item(&self) -> bool {
         self.living_base.is_using_item()
+    }
+
+    fn living_block_using_item(
+        &self,
+        world: &World,
+        attacker: &Living<'_>,
+        source: &DamageSource,
+        damage: f32,
+        fully_blocked: bool,
+    ) {
+        living_entity::block_using_item(self, world, attacker, source, damage, fully_blocked);
+        let Some((_, blocking_with)) = self.living().item_blocking_with() else {
+            return;
+        };
+        let Some(blocks_attacks) = blocking_with.get(BLOCKS_ATTACKS) else {
+            return;
+        };
+        let seconds = attacker.seconds_to_disable_blocking();
+        if seconds > 0.0 {
+            blocks_attacks::disable(
+                blocks_attacks,
+                world,
+                &self.living(),
+                seconds,
+                &blocking_with,
+            );
+        }
     }
 
     fn living_get_luck(&self) -> f32 {
@@ -237,7 +269,7 @@ impl Player {
         let target_ref = ContainerRef::from(Arc::clone(&self.inventory));
         let source_id = source_ref.container_id();
         let target_id = target_ref.container_id();
-        let mut guard = ContainerLockGuard::lock_all(&[source_ref, target_ref]);
+        let mut guard = ContainerLockGuard::lock_storage(&[source_ref, target_ref]);
         let source_slot = match hand {
             InteractionHand::MainHand => EquipmentSlot::MainHand,
             InteractionHand::OffHand => EquipmentSlot::OffHand,
@@ -445,9 +477,13 @@ impl LivingTable for Player {
         },
         indicate_damage: Self::living_indicate_damage,
         is_using_item: Self::living_is_using_item,
+        stop_using_item: Self::stop_using_item,
+        block_using_item: Self::living_block_using_item,
         luck: Self::living_get_luck,
         hurt_armor: Self::living_hurt_armor,
         actually_hurt: Self::living_actually_hurt,
+        on_enter_combat: Self::on_enter_combat,
+        on_leave_combat: Self::on_leave_combat,
         hurt_broadcast_chunk: Self::living_hurt_broadcast_chunk,
         die: Self::living_die,
         tick_equipment: Self::living_tick_equipment,

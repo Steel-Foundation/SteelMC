@@ -11,19 +11,17 @@ use std::sync::Arc;
 use glam::DVec3;
 use rand::{RngExt, rng};
 use steel_macros::entity_behavior;
-use steel_math::{DEG_TO_RAD, DEGREE_360, trig, vector};
+use steel_math::{DEG_TO_RAD, DEGREE_360, RAD_TO_DEG_F64, trig, vector};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidStateExt;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::loot_table::LootContext;
 use steel_registry::particle_type::ParticleData;
 use steel_registry::vanilla_entity_data::FishingBobberEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_particle_types::{BUBBLE, FISHING, SPLASH};
 use steel_registry::{
     sound_events, vanilla_blocks, vanilla_custom_stats, vanilla_entities, vanilla_items,
-    vanilla_loot_tables,
 };
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::CheckedMutex;
@@ -41,6 +39,7 @@ use crate::entity::{
     next_entity_id,
 };
 use crate::fluid::get_height;
+use crate::loot::{LootContext, vanilla_loot_tables};
 use crate::physics::MoverType;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
@@ -95,7 +94,7 @@ impl FishingHookState {
             time_until_lured: 0,
             time_until_hooked: 0,
             fish_angle: 0.0,
-            open_water: false,
+            open_water: true,
             bobber_state: BobberState::Flying,
             hooked_entity: None,
             luck: luck.max(0),
@@ -111,6 +110,7 @@ impl EntityTable for FishingHookEntity {
         movement_emission: |_| EntityMovementEmission::None,
         can_use_portal: |_, _| false,
         default_gravity: |_| f64::from(0.03_f32),
+        fishing_hook_open_water: |hook| Some(hook.hook_state.lock().open_water),
         // The client needs the owner to draw the line; an ownerless hook
         // sends its own id.
         spawn_data: |hook| {
@@ -182,8 +182,8 @@ impl FishingHookEntity {
 
         let horizontal_distance = (movement.x * movement.x + movement.z * movement.z).sqrt();
         self.set_rotation((
-            movement.x.atan2(movement.z).to_degrees() as f32,
-            movement.y.atan2(horizontal_distance).to_degrees() as f32,
+            (trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32,
+            (trig::atan2(movement.y, horizontal_distance) * RAD_TO_DEG_F64) as f32,
         ));
         self.base().set_old_rotation_to_current();
     }
@@ -515,13 +515,23 @@ impl FishingHookEntity {
                 && let Some(world) = self.level()
             {
                 let position = self.position();
-                let mut rng = rng();
-                let mut loot_ctx = LootContext::new(&mut rng)
-                    .with_origin(position.x, position.y, position.z)
-                    .with_tool(rod)
-                    .with_this_entity(entity_loot_ref(self, None))
-                    .with_luck(luck as f32 + player.living().luck());
-                let items = vanilla_loot_tables::GAMEPLAY_FISHING.get_random_items(&mut loot_ctx);
+                let table = &vanilla_loot_tables::GAMEPLAY_FISHING;
+                let items = world.with_loot_random(Some(table), 0, |random| {
+                    let mut context = LootContext::new(random)
+                        .with_world(&world)
+                        .with_origin(position)
+                        .with_tool(rod)
+                        .with_this_entity(entity_loot_ref(self, None))
+                        .with_luck(luck as f32 + player.living().luck());
+                    table.get_random_items(&mut context)
+                });
+                let items = match items {
+                    Ok(items) => items,
+                    Err(error) => {
+                        log::error!("Failed to generate fishing loot: {error}");
+                        return damage;
+                    }
+                };
                 // TODO: trigger FISHING_ROD_HOOKED once advancement criteria exist.
                 self.spawn_catch(items, &world, player);
                 damage = 1;
