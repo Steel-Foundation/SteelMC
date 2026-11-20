@@ -11,6 +11,7 @@ use steel_registry::{DyeColor, vanilla_custom_stats};
 use steel_utils::TICKS_PER_SECOND;
 use text_components::TextComponent;
 
+use super::entity::compute_modified_friction;
 use super::*;
 use crate::behavior::{
     BLOCK_BEHAVIORS, ITEM_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS,
@@ -2851,7 +2852,7 @@ pub trait LivingEntity: Entity {
     /// Returns the vertical friction used by `travelInAir`.
     fn air_travel_vertical_friction(&self, _horizontal_friction: f32) -> f32 {
         // TODO: FlyingAnimal uses horizontal friction here once animal types exist.
-        0.98
+        self.get_air_drag() as f32
     }
 
     /// Clamps movement while on a climbable block: caps horizontal and
@@ -2920,11 +2921,16 @@ pub trait LivingEntity: Entity {
         let world = self.level()?;
         let pos_below = self.block_pos_below_that_affects_movement()?;
         let block_friction = if self.on_ground() {
-            world.get_block_state(pos_below).get_block().config.friction
+            let friction = world.get_block_state(pos_below).get_block().config.friction;
+            let modifier =
+                self.attributes()
+                    .lock()
+                    .required_value(vanilla_attributes::FRICTION_MODIFIER) as f32;
+
+            compute_modified_friction(friction, modifier)
         } else {
             1.0
         };
-        let horizontal_friction = block_friction * 0.91;
         let (movement, result) =
             self.handle_relative_friction_and_calculate_movement(entity, input, block_friction)?;
         let movement_y = if let Some(levitation_y) = self.levitation_travel_y_delta(movement.y) {
@@ -2936,7 +2942,14 @@ pub trait LivingEntity: Entity {
         if self.should_discard_friction() {
             self.set_velocity(DVec3::new(movement.x, movement_y, movement.z));
         } else {
+            let air_drag_modifier =
+                self.attributes()
+                    .lock()
+                    .required_value(vanilla_attributes::AIR_DRAG_MODIFIER) as f32;
+            let horizontal_friction =
+                block_friction * compute_modified_friction(0.91, air_drag_modifier);
             let vertical_friction = self.air_travel_vertical_friction(horizontal_friction);
+
             self.set_velocity(DVec3::new(
                 movement.x * f64::from(horizontal_friction),
                 movement_y * f64::from(vertical_friction),
