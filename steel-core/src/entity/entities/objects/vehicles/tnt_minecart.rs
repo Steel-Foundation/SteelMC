@@ -140,11 +140,10 @@ impl TntMinecartEntity {
 
     /// Lights the fuse, crediting `source`'s causing entity for the eventual explosion.
     pub fn prime_fuse(&self, source: Option<&DamageSource>) {
-        let world = self.level();
-        if world
-            .as_ref()
-            .is_some_and(|world| !world.get_game_rule(&TNT_EXPLODES))
-        {
+        let Some(world) = self.level() else {
+            return;
+        };
+        if !world.get_game_rule(&TNT_EXPLODES) {
             return;
         }
 
@@ -160,9 +159,6 @@ impl TntMinecartEntity {
             }
         }
 
-        let Some(world) = world else {
-            return;
-        };
         self.broadcast_entity_event(EntityStatus::TntPrime);
         if !self.is_silent() {
             world.play_sound_at(
