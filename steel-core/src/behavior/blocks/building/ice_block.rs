@@ -15,13 +15,13 @@ use crate::chunk::light::LightLayer;
 use crate::player::Player;
 use crate::world::World;
 
-/// Vanilla `IceBlock` behavior.
+/// Ice block behavior.
 #[block_behavior]
 pub struct IceBlock {
     block: BlockRef,
 }
 
-pub const BASE_MELT_LIGHT_LEVEL: u8 = 11;
+pub(crate) const BASE_MELT_LIGHT_LEVEL: u8 = 11;
 
 impl IceBlock {
     /// Creates an ice block behavior.
@@ -30,13 +30,13 @@ impl IceBlock {
         Self { block }
     }
 
-    /// Vanilla `IceBlock.meltsInto`.
+    /// Returns the block state that ice melts into.
     #[must_use]
     pub fn melts_into() -> BlockStateId {
         vanilla_blocks::WATER.default_state()
     }
 
-    /// Vanilla `IceBlock.melt`.
+    /// Melts the ice block at the given position.
     pub fn melt(_state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if world.dimension_type.water_evaporates {
             world.set_block(

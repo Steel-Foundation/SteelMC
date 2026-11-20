@@ -55,7 +55,7 @@ impl World {
         }
 
         tracing::error!(
-            player = %player.gameprofile.name,
+            player = %player.gameprofile.name(),
             target_world = %target_world.key,
             membership_count = memberships.len(),
             operation,
@@ -135,6 +135,10 @@ impl World {
 
     pub(crate) fn unregister_player_entity(&self, player: &Player) {
         let entity_id = player.id();
+        // Combat entries hold strong references to the entities involved; release
+        // them before this player leaves the world so disconnecting players
+        // cannot keep each other alive.
+        player.clear_combat_history();
         self.remove_entity_from_tracker(entity_id);
 
         self.entity_manager()
@@ -175,13 +179,13 @@ impl World {
             };
             if !rolled_back {
                 tracing::error!(
-                    player = %player.gameprofile.name,
+                    player = %player.gameprofile.name(),
                     world = %self.key,
                     "Respawn entity registration failed after world player ownership changed"
                 );
             }
             tracing::warn!(
-                player = %player.gameprofile.name,
+                player = %player.gameprofile.name(),
                 world = %self.key,
                 "Refusing to install respawned player entity: {error}"
             );
@@ -218,6 +222,7 @@ impl World {
         let Some(player) = self.take_player_for_removal(&player) else {
             // End credits and failed target admission deliberately have no live
             // world membership but still need one authoritative disconnect save.
+            player.clear_combat_history();
             let domain = self.domain().to_owned();
             let player_data = PersistentPlayerData::from_player(&player);
             player.store_ender_pearls_with_player();
@@ -328,7 +333,7 @@ impl World {
         if Self::reject_duplicate_player_membership(&player, self, "world change") {
             return false;
         }
-        if !self.players.insert(player.clone()) {
+        if !self.players.insert(Arc::clone(&player)) {
             player.connection.close();
             return false;
         }

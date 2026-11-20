@@ -7,13 +7,14 @@ use tokio::{task::yield_now, time::timeout};
 fn timed_simulation_expiration_follows_its_final_scheduled_tick() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("timed_simulation_expiration");
+    let world_fixture = fresh_test_world("timed_simulation_expiration");
+    let world = &world_fixture.world;
     let chunk_pos = ChunkPos::new(0, 0);
     let block_pos = BlockPos::new(1, 64, 1);
     let mut holder = None;
     for z in -2..=2 {
         for x in -2..=2 {
-            let inserted = insert_ready_full_chunk(&world, ChunkPos::new(x, z));
+            let inserted = insert_ready_full_chunk(world, ChunkPos::new(x, z));
             if x == 0 && z == 0 {
                 holder = Some(inserted);
             }
@@ -69,7 +70,7 @@ fn timed_simulation_expiration_follows_its_final_scheduled_tick() {
     );
     assert!(world.has_scheduled_block_tick(block_pos, &vanilla_blocks::STONE));
 
-    tick_test_world(&world, 2, true);
+    tick_test_world(world, 2, true);
 
     assert_eq!(holder.simulation_level(), None);
     assert!(
@@ -101,5 +102,5 @@ fn timed_simulation_expiration_follows_its_final_scheduled_tick() {
     let _ = world
         .chunk_map
         .release_chunk_request_leases(&[chunk_pos], ChunkTicketLevel::FULL_CHUNK);
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
 }

@@ -307,11 +307,11 @@ impl StorageSelection {
         }
     }
 
-    /// Default file-backed player storage.
+    /// Default disk-backed player storage.
     #[must_use]
-    pub fn default_player_file() -> Self {
+    pub fn default_player_disk() -> Self {
         Self {
-            kind: Identifier::from_steel("file"),
+            kind: Identifier::from_steel("disk"),
             config: None,
         }
     }
@@ -410,7 +410,7 @@ impl WorldsConfig {
         let player_storage = self
             .player_storage
             .clone()
-            .unwrap_or_else(StorageSelection::default_player_file);
+            .unwrap_or_else(StorageSelection::default_player_disk);
         validate_player_storage_selection(&player_storage)?;
 
         let mut default_domain = None;
@@ -775,11 +775,16 @@ pub fn validate_relative_path(path: &str, field: &str) -> Result<(), String> {
 }
 
 fn validate_player_storage_selection(selection: &StorageSelection) -> Result<(), String> {
-    if selection.kind != Identifier::from_steel("file") {
+    if selection.kind != Identifier::from_steel("disk")
+        && selection.kind != Identifier::from_steel("ram")
+    {
         return Err(format!("unknown player storage {}", selection.kind));
     }
     if selection.config.is_some() {
-        return Err("steel:file player storage does not accept config yet".to_owned());
+        return Err(format!(
+            "{} player storage does not accept config yet",
+            selection.kind
+        ));
     }
     Ok(())
 }
@@ -922,6 +927,33 @@ difficulty = "hard"
         assert_eq!(nether.seed, 3);
         assert_eq!(nether.default_gamemode, GameType::Creative);
         assert_eq!(nether.difficulty, Difficulty::Hard);
+    }
+
+    #[test]
+    fn resolves_selectable_player_storage_backends() {
+        const WORLDS: &str = r#"
+[player_storage]
+type = "%KIND%"
+
+[domains.minecraft]
+default = true
+
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:overworld"
+default = true
+"#;
+
+        for kind in ["steel:disk", "steel:ram"] {
+            let resolved = resolve(&WORLDS.replace("%KIND%", kind))
+                .unwrap_or_else(|error| panic!("{kind} player storage should resolve: {error}"));
+            assert_eq!(resolved.player_storage.kind.to_string(), kind);
+        }
+
+        assert_eq!(
+            resolve(&WORLDS.replace("%KIND%", "steel:elsewhere")).err(),
+            Some("unknown player storage steel:elsewhere".to_owned())
+        );
     }
 
     #[test]

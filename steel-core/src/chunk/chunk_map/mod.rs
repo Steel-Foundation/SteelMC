@@ -81,15 +81,24 @@ mod light_update_state;
 mod light_updates;
 mod persistence;
 mod player_tracking;
+#[cfg(feature = "region-generation")]
+mod region_generation;
 mod scheduled_ticks;
 
 #[cfg(test)]
 use light_update_state::PendingLightUpdates;
 use light_update_state::{InFlightLightUpdates, LightUpdateState, PendingChunkLightUpdates};
+#[cfg(feature = "region-generation")]
+pub use region_generation::RegionGenerationError;
 
 const GENERATION_THREAD_MULTIPLE: usize = 2;
 // Vanilla applies this limit independently to block ticks and fluid ticks.
 const MAX_SCHEDULED_TICKS_PER_TICK: usize = 65_536;
+/// Squared block distance from a chunk center within which a non-spectator
+/// player makes that chunk a natural-spawn candidate.
+const SPAWN_CANDIDATE_PLAYER_DISTANCE_SQUARED: f64 = 16_384.0;
+/// Chunk radius around a player tracked by vanilla's natural-spawn counter.
+const NATURAL_SPAWN_CHUNK_RADIUS: i32 = 8;
 
 /// Lifetime, in ticks, of a thrown ender pearl's chunk ticket (vanilla
 /// `TicketType.ENDER_PEARL` timeout). The pearl refreshes it every
@@ -206,11 +215,6 @@ struct TickingReadinessCandidate {
     target: TickingReadiness,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct DeferredChunkRevival {
-    load_level: ChunkTicketLevel,
-}
-
 #[derive(Default)]
 struct ReadinessReconcileResult {
     snapshot_changed: bool,
@@ -226,8 +230,6 @@ pub struct ChunkMap {
     pub(crate) chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
     /// Map of chunks currently being unloaded.
     pub(crate) unloading_chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
-    /// Ticket states waiting for an unloading holder's save preparation to finish.
-    deferred_revivals: SyncMutex<FxHashMap<ChunkPos, DeferredChunkRevival>>,
     /// Queue of pending generation tasks.
     pub pending_generation_tasks: SyncMutex<Vec<Arc<ChunkGenerationTask>>>,
     /// Tracker for generation, save, and unload tasks.
@@ -382,7 +384,6 @@ impl ChunkMap {
         Self {
             chunks: scc::HashMap::default(),
             unloading_chunks: scc::HashMap::default(),
-            deferred_revivals: SyncMutex::new(FxHashMap::default()),
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
             scheduling: ChunkSchedulingCoordinator::new(
@@ -526,7 +527,7 @@ impl ChunkMap {
 
     /// Returns whether the chunk is in block simulation range with confirmed r1 readiness.
     #[must_use]
-    pub(crate) fn is_block_ticking_full_chunk_simulated(&self, pos: ChunkPos) -> bool {
+    pub fn is_block_ticking_full_chunk_simulated(&self, pos: ChunkPos) -> bool {
         self.lookup_active_holder(pos).is_some_and(|holder| {
             is_block_ticking(holder.simulation_level())
                 && holder.ticking_readiness_snapshot().is_block_ticking()
@@ -673,7 +674,8 @@ impl ChunkMap {
         for dz in -radius..=radius {
             for dx in -radius..=radius {
                 let pos = ChunkPos::new(center.0.x + dx, center.0.y + dz);
-                let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) else {
+                let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder))
+                else {
                     return false;
                 };
                 if holder.try_chunk(ChunkStatus::Full).is_none() {
@@ -862,6 +864,57 @@ impl ChunkMap {
         }
     }
 
+    /// Advances inhabited time for loaded Full chunks that are natural-spawn candidates.
+    ///
+    /// Vanilla's spawn-candidate tracker only retains chunks near a non-spectator
+    /// player, and `collectSpawningChunks` still requires the chunk center to be
+    /// within 128 blocks of that player.
+    fn tick_spawning_chunks(&self, world: &World) {
+        let mut player_positions = Vec::new();
+        world.players.iter_players(|_, player| {
+            if !player.is_spectator() {
+                player_positions.push(player.position());
+            }
+            true
+        });
+        // The radius square bounds every chunk within spawn distance, so checking
+        // distance against the producing player yields the full spawning set.
+        // The set dedups chunks near several players so each ticks once.
+        let mut spawning_chunks = FxHashSet::default();
+        for &position in &player_positions {
+            let ChunkPos(center) = ChunkPos::from_entity_pos(position);
+            for x in center.x - NATURAL_SPAWN_CHUNK_RADIUS..=center.x + NATURAL_SPAWN_CHUNK_RADIUS {
+                for z in
+                    center.y - NATURAL_SPAWN_CHUNK_RADIUS..=center.y + NATURAL_SPAWN_CHUNK_RADIUS
+                {
+                    let pos = ChunkPos::new(x, z);
+                    let delta_x = f64::from(pos.middle_block_x()) - position.x;
+                    let delta_z = f64::from(pos.middle_block_z()) - position.z;
+                    if delta_x * delta_x + delta_z * delta_z
+                        < SPAWN_CANDIDATE_PLAYER_DISTANCE_SQUARED
+                        && spawning_chunks.insert(pos)
+                    {
+                        self.tick_spawning_chunk(pos);
+                    }
+                }
+            }
+        }
+    }
+
+    fn tick_spawning_chunk(&self, pos: ChunkPos) {
+        let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder)) else {
+            return;
+        };
+        if !is_block_ticking(holder.load_level())
+            || !holder.ticking_readiness_snapshot().is_block_ticking()
+        {
+            return;
+        }
+        if let Some(chunk) = holder.try_full_chunk() {
+            chunk.common().increment_inhabited_time();
+        }
+    }
+
     /// Processes chunk updates, ticks chunks, and executes ready scheduled ticks.
     ///
     /// # Arguments
@@ -932,6 +985,10 @@ impl ChunkMap {
             timings.total_chunks = self.chunks.len();
             timings.tickable_count = tickable_chunks.block.len();
 
+            if runs_normally {
+                self.tick_spawning_chunks(world);
+            }
+
             if runs_normally && random_tick_speed > 0 && !tickable_chunks.block.is_empty() {
                 let _span = tracing::trace_span!(
                     "random_chunk_ticks",
@@ -969,7 +1026,7 @@ impl ChunkMap {
         {
             let _span = tracing::trace_span!("process_unloads").entered();
             let start = Instant::now();
-            self.process_pending_unloads();
+            self.process_unloads();
             timings.scheduling.process_unloads = start.elapsed();
         }
 
@@ -987,9 +1044,17 @@ impl ChunkMap {
         let _source_phase_guard = self.source_phase_guard.lock();
         let mut timings = self.run_chunk_source_updates();
         let start = Instant::now();
-        self.process_pending_unloads();
+        self.process_unloads();
         timings.process_unloads = start.elapsed();
         timings
+    }
+
+    /// Flint entry point for [`Self::advance_scheduling`].
+    ///
+    /// Exposed only with the `test-framework` feature; the same calling constraint applies.
+    #[cfg(feature = "test-framework")]
+    pub fn flint_advance_scheduling(self: &Arc<Self>) -> ChunkMapSchedulingTimings {
+        self.advance_scheduling()
     }
 
     fn apply_simulation_changes(&self, changes: &[SimulationLevelChange]) -> bool {
@@ -1042,8 +1107,6 @@ impl ChunkMap {
             timings.ticket_updates = start.elapsed();
             batch
         };
-
-        self.merge_deferred_revivals(&mut batch.load_changes);
 
         {
             let _span = tracing::trace_span!("block_entity_unloads").entered();
@@ -1165,24 +1228,9 @@ impl ChunkMap {
             timings.run_generation = start.elapsed();
         }
 
-        let through_receipt = batch.through_receipt;
-        // A staged revival has not published the ticket's holder state yet. A later
-        // phase returns the same watermark and commits it after every revival lands.
-        if self.deferred_revivals.lock().is_empty() {
-            self.scheduling.publish_committed(through_receipt);
-        }
+        self.scheduling.publish_committed(batch.through_receipt);
         self.scheduling.recycle_update_batch(batch);
         timings
-    }
-
-    fn process_pending_unloads(self: &Arc<Self>) {
-        let staged_revivals = self
-            .deferred_revivals
-            .lock()
-            .keys()
-            .copied()
-            .collect::<FxHashSet<_>>();
-        self.process_unloads(&staged_revivals);
     }
 
     /// Returns full chunks whose simulation level currently allows entity ticks.
@@ -1196,7 +1244,7 @@ impl ChunkMap {
     }
 
     /// Returns whether the chunk is full and currently allows entity ticks.
-    pub(crate) fn is_entity_ticking_full_chunk_loaded(&self, pos: ChunkPos) -> bool {
+    pub fn is_entity_ticking_full_chunk_loaded(&self, pos: ChunkPos) -> bool {
         self.chunks
             .read_sync(&pos, |_, holder| holder.entity_visibility().is_ticking())
             .unwrap_or(false)
@@ -1328,8 +1376,7 @@ impl ChunkMap {
             let mut lifecycle_dispatchers = unload
                 .holder
                 .try_full_chunk()
-                .map(|chunk| chunk.deactivate_block_entities(&unload.holder))
-                .unwrap_or_default();
+                .map_or_default(|chunk| chunk.deactivate_block_entities(&unload.holder));
             world
                 .block_entity_tickers()
                 .remove_positions(&unload.holder, &unload.positions);

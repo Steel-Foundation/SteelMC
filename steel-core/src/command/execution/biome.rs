@@ -5,7 +5,8 @@ use steel_registry::{
 };
 use steel_utils::{Identifier, translations};
 
-use super::argument::{identifier_matches, parse_identifier, unknown_resource};
+use super::argument::{parse_identifier, unknown_resource};
+use super::suggestions::identifier_matches;
 use crate::command::brigadier::{
     CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
 };

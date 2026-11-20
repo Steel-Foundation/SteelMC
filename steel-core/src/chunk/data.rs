@@ -2,10 +2,10 @@
 use std::fmt::{self, Formatter};
 use std::sync::{
     Arc, OnceLock, Weak,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicI64, Ordering},
 };
 
-use parking_lot::{MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use rustc_hash::FxHashMap;
 use steel_registry::{
     REGISTRY,
@@ -36,7 +36,6 @@ use crate::world::World;
 use crate::world::tick_scheduler::{
     BlockTickList, ChunkTickContainer, ChunkTickLists, FluidTickList, TickPriority,
 };
-use crate::worldgen::carving_mask::CarvingMask;
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
 pub(crate) fn empty_postprocessing(height: i32) -> Box<[Vec<u16>]> {
@@ -81,6 +80,8 @@ pub struct Chunk {
     /// Whether the chunk has been modified since last save.
     /// Newly generated chunks start dirty.
     pub dirty: AtomicBool,
+    /// Total game ticks this chunk spent as a natural-spawn candidate.
+    inhabited_time: AtomicI64,
     /// Heightmaps retained across every generation phase.
     pub(crate) heightmaps: SyncRwLock<ChunkHeightmaps>,
     /// The minimum Y coordinate of the world this chunk belongs to.
@@ -97,8 +98,6 @@ pub struct Chunk {
     pub structure_starts: SyncRwLock<StructureStartMap>,
     /// References to structures from nearby origin chunks.
     pub structure_references: SyncRwLock<StructureReferenceMap>,
-    /// Bitset of positions visited by carvers (lazily initialized).
-    pub carving_mask: SyncRwLock<Option<CarvingMask>>,
     /// Section-indexed packed offsets that need vanilla postprocessing after promotion.
     pub postprocessing: SyncMutex<Box<[Vec<u16>]>>,
     /// Stable block and fluid scheduled-tick storage retained through Full promotion.
@@ -132,6 +131,7 @@ impl Chunk {
             sections,
             pos,
             dirty: AtomicBool::new(true), // New chunks are always dirty
+            inhabited_time: AtomicI64::new(0),
             heightmaps: SyncRwLock::new(ChunkHeightmaps::empty()),
             min_y,
             height,
@@ -140,7 +140,6 @@ impl Chunk {
             entities: EntityStorage::new(),
             structure_starts: SyncRwLock::new(FxHashMap::default()),
             structure_references: SyncRwLock::new(FxHashMap::default()),
-            carving_mask: SyncRwLock::new(None),
             postprocessing: SyncMutex::new(empty_postprocessing(height)),
             scheduled_ticks: Arc::new(ChunkTickContainer::new_proto(ChunkTickLists::new(
                 BlockTickList::new_pending(),
@@ -174,21 +173,22 @@ impl Chunk {
         heightmaps: ChunkHeightmaps,
         structure_starts: StructureStartMap,
         structure_references: StructureReferenceMap,
-        carving_mask: Option<CarvingMask>,
         postprocessing: Vec<Vec<u16>>,
         block_ticks: BlockTickList,
         fluid_ticks: FluidTickList,
+        inhabited_time: i64,
         level: Weak<World>,
         mut light: ChunkLightData,
     ) -> Self {
-        if let Err(error) = light.refresh_emptiness_maps_from_sections(&sections) {
-            panic!("invalid loaded proto chunk light emptiness map length: {error:?}");
-        }
+        light
+            .refresh_emptiness_maps_from_sections(&sections)
+            .expect("invalid loaded proto chunk light emptiness map length");
 
         let chunk = Self {
             sections,
             pos,
             dirty: AtomicBool::new(false),
+            inhabited_time: AtomicI64::new(inhabited_time),
             heightmaps: SyncRwLock::new(heightmaps),
             min_y,
             height,
@@ -201,7 +201,6 @@ impl Chunk {
             },
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
-            carving_mask: SyncRwLock::new(carving_mask),
             postprocessing: SyncMutex::new(postprocessing_from_disk(height, postprocessing)),
             scheduled_ticks: Arc::new(if status == ChunkStatus::Full {
                 ChunkTickContainer::new(ChunkTickLists::new(block_ticks, fluid_ticks))
@@ -266,6 +265,17 @@ impl Chunk {
     /// Clears the dirty flag.
     pub fn clear_dirty(&self) {
         self.dirty.store(false, Ordering::Release);
+    }
+
+    /// Returns the total game ticks this chunk spent as a natural-spawn candidate.
+    #[must_use]
+    pub fn inhabited_time(&self) -> i64 {
+        self.inhabited_time.load(Ordering::Acquire)
+    }
+
+    /// Adds one tick of inhabited time.
+    pub fn increment_inhabited_time(&self) {
+        self.inhabited_time.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Reads a block using coordinates relative to the chunk's minimum Y.
@@ -548,22 +558,6 @@ impl Chunk {
         self.transient_generation_state.lock().value = None;
     }
 
-    /// Returns a write guard to this chunk's carving mask, initializing it on
-    /// first access. Mirrors vanilla's `ProtoChunk.getOrCreateCarvingMask`.
-    ///
-    /// # Panics
-    /// Never — the mask is populated immediately before projecting the guard.
-    pub(crate) fn get_or_create_carving_mask(&self) -> MappedRwLockWriteGuard<'_, CarvingMask> {
-        let mut guard = self.carving_mask.write();
-        if guard.is_none() {
-            *guard = Some(CarvingMask::new(self.height, self.min_y));
-        }
-        RwLockWriteGuard::map(guard, |opt| match opt {
-            Some(mask) => mask,
-            None => unreachable!("carving mask initialized immediately above"),
-        })
-    }
-
     /// Vanilla `ProtoChunk.packOffsetCoordinates` for postprocessing offsets.
     #[must_use]
     pub const fn pack_postprocessing_offset(pos: BlockPos) -> u16 {
@@ -613,7 +607,7 @@ impl Chunk {
     /// Returns the weak reference to the world.
     #[must_use]
     pub(crate) fn level_weak(&self) -> Weak<World> {
-        self.level.clone()
+        Weak::clone(&self.level)
     }
 
     /// Returns a reference to the world if it is still alive.
@@ -757,7 +751,7 @@ impl Chunk {
             }
 
             let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-            let creation = behavior.new_block_entity(self.level.clone(), pos, state);
+            let creation = behavior.new_block_entity(Weak::clone(&self.level), pos, state);
             match self.commit_pending_creation(pos, state, creation) {
                 PendingPromotionCommit::Retry => {}
                 PendingPromotionCommit::Complete(block_entity) => return block_entity,
@@ -1004,13 +998,10 @@ impl Chunk {
     }
 
     pub(crate) fn refresh_light_emptiness_maps(&self) {
-        if let Err(error) = self
-            .light
+        self.light
             .write()
             .refresh_emptiness_maps_from_sections(&self.sections)
-        {
-            panic!("invalid proto chunk light emptiness map length: {error:?}");
-        }
+            .expect("invalid proto chunk light emptiness map length");
     }
 
     /// Applies the heightmap side effect for an optimized direct section write.
@@ -1066,7 +1057,7 @@ impl Chunk {
             let scan_local_y = ((scan_y - min_y) % 16) as usize;
             sections.sections[scan_section_index]
                 .read()
-                .states
+                .states()
                 .get(lx, scan_local_y, lz)
         };
 
@@ -1101,7 +1092,7 @@ impl Chunk {
             let scan_local_y = ((scan_y - min_y) % 16) as usize;
             sections.sections[scan_section_index]
                 .read()
-                .states
+                .states()
                 .get(lx, scan_local_y, lz)
         };
 
@@ -1138,7 +1129,7 @@ impl Chunk {
         let local_y = (y & 15) as usize;
         let local_z = (pos.0.z & 15) as usize;
 
-        section_guard.states.get(local_x, local_y, local_z)
+        section_guard.states().get(local_x, local_y, local_z)
     }
 
     fn with_locked_block_state<R>(&self, pos: BlockPos, f: impl FnOnce(BlockStateId) -> R) -> R {
@@ -1148,7 +1139,7 @@ impl Chunk {
         }
 
         let section = self.sections.sections[self.get_section_index(y)].read();
-        let state = section.states.get(
+        let state = section.states().get(
             (pos.x() & 15) as usize,
             (y & 15) as usize,
             (pos.z() & 15) as usize,
@@ -1561,6 +1552,7 @@ mod tests {
         );
         let moving_pos = BlockPos::new(2, 4, 5);
         let chest_pos = BlockPos::new(3, 4, 5);
+        let unimplemented_pos = BlockPos::new(4, 4, 5);
         assert!(
             proto
                 .set_block_state_for_generation(
@@ -1581,20 +1573,42 @@ mod tests {
                 )
                 .is_some()
         );
+        assert!(
+            proto
+                .set_block_state_for_generation(
+                    ChunkStatus::Empty,
+                    unimplemented_pos,
+                    vanilla_blocks::COPPER_CHEST.default_state(),
+                    UpdateFlags::UPDATE_NONE,
+                )
+                .is_some()
+        );
         proto.set_pending_block_entity(moving_pos);
         proto.set_pending_block_entity(chest_pos);
+        proto.set_pending_block_entity(unimplemented_pos);
 
         assert!(proto.promote_pending_block_entity(moving_pos).is_none());
-        assert!(proto.promote_pending_block_entity(chest_pos).is_none());
+        assert!(proto.promote_pending_block_entity(chest_pos).is_some());
+        assert!(
+            proto
+                .promote_pending_block_entity(unimplemented_pos)
+                .is_none()
+        );
         let pending = proto.pending_block_entity_positions();
         assert!(pending.contains(&moving_pos));
-        assert!(pending.contains(&chest_pos));
+        assert!(!pending.contains(&chest_pos));
+        assert!(pending.contains(&unimplemented_pos));
 
         let full = proto.promote_to_full().chunk;
         assert!(full.get_block_entity(moving_pos).is_none());
         assert!(!full.pending_block_entity_positions().contains(&moving_pos));
-        assert!(full.get_block_entity(chest_pos).is_none());
-        assert!(full.pending_block_entity_positions().contains(&chest_pos));
+        assert!(full.get_block_entity(chest_pos).is_some());
+        assert!(!full.pending_block_entity_positions().contains(&chest_pos));
+        assert!(full.get_block_entity(unimplemented_pos).is_none());
+        assert!(
+            full.pending_block_entity_positions()
+                .contains(&unimplemented_pos)
+        );
     }
 
     #[test]

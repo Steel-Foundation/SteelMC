@@ -5,6 +5,7 @@ use serde::Deserialize;
 use std::iter::repeat_n;
 use std::path::Path;
 use std::sync::Arc;
+use steel_registry::biome::BiomeRef;
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::vanilla_biomes;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
@@ -12,11 +13,14 @@ use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
 use toml::map::Map;
 
-use crate::worldgen::structure::{FixedStructureBiomeProvider, StructureGenerator};
+use crate::worldgen::structure::StructureGenerator;
 use crate::worldgen::{
     ChunkGeneratorType, EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator,
 };
 use steel_worldgen::biomes::BiomeSourceKind;
+use steel_worldgen::density_functions::{
+    end::EndNoiseSettings, nether::NetherNoiseSettings, overworld::OverworldNoiseSettings,
+};
 use steel_worldgen::structure::placement::load_vanilla_structure_sets;
 
 /// Fully constructed generator metadata for a world.
@@ -68,6 +72,7 @@ impl ValidatedWorldGeneratorConfig {
             WorldGeneratorConfigData::Flat(config) => {
                 validated_dimension_type_by_key(&config.dimension_type)
             }
+            WorldGeneratorConfigData::SingleBiome(_) => &OVERWORLD,
         }
     }
 }
@@ -77,6 +82,7 @@ enum WorldGeneratorConfigData {
     Empty,
     EmptyWorld(DimensionTypeOnlyConfig),
     Flat(FlatGeneratorConfig),
+    SingleBiome(SingleBiomeConfig),
 }
 
 /// Registry of server-side world generator factories.
@@ -110,6 +116,13 @@ impl WorldGeneratorRegistry {
             WorldGeneratorFactory {
                 validate: validate_empty_config,
                 create: create_end,
+            },
+        )?;
+        registry.register(
+            Identifier::vanilla_static("single_biome_surface"),
+            WorldGeneratorFactory {
+                validate: validate_single_biome_config,
+                create: create_single_biome_surface,
             },
         )?;
         registry.register(
@@ -193,6 +206,17 @@ struct FlatGeneratorConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct SingleBiomeConfig {
+    #[serde(default = "default_single_biome")]
+    biome: Identifier,
+}
+
+const fn default_single_biome() -> Identifier {
+    Identifier::vanilla_static("plains")
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FlatLayerConfig {
     block: Identifier,
     height: usize,
@@ -234,6 +258,22 @@ fn validate_empty_config(config: &toml::Value) -> Result<WorldGeneratorConfigDat
         return Err("this generator does not accept config".to_owned());
     }
     Ok(WorldGeneratorConfigData::Empty)
+}
+
+fn validate_single_biome_config(config: &toml::Value) -> Result<WorldGeneratorConfigData, String> {
+    let parsed: SingleBiomeConfig = config
+        .clone()
+        .try_into()
+        .map_err(|e| format!("invalid minecraft:single_biome_surface config: {e}"))?;
+    single_biome_by_key(&parsed.biome)?;
+    Ok(WorldGeneratorConfigData::SingleBiome(parsed))
+}
+
+fn single_biome_by_key(key: &Identifier) -> Result<BiomeRef, String> {
+    REGISTRY
+        .biomes
+        .by_key(key)
+        .ok_or_else(|| format!("unknown biome {key} in minecraft:single_biome_surface"))
 }
 
 fn validate_empty_world_config(config: &toml::Value) -> Result<WorldGeneratorConfigData, String> {
@@ -306,6 +346,34 @@ fn create_overworld(
         generator: ChunkGeneratorType::Overworld(VanillaGenerator::new(
             world_path,
             BiomeSourceKind::overworld(seed),
+            seed,
+            thread_pool,
+        )),
+        is_flat: false,
+        sea_level: sea_level_for_dimension_type(&OVERWORLD),
+    })
+}
+
+fn create_single_biome_surface(
+    world_path: Option<&Path>,
+    config: &WorldGeneratorConfigData,
+    seed: i64,
+    thread_pool: &rayon::ThreadPool,
+) -> Result<GeneratorOutput, String> {
+    let WorldGeneratorConfigData::SingleBiome(parsed) = config else {
+        return Err("validated config does not match minecraft:single_biome_surface".to_owned());
+    };
+    let biome = single_biome_by_key(&parsed.biome)?;
+    let seed = seed as u64;
+    Ok(GeneratorOutput {
+        dimension_type: &OVERWORLD,
+        config: toml::Value::Table(Map::from_iter([(
+            "biome".to_owned(),
+            toml::Value::String(parsed.biome.to_string()),
+        )])),
+        generator: ChunkGeneratorType::Overworld(VanillaGenerator::new(
+            world_path,
+            BiomeSourceKind::fixed(biome),
             seed,
             thread_pool,
         )),
@@ -390,7 +458,7 @@ fn create_flat(
             .into_iter()
             .filter(|(key, _)| parsed.structure_overrides.contains(key))
             .collect();
-        let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
+        let biome_provider = BiomeSourceKind::fixed(&vanilla_biomes::PLAINS);
         Some(StructureGenerator::vanilla_flat_with_structure_sets(
             seed,
             world_path,
@@ -406,11 +474,11 @@ fn create_flat(
         generator: ChunkGeneratorType::Flat(FlatChunkGenerator::new_layers_with_structures(
             layers,
             seed,
-            sea_level_for_dimension_type(dimension_type),
+            FlatChunkGenerator::SEA_LEVEL,
             structure_generator,
         )),
         is_flat: true,
-        sea_level: sea_level_for_dimension_type(dimension_type),
+        sea_level: FlatChunkGenerator::SEA_LEVEL,
     })
 }
 
@@ -512,11 +580,11 @@ fn fixed_generator_dimension_type(generator: &Identifier) -> DimensionTypeRef {
 
 fn sea_level_for_dimension_type(dimension_type: DimensionTypeRef) -> i32 {
     if dimension_type == &THE_NETHER {
-        32
+        NetherNoiseSettings::SEA_LEVEL
     } else if dimension_type == &THE_END {
-        0
+        EndNoiseSettings::SEA_LEVEL
     } else {
-        63
+        OverworldNoiseSettings::SEA_LEVEL
     }
 }
 
@@ -527,6 +595,24 @@ mod tests {
 
     #[test]
     fn default_flat_config_matches_vanilla_superflat() {
+        use std::panic;
+        use std::thread;
+
+        // Larger stack to match chunk_stage_hashes.rs / structure_starts.rs —
+        // loading the default structure overrides (strongholds, villages)
+        // recurses deeply for jigsaw assembly.
+        let result = thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(default_flat_config_matches_vanilla_superflat_inner)
+            .expect("Failed to spawn test thread")
+            .join();
+
+        if let Err(payload) = result {
+            panic::resume_unwind(payload);
+        }
+    }
+
+    fn default_flat_config_matches_vanilla_superflat_inner() {
         init_vanilla_registry();
 
         let registry = WorldGeneratorRegistry::new_with_builtins()
@@ -563,6 +649,25 @@ mod tests {
                 toml::Value::String("minecraft:villages".to_owned()),
             ]))
         );
+    }
+
+    #[test]
+    fn single_biome_config_defaults_to_plains_and_rejects_unknown_biomes() {
+        init_vanilla_registry();
+
+        let defaulted = validate_single_biome_config(&toml::Value::Table(Map::new()))
+            .expect("an omitted biome should default");
+        let WorldGeneratorConfigData::SingleBiome(parsed) = defaulted else {
+            panic!("single_biome_surface should validate to its own config");
+        };
+        assert_eq!(parsed.biome, Identifier::vanilla_static("plains"));
+
+        let unknown = toml::Value::Table(Map::from_iter([(
+            "biome".to_owned(),
+            toml::Value::String("minecraft:lush_cave".to_owned()),
+        )]));
+        let error = validate_single_biome_config(&unknown).expect_err("unknown biome");
+        assert!(error.contains("minecraft:lush_cave"));
     }
 
     #[test]

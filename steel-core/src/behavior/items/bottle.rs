@@ -8,12 +8,8 @@ use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::data_components::PotionContents;
-use steel_registry::data_components::vanilla_components::POTION_CONTENTS;
-use steel_registry::item_stack::ItemStack;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{
-    RegistryReference, sound_events, vanilla_game_events, vanilla_items, vanilla_potions,
-};
+use steel_registry::{sound_events, vanilla_game_events, vanilla_items, vanilla_potions};
 
 use crate::behavior::context::{InteractionResult, UseItemContext};
 use crate::behavior::item::ItemBehavior;
@@ -58,7 +54,7 @@ impl ItemBehavior for BottleItem {
         context.world.game_event(
             &vanilla_game_events::FLUID_PICKUP,
             pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
         context.inv.with_item(|item| {
@@ -66,25 +62,14 @@ impl ItemBehavior for BottleItem {
                 .player
                 .award_stat(&vanilla_stat_types::ITEM_USED, item.item());
         });
-        create_filled_result(context, water_potion_stack(), true);
+        create_filled_result(
+            context,
+            PotionContents::create_item_stack(&vanilla_items::POTION, &vanilla_potions::WATER),
+            true,
+        );
 
         InteractionResult::Success
     }
-}
-
-/// Vanilla `PotionContents.createItemStack(Items.POTION, Potions.WATER)`.
-fn water_potion_stack() -> ItemStack {
-    let mut stack = ItemStack::new(&vanilla_items::POTION);
-    stack.set(
-        POTION_CONTENTS,
-        PotionContents::new(
-            Some(RegistryReference::new(&vanilla_potions::WATER)),
-            None,
-            Vec::new(),
-            None,
-        ),
-    );
-    stack
 }
 
 #[cfg(test)]
@@ -127,7 +112,7 @@ mod tests {
         player
     }
 
-    fn use_bottle(player: &Player, world: &Arc<World>, count: i32) -> InteractionResult {
+    fn use_bottle(player: &Arc<Player>, world: &Arc<World>, count: i32) -> InteractionResult {
         player.inventory.lock().set_item_in_hand(
             InteractionHand::MainHand,
             ItemStack::with_count(&vanilla_items::GLASS_BOTTLE, count),
@@ -136,7 +121,7 @@ mod tests {
             player,
             InteractionHand::MainHand,
             world,
-            player.inventory.clone(),
+            Arc::clone(&player.inventory),
         );
         BottleItem.use_item(&mut context)
     }
@@ -154,16 +139,17 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("bottle_fill_water");
+        let world_fixture = fresh_test_world("bottle_fill_water");
+        let world = &world_fixture.world;
         let water_pos = BlockPos::new(0, 80, 0);
         let player = looking_down_at(
-            &world,
+            world,
             DVec3::new(0.5, 81.0, 0.5),
             water_pos,
             vanilla_blocks::WATER.default_state(),
         );
 
-        assert_eq!(use_bottle(&player, &world, 1), InteractionResult::Success);
+        assert_eq!(use_bottle(&player, world, 1), InteractionResult::Success);
 
         let filled = hand_item(&player);
         assert_eq!(filled.item.key, vanilla_items::POTION.key);
@@ -183,26 +169,28 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("bottle_fill_stone");
+        let world_fixture = fresh_test_world("bottle_fill_stone");
+        let world = &world_fixture.world;
         let player = looking_down_at(
-            &world,
+            world,
             DVec3::new(0.5, 81.0, 0.5),
             BlockPos::new(0, 80, 0),
             vanilla_blocks::STONE.default_state(),
         );
 
-        assert_eq!(use_bottle(&player, &world, 1), InteractionResult::Pass);
+        assert_eq!(use_bottle(&player, world, 1), InteractionResult::Pass);
         assert_eq!(hand_item(&player).item.key, vanilla_items::GLASS_BOTTLE.key);
 
-        let air_world = fresh_test_world("bottle_fill_air");
+        let air_world_fixture = fresh_test_world("bottle_fill_air");
+        let air_world = &air_world_fixture.world;
         let air_player = looking_down_at(
-            &air_world,
+            air_world,
             DVec3::new(0.5, 81.0, 0.5),
             BlockPos::new(0, 80, 0),
             vanilla_blocks::AIR.default_state(),
         );
         assert_eq!(
-            use_bottle(&air_player, &air_world, 1),
+            use_bottle(&air_player, air_world, 1),
             InteractionResult::Pass
         );
     }

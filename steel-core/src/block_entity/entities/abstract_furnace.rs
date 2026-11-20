@@ -19,6 +19,8 @@ use steel_registry::recipe::{
 };
 use steel_registry::{REGISTRY, vanilla_block_entity_types, vanilla_items};
 use steel_utils::locks::IntoShared;
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{
     BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier, locks::SyncMutex,
     types::UpdateFlags,
@@ -27,6 +29,7 @@ use steel_utils::{
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::inventory::container::Container;
+use crate::inventory::container::load_all_items;
 use crate::inventory::fuel_values::VANILLA_FUEL_VALUES;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
 use crate::world::World;
@@ -70,6 +73,14 @@ impl FurnaceKind {
         match self {
             Self::Furnace => vanilla_duration,
             Self::BlastFurnace | Self::Smoker => vanilla_duration / 2,
+        }
+    }
+
+    #[must_use]
+    const fn cooking_time(self, recipe_time: i32) -> i32 {
+        match self {
+            Self::Furnace => recipe_time,
+            Self::BlastFurnace | Self::Smoker => recipe_time / 2,
         }
     }
 }
@@ -127,9 +138,10 @@ impl FurnaceContainer {
     }
 
     fn reset_cooking_for_input(&mut self) {
-        self.cooking_total_time = self
+        let recipe_time = self
             .recipe_for_input()
             .map_or(DEFAULT_COOKING_TIME, |recipe| recipe.data().cooking_time);
+        self.cooking_total_time = self.kind.cooking_time(recipe_time);
         self.cooking_timer = 0;
     }
 
@@ -203,7 +215,8 @@ impl FurnaceContainer {
                         self.cooking_timer += 1;
                         if self.cooking_timer == self.cooking_total_time {
                             self.cooking_timer = 0;
-                            self.cooking_total_time = recipe.data().cooking_time;
+                            self.cooking_total_time =
+                                self.kind.cooking_time(recipe.data().cooking_time);
                             self.burn(recipe);
                             changed = true;
                         }
@@ -315,7 +328,7 @@ impl AbstractFurnaceBlockEntity {
     ) -> Self {
         let base = Arc::new(BlockEntityBase::new(block_entity_type, level, pos, state));
         let container = FurnaceContainer::new(kind).into_shared();
-        let shared: SharedContainer = container.clone();
+        let shared: SharedContainer = Arc::<SyncMutex<FurnaceContainer>>::clone(&container);
         Self {
             container_ref: ContainerRef::owned_by_block_entity(shared, Arc::clone(&base)),
             base,
@@ -344,26 +357,15 @@ impl AbstractFurnaceBlockEntity {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
         let mut furnace = self.container.lock();
         furnace.items.fill(ItemStack::empty());
-        if let Some(items) = nbt.list("Items").and_then(|list| list.compounds()) {
-            for compound in items {
-                let Some(slot) = compound.byte("Slot").map(|slot| slot as usize) else {
-                    continue;
-                };
-                if slot < FURNACE_SLOTS
-                    && let Some(stack) = ItemStack::from_borrowed_compound(&compound)
-                {
-                    furnace.items[slot] = stack;
-                }
-            }
-        }
-        furnace.cooking_timer = i32::from(nbt.short("cooking_time_spent").unwrap_or(0));
-        furnace.cooking_total_time = i32::from(nbt.short("cooking_total_time").unwrap_or(0));
-        furnace.lit_time_remaining = i32::from(nbt.short("lit_time_remaining").unwrap_or(0));
-        furnace.lit_total_time = i32::from(nbt.short("lit_total_time").unwrap_or(0));
+        load_all_items(nbt, &mut furnace.items);
+        furnace.cooking_timer = nbt.int_value("cooking_time_spent").unwrap_or(0);
+        furnace.cooking_total_time = nbt.int_value("cooking_total_time").unwrap_or(0);
+        furnace.lit_time_remaining = nbt.int_value("lit_time_remaining").unwrap_or(0);
+        furnace.lit_total_time = nbt.int_value("lit_total_time").unwrap_or(0);
         furnace.recipes_used.clear();
         if let Some(recipes) = nbt.compound("RecipesUsed") {
             for (key, value) in recipes.iter() {
-                let Some(count) = value.int() else {
+                let Some(count) = value.codec_i32() else {
                     continue;
                 };
                 if let Ok(identifier) = key.to_string().parse() {
@@ -375,10 +377,10 @@ impl AbstractFurnaceBlockEntity {
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
         let furnace = self.container.lock();
-        nbt.insert("cooking_time_spent", furnace.cooking_timer as i16);
-        nbt.insert("cooking_total_time", furnace.cooking_total_time as i16);
-        nbt.insert("lit_time_remaining", furnace.lit_time_remaining as i16);
-        nbt.insert("lit_total_time", furnace.lit_total_time as i16);
+        nbt.insert("cooking_time_spent", furnace.cooking_timer);
+        nbt.insert("cooking_total_time", furnace.cooking_total_time);
+        nbt.insert("lit_time_remaining", furnace.lit_time_remaining);
+        nbt.insert("lit_total_time", furnace.lit_total_time);
 
         let mut items = Vec::new();
         for (slot, stack) in furnace.items.iter().enumerate() {
@@ -442,7 +444,11 @@ pub(crate) fn pop_furnace_experience(
 
 macro_rules! furnace_block_entity {
     ($name:ident, $key:literal, $type:ident, $kind:ident) => {
-        #[doc = concat!("Concrete Vanilla `", stringify!($name), "` implementation.")]
+        #[doc = concat!(
+                                            "`",
+                                            stringify!($name),
+                                            "` block entity backed by the shared smelting logic."
+                                        )]
         pub struct $name {
             common: AbstractFurnaceBlockEntity,
         }

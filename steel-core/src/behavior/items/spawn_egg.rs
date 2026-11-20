@@ -9,8 +9,10 @@ use steel_registry::data_components::vanilla_components::ENTITY_DATA;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::{vanilla_blocks, vanilla_game_events};
-use steel_utils::BlockPos;
+use steel_registry::{vanilla_game_events, vanilla_game_rules};
+use steel_utils::types::Difficulty;
+use steel_utils::{BlockPos, translations};
+use text_components::TextComponent;
 
 use crate::behavior::item_utils::get_player_pov_hit_result;
 use crate::behavior::{
@@ -18,7 +20,7 @@ use crate::behavior::{
     InteractionResult, InventoryAccess, ItemBehavior, UseItemContext, UseOnContext,
 };
 use crate::entity::{
-    AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, Mob, SharedEntity,
+    EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, Mob, SharedEntity,
     add_spawned_entity, apply_implicit_item_stack_components, create_entity_instance, spawn_entity,
 };
 use crate::player::Player;
@@ -87,9 +89,10 @@ impl SpawnEggItem {
         {
             return InteractionResult::Pass;
         }
-        if Self::spawn_offspring(stack, parent).is_none() {
+        let Some(offspring) = Self::spawn_offspring(stack, parent) else {
             return InteractionResult::Pass;
-        }
+        };
+        parent.on_offspring_spawned_from_egg(player, &offspring);
         stack.consume_one(player.has_infinite_materials());
         InteractionResult::SuccessServer
     }
@@ -117,9 +120,9 @@ impl SpawnEggItem {
             }
         };
 
-        let ageable = offspring.as_ageable_mob()?;
-        ageable.set_baby(true);
-        if !AgeableMob::is_baby(ageable) {
+        let mob = offspring.as_mob()?;
+        mob.set_baby(true);
+        if !mob.is_baby() {
             return None;
         }
 
@@ -128,7 +131,7 @@ impl SpawnEggItem {
         offspring.set_old_position_to_current();
         offspring.base().set_old_rotation_to_current();
         apply_implicit_item_stack_components(&offspring, stack);
-        add_spawned_entity(&world, offspring.clone()).ok()?;
+        add_spawned_entity(&world, Arc::clone(&offspring)).ok()?;
         Some(offspring)
     }
 }
@@ -140,17 +143,42 @@ impl ItemBehavior for SpawnEggItem {
 
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let stack = context.inv.with_item(|item| item.clone());
-        if Self::entity_type(&stack).is_none() {
+        let Some(entity_type) = Self::entity_type(&stack) else {
+            return InteractionResult::Fail;
+        };
+        if context.world.difficulty() == Difficulty::Peaceful && !entity_type.allowed_in_peaceful {
             return InteractionResult::Fail;
         }
 
         let clicked_pos = context.hit_result.block_pos;
         let clicked_state = context.world.get_block_state(clicked_pos);
-        if clicked_state.get_block() == &vanilla_blocks::SPAWNER {
-            // TODO: Use spawn eggs on a spawner block and also check if the condition is correct
-            // Spawner block-entity mutation is a separate foundation; do not
-            // incorrectly create a mob beside a spawner in its place.
-            return InteractionResult::Fail;
+        if let Some(block_entity) = context.world.get_block_entity(clicked_pos)
+            && let Some(spawner) = block_entity.as_spawner()
+        {
+            if !context
+                .world
+                .get_game_rule(&vanilla_game_rules::SPAWNER_BLOCKS_WORK)
+            {
+                context.player.send_message(&TextComponent::translated(
+                    translations::ADV_MODE_NOT_ENABLED_SPAWNER.msg(),
+                ));
+                return InteractionResult::Fail;
+            }
+
+            if context.player.is_operator()
+                && let Some(entity_data) = stack.get(ENTITY_DATA)
+            {
+                spawner.set_entity_data(entity_data);
+            } else {
+                spawner.set_entity_id(entity_type);
+            }
+            context.inv.with_item(|item| item.shrink(1));
+            context.world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                clicked_pos,
+                &GameEventContext::new(Some(context.player.as_ref()), None),
+            );
+            return InteractionResult::Success;
         }
 
         let clicked_face = context.hit_result.direction;
@@ -168,7 +196,7 @@ impl ItemBehavior for SpawnEggItem {
             clicked_face.relative(clicked_pos)
         };
 
-        let result = Self::spawn_mob(
+        Self::spawn_mob(
             context.world,
             context.player,
             &context.inv,
@@ -176,13 +204,7 @@ impl ItemBehavior for SpawnEggItem {
             spawn_pos,
             true,
             spawn_pos != clicked_pos && clicked_face == steel_utils::Direction::Up,
-        );
-        if result == InteractionResult::Success {
-            context
-                .player
-                .award_stat(&vanilla_stat_types::ITEM_USED, stack.item());
-        }
-        result
+        )
     }
 
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {

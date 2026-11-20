@@ -10,6 +10,7 @@ use super::{
     },
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
+    message::Message,
     nbt::parse_nbt_path,
     permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
@@ -19,6 +20,9 @@ use super::{
     },
     structure::{parse_structure_or_tag_key, suggest_structures},
     text::{CommandTextResolutionSource, CommandTextResolver, validate_component_syntax},
+    suggestions::{matches_substring_ignore_case, suggest_resources},
+    swing_animation::SwingAnimationParser,
+    text::validate_component_syntax,
     world::{parse_world_argument, suggest_worlds},
 };
 use crate::chunk::heightmap::HeightmapType;
@@ -31,10 +35,12 @@ use crate::command::incorrectly_typed_argument;
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
+use steel_math::round_f32;
 use steel_protocol::packets::game::{
     ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
     SuggestionType as ProtocolSuggestionType,
 };
+use steel_registry::advancement::Advancement;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
     DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _,
@@ -109,6 +115,10 @@ pub(crate) trait SteelArgumentParser:
 
     /// Returns the vanilla command-tree parser representation.
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
+
+    fn is_signed(&self) -> bool {
+        false
+    }
 }
 
 trait ErasedSteelArgumentParser: ErasedType + fmt::Debug + Send + Sync {
@@ -127,6 +137,9 @@ trait ErasedSteelArgumentParser: ErasedType + fmt::Debug + Send + Sync {
     fn protocol_argument_erased(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
 
     fn equals_erased(&self, other: &dyn ErasedSteelArgumentParser) -> bool;
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool;
 }
 
 impl<P> ErasedSteelArgumentParser for P
@@ -156,6 +169,10 @@ where
     fn equals_erased(&self, other: &dyn ErasedSteelArgumentParser) -> bool {
         other.downcast_ref::<P>() == Some(self)
     }
+
+    fn is_signed(&self) -> bool {
+        SteelArgumentParser::is_signed(self)
+    }
 }
 
 /// An extensible, keyed parser stored by Steel's command runtime.
@@ -170,6 +187,10 @@ impl SteelArgumentType {
 
     pub(crate) fn time(minimum: i32) -> Self {
         Self::new(TimeParser { minimum })
+    }
+
+    pub(crate) fn swing_animation() -> Self {
+        Self::new(SwingAnimationParser)
     }
 
     pub(crate) fn block_pos() -> Self {
@@ -198,6 +219,10 @@ impl SteelArgumentType {
 
     pub(crate) fn entity_anchor() -> Self {
         Self::new(EntityAnchorParser)
+    }
+
+    pub(crate) fn entity_tag() -> Self {
+        Self::new(EntityTagParser)
     }
 
     pub(crate) fn entity() -> Self {
@@ -358,8 +383,17 @@ impl SteelArgumentType {
         Self::new(SoundParser)
     }
 
+    pub(crate) fn advancement() -> Self {
+        Self::new(AdvancementParser)
+    }
+
     pub(crate) fn world_clock() -> Self {
         Self::new(WorldClockParser)
+    }
+
+    /// Creates a greedy `minecraft:message` argument parser
+    pub(crate) fn message() -> Self {
+        Self::new(MessageParser)
     }
 
     pub(crate) fn timeline(clock_argument: Option<&'static str>) -> Self {
@@ -485,6 +519,11 @@ where
     ) {
         self.0.list_suggestions_erased(context, builder);
     }
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool {
+        self.0.is_signed()
+    }
 }
 
 macro_rules! impl_downcast_type {
@@ -534,6 +573,10 @@ argument_value_wrapper!(
 argument_value_wrapper!(
     EnchantmentValue(EnchantmentRef),
     "steel:command/value/enchantment"
+);
+argument_value_wrapper!(
+    AdvancementValue(Identifier),
+    "steel:command/value/advancement"
 );
 argument_value_wrapper!(
     DamageTypeValue(DamageTypeRef),
@@ -608,15 +651,38 @@ argument_value_wrapper!(
     "steel:command/value/world_clock"
 );
 argument_value_wrapper!(TimelineValue(TimelineRef), "steel:command/value/timeline");
+argument_value_wrapper!(MessageValue(Message), "steel:command/value/message");
 
 macro_rules! unit_argument_parser {
+    // Pattern without 'is_signed': forwards with default value 'false'
     (
         $parser:ident,
         $key:literal,
         $value:ty,
         parse |$reader:ident, $source:ident| $parse:block,
         suggest |$context:ident, $builder:ident| $suggest:block,
-        protocol $protocol:expr
+        protocol $protocol:expr $(,)?
+    ) => {
+        unit_argument_parser!(
+            $parser,
+            $key,
+            $value,
+            parse |$reader, $source| $parse,
+            suggest |$context, $builder| $suggest,
+            protocol $protocol,
+            is_signed false
+        );
+    };
+
+    // Full pattern: contains the actual implementation
+    (
+        $parser:ident,
+        $key:literal,
+        $value:ty,
+        parse |$reader:ident, $source:ident| $parse:block,
+        suggest |$context:ident, $builder:ident| $suggest:block,
+        protocol $protocol:expr,
+        is_signed $is_signed:expr $(,)?
     ) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         struct $parser;
@@ -643,10 +709,13 @@ macro_rules! unit_argument_parser {
             ) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
                 $protocol
             }
+
+            fn is_signed(&self) -> bool {
+                $is_signed
+            }
         }
     };
 }
-
 #[derive(Clone, Debug, PartialEq)]
 struct PrimitiveParser(ArgumentType);
 
@@ -826,6 +895,57 @@ unit_argument_parser!(
     },
     protocol(ProtocolArgumentType::EntityAnchor, None)
 );
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct EntityTagParser;
+
+impl_downcast_type!(EntityTagParser, "steel:command/parser/entity_tag");
+
+impl SteelArgumentParser for EntityTagParser {
+    type Value = PrimitiveArgumentValue;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        Ok(PrimitiveArgumentValue::String(
+            reader.read_unquoted_string().into(),
+        ))
+    }
+
+    fn list_suggestions(
+        &self,
+        context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        let Ok(targets) = context.argument("targets") else {
+            return;
+        };
+        let Some(targets) = targets.downcast_ref::<EntitySelector>() else {
+            return;
+        };
+
+        let prefix = builder.remaining();
+        for tag in context
+            .source()
+            .entity_tag_suggestions(targets)
+            .into_iter()
+            .filter(|tag| matches_substring_ignore_case(prefix, tag))
+        {
+            builder.suggest(tag);
+        }
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (
+            ProtocolArgumentType::String {
+                behavior: ArgumentStringTypeBehavior::SingleWord,
+            },
+            Some(ProtocolSuggestionType::AskServer),
+        )
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct EntityParser {
@@ -1124,6 +1244,22 @@ unit_argument_parser!(
     )
 );
 unit_argument_parser!(
+    AdvancementParser,
+    "steel:command/parser/advancement",
+    AdvancementValue,
+    parse | reader,
+    _source | { Ok(AdvancementValue(parse_advancement(reader)?)) },
+    suggest | _context,
+    builder | {
+        let snap = REGISTRY.advancements.snapshot();
+        suggest_resources(snap.advancements().map(Advancement::key), builder);
+    },
+    protocol(
+        ProtocolArgumentType::ResourceLocation,
+        Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
     ItemStackParser,
     "steel:command/parser/item_stack",
     ItemStackValue,
@@ -1302,6 +1438,18 @@ unit_argument_parser!(
         },
         None,
     )
+);
+
+unit_argument_parser!(
+    MessageParser,
+    "steel:command/parser/message",
+    MessageValue,
+    parse | reader,
+    source | { Message::parse(reader, source).map(MessageValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Message, None,),
+    is_signed true
 );
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1579,6 +1727,10 @@ fn parse_summonable_entity(
     Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))))
 }
 
+fn parse_advancement(reader: &mut StringReader<'_>) -> Result<Identifier, CommandSyntaxError> {
+    parse_identifier(reader)
+}
+
 fn can_summon(entity_type: EntityTypeRef) -> bool {
     entity_type.summonable
         && ENTITIES
@@ -1650,28 +1802,6 @@ pub(super) fn unknown_resource(
     reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message)))
 }
 
-fn suggest_resources<'a>(
-    resources: impl Iterator<Item = &'a Identifier>,
-    builder: &mut SuggestionsBuilder<'_>,
-) {
-    let contents = builder.remaining_lowercase();
-    let has_namespace = contents.contains(':');
-    let suggestions = resources.filter_map(|resource| {
-        let full_name = resource.to_string();
-        let matches = if has_namespace {
-            matches_substring(contents, &full_name)
-        } else {
-            matches_substring(contents, resource.namespace.as_ref())
-                || matches_substring(contents, resource.path.as_ref())
-        };
-        matches.then_some(full_name)
-    });
-    let suggestions = suggestions.collect::<Vec<_>>();
-    for suggestion in suggestions {
-        builder.suggest(suggestion);
-    }
-}
-
 fn suggest_storage_keys<S>(source: &S, builder: &mut SuggestionsBuilder<'_>)
 where
     S: CommandArgumentSource + ?Sized,
@@ -1682,25 +1812,6 @@ where
         .filter_map(|key| key.parse::<Identifier>().ok())
         .collect::<Vec<_>>();
     suggest_resources(keys.iter(), builder);
-}
-
-pub(super) fn matches_substring(pattern: &str, input: &str) -> bool {
-    if input.starts_with(pattern) {
-        return true;
-    }
-    input.char_indices().any(|(index, character)| {
-        matches!(character, '.' | '_' | '/')
-            && input[index + character.len_utf8()..].starts_with(pattern)
-    })
-}
-
-pub(super) fn identifier_matches(pattern: &str, identifier: &Identifier) -> bool {
-    if pattern.contains(':') {
-        matches_substring(pattern, &identifier.to_string())
-    } else {
-        matches_substring(pattern, identifier.namespace.as_ref())
-            || matches_substring(pattern, identifier.path.as_ref())
-    }
 }
 
 fn parse_time(reader: &mut StringReader<'_>, minimum: i32) -> Result<i32, CommandSyntaxError> {
@@ -1716,7 +1827,7 @@ fn parse_time(reader: &mut StringReader<'_>, minimum: i32) -> Result<i32, Comman
             ))));
         }
     };
-    let ticks = java_round(value * factor);
+    let ticks = round_f32(value * factor);
     if ticks < minimum {
         let message = translations::ARGUMENT_TIME_TICK_COUNT_TOO_LOW
             .message([minimum.to_string(), ticks.to_string()])
@@ -1737,119 +1848,5 @@ fn suggest_time_units(builder: &mut SuggestionsBuilder<'_>) {
         if candidate.starts_with(unit) {
             builder.suggest(format!("{number}{candidate}"));
         }
-    }
-}
-
-fn java_round(value: f32) -> i32 {
-    (value + 0.5).floor() as i32
-}
-
-#[cfg(test)]
-mod message_tests {
-    use std::collections::BTreeMap;
-
-    use simdnbt::owned::NbtTag;
-    use steel_utils::text::DisplayResolutor;
-    use text_components::content::NbtSource;
-
-    use super::{
-        CommandSyntaxError, CommandTextResolutionSource, MessageSelectorSpan, MessageValue,
-        TextComponent,
-    };
-
-    #[derive(Default)]
-    struct FakeSource {
-        display_names: BTreeMap<&'static str, Vec<TextComponent>>,
-    }
-
-    impl CommandTextResolutionSource for FakeSource {
-        fn selector_display_names(
-            &self,
-            selector: &str,
-        ) -> Result<Vec<TextComponent>, CommandSyntaxError> {
-            Ok(self
-                .display_names
-                .get(selector)
-                .cloned()
-                .unwrap_or_default())
-        }
-
-        fn score_selector_names(
-            &self,
-            _selector: &str,
-        ) -> Result<Option<Vec<String>>, CommandSyntaxError> {
-            Ok(None)
-        }
-
-        fn score(
-            &self,
-            _holder: &str,
-            _objective: &str,
-        ) -> Result<Option<i32>, CommandSyntaxError> {
-            Ok(None)
-        }
-
-        fn nbt_source(&self, _source: &NbtSource) -> Result<Vec<NbtTag>, CommandSyntaxError> {
-            Ok(Vec::new())
-        }
-    }
-
-    fn message(text: &str, spans: &[(usize, usize)]) -> MessageValue {
-        MessageValue {
-            text: text.into(),
-            selectors: spans
-                .iter()
-                .map(|&(start, end)| MessageSelectorSpan { start, end })
-                .collect(),
-        }
-    }
-
-    #[test]
-    fn text_without_selectors_resolves_unchanged() {
-        let value = message("hello world", &[]);
-        let Ok(resolved) = value.resolve(&FakeSource::default()) else {
-            panic!("plain text should resolve");
-        };
-        assert_eq!(resolved.to_plain(&DisplayResolutor), "hello world");
-    }
-
-    #[test]
-    fn a_leading_selector_splices_its_display_name_before_the_trailing_text() {
-        let mut source = FakeSource::default();
-        source
-            .display_names
-            .insert("@p", vec![TextComponent::plain("Steve")]);
-        let value = message("@p is banned", &[(0, 2)]);
-        let Ok(resolved) = value.resolve(&source) else {
-            panic!("message with a leading selector should resolve");
-        };
-        assert_eq!(resolved.to_plain(&DisplayResolutor), "Steve is banned");
-    }
-
-    #[test]
-    fn selectors_in_the_middle_and_end_keep_surrounding_text_intact() {
-        let mut source = FakeSource::default();
-        source.display_names.insert(
-            "@a",
-            vec![TextComponent::plain("Alex"), TextComponent::plain("Steve")],
-        );
-        source
-            .display_names
-            .insert("@s", vec![TextComponent::plain("Admin")]);
-
-        let text = "kicked by @s: bye @a";
-        let s_start = text.find("@s").expect("@s should be present");
-        let s_end = s_start + "@s".len();
-        let a_start = text.find("@a").expect("@a should be present");
-        let a_end = a_start + "@a".len();
-        let value = message(text, &[(s_start, s_end), (a_start, a_end)]);
-
-        let Ok(resolved) = value.resolve(&source) else {
-            panic!("message with multiple selectors should resolve");
-        };
-        assert_eq!(
-            resolved.to_plain(&DisplayResolutor),
-            "kicked by Admin: bye Alex, Steve"
-        );
     }
 }

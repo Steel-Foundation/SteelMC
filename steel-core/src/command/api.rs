@@ -28,6 +28,7 @@ use super::{
     },
 };
 use crate::command::brigadier::ArgumentSuggestionContext;
+use crate::command::signing_context::CommandSigningContext;
 use crate::{
     entity::SharedEntity,
     permission::{PermissionExpr, PermissionState},
@@ -175,22 +176,6 @@ impl CommandNode {
         }
     }
 
-    /// Creates a typed argument node.
-    #[must_use]
-    pub fn argument_with_suggestions(
-        name: impl Into<Box<str>>,
-        argument: CommandArgument,
-        custom_suggestions: &'static (impl SuggestionProvider + 'static),
-    ) -> Self {
-        Self {
-            inner: CommandNodeBuilder::argument_with_suggestions_arc(
-                name,
-                argument.inner,
-                Arc::new(SuggestionProviderWrapper(custom_suggestions)),
-            ),
-        }
-    }
-
     /// Adds a child while preserving declaration order.
     #[must_use]
     pub fn then(mut self, child: Self) -> Self {
@@ -244,6 +229,14 @@ impl CommandNode {
             .requires(CommandRequirement::contextual(move |source| {
                 requirement(CommandSource { inner: source })
             }));
+        self
+    }
+
+    /// Add a custom [`SuggestionProvider`] to the corresponding argument
+    /// does nothing if the node isn't an argument
+    #[must_use]
+    pub fn suggests(mut self, suggestion: &'static (impl SuggestionProvider + 'static)) -> Self {
+        self.inner = self.inner.suggests(SuggestionProviderWrapper(suggestion));
         self
     }
 }
@@ -457,6 +450,12 @@ impl<'source> CommandSource<'source> {
     pub fn send_failure(self, message: TextComponent) {
         self.inner.send_failure(message);
     }
+
+    /// Return the signing context (salt, timestamp, ...) of this command source (if it exists)
+    #[must_use]
+    pub fn signing_context(self) -> Option<&'source CommandSigningContext> {
+        self.inner.signing_context()
+    }
 }
 
 /// A command parsing or execution error with vanilla-style feedback.
@@ -659,6 +658,11 @@ pub trait CommandArgumentParser:
 
     /// Returns the vanilla command-tree parser and optional server suggestion provider.
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool {
+        false
+    }
 }
 
 impl<P> SteelArgumentParser for P
@@ -694,6 +698,10 @@ where
 
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
         CommandArgumentParser::protocol_argument(self)
+    }
+
+    fn is_signed(&self) -> bool {
+        CommandArgumentParser::is_signed(self)
     }
 }
 
@@ -799,24 +807,6 @@ impl<'input> CommandReader<'_, 'input> {
             self.inner
                 .error(CommandSyntaxErrorKind::Dynamic(Box::new(message.into()))),
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::CommandReader;
-    use crate::command::brigadier::StringReader;
-
-    #[test]
-    fn command_reader_cursor_is_a_utf8_byte_offset() {
-        let mut inner = StringReader::new("é🦀");
-        let mut reader = CommandReader { inner: &mut inner };
-
-        assert_eq!(reader.read(), Some('é'));
-        assert_eq!(reader.cursor(), 2);
-        assert_eq!(reader.read(), Some('🦀'));
-        assert_eq!(reader.cursor(), 6);
-        assert_eq!(&reader.input()[..reader.cursor()], "é🦀");
     }
 }
 
@@ -948,5 +938,23 @@ where
 
     fn cancel(&mut self) {
         self.0.cancel();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CommandReader;
+    use crate::command::brigadier::StringReader;
+
+    #[test]
+    fn command_reader_cursor_is_a_utf8_byte_offset() {
+        let mut inner = StringReader::new("é🦀");
+        let mut reader = CommandReader { inner: &mut inner };
+
+        assert_eq!(reader.read(), Some('é'));
+        assert_eq!(reader.cursor(), 2);
+        assert_eq!(reader.read(), Some('🦀'));
+        assert_eq!(reader.cursor(), 6);
+        assert_eq!(&reader.input()[..reader.cursor()], "é🦀");
     }
 }

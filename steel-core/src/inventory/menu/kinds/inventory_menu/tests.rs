@@ -20,9 +20,10 @@ use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
 fn partial_result_overflow_has_no_thrower() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("inventory_menu_partial_result_overflow");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player = TestPlayerBuilder::new(Arc::clone(&world), "Crafter", 1).build();
+    let world_fixture = fresh_test_world("inventory_menu_partial_result_overflow");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Crafter", 1).build();
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
     let mut menu = inventory_menu(Arc::clone(&player.inventory));
     let Some(InventoryKind { handler, .. }) = menu.kind().downcast_ref::<InventoryKind>() else {
@@ -41,6 +42,7 @@ fn partial_result_overflow_has_no_thrower() {
     let result = menu
         .behavior()
         .lock_all_containers()
+        .expect("container access should succeed")
         .get(result_id)
         .expect("result container is registered with the menu")
         .get_item(0)
@@ -64,6 +66,7 @@ fn partial_result_overflow_has_no_thrower() {
     assert!(
         menu.behavior()
             .lock_all_containers()
+            .expect("container access should succeed")
             .get(result_id)
             .expect("result container is registered with the menu")
             .get_item(0)

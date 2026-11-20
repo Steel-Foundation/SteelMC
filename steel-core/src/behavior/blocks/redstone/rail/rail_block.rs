@@ -132,9 +132,10 @@ mod tests {
     fn powered_three_way_junction_uses_vanilla_curve_priority() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("rail_three_way_switch");
+        let world_fixture = fresh_test_world("rail_three_way_switch");
+        let world = &world_fixture.world;
         let center = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(center));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(center));
         let raw_flags = UpdateFlags::UPDATE_NONE | UpdateFlags::UPDATE_SKIP_ON_PLACE;
 
         for pos in [center, center.north(), center.south(), center.east()] {
@@ -169,13 +170,7 @@ mod tests {
 
         BLOCK_BEHAVIORS
             .get_behavior(&vanilla_blocks::RAIL)
-            .handle_neighbor_changed(
-                state,
-                &world,
-                center,
-                &vanilla_blocks::REDSTONE_BLOCK,
-                false,
-            );
+            .handle_neighbor_changed(state, world, center, &vanilla_blocks::REDSTONE_BLOCK, false);
 
         assert_eq!(
             world.get_block_state(center).get_value(RAIL_SHAPE),

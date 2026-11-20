@@ -1,3 +1,4 @@
+use super::tick_overload::TickOverloadGuard;
 use super::world_tick_workers::{WorldTickWorkerError, WorldTickWorkers};
 use super::{
     Arc, CCommandSuggestions, CHUNK_SENDING_TPS, COMMAND_DATA_AUTOSAVE_INTERVAL,
@@ -10,9 +11,14 @@ use super::{
     SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats, ThreadPool, World,
     command_suggestions_packet, sleep, spawn_blocking,
 };
-use steel_registry::vanilla_custom_stats;
+use crate::command::signing_context::CommandSigningContext;
+use crate::entity::Entity;
+use steel_protocol::packets::game::ChatTypeBound;
+use steel_registry::{RegistryEntry, vanilla_chat_types, vanilla_custom_stats};
 use steel_utils::threading::{available_worker_threads, worker_threads_for_available};
 use steel_utils::translations;
+
+use crate::world::WorldGameTickTimings;
 
 impl Server {
     pub(super) fn advance_server_tick(&self) -> (u64, bool) {
@@ -34,7 +40,7 @@ impl Server {
             worker_threads_for_available(self.config.packet_workers, available_worker_threads());
         let mut packet_handles = Vec::with_capacity(packet_worker_count);
         for worker_id in 0..packet_worker_count {
-            let s = self.clone();
+            let s = Arc::clone(&self);
             let t = cancel_token.clone();
             packet_handles.push(tokio::spawn(async move {
                 if let Err(error) = spawn_blocking(move || s.packet_processor.run(&s)).await {
@@ -53,16 +59,16 @@ impl Server {
             }
         };
         let game_handle = {
-            let s = self.clone();
+            let s = Arc::clone(&self);
             let t = cancel_token.clone();
-            let task_guard = GameTickTaskGuard::new(self.clone(), cancel_token.clone());
+            let task_guard = GameTickTaskGuard::new(Arc::clone(&self), cancel_token.clone());
             tokio::spawn(async move {
                 let _task_guard = task_guard;
                 s.run_game_tick(t).await;
             })
         };
         let chunk_send_handle = {
-            let s = self.clone();
+            let s = Arc::clone(&self);
             let t = cancel_token.clone();
             tokio::spawn(async move { s.run_chunk_sending_tick(t).await })
         };
@@ -118,6 +124,7 @@ impl Server {
             players_to_save.push((player, domain, data));
         }
 
+        self.damage_history.clear();
         log::info!("Saving world data...");
         let command_data = self.save_command_data().await;
         match command_data.scoreboards {
@@ -128,6 +135,10 @@ impl Server {
             Ok(saved) => log::info!("Saved {saved} domain command storages"),
             Err(error) => log::error!("Failed to save domain command storage: {error}"),
         }
+        match command_data.random_sequences {
+            Ok(saved) => log::info!("Saved {saved} domain random-sequence collections"),
+            Err(error) => log::error!("Failed to save domain random sequences: {error}"),
+        }
         let mut total_saved = 0;
         for world in self.worlds.values() {
             world.cleanup(&mut total_saved).await;
@@ -137,7 +148,7 @@ impl Server {
         log::info!("Saving player data...");
         let mut saved = 0;
         for (player, domain, data) in players_to_save {
-            let uuid = player.gameprofile.id;
+            let uuid = player.gameprofile.id();
             match self
                 .player_data_storage
                 .save_domain_data(&domain, uuid, &data)
@@ -181,6 +192,7 @@ impl Server {
             }
         };
         let mut next_tick_time = Instant::now();
+        let mut overload_guard = TickOverloadGuard::new();
         let mut next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
         let mut player_info_ticks = 0_u64;
         let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
@@ -208,6 +220,7 @@ impl Server {
 
             if should_sprint_this_tick {
                 next_tick_time = Instant::now();
+                overload_guard.restart_report_gap(next_tick_time);
             } else {
                 let now = Instant::now();
                 if now < next_tick_time {
@@ -215,6 +228,12 @@ impl Server {
                         () = cancel_token.cancelled() => break,
                         () = sleep(next_tick_time - now) => {}
                     }
+                } else {
+                    overload_guard.skip_backlog_if_overloaded(
+                        now,
+                        &mut next_tick_time,
+                        nanoseconds_per_tick,
+                    );
                 }
                 next_tick_time += Duration::from_nanos(nanoseconds_per_tick);
             }
@@ -231,14 +250,17 @@ impl Server {
 
             self.tick_pending_command_executions(&mut pending_command_executions);
             self.tick_command_requests(&mut pending_command_executions);
-            if let Err(error) = self
+            let world_timings = match self
                 .tick_worlds_game(&world_tick_workers, tick_count, runs_normally)
                 .await
             {
-                log::error!("World game tick failed: {error}");
-                cancel_token.cancel();
-                break;
-            }
+                Ok(timings) => timings,
+                Err(error) => {
+                    log::error!("World game tick failed: {error}");
+                    cancel_token.cancel();
+                    break;
+                }
+            };
             player_info_ticks += 1;
             if player_info_ticks > SEND_PLAYER_INFO_INTERVAL {
                 let _span = tracing::trace_span!("broadcast_latency").entered();
@@ -249,7 +271,7 @@ impl Server {
             self.process_player_joins();
 
             {
-                let server = self.clone();
+                let server = Arc::clone(&self);
                 let _ =
                     spawn_blocking(move || server.process_world_changes(tick_count, runs_normally))
                         .await;
@@ -262,10 +284,18 @@ impl Server {
                 &mut command_data_autosaves,
             );
 
-            let tab_list_tick_stats = self.record_tick_and_capture_tab_stats(
-                tick_count,
-                tick_start.elapsed().as_nanos() as u64,
-            );
+            let tick_elapsed = tick_start.elapsed();
+            let tab_list_tick_stats =
+                self.record_tick_and_capture_tab_stats(tick_count, tick_elapsed.as_nanos() as u64);
+            if let Some(completed) = self.perf.record_tick(
+                tick_elapsed,
+                self.worlds
+                    .values()
+                    .map(|world| &world.key)
+                    .zip(world_timings),
+            ) {
+                completed.finish(&self);
+            }
 
             if let Some(tick_stats) = tab_list_tick_stats {
                 self.broadcast_tab_list(tick_stats);
@@ -323,6 +353,10 @@ impl Server {
             Ok(saved) => tracing::debug!(saved, "Domain command-storage autosave completed"),
             Err(error) => tracing::error!(%error, "Domain command-storage autosave failed"),
         }
+        match results.random_sequences {
+            Ok(saved) => tracing::debug!(saved, "Domain random-sequence autosave completed"),
+            Err(error) => tracing::error!(%error, "Domain random-sequence autosave failed"),
+        }
     }
 
     fn tick_command_data_autosave(
@@ -364,7 +398,7 @@ impl Server {
         }
     }
 
-    fn tick_command_requests(
+    pub(super) fn tick_command_requests(
         self: &Arc<Self>,
         pending: &mut PendingCommandExecutionQueue<CommandSource>,
     ) {
@@ -379,11 +413,41 @@ impl Server {
             handled += 1;
 
             match request {
-                CommandRequest::Execute { owner, command } => {
+                CommandRequest::Execute {
+                    owner,
+                    command,
+                    signing_context,
+                } => {
                     if !owner.is_current(self) {
                         continue;
                     }
-                    self.execute_command_request(pending, owner, &command);
+                    self.execute_command_request(pending, owner, &command, signing_context);
+                }
+                CommandRequest::Chat { owner, message } => {
+                    if owner.is_current(self)
+                        && let Some(player) = owner.sender().get_player()
+                    {
+                        let chat_type = ChatTypeBound::new(
+                            vanilla_chat_types::CHAT.id() as i32,
+                            player.display_name(),
+                        );
+                        self.broadcast_chat(&message, &chat_type);
+                        player.detect_chat_rate_spam();
+                    }
+                }
+                CommandRequest::ChatSessionUpdate {
+                    owner,
+                    session,
+                    transition,
+                } => {
+                    if let Some(player) = owner.sender().get_player()
+                        && let Some(current_player) = player.session.current_player()
+                        && !current_player.connection.closed()
+                    {
+                        current_player.set_chat_session(*session);
+                    }
+
+                    self.finish_player_packet_transition(transition);
                 }
                 CommandRequest::Suggestions {
                     owner,
@@ -412,9 +476,10 @@ impl Server {
         pending: &mut PendingCommandExecutionQueue<CommandSource>,
         owner: CommandExecutionOwner,
         command: &str,
+        signing_context: Option<CommandSigningContext>,
     ) {
-        let source = CommandSource::new(owner.sender().clone(), Arc::clone(self));
-        let command = command.strip_prefix('/').unwrap_or(command);
+        let source = CommandSource::new(owner.sender().clone(), Arc::clone(self))
+            .with_signing_context(signing_context);
         let chain = {
             let dispatcher = self.command_dispatcher.read();
             let parse = dispatcher.parse(command, source.clone());
@@ -493,7 +558,7 @@ impl Server {
                 break;
             }
 
-            let server = self.clone();
+            let server = Arc::clone(&self);
             let _ = spawn_blocking(move || {
                 server.tick_chunk_sending();
             })
@@ -582,10 +647,11 @@ impl Server {
         workers: &WorldTickWorkers,
         tick_count: u64,
         runs_normally: bool,
-    ) -> Result<(), WorldTickWorkerError> {
+    ) -> Result<Vec<WorldGameTickTimings>, WorldTickWorkerError> {
         if runs_normally {
             self.worlds.advance_domain_game_times();
         }
+        self.damage_history.expire();
         let all_timings = workers.tick_all(tick_count, runs_normally).await?;
         for (i, timings) in all_timings.iter().enumerate() {
             if timings.elapsed < SLOW_CHUNK_TICK_THRESHOLD {
@@ -627,7 +693,7 @@ impl Server {
                 "Game tick slow"
             );
         }
-        Ok(())
+        Ok(all_timings)
     }
 
     pub(super) fn tick_jobs(self: &Arc<Self>, tick_count: u64, runs_normally: bool) {
@@ -650,6 +716,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::Server;
+
     use crate::{
         player::ResetReason,
         test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
@@ -659,10 +726,11 @@ mod tests {
 
     #[test]
     fn chunk_send_commit_rechecks_live_world_membership() {
-        let world = fresh_test_world("chunk_send_membership_revalidation");
+        let world_fixture = fresh_test_world("chunk_send_membership_revalidation");
+        let world = &world_fixture.world;
         let center = ChunkPos::new(0, 0);
-        insert_ready_full_chunk(&world, center);
-        let player = TestPlayerBuilder::new(Arc::clone(&world), "ChunkTester", 1).build();
+        insert_ready_full_chunk(world, center);
+        let player = TestPlayerBuilder::new(Arc::clone(world), "ChunkTester", 1).build();
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         assert!(world.players.remove_player_sync(&player).is_some());
 
@@ -671,12 +739,12 @@ mod tests {
             panic!("test chunk encoding pool should initialize");
         };
         let mut encode_cache = FxHashMap::default();
-        Server::send_chunks_for_player(&player, &world, &mut encode_cache, &encoding_pool);
+        Server::send_chunks_for_player(&player, world, &mut encode_cache, &encoding_pool);
 
         let sender = player.chunk_sender().lock();
         assert!(sender.pending_chunks.contains(&center));
         assert!(!sender.is_chunk_sent(center));
-        assert_eq!(sender.unacknowledged_batches, 0);
+        assert_eq!(sender.unacknowledged_batch_count_for_test(), 0);
         drop(sender);
 
         assert!(world.players.insert(Arc::clone(&player)));

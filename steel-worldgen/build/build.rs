@@ -4,19 +4,24 @@
     reason = "build-script modules include parser shapes and generated-code helpers"
 )]
 
-use std::{env, fs, io, path::Path, process::Command};
+use std::{env, fs, path::Path};
+
+use steel_utils as _;
+
+#[path = "../../build/codegen.rs"]
+mod codegen;
+use codegen::write_tokens_if_changed;
 
 mod density;
 mod multi_noise;
 mod noise_parameters;
-
-const FMT: bool = cfg!(feature = "fmt");
 
 const MULTI_NOISE: &str = "multi_noise";
 const NOISE_PARAMETERS: &str = "noise_parameters";
 
 pub fn main() {
     println!("cargo:rerun-if-changed=build/");
+    println!("cargo:rerun-if-changed=../build/codegen.rs");
 
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let out_dir = Path::new(&manifest_dir).join("src/generated");
@@ -29,15 +34,7 @@ pub fn main() {
 
     for (content, file_name) in generated_files {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
-        let content = content.to_string();
-        if fs::read_to_string(&path).is_ok_and(|existing| existing == content) {
-            continue;
-        }
-        fs::write(&path, content).expect("failed to write generated worldgen file");
-    }
-
-    if FMT && let Err(err) = format_generated_rust_files(&out_dir) {
-        panic!("failed to rustfmt generated worldgen files: {err}");
+        write_tokens_if_changed(&path, content);
     }
 
     let df = density::build();
@@ -50,40 +47,9 @@ pub fn main() {
         (df.end, "end"),
     ] {
         let path = df_dir.join(format!("{name}.rs"));
-        let content = content.to_string();
-        if fs::read_to_string(&path).is_ok_and(|existing| existing == content) {
-            continue;
-        }
-        fs::write(&path, content).expect("failed to write generated density function file");
+        write_tokens_if_changed(&path, content);
     }
 
     let path = df_dir.join("mod.rs");
-    let content = df.index.to_string();
-    if !fs::read_to_string(&path).is_ok_and(|existing| existing == content) {
-        fs::write(&path, content).expect("failed to write generated density function index");
-    }
-
-    if FMT && let Err(err) = format_generated_rust_files(&df_dir) {
-        panic!("failed to rustfmt generated density function files: {err}");
-    }
-}
-
-fn format_generated_rust_files(dir: &Path) -> io::Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let path = entry?.path();
-        if path.extension().is_none_or(|extension| extension != "rs") {
-            continue;
-        }
-
-        let output = Command::new("rustfmt").arg(&path).output()?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(io::Error::other(format!(
-                "rustfmt failed for {}: {stderr}",
-                path.display()
-            )));
-        }
-    }
-
-    Ok(())
+    write_tokens_if_changed(&path, df.index);
 }

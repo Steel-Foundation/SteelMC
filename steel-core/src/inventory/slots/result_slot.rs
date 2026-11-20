@@ -1,6 +1,12 @@
-use std::{mem, sync::Arc};
+use std::{
+    mem,
+    sync::{
+        Arc,
+        atomic::{AtomicI32, Ordering},
+    },
+};
 
-use steel_registry::item_stack::ItemStack;
+use steel_registry::{item_stack::ItemStack, stat::vanilla_stat_types};
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::{
@@ -15,6 +21,7 @@ use crate::{
 pub struct ResultSlot {
     handler: Arc<dyn ResultHandler + Send + Sync>,
     storage: SlotStorage,
+    remove_count: Option<AtomicI32>,
 }
 
 // SAFETY: This key uniquely identifies Steel's `ResultSlot`.
@@ -23,14 +30,39 @@ unsafe impl DowncastType for ResultSlot {
 }
 
 impl ResultSlot {
-    /// Creates a new `ResultSlot` backed by the handler's result container.
+    /// Creates a result slot that does not award `ITEM_CRAFTED`.
     pub fn new(handler: impl ResultHandler + 'static) -> Self {
+        Self::with_remove_count(handler, None)
+    }
+
+    /// Creates a crafting result slot whose taken items award `ITEM_CRAFTED`.
+    pub fn crafting(handler: impl ResultHandler + 'static) -> Self {
+        Self::with_remove_count(handler, Some(AtomicI32::new(0)))
+    }
+
+    fn with_remove_count(
+        handler: impl ResultHandler + 'static,
+        remove_count: Option<AtomicI32>,
+    ) -> Self {
         let result_container = handler.result_container();
         let storage =
             SlotStorage::physical(result_container, 0).with_dependencies(handler.dependencies());
         Self {
             handler: Arc::new(handler),
             storage,
+            remove_count,
+        }
+    }
+
+    /// Vanilla also runs `ItemStack.onCraftedBy` here. Its only override is
+    /// `MapItem`, and Steel does not implement maps.
+    fn check_take_achievements(&self, stack: &ItemStack, player: &Player) {
+        let Some(remove_count) = &self.remove_count else {
+            return;
+        };
+        let count = remove_count.swap(0, Ordering::Relaxed);
+        if count > 0 {
+            player.award_stat_with_count(&vanilla_stat_types::ITEM_CRAFTED, stack.item(), count);
         }
     }
 
@@ -90,15 +122,35 @@ impl Slot for ResultSlot {
     fn on_take(
         &self,
         guard: &mut ContainerLockGuard,
-        _stack: &ItemStack,
+        stack: &ItemStack,
         player: &Player,
     ) -> Option<ItemStack> {
-        // TODO: Track the crafted count and run ITEM_CRAFTED/item callbacks.
+        self.check_take_achievements(stack, player);
         self.handler.on_result_taken(guard, player)
     }
 
-    fn remove(&self, guard: &mut ContainerLockGuard, _amount: i32) -> ItemStack {
+    fn remove(&self, guard: &mut ContainerLockGuard, amount: i32) -> ItemStack {
+        if let Some(remove_count) = &self.remove_count {
+            let count = self.get_item(guard).count();
+            if count > 0 {
+                remove_count.fetch_add(amount.min(count), Ordering::Relaxed);
+            }
+        }
         mem::take(self.get_item_mut(guard))
+    }
+
+    fn on_quick_craft(&self, stack: &ItemStack, player: &Player) {
+        let Some(remove_count) = &self.remove_count else {
+            return;
+        };
+        remove_count.fetch_add(stack.count(), Ordering::Relaxed);
+        self.check_take_achievements(stack, player);
+    }
+
+    fn on_swap_craft(&self, count: i32) {
+        if let Some(remove_count) = &self.remove_count {
+            remove_count.fetch_add(count, Ordering::Relaxed);
+        }
     }
 
     fn is_fake(&self) -> bool {

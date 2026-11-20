@@ -26,7 +26,7 @@ use crate::{
         entities::{AnimationStatus, ShulkerBoxBlockEntity},
     },
     inventory::{
-        container::calculate_redstone_signal_from_container,
+        container::calculate_redstone_signal_from_containers,
         lock::{ContainerLockGuard, ContainerRef},
         menu::kinds::shulker_box,
     },
@@ -104,7 +104,7 @@ impl BlockBehavior for ShulkerBoxBlock {
             && let Some(container_ref) = block_entity.container_ref()
             && block_entity.can_open(state, world, pos)
         {
-            let inventory = player.inventory.clone();
+            let inventory = Arc::clone(&player.inventory);
             player.open_menu(
                 TextComponent::translated(translations::CONTAINER_SHULKER_BOX.msg()),
                 move |context| shulker_box(inventory, context.container_id, container_ref),
@@ -255,7 +255,7 @@ impl BlockBehavior for ShulkerBoxBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        world: &dyn LevelReader,
+        world: &World,
         pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
@@ -265,12 +265,12 @@ impl BlockBehavior for ShulkerBoxBlock {
         else {
             return 0;
         };
-        let guard = ContainerLockGuard::lock_all(&[&container_ref]);
-        guard
-            .get(container_ref.container_id())
-            .map_or(0, |container| {
-                calculate_redstone_signal_from_container(container)
-            })
+        let Ok(guard) = ContainerLockGuard::lock_all(&[&container_ref]) else {
+            // TODO: Handle preparation failures without reporting an empty
+            // inventory if lazy access is added to shulker-box storage.
+            return 0;
+        };
+        calculate_redstone_signal_from_containers(guard.get(container_ref.container_id()))
     }
 
     fn fits_inside_container_items(&self) -> bool {

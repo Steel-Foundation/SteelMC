@@ -1,7 +1,5 @@
 use super::*;
-use crate::command::execution::suggestion_provider::{
-    matches_suggestion_substring, matches_suggestion_substring_case_sensitive,
-};
+use crate::command::execution::suggestions::{matches_substring, matches_substring_ignore_case};
 
 fn selector_suggestions(allow_selectors: bool) -> Vec<&'static str> {
     if !allow_selectors {
@@ -94,7 +92,7 @@ fn selector_root_suggestions(
     suggestions.extend(
         data.player_names
             .iter()
-            .filter(|name| matches_suggestion_substring(prefix, name))
+            .filter(|name| matches_substring_ignore_case(prefix, name))
             .cloned(),
     );
     suggestions
@@ -147,7 +145,7 @@ fn selector_option_suggestions(
             .filter(|key| selector_option_available_for_type(key, selector_type))
             .filter(|key| !used_set_once_options.iter().any(|used| used == key))
             .filter(|key| selector_option_available_for_completed_entries(key, completed_entries))
-            .filter(|key| matches_suggestion_substring(current_entry.trim_start(), key))
+            .filter(|key| matches_substring_ignore_case(current_entry.trim_start(), key))
             .map(|key| format!("{expression_prefix}{key}=")),
     );
     suggestions
@@ -374,7 +372,7 @@ fn push_prefixed_value(
     value_prefix: &str,
     value: &str,
 ) {
-    if matches_suggestion_substring(value_prefix, value) {
+    if matches_substring_ignore_case(value_prefix, value) {
         suggestions.push(format!("{expression_prefix}{value}"));
     }
 }
@@ -469,7 +467,7 @@ fn push_entity_type_id_suggestions(
             .map(|(_, entity_type)| entity_type.key.to_string())
             .filter(|key| {
                 let text = key.strip_prefix("minecraft:").unwrap_or(key);
-                matches_suggestion_substring_case_sensitive(stripped_prefix, text)
+                matches_substring(stripped_prefix, text)
             })
             .map(|key| format!("{expression_prefix}{inversion}{key}")),
     );
@@ -501,11 +499,11 @@ fn push_entity_type_tag_suggestions(
             .filter(|key| !state.tags_seen.iter().any(|seen| seen == *key))
             .filter(|key| {
                 if key.namespace == Identifier::VANILLA_NAMESPACE {
-                    return matches_suggestion_substring_case_sensitive(tag_prefix, &key.path);
+                    return matches_substring(tag_prefix, &key.path);
                 }
 
                 let text = key.to_string();
-                matches_suggestion_substring_case_sensitive(tag_prefix, &text)
+                matches_substring(tag_prefix, &text)
             })
             .map(|key| format!("{expression_prefix}{marker}{key}")),
     );

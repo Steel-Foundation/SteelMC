@@ -166,7 +166,7 @@ impl FeatureDecorationRunner {
         axis: Option<Axis>,
         placement: &mut TreePlacement,
     ) {
-        let mut state = Self::sample_block_state_provider(
+        let mut state = BlockStateProviderEvaluator::sample_block_state_provider(
             region,
             registry,
             random,

@@ -1,6 +1,4 @@
 //! Liquid block behavior (water, lava).
-//!
-//! Based on vanilla's LiquidBlock.java.
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -18,14 +16,13 @@ use steel_utils::BlockStateId;
 use steel_utils::types::UpdateFlags;
 
 use steel_registry::level_events;
-use steel_registry::sound_events;
 use steel_registry::vanilla_items;
 
 use crate::behavior::FLUID_BEHAVIORS;
 use crate::behavior::block::{BlockBehavior, PickupResult};
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::ai::path::PathComputationType;
-use crate::fluid::{FluidStateExt, is_lava_fluid, is_water_fluid};
+use crate::fluid::{FluidStateExt, is_lava_fluid};
 use crate::player::Player;
 use crate::world::{ConditionalBlockSetResult, ScheduledTickAccess, World};
 
@@ -54,7 +51,6 @@ impl LiquidBlock {
     }
 
     /// Checks if this liquid should spread and handles lava-water interactions.
-    /// Based on vanilla's `LiquidBlock.shouldSpreadLiquid()`.
     ///
     /// Returns `true` if the liquid should spread (schedule tick),
     /// Returns `false` if the liquid was converted to a block (obsidian/cobblestone/basalt).
@@ -63,49 +59,44 @@ impl LiquidBlock {
         if !is_lava_fluid(self.fluid) {
             return true;
         }
-        // Check if there's soul soil below (for basalt generation)
         let below_pos = pos.offset(0, -1, 0);
         let below_state = world.get_block_state(below_pos);
         let has_soul_soil_below = below_state.get_block() == &vanilla_blocks::SOUL_SOIL;
 
-        // Get fluid state to check if this is a source
         let fluid_state = world.get_block_state(pos).get_fluid_state();
 
         for direction in Direction::FLOW_NEIGHBOR_CHECK {
             let neighbor_pos = direction.relative(pos);
             let neighbor_fluid = world.get_block_state(neighbor_pos).get_fluid_state();
 
-            // Check for water (including flowing_water and waterlogged blocks)
-            // Using fluid tag check to support modded fluids registered in the water tag
+            // `is_water` checks the fluid tag, so flowing, waterlogged and modded water count too.
             if neighbor_fluid.is_water() {
-                // Lava + Water = Obsidian (if source) or Cobblestone (if flowing)
                 let new_block = if fluid_state.is_source() {
                     &vanilla_blocks::OBSIDIAN
                 } else {
                     &vanilla_blocks::COBBLESTONE
                 };
 
-                let new_state = REGISTRY.blocks.get_default_state_id(new_block);
-                world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
-                world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
-                return false; // Don't schedule fluid tick - block was converted
+                Self::convert_and_fizz(world, pos, new_block);
+                return false;
             }
 
-            // Check for basalt generation: soul soil below + blue ice adjacent
             if has_soul_soil_below {
                 let neighbor_state = world.get_block_state(neighbor_pos);
                 if neighbor_state.get_block() == &vanilla_blocks::BLUE_ICE {
-                    let new_state = REGISTRY
-                        .blocks
-                        .get_default_state_id(&vanilla_blocks::BASALT);
-                    world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
-                    world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
-                    return false; // Don't schedule fluid tick - block was converted
+                    Self::convert_and_fizz(world, pos, &vanilla_blocks::BASALT);
+                    return false;
                 }
             }
         }
 
-        true // No interaction occurred, proceed with normal fluid tick
+        true
+    }
+
+    /// Replaces the lava at `pos` with `block` and plays vanilla's `fizz` level event.
+    fn convert_and_fizz(world: &Arc<World>, pos: BlockPos, block: BlockRef) {
+        world.set_block(pos, block.default_state(), UpdateFlags::UPDATE_ALL);
+        world.level_event(level_events::LAVA_FIZZ, pos, 0, None);
     }
 
     fn should_bubble_column_occupy(state: BlockStateId) -> bool {
@@ -202,8 +193,8 @@ impl BlockBehavior for LiquidBlock {
 
     /// Called when a neighbor's shape changes.
     ///
-    /// Vanilla parity: `LiquidBlock.updateShape` schedules a tick only when
-    /// either the current block or the neighbor contains a source fluid.
+    /// Schedules a tick only when either the current block or the neighbor
+    /// contains a source fluid.
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -228,7 +219,6 @@ impl BlockBehavior for LiquidBlock {
         state
     }
 
-    /// Vanilla parity: `LiquidBlock.randomTick` delegates to the fluid.
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         FLUID_BEHAVIORS
             .get_behavior(state.get_fluid_state().fluid_id)
@@ -245,6 +235,12 @@ impl BlockBehavior for LiquidBlock {
         if state.try_get_value(LEVEL) != Some(0) {
             return None;
         }
+        let behavior = FLUID_BEHAVIORS.get_behavior(self.fluid);
+        // Unlike vanilla, a fluid without a bucket stays in place.
+        let bucket = behavior.bucket();
+        if bucket == &*vanilla_items::AIR {
+            return None;
+        }
 
         let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         if world.set_block_if_unchanged(pos, state, air, UpdateFlags::UPDATE_ALL_IMMEDIATE)
@@ -253,21 +249,9 @@ impl BlockBehavior for LiquidBlock {
             return None;
         }
 
-        let bucket = if is_water_fluid(self.fluid) {
-            &vanilla_items::WATER_BUCKET
-        } else {
-            &vanilla_items::LAVA_BUCKET
-        };
-
-        let sound = if is_water_fluid(self.fluid) {
-            &sound_events::ITEM_BUCKET_FILL
-        } else {
-            &sound_events::ITEM_BUCKET_FILL_LAVA
-        };
-
         Some(PickupResult {
             filled_bucket: ItemStack::new(bucket),
-            sound: Some(sound),
+            sound: behavior.pickup_sound(),
         })
     }
 }
@@ -275,9 +259,10 @@ impl BlockBehavior for LiquidBlock {
 #[cfg(test)]
 mod tests {
     use crate::behavior::init_behaviors;
-    use steel_registry::{init_vanilla_registry, vanilla_fluids};
+    use steel_registry::{init_vanilla_registry, sound_events, vanilla_fluids};
 
-    use crate::test_support::TestLevel;
+    use crate::test_support::{TestLevel, fresh_test_world, insert_ready_full_chunk};
+    use steel_utils::ChunkPos;
 
     use super::*;
 
@@ -376,5 +361,44 @@ mod tests {
         assert!(vanilla_blocks::LAVA.default_state().is_liquid_block());
         assert!(!vanilla_blocks::STONE.default_state().is_liquid_block());
         assert!(!vanilla_blocks::AIR.default_state().is_liquid_block());
+    }
+
+    #[test]
+    fn pickup_returns_the_fluid_bucket_and_sound_from_sources_only() {
+        init_vanilla_registry();
+        init_behaviors();
+        let fixture = fresh_test_world("liquid_pickup");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let pos = BlockPos::new(1, 64, 1);
+        let cases = [
+            (
+                &vanilla_blocks::WATER,
+                &vanilla_fluids::WATER,
+                &*vanilla_items::WATER_BUCKET,
+                &sound_events::ITEM_BUCKET_FILL,
+            ),
+            (
+                &vanilla_blocks::LAVA,
+                &vanilla_fluids::LAVA,
+                &*vanilla_items::LAVA_BUCKET,
+                &sound_events::ITEM_BUCKET_FILL_LAVA,
+            ),
+        ];
+        for (block, fluid, bucket, sound) in cases {
+            let liquid = LiquidBlock::new(block, fluid);
+            let flowing = block.default_state().set_value(LEVEL, 3_u8);
+            world.set_block(pos, flowing, UpdateFlags::UPDATE_CLIENTS);
+            assert!(liquid.pickup_block(world, pos, flowing, None).is_none());
+
+            let source = block.default_state();
+            world.set_block(pos, source, UpdateFlags::UPDATE_CLIENTS);
+            let Some(picked) = liquid.pickup_block(world, pos, source, None) else {
+                panic!("{} source should be picked up", fluid.key);
+            };
+            assert_eq!(picked.filled_bucket.item().key, bucket.key);
+            assert_eq!(picked.sound.map(|event| &event.key), Some(&sound.key));
+            assert!(world.get_block_state(pos).is_air());
+        }
     }
 }

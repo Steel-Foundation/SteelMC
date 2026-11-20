@@ -21,7 +21,7 @@ pub(crate) fn rotate_if_necessary(base_angle: f32, target_angle: f32, max_angle_
     target_angle - delta_angle_clamped
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoveControlOperation {
     Wait,
     MoveTo,

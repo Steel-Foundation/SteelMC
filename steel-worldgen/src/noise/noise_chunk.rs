@@ -5,37 +5,40 @@
 //! Vanilla wraps density functions with `Interpolated` markers. Only the inner
 //! functions (arguments to `Interpolated`) are evaluated at cell corners; the
 //! outer operations (squeeze, min, etc.) are applied per-block after trilinear
-//! interpolation. Each `Interpolated` marker gets its own independent channel.
+//! interpolation. Markers with identical evaluations share a channel.
 //!
 //! Cell dimensions depend on the dimension's noise settings.
 
 use std::marker::PhantomData;
-use std::simd::f64x4;
+use std::simd::f32x4;
 
-use steel_math::lerp;
+use glam::IVec3;
+use steel_utils::SIMD_BATCH;
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 
-use crate::noise::Beardifier;
+use crate::noise::{Beardifier, CornerColumnStore};
 
 /// Maximum number of interpolation channels supported.
-/// Overworld uses 8 (1 terrain + 4 noodle caves + 3 vein channels), nether/end use 1.
 const MAX_INTERP: usize = 16;
+const INTERPOLATION_LANES: usize = 4;
 
 /// Maximum slice length (`z_corners` * `corners_y`) across all dimensions.
 /// Overworld: (16/4+1) * (384/8+1) = 5 * 49 = 245. Rounded up for headroom.
 const MAX_SLICE_LEN: usize = 256;
+/// The largest Vanilla noise cell height (overworld's is 8).
+const MAX_CELL_HEIGHT: usize = 16;
 
 /// Stores density values at cell corners for a single chunk and provides
 /// trilinear interpolation between corners for block-level resolution.
 ///
 /// Supports multiple interpolation channels matching vanilla's multi-interpolator
-/// system. Each `Interpolated` marker in the density function tree gets its own
-/// channel, filled at cell corners and interpolated independently.
+/// system. Distinct marker evaluations get channels filled at cell corners
+/// and interpolated independently.
 ///
 /// Storage is per-corner `SoA` — `slice[corner_idx * MAX_INTERP + ch]` — so 4
 /// adjacent channels' values at a given corner sit in contiguous memory,
-/// enabling a single `f64x4` load and SIMD-batched trilinear interpolation
-/// across 4 channels per block.
+/// allowing the terrain sampler to keep Vanilla's f32 density values without
+/// widening an intermediate result.
 pub struct NoiseChunk<N: DimensionNoises> {
     /// One slice per cell-X boundary, holding density values at the cell
     /// corners on that X-plane. Length is `cell_count_xz + 1`. Indexed as
@@ -47,7 +50,7 @@ pub struct NoiseChunk<N: DimensionNoises> {
     /// the slice-fill phase can run in parallel: each `cx` boundary's noise
     /// tree evaluation is independent. The per-block trilerp loop then
     /// indexes `slices[cx]` and `slices[cx + 1]` sequentially.
-    slices: Vec<Box<[f64; MAX_INTERP * MAX_SLICE_LEN]>>,
+    slices: Vec<Box<[f32; MAX_INTERP * MAX_SLICE_LEN]>>,
     /// Number of active interpolation channels.
     interp_count: usize,
     /// Number of Y corners per Z column (`cell_count_y` + 1).
@@ -114,14 +117,8 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         let n_slices = cell_count_xz + 1;
         let mut slices = Vec::with_capacity(n_slices);
         for _ in 0..n_slices {
-            // The boxed fixed-size array keeps the `[f64; N]` type that the SIMD
-            // `fill` path and its `get_unchecked` SAFETY proofs rely on. This is a
-            // per-chunk constructor, not a hot path, so the stack temporary is fine.
-            #[expect(
-                clippy::large_stack_arrays,
-                reason = "fixed-size boxed array keeps the [f64; N] type the SIMD fill path relies on; cold per-chunk constructor"
-            )]
-            slices.push(Box::new([0.0; MAX_INTERP * MAX_SLICE_LEN]));
+            // This is a per-chunk constructor, so the stack temporary is fine.
+            slices.push(Box::new([0.0_f32; MAX_INTERP * MAX_SLICE_LEN]));
         }
 
         Self {
@@ -146,30 +143,49 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         reason = "slice filling needs the precomputed geometry and per-thread cache"
     )]
     fn fill_slice_into(
-        slice: &mut [f64; MAX_INTERP * MAX_SLICE_LEN],
+        slice: &mut [f32; MAX_INTERP * MAX_SLICE_LEN],
         cell_x: i32,
         block_ys: &[i32],
-        blended_column: &mut [f64],
+        blended_column: &mut [f32],
         interp_count: usize,
         corners_y: usize,
         cell_count_xz: usize,
         first_cell_z: i32,
         noises: &N,
         cache: &mut N::ColumnCache,
+        corner_columns: &CornerColumnStore,
     ) {
         let cell_width = N::Settings::CELL_WIDTH;
 
         let block_x = cell_x * cell_width;
+        // Chunks sharing a corner column: two across each chunk boundary it lies on.
+        let chunk_boundary = |cell: i32| cell.rem_euclid(cell_count_xz as i32) == 0;
+        let x_users: u8 = if chunk_boundary(cell_x) { 2 } else { 1 };
 
-        let mut values = [0.0f64; MAX_INTERP];
-
-        // Scratch buffer for the 4-Y SIMD batch. Lane-major SoA: lane `i`'s
-        // `interp_count` channels live at `values_4x[i * interp_count..]`.
-        let mut values_4x = [0.0f64; 4 * MAX_INTERP];
+        let mut values = [0.0_f32; MAX_INTERP * SIMD_BATCH];
 
         for cz in 0..=cell_count_xz {
             let cell_z = first_cell_z + cz as i32;
             let block_z = cell_z * cell_width;
+            let users = x_users * if chunk_boundary(cell_z) { 2 } else { 1 };
+            let column_base = cz * corners_y * MAX_INTERP;
+            let column_len = corners_y * MAX_INTERP;
+
+            if users > 1
+                && corner_columns.consume((cell_x, cell_z), |values| {
+                    let column = &mut slice[column_base..column_base + column_len];
+                    for (corner, stored) in column
+                        .as_chunks_mut::<MAX_INTERP>()
+                        .0
+                        .iter_mut()
+                        .zip(values.chunks_exact(interp_count))
+                    {
+                        corner[..interp_count].copy_from_slice(stored);
+                    }
+                })
+            {
+                continue;
+            }
 
             // Ensure column cache for this (x, z)
             cache.ensure(block_x, block_z, noises);
@@ -177,60 +193,62 @@ impl<N: DimensionNoises> NoiseChunk<N> {
             // SIMD-batch blended noise for the entire Y column.
             noises.compute_noise_column(block_x, block_ys, block_z, blended_column);
 
-            // 4-Y SIMD-batched corner fill. Tail is handled by the scalar
-            // loop below for any remaining `corners_y % 4` corners.
-            let mut cy = 0;
-            while cy + 4 <= corners_y {
-                let ys_v = f64x4::from_array([
-                    f64::from(block_ys[cy]),
-                    f64::from(block_ys[cy + 1]),
-                    f64::from(block_ys[cy + 2]),
-                    f64::from(block_ys[cy + 3]),
-                ]);
-                let blended_v = f64x4::from_array([
-                    blended_column[cy],
-                    blended_column[cy + 1],
-                    blended_column[cy + 2],
-                    blended_column[cy + 3],
-                ]);
+            let (y_batches, y_tail) = block_ys.as_chunks::<SIMD_BATCH>();
+            let (blended_batches, blended_tail) = blended_column.as_chunks::<SIMD_BATCH>();
+            debug_assert_eq!(y_batches.len(), blended_batches.len());
+            debug_assert_eq!(y_tail.len(), blended_tail.len());
 
-                noises.fill_cell_corner_densities_4x(
+            for (batch, (ys, blended_noise_values)) in
+                y_batches.iter().zip(blended_batches.iter()).enumerate()
+            {
+                let cy = batch * SIMD_BATCH;
+                noises.fill_cell_corner_densities_y_simd::<SIMD_BATCH>(
                     cache,
                     block_x,
-                    ys_v,
+                    *ys,
                     block_z,
-                    blended_v,
-                    &mut values_4x[..4 * interp_count],
+                    *blended_noise_values,
+                    &mut values[..interp_count * SIMD_BATCH],
                 );
-
-                for lane in 0..4 {
-                    let lane_cy = cy + lane;
-                    let src = &values_4x[lane * interp_count..(lane + 1) * interp_count];
-                    let corner_idx = cz * corners_y + lane_cy;
+                for lane in 0..SIMD_BATCH {
+                    let corner_idx = cz * corners_y + cy + lane;
                     let base = corner_idx * MAX_INTERP;
-                    slice[base..base + interp_count].copy_from_slice(src);
+                    let value_base = lane * interp_count;
+                    slice[base..base + interp_count]
+                        .copy_from_slice(&values[value_base..value_base + interp_count]);
                 }
-
-                cy += 4;
             }
 
-            while cy < corners_y {
-                let block_y = block_ys[cy];
+            let tail_start = y_batches.len() * SIMD_BATCH;
+            for (tail_offset, (&block_y, &blended_noise_value)) in
+                y_tail.iter().zip(blended_tail.iter()).enumerate()
+            {
+                let cy = tail_start + tail_offset;
 
                 noises.fill_cell_corner_densities(
                     cache,
                     block_x,
                     block_y,
                     block_z,
-                    blended_column[cy],
+                    blended_noise_value,
                     &mut values[..interp_count],
                 );
 
                 let corner_idx = cz * corners_y + cy;
                 let base = corner_idx * MAX_INTERP;
                 slice[base..base + interp_count].copy_from_slice(&values[..interp_count]);
+            }
 
-                cy += 1;
+            if users > 1 {
+                corner_columns.produce((cell_x, cell_z), users, || {
+                    slice[column_base..column_base + column_len]
+                        .as_chunks::<MAX_INTERP>()
+                        .0
+                        .iter()
+                        .flat_map(|corner| &corner[..interp_count])
+                        .copied()
+                        .collect()
+                });
             }
         }
     }
@@ -241,22 +259,26 @@ impl<N: DimensionNoises> NoiseChunk<N> {
     /// 1. Trilinearly interpolate each channel independently from cell corners
     /// 2. Apply outer operations (squeeze, min, etc.) via `combine_interpolated`
     /// 3. Call `place_block` with the final density
+    ///
+    /// Cells at or above `unsampled_air_min_y` whose proving channels
+    /// ([`DimensionNoises::final_density_nonpositive_channels`]) are `<= 0`
+    /// at every interpolated block value, and that the beardifier cannot reach,
+    /// are skipped without calling `place_block`: their density is non-positive,
+    /// which the caller guarantees places nothing and changes no state there.
     #[expect(
         clippy::too_many_lines,
-        reason = "single SIMD trilinear-interpolation kernel; splitting the loop nest would scatter the per-corner SAFETY invariants"
-    )]
-    #[expect(
-        clippy::similar_names,
-        reason = "factor_{x,y,z}_v vector splats deliberately mirror their scalar factor_{x,y,z} sources"
+        reason = "keeps the cell interpolation and block traversal together"
     )]
     pub fn fill<F>(
         &mut self,
         noises: &N,
         cache: &mut N::ColumnCache,
         beardifier: Option<&Beardifier>,
+        unsampled_air_min_y: i32,
+        corner_columns: &CornerColumnStore,
         mut place_block: F,
     ) where
-        F: FnMut(usize, i32, usize, f64, &[f64], &mut N::ColumnCache),
+        F: FnMut(usize, i32, usize, f32, &[f32], &mut N::ColumnCache),
     {
         let cell_width = N::Settings::CELL_WIDTH;
         let cell_height = N::Settings::CELL_HEIGHT;
@@ -276,11 +298,11 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         // across chunks, so parallelising the 5 slices here would nest rayon work
         // and add coordination + cache-clone overhead with no spare cores to use.
         let n_slices = cell_count_xz + 1;
-        let mut local_blended = vec![0.0f64; corners_y];
-        for cx_off in 0..n_slices {
+        let mut local_blended = vec![0.0_f32; corners_y];
+        for (cx_off, slice) in self.slices[..n_slices].iter_mut().enumerate() {
             let cell_x = first_cell_x + cx_off as i32;
             Self::fill_slice_into(
-                &mut self.slices[cx_off],
+                slice,
                 cell_x,
                 block_ys,
                 &mut local_blended,
@@ -290,174 +312,191 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                 first_cell_z,
                 noises,
                 cache,
+                corner_columns,
             );
         }
 
-        let mut interpolated = [0.0f64; MAX_INTERP];
+        let air_channels = N::final_density_nonpositive_channels();
+        let mut air_cells = vec![false; cell_count_y];
+        let y_count = cell_height as usize;
+        debug_assert!(y_count <= MAX_CELL_HEIGHT);
+        let inverse_height = f32x4::splat(1.0 / cell_height as f32);
+        let channel_batches = interp_count.div_ceil(INTERPOLATION_LANES);
+        let all_batches = (1_usize << channel_batches) - 1;
+        let proving_batches = air_channels.map_or(0, |channels| {
+            channels.iter().fold(0, |mask, &channel| {
+                mask | (1 << (channel / INTERPOLATION_LANES))
+            })
+        });
 
-        // Per-(cell-z, x) column partials: after the y-stage and x-stage, the
-        // two intermediate values `d0`/`d1` do not depend on `factor_z`, so
-        // they are computed once per block-Y row of the column and reused by
-        // all four z columns of the cell. Rows are indexed by
-        // `cell_y_idx * cell_height + y_in_cell`.
-        //
-        // The per-block arithmetic (operand order included) is unchanged, and
-        // `place_block` keeps its original call order, so results and
-        // column-batched write behavior stay bit-identical.
-        let column_len = cell_count_y * cell_height as usize;
-        // One flat scratch allocation holds both intermediate buffers back to
-        // back, split into disjoint halves per use. Row-major storage sized by
-        // the ACTIVE channel count (not MAX_INTERP), so dimensions with fewer
-        // channels don't over-allocate.
-        let mut scratch = vec![0.0f64; column_len * interp_count * 2];
-        let (d0_col, d1_col) = scratch.split_at_mut(column_len * interp_count);
+        // Reuse Z partials across X without changing vanilla's Z/X/Y arithmetic.
+        let mut z_partials =
+            vec![[f32x4::splat(0.0); 2]; cell_width as usize * corners_y * channel_batches];
 
         for cell_x_idx in 0..cell_count_xz {
-            // Borrow both bounding slices once per cell-x strip.
-            let s0: &[f64] = &self.slices[cell_x_idx][..];
-            let s1: &[f64] = &self.slices[cell_x_idx + 1][..];
+            let s0: &[f32] = &self.slices[cell_x_idx][..];
+            let s1: &[f32] = &self.slices[cell_x_idx + 1][..];
 
             for cell_z_idx in 0..cell_count_xz {
                 let z0_base = cell_z_idx * corners_y;
                 let z1_base = (cell_z_idx + 1) * corners_y;
 
-                for x_in_cell in 0..cell_width {
-                    let factor_x = f64::from(x_in_cell) / f64::from(cell_width);
-                    let local_x = (cell_x_idx as i32 * cell_width + x_in_cell) as usize;
-                    let factor_x_v = f64x4::splat(factor_x);
+                let cell_min_x = (self.first_cell_x + cell_x_idx as i32) * cell_width;
+                let cell_min_z = (self.first_cell_z + cell_z_idx as i32) * cell_width;
+                for (cell_y_idx, air) in air_cells.iter_mut().enumerate() {
+                    let cell_min_world_y = (self.cell_min_y + cell_y_idx as i32) * cell_height;
+                    *air = air_channels.is_some_and(|channels| {
+                        cell_min_world_y >= unsampled_air_min_y
+                            && !beardifier.is_some_and(|beard| {
+                                beard.may_affect(
+                                    IVec3::new(cell_min_x, cell_min_world_y, cell_min_z),
+                                    IVec3::new(
+                                        cell_min_x + cell_width - 1,
+                                        cell_min_world_y + cell_height - 1,
+                                        cell_min_z + cell_width - 1,
+                                    ),
+                                )
+                            })
+                            && channels.iter().all(|&ch| {
+                                let i0 = (z0_base + cell_y_idx) * MAX_INTERP + ch;
+                                let i1 = (z1_base + cell_y_idx) * MAX_INTERP + ch;
+                                [i0, i0 + MAX_INTERP, i1, i1 + MAX_INTERP]
+                                    .into_iter()
+                                    .all(|i| s0[i] <= 0.0 && s1[i] <= 0.0)
+                            })
+                    });
+                }
 
-                    // Stage A: y-stage + x-stage partials for the whole
-                    // column. Neither depends on `factor_z`, so the results
-                    // are reused by all four z columns below.
-                    for cell_y_idx in 0..cell_count_y {
-                        let i0_base = (z0_base + cell_y_idx) * MAX_INTERP;
-                        let i1_base = (z1_base + cell_y_idx) * MAX_INTERP;
-                        let i0_next = i0_base + MAX_INTERP;
-                        let i1_next = i1_base + MAX_INTERP;
+                for z_in_cell in 0..cell_width as usize {
+                    let factor_z = f32x4::splat(z_in_cell as f32 / cell_width as f32);
+                    for corner_y in 0..corners_y {
+                        let i0 = (z0_base + corner_y) * MAX_INTERP;
+                        let i1 = (z1_base + corner_y) * MAX_INTERP;
+                        let row = (z_in_cell * corners_y + corner_y) * channel_batches;
+                        for (batch, channel) in
+                            (0..interp_count).step_by(INTERPOLATION_LANES).enumerate()
+                        {
+                            let corner = |slice: &[f32], base| {
+                                // SAFETY: construction bounds the corner count by
+                                // MAX_SLICE_LEN and interp_count by MAX_INTERP.
+                                // Both Z planes and corner_y are in that grid;
+                                // MAX_INTERP is a multiple of four, so the padded
+                                // final batch also stays inside its corner.
+                                f32x4::from_slice(unsafe {
+                                    slice.get_unchecked(
+                                        base + channel..base + channel + INTERPOLATION_LANES,
+                                    )
+                                })
+                            };
 
-                        for y_in_cell in 0..cell_height {
-                            let factor_y = f64::from(y_in_cell) / f64::from(cell_height);
-                            let factor_y_v = f64x4::splat(factor_y);
-                            let row = cell_y_idx * cell_height as usize + y_in_cell as usize;
-                            let row_base = row * interp_count;
-                            let d0_row = &mut d0_col[row_base..row_base + interp_count];
-                            let d1_row = &mut d1_col[row_base..row_base + interp_count];
-
-                            let mut ch_batch = 0;
-                            while ch_batch + 4 <= interp_count {
-                                // SAFETY: max index = (z1_base + cell_y_idx + 1) * MAX_INTERP + (ch_batch+3)
-                                //         ≤ ((cell_count_xz+1)*corners_y - 1) * MAX_INTERP + MAX_INTERP - 1
-                                //         < MAX_SLICE_LEN * MAX_INTERP
-                                unsafe {
-                                    let n000 =
-                                        f64x4::from_slice(s0.get_unchecked(
-                                            i0_base + ch_batch..i0_base + ch_batch + 4,
-                                        ));
-                                    let n100 =
-                                        f64x4::from_slice(s1.get_unchecked(
-                                            i0_base + ch_batch..i0_base + ch_batch + 4,
-                                        ));
-                                    let n010 =
-                                        f64x4::from_slice(s0.get_unchecked(
-                                            i0_next + ch_batch..i0_next + ch_batch + 4,
-                                        ));
-                                    let n110 =
-                                        f64x4::from_slice(s1.get_unchecked(
-                                            i0_next + ch_batch..i0_next + ch_batch + 4,
-                                        ));
-                                    let n001 =
-                                        f64x4::from_slice(s0.get_unchecked(
-                                            i1_base + ch_batch..i1_base + ch_batch + 4,
-                                        ));
-                                    let n101 =
-                                        f64x4::from_slice(s1.get_unchecked(
-                                            i1_base + ch_batch..i1_base + ch_batch + 4,
-                                        ));
-                                    let n011 =
-                                        f64x4::from_slice(s0.get_unchecked(
-                                            i1_next + ch_batch..i1_next + ch_batch + 4,
-                                        ));
-                                    let n111 =
-                                        f64x4::from_slice(s1.get_unchecked(
-                                            i1_next + ch_batch..i1_next + ch_batch + 4,
-                                        ));
-
-                                    let d00 = n000 + factor_y_v * (n010 - n000);
-                                    let d10 = n100 + factor_y_v * (n110 - n100);
-                                    let d01 = n001 + factor_y_v * (n011 - n001);
-                                    let d11 = n101 + factor_y_v * (n111 - n101);
-                                    let d0 = d00 + factor_x_v * (d10 - d00);
-                                    let d1 = d01 + factor_x_v * (d11 - d01);
-                                    d0_row[ch_batch..ch_batch + 4].copy_from_slice(&d0.to_array());
-                                    d1_row[ch_batch..ch_batch + 4].copy_from_slice(&d1.to_array());
-                                }
-                                ch_batch += 4;
-                            }
-                            // Scalar tail (when interp_count is not a multiple of 4).
-                            while ch_batch < interp_count {
-                                let ch = ch_batch;
-                                // SAFETY: ch < interp_count ≤ MAX_INTERP; indices in bounds (see comment above).
-                                unsafe {
-                                    let n000 = *s0.get_unchecked(i0_base + ch);
-                                    let n100 = *s1.get_unchecked(i0_base + ch);
-                                    let n010 = *s0.get_unchecked(i0_next + ch);
-                                    let n110 = *s1.get_unchecked(i0_next + ch);
-                                    let n001 = *s0.get_unchecked(i1_base + ch);
-                                    let n101 = *s1.get_unchecked(i1_base + ch);
-                                    let n011 = *s0.get_unchecked(i1_next + ch);
-                                    let n111 = *s1.get_unchecked(i1_next + ch);
-
-                                    let d00 = lerp(factor_y, n000, n010);
-                                    let d10 = lerp(factor_y, n100, n110);
-                                    let d01 = lerp(factor_y, n001, n011);
-                                    let d11 = lerp(factor_y, n101, n111);
-                                    d0_row[ch] = lerp(factor_x, d00, d10);
-                                    d1_row[ch] = lerp(factor_x, d01, d11);
-                                }
-                                ch_batch += 1;
-                            }
+                            let left0 = corner(s0, i0);
+                            let left1 = corner(s0, i1);
+                            let right0 = corner(s1, i0);
+                            let right1 = corner(s1, i1);
+                            z_partials[row + batch] = [
+                                left0 + factor_z * (left1 - left0),
+                                right0 + factor_z * (right1 - right0),
+                            ];
                         }
                     }
+                }
 
-                    // Stage B: finish the z-stage per block column, reading
-                    // the y/x-stage partials from the column buffers.
-                    // Iteration order (z ascending, then cell-Y descending,
-                    // then block-Y descending) matches the previous loop nest
-                    // exactly.
+                for x_in_cell in 0..cell_width {
+                    let factor_x = x_in_cell as f32 / cell_width as f32;
+                    let factor_x_v = f32x4::splat(factor_x);
+                    let local_x = (cell_x_idx as i32 * cell_width + x_in_cell) as usize;
+
                     for z_in_cell in 0..cell_width {
-                        let factor_z = f64::from(z_in_cell) / f64::from(cell_width);
                         let local_z = (cell_z_idx as i32 * cell_width + z_in_cell) as usize;
-                        let factor_z_v = f64x4::splat(factor_z);
-                        let world_z = cell_z_idx as i32 * cell_width
-                            + z_in_cell
-                            + self.first_cell_z * cell_width;
-                        let world_x = cell_x_idx as i32 * cell_width
-                            + x_in_cell
-                            + self.first_cell_x * cell_width;
 
                         for cell_y_idx in (0..cell_count_y).rev() {
-                            let world_y = (self.cell_min_y + cell_y_idx as i32) * cell_height;
+                            let cell_world_y = (self.cell_min_y + cell_y_idx as i32) * cell_height;
+                            let row =
+                                (z_in_cell as usize * corners_y + cell_y_idx) * channel_batches;
+                            let mut values_by_y = [[0.0_f32; MAX_INTERP]; MAX_CELL_HEIGHT];
+
+                            if N::interpolated_count() <= INTERPOLATION_LANES {
+                                for (batch, channel) in
+                                    (0..interp_count).step_by(INTERPOLATION_LANES).enumerate()
+                                {
+                                    let [v00, v10] = z_partials[row + batch];
+                                    let [v01, v11] = z_partials[row + channel_batches + batch];
+                                    let v0 = v00 + factor_x_v * (v10 - v00);
+                                    let v1 = v01 + factor_x_v * (v11 - v01);
+                                    let step = (v1 - v0) * inverse_height;
+                                    let mut value = v0 + step * f32x4::splat(0.0);
+
+                                    for values in values_by_y.iter_mut().take(y_count) {
+                                        values[channel..channel + INTERPOLATION_LANES]
+                                            .copy_from_slice(&value.to_array());
+                                        value += step;
+                                    }
+                                }
+
+                                if air_cells[cell_y_idx]
+                                    && air_channels.is_some_and(|channels| {
+                                        Self::channels_are_nonpositive(
+                                            &values_by_y[..y_count],
+                                            channels,
+                                        )
+                                    })
+                                {
+                                    continue;
+                                }
+                            } else {
+                                let fill_batches =
+                                    |batches: usize, values_by_y: &mut [[f32; MAX_INTERP]]| {
+                                        for (batch, channel) in (0..interp_count)
+                                            .step_by(INTERPOLATION_LANES)
+                                            .enumerate()
+                                        {
+                                            if batches & (1 << batch) == 0 {
+                                                continue;
+                                            }
+
+                                            let [v00, v10] = z_partials[row + batch];
+                                            let [v01, v11] =
+                                                z_partials[row + channel_batches + batch];
+                                            let v0 = v00 + factor_x_v * (v10 - v00);
+                                            let v1 = v01 + factor_x_v * (v11 - v01);
+                                            let step = (v1 - v0) * inverse_height;
+                                            let mut value = v0 + step * f32x4::splat(0.0);
+
+                                            for values in values_by_y.iter_mut().take(y_count) {
+                                                values[channel..channel + INTERPOLATION_LANES]
+                                                    .copy_from_slice(&value.to_array());
+                                                value += step;
+                                            }
+                                        }
+                                    };
+                                let first_batches = if air_cells[cell_y_idx] {
+                                    proving_batches
+                                } else {
+                                    all_batches
+                                };
+
+                                fill_batches(first_batches, &mut values_by_y);
+
+                                if air_cells[cell_y_idx]
+                                    && air_channels.is_some_and(|channels| {
+                                        Self::channels_are_nonpositive(
+                                            &values_by_y[..y_count],
+                                            channels,
+                                        )
+                                    })
+                                {
+                                    continue;
+                                }
+
+                                let remaining_batches = all_batches & !first_batches;
+                                if remaining_batches != 0 {
+                                    fill_batches(remaining_batches, &mut values_by_y);
+                                }
+                            }
 
                             for y_in_cell in (0..cell_height).rev() {
-                                let world_y = world_y + y_in_cell;
-                                let row = cell_y_idx * cell_height as usize + y_in_cell as usize;
-                                let row_base = row * interp_count;
-                                let d0_row = &d0_col[row_base..row_base + interp_count];
-                                let d1_row = &d1_col[row_base..row_base + interp_count];
-                                let mut ch_batch = 0;
-                                while ch_batch + 4 <= interp_count {
-                                    let d0 = f64x4::from_slice(&d0_row[ch_batch..ch_batch + 4]);
-                                    let d1 = f64x4::from_slice(&d1_row[ch_batch..ch_batch + 4]);
-                                    let result = d0 + factor_z_v * (d1 - d0);
-                                    interpolated[ch_batch..ch_batch + 4]
-                                        .copy_from_slice(&result.to_array());
-                                    ch_batch += 4;
-                                }
-                                while ch_batch < interp_count {
-                                    interpolated[ch_batch] =
-                                        lerp(factor_z, d0_row[ch_batch], d1_row[ch_batch]);
-                                    ch_batch += 1;
-                                }
+                                let world_y = cell_world_y + y_in_cell;
+                                let interpolated = &values_by_y[y_in_cell as usize][..interp_count];
 
                                 // Apply outer operations per-block.
                                 // x/z are 0 because vanilla's outer operations (squeeze, add, mul,
@@ -477,8 +516,14 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                 // would put it inside the squeeze and trilerp it linearly across
                                 // the cell, both of which diverge from vanilla for large beardifier
                                 // values inside a structure's pieces.
+                                let world_x = cell_x_idx as i32 * cell_width
+                                    + x_in_cell
+                                    + self.first_cell_x * cell_width;
+                                let world_z = cell_z_idx as i32 * cell_width
+                                    + z_in_cell
+                                    + self.first_cell_z * cell_width;
                                 if let Some(beard) = beardifier {
-                                    density += beard.compute(world_x, world_y, world_z);
+                                    density += beard.compute(world_x, world_y, world_z) as f32;
                                 }
 
                                 place_block(
@@ -498,5 +543,270 @@ impl<N: DimensionNoises> NoiseChunk<N> {
             // No swap needed: all slices are pre-filled and indexed directly
             // via `self.slices[cell_x_idx]` / `[cell_x_idx + 1]`.
         }
+    }
+
+    fn channels_are_nonpositive(values_by_y: &[[f32; MAX_INTERP]], channels: &[usize]) -> bool {
+        values_by_y
+            .iter()
+            .all(|values| channels.iter().all(|&channel| values[channel] <= 0.0))
+    }
+
+    /// Pre-fills the density/richness buffers used by material ore rules.
+    ///
+    /// `MaterialRuleContext.getDensitiesInChunk` samples these functions over
+    /// complete chunk volume before the surface scan begins. Steel keeps the
+    /// dense Y prefix where a rule may accept a block. Compact `f32` results
+    /// avoid retaining the noise chunk across generation stages.
+    /// The result has `256 * material_ore_vein_value_height() *
+    /// material_ore_vein_value_count()` entries, ordered by Y, Z, X, then value.
+    #[must_use]
+    pub fn prefill_material_ore_vein_values(
+        &self,
+        noises: &N,
+        cache: &mut N::ColumnCache,
+    ) -> Box<[f32]> {
+        let value_count = N::material_ore_vein_value_count();
+        if value_count == 0 {
+            return Box::default();
+        }
+
+        let cell_width = N::Settings::CELL_WIDTH;
+        let cell_height = N::Settings::CELL_HEIGHT;
+        let min_y = N::Settings::MIN_Y;
+        let value_height = N::material_ore_vein_value_height();
+        let mut values = vec![0.0; 16 * 16 * value_height * value_count];
+        let mut interpolated = [0.0_f32; MAX_INTERP];
+
+        for cell_x_idx in 0..self.cell_count_xz {
+            for cell_z_idx in 0..self.cell_count_xz {
+                let z0_base = cell_z_idx * self.corners_y;
+                let z1_base = (cell_z_idx + 1) * self.corners_y;
+                let s0 = &*self.slices[cell_x_idx];
+                let s1 = &*self.slices[cell_x_idx + 1];
+
+                for x_in_cell in 0..cell_width {
+                    let factor_x = x_in_cell as f32 / cell_width as f32;
+                    let local_x = (cell_x_idx as i32 * cell_width + x_in_cell) as usize;
+                    let world_x =
+                        self.first_cell_x * cell_width + cell_x_idx as i32 * cell_width + x_in_cell;
+
+                    for z_in_cell in 0..cell_width {
+                        let factor_z = z_in_cell as f32 / cell_width as f32;
+                        let local_z = (cell_z_idx as i32 * cell_width + z_in_cell) as usize;
+                        let world_z = self.first_cell_z * cell_width
+                            + cell_z_idx as i32 * cell_width
+                            + z_in_cell;
+
+                        for cell_y_idx in (0..self.cell_count_y).rev() {
+                            let i0_base = (z0_base + cell_y_idx) * MAX_INTERP;
+                            let i1_base = (z1_base + cell_y_idx) * MAX_INTERP;
+                            let i0_next = i0_base + MAX_INTERP;
+                            let i1_next = i1_base + MAX_INTERP;
+                            let mut values_by_y = [[0.0_f32; MAX_INTERP]; MAX_CELL_HEIGHT];
+                            let y_count = cell_height as usize;
+                            debug_assert!(y_count <= MAX_CELL_HEIGHT);
+
+                            for channel in 0..self.interp_count {
+                                let n000 = s0[i0_base + channel];
+                                let n001 = s0[i1_base + channel];
+                                let n100 = s1[i0_base + channel];
+                                let n101 = s1[i1_base + channel];
+                                let n010 = s0[i0_next + channel];
+                                let n011 = s0[i1_next + channel];
+                                let n110 = s1[i0_next + channel];
+                                let n111 = s1[i1_next + channel];
+                                let v00 = n000 + factor_z * (n001 - n000);
+                                let v01 = n010 + factor_z * (n011 - n010);
+                                let v10 = n100 + factor_z * (n101 - n100);
+                                let v11 = n110 + factor_z * (n111 - n110);
+                                let v0 = v00 + factor_x * (v10 - v00);
+                                let v1 = v01 + factor_x * (v11 - v01);
+                                let step = (v1 - v0) * (1.0_f32 / cell_height as f32);
+                                let mut value = v0 + step * 0.0;
+                                for values in values_by_y.iter_mut().take(y_count) {
+                                    values[channel] = value;
+                                    value += step;
+                                }
+                            }
+
+                            for y_in_cell in (0..cell_height).rev() {
+                                let world_y =
+                                    (self.cell_min_y + cell_y_idx as i32) * cell_height + y_in_cell;
+                                let relative_y = (world_y - min_y) as usize;
+                                if relative_y >= value_height {
+                                    continue;
+                                }
+
+                                interpolated[..self.interp_count].copy_from_slice(
+                                    &values_by_y[y_in_cell as usize][..self.interp_count],
+                                );
+
+                                let offset =
+                                    (relative_y * 16 * 16 + local_z * 16 + local_x) * value_count;
+                                noises.fill_material_ore_vein_values(
+                                    cache,
+                                    &interpolated[..self.interp_count],
+                                    world_x,
+                                    world_y,
+                                    world_z,
+                                    &mut values[offset..offset + value_count],
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        values.into_boxed_slice()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::random::{Random, legacy_random::LegacyRandom, xoroshiro::Xoroshiro};
+
+    use super::NoiseChunk;
+    use crate::density::{ColumnCache, DimensionNoises, NoiseSettings};
+    use crate::density_functions::{
+        end::EndNoises, nether::NetherNoises, overworld::OverworldNoises,
+    };
+    use crate::noise::CornerColumnStore;
+    use crate::noise_parameters::get_noise_parameters;
+
+    type Visit = ((usize, i32, usize), u32);
+
+    fn create_noises<N: DimensionNoises>() -> N {
+        let seed = 1;
+        let splitter = if N::Settings::LEGACY_RANDOM_SOURCE {
+            LegacyRandom::from_seed(seed).next_positional()
+        } else {
+            Xoroshiro::from_seed(seed).next_positional()
+        };
+        N::create(seed, &splitter, &get_noise_parameters())
+    }
+
+    fn fill_visits<N: DimensionNoises>(
+        noises: &N,
+        chunk: (i32, i32),
+        air_min_y: i32,
+        corner_columns: &CornerColumnStore,
+    ) -> Vec<Visit> {
+        let (min_x, min_z) = (chunk.0 * 16, chunk.1 * 16);
+        let mut noise_chunk = NoiseChunk::<N>::new(min_x, min_z);
+        let mut cache = N::ColumnCache::default();
+        cache.init_grid(min_x, min_z, noises);
+        let mut visits = Vec::new();
+        noise_chunk.fill(
+            noises,
+            &mut cache,
+            None,
+            air_min_y,
+            corner_columns,
+            |x, y, z, density, _, _| {
+                visits.push(((x, y, z), density.to_bits()));
+            },
+        );
+        visits
+    }
+
+    /// Skipping every provable cell must leave the visited blocks and their
+    /// densities unchanged, and only drop blocks whose density is not positive.
+    #[expect(
+        clippy::neg_cmp_op_on_partial_ord,
+        reason = "NaN counts as not positive, matching the aquifer's `density > 0` solid test"
+    )]
+    fn assert_air_skip_sound<N: DimensionNoises>() {
+        let noises = create_noises::<N>();
+
+        let mut skipped = 0;
+        for chunk in [(0, 0), (-7, 3), (40, -25), (-300, -120), (1000, 800)] {
+            let all = fill_visits(&noises, chunk, i32::MAX, &CornerColumnStore::default());
+            let mut kept = fill_visits(&noises, chunk, i32::MIN, &CornerColumnStore::default())
+                .into_iter()
+                .peekable();
+            for (pos, bits) in all {
+                if kept.peek().is_some_and(|&(kept_pos, _)| kept_pos == pos) {
+                    let (_, kept_bits) = kept.next().expect("peeked");
+                    assert_eq!(kept_bits, bits, "density changed at {pos:?} in {chunk:?}");
+                } else {
+                    assert!(
+                        !(f32::from_bits(bits) > 0.0),
+                        "skipped solid block {pos:?} in {chunk:?}"
+                    );
+                    skipped += 1;
+                }
+            }
+            assert!(
+                kept.next().is_none(),
+                "skip run visited a block the full run did not"
+            );
+        }
+        assert!(skipped > 0, "no cell was skipped");
+    }
+
+    /// Neighbors filled through one shared store must match independent fills.
+    fn assert_corner_reuse_matches<N: DimensionNoises>() {
+        let noises = create_noises::<N>();
+        let shared = CornerColumnStore::default();
+        for x in -1..=1 {
+            for z in -1..=1 {
+                let chunk = (x + 30, z - 12);
+                assert_eq!(
+                    fill_visits(&noises, chunk, i32::MIN, &shared),
+                    fill_visits(&noises, chunk, i32::MIN, &CornerColumnStore::default()),
+                    "chunk {chunk:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn air_column_rejects_rounding_overshoot() {
+        let lower = -5.0 * f32::from_bits(1);
+        let upper = 0.0_f32;
+        assert!(lower <= 0.0 && upper <= 0.0);
+        let step = (upper - lower) * (1.0 / 8.0);
+        let mut value = lower + step * 0.0;
+        let mut values_by_y = [[0.0; super::MAX_INTERP]; 8];
+        for values in &mut values_by_y {
+            values[0] = value;
+            value += step;
+        }
+        assert!(values_by_y[7][0] > 0.0);
+        assert!(!NoiseChunk::<OverworldNoises>::channels_are_nonpositive(
+            &values_by_y,
+            &[0],
+        ));
+    }
+
+    #[test]
+    fn overworld_corner_reuse_matches() {
+        assert_corner_reuse_matches::<OverworldNoises>();
+    }
+
+    #[test]
+    fn nether_corner_reuse_matches() {
+        assert_corner_reuse_matches::<NetherNoises>();
+    }
+
+    #[test]
+    fn end_corner_reuse_matches() {
+        assert_corner_reuse_matches::<EndNoises>();
+    }
+
+    #[test]
+    fn overworld_air_skip_is_sound() {
+        assert_air_skip_sound::<OverworldNoises>();
+    }
+
+    #[test]
+    fn nether_air_skip_is_sound() {
+        assert_air_skip_sound::<NetherNoises>();
+    }
+
+    #[test]
+    fn end_air_skip_is_sound() {
+        assert_air_skip_sound::<EndNoises>();
     }
 }

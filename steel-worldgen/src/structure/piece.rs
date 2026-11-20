@@ -225,7 +225,7 @@ pub enum TemplatePlacementAdjustment {
     Shipwreck {
         /// Whether this is the beached shipwreck variant.
         is_beached: bool,
-        /// Vanilla `height_adjusted` flag.
+        /// Whether the piece's terrain-based height adjustment has run.
         height_adjusted: bool,
     },
     /// Igloo per-placement height adjustment.

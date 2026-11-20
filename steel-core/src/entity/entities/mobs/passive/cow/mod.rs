@@ -1,5 +1,6 @@
 //! Vanilla Cow entity with variant + sound-variant parity.
 
+use crate::player::player_inventory::Prediction;
 use std::str::FromStr;
 use std::sync::{Arc, Weak};
 
@@ -27,20 +28,21 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier};
 
-use crate::behavior::InteractionResult;
+use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
 use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
     TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
-    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData,
+    AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
+    EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
+    LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule,
+    sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 
 const COW_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.75, 0.0)];
@@ -56,7 +58,7 @@ const COW_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachm
 );
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 
-#[entity_behavior(class = "Cow")]
+#[entity_behavior(class = "Cow", spawn_rule)]
 /// Vanilla cow entity with synced variant and sound-variant state.
 pub struct CowEntity {
     base: EntityBase,
@@ -74,6 +76,11 @@ unsafe impl DowncastType for CowEntity {
 }
 
 impl CowEntity {
+    /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
+    pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, random| {
+        <Self as Animal>::check_animal_spawn_rules(entity_type, level, spawn_reason, pos, random)
+    };
+
     /// Creates a new cow at runtime.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
@@ -179,23 +186,10 @@ impl CowEntity {
     }
 
     fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
+        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
+            self.entity_data
+                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
         }
-
-        let display = self.living_base.mob_effect_display_state();
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        // Sync base entity flags from resolved effect display state in one place.
-        self.entity_data.set_base_invisible_flag(display.invisible);
-        self.entity_data
-            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
     /// Returns whether an item stack matches the vanilla cow food tag.
@@ -225,21 +219,31 @@ impl CowEntity {
             let mut inventory = player.inventory.lock();
             inventory.apply_filled_result(
                 hand,
-                ItemStack::new(&vanilla_items::MILK_BUCKET),
+                ITEM_BEHAVIORS.default_instance(&vanilla_items::MILK_BUCKET),
                 player.has_infinite_materials(),
                 true,
             )
         };
 
         if !overflow.is_empty() {
-            let _ = player.drop_item(overflow, false, false);
+            let _ = player.drop_item(overflow, false, Prediction::Predicted);
         }
 
         true
     }
 }
 
+impl DefaultEntityPush for CowEntity {}
+
 impl Entity for CowEntity {
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -352,12 +356,12 @@ impl LivingEntity for CowEntity {
         Some(self.sound_variant().death_sound)
     }
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        let result = Mob::mob_ai_step(self);
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        let result = Mob::mob_ai_step(self, entity);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
@@ -430,8 +434,8 @@ impl Mob for CowEntity {
         &self.mob_base
     }
 
-    fn tick_goal_selectors(&self) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
 
     fn tick_path_navigation(&self) {
@@ -449,6 +453,7 @@ impl Mob for CowEntity {
     fn finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -472,7 +477,7 @@ impl Mob for CowEntity {
             self.set_sound_variant(sound_variant);
         }
 
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(world, difficulty, spawn_reason, group_data)
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

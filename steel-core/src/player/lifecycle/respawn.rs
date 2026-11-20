@@ -14,7 +14,8 @@ use crate::{
     },
     player::Player,
 };
-use steel_math::{DEGREE_90, wrap_degrees};
+use steel_math::trig;
+use steel_math::{DEGREE_90, RAD_TO_DEG_F64, wrap_degrees};
 use steel_protocol::packets::game::{CSound, SoundSource};
 use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
@@ -114,7 +115,7 @@ impl PlayerRespawnJob {
                 let fallback_search = PlayerSpawnSearch::new(
                     &fallback_world,
                     fallback_respawn_data.pos(),
-                    fallback_world.default_gamemode,
+                    fallback_world.default_gamemode(),
                 )?;
                 (
                     fallback_world,
@@ -210,7 +211,7 @@ impl PlayerRespawnJob {
         }
         if !server.finish_player_packet_transition(transition) {
             tracing::warn!(
-                player = %current_player.gameprofile.name,
+                player = %current_player.gameprofile.name(),
                 "Player respawn packet transition was no longer current"
             );
         }
@@ -265,13 +266,13 @@ impl ServerJob for PlayerRespawnJob {
                     let fallback_search = match PlayerSpawnSearch::new(
                         &fallback_world,
                         fallback_respawn_data.pos(),
-                        fallback_world.default_gamemode,
+                        fallback_world.default_gamemode(),
                     ) {
                         Ok(search) => search,
                         Err(error) => {
                             log::error!(
                                 "Failed to prepare fallback respawn for player {}: {error}",
-                                self.player.gameprofile.name
+                                self.player.gameprofile.name()
                             );
                             self.finish_pending();
                             return JobPoll::Finished;
@@ -283,10 +284,7 @@ impl ServerJob for PlayerRespawnJob {
                     self.phase = PlayerRespawnJobPhase::Searching(fallback_search);
                 }
                 PlayerRespawnJobPhase::Searching(search) => {
-                    match search.poll_with_ready_candidate_budget(
-                        &self.target_world,
-                        RESPAWN_SEARCH_READY_CANDIDATE_BUDGET,
-                    ) {
+                    match search.poll_with_time_budget(&self.target_world, POLL_TIME_BUDGET) {
                         PlayerSpawnSearchPoll::Pending => return JobPoll::Pending,
                         PlayerSpawnSearchPoll::Cancelled => {
                             self.finish_pending();
@@ -369,7 +367,7 @@ impl PlayerRespawnJob {
         if state.is_bed()
             && Player::bed_rule_value_allows_in_world(
                 world,
-                world.dimension_type.bed_rule.can_set_spawn,
+                Player::bed_rule_for(world, state).can_set_spawn,
             )
         {
             let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
@@ -430,7 +428,8 @@ fn calculate_respawn_look_at_yaw(position: DVec3, look_at_block_pos: BlockPos) -
     );
     let look_direction = (bed_center - position).normalize_or_zero();
     wrap_degrees(
-        (look_direction.z.atan2(look_direction.x).to_degrees() - f64::from(DEGREE_90)) as f32,
+        (trig::atan2(look_direction.z, look_direction.x) * RAD_TO_DEG_F64 - f64::from(DEGREE_90))
+            as f32,
     )
 }
 
@@ -475,7 +474,7 @@ impl Player {
             self.finish_respawn_request(pending_token);
             log::error!(
                 "Failed to schedule respawn for player {}: server is gone",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         };
@@ -486,7 +485,7 @@ impl Player {
                     self.finish_respawn_request(pending_token);
                     log::error!(
                         "Failed to schedule respawn for player {}: {error}",
-                        self.gameprofile.name
+                        self.gameprofile.name()
                     );
                     return;
                 }
@@ -507,7 +506,7 @@ impl Player {
                 self.finish_respawn_request(pending_token);
                 log::error!(
                     "Failed to schedule respawn for player {}: {error}",
-                    self.gameprofile.name
+                    self.gameprofile.name()
                 );
                 return;
             }
@@ -621,7 +620,7 @@ impl Player {
             self.connection.close();
             if !target_world.remove_respawned_player(&replacement) {
                 tracing::error!(
-                    player = %self.gameprofile.name,
+                    player = %self.gameprofile.name(),
                     world = %target_world.key,
                     "Failed to remove a respawn replacement after online-player commit failed"
                 );
@@ -636,13 +635,13 @@ impl Player {
                 && server.remove_online_player_sync(&replacement).is_none()
             {
                 tracing::error!(
-                    player = %self.gameprofile.name,
+                    player = %self.gameprofile.name(),
                     "Failed to remove or roll back online-player ownership after respawn session bind failed"
                 );
             }
             if !target_world.remove_respawned_player(&replacement) {
                 tracing::error!(
-                    player = %self.gameprofile.name,
+                    player = %self.gameprofile.name(),
                     world = %target_world.key,
                     "Failed to remove a respawn replacement after session bind failed"
                 );
@@ -715,18 +714,17 @@ impl Player {
         health <= 0.0
     }
 
-    /// Returns vanilla `ServerPlayer.seenCredits`.
+    /// Returns whether this player has already seen the End credits screen.
     #[must_use]
     pub fn has_seen_credits(&self) -> bool {
         *self.seen_credits.lock()
     }
 
-    /// Sets vanilla `ServerPlayer.seenCredits`.
+    /// Sets whether this player has seen the End credits screen.
     pub fn set_seen_credits(&self, seen_credits: bool) {
         *self.seen_credits.lock() = seen_credits;
     }
 
-    /// Returns vanilla `ServerPlayer.wonGame`.
     #[must_use]
     pub(crate) fn has_won_game(&self) -> bool {
         *self.won_game.lock()
@@ -781,7 +779,7 @@ impl Player {
         let Some(server) = self.server.upgrade() else {
             log::error!(
                 "Failed to schedule End credits respawn for player {}: server is gone",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         };
@@ -798,7 +796,7 @@ impl Player {
                     self.finish_respawn_request(pending_token);
                     log::error!(
                         "Failed to schedule End credits respawn for player {}: {error}",
-                        self.gameprofile.name
+                        self.gameprofile.name()
                     );
                     return;
                 }
@@ -819,7 +817,7 @@ impl Player {
                 self.finish_respawn_request(pending_token);
                 log::error!(
                     "Failed to schedule End credits respawn for player {}: {error}",
-                    self.gameprofile.name
+                    self.gameprofile.name()
                 );
                 return;
             }

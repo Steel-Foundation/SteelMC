@@ -41,6 +41,10 @@ pub fn item_behavior(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// Use `#[json_arg(...)]` on fields to describe extra constructor arguments.
 /// These attributes are stripped before compilation.
+///
+/// Add `spawn_rule` to register the struct's `SPAWN_RULE` constant, the spawn predicate that
+/// vanilla keeps in `SpawnPlacements` for this entity. The build script generates
+/// `register_spawn_rules()` from it.
 #[proc_macro_attribute]
 pub fn entity_behavior(attr: TokenStream, item: TokenStream) -> TokenStream {
     behavior::entity_behavior(attr.into(), item.into()).into()

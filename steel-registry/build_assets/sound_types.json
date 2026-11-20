@@ -1141,5 +1141,41 @@
     "place_sound": "minecraft:block.cinnabar.place",
     "hit_sound": "minecraft:block.cinnabar.hit",
     "fall_sound": "minecraft:block.cinnabar.fall"
+  },
+  "SHELF_MUSHROOM": {
+    "volume": 1.0,
+    "pitch": 1.0,
+    "break_sound": "minecraft:block.shelf_mushroom.break",
+    "step_sound": "minecraft:block.shelf_mushroom.step",
+    "place_sound": "minecraft:block.shelf_mushroom.place",
+    "hit_sound": "minecraft:intentionally_empty",
+    "fall_sound": "minecraft:block.shelf_mushroom.fall"
+  },
+  "POPLAR_LEAVES": {
+    "volume": 1.0,
+    "pitch": 1.0,
+    "break_sound": "minecraft:block.poplar_leaves.break",
+    "step_sound": "minecraft:block.poplar_leaves.step",
+    "place_sound": "minecraft:block.poplar_leaves.place",
+    "hit_sound": "minecraft:block.poplar_leaves.hit",
+    "fall_sound": "minecraft:block.poplar_leaves.fall"
+  },
+  "STRAW_BED": {
+    "volume": 1.0,
+    "pitch": 1.0,
+    "break_sound": "minecraft:block.straw_bed.break",
+    "step_sound": "minecraft:block.straw_bed.step",
+    "place_sound": "minecraft:block.straw_bed.place",
+    "hit_sound": "minecraft:block.straw_bed.hit",
+    "fall_sound": "minecraft:block.straw_bed.fall"
+  },
+  "RED_SHRUB": {
+    "volume": 1.0,
+    "pitch": 1.0,
+    "break_sound": "minecraft:block.red_shrub.break",
+    "step_sound": "minecraft:intentionally_empty",
+    "place_sound": "minecraft:block.red_shrub.place",
+    "hit_sound": "minecraft:intentionally_empty",
+    "fall_sound": "minecraft:intentionally_empty"
   }
 }

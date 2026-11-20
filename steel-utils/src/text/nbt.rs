@@ -11,7 +11,7 @@ const MAX_ARRAY_LENGTH: usize = 128;
 /// Renders one NBT tag using vanilla's command-component syntax highlighting.
 ///
 /// Float and double digits intentionally use Rust formatting. All surrounding
-/// SNBT syntax and styling follows `TextComponentTagVisitor` from vanilla 26.2.
+/// SNBT syntax and styling follows `TextComponentTagVisitor` from vanilla.
 #[must_use]
 pub fn command_nbt_component(tag: &NbtTag, plain: bool) -> TextComponent {
     let mut visitor = NbtComponentVisitor {

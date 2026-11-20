@@ -16,7 +16,7 @@ use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::{BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess};
 use crate::block_entity::entities::FurnaceKind;
 use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker};
-use crate::inventory::container::calculate_redstone_signal_from_container;
+use crate::inventory::container::calculate_redstone_signal_from_containers;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::kinds::furnace_menu;
 use crate::player::Player;
@@ -66,7 +66,7 @@ fn open_furnace(
     let Some(container) = ContainerRef::from_block_entity(block_entity) else {
         return InteractionResult::Success;
     };
-    let inventory = player.inventory.clone();
+    let inventory = Arc::clone(&player.inventory);
     player.open_menu(title, move |context| {
         furnace_menu(inventory, context.container_id, container, kind)
     });
@@ -74,17 +74,20 @@ fn open_furnace(
     InteractionResult::Success
 }
 
-fn analog_output(world: &dyn LevelReader, pos: BlockPos) -> i32 {
+fn analog_output(world: &(impl LevelReader + ?Sized), pos: BlockPos) -> i32 {
     let Some(container) = world
         .get_block_entity(pos)
         .and_then(ContainerRef::from_block_entity)
     else {
         return 0;
     };
-    let guard = ContainerLockGuard::lock_all(&[&container]);
-    guard
-        .get(container.container_id())
-        .map_or(0, calculate_redstone_signal_from_container)
+    let Ok(guard) = ContainerLockGuard::lock_all(&[&container]) else {
+        // TODO: Handle preparation failures without reporting an empty inventory.
+        // Current furnace storage has no preparation callback; ordinary mutex
+        // contention waits instead of reaching this fallback.
+        return 0;
+    };
+    calculate_redstone_signal_from_containers(guard.get(container.container_id()))
 }
 
 macro_rules! impl_furnace_block {
@@ -168,7 +171,7 @@ macro_rules! impl_furnace_block {
             fn get_analog_output_signal(
                 &self,
                 _state: BlockStateId,
-                world: &dyn LevelReader,
+                world: &World,
                 pos: BlockPos,
                 _direction: Direction,
             ) -> i32 {

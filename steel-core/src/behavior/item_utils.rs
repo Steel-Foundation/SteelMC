@@ -1,5 +1,6 @@
 //! Helpers shared by item behavior implementations.
 
+use crate::player::player_inventory::Prediction;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
 
@@ -9,7 +10,6 @@ use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
 use crate::world::{ClipBlockShape, ClipFluid, World};
 
-/// Vanilla `Item.getPlayerPOVHitResult`.
 #[must_use]
 pub(crate) fn get_player_pov_hit_result(
     world: &World,
@@ -28,7 +28,6 @@ pub(crate) fn get_player_pov_hit_result(
     }
 }
 
-/// Applies vanilla `ItemUtils.createFilledResult`.
 pub(crate) fn create_filled_result(
     context: &UseItemContext,
     result_stack: ItemStack,
@@ -50,6 +49,6 @@ pub(crate) fn create_filled_result(
     });
 
     if !overflow.is_empty() {
-        let _ = player.drop_item(overflow, false, false);
+        let _ = player.drop_item(overflow, false, Prediction::Predicted);
     }
 }

@@ -99,7 +99,7 @@ impl PartialEq for ItemAttributeModifierEntry {
 }
 
 /// Tooltip display behavior for an item attribute modifier.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ItemAttributeModifierDisplay {
     Default,
     Hidden,

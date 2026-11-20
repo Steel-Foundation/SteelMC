@@ -1,7 +1,7 @@
 use std::{f32::consts::TAU, mem, sync::Arc};
 
 use crate::{
-    entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity},
+    entity::{ContainerUser, Entity, LivingEntity as _, RemovalReason, entities::ItemEntity},
     inventory::{
         click::Click,
         container::{Container, CraftingContainer, clear_or_count_matching_stack},
@@ -15,24 +15,32 @@ use crate::{
     player::{Player, connection::NetworkConnection as _},
 };
 use glam::DVec3;
+use steel_math::trig;
+use steel_protocol::packets::game::SSeenAdvancement::Opened;
 use steel_protocol::packets::game::{
     CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
-    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot,
+    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSeenAdvancement,
+    SSetBeacon, SSetCarriedItem, SSetCreativeModeSlot, SoundSource,
 };
+use steel_registry::data_components::vanilla_components::SwingAnimation;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::sound_events;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_custom_stats;
+use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::{
     Downcast as _,
     locks::Shared,
+    translations,
     types::{GameType, InteractionHand},
 };
 use text_components::TextComponent;
 
 use super::{
     DeferredMenuAction, MenuItemDisposition, MenuOpenContext, MenuRemovalStatus, OpenMenuDispatch,
-    OpenMenuUnavailable, PendingMenuOpen, PlayerInventory, PreparedMenu, TerminalMenuRemoval,
+    OpenMenuUnavailable, PendingMenuOpen, PlayerInventory, Prediction, PreparedMenu,
+    TerminalMenuRemoval,
 };
 
 impl Player {
@@ -61,6 +69,7 @@ impl Player {
         open_menu.dispatch = Some(OpenMenuDispatch {
             container_id,
             overrides_player_slots,
+            opened_containers: menu.kind().opened_containers(),
             actions: Vec::new(),
         });
         Ok(menu)
@@ -186,20 +195,75 @@ impl Player {
         }
     }
 
-    /// Handles a container button click packet (e.g., enchanting table buttons).
+    /// Resolves an optional beacon effect ID, rejecting IDs vanilla's packet codec would reject.
+    pub(super) fn resolve_beacon_effect(id: Option<i32>) -> Result<Option<MobEffectRef>, ()> {
+        id.map(|id| {
+            let id = usize::try_from(id).map_err(|_| ())?;
+            REGISTRY.mob_effects.by_id(id).ok_or(())
+        })
+        .transpose()
+    }
+
+    /// Handles a beacon effect selection from the set-beacon packet.
+    pub fn handle_set_beacon_packet(&self, packet: SSetBeacon) {
+        let (Ok(primary), Ok(secondary)) = (
+            Self::resolve_beacon_effect(packet.primary),
+            Self::resolve_beacon_effect(packet.secondary),
+        ) else {
+            log::warn!(
+                "Player {} sent an unknown beacon effect id",
+                self.gameprofile.name()
+            );
+            self.disconnect(translations::MULTIPLAYER_DISCONNECT_GENERIC.msg());
+            return;
+        };
+
+        let Ok(mut menu) = self.take_open_menu_for_callback(None) else {
+            return;
+        };
+        if !menu.still_valid(self) {
+            log::debug!(
+                "Player {} interacted with invalid menu",
+                self.gameprofile.name()
+            );
+            self.finish_open_menu_callback(menu);
+            return;
+        }
+        if !menu.update_effects(primary, secondary, &self.connection) {
+            log::warn!(
+                "Player {} tried to set invalid beacon effects",
+                self.gameprofile.name()
+            );
+            self.finish_open_menu_callback(menu);
+            self.disconnect(translations::MULTIPLAYER_DISCONNECT_GENERIC.msg());
+            return;
+        }
+        self.finish_open_menu_callback(menu);
+    }
+
+    /// Dispatches a container button click to the open menu.
     pub fn handle_container_button_click(&self, packet: SContainerButtonClick) {
-        log::debug!(
-            "Player {} clicked button {} in container {}",
-            self.gameprofile.name,
-            packet.button_id,
-            packet.container_id
-        );
-        // TODO: Implement container button click handling
-        // This is used for things like:
-        // - Enchanting table level selection
-        // - Stonecutter recipe selection
-        // - Loom pattern selection
-        // - Lectern page turning
+        self.reset_last_action_time();
+        match self.take_open_menu_for_callback(Some(packet.container_id)) {
+            Ok(mut menu) => {
+                if self.game_mode() == GameType::Spectator {
+                    // Spectator button clicks are ignored without resynchronizing the menu.
+                } else if !menu.still_valid(self) {
+                    log::debug!(
+                        "Player {} interacted with invalid menu {}",
+                        self.gameprofile.name(),
+                        packet.container_id
+                    );
+                } else if menu.click_menu_button(packet.button_id, self) {
+                    menu.behavior_mut().broadcast_changes(&self.connection);
+                }
+                self.finish_open_menu_callback(menu);
+            }
+            Err(OpenMenuUnavailable::Closed) => {
+                log::debug!("container button click without an open menu");
+            }
+            Err(OpenMenuUnavailable::Unavailable) => {}
+        }
     }
 
     /// Handles a container click packet (slot interaction).
@@ -234,7 +298,7 @@ impl Player {
         if !menu.still_valid(self) {
             log::debug!(
                 "Player {} interacted with invalid menu",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         }
@@ -248,7 +312,7 @@ impl Player {
         if !packet_slot_is_valid {
             log::debug!(
                 "Player {} clicked invalid slot index: {}, available slots: {}",
-                self.gameprofile.name,
+                self.gameprofile.name(),
                 packet.slot_num,
                 slot_count
             );
@@ -267,7 +331,7 @@ impl Player {
         if click.is_none() {
             log::debug!(
                 "Player {} sent malformed container click (slot {}, button {}, {:?})",
-                self.gameprofile.name,
+                self.gameprofile.name(),
                 packet.slot_num,
                 packet.button_num,
                 packet.click_type
@@ -329,7 +393,7 @@ impl Player {
     pub fn handle_container_close(&self, packet: SContainerClose) {
         log::debug!(
             "Player {} closed container {}",
-            self.gameprofile.name,
+            self.gameprofile.name(),
             packet.container_id
         );
 
@@ -375,7 +439,7 @@ impl Player {
     pub fn handle_container_slot_state_changed(&self, packet: SContainerSlotStateChanged) {
         log::debug!(
             "Player {} changed slot {} state to {} in container {}",
-            self.gameprofile.name,
+            self.gameprofile.name(),
             packet.slot_id,
             packet.new_state,
             packet.container_id
@@ -400,13 +464,7 @@ impl Player {
             let mut menu = self.inventory_menu.lock();
             let slot_index = packet.slot_num as usize;
 
-            {
-                let mut guard = menu.behavior().lock_all_containers();
-                if let Some(slot) = menu.behavior().slots().get(slot_index) {
-                    let previous = slot.get_item(&guard).clone();
-                    slot.set_by_player(&mut guard, item_stack.clone(), &previous);
-                }
-            }
+            menu.set_slot_by_player(slot_index, item_stack.clone(), self);
             if (1..=4).contains(&slot_index) {
                 menu.update_crafting_result();
             }
@@ -421,12 +479,12 @@ impl Player {
                 } else {
                     log::warn!(
                         "Player {} was dropping items too fast in creative mode; ignoring",
-                        self.gameprofile.name,
+                        self.gameprofile.name(),
                     );
                     return;
                 }
             }
-            let _ = self.drop_item(item_stack, false, true);
+            let _ = self.drop_item(item_stack, true, Prediction::Predicted);
         }
     }
 
@@ -440,10 +498,19 @@ impl Player {
         {
             log::warn!(
                 "{} tried to set an invalid carried item",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
         } else {
             self.reset_last_action_time();
+        }
+    }
+
+    /// Set the selected advancement
+    pub fn handle_seen_advancement(&self, packet: SSeenAdvancement) {
+        if let Opened(tab_id) = packet {
+            REGISTRY.advancements.with_value_by_key(&tab_id, |adv| {
+                self.advancements.lock().set_selected_tab(self, Some(adv));
+            });
         }
     }
 
@@ -576,6 +643,7 @@ impl Player {
             open_menu.dispatch = Some(OpenMenuDispatch {
                 container_id: menu.container_id(),
                 overrides_player_slots: menu.overrides_player_slots(),
+                opened_containers: menu.kind().opened_containers(),
                 actions: Vec::new(),
             });
             break;
@@ -753,6 +821,7 @@ impl Player {
             open_menu.dispatch = Some(OpenMenuDispatch {
                 container_id: menu.container_id(),
                 overrides_player_slots: menu.overrides_player_slots(),
+                opened_containers: menu.kind().opened_containers(),
                 actions: Vec::new(),
             });
             menu
@@ -932,27 +1001,49 @@ impl Player {
         let removed = {
             let mut inventory = self.inventory.lock();
             let selected_count = inventory.get_selected_item().count();
-            if selected_count == 0 {
-                return;
-            }
             inventory.split_item_in_hand(
                 InteractionHand::MainHand,
                 if all { selected_count } else { 1 },
             )
         };
 
-        let _ = self.drop_item(removed, false, true);
+        let _ = self.drop_item(removed, true, Prediction::Predicted);
+        self.reset_attack_strength_ticker();
     }
 
-    /// Drops an item into the world.
+    /// Swings the main hand and throws `item` in the facing direction.
     ///
-    /// Based on Java's `LivingEntity.drop(ItemStack, boolean randomly, boolean thrownFromHand)`.
+    /// Based on Java's `LivingEntity.drop(ItemStack, boolean thrownFromHand, Prediction)`.
+    /// `prediction` decides whether the swing is also sent to this player.
+    #[must_use]
+    pub fn drop_item(
+        &self,
+        item: ItemStack,
+        thrown_from_hand: bool,
+        prediction: Prediction,
+    ) -> Option<Arc<ItemEntity>> {
+        if item.is_empty() {
+            return None;
+        }
+
+        self.swing(
+            InteractionHand::MainHand,
+            SwingAnimation::DEFAULT,
+            prediction == Prediction::ServerOnly,
+        );
+        self.spawn_dropped_item(item, false, thrown_from_hand)
+    }
+
+    /// Spawns `item` as a dropped entity without swinging.
+    ///
+    /// Based on Java's `LivingEntity.createItemStackToDrop`, used directly by
+    /// death drops and `/give` overflow.
     ///
     /// - `throw_randomly`: If true, the item is thrown in a random direction.
     ///   If false, it's thrown in the direction the player is facing.
     /// - `thrown_from_hand`: If true, sets the thrower and uses a longer pickup delay.
     #[must_use]
-    pub fn drop_item(
+    pub fn spawn_dropped_item(
         &self,
         item: ItemStack,
         throw_randomly: bool,
@@ -971,18 +1062,18 @@ impl Player {
             let power = rand::random_range(0.0..0.5);
             let angle = rand::random_range(0.0..TAU);
             DVec3::new(
-                f64::from(-angle.sin() * power),
+                f64::from(-trig::sin(angle) * power),
                 0.2,
-                f64::from(angle.cos() * power),
+                f64::from(trig::cos(angle) * power),
             )
         } else {
             let pitch_rad = pitch.to_radians();
             let yaw_rad = yaw.to_radians();
 
-            let sin_pitch = pitch_rad.sin();
-            let cos_pitch = pitch_rad.cos();
-            let sin_yaw = yaw_rad.sin();
-            let cos_yaw = yaw_rad.cos();
+            let sin_pitch = trig::sin(pitch_rad);
+            let cos_pitch = trig::cos(pitch_rad);
+            let sin_yaw = trig::sin(yaw_rad);
+            let cos_yaw = trig::cos(yaw_rad);
 
             let angle_offset = rand::random_range(0.0..TAU);
             let power_offset = rand::random_range(0.0..0.02);
@@ -1006,7 +1097,7 @@ impl Player {
             .spawn_item_with_velocity(spawn_pos, item, velocity)?;
         entity.set_pickup_delay(40);
         if thrown_from_hand {
-            entity.set_thrower(self.gameprofile.id);
+            entity.set_thrower(self.gameprofile.id());
             self.award_stat_with_count(&vanilla_stat_types::ITEM_DROPPED, item_ref, item_count);
             self.award_custom_stat(&vanilla_custom_stats::DROP);
         }
@@ -1019,8 +1110,7 @@ impl Player {
     /// Returns false if the player is dead, removed, or has a flag preventing item drops.
     #[must_use]
     pub fn can_drop_items(&self) -> bool {
-        !self.is_removed()
-        // TODO: Check if player is alive (health > 0)
+        Entity::is_alive(self)
     }
 
     /// Returns whether items from a closing menu (crafting grid, anvil inputs,
@@ -1032,13 +1122,13 @@ impl Player {
     /// drops the items.
     #[must_use]
     pub fn returns_menu_items_to_inventory(&self) -> bool {
-        if let Some(disposition) = self
+        let terminal_disposition = self
             .open_menu
             .lock()
             .terminal_removal
             .as_ref()
-            .map(|terminal_removal| terminal_removal.disposition)
-        {
+            .map(|terminal_removal| terminal_removal.disposition);
+        if let Some(disposition) = terminal_disposition {
             return disposition == MenuItemDisposition::ReturnToInventory;
         }
 
@@ -1055,17 +1145,39 @@ impl Player {
         }
     }
 
+    /// Tries to add an item to the player's inventory, playing the vanilla item-pickup
+    /// sound when the entire stack fits.
+    ///
+    /// Returns true if the whole stack was added; otherwise the stack keeps the remainder.
+    /// Mirrors the shared vanilla `Inventory.add` + `SoundEvents.ITEM_PICKUP` flow used by
+    /// `/give` and advancement rewards: the sound only plays once the stack is fully consumed.
+    pub fn add_item_with_sound(&self, stack: &mut ItemStack) -> bool {
+        let added = self.inventory.lock().add(stack);
+        if added {
+            let pitch = ((rand::random::<f32>() - rand::random::<f32>()) * 0.7 + 1.0) * 2.0;
+            self.get_world().play_sound_at(
+                &sound_events::ENTITY_ITEM_PICKUP,
+                SoundSource::Players,
+                self.position(),
+                0.2,
+                pitch,
+                None,
+            );
+        }
+        added
+    }
+
     /// Tries to add an item to the player's inventory, dropping it if it doesn't fit.
     ///
     /// Based on Java's `Inventory.placeItemBackInInventory`.
-    pub fn add_item_or_drop(&self, mut item: ItemStack) {
+    pub fn add_item_or_drop(&self, mut item: ItemStack, prediction: Prediction) {
         if item.is_empty() {
             return;
         }
 
         let added = self.inventory.lock().add(&mut item);
         if !added || !item.is_empty() {
-            let _ = self.drop_item(item, false, false);
+            let _ = self.drop_item(item, false, prediction);
         }
     }
 
@@ -1074,7 +1186,12 @@ impl Player {
     ///
     /// Use this variant when you already hold a `ContainerLockGuard` that includes
     /// the player's inventory to avoid deadlocks.
-    pub fn add_item_or_drop_with_guard(&self, guard: &mut ContainerLockGuard, mut item: ItemStack) {
+    pub fn add_item_or_drop_with_guard(
+        &self,
+        guard: &mut ContainerLockGuard,
+        mut item: ItemStack,
+        prediction: Prediction,
+    ) {
         if item.is_empty() {
             return;
         }
@@ -1087,7 +1204,24 @@ impl Player {
             true
         };
         if should_drop {
-            let _ = guard.run_unlocked(|| self.drop_item(item, false, false));
+            let _ = guard.run_unlocked(|| self.drop_item(item, false, prediction));
         }
+    }
+}
+
+impl ContainerUser for Player {
+    fn has_container_open_for(&self, container: ContainerId) -> bool {
+        let state = self.open_menu.lock();
+        if let Some(menu) = &state.menu {
+            return menu.kind().opened_containers().contains(&container);
+        }
+        state
+            .dispatch
+            .as_ref()
+            .is_some_and(|dispatch| dispatch.opened_containers.contains(&container))
+    }
+
+    fn container_interaction_range(&self) -> f64 {
+        self.block_interaction_range()
     }
 }

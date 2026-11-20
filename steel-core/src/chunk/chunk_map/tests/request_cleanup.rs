@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::*;
 use crate::chunk::chunk_request::{ChunkRequestLease, ChunkTicketKind};
 use futures::FutureExt;
@@ -5,7 +7,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 #[test]
 fn dropping_pending_radius_request_preserves_pearl_simulation() {
-    let world = fresh_test_world("dropped_radius_request");
+    let world_fixture = fresh_test_world("dropped_radius_request");
+    let world = &world_fixture.world;
     let chunk_map = &world.chunk_map;
     let center = ChunkPos::new(0, 0);
     let neighbor = ChunkPos::new(1, 0);
@@ -47,16 +50,17 @@ fn dropping_pending_radius_request_preserves_pearl_simulation() {
         Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
         "the neighboring bobber chunk must not become entity ticking"
     );
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
 }
 
 #[test]
 fn panicking_radius_callback_releases_its_request() {
-    let world = fresh_test_world("panicking_radius_request");
+    let world_fixture = fresh_test_world("panicking_radius_request");
+    let world = &world_fixture.world;
     let chunk_map = &world.chunk_map;
     let center = ChunkPos::new(0, 0);
     chunk_map.stop_generation_refill_loop();
-    let holder = insert_ready_full_chunk(&world, center);
+    let holder = insert_ready_full_chunk(world, center);
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         chunk_map.chunk_runtime.block_on(
@@ -67,12 +71,13 @@ fn panicking_radius_callback_releases_its_request() {
     let _runtime = chunk_map.chunk_runtime.enter();
     chunk_map.advance_scheduling();
     assert_eq!(holder.load_level(), None);
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
 }
 
 #[test]
 fn cancelling_handle_releases_once_and_preserves_another_lease() {
-    let world = fresh_test_world("cancelled_shared_request");
+    let world_fixture = fresh_test_world("cancelled_shared_request");
+    let world = &world_fixture.world;
     let chunk_map = &world.chunk_map;
     let center = ChunkPos::new(0, 0);
     chunk_map.stop_generation_refill_loop();
@@ -98,5 +103,5 @@ fn cancelling_handle_releases_once_and_preserves_another_lease() {
     drop(lease);
     chunk_map.advance_scheduling();
     assert_eq!(holder.load_level(), None);
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
 }

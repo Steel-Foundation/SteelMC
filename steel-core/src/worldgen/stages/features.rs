@@ -16,8 +16,8 @@ pub(crate) fn generate(
 ) {
     let center = holder.get_pos();
 
-    let Some(chunk) = holder.try_chunk(ChunkStatus::Carvers) else {
-        panic!("Chunk not found at status Carvers");
+    let Some(chunk) = holder.try_chunk(ChunkStatus::Terrain) else {
+        panic!("Chunk not found at status Terrain");
     };
     chunk.prime_final_heightmaps();
 

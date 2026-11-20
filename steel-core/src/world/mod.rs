@@ -2,21 +2,23 @@
 
 use std::{
     io, mem,
+    ops::ControlFlow,
     path::Path,
     sync::{
         Arc, LazyLock, Weak,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI8, Ordering},
     },
     time::Duration,
 };
 
-use crate::chunk::chunk_ticket_storage::{ChunkTicketStorage, PersistentChunkTickets};
+use crate::chunk::chunk_ticket_storage::ChunkTicketStorage;
 use crate::chunk::full_chunk::{FullChunkBlockSetResult, FullChunkRef};
 use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheScope;
 use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
 use crate::chunk::status::ChunkStatus;
+use crate::entity::damage::DamageHistory;
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
 use crate::world::game_event::{
@@ -32,7 +34,8 @@ use steel_protocol::packets::game::{
     CBlockDestruction, CChangeDifficulty, CGameEvent, CInitializeBorder, CLevelEvent,
     CLevelParticles, CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
     CSetBorderWarningDelay, CSetBorderWarningDistance, CSetEntityData, CSetEntityLink,
-    CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, SoundSource,
+    CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, RandomizationType,
+    SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
@@ -40,7 +43,8 @@ use steel_protocol::{
     packets::game::CSetTime,
 };
 
-use rustc_hash::FxHashSet;
+use crate::loot::{LootContext, random_sequences::RandomSequences};
+use rustc_hash::{FxHashMap, FxHashSet};
 use simdnbt::owned::NbtCompound;
 use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -54,7 +58,6 @@ use steel_registry::game_events::GameEventRef;
 use steel_registry::game_rules::{ErasedGameRuleRef, GameRule, GameRuleValue, GameRuleValueType};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
-use steel_registry::loot_table::LootContext;
 use steel_registry::particle_type::ParticleData;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -91,7 +94,7 @@ use crate::{
     entity::{
         AddEntityError, Entity, EntityChangeSenders, EntityChunkCallback, EntityLifecycleChanges,
         EntityMovementSyncPacket, EntityOwnership, EntityTracker, EntityVisibility,
-        InactiveEntityCallback, MobEffectSyncPacket, RemovalReason, SharedEntity,
+        InactiveEntityCallback, MobEffectSyncPacket, PartEntity, RemovalReason, SharedEntity,
         WorldEntityManager,
         entities::{ExperienceOrbEntity, ItemEntity},
         entity_loot_ref,
@@ -100,7 +103,7 @@ use crate::{
     level_data::{
         GameTime, GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings,
     },
-    player::{LastSeen, Player, connection::NetworkConnection},
+    player::{Player, connection::NetworkConnection},
     poi::PointOfInterestStorage,
 };
 
@@ -111,9 +114,12 @@ mod block_updates;
 mod border;
 mod broadcasts;
 pub(crate) mod clock;
+mod difficulty;
+mod domain_entity_directory;
 mod entity_management;
 mod environment;
 mod events;
+pub mod explosion;
 /// Vanilla game-event contexts, listeners, and dispatch storage.
 pub mod game_event;
 mod level_effects;
@@ -139,14 +145,22 @@ pub use crate::config::WorldStorageConfig;
 use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
 use block_event::BlockEventQueue;
-pub(crate) use block_region::{BlockRegionBounds, MAX_BLOCK_REGION_WORKSET_SLOTS};
+pub(crate) use block_region::{BlockRegionBounds, BlockRegionRead, MAX_BLOCK_REGION_WORKSET_SLOTS};
 use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
 pub(crate) use border::{MAX_CENTER_COORDINATE, MAX_SIZE};
 use border::{WorldBorder, WorldBorderSnapshot};
+pub use difficulty::DifficultyInstance;
+pub(crate) use domain_entity_directory::DomainEntityDirectory;
 use entity_management::NavigatingMobTracker;
 #[cfg(test)]
 use entity_management::nearest_player_distance_in_range;
+pub use explosion::{
+    BlockInteraction, DefaultExplosionDamageCalculator, EntityBasedExplosionDamageCalculator,
+    Explosion, ExplosionDamageCalculator, ExplosionInteraction, ExplosionOptions, ExplosionOutcome,
+    SimpleExplosionDamageCalculator,
+};
+pub(crate) use explosion::{ExplosionBlockReader, ImmutableExplosionBlockCalculator};
 pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
 pub use player_index::{PlayerAreaMap, PlayerMap};
 pub use raycast::{ClipBlockShape, ClipFluid, ClipHitResult, RaytraceAction};
@@ -204,6 +218,8 @@ pub enum ConditionalBlockSetResult {
 /// Configuration for creating a new world.
 #[derive(Clone)]
 pub struct WorldConfig {
+    /// Server-owned history; the caller retains it while the world runs.
+    pub damage_history: Arc<DamageHistory>,
     /// Domain game-time authority, bound during construction.
     pub game_time_source: GameTimeSource,
     /// Storage configuration for chunk persistence.
@@ -234,6 +250,7 @@ pub struct WorldConfig {
 
 /// A struct that represents a world.
 pub struct World {
+    pub(crate) damage_history: Weak<DamageHistory>,
     /// The chunk map of the world.
     pub chunk_map: Arc<ChunkMap>,
     /// All players in the world with dual indexing by UUID and entity ID.
@@ -253,6 +270,8 @@ pub struct World {
     pub(crate) game_time: Arc<GameTime>,
     /// Per-world saved data storage.
     pub(crate) saved_data: SavedDataManager,
+    pub(crate) random_sequences: SyncRwLock<Option<Arc<RandomSequences>>>,
+    pub(crate) loot_random: SyncMutex<RandomSource>,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
     /// Vanilla sleeping player counts for night-skip checks.
@@ -268,7 +287,7 @@ pub struct World {
     /// Sea level sent in login/respawn packets.
     pub sea_level: i32,
     /// Default game mode for first-visit player data.
-    pub default_gamemode: GameType,
+    default_gamemode: AtomicI8,
     /// Whether the tick rate is running normally (not frozen/paused).
     /// When false, movement validation checks are skipped.
     tick_runs_normally: AtomicBool,
@@ -280,6 +299,7 @@ pub struct World {
     neighbor_updater: CollectingNeighborUpdater,
     /// Central runtime entity ownership and lookup.
     entity_manager: WorldEntityManager,
+    domain_entity_directory: SyncRwLock<Option<Arc<DomainEntityDirectory>>>,
     /// World-global ordered block-entity ticker phase.
     block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers,
     /// Physical entries retained by this world's chunk-owned game-event registries.
@@ -304,6 +324,9 @@ pub struct World {
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
     /// World-change requests queued by world-local ticks for server safe-point processing.
     pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
+    /// Live multipart sub-entities by session ID (vanilla `ServerLevel.dragonParts`), kept
+    /// out of the entity manager.
+    entity_parts: SyncMutex<FxHashMap<i32, Arc<dyn PartEntity>>>,
 }
 
 impl World {
@@ -380,11 +403,7 @@ impl World {
         if level_data.is_dirty() {
             level_data.save().await?;
         }
-        let persistent_chunk_tickets: PersistentChunkTickets = saved_data
-            .load_or_default(saved_data_names::CHUNK_TICKETS)
-            .await?;
-        let ticket_storage = ChunkTicketStorage::from_persistent(persistent_chunk_tickets)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let ticket_storage = ChunkTicketStorage::load(&saved_data, &key).await;
         let world_border = WorldBorder::new(level_data.data().world_border)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
@@ -408,7 +427,7 @@ impl World {
         Ok(Arc::new_cyclic(|weak_self: &Weak<World>| {
             let chunk_map = Arc::new(ChunkMap::new_with_storage_and_ticket_storage(
                 chunk_runtime,
-                weak_self.clone(),
+                Weak::clone(weak_self),
                 dimension_type,
                 sea_level,
                 storage,
@@ -422,6 +441,7 @@ impl World {
             chunk_map.start_generation_refill_loop();
 
             Self {
+                damage_history: Arc::downgrade(&config.damage_history),
                 chunk_map,
                 players: PlayerMap::new(),
                 player_area_map: PlayerAreaMap::new(),
@@ -430,6 +450,10 @@ impl World {
                 game_time: level_data.game_time_handle(),
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
+                random_sequences: SyncRwLock::new(None),
+                loot_random: SyncMutex::new(RandomSource::Legacy(LegacyRandom::from_seed(
+                    rand::random(),
+                ))),
                 world_border: SyncMutex::new(world_border),
                 sleep_status: SyncMutex::new(sleep_status::SleepStatus::default()),
                 view_distance,
@@ -437,12 +461,13 @@ impl World {
                 compression,
                 is_flat,
                 sea_level,
-                default_gamemode,
+                default_gamemode: AtomicI8::new(default_gamemode.into()),
                 tick_runs_normally: AtomicBool::new(true),
                 handling_tick: AtomicBool::new(false),
                 block_events: SyncMutex::new(BlockEventQueue::default()),
                 neighbor_updater: CollectingNeighborUpdater::new(max_chained_neighbor_updates),
                 entity_manager: WorldEntityManager::new(),
+                domain_entity_directory: SyncRwLock::new(None),
                 block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers::new(),
                 game_event_listener_count: GameEventListenerCount::shared(),
                 entity_tracker: EntityTracker::new(),
@@ -456,6 +481,7 @@ impl World {
                 scheduled_fluid_ticks_this_tick: SyncMutex::new(None),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 pending_world_changes: SyncMutex::new(Vec::new()),
+                entity_parts: SyncMutex::new(FxHashMap::default()),
             }
         }))
     }
@@ -492,6 +518,35 @@ impl World {
     #[must_use]
     pub fn domain(&self) -> &str {
         self.key.namespace.as_ref()
+    }
+
+    pub(crate) fn set_domain_entity_directory(&self, directory: Arc<DomainEntityDirectory>) {
+        *self.domain_entity_directory.write() = Some(directory);
+    }
+
+    /// Gets an entity by UUID, checking this world before other loaded worlds in its domain.
+    #[must_use]
+    pub fn get_entity_in_domain_by_uuid(&self, uuid: &uuid::Uuid) -> Option<SharedEntity> {
+        self.get_entity_by_uuid(uuid).or_else(|| {
+            self.domain_entity_directory
+                .read()
+                .as_ref()
+                .and_then(|directory| directory.get_entity_by_uuid(uuid))
+        })
+    }
+
+    /// Vanilla keeps ticking removed players from their connection. Steel ticks
+    /// players through the entity manager, which skips removed entities, so tick
+    /// them here instead. This must run before the entity tick so the removal
+    /// tick itself is not processed twice. Unlike the entity tick, this skips
+    /// `commonTick`, so `tickCount` stays frozen like vanilla.
+    fn tick_removed_players(&self) {
+        self.players.iter_players(|_, player| {
+            if player.is_removed() {
+                Arc::clone(player).tick();
+            }
+            true
+        });
     }
 
     /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),
@@ -540,6 +595,8 @@ impl World {
         // Vanilla clears this before ticking entities and block entities.
         self.handling_tick.store(false, Ordering::Relaxed);
 
+        self.tick_removed_players();
+
         let entity_tick = {
             let _span = tracing::trace_span!("entity_tick").entered();
             let start = Instant::now();
@@ -575,7 +632,7 @@ impl World {
                         let Some(player) = self.players.get_by_entity_id(player_id) else {
                             return;
                         };
-                        player.connection.send_encoded(encoded);
+                        encoded.send_to(&player);
                     },
                     entity_data: |entity_id, dirty_entity_data| {
                         let packet = CSetEntityData::new(entity_id, dirty_entity_data);
@@ -683,6 +740,10 @@ impl LevelReader for World {
             .is_face_sturdy(state, self, pos, direction, support_type)
     }
 
+    fn sky_darkening(&self) -> u8 {
+        World::sky_darkening(self)
+    }
+
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
         let sky_light = if self.dimension_type.has_skylight {
             self.light_value_at(LightLayer::Sky, pos)
@@ -713,6 +774,10 @@ impl LevelReader for World {
     fn height(&self) -> i32 {
         self.get_height()
     }
+
+    fn sea_level(&self) -> i32 {
+        self.sea_level
+    }
 }
 
 impl LevelReader for Arc<World> {
@@ -733,6 +798,10 @@ impl LevelReader for Arc<World> {
     ) -> bool {
         self.as_ref()
             .is_face_sturdy_for(state, pos, direction, support_type)
+    }
+
+    fn sky_darkening(&self) -> u8 {
+        self.as_ref().sky_darkening()
     }
 
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
@@ -764,6 +833,10 @@ impl LevelReader for Arc<World> {
 
     fn height(&self) -> i32 {
         self.as_ref().get_height()
+    }
+
+    fn sea_level(&self) -> i32 {
+        self.as_ref().sea_level
     }
 }
 

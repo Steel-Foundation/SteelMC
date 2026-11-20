@@ -5,10 +5,10 @@ mod dragon_egg_block;
 mod falling_block;
 mod sand_block;
 
-pub use concrete_powder_block::ConcretePowderBlock;
-pub use dragon_egg_block::DragonEggBlock;
-pub use falling_block::FallingBlock;
-pub use sand_block::SandBlock;
+pub use concrete_powder_block::*;
+pub use dragon_egg_block::*;
+pub use falling_block::*;
+pub use sand_block::*;
 
 #[cfg(test)]
 mod tests;

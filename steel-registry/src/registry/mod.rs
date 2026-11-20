@@ -10,6 +10,7 @@ pub use holder_set::{RegistryHolderSet, RegistryHolderSetEntry};
 pub use reference::{RegistryReference, RegistryReferenceEntry};
 pub use tags::RegistryTags;
 
+use crate::advancement::registry::AdvancementRegistry;
 use crate::game_events::GameEventRegistry;
 use crate::stat::custom::CustomStatRegistry;
 use crate::stat::{StatTypeRegistry, vanilla_stat_types};
@@ -20,6 +21,7 @@ use crate::{
     banner_pattern::BannerPatternRegistry,
     biome::BiomeRegistry,
     block_entity_type::BlockEntityTypeRegistry,
+    block_transformer::BlockTransformerRegistry,
     blocks::BlockRegistry,
     carver::ConfiguredCarverRegistry,
     cat_sound_variant::CatSoundVariantRegistry,
@@ -33,14 +35,15 @@ use crate::{
     damage_type::DamageTypeRegistry,
     data_component_predicate::{self, DataComponentPredicateTypeRegistry},
     data_components::{DataComponentRegistry, vanilla_components},
+    decorated_pot_pattern::DecoratedPotPatternRegistry,
     dialog::DialogRegistry,
     dimension_type::DimensionTypeRegistry,
     enchantment::EnchantmentRegistry,
     entity_data::{EntityDataSerializerRegistry, register_vanilla_entity_data_serializers},
     entity_type::EntityTypeRegistry,
     feature::{
-        ConfiguredFeatureKind, ConfiguredFeatureRef, ConfiguredFeatureRegistry, PlacedFeatureData,
-        PlacedFeatureRef, PlacedFeatureRegistry,
+        BlockStateProviderRegistry, ConfiguredFeatureKind, ConfiguredFeatureRef,
+        ConfiguredFeatureRegistry, PlacedFeatureData, PlacedFeatureRef, PlacedFeatureRegistry,
     },
     fluid::FluidRegistry,
     frog_variant::FrogVariantRegistry,
@@ -48,7 +51,6 @@ use crate::{
     instrument::InstrumentRegistry,
     items::ItemRegistry,
     jukebox_song::JukeboxSongRegistry,
-    loot_table::LootTableRegistry,
     map_decoration_type::MapDecorationTypeRegistry,
     menu_type::MenuTypeRegistry,
     mob_effect::MobEffectRegistry,
@@ -71,17 +73,18 @@ use crate::{
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
-    vanilla_attributes, vanilla_banner_pattern_tags, vanilla_banner_patterns, vanilla_biome_tags,
-    vanilla_biomes, vanilla_block_entity_types, vanilla_block_tags, vanilla_blocks,
-    vanilla_cat_sound_variants, vanilla_cat_variants, vanilla_chat_types,
-    vanilla_chicken_sound_variants, vanilla_chicken_variants, vanilla_configured_carvers,
-    vanilla_configured_features, vanilla_cow_sound_variants, vanilla_cow_variants,
-    vanilla_custom_stats, vanilla_damage_type_tags, vanilla_damage_types, vanilla_dialog_tags,
-    vanilla_dialogs, vanilla_dimension_types, vanilla_enchantment_tags, vanilla_enchantments,
-    vanilla_entities, vanilla_entity_type_tags, vanilla_fluid_tags, vanilla_fluids,
-    vanilla_frog_variants, vanilla_game_events, vanilla_game_rules, vanilla_instrument_tags,
-    vanilla_instruments, vanilla_item_tags, vanilla_items, vanilla_jukebox_songs,
-    vanilla_loot_tables, vanilla_map_decoration_types, vanilla_menu_types, vanilla_mob_effects,
+    vanilla_advancements, vanilla_attributes, vanilla_banner_pattern_tags, vanilla_banner_patterns,
+    vanilla_biome_tags, vanilla_biomes, vanilla_block_entity_types, vanilla_block_state_providers,
+    vanilla_block_tags, vanilla_block_transformers, vanilla_blocks, vanilla_cat_sound_variants,
+    vanilla_cat_variants, vanilla_chat_types, vanilla_chicken_sound_variants,
+    vanilla_chicken_variants, vanilla_configured_carvers, vanilla_configured_features,
+    vanilla_cow_sound_variants, vanilla_cow_variants, vanilla_custom_stats,
+    vanilla_damage_type_tags, vanilla_damage_types, vanilla_decorated_pot_patterns,
+    vanilla_dialog_tags, vanilla_dialogs, vanilla_dimension_types, vanilla_enchantment_tags,
+    vanilla_enchantments, vanilla_entities, vanilla_entity_type_tags, vanilla_fluid_tags,
+    vanilla_fluids, vanilla_frog_variants, vanilla_game_events, vanilla_game_rules,
+    vanilla_instrument_tags, vanilla_instruments, vanilla_item_tags, vanilla_items,
+    vanilla_jukebox_songs, vanilla_map_decoration_types, vanilla_menu_types, vanilla_mob_effects,
     vanilla_painting_variant_tags, vanilla_painting_variants, vanilla_particle_types,
     vanilla_pig_sound_variants, vanilla_pig_variants, vanilla_placed_features,
     vanilla_poi_type_tags, vanilla_poi_types, vanilla_position_source_types, vanilla_potion_tags,
@@ -172,12 +175,15 @@ pub trait TaggedRegistryExt: RegistryExt {
     fn tag_keys(&self) -> impl Iterator<Item = &Identifier> + '_;
 }
 
+pub const ADVANCEMENT_REGISTRY: Identifier = Identifier::vanilla_static("advancement");
 pub const BLOCKS_REGISTRY: Identifier = Identifier::vanilla_static("block");
 pub const ITEMS_REGISTRY: Identifier = Identifier::vanilla_static("item");
 pub const BIOMES_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/biome");
 pub const CHAT_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("chat_type");
 pub const TRIM_PATTERN_REGISTRY: Identifier = Identifier::vanilla_static("trim_pattern");
 pub const TRIM_MATERIAL_REGISTRY: Identifier = Identifier::vanilla_static("trim_material");
+pub const DECORATED_POT_PATTERN_REGISTRY: Identifier =
+    Identifier::vanilla_static("decorated_pot_pattern");
 pub const WOLF_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("wolf_variant");
 pub const WOLF_SOUND_VARIANT_REGISTRY: Identifier =
     Identifier::vanilla_static("wolf_sound_variant");
@@ -212,7 +218,6 @@ pub const MAP_DECORATION_TYPE_REGISTRY: Identifier =
 pub const ZOMBIE_NAUTILUS_VARIANT_REGISTRY: Identifier =
     Identifier::vanilla_static("zombie_nautilus_variant");
 pub const TIMELINE_REGISTRY: Identifier = Identifier::vanilla_static("timeline");
-pub const LOOT_TABLE_REGISTRY: Identifier = Identifier::vanilla_static("loot_table");
 pub const BLOCK_ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("block_entity_type");
 pub const FLUID_REGISTRY: Identifier = Identifier::vanilla_static("fluid");
 pub const ENTITY_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("entity_type");
@@ -225,6 +230,9 @@ pub const CONFIGURED_FEATURE_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/configured_feature");
 pub const PLACED_FEATURE_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/placed_feature");
+pub const BLOCK_STATE_PROVIDER_REGISTRY: Identifier =
+    Identifier::vanilla_static("worldgen/block_state_provider");
+pub const BLOCK_TRANSFORMER_REGISTRY: Identifier = Identifier::vanilla_static("block_transformer");
 pub const STRUCTURE_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/structure");
 pub const STRUCTURE_PROCESSOR_LIST_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/processor_list");
@@ -244,6 +252,7 @@ pub struct Registry {
     pub chat_types: ChatTypeRegistry,
     pub trim_patterns: TrimPatternRegistry,
     pub trim_materials: TrimMaterialRegistry,
+    pub decorated_pot_patterns: DecoratedPotPatternRegistry,
     pub wolf_variants: WolfVariantRegistry,
     pub wolf_sound_variants: WolfSoundVariantRegistry,
     pub pig_sound_variants: PigSoundVariantRegistry,
@@ -262,6 +271,7 @@ pub struct Registry {
     pub villager_professions: VillagerProfessionRegistry,
     pub dimension_types: DimensionTypeRegistry,
     pub damage_types: DamageTypeRegistry,
+    pub block_transformers: BlockTransformerRegistry,
     pub banner_patterns: BannerPatternRegistry,
     pub jukebox_songs: JukeboxSongRegistry,
     pub instruments: InstrumentRegistry,
@@ -276,7 +286,6 @@ pub struct Registry {
     pub recipe_book_categories: RecipeBookCategoryRegistry,
     pub recipes: RecipeRegistry,
     pub entity_types: EntityTypeRegistry,
-    pub loot_tables: LootTableRegistry,
     pub block_entity_types: BlockEntityTypeRegistry,
     pub game_rules: GameRuleRegistry,
     pub game_events: GameEventRegistry,
@@ -286,6 +295,7 @@ pub struct Registry {
     pub enchantments: EnchantmentRegistry,
     pub world_clocks: WorldClockRegistry,
     pub configured_carvers: ConfiguredCarverRegistry,
+    pub block_state_providers: BlockStateProviderRegistry,
     pub configured_features: ConfiguredFeatureRegistry,
     pub placed_features: PlacedFeatureRegistry,
     pub structures: StructureRegistry,
@@ -293,6 +303,7 @@ pub struct Registry {
     pub custom_stats: CustomStatRegistry,
     pub stat_types: StatTypeRegistry,
     pub ticket_types: TicketTypeRegistry,
+    pub advancements: AdvancementRegistry,
 }
 
 impl Debug for Registry {
@@ -307,7 +318,7 @@ impl Registry {
     #[must_use]
     pub fn new_vanilla() -> Self {
         let mut registry = Self::new_empty();
-
+        vanilla_advancements::register_advancements(&registry.advancements);
         vanilla_attributes::register_attributes(&mut registry.attributes);
 
         vanilla_blocks::register_blocks(&mut registry.blocks);
@@ -333,6 +344,9 @@ impl Registry {
         vanilla_chat_types::register_chat_types(&mut registry.chat_types);
         vanilla_trim_patterns::register_trim_patterns(&mut registry.trim_patterns);
         vanilla_trim_materials::register_trim_materials(&mut registry.trim_materials);
+        vanilla_decorated_pot_patterns::register_decorated_pot_patterns(
+            &mut registry.decorated_pot_patterns,
+        );
         vanilla_wolf_variants::register_wolf_variants(&mut registry.wolf_variants);
         vanilla_wolf_sound_variants::register_wolf_sound_variants(
             &mut registry.wolf_sound_variants,
@@ -365,6 +379,7 @@ impl Registry {
         vanilla_damage_type_tags::DamageTypeTag::register_damage_type_tags(
             &mut registry.damage_types,
         );
+        vanilla_block_transformers::register_block_transformers(&mut registry.block_transformers);
         vanilla_banner_patterns::register_banner_patterns(&mut registry.banner_patterns);
         vanilla_banner_pattern_tags::BannerPatternTag::register_banner_pattern_tags(
             &mut registry.banner_patterns,
@@ -393,7 +408,6 @@ impl Registry {
         vanilla_entity_type_tags::EntityTypeTag::register_entity_type_tags(
             &mut registry.entity_types,
         );
-        vanilla_loot_tables::register_loot_tables(&mut registry.loot_tables);
         vanilla_block_entity_types::register_block_entity_types(&mut registry.block_entity_types);
         vanilla_game_rules::register_game_rules(&mut registry.game_rules);
         vanilla_game_events::register_game_events(&mut registry.game_events);
@@ -416,6 +430,10 @@ impl Registry {
         vanilla_structure_tags::StructureTag::register_structure_tags(&mut registry.structures);
         vanilla_structure_processors::register_structure_processor_lists(
             &mut registry.structure_processors,
+        );
+
+        vanilla_block_state_providers::register_block_state_providers(
+            &mut registry.block_state_providers,
         );
 
         vanilla_configured_carvers::register_configured_carvers(&mut registry.configured_carvers);
@@ -447,6 +465,7 @@ impl Registry {
         self.chat_types.freeze();
         self.trim_patterns.freeze();
         self.trim_materials.freeze();
+        self.decorated_pot_patterns.freeze();
         self.wolf_variants.freeze();
         self.wolf_sound_variants.freeze();
         self.pig_variants.freeze();
@@ -465,6 +484,7 @@ impl Registry {
         self.villager_professions.freeze();
         self.dimension_types.freeze();
         self.damage_types.freeze();
+        self.block_transformers.freeze();
         self.banner_patterns.freeze();
         self.jukebox_songs.freeze();
         self.instruments.freeze();
@@ -479,7 +499,6 @@ impl Registry {
         self.recipe_book_categories.freeze();
         self.recipes.freeze(&self.recipe_types);
         self.entity_types.freeze();
-        self.loot_tables.freeze();
         self.block_entity_types.freeze();
         self.game_rules.freeze();
         self.game_events.freeze();
@@ -489,6 +508,7 @@ impl Registry {
         self.enchantments.freeze();
         self.world_clocks.freeze();
         self.configured_carvers.freeze();
+        self.block_state_providers.freeze();
         self.configured_features.freeze();
         self.placed_features.freeze();
         self.structures.freeze();
@@ -496,6 +516,7 @@ impl Registry {
         self.custom_stats.freeze();
         self.stat_types.freeze();
         self.ticket_types.freeze();
+        self.advancements.update_tree();
     }
 
     fn validate_references(&self) {
@@ -708,6 +729,7 @@ impl Registry {
             chat_types: ChatTypeRegistry::new(),
             trim_patterns: TrimPatternRegistry::new(),
             trim_materials: TrimMaterialRegistry::new(),
+            decorated_pot_patterns: DecoratedPotPatternRegistry::new(),
             wolf_variants: WolfVariantRegistry::new(),
             wolf_sound_variants: WolfSoundVariantRegistry::new(),
             pig_variants: PigVariantRegistry::new(),
@@ -726,6 +748,7 @@ impl Registry {
             villager_professions: VillagerProfessionRegistry::new(),
             dimension_types: DimensionTypeRegistry::new(),
             damage_types: DamageTypeRegistry::new(),
+            block_transformers: BlockTransformerRegistry::new(),
             banner_patterns: BannerPatternRegistry::new(),
             jukebox_songs: JukeboxSongRegistry::new(),
             instruments: InstrumentRegistry::new(),
@@ -740,7 +763,6 @@ impl Registry {
             recipe_book_categories: RecipeBookCategoryRegistry::new(),
             recipes: RecipeRegistry::new(),
             entity_types: EntityTypeRegistry::new(),
-            loot_tables: LootTableRegistry::new(),
             block_entity_types: BlockEntityTypeRegistry::new(),
             game_rules: GameRuleRegistry::new(),
             game_events: GameEventRegistry::new(),
@@ -750,6 +772,7 @@ impl Registry {
             poi_types: PoiTypeRegistry::new(),
             enchantments: EnchantmentRegistry::new(),
             configured_carvers: ConfiguredCarverRegistry::new(),
+            block_state_providers: BlockStateProviderRegistry::new(),
             configured_features: ConfiguredFeatureRegistry::new(),
             placed_features: PlacedFeatureRegistry::new(),
             structures: StructureRegistry::new(),
@@ -757,6 +780,7 @@ impl Registry {
             custom_stats: CustomStatRegistry::new(),
             stat_types: StatTypeRegistry::new(),
             ticket_types: TicketTypeRegistry::new(),
+            advancements: AdvancementRegistry::default(),
         }
     }
 }

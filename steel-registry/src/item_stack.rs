@@ -114,9 +114,14 @@ impl ItemStack {
         if self.is_empty() { 0 } else { self.count }
     }
 
+    /// Returns the component patch. Empty stacks have an empty patch.
     #[must_use]
-    pub const fn components_patch(&self) -> &DataComponentPatch {
-        &self.patch
+    pub fn components_patch(&self) -> &DataComponentPatch {
+        if self.is_empty() {
+            DataComponentPatch::empty()
+        } else {
+            &self.patch
+        }
     }
 
     pub const fn set_count(&mut self, count: i32) {
@@ -241,7 +246,6 @@ impl ItemStack {
         self.is_damageable_item() && self.get_damage_value() >= self.get_max_damage()
     }
 
-    /// Returns vanilla `ItemStack.nextDamageWillBreak()`.
     #[must_use]
     pub fn next_damage_will_break(&self) -> bool {
         self.is_damageable_item() && self.get_damage_value() >= self.get_max_damage() - 1
@@ -336,8 +340,13 @@ impl ItemStack {
     }
 
     /// Returns true if this item has the specified component (by key).
+    ///
+    /// Empty stacks have no components.
     #[must_use]
     pub fn has_component(&self, key: &Identifier) -> bool {
+        if self.is_empty() {
+            return false;
+        }
         match self.patch.get_entry(key) {
             Some(ComponentPatchEntry::Set(_)) => true,
             Some(ComponentPatchEntry::Removed) => false,
@@ -432,9 +441,12 @@ impl ItemStack {
         self.get_equippable_slot() == Some(slot)
     }
 
-    /// Gets the raw component data by key.
+    /// Gets the raw component data by key. Empty stacks have no components.
     #[must_use]
     pub fn get_effective_value_raw(&self, key: &Identifier) -> Option<&ComponentData> {
+        if self.is_empty() {
+            return None;
+        }
         match self.patch.get_entry(key) {
             Some(ComponentPatchEntry::Set(data)) => Some(data),
             Some(ComponentPatchEntry::Removed) => None,
@@ -487,10 +499,10 @@ impl ItemStack {
         self.patch.clear(component);
     }
 
-    /// Returns a reference to the component patch.
+    /// Returns a reference to the component patch. Empty stacks have an empty patch.
     #[must_use]
-    pub const fn patch(&self) -> &DataComponentPatch {
-        &self.patch
+    pub fn patch(&self) -> &DataComponentPatch {
+        self.components_patch()
     }
 
     /// Gets the Tool component if present.
@@ -530,7 +542,6 @@ impl ItemStack {
             .is_none_or(|resistance| !resistance.is_resistant_to(damage_type))
     }
 
-    /// Returns vanilla `ItemStack.isValidRepairItem`.
     #[must_use]
     pub fn is_valid_repair_item(&self, repair_item: &Self) -> bool {
         self.get(REPAIRABLE)
@@ -598,7 +609,6 @@ impl ItemStack {
         self.get(self.enchantment_component())
     }
 
-    /// Vanilla `EnchantmentHelper.getComponentType`.
     #[must_use]
     fn enchantment_component(&self) -> DataComponentType<ItemEnchantments> {
         if self.is(&vanilla_items::ENCHANTED_BOOK) {
@@ -617,7 +627,7 @@ impl ItemStack {
                 .is_some_and(ItemEnchantments::is_empty)
     }
 
-    /// Checks if `ItemStack` has an enchantment
+    /// Checks if `ItemStack` has an enchantment, not including enchanted books
     #[must_use]
     pub fn is_enchanted(&self) -> bool {
         self.get_enchantments().is_some_and(|e| !e.is_empty())
@@ -684,74 +694,6 @@ impl ItemStack {
         value
     }
 
-    /// Sets the damage/durability as a fraction (0.0 = broken, 1.0 = full).
-    /// If `add` is true, adds to current damage instead of setting.
-    pub const fn set_damage_fraction(&mut self, _fraction: f32, _add: bool) {
-        // TODO: Implement when damage component system is ready
-        // let max_damage = self.get_max_damage();
-        // let damage_value = ((1.0 - fraction) * max_damage as f32) as i32;
-        // self.set_component(DAMAGE, damage_value);
-    }
-
-    /// Enchants this item randomly with enchantments from the given options.
-    pub const fn enchant_randomly<R: rand::Rng>(
-        &mut self,
-        _options: &crate::loot_table::EnchantmentOptions,
-        _rng: &mut R,
-    ) {
-        // TODO: Implement when enchantment registry and system are ready
-        // 1. Get list of valid enchantments from options (tag or list)
-        // 2. Filter to enchantments that can apply to this item
-        // 3. Pick one randomly
-        // 4. Pick a random level for that enchantment
-        // 5. Add to ENCHANTMENTS component
-    }
-
-    /// Enchants this item as if using an enchanting table at the given level.
-    pub const fn enchant_with_levels<R: rand::Rng>(
-        &mut self,
-        _level: i32,
-        _options: &crate::loot_table::EnchantmentOptions,
-        _rng: &mut R,
-    ) {
-        // TODO: Implement when enchantment registry and system are ready
-        // This simulates the enchanting table algorithm:
-        // 1. Calculate modified level based on item enchantability
-        // 2. Generate list of possible enchantments for that level
-        // 3. Filter by options (tag or list)
-        // 4. Apply enchantments with proper weights
-    }
-
-    /// Copies components from a source (block entity, attacker, etc.) to this item.
-    pub const fn copy_components<R: rand::Rng>(
-        &mut self,
-        _source: crate::loot_table::CopySource,
-        _include: &[Identifier],
-        _ctx: &crate::loot_table::LootContext<'_, R>,
-    ) {
-        // TODO: Implement when block entity system is ready
-        // 1. Get the source entity/block entity from context
-        // 2. For each component in `include`, copy it to this item's patch
-    }
-
-    /// Copies block state properties to this item (for blocks like `note_block`).
-    pub const fn copy_block_state<R: rand::Rng>(
-        &mut self,
-        _block: &Identifier,
-        _properties: &[&str],
-        _ctx: &crate::loot_table::LootContext<'_, R>,
-    ) {
-        // TODO: Implement block state copying
-        // 1. Get block state from context
-        // 2. For each property, store it in the item's BLOCK_STATE component
-    }
-
-    /// Sets components from a JSON string representation.
-    pub const fn set_components_from_json(&mut self, _components: &str) {
-        // TODO: Implement component parsing from JSON
-        // Parse the JSON and set each component in the patch
-    }
-
     /// Merges custom NBT data into this item's `custom_data` component.
     pub fn set_custom_data(&mut self, value: &CustomData) {
         let merged = self
@@ -766,69 +708,12 @@ impl ItemStack {
         }
     }
 
-    /// Applies furnace smelting to convert this item (e.g., raw iron -> iron ingot).
-    pub fn apply_furnace_smelt(&mut self, use_input_count: bool) {
-        let input = crate::recipe::SingleItemRecipeInput::new(self.copy_with_count(self.count()));
-        let Some(recipe) = REGISTRY
-            .recipes
-            .find_match(&crate::recipe::vanilla_recipe_types::SMELTING, &input)
-        else {
-            return;
-        };
-        let count = if use_input_count { self.count() } else { 1 };
-        let mut result = recipe.data().result.create();
-        result.set_count(
-            count
-                .saturating_mul(result.count())
-                .min(result.max_stack_size()),
-        );
-        *self = result;
-    }
-
-    /// Creates an exploration map pointing to a structure.
-    pub const fn create_exploration_map(
-        &mut self,
-        _destination: &Identifier,
-        _decoration: &Identifier,
-        _zoom: i32,
-        _skip_existing_chunks: bool,
-    ) {
-        // TODO: Implement exploration map creation
-        // 1. Change item to filled_map
-        // 2. Set MAP_DECORATIONS component
-        // 3. Set destination structure tag
-        // This requires world access to find the structure
-    }
-
-    /// Sets the custom name or item name of this item.
-    pub const fn set_name(&mut self, _name: &str, _target: crate::loot_table::NameTarget) {
-        // TODO: Implement name setting
-        // Parse the name as a text component and set CUSTOM_NAME or ITEM_NAME
-    }
-
     /// Sets the ominous bottle amplifier component.
     pub fn set_ominous_bottle_amplifier(&mut self, amplifier: i32) {
         self.set(
             OMINOUS_BOTTLE_AMPLIFIER,
             OminousBottleAmplifier::new(amplifier),
         );
-    }
-
-    /// Sets the potion type for this item.
-    pub const fn set_potion(&mut self, _id: &Identifier) {
-        // TODO: Implement potion type setting
-        // Set the POTION_CONTENTS component with the potion ID
-    }
-
-    /// Sets the suspicious stew effects for this item.
-    pub const fn set_stew_effects<R: rand::Rng>(
-        &mut self,
-        _effects: &[crate::loot_table::StewEffect],
-        _rng: &mut R,
-    ) {
-        // TODO: Implement stew effect setting
-        // Set the SUSPICIOUS_STEW_EFFECTS component
-        // Duration is determined by each effect's NumberProvider
     }
 
     pub fn set_enchantments(&mut self, enchantments: &[(Identifier, u32)], add: bool) {
@@ -865,144 +750,6 @@ impl ItemStack {
             self.item = item_ref;
             self.patch.sanitize_against(&item_ref.components);
         }
-    }
-
-    /// Copies the name from a source entity/block to this item.
-    pub const fn copy_name<R: rand::Rng>(
-        &mut self,
-        _source: crate::loot_table::CopySource,
-        _ctx: &crate::loot_table::LootContext<'_, R>,
-    ) {
-        // TODO: Implement when entity/block entity name access is available
-        // Get name from source (block_entity.custom_name or entity.custom_name)
-        // Set as CUSTOM_NAME component
-    }
-
-    /// Sets lore lines on this item.
-    pub const fn set_lore(&mut self, _lore: &[&str], _mode: crate::loot_table::ListOperation) {
-        // TODO: Implement lore setting
-        // Parse lore strings as text components and set LORE component
-        // Apply mode (replace, append, insert, etc.)
-    }
-
-    /// Sets container inventory contents.
-    pub const fn set_contents<R: rand::Rng>(
-        &mut self,
-        _entries: &[crate::loot_table::LootEntry],
-        _component_type: &Identifier,
-        _ctx: &mut crate::loot_table::LootContext<'_, R>,
-    ) {
-        // TODO: Implement container contents setting
-        // Generate items from entries and set as CONTAINER component
-    }
-
-    /// Modifies existing container contents.
-    pub const fn modify_contents<R: rand::Rng>(
-        &mut self,
-        _modifier: &[crate::loot_table::ConditionalLootFunction],
-        _component_type: &Identifier,
-        _ctx: &mut crate::loot_table::LootContext<'_, R>,
-    ) {
-        // TODO: Implement container contents modification
-        // Apply modifier functions to existing container contents
-    }
-
-    /// Sets the container's loot table reference.
-    pub const fn set_loot_table(&mut self, _loot_table: &Identifier, _seed: Option<i64>) {
-        // TODO: Implement loot table reference setting
-        // Set CONTAINER_LOOT component with table reference and seed
-    }
-
-    /// Sets attribute modifiers on this item.
-    pub const fn set_attributes<R: rand::Rng>(
-        &mut self,
-        _modifiers: &[crate::loot_table::AttributeModifier],
-        _replace: bool,
-        _rng: &mut R,
-    ) {
-        // TODO: Implement attribute modifier setting
-        // Set ATTRIBUTE_MODIFIERS component
-    }
-
-    /// Fills a player head with texture from an entity.
-    pub const fn fill_player_head<R: rand::Rng>(
-        &mut self,
-        _entity: crate::loot_table::LootContextEntity,
-        _ctx: &crate::loot_table::LootContext<'_, R>,
-    ) {
-        // TODO: Implement player head texture filling
-        // Get player profile from entity and set PROFILE component
-    }
-
-    /// Copies custom NBT data from a source.
-    pub const fn copy_custom_data<R: rand::Rng>(
-        &mut self,
-        _source: crate::loot_table::CopySource,
-        _operations: &[crate::loot_table::CopyDataOperation],
-        _ctx: &crate::loot_table::LootContext<'_, R>,
-    ) {
-        // TODO: Implement custom data copying
-        // Copy NBT paths from source to item's CUSTOM_DATA component
-    }
-
-    /// Sets banner pattern layers.
-    pub const fn set_banner_pattern(
-        &mut self,
-        _patterns: &[crate::loot_table::BannerPattern],
-        _append: bool,
-    ) {
-        // TODO: Implement banner pattern setting
-        // Set BANNER_PATTERNS component
-    }
-
-    /// Sets firework rocket properties.
-    pub const fn set_fireworks(
-        &mut self,
-        _explosions: Option<&[crate::loot_table::FireworkExplosion]>,
-        _flight_duration: Option<i32>,
-    ) {
-        // TODO: Implement firework setting
-        // Set FIREWORKS component
-    }
-
-    /// Sets firework star explosion properties.
-    pub const fn set_firework_explosion(
-        &mut self,
-        _explosion: &crate::loot_table::FireworkExplosion,
-    ) {
-        // TODO: Implement firework explosion setting
-        // Set FIREWORK_EXPLOSION component
-    }
-
-    /// Sets book cover (title/author for written books).
-    pub const fn set_book_cover(
-        &mut self,
-        _title: Option<&str>,
-        _author: Option<&str>,
-        _generation: Option<i32>,
-    ) {
-        // TODO: Implement book cover setting
-        // Set WRITTEN_BOOK_CONTENT component fields
-    }
-
-    /// Sets written book page contents.
-    pub const fn set_written_book_pages(
-        &mut self,
-        _pages: &[&str],
-        _mode: crate::loot_table::ListOperation,
-    ) {
-        // TODO: Implement written book pages setting
-        // Set WRITTEN_BOOK_CONTENT pages
-    }
-
-    /// Sets writable book page contents.
-    pub const fn set_writable_book_pages(
-        &mut self,
-        _pages: &[&str],
-        _mode: crate::loot_table::ListOperation,
-    ) {
-        // TODO: Implement writable book pages setting
-        // Set WRITABLE_BOOK_CONTENT pages
     }
 
     /// Runs vanilla `ToggleTooltips`: each boolean says whether the component is shown.
@@ -1538,7 +1285,8 @@ mod persistence_tests {
 
     use super::ItemStack;
     use crate::data_components::vanilla_components::{
-        CUSTOM_DATA, JUKEBOX_PLAYABLE, LORE, MAX_DAMAGE, MAX_STACK_SIZE, TOOLTIP_DISPLAY,
+        CUSTOM_DATA, DEATH_PROTECTION, JUKEBOX_PLAYABLE, LORE, MAX_DAMAGE, MAX_STACK_SIZE,
+        TOOLTIP_DISPLAY,
     };
     use crate::data_components::{CustomData, JukeboxPlayable};
     use crate::init_vanilla_registry;
@@ -1631,6 +1379,18 @@ mod persistence_tests {
     }
 
     #[test]
+    fn shrunk_to_empty_stack_exposes_no_components() {
+        init_vanilla_registry();
+        let mut totem = ItemStack::new(&vanilla_items::TOTEM_OF_UNDYING);
+        assert!(totem.has(DEATH_PROTECTION));
+
+        totem.shrink(1);
+
+        assert!(!totem.has(DEATH_PROTECTION));
+        assert!(totem.get(DEATH_PROTECTION).is_none());
+    }
+
+    #[test]
     fn component_patches_stay_sanitized_against_the_item_prototype() {
         init_vanilla_registry();
         let mut patch = crate::data_components::DataComponentPatch::new();
@@ -1659,14 +1419,14 @@ mod persistence_tests {
     }
 
     #[test]
-    fn strict_validation_checks_components_even_when_the_stack_is_empty() {
+    fn strict_validation_ignores_components_of_empty_stacks() {
         init_vanilla_registry();
         let mut patch = crate::data_components::DataComponentPatch::new();
         patch.set(MAX_DAMAGE, 1);
         let stack = ItemStack::with_count_and_patch(&vanilla_items::STONE, 0, patch);
 
         assert!(stack.is_empty());
-        assert!(stack.validate_strict().is_err());
+        assert!(stack.validate_strict().is_ok());
     }
 
     #[test]
@@ -1759,13 +1519,13 @@ mod persistence_tests {
         init_vanilla_registry();
         let mut stack = ItemStack::new(&vanilla_items::STONE);
 
-        stack.toggle_tooltips(&[(LORE.key.clone(), false)]);
+        stack.toggle_tooltips(&[(LORE.key, false)]);
         let display = stack
             .get(TOOLTIP_DISPLAY)
             .expect("tooltip display should be set");
         assert!(!display.shows(LORE));
 
-        stack.toggle_tooltips(&[(LORE.key.clone(), true)]);
+        stack.toggle_tooltips(&[(LORE.key, true)]);
         assert!(
             stack
                 .get(TOOLTIP_DISPLAY)

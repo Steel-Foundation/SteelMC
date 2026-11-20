@@ -28,6 +28,9 @@ pub struct NavigationPathRequest<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NavigationTickContext {
+    /// The mob position with its Y snapped to the surface it navigates along.
+    pub ground_mob_position: DVec3,
+    /// The mob's true position, which the waypoint distance is measured from.
     pub mob_position: DVec3,
     pub mob_bounding_box_width: f64,
     pub mob_speed: f32,
@@ -287,7 +290,7 @@ impl PathNavigation {
 
     fn trim_path_for_avoid_sun(
         &self,
-        level: &dyn LevelReader,
+        level: &(impl LevelReader + ?Sized),
         mob_position: DVec3,
         path: &mut Path,
     ) {
@@ -312,12 +315,12 @@ impl PathNavigation {
         }
     }
 
-    fn trim_path(&self, level: &dyn LevelReader, mob_position: DVec3, path: &mut Path) {
+    fn trim_path(&self, level: &(impl LevelReader + ?Sized), mob_position: DVec3, path: &mut Path) {
         Self::trim_path_for_cauldrons(level, path);
         self.trim_path_for_avoid_sun(level, mob_position, path);
     }
 
-    fn trim_path_for_cauldrons(level: &dyn LevelReader, path: &mut Path) {
+    fn trim_path_for_cauldrons(level: &(impl LevelReader + ?Sized), path: &mut Path) {
         for index in 0..path.node_count() {
             let Some(node) = path.node(index).cloned() else {
                 continue;
@@ -347,7 +350,7 @@ impl PathNavigation {
 
     pub fn move_to(
         &mut self,
-        level: &dyn LevelReader,
+        level: &(impl LevelReader + ?Sized),
         mut path: Path,
         speed_modifier: f64,
         mob_position: DVec3,
@@ -385,7 +388,7 @@ impl PathNavigation {
 
     pub fn reuse_current_path_to_targets(
         &mut self,
-        level: &dyn LevelReader,
+        level: &(impl LevelReader + ?Sized),
         targets: &[BlockPos],
         speed_modifier: f64,
         mob_position: DVec3,
@@ -443,7 +446,8 @@ impl PathNavigation {
         }
 
         let target = self.direct_target?;
-        if target.distance_squared(context.mob_position) < DIRECT_TARGET_REACHED_DISTANCE_SQR {
+        if target.distance_squared(context.ground_mob_position) < DIRECT_TARGET_REACHED_DISTANCE_SQR
+        {
             self.stop();
             return None;
         }
@@ -466,10 +470,10 @@ impl PathNavigation {
             return None;
         };
 
-        if context.mob_position.y > target.y
+        if context.ground_mob_position.y > target.y
             && !on_ground
-            && fast_floor(context.mob_position.x) == fast_floor(target.x)
-            && fast_floor(context.mob_position.z) == fast_floor(target.z)
+            && fast_floor(context.ground_mob_position.x) == fast_floor(target.x)
+            && fast_floor(context.ground_mob_position.z) == fast_floor(target.z)
         {
             path.advance();
         }
@@ -544,7 +548,7 @@ impl PathNavigation {
             f64::midpoint(f64::from(target.z), mob_position.z),
         );
         let distance = (path.node_count() - path.next_node_index()) as f64;
-        block_center(pos).distance_squared(middle_pos) < distance * distance
+        pos.get_center().distance_squared(middle_pos) < distance * distance
     }
 
     fn next_path_move_target(&mut self, context: NavigationTickContext) -> Option<(DVec3, f64)> {
@@ -575,7 +579,7 @@ impl PathNavigation {
             let should_cut_corner = path
                 .next_node()
                 .is_some_and(|node| can_cut_corner(node.path_type))
-                && should_target_next_node_in_direction(path, context.mob_position);
+                && should_target_next_node_in_direction(path, context.ground_mob_position);
             if is_close_enough_to_current_node || should_cut_corner {
                 path.advance();
             }
@@ -586,7 +590,11 @@ impl PathNavigation {
             }
         }
 
-        self.do_stuck_detection(context.mob_position, context.mob_speed, context.game_time);
+        self.do_stuck_detection(
+            context.ground_mob_position,
+            context.mob_speed,
+            context.game_time,
+        );
         if self.done {
             return None;
         }
@@ -633,7 +641,7 @@ impl PathNavigation {
             self.timeout_timer += game_time - self.last_timeout_check;
         } else {
             self.timeout_cached_node = current_node_pos;
-            let dist_to_node = mob_position.distance(block_bottom_center(current_node_pos));
+            let dist_to_node = mob_position.distance(current_node_pos.get_bottom_center());
             self.timeout_limit = if mob_speed > 0.0 {
                 dist_to_node / f64::from(mob_speed) * 20.0
             } else {
@@ -670,7 +678,7 @@ fn should_target_next_node_in_direction(path: &Path, mob_position: DVec3) -> boo
     let Some(current_node_pos) = path.next_node_pos() else {
         return false;
     };
-    let current_node = block_bottom_center(current_node_pos);
+    let current_node = current_node_pos.get_bottom_center();
     if mob_position.distance_squared(current_node) >= 4.0 {
         return false;
     }
@@ -678,7 +686,7 @@ fn should_target_next_node_in_direction(path: &Path, mob_position: DVec3) -> boo
     let Some(next_node_pos) = path.node_pos(next_node_index + 1) else {
         return false;
     };
-    let next_node = block_bottom_center(next_node_pos);
+    let next_node = next_node_pos.get_bottom_center();
     let mob_to_current = current_node - mob_position;
     let mob_to_next = next_node - mob_position;
     let mob_to_current_sqr = mob_to_current.length_squared();
@@ -690,16 +698,6 @@ fn should_target_next_node_in_direction(path: &Path, mob_position: DVec3) -> boo
     }
 
     mob_to_next.dot(mob_to_current) < 0.0
-}
-
-fn block_bottom_center(pos: BlockPos) -> DVec3 {
-    let (x, y, z) = pos.get_bottom_center();
-    DVec3::new(x, y, z)
-}
-
-fn block_center(pos: BlockPos) -> DVec3 {
-    let (x, y, z) = pos.get_center();
-    DVec3::new(x, y, z)
 }
 
 fn path_move_target(path: &Path, mob_bounding_box_width: f64) -> Option<DVec3> {
@@ -731,6 +729,7 @@ mod tests {
     use glam::DVec3;
     use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
     use steel_utils::{BlockPos, BlockStateId, WorldAabb};
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use super::{NavigationPathRequest, NavigationTickContext, PathNavigation};
     use crate::behavior::init_behaviors;
@@ -782,11 +781,15 @@ mod tests {
         }
 
         fn min_y(&self) -> i32 {
-            -64
+            OverworldNoiseSettings::MIN_Y
         }
 
         fn height(&self) -> i32 {
-            384
+            OverworldNoiseSettings::HEIGHT
+        }
+
+        fn sea_level(&self) -> i32 {
+            OverworldNoiseSettings::SEA_LEVEL
         }
     }
 
@@ -798,6 +801,21 @@ mod tests {
 
     fn tick_context(mob_position: DVec3) -> NavigationTickContext {
         NavigationTickContext {
+            ground_mob_position: mob_position,
+            mob_position,
+            mob_bounding_box_width: 0.9,
+            mob_speed: 0.25,
+            game_time: 0,
+        }
+    }
+
+    fn tick_context_standing_in_water(mob_position: DVec3) -> NavigationTickContext {
+        NavigationTickContext {
+            ground_mob_position: DVec3::new(
+                mob_position.x,
+                mob_position.y.floor() + 1.0,
+                mob_position.z,
+            ),
             mob_position,
             mob_bounding_box_width: 0.9,
             mob_speed: 0.25,
@@ -811,6 +829,7 @@ mod tests {
         game_time: i64,
     ) -> NavigationTickContext {
         NavigationTickContext {
+            ground_mob_position: mob_position,
             mob_position,
             mob_bounding_box_width: 0.9,
             mob_speed,
@@ -974,6 +993,31 @@ mod tests {
         assert!(navigation.move_to(&level, path, 1.0, DVec3::new(0.5, 64.0, 0.5)));
 
         assert_eq!(navigation.path().map(Path::node_count), Some(2));
+    }
+
+    #[test]
+    fn standing_in_water_still_retires_the_waypoint_underfoot() {
+        let path = Path::new(
+            vec![Node::new(0, 64, 0), Node::new(1, 64, 0)],
+            BlockPos::new(1, 64, 0),
+            true,
+        );
+        let mut navigation = PathNavigation::new();
+        let standing_in_water = DVec3::new(0.5, 64.0, 0.5);
+
+        assert!(move_to(&mut navigation, path, 1.0, standing_in_water));
+
+        let target = navigation.next_move_target(tick_context_standing_in_water(standing_in_water));
+
+        let Some((target, _)) = target else {
+            panic!("navigation should target the next path node");
+        };
+        assert_eq!(
+            target,
+            DVec3::new(1.5, 64.0, 0.5),
+            "the node underfoot should have retired and handed over to the next one"
+        );
+        assert_eq!(navigation.path().map(Path::next_node_index), Some(1));
     }
 
     #[test]

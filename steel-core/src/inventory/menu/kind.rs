@@ -1,10 +1,18 @@
 //! Per-menu behavior hooks.
 
+use smallvec::SmallVec;
+use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
 use steel_registry::item_stack::ItemStack;
-use steel_utils::ErasedType;
+use steel_registry::mob_effect::MobEffectRef;
+use steel_utils::{BlockPos, ErasedType};
 
+use crate::inventory::container::DEFAULT_DISTANCE_BUFFER;
 use crate::inventory::menu::behavior::MenuBehavior;
-use crate::{inventory::lock::ContainerLockGuard, player::Player};
+use crate::world::World;
+use crate::{
+    inventory::lock::{ContainerId, ContainerLockGuard},
+    player::Player,
+};
 
 use crate::inventory::click::{Click, ClickOutcome, QuickCraft};
 
@@ -17,6 +25,11 @@ use crate::inventory::click::{Click, ClickOutcome, QuickCraft};
 /// Concrete implementations must claim a unique
 /// [`steel_utils::DowncastTypeKey`] through [`steel_utils::DowncastType`].
 pub trait MenuKind: ErasedType + Send + Sync {
+    /// Chest inventories counted as open by this menu's container users.
+    /// This identity-only query runs under the player's menu-transition lock.
+    fn opened_containers(&self) -> SmallVec<[ContainerId; 2]> {
+        SmallVec::new()
+    }
     /// Recompute recipe-driven slots after a click touched a real slot.
     fn slots_changed(
         &mut self,
@@ -32,6 +45,18 @@ pub trait MenuKind: ErasedType + Send + Sync {
     /// Applies a rename from the client (anvil-style text input) and recomputes
     /// any result. No-op for kinds without a rename input.
     fn on_rename(&mut self, _behavior: &mut MenuBehavior, _name: String, _player: &Player) {}
+
+    /// Handles a client button press (vanilla `clickMenuButton`). Returns true
+    /// when the press was handled, whether or not it changed anything; the
+    /// caller then re-syncs the menu. No-op for kinds without buttons.
+    fn click_menu_button(
+        &mut self,
+        _behavior: &mut MenuBehavior,
+        _button_id: i32,
+        _player: &Player,
+    ) -> bool {
+        false
+    }
 
     /// Runs after initial contents are built but before they're sent, so
     /// anything populated here appears in the first render.
@@ -92,6 +117,18 @@ pub trait MenuKind: ErasedType + Send + Sync {
         true
     }
 
+    /// Handles a beacon effect update from the client's set-beacon packet.
+    /// Returns `false` when the selection or payment is invalid.
+    fn on_update_effects(
+        &mut self,
+        _behavior: &mut MenuBehavior,
+        _guard: &mut ContainerLockGuard,
+        _primary: Option<MobEffectRef>,
+        _secondary: Option<MobEffectRef>,
+    ) -> bool {
+        true
+    }
+
     /// Shift-click override. Return `Some` to fully handle the quick-move, or
     /// `None` to fall back to the route table.
     fn quick_move(
@@ -103,4 +140,14 @@ pub trait MenuKind: ErasedType + Send + Sync {
     ) -> Option<ItemStack> {
         None
     }
+}
+
+/// Vanilla's static `AbstractContainerMenu.stillValid(access, player, block)`, renamed
+/// so it does not read as [`MenuKind::still_valid`]: the block at `pos` is still
+/// `block` and the player is within reach.
+#[must_use]
+pub fn still_valid_block(world: &World, pos: BlockPos, block: BlockRef, player: &Player) -> bool {
+    world.get_block_state(pos).get_block() == block
+        && player
+            .is_within_block_interaction_range_with_buffer(pos, f64::from(DEFAULT_DISTANCE_BUFFER))
 }

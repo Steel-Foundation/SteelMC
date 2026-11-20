@@ -6,6 +6,7 @@ use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as Nbt
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
 use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
@@ -16,7 +17,8 @@ const COOLDOWN_TIME: i32 = 40;
 const ATTENTION_INTERVAL: i64 = 2400;
 const EVENT_COOLDOWN: i32 = 1;
 
-/// Vanilla `TheEndGatewayBlockEntity`.
+/// Block entity for end gateways, tracking beam age, teleport cooldown, and
+/// the linked exit portal position.
 pub struct EndGatewayBlockEntity {
     base: BlockEntityBase,
     gateway: SyncMutex<EndGatewayState>,
@@ -50,13 +52,14 @@ impl EndGatewayBlockEntity {
         }
     }
 
-    /// Returns vanilla `TheEndGatewayBlockEntity.isSpawning`.
+    /// Returns whether the gateway is still in its initial spawning phase,
+    /// during which it isn't yet usable for teleportation.
     #[must_use]
     pub fn is_spawning(&self) -> bool {
         self.gateway.lock().age < SPAWN_TIME
     }
 
-    /// Returns vanilla `TheEndGatewayBlockEntity.isCoolingDown`.
+    /// Returns whether the gateway is on cooldown from a recent teleport.
     #[must_use]
     pub fn is_cooling_down(&self) -> bool {
         self.gateway.lock().teleport_cooldown > 0
@@ -126,9 +129,11 @@ impl BlockEntity for EndGatewayBlockEntity {
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
         let mut gateway = self.gateway.lock();
-        gateway.age = nbt.long("Age").unwrap_or(0);
+        gateway.age = nbt.long_value("Age").unwrap_or(0);
         gateway.exit_portal = Self::load_exit_portal(&nbt);
-        gateway.exact_teleport = nbt.byte("ExactTeleport").is_some_and(|value| value != 0);
+        gateway.exact_teleport = nbt
+            .byte_value("ExactTeleport")
+            .is_some_and(|value| value != 0);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

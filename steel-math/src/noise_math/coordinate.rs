@@ -68,7 +68,8 @@ mod fast_floor_tests {
 /// Round-off constant for coordinate wrapping to prevent precision loss.
 /// This is 2^25 = 33554432.
 const ROUND_OFF: f64 = 33_554_432.0;
-const HALF_ROUND_OFF: f64 = ROUND_OFF / 2.0;
+
+const HALF_ROUND_OFF: f64 = (ROUND_OFF / 2.0).next_down();
 
 /// Wrap N coordinates to prevent precision loss (N-lane SIMD version of [`wrap`]).
 ///
@@ -116,54 +117,60 @@ pub fn wrap(x: f64) -> f64 {
 mod wrap_tests {
     use super::*;
     use std::simd::f64x4;
-    #[test]
-    fn test_wrap() {
-        fn wrap_reference(x: f64) -> f64 {
-            x - (x / ROUND_OFF + 0.5).floor() * ROUND_OFF
-        }
 
-        // Small values should be unchanged
-        assert!((wrap(100.0) - 100.0).abs() < 1e-10);
-        assert!((wrap(-100.0) - (-100.0)).abs() < 1e-10);
-
-        // Very large values should be wrapped
-        let large = 100_000_000.0;
-        let wrapped = wrap(large);
-        assert!(wrapped.abs() < ROUND_OFF);
-
-        for x in [
-            -HALF_ROUND_OFF,
-            -HALF_ROUND_OFF + 1.0,
-            0.0,
-            HALF_ROUND_OFF - 1.0,
+    const CASES: &[[f64; 4]] = &[
+        [0.0, -0.0, 100.0, -100.0],
+        [
+            HALF_ROUND_OFF.next_down(),
             HALF_ROUND_OFF,
-            ROUND_OFF,
-            -ROUND_OFF,
-            100_000_000.0,
-            -100_000_000.0,
-        ] {
-            assert!((wrap(x) - wrap_reference(x)).abs() < 1e-15);
+            HALF_ROUND_OFF.next_up(),
+            HALF_ROUND_OFF.next_up().next_up(),
+        ],
+        [
+            (-HALF_ROUND_OFF).next_down(),
+            -HALF_ROUND_OFF,
+            (-HALF_ROUND_OFF).next_up(),
+            (-HALF_ROUND_OFF).next_up().next_up(),
+        ],
+        [ROUND_OFF, -ROUND_OFF, 100_000_000.0, -100_000_000.0],
+        [1.25, HALF_ROUND_OFF, -20.5, -HALF_ROUND_OFF],
+        [0.0, -0.0, HALF_ROUND_OFF, f64::NAN],
+        [f64::INFINITY, f64::NEG_INFINITY, f64::NAN, -f64::NAN],
+        [f64::MAX, -f64::MAX, f64::MIN_POSITIVE, -f64::MIN_POSITIVE],
+    ];
+
+    fn assert_matches_vanilla(input: f64, actual: f64) {
+        // GradientNoise.wrap uses nextDown(16777216), including its fast path.
+        let bound = 16_777_216.0_f64.next_down();
+        let expected = if (-bound..bound).contains(&input) {
+            input
+        } else {
+            input - (input / 33_554_432.0 + 0.5).floor() * 33_554_432.0
+        };
+        if expected.is_nan() {
+            assert!(actual.is_nan(), "input {input:?}: {actual:?}");
+        } else {
+            assert_eq!(actual.to_bits(), expected.to_bits(), "input {input:?}");
         }
     }
 
     #[test]
-    fn test_wrap_4x_matches_scalar_wrap() {
-        let cases = [
-            [0.0, 1.0, -1.0, HALF_ROUND_OFF - 1.0],
-            [
-                -HALF_ROUND_OFF,
-                -HALF_ROUND_OFF + 1.0,
-                HALF_ROUND_OFF - 1.0,
-                HALF_ROUND_OFF,
-            ],
-            [ROUND_OFF, -ROUND_OFF, 100_000_000.0, -100_000_000.0],
-            [1.25, HALF_ROUND_OFF, -20.5, -HALF_ROUND_OFF],
-        ];
+    fn test_wrap() {
+        assert_eq!(
+            wrap(16_777_216.0_f64.next_down()).to_bits(),
+            (-16_777_216.0_f64).to_bits()
+        );
+        for &input in CASES.iter().flatten() {
+            assert_matches_vanilla(input, wrap(input));
+        }
+    }
 
-        for case in cases {
+    #[test]
+    fn test_wrap_4x_matches_vanilla() {
+        for &case in CASES {
             let wrapped = wrap_simd(f64x4::from_array(case)).to_array();
             for (input, actual) in case.into_iter().zip(wrapped) {
-                assert_eq!(actual, wrap(input));
+                assert_matches_vanilla(input, actual);
             }
         }
     }

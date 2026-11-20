@@ -42,7 +42,6 @@ struct FluidJson {
     id: u32,
     name: String,
     block: String,
-    bucket_item: String,
     behavior_properties: BehaviorProperties,
     #[serde(default)]
     #[expect(
@@ -81,7 +80,6 @@ pub(crate) fn build() -> TokenStream {
         let is_source = fluid.behavior_properties.is_source;
         let is_randomly_ticking = fluid.behavior_properties.is_randomly_ticking;
         let block = &fluid.block;
-        let bucket_item = &fluid.bucket_item;
         let tick_delay = fluid.behavior_properties.tick_delay.unwrap_or(0);
         let explosion_resistance = fluid
             .behavior_properties
@@ -107,7 +105,6 @@ pub(crate) fn build() -> TokenStream {
                 is_source: #is_source,
                 is_randomly_ticking: #is_randomly_ticking,
                 block: Identifier::vanilla_static(#block),
-                bucket_item: Identifier::vanilla_static(#bucket_item),
                 source_fluid: #source_fluid,
                 flowing_fluid: #flowing_fluid,
                 tick_delay: #tick_delay,
@@ -120,7 +117,7 @@ pub(crate) fn build() -> TokenStream {
     let mut register_stream = TokenStream::new();
 
     // Sort by ID to ensure correct registration order
-    let mut sorted_fluids = fluids.clone();
+    let mut sorted_fluids = fluids;
     sorted_fluids.sort_by_key(|f| f.id);
 
     for fluid in &sorted_fluids {

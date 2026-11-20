@@ -1,5 +1,6 @@
 use super::*;
 use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270, wrap_degrees};
+use steel_utils::nbt::NbtNumeric;
 
 impl StructureTemplate {
     pub(crate) fn bounding_box(&self, pos: BlockPos, rotation: Rotation) -> BoundingBox {
@@ -99,22 +100,9 @@ impl StructureTemplate {
     }
 
     pub(super) fn entity_facing(nbt: &NbtCompound) -> Option<Direction> {
-        nbt.byte("Facing")
-            .map(i32::from)
-            .or_else(|| nbt.int("Facing"))
-            .and_then(Self::direction_from_entity_facing)
-    }
-
-    const fn direction_from_entity_facing(value: i32) -> Option<Direction> {
-        match value {
-            0 => Some(Direction::Down),
-            1 => Some(Direction::Up),
-            2 => Some(Direction::North),
-            3 => Some(Direction::South),
-            4 => Some(Direction::West),
-            5 => Some(Direction::East),
-            _ => None,
-        }
+        nbt.get("Facing")
+            .and_then(NbtNumeric::codec_i8)
+            .map(|value| Direction::from_3d_data_value(i32::from(value)))
     }
 
     pub(super) const fn entity_facing_value(direction: Direction) -> i8 {
@@ -450,8 +438,7 @@ impl StructureTemplate {
             }
             let metadata = nbt
                 .string("metadata")
-                .map(|metadata| metadata.to_str().into_owned())
-                .unwrap_or_default();
+                .map_or_default(|metadata| metadata.to_str().into_owned());
             markers.push(StructureDataMarker {
                 metadata,
                 pos: world_pos,
@@ -702,9 +689,13 @@ impl StructureTemplate {
         state: BlockStateId,
         nbt: &NbtCompound,
     ) -> Option<BlockEntityTypeRef> {
+        let block = Self::block_for_state(registry, state);
         if let Some(id) = nbt.string("id") {
             let id = Identifier::from_str(id.to_str().as_ref()).ok()?;
-            return registry.block_entity_types.by_key(&id);
+            return registry
+                .block_entity_types
+                .by_key(&id)
+                .filter(|block_entity_type| block_entity_type.is_valid(block));
         }
         Self::block_entity_type_for_state(registry, state)
     }

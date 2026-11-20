@@ -5,7 +5,8 @@ use uuid::Uuid;
 
 #[test]
 fn players_at_same_position_share_loading_and_simulation_sources() {
-    let world = fresh_test_world("shared_player_ticket_sources");
+    let world_fixture = fresh_test_world("shared_player_ticket_sources");
+    let world = &world_fixture.world;
     let pos = ChunkPos::new(0, 0);
     let load_level = ChunkTicketLevel::ENTITY_TICKING_CHUNK;
     let simulation_level = ChunkTicketLevel::for_entity_ticking_radius(world.simulation_distance);
@@ -70,19 +71,56 @@ fn players_at_same_position_share_loading_and_simulation_sources() {
 
     assert!(!world.chunk_map.chunks.contains_sync(&pos));
     assert_eq!(world.chunk_map.scheduling.simulation_level(pos), None);
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
+}
+
+#[test]
+fn inhabited_time_increments_only_for_near_block_ticking_chunks() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("spawn_candidate_inhabited_time");
+    let world = &world_fixture.world;
+    let near = insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let unready = insert_unready_full_chunk(world, ChunkPos::new(1, 0));
+    let not_block_ticking = insert_active_full_holder(
+        world,
+        ChunkPos::new(2, 0),
+        ChunkTicketLevel::FULL_CHUNK,
+        Vec::new(),
+    );
+    let far = insert_ready_full_chunk(world, ChunkPos::new(9, 0));
+
+    let player = TestPlayerBuilder::new(Arc::clone(world), "SpawnCandidate", 1).build();
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+
+    world.chunk_map.tick_spawning_chunks(world);
+
+    let inhabited_time = |holder: &Arc<ChunkHolder>| {
+        holder
+            .try_full_chunk()
+            .expect("test holder should remain Full")
+            .common()
+            .inhabited_time()
+    };
+    assert_eq!(inhabited_time(&near), 1);
+    assert_eq!(inhabited_time(&unready), 0);
+    assert_eq!(inhabited_time(&not_block_ticking), 0);
+    assert_eq!(inhabited_time(&far), 0);
+
+    stop_chunk_tasks(world);
 }
 
 #[test]
 fn player_simulation_removal_applies_at_the_next_world_tick() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("synchronous_player_simulation_removal");
+    let world_fixture = fresh_test_world("synchronous_player_simulation_removal");
+    let world = &world_fixture.world;
     let center = ChunkPos::new(0, 0);
     let mut holder = None;
     for z in -2..=2 {
         for x in -2..=2 {
-            let inserted = insert_ready_full_chunk(&world, ChunkPos::new(x, z));
+            let inserted = insert_ready_full_chunk(world, ChunkPos::new(x, z));
             if x == 0 && z == 0 {
                 holder = Some(inserted);
             }
@@ -93,7 +131,7 @@ fn player_simulation_removal_applies_at_the_next_world_tick() {
         .chunk_map
         .acquire_chunk_request_leases(&[center], ChunkTicketLevel::FULL_CHUNK);
 
-    let player = TestPlayerBuilder::new(Arc::clone(&world), "SimulationPlayer", 1).build();
+    let player = TestPlayerBuilder::new(Arc::clone(world), "SimulationPlayer", 1).build();
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     world.tick_game(1, false);
     assert_eq!(world.chunk_map.tickable_full_chunk_positions(), [center]);
@@ -107,7 +145,7 @@ fn player_simulation_removal_applies_at_the_next_world_tick() {
     let _ = world
         .chunk_map
         .release_chunk_request_leases(&[center], ChunkTicketLevel::FULL_CHUNK);
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
 }
 
 #[test]
@@ -139,13 +177,14 @@ fn light_changed_does_not_broadcast_unloading_full_chunk() {
 fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("blocked_light_block_publication");
+    let world_fixture = fresh_test_world("blocked_light_block_publication");
+    let world = &world_fixture.world;
     let center = ChunkPos::new(0, 0);
-    let holder = insert_ready_full_chunk(&world, center);
+    let holder = insert_ready_full_chunk(world, center);
     for z in -LIGHT_CACHE_RADIUS..=LIGHT_CACHE_RADIUS {
         for x in -LIGHT_CACHE_RADIUS..=LIGHT_CACHE_RADIUS {
             if x != 0 || z != 0 {
-                insert_ready_full_chunk(&world, ChunkPos::new(x, z));
+                insert_ready_full_chunk(world, ChunkPos::new(x, z));
             }
         }
     }
@@ -158,7 +197,7 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
     world.chunk_map.broadcast_changed_chunks();
     assert!(!world.chunk_map.light_update_touches_chunk(center));
 
-    let (player, packets) = recording_player(&world);
+    let (player, packets) = recording_player(world);
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     // Keep player-ticket generation from competing with the light-work fixture.
     world.chunk_map.stop_generation_refill_loop();
@@ -187,7 +226,7 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
     assert!(world.chunk_map.light_update_touches_chunk(center));
     player.ack_block_changes_up_to(1);
 
-    tick_test_world(&world, 1, true);
+    tick_test_world(world, 1, true);
 
     assert!(world.chunk_map.chunks_to_broadcast.lock().is_empty());
     assert!(!holder.has_changes_to_broadcast());
@@ -207,16 +246,17 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
     assert!(!world.chunk_map.light_update_touches_chunk(center));
     assert!(world.chunk_map.chunks_to_broadcast.lock().is_empty());
     world.remove_player_for_world_change(&player);
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
 }
 
 #[test]
 fn frozen_tick_broadcasts_block_changes_before_acknowledging_them() {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("frozen_block_change_publication");
+    let world_fixture = fresh_test_world("frozen_block_change_publication");
+    let world = &world_fixture.world;
     let chunk_pos = ChunkPos::new(0, 0);
-    let holder = insert_ready_full_chunk(&world, chunk_pos);
+    let holder = insert_ready_full_chunk(world, chunk_pos);
     let pos = BlockPos::new(1, 64, 1);
     assert!(world.set_block(
         pos,
@@ -225,7 +265,7 @@ fn frozen_tick_broadcasts_block_changes_before_acknowledging_them() {
     ));
     world.chunk_map.broadcast_changed_chunks();
 
-    let (player, packets) = recording_player(&world);
+    let (player, packets) = recording_player(world);
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     let _ = player.mark_joined_world();
     player.set_client_loaded(true);
@@ -254,27 +294,47 @@ fn frozen_tick_broadcasts_block_changes_before_acknowledging_them() {
         .collect::<Vec<_>>();
     assert_eq!(relevant_packet_ids, [C_BLOCK_UPDATE, C_BLOCK_CHANGED_ACK]);
     world.remove_player_for_world_change(&player);
-    stop_chunk_tasks(&world);
+    stop_chunk_tasks(world);
 }
 
 #[test]
 fn removing_player_invalidates_old_world_chunks_without_resetting_connection_pacing() {
+    use crate::player::chunk_sender::ChunkSender;
+
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world("remove_player_chunk_sender_lifecycle");
-    let (player, _) = recording_player(&world);
+    let world_fixture = fresh_test_world("remove_player_chunk_sender_lifecycle");
+    let world = &world_fixture.world;
+    let sent = ChunkPos::new(0, 0);
+    insert_ready_full_chunk(world, sent);
+    let (player, _) = recording_player(world);
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
 
     let pending = ChunkPos::new(20, -30);
-    let sent = ChunkPos::new(-40, 50);
+    let batch = player
+        .chunk_sender()
+        .lock()
+        .prepare_batch(world, sent, &player.chunk_send_epoch)
+        .expect("ready chunk should prepare");
+    let encoding_pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .expect("test encoding pool should initialize");
+    let encoded =
+        ChunkSender::encode_batch(&batch, &mut FxHashMap::default(), None, &encoding_pool);
     {
         let mut sender = player.chunk_sender().lock();
+        assert_eq!(
+            sender.commit_batch(
+                &batch,
+                encoded,
+                &player.connection,
+                &player.chunk_send_epoch
+            ),
+            [sent]
+        );
         sender.mark_chunk_pending_to_send(pending);
-        sender.mark_chunk_sent_for_test(sent);
-        sender.unacknowledged_batches = 3;
-        sender.desired_chunks_per_tick = 12.5;
-        sender.batch_quota = 4.5;
-        sender.max_unacknowledged_batches = 10;
+        assert!(sender.on_chunk_batch_received_by_client(12.5));
     }
     let old_epoch = *player.chunk_send_epoch.lock();
 
@@ -282,11 +342,14 @@ fn removing_player_invalidates_old_world_chunks_without_resetting_connection_pac
 
     assert_eq!(*player.chunk_send_epoch.lock(), old_epoch.wrapping_add(1));
     assert!(player.last_tracking_view.lock().is_none());
-    let sender = player.chunk_sender().lock();
+    let mut sender = player.chunk_sender().lock();
     assert!(sender.pending_chunks.is_empty());
     assert!(!sender.is_chunk_sent(sent));
-    assert_eq!(sender.unacknowledged_batches, 3);
-    assert_eq!(sender.desired_chunks_per_tick.to_bits(), 12.5_f32.to_bits());
-    assert_eq!(sender.batch_quota.to_bits(), 4.5_f32.to_bits());
-    assert_eq!(sender.max_unacknowledged_batches, 10);
+    assert_eq!(sender.unacknowledged_batch_count_for_test(), 1);
+    assert!(
+        sender
+            .prepare_batch(world, sent, &player.chunk_send_epoch)
+            .is_none()
+    );
+    assert_eq!(sender.unacknowledged_batch_count_for_test(), 0);
 }

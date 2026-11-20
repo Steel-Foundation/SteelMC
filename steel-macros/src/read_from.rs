@@ -241,12 +241,12 @@ fn read_from_struct(s: syn::DataStruct, name: Ident, attrs: &[syn::Attribute]) -
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "has only 111 lines and the code is quite readable"
+)]
 fn read_from_enum(e: syn::DataEnum, name: Ident, attrs: Vec<syn::Attribute>) -> TokenStream {
     let readers = e.variants.iter().map(|v| {
-        assert!(
-            matches!(v.fields, Fields::Unit),
-            "Read only supports enum variants without fields"
-        );
         let Some((_, value)) = &v.discriminant else {
             panic!(
                 "Read only supports enum variants with explicit discriminant\n(Ej. {} = 0)",
@@ -254,8 +254,49 @@ fn read_from_enum(e: syn::DataEnum, name: Ident, attrs: Vec<syn::Attribute>) -> 
             )
         };
         let v_name = &v.ident;
-        quote! {
-            #value => #name::#v_name,
+
+        match &v.fields {
+            Fields::Unit => {
+                quote! {
+                    #value => #name::#v_name,
+                }
+            }
+            Fields::Unnamed(fields) => {
+                let field_reads = fields.unnamed.iter().enumerate().map(|(i, f)| {
+                    let field_type = &f.ty;
+                    let field_name = syn::Ident::new(&format!("field_{i}"), Span::call_site());
+                    quote! {
+                        let #field_name = <#field_type>::read(data)?;
+                    }
+                });
+                let field_names = (0..fields.unnamed.len())
+                    .map(|i| syn::Ident::new(&format!("field_{i}"), Span::call_site()));
+                quote! {
+                    #value => {
+                        #(#field_reads)*
+                        #name::#v_name(#(#field_names),*)
+                    }
+                }
+            }
+            Fields::Named(fields) => {
+                let field_reads = fields.named.iter().map(|f| {
+                    let field_name = f.ident.as_ref().expect("named field should have ident");
+                    let field_type = &f.ty;
+                    quote! {
+                        let #field_name = <#field_type>::read(data)?;
+                    }
+                });
+                let field_names = fields
+                    .named
+                    .iter()
+                    .map(|f| f.ident.as_ref().expect("named field should have ident"));
+                quote! {
+                    #value => {
+                        #(#field_reads)*
+                        #name::#v_name { #(#field_names),* }
+                    }
+                }
+            }
         }
     });
 

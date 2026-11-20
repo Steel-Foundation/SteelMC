@@ -168,11 +168,8 @@ impl BlockPredicate {
 }
 
 fn state_properties_match(state: BlockStateId, expected: &BlockProperties) -> bool {
-    let actual = REGISTRY.blocks.get_properties(state);
     expected.iter().all(|(name, value)| {
-        actual.iter().any(|(actual_name, actual_value)| {
-            *actual_name == name.as_ref() && *actual_value == value.as_ref()
-        })
+        REGISTRY.blocks.get_property_str(state, name.as_ref()) == Some(value.as_ref())
     })
 }
 

@@ -248,9 +248,10 @@ mod tests {
     #[test]
     fn ring_event_starts_shaking_in_the_supplied_direction() {
         init_vanilla_registry();
-        let world = fresh_test_world("bell_ring_event");
+        let world_fixture = fresh_test_world("bell_ring_event");
+        let world = &world_fixture.world;
         let bell = BellBlockEntity::new(
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             BlockPos::new(4, 64, 4),
             vanilla_blocks::BELL.default_state(),
         );
@@ -266,9 +267,10 @@ mod tests {
     #[test]
     fn unrelated_block_event_is_rejected() {
         init_vanilla_registry();
-        let world = fresh_test_world("bell_unrelated_event");
+        let world_fixture = fresh_test_world("bell_unrelated_event");
+        let world = &world_fixture.world;
         let bell = BellBlockEntity::new(
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             BlockPos::new(4, 64, 4),
             vanilla_blocks::BELL.default_state(),
         );

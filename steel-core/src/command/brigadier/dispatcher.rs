@@ -281,7 +281,7 @@ where
                 .executor
                 .as_ref()
                 .filter(|_| child.execution_requirement.allows(context.source()))
-                .map(Arc::clone);
+                .cloned();
             context.set_executor(executor);
             let redirect = child.redirect();
             let required_remaining = if redirect.is_some() { 1 } else { 2 };
@@ -384,6 +384,38 @@ where
         }
         candidate.errors().is_empty() && !current.errors().is_empty()
     }
+
+    pub(crate) fn has_signed_arguments(&self, parse: &ParseResults<'_, S, R>) -> bool {
+        self.signable_arguments(parse).next().is_some()
+    }
+
+    pub(crate) fn collect_signable_arguments<'a>(
+        &self,
+        parse: &ParseResults<'_, S, R>,
+        command: &'a str,
+    ) -> Vec<(String, &'a str)> {
+        self.signable_arguments(parse)
+            .filter_map(|(name, range)| {
+                Some((name.to_owned(), &command[range.byte_range(command)?]))
+            })
+            .collect()
+    }
+
+    fn signable_arguments<'a>(
+        &'a self,
+        parse: &'a ParseResults<'_, S, R>,
+    ) -> impl Iterator<Item = (&'a str, StringRange)> {
+        parse.context().nodes().iter().filter_map(|parsed| {
+            let CommandNodeData::Argument(name, argument) = &self.node(parsed.node())?.data else {
+                return None;
+            };
+
+            argument
+                .argument_type()
+                .is_signed()
+                .then_some((name.as_ref(), parsed.range()))
+        })
+    }
 }
 
 #[cfg(test)]
@@ -408,5 +440,47 @@ where
 {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StringRange;
+
+    #[test]
+    fn test_utf16_range_to_byte_range_ascii() {
+        let text = "hello world";
+        assert_eq!(StringRange::between(6, 11).byte_range(text), Some(6..11));
+        assert_eq!(&text[6..11], "world");
+    }
+
+    #[test]
+    fn test_utf16_range_to_byte_range_multibyte_accents() {
+        let text = "café noir";
+        let range = StringRange::between(5, 9).byte_range(text);
+        assert_eq!(range, Some(6..10));
+        assert_eq!(&text[range.expect("Invalid UTF-16 range")], "noir");
+    }
+
+    #[test]
+    fn test_utf16_range_to_byte_range_surrogate_pair_emoji() {
+        let text = "play 🎮 now";
+
+        let emoji_range = StringRange::between(5, 7).byte_range(text);
+        assert_eq!(emoji_range, Some(5..9));
+        assert_eq!(&text[emoji_range.expect("Invalid UTF-16 range")], "🎮");
+
+        let now_range = StringRange::between(8, 11).byte_range(text);
+        assert_eq!(now_range, Some(10..13));
+        assert_eq!(&text[now_range.expect("Invalid UTF-16 range")], "now");
+    }
+
+    #[test]
+    fn test_utf16_range_to_byte_range_invalid_bounds() {
+        let text = "test";
+        assert_eq!(StringRange::between(0, 10).byte_range(text), None);
+
+        let emoji_text = "🎮";
+        assert_eq!(StringRange::between(0, 1).byte_range(emoji_text), None);
     }
 }

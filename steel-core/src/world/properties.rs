@@ -1,3 +1,5 @@
+use steel_utils::types::GameType;
+
 use super::{
     ADVANCE_TIME, BlockPos, CChangeDifficulty, ChunkPos, Difficulty, Digest, ErasedGameRuleRef,
     GameRule, GameRuleValue, GameRuleValueType, LevelDataManager, OffsetVoxelShape, Ordering,
@@ -5,11 +7,11 @@ use super::{
 };
 
 impl World {
-    /// Vanilla `Level.MAX_LEVEL_SIZE`.
+    /// Maximum absolute X/Z coordinate for the world border, in blocks.
     pub const MAX_LEVEL_SIZE: i32 = 30_000_000;
-    /// Vanilla `Level.MAX_ENTITY_SPAWN_Y`.
+    /// Maximum Y coordinate at which entities are allowed to spawn or move.
     pub const MAX_ENTITY_SPAWN_Y: i32 = 20_000_000;
-    /// Vanilla `Level.MIN_ENTITY_SPAWN_Y`.
+    /// Minimum Y coordinate at which entities are allowed to spawn or move.
     pub const MIN_ENTITY_SPAWN_Y: i32 = -20_000_000;
 
     /// Returns whether this world uses the vanilla End dimension type.
@@ -34,6 +36,18 @@ impl World {
             level_data.data().difficulty_locked
         };
         self.broadcast_to_all(CChangeDifficulty { difficulty, locked });
+    }
+
+    /// Returns the default game mode for first-visit players in this world.
+    #[must_use]
+    pub fn default_gamemode(&self) -> GameType {
+        GameType::from(self.default_gamemode.load(Ordering::Relaxed))
+    }
+
+    /// Sets the default game mode for this world.
+    pub fn set_default_gamemode(&self, default_gamemode: GameType) {
+        self.default_gamemode
+            .store(default_gamemode.into(), Ordering::Relaxed);
     }
 
     /// Returns the total height of the world in blocks.
@@ -135,7 +149,6 @@ impl World {
     /// Returns whether the tick rate is running normally.
     ///
     /// When false (frozen/paused), movement validation checks should be skipped.
-    /// Matches vanilla's `level.tickRateManager().runsNormally()`.
     #[must_use]
     pub fn tick_runs_normally(&self) -> bool {
         self.tick_runs_normally.load(Ordering::Relaxed)

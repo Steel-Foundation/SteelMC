@@ -4,6 +4,15 @@ We welcome contributions to Steel! By contributing, you help us make Steel the b
 
 ## Before You Start
 
+### New Starters
+
+As a new contributor, please limit yourself to 3 open PRs at a time, so we can give feedback on your existing ones before you open more.
+Also, start with a small, simple contribution first, around 1k lines changed or less, so it's quicker to review.
+
+### Review time
+
+Maintainers review PRs in their free time, so an initial review can take a while. If you haven't heard back after a week, ask on Discord or leave a comment on your PR to get our attention.
+
 ### Discuss Major Changes
 
 Before implementing any major changes or new features, please create a post in the [#feature-discussion](https://canary.discord.com/channels/1428487339759370322/1429074039015473272) channel on our [Discord](https://discord.gg/MwChEHnAbh) server. This allows for discussion of potential problems, alternative solutions, and overall alignment with the project's direction.
@@ -16,9 +25,11 @@ Don't PR changes that have no impact on code foundation/structure, unless paired
 
 When optimizing code or removing "unnecessary" vanilla Minecraft elements, always consider their potential use cases in future implementations. This also applies when choosing which crate to place new functionality into; think about modularity and future extensibility.
 
-### Use Parchment Mappings
+### Testing
 
-Please stick to Parchment mapping names most of the time for consistency and easier collaboration.
+Only write tests for behavior that has caused regressions or is important enough to protect. Avoid tests that only add coverage.
+
+We have integrated the testing harness Flint, which lets you write JSON tests for blocks, items and entities. These tests can be compared directly against vanilla, so your work can be verified.
 
 ### AI policy
 

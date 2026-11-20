@@ -7,6 +7,7 @@ pub mod prefixed_read;
 pub mod prefixed_write;
 /// A module for reading data.
 pub mod read;
+pub mod vec_as_map;
 /// A module for writing data.
 pub mod write;
 
@@ -24,6 +25,18 @@ pub trait ReadFrom: Sized {
 pub trait WriteTo {
     /// Writes data to a writer.
     fn write(&self, writer: &mut impl Write) -> Result<()>;
+
+    /// writes a slice as consecutive values without a length prefix
+    fn write_slice(values: &[Self], writer: &mut impl Write) -> Result<()>
+    where
+        Self: Sized,
+    {
+        for value in values {
+            value.write(writer)?;
+        }
+
+        Ok(())
+    }
 }
 
 /// A trait for reading prefixed data from a cursor.

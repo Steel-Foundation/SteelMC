@@ -24,7 +24,11 @@
 //! ```
 
 pub(crate) mod block_state_nbt;
+mod components;
+mod container_openers_counter;
+mod container_properties;
 pub mod entities;
+mod randomizable_container;
 mod registry;
 mod storage;
 
@@ -53,13 +57,19 @@ use steel_utils::{
     locks::{SyncMutex, SyncRwLock},
 };
 
+pub use components::ImplicitComponentGetter;
+pub use randomizable_container::RandomizableContainer;
 pub use registry::{BLOCK_ENTITIES, BlockEntityFactory, BlockEntityRegistry, init_block_entities};
 pub(crate) use storage::{
     BlockEntityInsert, BlockEntityLookup, BlockEntityStorage, ClearedBlockEntities,
     DetachedBlockEntity, LifecycleDispatchers,
 };
 
+use crate::block_entity::entities::Spawner;
+use crate::entity::ContainerUser;
+use crate::inventory::container::DEFAULT_DISTANCE_BUFFER;
 use crate::inventory::lock::ContainerRef;
+use crate::nameable::Nameable;
 use crate::player::Player;
 
 use crate::world::World;
@@ -315,6 +325,10 @@ impl BlockEntityBase {
         self.components.read().clone()
     }
 
+    fn set_components(&self, components: DataComponentMap) {
+        *self.components.write() = components;
+    }
+
     pub(crate) fn is_valid_container_for(&self, player: &Player) -> bool {
         if self.is_removed() {
             return false;
@@ -326,7 +340,10 @@ impl BlockEntityBase {
             return false;
         };
         ptr::eq(current.base(), self)
-            && player.is_within_block_interaction_range_with_buffer(self.pos, 4.0)
+            && player.is_within_block_interaction_range_with_buffer(
+                self.pos,
+                f64::from(DEFAULT_DISTANCE_BUFFER),
+            )
     }
 }
 
@@ -356,8 +373,6 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     }
 
     /// Returns whether this entity's registered type accepts `state`.
-    ///
-    /// Mirrors Vanilla `BlockEntity.isValidBlockState`.
     fn is_valid_block_state(&self, state: BlockStateId) -> bool {
         self.get_type().is_valid(state.get_block())
     }
@@ -395,10 +410,13 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     }
 
     /// Handles a block event delegated by the owning block behavior.
-    ///
-    /// Mirrors Vanilla `BlockEntity.triggerEvent`.
     fn trigger_event(&self, _param_a: i32, _param_b: i32) -> bool {
         false
+    }
+
+    /// Returns this block entity as a spawner.
+    fn as_spawner(&self) -> Option<&dyn Spawner> {
+        None
     }
 
     /// Called before the block entity is removed to handle side effects.
@@ -426,6 +444,36 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     fn load_with_components(&self, nbt: &BorrowedNbtCompound<'_>) {
         self.load_additional(nbt);
         self.base().load_components(nbt);
+    }
+
+    /// Reads the components this entity represents through its own fields.
+    ///
+    /// Every component read is excluded from the stored component map.
+    fn apply_implicit_components(&self, _components: &mut ImplicitComponentGetter<'_>) {}
+
+    /// Adds the components this entity represents through its own fields.
+    ///
+    /// The inverse of [`Self::apply_implicit_components`].
+    fn collect_implicit_components(&self, _components: &mut DataComponentMap) {}
+
+    /// Applies the placed stack's components: implicit ones through
+    /// [`Self::apply_implicit_components`], the rest into the stored component map.
+    ///
+    /// Do not override; customize [`Self::apply_implicit_components`] instead.
+    fn apply_components_from_item_stack(&self, stack: &ItemStack) {
+        let mut getter = ImplicitComponentGetter::new(stack);
+        self.apply_implicit_components(&mut getter);
+        self.base()
+            .set_components(getter.remaining_stored_components());
+    }
+
+    /// Returns the stored components together with the implicit ones.
+    ///
+    /// Do not override; customize [`Self::collect_implicit_components`] instead.
+    fn collect_components(&self) -> DataComponentMap {
+        let mut components = self.base().stored_components();
+        self.collect_implicit_components(&mut components);
+        components
     }
 
     /// Loads entity data from an owned command/runtime compound.
@@ -468,10 +516,7 @@ pub trait BlockEntity: ErasedType + Send + Sync {
 
     /// Saves command-visible data together with vanilla block-entity metadata.
     fn save_with_full_metadata(&self) -> NbtCompound {
-        // TODO: Include stored block-entity components once Steel has Vanilla's
-        // block-entity component foundation. NBT predicates targeting the
-        // `components` field cannot match exactly until then.
-        let mut nbt = self.save_custom_only();
+        let mut nbt = self.save_without_metadata();
         let pos = self.get_block_pos();
         nbt.insert("id", self.get_type().key.to_string());
         nbt.insert("x", pos.x());
@@ -503,6 +548,22 @@ pub trait BlockEntity: ErasedType + Send + Sync {
         None
     }
 
+    /// Owner-side open notification, called after inventory locks are released.
+    fn start_open(&self, _user: &dyn ContainerUser) {}
+
+    /// Owner-side close notification, called without inventory locks.
+    fn stop_open(&self, _user: &dyn ContainerUser) {}
+
+    /// Returns the lazy loot capability when this entity owns a randomizable container.
+    fn as_randomizable_container(&self) -> Option<&dyn RandomizableContainer> {
+        None
+    }
+
+    /// Name capability used by block loot and container titles.
+    fn as_nameable(&self) -> Option<&dyn Nameable> {
+        None
+    }
+
     /// Returns this entity's fixed game-event listener, if it provides one.
     ///
     /// Mirrors Vanilla `GameEventListener.Provider.getListener`. The owning block behavior keeps
@@ -510,15 +571,6 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     fn game_event_listener(&self) -> Option<SharedGameEventListener> {
         None
     }
-
-    /// Vanilla `BlockEntity.applyComponentsFromItemStack`.
-    ///
-    /// Called in `BlockItem.place` before `placedState.getBlock().setPlacedBy`
-    #[expect(
-        unused_variables,
-        reason = "default trait impl; parameters used by overrides"
-    )]
-    fn apply_components_from_item(&self, item: &ItemStack) {}
 }
 
 /// Final block-entity common-state operations.

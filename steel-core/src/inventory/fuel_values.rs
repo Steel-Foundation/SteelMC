@@ -80,7 +80,7 @@ impl FuelValuesBuilder {
     }
 }
 
-/// Vanilla 26.2 fuel values, built from the generated item registry and tags.
+/// Vanilla  fuel values, built from the generated item registry and tags.
 pub static VANILLA_FUEL_VALUES: LazyLock<FuelValues> = LazyLock::new(|| {
     const BASE: i32 = 200;
 

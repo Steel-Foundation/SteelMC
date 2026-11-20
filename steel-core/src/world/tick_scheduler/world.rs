@@ -62,12 +62,9 @@ impl World {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk| {
-                match chunk.has_scheduled_block_tick(pos, block) {
-                    Ok(has_tick) => has_tick,
-                    Err(error) => {
-                        panic!("Full chunk scheduled-tick ownership invariant failed: {error:?}")
-                    }
-                }
+                chunk
+                    .has_scheduled_block_tick(pos, block)
+                    .expect("Full chunk scheduled-tick ownership invariant failed")
             })
             .unwrap_or(false)
     }
@@ -82,12 +79,9 @@ impl World {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk| {
-                match chunk.has_scheduled_fluid_tick(pos, fluid) {
-                    Ok(has_tick) => has_tick,
-                    Err(error) => {
-                        panic!("Full chunk scheduled-tick ownership invariant failed: {error:?}")
-                    }
-                }
+                chunk
+                    .has_scheduled_fluid_tick(pos, fluid)
+                    .expect("Full chunk scheduled-tick ownership invariant failed")
             })
             .unwrap_or(false)
     }
@@ -195,7 +189,7 @@ impl World {
             .scheduled_block_ticks_this_tick
             .lock()
             .as_ref()
-            .map(Arc::clone);
+            .cloned();
         batch.is_some_and(|batch| batch.contains(pos, block))
     }
 
@@ -205,7 +199,7 @@ impl World {
             .scheduled_fluid_ticks_this_tick
             .lock()
             .as_ref()
-            .map(Arc::clone);
+            .cloned();
         batch.is_some_and(|batch| batch.contains(pos, fluid))
     }
 

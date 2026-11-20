@@ -74,6 +74,26 @@ pub struct Section {
 }
 
 impl Section {
+    /// Joins adjacent sections into one transfer range, including across inventories.
+    ///
+    /// # Panics
+    /// Panics if the sections belong to different menus or are not adjacent in order.
+    #[must_use]
+    pub fn join(self, next: Self) -> Self {
+        assert_eq!(
+            self.menu, next.menu,
+            "joined sections must belong to the same menu"
+        );
+        assert_eq!(
+            self.range.end, next.range.start,
+            "joined sections must be adjacent in order"
+        );
+        Self {
+            menu: self.menu,
+            range: (self.range.start..next.range.end).into(),
+        }
+    }
+
     pub(crate) fn new(menu: MenuInstanceId, range: impl Into<Range<usize>>) -> Self {
         Self {
             menu,
@@ -392,15 +412,13 @@ impl From<&Self> for SectionKind {
 /// Rules that reject placement and allow pickup, shared process-wide.
 fn deny_place_rules() -> Arc<RestrictedRules> {
     static DENY: OnceLock<Arc<RestrictedRules>> = OnceLock::new();
-    DENY.get_or_init(|| RestrictedRules::place_only(|_, _| false))
-        .clone()
+    Arc::clone(DENY.get_or_init(|| RestrictedRules::place_only(|_, _| false)))
 }
 
 /// Rules that reject both placement and pickup, shared process-wide.
 fn deny_all_rules() -> Arc<RestrictedRules> {
     static DENY: OnceLock<Arc<RestrictedRules>> = OnceLock::new();
-    DENY.get_or_init(|| RestrictedRules::guarded(|_, _| false, |_, _, _, _| false))
-        .clone()
+    Arc::clone(DENY.get_or_init(|| RestrictedRules::guarded(|_, _| false, |_, _, _, _| false)))
 }
 
 /// The direction in which a slot range is walked when distributing items.
@@ -522,7 +540,7 @@ impl MenuBuilder {
 
     /// The container's size, read under a short lock.
     fn container_size(container: &ContainerRef) -> usize {
-        ContainerLockGuard::lock_all(slice::from_ref(container))
+        ContainerLockGuard::lock_storage(slice::from_ref(container))
             .get(container.container_id())
             .expect("container was just locked")
             .get_container_size()
@@ -668,7 +686,7 @@ impl MenuBuilder {
         kind: impl Into<SectionKind>,
     ) -> PlayerInventorySections {
         let kind = kind.into();
-        let container = ContainerRef::from(inventory.clone());
+        let container = ContainerRef::from(Arc::clone(inventory));
         let start = self.slots.len();
         for index in PlayerInventory::MAIN.chain(PlayerInventory::HOTBAR) {
             let slot = kind.make(&container, index);
@@ -687,13 +705,28 @@ impl MenuBuilder {
     /// Adds a single fake result slot driven by `handler`, backed by the
     /// handler's [`result_container`](ResultHandler::result_container).
     ///
+    /// Taken items do not award `ITEM_CRAFTED`; use
+    /// [`crafting_result_slot`](Self::crafting_result_slot) for crafting grids.
+    ///
     /// See [`crate::inventory::container::ResultContainer`] and [`crate::inventory::slots::ResultHandler`].
     ///
     /// # Panics
     /// Panics if the result container has no slot `0`, or that slot is already
     /// covered by another section of this menu.
     pub fn result_slot(&mut self, handler: impl ResultHandler + 'static) -> Section {
-        let slot = ResultSlot::new(handler);
+        self.add_result_slot(ResultSlot::new(handler))
+    }
+
+    /// Adds a crafting result slot whose taken items award `ITEM_CRAFTED`.
+    ///
+    /// # Panics
+    /// Panics if the result container has no slot `0`, or that slot is already
+    /// covered by another section of this menu.
+    pub fn crafting_result_slot(&mut self, handler: impl ResultHandler + 'static) -> Section {
+        self.add_result_slot(ResultSlot::crafting(handler))
+    }
+
+    fn add_result_slot(&mut self, slot: ResultSlot) -> Section {
         let container = slot.result_container().clone();
         self.claim(&container, (0..1).into());
         let start = self.slots.len();
@@ -981,7 +1014,7 @@ impl MenuBuilder {
     pub(crate) fn claim(&mut self, container: &ContainerRef, range: Range<usize>) {
         let id = container.container_id();
         let size = {
-            let guard = ContainerLockGuard::lock_all(slice::from_ref(container));
+            let guard = ContainerLockGuard::lock_storage(slice::from_ref(container));
             let Some(container) = guard.get(id) else {
                 panic!("container was not locked while validating a menu section");
             };
@@ -1146,7 +1179,10 @@ mod tests {
         let _ = builder.result_slot(DependencyResultHandler { result, dependency });
 
         let menu = builder.build(BasicKind);
-        let guard = menu.behavior().lock_all_containers();
+        let guard = menu
+            .behavior()
+            .lock_all_containers()
+            .expect("container access should succeed");
 
         assert!(guard.contains(dependency_id));
     }
@@ -1166,7 +1202,9 @@ mod tests {
     fn build_rejects_a_result_alias_through_player_inventory() {
         let inventory = PlayerInventory::new().into_shared();
         let mut builder = MenuBuilder::new(None, 0);
-        let _ = builder.result_slot(NoopResultHandler(ContainerRef::from(inventory.clone())));
+        let _ = builder.result_slot(NoopResultHandler(ContainerRef::from(Arc::clone(
+            &inventory,
+        ))));
         let _ = builder.player_inventory_with(&inventory, SectionKind::Normal);
 
         let _ = builder.build(BasicKind);
@@ -1216,7 +1254,7 @@ mod tests {
     fn section_at_rejects_indices_claimed_by_another_section() {
         let container = SimpleContainer::new(4).into_shared();
         let mut b = MenuBuilder::new(None, 0);
-        let _ = b.section(container.clone(), 2);
+        let _ = b.section(Arc::clone(&container), 2);
         let _ = b.section_at(container, [1], SectionKind::Normal);
     }
 

@@ -1,6 +1,7 @@
 use std::f64::consts::{FRAC_PI_2, SQRT_2};
 
 use glam::DVec3;
+use steel_math::trig;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_utils::BlockPos;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
@@ -13,7 +14,7 @@ use crate::fluid::FluidStateExt as _;
 const RANDOM_POS_ATTEMPTS: usize = 10;
 
 pub(super) fn default_random_pos(
-    mob: &dyn PathfinderMob,
+    mob: &(impl PathfinderMob + ?Sized),
     horizontal_dist: i32,
     vertical_dist: i32,
 ) -> Option<DVec3> {
@@ -25,7 +26,7 @@ pub(super) fn default_random_pos(
 }
 
 pub(super) fn default_random_pos_towards(
-    mob: &dyn PathfinderMob,
+    mob: &(impl PathfinderMob + ?Sized),
     horizontal_dist: i32,
     vertical_dist: i32,
     towards_pos: DVec3,
@@ -52,7 +53,7 @@ pub(super) fn default_random_pos_towards(
 }
 
 pub(super) fn default_random_pos_away(
-    mob: &dyn PathfinderMob,
+    mob: &(impl PathfinderMob + ?Sized),
     horizontal_dist: i32,
     vertical_dist: i32,
     avoid_pos: DVec3,
@@ -78,7 +79,7 @@ pub(super) fn default_random_pos_away(
 }
 
 pub(super) fn land_random_pos(
-    mob: &dyn PathfinderMob,
+    mob: &(impl PathfinderMob + ?Sized),
     horizontal_dist: i32,
     vertical_dist: i32,
 ) -> Option<DVec3> {
@@ -92,7 +93,7 @@ pub(super) fn land_random_pos(
 }
 
 fn generate_random_pos(
-    mob: &dyn PathfinderMob,
+    mob: &(impl PathfinderMob + ?Sized),
     mut pos_supplier: impl FnMut() -> Option<BlockPos>,
 ) -> Option<DVec3> {
     let mut best_weight = f32::NEG_INFINITY;
@@ -109,11 +110,11 @@ fn generate_random_pos(
         }
     }
 
-    best_pos.map(block_bottom_center)
+    best_pos.map(|pos| pos.get_bottom_center())
 }
 
 fn generate_random_direction(
-    _mob: &dyn PathfinderMob,
+    _mob: &(impl PathfinderMob + ?Sized),
     horizontal_dist: i32,
     vertical_dist: i32,
 ) -> BlockPos {
@@ -138,7 +139,7 @@ fn generate_random_direction_within_radians(
     z_dir: f64,
     max_xz_radians_from_dir: f64,
 ) -> Option<BlockPos> {
-    let y_radians_center = z_dir.atan2(x_dir) - FRAC_PI_2;
+    let y_radians_center = trig::atan2(z_dir, x_dir) - FRAC_PI_2;
     let y_radians =
         y_radians_center + (2.0 * f64::from(random.next_f32()) - 1.0) * max_xz_radians_from_dir;
     let dist = lerp(
@@ -157,7 +158,7 @@ fn generate_random_direction_within_radians(
 }
 
 fn default_random_pos_toward_direction(
-    mob: &dyn PathfinderMob,
+    mob: &(impl PathfinderMob + ?Sized),
     horizontal_dist: f64,
     restrict: bool,
     direction: BlockPos,
@@ -175,7 +176,7 @@ fn default_random_pos_toward_direction(
 }
 
 fn land_random_pos_toward_direction(
-    mob: &dyn PathfinderMob,
+    mob: &(impl PathfinderMob + ?Sized),
     horizontal_dist: f64,
     restrict: bool,
     direction: BlockPos,
@@ -192,7 +193,7 @@ fn land_random_pos_toward_direction(
 }
 
 fn generate_random_pos_toward_direction(
-    mob: &dyn PathfinderMob,
+    mob: &(impl PathfinderMob + ?Sized),
     horizontal_dist: f64,
     direction: BlockPos,
 ) -> BlockPos {
@@ -221,7 +222,10 @@ fn generate_random_pos_toward_direction(
     )
 }
 
-fn land_move_pos_up_out_of_solid(mob: &dyn PathfinderMob, pos: BlockPos) -> Option<BlockPos> {
+fn land_move_pos_up_out_of_solid(
+    mob: &(impl PathfinderMob + ?Sized),
+    pos: BlockPos,
+) -> Option<BlockPos> {
     let pos = move_up_out_of_solid(mob, pos)?;
     if !is_water(mob, pos) && !has_malus(mob, pos) {
         Some(pos)
@@ -230,7 +234,7 @@ fn land_move_pos_up_out_of_solid(mob: &dyn PathfinderMob, pos: BlockPos) -> Opti
     }
 }
 
-fn move_up_out_of_solid(mob: &dyn PathfinderMob, pos: BlockPos) -> Option<BlockPos> {
+fn move_up_out_of_solid(mob: &(impl PathfinderMob + ?Sized), pos: BlockPos) -> Option<BlockPos> {
     if !is_solid(mob, pos) {
         return Some(pos);
     }
@@ -243,27 +247,27 @@ fn move_up_out_of_solid(mob: &dyn PathfinderMob, pos: BlockPos) -> Option<BlockP
     Some(pos)
 }
 
-fn mob_restricted(mob: &dyn PathfinderMob, horizontal_dist: f64) -> bool {
+fn mob_restricted(mob: &(impl PathfinderMob + ?Sized), horizontal_dist: f64) -> bool {
     mob.has_home()
         && block_center_distance_sqr(mob.home_position(), mob.position())
             < (f64::from(mob.home_radius()) + horizontal_dist + 1.0).powi(2)
 }
 
-fn is_outside_limits(mob: &dyn PathfinderMob, pos: BlockPos) -> bool {
+fn is_outside_limits(mob: &(impl PathfinderMob + ?Sized), pos: BlockPos) -> bool {
     mob.level()
         .is_none_or(|world| world.is_outside_build_height(pos.y()))
 }
 
-fn is_restricted(restrict: bool, mob: &dyn PathfinderMob, pos: BlockPos) -> bool {
+fn is_restricted(restrict: bool, mob: &(impl PathfinderMob + ?Sized), pos: BlockPos) -> bool {
     restrict && !mob.is_within_home_pos(pos)
 }
 
-fn is_water(mob: &dyn PathfinderMob, pos: BlockPos) -> bool {
+fn is_water(mob: &(impl PathfinderMob + ?Sized), pos: BlockPos) -> bool {
     mob.level()
         .is_none_or(|world| world.get_block_state(pos).get_fluid_state().is_water())
 }
 
-fn has_malus(mob: &dyn PathfinderMob, pos: BlockPos) -> bool {
+fn has_malus(mob: &(impl PathfinderMob + ?Sized), pos: BlockPos) -> bool {
     let Some(world) = mob.level() else {
         return true;
     };
@@ -272,19 +276,13 @@ fn has_malus(mob: &dyn PathfinderMob, pos: BlockPos) -> bool {
     mob.get_pathfinding_malus(path_type) != 0.0
 }
 
-fn is_solid(mob: &dyn PathfinderMob, pos: BlockPos) -> bool {
+fn is_solid(mob: &(impl PathfinderMob + ?Sized), pos: BlockPos) -> bool {
     mob.level()
         .is_some_and(|world| world.get_block_state(pos).is_solid())
 }
 
-fn block_bottom_center(pos: BlockPos) -> DVec3 {
-    let (x, y, z) = pos.get_bottom_center();
-    DVec3::new(x, y, z)
-}
-
 fn block_center_distance_sqr(pos: BlockPos, target: DVec3) -> f64 {
-    let (x, y, z) = pos.get_center();
-    DVec3::new(x, y, z).distance_squared(target)
+    pos.get_center().distance_squared(target)
 }
 
 fn lerp(delta: f64, start: f64, end: f64) -> f64 {

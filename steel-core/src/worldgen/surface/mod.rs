@@ -4,6 +4,7 @@
 //! data, and positional random sources needed by transpiled surface rules.
 
 use rustc_hash::FxHashMap;
+use steel_math::round_f32;
 use steel_registry::biome::TemperatureModifier;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_blocks;
@@ -16,7 +17,7 @@ use steel_worldgen::density::NoiseParameters;
 use steel_worldgen::noise::{NormalNoise, PerlinSimplexNoise};
 use steel_worldgen::surface::SurfaceNoiseProvider;
 
-use crate::worldgen::generator::{GenerationChunk, SurfacePhase};
+use crate::worldgen::generator::{GenerationChunk, TerrainPhase};
 
 const CLAY_BAND_LENGTH: usize = 192;
 
@@ -38,7 +39,7 @@ pub struct TemperatureXzCache {
     frozen_large_x7: f64,
     frozen_edge: f64,
     frozen_small: f64,
-    height_temp_noise_x8: f64,
+    height_temp_noise_x8: f32,
 }
 
 impl TemperatureXzCache {
@@ -51,7 +52,7 @@ impl TemperatureXzCache {
             frozen_large_x7: f64::NAN,
             frozen_edge: f64::NAN,
             frozen_small: f64::NAN,
-            height_temp_noise_x8: f64::NAN,
+            height_temp_noise_x8: f32::NAN,
         }
     }
 }
@@ -203,9 +204,10 @@ impl SurfaceSystem {
     /// `(int)(noise * 2.75 + 3.0 + random.at(x, 0, z).nextDouble() * 0.25)`
     #[must_use]
     pub fn get_surface_depth(&self, x: i32, z: i32) -> i32 {
-        let noise_value = self
-            .surface_noise
-            .get_value(f64::from(x), 0.0, f64::from(z));
+        let noise_value = f64::from(
+            self.surface_noise
+                .get_value(f64::from(x), 0.0, f64::from(z)),
+        );
         let jitter = self.noise_random.at(x, 0, z).next_f64() * 0.25;
         (noise_value * 2.75 + 3.0 + jitter) as i32
     }
@@ -213,8 +215,10 @@ impl SurfaceSystem {
     /// Sample the surface secondary noise at a column position.
     #[must_use]
     pub fn get_surface_secondary(&self, x: i32, z: i32) -> f64 {
-        self.surface_secondary_noise
-            .get_value(f64::from(x), 0.0, f64::from(z))
+        f64::from(
+            self.surface_secondary_noise
+                .get_value(f64::from(x), 0.0, f64::from(z)),
+        )
     }
 
     // ── Temperature XZ-cache helpers (column-scoped) ────────────────────────
@@ -226,10 +230,11 @@ impl SurfaceSystem {
         if !xz.frozen_large_x7.is_nan() {
             return xz.frozen_large_x7;
         }
-        let v = self
-            .frozen_temperature_noise
-            .get_value(f64::from(xz.block_x) * 0.05, f64::from(xz.block_z) * 0.05)
-            * 7.0;
+        let v = f64::from(
+            self.frozen_temperature_noise
+                .get_value(f64::from(xz.block_x) * 0.05, f64::from(xz.block_z) * 0.05)
+                * 7.0,
+        );
         xz.frozen_large_x7 = v;
         v
     }
@@ -240,9 +245,10 @@ impl SurfaceSystem {
         if !xz.frozen_edge.is_nan() {
             return xz.frozen_edge;
         }
-        let v = self
-            .biome_info_noise
-            .get_value(f64::from(xz.block_x) * 0.2, f64::from(xz.block_z) * 0.2);
+        let v = f64::from(
+            self.biome_info_noise
+                .get_value(f64::from(xz.block_x) * 0.2, f64::from(xz.block_z) * 0.2),
+        );
         xz.frozen_edge = v;
         v
     }
@@ -253,23 +259,24 @@ impl SurfaceSystem {
         if !xz.frozen_small.is_nan() {
             return xz.frozen_small;
         }
-        let v = self
-            .biome_info_noise
-            .get_value(f64::from(xz.block_x) * 0.09, f64::from(xz.block_z) * 0.09);
+        let v = f64::from(
+            self.biome_info_noise
+                .get_value(f64::from(xz.block_x) * 0.09, f64::from(xz.block_z) * 0.09),
+        );
         xz.frozen_small = v;
         v
     }
 
     /// `temperature_noise.get_value(x/8, z/8) * 8.0`, lazily cached.
     #[inline]
-    fn height_temp_noise_x8(&self, xz: &mut TemperatureXzCache) -> f64 {
+    fn height_temp_noise_x8(&self, xz: &mut TemperatureXzCache) -> f32 {
         if !xz.height_temp_noise_x8.is_nan() {
             return xz.height_temp_noise_x8;
         }
-        let v = self
-            .temperature_noise
-            .get_value(f64::from(xz.block_x) / 8.0, f64::from(xz.block_z) / 8.0)
-            * 8.0;
+        let v = self.temperature_noise.get_value(
+            f64::from(xz.block_x as f32 / 8.0),
+            f64::from(xz.block_z as f32 / 8.0),
+        ) * 8.0;
         xz.height_temp_noise_x8 = v;
         v
     }
@@ -311,7 +318,7 @@ impl SurfaceSystem {
         // Height-based temperature adjustment above seaLevel + 17
         let snow_level = self.sea_level + 17;
         if block_y > snow_level {
-            let v = self.height_temp_noise_x8(xz) as f32;
+            let v = self.height_temp_noise_x8(xz);
             modified_temp - (v + block_y as f32 - snow_level as f32) * 0.05 / 40.0
         } else {
             modified_temp
@@ -335,7 +342,6 @@ impl SurfaceSystem {
 
     /// Check if an iceberg at this position should melt slightly.
     ///
-    /// Matches vanilla's `Biome.shouldMeltFrozenOceanIcebergSlightly()`.
     /// Temperature is evaluated at sea level.
     fn should_melt_frozen_ocean_iceberg_slightly(
         &self,
@@ -350,8 +356,6 @@ impl SurfaceSystem {
     // ── Clay band generation ────────────────────────────────────────────────
 
     /// Generate the 192-element terracotta band pattern.
-    ///
-    /// Matches vanilla's `SurfaceSystem.generateBands()`.
     fn generate_bands(random: &mut RandomSource) -> [BlockStateId; CLAY_BAND_LENGTH] {
         let terracotta = vanilla_blocks::TERRACOTTA.default_state();
         let orange = vanilla_blocks::ORANGE_TERRACOTTA.default_state();
@@ -398,8 +402,6 @@ impl SurfaceSystem {
     }
 
     /// Place random bands of a single color.
-    ///
-    /// Matches vanilla's `SurfaceSystem.makeBands()`.
     fn make_bands(
         random: &mut RandomSource,
         bands: &mut [BlockStateId; CLAY_BAND_LENGTH],
@@ -423,7 +425,6 @@ impl SurfaceSystem {
 impl SurfaceSystem {
     /// Eroded badlands extension — adds terracotta pillars above the surface.
     ///
-    /// Matches vanilla's `SurfaceSystem.erodedBadlandsExtension()`.
     /// Returns the new `start_height` if blocks were added above the original surface.
     #[expect(
         clippy::too_many_arguments,
@@ -432,7 +433,7 @@ impl SurfaceSystem {
     #[must_use]
     pub fn eroded_badlands_extension(
         &self,
-        chunk: GenerationChunk<'_, SurfacePhase>,
+        chunk: GenerationChunk<'_, TerrainPhase>,
         local_x: usize,
         local_z: usize,
         block_x: i32,
@@ -441,27 +442,30 @@ impl SurfaceSystem {
         min_y: i32,
     ) -> i32 {
         let pillar_buffer = f64::min(
-            (self
-                .badlands_surface_noise
-                .get_value(f64::from(block_x), 0.0, f64::from(block_z))
-                * 8.25)
-                .abs(),
-            self.badlands_pillar_noise.get_value(
-                f64::from(block_x) * 0.2,
+            (f64::from(self.badlands_surface_noise.get_value(
+                f64::from(block_x),
                 0.0,
-                f64::from(block_z) * 0.2,
-            ) * 15.0,
+                f64::from(block_z),
+            )) * 8.25)
+                .abs(),
+            f64::from(
+                self.badlands_pillar_noise.get_value(
+                    f64::from(block_x) * 0.2,
+                    0.0,
+                    f64::from(block_z) * 0.2,
+                ) * 15.0_f32,
+            ),
         );
 
         if pillar_buffer <= 0.0 {
             return height;
         }
 
-        let pillar_floor = (self.badlands_pillar_roof_noise.get_value(
+        let pillar_floor = (f64::from(self.badlands_pillar_roof_noise.get_value(
             f64::from(block_x) * 0.75,
             0.0,
             f64::from(block_z) * 0.75,
-        ) * 1.5)
+        )) * 1.5)
             .abs();
 
         let extension_top = 64.0
@@ -525,27 +529,30 @@ impl SurfaceSystem {
         writes: &mut Vec<(usize, BlockStateId)>,
     ) {
         let iceberg = f64::min(
-            (self
-                .iceberg_surface_noise
-                .get_value(f64::from(block_x), 0.0, f64::from(block_z))
-                * 8.25)
-                .abs(),
-            self.iceberg_pillar_noise.get_value(
-                f64::from(block_x) * 1.28,
+            (f64::from(self.iceberg_surface_noise.get_value(
+                f64::from(block_x),
                 0.0,
-                f64::from(block_z) * 1.28,
-            ) * 15.0,
+                f64::from(block_z),
+            )) * 8.25)
+                .abs(),
+            f64::from(
+                self.iceberg_pillar_noise.get_value(
+                    f64::from(block_x) * 1.28,
+                    0.0,
+                    f64::from(block_z) * 1.28,
+                ) * 15.0_f32,
+            ),
         );
 
         if iceberg <= 1.8 {
             return;
         }
 
-        let iceberg_roof = (self.iceberg_pillar_roof_noise.get_value(
+        let iceberg_roof = (f64::from(self.iceberg_pillar_roof_noise.get_value(
             f64::from(block_x) * 1.17,
             0.0,
             f64::from(block_z) * 1.17,
-        ) * 1.5)
+        )) * 1.5)
             .abs();
 
         let mut top = f64::min(iceberg * iceberg * 1.2, (iceberg_roof * 40.0).ceil() + 14.0);
@@ -601,21 +608,23 @@ impl SurfaceSystem {
 
 impl SurfaceNoiseProvider for SurfaceSystem {
     fn condition_noise(&self, noise_index: usize, x: i32, z: i32) -> f64 {
-        self.condition_noises[noise_index].get_value(f64::from(x), 0.0, f64::from(z))
+        f64::from(self.condition_noises[noise_index].get_value(f64::from(x), 0.0, f64::from(z)))
     }
 
     fn condition_noise_3d(&self, noise_index: usize, x: i32, y: i32, z: i32) -> f64 {
-        self.condition_noises[noise_index].get_value(f64::from(x), f64::from(y), f64::from(z))
+        f64::from(self.condition_noises[noise_index].get_value(
+            f64::from(x),
+            f64::from(y),
+            f64::from(z),
+        ))
     }
 
     fn get_band(&self, x: i32, y: i32, z: i32) -> BlockStateId {
-        // Java: (int)Math.round(noise * 4.0)
-        let offset = (self
-            .clay_bands_offset_noise
-            .get_value(f64::from(x), 0.0, f64::from(z))
-            * 4.0
-            + 0.5)
-            .floor() as i32;
+        let offset = round_f32(
+            self.clay_bands_offset_noise
+                .get_value(f64::from(x), 0.0, f64::from(z))
+                * 4.0,
+        );
         let index = ((y + offset) % CLAY_BAND_LENGTH as i32 + CLAY_BAND_LENGTH as i32) as usize
             % CLAY_BAND_LENGTH;
         self.clay_bands[index]
@@ -662,5 +671,5 @@ fn create_noise(
     let p = params
         .get(id)
         .unwrap_or_else(|| panic!("Missing noise parameters for {id}"));
-    NormalNoise::create(splitter, id, p.first_octave, &p.amplitudes)
+    p.create(splitter, id)
 }

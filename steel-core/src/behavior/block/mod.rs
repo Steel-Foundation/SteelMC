@@ -1,10 +1,12 @@
 //! Block behavior trait and registry.
 
 use std::sync::{Arc, Weak};
+use steel_utils::random::legacy_random::LegacyRandom;
 
+use crate::loot::{LootContext, LootTableRef};
 use glam::DVec3;
-use rand::rngs::ThreadRng;
 use smallvec::SmallVec;
+use steel_registry::DyeColor;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -17,13 +19,11 @@ use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entities;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_blocks};
 use steel_registry::{vanilla_damage_types, vanilla_items};
-use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
 use steel_utils::value_providers::IntProvider;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Identifier, WorldAabb, axis::Axis};
@@ -36,18 +36,22 @@ use crate::behavior::{InventoryAccess, PlacementSource};
 use crate::block_entity::{BlockEntity, BlockEntityTicker, SharedBlockEntity};
 use crate::entity::ai::path::PathComputationType;
 use crate::entity::projectile::Projectile;
-use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, entity_loot_ref};
+use crate::entity::{
+    Entity, InsideBlockEffectCollector, damage::DamageSource, entity_loot_ref, loot_equipment,
+};
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
 use crate::player::Player;
 use crate::world::game_event::SharedGameEventListener;
 use crate::world::{
-    ClipHitResult, ConditionalBlockSetResult, LevelAccessor, LevelReader, ScheduledTickAccess,
-    SignalQueryContext, World,
+    BlockInteraction, ClipHitResult, ConditionalBlockSetResult, Explosion, LevelAccessor,
+    LevelReader, ScheduledTickAccess, SignalQueryContext, World,
 };
 use steel_registry::vanilla_fluids;
 
-/// Vanilla `BlockBehaviour.canBeReplaced(BlockState, BlockPlaceContext)`.
+/// Exclusive block-emission limit for the default mob spawn predicate.
+pub(crate) const MAX_MOB_SPAWN_LIGHT_EMISSION: u8 = 14;
+
 pub(crate) fn default_can_be_replaced(
     state: BlockStateId,
     context: &BlockPlaceContext<'_>,
@@ -63,25 +67,44 @@ pub(crate) fn default_can_be_replaced(
 #[must_use]
 pub(crate) fn drop_from_block_interact_loot_table(
     key: LootTableRef,
+    world: &World,
+    pos: BlockPos,
     interacted_block_state: BlockStateId,
-    _interacted_block_entity: Option<SharedBlockEntity>,
     tool: Option<&ItemStack>,
     interacting_entity: Option<&dyn Entity>,
-    rng: &mut ThreadRng,
 ) -> Vec<ItemStack> {
-    let mut ctx = LootContext::new(rng).with_block_state(interacted_block_state);
+    world
+        .with_loot_random(Some(key), 0, |rng| {
+            let block_entity = world.get_block_entity(pos);
+            let mut ctx = LootContext::new(rng)
+                .with_world(world)
+                .with_origin(pos.get_center())
+                .with_block_state(interacted_block_state);
+            if let Some(block_entity) = block_entity.as_deref() {
+                ctx = ctx.with_block_entity(block_entity);
+            }
 
-    // TODO: Add the block entity to the context when it can be done.
+            let interacting_equipment = interacting_entity.and_then(loot_equipment);
+            if let Some(interacting_entity) = interacting_entity {
+                ctx = ctx.with_interacting_entity(entity_loot_ref(
+                    interacting_entity,
+                    interacting_equipment.as_ref(),
+                ));
+            }
 
-    if let Some(interacting_entity) = interacting_entity {
-        ctx = ctx.with_interacting_entity(entity_loot_ref(interacting_entity));
-    }
+            if let Some(tool) = tool {
+                ctx = ctx.with_tool(tool);
+            }
 
-    if let Some(tool) = tool {
-        ctx = ctx.with_tool(tool);
-    }
-
-    key.get_random_items(&mut ctx)
+            key.get_random_items(&mut ctx)
+        })
+        .unwrap_or_else(|error| {
+            log::error!(
+                "Failed to generate block-interaction loot {}: {error}",
+                key.key
+            );
+            Vec::new()
+        })
 }
 
 /// Samples and applies enchantment effects to a block experience drop.
@@ -148,7 +171,7 @@ use collision::world_aabb_bounds;
 /// - State changes
 pub trait BlockBehavior: Send + Sync {
     /// Returns the Rust type name of the concrete behavior implementation.
-    #[cfg(feature = "flint")]
+    #[cfg(feature = "test-framework")]
     #[must_use]
     #[expect(clippy::absolute_paths, reason = "easier for features")]
     fn type_name(&self) -> &'static str {
@@ -219,6 +242,20 @@ pub trait BlockBehavior: Send + Sync {
     /// (torches, buttons, candles, cactus, etc.).
     fn can_survive(&self, _state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         true
+    }
+
+    /// Whether this block accepts a mob spawning on or inside it.
+    /// Defaults to full UP support and emission below [`MAX_MOB_SPAWN_LIGHT_EMISSION`].
+    fn is_valid_spawn(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        _entity_type: EntityTypeRef,
+    ) -> bool {
+        // TODO: extract the correct rules from block spawn rule
+        world.is_face_sturdy_for(state, pos, Direction::Up, SupportType::Full)
+            && state.get_light_emission() < MAX_MOB_SPAWN_LIGHT_EMISSION
     }
 
     /// Returns whether this block can be occupied by a forced respawn position
@@ -331,8 +368,6 @@ pub trait BlockBehavior: Send + Sync {
     }
 
     /// Called after a player successfully removes this block.
-    ///
-    /// Mirrors vanilla `Block.destroy(LevelAccessor, BlockPos, BlockState)`.
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores all params"
@@ -377,6 +412,79 @@ pub trait BlockBehavior: Send + Sync {
         tool: &ItemStack,
         drop_experience: bool,
     ) {
+    }
+
+    /// Applies Vanilla's default block response to an explosion.
+    fn on_explosion_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &dyn Explosion,
+        on_hit: &mut dyn FnMut(ItemStack, BlockPos),
+    ) {
+        self.default_on_explosion_hit(state, world, pos, explosion, on_hit);
+    }
+
+    /// Applies the default response from an overriding explosion hook.
+    fn default_on_explosion_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &dyn Explosion,
+        on_hit: &mut dyn FnMut(ItemStack, BlockPos),
+    ) {
+        if state.is_air() || explosion.block_interaction() == BlockInteraction::TriggerBlock {
+            return;
+        }
+
+        if self.drop_from_explosion(explosion) {
+            let empty_tool = ItemStack::empty();
+            let block_entity = if state.has_block_entity() {
+                world.get_block_entity(pos)
+            } else {
+                None
+            };
+            let context = BlockLootContext::new(world, pos)
+                .with_block_entity(block_entity.as_deref())
+                .with_entity(explosion.direct_source_entity())
+                .with_tool(&empty_tool);
+            let context = if explosion.block_interaction() == BlockInteraction::DestroyWithDecay {
+                context.with_explosion(explosion.radius())
+            } else {
+                context
+            };
+            let drop_experience = explosion
+                .indirect_source_entity()
+                .is_some_and(|entity| entity.as_player().is_some());
+            self.spawn_after_break(state, world, pos, &empty_tool, drop_experience);
+            for stack in World::block_drops(state, &context) {
+                on_hit(stack, pos);
+            }
+        }
+
+        world.set_block(
+            pos,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        );
+        self.was_exploded(state, world, pos, explosion);
+    }
+
+    /// Called after this block is removed by an explosion.
+    fn was_exploded(
+        &self,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _explosion: &dyn Explosion,
+    ) {
+    }
+
+    /// Returns whether this block contributes normal explosion loot.
+    fn drop_from_explosion(&self, _explosion: &dyn Explosion) -> bool {
+        true
     }
 
     /// Called after this block is removed from the world, to affect neighbors.
@@ -551,6 +659,11 @@ pub trait BlockBehavior: Send + Sync {
         state.is_static_redstone_conductor()
     }
 
+    /// Chest opener sounds, when this block has chest behavior.
+    fn chest_sounds(&self) -> Option<(SoundEventRef, SoundEventRef)> {
+        None
+    }
+
     /// Handles a queued server block event.
     ///
     /// Mirrors Vanilla `BlockBehaviour.triggerEvent`. Returning `true` publishes
@@ -579,15 +692,17 @@ pub trait BlockBehavior: Send + Sync {
     /// # Arguments
     /// * `block` - The block being picked
     /// * `_state` - The block state (some blocks vary pick item based on state)
+    /// * `_block_entity` - An optional block entity (some blocks vary pick item based on block entity data)
     /// * `_include_data` - Whether to include block entity data (creative + Ctrl)
     #[expect(
         unused_variables,
-        reason = "default implementation only uses `block`; state/include_data are for overrides"
+        reason = "default implementation only uses `block`; state/block_entity/include_data are for overrides"
     )]
     fn get_clone_item_stack(
         &self,
         block: BlockRef,
         state: BlockStateId,
+        block_entity: Option<SharedBlockEntity>,
         include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(REGISTRY.items.by_block(block)))
@@ -609,6 +724,26 @@ pub trait BlockBehavior: Send + Sync {
     fn is_bed(&self) -> bool {
         false
     }
+
+    /// Sleep height
+    ///
+    /// `None` rejects sleeping
+    #[expect(unused_variables, reason = "only bed behaviors provide a sleep height")]
+    fn get_sleep_height(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> Option<f64> {
+        None
+    }
+
+    /// Sleep exit hook
+    #[expect(
+        unused_variables,
+        reason = "only blocks with leave-sleep behavior override this hook"
+    )]
+    fn on_stop_sleeping(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {}
 
     /// Returns whether this behavior implements vanilla `LiquidBlock`.
     fn is_liquid_block(&self) -> bool {
@@ -915,7 +1050,8 @@ pub trait BlockBehavior: Send + Sync {
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         Some(EntityFallDamage::new(
-            context.fall_distance,
+            context.fall_distance
+                * f64::from(1f32 - state.get_block().config.fall_distance_reduction),
             1.0,
             DamageSource::environment(&vanilla_damage_types::FALL),
         ))
@@ -932,6 +1068,21 @@ pub trait BlockBehavior: Send + Sync {
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         self.default_fall_on(state, world, pos, context)
+    }
+
+    /// called when an entity bounce on the block.
+    /// only works if the block has a restitution > 0.0 and the entity is not suppressing bounce
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn bounce_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext<'_>,
+    ) {
     }
 
     /// Called after fall damage requested by [`BlockBehavior::fall_on`] is applied.
@@ -982,8 +1133,21 @@ pub trait BlockBehavior: Send + Sync {
         world: &Arc<World>,
         pos: BlockPos,
         context: EntityLandingContext,
-    ) -> DVec3 {
-        self.default_update_entity_movement_after_fall_on(state, world, pos, context)
+    ) -> (DVec3, bool) {
+        let restitution = state.get_block().config.bounce_restitution;
+        if context.velocity.y >= 0.0
+            || restitution <= 0.0
+            || context.suppresses_bounce
+            || state.get_block().has_tag(&BlockTag::SUPPRESSES_BOUNCE)
+            || -context.velocity.y <= context.gravity
+        {
+            (
+                self.default_update_entity_movement_after_fall_on(state, world, pos, context),
+                false,
+            )
+        } else {
+            (context.velocity_after_bounce(restitution), true)
+        }
     }
 
     /// Default step-on hook.
@@ -1031,6 +1195,17 @@ pub trait BlockBehavior: Send + Sync {
         state: BlockStateId,
     ) -> BlockEntityCreation {
         BlockEntityCreation::Unimplemented
+    }
+
+    /// Returns the beam tint this block contributes to a beacon beam passing through it.
+    ///
+    /// Steel models Vanilla's `BeaconBeamBlock` marker interface as a trait method so third
+    /// party blocks can join a beacon beam without a new interface: `None` means the block is
+    /// not a beam block, matching a Vanilla class that does not implement `BeaconBeamBlock`.
+    ///
+    /// Vanilla parity: `BeaconBeamBlock.getColor()`.
+    fn beacon_beam_color(&self, _state: BlockStateId) -> Option<DyeColor> {
+        None
     }
 
     /// Returns the server ticker selected by this live block state and entity type.
@@ -1124,7 +1299,7 @@ pub trait BlockBehavior: Send + Sync {
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
-        world: &dyn LevelReader,
+        world: &World,
         pos: BlockPos,
         direction: Direction,
     ) -> i32 {
@@ -1179,7 +1354,7 @@ pub trait BlockBehavior: Send + Sync {
     ///
     /// This is a behavior hook because vanilla block subclasses can override the
     /// base replacement rule. The default mirrors `Block.canBeReplaced(Fluid)`.
-    fn can_be_replaced_by_fluid(&self, state: BlockStateId, _fluid_block: BlockRef) -> bool {
+    fn can_be_replaced_by_fluid(&self, state: BlockStateId, _fluid: FluidRef) -> bool {
         if state.is_air() {
             return true;
         }

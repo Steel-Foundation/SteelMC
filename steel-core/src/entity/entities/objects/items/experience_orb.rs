@@ -14,12 +14,14 @@ use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ExperienceOrbEntityData;
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, RemovalReason,
-    SharedEntity, next_entity_id,
+    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission,
+    EntitySyncedData, LivingEntity, RemovalReason, SharedEntity, next_entity_id,
 };
 use crate::fluid::get_fluid_state;
 use crate::physics::{MoverType, WorldCollisionProvider};
@@ -133,7 +135,8 @@ impl ExperienceOrbEntity {
         }
     }
 
-    /// Vanilla `ExperienceOrb.getExperienceValue`.
+    /// Splits a total XP amount into the largest single orb value at most
+    /// `max_value`, from a fixed tier table capped at 2477.
     #[must_use]
     pub const fn get_experience_value(max_value: i32) -> i32 {
         if max_value >= 2477 {
@@ -392,7 +395,17 @@ impl ExperienceOrbEntity {
     }
 }
 
+impl DefaultEntityPush for ExperienceOrbEntity {}
+
 impl Entity for ExperienceOrbEntity {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -401,7 +414,14 @@ impl Entity for ExperienceOrbEntity {
         self.entity_type
     }
 
-    fn tick(&self) {
+    // Vanilla `ExperienceOrb` overrides this with an empty body.
+    fn do_water_splash_effect(&self) {}
+
+    fn movement_emission(&self) -> EntityMovementEmission {
+        EntityMovementEmission::None
+    }
+
+    fn tick(self: Arc<Self>) {
         self.default_tick();
         self.set_old_position_to_current();
 
@@ -441,7 +461,7 @@ impl Entity for ExperienceOrbEntity {
         }
 
         let fall_speed = self.velocity().y;
-        if self
+        if Arc::clone(&self)
             .move_entity(MoverType::SelfMovement, self.velocity())
             .is_some()
         {
@@ -514,16 +534,16 @@ impl Entity for ExperienceOrbEntity {
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.state.lock();
-        state.health = i32::from(nbt.short("Health").unwrap_or(DEFAULT_HEALTH as i16));
-        state.age = i32::from(nbt.short("Age").unwrap_or(0));
-        if let Some(count) = nbt.int("Count")
+        state.health = i32::from(nbt.short_value("Health").unwrap_or(DEFAULT_HEALTH as i16));
+        state.age = i32::from(nbt.short_value("Age").unwrap_or(0));
+        if let Some(count) = nbt.get("Count").and_then(|tag| tag.codec_i32())
             && count > 0
         {
             state.count = count;
         }
         drop(state);
 
-        self.set_value(i32::from(nbt.short("Value").unwrap_or(0)));
+        self.set_value(i32::from(nbt.short_value("Value").unwrap_or(0)));
     }
 }
 

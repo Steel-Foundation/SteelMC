@@ -7,14 +7,18 @@ mod kind;
 pub mod kinds;
 mod layout;
 
+use crate::player::player_inventory::Prediction;
+use std::sync::Arc;
+
 use crate::inventory::container::Container as _;
 pub use behavior::MenuBehavior;
 pub use builder::{
     ContainerSlots, DataSlot, FakeResultRemainderPolicy, FillDirection, IntoSections, MenuBuilder,
     PlayerInventorySections, Section, SectionKind, SectionSource, SlotFactory,
 };
+pub(crate) use grid::GRID_WIDTH;
 pub use grid::{ColSpan, GridPlacer, PlacementBuilder, Rect, Region, RowSpan, SpanBounds};
-pub use kind::MenuKind;
+pub use kind::{MenuKind, still_valid_block};
 pub(crate) use layout::MenuLayout;
 #[cfg(test)]
 use steel_utils::locks::Shared;
@@ -22,14 +26,20 @@ use steel_utils::locks::Shared;
 use std::fmt;
 use std::mem;
 
-use steel_registry::{item_stack::ItemStack, menu_type::MenuTypeRef};
+use steel_registry::{
+    equipment::EquipmentSlot, item_stack::ItemStack, menu_type::MenuTypeRef,
+    mob_effect::MobEffectRef,
+};
 use steel_utils::{Downcast as _, types::GameType};
 
 use crate::inventory::container::CraftingContainer;
 use crate::inventory::menu::kinds::InventoryKind;
+use crate::loot::LootResult;
 use crate::{
+    entity::LivingEntity,
     inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef},
-    player::Player,
+    inventory::slots::{ArmorSlot, Slot},
+    player::{Player, PlayerConnection},
 };
 
 use crate::inventory::click::{Click, ClickOutcome, SwapTarget, can_item_quick_replace};
@@ -124,6 +134,24 @@ impl Menu {
         self.kind.can_take_item_for_pick_all(carried, slot_index)
     }
 
+    /// Forwards a beacon effect selection from the set-beacon packet.
+    pub fn update_effects(
+        &mut self,
+        primary: Option<MobEffectRef>,
+        secondary: Option<MobEffectRef>,
+        connection: &Arc<PlayerConnection>,
+    ) -> bool {
+        let accepted = {
+            let Ok(mut guard) = self.behavior.lock_all_containers() else {
+                return false;
+            };
+            self.kind
+                .on_update_effects(&mut self.behavior, &mut guard, primary, secondary)
+        };
+        self.behavior.broadcast_changes(connection);
+        accepted
+    }
+
     /// Called when the menu is closed. Hands the carried item and input sections
     /// back to the player, then runs the kind's cleanup. Items drop into the
     /// world if the player can't take them (see
@@ -134,9 +162,9 @@ impl Menu {
         let carried = mem::take(self.behavior.carried_mut());
         if !carried.is_empty() {
             if return_to_inventory {
-                player.add_item_or_drop(carried);
+                player.add_item_or_drop(carried, Prediction::ServerOnly);
             } else {
-                let _ = player.drop_item(carried, false, false);
+                let _ = player.drop_item(carried, false, Prediction::ServerOnly);
             }
         }
         self.layout
@@ -153,6 +181,13 @@ impl Menu {
         kind.on_rename(behavior, name.into(), player);
     }
 
+    /// Forwards a client button press to the menu's kind and reports whether
+    /// the kind handled it. Always false for kinds without buttons.
+    pub fn click_menu_button(&mut self, button_id: i32, player: &Player) -> bool {
+        let Self { behavior, kind, .. } = self;
+        kind.click_menu_button(behavior, button_id, player)
+    }
+
     /// Clears or counts crafting-grid items in the base inventory menu,
     /// returning the number cleared or counted. Returns 0 for any other menu.
     pub(crate) fn clear_or_count_crafting_items(
@@ -165,7 +200,9 @@ impl Menu {
             return 0;
         };
         let crafting_id = kind.crafting_id();
-        let mut guard = self.behavior.lock_all_containers();
+        let Ok(mut guard) = self.behavior.lock_all_containers() else {
+            return 0;
+        };
         let Some(crafting) = guard.get_typed_mut::<CraftingContainer>(crafting_id) else {
             return 0;
         };
@@ -187,7 +224,9 @@ impl Menu {
         let Some(kind) = self.kind.downcast_mut::<InventoryKind>() else {
             return;
         };
-        let mut guard = self.behavior.lock_all_containers();
+        let Ok(mut guard) = self.behavior.lock_all_containers() else {
+            return;
+        };
         kind.update_result(&mut guard);
     }
 
@@ -200,14 +239,18 @@ impl Menu {
     /// Runs the kind's `on_open` hook, after contents are built but before they
     /// are sent to the client.
     pub fn on_open(&mut self, player: &Player) {
-        let mut guard = self.behavior().lock_all_containers();
+        let Ok(mut guard) = self.behavior().lock_all_containers() else {
+            return;
+        };
         let Self { behavior, kind, .. } = self;
         kind.on_open(behavior, &mut guard, player);
     }
 
     /// Runs the kind's `on_tick` hook. Called once per server tick while open.
     pub fn on_tick(&mut self, player: &Player) {
-        let mut guard = self.behavior().lock_all_containers();
+        let Ok(mut guard) = self.behavior().lock_all_containers() else {
+            return;
+        };
         let Self { behavior, kind, .. } = self;
         kind.on_tick(behavior, &mut guard, player);
     }
@@ -247,10 +290,15 @@ impl Menu {
             return;
         }
 
+        let Ok(armor_before) = self.armor_items() else {
+            return;
+        };
         let has_infinite_materials = player.game_mode() == GameType::Creative;
         if let Click::QuickCraft(action) = click {
             let outcome = {
-                let mut guard = self.behavior().lock_all_containers();
+                let Ok(mut guard) = self.behavior().lock_all_containers() else {
+                    return;
+                };
                 let Self { behavior, kind, .. } = self;
                 kind.on_drag(behavior, &mut guard, action, player)
             };
@@ -271,7 +319,9 @@ impl Menu {
             // Menu-defined click hook. A consumed click skips default handling.
             // The guard is dropped before the default arms re-lock the same containers.
             let outcome = {
-                let mut guard = self.behavior().lock_all_containers();
+                let Ok(mut guard) = self.behavior().lock_all_containers() else {
+                    return;
+                };
                 let Self { behavior, kind, .. } = self;
                 kind.on_slot_clicked(behavior, &mut guard, click, player)
             };
@@ -311,14 +361,72 @@ impl Menu {
             _ => true,
         };
         if should_recompute {
-            let mut guard = self.behavior().lock_all_containers();
+            let Ok(mut guard) = self.behavior().lock_all_containers() else {
+                return;
+            };
             self.slots_changed(&mut guard, player);
+        }
+        self.notify_armor_equipment_changes(player, armor_before);
+    }
+
+    /// Sets a slot on behalf of a direct player action, such as a creative mode
+    /// slot packet. Reports the resulting equipment changes like [`Self::clicked`].
+    pub(crate) fn set_slot_by_player(
+        &mut self,
+        slot_index: usize,
+        stack: ItemStack,
+        player: &Player,
+    ) {
+        let Ok(armor_before) = self.armor_items() else {
+            return;
+        };
+        {
+            let Ok(mut guard) = self.behavior().lock_all_containers() else {
+                return;
+            };
+            let Some(slot) = self.behavior().slots().get(slot_index) else {
+                return;
+            };
+            let previous = slot.get_item(&guard).clone();
+            slot.set_by_player(&mut guard, stack, &previous);
+        }
+        self.notify_armor_equipment_changes(player, armor_before);
+    }
+
+    fn armor_items(&self) -> LootResult<Vec<(EquipmentSlot, ItemStack)>> {
+        let guard = self.behavior().lock_all_containers()?;
+        Ok(self
+            .behavior()
+            .slots()
+            .iter()
+            .filter_map(|slot| {
+                let armor_slot = slot.downcast_ref::<ArmorSlot>()?;
+                Some((
+                    armor_slot.equipment_slot(),
+                    armor_slot.get_item(&guard).clone(),
+                ))
+            })
+            .collect())
+    }
+
+    fn notify_armor_equipment_changes(
+        &self,
+        player: &Player,
+        armor_before: Vec<(EquipmentSlot, ItemStack)>,
+    ) {
+        let Ok(armor_after) = self.armor_items() else {
+            return;
+        };
+        for ((slot, previous), (_, current)) in armor_before.into_iter().zip(armor_after) {
+            player.on_equip_item(slot, &previous, &current);
         }
     }
 
     /// Handles quick move (shift-click).
     fn do_quick_move(&mut self, slot_index: usize, player: &Player) {
-        let mut guard = self.behavior().lock_all_containers();
+        let Ok(mut guard) = self.behavior().lock_all_containers() else {
+            return;
+        };
 
         if !self.behavior().slots()[slot_index].may_pickup(&guard, player) {
             return;
@@ -344,9 +452,11 @@ impl Menu {
     /// Handles swap (number keys for a hotbar slot, or swap-hands for the
     /// offhand).
     fn do_swap(&mut self, slot_index: usize, with: SwapTarget, player: &Player) {
-        let player_inventory = ContainerRef::from(player.inventory.clone());
+        let player_inventory = ContainerRef::from(Arc::clone(&player.inventory));
         let player_inv_id = ContainerId::from_arc(&player.inventory);
-        let mut guard = self.behavior().lock_all_containers_with(player_inventory);
+        let Ok(mut guard) = self.behavior().lock_all_containers_with(player_inventory) else {
+            return;
+        };
 
         let behavior = self.behavior();
         let target_slot = &behavior.slots()[slot_index];
@@ -369,9 +479,14 @@ impl Menu {
                     unreachable!("the explicitly locked player inventory must be present");
                 };
                 inventory.set_item(inventory_slot, target_item.clone());
+                target_slot.on_swap_craft(target_item.count);
                 target_slot.set_by_player(&mut guard, ItemStack::empty(), &target_item);
                 if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
-                    player.add_item_or_drop_with_guard(&mut guard, remainder);
+                    player.add_item_or_drop_with_guard(
+                        &mut guard,
+                        remainder,
+                        Prediction::Predicted,
+                    );
                 }
             }
         } else if target_item.is_empty() {
@@ -404,7 +519,11 @@ impl Menu {
                     let to_place = inv.get_item_mut(inventory_slot).split(max_size);
                     target_slot.set_by_player(&mut guard, to_place, &target_item);
                     if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
-                        player.add_item_or_drop_with_guard(&mut guard, remainder);
+                        player.add_item_or_drop_with_guard(
+                            &mut guard,
+                            remainder,
+                            Prediction::Predicted,
+                        );
                     }
                     let mut displaced = target_item;
                     let Some(inventory) = guard.get_mut(player_inv_id) else {
@@ -413,7 +532,9 @@ impl Menu {
                     let added = inventory.add(&mut displaced);
                     // Vanilla's Inventory::add consumes uninserted stacks in creative mode.
                     if !added && !player.has_infinite_materials() {
-                        let _ = guard.run_unlocked(|| player.drop_item(displaced, false, true));
+                        let _ = guard.run_unlocked(|| {
+                            player.drop_item(displaced, true, Prediction::Predicted)
+                        });
                     }
                 } else {
                     let Some(inventory) = guard.get_mut(player_inv_id) else {
@@ -422,7 +543,11 @@ impl Menu {
                     inventory.set_item(inventory_slot, target_item.clone());
                     target_slot.set_by_player(&mut guard, source_item, &target_item);
                     if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
-                        player.add_item_or_drop_with_guard(&mut guard, remainder);
+                        player.add_item_or_drop_with_guard(
+                            &mut guard,
+                            remainder,
+                            Prediction::Predicted,
+                        );
                     }
                 }
             }
@@ -432,7 +557,9 @@ impl Menu {
     /// Handles pickup all (double-click): collects matching items from all slots
     /// into the carried stack.
     fn do_pickup_all(&mut self, slot_index: usize, direction: FillDirection, player: &Player) {
-        let mut guard = self.behavior().lock_all_containers();
+        let Ok(mut guard) = self.behavior().lock_all_containers() else {
+            return;
+        };
 
         let behavior = self.behavior();
         let slot = &behavior.slots()[slot_index];

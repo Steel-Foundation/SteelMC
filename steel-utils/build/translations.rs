@@ -48,7 +48,7 @@ pub(crate) fn prepare(output: &Path) {
 
     let content = serde_json::to_string(&translations)
         .expect("Failed to serialize processed vanilla translations");
-    super::write_if_changed(output, content);
+    super::codegen::write_file_if_changed(output, content);
 }
 
 pub(crate) fn build(path: &str) -> TokenStream {

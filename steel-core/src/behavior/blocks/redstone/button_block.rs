@@ -11,18 +11,20 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_game_events;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use super::face_attached_horizontal_directional_block::FaceAttachedHorizontalDirectionalBlock;
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::face_attached_horizontal_directional_block::FaceAttachedHorizontalDirectionalBlock;
 use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::entity::{Entity, InsideBlockEffectCollector, SharedEntity};
 use crate::player::Player;
+use crate::world::explosion::Explosion;
 use crate::world::{
     LevelReader, ScheduledTickAccess, SignalQueryContext, World, game_event::GameEventContext,
 };
@@ -201,6 +203,21 @@ impl BlockBehavior for ButtonBlock {
         InteractionResult::Success
     }
 
+    fn on_explosion_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &dyn Explosion,
+        on_hit: &mut dyn FnMut(ItemStack, BlockPos),
+    ) {
+        if explosion.can_trigger_blocks() && !state.get_value(POWERED) {
+            self.press(state, world, pos, None);
+        }
+
+        self.default_on_explosion_hit(state, world, pos, explosion, on_hit);
+    }
+
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let powered: bool = state.get_value(POWERED);
         if !powered {
@@ -294,9 +311,10 @@ mod tests {
     fn wooden_button_stays_pressed_while_arrow_intersects_its_shape() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("wooden_button_arrow");
+        let world_fixture = fresh_test_world("wooden_button_arrow");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         let state = vanilla_blocks::OAK_BUTTON.default_state();
         assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
 
@@ -313,7 +331,7 @@ mod tests {
         let arrow: SharedEntity = TestEntity::shared(
             7_001,
             arrow_pos,
-            Arc::downgrade(&world),
+            Arc::downgrade(world),
             &vanilla_entities::ARROW,
         );
         world
@@ -323,7 +341,7 @@ mod tests {
         let mut effects = InsideBlockEffectCollector::new();
         BLOCK_BEHAVIORS
             .get_behavior(&vanilla_blocks::OAK_BUTTON)
-            .entity_inside(state, &world, pos, arrow.as_ref(), &mut effects, true);
+            .entity_inside(state, world, pos, arrow.as_ref(), &mut effects, true);
 
         assert!(world.get_block_state(pos).get_value(POWERED));
         assert!(world.has_scheduled_block_tick(pos, &vanilla_blocks::OAK_BUTTON));

@@ -282,7 +282,7 @@ mod tests {
         let queue = ServerJobQueue::new();
         let polls = Arc::new(AtomicUsize::new(0));
         queue.spawn(CountJob {
-            polls: polls.clone(),
+            polls: Arc::clone(&polls),
             finish_after: 2,
         });
 
@@ -319,7 +319,7 @@ mod tests {
         impl ServerJob for SpawnJob {
             fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
                 self.queue.spawn(CountJob {
-                    polls: self.polls.clone(),
+                    polls: Arc::clone(&self.polls),
                     finish_after: 1,
                 });
                 JobPoll::Finished
@@ -329,8 +329,8 @@ mod tests {
         let queue = Arc::new(ServerJobQueue::new());
         let polls = Arc::new(AtomicUsize::new(0));
         queue.spawn(SpawnJob {
-            queue: queue.clone(),
-            polls: polls.clone(),
+            queue: Arc::clone(&queue),
+            polls: Arc::clone(&polls),
         });
 
         let mut context = ServerJobContext::for_test(1, true);
@@ -356,7 +356,7 @@ mod tests {
         let result = queue.poll_now_or_spawn_with_context(
             &mut context,
             CountJob {
-                polls: polls.clone(),
+                polls: Arc::clone(&polls),
                 finish_after: 1,
             },
         );
@@ -375,7 +375,7 @@ mod tests {
         let result = queue.poll_now_or_spawn_with_context(
             &mut context,
             CountJob {
-                polls: polls.clone(),
+                polls: Arc::clone(&polls),
                 finish_after: 2,
             },
         );

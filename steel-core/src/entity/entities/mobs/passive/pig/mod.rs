@@ -35,14 +35,14 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
-    EntitySpawnReason, EntitySyncedData, ItemBasedSteering, ItemSteerable, LivingEntity,
-    LivingEntityBase, LivingEntitySyncedData, Mob, MobBase, MoveResult, PathfinderMob,
-    SharedEntity, SpawnGroupData,
+    AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
+    EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, ItemBasedSteering,
+    ItemSteerable, LivingEntity, LivingEntityBase, LivingEntitySyncedData, Mob, MobBase,
+    MoveResult, PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule, sync_dirty_mob_effects,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 
 const PIG_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.5, 0.0)];
@@ -54,7 +54,7 @@ const PIG_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachm
 );
 
 /// Vanilla pig entity.
-#[entity_behavior(class = "Pig")]
+#[entity_behavior(class = "Pig", spawn_rule)]
 pub struct PigEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -72,6 +72,11 @@ unsafe impl DowncastType for PigEntity {
 }
 
 impl PigEntity {
+    /// Vanilla `SpawnPlacements` predicate: `Animal.checkAnimalSpawnRules`.
+    pub(crate) const SPAWN_RULE: SpawnRule = |entity_type, level, spawn_reason, pos, random| {
+        <Self as Animal>::check_animal_spawn_rules(entity_type, level, spawn_reason, pos, random)
+    };
+
     /// Creates a new pig entity.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
@@ -202,22 +207,10 @@ impl PigEntity {
     }
 
     fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
+        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
+            self.entity_data
+                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
         }
-
-        let display = self.living_base.mob_effect_display_state();
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
-        self.entity_data
-            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
     /// Returns whether the stack is vanilla pig food.
@@ -229,7 +222,17 @@ impl PigEntity {
     }
 }
 
+impl DefaultEntityPush for PigEntity {}
+
 impl Entity for PigEntity {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
+    fn as_default_entity_push(&self) -> Option<&dyn DefaultEntityPush> {
+        Some(self)
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -358,8 +361,8 @@ impl LivingEntity for PigEntity {
         (slot == EquipmentSlot::Saddle).then_some(&sound_events::ENTITY_PIG_SADDLE)
     }
 
-    fn server_ai_step(&self) {
-        Mob::mob_server_ai_step(self);
+    fn server_ai_step(&self, entity: &SharedEntity) {
+        Mob::mob_server_ai_step(self, entity);
     }
 
     fn tick_ridden(&self, controller: &Player, _ridden_input: DVec3) {
@@ -380,8 +383,8 @@ impl LivingEntity for PigEntity {
         movement_speed * 0.225 * ItemSteerable::boost_factor(self)
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
-        let result = Mob::mob_ai_step(self);
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        let result = Mob::mob_ai_step(self, entity);
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
         result
@@ -467,8 +470,8 @@ impl Mob for PigEntity {
         &self.mob_base
     }
 
-    fn tick_goal_selectors(&self) {
-        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    fn tick_goal_selectors(&self, entity: &SharedEntity) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self, entity);
     }
 
     fn tick_path_navigation(&self) {
@@ -486,6 +489,7 @@ impl Mob for PigEntity {
     fn finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -509,7 +513,7 @@ impl Mob for PigEntity {
             self.set_sound_variant(sound_variant);
         }
 
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(world, difficulty, spawn_reason, group_data)
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

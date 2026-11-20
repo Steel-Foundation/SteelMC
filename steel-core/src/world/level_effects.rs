@@ -1,19 +1,22 @@
-use std::ptr;
+use crate::loot::LOOT_TABLES;
+use std::{borrow::Cow, ptr};
+use steel_utils::Identifier;
 
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockLootContext, BlockPos, BlockStateExt, BlockStateId, CLevelEvent,
     CLevelParticles, CSound, ChunkPos, ConnectionProtocol, DVec3, EncodedPacket, Entity,
     GLOBAL_SOUND_EVENTS, GameEventContext, ItemStack, LevelReader, LootContext, NetworkConnection,
-    ParticleData, Player, REGISTRY, RegistryExt, SectionPos, SoundEventRef, SoundSource,
+    ParticleData, Player, RandomizationType, RegistryExt, SectionPos, SoundEventRef, SoundSource,
     UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block, level_events,
     vanilla_blocks, vanilla_game_events,
 };
+use crate::entity::loot_equipment;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use steel_registry::sound_event::SoundEventHolder;
 use steel_registry::vanilla_particle_types::{BUBBLE, SPLASH};
 
 pub(super) fn sound_is_within_range(
-    sound: SoundEventRef,
+    sound: &SoundEventHolder,
     volume: f32,
     distance_squared: f64,
 ) -> bool {
@@ -120,9 +123,12 @@ impl World {
             x_dist: spread.x as f32,
             y_dist: spread.y as f32,
             z_dist: spread.z as f32,
-            max_speed: speed as f32,
+            x_max_speed: speed as f32,
+            y_max_speed: speed as f32,
+            z_max_speed: speed as f32,
             count,
             particle,
+            randomization_type: RandomizationType::default(),
         };
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -181,9 +187,12 @@ impl World {
             x_dist: spread.x as f32,
             y_dist: spread.y as f32,
             z_dist: spread.z as f32,
-            max_speed: speed as f32,
+            x_max_speed: speed as f32,
+            y_max_speed: speed as f32,
+            z_max_speed: speed as f32,
             count,
             particle,
+            randomization_type: RandomizationType::default(),
         };
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -200,9 +209,8 @@ impl World {
         particle_pos: DVec3,
         override_limiter: bool,
     ) -> bool {
-        let (x, y, z) = player_block_pos.get_center();
         let radius = if override_limiter { 512.0 } else { 32.0 };
-        DVec3::new(x, y, z).distance_squared(particle_pos) < radius * radius
+        player_block_pos.get_center().distance_squared(particle_pos) < radius * radius
     }
 
     /// Sends bubble column particles at the position
@@ -252,15 +260,13 @@ impl World {
 
     /// Broadcasts block destruction particles and sound for a destroyed block.
     ///
-    /// This is a convenience method that sends the `PARTICLES_DESTROY_BLOCK` level event.
-    ///
     /// # Arguments
     /// * `pos` - The position of the destroyed block
     /// * `block_state_id` - The block state ID of the destroyed block
     /// * `exclude` - Optional entity ID to exclude from receiving the event
     pub fn destroy_block_effect(&self, pos: BlockPos, block_state_id: u32, exclude: Option<i32>) {
         self.level_event(
-            level_events::PARTICLES_DESTROY_BLOCK,
+            level_events::PARTICLES_AND_SOUND_DESTROY_BLOCK,
             pos,
             block_state_id as i32,
             exclude,
@@ -341,7 +347,9 @@ impl World {
             if let Some(block_entity) = self.get_block_entity(pos)
                 && let Some(container_ref) = ContainerRef::from_block_entity(block_entity)
             {
-                let mut guard = ContainerLockGuard::lock_all(&[&container_ref]);
+                let Ok(mut guard) = ContainerLockGuard::lock_all(&[&container_ref]) else {
+                    return false;
+                };
                 if let Some(container) = guard.get_mut(container_ref.container_id()) {
                     for slot in 0..container.get_container_size() {
                         let item = container.remove_item_no_update(slot);
@@ -410,29 +418,42 @@ impl World {
         context: &BlockLootContext<'_>,
     ) -> Vec<ItemStack> {
         let block = state.get_block();
-        let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
-
-        let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_key) else {
+        let loot_key = block.config.loot_table.map_or_else(
+            || Cow::Owned(Identifier::vanilla(format!("blocks/{}", block.key.path))),
+            Cow::Borrowed,
+        );
+        let Some(loot_table) = LOOT_TABLES.by_key(&loot_key) else {
             return Vec::new();
         };
 
-        let mut rng = rand::rng();
-        let mut ctx = LootContext::new(&mut rng)
-            .with_luck(context.luck())
-            .with_block_state(state)
-            .with_origin(
-                f64::from(context.pos().x()),
-                f64::from(context.pos().y()),
-                f64::from(context.pos().z()),
-            );
-        if let Some(tool) = context.tool() {
-            ctx = ctx.with_tool(tool);
-        }
-        if let Some(entity) = context.entity() {
-            ctx = ctx.with_this_entity(entity_loot_ref(entity));
-        }
+        context
+            .world()
+            .with_loot_random(Some(loot_table), 0, |rng| {
+                let empty_tool = ItemStack::empty();
+                let block_entity = context.world().get_block_entity(context.pos());
+                let mut ctx = LootContext::new(rng)
+                    .with_world(context.world())
+                    .with_tool(context.tool().unwrap_or(&empty_tool))
+                    .with_luck(context.luck())
+                    .with_block_state(state)
+                    .with_origin(context.pos().get_center());
+                if let Some(block_entity) = &block_entity {
+                    ctx = ctx.with_block_entity(block_entity.as_ref());
+                }
+                let entity_equipment = context.entity().and_then(loot_equipment);
+                if let Some(entity) = context.entity() {
+                    ctx = ctx.with_this_entity(entity_loot_ref(entity, entity_equipment.as_ref()));
+                }
+                if let Some(radius) = context.explosion_radius() {
+                    ctx = ctx.with_explosion(radius);
+                }
 
-        loot_table.get_random_items(&mut ctx)
+                loot_table.get_random_items(&mut ctx)
+            })
+            .unwrap_or_else(|error| {
+                log::error!("Failed to generate block loot {}: {error}", loot_table.key);
+                Vec::new()
+            })
     }
 
     /// Plays a sound at a specific position, broadcasting to nearby players.
@@ -481,6 +502,26 @@ impl World {
         pitch: f32,
         exclude: Option<i32>,
     ) {
+        self.play_sound_holder_at(
+            &SoundEventHolder::Registry(sound),
+            source,
+            pos,
+            volume,
+            pitch,
+            exclude,
+        );
+    }
+
+    /// broadcasts a registry or direct sound holder at an exact world position
+    pub fn play_sound_holder_at(
+        &self,
+        sound: &SoundEventHolder,
+        source: SoundSource,
+        pos: DVec3,
+        volume: f32,
+        pitch: f32,
+        exclude: Option<i32>,
+    ) {
         let chunk = ChunkPos::new(
             SectionPos::block_to_section_coord(pos.x.floor() as i32),
             SectionPos::block_to_section_coord(pos.z.floor() as i32),
@@ -488,7 +529,7 @@ impl World {
 
         // Generate a random seed for sound variations
         let seed = rand::random::<i64>();
-        let packet = CSound::new(sound, source, pos, volume, pitch, seed);
+        let packet = CSound::new_holder(sound.clone(), source, pos, volume, pitch, seed);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
         else {

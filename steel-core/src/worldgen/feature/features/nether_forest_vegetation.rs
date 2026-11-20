@@ -30,7 +30,7 @@ impl FeatureDecorationRunner {
                 random.next_i32_bounded(config.spread_width)
                     - random.next_i32_bounded(config.spread_width),
             );
-            let state = Self::sample_block_state_provider(
+            let state = BlockStateProviderEvaluator::sample_block_state_provider(
                 region,
                 registry,
                 random,

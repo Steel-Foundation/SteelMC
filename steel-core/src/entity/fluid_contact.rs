@@ -156,6 +156,12 @@ impl EntityFluidContact {
         self.lava_height
     }
 
+    /// Returns whether any fluid touches the entity.
+    #[must_use]
+    pub const fn any_fluid(self) -> bool {
+        self.water_height > 0.0 || self.lava_height > 0.0
+    }
+
     /// Returns whether the entity's eyes are currently inside water.
     #[must_use]
     pub const fn eye_in_water(self) -> bool {

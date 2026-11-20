@@ -51,11 +51,6 @@ pub mod item_behaviors;
 
 #[expect(warnings)]
 #[rustfmt::skip]
-#[path = "generated/strippables.rs"]
-pub mod strippables;
-
-#[expect(warnings)]
-#[rustfmt::skip]
 #[path = "generated/waxables.rs"]
 pub mod waxables;
 
@@ -63,6 +58,11 @@ pub mod waxables;
 #[rustfmt::skip]
 #[path = "generated/weathering.rs"]
 pub mod weathering;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/skull_types.rs"]
+pub mod skull_types;
 
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionBoxes, BlockCollisionContext,
@@ -73,17 +73,16 @@ pub(crate) use block::{pickup_waterlogged_block, try_drop_experience};
 use block_behaviors::register_block_behaviors;
 pub use consume_effect::{CONSUME_EFFECT_BEHAVIORS, ConsumeEffectBehaviorRegistry};
 pub use context::{
-    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, PlacementOrientation,
-    PlacementSource, UseItemContext, UseOnContext,
+    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, InventoryTickContext,
+    PlacementOrientation, PlacementSource, UseItemContext, UseOnContext,
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub(crate) use item::apply_use_remainder;
-pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation};
+pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation, SignApplicator};
 use item_behaviors::register_item_behaviors;
 pub use items::{
-    BedItem, BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem,
-    HangingSignItem, ScaffoldingBlockItem, ShovelItem, SignItem, SolidBucketItem,
-    StandingAndWallBlockItem,
+    BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem, HangingSignItem,
+    ScaffoldingBlockItem, ShieldItem, SolidBucketItem, StandingAndWallBlockItem,
 };
 pub use mob_effect::{MOB_EFFECT_BEHAVIORS, MobEffectBehaviorRegistry};
 use std::ops::Deref;
@@ -91,6 +90,7 @@ use std::sync::OnceLock;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::consume_effect::vanilla_consume_effect_types;
+use steel_registry::fluid::FluidRef;
 use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_mob_effects;
 use steel_utils::BlockStateId;
@@ -134,11 +134,12 @@ impl Deref for ItemBehaviorLock {
 /// This is separate from `BlockStateExt` (in steel-registry) because these methods
 /// require access to the behavior registry which lives in steel-core.
 pub trait BlockStateBehaviorExt {
-    /// Returns whether this block state belongs to a vanilla `LiquidBlockContainer`.
+    /// Returns whether this block state can hold a fluid inside it, such as
+    /// a waterlogged block, cauldron, or seagrass.
     fn is_liquid_container(&self) -> bool;
 
     /// Returns whether this block state can be replaced by the given fluid block.
-    fn can_be_replaced_by_fluid(&self, fluid_block: BlockRef) -> bool;
+    fn can_be_replaced_by_fluid(&self, fluid: FluidRef) -> bool;
 
     /// Returns whether this block state can be replaced in this placement context.
     fn can_be_replaced(&self, context: &BlockPlaceContext<'_>) -> bool;
@@ -163,10 +164,10 @@ impl BlockStateBehaviorExt for BlockStateId {
         behavior.is_liquid_container(*self)
     }
 
-    fn can_be_replaced_by_fluid(&self, fluid_block: BlockRef) -> bool {
+    fn can_be_replaced_by_fluid(&self, fluid: FluidRef) -> bool {
         let block = self.get_block();
         let behavior = BLOCK_BEHAVIORS.get_behavior(block);
-        behavior.can_be_replaced_by_fluid(*self, fluid_block)
+        behavior.can_be_replaced_by_fluid(*self, fluid)
     }
 
     fn can_be_replaced(&self, context: &BlockPlaceContext<'_>) -> bool {

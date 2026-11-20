@@ -18,6 +18,8 @@ pub mod state_resolver;
 pub mod structure;
 /// Surface rule context types for generated code.
 pub mod surface;
+/// Partial evaluation of surface rules below the preliminary surface.
+pub mod surface_partial;
 /// utils
 pub mod utils;
 

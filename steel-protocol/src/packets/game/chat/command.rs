@@ -1,16 +1,29 @@
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use steel_macros::{ReadFrom, ServerPacket};
 #[expect(unused_imports)]
 use steel_registry::packets::play::{S_CHAT_COMMAND, S_CHAT_COMMAND_SIGNED};
 use steel_utils::codec::VarInt;
-use steel_utils::serial::PrefixedRead;
+use steel_utils::serial::{PrefixedRead, ReadFrom, prefixed_read::read_utf};
 
-#[derive(ServerPacket, ReadFrom)]
+use super::MessageSignature;
+
+const MAX_COMMAND_LENGTH: usize = 32_767;
+const MAX_ARGUMENT_COUNT: usize = 8;
+const MAX_ARGUMENT_NAME_LENGTH: usize = 16;
+
+#[derive(ServerPacket)]
 #[packet_id(Play = S_CHAT_COMMAND)]
 pub struct SChatCommand {
-    #[read(as = Prefixed(VarInt))]
     pub command: String,
+}
+
+impl ReadFrom for SChatCommand {
+    fn read(reader: &mut Cursor<&[u8]>) -> std::io::Result<Self> {
+        Ok(Self {
+            command: read_utf(reader, MAX_COMMAND_LENGTH)?,
+        })
+    }
 }
 
 /// Client -> Server: Executes a signed command.
@@ -38,32 +51,14 @@ pub struct SChatCommandSigned {
     pub last_seen: LastSeenMessagesUpdate,
 }
 
-impl steel_utils::serial::ReadFrom for SChatCommandSigned {
+impl ReadFrom for SChatCommandSigned {
     fn read(reader: &mut Cursor<&[u8]>) -> std::io::Result<Self> {
-        let command = String::read_prefixed_bound::<VarInt>(reader, 256)?;
-        let timestamp = i64::read(reader)?;
-        let salt = i64::read(reader)?;
-
-        let arg_count = VarInt::read(reader)?.0 as usize;
-        if arg_count > 8 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Too many argument signatures",
-            ));
-        }
-        let mut argument_signatures = Vec::with_capacity(arg_count);
-        for _ in 0..arg_count {
-            argument_signatures.push(ArgumentSignature::read(reader)?);
-        }
-
-        let last_seen = LastSeenMessagesUpdate::read(reader)?;
-
         Ok(Self {
-            command,
-            timestamp,
-            salt,
-            argument_signatures,
-            last_seen,
+            command: read_utf(reader, MAX_COMMAND_LENGTH)?,
+            timestamp: i64::read(reader)?,
+            salt: i64::read(reader)?,
+            argument_signatures: Vec::read_prefixed_bound::<VarInt>(reader, MAX_ARGUMENT_COUNT)?,
+            last_seen: LastSeenMessagesUpdate::read(reader)?,
         })
     }
 }
@@ -75,42 +70,35 @@ pub struct ArgumentSignature {
     pub name: String,
 
     /// The signature bytes (256 bytes for RSA 2048-bit)
-    pub signature: [u8; 256],
+    pub signature: [u8; MessageSignature::BYTES],
 }
 
-impl steel_utils::serial::ReadFrom for ArgumentSignature {
+impl ReadFrom for ArgumentSignature {
     fn read(reader: &mut Cursor<&[u8]>) -> std::io::Result<Self> {
-        // Read argument name (max 16 chars)
-        let name = String::read_prefixed_bound::<VarInt>(reader, 16)?;
-
-        // Read signature
-        let mut signature = [0u8; 256];
-        reader.read_exact(&mut signature)?;
-
-        Ok(Self { name, signature })
+        Ok(Self {
+            name: read_utf(reader, MAX_ARGUMENT_NAME_LENGTH)?,
+            signature: ReadFrom::read(reader)?,
+        })
     }
 }
 
 /// Last seen messages update from client
-#[derive(Clone, Debug)]
+#[derive(ReadFrom, Clone, Debug)]
 pub struct LastSeenMessagesUpdate {
     /// Offset to advance the message window
     pub offset: VarInt,
 
-    /// `BitSet` indicating which of the last 20 messages were acknowledged
-    /// 3 bytes = 24 bits (using 20)
-    pub acknowledged: [u8; 3],
+    /// A fixed bitset indicating which msgs in the lastseen window were acked
+    pub acknowledged: [u8; LastSeenMessagesUpdate::ACKNOWLEDGED_BYTES],
+
+    /// Checksum of the client's `LastSeenMessages`, verified against the
+    /// server's own computed checksum (0 means "skip verification").
+    pub checksum: u8,
 }
 
-impl steel_utils::serial::ReadFrom for LastSeenMessagesUpdate {
-    fn read(reader: &mut Cursor<&[u8]>) -> std::io::Result<Self> {
-        let offset = VarInt::read(reader)?;
-        let mut acknowledged = [0u8; 3];
-        reader.read_exact(&mut acknowledged)?;
-
-        Ok(Self {
-            offset,
-            acknowledged,
-        })
-    }
+impl LastSeenMessagesUpdate {
+    /// the max number of msgs in the lastseen window
+    pub const MAX_ENTRIES: usize = 20;
+    /// the size of the fixed bitset on the wire
+    pub const ACKNOWLEDGED_BYTES: usize = Self::MAX_ENTRIES.div_ceil(u8::BITS as usize);
 }

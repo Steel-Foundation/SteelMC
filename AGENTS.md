@@ -40,6 +40,7 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
  - Avoid raw `BlockStateId` in generated registry data. Use `BlockRef` plus explicit properties/default-state resolution so registry ordering can still evolve for plugin support.
 
 **Code standard**
+ - No magic numbers. Name unexplained literals with a constant or typed value stating meaning and unit; reuse vanilla/extracted constants when they exist. Obvious literals (`0`/`1`, index math) need no constant unless the unit is unclear.
  - Use vanilla names unless they are misleading or a Rust design is explicitly approved. Document intentional differences on the relevant struct, method, or module.
  - Minimize duplication when it reduces maintenance risk, but a few local lines are usually fine.
  - Keep files focused and reasonably sized. Split a file once it contains distinct responsibilities or becomes difficult to navigate.
@@ -57,6 +58,10 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
  - Keep comments concise.
  - After fixing something, don't leave a comment that only explains the old bug.
  - Currently this project is in early development, we don't need to provide migrations.
+
+ **Vanilla reference comments**
+- Don't write comments that only name the matching vanilla name, like ``/// Mirrors vanilla `CandleBlock.isLit`.`` on `CandleBlock::is_lit`.
+- Only reference vanilla when you document: a non obvious name, or you do something different an need to document where it comes from.
 
 **Particle routing**
 - In Vanilla, `Level.addParticle` and `playLocalSound` calls from shared ticks are client-local, so Steel generally has no server-side work to perform for them. An explanatory comment can still be useful when an omission would otherwise look accidental.
@@ -96,7 +101,7 @@ cargo build          # Build
 cargo run            # Run
 cargo check          # Fast compile check
 cargo test           # Tests
-cargo clippy -r --all-targets --all-features  # CI lint
+cargo clippy -r --workspace --all-targets --all-features  # CI lint
 cargo check -p steel-core          # Fast game/worldgen check
 cargo fmt --all --check            # CI formatting
 typos                               # CI spelling

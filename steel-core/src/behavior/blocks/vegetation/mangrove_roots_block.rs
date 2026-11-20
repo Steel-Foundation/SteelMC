@@ -62,10 +62,11 @@ mod tests {
     fn placement_preserves_source_water() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("mangrove_roots_placement");
+        let world_fixture = fresh_test_world("mangrove_roots_placement");
+        let world = &world_fixture.world;
         let wet_pos = BlockPos::new(8, 64, 8);
         let dry_pos = wet_pos.east();
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(wet_pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(wet_pos));
         assert!(world.set_block(
             wet_pos,
             vanilla_blocks::WATER.default_state(),
@@ -76,7 +77,7 @@ mod tests {
         let wet_state = {
             let mut stack = ItemStack::new(&vanilla_items::MANGROVE_ROOTS);
             let context = BlockPlaceContext::directional(
-                &world,
+                world,
                 wet_pos,
                 Direction::Down,
                 &mut stack,
@@ -89,7 +90,7 @@ mod tests {
         let dry_state = {
             let mut stack = ItemStack::new(&vanilla_items::MANGROVE_ROOTS);
             let context = BlockPlaceContext::directional(
-                &world,
+                world,
                 dry_pos,
                 Direction::Down,
                 &mut stack,

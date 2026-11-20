@@ -8,9 +8,9 @@ pub struct CommonPlayerSpawnInfo {
     pub dimension_type: i32,
     pub dimension: Identifier,
     pub seed: i64,
-    #[write(as = Byte)]
+    #[write(as = VarInt)]
     pub game_type: GameType,
-    #[write(as = OptionByte)]
+    #[write(as = OptionVarInt)]
     pub previous_game_type: Option<GameType>,
     pub is_debug: bool,
     pub is_flat: bool,

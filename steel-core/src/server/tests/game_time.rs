@@ -1,11 +1,13 @@
 use std::path::Path;
+use std::sync::Arc;
 use steel_utils::Identifier;
 
 use super::*;
-use crate::config::{DomainConfig, WorldEntryConfig};
+use crate::config::{DomainConfig, StorageSelection, WorldEntryConfig};
+
 use crate::level_data::LevelData;
 use crate::server::world_tick_workers::WorldTickWorkers;
-use crate::test_support::test_domain;
+use crate::test_support::{TestEntity, test_domain};
 use crate::world::tick_scheduler::TickPriority;
 use steel_registry::vanilla_fluids;
 use steel_registry::{packets::play::C_SET_TIME, vanilla_world_clocks};
@@ -42,22 +44,29 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
         .build()
         .expect("runtime");
     runtime.block_on(async {
-        let root = test_storage_root("game-time-domain-ticks");
         let server = test_server_with_worlds(
             "clock_a".to_owned(),
             &domains,
             &loaded,
             PermissionSubjectIndex::new(),
-            &root,
         )
         .await
         .expect("server");
         let workers = WorldTickWorkers::spawn(server.worlds.values()).expect("workers");
         let player = test_player(&server, Arc::clone(&primary));
-        let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
-        player
-            .living_base()
-            .record_last_damage_source(&source, primary.game_time());
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(primary.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let attacker = TestEntity::shared(
+            next_entity_id(),
+            DVec3::ZERO,
+            Arc::downgrade(&primary),
+            &vanilla_entities::ITEM,
+        );
+        let attacker_weak = Arc::downgrade(&attacker);
+        let source =
+            DamageSource::environment(&vanilla_damage_types::GENERIC).with_causing_entity(attacker);
+        player.record_last_damage_source(&source);
+        drop(source);
         let mut server_iteration = 0;
         let transfer_age = 39;
         for _ in 0..transfer_age {
@@ -85,6 +94,10 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
         }
         assert_eq!(primary.game_time(), 39);
         assert!(player.last_damage_source().is_some());
+        assert!(
+            attacker_weak.upgrade().is_some(),
+            "same-incarnation transfer retains the source"
+        );
         assert!(server.tick_rate_manager.write().step_game_if_paused(2));
         for (expected_damage_age, available) in [(40, true), (41, false)] {
             server_iteration += 1;
@@ -95,6 +108,7 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
                 .expect("step");
             assert_eq!(derived.game_time(), expected_damage_age);
             assert_eq!(player.last_damage_source().is_some(), available);
+            assert_eq!(attacker_weak.upgrade().is_some(), available);
         }
         let sprint_ticks = 3;
         server
@@ -126,8 +140,10 @@ fn game_time_domains_freeze_steps_sprint_and_transfer_damage() {
             other_domain_start_time + 44
         );
         drop(workers);
+        derived.remove_player_for_world_change(&player);
+        assert!(server.remove_online_player_sync(&player).is_some());
+        stop_game_time_test_worlds(&server).await;
         server.cancel_token.cancel();
-        fs::remove_dir_all(root).await.expect("cleanup");
     });
 }
 
@@ -143,8 +159,7 @@ fn game_time_full_partial_periodic_packets_keep_world_clocks_independent() {
         .build()
         .expect("runtime");
     runtime.block_on(async {
-        let root = test_storage_root("game-time-packets");
-        let server = test_server(Arc::clone(primary), PermissionSubjectIndex::new(), &root)
+        let server = test_server(Arc::clone(primary), PermissionSubjectIndex::new())
             .await
             .expect("server");
         let (player, packets) =
@@ -194,7 +209,6 @@ fn game_time_full_partial_periodic_packets_keep_world_clocks_independent() {
             Some(0)
         );
         server.cancel_token.cancel();
-        fs::remove_dir_all(root).await.expect("cleanup");
     });
 }
 

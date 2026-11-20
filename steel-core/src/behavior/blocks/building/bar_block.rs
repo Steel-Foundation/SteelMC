@@ -154,7 +154,7 @@ fn connects_to(
 }
 
 /// Gets the connection state for a position by checking all 4 horizontal neighbors.
-pub fn get_connection_state(block: BlockRef, world: &World, pos: &BlockPos) -> BlockStateId {
+pub(crate) fn get_connection_state(block: BlockRef, world: &World, pos: &BlockPos) -> BlockStateId {
     let mut state = block.default_state();
 
     // Check north
@@ -184,7 +184,7 @@ pub fn get_connection_state(block: BlockRef, world: &World, pos: &BlockPos) -> B
     state
 }
 
-pub fn update_shape(
+pub(crate) fn update_shape(
     world: &dyn LevelReader,
     state: BlockStateId,
     neighbor_state: BlockStateId,

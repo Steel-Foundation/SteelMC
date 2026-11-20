@@ -148,7 +148,7 @@ pub(crate) fn build() -> TokenStream {
     // Generate registration function (order matters - must match vanilla IDs)
     let mut register_stream = TokenStream::new();
 
-    let mut sorted_poi_types = poi_types.clone();
+    let mut sorted_poi_types = poi_types;
     sorted_poi_types.sort_by_key(|p| p.id);
 
     for poi_type in &sorted_poi_types {

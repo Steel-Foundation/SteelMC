@@ -4,6 +4,7 @@ use steel_macros::block_behavior;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _, shapes::VoxelShape};
 use steel_registry::dimension_type::DimensionTypeRef;
+use steel_registry::fluid::FluidRef;
 use steel_registry::{vanilla_block_entity_types, vanilla_dimension_types};
 use steel_utils::{BlockPos, BlockStateId, Downcast as _};
 
@@ -18,7 +19,7 @@ use crate::portal::PortalKind;
 use crate::world::LevelReader;
 use crate::world::World;
 
-/// Vanilla `EndPortalBlock` replacement behavior.
+/// End portal block behavior.
 #[block_behavior]
 pub struct EndPortalBlock {
     block: BlockRef,
@@ -71,7 +72,7 @@ impl BlockBehavior for EndPortalBlock {
         Some(self.block.default_state())
     }
 
-    fn can_be_replaced_by_fluid(&self, _state: BlockStateId, _fluid_block: BlockRef) -> bool {
+    fn can_be_replaced_by_fluid(&self, _state: BlockStateId, _fluid: FluidRef) -> bool {
         false
     }
 
@@ -111,7 +112,7 @@ impl BlockBehavior for EndPortalBlock {
     }
 }
 
-/// Vanilla `EndGatewayBlock` replacement behavior.
+/// End gateway block behavior.
 #[block_behavior]
 pub struct EndGatewayBlock {
     block: BlockRef,
@@ -149,7 +150,7 @@ impl BlockBehavior for EndGatewayBlock {
         Some(self.block.default_state())
     }
 
-    fn can_be_replaced_by_fluid(&self, _state: BlockStateId, _fluid_block: BlockRef) -> bool {
+    fn can_be_replaced_by_fluid(&self, _state: BlockStateId, _fluid: FluidRef) -> bool {
         false
     }
 
@@ -213,6 +214,7 @@ mod tests {
     use std::sync::Weak;
     use steel_registry::blocks::block_state_ext::BlockStateExt as _;
     use steel_registry::entity_type::EntityTypeRef;
+    use steel_registry::vanilla_fluids;
     use steel_registry::{
         init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks, vanilla_dimension_types,
     };
@@ -235,12 +237,12 @@ mod tests {
         assert!(
             !vanilla_blocks::END_PORTAL
                 .default_state()
-                .can_be_replaced_by_fluid(&vanilla_blocks::WATER)
+                .can_be_replaced_by_fluid(&vanilla_fluids::WATER)
         );
         assert!(
             !vanilla_blocks::END_GATEWAY
                 .default_state()
-                .can_be_replaced_by_fluid(&vanilla_blocks::LAVA)
+                .can_be_replaced_by_fluid(&vanilla_fluids::LAVA)
         );
     }
 
@@ -334,7 +336,8 @@ mod tests {
     #[test]
     fn end_gateway_creates_typed_block_entity() {
         init_vanilla_registry();
-        let world = fresh_test_world("end_gateway_ticker");
+        let world_fixture = fresh_test_world("end_gateway_ticker");
+        let world = &world_fixture.world;
         let behavior = EndGatewayBlock::new(&vanilla_blocks::END_GATEWAY);
         let state = vanilla_blocks::END_GATEWAY.default_state();
         let pos = BlockPos::new(2, 70, -4);
@@ -352,12 +355,12 @@ mod tests {
         assert_eq!(block_entity.get_block_state(), state);
         assert!(
             behavior
-                .get_block_entity_ticker(&world, state, &vanilla_block_entity_types::END_GATEWAY,)
+                .get_block_entity_ticker(world, state, &vanilla_block_entity_types::END_GATEWAY,)
                 .is_some()
         );
         assert!(
             behavior
-                .get_block_entity_ticker(&world, state, &vanilla_block_entity_types::END_PORTAL)
+                .get_block_entity_ticker(world, state, &vanilla_block_entity_types::END_PORTAL)
                 .is_none()
         );
     }

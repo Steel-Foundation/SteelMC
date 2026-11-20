@@ -62,7 +62,7 @@ impl ItemBehavior for FlintAndSteelItem {
         context.world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
             click_pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
         let has_infinite_materials = context.player.has_infinite_materials();
@@ -116,7 +116,7 @@ impl ItemBehavior for FireChargeItem {
         context.world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
             fire_pos,
-            &GameEventContext::new(Some(context.player), None),
+            &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
         context.inv.with_item(ItemStack::shrink_one);
@@ -147,7 +147,7 @@ fn try_light_block(
     context.world.game_event(
         &vanilla_game_events::BLOCK_CHANGE,
         pos,
-        &GameEventContext::new(Some(context.player), None),
+        &GameEventContext::new(Some(context.player.as_ref()), None),
     );
 
     true

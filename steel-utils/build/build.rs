@@ -1,5 +1,8 @@
 //! Build script for steel-utils that generates translation constants.
 
+use chrono::{DateTime, Utc};
+use proc_macro2::TokenStream;
+use quote::quote;
 use reqwest::blocking::{self, Response};
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
@@ -10,17 +13,18 @@ use std::{
     fs::OpenOptions,
     io::{Cursor, ErrorKind, Read, copy},
     path::{Path, PathBuf},
-    process::Command,
     thread,
     time::{Duration, Instant},
 };
 
 use text_components::build::build_translations;
 
+#[path = "../../build/codegen.rs"]
+mod codegen;
+use codegen::write_tokens_if_changed;
+
 mod entity_events;
 mod translations;
-
-const FMT: bool = cfg!(feature = "fmt");
 
 const OUT_DIR: &str = "src/generated";
 const IDS: &str = "vanilla_translations/ids";
@@ -55,6 +59,37 @@ struct DownloadEntry {
     sha1: String,
     size: u64,
     url: String,
+}
+
+/// Matches the `version.json` vanilla bundles at the server jar root - the
+/// same file `DetectedVersion.tryDetectVersion` reads at runtime.
+#[derive(Deserialize)]
+struct VersionInfo {
+    id: String,
+    name: String,
+    world_version: i32,
+    #[serde(default = "default_series_id")]
+    series_id: String,
+    build_time: String,
+    pack_version: PackVersionInfo,
+    stable: bool,
+}
+
+fn default_series_id() -> String {
+    "main".to_owned()
+}
+
+#[derive(Deserialize)]
+struct PackVersionInfo {
+    resource_major: i32,
+    resource_minor: i32,
+    data_major: i32,
+    data_minor: i32,
+}
+
+/// Formats a pack format the way vanilla's `PackFormat#toString` does.
+fn format_pack_version(major: i32, minor: i32) -> String {
+    format!("{major}.{minor}")
 }
 
 fn get_target_mc_version() -> String {
@@ -109,11 +144,13 @@ fn assets_are_valid(
     version_file: &Path,
     en_us_dest: &Path,
     deprecated_dest: &Path,
+    version_json_dest: &Path,
     target_ver: &str,
 ) -> bool {
     version_file.exists()
         && en_us_dest.exists()
         && deprecated_dest.exists()
+        && version_json_dest.exists()
         && fs::read_to_string(version_file).is_ok_and(|v| v.trim() == target_ver)
 }
 
@@ -122,6 +159,7 @@ fn acquire_asset_lock(
     version_file: &Path,
     en_us_dest: &Path,
     deprecated_dest: &Path,
+    version_json_dest: &Path,
     target_ver: &str,
 ) -> Option<AssetLock> {
     let start = Instant::now();
@@ -129,7 +167,13 @@ fn acquire_asset_lock(
         match try_acquire_asset_lock(lock_file) {
             Ok(Some(lock)) => return Some(lock),
             Ok(None) => {
-                if assets_are_valid(version_file, en_us_dest, deprecated_dest, target_ver) {
+                if assets_are_valid(
+                    version_file,
+                    en_us_dest,
+                    deprecated_dest,
+                    version_json_dest,
+                    target_ver,
+                ) {
                     return None;
                 }
                 assert!(
@@ -214,16 +258,15 @@ fn get_server_archive(jar_data: Vec<u8>) -> zip::ZipArchive<Cursor<Vec<u8>>> {
 
     let mut nested_entry_name = None;
     for i in 0..outer_archive.len() {
-        if let Ok(file) = outer_archive.by_index(i) {
-            let name = file.name();
-            if name.starts_with("META-INF/versions/")
-                && Path::new(name)
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"))
-            {
-                nested_entry_name = Some(name.to_string());
-                break;
-            }
+        if let Ok(file) = outer_archive.by_index(i)
+            && let Ok(name) = file.name()
+            && name.starts_with("META-INF/versions/")
+            && Path::new(&*name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"))
+        {
+            nested_entry_name = Some(name.into_owned());
+            break;
         }
     }
 
@@ -244,6 +287,12 @@ fn get_server_archive(jar_data: Vec<u8>) -> zip::ZipArchive<Cursor<Vec<u8>>> {
     }
 }
 
+fn extract_file(file: &mut impl Read, dest: &Path, label: &str) {
+    let mut out_file = fs::File::create(dest)
+        .unwrap_or_else(|e| panic!("Failed to create file {}: {e}", dest.display()));
+    copy(file, &mut out_file).unwrap_or_else(|e| panic!("Failed to extract {label}: {e}"));
+}
+
 fn download_and_extract_assets(manifest_dir: &str) {
     let target_ver = get_target_mc_version();
     let build_assets = Path::new(manifest_dir).join("build_assets");
@@ -252,9 +301,16 @@ fn download_and_extract_assets(manifest_dir: &str) {
     let version_file = datapack_dir.join(".version");
     let en_us_dest = build_assets.join("en_us.json");
     let deprecated_dest = build_assets.join("deprecated.json");
+    let version_json_dest = build_assets.join("version.json");
     let lock_file = build_assets.join(".asset-extract.lock");
 
-    if assets_are_valid(&version_file, &en_us_dest, &deprecated_dest, &target_ver) {
+    if assets_are_valid(
+        &version_file,
+        &en_us_dest,
+        &deprecated_dest,
+        &version_json_dest,
+        &target_ver,
+    ) {
         return;
     }
 
@@ -263,11 +319,18 @@ fn download_and_extract_assets(manifest_dir: &str) {
         &version_file,
         &en_us_dest,
         &deprecated_dest,
+        &version_json_dest,
         &target_ver,
     ) else {
         return;
     };
-    if assets_are_valid(&version_file, &en_us_dest, &deprecated_dest, &target_ver) {
+    if assets_are_valid(
+        &version_file,
+        &en_us_dest,
+        &deprecated_dest,
+        &version_json_dest,
+        &target_ver,
+    ) {
         return;
     }
 
@@ -289,12 +352,13 @@ fn download_and_extract_assets(manifest_dir: &str) {
     let mut archive = get_server_archive(jar_data);
     let mut extracted_en_us = false;
     let mut extracted_deprecated = false;
+    let mut extracted_version_json = false;
 
     for i in 0..archive.len() {
         let mut file = archive
             .by_index(i)
             .expect("Failed to read file in server jar");
-        let name = file.name();
+        let name = file.name().expect("Failed to read file name in server jar");
 
         if name.starts_with("data/minecraft/") {
             let rel_path = name
@@ -314,16 +378,14 @@ fn download_and_extract_assets(manifest_dir: &str) {
                 copy(&mut file, &mut out_file).expect("Failed to extract file");
             }
         } else if name == "assets/minecraft/lang/en_us.json" {
-            let mut out_file = fs::File::create(&en_us_dest)
-                .unwrap_or_else(|e| panic!("Failed to create file {}: {e}", en_us_dest.display()));
-            copy(&mut file, &mut out_file).expect("Failed to extract en_us.json");
+            extract_file(&mut file, &en_us_dest, "en_us.json");
             extracted_en_us = true;
         } else if name == "assets/minecraft/lang/deprecated.json" {
-            let mut out_file = fs::File::create(&deprecated_dest).unwrap_or_else(|e| {
-                panic!("Failed to create file {}: {e}", deprecated_dest.display())
-            });
-            copy(&mut file, &mut out_file).expect("Failed to extract deprecated.json");
+            extract_file(&mut file, &deprecated_dest, "deprecated.json");
             extracted_deprecated = true;
+        } else if name == "version.json" {
+            extract_file(&mut file, &version_json_dest, "version.json");
+            extracted_version_json = true;
         }
     }
 
@@ -335,22 +397,76 @@ fn download_and_extract_assets(manifest_dir: &str) {
         extracted_deprecated,
         "Failed to find assets/minecraft/lang/deprecated.json in server jar"
     );
+    assert!(
+        extracted_version_json,
+        "Failed to find version.json in server jar"
+    );
     fs::write(&version_file, &target_ver).expect("Failed to write version file");
     println!(
         "cargo:warning=Successfully extracted datapack and translation files for Minecraft {target_ver}."
     );
 }
 
-fn build_version_constant() -> String {
+/// Generates the version constants from the `version.json` extracted from
+/// the target server jar, mirroring `DetectedVersion.tryDetectVersion`.
+fn build_version_constants(manifest_dir: &str) -> TokenStream {
+    println!("cargo:rerun-if-changed=build_assets/version.json");
     let target_version = get_target_mc_version();
-    format!(
-        "/// The targeted Minecraft version.\npub const MINECRAFT_VERSION: &str = {target_version:?};\n"
-    )
+    let version_json_path = Path::new(manifest_dir)
+        .join("build_assets")
+        .join("version.json");
+    let version_json = fs::read_to_string(&version_json_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", version_json_path.display()));
+    let info: VersionInfo = serde_json::from_str(&version_json)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", version_json_path.display()));
+    let resource_pack_version = format_pack_version(
+        info.pack_version.resource_major,
+        info.pack_version.resource_minor,
+    );
+    let data_pack_version =
+        format_pack_version(info.pack_version.data_major, info.pack_version.data_minor);
+    let build_time = DateTime::parse_from_rfc3339(&info.build_time)
+        .unwrap_or_else(|e| panic!("Failed to parse build_time {:?}: {e}", info.build_time))
+        .with_timezone(&Utc)
+        .format("%a %b %d %H:%M:%S UTC %Y")
+        .to_string();
+
+    let VersionInfo {
+        id,
+        name,
+        world_version,
+        series_id,
+        stable,
+        ..
+    } = info;
+
+    quote! {
+        /// The targeted Minecraft version.
+        pub const MINECRAFT_VERSION: &str = #target_version;
+        /// Vanilla `WorldVersion.id`.
+        pub const VERSION_ID: &str = #id;
+        /// Vanilla `WorldVersion.name`.
+        pub const VERSION_NAME: &str = #name;
+        /// Vanilla `DataVersion.version`.
+        pub const DATA_VERSION: i32 = #world_version;
+        /// Vanilla `DataVersion.series`.
+        pub const DATA_VERSION_SERIES: &str = #series_id;
+        /// Vanilla `WorldVersion.buildTime`, formatted like Java's `Date.toString` in UTC.
+        pub const BUILD_TIME: &str = #build_time;
+        /// Vanilla `WorldVersion.packVersion(PackType.CLIENT_RESOURCES)`, formatted like `PackFormat::toString`.
+        pub const RESOURCE_PACK_VERSION: &str = #resource_pack_version;
+        /// Vanilla `WorldVersion.packVersion(PackType.SERVER_DATA)`, formatted like `PackFormat::toString`.
+        pub const DATA_PACK_VERSION: &str = #data_pack_version;
+        /// Vanilla `WorldVersion.stable`.
+        pub const STABLE: bool = #stable;
+    }
 }
 
 /// Main build script entry point that generates translation constants.
 pub fn main() {
     println!("cargo:rerun-if-changed=build/");
+    println!("cargo:rerun-if-changed=../build/codegen.rs");
+    println!("cargo:rerun-if-changed=build_assets/");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=../Cargo.toml");
 
@@ -373,33 +489,14 @@ pub fn main() {
         .expect("Translation output path is not valid UTF-8");
 
     let content = build_translations(processed_translations);
-    write_if_changed(format!("{OUT_DIR}/{IDS}.rs"), content.to_string());
+    write_tokens_if_changed(format!("{OUT_DIR}/{IDS}.rs"), content);
 
     let content = translations::build(processed_translations);
-    write_if_changed(format!("{OUT_DIR}/{REGISTRY}.rs"), content.to_string());
+    write_tokens_if_changed(format!("{OUT_DIR}/{REGISTRY}.rs"), content);
 
     let content = entity_events::build();
-    write_if_changed(format!("{OUT_DIR}/{ENTITY_EVENTS}.rs"), content.to_string());
+    write_tokens_if_changed(format!("{OUT_DIR}/{ENTITY_EVENTS}.rs"), content);
 
-    let content = build_version_constant();
-    write_if_changed(format!("{OUT_DIR}/{VERSION}.rs"), content);
-
-    if FMT && let Ok(entries) = fs::read_dir(OUT_DIR) {
-        for entry in entries.flatten() {
-            let _ = Command::new("rustfmt").arg(entry.path()).output();
-        }
-    }
-}
-
-fn write_if_changed(path: impl AsRef<Path>, content: String) {
-    let path = path.as_ref();
-    if let Ok(existing) = fs::read_to_string(path)
-        && existing == content
-    {
-        return;
-    }
-
-    if let Err(error) = fs::write(path, content) {
-        panic!("Failed to write {}: {error}", path.display());
-    }
+    let content = build_version_constants(&manifest_dir);
+    write_tokens_if_changed(format!("{OUT_DIR}/{VERSION}.rs"), content);
 }

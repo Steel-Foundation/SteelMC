@@ -2,6 +2,7 @@
 
 use crate::item_stack::ItemStack;
 use steel_utils::entity_events::EntityStatus;
+use steel_utils::types::InteractionHand;
 
 /// Equipment slot types for categorization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -39,6 +40,15 @@ pub enum EquipmentSlot {
     Saddle,
 }
 
+impl From<InteractionHand> for EquipmentSlot {
+    fn from(hand: InteractionHand) -> Self {
+        match hand {
+            InteractionHand::MainHand => Self::MainHand,
+            InteractionHand::OffHand => Self::OffHand,
+        }
+    }
+}
+
 impl EquipmentSlot {
     /// All equipment slots in order.
     pub const ALL: [EquipmentSlot; 8] = [
@@ -74,7 +84,6 @@ impl EquipmentSlot {
         }
     }
 
-    /// Returns vanilla `EquipmentSlot.canIncreaseExperience`.
     #[must_use]
     pub const fn can_increase_experience(self) -> bool {
         !matches!(self.slot_type(), EquipmentSlotType::Saddle)
