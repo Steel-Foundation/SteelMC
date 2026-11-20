@@ -408,8 +408,7 @@ impl EntityTracker {
                         body_rotation: entity.rotation(),
                         head_yaw: entity.head_yaw(),
                         on_ground: entity.on_ground(),
-                        uses_stepped_interpolation: entity.is_living_entity()
-                            && entity.entity_type() != &vanilla_entities::SHULKER,
+                        uses_stepped_interpolation: entity.uses_stepped_interpolation(),
                         predicted_movement,
                         sync_position,
                         needs_velocity_sync: entity.needs_velocity_sync(),

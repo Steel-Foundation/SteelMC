@@ -1586,6 +1586,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.as_living_entity().is_some()
     }
 
+    /// Whether vanilla `createInterpolationHandler` returns a `SteppedInterpolationHandler`.
+    fn uses_stepped_interpolation(&self) -> bool {
+        // TODO: move the shulker exception into an override once Shulker is implemented.
+        self.is_living_entity() && self.entity_type() != &vanilla_entities::SHULKER
+    }
+
     /// Returns whether this entity belongs to vanilla's `AbstractArrow` hierarchy.
     fn is_abstract_arrow(&self) -> bool {
         self.entity_type().is_abstract_arrow
@@ -3618,7 +3624,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         delta: DVec3,
     ) -> Option<MoveResult> {
         let world = self.level()?;
-        let predicted = mover_type != MoverType::SelfMovement && self.is_living_entity();
+        // TODO: vanilla also predicts `SELF` movement of `SERVER_AND_CLIENT` entities.
+        let predicted = mover_type != MoverType::SelfMovement && self.uses_stepped_interpolation();
 
         if self.no_physics() {
             let result = self.move_without_physics(delta)?;
