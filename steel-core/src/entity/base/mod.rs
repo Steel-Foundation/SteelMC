@@ -246,6 +246,11 @@ pub struct EntityBaseState {
 }
 
 impl EntityBaseState {
+    fn compute_known_speed(&mut self) {
+        self.last_known_speed = self.position - self.last_known_position.unwrap_or(self.position);
+        self.last_known_position = Some(self.position);
+    }
+
     /// Creates base state for a freshly spawned entity.
     #[must_use]
     pub fn new(position: DVec3, dimensions: EntityDimensions) -> Self {
@@ -1011,26 +1016,19 @@ impl EntityBase {
 
     /// Advances the base-tick movement and relationship state Steel currently implements.
     pub fn advance_base_tick_state(&self) {
-        self.clear_in_block_state_for_base_tick();
-        self.set_old_rotation_to_current();
-        self.compute_known_speed();
-        self.decrement_boarding_cooldown();
-    }
+        {
+            let mut state = self.state.lock();
+            state.in_block_state = None;
+            state.old_rotation = state.rotation;
+            state.compute_known_speed();
+        }
 
-    /// Clears vanilla `inBlockState` at the start of base tick.
-    fn clear_in_block_state_for_base_tick(&self) {
-        self.state.lock().in_block_state = None;
+        self.decrement_boarding_cooldown();
     }
 
     /// Computes vanilla `lastKnownSpeed` from the previous base-tick position.
     pub fn compute_known_speed(&self) {
-        let mut state = self.state.lock();
-        let previous_position = match state.last_known_position {
-            Some(position) => position,
-            None => state.position,
-        };
-        state.last_known_speed = state.position - previous_position;
-        state.last_known_position = Some(state.position);
+        self.state.lock().compute_known_speed();
     }
 
     fn decrement_boarding_cooldown(&self) {
