@@ -1,10 +1,12 @@
 //! Shared movement synchronization state for tracked entities.
 
+use std::mem;
+
 use glam::DVec3;
 use steel_protocol::packets::game::{
     CEntityPositionSync, CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, CProjectilePower,
-    CRotateHead, CSetEntityMotion, PackedEntityDelta, PositionPath, VecDelta, calc_delta,
-    to_angle_byte,
+    CRotateHead, CSetEntityMotion, DeltaStep, PackedEntityDelta, PositionPath, PositionStep,
+    VecDelta, calc_delta, to_angle_byte,
 };
 use steel_registry::{entity_type::EntityTypeRef, vanilla_entities};
 
@@ -17,6 +19,7 @@ pub const VELOCITY_SYNC_THRESHOLD: f64 = 1.0e-7;
 pub const FORCED_POS_UPDATE_PERIOD: i32 = 60;
 /// Ticks between forced full teleport packets to resync drifted clients.
 pub const FORCED_TELEPORT_PERIOD: i32 = 400;
+const PREDICTED_MOVEMENT_THRESHOLD_SQUARED: f64 = 1.0e-5_f32 as f64;
 
 /// Packed body rotation used by entity movement packets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,11 +252,33 @@ impl EntityPositionSyncSnapshot {
     }
 
     const fn full_sync_packet(self) -> CEntityPositionSync {
+        self.full_sync_packet_with_path(PositionPath::Linear(self.position))
+    }
+
+    const fn full_sync_packet_with_path(self, path: PositionPath) -> CEntityPositionSync {
         CEntityPositionSync {
             entity_id: self.entity_id,
-            path: PositionPath::Linear(self.position),
+            path,
             y_rot: self.rotation.0,
             x_rot: self.rotation.1,
+            on_ground: self.on_ground,
+        }
+    }
+
+    const fn delta_packet(self, delta: VecDelta) -> CMoveEntityPos {
+        CMoveEntityPos {
+            entity_id: self.entity_id,
+            delta,
+            on_ground: self.on_ground,
+        }
+    }
+
+    const fn delta_rot_packet(self, delta: VecDelta) -> CMoveEntityPosRot {
+        CMoveEntityPosRot {
+            entity_id: self.entity_id,
+            delta,
+            y_rot: to_angle_byte(self.rotation.0),
+            x_rot: to_angle_byte(self.rotation.1),
             on_ground: self.on_ground,
         }
     }
@@ -267,11 +292,13 @@ impl EntityPositionSyncDecision {
         snapshot: EntityPositionSyncSnapshot,
     ) -> EntityPositionSyncPacket {
         match self {
-            Self::Delta { dx, dy, dz } => EntityPositionSyncPacket::Delta(CMoveEntityPos {
-                entity_id: snapshot.entity_id,
-                delta: VecDelta::Linear { dx, dy, dz },
-                on_ground: snapshot.on_ground,
-            }),
+            Self::Delta { dx, dy, dz } => {
+                EntityPositionSyncPacket::Delta(snapshot.delta_packet(VecDelta::Linear {
+                    dx,
+                    dy,
+                    dz,
+                }))
+            }
             Self::Full => EntityPositionSyncPacket::Full(snapshot.full_sync_packet()),
         }
     }
@@ -283,13 +310,13 @@ impl EntityPositionSyncDecision {
         snapshot: EntityPositionSyncSnapshot,
     ) -> EntityPositionRotSyncPacket {
         match self {
-            Self::Delta { dx, dy, dz } => EntityPositionRotSyncPacket::Delta(CMoveEntityPosRot {
-                entity_id: snapshot.entity_id,
-                delta: VecDelta::Linear { dx, dy, dz },
-                y_rot: to_angle_byte(snapshot.rotation.0),
-                x_rot: to_angle_byte(snapshot.rotation.1),
-                on_ground: snapshot.on_ground,
-            }),
+            Self::Delta { dx, dy, dz } => {
+                EntityPositionRotSyncPacket::Delta(snapshot.delta_rot_packet(VecDelta::Linear {
+                    dx,
+                    dy,
+                    dz,
+                }))
+            }
             Self::Full => EntityPositionRotSyncPacket::Full(snapshot.full_sync_packet()),
         }
     }
@@ -355,10 +382,49 @@ impl EntityPositionSyncState {
         self,
         current_position: DVec3,
     ) -> Option<(PackedEntityDelta, PackedEntityDelta, PackedEntityDelta)> {
-        let dx = calc_delta(current_position.x, self.last_sent_position.x)?;
-        let dy = calc_delta(current_position.y, self.last_sent_position.y)?;
-        let dz = calc_delta(current_position.z, self.last_sent_position.z)?;
-        Some((dx, dy, dz))
+        Self::pack_delta_between(current_position, self.last_sent_position)
+    }
+
+    fn pack_delta_between(
+        current: DVec3,
+        previous: DVec3,
+    ) -> Option<(PackedEntityDelta, PackedEntityDelta, PackedEntityDelta)> {
+        Some((
+            calc_delta(current.x, previous.x)?,
+            calc_delta(current.y, previous.y)?,
+            calc_delta(current.z, previous.z)?,
+        ))
+    }
+
+    fn encode_path(
+        self,
+        position: DVec3,
+        tracker: Option<&SteppedInterpolationTracker>,
+    ) -> Option<VecDelta> {
+        let (steps, current_step) = tracker.map_or((&[][..], None), |tracker| {
+            (tracker.steps.as_slice(), tracker.current_step(position))
+        });
+
+        if steps.is_empty() && current_step.is_none() {
+            let (dx, dy, dz) = self.packed_delta(position)?;
+            return Some(VecDelta::Linear { dx, dy, dz });
+        }
+
+        let mut previous = self.last_sent_position;
+        let mut encoded = Vec::with_capacity(steps.len() + usize::from(current_step.is_some()));
+
+        for step in steps.iter().copied().chain(current_step) {
+            let (dx, dy, dz) = Self::pack_delta_between(step.position, previous)?;
+            previous = step.position;
+            encoded.push(DeltaStep {
+                dx,
+                dy,
+                dz,
+                ticks: step.tick_offset,
+            });
+        }
+
+        Some(VecDelta::Stepped(encoded))
     }
 
     /// Marks a delta movement packet as sent.
@@ -468,8 +534,64 @@ pub struct EntityMovementSyncUpdate {
     pub on_ground: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct SteppedInterpolationTracker {
+    steps: Vec<PositionStep>,
+    ticks_since_last_step: i32,
+}
+
+impl Default for SteppedInterpolationTracker {
+    fn default() -> Self {
+        Self {
+            steps: Vec::new(),
+            ticks_since_last_step: -1,
+        }
+    }
+}
+
+impl SteppedInterpolationTracker {
+    fn current_step(&self, position: DVec3) -> Option<PositionStep> {
+        (self.ticks_since_last_step > 0).then_some(PositionStep {
+            position,
+            tick_offset: self.ticks_since_last_step,
+        })
+    }
+
+    fn update_tracking(&mut self, position: DVec3, predicted: DVec3, sync_position: bool) {
+        if predicted.length_squared() > PREDICTED_MOVEMENT_THRESHOLD_SQUARED {
+            for step in &mut self.steps {
+                step.position += predicted;
+            }
+        }
+
+        self.ticks_since_last_step = self.ticks_since_last_step.wrapping_add(1);
+        if sync_position && let Some(step) = self.current_step(position) {
+            self.steps.push(step);
+            self.ticks_since_last_step = 0;
+        }
+    }
+
+    fn take_path(&mut self, position: DVec3) -> PositionPath {
+        let current_step = self.current_step(position);
+        self.ticks_since_last_step = 0;
+
+        if self.steps.is_empty() && current_step.is_none() {
+            PositionPath::Linear(position)
+        } else {
+            let mut steps = mem::take(&mut self.steps);
+            steps.extend(current_step);
+            PositionPath::Stepped(steps)
+        }
+    }
+
+    fn clear(&mut self) {
+        self.steps.clear();
+        self.ticks_since_last_step = 0;
+    }
+}
+
 /// Per-tracked-entity movement state owned by the entity tracker.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ServerEntityMovementSyncState {
     position: EntityPositionSyncState,
     rotation: EntityRotationSyncState,
@@ -480,6 +602,7 @@ pub struct ServerEntityMovementSyncState {
     teleport_delay: i32,
     was_riding: bool,
     was_on_ground: bool,
+    interpolation_tracker: Option<SteppedInterpolationTracker>,
 }
 
 /// Runtime values accepted by vanilla `ServerEntity.sendChanges` movement sync.
@@ -507,6 +630,12 @@ pub struct ServerEntityMovementSyncUpdate {
     pub head_yaw: f32,
     /// Current on-ground flag.
     pub on_ground: bool,
+    /// whether this entity uses the stepped interpolation handler
+    pub uses_stepped_interpolation: bool,
+    /// movement already simulated by both sides since the last tracking update
+    pub predicted_movement: DVec3,
+    /// whether the movement needs an interpolation step at the current tick
+    pub sync_position: bool,
     /// Whether this entity's velocity changed enough to need syncing this tick.
     pub needs_velocity_sync: bool,
     /// Whether synced entity data is dirty this tick.
@@ -518,13 +647,14 @@ pub struct ServerEntityMovementSyncUpdate {
 }
 
 impl ServerEntityMovementSyncUpdate {
-    fn is_full_precision_encoding_required(
-        &self,
-        (dx, _, dz): (PackedEntityDelta, PackedEntityDelta, PackedEntityDelta),
-    ) -> bool {
+    fn is_full_precision_encoding_required(&self, delta: &VecDelta) -> bool {
         if self.entity_type != &vanilla_entities::ITEM {
             return false;
         }
+
+        let VecDelta::Linear { dx, dz, .. } = delta else {
+            return false;
+        };
 
         let moving_x = dx.as_i16() != 0;
         let moving_z = dz.as_i16() != 0;
@@ -578,6 +708,7 @@ impl ServerEntityMovementSyncState {
             teleport_delay: 0,
             was_riding: false,
             was_on_ground: on_ground,
+            interpolation_tracker: None,
         }
     }
 
@@ -588,6 +719,23 @@ impl ServerEntityMovementSyncState {
         update: ServerEntityMovementSyncUpdate,
     ) -> ServerEntityMovementSyncResult {
         let mut result = ServerEntityMovementSyncResult::default();
+        if update.uses_stepped_interpolation {
+            self.interpolation_tracker
+                .get_or_insert_default()
+                .update_tracking(
+                    update.position,
+                    update.predicted_movement,
+                    update.sync_position,
+                );
+        } else if update.sync_position {
+            self.tick_count = if self.update_interval > 0 && self.update_interval != i32::MAX {
+                (self.tick_count / self.update_interval * self.update_interval)
+                    .wrapping_add(self.update_interval)
+            } else {
+                0
+            };
+        }
+
         let should_process =
             self.should_process(update.needs_velocity_sync, update.has_dirty_entity_data);
         if should_process {
@@ -614,7 +762,7 @@ impl ServerEntityMovementSyncState {
         result
     }
 
-    const fn should_process(self, needs_velocity_sync: bool, has_dirty_entity_data: bool) -> bool {
+    const fn should_process(&self, needs_velocity_sync: bool, has_dirty_entity_data: bool) -> bool {
         needs_velocity_sync
             || has_dirty_entity_data
             || (self.update_interval > 0 && self.tick_count % self.update_interval == 0)
@@ -641,6 +789,10 @@ impl ServerEntityMovementSyncState {
 
         self.position
             .reset_base_without_packet(update.position, update.on_ground);
+        if let Some(tracker) = &mut self.interpolation_tracker {
+            tracker.clear();
+        }
+
         self.was_riding = true;
     }
 
@@ -656,13 +808,7 @@ impl ServerEntityMovementSyncState {
         let should_send_position =
             position_changed || self.tick_count % FORCED_POS_UPDATE_PERIOD == 0;
 
-        let packed_delta = self.position.packed_delta(update.position);
-        let delta_too_big = packed_delta.is_none();
-        let full_precision_required = should_send_position
-            && packed_delta.is_some_and(|delta| update.is_full_precision_encoding_required(delta));
-
-        let force_full = delta_too_big
-            || update.requires_precise_position
+        let force_full = update.requires_precise_position
             || self.teleport_delay > FORCED_TELEPORT_PERIOD
             || self.was_riding
             || self.was_on_ground != update.on_ground;
@@ -685,63 +831,88 @@ impl ServerEntityMovementSyncState {
             result.packets.push(packet);
         }
 
-        if force_full || full_precision_required {
-            if force_full {
-                self.was_on_ground = update.on_ground;
-                self.teleport_delay = 0;
-            }
-
-            let decision =
-                self.position
-                    .record_movement_sync(update.position, update.on_ground, true);
-            self.rotation.mark_body_rotation_sent(update.body_rotation);
-            result.packets.push(EntityMovementSyncPacket::from(
-                decision.into_position_rot_packet(EntityPositionSyncSnapshot::new(
-                    update.entity_id,
-                    update.position,
-                    update.body_rotation,
-                    update.on_ground,
-                )),
-            ));
-        } else if should_send_position && should_send_rotation {
-            let decision =
-                self.position
-                    .record_movement_sync(update.position, update.on_ground, false);
-            self.rotation.mark_body_rotation_sent(update.body_rotation);
-            result.packets.push(EntityMovementSyncPacket::from(
-                decision.into_position_rot_packet(EntityPositionSyncSnapshot::new(
-                    update.entity_id,
-                    update.position,
-                    update.body_rotation,
-                    update.on_ground,
-                )),
-            ));
-        } else if should_send_position {
-            let decision =
-                self.position
-                    .record_movement_sync(update.position, update.on_ground, false);
-            result.packets.push(EntityMovementSyncPacket::from(
-                decision.into_position_packet(EntityPositionSyncSnapshot::new(
-                    update.entity_id,
-                    update.position,
-                    update.body_rotation,
-                    update.on_ground,
-                )),
-            ));
-        } else if should_send_rotation
-            && let Some(body_rotation) = self.rotation.record_body_rotation(update.body_rotation)
-        {
+        if force_full || should_send_position {
             result
                 .packets
-                .push(EntityMovementSyncPacket::from(CMoveEntityRot {
-                    entity_id: update.entity_id,
-                    y_rot: body_rotation.yaw(),
-                    x_rot: body_rotation.pitch(),
-                    on_ground: update.on_ground,
-                }));
+                .push(self.position_packet(update, force_full, should_send_rotation));
+        } else {
+            if let Some(tracker) = &mut self.interpolation_tracker {
+                tracker.clear();
+            }
+            if should_send_rotation
+                && let Some(body_rotation) =
+                    self.rotation.record_body_rotation(update.body_rotation)
+            {
+                result
+                    .packets
+                    .push(EntityMovementSyncPacket::from(CMoveEntityRot {
+                        entity_id: update.entity_id,
+                        y_rot: body_rotation.yaw(),
+                        x_rot: body_rotation.pitch(),
+                        on_ground: update.on_ground,
+                    }));
+            }
         }
 
         self.was_riding = false;
+    }
+
+    fn position_packet(
+        &mut self,
+        update: ServerEntityMovementSyncUpdate,
+        force_full: bool,
+        should_send_rotation: bool,
+    ) -> EntityMovementSyncPacket {
+        let delta = if force_full {
+            None
+        } else {
+            self.position
+                .encode_path(update.position, self.interpolation_tracker.as_ref())
+        };
+
+        if force_full || (self.interpolation_tracker.is_none() && delta.is_none()) {
+            self.was_on_ground = update.on_ground;
+            self.teleport_delay = 0;
+        }
+
+        let snapshot = EntityPositionSyncSnapshot::new(
+            update.entity_id,
+            update.position,
+            update.body_rotation,
+            update.on_ground,
+        );
+        if let Some(delta) =
+            delta.filter(|delta| !update.is_full_precision_encoding_required(delta))
+        {
+            if let Some(tracker) = &mut self.interpolation_tracker {
+                tracker.clear();
+            }
+
+            self.position
+                .mark_delta_sent(update.position, update.on_ground);
+
+            if should_send_rotation {
+                self.rotation.mark_body_rotation_sent(update.body_rotation);
+                return EntityMovementSyncPacket::PositionRotation(
+                    snapshot.delta_rot_packet(delta),
+                );
+            }
+
+            return EntityMovementSyncPacket::Position(snapshot.delta_packet(delta));
+        }
+
+        let path = self
+            .interpolation_tracker
+            .as_mut()
+            .map_or(PositionPath::Linear(update.position), |tracker| {
+                tracker.take_path(update.position)
+            });
+
+        self.position
+            .mark_full_sent(update.position, update.on_ground);
+        self.rotation.mark_body_rotation_sent(update.body_rotation);
+
+        EntityMovementSyncPacket::PositionSync(snapshot.full_sync_packet_with_path(path))
     }
 }
 
@@ -1115,6 +1286,9 @@ mod tests {
             body_rotation: (0.0, 0.0),
             head_yaw: 0.0,
             on_ground: false,
+            uses_stepped_interpolation: false,
+            predicted_movement: DVec3::ZERO,
+            sync_position: false,
             needs_velocity_sync: false,
             has_dirty_entity_data: false,
             force_velocity_sync: false,
