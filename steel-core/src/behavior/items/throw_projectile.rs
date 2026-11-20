@@ -21,7 +21,7 @@ const THROW_PITCH_DIVISOR_MAX: f32 = 1.2;
 
 /// The per-item constants of vanilla's throw `use`.
 pub(super) struct ThrowParams {
-    /// Sound played before the projectile spawns.
+    /// Sound played when the item is thrown
     pub sound: SoundEventRef,
     /// Category that sound is played under.
     pub sound_source: SoundSource,
@@ -67,8 +67,8 @@ pub(super) enum ThrowSound {
     AfterSpawn,
 }
 
-/// Plays the throw sound, spawns the projectile, awards `ITEM_USED` and
-/// consumes one item. `spawn` receives a copy of the used stack.
+/// Spawns the projectile, plays its throw sound at the requested time, awards
+/// `ITEM_USED` and consumes one item.
 pub(super) fn throw_projectile(
     context: &mut UseItemContext,
     params: &ThrowParams,

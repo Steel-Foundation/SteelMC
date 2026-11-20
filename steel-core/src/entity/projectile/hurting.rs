@@ -1,10 +1,9 @@
 //! Gravity-free projectiles that accelerate along their heading.
 
-use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_math::trig;
 use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64};
+use steel_math::{trig, vector};
 use steel_utils::locks::CheckedMutex;
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{DowncastType, DowncastTypeKey, TICKS_PER_SECOND};
@@ -22,7 +21,6 @@ const DEFLECTION_SCALE: f64 = 0.5;
 const DEFAULT_INERTIA: f32 = 0.95;
 const DEFAULT_LIQUID_INERTIA: f32 = 0.8;
 const ROTATION_SPEED: f32 = 0.2;
-const NORMALIZE_EPSILON: f64 = 1.0e-5_f32 as f64;
 
 /// Runtime state of an accelerating projectile.
 pub struct HurtingProjectileBase {
@@ -109,12 +107,8 @@ pub fn tick<E: Parts>(entity: &E) {
     } else {
         E::INERTIA
     };
-    let length = movement.length();
-    let heading = if length < NORMALIZE_EPSILON {
-        DVec3::ZERO
-    } else {
-        movement / length
-    };
+
+    let heading = vector::normalize(movement);
     let acceleration_power = entity.get::<HurtingProjectileBase>().acceleration_power();
     projectile.set_velocity((movement + heading * acceleration_power) * f64::from(inertia));
 

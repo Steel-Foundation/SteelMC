@@ -1,8 +1,6 @@
 use crate::entity::prelude::*;
 use std::sync::Arc;
 
-use crate::entity::PartEntity;
-
 use super::{
     ATTACK_RANGE_BUFFER, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
@@ -25,7 +23,7 @@ use steel_registry::{
     vanilla_particle_types,
 };
 
-use crate::entity::{EntityReference, ProjectileDeflection};
+use crate::entity::{DAMAGE_STAT_SCALE, EntityReference, PartEntity, ProjectileDeflection};
 
 /// An attack only counts as full strength once the attack strength scale exceeds this.
 const FULL_ATTACK_STRENGTH_SCALE_THRESHOLD: f32 = 0.9;
@@ -328,9 +326,16 @@ impl Player {
     }
 
     fn can_piercing_hit_entity(&self, target: &dyn Entity) -> bool {
-        if target.id() == self.id() || target.is_invulnerable() || !target.is_alive() {
+        if target.id() == self.id()
+            || !target.is_alive()
+            || target.is_invulnerable()
+            || target
+                .as_living_entity()
+                .is_some_and(|living| living.invulnerable_time() > 0)
+        {
             return false;
         }
+
         if target.entity_type() == &vanilla_entities::INTERACTION {
             return true;
         }
@@ -965,7 +970,7 @@ impl Player {
             let actual_damage = old_entity_living_health - entity.health();
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_DEALT,
-                round_f32(actual_damage * 10.0),
+                round_f32(actual_damage * DAMAGE_STAT_SCALE),
             );
 
             let count = (actual_damage * 0.5).round() as i32;

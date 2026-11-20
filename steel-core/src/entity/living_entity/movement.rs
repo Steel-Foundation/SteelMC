@@ -618,6 +618,9 @@ pub fn check_fall_damage<E: Parts>(
     }
 
     entity::check_fall_damage(entity, vertical_movement, on_ground, on_state, pos, world);
+    if on_ground {
+        living.set_last_climbable_pos(None);
+    }
 }
 
 /// `LivingEntity`'s [`LivingProps::can_glide_using`].

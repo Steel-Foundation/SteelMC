@@ -13,7 +13,7 @@ use crate::physics::MoveResult;
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
 use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target};
-use spawn_armor::VANILLA_SPAWN_ARMOR_TIERS;
+pub use spawn_armor::populate_default_equipment_slots;
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::nbt::NbtValueInput as _;
 
@@ -90,11 +90,6 @@ pub(crate) const RANDOM_SPAWN_BONUS_ID: Identifier =
     Identifier::vanilla_static("random_spawn_bonus");
 const RANDOM_SPAWN_BONUS_SCALE: f64 = 0.114_850_000_000_000_01;
 const LEFT_HANDED_SPAWN_CHANCE: f32 = 0.05;
-const MAX_WEARING_ARMOR_CHANCE: f32 = 0.15;
-const WEARING_ARMOR_UPGRADE_MATERIAL_CHANCE: f32 = 0.1087;
-const WEARING_ARMOR_UPGRADE_MATERIAL_ATTEMPTS: i32 = 3;
-const HARD_ARMOR_PARTIAL_CHANCE: f32 = 0.1;
-const OTHER_ARMOR_PARTIAL_CHANCE: f32 = 0.25;
 /// Vanilla `Mob.ITEM_PICKUP_REACH`: the per-axis distance the item-pickup search
 /// box is inflated by when a mob looks for nearby dropped items to collect.
 const ITEM_PICKUP_REACH: DVec3 = DVec3::new(1.0, 0.0, 1.0);
@@ -2193,50 +2188,6 @@ pub const fn mob_interact<E: Parts>(
     _hand: InteractionHand,
 ) -> InteractionResult {
     InteractionResult::Pass
-}
-
-/// Shared implementation of vanilla `Mob.populateDefaultEquipmentSlots`.
-pub fn populate_default_equipment_slots<E: Parts>(entity: &E, difficulty: DifficultyInstance) {
-    let mob = entity.mob();
-    if rand::random::<f32>() >= MAX_WEARING_ARMOR_CHANCE * difficulty.special_multiplier() {
-        return;
-    }
-
-    let mut armor_type = rand::random_range(0..3);
-    for _ in 0..WEARING_ARMOR_UPGRADE_MATERIAL_ATTEMPTS {
-        if rand::random::<f32>() < WEARING_ARMOR_UPGRADE_MATERIAL_CHANCE {
-            armor_type += 1;
-        }
-    }
-
-    let partial_chance = if difficulty.difficulty() == Difficulty::Hard {
-        HARD_ARMOR_PARTIAL_CHANCE
-    } else {
-        OTHER_ARMOR_PARTIAL_CHANCE
-    };
-    let mut first = true;
-    for slot in EquipmentSlot::ARMOR_SLOTS {
-        if !first && rand::random::<f32>() < partial_chance {
-            break;
-        }
-        first = false;
-        if !mob.equipment_in_slot(slot).is_empty() {
-            continue;
-        }
-        let Some(tier) = usize::try_from(armor_type)
-            .ok()
-            .and_then(|index| VANILLA_SPAWN_ARMOR_TIERS.get(index))
-        else {
-            continue;
-        };
-        let Some(item) = tier.item_for(slot) else {
-            continue;
-        };
-        mob.living_base()
-            .equipment()
-            .lock()
-            .set(slot, ItemStack::new(item));
-    }
 }
 
 // Every mob is `Leashable`.

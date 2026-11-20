@@ -1,10 +1,10 @@
 use std::f32::consts::PI;
 
+use steel_math::vector;
 use steel_registry::data_components::vanilla_components::BLOCKS_ATTACKS;
 
 use super::{
-    DVec3, DamageSource, InteractionHand, ItemStack, Living, Parts, VEC3_NORMALIZE_EPSILON, World,
-    vanilla_damage_type_tags,
+    DVec3, DamageSource, InteractionHand, ItemStack, Living, Parts, World, vanilla_damage_type_tags,
 };
 use crate::behavior::ITEM_BEHAVIORS;
 use crate::entity::blocks_attacks;
@@ -62,14 +62,10 @@ impl Living<'_> {
                 let view = self.calculate_view_vector(0.0, self.y_head_rot());
                 let delta = source_position - self.position();
                 let horizontal = DVec3::new(delta.x, 0.0, delta.z);
-                let length = horizontal.length();
-                let to_source = if length < VEC3_NORMALIZE_EPSILON {
-                    DVec3::ZERO
-                } else {
-                    horizontal / length
-                };
-                to_source.dot(view).acos()
+
+                vector::normalize(horizontal).dot(view).acos()
             });
+
         let damage_blocked =
             blocks_attacks.resolve_blocked_damage(source.damage_type, damage, angle);
         blocks_attacks::hurt_blocking_item(

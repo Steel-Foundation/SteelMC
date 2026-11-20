@@ -112,10 +112,10 @@ use crate::entity::blocks_attacks;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::{ExperienceOrbEntity, FishingHookEntity};
 use crate::entity::{
-    ActiveItemUseState, AsEntity, DEATH_DURATION, Entity, EntityAnchor, EntityBase,
-    EntityMoveError, EntityMovementEmission, Living, LivingEntityBase, MobEffectSyncChange,
-    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, get_kill_credit,
-    start_riding_entities,
+    ActiveItemUseState, AsEntity, DAMAGE_STAT_SCALE, DEATH_DURATION, Entity, EntityAnchor,
+    EntityBase, EntityMoveError, EntityMovementEmission, Living, LivingEntityBase,
+    MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at,
+    get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, EquipmentSlotType};
@@ -501,11 +501,9 @@ impl Player {
         if item.is_empty() {
             return;
         }
-        let Some(user) = LivingEntityRef::new(entity) else {
-            panic!("active item use requires a living entity");
-        };
         let stack_before_finish = item.clone();
-        let result = behavior.finish_using(&mut item, &self.get_world(), user);
+        let result = behavior.finish_using(&mut item, &world, user);
+
         self.apply_item_use_cooldown(&stack_before_finish);
         self.inventory.lock().write_use_result(hand, item, result);
         self.stop_using_item();
@@ -881,7 +879,7 @@ impl Player {
         if (0.0..f32::MAX).contains(&absorbed_damage) {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_ABSORBED,
-                round_f32(absorbed_damage * 10.0),
+                round_f32(absorbed_damage * DAMAGE_STAT_SCALE),
             );
         }
 
@@ -892,9 +890,10 @@ impl Player {
             if damage < f32::MAX {
                 self.award_custom_stat_with_count(
                     &vanilla_custom_stats::DAMAGE_TAKEN,
-                    round_f32(damage * 10.0),
+                    round_f32(damage * DAMAGE_STAT_SCALE),
                 );
             }
+
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
         }
     }

@@ -426,9 +426,6 @@ pub trait EntityMotion: Entity {
         );
         if !hit.is_miss() {
             self.reset_fall_distance();
-            if let Some(living) = self.as_living_entity() {
-                living.living_base().set_last_climbable_pos(None);
-            }
         }
     }
 

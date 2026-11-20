@@ -1,11 +1,22 @@
-//! Default spawn armor tiers shared by mobs.
+//! Difficulty-scaled armor for newly spawned mobs.
 
 use std::sync::LazyLock;
 
+use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::vanilla_items;
+use steel_utils::types::Difficulty;
 
+use super::Parts;
 use crate::inventory::equipment::EquipmentSlot;
+use crate::world::DifficultyInstance;
+
+const INITIAL_ARMOR_TIER_COUNT: usize = 3;
+const MAX_WEARING_ARMOR_CHANCE: f32 = 0.15;
+const WEARING_ARMOR_UPGRADE_MATERIAL_CHANCE: f32 = 0.1087;
+const WEARING_ARMOR_UPGRADE_MATERIAL_ATTEMPTS: i32 = 3;
+const HARD_ARMOR_PARTIAL_CHANCE: f32 = 0.1;
+const OTHER_ARMOR_PARTIAL_CHANCE: f32 = 0.25;
 
 /// One tier of default spawn armor.
 #[derive(Clone, Copy, Debug)]
@@ -85,3 +96,39 @@ pub static VANILLA_SPAWN_ARMOR_TIERS: LazyLock<[SpawnArmorTier; 6]> = LazyLock::
         ),
     ]
 });
+
+/// Equips empty armor slots in order, starting with the helmet.
+pub fn populate_default_equipment_slots<E: Parts>(entity: &E, difficulty: DifficultyInstance) {
+    if rand::random::<f32>() >= MAX_WEARING_ARMOR_CHANCE * difficulty.special_multiplier() {
+        return;
+    }
+
+    let mut tier_index = rand::random_range(0..INITIAL_ARMOR_TIER_COUNT);
+    for _ in 0..WEARING_ARMOR_UPGRADE_MATERIAL_ATTEMPTS {
+        if rand::random::<f32>() < WEARING_ARMOR_UPGRADE_MATERIAL_CHANCE {
+            tier_index += 1;
+        }
+    }
+
+    let tier = VANILLA_SPAWN_ARMOR_TIERS[tier_index];
+    let partial_chance = if difficulty.difficulty() == Difficulty::Hard {
+        HARD_ARMOR_PARTIAL_CHANCE
+    } else {
+        OTHER_ARMOR_PARTIAL_CHANCE
+    };
+
+    let mob = entity.mob();
+    let mut equipment = mob.living_base().equipment().lock();
+
+    for (index, slot) in EquipmentSlot::ARMOR_SLOTS.into_iter().enumerate() {
+        if index > 0 && rand::random::<f32>() < partial_chance {
+            break;
+        }
+
+        if equipment.get_ref(slot).is_empty()
+            && let Some(item) = tier.item_for(slot)
+        {
+            equipment.set(slot, ItemStack::new(item));
+        }
+    }
+}

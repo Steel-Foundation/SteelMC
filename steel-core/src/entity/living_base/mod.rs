@@ -1718,12 +1718,16 @@ impl LivingEntityBase {
         };
         if let Some(player) = cached.and_then(|player| player.upgrade())
             && !player.is_removed()
+            && player
+                .level()
+                .is_some_and(|level| level.domain() == world.domain())
         {
             return Some(player);
         }
+
         world
-            .get_entity_by_uuid(&uuid)
-            .filter(|entity| entity.as_player().is_some())
+            .get_entity_in_domain_by_uuid(&uuid)
+            .filter(|entity| !entity.is_removed() && entity.as_player().is_some())
     }
 
     /// Returns ticks remaining that this entity will remember the player who last hurt it.
