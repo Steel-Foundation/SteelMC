@@ -27,7 +27,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use simdnbt::{FromNbtTag as _, ToNbtTag as _};
 use steel_math::trig;
-use steel_math::{DEG_TO_RAD, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64};
+use steel_math::{DEG_TO_RAD, DEGREE_180, DEGREE_360, RAD_TO_DEG, RAD_TO_DEG_F64};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::data_components::AdventureModePredicate;
 use steel_registry::item_stack::ItemStack;
@@ -438,8 +438,9 @@ pub trait Projectile: Entity + ProjectileEventSource {
         self.mark_velocity_sync();
 
         let horizontal = (movement.x * movement.x + movement.z * movement.z).sqrt();
-        let yaw = (trig::atan2(movement.x, movement.z) * RAD_TO_DEG_F64) as f32;
-        let pitch = (trig::atan2(movement.y, horizontal) * RAD_TO_DEG_F64) as f32;
+        let yaw = (trig::atan2(movement.x, movement.z) * f64::from(RAD_TO_DEG)) as f32;
+        let pitch = (trig::atan2(movement.y, horizontal) * f64::from(RAD_TO_DEG)) as f32;
+
         self.set_rotation((yaw, pitch));
         self.base().set_old_rotation_to_current();
     }

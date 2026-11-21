@@ -41,6 +41,14 @@ impl BaseRailBlock {
         block.has_tag(&BlockTag::RAILS) && BLOCK_BEHAVIORS.get_behavior(block).as_rail().is_some()
     }
 
+    pub(crate) fn is_slope(state: BlockStateId) -> bool {
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .as_rail()
+            .is_some()
+            && state.get_value(RAIL_SHAPE).is_slope()
+    }
+
     fn can_support_rigid_block(level: &(impl LevelReader + ?Sized), pos: BlockPos) -> bool {
         level.is_face_sturdy_for(
             level.get_block_state(pos),

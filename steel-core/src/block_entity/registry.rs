@@ -179,6 +179,10 @@ pub static BLOCK_ENTITIES: BlockEntityRegistryLock = BlockEntityRegistryLock(Onc
 /// Initializes the global block entity registry.
 ///
 /// This should be called after the main registry is frozen. Repeated calls are a no-op.
+#[expect(
+    clippy::too_many_lines,
+    reason = "flat list of block entity registrations"
+)]
 pub fn init_block_entities() {
     BLOCK_ENTITIES.get_or_init(|| {
         let mut registry = BlockEntityRegistry::new();
@@ -228,6 +232,17 @@ pub fn init_block_entities() {
             &vanilla_block_entity_types::CAMPFIRE,
             |level, pos, state| Arc::new(CampfireBlockEntity::new(level, pos, state)),
         );
+
+        // Register dispenser block entity factory
+        registry.register(
+            &vanilla_block_entity_types::DISPENSER,
+            |level, pos, state| Arc::new(DispenserBlockEntity::new(level, pos, state)),
+        );
+
+        // Register dropper block entity factory
+        registry.register(&vanilla_block_entity_types::DROPPER, |level, pos, state| {
+            Arc::new(DropperBlockEntity::new(level, pos, state))
+        });
 
         registry.register(
             &vanilla_block_entity_types::CHISELED_BOOKSHELF,
