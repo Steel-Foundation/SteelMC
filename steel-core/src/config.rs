@@ -8,6 +8,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Deserializer, de::Error as DeError};
 use std::{
     collections::BTreeMap,
+    fmt::{self, Debug, Formatter},
     path::{Component, Path, PathBuf},
 };
 pub use steel_protocol::packet_traits::CompressionInfo;
@@ -26,6 +27,9 @@ use crate::worldgen::registry::{ValidatedWorldGeneratorConfig, WorldGeneratorReg
 pub const ONLINE_MODE_REQUIRES_ENCRYPTION: &str =
     "encryption must be true when online_mode is enabled";
 
+/// Error returned when the backend would authenticate players a proxy already authenticated.
+pub const PROXY_FORWARDING_REQUIRES_OFFLINE_MODE: &str = "online_mode must be false when player_info_forwarding_mode is enabled; the proxy authenticates players";
+
 /// Vanilla chat and command spam threshold window, in seconds.
 pub const DEFAULT_SPAM_THRESHOLD_SECONDS: i32 = 10;
 
@@ -37,15 +41,139 @@ pub const DEFAULT_MAX_CHAINED_NEIGHBOR_UPDATES: i32 = 1_000_000;
 /// # Errors
 ///
 /// Returns an error when online mode could accept a client-supplied UUID without
-/// completing the encryption-backed `hasJoined` flow.
+/// completing the encryption-backed `hasJoined` flow, or when online mode is combined
+/// with proxy forwarding (the proxy cannot complete the backend's encryption request).
 pub const fn validate_login_security(
     online_mode: bool,
     encryption: bool,
+    proxy_forwarding: bool,
 ) -> Result<(), &'static str> {
-    if online_mode && !encryption {
+    if online_mode && proxy_forwarding {
+        Err(PROXY_FORWARDING_REQUIRES_OFFLINE_MODE)
+    } else if online_mode && !encryption {
         Err(ONLINE_MODE_REQUIRES_ENCRYPTION)
     } else {
         Ok(())
+    }
+}
+
+/// Length of the secret Velocity generates, in bytes; shorter secrets are easier to brute-force.
+const MIN_RECOMMENDED_SECRET_LEN: usize = 12;
+
+/// Shared secret for Velocity modern forwarding or a `BungeeGuard` token.
+///
+/// `Debug` is redacted so the secret never reaches logs.
+#[derive(Clone)]
+pub struct ForwardingSecret(Box<[u8]>);
+
+impl ForwardingSecret {
+    /// Wraps a secret, returning `None` when it is empty.
+    #[must_use]
+    pub fn new(secret: impl Into<Box<[u8]>>) -> Option<Self> {
+        let secret = secret.into();
+        (!secret.is_empty()).then_some(Self(secret))
+    }
+
+    /// The raw secret bytes.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl Debug for ForwardingSecret {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("ForwardingSecret(<redacted>)")
+    }
+}
+
+/// How a proxy in front of this server forwards the player's identity and address.
+///
+/// Mode names match Velocity's `player-info-forwarding-mode`.
+#[derive(Debug, Clone, Default)]
+pub enum PlayerInfoForwarding {
+    /// Players connect directly; no proxy data is trusted.
+    #[default]
+    None,
+    /// `BungeeCord` `ip_forward` data appended to the handshake hostname. Unauthenticated:
+    /// the backend must only be reachable from the proxy.
+    Legacy,
+    /// Legacy forwarding with a `bungeeguard-token` profile property checked against the secret.
+    BungeeGuard(ForwardingSecret),
+    /// Velocity modern forwarding over the `velocity:player_info` login query, signed with
+    /// HMAC-SHA256.
+    Modern(ForwardingSecret),
+}
+
+impl PlayerInfoForwarding {
+    /// The mode's name as written in `config.toml`.
+    #[must_use]
+    pub const fn mode_name(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Legacy => "legacy",
+            Self::BungeeGuard(_) => "bungeeguard",
+            Self::Modern(_) => "modern",
+        }
+    }
+}
+
+/// Proxy settings for a server running behind Velocity or `BungeeCord`.
+#[derive(Debug, Clone)]
+pub struct ProxyConfig {
+    /// Player info forwarding mode and its secret.
+    pub forwarding: PlayerInfoForwarding,
+    /// Whether the proxy authenticates players with Mojang, making forwarded UUIDs online UUIDs.
+    pub online_mode: bool,
+}
+
+impl Default for ProxyConfig {
+    fn default() -> Self {
+        Self {
+            forwarding: PlayerInfoForwarding::None,
+            online_mode: true,
+        }
+    }
+}
+
+impl ProxyConfig {
+    /// Whether player info forwarding is enabled.
+    #[must_use]
+    pub const fn is_forwarding(&self) -> bool {
+        !matches!(self.forwarding, PlayerInfoForwarding::None)
+    }
+
+    /// Logs the forwarding mode at startup, warning about unauthenticated or weak setups.
+    pub fn log_startup(&self) {
+        if let PlayerInfoForwarding::Modern(secret) | PlayerInfoForwarding::BungeeGuard(secret) =
+            &self.forwarding
+            && secret.as_bytes().len() < MIN_RECOMMENDED_SECRET_LEN
+        {
+            log::warn!(
+                "The proxy forwarding secret is shorter than {MIN_RECOMMENDED_SECRET_LEN} bytes and can be guessed; use the secret your proxy generated"
+            );
+        }
+        match self.forwarding {
+            PlayerInfoForwarding::None => {}
+            PlayerInfoForwarding::Modern(_) => log::info!("Velocity modern forwarding is enabled"),
+            PlayerInfoForwarding::BungeeGuard(_) => {
+                log::info!("BungeeCord forwarding with BungeeGuard is enabled");
+            }
+            PlayerInfoForwarding::Legacy => {
+                log::warn!(
+                    "BungeeCord legacy forwarding is enabled. Forwarded data is not authenticated: anyone who can reach this port can join as any player. Firewall it so only the proxy can connect, or use \"modern\" or \"bungeeguard\" forwarding."
+                );
+            }
+        }
+    }
+
+    /// Whether the forwarding mode carries data in the handshake hostname.
+    #[must_use]
+    pub const fn uses_handshake_forwarding(&self) -> bool {
+        matches!(
+            self.forwarding,
+            PlayerInfoForwarding::Legacy | PlayerInfoForwarding::BungeeGuard(_)
+        )
     }
 }
 
@@ -96,6 +224,8 @@ pub struct RuntimeConfig {
     pub chunk_generation_threads: Option<usize>,
     /// Optional worker count for the Rayon chunk encoding pool.
     pub chunk_encoding_threads: Option<usize>,
+    /// Proxy player info forwarding settings.
+    pub proxy: ProxyConfig,
 }
 
 impl Default for RuntimeConfig {
@@ -124,11 +254,19 @@ impl Default for RuntimeConfig {
             packet_workers: None,
             chunk_generation_threads: None,
             chunk_encoding_threads: None,
+            proxy: ProxyConfig::default(),
         }
     }
 }
 
 impl RuntimeConfig {
+    /// Whether player identities are Mojang-authenticated, by this server or by a forwarding
+    /// proxy in online mode. Vanilla `MinecraftServer.usesAuthentication`.
+    #[must_use]
+    pub const fn uses_authentication(&self) -> bool {
+        self.online_mode || (self.proxy.is_forwarding() && self.proxy.online_mode)
+    }
+
     /// Builds the `CServerLinks` packet from config, if server links are enabled.
     #[must_use]
     pub fn server_links_packet(&self) -> Option<CServerLinks> {
@@ -851,13 +989,23 @@ mod tests {
 
     #[test]
     fn online_mode_requires_the_authenticated_encryption_flow() {
-        assert_eq!(validate_login_security(true, true), Ok(()));
+        assert_eq!(validate_login_security(true, true, false), Ok(()));
         assert_eq!(
-            validate_login_security(true, false),
+            validate_login_security(true, false, false),
             Err(ONLINE_MODE_REQUIRES_ENCRYPTION)
         );
-        assert_eq!(validate_login_security(false, true), Ok(()));
-        assert_eq!(validate_login_security(false, false), Ok(()));
+        assert_eq!(validate_login_security(false, true, false), Ok(()));
+        assert_eq!(validate_login_security(false, false, false), Ok(()));
+    }
+
+    #[test]
+    fn proxy_forwarding_requires_backend_offline_mode() {
+        assert_eq!(
+            validate_login_security(true, true, true),
+            Err(PROXY_FORWARDING_REQUIRES_OFFLINE_MODE)
+        );
+        assert_eq!(validate_login_security(false, false, true), Ok(()));
+        assert_eq!(validate_login_security(false, true, true), Ok(()));
     }
 
     fn registries() -> (WorldGeneratorRegistry, WorldStorageRegistry) {

@@ -242,6 +242,8 @@ impl PerfMetadata {
                 max_chained_neighbor_updates: server.config.max_chained_neighbor_updates,
                 online_mode: server.config.online_mode,
                 encryption: server.config.encryption,
+                player_info_forwarding: server.config.proxy.forwarding.mode_name(),
+                proxy_online_mode: server.config.proxy.online_mode,
                 enforce_secure_chat: server.config.enforce_secure_chat,
                 allow_flight: server.config.allow_flight,
                 compression_threshold: server
@@ -283,6 +285,8 @@ struct PerfServerReport {
     max_chained_neighbor_updates: i32,
     online_mode: bool,
     encryption: bool,
+    player_info_forwarding: &'static str,
+    proxy_online_mode: bool,
     enforce_secure_chat: bool,
     allow_flight: bool,
     compression_threshold: Option<u32>,

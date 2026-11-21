@@ -257,6 +257,32 @@
             }
           },
           "additionalProperties": false
+        },
+        "proxy": {
+          "type": "object",
+          "description": "Player info forwarding for running behind Velocity, BungeeCord or Waterfall. Set online_mode = false when forwarding is enabled; the proxy authenticates players.",
+          "properties": {
+            "player_info_forwarding_mode": {
+              "type": "string",
+              "description": "Must match the proxy: 'none' (no proxy), 'legacy' (BungeeCord ip_forward or Velocity legacy), 'bungeeguard' (legacy plus a BungeeGuard token), or 'modern' (Velocity modern forwarding, recommended).",
+              "enum": ["none", "legacy", "bungeeguard", "modern"],
+              "default": "none"
+            },
+            "forwarding_secret": {
+              "type": "string",
+              "description": "Velocity forwarding secret (modern) or BungeeGuard token (bungeeguard). Set this or forwarding_secret_file, not both."
+            },
+            "forwarding_secret_file": {
+              "type": "string",
+              "description": "File holding the forwarding secret, such as a copy of Velocity's forwarding.secret. Relative to the working directory."
+            },
+            "online_mode": {
+              "type": "boolean",
+              "description": "Whether the proxy runs in online mode. Enables online UUID lookups and secure chat behind the proxy.",
+              "default": true
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [
