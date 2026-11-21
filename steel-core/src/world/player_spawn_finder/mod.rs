@@ -10,9 +10,8 @@ use tokio::time::sleep;
 use crate::behavior::BlockCollisionContext;
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState, ChunkTicketKind};
 use crate::chunk::status::ChunkStatus;
-use crate::fluid::get_fluid_state;
 use crate::physics::{CollisionWorld as _, WorldCollisionProvider};
-use crate::world::World;
+use crate::world::{LevelReader as _, World};
 
 use candidates::CandidateSequence;
 use chunk_load::{ChunkLoad, ChunkLoadState, PollBudget};
@@ -402,27 +401,6 @@ impl World {
         !collision_world.has_entity_collision(&aabb)
             && !collision_world
                 .has_block_collision_with_context(&aabb, BlockCollisionContext::empty())
-            && !aabb_contains_any_liquid(self, aabb)
+            && !self.contains_any_liquid(aabb)
     }
-}
-
-pub(crate) fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
-    let min_x = aabb.min_x().floor() as i32;
-    let max_x = aabb.max_x().ceil() as i32;
-    let min_y = aabb.min_y().floor() as i32;
-    let max_y = aabb.max_y().ceil() as i32;
-    let min_z = aabb.min_z().floor() as i32;
-    let max_z = aabb.max_z().ceil() as i32;
-
-    for x in min_x..max_x {
-        for y in min_y..max_y {
-            for z in min_z..max_z {
-                if !get_fluid_state(world, BlockPos::new(x, y, z)).is_empty() {
-                    return true;
-                }
-            }
-        }
-    }
-
-    false
 }

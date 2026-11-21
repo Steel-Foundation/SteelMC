@@ -60,7 +60,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
     ConversionParams, Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason,
-    SharedEntity, SpawnGroupData, WeakEntity, aabb_contains_any_liquid,
+    SharedEntity, SpawnGroupData, WeakEntity,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -623,7 +623,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn check_spawn_obstruction(&self, world: &Arc<World>) -> bool {
         let aabb = self.bounding_box();
-        if aabb_contains_any_liquid(world, aabb) {
+        if world.contains_any_liquid(aabb) {
             return false;
         }
 

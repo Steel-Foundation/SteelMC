@@ -2,7 +2,6 @@ use glam::DVec3;
 use steel_registry::{
     REGISTRY,
     blocks::{
-        BlockSpawnRule,
         block_state_ext::BlockStateExt as _,
         properties::BlockStateProperties,
         shapes::{OffsetVoxelShape, is_offset_shape_full_block},
@@ -153,7 +152,7 @@ impl Placement {
 
         let can_finalize = self.check_walk_target_value(region, block_pos)
             && (matches!(self.rule, SpawnRule::Strider)
-                || !contains_any_liquid(region, box_at_spawn));
+                || !region.contains_any_liquid(box_at_spawn));
 
         Attempt::Candidate {
             position,
@@ -205,26 +204,15 @@ impl Placement {
             _ if !world.is_block_within_world_border(pos) => false,
             InLava => region.block_state(pos).get_fluid_state().is_lava(),
             OnGround => {
-                self.is_valid_spawn_surface(region, pos.below())
+                let below = pos.below();
+                let below_state = region.block_state(below);
+
+                BLOCK_BEHAVIORS
+                    .get_behavior(below_state.get_block())
+                    .is_valid_spawn(below_state, region, below, self.entity_type)
                     && self.is_valid_empty_spawn_block(region, pos)
                     && self.is_valid_empty_spawn_block(region, pos.above())
             }
-        }
-    }
-
-    fn is_valid_spawn_surface(&self, region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
-        let state = region.block_state(pos);
-        let block = state.get_block();
-
-        match block.spawn_rule {
-            BlockSpawnRule::Default => BLOCK_BEHAVIORS.get_behavior(block).is_valid_spawn(
-                state,
-                region,
-                pos,
-                self.entity_type,
-            ),
-            BlockSpawnRule::Always => true,
-            BlockSpawnRule::Allowed(types) => types.contains(&self.entity_type),
         }
     }
 
@@ -347,15 +335,4 @@ pub(super) fn clamp_spawn_coordinate(block: i32, origin: i32, width: f32) -> f64
     let chunk_width = f64::from(SectionPos::section_to_block_coord(1, 0));
 
     f64::from(block).clamp(origin + width, origin + chunk_width - width)
-}
-
-fn contains_any_liquid(region: &WorldGenRegion<'_>, aabb: WorldAabb) -> bool {
-    let min = BlockPos::from(aabb.min_corner());
-    let max = BlockPos::from(aabb.max_corner());
-
-    (min.x()..=max.x()).any(|x| {
-        (min.y()..=max.y()).any(|y| {
-            (min.z()..=max.z()).any(|z| region.block_state(BlockPos::new(x, y, z)).has_fluid())
-        })
-    })
 }
