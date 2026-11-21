@@ -58,8 +58,11 @@ pub struct PlayerMap {
     by_uuid: HashMap<Uuid, Arc<PlayerSlot>>,
     /// Secondary index by entity ID (session-local identifier)
     by_entity_id: HashMap<i32, Arc<PlayerSlot>>,
-    /// Player UUIDs in insertion order for vanilla-visible iteration.
-    order: SyncMutex<Vec<Uuid>>,
+    /// Player slots in insertion order for vanilla-visible iteration.
+    ///
+    /// Mutations publish a new snapshot, so iteration takes no lock and its
+    /// callback may change the map.
+    order: ArcSwap<Vec<Arc<PlayerSlot>>>,
     /// Serializes changes to the indexes and their shared slots.
     mutations: SyncMutex<()>,
 }
@@ -77,7 +80,7 @@ impl PlayerMap {
         Self {
             by_uuid: HashMap::new(),
             by_entity_id: HashMap::new(),
-            order: SyncMutex::new(Vec::new()),
+            order: ArcSwap::from_pointee(Vec::new()),
             mutations: SyncMutex::new(()),
         }
     }
@@ -101,11 +104,19 @@ impl PlayerMap {
             return false;
         }
 
-        if self.by_entity_id.insert_sync(entity_id, slot).is_err() {
+        if self
+            .by_entity_id
+            .insert_sync(entity_id, Arc::clone(&slot))
+            .is_err()
+        {
             let _ = self.by_uuid.remove_sync(&uuid);
             panic!("player entity id {entity_id} is already registered");
         }
-        self.order.lock().push(uuid);
+        self.order.rcu(|order| {
+            let mut order = Vec::clone(order);
+            order.push(Arc::clone(&slot));
+            order
+        });
         true
     }
 
@@ -146,7 +157,7 @@ impl PlayerMap {
         let _ = self
             .by_entity_id
             .remove_if_sync(&player.id(), |current| Arc::ptr_eq(current, &slot));
-        self.order.lock().retain(|player_uuid| player_uuid != uuid);
+        self.remove_from_order(&slot);
         Some(player)
     }
 
@@ -168,10 +179,17 @@ impl PlayerMap {
         let _ = self
             .by_entity_id
             .remove_if_sync(&current.id(), |indexed| Arc::ptr_eq(indexed, &removed_slot));
-        self.order
-            .lock()
-            .retain(|indexed_uuid| *indexed_uuid != uuid);
+        self.remove_from_order(&removed_slot);
         Some(current)
+    }
+
+    /// Publishes an iteration snapshot without `slot`. Callers hold `mutations`.
+    fn remove_from_order(&self, slot: &Arc<PlayerSlot>) {
+        self.order.rcu(|order| {
+            let mut order = Vec::clone(order);
+            order.retain(|indexed| !Arc::ptr_eq(indexed, slot));
+            order
+        });
     }
 
     /// Replaces this exact player while retaining its UUID, entity ID, and
@@ -225,16 +243,14 @@ impl PlayerMap {
     /// Iterates over all players.
     ///
     /// The callback returns `true` to continue iteration, `false` to stop.
+    /// Players inserted or removed during iteration do not change the visited set.
     pub fn iter_players<F>(&self, mut f: F)
     where
         F: FnMut(&Uuid, &Arc<Player>) -> bool,
     {
-        let order = self.order.lock().iter().copied().collect::<Vec<_>>();
-        for uuid in order {
-            let Some(player) = self.get_by_uuid(&uuid) else {
-                continue;
-            };
-            if !f(&uuid, &player) {
+        for slot in self.order.load().iter() {
+            let registered = slot.player.load();
+            if !f(&registered.player.gameprofile.id(), &registered.player) {
                 return;
             }
         }
