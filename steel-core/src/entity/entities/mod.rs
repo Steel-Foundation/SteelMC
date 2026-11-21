@@ -16,4 +16,6 @@ pub use objects::projectiles::{
     ThrownEggEntity, WindChargeEntity,
 };
 pub use objects::technical::{InteractionEntity, MarkerEntity};
-pub use objects::vehicles::{ChestMinecartEntity, MinecartEntity, SpawnerMinecartEntity};
+pub use objects::vehicles::{
+    ChestMinecartEntity, MinecartEntity, SpawnerMinecartEntity, TntMinecartEntity,
+};
