@@ -1,3 +1,4 @@
+use crate::loot::OperationResult;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -273,26 +274,32 @@ impl BlockBehavior for ChestBlock {
             }
             return InteractionResult::Success;
         }
-        for owner in &chest.owners {
-            if let Some(randomizable) = owner.as_randomizable_container()
-                && let Err(error) = randomizable.unpack_loot_table(Some(player))
-            {
-                log::error!(
-                    "Could not unpack chest loot at {:?}: {error}",
-                    owner.get_block_pos()
-                );
-                return InteractionResult::Success;
-            }
-        }
         let inventory = Arc::clone(&player.inventory);
-        player.open_menu(title, move |context| {
-            block_chest(
-                inventory,
-                context.container_id,
-                chest.owners,
-                chest.containers,
-            )
-        });
+        let open_world = Arc::clone(world);
+        player.open_loot_container_menu(
+            chest.owners.iter().map(Arc::clone).collect(),
+            move |player| {
+                let current_state = open_world.get_block_state(pos);
+                if current_state != state
+                    || Self::get_container(current_state, &open_world, pos, false).is_none()
+                    || !chest.owners.iter().all(|owner| {
+                        owner
+                            .downcast_ref::<ChestBlockEntity>()
+                            .is_some_and(|chest| chest.can_open(player))
+                    })
+                {
+                    return;
+                }
+                player.open_menu(title, move |context| {
+                    block_chest(
+                        inventory,
+                        context.container_id,
+                        chest.owners,
+                        chest.containers,
+                    )
+                });
+            },
+        );
         InteractionResult::Success
     }
 
@@ -320,22 +327,17 @@ impl BlockBehavior for ChestBlock {
         world: &World,
         pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
+    ) -> OperationResult<i32> {
         let Some(chest) = Self::get_container(state, world, pos, false) else {
-            return 0;
+            return Ok(0);
         };
-        let Ok(guard) = ContainerLockGuard::lock_all(&chest.containers) else {
-            // TODO: Preserve vanilla access ordering so loot-generation contention
-            // cannot become a false zero comparator signal. Returning zero here
-            // also hides generation failures; distinguish them from empty contents.
-            return 0;
-        };
-        calculate_redstone_signal_from_containers(
+        let guard = ContainerLockGuard::lock_all(&chest.containers)?;
+        Ok(calculate_redstone_signal_from_containers(
             chest
                 .containers
                 .iter()
                 .filter_map(|container| guard.get(container.container_id())),
-        )
+        ))
     }
 
     fn affect_neighbors_after_removal(

@@ -1,9 +1,7 @@
-use steel_utils::random::Random;
-
-use super::{LootContext, LootModifier, LootOutput, LootResult};
+use super::{LootContext, LootModifier, LootOutput, OperationResult};
 
 type CreateItems =
-    dyn Fn(&mut LootContext<'_>, &mut LootOutput<'_>) -> LootResult<()> + Send + Sync;
+    dyn Fn(&mut LootContext<'_>, &mut LootOutput<'_>) -> OperationResult<()> + Send + Sync;
 
 /// One expanded weighted entry. Its implementation is Rust code, not a loot AST.
 pub struct LootCandidate {
@@ -18,7 +16,7 @@ impl LootCandidate {
         weight: i32,
         quality: i32,
         luck: f32,
-        create: impl Fn(&mut LootContext<'_>, &mut LootOutput<'_>) -> LootResult<()>
+        create: impl Fn(&mut LootContext<'_>, &mut LootOutput<'_>) -> OperationResult<()>
         + Send
         + Sync
         + 'static,
@@ -39,7 +37,7 @@ impl LootCandidate {
         &self,
         context: &mut LootContext<'_>,
         output: &mut LootOutput<'_>,
-    ) -> LootResult<()> {
+    ) -> OperationResult<()> {
         (self.create)(context, &mut |context, mut item| {
             for modifier in &self.modifiers {
                 modifier(context, &mut item)?;
@@ -53,7 +51,7 @@ impl LootCandidate {
         candidates: &[Self],
         context: &mut LootContext<'_>,
         output: &mut LootOutput<'_>,
-    ) -> LootResult<()> {
+    ) -> OperationResult<()> {
         let mut positive = candidates.iter().filter(|candidate| candidate.weight > 0);
         let Some(first) = positive.next() else {
             return Ok(());

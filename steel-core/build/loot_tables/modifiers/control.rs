@@ -72,7 +72,9 @@ impl CompileModifier for Filtered {
         let filter = Compiler::item_predicate(item_filter);
         let on_pass = compiler.modifier(on_pass.as_ref());
         let on_fail = compiler.modifier(on_fail.as_ref());
-        quote! { if #filter { #on_pass(ctx, item)?; } else { #on_fail(ctx, item)?; } }
+        let on_pass = compiler.call(quote! { #on_pass(ctx, item) });
+        let on_fail = compiler.call(quote! { #on_fail(ctx, item) });
+        quote! { if #filter { #on_pass?; } else { #on_fail?; } }
     }
 }
 
@@ -87,6 +89,7 @@ impl CompileModifier for Sequence {
     fn compile(&self, compiler: &mut Compiler) -> TokenStream {
         let Self { functions, .. } = self;
         let functions = compiler.modifier(Some(functions));
-        quote! { #functions(ctx, item)?; }
+        let functions = compiler.call(quote! { #functions(ctx, item) });
+        quote! { #functions?; }
     }
 }

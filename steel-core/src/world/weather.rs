@@ -17,7 +17,7 @@ use super::{
     obfuscate_biome_seed, vanilla_dimension_types,
 };
 
-use crate::chunk::light::MAX_LIGHT_LEVEL;
+use crate::chunk::{light::MAX_LIGHT_LEVEL, status::ChunkStatus};
 
 static BIOME_TEMPERATURE_NOISE: LazyLock<PerlinSimplexNoise> = LazyLock::new(|| {
     let mut random = RandomSource::Legacy(LegacyRandom::from_seed(1234));
@@ -336,18 +336,24 @@ impl World {
         let local_quart_x = (quart_x & 3) as usize;
         let local_quart_z = (quart_z & 3) as usize;
 
-        if let Some(Some(biome_id)) = self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
-            let sections = chunk.sections();
-            let (section_index, local_quart_y) =
-                Self::biome_quart_y_indices(chunk.min_y(), sections.sections.len(), quart_y)?;
-            let section = sections.sections.get(section_index)?;
-            Some(
-                section
-                    .read()
-                    .biomes
-                    .get(local_quart_x, local_quart_y, local_quart_z),
-            )
-        }) {
+        if let Some(Some(biome_id)) =
+            self.chunk_map
+                .with_chunk_at_status(chunk_pos, ChunkStatus::Biomes, |chunk| {
+                    let sections = chunk.sections();
+                    let (section_index, local_quart_y) = Self::biome_quart_y_indices(
+                        chunk.min_y(),
+                        sections.sections.len(),
+                        quart_y,
+                    )?;
+                    let section = sections.sections.get(section_index)?;
+                    Some(
+                        section
+                            .read()
+                            .biomes
+                            .get(local_quart_x, local_quart_y, local_quart_z),
+                    )
+                })
+        {
             return Some(biome_id);
         }
 

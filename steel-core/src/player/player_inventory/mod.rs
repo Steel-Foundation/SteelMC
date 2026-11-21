@@ -14,6 +14,7 @@ use crate::{
 mod container;
 mod core;
 mod equipment;
+mod loot;
 mod player_handlers;
 
 pub use container::InvalidHotbarSlot;
@@ -68,6 +69,7 @@ impl MenuItemDisposition {
 }
 
 pub(super) struct OpenMenuState {
+    pending_open: Option<Arc<()>>,
     menu: Option<Menu>,
     dispatch: Option<OpenMenuDispatch>,
     terminal_removal: Option<TerminalMenuRemoval>,
@@ -150,6 +152,7 @@ enum OpenMenuUnavailable {
 impl OpenMenuState {
     pub(super) const fn new() -> Self {
         Self {
+            pending_open: None,
             menu: None,
             dispatch: None,
             terminal_removal: None,

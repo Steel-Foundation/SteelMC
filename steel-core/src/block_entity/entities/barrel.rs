@@ -7,7 +7,7 @@ use crate::{
     },
     entity::Entity as _,
     inventory::lock::ContainerRef,
-    loot::LootResult,
+    loot::OperationResult,
     nameable::Nameable,
     player::Player,
     world::World,
@@ -102,7 +102,7 @@ impl RandomizableContainer for BarrelBlockEntity {
         self.storage.set_loot_table(loot);
     }
 
-    fn unpack_loot_table(&self, player: Option<&Player>) -> LootResult<()> {
+    fn unpack_loot_table(&self, player: Option<&Player>) -> OperationResult<()> {
         self.storage.unpack_loot_table(player)
     }
 }

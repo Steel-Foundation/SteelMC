@@ -1,5 +1,6 @@
 //! Vanilla jukebox block behavior.
 
+use crate::loot::OperationResult;
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
@@ -187,14 +188,14 @@ impl BlockBehavior for JukeboxBlock {
         world: &World,
         pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
+    ) -> OperationResult<i32> {
         let Some(block_entity) = world.get_block_entity(pos) else {
-            return MIN_REDSTONE_SIGNAL;
+            return Ok(MIN_REDSTONE_SIGNAL);
         };
         let Some(jukebox) = block_entity.downcast_ref::<JukeboxBlockEntity>() else {
-            return MIN_REDSTONE_SIGNAL;
+            return Ok(MIN_REDSTONE_SIGNAL);
         };
-        jukebox.analog_output_signal()
+        Ok(jukebox.analog_output_signal())
     }
 
     fn new_block_entity(

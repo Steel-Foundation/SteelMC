@@ -3,7 +3,7 @@ pub(crate) use storage::RandomizableContainerStorage;
 
 use steel_registry::data_components::vanilla_components::SeededContainerLoot;
 
-use crate::{loot::LootResult, player::Player};
+use crate::{loot::OperationResult, player::Player};
 
 // TODO: Integrate other vanilla containers beyond barrels and normal chests,
 // preserving their persistence formats, including decorated pots' single item.
@@ -17,5 +17,5 @@ pub trait RandomizableContainer: Send + Sync {
     fn set_loot_table(&self, loot: Option<SeededContainerLoot>);
 
     /// Generates pending contents; player opening supplies luck and `THIS_ENTITY`.
-    fn unpack_loot_table(&self, player: Option<&Player>) -> LootResult<()>;
+    fn unpack_loot_table(&self, player: Option<&Player>) -> OperationResult<()>;
 }

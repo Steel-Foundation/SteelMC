@@ -286,6 +286,10 @@ pub fn init_block_entities() {
             |level, pos, state| Arc::new(EnderChestBlockEntity::new(level, pos, state)),
         );
 
+        registry.register(&vanilla_block_entity_types::BANNER, |level, pos, state| {
+            Arc::new(BannerBlockEntity::from_state(level, pos, state))
+        });
+
         // Register enchanting table block entity factory
         registry.register(
             &vanilla_block_entity_types::ENCHANTING_TABLE,

@@ -355,12 +355,14 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
     assert_eq!(record.count(), 1);
     assert!(jukebox.is_record_playing());
     assert_eq!(
-        behavior.get_analog_output_signal(
-            world.get_block_state(pos),
-            world.as_ref(),
-            pos,
-            Direction::North,
-        ),
+        behavior
+            .get_analog_output_signal(
+                world.get_block_state(pos),
+                world.as_ref(),
+                pos,
+                Direction::North,
+            )
+            .expect("analog output"),
         cat_output
     );
     assert_eq!(world.get_signal(pos, Direction::North), MAX_REDSTONE_SIGNAL);
@@ -457,12 +459,14 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
     assert!(record.is(&vanilla_items::MUSIC_DISC_PIGSTEP));
     assert_eq!(record.count(), 1);
     assert_eq!(
-        behavior.get_analog_output_signal(
-            world.get_block_state(pos),
-            world.as_ref(),
-            pos,
-            Direction::South,
-        ),
+        behavior
+            .get_analog_output_signal(
+                world.get_block_state(pos),
+                world.as_ref(),
+                pos,
+                Direction::South,
+            )
+            .expect("analog output"),
         pigstep_output
     );
 }
@@ -588,12 +592,14 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
     };
     assert!(stored.is(&vanilla_items::MUSIC_DISC_11));
     assert_eq!(
-        behavior.get_analog_output_signal(
-            world.get_block_state(pos),
-            world.as_ref(),
-            pos,
-            Direction::North,
-        ),
+        behavior
+            .get_analog_output_signal(
+                world.get_block_state(pos),
+                world.as_ref(),
+                pos,
+                Direction::North,
+            )
+            .expect("analog output"),
         expected_output
     );
     assert_eq!(world.get_signal(pos, Direction::North), MIN_REDSTONE_SIGNAL);

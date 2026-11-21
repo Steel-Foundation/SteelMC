@@ -36,8 +36,10 @@ mod ram_only;
 mod region_manager;
 pub mod registry;
 mod storage;
+mod structure_info;
 
 pub use format::*;
 pub use ram_only::*;
 pub use region_manager::*;
 pub use storage::*;
+pub use structure_info::ChunkStructureInfo;

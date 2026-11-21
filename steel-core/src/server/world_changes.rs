@@ -490,6 +490,12 @@ impl Server {
         let switches = mem::take(&mut *self.pending_domain_switches.lock());
 
         for request in switches {
+            let world = request.player.get_world();
+            let lifecycle = Arc::clone(&world.loot_lifecycle.read());
+            let Some(_barrier) = lifecycle.try_save_barrier() else {
+                self.pending_domain_switches.lock().push(request);
+                continue;
+            };
             let player = Arc::clone(&request.player);
             let player_name = player.gameprofile.name().to_owned();
             let pending_token = request.pending_token;

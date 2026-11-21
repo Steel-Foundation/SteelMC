@@ -44,6 +44,15 @@ pub trait ChunkGenerator: Send + Sync {
     /// Returns the generator biome at one quart position without requiring a loaded chunk.
     fn noise_biome(&self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef;
 
+    /// Samples independent quart positions while permitting allocation reuse.
+    /// Results have the same order and tie-breaking as separate `noise_biome` calls.
+    fn noise_biomes(&self, positions: &[IVec3]) -> Vec<BiomeRef> {
+        positions
+            .iter()
+            .map(|pos| self.noise_biome(pos.x, pos.y, pos.z))
+            .collect()
+    }
+
     /// Returns the climate-selected origin used by vanilla before searching for a safe spawn chunk.
     fn initial_spawn_search_origin(&self) -> BlockPos {
         BlockPos::new(0, 0, 0)

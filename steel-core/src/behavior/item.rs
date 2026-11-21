@@ -57,6 +57,10 @@ pub trait SignApplicator: Send + Sync {
 /// - Use in air
 /// - etc.
 pub trait ItemBehavior: Send + Sync {
+    /// Whether this item has filled-map behavior when displayed in a frame.
+    fn is_map_item(&self) -> bool {
+        false
+    }
     /// Returns the Rust type name of the concrete behavior implementation.
     #[cfg(feature = "test-framework")]
     #[must_use]

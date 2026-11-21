@@ -30,6 +30,8 @@ use super::{
     },
 };
 
+mod structure_info;
+
 #[derive(Debug)]
 struct CorruptChunkData(String);
 

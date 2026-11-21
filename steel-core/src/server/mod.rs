@@ -44,6 +44,7 @@ use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
 use crate::loot::random_sequences::DomainRandomSequences;
+use crate::maps::DomainMaps;
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
@@ -160,6 +161,8 @@ pub struct CommandDataSaveResults {
     pub storage: io::Result<usize>,
     /// Number of dirty domain random-sequence collections written, or the save error.
     pub random_sequences: io::Result<usize>,
+    /// Number of dirty map images written, or the save error.
+    pub maps: io::Result<usize>,
 }
 
 mod known_players;
@@ -216,6 +219,9 @@ pub async fn test_server_with_worlds_and_config(
     let random_sequences = DomainRandomSequences::load(&worlds)
         .await
         .map_err(|error| format!("test random sequences should load: {error}"))?;
+    let maps = DomainMaps::load(&worlds)
+        .await
+        .map_err(|error| format!("test map data should load: {error}"))?;
     let player_data_storage = PlayerDataStorage::in_memory();
     let registered_commands = create_registered_dispatcher(CommandRegistry::new())
         .map_err(|error| format!("test commands should register: {error}"))?;
@@ -247,6 +253,10 @@ pub async fn test_server_with_worlds_and_config(
         return Err("test worlds must share the server's history owner".to_owned());
     }
 
+    let jobs = Arc::new(ServerJobQueue::new());
+    for world in worlds.values() {
+        *world.loot_jobs.write() = Arc::downgrade(&jobs);
+    }
     Ok(Arc::new(Server {
         damage_history,
         config,
@@ -264,12 +274,13 @@ pub async fn test_server_with_worlds_and_config(
         scoreboards,
         command_storage,
         random_sequences,
+        maps,
         command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
         command_permission_keys,
         command_requests: CommandRequestQueue::new(),
         packet_processor: PacketProcessor::new(),
         chunk_encoding_pool: Arc::new(chunk_encoding_pool),
-        jobs: ServerJobQueue::new(),
+        jobs,
         player_data_storage,
         player_permission_states: SyncRwLock::new(player_permission_states),
         player_permission_updates: AsyncMutex::new(()),
@@ -509,6 +520,7 @@ pub struct Server {
     /// Command NBT storage isolated by Steel domain.
     pub(crate) command_storage: DomainCommandStorage,
     random_sequences: DomainRandomSequences,
+    maps: DomainMaps,
     /// Saves and dispatches commands to appropriate handlers.
     command_dispatcher: SyncRwLock<CommandDispatcher>,
     /// Steel-owned permission keys exposed for command autocomplete.
@@ -520,7 +532,7 @@ pub struct Server {
     /// Dedicated worker pool for CPU-heavy chunk persistence and packet encoding.
     chunk_encoding_pool: Arc<ThreadPool>,
     /// Jobs resumed from a known point in the server game tick.
-    pub jobs: ServerJobQueue,
+    pub jobs: Arc<ServerJobQueue>,
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
     /// Persisted permission state indexed by player UUID.
@@ -838,6 +850,14 @@ impl Server {
             .map(|permission| permission.as_str().to_owned())
             .collect();
 
+        let maps = DomainMaps::load(&worlds)
+            .await
+            .map_err(|error| format!("Failed to load map data: {error}"))?;
+        let jobs = Arc::new(ServerJobQueue::new());
+        for world in worlds.values() {
+            *world.loot_jobs.write() = Arc::downgrade(&jobs);
+        }
+
         // Steel finishes the initial attempt before opening its listener, except offline,
         // where `enforces_secure_chat` needs online mode so nothing acts on the result.
         if config.online_mode && service_keys_ready.await.is_err() {
@@ -862,12 +882,13 @@ impl Server {
             scoreboards,
             command_storage,
             random_sequences,
+            maps,
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
             command_requests: CommandRequestQueue::new(),
             packet_processor: PacketProcessor::new(),
             chunk_encoding_pool,
-            jobs: ServerJobQueue::new(),
+            jobs,
             player_data_storage,
             player_permission_states: SyncRwLock::new(player_permission_states),
             player_permission_updates: AsyncMutex::new(()),
@@ -906,6 +927,7 @@ impl Server {
             scoreboards: self.scoreboards.save(&self.worlds).await,
             storage: self.save_command_storage().await,
             random_sequences: self.random_sequences.save(&self.worlds).await,
+            maps: self.maps.save(&self.worlds).await,
         }
     }
 

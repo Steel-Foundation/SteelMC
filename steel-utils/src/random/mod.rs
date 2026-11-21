@@ -25,7 +25,9 @@ pub mod xoroshiro;
 #[expect(missing_docs, reason = "method names are self-explanatory")]
 pub trait Random {
     #[must_use]
-    fn fork(&mut self) -> Self;
+    fn fork(&mut self) -> Self
+    where
+        Self: Sized;
 
     fn next_i32(&mut self) -> i32;
 
@@ -66,7 +68,10 @@ pub trait Random {
     }
 
     /// Vanilla `Util.shuffle`: one descending bounded draw per swapped position.
-    fn shuffle<T>(&mut self, items: &mut [T]) {
+    fn shuffle<T>(&mut self, items: &mut [T])
+    where
+        Self: Sized,
+    {
         let Ok(size) = i32::try_from(items.len()) else {
             panic!("shuffle length {} exceeds Java's int range", items.len());
         };

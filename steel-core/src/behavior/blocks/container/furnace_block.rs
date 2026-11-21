@@ -1,5 +1,6 @@
 //! Furnace, blast-furnace, and smoker block behavior.
 
+use crate::loot::OperationResult;
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
@@ -174,8 +175,8 @@ macro_rules! impl_furnace_block {
                 world: &World,
                 pos: BlockPos,
                 _direction: Direction,
-            ) -> i32 {
-                analog_output(world, pos)
+            ) -> OperationResult<i32> {
+                Ok(analog_output(world, pos))
             }
         }
     };

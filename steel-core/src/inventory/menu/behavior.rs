@@ -1,6 +1,6 @@
 //! Slots, client-sync state, and click handling shared by every menu.
 
-use crate::loot::LootResult;
+use crate::loot::OperationResult;
 use crate::player::player_inventory::Prediction;
 use std::fmt;
 use std::{mem, sync::Arc};
@@ -109,7 +109,7 @@ impl MenuBehavior {
     /// # Errors
     /// Returns a loot preparation error if an access callback fails; the group's
     /// inventory locks have not yet been acquired.
-    pub fn lock_all_containers(&self) -> LootResult<ContainerLockGuard> {
+    pub fn lock_all_containers(&self) -> OperationResult<ContainerLockGuard> {
         ContainerLockGuard::lock_all(&self.container_refs)
     }
 
@@ -122,7 +122,7 @@ impl MenuBehavior {
     pub(crate) fn lock_all_containers_with(
         &self,
         additional: ContainerRef,
-    ) -> LootResult<ContainerLockGuard> {
+    ) -> OperationResult<ContainerLockGuard> {
         let mut container_refs = self.container_refs.clone();
         container_refs.push(additional);
         ContainerLockGuard::lock_all(&container_refs)

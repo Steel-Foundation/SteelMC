@@ -25,7 +25,7 @@ use crate::entity::{
     load_entity_recursive_owned, nbt_dvec3,
 };
 use crate::inventory::equipment::EquipmentSlot;
-use crate::loot::{LOOT_TABLES, LootContext, LootResult};
+use crate::loot::{LOOT_TABLES, LootContext, OperationResult};
 use crate::physics::{WorldCollisionProvider, has_collision};
 use crate::world::World;
 
@@ -619,7 +619,11 @@ fn random_spawn_position<R: Rng + ?Sized>(
     )
 }
 
-fn equip_from_table(world: &World, mob: &dyn Mob, equipment: &EquipmentTable) -> LootResult<()> {
+fn equip_from_table(
+    world: &World,
+    mob: &dyn Mob,
+    equipment: &EquipmentTable,
+) -> OperationResult<()> {
     let Some(table) = LOOT_TABLES.by_key(&equipment.loot_table) else {
         return Ok(());
     };

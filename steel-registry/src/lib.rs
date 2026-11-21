@@ -60,6 +60,7 @@ pub mod item_stack_template;
 pub mod items;
 pub mod jukebox_song;
 mod macros;
+pub mod map_color;
 pub mod map_decoration_type;
 pub mod menu_type;
 pub mod mob_effect;
@@ -306,6 +307,10 @@ pub mod vanilla_mob_effects;
 #[rustfmt::skip]
 #[path = "generated/vanilla_map_decoration_types.rs"]
 pub mod vanilla_map_decoration_types;
+
+#[rustfmt::skip]
+#[path = "generated/vanilla_map_colors.rs"]
+pub mod vanilla_map_colors;
 
 #[expect(warnings)]
 #[rustfmt::skip]

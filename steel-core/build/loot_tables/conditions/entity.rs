@@ -4,7 +4,6 @@ use super::super::{
     quote,
 };
 use serde::Deserialize;
-use serde::de::IgnoredAny;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -53,28 +52,5 @@ impl CompileCondition for DamageSourceProperties {
         let Self { predicate, .. } = self;
         let predicate = Compiler::damage_source_predicate(predicate);
         quote! { ctx.origin.is_some() && (#predicate) }
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LocationCheck {
-    #[serde(default, rename = "offsetX")]
-    pub _offset_x: i32,
-    #[serde(default, rename = "offsetY")]
-    pub _offset_y: i32,
-    #[serde(default, rename = "offsetZ")]
-    pub _offset_z: i32,
-    #[serde(rename = "predicate")]
-    pub _predicate: Option<IgnoredAny>,
-}
-
-impl CompileCondition for LocationCheck {
-    fn compile(&self, _compiler: &mut Compiler) -> TokenStream {
-        // TODO: Compile typed LocationPredicate inputs with vanilla origin/offset
-        // and loaded-chunk semantics. Extracted tables already need biome and
-        // block/state checks; also cover position, dimension, structures, campfire
-        // smoke, light, fluid, and sky visibility predicates.
-        quote! { ctx.unsupported::<bool>("minecraft:location_check")? }
     }
 }

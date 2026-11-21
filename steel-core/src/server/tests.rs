@@ -233,6 +233,8 @@ async fn test_server_with_worlds(
 }
 
 mod connection_lifecycle;
+mod loot_containers;
+mod loot_saves;
 mod perf;
 mod player_limit;
 
@@ -4678,9 +4680,11 @@ fn save_and_shutdown_writes_player_and_world_data() {
     with_server_runtime(|runtime| {
         runtime.block_on(async {
             let save_root = test_storage_root("save-and-shutdown");
-            let server = offline_server(runtime, &save_root, UNROUTABLE_SERVICES)
-                .await
-                .expect("an offline server should start");
+            let server = Arc::new(
+                offline_server(runtime, &save_root, UNROUTABLE_SERVICES)
+                    .await
+                    .expect("an offline server should start"),
+            );
 
             server.save_and_shutdown().await;
 

@@ -806,6 +806,7 @@ impl Player {
     fn close_open_menu(&self, send_packet: bool) {
         let menu = {
             let mut open_menu = self.open_menu.lock();
+            open_menu.pending_open = None;
             if open_menu.terminal_removal.is_some() {
                 return;
             }

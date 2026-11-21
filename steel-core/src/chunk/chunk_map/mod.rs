@@ -473,6 +473,12 @@ impl ChunkMap {
         }
     }
 
+    /// Whether an active holder permits Full status, including pending generation.
+    pub(crate) fn has_chunk(&self, pos: ChunkPos) -> bool {
+        self.lookup_active_holder(pos)
+            .is_some_and(|holder| !holder.is_status_disallowed(ChunkStatus::Full))
+    }
+
     /// Executes a function with access to a fully loaded chunk.
     /// Returns `None` if the chunk is not loaded or not at Full status.
     pub fn with_full_chunk<F, R>(&self, pos: ChunkPos, f: F) -> Option<R>
