@@ -356,6 +356,20 @@ impl AttributeMap {
         value
     }
 
+    /// Gets the base value of an attribute that must exist on this entity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the entity type was not constructed with the requested
+    /// attribute, matching [`Self::required_value`].
+    #[must_use]
+    pub fn required_base_value(&self, attribute: AttributeRef) -> f64 {
+        let Some(value) = self.get_base_value(attribute) else {
+            panic!("required attribute {} is missing", attribute.key);
+        };
+        value
+    }
+
     /// Gets the base value of an attribute
     #[must_use]
     pub fn get_base_value(&self, attribute: AttributeRef) -> Option<f64> {

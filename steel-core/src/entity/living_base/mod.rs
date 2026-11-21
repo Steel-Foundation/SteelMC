@@ -14,7 +14,7 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::packets::game::{CRemoveMobEffect, CUpdateMobEffect, MobEffectPacketFlags};
 use steel_registry::RegistryEntry;
 use steel_registry::attribute::AttributeRef;
-use steel_registry::data_components::vanilla_components::SwingAnimation;
+use steel_registry::data_components::vanilla_components::{KINETIC_WEAPON, SwingAnimation};
 use steel_registry::entity_data::ParticleList;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -714,6 +714,9 @@ struct LivingEntityState {
     rotation: LivingRotationState,
     swing: LivingSwingState,
     active_item_use: Option<ActiveItemUseState>,
+    /// Game time each entity was last stabbed, keyed by entity id; present only while
+    /// a kinetic weapon is in active use.
+    recent_kinetic_enemies: Option<FxHashMap<i32, i64>>,
     no_jump_delay: i32,
     no_action_time: i32,
     combat_tracker: CombatTracker,
@@ -752,6 +755,7 @@ impl LivingEntityState {
             rotation: LivingRotationState::new(),
             swing: LivingSwingState::new(),
             active_item_use: None,
+            recent_kinetic_enemies: None,
             no_jump_delay: 0,
             no_action_time: 0,
             combat_tracker: CombatTracker::new(),
@@ -931,12 +935,36 @@ impl LivingEntityBase {
             return false;
         }
         state.active_item_use = Some(ActiveItemUseState::new(hand, item.item(), duration));
+        if item.has(KINETIC_WEAPON) {
+            state.recent_kinetic_enemies = Some(FxHashMap::default());
+        }
         true
     }
 
     /// Stops vanilla active item use without calling item hooks.
     pub fn stop_using_item(&self) -> Option<ActiveItemUseState> {
-        self.state.lock().active_item_use.take()
+        let mut state = self.state.lock();
+        state.recent_kinetic_enemies = None;
+        state.active_item_use.take()
+    }
+
+    /// Returns whether the active kinetic-weapon use stabbed `target_id` less than
+    /// `allowed_ticks` before `game_time`.
+    #[must_use]
+    pub fn was_recently_stabbed(&self, target_id: i32, allowed_ticks: i32, game_time: i64) -> bool {
+        self.state
+            .lock()
+            .recent_kinetic_enemies
+            .as_ref()
+            .and_then(|enemies| enemies.get(&target_id))
+            .is_some_and(|&stabbed_at| game_time - stabbed_at < i64::from(allowed_ticks))
+    }
+
+    /// Records that the active kinetic-weapon use stabbed `target_id` at `game_time`.
+    pub fn remember_stabbed_entity(&self, target_id: i32, game_time: i64) {
+        if let Some(enemies) = self.state.lock().recent_kinetic_enemies.as_mut() {
+            enemies.insert(target_id, game_time);
+        }
     }
 
     /// Decrements active-use remaining ticks and returns the updated state.
