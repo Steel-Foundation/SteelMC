@@ -61,9 +61,8 @@ const FALL_DISTANCE_VELOCITY_DIVISOR: f64 = 10.0;
 
 /// The vanilla `ignitionSource` damage source.
 ///
-/// Its direct entity is always this cart, so only the causing entity is kept; storing the full
-/// [`DamageSource`] would make the cart own a strong reference to itself. The cause is retained
-/// even after removal so the explosion keeps its attribution, as vanilla's stored source does.
+/// the direct entity is supplied when the blast runs so keep the causing entity available
+/// until this cart is removed even if the cause leaves the world first
 #[derive(Clone)]
 struct IgnitionSource {
     cause: Option<SharedEntity>,
@@ -191,13 +190,14 @@ impl TntMinecartEntity {
         };
 
         if world.get_game_rule(&TNT_EXPLODES) {
-            let (power_base, speed_factor) = {
+            let (power_base, velocity_factor) = {
                 let state = self.state.lock();
                 (state.explosion_power_base, state.explosion_speed_factor)
             };
+
             let velocity = velocity_sqr.sqrt().min(MAX_EXPLOSION_VELOCITY);
             let power = f64::from(power_base)
-                + f64::from(speed_factor)
+                + f64::from(velocity_factor)
                     * rand::random::<f64>()
                     * EXPLOSION_VELOCITY_POWER_SCALE
                     * velocity;
@@ -366,8 +366,16 @@ impl Entity for TntMinecartEntity {
         self.entity_type
     }
 
+    fn set_removed(&self, reason: RemovalReason) {
+        self.base.set_removed(reason);
+        let ignition_source = self.state.lock().ignition_source.take();
+
+        drop(ignition_source);
+    }
+
     fn tick(self: Arc<Self>) {
         let entity = Arc::clone(&self).into_shared_entity();
+        let ignition_before_movement = self.ignition_damage_source(&entity);
         self.tick_minecart(&entity);
 
         // The fuse smoke particle is client-local in vanilla.
@@ -382,10 +390,17 @@ impl Entity for TntMinecartEntity {
                 None => false,
             }
         };
+
+        if !fuse_burnt_out && !self.horizontal_collision() {
+            return;
+        }
+
+        let ignition_source =
+            ignition_before_movement.or_else(|| self.ignition_damage_source(&entity));
         if fuse_burnt_out {
             self.explode(
                 &entity,
-                self.ignition_damage_source(&entity),
+                ignition_source.clone(),
                 self.horizontal_velocity_sqr(),
             );
         }
@@ -393,7 +408,7 @@ impl Entity for TntMinecartEntity {
         if self.horizontal_collision() {
             let velocity_sqr = self.horizontal_velocity_sqr();
             if Self::is_explosive_horizontal_velocity(velocity_sqr) {
-                self.explode(&entity, self.ignition_damage_source(&entity), velocity_sqr);
+                self.explode(&entity, ignition_source, velocity_sqr);
             }
         }
     }
@@ -556,7 +571,7 @@ impl Entity for TntMinecartEntity {
             .clamp(0.0, MAX_SAVED_EXPLOSION_VALUE);
     }
 
-    // TODO: Implement getPickResult.
+    // TODO: Return a TNT minecart item once entity pickitem handling is wired up
 }
 
 #[cfg(test)]
