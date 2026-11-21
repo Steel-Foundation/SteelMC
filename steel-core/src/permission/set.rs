@@ -1,6 +1,10 @@
 use std::mem;
 
-use super::{PermissionContext, PermissionExpr, PermissionKey, PermissionRuleContext};
+use steel_utils::Identifier;
+
+use super::{
+    PermissionContext, PermissionExpr, PermissionKey, PermissionRuleContext, key::identifier_scopes,
+};
 
 /// Resolved state of one matching permission rule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -171,125 +175,6 @@ impl PermissionSet {
         self.entries.len() != old_len
     }
 
-    /// Resolves one key globally.
-    #[must_use]
-    pub fn resolve_key(&self, key: &PermissionKey) -> Option<PermissionState> {
-        self.resolve_key_in(key, &PermissionContext::global())
-    }
-
-    /// Resolves one key in an active context.
-    #[must_use]
-    pub fn resolve_key_in(
-        &self,
-        key: &PermissionKey,
-        context: &PermissionContext,
-    ) -> Option<PermissionState> {
-        self.best_key_candidate(key, context)
-            .map(|candidate| candidate.state)
-    }
-
-    /// Resolves one key globally and returns the winning rule details.
-    #[must_use]
-    pub fn resolve_key_detailed(&self, key: &PermissionKey) -> Option<PermissionResolution> {
-        self.resolve_key_in_detailed(key, &PermissionContext::global())
-    }
-
-    /// Resolves one key in an active context and returns the winning rule details.
-    #[must_use]
-    pub fn resolve_key_in_detailed(
-        &self,
-        key: &PermissionKey,
-        context: &PermissionContext,
-    ) -> Option<PermissionResolution> {
-        self.best_key_candidate(key, context)
-            .map(|candidate| self.permission_resolution(candidate))
-    }
-
-    /// Resolves a child key that may inherit a broad parent grant.
-    #[must_use]
-    pub fn resolve_scoped_key(
-        &self,
-        parent: &PermissionKey,
-        key: &PermissionKey,
-    ) -> Option<PermissionState> {
-        self.resolve_scoped_key_in(parent, key, &PermissionContext::global())
-    }
-
-    /// Resolves a child key with a parent fallback in an active context.
-    #[must_use]
-    pub fn resolve_scoped_key_in(
-        &self,
-        parent: &PermissionKey,
-        key: &PermissionKey,
-        context: &PermissionContext,
-    ) -> Option<PermissionState> {
-        self.best_scoped_key_candidate(parent, key, context)
-            .map(|candidate| candidate.state)
-    }
-
-    /// Resolves a scoped child globally and returns the winning rule details.
-    #[must_use]
-    pub fn resolve_scoped_key_detailed(
-        &self,
-        parent: &PermissionKey,
-        key: &PermissionKey,
-    ) -> Option<PermissionResolution> {
-        self.resolve_scoped_key_in_detailed(parent, key, &PermissionContext::global())
-    }
-
-    /// Resolves a scoped child in an active context and returns winning rule details.
-    #[must_use]
-    pub fn resolve_scoped_key_in_detailed(
-        &self,
-        parent: &PermissionKey,
-        key: &PermissionKey,
-        context: &PermissionContext,
-    ) -> Option<PermissionResolution> {
-        self.best_scoped_key_candidate(parent, key, context)
-            .map(|candidate| self.permission_resolution(candidate))
-    }
-
-    /// Returns whether one global key resolves to allow.
-    #[must_use]
-    pub fn allows_key(&self, key: &PermissionKey) -> bool {
-        self.resolve_key(key) == Some(PermissionState::Allow)
-    }
-
-    /// Returns whether one key resolves to allow in `context`.
-    #[must_use]
-    pub fn allows_key_in(&self, key: &PermissionKey, context: &PermissionContext) -> bool {
-        self.resolve_key_in(key, context) == Some(PermissionState::Allow)
-    }
-
-    /// Returns whether one scoped child resolves to allow globally.
-    #[must_use]
-    pub fn allows_scoped_key(&self, parent: &PermissionKey, key: &PermissionKey) -> bool {
-        self.resolve_scoped_key(parent, key) == Some(PermissionState::Allow)
-    }
-
-    /// Returns whether one scoped child resolves to allow in `context`.
-    #[must_use]
-    pub fn allows_scoped_key_in(
-        &self,
-        parent: &PermissionKey,
-        key: &PermissionKey,
-        context: &PermissionContext,
-    ) -> bool {
-        self.resolve_scoped_key_in(parent, key, context) == Some(PermissionState::Allow)
-    }
-
-    /// Returns whether a global permission expression resolves to allow.
-    #[must_use]
-    pub fn allows(&self, permission: &PermissionExpr) -> bool {
-        self.allows_in(permission, &PermissionContext::global())
-    }
-
-    /// Returns whether an expression resolves to allow in `context`.
-    #[must_use]
-    pub fn allows_in(&self, permission: &PermissionExpr, context: &PermissionContext) -> bool {
-        self.resolve_in(permission, context) == Some(PermissionState::Allow)
-    }
-
     /// Resolves a permission expression globally.
     #[must_use]
     pub fn resolve(&self, permission: &PermissionExpr) -> Option<PermissionState> {
@@ -304,13 +189,185 @@ impl PermissionSet {
         context: &PermissionContext,
     ) -> Option<PermissionState> {
         match permission {
-            PermissionExpr::Key(key) => self.resolve_key_in(key, context),
+            PermissionExpr::Key(identifier) => self.resolve_identifier_in(identifier, context),
             PermissionExpr::ScopedKey { parent, key } => {
-                self.resolve_scoped_key_in(parent, key, context)
+                self.resolve_scoped_identifier_in(parent, key, context)
             }
             PermissionExpr::All(children) => resolve_all(children, self, context),
             PermissionExpr::Any(children) => resolve_any(children, self, context),
         }
+    }
+
+    /// Returns whether a global permission expression resolves to allow.
+    #[must_use]
+    pub fn allows(&self, permission: &PermissionExpr) -> bool {
+        self.allows_in(permission, &PermissionContext::global())
+    }
+
+    /// Returns whether an expression resolves to allow in `context`.
+    #[must_use]
+    pub fn allows_in(&self, permission: &PermissionExpr, context: &PermissionContext) -> bool {
+        self.resolve_in(permission, context) == Some(PermissionState::Allow)
+    }
+
+    /// Resolves one concrete permission globally.
+    #[must_use]
+    pub fn resolve_identifier(&self, identifier: &Identifier) -> Option<PermissionState> {
+        self.resolve_identifier_in(identifier, &PermissionContext::global())
+    }
+
+    /// Resolves one concrete permission in an active context.
+    #[must_use]
+    pub fn resolve_identifier_in(
+        &self,
+        identifier: &Identifier,
+        context: &PermissionContext,
+    ) -> Option<PermissionState> {
+        self.best_candidate(context, |key| key.matches_identifier(identifier))
+            .map(|candidate| candidate.state)
+    }
+
+    /// Resolves one concrete permission globally and returns the winning rule details.
+    #[must_use]
+    pub fn resolve_identifier_detailed(
+        &self,
+        identifier: &Identifier,
+    ) -> Option<PermissionResolution> {
+        self.resolve_identifier_in_detailed(identifier, &PermissionContext::global())
+    }
+
+    /// Resolves one concrete permission in an active context with winning rule details.
+    #[must_use]
+    pub fn resolve_identifier_in_detailed(
+        &self,
+        identifier: &Identifier,
+        context: &PermissionContext,
+    ) -> Option<PermissionResolution> {
+        self.best_candidate(context, |key| key.matches_identifier(identifier))
+            .map(|candidate| self.permission_resolution(candidate))
+    }
+
+    /// Returns whether one concrete permission resolves to allow globally.
+    #[must_use]
+    pub fn allows_identifier(&self, identifier: &Identifier) -> bool {
+        self.resolve_identifier(identifier) == Some(PermissionState::Allow)
+    }
+
+    /// Returns whether one concrete permission resolves to allow in `context`.
+    #[must_use]
+    pub fn allows_identifier_in(
+        &self,
+        identifier: &Identifier,
+        context: &PermissionContext,
+    ) -> bool {
+        self.resolve_identifier_in(identifier, context) == Some(PermissionState::Allow)
+    }
+
+    /// Resolves a child permission that may inherit a broad parent grant.
+    #[must_use]
+    pub fn resolve_scoped_identifier(
+        &self,
+        parent: &Identifier,
+        key: &Identifier,
+    ) -> Option<PermissionState> {
+        self.resolve_scoped_identifier_in(parent, key, &PermissionContext::global())
+    }
+
+    /// Resolves a child permission with a parent fallback in an active context.
+    #[must_use]
+    pub fn resolve_scoped_identifier_in(
+        &self,
+        parent: &Identifier,
+        key: &Identifier,
+        context: &PermissionContext,
+    ) -> Option<PermissionState> {
+        self.best_scoped_identifier_candidate(parent, key, context)
+            .map(|candidate| candidate.state)
+    }
+
+    /// Resolves a scoped child globally and returns the winning rule details.
+    #[must_use]
+    pub fn resolve_scoped_identifier_detailed(
+        &self,
+        parent: &Identifier,
+        key: &Identifier,
+    ) -> Option<PermissionResolution> {
+        self.resolve_scoped_identifier_in_detailed(parent, key, &PermissionContext::global())
+    }
+
+    /// Resolves a scoped child in an active context with winning rule details.
+    #[must_use]
+    pub fn resolve_scoped_identifier_in_detailed(
+        &self,
+        parent: &Identifier,
+        key: &Identifier,
+        context: &PermissionContext,
+    ) -> Option<PermissionResolution> {
+        self.best_scoped_identifier_candidate(parent, key, context)
+            .map(|candidate| self.permission_resolution(candidate))
+    }
+
+    /// Returns whether one scoped child resolves to allow globally.
+    #[must_use]
+    pub fn allows_scoped_identifier(&self, parent: &Identifier, key: &Identifier) -> bool {
+        self.resolve_scoped_identifier(parent, key) == Some(PermissionState::Allow)
+    }
+
+    /// Returns whether one scoped child resolves to allow in `context`.
+    #[must_use]
+    pub fn allows_scoped_identifier_in(
+        &self,
+        parent: &Identifier,
+        key: &Identifier,
+        context: &PermissionContext,
+    ) -> bool {
+        self.resolve_scoped_identifier_in(parent, key, context) == Some(PermissionState::Allow)
+    }
+
+    /// Resolves one permission pattern globally.
+    #[must_use]
+    pub fn resolve_key(&self, key: &PermissionKey) -> Option<PermissionState> {
+        self.resolve_key_in(key, &PermissionContext::global())
+    }
+
+    /// Resolves one permission pattern in an active context.
+    #[must_use]
+    pub fn resolve_key_in(
+        &self,
+        key: &PermissionKey,
+        context: &PermissionContext,
+    ) -> Option<PermissionState> {
+        self.best_candidate(context, |entry_key| entry_key.matches(key))
+            .map(|candidate| candidate.state)
+    }
+
+    /// Resolves one permission pattern globally and returns the winning rule details.
+    #[must_use]
+    pub fn resolve_key_detailed(&self, key: &PermissionKey) -> Option<PermissionResolution> {
+        self.resolve_key_in_detailed(key, &PermissionContext::global())
+    }
+
+    /// Resolves one permission pattern in an active context with winning rule details.
+    #[must_use]
+    pub fn resolve_key_in_detailed(
+        &self,
+        key: &PermissionKey,
+        context: &PermissionContext,
+    ) -> Option<PermissionResolution> {
+        self.best_candidate(context, |entry_key| entry_key.matches(key))
+            .map(|candidate| self.permission_resolution(candidate))
+    }
+
+    /// Returns whether one permission pattern resolves to allow globally.
+    #[must_use]
+    pub fn allows_key(&self, key: &PermissionKey) -> bool {
+        self.resolve_key(key) == Some(PermissionState::Allow)
+    }
+
+    /// Returns whether one permission pattern resolves to allow in `context`.
+    #[must_use]
+    pub fn allows_key_in(&self, key: &PermissionKey, context: &PermissionContext) -> bool {
+        self.resolve_key_in(key, context) == Some(PermissionState::Allow)
     }
 
     pub(super) fn push_group(&mut self, entry: PermissionEntry, group: &str, group_priority: i32) {
@@ -339,14 +396,14 @@ impl PermissionSet {
         }
     }
 
-    fn best_key_candidate(
+    fn best_candidate(
         &self,
-        key: &PermissionKey,
         context: &PermissionContext,
+        matches: impl Fn(&PermissionKey) -> bool,
     ) -> Option<PermissionCandidate> {
         let mut best = None;
         for (index, (entry, source)) in self.entries.iter().zip(&self.sources).enumerate() {
-            if !entry.context.matches(context) || !entry.key.matches(key) {
+            if !entry.context.matches(context) || !matches(&entry.key) {
                 continue;
             }
             push_candidate(
@@ -361,20 +418,20 @@ impl PermissionSet {
         best
     }
 
-    fn best_scoped_key_candidate(
+    fn best_scoped_identifier_candidate(
         &self,
-        parent: &PermissionKey,
-        key: &PermissionKey,
+        parent: &Identifier,
+        key: &Identifier,
         context: &PermissionContext,
     ) -> Option<PermissionCandidate> {
         let mut best = None;
-        let parent_scopes_key = parent.scopes(key);
+        let parent_scopes_key = identifier_scopes(parent, key);
         for (index, (entry, source)) in self.entries.iter().zip(&self.sources).enumerate() {
             if !entry.context.matches(context) {
                 continue;
             }
-            let matches_parent = parent_scopes_key && entry.key.matches(parent);
-            let matches_key = entry.key.matches(key);
+            let matches_parent = parent_scopes_key && entry.key.matches_identifier(parent);
+            let matches_key = entry.key.matches_identifier(key);
             if !matches_parent && !matches_key {
                 continue;
             }

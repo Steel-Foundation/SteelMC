@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     env,
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -7,7 +8,8 @@ use std::{
 use steel_core::{
     config::{RuntimeConfig, WorldsConfig},
     permission::{
-        PermissionGroupConfig, PermissionGroupStore, PermissionGroups, PermissionGroupsConfig,
+        PermissionCollections, PermissionCollectionsConfig, PermissionGroupConfig,
+        PermissionGroupStore, PermissionGroups, PermissionGroupsConfig,
         PermissionMetadataRuleConfig, PermissionMetadataValue,
     },
 };
@@ -16,7 +18,9 @@ use tokio::fs as async_fs;
 use super::{
     DEFAULT_CONFIG, DEFAULT_WORLDS, FilePermissionGroupStore, LogLevel, RotationTimeFormat,
     SteelConfig,
-    groups::{DEFAULT_GROUPS, GROUPS_CONFIG_HEADER},
+    groups::{
+        COLLECTIONS_CONFIG_HEADER, DEFAULT_COLLECTIONS, DEFAULT_GROUPS, GROUPS_CONFIG_HEADER,
+    },
     server::validate,
 };
 
@@ -46,8 +50,13 @@ fn packaged_configs_parse() {
     assert!(!worlds.domains.is_empty());
     let groups: PermissionGroupsConfig =
         toml::from_str(DEFAULT_GROUPS).expect("default groups parse");
-    PermissionGroups::from_config(groups).expect("default groups validate");
+    PermissionGroups::from_config(groups, &PermissionCollections::vanilla())
+        .expect("default groups validate");
     assert!(DEFAULT_GROUPS.starts_with(GROUPS_CONFIG_HEADER));
+    let collections: PermissionCollectionsConfig =
+        toml::from_str(DEFAULT_COLLECTIONS).expect("default collections parse");
+    PermissionCollections::from_config(&collections).expect("default collections validate");
+    assert!(DEFAULT_COLLECTIONS.starts_with(COLLECTIONS_CONFIG_HEADER));
 }
 
 /// Covers every `RuntimeConfig` field. The destructure is exhaustive on purpose, so adding
@@ -145,13 +154,14 @@ fn packaged_schema_declares_server_thread_settings() {
 #[tokio::test]
 async fn file_permission_group_store_round_trips_typed_config() {
     let root = temp_config_root("groups-store");
-    let path = root.join("groups.toml");
-    let store = FilePermissionGroupStore::new(path.clone());
+    let groups_path = root.join("groups.toml");
+    let collections_path = root.join("collections.toml");
+    let store = FilePermissionGroupStore::new(groups_path.clone(), collections_path.clone());
     let mut config = PermissionGroupsConfig::default();
     config.groups.insert(
         "builder".to_owned(),
         PermissionGroupConfig {
-            allow: vec!["steel.build{domain=survival}".to_owned()],
+            allow: vec!["steel:build{domain=survival}".to_owned()],
             metadata: vec![
                 PermissionMetadataRuleConfig {
                     key: "plugin:max_homes{domain=survival}".to_owned(),
@@ -173,7 +183,7 @@ async fn file_permission_group_store_round_trips_typed_config() {
     PermissionGroupStore::save_groups(&store, config.clone())
         .await
         .expect("groups config should save");
-    let written = async_fs::read_to_string(&path)
+    let written = async_fs::read_to_string(&groups_path)
         .await
         .expect("groups config should be written");
     let parsed: PermissionGroupsConfig =
@@ -191,7 +201,35 @@ async fn file_permission_group_store_round_trips_typed_config() {
     assert!(written.contains("{ key = \"plugin:prefix\", value = \"[Builder]\" }"));
     assert!(written.contains("{ key = \"plugin:can_claim\", value = true }"));
     assert_eq!(parsed, config);
-    PermissionGroups::from_config(parsed).expect("written groups should validate");
+    PermissionGroups::from_config(parsed, &PermissionCollections::vanilla())
+        .expect("written groups should validate");
+
+    let collections = PermissionCollectionsConfig {
+        collections: BTreeMap::from([(
+            "minecraft".to_owned(),
+            BTreeMap::from([(
+                "builders".to_owned(),
+                vec![
+                    "minecraft:command.help".to_owned(),
+                    "#minecraft:all".to_owned(),
+                ],
+            )]),
+        )]),
+    };
+    PermissionGroupStore::save_collections(&store, collections.clone())
+        .await
+        .expect("collections config should save");
+    let written_collections = async_fs::read_to_string(&collections_path)
+        .await
+        .expect("collections config should be written");
+    let parsed_collections: PermissionCollectionsConfig =
+        toml::from_str(&written_collections).expect("written collections should parse");
+
+    assert!(written_collections.starts_with(COLLECTIONS_CONFIG_HEADER));
+    assert_eq!(parsed_collections, collections);
+    PermissionCollections::from_config(&parsed_collections)
+        .expect("written collections should validate");
+
     async_fs::remove_dir_all(root)
         .await
         .expect("temporary config directory should be removable");

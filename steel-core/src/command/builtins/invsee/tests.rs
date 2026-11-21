@@ -24,7 +24,7 @@ use crate::{
         menu::kinds::BasicKind,
         prelude::{Click, DragKind, MenuBuilder, MouseButton, QuickCraft, SectionKind},
     },
-    permission::{PermissionEntry, PermissionMetadataSet, PermissionSet},
+    permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet},
     player::{PlayerConnection, player_inventory::PlayerInventory},
     test_support::{
         TestPlayerBuilder, fresh_test_world_in_domain, test_runtime_config, test_world,
@@ -142,11 +142,8 @@ fn test_player(name: &str, entity_id: i32) -> Arc<Player> {
         .build()
 }
 
-fn permission_key(value: &str) -> PermissionKey {
-    match PermissionKey::parse(value) {
-        Ok(key) => key,
-        Err(error) => panic!("test permission key should parse: {error}"),
-    }
+fn permission_key(value: &Identifier) -> PermissionKey {
+    PermissionKey::from_identifier(value)
 }
 
 fn set_permissions(player: &Player, effective: PermissionSet) {
@@ -174,19 +171,17 @@ fn finish_domain_switch(player: &Player, token: PendingWorldChangeToken) {
 
 #[test]
 fn base_and_modify_permissions_grant_the_expected_access() {
-    let Ok((access, modify)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
+    let (access, modify) = invsee_permissions();
     let readonly = PermissionSet::from_entries([
-        PermissionEntry::allow(permission_key(INVSEE_PERMISSION)),
-        PermissionEntry::deny(permission_key(MODIFY_PERMISSION)),
+        PermissionEntry::allow(permission_key(&INVSEE_PERMISSION)),
+        PermissionEntry::deny(permission_key(&MODIFY_PERMISSION)),
     ]);
     assert!(readonly.allows(&access));
     assert!(!readonly.allows(&modify));
 
     let modifier = PermissionSet::from_entries([
-        PermissionEntry::deny(permission_key(INVSEE_PERMISSION)),
-        PermissionEntry::allow(permission_key(MODIFY_PERMISSION)),
+        PermissionEntry::deny(permission_key(&INVSEE_PERMISSION)),
+        PermissionEntry::allow(permission_key(&MODIFY_PERMISSION)),
     ]);
     assert!(modifier.allows(&access));
     assert!(modifier.allows(&modify));
@@ -690,7 +685,7 @@ fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
 
     set_permissions(
         &source,
-        PermissionSet::from_entries([PermissionEntry::allow(permission_key(MODIFY_PERMISSION))]),
+        PermissionSet::from_entries([PermissionEntry::allow(permission_key(&MODIFY_PERMISSION))]),
     );
     let modify_menu = invsee(1, &source, &target, true);
     assert!(modify_menu.still_valid(&source));

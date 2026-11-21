@@ -87,7 +87,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(experience::registration())?;
     builder.register(fill::registration())?;
     builder.register(fly::registration())?;
-    builder.register(gamemode::registration()?)?;
+    builder.register(gamemode::registration())?;
     builder.register(gamerule::registration())?;
     builder.register(give::registration())?;
     builder.register(kill::registration())?;
@@ -118,7 +118,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(version::registration())?;
     builder.register(weather::registration())?;
     builder.register(worldborder::registration())?;
-    builder.register(invsee::registration()?)?;
+    builder.register(invsee::registration())?;
     builder.register(transfer::registration())?;
     builder.extend(extension_commands.into_inner())?;
     builder.build_with_permissions()
@@ -298,7 +298,7 @@ mod tests {
             registered
                 .permissions
                 .iter()
-                .any(|permission| permission.as_str() == "steel_test.command.stop")
+                .any(|permission| permission.as_str() == "steel_test:command.stop")
         );
     }
 
@@ -314,9 +314,9 @@ mod tests {
             .map(PermissionKey::as_str)
             .collect::<Vec<_>>();
 
-        assert!(permissions.contains(&"steel.command.invsee"));
-        assert!(permissions.contains(&"steel.command.invsee.modify"));
-        assert!(!permissions.contains(&"minecraft.command.invsee"));
+        assert!(permissions.contains(&"steel:command.invsee"));
+        assert!(permissions.contains(&"steel:command.invsee.modify"));
+        assert!(!permissions.contains(&"minecraft:command.invsee"));
     }
 
     #[test]

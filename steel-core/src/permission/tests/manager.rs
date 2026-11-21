@@ -4,9 +4,9 @@ use futures::future::BoxFuture;
 use steel_utils::locks::SyncMutex;
 
 use super::super::{
-    PermissionGroupConfig, PermissionGroupManager, PermissionGroupManagerError,
+    PermissionCollectionsConfig, PermissionGroupConfig, PermissionGroupManagerError,
     PermissionGroupStore, PermissionGroupStoreError, PermissionGroupUpdateError,
-    PermissionGroupsConfig,
+    PermissionGroupsConfig, PermissionManager,
 };
 
 #[derive(Debug)]
@@ -25,6 +25,13 @@ impl PermissionGroupStore for CapturingStore {
             Ok(())
         })
     }
+
+    fn save_collections(
+        &self,
+        _config: PermissionCollectionsConfig,
+    ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 #[derive(Debug)]
@@ -37,10 +44,21 @@ impl PermissionGroupStore for FailingStore {
     ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>> {
         Box::pin(async { Err(PermissionGroupStoreError::new("test store failure")) })
     }
+
+    fn save_collections(
+        &self,
+        _config: PermissionCollectionsConfig,
+    ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>> {
+        Box::pin(async { Err(PermissionGroupStoreError::new("test store failure")) })
+    }
 }
 
-fn manager(store: Option<Arc<dyn PermissionGroupStore>>) -> PermissionGroupManager {
-    match PermissionGroupManager::new(PermissionGroupsConfig::default(), store) {
+fn manager(store: Option<Arc<dyn PermissionGroupStore>>) -> PermissionManager {
+    match PermissionManager::new(
+        PermissionGroupsConfig::default(),
+        PermissionCollectionsConfig::default(),
+        store,
+    ) {
         Ok(manager) => manager,
         Err(error) => panic!("default permission groups should resolve: {error}"),
     }
@@ -51,7 +69,7 @@ fn config_with_builder() -> PermissionGroupsConfig {
     config.groups.insert(
         "builder".to_owned(),
         PermissionGroupConfig {
-            allow: vec!["steel.build".to_owned()],
+            allow: vec!["steel:build".to_owned()],
             ..PermissionGroupConfig::default()
         },
     );
@@ -79,7 +97,12 @@ async fn manager_keeps_state_when_store_fails() {
     let result = manager.replace_config(config_with_builder()).await;
     assert!(matches!(result, Err(PermissionGroupManagerError::Store(_))));
     assert!(!manager.contains_group("builder"));
-    assert!(!manager.config_snapshot().groups.contains_key("builder"));
+    assert!(
+        !manager
+            .group_config_snapshot()
+            .groups
+            .contains_key("builder")
+    );
 }
 
 #[tokio::test]
@@ -89,14 +112,15 @@ async fn manager_keeps_state_when_validation_fails() {
         saved: Arc::clone(&saved),
     })));
     let mut invalid = PermissionGroupsConfig::default();
-    invalid.groups.remove("op");
+    let op_group = invalid.op_group.clone();
+    invalid.groups.remove(&op_group);
 
     let result = manager.replace_config(invalid).await;
     assert!(matches!(
         result,
         Err(PermissionGroupManagerError::Config(_))
     ));
-    assert!(manager.contains_group("op"));
+    assert!(manager.contains_group(&op_group));
     assert!(saved.lock().is_empty());
 }
 
@@ -141,7 +165,7 @@ async fn manager_updates_the_latest_config_under_one_lock() {
     };
     assert_eq!(first, Ok(()));
     assert_eq!(second, Ok(()));
-    let config = manager.config_snapshot();
+    let config = manager.group_config_snapshot();
     assert!(config.groups.contains_key("first"));
     assert!(config.groups.contains_key("second"));
     assert_eq!(saved.lock().len(), 2);

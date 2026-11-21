@@ -21,6 +21,8 @@ mod skull_type;
 mod waxables;
 mod weathering;
 
+mod permissions_group;
+
 #[derive(Debug, Deserialize)]
 struct Classes {
     blocks: Vec<blocks::BlockClass>,
@@ -33,6 +35,7 @@ pub fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let behavior_out_dir = format!("{manifest_dir}/src/behavior/generated");
     let entity_out_dir = format!("{manifest_dir}/src/entity/generated");
+    let permission_out_dir = format!("{manifest_dir}/src/permission/generated");
 
     let loot_dir = format!("{manifest_dir}/src/loot/generated");
     fs::create_dir_all(&loot_dir).unwrap_or_else(|e| panic!("{loot_dir}: {e}"));
@@ -48,6 +51,7 @@ pub fn main() {
 
     fs::create_dir_all(&behavior_out_dir).expect("Failed to create behavior output directory");
     fs::create_dir_all(&entity_out_dir).expect("Failed to create entity output directory");
+    fs::create_dir_all(&permission_out_dir).expect("Failed to create permission output directory");
 
     write_if_changed(
         format!("{behavior_out_dir}/blocks.rs"),
@@ -73,6 +77,10 @@ pub fn main() {
     write_if_changed(
         format!("{behavior_out_dir}/skull_types.rs"),
         skull_type::build(),
+    );
+    write_if_changed(
+        format!("{permission_out_dir}/collections.rs"),
+        permissions_group::build(),
     );
 
     println!("cargo:rerun-if-changed={manifest_dir}/build/classes.json");

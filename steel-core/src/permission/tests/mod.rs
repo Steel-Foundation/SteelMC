@@ -134,15 +134,15 @@ fn metadata_resolution_uses_context_source_priority_and_order() {
 #[test]
 fn keys_validate_segments_and_wildcard_position() {
     assert_eq!(
-        PermissionKey::parse("minecraft.*.give"),
+        PermissionKey::parse("minecraft:command.*.give"),
         Err(PermissionKeyError::WildcardNotFinal)
     );
     assert_eq!(
-        PermissionKey::parse("minecraft.command.g*"),
+        PermissionKey::parse("minecraft:command.g*"),
         Err(PermissionKeyError::InvalidWildcardSegment)
     );
     assert_eq!(
-        PermissionKey::parse("Minecraft.command.give"),
+        PermissionKey::parse("minecraft:Command.give"),
         Err(PermissionKeyError::InvalidSegment)
     );
     assert_eq!(
@@ -152,39 +152,23 @@ fn keys_validate_segments_and_wildcard_position() {
 }
 
 #[test]
-fn typed_segments_build_child_keys() {
-    let segments =
-        ["minecraft", "command", "give"].map(|value| match PermissionSegment::parse(value) {
-            Ok(segment) => segment,
-            Err(error) => panic!("test segment should parse: {error}"),
-        });
-    let built = PermissionKey::from_segments(segments);
-    let Ok(built) = built else {
-        panic!("typed segments should build a key");
-    };
-    assert_eq!(built.as_str(), "minecraft.command.give");
+fn concrete_identifiers_build_exact_keys() {
+    let identifier = Identifier::new("minecraft", "command.give");
+    let exact = PermissionKey::from_identifier(&identifier);
+    assert_eq!(exact.as_str(), "minecraft:command.give");
+    assert!(exact.matches_identifier(&identifier));
 
-    let segment = match PermissionSegment::parse("freeze") {
-        Ok(segment) => segment,
-        Err(error) => panic!("test segment should parse: {error}"),
-    };
-    let child = key("minecraft.command.tick").child(&segment);
-    assert_eq!(
-        child.as_ref().map(PermissionKey::as_str),
-        Ok("minecraft.command.tick.freeze")
-    );
-    assert_eq!(
-        key("minecraft.command.*").child(&segment),
-        Err(PermissionKeyError::WildcardNotFinal)
-    );
+    let namespace_wildcard = key("command.give");
+    assert!(namespace_wildcard.matches_identifier(&identifier));
+    assert!(namespace_wildcard.matches(&exact));
 }
 
 #[test]
 fn wildcards_match_only_their_descendants() {
     assert!(key("*").matches(&key("some.plugin.dangerous")));
-    assert!(key("minecraft.command.*").matches(&key("minecraft.command.give")));
-    assert!(!key("minecraft.command.*").matches(&key("minecraft.other.give")));
-    assert!(!key("minecraft.command.*").matches(&key("minecraft.command")));
+    assert!(key("minecraft:command.*").matches(&key("minecraft:command.give")));
+    assert!(!key("minecraft:command.*").matches(&key("minecraft:other.give")));
+    assert!(!key("minecraft:command.*").matches(&key("minecraft:command")));
 }
 
 #[test]
@@ -267,7 +251,7 @@ fn active_context_rejects_conflicting_custom_values() {
 #[test]
 fn unset_permissions_default_to_deny() {
     let permissions = PermissionSet::new();
-    let give = key("minecraft.command.give");
+    let give = key("minecraft:command.give");
 
     assert_eq!(permissions.resolve_key(&give), None);
     assert!(!permissions.allows_key(&give));
@@ -275,9 +259,9 @@ fn unset_permissions_default_to_deny() {
 
 #[test]
 fn key_specificity_precedes_context_specificity() {
-    let creative = key("minecraft.command.gamemode.creative");
+    let creative = key("minecraft:command.gamemode.creative");
     let permissions = PermissionSet::from_entries([
-        PermissionEntry::allow_with_context(key("minecraft.command.*"), domain_context("lobby")),
+        PermissionEntry::allow_with_context(key("minecraft:command.*"), domain_context("lobby")),
         PermissionEntry::deny(creative.clone()),
     ]);
 
@@ -286,7 +270,7 @@ fn key_specificity_precedes_context_specificity() {
 
 #[test]
 fn context_specificity_breaks_equal_key_ties() {
-    let fly = key("steel.fly");
+    let fly = key("steel:fly");
     let permissions = PermissionSet::from_entries([
         PermissionEntry::deny(fly.clone()),
         PermissionEntry::allow_with_context(fly.clone(), domain_context("lobby")),
@@ -298,7 +282,7 @@ fn context_specificity_breaks_equal_key_ties() {
 
 #[test]
 fn chained_context_is_more_specific_than_one_constraint() {
-    let fly = key("steel.fly");
+    let fly = key("steel:fly");
     let world = PermissionRuleContext::world(Identifier::new("lobby", "spawn"));
     let chained =
         PermissionRuleContext::all([world.clone(), custom_context("plugin:region", "spawn")]);
@@ -339,31 +323,36 @@ fn rule_context_builds_an_equivalent_active_context_for_admin_checks() {
 
 #[test]
 fn scoped_child_rules_override_parent_fallbacks() {
-    let parent = key("minecraft.command.gamemode");
-    let creative = key("minecraft.command.gamemode.creative");
-    let survival = key("minecraft.command.gamemode.survival");
+    let parent = Identifier::new("minecraft", "command.gamemode");
+    let creative = Identifier::new("minecraft", "command.gamemode.creative");
+    let survival = Identifier::new("minecraft", "command.gamemode.survival");
     let permissions = PermissionSet::from_entries([
-        PermissionEntry::allow(parent.clone()),
-        PermissionEntry::deny(creative.clone()),
+        PermissionEntry::allow(PermissionKey::from_identifier(&parent)),
+        PermissionEntry::deny(PermissionKey::from_identifier(&creative)),
     ]);
 
     assert_eq!(
-        permissions.resolve_scoped_key(&parent, &creative),
+        permissions.resolve_scoped_identifier(&parent, &creative),
         Some(PermissionState::Deny)
     );
-    assert!(permissions.allows_scoped_key(&parent, &survival));
-    assert!(!permissions.allows_scoped_key(&parent, &key("steel.command.fly")));
+    assert!(permissions.allows_scoped_identifier(&parent, &survival));
+    assert!(
+        !permissions.allows_scoped_identifier(&parent, &Identifier::new("steel", "command.fly"))
+    );
 }
 
 #[test]
 fn expression_all_and_any_preserve_unset_state() {
+    let allowed = Identifier::new("steel", "allowed");
+    let denied = Identifier::new("steel", "denied");
+    let unset = Identifier::new("steel", "unset");
     let permissions = PermissionSet::from_entries([
-        PermissionEntry::allow(key("steel.allowed")),
-        PermissionEntry::deny(key("steel.denied")),
+        PermissionEntry::allow(PermissionKey::from_identifier(&allowed)),
+        PermissionEntry::deny(PermissionKey::from_identifier(&denied)),
     ]);
-    let allowed = PermissionExpr::key(key("steel.allowed"));
-    let denied = PermissionExpr::key(key("steel.denied"));
-    let unset = PermissionExpr::key(key("steel.unset"));
+    let allowed = PermissionExpr::key(allowed);
+    let denied = PermissionExpr::key(denied);
+    let unset = PermissionExpr::key(unset);
 
     assert_eq!(
         permissions.resolve(&(allowed.clone() & unset.clone())),
@@ -382,7 +371,7 @@ fn expression_all_and_any_preserve_unset_state() {
 
 #[test]
 fn deny_wins_a_complete_tie() {
-    let give = key("minecraft.command.give");
+    let give = key("minecraft:command.give");
     let permissions = PermissionSet::from_entries([
         PermissionEntry::allow(give.clone()),
         PermissionEntry::deny(give.clone()),
@@ -393,7 +382,7 @@ fn deny_wins_a_complete_tie() {
 
 #[test]
 fn source_and_group_priority_break_only_equal_specificity_ties() {
-    let admin = key("steel.admin");
+    let admin = key("steel:admin");
     let mut permissions = PermissionSet::new();
     permissions.push_group(PermissionEntry::allow(admin.clone()), "low", 0);
     permissions.push_group(PermissionEntry::deny(admin.clone()), "high", 50);
@@ -414,7 +403,7 @@ fn source_and_group_priority_break_only_equal_specificity_ties() {
     assert_eq!(resolution.state(), PermissionState::Allow);
     assert_eq!(resolution.source(), &PermissionResolutionSource::Subject);
 
-    let contextual = key("steel.contextual");
+    let contextual = key("steel:contextual");
     permissions.push(PermissionEntry::allow(contextual.clone()));
     permissions.push_group(
         PermissionEntry::deny_with_context(contextual.clone(), domain_context("lobby")),
@@ -426,7 +415,7 @@ fn source_and_group_priority_break_only_equal_specificity_ties() {
 
 #[test]
 fn set_and_unset_replace_only_exact_rules() {
-    let fly = key("steel.fly");
+    let fly = key("steel:fly");
     let lobby = domain_context("lobby");
     let mut permissions = PermissionSet::from_entries([
         PermissionEntry::allow(fly.clone()),

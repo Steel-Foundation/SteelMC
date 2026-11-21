@@ -10,7 +10,7 @@ use super::super::{
 };
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
-    CommandRegistration::new(Identifier::vanilla_static("list"), |_| command()).default_access()
+    CommandRegistration::new(Identifier::vanilla_static("list"), |_| command())
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {

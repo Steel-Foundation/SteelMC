@@ -31,7 +31,7 @@ use crate::command::brigadier::ArgumentSuggestionContext;
 use crate::command::signing_context::CommandSigningContext;
 use crate::{
     entity::SharedEntity,
-    permission::{PermissionExpr, PermissionState},
+    permission::{PermissionCollectionMember, PermissionExpr, PermissionState},
     player::Player,
     server::Server,
     world::World,
@@ -57,10 +57,13 @@ impl CommandRegistration {
         self
     }
 
-    /// Allows an unset root permission while still respecting an explicit deny.
+    /// Declares the permission collection that grants this command's derived permission.
+    ///
+    /// Commands that do not declare a collection fall back to
+    /// [`OWNERS_COLLECTION`](crate::permission::OWNERS_COLLECTION).
     #[must_use]
-    pub fn default_access(mut self) -> Self {
-        self.inner = self.inner.default_access();
+    pub fn permission_collection(mut self, collection: Identifier) -> Self {
+        self.inner = self.inner.permission_collection(collection);
         self
     }
 
@@ -104,6 +107,22 @@ impl CommandRegistry {
     ) -> Result<&mut Self, CommandRegistrationError> {
         self.inner
             .declare_permission(permission)
+            .map_err(CommandRegistrationError::from)?;
+        Ok(self)
+    }
+
+    /// Adds a permission or nested collection to a code-declared collection.
+    ///
+    /// Declarations are independent of commands and are never persisted. They
+    /// extend the generated vanilla collections with the same id, so extensions
+    /// may contribute to collections such as `minecraft:gamemasters`.
+    pub fn declare_collection_member(
+        &mut self,
+        collection: Identifier,
+        member: PermissionCollectionMember,
+    ) -> Result<&mut Self, CommandRegistrationError> {
+        self.inner
+            .declare_collection_member(collection, member)
             .map_err(CommandRegistrationError::from)?;
         Ok(self)
     }

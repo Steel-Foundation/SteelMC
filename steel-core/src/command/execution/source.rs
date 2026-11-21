@@ -9,8 +9,8 @@ use crate::{
     },
     entity::{Entity, EntityAnchor, SharedEntity},
     permission::{
-        PermissionContext, PermissionExpr, PermissionKey, PermissionMetadataExpression,
-        PermissionRuleExpression, PermissionSet, PermissionState,
+        PermissionContext, PermissionExpr, PermissionGroupRule, PermissionKey,
+        PermissionMetadataExpression, PermissionRuleExpression, PermissionSet, PermissionState,
     },
     player::{DomainResidenceToken, KnownPlayer, Player},
     scoreboard::Scoreboard,
@@ -26,7 +26,7 @@ use steel_registry::{
     },
     world_clock::WorldClockRef,
 };
-use steel_utils::translations;
+use steel_utils::{Identifier, translations};
 use text_components::{Modifier, TextComponent, format::Color};
 
 use super::{CommandExecutionContext, GameProfileArgument, selector::EntitySelector};
@@ -128,6 +128,10 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
         Vec::new()
     }
 
+    fn permission_collection_names(&self) -> Vec<steel_utils::Identifier> {
+        Vec::new()
+    }
+
     fn non_operator_profile_names(&self) -> Vec<String> {
         Vec::new()
     }
@@ -181,8 +185,38 @@ pub(crate) trait ExecutionCommandSource:
 pub(crate) trait CommandPermissionSource: ExecutionCommandSource {
     fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState>;
 
+    /// Resolves one permission pattern, including wildcard rules.
+    fn permission_pattern_state(&self, key: &PermissionKey) -> Option<PermissionState>;
+
     fn has_permission(&self, permission: &PermissionExpr) -> bool {
         self.permission_state(permission) == Some(PermissionState::Allow)
+    }
+
+    fn has_permission_pattern(&self, key: &PermissionKey) -> bool {
+        self.permission_pattern_state(key) == Some(PermissionState::Allow)
+    }
+
+    /// Returns whether this source may manage the given permission expression.
+    fn can_manage_permission(&self, permission: &PermissionKey) -> bool {
+        self.has_permission_pattern(&permission.manage_authority())
+    }
+
+    /// Returns whether this source may manage the given group rule.
+    fn can_manage_group_rule(&self, rule: &PermissionGroupRule) -> bool {
+        match rule {
+            PermissionGroupRule::Expression(expression) => {
+                self.can_manage_permission(expression.key())
+            }
+            PermissionGroupRule::Collection(collection) => {
+                self.can_manage_permission(&PermissionKey::from_identifier(collection))
+            }
+        }
+    }
+
+    /// Returns whether this source may manage the raw `allow`/`deny` rule text.
+    fn can_manage_rule(&self, rule: &str) -> bool {
+        PermissionGroupRule::parse(rule.to_owned())
+            .is_ok_and(|rule| self.can_manage_group_rule(&rule))
     }
 }
 
@@ -234,6 +268,13 @@ impl CommandAuthorizationContext {
             return Some(PermissionState::Allow);
         };
         permissions.resolve_in(permission, self.permission_context())
+    }
+
+    fn permission_pattern_state(&self, key: &PermissionKey) -> Option<PermissionState> {
+        let Some(permissions) = &self.player_permissions else {
+            return Some(PermissionState::Allow);
+        };
+        permissions.resolve_key_in(key, self.permission_context())
     }
 
     fn allows_execution_domain(&self, domain: &str) -> bool {
@@ -648,7 +689,7 @@ impl CommandArgumentSource for CommandSource {
                     .overrides()
                     .entries()
                     .iter()
-                    .filter(|entry| can_manage_permission(self, entry.key()))
+                    .filter(|entry| self.can_manage_permission(entry.key()))
                     .map(|entry| {
                         PermissionRuleExpression::new(entry.key().clone(), entry.context().clone())
                             .to_string()
@@ -659,7 +700,7 @@ impl CommandArgumentSource for CommandSource {
     }
 
     fn user_permission_metadata_suggestions(&self, targets: &GameProfileArgument) -> Vec<String> {
-        if !has_permission_key(self, "steel.permission.metadata") {
+        if !source_has_permission(self, "steel:permission.metadata") {
             return Vec::new();
         }
         let mut suggestions = BTreeSet::new();
@@ -681,15 +722,12 @@ impl CommandArgumentSource for CommandSource {
         }
         self.server
             .permission_groups
-            .config_snapshot()
+            .group_config_snapshot()
             .groups
             .get(group)
             .into_iter()
             .flat_map(|group| group.allow.iter().chain(&group.deny))
-            .filter(|expression| {
-                PermissionRuleExpression::parse(expression.as_str())
-                    .is_ok_and(|expression| can_manage_permission(self, expression.key()))
-            })
+            .filter(|expression| self.can_manage_rule(expression))
             .cloned()
             .collect::<BTreeSet<_>>()
             .into_iter()
@@ -697,13 +735,14 @@ impl CommandArgumentSource for CommandSource {
     }
 
     fn group_permission_metadata_suggestions(&self, group: &str) -> Vec<String> {
-        if !has_permission_key(self, "steel.permission.metadata") || !can_manage_group(self, group)
+        if !source_has_permission(self, "steel:permission.metadata")
+            || !can_manage_group(self, group)
         {
             return Vec::new();
         }
         self.server
             .permission_groups
-            .config_snapshot()
+            .group_config_snapshot()
             .groups
             .get(group)
             .into_iter()
@@ -715,6 +754,10 @@ impl CommandArgumentSource for CommandSource {
 
     fn permission_group_names(&self) -> Vec<String> {
         self.server.permission_groups.group_names()
+    }
+
+    fn permission_collection_names(&self) -> Vec<Identifier> {
+        self.server.permission_groups.collection_names()
     }
 
     fn non_operator_profile_names(&self) -> Vec<String> {
@@ -758,19 +801,11 @@ impl CommandArgumentSource for CommandSource {
     }
 
     fn allows_entity_selectors(&self) -> bool {
-        let Ok(permission) = entity_selector_permission_expr() else {
-            tracing::error!("built-in entity selector permission key is invalid");
-            return false;
-        };
-        CommandPermissionSource::has_permission(self, &permission)
+        CommandPermissionSource::has_permission(self, &entity_selector_permission_expr())
     }
 
     fn allows_advanced_entity_selectors(&self) -> bool {
-        let Ok(permission) = entity_selector_advanced_permission_expr() else {
-            tracing::error!("built-in advanced entity selector permission key is invalid");
-            return false;
-        };
-        CommandPermissionSource::has_permission(self, &permission)
+        CommandPermissionSource::has_permission(self, &entity_selector_advanced_permission_expr())
     }
 }
 
@@ -808,20 +843,13 @@ fn profile_argument_uuids(
     }
 }
 
-fn can_manage_permission(source: &CommandSource, permission: &PermissionKey) -> bool {
-    has_permission_key(
-        source,
-        &format!("steel.permission.manage.{}", permission.as_str()),
-    )
-}
-
 fn can_manage_group(source: &CommandSource, group: &str) -> bool {
-    has_permission_key(source, &format!("steel.permission.group.{group}"))
+    source_has_permission(source, &format!("steel:permission.group.{group}"))
 }
 
-fn has_permission_key(source: &CommandSource, value: &str) -> bool {
+fn source_has_permission(source: &CommandSource, value: &str) -> bool {
     PermissionKey::parse(value)
-        .is_ok_and(|key| CommandPermissionSource::has_permission(source, &PermissionExpr::key(key)))
+        .is_ok_and(|key| CommandPermissionSource::has_permission_pattern(source, &key))
 }
 
 fn profile_names(server: &Server, operator: bool, include_known: bool) -> Vec<String> {
@@ -879,6 +907,10 @@ fn all_profile_names(server: &Server) -> Vec<String> {
 impl CommandPermissionSource for CommandSource {
     fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState> {
         self.authorization.permission_state(permission)
+    }
+
+    fn permission_pattern_state(&self, key: &PermissionKey) -> Option<PermissionState> {
+        self.authorization.permission_pattern_state(key)
     }
 }
 
@@ -940,13 +972,6 @@ mod tests {
         }
     }
 
-    fn permission_key(value: &str) -> PermissionKey {
-        match PermissionKey::parse(value) {
-            Ok(key) => key,
-            Err(error) => panic!("test permission key should parse: {error}"),
-        }
-    }
-
     #[test]
     fn rotation_normalization_matches_command_source_stack() {
         assert_eq!(normalize_rotation((540.0, -540.0)), (-180.0, -180.0));
@@ -991,10 +1016,11 @@ mod tests {
     #[test]
     fn authorization_context_uses_published_snapshot_instead_of_stale_player_permissions() {
         let world = Identifier::new("lobby", "spawn");
-        let permission = permission_key("minecraft.command.stop");
+        let permission = Identifier::new("minecraft", "command.stop");
+        let key = PermissionKey::from_identifier(&permission);
         let stale_player_permissions =
-            PermissionSet::from_entries([PermissionEntry::allow(permission.clone())]);
-        assert!(stale_player_permissions.allows_key(&permission));
+            PermissionSet::from_entries([PermissionEntry::allow(key.clone())]);
+        assert!(stale_player_permissions.allows_key(&key));
 
         let authorization = CommandAuthorizationContext::for_player(world, PermissionSet::new());
 
@@ -1008,7 +1034,7 @@ mod tests {
     fn unrestricted_authorization_allows_console_permissions() {
         let authorization =
             CommandAuthorizationContext::unrestricted(Identifier::new("default", "overworld"));
-        let permission = PermissionExpr::key(permission_key("minecraft.command.stop"));
+        let permission = PermissionExpr::key(Identifier::new("minecraft", "command.stop"));
 
         assert_eq!(
             authorization.permission_state(&permission),

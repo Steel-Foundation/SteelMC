@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, mem};
+use std::{fmt, mem};
 
 use serde::{Deserialize, Serialize};
 use steel_utils::Identifier;
@@ -168,46 +168,30 @@ pub fn parse_permission_metadata_key(
 }
 
 /// Invalid permission metadata identifier.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PermissionMetadataKeyError {
     /// The value does not use exactly one `namespace:path` separator.
+    #[error("permission metadata key must be a namespaced id")]
     InvalidFormat,
     /// The namespace is empty.
+    #[error("permission metadata key namespace is empty")]
     EmptyNamespace,
     /// The path is empty.
+    #[error("permission metadata key path is empty")]
     EmptyPath,
     /// The namespace contains invalid characters or empty segments.
+    #[error("permission metadata key namespace contains invalid characters")]
     InvalidNamespace,
     /// The path contains invalid characters or empty segments.
+    #[error("permission metadata key path contains invalid characters")]
     InvalidPath,
 }
 
-impl fmt::Display for PermissionMetadataKeyError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidFormat => {
-                formatter.write_str("permission metadata key must be a namespaced id")
-            }
-            Self::EmptyNamespace => {
-                formatter.write_str("permission metadata key namespace is empty")
-            }
-            Self::EmptyPath => formatter.write_str("permission metadata key path is empty"),
-            Self::InvalidNamespace => {
-                formatter.write_str("permission metadata key namespace contains invalid characters")
-            }
-            Self::InvalidPath => {
-                formatter.write_str("permission metadata key path contains invalid characters")
-            }
-        }
-    }
-}
-
-impl Error for PermissionMetadataKeyError {}
-
 /// Invalid permission metadata expression syntax.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PermissionMetadataExpressionError {
     /// The metadata key is invalid.
+    #[error("invalid permission metadata key '{value}': {source}")]
     InvalidMetadataKey {
         /// Invalid key text.
         value: String,
@@ -215,12 +199,16 @@ pub enum PermissionMetadataExpressionError {
         source: PermissionMetadataKeyError,
     },
     /// A context selector starts with `{` but does not end with `}`.
+    #[error("permission metadata context selector is not closed")]
     UnclosedContext,
     /// The context selector contains no entries.
+    #[error("permission metadata context selector is empty")]
     EmptyContext,
     /// A context entry is not `key=value`.
+    #[error("invalid permission metadata context entry '{0}'")]
     InvalidContextEntry(String),
     /// A context entry contains an unsupported value.
+    #[error("invalid permission metadata context value '{value}' for '{key}'")]
     InvalidContextValue {
         /// Context key.
         key: String,
@@ -228,12 +216,16 @@ pub enum PermissionMetadataExpressionError {
         value: String,
     },
     /// The same context key appears more than once.
+    #[error("permission metadata context key '{0}' appears more than once")]
     DuplicateContextKey(String),
     /// The built-in domain value is invalid.
+    #[error("invalid domain context '{0}'")]
     InvalidDomain(String),
     /// The built-in loaded-world value is invalid.
+    #[error("invalid world context '{0}'")]
     InvalidWorld(String),
     /// A custom context key is invalid.
+    #[error("invalid permission context key '{key}': {source}")]
     InvalidContextKey {
         /// Invalid context key text.
         key: String,
@@ -241,6 +233,7 @@ pub enum PermissionMetadataExpressionError {
         source: PermissionContextKeyError,
     },
     /// The combined rule-side context is invalid.
+    #[error(transparent)]
     InvalidRuleContext(PermissionRuleContextError),
 }
 
@@ -268,50 +261,6 @@ impl PermissionMetadataExpressionError {
         }
     }
 }
-
-impl fmt::Display for PermissionMetadataExpressionError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidMetadataKey { value, source } => {
-                write!(
-                    formatter,
-                    "invalid permission metadata key '{value}': {source}"
-                )
-            }
-            Self::UnclosedContext => {
-                formatter.write_str("permission metadata context selector is not closed")
-            }
-            Self::EmptyContext => {
-                formatter.write_str("permission metadata context selector is empty")
-            }
-            Self::InvalidContextEntry(entry) => {
-                write!(
-                    formatter,
-                    "invalid permission metadata context entry '{entry}'"
-                )
-            }
-            Self::InvalidContextValue { key, value } => write!(
-                formatter,
-                "invalid permission metadata context value '{value}' for '{key}'"
-            ),
-            Self::DuplicateContextKey(key) => write!(
-                formatter,
-                "permission metadata context key '{key}' appears more than once"
-            ),
-            Self::InvalidDomain(domain) => write!(formatter, "invalid domain context '{domain}'"),
-            Self::InvalidWorld(world) => write!(formatter, "invalid world context '{world}'"),
-            Self::InvalidContextKey { key, source } => {
-                write!(
-                    formatter,
-                    "invalid permission context key '{key}': {source}"
-                )
-            }
-            Self::InvalidRuleContext(source) => source.fmt(formatter),
-        }
-    }
-}
-
-impl Error for PermissionMetadataExpressionError {}
 
 /// One permission metadata rule.
 #[derive(Clone, Debug, PartialEq, Eq)]

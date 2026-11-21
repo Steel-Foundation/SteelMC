@@ -22,10 +22,16 @@ use std::{
 use serde::Deserialize;
 use steel_core::{
     config::WorldsConfig,
-    permission::{PermissionGroupStore, PermissionGroupsConfig},
+    permission::{
+        PermissionCollections, PermissionCollectionsConfig, PermissionGroupStore,
+        PermissionGroupsConfig,
+    },
 };
 
-use self::{groups::load_or_create_groups, server::validate};
+use self::{
+    groups::{load_or_create_collections, load_or_create_groups},
+    server::validate,
+};
 
 #[cfg(feature = "stand-alone")]
 const DEFAULT_FAVICON: &[u8] = include_bytes!("../../../package-content/favicon.png");
@@ -44,21 +50,33 @@ pub struct SteelConfig {
     /// World and domain configuration from `worlds.toml`.
     #[serde(skip, default = "empty_worlds_config")]
     pub worlds: WorldsConfig,
-    /// Permission group configuration from `groups.toml`.
+    /// Permission group configuration from `permission/groups.toml`.
     #[serde(skip, default)]
     pub groups: PermissionGroupsConfig,
-    /// Path to the loaded `groups.toml`.
+    /// Path to the loaded `permission/groups.toml`.
     #[serde(skip, default)]
     pub groups_path: Option<PathBuf>,
+    /// Permission collection configuration from `permission/collections.toml`.
+    #[serde(skip, default)]
+    pub collections: PermissionCollectionsConfig,
+    /// Path to the loaded `permission/collections.toml`.
+    #[serde(skip, default)]
+    pub collections_path: Option<PathBuf>,
 }
 
 impl SteelConfig {
     /// Builds the store used for persistence-first permission group updates.
     #[must_use]
     pub fn permission_group_store(&self) -> Option<Arc<dyn PermissionGroupStore>> {
-        self.groups_path.as_ref().map(|path| {
-            Arc::new(FilePermissionGroupStore::new(path.clone())) as Arc<dyn PermissionGroupStore>
-        })
+        let (Some(groups_path), Some(collections_path)) =
+            (&self.groups_path, &self.collections_path)
+        else {
+            return None;
+        };
+        Some(Arc::new(FilePermissionGroupStore::new(
+            groups_path.clone(),
+            collections_path.clone(),
+        )) as Arc<dyn PermissionGroupStore>)
     }
 }
 
@@ -106,11 +124,22 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
         .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
         .join("worlds.toml");
     config.worlds = load_or_create_worlds(&worlds_path)?;
-    let groups_path = path
+    let permission_dir = path
         .parent()
         .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
-        .join("groups.toml");
-    config.groups = load_or_create_groups(&groups_path)?;
+        .join("permission");
+    let collections_path = permission_dir.join("collections.toml");
+    config.collections = load_or_create_collections(&collections_path)?;
+    let overrides = PermissionCollections::from_config(&config.collections).map_err(|error| {
+        format!(
+            "failed to validate collections config {}: {error}",
+            collections_path.display()
+        )
+    })?;
+    let collections = PermissionCollections::effective(&PermissionCollections::new(), &overrides);
+    config.collections_path = Some(collections_path);
+    let groups_path = permission_dir.join("groups.toml");
+    config.groups = load_or_create_groups(&groups_path, &collections)?;
     config.groups_path = Some(groups_path);
 
     // If icon file doesnt exist, write it

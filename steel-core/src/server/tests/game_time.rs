@@ -228,8 +228,11 @@ fn game_time_startup_and_chunk_reload_use_the_configured_primary() {
                     CancellationToken::new(),
                     config(),
                     primary_last_worlds_config(&root),
-                    PermissionGroupManager::transient(PermissionGroupsConfig::default())
-                        .expect("permissions"),
+                    PermissionManager::transient(
+                        PermissionGroupsConfig::default(),
+                        PermissionCollectionsConfig::default(),
+                    )
+                    .expect("permissions"),
                 )
                 .await
                 .expect("startup")
@@ -422,8 +425,11 @@ fn game_time_rejects_ephemeral_primary_before_touching_derived_save() {
                 cancel.clone(),
                 config,
                 worlds_config,
-                PermissionGroupManager::transient(PermissionGroupsConfig::default())
-                    .expect("permissions"),
+                PermissionManager::transient(
+                    PermissionGroupsConfig::default(),
+                    PermissionCollectionsConfig::default(),
+                )
+                .expect("permissions"),
             )
             .await;
             cancel.cancel();

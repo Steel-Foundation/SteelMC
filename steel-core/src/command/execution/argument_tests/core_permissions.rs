@@ -167,6 +167,45 @@ fn permission_group_argument_can_require_a_configured_group() {
 }
 
 #[test]
+fn permission_collection_argument_reads_namespaced_identifiers() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::permission_collection());
+    let parse = dispatcher.parse("resource minecraft:gamemasters", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("namespaced collection identifier should parse");
+    };
+    assert!(chain.top_context().argument("value").is_ok());
+}
+
+#[test]
+fn permission_collection_member_argument_reads_permissions_and_references() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::permission_collection_member());
+
+    for (input, expected) in [
+        (
+            "resource steel:build",
+            PermissionCollectionMember::Permission(Identifier::new("steel", "build")),
+        ),
+        (
+            "resource #minecraft:gamemasters",
+            PermissionCollectionMember::Collection(Identifier::new("minecraft", "gamemasters")),
+        ),
+    ] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("collection member {input} should parse");
+        };
+        let value = chain.top_context().argument("value");
+        let Ok(value) = value else {
+            panic!("collection member {input} value should be retained");
+        };
+        assert_eq!(
+            value.downcast_ref::<PermissionCollectionMember>(),
+            Some(&expected)
+        );
+    }
+}
+
+#[test]
 fn owned_permission_arguments_scope_unset_suggestions_to_prior_arguments() {
     let mut dispatcher = TestDispatcher::new();
     assert!(
@@ -181,12 +220,12 @@ fn owned_permission_arguments_scope_unset_suggestions_to_prior_arguments() {
     );
     assert!(
         dispatcher
-            .register(literal("group").then(
-                argument("group", SteelArgumentType::permission_group(true)).then(argument(
-                    "permission",
-                    SteelArgumentType::group_permission_rule(),
-                )),
-            ))
+            .register(
+                literal("group").then(
+                    argument("group", SteelArgumentType::permission_group(true))
+                        .then(argument("permission", SteelArgumentType::group_rule(),)),
+                )
+            )
             .is_ok()
     );
 
@@ -213,7 +252,7 @@ fn owned_permission_arguments_scope_unset_suggestions_to_prior_arguments() {
             .iter()
             .map(Suggestion::text)
             .collect::<Vec<_>>(),
-        ["steel.group_owned"]
+        ["#minecraft:gamemasters", "steel.group_owned"]
     );
 }
 

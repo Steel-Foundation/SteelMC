@@ -1,18 +1,18 @@
 use steel_utils::Identifier;
 
-use crate::permission::PermissionMetadataValue;
+use crate::permission::{PermissionCollectionsConfig, PermissionMetadataValue};
 
 use super::{
-    Arc, FnServerJob, OP_GROUP, PermissionGroupManager, PermissionGroupManagerError,
-    PermissionGroupUpdateError, PermissionGroupsConfig, PermissionSet, PermissionSubjectState,
-    Player, PlayerPermissionUpdateError, Server, ServerJobContext, Uuid,
+    Arc, FnServerJob, PermissionGroupManagerError, PermissionGroupUpdateError,
+    PermissionGroupsConfig, PermissionManager, PermissionSet, PermissionSubjectState, Player,
+    PlayerPermissionUpdateError, Server, ServerJobContext, Uuid,
 };
 
 const BYPASSES_PLAYER_LIMIT: Identifier =
     Identifier::new_static(Identifier::STEEL_NAMESPACE, "bypasses_player_limit");
 
 pub(super) fn validate_player_permission_group_update<E>(
-    manager: &PermissionGroupManager,
+    manager: &PermissionManager,
     previous_groups: &[String],
     updated_groups: &[String],
 ) -> Result<(), PlayerPermissionUpdateError<E>> {
@@ -83,10 +83,11 @@ impl Server {
     /// Returns whether the latest published subject state assigns the operator group.
     #[must_use]
     pub(crate) fn is_operator(&self, uuid: Uuid) -> bool {
+        let op_group = self.permission_groups.op_group();
         self.player_permission_states
             .read()
             .get(uuid)
-            .is_some_and(|state| state.groups().iter().any(|group| group == OP_GROUP))
+            .is_some_and(|state| state.groups().iter().any(|group| group == &op_group))
     }
 
     /// Captures effective command permissions from the latest published subject and group state.
@@ -163,6 +164,20 @@ impl Server {
         update: impl FnOnce(&mut PermissionGroupsConfig) + Send,
     ) -> Result<(), PermissionGroupManagerError> {
         self.permission_groups.update_config(update).await?;
+        self.queue_online_permission_group_refresh();
+        Ok(())
+    }
+
+    /// Edits the latest permission collections config and refreshes online players.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when validation or persistence fails.
+    pub async fn update_permission_collections(
+        self: &Arc<Self>,
+        update: impl FnOnce(&mut PermissionCollectionsConfig) + Send,
+    ) -> Result<(), PermissionGroupManagerError> {
+        self.permission_groups.update_collections(update).await?;
         self.queue_online_permission_group_refresh();
         Ok(())
     }
