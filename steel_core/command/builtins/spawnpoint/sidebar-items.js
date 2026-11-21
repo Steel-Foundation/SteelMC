@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["command","registration","set_source_position","set_source_spawn","set_spawn","set_target_position","set_target_position_and_rotation"]};

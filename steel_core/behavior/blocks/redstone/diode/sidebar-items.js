@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DELAY","HORIZONTAL_FACING","LOCKED","MODE_COMPARATOR","POWERED"],"mod":["base","comparator","repeater"],"struct":["ComparatorBlock","RepeaterBlock"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["pack_payload"],"struct":["VarInt","VarLong","VarUint"]};

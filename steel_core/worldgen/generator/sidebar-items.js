@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["worldgen_region_random_from_splitter","xoroshiro_worldgen_region_random"],"mod":["context","empty","flat","generation_chunk","registry","surface_biomes","vanilla"],"trait":["ChunkGenerator"]};

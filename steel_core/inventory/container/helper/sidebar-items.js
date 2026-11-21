@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["item_slot","load_all_items"]};

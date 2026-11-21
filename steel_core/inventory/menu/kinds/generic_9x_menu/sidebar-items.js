@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["generic_9x_menu","generic_9x_menu_with_kind","menu_type_for_rows"],"struct":["Generic9xKind"]};

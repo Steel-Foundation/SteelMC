@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["POTENT_SULFUR_STATE"],"struct":["PotentSulfurBlock"]};

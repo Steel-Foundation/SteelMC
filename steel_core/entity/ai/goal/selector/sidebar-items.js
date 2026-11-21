@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["GoalControl"],"struct":["GoalControls","GoalId","GoalSelector","WrappedGoal"],"trait":["Goal"]};

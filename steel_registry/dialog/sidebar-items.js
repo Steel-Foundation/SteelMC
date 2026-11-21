@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DialogVariant"],"struct":["Dialog","DialogRegistry","ExitAction"],"type":["DialogRef"]};

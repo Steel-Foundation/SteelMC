@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["RAIL_SHAPE","WATERLOGGED"],"struct":["BaseRailBlock"]};

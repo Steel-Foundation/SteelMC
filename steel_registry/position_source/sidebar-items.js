@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["read_network","write_network"],"struct":["BlockPositionSource","EntityPositionSource","PositionSource","PositionSourceType","PositionSourceTypeRegistry"],"trait":["ErasedPositionSource","PositionSourceCodec"],"type":["NetworkReader","NetworkWriter","PositionSourceTypeRef"]};

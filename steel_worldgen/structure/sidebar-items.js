@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["box_octree","desert_pyramid","end_city","fortress","generation","generator","igloo","jigsaw","jungle_temple","mansion","mineshaft","nether_fossil","ocean_monument","ocean_ruin","piece","placement","ruined_portal","shipwreck","single_piece","start","stronghold","swamp_hut","utils"],"trait":["Structure"]};

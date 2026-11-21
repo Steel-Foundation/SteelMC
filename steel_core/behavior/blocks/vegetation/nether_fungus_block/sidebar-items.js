@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BONEMEAL_SUCCESS_CHANCE"],"struct":["NetherFungusBlock"]};

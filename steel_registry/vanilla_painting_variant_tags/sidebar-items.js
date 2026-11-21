@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["PLACEABLE_TAG_LIST"],"struct":["PaintingVariantTag"]};

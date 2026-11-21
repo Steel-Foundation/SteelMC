@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FLYING","INSTABUILD","INVULNERABLE","MAY_FLY"]};

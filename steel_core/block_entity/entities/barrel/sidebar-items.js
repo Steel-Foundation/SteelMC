@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BARREL_SLOTS"],"struct":["BarrelBlockEntity"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["anvil_menu","basic_menu","beacon_menu","block_chest_menu","crafting_menu","enchantment_menu","ender_chest_menu","furnace_menu","generic_9x_menu","grindstone_menu","inventory_menu","shulker_box_menu"]};

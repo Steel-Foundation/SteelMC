@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["criterion","display","positioner","registry"],"struct":["Advancement","AdvancementProgressData","AdvancementRequirement","AdvancementRewards","Criteria"]};

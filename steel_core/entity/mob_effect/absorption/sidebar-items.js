@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ABSORPTION_PER_LEVEL"],"struct":["AbsorptionBehavior"]};

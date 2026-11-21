@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["QUARTS_PER_SECTION","QUARTS_PER_SECTION_PLANE","QUARTS_PER_SECTION_SIDE","RING_SIDE","UNREAD"],"struct":["BiomeCandidate","FuzzedBiomeColumn","SurfaceBiomeClasses","SurfaceQuartBiomes"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["crafting","ingredient","properties","registry","single_item","smithing","types"]};

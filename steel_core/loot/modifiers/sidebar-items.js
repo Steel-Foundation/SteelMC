@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["copy_block_entity_name","set_damage","set_enchantment","set_potion","smelt","uniform_bonus"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["AGE","FACING","MAX_AGE"],"struct":["AttachedStemBlock"]};

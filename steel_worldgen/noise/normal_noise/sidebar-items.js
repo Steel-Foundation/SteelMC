@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEVIATION_COEFFICIENT","INPUT_FACTOR","TARGET_DEVIATION"],"fn":["build_octaves","normalization_constant","normalization_factor","parity_base_amplitude","parity_normalization_factor"],"struct":["Layer","NormalNoise","Octave"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PROMPT","SCROLLED_PROMPT"],"struct":["Output"]};

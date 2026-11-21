@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["component_data","components","getter","registry","vanilla_components"]};

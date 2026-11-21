@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_lava_fluid","is_water_fluid"],"struct":["Fluid","FluidRegistry","FluidState"],"trait":["FluidStateExt"],"type":["FluidRef"]};

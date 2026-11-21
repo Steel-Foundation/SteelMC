@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_DURATION"],"enum":["WeatherKind"],"fn":["command","registration","set_weather","weather_literal"]};

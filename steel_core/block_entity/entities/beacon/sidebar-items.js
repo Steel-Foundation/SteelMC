@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BASE_EFFECT_RANGE","BEACON_EFFECTS","BEACON_TICK_INTERVAL","BLOCKS_CHECK_PER_TICK","EFFECT_RANGE_PER_LEVEL","MAX_LEVELS"],"struct":["BeaconBlockEntity","BeaconState","BeamSection"]};

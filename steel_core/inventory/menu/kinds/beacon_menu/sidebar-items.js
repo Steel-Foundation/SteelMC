@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["beacon","encode_effect"],"struct":["BeaconKind","PaymentContainer"]};

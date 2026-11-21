@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_BACKGROUND_COLOR","DEFAULT_LINE_WIDTH","DEFAULT_TEXT_OPACITY"],"enum":["Alignment"],"struct":["TextDisplayEntity","TextDisplayFlags","TextDisplayView"]};

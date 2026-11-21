@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["POWER","POWERED","PRESSED_TIME"],"enum":["PressurePlateSensitivity"],"mod":["base","standard","weighted"],"struct":["PressurePlateBlock","WeightedPressurePlateBlock"]};

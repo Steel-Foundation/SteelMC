@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["MOB_EFFECT_BEHAVIORS"],"struct":["DefaultMobEffect","MobEffectBehaviorLock","MobEffectBehaviorRegistry"]};

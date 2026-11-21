@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["LAST_ENTITY_GENERATION"],"struct":["EntityGeneration"]};

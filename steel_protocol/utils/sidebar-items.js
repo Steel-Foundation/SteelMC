@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_PACKET_DATA_SIZE","MAX_PACKET_SIZE"],"enum":["ConnectionProtocol","PacketError"],"struct":["RawPacket","StreamDecryptor","StreamEncryptor"],"type":["Aes128Cfb8Dec","Aes128Cfb8Enc"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ProceduralPieceData","StructureBlockIgnore","StructureMirror","StructurePiecePayload","TemplateMarkerHandling","TemplatePlacementAdjustment","TemplatePlacementClip","TemplatePostProcess","TemplateProcessorList"],"struct":["RuinedPortalProperties","StructurePiece","TemplatePieceData"]};

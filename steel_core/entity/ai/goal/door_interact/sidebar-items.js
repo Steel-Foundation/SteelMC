@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DOOR_REACH_DISTANCE_SQR","PATH_NODE_SCAN_AHEAD"],"fn":["distance_to_door_sqr"],"struct":["DoorInteractGoal"]};

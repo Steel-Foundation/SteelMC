@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ENDER_CHEST_SLOTS"],"struct":["PlayerEnderChestContainer"],"type":["SyncPlayerEnderChest","WeakBlockEntity"]};

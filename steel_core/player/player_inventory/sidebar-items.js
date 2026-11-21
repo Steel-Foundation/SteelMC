@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DeferredMenuAction","MenuItemDisposition","MenuRemovalStatus","OpenMenuUnavailable","Prediction"],"mod":["container","core","equipment","player_handlers"],"struct":["MenuOpenContext","OpenMenuDispatch","OpenMenuState","PendingMenuOpen","PlayerInventorySyncState","PreparedMenu","TerminalMenuRemoval"],"type":["MenuFactory"]};

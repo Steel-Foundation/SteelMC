@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CLOUD_DURATION","CLOUD_RADIUS","CLOUD_RADIUS_ON_USE","CLOUD_WAIT_TIME"],"struct":["LingeringPotionEntity"]};

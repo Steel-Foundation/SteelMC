@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PermissionContextKeyError","PermissionRuleContext","PermissionRuleContextError"],"fn":["compare_rule_contexts","normalize_world_domain","push_unique_context","rule_context_rank","validate_namespaced_context_key"],"struct":["PermissionContext","PermissionContextKey","PermissionContextValue","PermissionDomain","PermissionRuleContexts"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["obfuscate_biome_seed"],"mod":["biome_source","climate_sampler","nether_climate_sampler"]};

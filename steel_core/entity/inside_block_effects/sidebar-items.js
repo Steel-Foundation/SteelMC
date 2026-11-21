@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["APPLY_ORDER","EFFECT_TYPE_COUNT","NO_STEP"],"enum":["InsideBlockEffectType"],"struct":["InsideBlockEffectCollector"],"type":["InsideBlockEffectCallback"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CHECK_SURVIVAL_FREQUENCY_TICKS","VALID_READ_DISTANCE_SQR"],"struct":["BlockAttachedEntityBase","BlockAttachedEntityState"],"trait":["BlockAttachedEntity"]};

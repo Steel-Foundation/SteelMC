@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["disable","hurt_blocking_item","on_blocked","play_user_sound"]};

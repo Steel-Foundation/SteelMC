@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BELL_ATTACHMENT","FACING","MAX_HIT_HEIGHT","POWERED"],"struct":["BellBlock"]};

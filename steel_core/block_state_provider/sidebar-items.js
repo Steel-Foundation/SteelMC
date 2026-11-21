@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["noise_cache","predicates","providers"],"struct":["BlockStateProviderEvaluator"]};

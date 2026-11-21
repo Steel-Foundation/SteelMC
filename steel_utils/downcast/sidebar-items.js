@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":[["impl_steel_downcast_type",1]],"mod":["private"],"struct":["DowncastTypeKey"],"trait":["Downcast","DowncastType","ErasedType"]};

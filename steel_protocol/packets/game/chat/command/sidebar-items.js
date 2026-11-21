@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_ARGUMENT_COUNT","MAX_ARGUMENT_NAME_LENGTH","MAX_COMMAND_LENGTH"],"struct":["ArgumentSignature","LastSeenMessagesUpdate","SChatCommand","SChatCommandSigned"]};

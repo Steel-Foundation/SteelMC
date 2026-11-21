@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FLAG_BACKWARD","FLAG_FORWARD","FLAG_JUMP","FLAG_LEFT","FLAG_RIGHT","FLAG_SHIFT","FLAG_SPRINT"],"struct":["PlayerInput"]};

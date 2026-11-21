@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PLAIN_BLOCKS"],"fn":["register_block_behaviors"]};

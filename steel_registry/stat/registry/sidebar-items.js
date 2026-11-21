@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["StatType","StatTypeEntry","StatTypeRegistry","StatValueRegistryData"],"trait":["StatValueRegistry","StatValueRegistryEntry"],"type":["StatTypeEntryRef","StatTypeRef"]};

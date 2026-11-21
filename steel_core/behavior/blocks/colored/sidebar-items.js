@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["WATERLOGGED"],"mod":["stained_glass_block","stained_glass_pane_block"],"struct":["StainedGlassBlock","StainedGlassPaneBlock"]};

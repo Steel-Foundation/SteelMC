@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HALLOWEEN_DAY","HALLOWEEN_MONTH"],"fn":["day_now","is_halloween"]};
