@@ -81,7 +81,7 @@ impl MeleeAttackGoal {
         self.ticks_until_next_attack
     }
 
-    const fn attack_interval() -> i32 {
+    pub(crate) const fn attack_interval() -> i32 {
         reduced_tick_delay(ATTACK_INTERVAL_TICKS)
     }
 

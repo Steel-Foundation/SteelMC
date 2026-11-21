@@ -451,7 +451,12 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     fn base_experience_reward_mob(&self) -> i32 {
-        let xp_reward = self.xp_reward();
+        self.base_experience_reward_mob_with(self.xp_reward())
+    }
+
+    /// Vanilla `Mob.getBaseExperienceReward` with an explicit base reward, so
+    /// mobs such as babies can scale `xpReward` before equipment bonuses.
+    fn base_experience_reward_mob_with(&self, xp_reward: i32) -> i32 {
         if xp_reward <= 0 {
             return xp_reward;
         }
