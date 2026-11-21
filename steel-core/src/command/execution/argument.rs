@@ -15,8 +15,11 @@ use super::{
     permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
-    selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
+    selector::{
+        EntitySelector, is_selector_type_letter, parse_entity_selector, suggest_entity_selector,
+    },
     structure::{parse_structure_or_tag_key, suggest_structures},
+    text::{CommandTextResolutionSource, CommandTextResolver, validate_component_syntax},
     suggestions::{matches_substring_ignore_case, suggest_resources},
     swing_animation::SwingAnimationParser,
     text::validate_component_syntax,
@@ -360,6 +363,14 @@ impl SteelArgumentType {
         Self::new(ComponentParser)
     }
 
+    pub(crate) fn message() -> Self {
+        Self::new(MessageParser)
+    }
+
+    pub(crate) fn word() -> Self {
+        Self::new(WordParser)
+    }
+
     pub(crate) fn nbt_path() -> Self {
         Self::new(NbtPathParser)
     }
@@ -576,6 +587,60 @@ argument_value_wrapper!(
     ComponentValue(TextComponent),
     "steel:command/value/component"
 );
+/// Byte range of one `@selector` occurrence within a [`MessageValue`]'s text.
+#[derive(Clone, Copy, Debug)]
+struct MessageSelectorSpan {
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug)]
+pub(super) struct MessageValue {
+    text: Box<str>,
+    selectors: Vec<MessageSelectorSpan>,
+}
+
+impl_downcast_type!(MessageValue, "steel:command/value/message");
+
+impl MessageValue {
+    /// Returns the raw, unresolved message text (`@selector`s included verbatim).
+    pub(super) fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// Splices resolved entity selectors into the message text, matching
+    /// vanilla's `MessageArgument.Message#toComponent`.
+    pub(super) fn resolve<S>(&self, source: &S) -> Result<TextComponent, CommandSyntaxError>
+    where
+        S: CommandTextResolutionSource,
+    {
+        if self.selectors.is_empty() {
+            return Ok(TextComponent::plain(self.text.to_string()));
+        }
+
+        let mut result = TextComponent::new();
+        let mut read_to = 0;
+        for span in &self.selectors {
+            if read_to < span.start {
+                result.children.push(TextComponent::plain(
+                    self.text[read_to..span.start].to_owned(),
+                ));
+            }
+            result.children.push(TextComponent::entity(
+                self.text[span.start..span.end].to_owned(),
+                None,
+            ));
+            read_to = span.end;
+        }
+        if read_to < self.text.len() {
+            result
+                .children
+                .push(TextComponent::plain(self.text[read_to..].to_owned()));
+        }
+        result.try_resolve(&CommandTextResolver::new(source))
+    }
+}
+argument_value_wrapper!(WordValue(Box<str>), "steel:command/value/word");
 argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
 argument_value_wrapper!(
     IdentifierValue(Identifier),
@@ -1233,6 +1298,77 @@ unit_argument_parser!(
     suggest | _context,
     _builder | {},
     protocol(ProtocolArgumentType::Component, None)
+);
+/// Reads the rest of the input, scanning for `@selector` occurrences the way
+/// vanilla's `MessageArgument.Message#parseText` does.
+///
+/// A bare `@` not followed by a valid selector type letter is left as
+/// literal text; once the type letter matches, the selector must parse
+/// cleanly or the whole argument fails, matching vanilla's split between
+/// `ERROR_MISSING_SELECTOR_TYPE`/`ERROR_UNKNOWN_SELECTOR_TYPE` (lenient) and
+/// every other selector syntax error (fatal).
+fn parse_message(
+    reader: &mut StringReader<'_>,
+    source: &dyn CommandArgumentSource,
+) -> Result<MessageValue, CommandSyntaxError> {
+    let base = reader.byte_cursor();
+    if !source.allows_entity_selectors() {
+        return Ok(MessageValue {
+            text: reader.read_remaining().into(),
+            selectors: Vec::new(),
+        });
+    }
+
+    let text: Box<str> = reader.remaining().into();
+    let mut selectors = Vec::new();
+    while reader.can_read() {
+        if reader.peek() != Some('@') {
+            reader.skip();
+            continue;
+        }
+
+        let before_at = reader.checkpoint();
+        let start = reader.byte_cursor();
+        reader.skip();
+        if !reader.peek().is_some_and(is_selector_type_letter) {
+            continue;
+        }
+
+        reader.restore(before_at);
+        parse_entity_selector(reader, source, false, false)?;
+        selectors.push(MessageSelectorSpan {
+            start: start - base,
+            end: reader.byte_cursor() - base,
+        });
+    }
+
+    Ok(MessageValue { text, selectors })
+}
+
+unit_argument_parser!(
+    MessageParser,
+    "steel:command/parser/message",
+    MessageValue,
+    parse | reader,
+    source | { parse_message(reader, source) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Message, None)
+);
+unit_argument_parser!(
+    WordParser,
+    "steel:command/parser/word",
+    WordValue,
+    parse | reader,
+    _source | { Ok(WordValue(reader.read_unquoted_string().into())) },
+    suggest | _context,
+    _builder | {},
+    protocol(
+        ProtocolArgumentType::String {
+            behavior: ArgumentStringTypeBehavior::SingleWord
+        },
+        None,
+    )
 );
 unit_argument_parser!(
     NbtPathParser,

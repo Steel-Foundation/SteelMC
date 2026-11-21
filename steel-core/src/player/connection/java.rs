@@ -1402,6 +1402,34 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn signed_chat_command_decodes_to_the_same_kind_as_the_unsigned_one() {
+        use steel_utils::serial::{PrefixedWrite as _, WriteTo as _};
+
+        let mut payload = Vec::new();
+        "/ban Steve griefing"
+            .write_prefixed::<VarInt>(&mut payload)
+            .expect("command should write");
+        0i64.write(&mut payload).expect("timestamp should write");
+        0i64.write(&mut payload).expect("salt should write");
+        VarInt(0)
+            .write(&mut payload)
+            .expect("argument signature count should write");
+        VarInt(0)
+            .write(&mut payload)
+            .expect("last-seen offset should write");
+        payload.extend_from_slice(&[0u8; 3]);
+
+        let decoded = decode(RawPacket::new(play::S_CHAT_COMMAND_SIGNED, payload));
+
+        assert!(matches!(
+            decoded,
+            DecodedPlayPacket::Scheduled(ScheduledPlayPacket(ScheduledPlayPacketKind::ChatCommand(
+                SChatCommand { command }
+            ))) if command == "/ban Steve griefing"
+        ));
+    }
+
     #[tokio::test]
     async fn sender_writes_packets_through_a_boxed_transport() {
         let (server_end, mut client_end) = duplex(1024);

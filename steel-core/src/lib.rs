@@ -8,6 +8,7 @@
 
 use crate::chunk::chunk_map::ChunkMap;
 
+pub mod ban;
 pub mod behavior;
 pub mod block_entity;
 mod block_state_provider;
@@ -34,6 +35,7 @@ pub mod special_dates;
 #[cfg(test)]
 #[path = "../tests/support/mod.rs"]
 pub(crate) mod test_support;
+pub mod whitelist;
 pub mod world;
 pub mod worldgen;
 

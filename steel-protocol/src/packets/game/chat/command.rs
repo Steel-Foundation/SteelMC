@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use steel_macros::{ReadFrom, ServerPacket};
 #[expect(unused_imports)]
-use steel_registry::packets::play::S_CHAT_COMMAND;
+use steel_registry::packets::play::{S_CHAT_COMMAND, S_CHAT_COMMAND_SIGNED};
 use steel_utils::codec::VarInt;
 use steel_utils::serial::{PrefixedRead, ReadFrom, prefixed_read::read_utf};
 
@@ -33,6 +33,7 @@ impl ReadFrom for SChatCommand {
 ///
 /// Equivalent to `ServerboundChatCommandSignedPacket` in Minecraft.
 #[derive(ServerPacket, Clone, Debug)]
+#[packet_id(Play = S_CHAT_COMMAND_SIGNED)]
 pub struct SChatCommandSigned {
     /// The command string (without leading slash)
     pub command: String,

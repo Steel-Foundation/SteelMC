@@ -14,6 +14,9 @@ use super::{
     ItemPredicate, PermissionGroupName, ScoreHolderArgument, ScoreHolderWildcard,
     SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
+        ComponentValue, CoordinateAxes, DomainValue, EnchantmentValue, EntityTypeValue,
+        GameModeValue, IdentifierValue, ItemStackValue, MessageValue, NbtPathValue, ObjectiveValue,
+        SteelArgumentValue, TimeValue, TimelineValue, WordValue, WorldClockValue,
         AdvancementValue, ComponentValue, CoordinateAxes, DamageTypeValue, DomainValue,
         EnchantmentValue, EntityTypeValue, GameModeValue, IdentifierValue, ItemStackValue,
         MessageValue, NbtPathValue, ObjectiveValue, SteelArgumentValue, TimeValue, TimelineValue,
@@ -351,6 +354,19 @@ where
             .map(|value| &value.0)
     }
 
+    /// Returns a message argument's raw, unresolved text (`@selector`s
+    /// included verbatim). Use [`SteelCommandContext::message`] to also
+    /// resolve those selectors into their matched entities' display names.
+    pub(crate) fn message_text(&self, name: &str) -> Result<&str, CommandSyntaxError> {
+        self.typed_argument::<MessageValue>(name)
+            .map(MessageValue::text)
+    }
+
+    pub(crate) fn word(&self, name: &str) -> Result<&str, CommandSyntaxError> {
+        self.typed_argument::<WordValue>(name)
+            .map(|value| &*value.0)
+    }
+
     pub(crate) fn nbt_path(&self, name: &str) -> Result<&NbtPath, CommandSyntaxError> {
         self.typed_argument::<NbtPathValue>(name)
             .map(|value| &value.0)
@@ -431,6 +447,13 @@ impl<S> SteelSuggestionContext<'_, S> {
 }
 
 impl SteelCommandContext<CommandSource> {
+    /// Resolves a message argument, splicing in any `@selector` occurrences
+    /// it contains as their matched entities' display names.
+    pub(crate) fn message(&self, name: &str) -> Result<TextComponent, CommandSyntaxError> {
+        self.typed_argument::<MessageValue>(name)?
+            .resolve(self.source())
+    }
+
     pub(crate) fn score_holders(
         &self,
         name: &str,
