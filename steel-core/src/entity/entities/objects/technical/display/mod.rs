@@ -102,8 +102,7 @@ pub trait Display: Entity {
         view.set_transformation(
             nbt.get("transformation")
                 .and_then(TransformationNbt::from_nbt_tag)
-                .map(|tag| tag.0)
-                .unwrap_or(Transformation::IDENTITY),
+                .map_or(Transformation::IDENTITY, |tag| tag.0),
         );
 
         view.set_transformation_interpolation_duration(
