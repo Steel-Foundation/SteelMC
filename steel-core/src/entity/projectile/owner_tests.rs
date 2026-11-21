@@ -102,6 +102,7 @@ fn owner_cache_rejects_mismatched_uuid_and_deflection_updates_owner() {
         None,
         Some(EntityReference::from_uuid(other.uuid())),
         false,
+        glam::DVec3::splat(1.0),
     );
     assert!(pearl.get_owner().is_none());
     pearl.cache_owner_entity(&other);
@@ -110,7 +111,13 @@ fn owner_cache_rejects_mismatched_uuid_and_deflection_updates_owner() {
         &other
     ));
 
-    pearl.deflect(super::ProjectileDeflection::None, None, None, false);
+    pearl.deflect(
+        super::ProjectileDeflection::None,
+        None,
+        None,
+        false,
+        glam::DVec3::splat(1.0),
+    );
     assert!(pearl.owner_uuid().is_none());
 }
 

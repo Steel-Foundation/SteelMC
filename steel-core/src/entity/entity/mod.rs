@@ -656,7 +656,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether projectile collision may interact with this entity.
     fn can_be_hit_by_projectile(&self) -> bool {
-        !self.is_removed() && self.is_pickable()
+        self.is_alive() && self.is_pickable()
+    }
+
+    /// Returns whether a projectile that hit this entity still applies its side
+    /// effects (hit sound, deflection) when the hit did not hurt.
+    fn projectile_receives_side_effects_on_hit(&self, _was_hurt: bool) -> bool {
+        true
     }
 
     /// Returns this entity's Vanilla projectile deflection behavior.
@@ -921,6 +927,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return;
         }
 
+        self.default_push_impulse(impulse);
+    }
+
+    /// Base `push` body for overrides that need the default impulse.
+    fn default_push_impulse(&self, impulse: DVec3) {
         if !impulse.is_finite() {
             return;
         }
@@ -3793,6 +3804,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 entity_is_player: self.entity_type() == &vanilla_entities::PLAYER,
             },
             ClipFluid::Water,
+            BlockCollisionContext::entity(self.position().y, self.is_descending()),
         );
         if !hit.is_miss() {
             self.reset_fall_distance();
@@ -4032,7 +4044,35 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Applies entity-specific implicit components carried by an item stack.
     ///
     /// Mirrors the overridable part of vanilla's `Entity.applyImplicitComponents`.
-    fn apply_implicit_item_components(&self, _item_stack: &ItemStack) {}
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(projectile) = self.as_projectile() {
+            projectile.projectile_apply_implicit_item_components(item_stack);
+        }
+    }
+
+    /// Applies implicit entity components, then the stack's custom name and
+    /// custom data.
+    fn apply_components_from_item_stack(&self, item_stack: &ItemStack) {
+        self.apply_implicit_item_components(item_stack);
+
+        if let Some(custom_name) = item_stack.get(CUSTOM_NAME) {
+            self.set_custom_name(Some(custom_name.clone()));
+        }
+
+        if let Some(custom_data) = item_stack.get(CUSTOM_DATA) {
+            self.set_custom_data(custom_data.copy_tag());
+        }
+    }
+
+    /// Returns whether `take` sends the take-item animation packet for this
+    /// entity type (`ItemEntity`, `AbstractArrow`, `ExperienceOrb`).
+    fn is_takeable(&self) -> bool {
+        self.is_abstract_arrow()
+            || self.downcast_ref::<entities::ItemEntity>().is_some()
+            || self
+                .downcast_ref::<entities::ExperienceOrbEntity>()
+                .is_some()
+    }
 
     /// Spawn-item data is merged into the entity's current save state before it
     /// is loaded. Keeping that merge at the entity boundary preserves defaults

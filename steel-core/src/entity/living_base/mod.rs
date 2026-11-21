@@ -657,6 +657,7 @@ struct LivingEntityState {
     invulnerable_time: i32,
     hurt_time: i32,
     hurt_duration: i32,
+    remove_arrow_time: i32,
     last_hurt: f32,
     last_hurt_by_player: Option<Uuid>,
     last_hurt_by_player_entity: Option<WeakEntity>,
@@ -695,6 +696,7 @@ impl LivingEntityState {
             invulnerable_time: 0,
             hurt_time: 0,
             hurt_duration: 0,
+            remove_arrow_time: 0,
             last_hurt: 0.0,
             last_hurt_by_player: None,
             last_hurt_by_player_entity: None,
@@ -1036,12 +1038,8 @@ impl LivingEntityBase {
         self.state.lock().no_action_time += 1;
     }
 
-    /// Refreshes transient item attribute modifiers for an equipment slot.
-    pub fn refresh_equipment_attribute_modifiers(
-        &self,
-        slot: EquipmentSlot,
-        item_stack: &ItemStack,
-    ) {
+    /// Removes transient attribute modifiers installed by the item in `slot`.
+    pub fn remove_equipment_attribute_modifiers(&self, slot: EquipmentSlot) {
         let slot_index = slot.index();
         let mut attributes = self.attributes.lock();
         let mut installed_modifiers = self.equipment_attribute_modifiers.lock();
@@ -1053,10 +1051,23 @@ impl LivingEntityBase {
         for key in installed_modifiers[slot_index].drain(..) {
             attributes.remove_modifier(key.attribute, &key.id);
         }
+    }
+
+    /// Refreshes transient item attribute modifiers for an equipment slot.
+    pub fn refresh_equipment_attribute_modifiers(
+        &self,
+        slot: EquipmentSlot,
+        item_stack: &ItemStack,
+    ) {
+        self.remove_equipment_attribute_modifiers(slot);
 
         if item_stack.is_empty() || item_stack.is_broken() {
             return;
         }
+
+        let slot_index = slot.index();
+        let mut attributes = self.attributes.lock();
+        let mut installed_modifiers = self.equipment_attribute_modifiers.lock();
 
         let Some(modifiers) = item_stack.get_attribute_modifiers() else {
             return;
@@ -1559,6 +1570,23 @@ impl LivingEntityBase {
         if state.invulnerable_time > 0 {
             state.invulnerable_time -= 1;
         }
+    }
+
+    /// Advances vanilla's stuck-arrow decay timer.
+    ///
+    /// Returns the new arrow count when a stuck arrow detaches this tick.
+    pub fn tick_stuck_arrow_count(&self, arrow_count: i32) -> Option<i32> {
+        if arrow_count <= 0 {
+            return None;
+        }
+
+        let mut state = self.state.lock();
+        if state.remove_arrow_time <= 0 {
+            state.remove_arrow_time = 20 * (30 - arrow_count);
+        }
+
+        state.remove_arrow_time -= 1;
+        (state.remove_arrow_time <= 0).then_some(arrow_count - 1)
     }
 
     /// Starts the vanilla hurt animation.

@@ -490,19 +490,22 @@ impl Player {
 
     /// Sets selected slot
     pub fn handle_set_carried_item(&self, packet: SSetCarriedItem) {
-        if self
+        let result = self
             .inventory
             .lock()
-            .try_set_selected_slot_from_packet(packet.slot)
-            .is_err()
-        {
+            .try_set_selected_slot_from_packet(packet.slot);
+        let Ok(changed) = result else {
             log::warn!(
                 "{} tried to set an invalid carried item",
                 self.gameprofile.name()
             );
-        } else {
-            self.reset_last_action_time();
+            return;
+        };
+
+        if changed && self.active_item_use_hand() == Some(InteractionHand::MainHand) {
+            self.stop_using_item();
         }
+        self.reset_last_action_time();
     }
 
     /// Set the selected advancement

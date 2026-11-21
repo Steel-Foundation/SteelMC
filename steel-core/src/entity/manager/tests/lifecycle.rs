@@ -115,3 +115,51 @@ fn duplicate_entity_id_is_a_loud_invariant_failure() {
         EntityOwnership::ManagerOwned,
     );
 }
+
+#[test]
+fn add_deferred_entity_waits_for_chunk_load() {
+    let manager = WorldEntityManager::new();
+    let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+
+    assert!(
+        manager
+            .add_deferred_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .is_ok()
+    );
+    assert!(manager.get_by_id(entity.id()).is_none());
+    assert_eq!(manager.count(), 0);
+
+    let chunk = ChunkPos::new(0, 0);
+    let result = manager.on_chunk_loaded(chunk);
+    assert_eq!(result.restored.len(), 1);
+    assert!(Arc::ptr_eq(&result.restored[0], &entity));
+    assert!(result.needs_save);
+    assert_eq!(manager.count(), 1);
+    let Some(live) = manager.get_by_id(entity.id()) else {
+        panic!("deferred entity should become live when its chunk loads");
+    };
+    assert!(Arc::ptr_eq(&live, &entity));
+}
+
+#[test]
+fn add_deferred_entity_rejects_duplicate_uuid_of_live_entity() {
+    let manager = WorldEntityManager::new();
+    load_chunk(&manager, ChunkPos::new(0, 0));
+
+    let uuid = Uuid::from_u128(9);
+    let live = ManagerTestEntity::shared(1, uuid, DVec3::new(1.0, 64.0, 1.0));
+    assert!(
+        manager
+            .add_live_entity(Arc::clone(&live), EntityOwnership::ManagerOwned)
+            .is_ok()
+    );
+    let deferred = ManagerTestEntity::shared(2, uuid, DVec3::new(200.0, 64.0, 1.0));
+
+    assert!(matches!(
+        manager.add_deferred_entity(deferred, EntityOwnership::ManagerOwned),
+        Err(AddEntityError::DuplicateUuid {
+            entity_id: 2,
+            uuid: duplicate,
+        }) if duplicate == uuid
+    ));
+}

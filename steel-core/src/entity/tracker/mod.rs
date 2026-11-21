@@ -505,12 +505,15 @@ impl EntityTracker {
             (senders.self_movement)(player_id, packet);
         }
 
-        for (entity_id, dirty_entity_data) in entity_data_to_broadcast {
-            (senders.entity_data)(entity_id, dirty_entity_data);
-        }
-
+        // Vanilla sends equipment packets from `LivingEntity.tick` before
+        // `ServerEntity.sendChanges` packs dirty entity data, so observers must
+        // see a newly held item before flags such as `USING_ITEM`.
         for (entity_id, dirty_equipment) in equipment_to_broadcast {
             (senders.equipment)(entity_id, CSetEquipment::new(entity_id, dirty_equipment));
+        }
+
+        for (entity_id, dirty_entity_data) in entity_data_to_broadcast {
+            (senders.entity_data)(entity_id, dirty_entity_data);
         }
 
         for (entity_id, dirty_attributes) in attributes_to_broadcast {

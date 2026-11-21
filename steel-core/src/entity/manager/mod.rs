@@ -431,13 +431,15 @@ pub struct UnsavedEntityReport {
 /// Entity changes produced when a chunk becomes loaded.
 #[derive(Default)]
 pub struct ChunkEntityLoadResult {
-    /// Retained entities restored to live world membership.
+    /// Previously deferred spawns activated, plus retained entities restored to
+    /// live world membership.
     pub restored: Vec<SharedEntity>,
     /// Live entities in this chunk whose tracking became visible again.
     pub tracking_started: Vec<SharedEntity>,
     /// Live entities in this chunk whose ticking became active again.
     pub ticking_started: Vec<SharedEntity>,
-    /// Whether recovery created save-pending entity state for this chunk.
+    /// Whether recovery created save-pending entity state for this chunk or
+    /// activated deferred spawns.
     pub needs_save: bool,
 }
 
@@ -520,6 +522,7 @@ struct ManagerState {
     by_spatial_cell: FxHashMap<EntitySpatialCell, SpatialCellEntities>,
     by_hard_collision_cell: FxHashMap<EntitySpatialCell, SpatialCellEntities>,
     by_chunk: FxHashMap<ChunkPos, FxHashSet<i32>>,
+    deferred_by_chunk: FxHashMap<ChunkPos, Vec<EntityEntry>>,
     unloading_by_chunk: FxHashMap<ChunkPos, Vec<EntityEntry>>,
     save_pending_by_chunk: FxHashMap<ChunkPos, Vec<EntityEntry>>,
     tick_list: EntityTickList,
@@ -768,6 +771,7 @@ impl fmt::Debug for WorldEntityManager {
         f.debug_struct("WorldEntityManager")
             .field("chunk_visibility", &state.chunk_visibility.len())
             .field("live_entities", &state.live_by_id.len())
+            .field("deferred_chunks", &state.deferred_by_chunk.len())
             .field("unloading_chunks", &state.unloading_by_chunk.len())
             .finish()
     }
@@ -800,6 +804,30 @@ impl WorldEntityManager {
             .or_insert(EntityVisibility::Hidden);
 
         let mut result = ChunkEntityLoadResult::default();
+        if let Some(entries) = state.deferred_by_chunk.remove(&pos) {
+            result.needs_save = true;
+            result.restored.reserve(entries.len());
+            for entry in entries {
+                if entry.entity.is_removed() {
+                    if entry.should_save() {
+                        state
+                            .save_pending_by_chunk
+                            .entry(pos)
+                            .or_default()
+                            .push(entry);
+                    }
+                    continue;
+                }
+
+                let entity = Arc::clone(&entry.entity);
+                Self::insert_live_entry(&mut state, entry);
+                let lifecycle = Self::apply_entity_lifecycle_after_insert(&mut state, entity.id());
+                result.tracking_started.extend(lifecycle.tracking_started);
+                result.ticking_started.extend(lifecycle.ticking_started);
+                result.restored.push(entity);
+            }
+        }
+
         if let Some(entries) = state.unloading_by_chunk.remove(&pos) {
             result.restored.reserve(entries.len());
             for entry in entries {
@@ -1070,6 +1098,30 @@ impl WorldEntityManager {
         Ok(lifecycle)
     }
 
+    /// Defers a new entity until its chunk is loaded.
+    ///
+    /// Vanilla registers a spawned entity in its section storage even when the
+    /// destination chunk is not loaded yet; the entity becomes live when the
+    /// chunk is loaded. Steel normally rejects entities in non-loaded chunks, so
+    /// callers that mirror vanilla `Level.addFreshEntity` use this path to keep
+    /// the spawn instead of dropping it.
+    pub fn add_deferred_entity(
+        &self,
+        entity: SharedEntity,
+        ownership: EntityOwnership,
+    ) -> Result<(), AddEntityError> {
+        let entry = Self::checked_live_entry(entity, ownership)?;
+        let chunk = entry.chunk;
+        let mut state = self.state.write();
+        Self::validate_live_entries(&state, slice::from_ref(&entry), ownership, false)?;
+        state
+            .deferred_by_chunk
+            .entry(chunk)
+            .or_default()
+            .push(entry);
+        Ok(())
+    }
+
     fn checked_live_entry(
         entity: SharedEntity,
         ownership: EntityOwnership,
@@ -1142,13 +1194,17 @@ impl WorldEntityManager {
 
         let saved_entity_ids = saved_entity_ids.iter().copied().collect::<FxHashSet<_>>();
         let mut state = self.state.write();
-        let Some(entries) = state.save_pending_by_chunk.get_mut(&chunk) else {
-            return;
-        };
-
-        entries.retain(|entry| !saved_entity_ids.contains(&entry.entity.id()));
-        if entries.is_empty() {
-            state.save_pending_by_chunk.remove(&chunk);
+        if let Some(entries) = state.save_pending_by_chunk.get_mut(&chunk) {
+            entries.retain(|entry| !saved_entity_ids.contains(&entry.entity.id()));
+            if entries.is_empty() {
+                state.save_pending_by_chunk.remove(&chunk);
+            }
+        }
+        if let Some(entries) = state.deferred_by_chunk.get_mut(&chunk) {
+            entries.retain(|entry| !saved_entity_ids.contains(&entry.entity.id()));
+            if entries.is_empty() {
+                state.deferred_by_chunk.remove(&chunk);
+            }
         }
     }
 
@@ -1766,6 +1822,12 @@ impl WorldEntityManager {
             Self::push_unsaved_entity_report(&saved_chunks, &mut seen, &mut reports, entry);
         }
 
+        for entries in state.deferred_by_chunk.values() {
+            for entry in entries {
+                Self::push_unsaved_entity_report(&saved_chunks, &mut seen, &mut reports, entry);
+            }
+        }
+
         for entries in state.unloading_by_chunk.values() {
             for entry in entries {
                 Self::push_unsaved_entity_report(&saved_chunks, &mut seen, &mut reports, entry);
@@ -1795,6 +1857,12 @@ impl WorldEntityManager {
                 continue;
             };
             Self::push_saveable_entity(&mut result, &mut seen_ids, &mut seen_uuids, entry);
+        }
+
+        if let Some(entries) = state.deferred_by_chunk.get(&chunk) {
+            for entry in entries {
+                Self::push_saveable_entity(&mut result, &mut seen_ids, &mut seen_uuids, entry);
+            }
         }
 
         if let Some(entries) = state.unloading_by_chunk.get(&chunk) {
@@ -2149,6 +2217,11 @@ impl WorldEntityManager {
     fn contains_uuid(state: &ManagerState, uuid: Uuid) -> bool {
         state.live_by_uuid.contains_key(&uuid)
             || state
+                .deferred_by_chunk
+                .values()
+                .flatten()
+                .any(|entry| entry.uuid == uuid)
+            || state
                 .unloading_by_chunk
                 .values()
                 .flatten()
@@ -2162,6 +2235,11 @@ impl WorldEntityManager {
 
     fn contains_id(state: &ManagerState, entity_id: i32) -> bool {
         state.live_by_id.contains_key(entity_id)
+            || state
+                .deferred_by_chunk
+                .values()
+                .flatten()
+                .any(|entry| entry.entity.id() == entity_id)
             || state
                 .unloading_by_chunk
                 .values()
