@@ -218,18 +218,34 @@ impl NormalNoise {
         }
     }
 
+    /// Adds every layer's sample, scaled by its amplitude, in vanilla's f32 order.
+    #[inline]
+    fn sum_layers(&self, sample: impl Fn(&Layer) -> f32) -> f32 {
+        self.layers.iter().fold(0.0_f32, |value, layer| {
+            value + layer.amplitude * sample(layer)
+        })
+    }
+
+    /// [`Self::sum_layers`] over SIMD lanes.
+    #[inline]
+    fn sum_layers_simd<const N: usize>(
+        &self,
+        sample: impl Fn(&Layer) -> Simd<f32, N>,
+    ) -> Simd<f32, N> {
+        let mut value = Simd::splat(0.0_f32);
+        for layer in &self.layers {
+            value += Simd::splat(layer.amplitude) * sample(layer);
+        }
+        value
+    }
+
     #[inline]
     #[must_use]
     /// Samples the float-valued vanilla noise stack.
     pub fn get_value(&self, x: f64, y: f64, z: f64) -> f32 {
-        self.layers.iter().fold(0.0_f32, |value, layer| {
-            value
-                + layer.amplitude
-                    * layer.noise.noise(
-                        x * layer.frequency,
-                        y * layer.frequency,
-                        z * layer.frequency,
-                    )
+        self.sum_layers(|layer| {
+            let f = layer.frequency;
+            layer.noise.noise(x * f, y * f, z * f)
         })
     }
 
@@ -237,12 +253,10 @@ impl NormalNoise {
     #[must_use]
     /// Samples the float-valued vanilla noise stack with a fixed Y coordinate.
     pub fn get_value_xz(&self, x: f64, z: f64) -> f32 {
-        self.layers.iter().fold(0.0_f32, |value, layer| {
-            value
-                + layer.amplitude
-                    * layer
-                        .noise
-                        .noise_xz(x * layer.frequency, z * layer.frequency)
+        self.sum_layers(|layer| {
+            layer
+                .noise
+                .noise_xz(x * layer.frequency, z * layer.frequency)
         })
     }
 
@@ -250,12 +264,10 @@ impl NormalNoise {
     #[must_use]
     /// Samples the float-valued vanilla noise stack with a fixed Z coordinate.
     pub fn get_value_xy(&self, x: f64, y: f64) -> f32 {
-        self.layers.iter().fold(0.0_f32, |value, layer| {
-            value
-                + layer.amplitude
-                    * layer
-                        .noise
-                        .noise_xy(x * layer.frequency, y * layer.frequency)
+        self.sum_layers(|layer| {
+            layer
+                .noise
+                .noise_xy(x * layer.frequency, y * layer.frequency)
         })
     }
 
@@ -268,16 +280,57 @@ impl NormalNoise {
         ys: Simd<f64, N>,
         z: f64,
     ) -> Simd<f32, N> {
-        let mut value = Simd::splat(0.0_f32);
-        for layer in &self.layers {
-            let noise = layer.noise.noise_y_simd(
-                x * layer.frequency,
-                ys * Simd::splat(layer.frequency),
-                z * layer.frequency,
-            );
-            value += Simd::splat(layer.amplitude) * noise;
-        }
-        value
+        self.sum_layers_simd(|layer| {
+            let f = layer.frequency;
+            layer.noise.noise_y_simd(x * f, ys * Simd::splat(f), z * f)
+        })
+    }
+
+    // Vanilla's chunk fill samples unshifted noise through `NoiseStack.addToVolume`, which
+    // multiplies each block coordinate by `scale * frequency`. Point queries compute
+    // `(block * scale) * frequency`; for non-dyadic scales the two can differ by an ulp.
+
+    #[inline]
+    #[must_use]
+    /// [`Self::get_value`] in vanilla's bulk coordinate order.
+    pub fn get_value_bulk(&self, x: f64, y: f64, z: f64, xz_scale: f64, y_scale: f64) -> f32 {
+        self.sum_layers(|layer| {
+            let xz_f = xz_scale * layer.frequency;
+            layer
+                .noise
+                .noise(x * xz_f, y * (y_scale * layer.frequency), z * xz_f)
+        })
+    }
+
+    #[inline]
+    #[must_use]
+    /// [`Self::get_value_xz`] in vanilla's bulk coordinate order.
+    pub fn get_value_xz_bulk(&self, x: f64, z: f64, xz_scale: f64) -> f32 {
+        self.sum_layers(|layer| {
+            let xz_f = xz_scale * layer.frequency;
+            layer.noise.noise_xz(x * xz_f, z * xz_f)
+        })
+    }
+
+    #[inline]
+    #[must_use]
+    /// [`Self::get_value_y_simd`] in vanilla's bulk coordinate order.
+    pub fn get_value_y_simd_bulk<const N: usize>(
+        &self,
+        x: f64,
+        ys: Simd<f64, N>,
+        z: f64,
+        xz_scale: f64,
+        y_scale: f64,
+    ) -> Simd<f32, N> {
+        self.sum_layers_simd(|layer| {
+            let xz_f = xz_scale * layer.frequency;
+            layer.noise.noise_y_simd(
+                x * xz_f,
+                ys * Simd::splat(y_scale * layer.frequency),
+                z * xz_f,
+            )
+        })
     }
 
     #[inline]
@@ -426,6 +479,46 @@ mod tests {
         let simd8 = noise.get_value_y_simd(x, f64x8::from_array(ys8), z);
         for (lane, y) in ys8.into_iter().enumerate() {
             assert_eq!(simd8[lane].to_bits(), noise.get_value(x, y, z).to_bits());
+        }
+    }
+
+    /// The bulk entries must agree with each other, and with point order wherever
+    /// `scale * frequency` is exact (dyadic scales, and 1.5 and 0.75 against `INPUT_FACTOR`).
+    /// Where it is not, as for `jagged`'s 1500, the two orders must differ.
+    #[test]
+    fn bulk_order_entries_agree() {
+        let mut random = RandomSource::Legacy(LegacyRandom::from_seed(12_345));
+        let noise = NormalNoise::create_from_random(&mut random, -16, &[1.0; 16]);
+        assert_ne!(
+            noise
+                .get_value_xz_bulk(-29_999_888.0, -4.0, 1500.0)
+                .to_bits(),
+            noise
+                .get_value_xz(-29_999_888.0 * 1500.0, -4.0 * 1500.0)
+                .to_bits()
+        );
+        let (x, z) = (-29_999_976.0, 5_000_004.0);
+        let ys = [-64.0, -40.0, 40.0, 72.0, 0.0, 8.0, 312.0, 320.0];
+
+        let simd = noise.get_value_y_simd_bulk(x, f64x8::from_array(ys), z, 1500.0, 0.3);
+        for (lane, y) in ys.into_iter().enumerate() {
+            let scalar = noise.get_value_bulk(x, y, z, 1500.0, 0.3);
+            assert_eq!(simd[lane].to_bits(), scalar.to_bits(), "lane {lane}");
+            assert_eq!(
+                noise.get_value_xz_bulk(x, z, 1500.0).to_bits(),
+                noise.get_value_bulk(x, y, z, 1500.0, 0.0).to_bits(),
+                "y={y}"
+            );
+        }
+
+        for scale in [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0] {
+            for y in ys {
+                assert_eq!(
+                    noise.get_value_bulk(x, y, z, scale, scale).to_bits(),
+                    noise.get_value(x * scale, y * scale, z * scale).to_bits(),
+                    "scale={scale}, y={y}"
+                );
+            }
         }
     }
 }

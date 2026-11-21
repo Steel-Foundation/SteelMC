@@ -12,6 +12,7 @@
     reason = "must match vanilla's truncate-toward-zero behavior"
 )]
 
+use std::array;
 use std::cmp::Ordering;
 
 use super::PARAMETER_COUNT;
@@ -241,10 +242,10 @@ fn snapshot_buckets(entries: &[BuildEntry]) -> (i64, Vec<Vec<BuildEntry>>) {
 /// The BFS-order layout also means that nodes accessed together during a
 /// search tend to be near each other in memory.
 struct FlatNode {
-    /// Bounding box minimum values for each parameter dimension.
-    mins: [i64; PARAMETER_COUNT],
-    /// Bounding box maximum values for each parameter dimension.
-    maxs: [i64; PARAMETER_COUNT],
+    /// Bounding box minimum per axis, except offset (see `offset_term`).
+    mins: [i64; OFFSET_AXIS],
+    /// Bounding box maximum per axis, except offset (see `offset_term`).
+    maxs: [i64; OFFSET_AXIS],
     /// For leaf nodes: index into the values array.
     /// For subtree nodes: `u32::MAX` (sentinel).
     value_index: u32,
@@ -252,23 +253,51 @@ struct FlatNode {
     children_start: u32,
     /// Number of children (0 = leaf, 1..=6 = subtree).
     children_count: u8,
+    /// Squared distance on the offset axis, whose target is always 0.
+    offset_term: i64,
+}
+
+/// Index of the offset axis in a parameter array.
+const OFFSET_AXIS: usize = PARAMETER_COUNT - 1;
+
+/// Every axis but offset, which is always 0 and covered by `FlatNode::offset_term`.
+fn search_axes(target: &TargetPoint) -> [i64; OFFSET_AXIS] {
+    let axes = target.to_parameter_array();
+    array::from_fn(|axis| axes[axis])
 }
 
 impl FlatNode {
-    /// Compute the squared distance from a target point to this node's bounding box.
+    fn new(
+        parameter_space: &[Parameter; PARAMETER_COUNT],
+        value_index: u32,
+        children_count: u8,
+    ) -> Self {
+        Self {
+            mins: array::from_fn(|axis| parameter_space[axis].min),
+            maxs: array::from_fn(|axis| parameter_space[axis].max),
+            value_index,
+            children_start: 0,
+            children_count,
+            offset_term: parameter_space[OFFSET_AXIS].distance(0).pow(2),
+        }
+    }
+
+    /// Squared distance from `target` to this node's box, if it is below `bound`.
     ///
-    /// Uses branchless `max` operations (compiles to `cmov`) to avoid branch
-    /// mispredictions in the hot inner loop.
+    /// Every term is non-negative, so the sum stops once it reaches `bound`.
     #[inline]
-    fn distance(&self, target: &[i64; PARAMETER_COUNT]) -> i64 {
-        let mut d = 0i64;
-        for i in 0..PARAMETER_COUNT {
+    fn distance_below(&self, target: &[i64; OFFSET_AXIS], bound: i64) -> Option<i64> {
+        let mut d = self.offset_term;
+        for i in 0..OFFSET_AXIS {
+            if d >= bound {
+                return None;
+            }
             let di = (target[i] - self.maxs[i])
                 .max(self.mins[i] - target[i])
                 .max(0);
             d += di * di;
         }
-        d
+        (d < bound).then_some(d)
     }
 
     #[inline]
@@ -305,26 +334,18 @@ fn flatten_tree(root: RTreeNode) -> Vec<FlatNode> {
                     parameter_space,
                     value_index,
                 } => {
-                    nodes.push(FlatNode {
-                        mins: parameter_space.map(|p| p.min),
-                        maxs: parameter_space.map(|p| p.max),
-                        value_index: value_index as u32,
-                        children_start: 0,
-                        children_count: 0,
-                    });
+                    nodes.push(FlatNode::new(&parameter_space, value_index as u32, 0));
                 }
                 RTreeNode::SubTree {
                     parameter_space,
                     children,
                 } => {
-                    let children_count = children.len() as u8;
-                    nodes.push(FlatNode {
-                        mins: parameter_space.map(|p| p.min),
-                        maxs: parameter_space.map(|p| p.max),
-                        value_index: u32::MAX,
-                        children_start: 0, // fixed up when children batch is processed
-                        children_count,
-                    });
+                    // `children_start` is fixed up when the children batch is processed.
+                    nodes.push(FlatNode::new(
+                        &parameter_space,
+                        u32::MAX,
+                        children.len() as u8,
+                    ));
                     queue.push_back((children, Some(flat_idx)));
                 }
             }
@@ -341,7 +362,7 @@ fn flatten_tree(root: RTreeNode) -> Vec<FlatNode> {
 fn search_nearest(
     nodes: &[FlatNode],
     node: &FlatNode,
-    target: &[i64; PARAMETER_COUNT],
+    target: &[i64; OFFSET_AXIS],
     best_dist: &mut i64,
     best_idx: &mut Option<u32>,
 ) {
@@ -350,17 +371,17 @@ fn search_nearest(
     let children = &nodes[start..end];
 
     for child in children {
-        let child_dist = child.distance(target);
         // Vanilla uses strict > for pruning (skips equal distance)
-        if *best_dist > child_dist {
-            if child.is_leaf() {
-                // Leaf: child_dist IS the exact distance — no recursion needed
-                *best_dist = child_dist;
-                *best_idx = Some(child.value_index);
-            } else {
-                // Subtree: recurse into children
-                search_nearest(nodes, child, target, best_dist, best_idx);
-            }
+        let Some(child_dist) = child.distance_below(target, *best_dist) else {
+            continue;
+        };
+        if child.is_leaf() {
+            // Leaf: child_dist IS the exact distance — no recursion needed
+            *best_dist = child_dist;
+            *best_idx = Some(child.value_index);
+        } else {
+            // Subtree: recurse into children
+            search_nearest(nodes, child, target, best_dist, best_idx);
         }
     }
 }
@@ -430,7 +451,6 @@ impl<T> ParameterList<T> {
     /// Panics if the R-Tree search fails to find any matching value.
     #[must_use]
     pub fn find_value(&self, target: &TargetPoint) -> &T {
-        let target_array = target.to_parameter_array();
         let root = &self.nodes[0];
         if root.is_leaf() {
             return &self.values[root.value_index as usize].1;
@@ -440,7 +460,7 @@ impl<T> ParameterList<T> {
         search_nearest(
             &self.nodes,
             root,
-            &target_array,
+            &search_axes(target),
             &mut best_dist,
             &mut best_idx,
         );
@@ -486,7 +506,7 @@ impl<T> ParameterList<T> {
         search_nearest(
             &self.nodes,
             root,
-            &target_array,
+            &search_axes(target),
             &mut best_dist,
             &mut best_idx,
         );
