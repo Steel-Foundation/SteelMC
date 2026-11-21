@@ -2,6 +2,7 @@
 
 mod anvil_slots;
 mod armor_slot;
+mod brewing_slots;
 mod crafting_slots;
 mod enchantment_slots;
 mod furnace_slots;
@@ -14,6 +15,7 @@ pub mod slot;
 
 pub use anvil_slots::*;
 pub use armor_slot::ArmorSlot;
+pub use brewing_slots::{FuelSlot, IngredientsSlot, PotionSlot};
 pub use crafting_slots::CraftingHandler;
 pub use enchantment_slots::EnchantItemSlot;
 pub use furnace_slots::{FurnaceFuelSlot, FurnaceResultSlot};

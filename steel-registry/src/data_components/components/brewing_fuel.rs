@@ -4,21 +4,26 @@ use std::io::{Cursor, Result, Write};
 
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
-use steel_utils::Identifier;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::serial::{ReadFrom, WriteTo};
 
-/// References to the context int/float providers that give a brewing fuel
-/// item its number of uses and brewing-speed multiplier.
-#[derive(Debug, Clone, PartialEq, Eq)]
+use crate::resolvable_number::{ResolvableFloat, ResolvableInt};
+
+/// The number of uses and brewing-speed multiplier a fuel item provides.
+///
+/// Literal providers are folded to [`ResolvableInt::Constant`] /
+/// [`ResolvableFloat::Constant`] by the build script. Non-literal providers stay
+/// as references because Steel has no runtime context-provider registry; they are
+/// preserved by the codecs but not evaluated.
+#[derive(Debug, Clone, PartialEq)]
 pub struct BrewingFuel {
-    pub uses: Identifier,
-    pub speed_multiplier: Identifier,
+    pub uses: ResolvableInt,
+    pub speed_multiplier: ResolvableFloat,
 }
 
 impl BrewingFuel {
     #[must_use]
-    pub const fn new(uses: Identifier, speed_multiplier: Identifier) -> Self {
+    pub const fn new(uses: ResolvableInt, speed_multiplier: ResolvableFloat) -> Self {
         Self {
             uses,
             speed_multiplier,
@@ -36,8 +41,8 @@ impl WriteTo for BrewingFuel {
 impl ReadFrom for BrewingFuel {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self {
-            uses: Identifier::read(data)?,
-            speed_multiplier: Identifier::read(data)?,
+            uses: ResolvableInt::read(data)?,
+            speed_multiplier: ResolvableFloat::read(data)?,
         })
     }
 }
@@ -54,8 +59,8 @@ impl ToNbtTag for BrewingFuel {
 impl FromNbtTag for BrewingFuel {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
-        let uses = Identifier::from_nbt_tag(compound.get("uses")?)?;
-        let speed_multiplier = Identifier::from_nbt_tag(compound.get("speed_multiplier")?)?;
+        let uses = ResolvableInt::from_nbt_tag(compound.get("uses")?)?;
+        let speed_multiplier = ResolvableFloat::from_nbt_tag(compound.get("speed_multiplier")?)?;
         Some(Self {
             uses,
             speed_multiplier,
@@ -98,6 +103,7 @@ mod tests {
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
     use super::BrewingFuel;
+    use crate::resolvable_number::{ResolvableFloat, ResolvableInt};
 
     fn parse(tag: NbtTag) -> Option<BrewingFuel> {
         let mut bytes = Vec::new();
@@ -107,20 +113,31 @@ mod tests {
     }
 
     #[test]
-    fn round_trips_both_codecs() {
-        let value = BrewingFuel::new(
-            Identifier::vanilla_static("brewing/uses_default"),
-            Identifier::vanilla_static("brewing/speed_default"),
+    fn round_trips_references_and_constants() {
+        let references = BrewingFuel::new(
+            ResolvableInt::reference(Identifier::vanilla_static("brewing/uses_default")),
+            ResolvableFloat::reference(Identifier::vanilla_static("brewing/speed_default")),
         );
-
-        let nbt = value.clone().to_nbt_tag();
-        assert_eq!(parse(nbt), Some(value.clone()));
-
-        let mut network = Vec::new();
-        value.write(&mut network).expect("fuel should encode");
         assert_eq!(
-            BrewingFuel::read(&mut Cursor::new(network.as_slice())).expect("fuel should decode"),
-            value
+            parse(references.clone().to_nbt_tag()),
+            Some(references.clone())
         );
+
+        let constants =
+            BrewingFuel::new(ResolvableInt::constant(20), ResolvableFloat::constant(1.5));
+        assert_eq!(
+            parse(constants.clone().to_nbt_tag()),
+            Some(constants.clone())
+        );
+
+        for value in [references, constants] {
+            let mut network = Vec::new();
+            value.write(&mut network).expect("fuel should encode");
+            assert_eq!(
+                BrewingFuel::read(&mut Cursor::new(network.as_slice()))
+                    .expect("fuel should decode"),
+                value
+            );
+        }
     }
 }

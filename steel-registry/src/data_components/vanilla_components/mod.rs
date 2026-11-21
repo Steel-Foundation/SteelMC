@@ -45,6 +45,7 @@ pub use crate::game_profile::{GameProfile, ProfileProperty};
 pub use crate::item_predicate::{AdventureModePredicate, BlockPredicate, ItemPredicate, LockCode};
 pub use crate::pig_sound_variant::PigSoundVariant;
 pub use crate::pig_variant::PigVariant;
+pub use crate::resolvable_number::{ResolvableFloat, ResolvableInt};
 pub use crate::resolvable_profile::{
     PartialProfile, PlayerModelType, PlayerSkinPatch, ResolvableProfile, ResolvableProfileContents,
 };

@@ -5,6 +5,7 @@ mod barrel;
 mod beacon;
 mod beehive;
 mod bell;
+mod brewing_stand;
 mod brushable;
 mod campfire;
 mod chest;
@@ -35,6 +36,8 @@ pub use beehive::{
     BEEHIVE_MAX_OCCUPANTS, BEEHIVE_MIN_OCCUPATION_TICKS_NECTARLESS, BeehiveBlockEntity,
 };
 pub use bell::BellBlockEntity;
+pub(crate) use brewing_stand::{BREWING_DATA_SLOTS, BrewingStandContainer};
+pub use brewing_stand::{BREWING_STAND_SLOTS, BrewingStandBlockEntity};
 pub use brushable::BrushableBlockEntity;
 pub use campfire::{CAMPFIRE_SLOTS, CampfireBlockEntity};
 pub use chest::{CHEST_SLOTS, ChestBlockEntity};
