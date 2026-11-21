@@ -15,23 +15,23 @@ use super::{
 const IMMUNE_BLOCK_RESISTANCE: f32 = 3_600_000.0;
 
 /// Explosion policy with fixed block, entity-damage, and knockback decisions.
-pub struct SimpleExplosionDamageCalculator {
+pub struct SimpleExplosionDamageCalculator<'a> {
     explodes_blocks: bool,
     damages_entities: bool,
     knockback_multiplier: Option<f32>,
     /// When set, blocks in this tag fully resist the blast and every other block
     /// offers no resistance at all.
-    immune_blocks: Option<Identifier>,
+    immune_blocks: Option<&'a Identifier>,
 }
 
-impl SimpleExplosionDamageCalculator {
+impl<'a> SimpleExplosionDamageCalculator<'a> {
     /// Creates a calculator; `None` values fall back to the default calculator.
     #[must_use]
     pub const fn new(
         explodes_blocks: bool,
         damages_entities: bool,
         knockback_multiplier: Option<f32>,
-        immune_blocks: Option<Identifier>,
+        immune_blocks: Option<&'a Identifier>,
     ) -> Self {
         Self {
             explodes_blocks,
@@ -42,7 +42,7 @@ impl SimpleExplosionDamageCalculator {
     }
 
     fn resistance(&self, state: BlockStateId, fluid: FluidState) -> Option<f32> {
-        let Some(immune_blocks) = &self.immune_blocks else {
+        let Some(immune_blocks) = self.immune_blocks else {
             return super::default_block_explosion_resistance(state, fluid);
         };
         state
@@ -52,7 +52,7 @@ impl SimpleExplosionDamageCalculator {
     }
 }
 
-impl ExplosionDamageCalculator for SimpleExplosionDamageCalculator {
+impl ExplosionDamageCalculator for SimpleExplosionDamageCalculator<'_> {
     fn block_explosion_resistance(
         &self,
         _explosion: &dyn Explosion,
@@ -88,7 +88,7 @@ impl ExplosionDamageCalculator for SimpleExplosionDamageCalculator {
     }
 }
 
-impl ImmutableExplosionBlockCalculator for SimpleExplosionDamageCalculator {
+impl ImmutableExplosionBlockCalculator for SimpleExplosionDamageCalculator<'_> {
     fn bounded_block_read_radius(&self) -> Option<u32> {
         Some(0)
     }
@@ -136,12 +136,9 @@ mod tests {
     fn immune_block_tag_leaves_every_other_block_without_resistance() {
         init_vanilla_registry();
 
-        let calculator = SimpleExplosionDamageCalculator::new(
-            true,
-            false,
-            None,
-            Some(BlockTag::BLOCKS_WIND_CHARGE_EXPLOSIONS),
-        );
+        let immune_blocks = BlockTag::BLOCKS_WIND_CHARGE_EXPLOSIONS;
+        let calculator =
+            SimpleExplosionDamageCalculator::new(true, false, None, Some(&immune_blocks));
         let reader: &dyn ExplosionBlockReader = test_world().as_ref();
         let pos = BlockPos::new(0, 64, 0);
         let obsidian = vanilla_blocks::OBSIDIAN.default_state();

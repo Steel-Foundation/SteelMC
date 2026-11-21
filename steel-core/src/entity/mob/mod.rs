@@ -1928,7 +1928,7 @@ pub(crate) fn do_hurt_target_default<M: Mob + ?Sized>(
     }
 
     if let Some(user) = mob.as_entity_event_source().as_living_entity() {
-        enchantment_helper::do_post_piercing_attack_effects(world, user);
+        enchantment_helper::do_post_piercing_attack_effects(user);
     }
     was_hurt
 }

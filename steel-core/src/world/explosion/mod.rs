@@ -25,26 +25,12 @@ use crate::world::World;
 
 use server::ServerExplosion;
 pub use simple::SimpleExplosionDamageCalculator;
+pub use steel_utils::types::ExplosionInteraction;
 
 mod server;
 mod simple;
 
 const MAX_PACKET_DISTANCE_SQUARED: f64 = 64.0 * 64.0;
-
-/// High-level source category used to resolve Vanilla explosion gamerules.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExplosionInteraction {
-    /// Damage entities without changing blocks.
-    None,
-    /// A block-created explosion governed by `block_explosion_drop_decay`.
-    Block,
-    /// A mob-created explosion governed by mob griefing and mob drop decay.
-    Mob,
-    /// A TNT explosion governed by `tnt_explosion_drop_decay`.
-    Tnt,
-    /// Lets blocks react without being destroyed, as wind charges do.
-    Trigger,
-}
 
 /// How an explosion interacts with blocks after its affected positions are calculated.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

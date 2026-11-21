@@ -7,17 +7,19 @@ use quote::quote;
 use serde::Deserialize;
 use steel_utils::Identifier;
 
+const ASSET: &str = "build_assets/particle_types.json";
+
 #[derive(Deserialize)]
-struct ParticleTypeEntry {
+pub(crate) struct ParticleTypeEntry {
     id: usize,
-    key: Identifier,
+    pub(crate) key: Identifier,
     override_limiter: bool,
-    options_type: ParticleOptionsType,
+    pub(crate) options_type: ParticleOptionsType,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum ParticleOptionsType {
+pub(crate) enum ParticleOptionsType {
     Simple,
     Block,
     Color,
@@ -34,10 +36,13 @@ enum ParticleOptionsType {
     Vibration,
 }
 
-pub(crate) fn build() -> TokenStream {
-    const ASSET: &str = "build_assets/particle_types.json";
+/// Reads the extracted particle types in file order.
+pub(crate) fn read_particle_types() -> Vec<ParticleTypeEntry> {
+    read_json_asset(ASSET)
+}
 
-    let mut particle_types: Vec<ParticleTypeEntry> = read_json_asset(ASSET);
+pub(crate) fn build() -> TokenStream {
+    let mut particle_types = read_particle_types();
     sort_contiguous_registry_entries(&mut particle_types, ASSET, |entry| entry.id);
 
     let mut constants = TokenStream::new();

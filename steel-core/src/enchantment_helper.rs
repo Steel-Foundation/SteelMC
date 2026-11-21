@@ -4,23 +4,33 @@ use std::sync::Arc;
 
 use item_in_use::EnchantedItemInUse;
 use steel_math::round_f32;
+use steel_protocol::packets::game::ExplosionParticlePalette;
 use steel_utils::TICKS_PER_SECOND;
 
 use steel_registry::enchantment_effect::{
     DamageSourcePredicate, EnchantmentEffectComponent, EnchantmentEffectRequirements,
-    EnchantmentEntityEffect, EnchantmentEntityTarget, EnchantmentTarget, EntityPredicate,
-    EntityTypePredicate, EntityTypeSpecificPredicate, EntityVehiclePredicate, MobEffectSelection,
+    EnchantmentEntityEffect, EnchantmentEntityTarget, EnchantmentExplodeEffect, EnchantmentTarget,
+    EntityPredicate, EntityTypePredicate, EntityTypeSpecificPredicate, EntityVehiclePredicate,
+    LevelBasedValue, MobEffectSelection,
 };
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::particle_type::ParticleData;
+use steel_registry::sound_event::SoundEventHolder;
 use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_entities, vanilla_items};
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, MobEffectInstance, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
-use crate::world::World;
+use crate::world::{
+    ExplosionInteraction, ExplosionOptions, SimpleExplosionDamageCalculator, World,
+};
 
 mod selection;
+
+#[cfg(test)]
+mod explode_tests;
 
 pub(crate) use selection::{EnchantmentInstance, get_enchantment_cost, select_enchantment};
 
@@ -94,13 +104,13 @@ impl<'a> EnchantmentPostAttackContext<'a> {
         }
     }
 
-    fn damage_context(&self) -> EnchantmentDamageContext<'a> {
-        EnchantmentDamageContext::new(
-            self.victim.entity_type(),
-            self.attacker.map(|entity| entity.entity_type()),
-            self.direct_attacker.map(|entity| entity.entity_type()),
-            self.damage_source,
-        )
+    /// Resolves vanilla's `ENCHANTED_DAMAGE` loot context entities.
+    const fn entity(&self, target: EnchantmentEntityTarget) -> Option<&'a SharedEntity> {
+        match target {
+            EnchantmentEntityTarget::This => Some(self.victim),
+            EnchantmentEntityTarget::Attacker => self.attacker,
+            EnchantmentEntityTarget::DirectAttacker => self.direct_attacker,
+        }
     }
 
     fn affected_entity(&self, target: EnchantmentTarget) -> Option<&'a SharedEntity> {
@@ -388,7 +398,6 @@ fn apply_post_attack_effects(
     let Some(enchantments) = enchantments else {
         return false;
     };
-    let damage_context = context.damage_context();
     let mut enchanted_item_broke = false;
 
     for (key, level) in enchantments.iter() {
@@ -410,9 +419,7 @@ fn apply_post_attack_effects(
             let Some(enchanted_entity) = context.affected_entity(enchanted_target) else {
                 continue;
             };
-            let requirements_match =
-                post_attack_requirements_match(effect.requirements, &damage_context, level);
-            if !requirements_match {
+            if !post_attack_requirements_match(effect.requirements, context, level) {
                 continue;
             }
             let Some(affected_entity) = context.affected_entity(effect.affected) else {
@@ -422,7 +429,7 @@ fn apply_post_attack_effects(
                 world,
                 &effect.effect,
                 level,
-                affected_entity.as_ref(),
+                affected_entity,
                 Some(enchanted_entity),
                 item,
             );
@@ -437,7 +444,7 @@ fn apply_post_attack_effects(
 pub(crate) fn on_projectile_spawned(
     world: &World,
     weapon: &mut ItemStack,
-    projectile: &dyn Entity,
+    projectile: &SharedEntity,
     owner: Option<&SharedEntity>,
 ) {
     let Some(enchantments) = weapon.get_enchantments() else {
@@ -459,7 +466,7 @@ pub(crate) fn on_projectile_spawned(
     for (enchantment, level) in enchantments {
         let level = level as i32;
         for effect in enchantment.effects.projectile_spawned {
-            if entity_requirements_match(effect.requirements, projectile, level) {
+            if entity_requirements_match(effect.requirements, projectile.as_ref(), level) {
                 let _ = apply_entity_effect(
                     world,
                     &effect.effect,
@@ -473,7 +480,7 @@ pub(crate) fn on_projectile_spawned(
     }
 }
 
-pub(crate) fn do_post_piercing_attack_effects(world: &World, user: &dyn LivingEntity) {
+pub(crate) fn do_post_piercing_attack_effects(user: &dyn LivingEntity) {
     let mut item_stack = ItemStack::empty();
     user.with_equipment_slot(EquipmentSlot::MainHand, &mut |stack| {
         item_stack = stack.copy_with_count(stack.count());
@@ -500,7 +507,7 @@ pub(crate) fn do_post_piercing_attack_effects(world: &World, user: &dyn LivingEn
             if !entity_requirements_match(effect.requirements, user, level) {
                 continue;
             }
-            if apply_post_piercing_entity_effect(world, &effect.effect, level, user) {
+            if apply_post_piercing_entity_effect(&effect.effect, level, user) {
                 user.on_equipped_item_broken(item_ref, EquipmentSlot::MainHand);
             }
         }
@@ -511,7 +518,7 @@ fn apply_entity_effect(
     world: &World,
     effect: &EnchantmentEntityEffect,
     level: i32,
-    entity: &dyn Entity,
+    entity: &SharedEntity,
     enchanted_entity: Option<&SharedEntity>,
     enchanted_item: &mut EnchantedItemInUse<'_>,
 ) -> bool {
@@ -540,7 +547,8 @@ fn entity_effect_is_supported(effect: &EnchantmentEntityEffect) -> bool {
         | EnchantmentEntityEffect::Unsupported { .. } => false,
         EnchantmentEntityEffect::ChangeItemDamage { .. }
         | EnchantmentEntityEffect::DamageEntity { .. }
-        | EnchantmentEntityEffect::Ignite { .. } => true,
+        | EnchantmentEntityEffect::Ignite { .. }
+        | EnchantmentEntityEffect::Explode(_) => true,
         EnchantmentEntityEffect::ApplyMobEffect { to_apply, .. } => {
             matches!(to_apply, MobEffectSelection::Single(_))
         }
@@ -551,7 +559,7 @@ fn apply_supported_entity_effect(
     world: &World,
     effect: &EnchantmentEntityEffect,
     level: i32,
-    entity: &dyn Entity,
+    entity: &SharedEntity,
     enchanted_entity: Option<&SharedEntity>,
     enchanted_item: &mut EnchantedItemInUse<'_>,
 ) -> bool {
@@ -593,8 +601,7 @@ fn apply_supported_entity_effect(
             false
         }
         EnchantmentEntityEffect::Ignite { duration } => {
-            let ticks = (duration.calculate(level) * TICKS_PER_SECOND as f32).floor() as i32;
-            entity.ignite_for_ticks(ticks);
+            ignite(entity.as_ref(), duration, level);
             false
         }
         EnchantmentEntityEffect::ApplyMobEffect {
@@ -604,22 +611,17 @@ fn apply_supported_entity_effect(
             min_amplifier,
             max_amplifier,
         } => {
-            let Some(living) = entity.as_living_entity() else {
-                return false;
-            };
-            let min_duration = min_duration.calculate(level);
-            let max_duration = max_duration.calculate(level);
-            let min_amplifier = min_amplifier.calculate(level);
-            let max_amplifier = max_amplifier.calculate(level);
-            let duration_seconds = random_between(min_duration, max_duration);
-            let amplifier = random_between(min_amplifier, max_amplifier);
-            let duration_ticks = round_f32(duration_seconds * TICKS_PER_SECOND as f32);
-            let amplifier = round_f32(amplifier).max(0);
-            living.add_mob_effect(MobEffectInstance::with_duration(
+            apply_mob_effect(
+                entity.as_ref(),
                 effect,
-                duration_ticks,
-                amplifier,
-            ));
+                [min_duration, max_duration],
+                [min_amplifier, max_amplifier],
+                level,
+            );
+            false
+        }
+        EnchantmentEntityEffect::Explode(explode) => {
+            explode_at(explode, level, entity);
             false
         }
         EnchantmentEntityEffect::ApplyMobEffect { .. }
@@ -631,7 +633,6 @@ fn apply_supported_entity_effect(
 }
 
 fn apply_post_piercing_entity_effect(
-    world: &World,
     effect: &EnchantmentEntityEffect,
     level: i32,
     user: &dyn LivingEntity,
@@ -640,7 +641,7 @@ fn apply_post_piercing_entity_effect(
         return false;
     }
 
-    apply_supported_post_piercing_entity_effect(world, effect, level, user)
+    apply_supported_post_piercing_entity_effect(effect, level, user)
 }
 
 fn post_piercing_entity_effect_is_supported(effect: &EnchantmentEntityEffect) -> bool {
@@ -658,13 +659,15 @@ fn post_piercing_entity_effect_is_supported(effect: &EnchantmentEntityEffect) ->
         EnchantmentEntityEffect::ApplyMobEffect { to_apply, .. } => {
             matches!(to_apply, MobEffectSelection::Single(_))
         }
+        // TODO: Support `minecraft:explode` here. Vanilla allows it in post-piercing
+        // effects (no vanilla enchantment uses it); it needs the user as a `SharedEntity`.
         EnchantmentEntityEffect::DamageEntity { .. }
+        | EnchantmentEntityEffect::Explode(_)
         | EnchantmentEntityEffect::Unsupported { .. } => false,
     }
 }
 
 fn apply_supported_post_piercing_entity_effect(
-    world: &World,
     effect: &EnchantmentEntityEffect,
     level: i32,
     user: &dyn LivingEntity,
@@ -674,7 +677,7 @@ fn apply_supported_post_piercing_entity_effect(
             let mut enchanted_item_broke = false;
             for effect in *effects {
                 enchanted_item_broke |=
-                    apply_supported_post_piercing_entity_effect(world, effect, level, user);
+                    apply_supported_post_piercing_entity_effect(effect, level, user);
             }
             enchanted_item_broke
         }
@@ -714,20 +717,102 @@ fn apply_supported_post_piercing_entity_effect(
             user.play_sound(sounds[index], *volume, *pitch);
             false
         }
-        EnchantmentEntityEffect::Ignite { .. } | EnchantmentEntityEffect::ApplyMobEffect { .. } => {
-            let mut ignored_item = ItemStack::empty();
-            apply_supported_entity_effect(
-                world,
-                effect,
-                level,
-                user,
-                None,
-                &mut EnchantedItemInUse::Stack(&mut ignored_item),
-            )
+        EnchantmentEntityEffect::Ignite { duration } => {
+            ignite(user, duration, level);
+            false
         }
-        EnchantmentEntityEffect::DamageEntity { .. }
+        EnchantmentEntityEffect::ApplyMobEffect {
+            to_apply: MobEffectSelection::Single(effect),
+            min_duration,
+            max_duration,
+            min_amplifier,
+            max_amplifier,
+        } => {
+            apply_mob_effect(
+                user,
+                effect,
+                [min_duration, max_duration],
+                [min_amplifier, max_amplifier],
+                level,
+            );
+            false
+        }
+        EnchantmentEntityEffect::ApplyMobEffect { .. }
+        | EnchantmentEntityEffect::DamageEntity { .. }
+        | EnchantmentEntityEffect::Explode(_)
         | EnchantmentEntityEffect::Unsupported { .. } => false,
     }
+}
+
+fn ignite(entity: &dyn Entity, duration: &LevelBasedValue, level: i32) {
+    let ticks = (duration.calculate(level) * TICKS_PER_SECOND as f32).floor() as i32;
+    entity.ignite_for_ticks(ticks);
+}
+
+/// `duration` and `amplifier` are `[min, max]` level-based ranges, with durations in seconds.
+fn apply_mob_effect(
+    entity: &dyn Entity,
+    effect: MobEffectRef,
+    [min_duration, max_duration]: [&LevelBasedValue; 2],
+    [min_amplifier, max_amplifier]: [&LevelBasedValue; 2],
+    level: i32,
+) {
+    let Some(living) = entity.as_living_entity() else {
+        return;
+    };
+    let duration_seconds =
+        random_between(min_duration.calculate(level), max_duration.calculate(level));
+    let amplifier = random_between(
+        min_amplifier.calculate(level),
+        max_amplifier.calculate(level),
+    );
+    let duration_ticks = round_f32(duration_seconds * TICKS_PER_SECOND as f32);
+    let amplifier = round_f32(amplifier).max(0);
+    living.add_mob_effect(MobEffectInstance::with_duration(
+        effect,
+        duration_ticks,
+        amplifier,
+    ));
+}
+
+/// Runs a `minecraft:explode` effect centered on `entity`.
+fn explode_at(effect: &EnchantmentExplodeEffect, level: i32, entity: &SharedEntity) {
+    // Vanilla passes the effect's server level, which is always the affected entity's level.
+    let Some(world) = entity.level() else {
+        return;
+    };
+    let position = entity.position() + effect.offset;
+    let damage_source = effect.damage_type.map(|damage_type| {
+        if effect.attribute_to_user {
+            DamageSource::direct(damage_type, Arc::clone(entity))
+        } else {
+            DamageSource::environment(damage_type).with_source_position(position)
+        }
+    });
+    let calculator = SimpleExplosionDamageCalculator::new(
+        effect.block_interaction != ExplosionInteraction::None,
+        effect.damage_type.is_some(),
+        effect
+            .knockback_multiplier
+            .map(|multiplier| multiplier.calculate(level)),
+        effect.immune_blocks.as_ref(),
+    );
+
+    let mut options = ExplosionOptions::new(
+        position,
+        effect.radius.calculate(level).max(0.0),
+        effect.block_interaction,
+    );
+    options.source = effect.attribute_to_user.then(|| Arc::clone(entity));
+    options.damage_source = damage_source;
+    options.damage_calculator = Some(&calculator);
+    options.immutable_block_calculator = Some(&calculator);
+    options.fire = effect.create_fire;
+    options.small_explosion_particle = ParticleData::simple(effect.small_particle);
+    options.large_explosion_particle = ParticleData::simple(effect.large_particle);
+    options.block_particles = ExplosionParticlePalette::empty();
+    options.explosion_sound = SoundEventHolder::registry(effect.sound);
+    world.explode(options);
 }
 
 fn random_between(min: f32, max: f32) -> f32 {
@@ -747,7 +832,7 @@ fn requirements_match(
 
 fn post_attack_requirements_match(
     requirements: Option<&'static EnchantmentEffectRequirements>,
-    context: &EnchantmentDamageContext<'_>,
+    context: &EnchantmentPostAttackContext<'_>,
     level: i32,
 ) -> bool {
     let Some(requirements) = requirements else {
@@ -755,7 +840,7 @@ fn post_attack_requirements_match(
     };
 
     matches!(
-        requirements_state_with_random(requirements, context, level),
+        post_attack_requirements_state(requirements, context, level),
         Some(true)
     )
 }
@@ -802,16 +887,16 @@ fn requirements_state(
     }
 }
 
-fn requirements_state_with_random(
+fn post_attack_requirements_state(
     requirements: &'static EnchantmentEffectRequirements,
-    context: &EnchantmentDamageContext<'_>,
+    context: &EnchantmentPostAttackContext<'_>,
     level: i32,
 ) -> Option<bool> {
     match requirements {
         EnchantmentEffectRequirements::AllOf(terms) => {
             let mut has_unknown = false;
             for term in *terms {
-                match requirements_state_with_random(term, context, level) {
+                match post_attack_requirements_state(term, context, level) {
                     Some(true) => {}
                     Some(false) => return Some(false),
                     None => has_unknown = true,
@@ -822,7 +907,7 @@ fn requirements_state_with_random(
         EnchantmentEffectRequirements::AnyOf(terms) => {
             let mut has_unknown = false;
             for term in *terms {
-                match requirements_state_with_random(term, context, level) {
+                match post_attack_requirements_state(term, context, level) {
                     Some(true) => return Some(true),
                     Some(false) => {}
                     None => has_unknown = true,
@@ -831,11 +916,15 @@ fn requirements_state_with_random(
             if has_unknown { None } else { Some(false) }
         }
         EnchantmentEffectRequirements::Inverted(term) => {
-            requirements_state_with_random(term, context, level).map(|matched| !matched)
+            post_attack_requirements_state(term, context, level).map(|matched| !matched)
         }
-        EnchantmentEffectRequirements::EntityProperties { entity, predicate } => context
-            .entity_type(*entity)
-            .and_then(|entity_type| entity_predicate_matches_type(predicate, entity_type)),
+        EnchantmentEffectRequirements::EntityProperties { entity, predicate } => {
+            // Vanilla `EntityPredicate.matches` rejects an absent entity.
+            let Some(entity) = context.entity(*entity) else {
+                return Some(false);
+            };
+            entity_predicate_matches_entity(predicate, entity.as_ref())
+        }
         EnchantmentEffectRequirements::DamageSourceProperties(predicate) => Some(
             damage_source_predicate_matches(predicate, context.damage_source),
         ),
@@ -914,6 +1003,7 @@ fn entity_predicate_matches_type(
     if predicate.unsupported
         || !matches!(predicate.vehicle, EntityVehiclePredicate::Any)
         || predicate.flags.has_constraints()
+        || predicate.movement.is_some()
     {
         return None;
     }
@@ -967,18 +1057,28 @@ fn entity_predicate_matches_entity(
     if predicate.flags.unsupported {
         return None;
     }
-    if let Some(expected) = predicate.flags.is_fall_flying {
-        let is_fall_flying = entity
-            .as_living_entity()
-            .is_some_and(LivingEntity::is_fall_flying);
-        if is_fall_flying != expected {
-            return Some(false);
-        }
+    let is_fall_flying = entity.as_living_entity().map(LivingEntity::is_fall_flying);
+    if let Some(expected) = predicate.flags.is_flying
+        && (is_fall_flying == Some(true) || entity.is_flying_player()) != expected
+    {
+        return Some(false);
+    }
+    // Non-living entities pass `is_fall_flying` regardless of the expected value.
+    if let Some(expected) = predicate.flags.is_fall_flying
+        && is_fall_flying.is_some_and(|is_fall_flying| is_fall_flying != expected)
+    {
+        return Some(false);
     }
     if let Some(expected) = predicate.flags.is_in_water
         && entity.is_in_water() != expected
     {
         return Some(false);
+    }
+    if let Some(movement) = &predicate.movement {
+        let velocity = entity.known_movement() * f64::from(TICKS_PER_SECOND);
+        if !movement.matches(velocity, entity.fall_distance()) {
+            return Some(false);
+        }
     }
 
     match &predicate.type_specific {
@@ -1395,19 +1495,20 @@ mod tests {
     fn projectile_spawned_effect_ignites_firework() {
         init_vanilla_registry();
 
-        let projectile = FireworkRocketEntity::new(
+        let projectile = Arc::new(FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             2,
             DVec3::ZERO,
             Weak::new(),
-        );
+        ));
         let mut rocket = enchanted_item(
             &vanilla_items::FIREWORK_ROCKET,
             Identifier::vanilla_static("flame"),
             1,
         );
 
-        on_projectile_spawned(test_world(), &mut rocket, &projectile, None);
+        let projectile_entity: SharedEntity = Arc::<FireworkRocketEntity>::clone(&projectile);
+        on_projectile_spawned(test_world(), &mut rocket, &projectile_entity, None);
 
         assert_eq!(projectile.remaining_fire_ticks(), 2_000);
     }

@@ -810,7 +810,7 @@ where
         log::debug!("failed to spawn projectile: {error}");
         return None;
     }
-    enchantment_helper::on_projectile_spawned(world, item_stack, entity.as_ref(), owner.as_ref());
+    enchantment_helper::on_projectile_spawned(world, item_stack, &entity, owner.as_ref());
 
     Some(entity)
 }

@@ -19,7 +19,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, sound_events, vanilla_particle_types};
 use steel_utils::locks::SyncMutex;
-use steel_utils::{DowncastType, DowncastTypeKey, WorldAabb};
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier, WorldAabb};
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{
@@ -37,12 +37,15 @@ const EXPLOSION_KNOCKBACK_MULTIPLIER: f32 = 1.22;
 const NO_DEFLECT_TICKS: i32 = 5;
 const INERTIA: f32 = 1.0;
 
-static EXPLOSION_DAMAGE_CALCULATOR: SimpleExplosionDamageCalculator =
+// Held in a static so the calculator can borrow it for `'static`.
+static EXPLOSION_IMMUNE_BLOCKS: Identifier = BlockTag::BLOCKS_WIND_CHARGE_EXPLOSIONS;
+
+static EXPLOSION_DAMAGE_CALCULATOR: SimpleExplosionDamageCalculator<'static> =
     SimpleExplosionDamageCalculator::new(
         true,
         false,
         Some(EXPLOSION_KNOCKBACK_MULTIPLIER),
-        Some(BlockTag::BLOCKS_WIND_CHARGE_EXPLOSIONS),
+        Some(&EXPLOSION_IMMUNE_BLOCKS),
     );
 
 /// A wind charge thrown by a player or shot from a dispenser.
