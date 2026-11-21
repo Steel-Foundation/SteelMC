@@ -50,12 +50,12 @@ fn only_powered_activator_rails_prime_the_fuse() {
     assert!(!cart.is_primed());
 
     cart.activate_minecart(world, CART_BLOCK_POS, true);
-    assert_eq!(cart.fuse(), PrimedTntEntity::DEFAULT_FUSE_TIME);
+    assert_eq!(cart.fuse(), Some(PrimedTntEntity::DEFAULT_FUSE_TIME));
 
     // A lit fuse is not restarted by later activator rails.
-    cart.state.lock().fuse = 5;
+    cart.state.lock().fuse = Some(5);
     cart.activate_minecart(world, CART_BLOCK_POS, true);
-    assert_eq!(cart.fuse(), 5);
+    assert_eq!(cart.fuse(), Some(5));
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn burnt_out_fuse_explodes_but_spares_rails_and_their_support() {
     let cart = spawned_tnt_minecart(world);
 
     cart.prime_fuse(None);
-    cart.state.lock().fuse = 0;
+    cart.state.lock().fuse = Some(0);
     Arc::clone(&cart).tick();
 
     assert!(cart.is_removed());
@@ -117,7 +117,10 @@ fn fire_damage_destroys_into_a_short_random_fuse() {
 
     assert!(!cart.is_removed());
     let max_fuse = 2 * (DESTROYED_FUSE_RANDOM_BOUND - 1);
-    assert!((0..=max_fuse).contains(&cart.fuse()));
+    assert!(
+        cart.fuse()
+            .is_some_and(|fuse| (0..=max_fuse).contains(&fuse))
+    );
     assert!(cart.state.lock().ignition_source.is_some());
 }
 
@@ -164,7 +167,7 @@ fn disabled_tnt_still_burns_a_destroyed_fuse_then_discards_without_exploding() {
     );
     assert!(cart.is_primed());
 
-    cart.state.lock().fuse = 0;
+    cart.state.lock().fuse = Some(0);
     Arc::clone(&cart).tick();
 
     assert!(cart.is_removed());
@@ -211,7 +214,7 @@ fn saved_fuse_and_explosion_values_round_trip_with_vanilla_clamping() {
     cart.load_additional((&borrowed).into());
 
     let state = cart.state.lock();
-    assert_eq!(state.fuse, 12);
+    assert_eq!(state.fuse, Some(12));
     assert_eq!(state.explosion_power_base, MAX_SAVED_EXPLOSION_VALUE);
     assert_eq!(state.explosion_speed_factor, 0.0);
 }

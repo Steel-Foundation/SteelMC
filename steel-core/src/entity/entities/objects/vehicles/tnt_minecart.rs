@@ -38,25 +38,26 @@ use crate::entity::{
 use crate::physics::{MoveResult, MoverType};
 use crate::world::{Explosion, ExplosionInteraction, ExplosionOptions, World};
 
-/// Fuse value of a minecart that has not been primed.
+/// Saved fuse value of a minecart that has not been primed. Vanilla treats any negative fuse
+/// as unprimed.
 const UNPRIMED_FUSE: i32 = -1;
 const DEFAULT_EXPLOSION_POWER_BASE: f32 = 4.0;
 const DEFAULT_EXPLOSION_SPEED_FACTOR: f32 = 1.0;
-/// Horizontal speed squared at or above which a collision or destruction sets the cart off.
-/// Vanilla compares against the float literal `0.01F`.
-const MIN_EXPLOSIVE_HORIZONTAL_SPEED_SQR: f32 = 0.01;
-/// Upper bound on the speed that contributes extra explosion power, in blocks per tick.
-const MAX_EXPLOSION_SPEED: f64 = 5.0;
-/// Scale applied to `speed * random` before the speed factor when adding explosion power.
-const EXPLOSION_SPEED_POWER_SCALE: f64 = 1.5;
+/// Horizontal velocity length squared at or above which a collision or destruction sets the cart
+/// off. Vanilla compares against the float literal `0.01F`.
+const MIN_EXPLOSIVE_HORIZONTAL_VELOCITY_SQR: f32 = 0.01;
+/// Upper bound on the velocity length that contributes extra explosion power, in blocks per tick.
+const MAX_EXPLOSION_VELOCITY: f64 = 5.0;
+/// Scale applied to `velocity * random` before `explosion_speed_factor` when adding explosion power.
+const EXPLOSION_VELOCITY_POWER_SCALE: f64 = 1.5;
 /// Exclusive bound of each of the two random rolls summed into a destruction fuse, in ticks.
 const DESTROYED_FUSE_RANDOM_BOUND: i32 = 20;
 /// Vanilla clamp applied to both saved explosion values.
 const MAX_SAVED_EXPLOSION_VALUE: f32 = 128.0;
 /// Fall distance, in blocks, from which landing sets the cart off.
 const MIN_EXPLOSIVE_FALL_DISTANCE: f64 = 3.0;
-/// Divisor turning fall distance into the speed fed to the explosion power formula.
-const FALL_DISTANCE_SPEED_DIVISOR: f64 = 10.0;
+/// Divisor turning fall distance into the velocity fed to the explosion power formula.
+const FALL_DISTANCE_VELOCITY_DIVISOR: f64 = 10.0;
 
 /// The vanilla `ignitionSource` damage source.
 ///
@@ -69,7 +70,8 @@ struct IgnitionSource {
 }
 
 struct TntMinecartState {
-    fuse: i32,
+    /// Remaining fuse in ticks, or `None` while unprimed.
+    fuse: Option<i32>,
     explosion_power_base: f32,
     explosion_speed_factor: f32,
     ignition_source: Option<IgnitionSource>,
@@ -78,7 +80,7 @@ struct TntMinecartState {
 impl TntMinecartState {
     const fn new() -> Self {
         Self {
-            fuse: UNPRIMED_FUSE,
+            fuse: None,
             explosion_power_base: DEFAULT_EXPLOSION_POWER_BASE,
             explosion_speed_factor: DEFAULT_EXPLOSION_SPEED_FACTOR,
             ignition_source: None,
@@ -126,16 +128,16 @@ impl TntMinecartEntity {
         }
     }
 
-    /// Returns the remaining fuse in ticks, or a negative value when unprimed.
+    /// Returns the remaining fuse in ticks, or `None` when unprimed.
     #[must_use]
-    pub fn fuse(&self) -> i32 {
+    pub fn fuse(&self) -> Option<i32> {
         self.state.lock().fuse
     }
 
     /// Returns whether the fuse is lit.
     #[must_use]
     pub fn is_primed(&self) -> bool {
-        self.fuse() > UNPRIMED_FUSE
+        self.fuse().is_some()
     }
 
     /// Lights the fuse, crediting `source`'s causing entity for the eventual explosion.
@@ -149,7 +151,7 @@ impl TntMinecartEntity {
 
         {
             let mut state = self.state.lock();
-            state.fuse = PrimedTntEntity::DEFAULT_FUSE_TIME;
+            state.fuse = Some(PrimedTntEntity::DEFAULT_FUSE_TIME);
             if let Some(source) = source
                 && state.ignition_source.is_none()
             {
@@ -181,9 +183,9 @@ impl TntMinecartEntity {
         ))
     }
 
-    /// Explodes with power scaled by `speed_sqr`, or just discards a primed cart while
+    /// Explodes with power scaled by `velocity_sqr`, or just discards a primed cart while
     /// `tntExplodes` is off.
-    fn explode(&self, this: &SharedEntity, damage_source: Option<DamageSource>, speed_sqr: f64) {
+    fn explode(&self, this: &SharedEntity, damage_source: Option<DamageSource>, velocity_sqr: f64) {
         let Some(world) = self.level() else {
             return;
         };
@@ -193,12 +195,12 @@ impl TntMinecartEntity {
                 let state = self.state.lock();
                 (state.explosion_power_base, state.explosion_speed_factor)
             };
-            let speed = speed_sqr.sqrt().min(MAX_EXPLOSION_SPEED);
+            let velocity = velocity_sqr.sqrt().min(MAX_EXPLOSION_VELOCITY);
             let power = f64::from(power_base)
                 + f64::from(speed_factor)
                     * rand::random::<f64>()
-                    * EXPLOSION_SPEED_POWER_SCALE
-                    * speed;
+                    * EXPLOSION_VELOCITY_POWER_SCALE
+                    * velocity;
 
             let mut options =
                 ExplosionOptions::new(self.position(), power as f32, ExplosionInteraction::Tnt);
@@ -220,13 +222,13 @@ impl TntMinecartEntity {
         source.is(&DamageTypeTag::IS_FIRE) || source.is(&DamageTypeTag::IS_EXPLOSION)
     }
 
-    fn horizontal_speed_sqr(&self) -> f64 {
+    fn horizontal_velocity_sqr(&self) -> f64 {
         let velocity = self.velocity();
         velocity.x * velocity.x + velocity.z * velocity.z
     }
 
-    fn is_explosive_horizontal_speed(speed_sqr: f64) -> bool {
-        speed_sqr >= f64::from(MIN_EXPLOSIVE_HORIZONTAL_SPEED_SQR)
+    fn is_explosive_horizontal_velocity(velocity_sqr: f64) -> bool {
+        velocity_sqr >= f64::from(MIN_EXPLOSIVE_HORIZONTAL_VELOCITY_SQR)
     }
 
     /// Primed carts let explosions pass through and spare rails and the block holding them.
@@ -287,7 +289,7 @@ impl VehicleEntity for TntMinecartEntity {
 
     fn vehicle_destroy(&self, world: &World, source: &DamageSource) {
         if !Self::damage_source_ignites_tnt(source)
-            && !Self::is_explosive_horizontal_speed(self.horizontal_speed_sqr())
+            && !Self::is_explosive_horizontal_velocity(self.horizontal_velocity_sqr())
         {
             self.vehicle_destroy_with_item(world, self.vehicle_drop_item());
             return;
@@ -298,8 +300,10 @@ impl VehicleEntity for TntMinecartEntity {
         }
         self.prime_fuse(Some(source));
         // Vanilla overwrites the fuse even when `tntExplodes` stopped priming.
-        self.state.lock().fuse = rand::random_range(0..DESTROYED_FUSE_RANDOM_BOUND)
-            + rand::random_range(0..DESTROYED_FUSE_RANDOM_BOUND);
+        self.state.lock().fuse = Some(
+            rand::random_range(0..DESTROYED_FUSE_RANDOM_BOUND)
+                + rand::random_range(0..DESTROYED_FUSE_RANDOM_BOUND),
+        );
     }
 }
 
@@ -369,25 +373,27 @@ impl Entity for TntMinecartEntity {
         // The fuse smoke particle is client-local in vanilla.
         let fuse_burnt_out = {
             let mut state = self.state.lock();
-            if state.fuse > 0 {
-                state.fuse -= 1;
-                false
-            } else {
-                state.fuse == 0
+            match &mut state.fuse {
+                Some(0) => true,
+                Some(fuse) => {
+                    *fuse -= 1;
+                    false
+                }
+                None => false,
             }
         };
         if fuse_burnt_out {
             self.explode(
                 &entity,
                 self.ignition_damage_source(&entity),
-                self.horizontal_speed_sqr(),
+                self.horizontal_velocity_sqr(),
             );
         }
 
         if self.horizontal_collision() {
-            let speed_sqr = self.horizontal_speed_sqr();
-            if Self::is_explosive_horizontal_speed(speed_sqr) {
-                self.explode(&entity, self.ignition_damage_source(&entity), speed_sqr);
+            let velocity_sqr = self.horizontal_velocity_sqr();
+            if Self::is_explosive_horizontal_velocity(velocity_sqr) {
+                self.explode(&entity, self.ignition_damage_source(&entity), velocity_sqr);
             }
         }
     }
@@ -462,7 +468,7 @@ impl Entity for TntMinecartEntity {
 
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         // TODO: Explode immediately when the direct entity is a burning `AbstractArrow`, with
-        // power from the arrow's speed, once arrows exist.
+        // power from the arrow's velocity, once arrows exist.
         self.vehicle_hurt(world, source, amount)
     }
 
@@ -473,12 +479,12 @@ impl Entity for TntMinecartEntity {
         source: &DamageSource,
     ) -> bool {
         if fall_distance >= MIN_EXPLOSIVE_FALL_DISTANCE {
-            let fall_speed = fall_distance / FALL_DISTANCE_SPEED_DIVISOR;
+            let fall_velocity = fall_distance / FALL_DISTANCE_VELOCITY_DIVISOR;
             let entity = Arc::clone(&self).into_shared_entity();
             self.explode(
                 &entity,
                 self.ignition_damage_source(&entity),
-                fall_speed * fall_speed,
+                fall_velocity * fall_velocity,
             );
         }
 
@@ -527,7 +533,7 @@ impl Entity for TntMinecartEntity {
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.save_abstract_minecart_data(nbt);
         let state = self.state.lock();
-        nbt.insert("fuse", state.fuse);
+        nbt.insert("fuse", state.fuse.unwrap_or(UNPRIMED_FUSE));
         if state.explosion_power_base != DEFAULT_EXPLOSION_POWER_BASE {
             nbt.insert("explosion_power", state.explosion_power_base);
         }
@@ -539,7 +545,7 @@ impl Entity for TntMinecartEntity {
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_abstract_minecart_data(nbt);
         let mut state = self.state.lock();
-        state.fuse = nbt.int_value("fuse").unwrap_or(UNPRIMED_FUSE);
+        state.fuse = nbt.int_value("fuse").filter(|fuse| *fuse >= 0);
         state.explosion_power_base = nbt
             .float_value("explosion_power")
             .unwrap_or(DEFAULT_EXPLOSION_POWER_BASE)
