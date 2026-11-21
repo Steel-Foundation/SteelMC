@@ -48,9 +48,9 @@ use crate::loot::random_sequences::DomainRandomSequences;
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
 use crate::permission::{
-    PermissionGroupManagerError, PermissionGroupUpdateError, PermissionGroupsConfig,
-    PermissionManager, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
-    PermissionSubjectIndex, PermissionSubjectState,
+    PermissionCollectionsConfig, PermissionGroupManagerError, PermissionGroupUpdateError,
+    PermissionGroupsConfig, PermissionManager, PermissionMetadataExpression,
+    PermissionRuleExpression, PermissionSet, PermissionSubjectIndex, PermissionSubjectState,
 };
 use crate::player::chat::{OutgoingChatMessage, profile_key::RemoteChatSession};
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
@@ -202,8 +202,6 @@ pub async fn test_server_with_worlds_and_config(
     player_permission_states: PermissionSubjectIndex,
     config: Arc<RuntimeConfig>,
 ) -> Result<Arc<Server>, String> {
-    use crate::permission::PermissionCollectionsConfig;
-
     let mut worlds = WorldMap::new(default_domain, domains, &[]);
     for world in loaded_worlds {
         worlds.insert(world.key.clone(), Arc::clone(world));

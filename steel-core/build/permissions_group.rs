@@ -1,10 +1,9 @@
-use std::{collections::BTreeMap, fs};
-
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
+use std::{collections::BTreeMap, fs};
 
 #[derive(Deserialize, Default)]
 struct Group {
@@ -47,8 +46,8 @@ pub fn build() -> String {
 
     let group_constants = group_name_constants(&group_names);
     let collection_constants = collection_identifier_constants(&group_names);
-    let collection_entries = collection_entries(&group_names, &groups);
-    let default_group_entries = default_group_entries(&group_names, &groups);
+    let collection_entries = collection_entries(&groups);
+    let default_group_entries = default_group_entries(&groups);
 
     let output = quote! {
         //! Generated vanilla permission groups and collections. Do not edit by hand.
@@ -96,7 +95,7 @@ pub fn build() -> String {
 fn group_name_constants(group_names: &[String]) -> TokenStream {
     let mut tokens = TokenStream::new();
     for name in group_names {
-        let constant = level_constant(name);
+        let constant = group_constant(name);
         tokens.extend(quote! {
             #[doc = #name]
             #[doc = "permission level group name."]
@@ -121,20 +120,14 @@ fn collection_identifier_constants(group_names: &[String]) -> TokenStream {
 }
 
 /// Emits the `(Identifier, Vec<Identifier>)` entries for the code-owned collections.
-fn collection_entries(group_names: &[String], groups: &BTreeMap<String, Group>) -> TokenStream {
+fn collection_entries(groups: &BTreeMap<String, Group>) -> TokenStream {
     let mut tokens = TokenStream::new();
-    for name in group_names {
+    for (name, group) in groups {
         let collection = collection_constant(name);
-        let permissions = groups.get(name).map_or_else(Vec::new, |group| {
-            group
-                .allow
-                .iter()
-                .map(|key| permission_identifier(key))
-                .collect()
-        });
-        let permissions = permissions
+        let permissions = group
+            .allow
             .iter()
-            .map(|(namespace, path)| quote! { Identifier::new_static(#namespace, #path) })
+            .map(|key| permission_identifier(key))
             .collect::<Vec<_>>();
         tokens.extend(quote! {
             (
@@ -147,17 +140,11 @@ fn collection_entries(group_names: &[String], groups: &BTreeMap<String, Group>) 
 }
 
 /// Emits the default vanilla group configs referencing the generated collections.
-fn default_group_entries(group_names: &[String], groups: &BTreeMap<String, Group>) -> TokenStream {
+fn default_group_entries(groups: &BTreeMap<String, Group>) -> TokenStream {
     let mut tokens = TokenStream::new();
-    for name in group_names {
-        let inherits = groups
-            .get(name)
-            .and_then(|group| group.inherits.clone())
-            .into_iter()
-            .collect::<Vec<_>>();
-        let has_allow = groups
-            .get(name)
-            .is_some_and(|group| !group.allow.is_empty());
+    for (name, group) in groups {
+        let inherits = group.inherits.clone().into_iter();
+        let has_allow = !group.allow.is_empty();
         let allow = has_allow.then(|| format!("#minecraft:{name}")).into_iter();
         tokens.extend(quote! {
             groups.insert(
@@ -181,7 +168,7 @@ fn read_string(root: &serde_json::Map<String, Value>, key: &str) -> String {
         .to_owned()
 }
 
-fn level_constant(name: &str) -> Ident {
+fn group_constant(name: &str) -> Ident {
     Ident::new(
         &format!("{}_GROUP", name.to_shouty_snake_case()),
         Span::call_site(),
@@ -195,10 +182,9 @@ fn collection_constant(name: &str) -> Ident {
     )
 }
 
-/// Splits a dotted extracted permission key into its namespace and path.
-fn permission_identifier(key: &str) -> (String, String) {
-    match key.split_once('.') {
-        Some((namespace, path)) => (namespace.to_owned(), path.to_owned()),
-        None => ("minecraft".to_owned(), key.to_owned()),
+fn permission_identifier(name: &str) -> TokenStream {
+    let (namespace, path) = name.split_once(':').unwrap_or(("minecraft", name));
+    quote! {
+        Identifier::new_static(#namespace, #path)
     }
 }

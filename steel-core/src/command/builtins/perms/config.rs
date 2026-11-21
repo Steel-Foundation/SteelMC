@@ -279,8 +279,8 @@ mod tests {
             panic!("default permission group should exist");
         };
         group.allow.clear();
-        let global = permission("steel.build");
-        let survival = permission("steel.build{domain=survival}");
+        let global = permission("steel:build");
+        let survival = permission("steel:build{domain=survival}");
 
         assert_eq!(
             set_permission(&mut config, "all", &global, Some(PermissionState::Allow)),
@@ -292,7 +292,7 @@ mod tests {
         );
         assert_eq!(set_permission(&mut config, "all", &global, None), Ok(true));
         assert_eq!(config.groups["all"].allow.len(), 0);
-        assert_eq!(config.groups["all"].deny, ["steel.build{domain=survival}"]);
+        assert_eq!(config.groups["all"].deny, ["steel:build{domain=survival}"]);
     }
 
     #[test]
@@ -330,8 +330,8 @@ mod tests {
         group.allow.clear();
         group
             .allow
-            .push("steel.build{plugin:region=spawn,domain=survival}".to_owned());
-        let expression = permission("steel.build{domain=survival,plugin:region=spawn}");
+            .push("steel:build{plugin:region=spawn,domain=survival}".to_owned());
+        let expression = permission("steel:build{domain=survival,plugin:region=spawn}");
 
         assert_eq!(
             set_permission(&mut config, "all", &expression, Some(PermissionState::Deny)),
@@ -340,7 +340,7 @@ mod tests {
         assert_eq!(config.groups["all"].allow.len(), 0);
         assert_eq!(
             config.groups["all"].deny,
-            ["steel.build{domain=survival,plugin:region=spawn}"]
+            ["steel:build{domain=survival,plugin:region=spawn}"]
         );
     }
 

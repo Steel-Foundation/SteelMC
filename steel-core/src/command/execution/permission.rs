@@ -86,6 +86,62 @@ enum PermissionSuggestionScope {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PermissionSuggestionKind {
+    Rule,
+    Metadata,
+}
+
+impl PermissionSuggestionScope {
+    fn expressions(
+        self,
+        context: &dyn SteelArgumentSuggestionContext,
+        kind: PermissionSuggestionKind,
+    ) -> Vec<String> {
+        let source = context.source();
+        match self {
+            Self::All => match kind {
+                PermissionSuggestionKind::Rule => source.permission_rule_suggestions(),
+                PermissionSuggestionKind::Metadata => source.permission_metadata_suggestions(),
+            },
+            Self::UserOwned => {
+                let Some(targets) = context
+                    .argument("targets")
+                    .ok()
+                    .and_then(|value| value.downcast_ref::<super::GameProfileArgument>())
+                else {
+                    return Vec::new();
+                };
+                match kind {
+                    PermissionSuggestionKind::Rule => {
+                        source.user_permission_rule_suggestions(targets)
+                    }
+                    PermissionSuggestionKind::Metadata => {
+                        source.user_permission_metadata_suggestions(targets)
+                    }
+                }
+            }
+            Self::GroupOwned => {
+                let Some(group) = context
+                    .argument("group")
+                    .ok()
+                    .and_then(|value| value.downcast_ref::<PermissionGroupName>())
+                else {
+                    return Vec::new();
+                };
+                match kind {
+                    PermissionSuggestionKind::Rule => {
+                        source.group_permission_rule_suggestions(group.as_str())
+                    }
+                    PermissionSuggestionKind::Metadata => {
+                        source.group_permission_metadata_suggestions(group.as_str())
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct PermissionRuleParser {
     suggestions: PermissionSuggestionScope,
 }
@@ -130,25 +186,9 @@ impl SteelArgumentParser for PermissionRuleParser {
         context: &dyn SteelArgumentSuggestionContext,
         builder: &mut SuggestionsBuilder<'_>,
     ) {
-        let expressions = match self.suggestions {
-            PermissionSuggestionScope::All => context.source().permission_rule_suggestions(),
-            PermissionSuggestionScope::UserOwned => context
-                .argument("targets")
-                .ok()
-                .and_then(|value| value.downcast_ref::<super::GameProfileArgument>())
-                .map_or_else(Vec::new, |targets| {
-                    context.source().user_permission_rule_suggestions(targets)
-                }),
-            PermissionSuggestionScope::GroupOwned => context
-                .argument("group")
-                .ok()
-                .and_then(|value| value.downcast_ref::<PermissionGroupName>())
-                .map_or_else(Vec::new, |group| {
-                    context
-                        .source()
-                        .group_permission_rule_suggestions(group.as_str())
-                }),
-        };
+        let expressions = self
+            .suggestions
+            .expressions(context, PermissionSuggestionKind::Rule);
         suggest_expression(builder, context.source(), expressions);
     }
 
@@ -195,15 +235,8 @@ impl SteelArgumentParser for PermissionGroupRuleParser {
         context: &dyn SteelArgumentSuggestionContext,
         builder: &mut SuggestionsBuilder<'_>,
     ) {
-        let mut expressions = context
-            .argument("group")
-            .ok()
-            .and_then(|value| value.downcast_ref::<PermissionGroupName>())
-            .map_or_else(Vec::new, |group| {
-                context
-                    .source()
-                    .group_permission_rule_suggestions(group.as_str())
-            });
+        let mut expressions = PermissionSuggestionScope::GroupOwned
+            .expressions(context, PermissionSuggestionKind::Rule);
         expressions.extend(
             context
                 .source()
@@ -271,27 +304,9 @@ impl SteelArgumentParser for PermissionMetadataParser {
         context: &dyn SteelArgumentSuggestionContext,
         builder: &mut SuggestionsBuilder<'_>,
     ) {
-        let expressions = match self.suggestions {
-            PermissionSuggestionScope::All => context.source().permission_metadata_suggestions(),
-            PermissionSuggestionScope::UserOwned => context
-                .argument("targets")
-                .ok()
-                .and_then(|value| value.downcast_ref::<super::GameProfileArgument>())
-                .map_or_else(Vec::new, |targets| {
-                    context
-                        .source()
-                        .user_permission_metadata_suggestions(targets)
-                }),
-            PermissionSuggestionScope::GroupOwned => context
-                .argument("group")
-                .ok()
-                .and_then(|value| value.downcast_ref::<PermissionGroupName>())
-                .map_or_else(Vec::new, |group| {
-                    context
-                        .source()
-                        .group_permission_metadata_suggestions(group.as_str())
-                }),
-        };
+        let expressions = self
+            .suggestions
+            .expressions(context, PermissionSuggestionKind::Metadata);
         suggest_expression(builder, context.source(), expressions);
     }
 
