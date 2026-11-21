@@ -2,12 +2,14 @@
 
 use std::sync::{Arc, Weak};
 
+use glam::DVec3;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, PotentSulfurState};
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::vanilla_game_events;
+use steel_registry::vanilla_mob_effects::NAUSEA;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt as _, vanilla_blocks, vanilla_entity_type_tags::EntityTypeTag,
 };
@@ -16,13 +18,14 @@ use steel_utils::random::xoroshiro::Xoroshiro;
 use steel_utils::random::{PositionalRandom, Random, RandomSource, RandomSplitter};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{
-    BlockPos, BlockStateId, DowncastType, DowncastTypeKey, WorldAabb, locks::SyncMutex,
+    BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey, WorldAabb, locks::SyncMutex,
 };
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
+use crate::entity::MobEffectInstance;
 use crate::fluid::FluidStateExt as _;
-use crate::world::World;
+use crate::world::{LevelReader, World};
 
 const GEYSER_SALT: i64 = -904_011_478;
 const COUNTDOWN_FREQUENCY_TICKS: i64 = 20;
@@ -31,6 +34,9 @@ const BASE_VELOCITY_THRESHOLD: f64 = 0.3;
 const VELOCITY_THRESHOLD_SCALE: f64 = 0.1;
 const MAX_WATER_BLOCKS_ABOVE: i32 = 4;
 const FORCE_HEIGHT_MULTIPLIER: i32 = 6;
+const EFFECT_APPLICATION_FREQUENCY_TICKS: i64 = 10;
+const EFFECT_DURATION_IN_TICKS: i32 = 80;
+const EFFECT_RANGE: f64 = 3.0;
 
 /// Block entity for `potent_sulfur` blocks
 pub struct PotentSulfurBlockEntity {
@@ -100,7 +106,7 @@ impl PotentSulfurBlockEntity {
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         behavior
-            .get_collision_shape(state, world, pos, context)
+            .get_collision_boxes(state, world, pos, context)
             .is_empty()
     }
 
@@ -119,7 +125,7 @@ impl PotentSulfurBlockEntity {
                 && (state.get_block() == &vanilla_blocks::WATER
                     || Self::is_geyser_passable(world, pos, geyser_position_context))
             {
-                pos = BlockPos::new(pos.x(), pos.y() + 1, pos.z());
+                pos = pos.relative(Direction::Up);
                 continue;
             }
 
@@ -198,17 +204,14 @@ impl PotentSulfurBlockEntity {
         };
 
         let water_blocks = source.y() - pos.y() - 1;
-        let above = BlockPos::new(pos.x(), pos.y() + 1, pos.z());
+        let above = pos.above();
         let force_height = Self::unobstructed_block_count(world, above, water_blocks);
 
-        let aabb = WorldAabb::new(
-            f64::from(pos.x()),
-            f64::from(pos.y() + 1),
-            f64::from(pos.z()),
-            f64::from(pos.x() + 1),
-            f64::from(pos.y() + 1) + f64::from(force_height),
-            f64::from(pos.z() + 1),
-        );
+        let aabb = WorldAabb::single(above.0).expand_towards(DVec3::new(
+            0.0,
+            f64::from(force_height - 1),
+            0.0,
+        ));
 
         let velocity_threshold =
             BASE_VELOCITY_THRESHOLD + f64::from(water_blocks) * VELOCITY_THRESHOLD_SCALE;
@@ -239,9 +242,58 @@ impl PotentSulfurBlockEntity {
                 continue;
             }
 
-            entity.set_velocity(glam::DVec3::new(vel.x, vel.y + LAUNCH_FORCE, vel.z));
+            entity.set_velocity(DVec3::new(vel.x, vel.y + LAUNCH_FORCE, vel.z));
             entity.mark_velocity_sync();
         }
+    }
+
+    fn tick_nausea(world: &World, pos: BlockPos) {
+        if world.game_time() % EFFECT_APPLICATION_FREQUENCY_TICKS != 0 {
+            return;
+        }
+        let Some(source) = Self::find_source_block(world, pos) else {
+            return;
+        };
+        let aabb =
+            WorldAabb::single(source.0).inflate_xyz(EFFECT_RANGE - 0.5, 0.0, EFFECT_RANGE - 0.5);
+        for entity in world.get_entities_in_aabb(&aabb) {
+            if !entity.is_alive() || entity.is_spectator() {
+                continue;
+            }
+            let Some(e) = entity.as_living_entity() else {
+                continue;
+            };
+            let feet = e.position();
+            let eye = DVec3::new(feet.x, e.get_eye_y(), feet.z);
+            if !Self::can_get_nausea(world, source, eye) {
+                continue;
+            }
+            e.add_mob_effect(
+                MobEffectInstance::with_duration(NAUSEA, EFFECT_DURATION_IN_TICKS, 0)
+                    .with_ambient(true),
+            );
+        }
+    }
+
+    fn can_get_nausea(world: &World, source: BlockPos, eye: DVec3) -> bool {
+        let eye_pos = BlockPos::from(eye);
+        let ctx = BlockCollisionContext::position_context(f64::from(eye_pos.y() - 1));
+        if !Self::is_geyser_passable(world, eye_pos, ctx)
+            || eye.distance_squared(source.get_center()) > EFFECT_RANGE * EFFECT_RANGE
+        {
+            return false;
+        }
+        let eye_below = eye - DVec3::new(0.0, 1.0, 0.0);
+        let f_state = world
+            .get_block_state(BlockPos::from(eye_below))
+            .get_fluid_state();
+        f_state.is_source()
+            && f_state.is_water()
+            && world.is_block_collision_path_clear(
+                source.below().get_center(),
+                eye_below,
+                BlockCollisionContext::empty(),
+            )
     }
 }
 
@@ -277,8 +329,6 @@ impl BlockEntity for PotentSulfurBlockEntity {
 
         let game_time = world.game_time();
 
-        // TODO: Add nausea ticker (WET / DORMANT states, every 10 ticks) after the mob-effect refactor adds timed instances and sync.
-
         let action = if matches!(
             &current,
             PotentSulfurState::Dormant | PotentSulfurState::Erupting
@@ -289,11 +339,14 @@ impl BlockEntity for PotentSulfurBlockEntity {
             None
         };
 
-        if matches!(
-            &current,
-            PotentSulfurState::Erupting | PotentSulfurState::Continuous
-        ) {
-            Self::tick_launch(world, pos);
+        match &current {
+            PotentSulfurState::Erupting | PotentSulfurState::Continuous => {
+                Self::tick_launch(world, pos);
+            }
+            PotentSulfurState::Dormant | PotentSulfurState::Wet => {
+                Self::tick_nausea(world, pos);
+            }
+            PotentSulfurState::Dry => {}
         }
 
         if let Some((new_state, deactivates)) = action {

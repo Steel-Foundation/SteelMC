@@ -1626,6 +1626,27 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn ItemFrame>(self)
     }
 
+    /// Returns this entity as a multipart sub-entity, in place of vanilla's
+    /// `instanceof EnderDragonPart` checks.
+    fn as_part_entity(&self) -> Option<&dyn PartEntity> {
+        try_as_dyn::<Self, dyn PartEntity>(self)
+    }
+
+    /// Returns this entity's multipart sub-entities (vanilla `EnderDragon.getSubEntities`,
+    /// on `Entity` as `NeoForge` does), or an empty slice.
+    fn parts(&self) -> &[Arc<dyn PartEntity>] {
+        &[]
+    }
+
+    /// Vanilla `Entity.is`: identity, except that a multipart part also counts as its parent.
+    fn is_same_entity(&self, other: &dyn Entity) -> bool {
+        self.id() == other.id()
+            || self
+                .as_part_entity()
+                .and_then(PartEntity::parent)
+                .is_some_and(|parent| parent.id() == other.id())
+    }
+
     /// Returns this entity as a player when it is the concrete server player.
     fn as_player(&self) -> Option<&Player> {
         self.downcast_ref::<Player>()
@@ -2870,7 +2891,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Returns vanilla dimensions for a physical pose.
+    ///
+    /// A multipart part reports its parent's type, so it returns its own fixed size
+    /// instead, as vanilla `EnderDragonPart.getDimensions` does.
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
+        if let Some(part) = self.as_part_entity() {
+            return part.part_base().size();
+        }
         let dimensions = self.entity_type().dimensions;
         let Some(living) = self.as_living_entity() else {
             return dimensions;
@@ -3525,15 +3552,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// get the air drag value of the entity
     fn get_air_drag(&self) -> f64 {
         let Some(entity) = self.as_living_entity() else {
-            return DEFAULT_AIR_DRAG;
+            return f64::from(DEFAULT_AIR_DRAG as f32);
         };
-        compute_modified_friction(
-            DEFAULT_AIR_DRAG,
+
+        f64::from(compute_modified_friction(
+            DEFAULT_AIR_DRAG as f32,
             entity
                 .attributes()
                 .lock()
-                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER),
-        )
+                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER) as f32,
+        ))
     }
 
     /// Applies gravity to the entity's velocity.
@@ -3667,11 +3695,20 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         if result.horizontal_collision {
             let vel = self.velocity();
             self.set_velocity(DVec3::new(
-                if result.x_collision { 0.0 } else { vel.x },
+                if result.x_collision {
+                    0.0_f64.copysign(-vel.x)
+                } else {
+                    vel.x
+                },
                 vel.y,
-                if result.z_collision { 0.0 } else { vel.z },
+                if result.z_collision {
+                    0.0_f64.copysign(-vel.z)
+                } else {
+                    vel.z
+                },
             ));
         }
+
         if result.vertical_collision && self.can_simulate_movement() {
             let velocity = self.velocity();
             let landing_context = EntityLandingContext::new(
@@ -3704,7 +3741,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                                 self.as_entity_event_source(),
                             ),
                         );
+                        self.game_event(&vanilla_game_events::BOUNCE);
                     }
+
                     res
                 } else {
                     landing_context.default_velocity_after_fall_on()
@@ -3881,6 +3920,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         self.reset_fall_distance();
+
+        if let Some(living) = self.as_living_entity() {
+            living.set_last_climbable_pos(None);
+        }
     }
 
     /// Computes vanilla support state for an on-ground update.
@@ -4148,7 +4191,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 }
 
-fn compute_modified_friction(friction: f64, modifier: f64) -> f64 {
+pub(super) fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
     (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
 }
 

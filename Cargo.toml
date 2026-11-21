@@ -28,7 +28,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.17.0+mc26.3"
+version = "0.17.1+mc26.3"
 edition = "2024"
 authors = ["Alve Jeansson"]
 license = "AGPL-3.0-or-later"
@@ -199,6 +199,7 @@ cast_possible_wrap = "allow"
 cast_possible_truncation = "allow"
 cast_precision_loss = "allow"
 "struct_field_names" = "allow"
+assert_is_empty = "allow"
 absolute_paths = "warn"
 missing_const_for_fn = "warn"
 allow_attributes = "warn"
