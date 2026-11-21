@@ -148,7 +148,7 @@ impl Server {
             return Ok(profile);
         }
 
-        match classify_uncached_player_target(name, self.config.online_mode) {
+        match classify_uncached_player_target(name, self.config.uses_authentication()) {
             UncachedPlayerTarget::DirectUuid(uuid) => {
                 // No verified name is available, so use the canonical UUID for
                 // feedback without adding a synthetic identity-cache entry.

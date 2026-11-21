@@ -1,11 +1,13 @@
 use std::{
-    env,
+    env, fs,
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use steel_core::{
-    config::{RuntimeConfig, WorldsConfig},
+    config::{
+        PROXY_FORWARDING_REQUIRES_OFFLINE_MODE, PlayerInfoForwarding, RuntimeConfig, WorldsConfig,
+    },
     permission::{
         PermissionGroupConfig, PermissionGroupStore, PermissionGroups, PermissionGroupsConfig,
         PermissionMetadataRuleConfig, PermissionMetadataValue,
@@ -77,7 +79,11 @@ fn packaged_config_matches_the_runtime_config_defaults() {
         packet_workers,
         chunk_generation_threads,
         chunk_encoding_threads,
-    } = config.server.into_runtime_config();
+        proxy,
+    } = config
+        .server
+        .into_runtime_config()
+        .expect("runtime config converts");
     let defaults = RuntimeConfig::default();
 
     assert_eq!(max_players, defaults.max_players);
@@ -122,6 +128,8 @@ fn packaged_config_matches_the_runtime_config_defaults() {
     assert_eq!(packet_workers, Some(0));
     assert_eq!(chunk_generation_threads, Some(0));
     assert_eq!(chunk_encoding_threads, Some(0));
+    assert!(!proxy.is_forwarding());
+    assert_eq!(proxy.online_mode, defaults.proxy.online_mode);
 }
 
 #[test]
@@ -224,15 +232,21 @@ fn server_config_defaults_backward_compatible_fields() {
 #[test]
 fn configured_auth_server_flows_to_runtime_config() {
     let auth_server = "https://auth.example.com/session/minecraft/hasJoined";
-    let config_toml = DEFAULT_CONFIG.replace(
+    let config_toml = DEFAULT_CONFIG.replacen(
         "online_mode = true",
         &format!("online_mode = true\nauth_server = \"{auth_server}\""),
+        1,
     );
     let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
     assert_eq!(config.server.auth_server.as_deref(), Some(auth_server));
     assert_eq!(
-        config.server.into_runtime_config().auth_server.as_deref(),
+        config
+            .server
+            .into_runtime_config()
+            .expect("runtime config converts")
+            .auth_server
+            .as_deref(),
         Some(auth_server)
     );
 }
@@ -240,9 +254,10 @@ fn configured_auth_server_flows_to_runtime_config() {
 #[test]
 fn configured_profile_server_flows_to_runtime_config() {
     let profile_server = "https://profiles.example.com/lookup/name";
-    let config_toml = DEFAULT_CONFIG.replace(
+    let config_toml = DEFAULT_CONFIG.replacen(
         "online_mode = true",
         &format!("online_mode = true\nprofile_server = \"{profile_server}\""),
+        1,
     );
     let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
@@ -254,6 +269,7 @@ fn configured_profile_server_flows_to_runtime_config() {
         config
             .server
             .into_runtime_config()
+            .expect("runtime config converts")
             .profile_server
             .as_deref(),
         Some(profile_server)
@@ -263,9 +279,10 @@ fn configured_profile_server_flows_to_runtime_config() {
 #[test]
 fn configured_services_server_flows_to_runtime_config() {
     let services_server = "https://services.example.com/publickeys";
-    let config_toml = DEFAULT_CONFIG.replace(
+    let config_toml = DEFAULT_CONFIG.replacen(
         "online_mode = true",
         &format!("online_mode = true\nservices_server = \"{services_server}\""),
+        1,
     );
     let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
@@ -277,6 +294,7 @@ fn configured_services_server_flows_to_runtime_config() {
         config
             .server
             .into_runtime_config()
+            .expect("runtime config converts")
             .services_server
             .as_deref(),
         Some(services_server)
@@ -299,10 +317,18 @@ fn configured_thread_counts_parse_and_flow_to_runtime_config() {
     assert_eq!(config.server.threads.chunk_generation, Some(6));
     assert_eq!(config.server.threads.chunk_encoding, Some(7));
     assert_eq!(
-        config.server.clone().into_runtime_config().packet_workers,
+        config
+            .server
+            .clone()
+            .into_runtime_config()
+            .expect("runtime config converts")
+            .packet_workers,
         Some(5)
     );
-    let runtime_config = config.server.into_runtime_config();
+    let runtime_config = config
+        .server
+        .into_runtime_config()
+        .expect("runtime config converts");
     assert_eq!(runtime_config.chunk_generation_threads, Some(6));
     assert_eq!(runtime_config.chunk_encoding_threads, Some(7));
 }
@@ -380,9 +406,10 @@ fn validate_rejects_view_distance_above_supported_ticket_range() {
 
 #[test]
 fn validate_rejects_invalid_auth_server_url() {
-    let config_toml = DEFAULT_CONFIG.replace(
+    let config_toml = DEFAULT_CONFIG.replacen(
         "online_mode = true",
         "online_mode = true\nauth_server = \"not a url\"",
+        1,
     );
     let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
@@ -394,9 +421,10 @@ fn validate_rejects_invalid_auth_server_url() {
 
 #[test]
 fn validate_allows_http_auth_server_url() {
-    let config_toml = DEFAULT_CONFIG.replace(
+    let config_toml = DEFAULT_CONFIG.replacen(
         "online_mode = true",
         "online_mode = true\nauth_server = \"http://localhost:8080/session/minecraft/hasJoined\"",
+        1,
     );
     let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
@@ -405,9 +433,10 @@ fn validate_allows_http_auth_server_url() {
 
 #[test]
 fn validate_rejects_unsupported_auth_server_scheme() {
-    let config_toml = DEFAULT_CONFIG.replace(
+    let config_toml = DEFAULT_CONFIG.replacen(
         "online_mode = true",
         "online_mode = true\nauth_server = \"ftp://auth.example.com/session/minecraft/hasJoined\"",
+        1,
     );
     let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
@@ -419,9 +448,10 @@ fn validate_rejects_unsupported_auth_server_scheme() {
 
 #[test]
 fn validate_rejects_invalid_services_server_url() {
-    let config_toml = DEFAULT_CONFIG.replace(
+    let config_toml = DEFAULT_CONFIG.replacen(
         "online_mode = true",
         "online_mode = true\nservices_server = \"not a url\"",
+        1,
     );
     let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
@@ -482,4 +512,97 @@ fn log_config_defaults_for_older_configs() {
     assert!(log_config.log_file);
     assert_eq!(log_config.rotation_time, RotationTimeFormat::Daily);
     assert_eq!(log_config.max_history, 50);
+}
+
+fn proxied_config(proxy_lines: &str) -> SteelConfig {
+    let config_toml = DEFAULT_CONFIG
+        .replace(
+            "online_mode = true\n# Optional authentication",
+            "online_mode = false\n# Optional authentication",
+        )
+        .replace(
+            "player_info_forwarding_mode = \"none\"\n",
+            &format!("{proxy_lines}\n"),
+        );
+    toml::from_str(&config_toml).expect("proxied config parses")
+}
+
+#[test]
+fn proxy_forwarding_requires_backend_offline_mode() {
+    let config_toml = DEFAULT_CONFIG.replace(
+        "player_info_forwarding_mode = \"none\"",
+        "player_info_forwarding_mode = \"legacy\"",
+    );
+    let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+    assert_eq!(
+        validate(&config.server),
+        Err(PROXY_FORWARDING_REQUIRES_OFFLINE_MODE)
+    );
+}
+
+#[test]
+fn secret_forwarding_modes_require_a_secret() {
+    for mode in ["modern", "bungeeguard"] {
+        let config = proxied_config(&format!("player_info_forwarding_mode = \"{mode}\""));
+        assert!(validate(&config.server).is_err(), "{mode} without a secret");
+
+        let config = proxied_config(&format!(
+            "player_info_forwarding_mode = \"{mode}\"\nforwarding_secret = \"  \""
+        ));
+        assert!(
+            validate(&config.server).is_err(),
+            "{mode} with a blank secret"
+        );
+    }
+
+    let config = proxied_config("player_info_forwarding_mode = \"legacy\"");
+    validate(&config.server).expect("legacy forwarding needs no secret");
+}
+
+#[test]
+fn forwarding_secret_file_loads_trimmed_into_runtime_config() {
+    let root = temp_config_root("forwarding-secret");
+    fs::create_dir_all(&root).expect("create temp dir");
+    let secret_path = root.join("forwarding.secret");
+    fs::write(&secret_path, "s3cret\n").expect("write secret");
+
+    let mut config = proxied_config(&format!(
+        "player_info_forwarding_mode = \"modern\"\nforwarding_secret_file = '{}'",
+        secret_path.display()
+    ));
+    validate(&config.server).expect("modern with a secret file validates");
+
+    // Converting before the file is loaded fails closed instead of disabling forwarding.
+    assert!(config.server.clone().into_runtime_config().is_err());
+
+    config
+        .server
+        .proxy
+        .load_secret_file()
+        .expect("secret file loads");
+    let runtime = config
+        .server
+        .into_runtime_config()
+        .expect("runtime config converts");
+    let PlayerInfoForwarding::Modern(secret) = &runtime.proxy.forwarding else {
+        panic!("expected modern forwarding");
+    };
+    assert_eq!(secret.as_bytes(), b"s3cret");
+    assert!(runtime.uses_authentication());
+
+    fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
+fn secure_chat_behind_a_proxy_requires_proxy_online_mode() {
+    let mut config = proxied_config("player_info_forwarding_mode = \"legacy\"");
+    config.server.enforce_secure_chat = true;
+    validate(&config.server).expect("online proxy permits secure chat");
+
+    config.server.proxy.online_mode = false;
+    assert_eq!(
+        validate(&config.server),
+        Err("proxy.online_mode must be true when enforce_secure_chat is enabled")
+    );
 }
