@@ -308,10 +308,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             nbt.insert("data", NbtTag::Compound(custom_data));
         }
 
-        if let Some(living) = self.as_living_entity() {
-            living.save_command_nbt(&mut nbt);
-        }
-        self.save_additional(&mut nbt);
+        self.save_additional_for_data_compare(&mut nbt);
 
         if let Some(player) = self.as_player() {
             player.save_command_nbt(&mut nbt);
@@ -2228,6 +2225,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().is_on_fire(self.fire_immune())
     }
 
+    /// Returns vanilla `Entity.getLightLevelDependentMagicValue`: the curved
+    /// brightness at this entity's eye, or `0.0` when its chunk is unavailable.
+    fn get_light_level_dependent_magic_value(&self) -> f32 {
+        let Some(world) = self.level() else {
+            return 0.0;
+        };
+
+        let position = self.position();
+        let block_pos = BlockPos::new(
+            position.x.floor() as i32,
+            self.get_eye_y().floor() as i32,
+            position.z.floor() as i32,
+        );
+        if !world.is_full_chunk_loaded_at(block_pos) {
+            return 0.0;
+        }
+
+        world.light_level_dependent_magic_value(block_pos)
+    }
+
     /// Returns whether this entity currently renders as visually on fire.
     fn has_visual_fire(&self) -> bool {
         self.base().has_visual_fire()
@@ -4022,6 +4039,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// needed to restore entity state on load. Base fields (pos, motion,
     /// rotation, uuid, `on_ground`) are handled by the serialization layer.
     fn save_additional(&self, _nbt: &mut NbtCompound) {}
+
+    /// appends living and typespecific state to the NBT used by predicates
+    ///
+    /// entities that persist living state can write it through the living command hook and append only their remaining typespecific fields
+    fn save_additional_for_data_compare(&self, nbt: &mut NbtCompound) {
+        if let Some(living) = self.as_living_entity() {
+            living.save_command_nbt(nbt);
+        }
+
+        self.save_additional(nbt);
+    }
 
     /// Loads type-specific entity data from NBT.
     ///
