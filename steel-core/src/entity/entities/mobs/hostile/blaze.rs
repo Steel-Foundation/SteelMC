@@ -12,6 +12,7 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::BlazeEntityData;
 use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
 
 use crate::entity::ai::goal::{
@@ -22,9 +23,9 @@ use crate::entity::ai::path::PathType;
 use crate::entity::damage::DamageSource;
 use crate::entity::projectile::triangle_random;
 use crate::entity::{
-    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose,
-    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, Monster,
-    PathfinderMob, SharedEntity, SpawnRule, sync_dirty_mob_effects,
+    DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySpawnReason,
+    EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase, Monster, PathfinderMob,
+    SharedEntity, SpawnRule, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::world::{LevelReader, World};
@@ -203,6 +204,10 @@ impl BlazeEntity {
 impl DefaultEntityPush for BlazeEntity {}
 
 impl Entity for BlazeEntity {
+    fn blocks_building(&self) -> bool {
+        true
+    }
+
     fn is_hard_collision_relevant(&self) -> bool {
         false
     }
@@ -217,10 +222,6 @@ impl Entity for BlazeEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
-    }
-
-    fn movement_emission(&self) -> EntityMovementEmission {
-        EntityMovementEmission::Events
     }
 
     fn base_tick(&self) {
@@ -278,10 +279,24 @@ impl Entity for BlazeEntity {
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        self.save_persistent_living_data(nbt);
+        self.save_mob(nbt);
+    }
+
+    fn save_additional_for_data_compare(&self, nbt: &mut NbtCompound) {
+        self.save_persistent_living_data(nbt);
+        self.save_command_living_fields(nbt);
         self.save_mob(nbt);
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        self.living_base.load_damage_state(nbt, self.tick_count());
+        self.attributes().lock().load_vanilla_nbt(nbt);
+        self.living_base.load_mob_effects(nbt);
+        self.set_health(
+            nbt.float_value("Health")
+                .unwrap_or_else(|| self.get_max_health()),
+        );
         self.load_mob(nbt);
     }
 }

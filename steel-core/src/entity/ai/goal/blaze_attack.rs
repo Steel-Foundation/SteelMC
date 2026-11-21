@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use glam::DVec3;
+use steel_math::vector;
 use steel_registry::{level_events, vanilla_attributes, vanilla_entities};
 use steel_utils::Downcast as _;
 
@@ -51,14 +52,20 @@ impl BlazeAttackGoal {
             .unwrap_or(0.0)
     }
 
+    fn fireball_velocity(direction: DVec3) -> DVec3 {
+        // blaze normalizes its aim before the projectile normalizes it again
+        let heading = vector::normalize(direction);
+        vector::normalize(heading) * INITIAL_ACCELERATION_POWER
+    }
+
     fn spawn_fireball(mob: &dyn PathfinderMob, entity: &SharedEntity, target: &SharedEntity) {
         let Some(world) = mob.level() else {
             return;
         };
 
         let mob_position = mob.position();
-        let mob_height = mob.bounding_box().height();
-        let target_height = target.bounding_box().height();
+        let mob_height = f64::from(mob.base().dimensions().height);
+        let target_height = f64::from(target.base().dimensions().height);
         let direction = DVec3::new(
             target.position().x - mob_position.x,
             (target.position().y + target_height * 0.5) - (mob_position.y + mob_height * 0.5),
@@ -86,7 +93,7 @@ impl BlazeAttackGoal {
         );
         fireball.set_owner_entity(Some(entity));
         fireball.set_rotation(mob.rotation());
-        fireball.set_velocity(shot_direction.normalize_or_zero() * INITIAL_ACCELERATION_POWER);
+        fireball.set_velocity(Self::fireball_velocity(shot_direction));
         fireball.mark_velocity_sync();
 
         if let Err(error) = world.try_add_entity(Arc::new(fireball) as SharedEntity) {

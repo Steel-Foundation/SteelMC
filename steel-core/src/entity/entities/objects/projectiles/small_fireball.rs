@@ -133,7 +133,7 @@ impl Projectile for SmallFireballEntity {
     }
 
     fn can_hit_entity(&self, entity: &dyn Entity) -> bool {
-        self.hurting_can_hit_entity(entity)
+        entity.is_alive() && self.hurting_can_hit_entity(entity)
     }
 
     fn on_deflection(&self, by_attack: bool) {
@@ -153,17 +153,14 @@ impl Projectile for SmallFireballEntity {
         let remaining_fire_ticks = entity.remaining_fire_ticks();
         entity.ignite_for_ticks(FIREBALL_IGNITE_TICKS);
 
-        let owner = self.get_owner();
-        let damage_type = if owner.is_some() {
-            &vanilla_damage_types::FIREBALL
+        let fireball = Arc::clone(&self).into_shared_entity();
+        let source = if let Some(owner) = self.get_owner() {
+            DamageSource::environment(&vanilla_damage_types::FIREBALL)
+                .with_direct_entity(fireball)
+                .with_causing_entity(owner)
         } else {
-            &vanilla_damage_types::UNATTRIBUTED_FIREBALL
+            DamageSource::direct(&vanilla_damage_types::UNATTRIBUTED_FIREBALL, fireball)
         };
-        let mut source = DamageSource::environment(damage_type)
-            .with_direct_entity(Arc::<Self>::clone(&self).into_shared_entity());
-        if let Some(owner) = owner {
-            source = source.with_causing_entity(owner);
-        }
 
         if entity.hurt(&world, &source, FIREBALL_DAMAGE) {
             let context = EnchantmentPostAttackContext::new(entity, &source);
@@ -233,7 +230,8 @@ mod tests {
     use crate::entity::entities::{BlazeEntity, PigEntity};
     use crate::entity::projectile::EntityHitResult;
     use crate::entity::{
-        Entity, LivingEntity, Projectile, ProjectileHit, SharedEntity, next_entity_id,
+        Entity, INITIAL_ACCELERATION_POWER, LivingEntity, Projectile, ProjectileHit, SharedEntity,
+        next_entity_id,
     };
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
@@ -259,6 +257,9 @@ mod tests {
         let owner: SharedEntity = Arc::<BlazeEntity>::clone(&blaze);
         let target: SharedEntity = Arc::<PigEntity>::clone(&pig);
         world
+            .try_add_entity(Arc::clone(&owner))
+            .expect("owner should attach to the loaded chunk");
+        world
             .try_add_entity(Arc::clone(&target))
             .expect("target should attach to the loaded chunk");
 
@@ -279,5 +280,74 @@ mod tests {
         assert_eq!(pig.get_health(), 5.0);
         assert_eq!(pig.remaining_fire_ticks(), FIREBALL_IGNITE_TICKS);
         assert!(Entity::is_removed(fireball.as_ref()));
+        let source = pig
+            .last_damage_source()
+            .expect("the pig was hit by the fireball");
+        assert_eq!(source.damage_type.key, vanilla_damage_types::FIREBALL.key);
+        assert_eq!(
+            source.direct_entity().map(|direct| direct.uuid()),
+            Some(fireball.uuid())
+        );
+        assert_eq!(
+            source.causing_entity().map(|cause| cause.uuid()),
+            Some(blaze.uuid())
+        );
+    }
+
+    #[test]
+    fn ownerless_fireball_flies_past_a_dying_mob_and_credits_itself() {
+        init_vanilla_registry();
+        let fixture = fresh_test_world("ownerless_fireball_flight");
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        let dying = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            next_entity_id(),
+            DVec3::new(7.75, 65.0, 8.0),
+            Arc::downgrade(world),
+        ));
+        let target = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            next_entity_id(),
+            DVec3::new(8.9, 65.0, 8.0),
+            Arc::downgrade(world),
+        ));
+        dying.set_health(0.0);
+        world
+            .try_add_entity(Arc::<PigEntity>::clone(&dying))
+            .expect("dying mob stays in the world");
+        world
+            .try_add_entity(Arc::<PigEntity>::clone(&target))
+            .expect("target should attach to the loaded chunk");
+
+        let fireball = Arc::new(SmallFireballEntity::new(
+            &vanilla_entities::SMALL_FIREBALL,
+            next_entity_id(),
+            DVec3::new(5.0, 65.5, 8.0),
+            Arc::downgrade(world),
+        ));
+        fireball.set_velocity(DVec3::X * INITIAL_ACCELERATION_POWER);
+        for _ in 0..12 {
+            if fireball.is_removed() {
+                break;
+            }
+            Arc::clone(&fireball).tick();
+        }
+
+        assert!(!Entity::is_removed(dying.as_ref()));
+        assert!(fireball.is_removed());
+        assert_eq!(target.get_health(), 5.0);
+        let source = target
+            .last_damage_source()
+            .expect("the target was hit by the fireball");
+        assert_eq!(
+            source.damage_type.key,
+            vanilla_damage_types::UNATTRIBUTED_FIREBALL.key
+        );
+        assert!(source.is_direct());
+        assert_eq!(
+            source.causing_entity().map(|cause| cause.uuid()),
+            Some(fireball.uuid())
+        );
     }
 }
