@@ -8,7 +8,7 @@ use std::{
     fmt::{self, Debug, Formatter},
     future::{Future, pending},
     io::Cursor,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::Arc,
     time::Duration,
 };
@@ -20,7 +20,7 @@ use steel_core::player::{
         JavaNetworkReader, JavaNetworkWriter, JavaTransportRead, JavaTransportWrite, OutboundPacket,
     },
 };
-use steel_core::server::Server;
+use steel_core::{config::PlayerInfoForwarding, server::Server};
 use steel_protocol::{
     packet_reader::TCPNetworkDecoder,
     packet_traits::{ClientPacket, CompressionInfo, EncodedPacket, ServerPacket},
@@ -29,7 +29,7 @@ use steel_protocol::{
         common::{CDisconnect, SClientInformation, SCustomPayload, SPingRequest},
         config::SSelectKnownPacks,
         handshake::{ClientIntent, SClientIntention},
-        login::{CLoginDisconnect, SHello, SKey},
+        login::{CLoginDisconnect, SCustomQueryAnswer, SHello, SKey},
     },
     utils::{ConnectionProtocol, PacketError, RawPacket},
 };
@@ -58,7 +58,10 @@ use tokio::{
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use uuid::Uuid;
 
-use crate::pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState};
+use crate::{
+    forwarding::bungee::{self, LegacyForwardedPlayer},
+    pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState},
+};
 
 const MAX_TICKS_BEFORE_LOGIN: u64 = 600;
 const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
@@ -204,8 +207,9 @@ pub struct JavaTcpClient {
     pub client_information: AsyncMutex<ClientInformation>,
     /// The current connection state of the client (e.g., Handshaking, Status, Play).
     pub protocol: Arc<AtomicCell<ConnectionProtocol>>,
-    /// The client's IP address.
-    pub address: SocketAddr,
+    /// The client's address. Starts as the socket peer and is replaced by the forwarded
+    /// client IP once a proxy's forwarding data is accepted.
+    address: AtomicCell<SocketAddr>,
     /// A token to cancel the client's operations. Called when the connection is closed.
     pub cancel_token: CancellationToken,
 
@@ -230,6 +234,8 @@ pub struct JavaTcpClient {
 
     pub(crate) pre_play_state: SyncMutex<PrePlayState>,
     pub(crate) login_deadline: AtomicCell<Option<LoginDeadline>>,
+    /// `BungeeCord` forwarding data accepted from the login handshake.
+    pub(crate) legacy_forwarding: SyncMutex<Option<LegacyForwardedPlayer>>,
     task_tracker: TaskTracker,
 }
 
@@ -285,7 +291,7 @@ impl JavaTcpClient {
         let client = Self {
             id,
             client_information: AsyncMutex::new(ClientInformation::default()),
-            address,
+            address: AtomicCell::new(address),
             protocol: Arc::new(AtomicCell::new(ConnectionProtocol::Handshake)),
             cancel_token,
 
@@ -301,10 +307,25 @@ impl JavaTcpClient {
             connection_updated: Arc::new(Notify::new()),
             pre_play_state: SyncMutex::new(PrePlayState::new()),
             login_deadline: AtomicCell::new(None),
+            legacy_forwarding: SyncMutex::new(None),
             task_tracker,
         };
 
         (client, recv, TCPNetworkDecoder::new(BufReader::new(read)))
+    }
+
+    /// The client's address: the forwarded client IP behind a proxy, otherwise the socket peer.
+    #[must_use]
+    pub fn address(&self) -> SocketAddr {
+        self.address.load()
+    }
+
+    /// Replaces the client IP with one forwarded by the proxy, keeping the socket port like
+    /// Paper and Spigot do.
+    pub(crate) fn set_forwarded_ip(&self, ip: IpAddr) {
+        let socket = self.address.load();
+        log::debug!("Client {} forwarded by proxy {socket} as {ip}", self.id);
+        self.address.store(SocketAddr::new(ip, socket.port()));
     }
 
     /// Closes the connection.
@@ -685,7 +706,12 @@ impl JavaTcpClient {
 
         match packet.id {
             handshake::S_INTENTION => {
-                let packet = SClientIntention::read_packet(data)?;
+                let handshake_forwarding = self.server.config.proxy.uses_handshake_forwarding();
+                let packet = if handshake_forwarding {
+                    SClientIntention::read_forwarded(data)?
+                } else {
+                    SClientIntention::read_packet(data)?
+                };
                 let intent = match packet.intention {
                     ClientIntent::Status => ConnectionProtocol::Status,
                     ClientIntent::Login | ClientIntent::Transfer => ConnectionProtocol::Login,
@@ -704,6 +730,13 @@ impl JavaTcpClient {
                 } else {
                     let reason = match packet.protocol_version.cmp(&CURRENT_MC_PROTOCOL) {
                         Ordering::Equal => {
+                            if handshake_forwarding
+                                && let Err(reason) = self.accept_legacy_forwarding(&packet.hostname)
+                            {
+                                self.protocol.store(intent);
+                                self.kick(reason.into()).await;
+                                return Ok(());
+                            }
                             let tick_manager = self.server.tick_rate_manager.read();
                             self.login_deadline
                                 .store(Some(LoginDeadline::from_start_tick(
@@ -731,6 +764,29 @@ impl JavaTcpClient {
             }
         }
         Ok(())
+    }
+
+    /// Accepts `BungeeCord` forwarding data from a login handshake hostname.
+    fn accept_legacy_forwarding(&self, hostname: &str) -> Result<(), &'static str> {
+        let guard = match &self.server.config.proxy.forwarding {
+            PlayerInfoForwarding::BungeeGuard(secret) => Some(secret),
+            _ => None,
+        };
+        match bungee::parse_handshake(hostname, guard) {
+            Ok(player) => {
+                self.set_forwarded_ip(player.address);
+                *self.legacy_forwarding.lock() = Some(player);
+                Ok(())
+            }
+            Err(error) => {
+                log::warn!(
+                    "Denied connection from {} (client {}): invalid BungeeCord forwarding data ({error:?})",
+                    self.address(),
+                    self.id
+                );
+                Err(error.disconnect_message(guard.is_some()))
+            }
+        }
     }
 
     /// Handles a status packet.
@@ -769,6 +825,16 @@ impl JavaTcpClient {
                     return Ok(self.reject_unexpected_packet(error).await);
                 }
                 Ok(self.handle_key(SKey::read_packet(data)?).await)
+            }
+            login_packets::S_CUSTOM_QUERY_ANSWER => {
+                let packet = SCustomQueryAnswer::read_packet(data)?;
+                if self
+                    .expect_pre_play_packet(PrePlayPacket::CustomQueryAnswer)
+                    .is_err()
+                {
+                    return Ok(self.reject_unexpected_query_answer().await);
+                }
+                Ok(self.handle_custom_query_answer(packet).await)
             }
             login_packets::S_LOGIN_ACKNOWLEDGED => {
                 if let Err(error) = self.expect_pre_play_packet(PrePlayPacket::LoginAcknowledged) {

@@ -19,6 +19,8 @@ tokio-util.workspace = true
 
 # Serialization
 base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 # Concurrency
 crossbeam.workspace = true
@@ -35,6 +37,8 @@ reqwest.workspace = true
 # Cryptography
 sha1.workspace = true
 sha2.workspace = true
+hmac.workspace = true
+subtle.workspace = true
 rand.workspace = true
 hex.workspace = true
 

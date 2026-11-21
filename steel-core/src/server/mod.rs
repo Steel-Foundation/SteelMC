@@ -654,7 +654,12 @@ impl Server {
         permission_groups: PermissionGroupManager,
         command_registry: CommandRegistry,
     ) -> Result<Self, String> {
-        validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
+        validate_login_security(
+            config.online_mode,
+            config.encryption,
+            config.proxy.is_forwarding(),
+        )
+        .map_err(str::to_owned)?;
         let config = Arc::new(config);
         init_globals();
         log::info!(
@@ -840,7 +845,7 @@ impl Server {
 
         // Steel finishes the initial attempt before opening its listener, except offline,
         // where `enforces_secure_chat` needs online mode so nothing acts on the result.
-        if config.online_mode && service_keys_ready.await.is_err() {
+        if config.uses_authentication() && service_keys_ready.await.is_err() {
             log::error!("Minecraft services key fetch task stopped before its initial attempt");
         }
 
@@ -891,7 +896,7 @@ impl Server {
     #[must_use]
     pub fn enforces_secure_chat(&self) -> bool {
         self.config.enforce_secure_chat
-            && self.config.online_mode
+            && self.config.uses_authentication()
             && self.profile_key_signature_validator().is_some()
     }
 
