@@ -53,6 +53,7 @@ pub mod block_breaking;
 mod block_interaction;
 mod entity_interaction;
 mod item_interaction;
+mod kinetic_attack;
 mod player_methods;
 mod raycast;
 mod swing;
