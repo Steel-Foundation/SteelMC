@@ -6,8 +6,6 @@
     )
 )]
 
-use std::sync::Arc;
-
 use super::{
     BiomeOrTag, BlockInput, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
     Coordinates, ExecutionCommandSource, ExecutionControl, GameProfileArgument, IntRange,
@@ -22,11 +20,14 @@ use super::{
     message::Message,
     selector::EntitySelector,
 };
+use simdnbt::owned::NbtCompound;
+use std::sync::Arc;
 
 use crate::command::brigadier::{
     ArgumentSuggestionContext, CommandContext, CommandNodeBuilder, CommandRedirectTarget,
     CommandRuntime, CommandSyntaxError, ContextChain,
 };
+use crate::command::execution::argument::CompoundTagValue;
 use crate::command::incorrectly_typed_argument;
 use crate::{
     chunk::heightmap::HeightmapType,
@@ -348,6 +349,11 @@ where
 
     pub(crate) fn text_component(&self, name: &str) -> Result<&TextComponent, CommandSyntaxError> {
         self.typed_argument::<ComponentValue>(name)
+            .map(|value| &value.0)
+    }
+
+    pub(crate) fn compound_tag(&self, name: &str) -> Result<&NbtCompound, CommandSyntaxError> {
+        self.typed_argument::<CompoundTagValue>(name)
             .map(|value| &value.0)
     }
 

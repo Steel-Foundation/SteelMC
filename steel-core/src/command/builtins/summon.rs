@@ -29,10 +29,12 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
         argument("entity", SteelArgumentType::summonable_entity())
             .executes(|context| summon_entity(context, context.source().position()))
             .then(
-                argument("pos", SteelArgumentType::vec3(true)).executes(|context| {
-                    let position = context.coordinates("pos")?;
-                    summon_entity(context, position.position(context.source()))
-                }),
+                argument("pos", SteelArgumentType::vec3(true))
+                    .executes(|context| {
+                        let position = context.coordinates("pos")?;
+                        summon_entity(context, position.position(context.source()))
+                    })
+                    .then(argument("nbt", SteelArgumentType::compound_tag())),
             ),
     )
     // TODO: Add the vanilla compound-NBT branch once Steel has an SNBT compound
