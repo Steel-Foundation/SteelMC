@@ -1,7 +1,5 @@
 //! Vanilla kick command.
 
-use steel_utils::Identifier;
-
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
@@ -11,6 +9,9 @@ use super::super::{
     registration::CommandRegistration,
 };
 use crate::entity::Entity as _;
+use steel_utils::{Identifier, translations};
+use text_components::TextComponent;
+use text_components::content::Content;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("kick"), |_| command())
@@ -29,8 +30,18 @@ fn kick_players(ctx: &SteelCommandContext<CommandSource>) -> Result<i32, Command
 
     let targets = ctx.players("targets")?;
     let message = match ctx.message("reason") {
-        Ok(message) => message.resolve_component(ctx.source())?,
-        Err(_) => steel_utils::translations::MULTIPLAYER_DISCONNECT_KICKED
+        // A reason argument is present
+        Ok(message) => {
+            let parsed = message.resolve_component(ctx.source())?;
+
+            // Try parsing the reason to a text component
+            if let Content::Text { text } = &parsed.content {
+                TextComponent::from_snbt(text).unwrap_or(parsed)
+            } else {
+                parsed
+            }
+        }
+        Err(_) => translations::MULTIPLAYER_DISCONNECT_KICKED
             .msg()
             .component(),
     };
@@ -38,7 +49,7 @@ fn kick_players(ctx: &SteelCommandContext<CommandSource>) -> Result<i32, Command
     for players in targets {
         players.disconnect(message.clone());
         ctx.source().send_success(
-            &steel_utils::translations::COMMANDS_KICK_SUCCESS
+            &translations::COMMANDS_KICK_SUCCESS
                 .message([players.display_name(), message.clone()])
                 .component(),
             true,
