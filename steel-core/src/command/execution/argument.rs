@@ -10,6 +10,7 @@ use super::{
     },
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
+    message::Message,
     nbt::parse_nbt_path,
     permission::{
         PermissionCollectionMemberParser, PermissionCollectionParser, PermissionGroupParser,
@@ -114,6 +115,10 @@ pub(crate) trait SteelArgumentParser:
 
     /// Returns the vanilla command-tree parser representation.
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
+
+    fn is_signed(&self) -> bool {
+        false
+    }
 }
 
 trait ErasedSteelArgumentParser: ErasedType + fmt::Debug + Send + Sync {
@@ -132,6 +137,9 @@ trait ErasedSteelArgumentParser: ErasedType + fmt::Debug + Send + Sync {
     fn protocol_argument_erased(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
 
     fn equals_erased(&self, other: &dyn ErasedSteelArgumentParser) -> bool;
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool;
 }
 
 impl<P> ErasedSteelArgumentParser for P
@@ -160,6 +168,10 @@ where
 
     fn equals_erased(&self, other: &dyn ErasedSteelArgumentParser) -> bool {
         other.downcast_ref::<P>() == Some(self)
+    }
+
+    fn is_signed(&self) -> bool {
+        SteelArgumentParser::is_signed(self)
     }
 }
 
@@ -379,6 +391,11 @@ impl SteelArgumentType {
         Self::new(WorldClockParser)
     }
 
+    /// Creates a greedy `minecraft:message` argument parser
+    pub(crate) fn message() -> Self {
+        Self::new(MessageParser)
+    }
+
     pub(crate) fn timeline(clock_argument: Option<&'static str>) -> Self {
         Self::new(TimelineParser { clock_argument })
     }
@@ -502,6 +519,11 @@ where
     ) {
         self.0.list_suggestions_erased(context, builder);
     }
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool {
+        self.0.is_signed()
+    }
 }
 
 macro_rules! impl_downcast_type {
@@ -575,15 +597,38 @@ argument_value_wrapper!(
     "steel:command/value/world_clock"
 );
 argument_value_wrapper!(TimelineValue(TimelineRef), "steel:command/value/timeline");
+argument_value_wrapper!(MessageValue(Message), "steel:command/value/message");
 
 macro_rules! unit_argument_parser {
+    // Pattern without 'is_signed': forwards with default value 'false'
     (
         $parser:ident,
         $key:literal,
         $value:ty,
         parse |$reader:ident, $source:ident| $parse:block,
         suggest |$context:ident, $builder:ident| $suggest:block,
-        protocol $protocol:expr
+        protocol $protocol:expr $(,)?
+    ) => {
+        unit_argument_parser!(
+            $parser,
+            $key,
+            $value,
+            parse |$reader, $source| $parse,
+            suggest |$context, $builder| $suggest,
+            protocol $protocol,
+            is_signed false
+        );
+    };
+
+    // Full pattern: contains the actual implementation
+    (
+        $parser:ident,
+        $key:literal,
+        $value:ty,
+        parse |$reader:ident, $source:ident| $parse:block,
+        suggest |$context:ident, $builder:ident| $suggest:block,
+        protocol $protocol:expr,
+        is_signed $is_signed:expr $(,)?
     ) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         struct $parser;
@@ -610,10 +655,13 @@ macro_rules! unit_argument_parser {
             ) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
                 $protocol
             }
+
+            fn is_signed(&self) -> bool {
+                $is_signed
+            }
         }
     };
 }
-
 #[derive(Clone, Debug, PartialEq)]
 struct PrimitiveParser(ArgumentType);
 
@@ -1265,6 +1313,18 @@ unit_argument_parser!(
         },
         None,
     )
+);
+
+unit_argument_parser!(
+    MessageParser,
+    "steel:command/parser/message",
+    MessageValue,
+    parse | reader,
+    source | { Message::parse(reader, source).map(MessageValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Message, None,),
+    is_signed true
 );
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

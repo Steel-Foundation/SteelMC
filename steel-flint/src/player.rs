@@ -63,9 +63,10 @@ impl SteelTestPlayer {
         );
         // Mark as loaded so interactions work
         player.set_client_loaded(true);
-        Self {
-            player: Arc::new(player),
-        }
+        let player = Arc::new(player);
+        // Behaviors (e.g. fishing rod) resolve the player through the world's player map.
+        player.get_world().players.insert(Arc::clone(&player));
+        Self { player }
     }
 }
 

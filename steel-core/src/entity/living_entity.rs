@@ -8,14 +8,17 @@ use steel_registry::data_components::vanilla_components::{
 use steel_registry::entity_variant::MooshroomVariant;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
+use steel_utils::TICKS_PER_SECOND;
+use text_components::TextComponent;
 
+use super::entity::compute_modified_friction;
 use super::*;
 use crate::behavior::{
     BLOCK_BEHAVIORS, ITEM_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS,
 };
 use crate::entity::blocks_attacks;
 use crate::entity::consume_effect::apply_consume_effect;
-use crate::entity::damage::RecentDamageSource;
+use crate::entity::damage::{FallLocation, RecentDamageSource, death_message};
 use crate::entity::pushing::EntityPush;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
@@ -1061,10 +1064,79 @@ pub trait LivingEntity: Entity {
         }
 
         if damage != 0.0 {
+            self.record_combat_damage(source, damage);
             self.set_health(self.get_health() - damage);
             self.set_absorption_amount(self.get_absorption_amount() - damage);
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
         }
+    }
+
+    /// Records damage and enters combat when a living entity caused it.
+    fn record_combat_damage(&self, source: &DamageSource, damage: f32) {
+        self.recheck_combat_status();
+
+        let tick_count = self.tick_count();
+        self.living_base().record_combat_damage(
+            source,
+            damage,
+            self.current_fall_location(),
+            self.fall_distance() as f32,
+            tick_count,
+        );
+
+        let caused_by_living = source
+            .causing_entity()
+            .is_some_and(|entity| entity.as_living_entity().is_some());
+        if caused_by_living && Entity::is_alive(self) && self.living_base().enter_combat(tick_count)
+        {
+            self.on_enter_combat();
+        }
+    }
+
+    /// Resets expired combat state, notifying when combat ends.
+    fn recheck_combat_status(&self) {
+        if self
+            .living_base()
+            .recheck_combat_status(self.tick_count(), Entity::is_alive(self))
+        {
+            self.on_leave_combat();
+        }
+    }
+
+    /// Returns the combat duration in ticks.
+    fn combat_duration(&self) -> i32 {
+        self.living_base().combat_duration(self.tick_count())
+    }
+
+    /// Returns where this entity was climbing or swimming, if anywhere.
+    fn current_fall_location(&self) -> Option<FallLocation> {
+        if let Some(pos) = self.last_climbable_pos() {
+            self.level()
+                .map(|world| FallLocation::from_block_state(world.get_block_state(pos)))
+        } else if self.is_in_water() {
+            Some(FallLocation::Water)
+        } else {
+            None
+        }
+    }
+
+    /// Called when this entity enters combat.
+    fn on_enter_combat(&self) {}
+
+    /// Called when this entity leaves combat.
+    fn on_leave_combat(&self) {}
+
+    /// Returns the death message built from this entity's combat entries.
+    fn get_death_message(&self) -> TextComponent {
+        death_message(self)
+    }
+
+    /// Drops recorded combat entries without changing combat status.
+    ///
+    /// Entries retain strong damage-source references, so entities leaving the
+    /// world must release them to avoid mutual ownership cycles.
+    fn clear_combat_history(&self) {
+        self.living_base().clear_combat_history();
     }
 
     /// Applies vanilla hurt knockback for a damage source.
@@ -2247,6 +2319,12 @@ pub trait LivingEntity: Entity {
             .tick_fall_flying_state(self.is_fall_flying());
         self.refresh_dirty_attributes();
         self.living_base().tick_post_impulse_grace_time();
+        self.living_base().tick_last_hurt_by_player_memory();
+        self.living_base()
+            .tick_living_combat_memory(self.tick_count());
+        if self.tick_count() % TICKS_PER_SECOND == 0 {
+            self.recheck_combat_status();
+        }
     }
 
     /// Returns whether the given item in the given slot allows elytra-style gliding.
@@ -2333,8 +2411,8 @@ pub trait LivingEntity: Entity {
         self.living_base().last_climbable_pos()
     }
 
-    /// Records the last climbable block position this living entity touched.
-    fn set_last_climbable_pos(&self, pos: BlockPos) {
+    /// Records or clears the last climbable block position this living entity touched.
+    fn set_last_climbable_pos(&self, pos: Option<BlockPos>) {
         self.living_base().set_last_climbable_pos(pos);
     }
 
@@ -2361,7 +2439,7 @@ pub trait LivingEntity: Entity {
                 && trapdoor_usable_as_ladder_state(state, world.get_block_state(pos.below()));
 
         if climbable {
-            self.set_last_climbable_pos(pos);
+            self.set_last_climbable_pos(Some(pos));
         }
 
         climbable
@@ -2757,7 +2835,7 @@ pub trait LivingEntity: Entity {
     /// Returns the vertical friction used by `travelInAir`.
     fn air_travel_vertical_friction(&self, _horizontal_friction: f32) -> f32 {
         // TODO: FlyingAnimal uses horizontal friction here once animal types exist.
-        0.98
+        self.get_air_drag() as f32
     }
 
     /// Clamps movement while on a climbable block: caps horizontal and
@@ -2826,11 +2904,16 @@ pub trait LivingEntity: Entity {
         let world = self.level()?;
         let pos_below = self.block_pos_below_that_affects_movement()?;
         let block_friction = if self.on_ground() {
-            world.get_block_state(pos_below).get_block().config.friction
+            let friction = world.get_block_state(pos_below).get_block().config.friction;
+            let modifier =
+                self.attributes()
+                    .lock()
+                    .required_value(vanilla_attributes::FRICTION_MODIFIER) as f32;
+
+            compute_modified_friction(friction, modifier)
         } else {
             1.0
         };
-        let horizontal_friction = block_friction * 0.91;
         let (movement, result) =
             self.handle_relative_friction_and_calculate_movement(entity, input, block_friction)?;
         let movement_y = if let Some(levitation_y) = self.levitation_travel_y_delta(movement.y) {
@@ -2842,7 +2925,14 @@ pub trait LivingEntity: Entity {
         if self.should_discard_friction() {
             self.set_velocity(DVec3::new(movement.x, movement_y, movement.z));
         } else {
+            let air_drag_modifier =
+                self.attributes()
+                    .lock()
+                    .required_value(vanilla_attributes::AIR_DRAG_MODIFIER) as f32;
+            let horizontal_friction =
+                block_friction * compute_modified_friction(0.91, air_drag_modifier);
             let vertical_friction = self.air_travel_vertical_friction(horizontal_friction);
+
             self.set_velocity(DVec3::new(
                 movement.x * f64::from(horizontal_friction),
                 movement_y * f64::from(vertical_friction),

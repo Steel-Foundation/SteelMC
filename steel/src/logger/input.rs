@@ -102,8 +102,7 @@ impl CommandLogger {
                     }
                 }
                 if !string.is_empty() {
-                    tx.send(ExtendedKey::String(string.clone())).ok();
-                    string = String::new();
+                    tx.send(ExtendedKey::String(mem::take(&mut string))).ok();
                 }
             }
         });
@@ -420,7 +419,8 @@ fn dispatch_command(message: String) {
     steel_utils::console!("{}", message);
     if let Some(server) = SERVER.get()
         && server
-            .submit_command(CommandSender::Console, message)
+            // None because console can't be reported to Microsoft (no signed messages)
+            .submit_command(CommandSender::Console, message, None)
             .is_err()
     {
         log::warn!("Command queue is full");

@@ -14,17 +14,19 @@ use super::{
     ItemPredicate, PermissionCollectionName, PermissionGroupName, ScoreHolderArgument,
     ScoreHolderWildcard, SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
-        ComponentValue, CoordinateAxes, DomainValue, EnchantmentValue, EntityTypeValue,
-        GameModeValue, IdentifierValue, ItemStackValue, NbtPathValue, ObjectiveValue,
-        SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
+        AdvancementValue, ComponentValue, CoordinateAxes, DamageTypeValue, DomainValue,
+        EnchantmentValue, EntityTypeValue, GameModeValue, IdentifierValue, ItemStackValue,
+        MessageValue, NbtPathValue, ObjectiveValue, SteelArgumentValue, TimeValue, TimelineValue,
+        WorldClockValue,
     },
+    message::Message,
     selector::EntitySelector,
 };
+
 use crate::command::brigadier::{
     ArgumentSuggestionContext, CommandContext, CommandNodeBuilder, CommandRedirectTarget,
     CommandRuntime, CommandSyntaxError, ContextChain,
 };
-use crate::command::execution::argument::{AdvancementValue, DamageTypeValue};
 use crate::command::incorrectly_typed_argument;
 use crate::{
     chunk::heightmap::HeightmapType,
@@ -431,6 +433,10 @@ where
         name: &str,
     ) -> Result<&PermissionCollectionMember, CommandSyntaxError> {
         self.typed_argument(name)
+    }
+
+    pub(crate) fn message(&self, name: &str) -> Result<&Message, CommandSyntaxError> {
+        Ok(&self.typed_argument::<MessageValue>(name)?.0)
     }
 }
 
