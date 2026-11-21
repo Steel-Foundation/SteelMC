@@ -82,6 +82,7 @@ pub(super) fn create_entity(
         ));
     }
 
+    let mut _loaded_tree = None;
     let entity = if let Some(nbt) = nbt {
         let mut compound = nbt.clone();
         compound.remove("id");
@@ -97,7 +98,11 @@ pub(super) fn create_entity(
             return Err(command_failed(&translations::COMMANDS_SUMMON_FAILED));
         };
 
-        loaded.root
+        // Use this to keep to avoid dropping the passengers after this scope
+        // Without this, only the base entity spawn (without the passengers)
+        let root = Arc::clone(&loaded.root);
+        _loaded_tree = Some(loaded);
+        root
     } else {
         let Some(entity) = ENTITIES.create(entity_type, position, Arc::downgrade(world)) else {
             return Err(command_failed(&translations::COMMANDS_SUMMON_FAILED));
