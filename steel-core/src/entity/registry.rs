@@ -210,13 +210,26 @@ impl EntityRegistry {
         pos: DVec3,
         world: Weak<World>,
     ) -> Option<SharedEntity> {
-        let factory = self.entries.get(entity_type.id())?.factory?;
-        Some(factory(
-            entity_type,
-            self.reserve_id(entity_type).first(),
-            pos,
-            world,
-        ))
+        Some(self.factory_for(entity_type)?(pos, world))
+    }
+
+    /// resolves a factory for repeated spawns of the same type
+    pub(crate) fn factory_for(
+        &self,
+        entity_type: EntityTypeRef,
+    ) -> Option<impl Fn(DVec3, Weak<World>) -> SharedEntity> {
+        let entry = self.entries.get(entity_type.id())?;
+        let factory = entry.factory?;
+        let id_count = entry.part_count + 1;
+
+        Some(move |pos, world| {
+            factory(
+                entity_type,
+                reserve_entity_ids(id_count).first(),
+                pos,
+                world,
+            )
+        })
     }
 
     /// Creates an entity from persisted data.

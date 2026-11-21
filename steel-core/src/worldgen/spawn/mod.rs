@@ -1,0 +1,219 @@
+//! original mob spawning during the chunk Spawn stage.
+
+mod finalize;
+#[cfg(feature = "benchmark-support")]
+pub mod fixture;
+mod placement;
+#[cfg(test)]
+mod tests;
+
+use glam::{DVec3, IVec3};
+use steel_math::DEGREE_360;
+use steel_registry::biome::{BiomeRef, WorldgenCreatureSpawn};
+use steel_registry::{REGISTRY, RegistryExt};
+use steel_utils::random::{Random, legacy_random::LegacyRandom};
+use steel_utils::{BlockPos, SectionPos};
+
+use crate::entity::{ENTITIES, Entity, EntityBase, SharedEntity};
+use crate::world::World;
+use crate::worldgen::generator::vanilla::fuzzed_biome_at_block;
+use crate::worldgen::region::WorldGenRegion;
+
+use self::finalize::{SpawnData, SpawnGroup, SpawnState};
+use self::placement::{Attempt, Placement};
+
+const DEFAULT_CREATURE_WORLD_GEN_SPAWN_PROBABILITY: f32 = 0.1;
+const CREATURE_WORLD_GEN_PROBABILITY_MAX: f32 = 0.999_999_9;
+const ATTEMPTS_PER_MOB: usize = 4;
+const RANDOM_WALK_BOUND: i32 = 5;
+
+#[derive(Clone, Copy)]
+enum SpawnMode {
+    Materialize,
+    #[cfg(test)]
+    Trace {
+        spawn_mobs: bool,
+    },
+}
+
+pub(super) fn spawn_original_mobs(
+    region: &mut WorldGenRegion<'_>,
+    world: &World,
+    world_seed: i64,
+    biome_zoom_seed: i64,
+) {
+    let _ = generate(
+        region,
+        world,
+        world_seed,
+        biome_zoom_seed,
+        SpawnMode::Materialize,
+        |_, _, _| {},
+    );
+}
+
+fn generate(
+    region: &mut WorldGenRegion<'_>,
+    world: &World,
+    world_seed: i64,
+    biome_zoom_seed: i64,
+    mode: SpawnMode,
+    mut on_spawn: impl FnMut(DVec3, f32, &SpawnState),
+) -> i64 {
+    let center = region.center();
+    let size = SectionPos::section_to_block_coord(1, 0);
+    let origin_x = center.0.x * size;
+    let origin_z = center.0.y * size;
+    let mut random = LegacyRandom::for_chunk_generation(world_seed, origin_x, origin_z);
+
+    #[cfg(test)]
+    if matches!(mode, SpawnMode::Trace { spawn_mobs: false }) {
+        return random.get_seed();
+    }
+
+    let source = BlockPos::new(origin_x, region.max_y_exclusive() - 1, origin_z);
+    let list = biome_at(region, biome_zoom_seed, source).worldgen_creature_spawns;
+    if list.last().is_none_or(|entry| entry.cumulative_weight == 0) {
+        return random.get_seed();
+    }
+
+    let probability = creature_spawn_probability(noise_biome_at(region, source));
+    while random.next_f32() < probability {
+        let Some(entry) = WorldgenCreatureSpawn::select(list, &mut random) else {
+            continue;
+        };
+
+        let count = entry.count.sample(&mut random);
+        let mut x = origin_x + random.next_i32_bounded(size);
+        let mut z = origin_z + random.next_i32_bounded(size);
+        let (start_x, start_z) = (x, z);
+        let entity_type = entry.entity_type;
+        let Some(placement) = Placement::for_entity(entity_type) else {
+            panic!("Missing worldgen spawn placement for {}", entity_type.key);
+        };
+
+        let Some(mut group) = SpawnGroup::new(entity_type) else {
+            panic!(
+                "Missing worldgen spawn finalization for {}",
+                entity_type.key
+            );
+        };
+
+        let factory = match mode {
+            SpawnMode::Materialize => ENTITIES.factory_for(entity_type),
+            #[cfg(test)]
+            SpawnMode::Trace { .. } => None,
+        };
+
+        for _ in 0..count {
+            for _ in 0..ATTEMPTS_PER_MOB {
+                let success = match placement.try_position(region, world, biome_zoom_seed, x, z) {
+                    Attempt::WalkWithoutCandidate => false,
+                    Attempt::RetryAtSamePosition => continue,
+                    Attempt::Candidate {
+                        position,
+                        can_finalize,
+                    } => {
+                        let yaw = spawn_yaw(&mut random);
+                        if can_finalize {
+                            let pos = BlockPos::from(position);
+                            let biome = biome_at(region, biome_zoom_seed, pos);
+                            let state = group.finalize(biome, pos, world, region.random_mut());
+                            on_spawn(position, yaw, &state);
+
+                            if let Some(factory) = &factory {
+                                let entity = factory(position, region.weak_world());
+                                add_spawn(region, &state, entity, position, yaw);
+                            }
+                        }
+
+                        can_finalize
+                    }
+                };
+
+                x += random_walk(&mut random);
+                z += random_walk(&mut random);
+
+                while x - origin_x < 0
+                    || x - origin_x >= size
+                    || z - origin_z < 0
+                    || z - origin_z >= size
+                {
+                    x = start_x + random_walk(&mut random);
+                    z = start_z + random_walk(&mut random);
+                }
+
+                if success {
+                    break;
+                }
+            }
+        }
+    }
+
+    random.get_seed()
+}
+
+fn add_spawn(
+    region: &WorldGenRegion<'_>,
+    state: &SpawnState,
+    entity: SharedEntity,
+    position: DVec3,
+    yaw: f32,
+) {
+    initialize_spawn(entity.as_ref(), &state.data, position, yaw);
+
+    let passenger = state.passenger.as_ref().and_then(|data| {
+        let rider = ENTITIES.create(data.entity_type, position, region.weak_world())?;
+        initialize_spawn(rider.as_ref(), data, position, yaw);
+        EntityBase::restore_passenger_relationship(&entity, &rider);
+
+        Some(rider)
+    });
+
+    let _ = region.add_fresh_entity(entity);
+    if let Some(passenger) = passenger {
+        let _ = region.add_fresh_entity(passenger);
+    }
+}
+
+fn initialize_spawn(entity: &dyn Entity, data: &SpawnData, position: DVec3, yaw: f32) {
+    entity.snap_to(position, yaw, 0.0);
+    entity.base().set_old_rotation_to_current();
+    data.apply(entity);
+}
+
+fn random_walk(random: &mut LegacyRandom) -> i32 {
+    random.next_i32_bounded(RANDOM_WALK_BOUND) - random.next_i32_bounded(RANDOM_WALK_BOUND)
+}
+
+fn spawn_yaw(random: &mut LegacyRandom) -> f32 {
+    random.next_f32() * DEGREE_360
+}
+
+fn creature_spawn_probability(biome: BiomeRef) -> f32 {
+    biome
+        .creature_world_gen_spawn_probability
+        .unwrap_or(DEFAULT_CREATURE_WORLD_GEN_SPAWN_PROBABILITY)
+        .clamp(0.0, CREATURE_WORLD_GEN_PROBABILITY_MAX)
+}
+
+fn biome_at(region: &WorldGenRegion<'_>, biome_zoom_seed: i64, pos: BlockPos) -> BiomeRef {
+    let id = fuzzed_biome_at_block(biome_zoom_seed, pos, |quart| {
+        region.noise_biome_id(quart.x, quart.y, quart.z)
+    });
+
+    registered_biome(id)
+}
+
+fn noise_biome_at(region: &WorldGenRegion<'_>, pos: BlockPos) -> BiomeRef {
+    let quart: IVec3 = pos.0 >> 2;
+    registered_biome(region.noise_biome_id(quart.x, quart.y, quart.z))
+}
+
+fn registered_biome(id: u16) -> BiomeRef {
+    let Some(biome) = REGISTRY.biomes.by_id(usize::from(id)) else {
+        panic!("Biome {id} missing from the registry during chunk generation");
+    };
+
+    biome
+}

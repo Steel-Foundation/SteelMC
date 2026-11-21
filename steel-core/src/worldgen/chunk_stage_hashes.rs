@@ -222,7 +222,7 @@ fn chunk_or_panic(chunks: &FxHashMap<(i32, i32), Chunk>, pos: (i32, i32)) -> &Ch
     }
 }
 
-fn create_test_world(
+pub(super) fn create_test_world(
     dim_key: &str,
     dim_type: DimensionTypeRef,
     seed: u64,

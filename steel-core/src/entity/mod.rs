@@ -301,15 +301,6 @@ pub(crate) fn equipment_items_to_packet_items(
         .collect()
 }
 
-pub(crate) fn aabb_contains_any_liquid(world: &Arc<World>, aabb: WorldAabb) -> bool {
-    (aabb.min_x().floor() as i32..aabb.max_x().ceil() as i32).any(|x| {
-        (aabb.min_y().floor() as i32..aabb.max_y().ceil() as i32).any(|y| {
-            (aabb.min_z().floor() as i32..aabb.max_z().ceil() as i32)
-                .any(|z| !get_fluid_state(world, BlockPos::new(x, y, z)).is_empty())
-        })
-    })
-}
-
 enum BlockEffectSegmentResult {
     Complete(i32),
     IterationLimit,
@@ -856,6 +847,7 @@ mod storage;
 mod synced_data;
 mod ticking;
 mod tracker;
+mod worldgen_spawn;
 
 use crate::portal::{
     PortalKind, PortalProcessResult, PortalProcessor, PortalTicketTarget, TeleportPostAction,
@@ -902,7 +894,7 @@ pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
 };
-pub(crate) use mob::{Mob, MobBase, PathfinderMob};
+pub(crate) use mob::{Mob, MobBase, MobSpawnState, PathfinderMob};
 pub(crate) use monster::{Enemy, Monster};
 pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
@@ -935,6 +927,7 @@ pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
 pub(crate) use ticking::{snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_if};
 pub use tracker::{EntityChangeSenders, EntityTracker};
+pub use worldgen_spawn::{HorseMarkings, PandaGene, WorldgenSpawnProperties};
 
 #[cfg(test)]
 macro_rules! impl_test_downcast_type {

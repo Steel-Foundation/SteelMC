@@ -629,6 +629,7 @@ pub(crate) fn build() -> TokenStream {
     println!("cargo:rerun-if-changed=build_assets/blocks.json");
     let block_assets: BlockAssets =
         serde_json::from_str(&fs::read_to_string("build_assets/blocks.json").unwrap()).unwrap();
+    let mut block_spawn_rules = super::block_spawn_rules::BlockSpawnRules::read();
 
     // Create default properties for comparison
     let default_props = BlockConfig::new();
@@ -873,6 +874,7 @@ pub(crate) fn build() -> TokenStream {
     for (block, info) in block_assets.blocks.iter().zip(block_shape_infos.iter()) {
         let block_name = Ident::new(&block.name.to_shouty_snake_case(), Span::call_site());
         let block_name_str = block.name.clone();
+        let spawn_data = block_spawn_rules.take_tokens(&block.name);
         let properties = block
             .properties
             .iter()
@@ -1042,10 +1044,11 @@ pub(crate) fn build() -> TokenStream {
                     #randomly_ticking_default,
                     &[#(#randomly_ticking_overwrites),*],
                 ),
-            ) #shape_offsets #default_state;
+            ) #shape_offsets #default_state #spawn_data;
         });
     }
 
+    block_spawn_rules.assert_consumed();
     let mut register_stream = TokenStream::new();
 
     for block in &block_assets.blocks {
@@ -1061,13 +1064,13 @@ pub(crate) fn build() -> TokenStream {
             blocks::{
                 behavior::{BlockConfig, OffsetType, PushReaction},
                 shapes::ShapeOffsetFlags,
-                Block, BlockLightProperties, BlockRegistry, StateBooleanData,
+                Block, BlockLightProperties, BlockRegistry, BlockSpawnRule, StateBooleanData,
                 StateBooleanOverwrite, StateFluidData, StateFluidOverwrite, offset,
             },
             blocks::properties::{self, BlockStateProperties, NoteBlockInstrument},
             blocks::shapes::VoxelShape,
             fluid::FluidState,
-            vanilla_fluids,
+            vanilla_entities, vanilla_fluids,
         };
         use steel_utils::{BlockLocalAabb, Identifier};
 

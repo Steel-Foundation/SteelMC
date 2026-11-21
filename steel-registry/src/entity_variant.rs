@@ -6,7 +6,10 @@ use simdnbt::owned::NbtTag;
 use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent};
+use steel_utils::random::Random;
 use steel_utils::serial::{ReadFrom, WriteTo};
+
+const PANDA_GENE_ROLL_BOUND: i32 = 16;
 
 macro_rules! impl_variant_codecs {
     ($type:ty) => {
@@ -40,6 +43,23 @@ macro_rules! impl_variant_codecs {
             }
         }
     };
+}
+
+include!("generated/vanilla_entity_variant_enums.rs");
+
+impl PandaGene {
+    /// samples one gene with the mc spawn distribution
+    pub fn sample(random: &mut impl Random) -> Self {
+        match random.next_i32_bounded(PANDA_GENE_ROLL_BOUND) {
+            0 => Self::Lazy,
+            1 => Self::Worried,
+            2 => Self::Playful,
+            4 => Self::Aggressive,
+            3 | 5..=8 => Self::Weak,
+            9..=10 => Self::Brown,
+            _ => Self::Normal,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
@@ -147,71 +167,6 @@ impl SalmonVariant {
 }
 
 impl_variant_codecs!(SalmonVariant);
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ParrotVariant {
-    #[default]
-    RedBlue,
-    Blue,
-    Green,
-    YellowBlue,
-    Gray,
-}
-
-impl ParrotVariant {
-    pub const VALUES: [Self; 5] = [
-        Self::RedBlue,
-        Self::Blue,
-        Self::Green,
-        Self::YellowBlue,
-        Self::Gray,
-    ];
-
-    #[must_use]
-    pub const fn id(self) -> i32 {
-        match self {
-            Self::RedBlue => 0,
-            Self::Blue => 1,
-            Self::Green => 2,
-            Self::YellowBlue => 3,
-            Self::Gray => 4,
-        }
-    }
-
-    #[must_use]
-    pub const fn by_id(id: i32) -> Self {
-        match id {
-            i32::MIN..=0 => Self::RedBlue,
-            1 => Self::Blue,
-            2 => Self::Green,
-            3 => Self::YellowBlue,
-            _ => Self::Gray,
-        }
-    }
-
-    #[must_use]
-    pub const fn serialized_name(self) -> &'static str {
-        match self {
-            Self::RedBlue => "red_blue",
-            Self::Blue => "blue",
-            Self::Green => "green",
-            Self::YellowBlue => "yellow_blue",
-            Self::Gray => "gray",
-        }
-    }
-
-    #[must_use]
-    pub const fn from_serialized_name(name: &str) -> Option<Self> {
-        match name {
-            "red_blue" => Some(Self::RedBlue),
-            "blue" => Some(Self::Blue),
-            "green" => Some(Self::Green),
-            "yellow_blue" => Some(Self::YellowBlue),
-            "gray" => Some(Self::Gray),
-            _ => None,
-        }
-    }
-}
 
 impl_variant_codecs!(ParrotVariant);
 
@@ -476,138 +431,7 @@ impl RabbitVariant {
 
 impl_variant_codecs!(RabbitVariant);
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum HorseVariant {
-    #[default]
-    White,
-    Creamy,
-    Chestnut,
-    Brown,
-    Black,
-    Gray,
-    DarkBrown,
-}
-
-impl HorseVariant {
-    pub const VALUES: [Self; 7] = [
-        Self::White,
-        Self::Creamy,
-        Self::Chestnut,
-        Self::Brown,
-        Self::Black,
-        Self::Gray,
-        Self::DarkBrown,
-    ];
-
-    #[must_use]
-    pub const fn id(self) -> i32 {
-        match self {
-            Self::White => 0,
-            Self::Creamy => 1,
-            Self::Chestnut => 2,
-            Self::Brown => 3,
-            Self::Black => 4,
-            Self::Gray => 5,
-            Self::DarkBrown => 6,
-        }
-    }
-
-    #[must_use]
-    pub const fn by_id(id: i32) -> Self {
-        match id.rem_euclid(7) {
-            0 => Self::White,
-            1 => Self::Creamy,
-            2 => Self::Chestnut,
-            3 => Self::Brown,
-            4 => Self::Black,
-            5 => Self::Gray,
-            _ => Self::DarkBrown,
-        }
-    }
-
-    #[must_use]
-    pub const fn serialized_name(self) -> &'static str {
-        match self {
-            Self::White => "white",
-            Self::Creamy => "creamy",
-            Self::Chestnut => "chestnut",
-            Self::Brown => "brown",
-            Self::Black => "black",
-            Self::Gray => "gray",
-            Self::DarkBrown => "dark_brown",
-        }
-    }
-
-    #[must_use]
-    pub const fn from_serialized_name(name: &str) -> Option<Self> {
-        match name {
-            "white" => Some(Self::White),
-            "creamy" => Some(Self::Creamy),
-            "chestnut" => Some(Self::Chestnut),
-            "brown" => Some(Self::Brown),
-            "black" => Some(Self::Black),
-            "gray" => Some(Self::Gray),
-            "dark_brown" => Some(Self::DarkBrown),
-            _ => None,
-        }
-    }
-}
-
 impl_variant_codecs!(HorseVariant);
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LlamaVariant {
-    #[default]
-    Creamy,
-    White,
-    Brown,
-    Gray,
-}
-
-impl LlamaVariant {
-    pub const VALUES: [Self; 4] = [Self::Creamy, Self::White, Self::Brown, Self::Gray];
-
-    #[must_use]
-    pub const fn id(self) -> i32 {
-        match self {
-            Self::Creamy => 0,
-            Self::White => 1,
-            Self::Brown => 2,
-            Self::Gray => 3,
-        }
-    }
-
-    #[must_use]
-    pub const fn by_id(id: i32) -> Self {
-        match id {
-            i32::MIN..=0 => Self::Creamy,
-            1 => Self::White,
-            2 => Self::Brown,
-            _ => Self::Gray,
-        }
-    }
-
-    #[must_use]
-    pub const fn serialized_name(self) -> &'static str {
-        match self {
-            Self::Creamy => "creamy",
-            Self::White => "white",
-            Self::Brown => "brown",
-            Self::Gray => "gray",
-        }
-    }
-
-    #[must_use]
-    pub const fn from_serialized_name(name: &str) -> Option<Self> {
-        match name {
-            "creamy" => Some(Self::Creamy),
-            "white" => Some(Self::White),
-            "brown" => Some(Self::Brown),
-            "gray" => Some(Self::Gray),
-            _ => None,
-        }
-    }
-}
 
 impl_variant_codecs!(LlamaVariant);
 
@@ -689,8 +513,9 @@ mod tests {
     use steel_utils::serial::ReadFrom;
 
     use super::{
-        AxolotlVariant, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant, ParrotVariant,
-        RabbitVariant, SalmonVariant, TropicalFishBase, TropicalFishPattern,
+        AxolotlVariant, FoxVariant, HorseMarkings, HorseVariant, LlamaVariant, MooshroomVariant,
+        PandaGene, ParrotVariant, RabbitVariant, SalmonVariant, TropicalFishBase,
+        TropicalFishPattern,
     };
 
     fn assert_variant<T>(value: T, id: i32, name: &str)
@@ -774,6 +599,10 @@ mod tests {
         assert_eq!(RabbitVariant::by_id(6), RabbitVariant::Brown);
         assert_eq!(HorseVariant::by_id(-1), HorseVariant::DarkBrown);
         assert_eq!(HorseVariant::by_id(7), HorseVariant::White);
+        assert_eq!(HorseMarkings::by_id(-1), HorseMarkings::BlackDots);
+        assert_eq!(HorseMarkings::by_id(5), HorseMarkings::None);
+        assert_eq!(PandaGene::by_id(-1), PandaGene::Normal);
+        assert_eq!(PandaGene::by_id(7), PandaGene::Normal);
         assert_eq!(LlamaVariant::by_id(-1), LlamaVariant::Creamy);
         assert_eq!(LlamaVariant::by_id(4), LlamaVariant::Gray);
         assert_eq!(AxolotlVariant::by_id(-1), AxolotlVariant::Lucy);

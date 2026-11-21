@@ -1,0 +1,147 @@
+{
+  "horse_variant": [
+    {
+      "name": "WHITE",
+      "id": 0,
+      "serialized_name": "white"
+    },
+    {
+      "name": "CREAMY",
+      "id": 1,
+      "serialized_name": "creamy"
+    },
+    {
+      "name": "CHESTNUT",
+      "id": 2,
+      "serialized_name": "chestnut"
+    },
+    {
+      "name": "BROWN",
+      "id": 3,
+      "serialized_name": "brown"
+    },
+    {
+      "name": "BLACK",
+      "id": 4,
+      "serialized_name": "black"
+    },
+    {
+      "name": "GRAY",
+      "id": 5,
+      "serialized_name": "gray"
+    },
+    {
+      "name": "DARK_BROWN",
+      "id": 6,
+      "serialized_name": "dark_brown"
+    }
+  ],
+  "horse_markings": [
+    {
+      "name": "NONE",
+      "id": 0
+    },
+    {
+      "name": "WHITE",
+      "id": 1
+    },
+    {
+      "name": "WHITE_FIELD",
+      "id": 2
+    },
+    {
+      "name": "WHITE_DOTS",
+      "id": 3
+    },
+    {
+      "name": "BLACK_DOTS",
+      "id": 4
+    }
+  ],
+  "llama_variant": [
+    {
+      "name": "CREAMY",
+      "id": 0,
+      "serialized_name": "creamy"
+    },
+    {
+      "name": "WHITE",
+      "id": 1,
+      "serialized_name": "white"
+    },
+    {
+      "name": "BROWN",
+      "id": 2,
+      "serialized_name": "brown"
+    },
+    {
+      "name": "GRAY",
+      "id": 3,
+      "serialized_name": "gray"
+    }
+  ],
+  "parrot_variant": [
+    {
+      "name": "RED_BLUE",
+      "id": 0,
+      "serialized_name": "red_blue"
+    },
+    {
+      "name": "BLUE",
+      "id": 1,
+      "serialized_name": "blue"
+    },
+    {
+      "name": "GREEN",
+      "id": 2,
+      "serialized_name": "green"
+    },
+    {
+      "name": "YELLOW_BLUE",
+      "id": 3,
+      "serialized_name": "yellow_blue"
+    },
+    {
+      "name": "GRAY",
+      "id": 4,
+      "serialized_name": "gray"
+    }
+  ],
+  "panda_gene": [
+    {
+      "name": "NORMAL",
+      "id": 0,
+      "serialized_name": "normal"
+    },
+    {
+      "name": "LAZY",
+      "id": 1,
+      "serialized_name": "lazy"
+    },
+    {
+      "name": "WORRIED",
+      "id": 2,
+      "serialized_name": "worried"
+    },
+    {
+      "name": "PLAYFUL",
+      "id": 3,
+      "serialized_name": "playful"
+    },
+    {
+      "name": "BROWN",
+      "id": 4,
+      "serialized_name": "brown"
+    },
+    {
+      "name": "WEAK",
+      "id": 5,
+      "serialized_name": "weak"
+    },
+    {
+      "name": "AGGRESSIVE",
+      "id": 6,
+      "serialized_name": "aggressive"
+    }
+  ]
+}

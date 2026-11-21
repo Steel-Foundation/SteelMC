@@ -3,11 +3,14 @@ use std::{cmp::Ordering, collections::BTreeMap, str::FromStr};
 use serde::{Deserialize, Deserializer, de::Error as _};
 use simdnbt::ToNbtTag;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use smallvec::SmallVec;
 use steel_utils::Identifier;
 use steel_utils::random::Random;
 
 use crate::biome::BiomeRef;
 use crate::{REGISTRY, TaggedRegistryExt};
+
+const INLINE_MAX_PRIORITY_MATCHES: usize = 8;
 
 /// Block state data as encoded by vanilla registry JSON.
 #[derive(Debug, Clone, Deserialize)]
@@ -140,7 +143,7 @@ pub fn pick_spawn_conditioned_entry<T: Copy>(
     biome: BiomeRef,
     random: &mut impl Random,
 ) -> Option<T> {
-    let mut selected = Vec::new();
+    let mut selected = SmallVec::<[T; INLINE_MAX_PRIORITY_MATCHES]>::new();
     let mut highest_priority = i32::MIN;
 
     for entry in entries {

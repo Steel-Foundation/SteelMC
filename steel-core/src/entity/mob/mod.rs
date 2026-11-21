@@ -37,6 +37,7 @@ use steel_registry::{
 use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::nbt::NbtValueInput as _;
+use steel_utils::random::Random;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{
     BlockPos, ChunkPos, Downcast as _, Identifier, TICKS_PER_SECOND, WorldAabb, axis::Axis,
@@ -59,7 +60,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
     ConversionParams, Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason,
-    SharedEntity, SpawnGroupData, WeakEntity, aabb_contains_any_liquid,
+    SharedEntity, SpawnGroupData, WeakEntity,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -103,6 +104,37 @@ const SUN_BURN_RANDOM_SCALE: f32 = 30.0;
 const SUN_BURN_LIGHT_OFFSET: f32 = 0.4;
 const SUN_BURN_LIGHT_GAIN: f32 = 2.0;
 const SUN_BURN_DURABILITY_ROLL_BOUND: i32 = 2;
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct MobSpawnState {
+    follow_range_bonus: Option<f64>,
+    left_handed: bool,
+}
+
+impl MobSpawnState {
+    pub(crate) fn sample(random: &mut impl Random) -> Self {
+        Self {
+            follow_range_bonus: Some(random.triangle(0.0, RANDOM_SPAWN_BONUS_SCALE)),
+            left_handed: random.next_f32() < LEFT_HANDED_SPAWN_CHANCE,
+        }
+    }
+
+    pub(crate) fn apply(self, mob: &(impl Mob + ?Sized)) {
+        if let Some(amount) = self.follow_range_bonus {
+            mob.attributes().lock().add_modifier(
+                vanilla_attributes::FOLLOW_RANGE,
+                AttributeModifier {
+                    id: RANDOM_SPAWN_BONUS_ID,
+                    amount,
+                    operation: AttributeModifierOperation::AddMultipliedBase,
+                },
+                true,
+            );
+        }
+
+        mob.set_left_handed(self.left_handed);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct DropChances {
@@ -534,22 +566,14 @@ pub trait Mob: LivingEntity + Leashable {
             .attributes()
             .lock()
             .has_modifier(vanilla_attributes::FOLLOW_RANGE, &RANDOM_SPAWN_BONUS_ID);
-        let random_spawn_bonus = needs_random_spawn_bonus
-            .then(|| RANDOM_SPAWN_BONUS_SCALE * (rand::random::<f64>() - rand::random::<f64>()));
-        let left_handed = rand::random::<f32>() < LEFT_HANDED_SPAWN_CHANCE;
-
-        if let Some(amount) = random_spawn_bonus {
-            self.attributes().lock().add_modifier(
-                vanilla_attributes::FOLLOW_RANGE,
-                AttributeModifier {
-                    id: RANDOM_SPAWN_BONUS_ID,
-                    amount,
-                    operation: AttributeModifierOperation::AddMultipliedBase,
-                },
-                true,
-            );
+        MobSpawnState {
+            follow_range_bonus: needs_random_spawn_bonus.then(|| {
+                RANDOM_SPAWN_BONUS_SCALE * (rand::random::<f64>() - rand::random::<f64>())
+            }),
+            left_handed: rand::random::<f32>() < LEFT_HANDED_SPAWN_CHANCE,
         }
-        self.set_left_handed(left_handed);
+        .apply(self);
+
         group_data
     }
 
@@ -599,7 +623,7 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn check_spawn_obstruction(&self, world: &Arc<World>) -> bool {
         let aabb = self.bounding_box();
-        if aabb_contains_any_liquid(world, aabb) {
+        if world.contains_any_liquid(aabb) {
             return false;
         }
 
