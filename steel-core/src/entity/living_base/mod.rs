@@ -50,6 +50,7 @@ const MIN_EFFECT_AMPLIFIER: i32 = 0;
 const MAX_EFFECT_AMPLIFIER: i32 = 255;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
 const POST_IMPULSE_GRACE_TICKS: i32 = 40;
+const LAST_HURT_BY_MOB_MEMORY_TICKS: i32 = 100;
 
 /// Runtime mob-effect state.
 ///
@@ -1042,9 +1043,10 @@ impl LivingEntityBase {
     }
 
     pub(crate) fn save_damage_state(&self, nbt: &mut NbtCompound, tick_count: i32) {
-        let (death_time, player, mob) = {
+        let (hurt_time, death_time, player, mob) = {
             let state = self.state.lock();
             (
+                state.hurt_time,
                 state.death_time,
                 state
                     .last_hurt_by_player
@@ -1058,6 +1060,7 @@ impl LivingEntityBase {
             )
         };
 
+        nbt.insert("HurtTime", hurt_time as i16);
         nbt.insert("DeathTime", death_time as i16);
 
         if let Some((player, memory_time)) = player {
@@ -1085,6 +1088,7 @@ impl LivingEntityBase {
         let mut state = self.state.lock();
 
         state.absorption_amount = nbt.float_value("AbsorptionAmount").unwrap_or(0.0);
+        state.hurt_time = i32::from(nbt.short_value("HurtTime").unwrap_or(0));
         state.death_time = i32::from(nbt.short_value("DeathTime").unwrap_or(0));
         state.last_hurt_by_player = player;
         state.last_hurt_by_player_entity = None;
@@ -1845,7 +1849,8 @@ impl LivingEntityBase {
         };
 
         if living_is_dead(&hurt_by)
-            || tick_count.wrapping_sub(self.last_hurt_by_mob_timestamp()) > 100
+            || tick_count.wrapping_sub(self.last_hurt_by_mob_timestamp())
+                > LAST_HURT_BY_MOB_MEMORY_TICKS
         {
             self.set_last_hurt_by_mob(None, tick_count);
         }

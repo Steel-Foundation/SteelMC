@@ -31,6 +31,8 @@ use crate::physics::MoveResult;
 use crate::world::{LevelReader, World};
 
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
+const FALL_SPEED_MULTIPLIER: f64 = 0.6;
+const LOOK_AT_PLAYER_RANGE: f64 = 8.0;
 const XP_REWARD: i32 = 10;
 /// Vanilla `Blaze.allowedHeightOffset` initial value.
 const ALLOWED_HEIGHT_OFFSET_INITIAL: f32 = 0.5;
@@ -125,7 +127,7 @@ impl BlazeEntity {
                 7,
                 WaterAvoidingRandomStrollGoal::with_probability(1.0, STROLL_WATER_PROBABILITY),
             );
-            goal_selector.add_goal(8, LookAtPlayerGoal::new(8.0));
+            goal_selector.add_goal(8, LookAtPlayerGoal::new(LOOK_AT_PLAYER_RANGE));
             goal_selector.add_goal(8, RandomLookAroundGoal::new());
 
             let mut target_selector = mob_base.target_selector().lock();
@@ -343,8 +345,9 @@ impl LivingEntity for BlazeEntity {
     fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
         let velocity = self.velocity();
         if !self.on_ground() && velocity.y < 0.0 {
-            self.set_velocity(velocity * DVec3::new(1.0, 0.6, 1.0));
+            self.set_velocity(velocity * DVec3::new(1.0, FALL_SPEED_MULTIPLIER, 1.0));
         }
+
         Monster::monster_ai_step(self, entity)
     }
 }

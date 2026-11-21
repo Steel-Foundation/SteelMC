@@ -26,6 +26,8 @@ const COOLDOWN_DELAY: i32 = 100;
 const SHOT_STEP_LIMIT: i32 = 4;
 /// Vanilla's fireball direction spread scale.
 const SHOT_SPREAD_SCALE: f64 = 2.297;
+const SHOT_DISTANCE_SCALE: f64 = 0.5;
+const SHOT_HEIGHT_ABOVE_CENTER: f64 = 0.5;
 const LOST_SIGHT_MOVE_TICKS: i32 = 5;
 const MOVE_SPEED: f64 = 1.0;
 const LOOK_SPEED: f32 = 10.0;
@@ -64,15 +66,17 @@ impl BlazeAttackGoal {
         };
 
         let mob_position = mob.position();
-        let mob_height = f64::from(mob.base().dimensions().height);
-        let target_height = f64::from(target.base().dimensions().height);
+        let target_position = target.position();
+        let mob_center_y = mob_position.y + f64::from(mob.base().dimensions().height) * 0.5;
+        let target_center_y =
+            target_position.y + f64::from(target.base().dimensions().height) * 0.5;
         let direction = DVec3::new(
-            target.position().x - mob_position.x,
-            (target.position().y + target_height * 0.5) - (mob_position.y + mob_height * 0.5),
-            target.position().z - mob_position.z,
+            target_position.x - mob_position.x,
+            target_center_y - mob_center_y,
+            target_position.z - mob_position.z,
         );
-        let distance_sqr = mob_position.distance_squared(target.position());
-        let spread = SHOT_SPREAD_SCALE * (distance_sqr.sqrt().sqrt() * 0.5);
+        let distance_sqr = mob_position.distance_squared(target_position);
+        let spread = SHOT_SPREAD_SCALE * (distance_sqr.sqrt().sqrt() * SHOT_DISTANCE_SCALE);
 
         let shot_direction = DVec3::new(
             triangle_random(direction.x, spread),
@@ -82,7 +86,7 @@ impl BlazeAttackGoal {
 
         let spawn_position = DVec3::new(
             mob_position.x,
-            mob_position.y + mob_height * 0.5 + 0.5,
+            mob_center_y + SHOT_HEIGHT_ABOVE_CENTER,
             mob_position.z,
         );
         let fireball = SmallFireballEntity::new(

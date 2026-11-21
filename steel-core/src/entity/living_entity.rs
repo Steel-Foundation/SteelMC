@@ -271,10 +271,6 @@ pub trait LivingEntity: Entity {
     /// appends the living fields currently exposed through the command snapshot
     fn save_command_living_fields(&self, nbt: &mut NbtCompound) {
         nbt.insert(
-            "HurtTime",
-            NbtTag::Short(self.living_base().hurt_time() as i16),
-        );
-        nbt.insert(
             "current_impulse_context_reset_grace_time",
             self.living_base()
                 .current_impulse_context_reset_grace_time(),
