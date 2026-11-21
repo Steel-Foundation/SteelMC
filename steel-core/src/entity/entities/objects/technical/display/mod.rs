@@ -2,6 +2,8 @@
 //!
 
 pub use self::transformation::Transformation;
+use self::transformation::TransformationNbt;
+use crate::chunk::light::MAX_LIGHT_LEVEL;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, EntityBase};
 use crate::world::World;
@@ -99,7 +101,8 @@ pub trait Display: Entity {
     ) {
         view.set_transformation(
             nbt.get("transformation")
-                .and_then(Transformation::from_nbt_tag)
+                .and_then(TransformationNbt::from_nbt_tag)
+                .map(|tag| tag.0)
                 .unwrap_or(Transformation::IDENTITY),
         );
 
@@ -141,7 +144,7 @@ pub trait Display: Entity {
 
     /// Saves a display entity's fields common to all display entities to an NBT compound via a view.
     fn save_display<'a>(view: &'a impl DisplayView<'a>, nbt: &mut NbtCompound) {
-        nbt.insert("transformation", view.transformation());
+        nbt.insert("transformation", TransformationNbt(view.transformation()));
 
         nbt.insert("billboard", view.billboard_constraints());
         nbt.insert(
@@ -439,18 +442,21 @@ pub struct Brightness {
 }
 
 impl Brightness {
-    /// Packs this [`Brightness`] into a single `i32`.
+    const BLOCK_LIGHT_SHIFT: u32 = 4;
+    const SKY_LIGHT_SHIFT: u32 = 20;
+
+    /// Pack using `LightCoordsUtil` bit positions
     #[must_use]
     pub const fn pack(self) -> i32 {
-        self.block << 4 | self.sky << 20
+        self.block << Self::BLOCK_LIGHT_SHIFT | self.sky << Self::SKY_LIGHT_SHIFT
     }
 
     /// Unpacks a [`Brightness`] from a single `i32`.
     #[must_use]
     pub const fn unpack(bits: i32) -> Brightness {
         Self {
-            block: (bits >> 4) & 0b1111,
-            sky: (bits >> 20) & 0b1111,
+            block: (bits >> Self::BLOCK_LIGHT_SHIFT) & MAX_LIGHT_LEVEL as i32,
+            sky: (bits >> Self::SKY_LIGHT_SHIFT) & MAX_LIGHT_LEVEL as i32,
         }
     }
 }
@@ -468,7 +474,7 @@ impl FromNbtTag for Brightness {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
         let block = compound.get("block")?.codec_i32()?;
-        let range = 0..=15;
+        let range = 0..=i32::from(MAX_LIGHT_LEVEL);
         if !range.contains(&block) {
             return None;
         }
