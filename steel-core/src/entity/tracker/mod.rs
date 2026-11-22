@@ -390,6 +390,8 @@ impl EntityTracker {
 
             let dirty_entity_data = entity.pack_dirty_entity_data();
             let has_dirty_entity_data = dirty_entity_data.is_some();
+            let (predicted_movement, sync_position) = entity.base().take_movement_interpolation();
+
             let result =
                 tracked
                     .server_entity
@@ -406,6 +408,9 @@ impl EntityTracker {
                         body_rotation: entity.rotation(),
                         head_yaw: entity.head_yaw(),
                         on_ground: entity.on_ground(),
+                        uses_stepped_interpolation: entity.uses_stepped_interpolation(),
+                        predicted_movement,
+                        sync_position,
                         needs_velocity_sync: entity.needs_velocity_sync(),
                         has_dirty_entity_data,
                         force_velocity_sync: entity.forces_fall_flying_velocity_sync(),
