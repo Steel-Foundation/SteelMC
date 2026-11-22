@@ -23,6 +23,11 @@ pub(crate) trait CommandArgumentParser<S>: PartialEq + Send + Sync + 'static {
         context: &ArgumentSuggestionContext<'_, S, Self::Value>,
         builder: &mut SuggestionsBuilder<'_>,
     );
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool {
+        false
+    }
 }
 
 /// The parsing mode for a string argument.

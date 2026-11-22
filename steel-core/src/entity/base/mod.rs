@@ -17,6 +17,7 @@ pub use persistence::{EntityBaseLoad, EntityBaseSaveData};
 pub use relationships::PendingWorldChangeToken;
 use relationships::{EntityLifecycleState, EntityRelationshipState};
 
+use std::mem::take;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -242,6 +243,8 @@ pub struct EntityBaseState {
     fall_distance: f64,
     stuck_speed_multiplier: DVec3,
     no_physics: bool,
+    predicted_movement: DVec3,
+    sync_position: bool,
     needs_velocity_sync: bool,
     hurt_marked: bool,
     requires_precise_position: bool,
@@ -277,6 +280,8 @@ impl EntityBaseState {
             fall_distance: 0.0,
             stuck_speed_multiplier: DVec3::ZERO,
             no_physics: false,
+            predicted_movement: DVec3::ZERO,
+            sync_position: false,
             needs_velocity_sync: false,
             hurt_marked: false,
             requires_precise_position: false,
@@ -829,6 +834,22 @@ impl EntityBase {
         self.state.lock().requires_precise_position = requires_precise_position;
     }
 
+    pub(crate) fn record_predicted_movement(&self, movement: DVec3) {
+        self.state.lock().predicted_movement += movement;
+    }
+
+    pub(crate) fn mark_position_for_interpolation(&self) {
+        self.state.lock().sync_position = true;
+    }
+
+    pub(crate) fn take_movement_interpolation(&self) -> (DVec3, bool) {
+        let mut state = self.state.lock();
+        (
+            take(&mut state.predicted_movement),
+            take(&mut state.sync_position),
+        )
+    }
+
     /// Gets the world this entity is in.
     ///
     /// Returns `None` if the world has been dropped.
@@ -1336,6 +1357,16 @@ impl EntityBase {
     /// Sets the entity's rotation as (yaw, pitch) in degrees.
     pub fn set_rotation(&self, rotation: (f32, f32)) {
         self.state.lock().rotation = normalize_rotation(rotation);
+    }
+
+    pub(crate) fn set_y_rot(&self, yaw: f32) {
+        assert!(yaw.is_finite(), "entity yaw must be finite: {yaw:?}");
+        self.state.lock().rotation.0 = yaw;
+    }
+
+    pub(crate) fn set_x_rot(&self, pitch: f32) {
+        assert!(pitch.is_finite(), "entity pitch must be finite: {pitch:?}");
+        self.state.lock().rotation.1 = (pitch % DEGREE_360).clamp(-DEGREE_90, DEGREE_90);
     }
 
     /// Sets whether this entity bypasses collision physics.

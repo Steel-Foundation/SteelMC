@@ -36,18 +36,13 @@ pub fn collide(
     shapes: &[WorldAabb],
     desired_movement: f64,
 ) -> f64 {
-    if desired_movement.abs() < COLLISION_EPSILON {
-        return 0.0;
-    }
-
     let mut movement = desired_movement;
-
     for shape in shapes {
-        movement = collide_single(axis, entity_aabb, shape, movement);
-
         if movement.abs() < COLLISION_EPSILON {
             return 0.0;
         }
+
+        movement = collide_single(axis, entity_aabb, shape, movement);
     }
 
     movement
