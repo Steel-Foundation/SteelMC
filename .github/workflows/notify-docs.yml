@@ -1,10 +1,11 @@
 name: Notify SteelDocs of changes
 
 on:
-  workflow_run:
-    workflows: ["Flint Tests"]
-    types: [completed]
+  push:
     branches: [master]
+    paths:
+      - "steel-core/build/classes.json"
+      - "steel-core/src/behavior/**"
 
 jobs:
   notify:
