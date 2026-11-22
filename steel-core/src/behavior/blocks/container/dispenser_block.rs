@@ -82,9 +82,9 @@ pub(crate) fn dispense_default(
         f64::from(pos.y()) + 0.5 + 0.7 * sy,
         f64::from(pos.z()) + 0.5 + 0.7 * sz,
     );
-    spawn.y -= if sy != 0.0 { 0.125 } else { 0.15625 };
+    spawn.y -= if sy == 0.0 { 0.15625 } else { 0.125 };
 
-    let spread = 0.0172275 * DEFAULT_ACCURACY;
+    let spread = 0.017_227_5 * DEFAULT_ACCURACY;
     let pow = rand::random::<f64>() * 0.1 + 0.2;
     let velocity = DVec3::new(
         triangle(sx * pow, spread),

@@ -37,6 +37,10 @@ impl HopperBlock {
     }
 
     /// Vanilla `HopperBlock.checkPoweredState`: enabled only without a neighbor signal.
+    #[expect(
+        clippy::unused_self,
+        reason = "trait-style helper kept on the block behavior for parity with vanilla"
+    )]
     fn check_powered_state(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let enabled = !world.has_neighbor_signal(pos);
         if state.get_value(ENABLED) != enabled {

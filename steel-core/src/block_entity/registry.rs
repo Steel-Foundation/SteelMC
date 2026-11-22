@@ -179,6 +179,10 @@ pub static BLOCK_ENTITIES: BlockEntityRegistryLock = BlockEntityRegistryLock(Onc
 /// Initializes the global block entity registry.
 ///
 /// This should be called after the main registry is frozen. Repeated calls are a no-op.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one flat registration call per block entity type, kept in vanilla order"
+)]
 pub fn init_block_entities() {
     BLOCK_ENTITIES.get_or_init(|| {
         let mut registry = BlockEntityRegistry::new();

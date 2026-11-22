@@ -8,6 +8,7 @@
 //! containers yet, double chests are not combined, and the hopper menu is not
 //! implemented, so right-click opens nothing.
 
+use std::mem;
 use std::sync::atomic::{AtomicI32, AtomicI64, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -370,7 +371,7 @@ impl BlockEntity for HopperBlockEntity {
     fn pre_remove_side_effects(&self, pos: BlockPos, _state: BlockStateId) {
         let items = {
             let mut container = self.container.lock();
-            std::mem::replace(&mut container.items, vec![ItemStack::empty(); HOPPER_SLOTS])
+            mem::replace(&mut container.items, vec![ItemStack::empty(); HOPPER_SLOTS])
         };
         let Some(world) = self.get_level() else {
             return;

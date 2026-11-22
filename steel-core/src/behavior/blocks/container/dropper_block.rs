@@ -16,7 +16,9 @@ use super::dispenser_block::{FACING, dispense_default, update_triggered};
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::BlockPlaceContext;
 use crate::block_entity::BLOCK_ENTITIES;
-use crate::block_entity::entities::{DispenserBlockEntity, HopperBlockEntity};
+use crate::block_entity::entities::{
+    DispenserBlockEntity, HopperBlockEntity, get_block_container, insert_stack,
+};
 use crate::inventory::lock::ContainerLockGuard;
 use crate::world::World;
 
@@ -36,9 +38,7 @@ fn drop_from_dropper(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
     let direction: Direction = state.get_value(FACING);
     let target = direction.relative(pos);
 
-    let Some((target_ref, target_be)) =
-        crate::block_entity::entities::get_block_container(world, target)
-    else {
+    let Some((target_ref, target_be)) = get_block_container(world, target) else {
         dropper.set_slot(slot, dispense_default(world, pos, state, stack));
         return;
     };
@@ -54,13 +54,7 @@ fn drop_from_dropper(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
         let Some(to) = guard.get_mut(target_ref.container_id()) else {
             return;
         };
-        crate::block_entity::entities::insert_stack(
-            to,
-            one,
-            Some(direction.opposite()),
-            receiver,
-            None,
-        )
+        insert_stack(to, one, Some(direction.opposite()), receiver, None)
     };
     let mut remaining = stack;
     if remainder.is_empty() {

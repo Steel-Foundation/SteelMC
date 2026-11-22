@@ -1,6 +1,7 @@
 //! Dispenser and dropper block entity: a 9-slot container that dispenses from a
 //! randomly chosen non-empty slot. Vanilla `DispenserBlockEntity` (also used for droppers).
 
+use std::mem;
 use std::sync::{Arc, Weak};
 
 use simdnbt::ToNbtTag;
@@ -117,7 +118,7 @@ impl BlockEntity for DispenserBlockEntity {
     fn pre_remove_side_effects(&self, pos: BlockPos, _state: BlockStateId) {
         let items = {
             let mut container = self.container.lock();
-            std::mem::replace(
+            mem::replace(
                 &mut container.items,
                 vec![ItemStack::empty(); DISPENSER_SLOTS],
             )
@@ -181,12 +182,14 @@ mod tests {
 
     #[test]
     fn random_slot_is_none_when_empty_and_only_non_empty_slot_when_single() {
+        use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
+
         init_vanilla_registry();
         let dispenser = DispenserBlockEntity::new(
-            &steel_registry::vanilla_block_entity_types::DISPENSER,
+            &vanilla_block_entity_types::DISPENSER,
             Weak::new(),
             BlockPos::new(0, 0, 0),
-            steel_registry::vanilla_blocks::DISPENSER.default_state(),
+            vanilla_blocks::DISPENSER.default_state(),
         );
         assert_eq!(dispenser.random_slot(), None);
 
