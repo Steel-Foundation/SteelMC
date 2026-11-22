@@ -3,7 +3,7 @@ use std::io::{Cursor, Error, Read, Result};
 use steel_macros::ServerPacket;
 use steel_utils::{codec::VarInt, serial::ReadFrom};
 
-/// Vanilla `ServerboundCustomQueryAnswerPacket.MAX_PAYLOAD_SIZE`, in bytes.
+/// Largest answer payload accepted, in bytes.
 const MAX_PAYLOAD_SIZE: usize = 1_048_576;
 
 /// Login plugin response. `payload` is `None` when the client did not understand the query.
@@ -21,7 +21,9 @@ impl ReadFrom for SCustomQueryAnswer {
             data.take(MAX_PAYLOAD_SIZE as u64 + 1)
                 .read_to_end(&mut payload)?;
             if payload.len() > MAX_PAYLOAD_SIZE {
-                return Err(Error::other("Payload may not be larger than 1048576 bytes"));
+                return Err(Error::other(format!(
+                    "Payload may not be larger than {MAX_PAYLOAD_SIZE} bytes"
+                )));
             }
             Some(payload)
         } else {

@@ -2,9 +2,7 @@
 
 use sha1::Sha1;
 use sha2::Digest;
-use steel_core::{
-    config::PlayerInfoForwarding, player::GameProfile, server::DuplicatePlayerWaitError,
-};
+use steel_core::{player::GameProfile, server::DuplicatePlayerWaitError};
 use steel_crypto::key_store::{DecryptError, KeyStore};
 use steel_protocol::{
     packets::login::{
@@ -17,9 +15,8 @@ use text_components::TextComponent;
 
 use crate::{
     AuthError,
-    forwarding::velocity::{
-        self, DIRECT_CONNECTION_MESSAGE, MAX_SUPPORTED_FORWARDING_VERSION, PLAYER_INFO_CHANNEL,
-        VERIFICATION_FAILURE_MESSAGE,
+    forwarding::{
+        ForwardedPlayer, ForwardedProfile, ForwardingRejection, ForwardingStep, LoginQuery,
     },
     is_valid_player_name, mojang_authenticate, offline_uuid, signed_bytes_be_to_hex,
     tcp_client::{ConnectionAction, ConnectionUpdate, JavaTcpClient},
@@ -91,12 +88,25 @@ impl JavaTcpClient {
             return ConnectionAction::none();
         }
 
-        match &self.server.config.proxy.forwarding {
-            PlayerInfoForwarding::None => {}
-            PlayerInfoForwarding::Modern(_) => return self.request_velocity_forwarding().await,
-            PlayerInfoForwarding::Legacy | PlayerInfoForwarding::BungeeGuard(_) => {
-                return self.finish_legacy_forwarded_login(requested_username).await;
-            }
+        if let Some(forwarder) = self.connection_session.player_info_forwarder() {
+            let handshake = self.pre_play_state.lock().take_handshake_forwarding();
+            let handshake = match handshake {
+                Ok(handshake) => handshake,
+                Err(error) => return self.reject_unexpected_packet(error).await,
+            };
+            return match forwarder.on_hello(handshake) {
+                Ok(ForwardingStep::Query(query)) => {
+                    self.send_forwarding_query(query, requested_username).await
+                }
+                Ok(ForwardingStep::Complete(player)) => {
+                    self.finish_forwarded_login(Ok(player), requested_username)
+                        .await
+                }
+                Err(rejection) => {
+                    self.finish_forwarded_login(Err(rejection), requested_username)
+                        .await
+                }
+            };
         }
 
         if self.server.config.encryption {
@@ -129,68 +139,47 @@ impl JavaTcpClient {
         self.finish_verified_login(profile, None).await
     }
 
-    /// Sends the `velocity:player_info` query instead of the encryption request, like Paper.
-    async fn request_velocity_forwarding(&self) -> ConnectionAction {
+    /// Sends the forwarder's login query to the proxy, with a fresh transaction id.
+    async fn send_forwarding_query(
+        &self,
+        query: LoginQuery,
+        requested_username: String,
+    ) -> ConnectionAction {
         let transaction_id: i32 = rand::random();
         let sequence_result = self
             .pre_play_state
             .lock()
-            .wait_for_forwarding(transaction_id);
+            .wait_for_forwarding(transaction_id, requested_username);
         if let Err(error) = sequence_result {
             return self.reject_unexpected_packet(error).await;
         }
         self.send_bare_packet_now(CCustomQuery::new(
             transaction_id,
-            PLAYER_INFO_CHANNEL,
-            &[MAX_SUPPORTED_FORWARDING_VERSION],
+            query.channel,
+            &query.payload,
         ))
         .await;
         ConnectionAction::none()
     }
 
-    /// Handles the proxy's answer to the `velocity:player_info` query.
+    /// Handles the proxy's answer to the forwarder's login query.
     pub(crate) async fn handle_custom_query_answer(
         &self,
         packet: SCustomQueryAnswer,
     ) -> ConnectionAction {
-        let PlayerInfoForwarding::Modern(secret) = &self.server.config.proxy.forwarding else {
+        let Some(forwarder) = self.connection_session.player_info_forwarder() else {
             return self.reject_unexpected_query_answer().await;
         };
         let sequence_result = self
             .pre_play_state
             .lock()
             .begin_forwarded_authentication(packet.transaction_id);
-        if sequence_result.is_err() {
+        let Ok(requested_username) = sequence_result else {
             return self.reject_unexpected_query_answer().await;
-        }
-
-        // A vanilla client answers unknown queries without data: it bypassed the proxy.
-        let Some(payload) = packet.payload else {
-            log::warn!(
-                "Denied connection from {} (client {}): connected without Velocity forwarding",
-                self.address(),
-                self.id
-            );
-            self.kick(DIRECT_CONNECTION_MESSAGE.into()).await;
-            return ConnectionAction::none();
         };
-
-        match velocity::read_player_info(secret, &payload) {
-            Ok(info) => {
-                self.set_forwarded_ip(info.address);
-                self.finish_verified_login(info.profile, None).await
-            }
-            Err(error) => {
-                log::warn!(
-                    "Denied connection from {} (client {}): {error}",
-                    self.address(),
-                    self.id
-                );
-                // The detail is only logged; the client gets Paper's generic message.
-                self.kick(VERIFICATION_FAILURE_MESSAGE.into()).await;
-                ConnectionAction::none()
-            }
-        }
+        let result = forwarder.on_query_answer(packet.payload.as_deref());
+        self.finish_forwarded_login(result, requested_username)
+            .await
     }
 
     /// Vanilla rejects every login query answer it did not expect.
@@ -202,22 +191,35 @@ impl JavaTcpClient {
         ConnectionAction::none()
     }
 
-    /// Completes login with the identity `BungeeCord` forwarded in the handshake.
-    ///
-    /// The name comes from the hello packet and the UUID and properties from the proxy, like
-    /// Spigot's `ServerLoginPacketListenerImpl.initUUID`.
-    async fn finish_legacy_forwarded_login(&self, requested_username: String) -> ConnectionAction {
-        let Some(forwarded) = self.legacy_forwarding.lock().take() else {
-            // The handshake rejects logins without forwarding data before hello.
-            log::error!("Client {} reached hello without forwarding data", self.id);
-            self.close();
-            return ConnectionAction::none();
+    /// Completes login with the identity the proxy forwarded, or kicks with its rejection.
+    async fn finish_forwarded_login(
+        &self,
+        result: Result<ForwardedPlayer, ForwardingRejection>,
+        requested_username: String,
+    ) -> ConnectionAction {
+        let result = result.and_then(|player| {
+            let profile = match player.profile {
+                ForwardedProfile::Complete(profile) => profile,
+                ForwardedProfile::NameFromHello { id, properties } => {
+                    GameProfile::new(id, requested_username, properties).map_err(|error| {
+                        ForwardingRejection::new(
+                            format!("invalid forwarded player profile: {error}"),
+                            "Invalid forwarded player profile",
+                        )
+                    })?
+                }
+            };
+            Ok((player.address, profile))
+        });
+        let (address, profile) = match result {
+            Ok(accepted) => accepted,
+            Err(rejection) => {
+                self.log_forwarding_rejection(&rejection.log_reason);
+                self.kick(*rejection.disconnect).await;
+                return ConnectionAction::none();
+            }
         };
-        let Ok(profile) = GameProfile::new(forwarded.id, requested_username, forwarded.properties)
-        else {
-            self.kick("Invalid forwarded player profile".into()).await;
-            return ConnectionAction::none();
-        };
+        self.set_forwarded_ip(address);
         self.finish_verified_login(profile, None).await
     }
 

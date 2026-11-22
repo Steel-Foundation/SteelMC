@@ -11,7 +11,7 @@
 
 mod authentication;
 mod connection;
-mod forwarding;
+pub mod forwarding;
 mod handlers;
 mod pre_play_state;
 mod tcp_client;

@@ -95,8 +95,8 @@ impl ServerConfig {
     /// Extracts the `RuntimeConfig` from this full config.
     ///
     /// # Errors
-    /// Returns an error if the proxy settings are invalid or their secret file was not loaded.
-    pub fn into_runtime_config(self) -> Result<RuntimeConfig, &'static str> {
+    /// Returns an error if the proxy settings are invalid or their secret file cannot be read.
+    pub fn into_runtime_config(self) -> Result<RuntimeConfig, String> {
         Ok(RuntimeConfig {
             max_players: self.max_players,
             view_distance: self.view_distance,
@@ -196,19 +196,21 @@ pub(super) fn validate(config: &ServerConfig) -> Result<(), &'static str> {
             return Err("Compression level must be between 1 and 9");
         }
     }
-    if config.enforce_secure_chat {
-        if config.proxy.is_forwarding() {
-            if !config.proxy.online_mode {
-                return Err("proxy.online_mode must be true when enforce_secure_chat is enabled");
-            }
+    if !config.enforce_secure_chat {
+        return Ok(());
+    }
+    if config.proxy.is_forwarding() {
+        return if config.proxy.online_mode {
+            Ok(())
         } else {
-            if !config.online_mode {
-                return Err("online_mode must be true when enforce_secure_chat is enabled");
-            }
-            if !config.encryption {
-                return Err("encryption must be true when enforce_secure_chat is enabled");
-            }
-        }
+            Err("proxy.online_mode must be true when enforce_secure_chat is enabled")
+        };
+    }
+    if !config.online_mode {
+        return Err("online_mode must be true when enforce_secure_chat is enabled");
+    }
+    if !config.encryption {
+        return Err("encryption must be true when enforce_secure_chat is enabled");
     }
     Ok(())
 }

@@ -5,14 +5,13 @@ use std::{fmt, fs, path::Path};
 use serde::Deserialize;
 use steel_core::config::{ForwardingSecret, PlayerInfoForwarding, ProxyConfig};
 
-const MISSING_SECRET: &str = "proxy forwarding secret must not be empty";
+const MISSING_SECRET: &str = "proxy.forwarding_secret or proxy.forwarding_secret_file is required for the bungeeguard and modern forwarding modes";
 
 /// Player info forwarding mode, named like Velocity's `player-info-forwarding-mode`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PlayerInfoForwardingMode {
     /// No proxy.
-    #[default]
     None,
     /// `BungeeCord` `ip_forward` / Velocity `legacy`.
     Legacy,
@@ -87,9 +86,7 @@ impl ProxySettings {
             return Ok(());
         }
         if self.forwarding_secret.is_none() && self.forwarding_secret_file.is_none() {
-            return Err(
-                "proxy.forwarding_secret or proxy.forwarding_secret_file is required for the bungeeguard and modern forwarding modes",
-            );
+            return Err(MISSING_SECRET);
         }
         if self
             .forwarding_secret
@@ -101,57 +98,50 @@ impl ProxySettings {
         Ok(())
     }
 
-    /// Reads `forwarding_secret_file` into `forwarding_secret` so the runtime conversion
-    /// never touches the filesystem. Relative paths resolve against the working directory.
-    pub(super) fn load_secret_file(&mut self) -> Result<(), String> {
-        if !self.player_info_forwarding_mode.needs_secret() {
-            return Ok(());
-        }
-        let Some(path) = self.forwarding_secret_file.take() else {
-            return Ok(());
-        };
-        let secret = fs::read_to_string(Path::new(&path)).map_err(|error| {
-            format!(
-                "failed to read proxy.forwarding_secret_file {path}: {error} (copy forwarding.secret from your Velocity directory, or your BungeeGuard token, into this file)"
-            )
-        })?;
-        if secret.trim().is_empty() {
-            return Err(format!("proxy.forwarding_secret_file {path} is empty"));
-        }
-        self.forwarding_secret = Some(secret);
-        Ok(())
-    }
-
-    /// Converts loaded settings to the runtime form.
-    ///
-    /// Surrounding whitespace is trimmed from the secret, matching how Velocity reads
-    /// `forwarding.secret`.
+    /// Converts the settings to the runtime form, reading `forwarding_secret_file` if set.
+    /// Relative paths resolve against the working directory.
     ///
     /// # Errors
-    /// Fails closed when a secret mode has no loaded secret, instead of falling back to
+    /// Fails closed when a secret mode has no usable secret, instead of falling back to
     /// unauthenticated forwarding.
-    pub(super) fn into_runtime(self) -> Result<ProxyConfig, &'static str> {
+    pub(super) fn into_runtime(self) -> Result<ProxyConfig, String> {
         self.validate()?;
-        if self.player_info_forwarding_mode.needs_secret() && self.forwarding_secret_file.is_some()
-        {
-            return Err("proxy.forwarding_secret_file was not loaded");
-        }
-        let secret = self
-            .forwarding_secret
-            .and_then(|secret| ForwardingSecret::new(secret.trim().as_bytes()));
+        let online_mode = self.online_mode;
         let forwarding = match self.player_info_forwarding_mode {
             PlayerInfoForwardingMode::None => PlayerInfoForwarding::None,
             PlayerInfoForwardingMode::Legacy => PlayerInfoForwarding::Legacy,
             PlayerInfoForwardingMode::BungeeGuard => {
-                PlayerInfoForwarding::BungeeGuard(secret.ok_or(MISSING_SECRET)?)
+                PlayerInfoForwarding::BungeeGuard(self.into_secret()?)
             }
-            PlayerInfoForwardingMode::Modern => {
-                PlayerInfoForwarding::Modern(secret.ok_or(MISSING_SECRET)?)
-            }
+            PlayerInfoForwardingMode::Modern => PlayerInfoForwarding::Modern(self.into_secret()?),
         };
         Ok(ProxyConfig {
             forwarding,
-            online_mode: self.online_mode,
+            online_mode,
         })
+    }
+
+    /// Resolves the inline secret or reads it from `forwarding_secret_file`.
+    fn into_secret(self) -> Result<ForwardingSecret, String> {
+        let (secret, source) = match (self.forwarding_secret, self.forwarding_secret_file) {
+            (Some(secret), _) => (secret, "proxy.forwarding_secret".to_owned()),
+            (None, Some(path)) => {
+                let secret = fs::read_to_string(Path::new(&path)).map_err(|error| {
+                    format!(
+                        "failed to read proxy.forwarding_secret_file {path}: {error} (copy forwarding.secret from your Velocity directory, or your BungeeGuard token, into this file)"
+                    )
+                })?;
+                // Velocity joins the file's lines: line breaks are dropped, other whitespace is kept.
+                (
+                    secret.replace(['\r', '\n'], ""),
+                    format!("proxy.forwarding_secret_file {path}"),
+                )
+            }
+            (None, None) => return Err(MISSING_SECRET.to_owned()),
+        };
+        let blank = secret.trim().is_empty();
+        ForwardingSecret::new(secret.into_bytes())
+            .filter(|_| !blank)
+            .ok_or_else(|| format!("{source} must not be empty"))
     }
 }

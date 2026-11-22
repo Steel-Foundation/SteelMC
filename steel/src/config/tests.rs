@@ -561,26 +561,19 @@ fn secret_forwarding_modes_require_a_secret() {
 }
 
 #[test]
-fn forwarding_secret_file_loads_trimmed_into_runtime_config() {
+fn forwarding_secret_file_loads_like_velocity() {
     let root = temp_config_root("forwarding-secret");
     fs::create_dir_all(&root).expect("create temp dir");
     let secret_path = root.join("forwarding.secret");
-    fs::write(&secret_path, "s3cret\n").expect("write secret");
+    // Velocity joins lines and keeps other whitespace.
+    fs::write(&secret_path, "s3c ret\r\n part2 \n").expect("write secret");
 
-    let mut config = proxied_config(&format!(
+    let config = proxied_config(&format!(
         "player_info_forwarding_mode = \"modern\"\nforwarding_secret_file = '{}'",
         secret_path.display()
     ));
     validate(&config.server).expect("modern with a secret file validates");
 
-    // Converting before the file is loaded fails closed instead of disabling forwarding.
-    assert!(config.server.clone().into_runtime_config().is_err());
-
-    config
-        .server
-        .proxy
-        .load_secret_file()
-        .expect("secret file loads");
     let runtime = config
         .server
         .into_runtime_config()
@@ -588,7 +581,7 @@ fn forwarding_secret_file_loads_trimmed_into_runtime_config() {
     let PlayerInfoForwarding::Modern(secret) = &runtime.proxy.forwarding else {
         panic!("expected modern forwarding");
     };
-    assert_eq!(secret.as_bytes(), b"s3cret");
+    assert_eq!(secret.as_bytes(), b"s3c ret part2 ");
     assert!(runtime.uses_authentication());
 
     fs::remove_dir_all(root).expect("remove temp dir");

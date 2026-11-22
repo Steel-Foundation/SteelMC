@@ -20,7 +20,7 @@ use steel_core::player::{
         JavaNetworkReader, JavaNetworkWriter, JavaTransportRead, JavaTransportWrite, OutboundPacket,
     },
 };
-use steel_core::{config::PlayerInfoForwarding, server::Server};
+use steel_core::{config::ProxyConfig, server::Server};
 use steel_protocol::{
     packet_reader::TCPNetworkDecoder,
     packet_traits::{ClientPacket, CompressionInfo, EncodedPacket, ServerPacket},
@@ -28,7 +28,7 @@ use steel_protocol::{
     packets::{
         common::{CDisconnect, SClientInformation, SCustomPayload, SPingRequest},
         config::SSelectKnownPacks,
-        handshake::{ClientIntent, SClientIntention},
+        handshake::{ClientIntent, MAX_HOST_LENGTH, SClientIntention},
         login::{CLoginDisconnect, SCustomQueryAnswer, SHello, SKey},
     },
     utils::{ConnectionProtocol, PacketError, RawPacket},
@@ -59,7 +59,7 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use uuid::Uuid;
 
 use crate::{
-    forwarding::bungee::{self, LegacyForwardedPlayer},
+    forwarding::{PlayerInfoForwarder, builtin_forwarder},
     pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState},
 };
 
@@ -144,13 +144,31 @@ impl Debug for ConnectionUpdate {
     }
 }
 
-/// Session id owned by the active server connection listener
-#[derive(Default)]
+/// State shared by every connection of the active server connection listener.
 pub struct ServerConnectionSession {
     session_id: SyncMutex<Option<Uuid>>,
+    player_info_forwarder: Option<Box<dyn PlayerInfoForwarder>>,
 }
 
 impl ServerConnectionSession {
+    /// Creates a session whose logins use the proxy forwarding from `proxy`.
+    ///
+    /// The forwarder is always derived from the server's proxy config, so the session can never
+    /// accept direct logins while the config reports proxy-authenticated identities.
+    #[must_use]
+    pub fn new(proxy: &ProxyConfig) -> Self {
+        Self {
+            session_id: SyncMutex::new(None),
+            player_info_forwarder: builtin_forwarder(&proxy.forwarding),
+        }
+    }
+
+    /// The proxy forwarder every login goes through, or `None` for direct connections.
+    #[must_use]
+    pub fn player_info_forwarder(&self) -> Option<&dyn PlayerInfoForwarder> {
+        self.player_info_forwarder.as_deref()
+    }
+
     /// Returns the listener session id generating it on first use
     #[must_use]
     pub fn session_id(&self) -> Uuid {
@@ -234,8 +252,6 @@ pub struct JavaTcpClient {
 
     pub(crate) pre_play_state: SyncMutex<PrePlayState>,
     pub(crate) login_deadline: AtomicCell<Option<LoginDeadline>>,
-    /// `BungeeCord` forwarding data accepted from the login handshake.
-    pub(crate) legacy_forwarding: SyncMutex<Option<LegacyForwardedPlayer>>,
     task_tracker: TaskTracker,
 }
 
@@ -307,7 +323,6 @@ impl JavaTcpClient {
             connection_updated: Arc::new(Notify::new()),
             pre_play_state: SyncMutex::new(PrePlayState::new()),
             login_deadline: AtomicCell::new(None),
-            legacy_forwarding: SyncMutex::new(None),
             task_tracker,
         };
 
@@ -324,6 +339,9 @@ impl JavaTcpClient {
     /// Paper and Spigot do.
     pub(crate) fn set_forwarded_ip(&self, ip: IpAddr) {
         let socket = self.address.load();
+        if socket.ip() == ip {
+            return;
+        }
         log::debug!("Client {} forwarded by proxy {socket} as {ip}", self.id);
         self.address.store(SocketAddr::new(ip, socket.port()));
     }
@@ -706,12 +724,11 @@ impl JavaTcpClient {
 
         match packet.id {
             handshake::S_INTENTION => {
-                let handshake_forwarding = self.server.config.proxy.uses_handshake_forwarding();
-                let packet = if handshake_forwarding {
-                    SClientIntention::read_forwarded(data)?
-                } else {
-                    SClientIntention::read_packet(data)?
-                };
+                let forwarder = self.connection_session.player_info_forwarder();
+                let max_host_length = forwarder.map_or(MAX_HOST_LENGTH, |forwarder| {
+                    forwarder.max_handshake_host_length()
+                });
+                let packet = SClientIntention::read_with_host_length(data, max_host_length)?;
                 let intent = match packet.intention {
                     ClientIntent::Status => ConnectionProtocol::Status,
                     ClientIntent::Login | ClientIntent::Transfer => ConnectionProtocol::Login,
@@ -730,11 +747,12 @@ impl JavaTcpClient {
                 } else {
                     let reason = match packet.protocol_version.cmp(&CURRENT_MC_PROTOCOL) {
                         Ordering::Equal => {
-                            if handshake_forwarding
-                                && let Err(reason) = self.accept_legacy_forwarding(&packet.hostname)
+                            if let Some(forwarder) = forwarder
+                                && let Err(reason) =
+                                    self.accept_handshake_forwarding(forwarder, &packet.hostname)
                             {
                                 self.protocol.store(intent);
-                                self.kick(reason.into()).await;
+                                self.kick(*reason).await;
                                 return Ok(());
                             }
                             let tick_manager = self.server.tick_rate_manager.read();
@@ -766,27 +784,37 @@ impl JavaTcpClient {
         Ok(())
     }
 
-    /// Accepts `BungeeCord` forwarding data from a login handshake hostname.
-    fn accept_legacy_forwarding(&self, hostname: &str) -> Result<(), &'static str> {
-        let guard = match &self.server.config.proxy.forwarding {
-            PlayerInfoForwarding::BungeeGuard(secret) => Some(secret),
-            _ => None,
-        };
-        match bungee::parse_handshake(hostname, guard) {
-            Ok(player) => {
+    /// Lets the proxy forwarder inspect a login handshake hostname.
+    fn accept_handshake_forwarding(
+        &self,
+        forwarder: &dyn PlayerInfoForwarder,
+        hostname: &str,
+    ) -> Result<(), Box<TextComponent>> {
+        match forwarder.on_handshake(hostname) {
+            Ok(Some(player)) => {
                 self.set_forwarded_ip(player.address);
-                *self.legacy_forwarding.lock() = Some(player);
-                Ok(())
+                let sequence_result = self.pre_play_state.lock().set_handshake_forwarding(player);
+                sequence_result.map_err(|error| {
+                    log::warn!("Client {} {error}", self.id);
+                    Box::new(TextComponent::translated(
+                        translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg(),
+                    ))
+                })
             }
-            Err(error) => {
-                log::warn!(
-                    "Denied connection from {} (client {}): invalid BungeeCord forwarding data ({error:?})",
-                    self.address(),
-                    self.id
-                );
-                Err(error.disconnect_message(guard.is_some()))
+            Ok(None) => Ok(()),
+            Err(rejection) => {
+                self.log_forwarding_rejection(&rejection.log_reason);
+                Err(rejection.disconnect)
             }
         }
+    }
+
+    pub(crate) fn log_forwarding_rejection(&self, reason: &str) {
+        log::warn!(
+            "Denied connection from {} (client {}): {reason}",
+            self.address(),
+            self.id
+        );
     }
 
     /// Handles a status packet.

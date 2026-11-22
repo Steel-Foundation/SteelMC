@@ -3,17 +3,11 @@ use std::io::{Cursor, Result};
 use steel_macros::{ReadFrom, ServerPacket};
 use steel_utils::{
     codec::VarInt,
-    serial::{
-        ReadFrom,
-        prefixed_read::{MAX_STRING_LENGTH, read_utf},
-    },
+    serial::{ReadFrom, prefixed_read::read_utf},
 };
 
-/// Vanilla `ClientIntentionPacket.MAX_HOST_LENGTH`, in UTF-16 code units.
-const MAX_HOST_LENGTH: usize = 255;
-/// Spigot's raised hostname limit, which leaves room for `BungeeCord` forwarding data appended
-/// to the hostname.
-const MAX_FORWARDED_HOST_LENGTH: usize = MAX_STRING_LENGTH;
+/// Longest handshake hostname accepted, in UTF-16 code units.
+pub const MAX_HOST_LENGTH: usize = 255;
 
 #[derive(Clone, Copy, PartialEq, Eq, ReadFrom, Debug)]
 #[read(as = VarInt)]
@@ -47,17 +41,12 @@ impl SClientIntention {
         }
     }
 
-    /// Reads the handshake with Spigot's raised hostname limit instead of vanilla's.
-    ///
-    /// Only used when `BungeeCord` forwarding is enabled.
+    /// Reads the handshake with a hostname limit other than vanilla's [`MAX_HOST_LENGTH`], for
+    /// proxies that append forwarding data to the hostname.
     ///
     /// # Errors
     /// Returns an error if the packet is malformed.
-    pub fn read_forwarded(data: &mut Cursor<&[u8]>) -> Result<Self> {
-        Self::read_with_host_length(data, MAX_FORWARDED_HOST_LENGTH)
-    }
-
-    fn read_with_host_length(data: &mut Cursor<&[u8]>, max_host_length: usize) -> Result<Self> {
+    pub fn read_with_host_length(data: &mut Cursor<&[u8]>, max_host_length: usize) -> Result<Self> {
         Ok(Self {
             protocol_version: VarInt::read(data)?.0,
             hostname: read_utf(data, max_host_length)?,

@@ -5,8 +5,7 @@ use crate::{
     serial::{PrefixedRead, ReadFrom},
 };
 
-/// Vanilla `FriendlyByteBuf.MAX_STRING_LENGTH`, the default [`read_utf`] bound, in UTF-16
-/// code units.
+/// Default [`read_utf`] bound, in UTF-16 code units.
 pub const MAX_STRING_LENGTH: usize = 32_767;
 
 /// Reads a Minecraft UTF-8 string whose decoded length is bounded in Java

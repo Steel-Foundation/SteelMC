@@ -140,8 +140,8 @@ impl SteelServer {
             tcp_listener,
             cancel_token,
             client_id: 0,
+            connection_session: Arc::new(ServerConnectionSession::new(&server.config.proxy)),
             server: Arc::new(server),
-            connection_session: Arc::new(ServerConnectionSession::default()),
         })
     }
 

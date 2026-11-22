@@ -81,10 +81,9 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
     let mut config = if path.exists() {
         let config_str = fs::read_to_string(path)
             .map_err(|e| format!("failed to read config file {}: {e}", path.display()))?;
-        let mut config: SteelConfig = toml::from_str(config_str.as_str())
+        let config: SteelConfig = toml::from_str(config_str.as_str())
             .map_err(|e| format!("failed to parse config: {e}"))?;
         validate(&config.server).map_err(|e| format!("failed to validate config: {e}"))?;
-        config.server.proxy.load_secret_file()?;
         config
     } else {
         let parent = path

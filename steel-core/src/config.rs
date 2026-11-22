@@ -10,6 +10,7 @@ use std::{
     collections::BTreeMap,
     fmt::{self, Debug, Formatter},
     path::{Component, Path, PathBuf},
+    sync::Arc,
 };
 pub use steel_protocol::packet_traits::CompressionInfo;
 use steel_protocol::packets::config::{CServerLinks, Link, ServerLinksType};
@@ -62,21 +63,22 @@ const MIN_RECOMMENDED_SECRET_LEN: usize = 12;
 
 /// Shared secret for Velocity modern forwarding or a `BungeeGuard` token.
 ///
-/// `Debug` is redacted so the secret never reaches logs.
+/// `Debug` is redacted so the secret never reaches logs. Clones share one allocation, so the
+/// login forwarder and the runtime config hold the same secret.
 #[derive(Clone)]
-pub struct ForwardingSecret(Box<[u8]>);
+pub struct ForwardingSecret(Arc<[u8]>);
 
 impl ForwardingSecret {
     /// Wraps a secret, returning `None` when it is empty.
     #[must_use]
-    pub fn new(secret: impl Into<Box<[u8]>>) -> Option<Self> {
+    pub fn new(secret: impl Into<Arc<[u8]>>) -> Option<Self> {
         let secret = secret.into();
         (!secret.is_empty()).then_some(Self(secret))
     }
 
     /// The raw secret bytes.
     #[must_use]
-    pub const fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 }
@@ -90,10 +92,9 @@ impl Debug for ForwardingSecret {
 /// How a proxy in front of this server forwards the player's identity and address.
 ///
 /// Mode names match Velocity's `player-info-forwarding-mode`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub enum PlayerInfoForwarding {
     /// Players connect directly; no proxy data is trusted.
-    #[default]
     None,
     /// `BungeeCord` `ip_forward` data appended to the handshake hostname. Unauthenticated:
     /// the backend must only be reachable from the proxy.
@@ -165,15 +166,6 @@ impl ProxyConfig {
                 );
             }
         }
-    }
-
-    /// Whether the forwarding mode carries data in the handshake hostname.
-    #[must_use]
-    pub const fn uses_handshake_forwarding(&self) -> bool {
-        matches!(
-            self.forwarding,
-            PlayerInfoForwarding::Legacy | PlayerInfoForwarding::BungeeGuard(_)
-        )
     }
 }
 
@@ -261,7 +253,7 @@ impl Default for RuntimeConfig {
 
 impl RuntimeConfig {
     /// Whether player identities are Mojang-authenticated, by this server or by a forwarding
-    /// proxy in online mode. Vanilla `MinecraftServer.usesAuthentication`.
+    /// proxy in online mode.
     #[must_use]
     pub const fn uses_authentication(&self) -> bool {
         self.online_mode || (self.proxy.is_forwarding() && self.proxy.online_mode)

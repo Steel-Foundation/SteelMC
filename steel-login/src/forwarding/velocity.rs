@@ -23,11 +23,13 @@ use steel_utils::{
 };
 use thiserror::Error;
 
-use super::parse_forwarded_ip;
+use super::{
+    ForwardedPlayer, ForwardedProfile, ForwardingRejection, ForwardingStep, LoginQuery,
+    PlayerInfoForwarder, parse_forwarded_ip,
+};
 
 /// Login query channel Velocity answers with forwarded player info.
-pub(crate) const PLAYER_INFO_CHANNEL: Identifier =
-    Identifier::new_static("velocity", "player_info");
+const PLAYER_INFO_CHANNEL: Identifier = Identifier::new_static("velocity", "player_info");
 
 /// Velocity `MODERN_DEFAULT`, the first forwarding version.
 const MODERN_DEFAULT: u8 = 1;
@@ -35,28 +37,72 @@ const MODERN_DEFAULT: u8 = 1;
 /// this protocol version has no use for, so it is left unread like Paper does.
 const MODERN_LAZY_SESSION: u8 = 4;
 /// Highest forwarding version this server requests and accepts.
-pub(crate) const MAX_SUPPORTED_FORWARDING_VERSION: u8 = MODERN_LAZY_SESSION;
+const MAX_SUPPORTED_FORWARDING_VERSION: u8 = MODERN_LAZY_SESSION;
 /// Length of the HMAC-SHA256 signature prefix, in bytes.
 const SIGNATURE_LEN: usize = 32;
 
 /// Kick message for a client that answered the query without forwarding data, i.e. one that
 /// connected directly instead of through Velocity. Paper's wording.
-pub(crate) const DIRECT_CONNECTION_MESSAGE: &str =
-    "This server requires you to connect with Velocity.";
+const DIRECT_CONNECTION_MESSAGE: &str = "This server requires you to connect with Velocity.";
 /// Kick message for forwarding data that fails verification or decoding. Paper's wording for
 /// a bad signature.
-pub(crate) const VERIFICATION_FAILURE_MESSAGE: &str = "Unable to verify player details";
+const VERIFICATION_FAILURE_MESSAGE: &str = "Unable to verify player details";
+
+/// Velocity modern forwarding, verified with the shared forwarding secret.
+pub(crate) struct VelocityForwarder {
+    secret: ForwardingSecret,
+}
+
+impl VelocityForwarder {
+    pub(crate) const fn new(secret: ForwardingSecret) -> Self {
+        Self { secret }
+    }
+}
+
+impl PlayerInfoForwarder for VelocityForwarder {
+    /// Sends the `velocity:player_info` query instead of the encryption request, like Paper.
+    fn on_hello(
+        &self,
+        _handshake: Option<ForwardedPlayer>,
+    ) -> Result<ForwardingStep, ForwardingRejection> {
+        Ok(ForwardingStep::Query(LoginQuery {
+            channel: PLAYER_INFO_CHANNEL,
+            payload: vec![MAX_SUPPORTED_FORWARDING_VERSION],
+        }))
+    }
+
+    fn on_query_answer(
+        &self,
+        payload: Option<&[u8]>,
+    ) -> Result<ForwardedPlayer, ForwardingRejection> {
+        // A vanilla client answers unknown queries without data: it bypassed the proxy.
+        let Some(payload) = payload else {
+            return Err(ForwardingRejection::new(
+                "connected without Velocity forwarding",
+                DIRECT_CONNECTION_MESSAGE,
+            ));
+        };
+        // The detail is only logged; the client gets Paper's generic message.
+        let info = VelocityPlayerInfo::read(&self.secret, payload).map_err(|error| {
+            ForwardingRejection::new(error.to_string(), VERIFICATION_FAILURE_MESSAGE)
+        })?;
+        Ok(ForwardedPlayer {
+            address: info.address,
+            profile: ForwardedProfile::Complete(info.profile),
+        })
+    }
+}
 
 /// Player info forwarded by Velocity, after its signature verified.
 #[derive(Debug)]
-pub(crate) struct VelocityPlayerInfo {
-    pub(crate) address: IpAddr,
-    pub(crate) profile: GameProfile,
+struct VelocityPlayerInfo {
+    address: IpAddr,
+    profile: GameProfile,
 }
 
 /// Why a Velocity forwarding payload was rejected.
 #[derive(Debug, Error)]
-pub(crate) enum VelocityForwardingError {
+enum VelocityForwardingError {
     /// Wrong secret, tampered payload, or a payload not produced by Velocity.
     #[error("forwarding signature did not verify")]
     Integrity,
@@ -71,46 +117,45 @@ pub(crate) enum VelocityForwardingError {
     Malformed(#[from] io::Error),
 }
 
-/// Verifies and decodes a `velocity:player_info` answer.
-///
-/// # Errors
-/// Returns [`VelocityForwardingError::Integrity`] unless the signature matches `secret`; nothing
-/// after the signature is parsed before that check passes.
-pub(crate) fn read_player_info(
-    secret: &ForwardingSecret,
-    payload: &[u8],
-) -> Result<VelocityPlayerInfo, VelocityForwardingError> {
-    let data = verify(secret, payload)?;
-    let data = &mut Cursor::new(data);
+impl VelocityPlayerInfo {
+    /// Verifies and decodes a `velocity:player_info` answer.
+    ///
+    /// # Errors
+    /// Returns [`VelocityForwardingError::Integrity`] unless the signature matches `secret`; nothing
+    /// after the signature is parsed before that check passes.
+    fn read(secret: &ForwardingSecret, payload: &[u8]) -> Result<Self, VelocityForwardingError> {
+        let data = Self::verify(secret, payload)?;
+        let data = &mut Cursor::new(data);
 
-    let version = VarInt::read(data)?.0;
-    let supported = u8::try_from(version).is_ok_and(|version| {
-        (MODERN_DEFAULT..=MAX_SUPPORTED_FORWARDING_VERSION).contains(&version)
-    });
-    if !supported {
-        return Err(VelocityForwardingError::UnsupportedVersion(version));
+        let version = VarInt::read(data)?.0;
+        let supported = u8::try_from(version).is_ok_and(|version| {
+            (MODERN_DEFAULT..=MAX_SUPPORTED_FORWARDING_VERSION).contains(&version)
+        });
+        if !supported {
+            return Err(VelocityForwardingError::UnsupportedVersion(version));
+        }
+        // Paper reads the address with the default `readUtf()` bound.
+        let address = parse_forwarded_ip(&read_utf(data, MAX_STRING_LENGTH)?)
+            .ok_or(VelocityForwardingError::InvalidAddress)?;
+        let profile = GameProfile::read(data)?;
+        Ok(Self { address, profile })
     }
-    // Paper reads the address with the default `readUtf()` bound.
-    let address = parse_forwarded_ip(&read_utf(data, MAX_STRING_LENGTH)?)
-        .ok_or(VelocityForwardingError::InvalidAddress)?;
-    let profile = GameProfile::read(data)?;
-    Ok(VelocityPlayerInfo { address, profile })
-}
 
-/// Checks the HMAC-SHA256 signature in constant time and returns the signed data.
-fn verify<'a>(
-    secret: &ForwardingSecret,
-    payload: &'a [u8],
-) -> Result<&'a [u8], VelocityForwardingError> {
-    let (signature, data) = payload
-        .split_at_checked(SIGNATURE_LEN)
-        .ok_or(VelocityForwardingError::Integrity)?;
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
-        .map_err(|_| VelocityForwardingError::Integrity)?;
-    mac.update(data);
-    mac.verify_slice(signature)
-        .map_err(|_| VelocityForwardingError::Integrity)?;
-    Ok(data)
+    /// Checks the HMAC-SHA256 signature in constant time and returns the signed data.
+    fn verify<'a>(
+        secret: &ForwardingSecret,
+        payload: &'a [u8],
+    ) -> Result<&'a [u8], VelocityForwardingError> {
+        let (signature, data) = payload
+            .split_at_checked(SIGNATURE_LEN)
+            .ok_or(VelocityForwardingError::Integrity)?;
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+            .map_err(|_| VelocityForwardingError::Integrity)?;
+        mac.update(data);
+        mac.verify_slice(signature)
+            .map_err(|_| VelocityForwardingError::Integrity)?;
+        Ok(data)
+    }
 }
 
 #[cfg(test)]
@@ -130,7 +175,7 @@ mod tests {
     };
     use uuid::Uuid;
 
-    use super::{VelocityForwardingError, read_player_info};
+    use super::{VelocityForwardingError, VelocityPlayerInfo};
 
     const SECRET: &[u8] = b"velocity-secret";
 
@@ -178,7 +223,7 @@ mod tests {
         let profile = profile();
         let payload = sign(SECRET, &forwarding_data(4, "203.0.113.7", &profile));
 
-        let info = read_player_info(&secret(), &payload).expect("valid payload");
+        let info = VelocityPlayerInfo::read(&secret(), &payload).expect("valid payload");
 
         assert_eq!(info.address, IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)));
         assert_eq!(info.profile, profile);
@@ -191,7 +236,8 @@ mod tests {
         let mut data = forwarding_data(3, "203.0.113.7", &profile);
         data.extend_from_slice(&[0xAA; 64]);
 
-        let info = read_player_info(&secret(), &sign(SECRET, &data)).expect("valid payload");
+        let info =
+            VelocityPlayerInfo::read(&secret(), &sign(SECRET, &data)).expect("valid payload");
         assert_eq!(info.profile, profile);
     }
 
@@ -202,7 +248,7 @@ mod tests {
 
         let wrong_secret = sign(b"another-secret", &data);
         assert!(matches!(
-            read_player_info(&secret(), &wrong_secret),
+            VelocityPlayerInfo::read(&secret(), &wrong_secret),
             Err(VelocityForwardingError::Integrity)
         ));
 
@@ -217,13 +263,13 @@ mod tests {
         tampered.truncate(32);
         tampered.extend_from_slice(&forged);
         assert!(matches!(
-            read_player_info(&secret(), &tampered),
+            VelocityPlayerInfo::read(&secret(), &tampered),
             Err(VelocityForwardingError::Integrity)
         ));
 
         for short in [&[][..], &[0; 31][..], &[0; 32][..]] {
             assert!(matches!(
-                read_player_info(&secret(), short),
+                VelocityPlayerInfo::read(&secret(), short),
                 Err(VelocityForwardingError::Integrity)
             ));
         }
@@ -235,7 +281,7 @@ mod tests {
         for version in [0, 5] {
             let payload = sign(SECRET, &forwarding_data(version, "203.0.113.7", &profile));
             assert!(matches!(
-                read_player_info(&secret(), &payload),
+                VelocityPlayerInfo::read(&secret(), &payload),
                 Err(VelocityForwardingError::UnsupportedVersion(v)) if v == version
             ));
         }
@@ -245,7 +291,7 @@ mod tests {
     fn rejects_hostname_addresses() {
         let payload = sign(SECRET, &forwarding_data(4, "example.com", &profile()));
         assert!(matches!(
-            read_player_info(&secret(), &payload),
+            VelocityPlayerInfo::read(&secret(), &payload),
             Err(VelocityForwardingError::InvalidAddress)
         ));
     }
