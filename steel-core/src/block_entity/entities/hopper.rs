@@ -180,7 +180,8 @@ impl HopperBlockEntity {
         };
         let direction = facing.opposite();
         let ids = [self.container_ref.container_id(), target_ref.container_id()];
-        let Ok(mut guard) = ContainerLockGuard::lock_all(&[&self.container_ref, &target_ref]) else {
+        let Ok(mut guard) = ContainerLockGuard::lock_all(&[&self.container_ref, &target_ref])
+        else {
             return false;
         };
         let Some([from, to]) = guard.get_disjoint_mut(ids) else {

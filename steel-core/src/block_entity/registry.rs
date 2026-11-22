@@ -209,14 +209,17 @@ pub fn init_block_entities() {
         });
 
         // Register dispenser and dropper block entity factories
-        registry.register(&vanilla_block_entity_types::DISPENSER, |level, pos, state| {
-            Arc::new(DispenserBlockEntity::new(
-                &vanilla_block_entity_types::DISPENSER,
-                level,
-                pos,
-                state,
-            ))
-        });
+        registry.register(
+            &vanilla_block_entity_types::DISPENSER,
+            |level, pos, state| {
+                Arc::new(DispenserBlockEntity::new(
+                    &vanilla_block_entity_types::DISPENSER,
+                    level,
+                    pos,
+                    state,
+                ))
+            },
+        );
         registry.register(&vanilla_block_entity_types::DROPPER, |level, pos, state| {
             Arc::new(DispenserBlockEntity::new(
                 &vanilla_block_entity_types::DROPPER,
