@@ -1,19 +1,23 @@
-//! Structure location command.
+//! Structure, biome, and POI location command.
 
-use std::{sync::Arc, time::Instant};
+use std::{io, sync::Arc, time::Instant};
 
+use steel_registry::poi::PoiTypeRef;
 use steel_utils::{BlockPos, Identifier, translations};
 use text_components::{
     Modifier, TextComponent,
     format::Color,
     interactivity::{ClickEvent, HoverEvent},
+    translation::Translation,
 };
+use tokio::{sync::oneshot, task::JoinHandle};
 
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
-        CommandResultSuspension, CommandResultSuspensionPoll, CommandSource, SteelArgumentType,
-        SteelCommandContext, SteelCommandRuntime, StructureOrTagKey, argument, literal,
+        BiomeOrTag, CommandResultSuspension, CommandResultSuspensionPoll, CommandSource, PoiOrTag,
+        SteelArgumentType, SteelCommandContext, SteelCommandRuntime, StructureOrTagKey, argument,
+        literal,
     },
     registration::CommandRegistration,
 };
@@ -22,6 +26,7 @@ use crate::{
         chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
         status::ChunkStatus,
     },
+    poi::OccupationStatus,
     world::World,
     worldgen::{
         generator::ChunkGenerator,
@@ -30,20 +35,169 @@ use crate::{
 };
 
 const MAX_STRUCTURE_SEARCH_RADIUS: i32 = 100;
+const MAX_BIOME_SEARCH_RADIUS: i32 = 6400;
+const BIOME_SAMPLE_RESOLUTION_HORIZONTAL: i32 = 32;
+const BIOME_SAMPLE_RESOLUTION_VERTICAL: i32 = 64;
+const POI_SEARCH_RADIUS: i32 = 256;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("locate"), |_| command())
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("locate").then(
-        literal("structure").then(
-            argument("structure", SteelArgumentType::structure_or_tag_key())
-                .executes_suspended(start_structure_search),
+    literal("locate")
+        .then(
+            literal("structure").then(
+                argument("structure", SteelArgumentType::structure_or_tag_key())
+                    .executes_suspended(start_structure_search),
+            ),
+        )
+        .then(
+            literal("biome")
+                .then(argument("biome", SteelArgumentType::biome_or_tag()).executes(locate_biome)),
+        )
+        .then(literal("poi").then(
+            argument("poi", SteelArgumentType::poi_or_tag()).executes_suspended(start_poi_search),
+        ))
+}
+
+fn locate_biome(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
+    let query = context.biome_or_tag("biome")?;
+    let world = context.source().world();
+    let origin = BlockPos::from(context.source().position());
+    let started_at = Instant::now();
+
+    let nearest = world
+        .chunk_map
+        .world_gen_context
+        .generator
+        .find_closest_biome_3d(
+            origin,
+            MAX_BIOME_SEARCH_RADIUS,
+            BIOME_SAMPLE_RESOLUTION_HORIZONTAL,
+            BIOME_SAMPLE_RESOLUTION_VERTICAL,
+            &|biome| query.matches(biome),
+        );
+    let Some((pos, biome)) = nearest else {
+        return Err(biome_not_found(query));
+    };
+
+    let distance = distance_3d(origin, pos);
+    let found_name = query.found_name(biome);
+    context.source().send_success(
+        &locate_success_component(
+            &translations::COMMANDS_LOCATE_BIOME_SUCCESS,
+            found_name.clone(),
+            pos,
+            distance,
+            true,
         ),
-    )
-    // TODO: Add `locate biome` once Steel has an asynchronous closest-biome search.
-    // TODO: Add `locate poi` once Steel has a point-of-interest manager.
+        false,
+    );
+    tracing::info!(
+        "Locating element {} took {} ms",
+        found_name,
+        started_at.elapsed().as_millis()
+    );
+    Ok(distance)
+}
+
+fn start_poi_search(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<LocatePoiSearch, CommandSyntaxError> {
+    let query = context.poi_or_tag("poi")?.clone();
+    let source = context.source().clone();
+    let origin = BlockPos::from(context.source().position());
+    let task_query = query.clone();
+    let task_world = Arc::clone(source.world());
+    let (sender, receiver) = oneshot::channel();
+    // POI columns may need disk reads, so search off the tick thread and report
+    // back through the command suspension queue.
+    let task = tokio::spawn(async move {
+        let result = task_world
+            .find_closest_poi(
+                |poi_type| task_query.matches(poi_type),
+                origin,
+                POI_SEARCH_RADIUS,
+                OccupationStatus::Any,
+            )
+            .await;
+        let _ = sender.send(result);
+    });
+
+    Ok(LocatePoiSearch {
+        source,
+        query,
+        origin,
+        receiver,
+        task: Some(task),
+        started_at: Instant::now(),
+    })
+}
+
+struct LocatePoiSearch {
+    source: CommandSource,
+    query: PoiOrTag,
+    origin: BlockPos,
+    receiver: oneshot::Receiver<io::Result<Option<(BlockPos, PoiTypeRef)>>>,
+    task: Option<JoinHandle<()>>,
+    started_at: Instant,
+}
+
+impl CommandResultSuspension for LocatePoiSearch {
+    fn poll(&mut self) -> CommandResultSuspensionPoll {
+        let result = match self.receiver.try_recv() {
+            Ok(result) => result,
+            Err(oneshot::error::TryRecvError::Empty) => {
+                return CommandResultSuspensionPoll::Pending;
+            }
+            Err(oneshot::error::TryRecvError::Closed) => {
+                self.task = None;
+                return CommandResultSuspensionPoll::Ready(Err(CommandSyntaxError::dynamic(
+                    "Point of interest search ended without a result",
+                )));
+            }
+        };
+        self.task = None;
+
+        let found = match result {
+            Ok(found) => found,
+            Err(error) => {
+                tracing::error!("Failed to search for points of interest: {error}");
+                return CommandResultSuspensionPoll::Ready(Err(CommandSyntaxError::dynamic(
+                    "Failed to search for points of interest",
+                )));
+            }
+        };
+        let Some((pos, poi_type)) = found else {
+            return CommandResultSuspensionPoll::Ready(Err(poi_not_found(&self.query)));
+        };
+
+        let distance = horizontal_distance(self.origin, pos);
+        let found_name = self.query.found_name(poi_type);
+        self.source.send_success(
+            &locate_success_component(
+                &translations::COMMANDS_LOCATE_POI_SUCCESS,
+                found_name.clone(),
+                pos,
+                distance,
+                false,
+            ),
+            false,
+        );
+        tracing::info!(
+            "Locating element {} took {} ms",
+            found_name,
+            self.started_at.elapsed().as_millis()
+        );
+        CommandResultSuspensionPoll::Ready(Ok(distance))
+    }
+
+    fn cancel(&mut self) {
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
 }
 
 fn start_structure_search(
@@ -304,7 +458,13 @@ impl LocateStructureSearch {
         let distance = horizontal_distance(self.origin, pos);
         let structure_name = self.query.found_name(&best.found_structure);
         self.source.send_success(
-            &locate_success_component(structure_name.clone(), pos, distance),
+            &locate_success_component(
+                &translations::COMMANDS_LOCATE_STRUCTURE_SUCCESS,
+                structure_name.clone(),
+                pos,
+                distance,
+                false,
+            ),
             false,
         );
         tracing::info!(
@@ -344,31 +504,66 @@ fn structure_not_found(query: &StructureOrTagKey) -> CommandSyntaxError {
     )
 }
 
+fn biome_not_found(query: &BiomeOrTag) -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(
+        translations::COMMANDS_LOCATE_BIOME_NOT_FOUND
+            .message([TextComponent::from(query.as_printable())])
+            .component(),
+    )
+}
+
+fn poi_not_found(query: &PoiOrTag) -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(
+        translations::COMMANDS_LOCATE_POI_NOT_FOUND
+            .message([TextComponent::from(query.as_printable())])
+            .component(),
+    )
+}
+
 fn horizontal_distance(a: BlockPos, b: BlockPos) -> i32 {
     let dx = b.0.x.wrapping_sub(a.0.x);
     let dz = b.0.z.wrapping_sub(a.0.z);
     let squared = dx.wrapping_mul(dx).wrapping_add(dz.wrapping_mul(dz));
+    (f64::from(squared).sqrt() as f32).floor() as i32
+}
+
+fn distance_3d(a: BlockPos, b: BlockPos) -> i32 {
+    let dx = f64::from(b.0.x) - f64::from(a.0.x);
+    let dy = f64::from(b.0.y) - f64::from(a.0.y);
+    let dz = f64::from(b.0.z) - f64::from(a.0.z);
+    let squared = dx * dx + dy * dy + dz * dz;
+    // Vanilla narrows the squared distance to f32 before the square root.
     (f64::from(squared as f32).sqrt() as f32).floor() as i32
 }
 
-fn locate_success_component(structure_name: String, pos: BlockPos, distance: i32) -> TextComponent {
-    translations::COMMANDS_LOCATE_STRUCTURE_SUCCESS
+fn locate_success_component(
+    translation: &Translation<3usize>,
+    found_name: String,
+    pos: BlockPos,
+    distance: i32,
+    include_y: bool,
+) -> TextComponent {
+    translation
         .message([
-            TextComponent::from(structure_name),
-            locate_coordinates_component(pos),
+            TextComponent::from(found_name),
+            locate_coordinates_component(pos, include_y),
             TextComponent::from(distance.to_string()),
         ])
         .component()
 }
 
-fn locate_coordinates_component(pos: BlockPos) -> TextComponent {
-    let displayed_y = "~";
+fn locate_coordinates_component(pos: BlockPos, include_y: bool) -> TextComponent {
+    let displayed_y = if include_y {
+        pos.0.y.to_string()
+    } else {
+        "~".to_owned()
+    };
     TextComponent::plain("[")
         .add_child(
             translations::CHAT_COORDINATES
                 .message([
                     TextComponent::from(pos.0.x.to_string()),
-                    TextComponent::from(displayed_y),
+                    TextComponent::from(displayed_y.clone()),
                     TextComponent::from(pos.0.z.to_string()),
                 ])
                 .component(),
@@ -411,42 +606,67 @@ mod tests {
     }
 
     #[test]
-    fn locate_graph_exposes_only_the_supported_typed_structure_branch() {
+    fn locate_graph_exposes_structure_biome_and_poi_branches() {
         init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };
         let locate = child(&dispatcher, dispatcher.root(), "locate");
         let structure = child(&dispatcher, locate, "structure");
-        let target = child(&dispatcher, structure, "structure");
+        let structure_target = child(&dispatcher, structure, "structure");
+        let biome = child(&dispatcher, locate, "biome");
+        let biome_target = child(&dispatcher, biome, "biome");
+        let poi = child(&dispatcher, locate, "poi");
+        let poi_target = child(&dispatcher, poi, "poi");
 
         assert_eq!(
             dispatcher
-                .node(target)
+                .node(structure_target)
                 .and_then(|node| node.argument_type()),
             Some(&SteelArgumentType::structure_or_tag_key())
         );
-        let Some(target_node) = dispatcher.node(target) else {
-            panic!("locate structure argument should exist");
-        };
-        assert!(target_node.is_executable());
-        assert!(dispatcher.children(target).is_some_and(<[_]>::is_empty));
-        assert_eq!(dispatcher.children(locate).map(<[_]>::len), Some(1));
+        assert_eq!(
+            dispatcher
+                .node(biome_target)
+                .and_then(|node| node.argument_type()),
+            Some(&SteelArgumentType::biome_or_tag())
+        );
+        assert_eq!(
+            dispatcher
+                .node(poi_target)
+                .and_then(|node| node.argument_type()),
+            Some(&SteelArgumentType::poi_or_tag())
+        );
+        for target in [structure_target, biome_target, poi_target] {
+            let Some(target_node) = dispatcher.node(target) else {
+                panic!("locate argument should exist");
+            };
+            assert!(target_node.is_executable());
+            assert!(dispatcher.children(target).is_some_and(<[_]>::is_empty));
+        }
+        assert_eq!(dispatcher.children(locate).map(<[_]>::len), Some(3));
     }
 
     #[test]
     fn locate_coordinates_component_matches_vanilla_interactivity() {
-        let component = locate_coordinates_component(BlockPos::new(12, 0, -34));
+        let component = locate_coordinates_component(BlockPos::new(12, 64, -34), true);
 
         assert_eq!(component.format.color, Some(Color::Green));
         assert!(matches!(
             component.interactions.click,
             Some(ClickEvent::SuggestCommand { ref command })
-                if command.as_ref() == "/tp @s 12 ~ -34"
+                if command.as_ref() == "/tp @s 12 64 -34"
         ));
         assert!(matches!(
             component.interactions.hover,
             Some(HoverEvent::ShowText { .. })
+        ));
+
+        let component = locate_coordinates_component(BlockPos::new(12, 64, -34), false);
+        assert!(matches!(
+            component.interactions.click,
+            Some(ClickEvent::SuggestCommand { ref command })
+                if command.as_ref() == "/tp @s 12 ~ -34"
         ));
     }
 

@@ -1005,6 +1005,13 @@ impl ChunkHolder {
         storage: &Arc<ChunkStorage>,
         thread_pool: &rayon::ThreadPool,
     ) -> Option<bool> {
+        if let Err(error) = context.world().load_poi_column(holder.pos).await {
+            tracing::error!(
+                chunk = ?holder.pos,
+                "Failed to load POI column before chunk load: {error}"
+            );
+        }
+
         let loaded = match storage
             .load_chunk(
                 holder.pos,

@@ -346,6 +346,25 @@ impl<N: VanillaPostNoiseStateType + NoiseSpawnTarget> ChunkGenerator for Vanilla
             .sample(quart_x, quart_y, quart_z)
     }
 
+    fn find_closest_biome_3d(
+        &self,
+        origin: BlockPos,
+        search_radius: i32,
+        sample_resolution_horizontal: i32,
+        sample_resolution_vertical: i32,
+        allowed: &dyn Fn(BiomeRef) -> bool,
+    ) -> Option<(BlockPos, BiomeRef)> {
+        self.biome_source.find_closest_biome_3d(
+            origin,
+            search_radius,
+            sample_resolution_horizontal,
+            sample_resolution_vertical,
+            N::Settings::MIN_Y,
+            N::Settings::MIN_Y + N::Settings::HEIGHT - 1,
+            allowed,
+        )
+    }
+
     fn initial_spawn_search_origin(&self) -> BlockPos {
         N::initial_spawn_search_origin(&self.biome_source, self.seed as u64)
     }

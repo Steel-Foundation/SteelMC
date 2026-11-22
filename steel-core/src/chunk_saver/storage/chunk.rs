@@ -1,12 +1,12 @@
 use small_map::FxSmallMap;
 
 use super::{
-    BlockPos, BlockStateId, BlockTickList, Chunk, ChunkBuilder, ChunkHeightmaps, ChunkPos,
-    ChunkSection, ChunkStatus, ChunkStorage, DATA_LAYER_SIZE, FluidTickList, FullChunkRef,
-    FxHashSet, Heightmap, HeightmapType, LoadedChunk, Ordering, PalettedContainer,
-    PersistentBiomeData, PersistentChunk, PersistentHeightmap, PersistentLightSection,
-    PersistentPoi, PersistentSection, REGISTRY, RegistryExt, SectionHolder, Sections, Weak, World,
-    bits_for_palette_len, io, pack_indices_from_iter, unpack_indices,
+    BlockStateId, BlockTickList, Chunk, ChunkBuilder, ChunkHeightmaps, ChunkPos, ChunkSection,
+    ChunkStatus, ChunkStorage, DATA_LAYER_SIZE, FluidTickList, FullChunkRef, FxHashSet, Heightmap,
+    HeightmapType, LoadedChunk, Ordering, PalettedContainer, PersistentBiomeData, PersistentChunk,
+    PersistentHeightmap, PersistentLightSection, PersistentSection, REGISTRY, RegistryExt,
+    SectionHolder, Sections, Weak, World, bits_for_palette_len, io, pack_indices_from_iter,
+    unpack_indices,
 };
 const PALETTE_INLINE_CAPACITY: usize = 8;
 
@@ -224,12 +224,6 @@ impl ChunkStorage {
                     .fluid_ticks
                     .iter()
                     .map(|entry| ("fluid tick", entry.x, entry.y, entry.z)),
-            )
-            .chain(
-                persistent
-                    .pois
-                    .iter()
-                    .map(|entry| ("POI", entry.x, entry.y, entry.z)),
             )
         {
             let y = i32::from(y);
@@ -462,25 +456,6 @@ impl ChunkStorage {
                 pending_entities.append(&mut loaded_entities);
             }
 
-            // Restore POI ticket state (populate_poi ran in from_disk, now apply saved occupancy)
-            if !persistent.pois.is_empty()
-                && let Some(world) = level.upgrade()
-            {
-                let tickets: Vec<_> = persistent
-                    .pois
-                    .iter()
-                    .map(|p| {
-                        let block_pos = BlockPos::new(
-                            pos.0.x * 16 + i32::from(p.x),
-                            i32::from(p.y),
-                            pos.0.y * 16 + i32::from(p.z),
-                        );
-                        (block_pos, p.free_tickets)
-                    })
-                    .collect();
-                world.poi_storage.lock().restore_tickets(pos, &tickets);
-            }
-
             // Clear dirty flag since we just loaded (add_and_register marks dirty)
             full.common().dirty.store(false, Ordering::Release);
 
@@ -608,28 +583,6 @@ impl ChunkStorage {
         }
 
         heightmaps
-    }
-
-    /// Collects POI occupancy data from the world's POI storage for this chunk.
-    pub(super) fn pois_to_persistent(
-        chunk: FullChunkRef<'_>,
-        chunk_pos: ChunkPos,
-    ) -> Vec<PersistentPoi> {
-        let Some(world) = chunk.get_level() else {
-            return Vec::new();
-        };
-        world
-            .poi_storage
-            .lock()
-            .collect_for_chunk(chunk_pos)
-            .into_iter()
-            .map(|(pos, free_tickets)| PersistentPoi {
-                x: (pos.0.x - chunk_pos.0.x * 16) as u8,
-                y: pos.0.y as i16,
-                z: (pos.0.z - chunk_pos.0.y * 16) as u8,
-                free_tickets,
-            })
-            .collect()
     }
 
     /// Converts a persistent section to runtime format.

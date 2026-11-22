@@ -45,6 +45,38 @@ fn biome_or_tag_argument_resolves_registry_entries_and_tags() {
 }
 
 #[test]
+fn poi_or_tag_argument_resolves_registry_entries_and_tags() {
+    init_vanilla_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::poi_or_tag());
+
+    let parse = dispatcher.parse("resource home", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("registered POI type should parse");
+    };
+    assert!(matches!(
+        chain.top_context().poi_or_tag("value"),
+        Ok(PoiOrTag::Poi(poi)) if poi.key == vanilla_poi_types::HOME.key
+    ));
+
+    let parse = dispatcher.parse("resource #village", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("registered POI type tag should parse");
+    };
+    let Ok(tag) = chain.top_context().poi_or_tag("value") else {
+        panic!("POI type tag should be retained");
+    };
+    assert!(tag.matches(&vanilla_poi_types::HOME));
+
+    for input in ["resource missing", "resource #missing"] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        assert!(
+            dispatcher.context_chain(parse).is_err(),
+            "{input} should reject an unknown POI type or tag"
+        );
+    }
+}
+
+#[test]
 fn structure_or_tag_key_argument_defers_registry_resolution_until_execution() {
     init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::structure_or_tag_key());

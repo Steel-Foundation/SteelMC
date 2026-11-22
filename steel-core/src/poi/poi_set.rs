@@ -93,7 +93,7 @@ impl PointOfInterestSet {
         positions
             .iter()
             .filter_map(|pos| self.pois_by_pos.get(pos))
-            .filter(|poi| status.matches(poi, max_tickets))
+            .filter(|poi| status.matches(poi, || max_tickets))
             .collect()
     }
 
@@ -108,7 +108,7 @@ impl PointOfInterestSet {
             .values()
             .filter(|poi| {
                 type_predicate(poi.poi_type_id)
-                    && status.matches(poi, max_tickets_fn(poi.poi_type_id))
+                    && status.matches(poi, || max_tickets_fn(poi.poi_type_id))
             })
             .collect()
     }
