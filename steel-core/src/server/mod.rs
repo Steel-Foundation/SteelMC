@@ -48,9 +48,9 @@ use crate::loot::random_sequences::DomainRandomSequences;
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings};
 use crate::permission::{
-    PermissionCollectionsConfig, PermissionGroupManagerError, PermissionGroupUpdateError,
-    PermissionGroupsConfig, PermissionManager, PermissionMetadataExpression,
-    PermissionRuleExpression, PermissionSet, PermissionSubjectIndex, PermissionSubjectState,
+    PermissionGroupManagerError, PermissionGroupUpdateError, PermissionGroupsConfig,
+    PermissionManager, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
+    PermissionSubjectIndex, PermissionSubjectState,
 };
 use crate::player::chat::{OutgoingChatMessage, profile_key::RemoteChatSession};
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
@@ -221,7 +221,7 @@ pub async fn test_server_with_worlds_and_config(
         .map_err(|error| format!("test commands should register: {error}"))?;
     let permission_groups = PermissionManager::transient(
         PermissionGroupsConfig::default(),
-        PermissionCollectionsConfig::default(),
+        crate::permission::PermissionCollectionsConfig::default(),
     )
     .map_err(|error| format!("test permission groups should resolve: {error}"))?;
     permission_groups
