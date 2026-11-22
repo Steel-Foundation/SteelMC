@@ -5,6 +5,7 @@ use crate::{
         brigadier::CommandSyntaxError,
         registration::{entity_selector_advanced_permission_expr, entity_selector_permission_expr},
         sender::CommandSender,
+        signing_context::CommandSigningContext,
     },
     entity::{Entity, EntityAnchor, SharedEntity},
     permission::{
@@ -17,8 +18,8 @@ use crate::{
     world::World,
 };
 use glam::DVec3;
-use steel_math::trig;
-use steel_math::{DEGREE_90, RAD_TO_DEG_F64, wrap_degrees};
+use steel_math::{DEGREE_90, RAD_TO_DEG_F64, trig, wrap_degrees};
+use steel_protocol::packets::game::ChatTypeBound;
 use steel_registry::{
     vanilla_game_rules::{
         LOG_ADMIN_COMMANDS, MAX_COMMAND_FORKS, MAX_COMMAND_SEQUENCE_LENGTH, SEND_COMMAND_FEEDBACK,
@@ -259,6 +260,7 @@ pub(crate) struct CommandSource {
     effective_player_residence: Option<DomainResidenceToken>,
     callback: CommandResultCallback,
     silent: bool,
+    signing_context: Option<Arc<CommandSigningContext>>,
 }
 
 impl CommandSource {
@@ -313,6 +315,7 @@ impl CommandSource {
             effective_player_residence,
             callback: CommandResultCallback::empty(),
             silent: false,
+            signing_context: None,
         }
     }
 
@@ -443,6 +446,16 @@ impl CommandSource {
         self.silent
     }
 
+    pub(crate) fn with_signing_context(mut self, context: Option<CommandSigningContext>) -> Self {
+        self.signing_context = context.map(Arc::new);
+        self
+    }
+
+    #[must_use]
+    pub fn signing_context(&self) -> Option<&CommandSigningContext> {
+        self.signing_context.as_deref()
+    }
+
     /// Sends informational command output straight to the sender.
     ///
     /// Unlike [`Self::send_success`], this ignores the `sendCommandFeedback`
@@ -511,6 +524,15 @@ impl CommandSource {
         {
             CommandSender::Console.send_message(&broadcast);
         }
+    }
+
+    pub fn bind_chat_type(&self, registry_id: i32) -> ChatTypeBound {
+        let sender_name = self.player().map_or_else(
+            || TextComponent::plain(self.sender.to_string()),
+            |player| player.display_name(),
+        );
+
+        ChatTypeBound::new(registry_id, sender_name)
     }
 }
 

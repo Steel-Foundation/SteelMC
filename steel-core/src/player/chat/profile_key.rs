@@ -253,6 +253,13 @@ impl ProfilePublicKey {
     pub fn create_signature_validator(&self) -> RsaPublicKeyValidator {
         RsaPublicKeyValidator::new(self.data.key.clone())
     }
+
+    /// Checks if the public key has expired or is invalid for the given packet timestamp.
+    #[must_use]
+    pub fn is_valid_at(&self, timestamp_ms: u64) -> bool {
+        let packet_time = system_time_from_millis(timestamp_ms as i64);
+        packet_time <= self.data.expires_at && !self.data.has_expired()
+    }
 }
 
 /// Remote chat session containing session ID and validated public key.
@@ -342,7 +349,7 @@ pub(super) fn system_time_from_millis(millis: i64) -> SystemTime {
     }
 }
 
-fn system_time_to_millis(time: SystemTime) -> i64 {
+pub(super) fn system_time_to_millis(time: SystemTime) -> i64 {
     match time.duration_since(UNIX_EPOCH) {
         Ok(duration) => i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
         Err(error) => match i64::try_from(error.duration().as_millis()) {
