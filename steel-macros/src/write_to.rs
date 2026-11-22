@@ -222,7 +222,7 @@ fn write_to_struct(
     generics: &syn::Generics,
     attrs: &[syn::Attribute],
 ) -> TokenStream {
-    let (impl_generics, ty_generics, _) = generics.split_for_impl();
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     match s.fields {
         Fields::Named(fields) => {
@@ -241,7 +241,7 @@ fn write_to_struct(
 
             let expanded = quote! {
                 #[automatically_derived]
-                impl #impl_generics steel_utils::serial::WriteTo for #name #ty_generics {
+                impl #impl_generics steel_utils::serial::WriteTo for #name #ty_generics #where_clause {
                     fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
                         #(#writers)*
 
@@ -266,7 +266,7 @@ fn write_to_struct(
 
             let expanded = quote! {
                 #[automatically_derived]
-                impl #impl_generics steel_utils::serial::WriteTo for #name #ty_generics {
+                impl #impl_generics steel_utils::serial::WriteTo for #name #ty_generics #where_clause {
                     fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
                         #writer
 
@@ -284,7 +284,7 @@ fn write_to_struct(
             // Unit struct: write nothing
             let expanded = quote! {
                 #[automatically_derived]
-                impl #impl_generics steel_utils::serial::WriteTo for #name #ty_generics {
+                impl #impl_generics steel_utils::serial::WriteTo for #name #ty_generics #where_clause {
                     fn write(&self, _writer: &mut impl std::io::Write) -> std::io::Result<()> {
                         Ok(())
                     }
@@ -302,7 +302,7 @@ fn write_to_enum(
     generics: &syn::Generics,
     attrs: Vec<syn::Attribute>,
 ) -> TokenStream {
-    let (impl_generics, ty_generics, _) = generics.split_for_impl();
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let mut strategy: Option<Strategy> = None;
     let mut bound: Option<syn::LitInt> = None;
@@ -390,7 +390,7 @@ fn write_to_enum(
 
     TokenStream::from(quote! {
         #[automatically_derived]
-        impl #impl_generics steel_utils::serial::WriteTo for #name #ty_generics {
+        impl #impl_generics steel_utils::serial::WriteTo for #name #ty_generics #where_clause {
             fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
                 #writer
 
