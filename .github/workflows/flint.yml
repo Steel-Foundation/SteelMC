@@ -129,10 +129,11 @@ jobs:
 
       - name: Upload Flint summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flint-summary
           path: ${{ env.FLINT_DIR }}/log/flint_summary.json
+          archive: 'false'
 
       - name: Dispatch to SteelDocs
         uses: peter-evans/repository-dispatch@v4
