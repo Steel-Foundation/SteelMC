@@ -1,61 +1,16 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt,
-    str::FromStr,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use steel_utils::Identifier;
 
+use super::{PermissionGroupRule, PermissionGroupRuleError, PermissionRuleExpression};
+
 /// One member referenced by a permission collection.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PermissionCollectionMember {
-    /// A concrete permission granted by the collection.
-    Permission(Identifier),
-    /// Another collection included by this collection.
-    Collection(Identifier),
-}
-
-impl PermissionCollectionMember {
-    /// Parses one collection member.
-    ///
-    /// A leading `#` marks a nested collection reference; any other value is a
-    /// concrete permission.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the referenced identifier is invalid.
-    pub fn parse(value: &str) -> Result<Self, PermissionCollectionError> {
-        if let Some(reference) = value.strip_prefix('#') {
-            Identifier::from_str(reference)
-                .map(Self::Collection)
-                .map_err(
-                    |reason| PermissionCollectionError::InvalidCollectionReference {
-                        value: value.to_owned(),
-                        reason,
-                    },
-                )
-        } else {
-            Identifier::from_str(value)
-                .map(Self::Permission)
-                .map_err(
-                    |reason| PermissionCollectionError::InvalidPermissionReference {
-                        value: value.to_owned(),
-                        reason,
-                    },
-                )
-        }
-    }
-}
-
-impl fmt::Display for PermissionCollectionMember {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Permission(identifier) => write!(formatter, "{identifier}"),
-            Self::Collection(identifier) => write!(formatter, "#{identifier}"),
-        }
-    }
-}
+///
+/// Collections use the same parsed rule type as group `allow`/`deny` entries, so
+/// concrete permissions, wildcard patterns, and nested collection references all
+/// follow the same syntax.
+pub type PermissionCollectionMember = PermissionGroupRule;
 
 /// One named permission collection.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -89,7 +44,7 @@ impl PermissionCollection {
 
     /// Adds a concrete permission member.
     pub fn push_permission(&mut self, permission: Identifier) {
-        self.push(PermissionCollectionMember::Permission(permission));
+        self.push(PermissionGroupRule::permission(permission));
     }
 }
 
@@ -111,16 +66,7 @@ impl PermissionCollections {
     pub fn vanilla() -> Self {
         let collections = super::generated_collections::collections()
             .into_iter()
-            .map(|(id, permissions)| {
-                (
-                    id,
-                    PermissionCollection::new(
-                        permissions
-                            .into_iter()
-                            .map(PermissionCollectionMember::Permission),
-                    ),
-                )
-            })
+            .map(|(id, members)| (id, PermissionCollection::new(members)))
             .collect();
         Self { collections }
     }
@@ -142,12 +88,12 @@ impl PermissionCollections {
         self.collections.keys()
     }
 
-    /// Returns the concrete permissions granted by `id`, following nested references.
+    /// Returns the permission rules granted by `id`, following nested references.
     ///
     /// Unknown collections resolve to nothing.
     #[must_use]
-    pub fn expand(&self, id: &Identifier) -> BTreeSet<Identifier> {
-        let mut permissions = BTreeSet::new();
+    pub fn expand(&self, id: &Identifier) -> Vec<PermissionRuleExpression> {
+        let mut permissions = Vec::new();
         let mut visited = BTreeSet::new();
         self.expand_into(id, &mut visited, &mut permissions);
         permissions
@@ -157,7 +103,7 @@ impl PermissionCollections {
         &self,
         id: &Identifier,
         visited: &mut BTreeSet<Identifier>,
-        permissions: &mut BTreeSet<Identifier>,
+        permissions: &mut Vec<PermissionRuleExpression>,
     ) {
         if !visited.insert(id.clone()) {
             return;
@@ -167,10 +113,12 @@ impl PermissionCollections {
         };
         for member in collection.members() {
             match member {
-                PermissionCollectionMember::Permission(permission) => {
-                    permissions.insert(permission.clone());
+                PermissionGroupRule::Expression(expression) => {
+                    if !permissions.contains(expression) {
+                        permissions.push(expression.clone());
+                    }
                 }
-                PermissionCollectionMember::Collection(nested) => {
+                PermissionGroupRule::Collection(nested) => {
                     self.expand_into(nested, visited, permissions);
                 }
             }
@@ -201,7 +149,7 @@ impl PermissionCollections {
                 }
                 let mut collection = PermissionCollection::default();
                 for member in members {
-                    collection.push(PermissionCollectionMember::parse(member)?);
+                    collection.push(PermissionGroupRule::parse(member)?);
                 }
                 collections.insert(Identifier::new(namespace.clone(), name.clone()), collection);
             }
@@ -235,14 +183,27 @@ impl PermissionCollections {
     /// Every permission contributed by code can then be administered through
     /// `/perms` without a separate authority declaration.
     pub fn push_managed_permission(&mut self, id: Identifier, permission: Identifier) {
-        self.push(
-            id.clone(),
-            PermissionCollectionMember::Permission(permission.clone()),
-        );
-        self.push(
-            id,
-            PermissionCollectionMember::Permission(super::management_authority(&permission)),
-        );
+        self.push_managed_member(id, PermissionGroupRule::permission(permission));
+    }
+
+    /// Adds a member and its matching management authority to the collection `id`.
+    ///
+    /// Collection references are pushed unchanged; rule expressions receive the
+    /// authority derived from their key, preserving wildcard and context selectors.
+    pub fn push_managed_member(&mut self, id: Identifier, member: PermissionCollectionMember) {
+        let authority = match &member {
+            PermissionGroupRule::Expression(expression) => Some(PermissionGroupRule::Expression(
+                PermissionRuleExpression::new(
+                    expression.key().manage_authority(),
+                    expression.context().clone(),
+                ),
+            )),
+            PermissionGroupRule::Collection(_) => None,
+        };
+        self.push(id.clone(), member);
+        if let Some(authority) = authority {
+            self.push(id, authority);
+        }
     }
 
     /// Additively merges the members of `other` into this set.
@@ -282,20 +243,7 @@ pub enum PermissionCollectionError {
         /// Invalid collection name.
         name: String,
     },
-    /// A nested collection reference is invalid.
-    #[error("invalid permission collection reference '{value}': {reason}")]
-    InvalidCollectionReference {
-        /// Invalid member text.
-        value: String,
-        /// Identifier parse failure reason.
-        reason: &'static str,
-    },
-    /// A concrete permission reference is invalid.
-    #[error("invalid permission reference '{value}': {reason}")]
-    InvalidPermissionReference {
-        /// Invalid member text.
-        value: String,
-        /// Identifier parse failure reason.
-        reason: &'static str,
-    },
+    /// A collection member is not a valid group-style rule.
+    #[error(transparent)]
+    InvalidRule(#[from] PermissionGroupRuleError),
 }

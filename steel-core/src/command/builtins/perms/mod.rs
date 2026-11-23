@@ -24,7 +24,9 @@ use steel_utils::Identifier;
 use text_components::TextComponent;
 use tokio::{sync::oneshot, task::JoinHandle};
 
+#[cfg(test)]
 pub(super) const MANAGE_ALL_PERMISSION: &str = "steel:permission.manage.*";
+#[cfg(test)]
 pub(super) const GROUP_ALL_PERMISSION: &str = "steel:permission.group.*";
 pub(super) const METADATA_PERMISSION: &str = "steel:permission.metadata";
 
@@ -1692,7 +1694,7 @@ mod tests {
         builtins::{create_dispatcher, create_registered_dispatcher},
         execution::{CommandSource, SteelCommandRuntime},
     };
-    use crate::permission::{PermissionCollection, PermissionCollectionMember, PermissionKey};
+    use crate::permission::{PermissionCollection, PermissionGroupRule, PermissionKey};
     use steel_utils::Identifier;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
@@ -1754,7 +1756,7 @@ mod tests {
     }
 
     #[test]
-    fn perms_discovery_contains_static_admin_and_granular_command_permissions() {
+    fn perms_discovery_excludes_admin_wildcards_and_keeps_granular_commands() {
         init_vanilla_registry();
         let Ok(registered) = create_registered_dispatcher(CommandRegistry::new()) else {
             panic!("built-in dispatcher should build");
@@ -1766,8 +1768,6 @@ mod tests {
             .collect::<Vec<_>>();
 
         for expected in [
-            MANAGE_ALL_PERMISSION,
-            GROUP_ALL_PERMISSION,
             METADATA_PERMISSION,
             "steel:command.perms.user.allow",
             "steel:command.perms.user.metadata.set",
@@ -1775,6 +1775,12 @@ mod tests {
             "steel:command.perms.collection.add",
         ] {
             assert!(permissions.contains(&expected), "missing {expected}");
+        }
+        for hidden in [MANAGE_ALL_PERMISSION, GROUP_ALL_PERMISSION] {
+            assert!(
+                !permissions.contains(&hidden),
+                "administrative wildcard {hidden} should not be suggested"
+            );
         }
     }
 
@@ -1789,9 +1795,8 @@ mod tests {
         let members = declared
             .get(&PERMS_COLLECTION)
             .map(PermissionCollection::members);
-        let command =
-            PermissionCollectionMember::Permission(Identifier::from_steel("command.perms"));
-        let manage = PermissionCollectionMember::Permission(Identifier::from_steel(
+        let command = PermissionGroupRule::permission(Identifier::from_steel("command.perms"));
+        let manage = PermissionGroupRule::permission(Identifier::from_steel(
             "permission.manage.steel.command.perms",
         ));
         assert!(

@@ -183,7 +183,7 @@ fn permission_collection_member_argument_reads_permissions_and_references() {
     for (input, expected) in [
         (
             "resource steel:build",
-            PermissionCollectionMember::Permission(Identifier::new("steel", "build")),
+            PermissionGroupRule::permission(Identifier::new("steel", "build")),
         ),
         (
             "resource #minecraft:gamemasters",

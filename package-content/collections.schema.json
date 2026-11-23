@@ -14,7 +14,7 @@
         },
         "additionalProperties": {
           "type": "array",
-          "description": "Collection members: concrete permission identifiers or #namespace:name collection references",
+          "description": "Collection members: permission rule expressions or #namespace:name collection references",
           "items": {
             "$ref": "#/definitions/collection_member"
           },
@@ -28,10 +28,26 @@
   },
   "additionalProperties": false,
   "definitions": {
-    "collection_member": {
+    "permission_rule_expression": {
       "type": "string",
-      "description": "Concrete permission identifier (namespace:path) or a nested collection reference (#namespace:name).",
-      "pattern": "^#?([a-z0-9_.-]+:)?[a-z0-9_./-]+$"
+      "description": "Permission key with an optional namespace and an optional context selector, such as minecraft:command.give or steel:permission.manage.*.",
+      "pattern": "^(\\*|([a-z0-9_.-]+:)?(\\*|[a-z0-9_-]+(\\.[a-z0-9_-]+)*(\\.\\*)?))(\\{([a-z0-9_-]+|[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*)=[^\\s{},=]+(,([a-z0-9_-]+|[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*)=[^\\s{},=]+)*\\})?$"
+    },
+    "collection_reference": {
+      "type": "string",
+      "description": "Reference to a nested permission collection, such as #minecraft:owners.",
+      "pattern": "^#([a-z0-9_.-]+:)?[a-z0-9_./-]+$"
+    },
+    "collection_member": {
+      "description": "A permission rule expression or a #namespace:name nested collection reference",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/permission_rule_expression"
+        },
+        {
+          "$ref": "#/definitions/collection_reference"
+        }
+      ]
     }
   }
 }

@@ -72,8 +72,7 @@ pub(crate) fn create_registered_dispatcher(
     let mut builder = CommandDispatcherBuilder::new();
     builder.declare_permission(ENTITY_SELECTOR_PERMISSION_KEY)?;
     builder.declare_permission(ENTITY_SELECTOR_ADVANCED_PERMISSION_KEY)?;
-    builder.declare_permission(perms::MANAGE_ALL_PERMISSION)?;
-    builder.declare_permission(perms::GROUP_ALL_PERMISSION)?;
+    // Administrative wildcards stay valid at runtime but are not autocomplete candidates.
     builder.declare_permission(perms::METADATA_PERMISSION)?;
     builder.register(advancement::registration())?;
     builder.register(clear::registration())?;
@@ -134,7 +133,7 @@ mod tests {
         literal as extension_literal,
     };
     use crate::permission::{
-        OWNERS_COLLECTION, PermissionCollectionMember, PermissionCollections, PermissionKey,
+        OWNERS_COLLECTION, PermissionCollections, PermissionGroupRule, PermissionKey,
     };
     use steel_registry::init_vanilla_registry;
     use steel_utils::Identifier;
@@ -321,12 +320,17 @@ mod tests {
             assert!(
                 owners
                     .members()
-                    .contains(&PermissionCollectionMember::Permission((*member).clone()))
+                    .contains(&PermissionGroupRule::permission((*member).clone()))
             );
         }
         let effective =
             PermissionCollections::effective(&collections, &PermissionCollections::new());
-        assert!(effective.expand(&OWNERS_COLLECTION).contains(&modify));
+        assert!(
+            effective
+                .expand(&OWNERS_COLLECTION)
+                .iter()
+                .any(|expression| expression.key().as_identifier().as_ref() == Some(&modify))
+        );
     }
 
     #[test]

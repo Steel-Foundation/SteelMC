@@ -11,8 +11,8 @@ use crate::command::{
     },
 };
 use crate::permission::{
-    OWNERS_COLLECTION, PermissionCollectionMember, PermissionEntry, PermissionExpr, PermissionKey,
-    PermissionSet, PermissionState,
+    OWNERS_COLLECTION, PermissionCollectionMember, PermissionEntry, PermissionExpr,
+    PermissionGroupRule, PermissionKey, PermissionSet, PermissionState,
 };
 
 use super::{CommandDispatcherBuilder, CommandRegistration, CommandRegistrationError};
@@ -367,8 +367,7 @@ fn dispatcher_build_retains_declared_and_derived_permission_keys() {
         [
             "minecraft:command.tick",
             "minecraft:command.tick.freeze",
-            "minecraft:selector",
-            "steel:permission.manage.minecraft.command.tick"
+            "minecraft:selector"
         ]
     );
 }
@@ -400,7 +399,7 @@ fn command_collection_permissions_resolve_default_and_explicit_collections() {
     assert!(
         custom_members
             .members()
-            .contains(&PermissionCollectionMember::Permission(granted.clone()))
+            .contains(&PermissionGroupRule::permission(granted.clone()))
     );
     let Some(owners) = collections.get(&OWNERS_COLLECTION) else {
         panic!("explicit member collection should be declared");
@@ -408,7 +407,7 @@ fn command_collection_permissions_resolve_default_and_explicit_collections() {
     assert!(
         owners
             .members()
-            .contains(&PermissionCollectionMember::Permission(owner_only))
+            .contains(&PermissionGroupRule::permission(owner_only))
     );
     assert!(
         registered
@@ -438,7 +437,7 @@ fn declared_permissions_grant_their_management_authorities() {
         builder
             .declare_collection_member(
                 custom.clone(),
-                PermissionCollectionMember::Permission(independent.clone()),
+                PermissionGroupRule::permission(independent.clone()),
             )
             .is_ok()
     );
@@ -457,7 +456,7 @@ fn declared_permissions_grant_their_management_authorities() {
         );
         for member in [permission.clone(), authority] {
             assert!(
-                members.contains(&PermissionCollectionMember::Permission(member.clone())),
+                members.contains(&PermissionGroupRule::permission(member.clone())),
                 "missing {member}"
             );
         }

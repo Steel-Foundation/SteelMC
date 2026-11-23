@@ -1,9 +1,11 @@
 #:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/package-content/collections.schema.json
 # Documentation: https://steelmc.dev/configuration/permissions/
 
-# Permission collections group related permissions under a reusable `#namespace:name`
-# reference. A group lists a collection in its `allow` or `deny` rules to apply every
-# permission it contains.
+# Permission collections group related permission rules under a reusable
+# `#namespace:name` reference. Members use the same syntax as group rules: concrete
+# permissions, wildcard patterns such as `steel:permission.manage.*`, rules with a
+# context selector, and nested collection references. A group lists a collection in
+# its `allow` or `deny` rules to apply every rule it contains.
 #
 # The vanilla collections (`#minecraft:all`, `#minecraft:moderators`,
 # `#minecraft:gamemasters`, `#minecraft:admins`, `#minecraft:owners`) are provided by

@@ -37,7 +37,7 @@ use text_components::{TextComponent, content::Content};
 use crate::bootstrap::init_globals;
 use crate::entity::EntityAnchor;
 use crate::permission::{
-    PermissionCollectionMember, PermissionExpr, PermissionKey, PermissionState,
+    PermissionCollectionMember, PermissionExpr, PermissionGroupRule, PermissionKey, PermissionState,
 };
 
 use super::argument::SteelArgumentParser;

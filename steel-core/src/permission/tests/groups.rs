@@ -1,12 +1,12 @@
 use steel_utils::Identifier;
 
 use super::super::{
-    MODERATORS_COLLECTION, PermissionCollectionMember, PermissionCollections,
-    PermissionConfigError, PermissionEntry, PermissionGroupConfig, PermissionGroups,
-    PermissionGroupsConfig, PermissionKey, PermissionMetadataEntry, PermissionMetadataRuleConfig,
-    PermissionMetadataSet, PermissionMetadataValue, PermissionRuleContext,
-    PermissionRuleExpression, PermissionRuleExpressionError, PermissionSet, PermissionState,
-    parse_permission_metadata_key,
+    MODERATORS_COLLECTION, PermissionCollections, PermissionCollectionsConfig,
+    PermissionConfigError, PermissionEntry, PermissionGroupConfig, PermissionGroupRule,
+    PermissionGroups, PermissionGroupsConfig, PermissionKey, PermissionMetadataEntry,
+    PermissionMetadataRuleConfig, PermissionMetadataSet, PermissionMetadataValue,
+    PermissionRuleContext, PermissionRuleExpression, PermissionRuleExpressionError, PermissionSet,
+    PermissionState, parse_permission_metadata_key,
 };
 
 fn key(value: &str) -> PermissionKey {
@@ -314,7 +314,7 @@ fn runtime_declared_collections_reach_inheriting_groups() {
     let mut declared = PermissionCollections::new();
     declared.push(
         Identifier::new("minecraft", "gamemasters"),
-        PermissionCollectionMember::Permission(Identifier::new("steel", "command.fly")),
+        PermissionGroupRule::permission(Identifier::new("steel", "command.fly")),
     );
     let collections = PermissionCollections::effective(&declared, &PermissionCollections::new());
 
@@ -340,6 +340,48 @@ fn runtime_declared_collections_reach_inheriting_groups() {
 }
 
 #[test]
+fn wildcard_collection_members_apply_through_group_references() {
+    let mut config = PermissionCollectionsConfig::default();
+    config
+        .collections
+        .entry("steel".to_owned())
+        .or_default()
+        .insert(
+            "build".to_owned(),
+            vec![
+                "minecraft:command.*".to_owned(),
+                "#minecraft:moderators".to_owned(),
+            ],
+        );
+    let collections = match PermissionCollections::from_config(&config) {
+        Ok(collections) => collections,
+        Err(error) => panic!("test collection config should resolve: {error}"),
+    };
+    let expressions = collections.expand(&Identifier::new("steel", "build"));
+    assert!(
+        expressions
+            .iter()
+            .any(|expression| expression.key().as_str() == "minecraft:command.*")
+    );
+
+    let mut groups_config = PermissionGroupsConfig::default();
+    groups_config.groups.insert(
+        "builder".to_owned(),
+        PermissionGroupConfig {
+            allow: vec!["#steel:build".to_owned()],
+            ..PermissionGroupConfig::default()
+        },
+    );
+    let groups = match PermissionGroups::from_config(groups_config, &collections) {
+        Ok(groups) => groups,
+        Err(error) => panic!("test group config should resolve: {error}"),
+    };
+    let builder = groups.effective_permissions(&["builder".to_owned()], &PermissionSet::new());
+    assert!(builder.allows_key(&key("minecraft:command.give")));
+    assert!(!builder.allows_key(&key("minecraft:other")));
+}
+
+#[test]
 fn vanilla_management_authorities_are_scoped_to_each_level() {
     let groups = groups(PermissionGroupsConfig::default());
 
@@ -352,32 +394,54 @@ fn vanilla_management_authorities_are_scoped_to_each_level() {
     let group_all = Identifier::new("steel", "permission.group.all");
     let group_admins = Identifier::new("steel", "permission.group.admins");
     let group_owners = Identifier::new("steel", "permission.group.owners");
+    let manage_group_all = Identifier::new("steel", "permission.manage.steel.permission.group.all");
+    let manage_group_admins =
+        Identifier::new("steel", "permission.manage.steel.permission.group.admins");
+    let manage_group_moderators = Identifier::new(
+        "steel",
+        "permission.manage.steel.permission.group.moderators",
+    );
+    let manage_group_owners =
+        Identifier::new("steel", "permission.manage.steel.permission.group.owners");
     let metadata = Identifier::new("steel", "permission.metadata");
+    let manage_wildcard = key("steel:permission.manage.*");
+    let group_wildcard = key("steel:permission.group.*");
 
     // `all` is the only vanilla level without any administration surface.
     assert!(!all.allows_identifier(&manage_give));
     assert!(!all.allows_identifier(&group_all));
     assert!(!all.allows_identifier(&group_admins));
+    assert!(!all.allows_identifier(&manage_group_all));
     assert!(!all.allows_identifier(&metadata));
 
     // `moderators` has no vanilla commands, but still carries its management authorities.
     let moderators =
         groups.effective_permissions(&["moderators".to_owned()], &PermissionSet::new());
     assert!(moderators.allows_identifier(&Identifier::new("steel", "permission.group.moderators")));
+    assert!(moderators.allows_identifier(&manage_group_moderators));
     assert!(!moderators.allows_identifier(&group_all));
+    assert!(!moderators.allows_identifier(&manage_group_all));
 
     // `admins` inherits its own level and everything below it, including `all`, but not owners.
     assert!(admins.allows_identifier(&manage_give));
     assert!(admins.allows_identifier(&group_all));
     assert!(admins.allows_identifier(&group_admins));
+    assert!(admins.allows_identifier(&manage_group_all));
+    assert!(admins.allows_identifier(&manage_group_admins));
     assert!(admins.allows_identifier(&metadata));
     assert!(!admins.allows_identifier(&manage_stop));
     assert!(!admins.allows_identifier(&group_owners));
+    assert!(!admins.allows_identifier(&manage_group_owners));
+    assert!(!admins.allows_key(&key("steel:permission.manage.*")));
+    assert!(!admins.allows_key(&key("steel:permission.group.*")));
 
-    // `owners` can administer its own level too.
+    // `owners` can administer its own level and hold both root wildcards.
     assert!(owners.allows_identifier(&manage_stop));
     assert!(owners.allows_identifier(&group_all));
     assert!(owners.allows_identifier(&group_owners));
+    assert!(owners.allows_identifier(&manage_group_owners));
+    assert!(owners.allows_key(&manage_wildcard));
+    assert!(owners.allows_key(&group_wildcard));
 }
 
 #[test]
@@ -385,7 +449,7 @@ fn vanilla_moderators_collection_grants_perms_command_to_ops() {
     let mut declared = PermissionCollections::new();
     declared.push(
         MODERATORS_COLLECTION,
-        PermissionCollectionMember::Permission(Identifier::from_steel("command.perms")),
+        PermissionGroupRule::permission(Identifier::from_steel("command.perms")),
     );
     let collections = PermissionCollections::effective(&declared, &PermissionCollections::new());
     let groups =

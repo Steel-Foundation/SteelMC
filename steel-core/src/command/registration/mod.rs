@@ -15,7 +15,7 @@ use super::{
 };
 use crate::permission::{
     OWNERS_COLLECTION, PermissionCollectionMember, PermissionCollections, PermissionExpr,
-    PermissionKey, PermissionKeyError, PermissionSegment, PermissionState,
+    PermissionGroupRule, PermissionKey, PermissionKeyError, PermissionSegment, PermissionState,
 };
 
 type CommandFactory<S> =
@@ -88,7 +88,7 @@ where
     /// Adds a permission to this command's collection.
     pub(crate) fn collection_permission(mut self, permission: Identifier) -> Self {
         self.collection_members
-            .push((None, PermissionCollectionMember::Permission(permission)));
+            .push((None, PermissionGroupRule::permission(permission)));
         self
     }
 
@@ -100,7 +100,7 @@ where
     ) -> Self {
         self.collection_members.push((
             Some(collection),
-            PermissionCollectionMember::Permission(permission),
+            PermissionGroupRule::permission(permission),
         ));
         self
     }
@@ -273,15 +273,8 @@ where
         if !Identifier::validate(&collection.namespace, &collection.path) {
             return Err(CommandRegistrationError::InvalidDeclaredCollection { collection });
         }
-        match member {
-            PermissionCollectionMember::Permission(permission) => {
-                self.declared_collections
-                    .push_managed_permission(collection, permission);
-            }
-            member @ PermissionCollectionMember::Collection(_) => {
-                self.declared_collections.push(collection, member);
-            }
-        }
+        self.declared_collections
+            .push_managed_member(collection, member);
         Ok(())
     }
 
@@ -357,15 +350,15 @@ where
             declared_collections.push_managed_permission(collection.clone(), derived_key);
             for (member_collection, member) in collection_members {
                 let target = member_collection.unwrap_or_else(|| collection.clone());
-                match member {
-                    PermissionCollectionMember::Permission(permission) => {
-                        permissions.insert(PermissionKey::from_identifier(&permission));
-                        declared_collections.push_managed_permission(target, permission);
+                match &member {
+                    PermissionGroupRule::Expression(expression) => {
+                        if let Some(identifier) = expression.key().as_identifier() {
+                            permissions.insert(PermissionKey::from_identifier(&identifier));
+                        }
                     }
-                    member @ PermissionCollectionMember::Collection(_) => {
-                        declared_collections.push(target, member);
-                    }
+                    PermissionGroupRule::Collection(_) => {}
                 }
+                declared_collections.push_managed_member(target, member);
             }
             collect_permission_keys(&root_permission, &mut permissions);
             let root = apply_registration_requirements(
@@ -411,17 +404,6 @@ where
                 .any(|root| claim_counts.get(root).is_some_and(|count| *count > 1));
             if collided {
                 register_renamed_root(&mut dispatcher, &command.root, command.id.to_string())?;
-            }
-        }
-
-        for collection in declared_collections.ids() {
-            let Some(members) = declared_collections.get(collection) else {
-                continue;
-            };
-            for member in members.members() {
-                if let PermissionCollectionMember::Permission(permission) = member {
-                    permissions.insert(PermissionKey::from_identifier(permission));
-                }
             }
         }
 

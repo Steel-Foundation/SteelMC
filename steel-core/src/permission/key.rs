@@ -4,6 +4,17 @@ use steel_utils::Identifier;
 
 const MANAGEMENT_PERMISSION_PREFIX: &str = "permission.manage";
 
+/// Returns whether `namespace:path` is itself a permission-management authority.
+///
+/// Management authorities authorize themselves so managing one never requires an
+/// authority nested one level deeper, ad infinitum.
+fn is_manage_authority(namespace: Option<&str>, path: &str) -> bool {
+    namespace == Some(Identifier::STEEL_NAMESPACE)
+        && path
+            .strip_prefix(MANAGEMENT_PERMISSION_PREFIX)
+            .is_some_and(|rest| rest.starts_with('.'))
+}
+
 /// One permission pattern: an optional namespace and a dot-separated path whose
 /// final segment may be a `*` wildcard.
 ///
@@ -100,6 +111,38 @@ impl PermissionKey {
         &self.value
     }
 
+    /// Returns the concrete identifier for this key, or `None` for wildcards and
+    /// namespace-less patterns.
+    #[must_use]
+    pub fn as_identifier(&self) -> Option<Identifier> {
+        let namespace = self.namespace.as_ref()?;
+        let path = self
+            .segments
+            .iter()
+            .map(|segment| match segment {
+                KeySegment::Literal(literal) => Some(literal.as_str()),
+                KeySegment::Wildcard => None,
+            })
+            .collect::<Option<Vec<_>>>()?
+            .join(".");
+        Some(Identifier::new(namespace.clone(), path))
+    }
+
+    /// Builds a wildcard key from a namespace and a literal path prefix.
+    pub(crate) fn wildcard(namespace: impl Into<String>, prefix: &str) -> Self {
+        let namespace = namespace.into();
+        let mut segments = prefix
+            .split('.')
+            .map(|segment| KeySegment::Literal(segment.to_owned()))
+            .collect::<Vec<_>>();
+        segments.push(KeySegment::Wildcard);
+        Self {
+            value: format!("{namespace}:{prefix}.*"),
+            namespace: Some(namespace),
+            segments,
+        }
+    }
+
     /// Returns the pattern's namespace, or `None` when it matches every namespace.
     #[must_use]
     pub fn namespace(&self) -> Option<&str> {
@@ -111,9 +154,17 @@ impl PermissionKey {
     /// The managed namespace and path are appended to the Steel management prefix
     /// as path segments, so `minecraft:command.give` is managed by
     /// `steel:permission.manage.minecraft.command.give`. A namespace-less expression
-    /// appends only its path.
+    /// appends only its path. Management authorities themselves return unchanged,
+    /// which prevents an infinite chain of management authorities.
     #[must_use]
     pub fn manage_authority(&self) -> Self {
+        let path = self
+            .value
+            .split_once(':')
+            .map_or(self.value.as_str(), |(_, path)| path);
+        if is_manage_authority(self.namespace.as_deref(), path) {
+            return self.clone();
+        }
         let mut segments = Vec::with_capacity(self.segments.len() + 3);
         segments.extend(
             MANAGEMENT_PERMISSION_PREFIX
@@ -201,8 +252,12 @@ impl PermissionKey {
 ///
 /// This is the identifier form of [`PermissionKey::manage_authority`] for a
 /// concrete permission, used when granting management through a collection.
+/// A management authority is returned unchanged to stop recursive nesting.
 #[must_use]
 pub fn management_authority(permission: &Identifier) -> Identifier {
+    if is_manage_authority(Some(&permission.namespace), &permission.path) {
+        return permission.clone();
+    }
     Identifier::new(
         Identifier::STEEL_NAMESPACE.to_owned(),
         format!(

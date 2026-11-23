@@ -11,8 +11,8 @@ use super::{
     PermissionCollectionError, PermissionCollections, PermissionEntry, PermissionKey,
     PermissionKeyError, PermissionMetadataEntry, PermissionMetadataExpression,
     PermissionMetadataExpressionError, PermissionMetadataSet, PermissionMetadataValue,
-    PermissionRuleExpression, PermissionRuleExpressionError, PermissionSegment, PermissionSet,
-    PermissionState, generated_collections,
+    PermissionRuleContext, PermissionRuleExpression, PermissionRuleExpressionError,
+    PermissionSegment, PermissionSet, PermissionState, generated_collections,
 };
 
 /// Parsed `groups.toml` permission configuration.
@@ -96,6 +96,23 @@ impl PermissionGroupRule {
         PermissionRuleExpression::parse(value)
             .map(Self::Expression)
             .map_err(PermissionGroupRuleError::from)
+    }
+
+    /// Builds a global rule for one concrete permission identifier.
+    #[must_use]
+    pub fn permission(permission: Identifier) -> Self {
+        Self::Expression(PermissionRuleExpression::new(
+            PermissionKey::from_identifier(&permission),
+            PermissionRuleContext::Global,
+        ))
+    }
+
+    /// Builds a global wildcard rule; used for generated built-in authorities.
+    pub(crate) fn wildcard(namespace: &str, prefix: &str) -> Self {
+        Self::Expression(PermissionRuleExpression::new(
+            PermissionKey::wildcard(namespace, prefix),
+            PermissionRuleContext::Global,
+        ))
     }
 
     /// Returns the permission rule expression, or `None` for a collection reference.
@@ -352,11 +369,9 @@ fn push_group_rule(
             permissions.push(PermissionEntry::new_with_context(key, context, state));
         }
         PermissionGroupRule::Collection(identifier) => {
-            for permission in collections.expand(&identifier) {
-                permissions.push(PermissionEntry::new(
-                    PermissionKey::from_identifier(&permission),
-                    state,
-                ));
+            for expression in collections.expand(&identifier) {
+                let (key, context) = expression.into_parts();
+                permissions.push(PermissionEntry::new_with_context(key, context, state));
             }
         }
     }

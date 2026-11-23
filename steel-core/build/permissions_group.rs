@@ -17,6 +17,9 @@ struct Group {
 /// Change this to move that authority to a different level.
 const DEFAULT_GROUP_MANAGER_LEVEL: &str = "admins";
 
+/// Highest vanilla level, which carries the root management wildcards.
+const OWNER_LEVEL: &str = "owners";
+
 /// Compiles the extracted vanilla permission levels into a Rust module.
 ///
 /// The generated module exposes the vanilla group names, one collection identifier
@@ -62,7 +65,7 @@ pub fn build() -> String {
 
         use steel_utils::Identifier;
 
-        use crate::permission::PermissionGroupConfig;
+        use crate::permission::{PermissionGroupConfig, PermissionGroupRule};
 
         #group_constants
 
@@ -81,7 +84,7 @@ pub fn build() -> String {
         ///
         /// Each collection holds the commands and management authorities declared for
         /// that level only. Levels inherit cumulatively through the generated groups.
-        pub fn collections() -> Vec<(Identifier, Vec<Identifier>)> {
+        pub fn collections() -> Vec<(Identifier, Vec<PermissionGroupRule>)> {
             vec![
                 #collection_entries
             ]
@@ -125,7 +128,7 @@ fn collection_identifier_constants(group_names: &[String]) -> TokenStream {
     tokens
 }
 
-/// Emits the `(Identifier, Vec<Identifier>)` entries for the code-owned collections.
+/// Emits the `(Identifier, Vec<PermissionGroupRule>)` entries for the code-owned collections.
 ///
 /// Every level above the default group also carries the management authorities for
 /// its own permissions, collection, group, and metadata. Higher levels inherit lower
@@ -134,7 +137,10 @@ fn collection_entries(groups: &BTreeMap<String, Group>, default_group: &str) -> 
     let mut tokens = TokenStream::new();
     for (name, group) in groups {
         let collection = collection_constant(name);
-        let permissions = group.allow.iter().map(|key| permission_identifier(key));
+        let permissions = group
+            .allow
+            .iter()
+            .map(|key| permission_rule(permission_identifier(key)));
         let management = (name != default_group)
             .then(|| management_identifiers(name, group, default_group))
             .into_iter()
@@ -150,7 +156,7 @@ fn collection_entries(groups: &BTreeMap<String, Group>, default_group: &str) -> 
     tokens
 }
 
-/// Returns the management authorities granted by one permission level.
+/// Returns the management rules granted by one permission level.
 fn management_identifiers(level: &str, group: &Group, default_group: &str) -> Vec<TokenStream> {
     let mut authorities = group
         .allow
@@ -161,13 +167,34 @@ fn management_identifiers(level: &str, group: &Group, default_group: &str) -> Ve
         "minecraft:{level}"
     )));
     authorities.push(group_authority_identifier(level));
+    authorities.push(management_authority_identifier(&format!(
+        "steel:permission.group.{level}"
+    )));
     if level == DEFAULT_GROUP_MANAGER_LEVEL {
         authorities.push(group_authority_identifier(default_group));
+        authorities.push(management_authority_identifier(&format!(
+            "steel:permission.group.{default_group}"
+        )));
     }
+    let metadata = "permission.metadata";
     authorities.push(quote! {
-        Identifier::new_static("steel", "permission.metadata")
+        Identifier::new_static("steel", #metadata)
     });
-    authorities
+    authorities.push(management_authority_identifier(&format!(
+        "steel:{metadata}"
+    )));
+
+    let mut rules = authorities
+        .into_iter()
+        .map(permission_rule)
+        .collect::<Vec<_>>();
+    if level == OWNER_LEVEL {
+        rules.extend([
+            quote! { PermissionGroupRule::wildcard("steel", "permission.manage") },
+            quote! { PermissionGroupRule::wildcard("steel", "permission.group") },
+        ]);
+    }
+    rules
 }
 
 fn management_authority_identifier(name: &str) -> TokenStream {
@@ -189,7 +216,8 @@ fn group_authority_identifier(level: &str) -> TokenStream {
 ///
 /// Every level references its own collection, including levels with no vanilla
 /// commands of their own: their collection still carries management authorities and
-/// code-declared permissions such as `/perms`.
+/// code-declared permissions such as `/perms`. Owners also receive the root management
+/// wildcards in their collection.
 fn default_group_entries(groups: &BTreeMap<String, Group>) -> TokenStream {
     let mut tokens = TokenStream::new();
     for (name, group) in groups {
@@ -236,4 +264,8 @@ fn permission_identifier(name: &str) -> TokenStream {
     quote! {
         Identifier::new_static(#namespace, #path)
     }
+}
+
+fn permission_rule(identifier: TokenStream) -> TokenStream {
+    quote! { PermissionGroupRule::permission(#identifier) }
 }

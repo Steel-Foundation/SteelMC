@@ -72,12 +72,6 @@ unsafe impl DowncastType for PermissionCollectionName {
         DowncastTypeKey::new("steel:command/value/permission_collection");
 }
 
-// SAFETY: This Steel-owned key uniquely identifies the concrete parsed value.
-unsafe impl DowncastType for PermissionCollectionMember {
-    const TYPE_KEY: DowncastTypeKey =
-        DowncastTypeKey::new("steel:command/value/permission_collection_member");
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PermissionSuggestionScope {
     All,

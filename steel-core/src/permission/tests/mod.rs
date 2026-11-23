@@ -18,6 +18,20 @@ fn key(value: &str) -> PermissionKey {
     }
 }
 
+#[test]
+fn management_authorities_authorize_themselves() {
+    let concrete = key("minecraft:command.advancement");
+    let authority = key("steel:permission.manage.minecraft.command.advancement");
+    assert_eq!(concrete.manage_authority(), authority);
+    assert_eq!(authority.manage_authority(), authority);
+
+    let wildcard = key("steel:permission.manage.*");
+    assert_eq!(wildcard.manage_authority(), wildcard);
+
+    let group_authority = key("steel:permission.manage.steel.permission.group.admins");
+    assert_eq!(group_authority.manage_authority(), group_authority);
+}
+
 fn context_key(value: &str) -> PermissionContextKey {
     match PermissionContextKey::parse(value) {
         Ok(key) => key,
