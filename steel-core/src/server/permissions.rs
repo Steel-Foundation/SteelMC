@@ -154,6 +154,17 @@ impl Server {
         Ok(())
     }
 
+    /// Reloads permission configs from storage and refreshes online players.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no store is configured, a read fails, or a config is invalid.
+    pub async fn reload_permissions(self: &Arc<Self>) -> Result<(), PermissionGroupManagerError> {
+        self.permission_groups.reload_from_store().await?;
+        self.queue_online_permission_group_refresh();
+        Ok(())
+    }
+
     /// Edits the latest permission group config and refreshes online players.
     ///
     /// # Errors

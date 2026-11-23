@@ -5,7 +5,7 @@ use steel_core::command::{
     CommandRegistration, CommandRegistry, CommandSuggestionContext, CommandSuggestions,
     SuspendedCommand, SuspendedCommandPoll, argument, literal,
 };
-use steel_core::permission::PermissionGroupRule;
+use steel_core::permission::PermissionDeclaration;
 use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
@@ -93,12 +93,12 @@ fn downstream_commands_can_register_primitive_keyed_and_suspended_nodes() {
     .subcommand_permission(["wait"]);
 
     let mut registry = CommandRegistry::new();
-    assert!(registry.declare_permission("steel_test.extra").is_ok());
     assert!(
         registry
-            .declare_collection_member(
-                Identifier::new("minecraft", "gamemasters"),
-                PermissionGroupRule::permission(Identifier::new("steel_test", "extra")),
+            .declare_permission(
+                PermissionDeclaration::new("steel_test:extra")
+                    .unwrap()
+                    .in_collection(Identifier::new("minecraft", "gamemasters"))
             )
             .is_ok()
     );

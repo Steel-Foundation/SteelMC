@@ -2,6 +2,7 @@
 
 mod collection;
 mod context;
+mod declaration;
 mod expression;
 mod groups;
 mod key;
@@ -30,6 +31,7 @@ pub use context::{
     PermissionContext, PermissionContextKey, PermissionContextKeyError, PermissionContextValue,
     PermissionDomain, PermissionRuleContext, PermissionRuleContextError, PermissionRuleContexts,
 };
+pub use declaration::{PermissionDeclaration, PermissionDeclarationError};
 pub use expression::PermissionExpr;
 pub use groups::{
     PermissionConfigError, PermissionGroup, PermissionGroupConfig, PermissionGroupRule,

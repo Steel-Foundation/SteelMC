@@ -31,7 +31,10 @@ use crate::command::brigadier::ArgumentSuggestionContext;
 use crate::command::signing_context::CommandSigningContext;
 use crate::{
     entity::SharedEntity,
-    permission::{PermissionCollectionMember, PermissionExpr, PermissionState},
+    permission::{
+        PermissionDeclaration, PermissionExpr, PermissionGroupRule, PermissionRuleContext,
+        PermissionRuleExpression, PermissionState,
+    },
     player::Player,
     server::Server,
     world::World,
@@ -60,31 +63,12 @@ impl CommandRegistration {
     /// Declares the permission collection that grants this command's derived permission.
     ///
     /// Commands that do not declare a collection fall back to
-    /// [`OWNERS_COLLECTION`](crate::permission::OWNERS_COLLECTION).
+    /// [`OWNERS_COLLECTION`](crate::permission::OWNERS_COLLECTION). Permissions that
+    /// are not derived from a command are declared with
+    /// [`CommandRegistry::declare_permission`].
     #[must_use]
     pub fn permission_collection(mut self, collection: Identifier) -> Self {
         self.inner = self.inner.permission_collection(collection);
-        self
-    }
-
-    /// Adds a permission to this command's collection.
-    ///
-    /// Uses the collection from [`Self::permission_collection`], or
-    /// [`OWNERS_COLLECTION`](crate::permission::OWNERS_COLLECTION) by default.
-    #[must_use]
-    pub fn collection_permission(mut self, permission: Identifier) -> Self {
-        self.inner = self.inner.collection_permission(permission);
-        self
-    }
-
-    /// Adds a permission to an explicit collection instead of this command's collection.
-    #[must_use]
-    pub fn collection_permission_in(
-        mut self,
-        collection: Identifier,
-        permission: Identifier,
-    ) -> Self {
-        self.inner = self.inner.collection_permission_in(collection, permission);
         self
     }
 
@@ -121,30 +105,52 @@ impl CommandRegistry {
         }
     }
 
-    /// Declares a non-command permission for discovery and autocomplete.
+    /// Declares one permission for discovery and optional collection membership.
+    ///
+    /// [`PermissionDeclaration::in_collection`] makes the permission a managed member
+    /// of that collection. Use [`PermissionDeclaration::grant_permission_to`] to add the
+    /// permission directly to an existing collection, or
+    /// [`PermissionDeclaration::grant_collection_to`] to reference the declared
+    /// collection from another collection.
+    ///
+    /// A declaration made in `collections.toml` with the same collection id replaces
+    /// these code declarations entirely: the configuration has final say.
     pub fn declare_permission(
         &mut self,
-        permission: impl Into<String>,
+        declaration: PermissionDeclaration,
     ) -> Result<&mut Self, CommandRegistrationError> {
-        self.inner
-            .declare_permission(permission)
-            .map_err(CommandRegistrationError::from)?;
-        Ok(self)
-    }
+        let (key, collection, permission_grants, collection_grants) = declaration.into_parts();
+        if !collection_grants.is_empty() && collection.is_none() {
+            return Err(InternalCommandRegistrationError::CollectionRequiredForGrant.into());
+        }
 
-    /// Adds a permission or nested collection to a code-declared collection.
-    ///
-    /// Declarations are independent of commands and are never persisted. They
-    /// extend the generated vanilla collections with the same id, so extensions
-    /// may contribute to collections such as `minecraft:gamemasters`.
-    pub fn declare_collection_member(
-        &mut self,
-        collection: Identifier,
-        member: PermissionCollectionMember,
-    ) -> Result<&mut Self, CommandRegistrationError> {
         self.inner
-            .declare_collection_member(collection, member)
+            .declare_permission(key.as_str())
             .map_err(CommandRegistrationError::from)?;
+
+        let rule = PermissionGroupRule::Expression(PermissionRuleExpression::new(
+            key,
+            PermissionRuleContext::Global,
+        ));
+
+        if let Some(collection) = collection {
+            self.inner
+                .declare_collection_member(collection.clone(), rule.clone())
+                .map_err(CommandRegistrationError::from)?;
+            for target in collection_grants {
+                self.inner
+                    .declare_collection_member(
+                        target,
+                        PermissionGroupRule::Collection(collection.clone()),
+                    )
+                    .map_err(CommandRegistrationError::from)?;
+            }
+        }
+        for target in permission_grants {
+            self.inner
+                .declare_collection_member(target, rule.clone())
+                .map_err(CommandRegistrationError::from)?;
+        }
         Ok(self)
     }
 
@@ -983,8 +989,157 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::CommandReader;
+    use steel_utils::Identifier;
+
+    use super::{CommandNode, CommandReader, CommandRegistration, CommandRegistry};
     use crate::command::brigadier::StringReader;
+    use crate::permission::{
+        PermissionCollectionsConfig, PermissionDeclaration, PermissionGroupRule,
+        PermissionGroupsConfig, PermissionKey, PermissionManager, PermissionSet,
+    };
+
+    #[test]
+    fn declared_permission_becomes_discoverable_and_managed_member() {
+        let collection = Identifier::new("steel_test", "commands");
+        let key = PermissionKey::parse("steel_test:build").unwrap();
+
+        let mut registry = CommandRegistry::new();
+        registry
+            .declare_permission(
+                PermissionDeclaration::new("steel_test:build")
+                    .unwrap()
+                    .in_collection(collection.clone()),
+            )
+            .unwrap();
+
+        let registered = registry.into_inner().build_with_permissions().unwrap();
+        assert!(registered.permissions.contains(&key));
+
+        let members = registered
+            .declared_collections()
+            .get(&collection)
+            .unwrap()
+            .members()
+            .to_vec();
+        let authority = key.manage_authority();
+        for expected in [&key, &authority] {
+            assert!(members.iter().any(|member| match member {
+                PermissionGroupRule::Expression(expression) => expression.key() == expected,
+                PermissionGroupRule::Collection(_) => false,
+            }));
+        }
+    }
+
+    #[test]
+    fn declared_permission_grants_its_collection_to_a_target() {
+        let collection = Identifier::new("steel_test", "commands");
+        let target = Identifier::new("minecraft", "moderators");
+
+        let mut registry = CommandRegistry::new();
+        registry
+            .declare_permission(
+                PermissionDeclaration::new("steel_test:build")
+                    .unwrap()
+                    .in_collection(collection.clone())
+                    .grant_collection_to(target.clone()),
+            )
+            .unwrap();
+
+        let registered = registry.into_inner().build_with_permissions().unwrap();
+        let declared = registered.declared_collections();
+        assert!(
+            declared
+                .get(&target)
+                .unwrap()
+                .members()
+                .contains(&PermissionGroupRule::Collection(collection))
+        );
+    }
+
+    #[test]
+    fn grant_permission_to_adds_the_permission_directly() {
+        let target = Identifier::new("minecraft", "gamemasters");
+        let key = PermissionKey::parse("steel_test:fly").unwrap();
+
+        let mut registry = CommandRegistry::new();
+        registry
+            .declare_permission(
+                PermissionDeclaration::new("steel_test:fly")
+                    .unwrap()
+                    .grant_permission_to(target.clone()),
+            )
+            .unwrap();
+
+        let registered = registry.into_inner().build_with_permissions().unwrap();
+        let declared = registered.declared_collections();
+        assert!(
+            declared
+                .get(&target)
+                .unwrap()
+                .members()
+                .iter()
+                .any(|member| match member {
+                    PermissionGroupRule::Expression(expression) => expression.key() == &key,
+                    PermissionGroupRule::Collection(_) => false,
+                })
+        );
+    }
+
+    #[test]
+    fn collection_grant_requires_in_collection() {
+        let mut registry = CommandRegistry::new();
+        let result = registry.declare_permission(
+            PermissionDeclaration::new("steel_test:fly")
+                .unwrap()
+                .grant_collection_to(Identifier::new("minecraft", "moderators")),
+        );
+        let error = match result {
+            Ok(_) => panic!("collection grant without in_collection should be rejected"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("requires in_collection"));
+    }
+
+    #[test]
+    fn declared_permissions_reach_effective_group_sets() {
+        let mut registry = CommandRegistry::new();
+        registry
+            .declare_permission(
+                PermissionDeclaration::new("steel_test:fly")
+                    .unwrap()
+                    .grant_permission_to(Identifier::new("minecraft", "moderators")),
+            )
+            .unwrap();
+        registry
+            .register(
+                CommandRegistration::new(Identifier::new("steel_test", "dash"), || {
+                    CommandNode::literal("dash")
+                })
+                .permission_collection(Identifier::new("minecraft", "moderators")),
+            )
+            .unwrap();
+
+        let registered = registry.into_inner().build_with_permissions().unwrap();
+        let manager = PermissionManager::transient(
+            PermissionGroupsConfig::default(),
+            PermissionCollectionsConfig::default(),
+        )
+        .unwrap();
+        manager
+            .set_declared_collections(registered.declared_collections())
+            .unwrap();
+
+        let effective =
+            manager.effective_permissions(&["moderators".to_owned()], &PermissionSet::new());
+        assert!(
+            effective.allows_key(&PermissionKey::parse("steel_test:fly").unwrap()),
+            "standalone declaration should be granted to moderators"
+        );
+        assert!(
+            effective.allows_key(&PermissionKey::parse("steel_test:command.dash").unwrap()),
+            "command-derived permission should be granted to moderators"
+        );
+    }
 
     #[test]
     fn command_reader_cursor_is_a_utf8_byte_offset() {

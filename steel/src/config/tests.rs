@@ -204,6 +204,12 @@ async fn file_permission_group_store_round_trips_typed_config() {
     assert_eq!(parsed, config);
     PermissionGroups::from_config(parsed, &PermissionCollections::vanilla())
         .expect("written groups should validate");
+    assert_eq!(
+        PermissionGroupStore::load_groups(&store)
+            .await
+            .expect("groups config should load"),
+        config
+    );
 
     let collections = PermissionCollectionsConfig {
         collections: BTreeMap::from([(
@@ -233,6 +239,12 @@ async fn file_permission_group_store_round_trips_typed_config() {
     assert_eq!(parsed_collections, collections);
     PermissionCollections::from_config(&parsed_collections)
         .expect("written collections should validate");
+    assert_eq!(
+        PermissionGroupStore::load_collections(&store)
+            .await
+            .expect("collections config should load"),
+        collections
+    );
 
     async_fs::remove_dir_all(root)
         .await

@@ -89,6 +89,46 @@ impl PermissionGroupStore for FilePermissionGroupStore {
                 })
         })
     }
+
+    fn load_groups(
+        &self,
+    ) -> BoxFuture<'static, Result<PermissionGroupsConfig, PermissionGroupStoreError>> {
+        let path = self.groups_path.clone();
+        Box::pin(async move {
+            let contents = async_fs::read_to_string(&path).await.map_err(|error| {
+                PermissionGroupStoreError::new(format!(
+                    "failed to read groups config {}: {error}",
+                    path.display()
+                ))
+            })?;
+            toml::from_str(&contents).map_err(|error| {
+                PermissionGroupStoreError::new(format!(
+                    "failed to parse groups config {}: {error}",
+                    path.display()
+                ))
+            })
+        })
+    }
+
+    fn load_collections(
+        &self,
+    ) -> BoxFuture<'static, Result<PermissionCollectionsConfig, PermissionGroupStoreError>> {
+        let path = self.collections_path.clone();
+        Box::pin(async move {
+            let contents = async_fs::read_to_string(&path).await.map_err(|error| {
+                PermissionGroupStoreError::new(format!(
+                    "failed to read collections config {}: {error}",
+                    path.display()
+                ))
+            })?;
+            toml::from_str(&contents).map_err(|error| {
+                PermissionGroupStoreError::new(format!(
+                    "failed to parse collections config {}: {error}",
+                    path.display()
+                ))
+            })
+        })
+    }
 }
 
 fn serialize_groups_config(config: &PermissionGroupsConfig) -> Result<String, TomlSerializeError> {

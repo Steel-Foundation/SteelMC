@@ -15,16 +15,15 @@ use super::super::{
 };
 use crate::command::missing_argument;
 use crate::permission::{
-    MODERATORS_COLLECTION, PermissionCollectionMember, PermissionContext, PermissionEntry,
-    PermissionGroupRule, PermissionKey, PermissionMetadataEntry, PermissionMetadataExpression,
-    PermissionMetadataValue, PermissionResolutionSource, PermissionRuleExpression, PermissionState,
-    PermissionSubjectState,
+    MODERATORS_COLLECTION, PermissionCollectionMember, PermissionCollectionsConfig,
+    PermissionContext, PermissionEntry, PermissionGroupRule, PermissionKey,
+    PermissionMetadataEntry, PermissionMetadataExpression, PermissionMetadataValue,
+    PermissionResolutionSource, PermissionRuleExpression, PermissionState, PermissionSubjectState,
 };
 use steel_utils::Identifier;
-use text_components::TextComponent;
+use text_components::{Modifier, TextComponent, format::Color};
 use tokio::{sync::oneshot, task::JoinHandle};
 
-#[cfg(test)]
 pub(super) const MANAGE_ALL_PERMISSION: &str = "steel:permission.manage.*";
 #[cfg(test)]
 pub(super) const GROUP_ALL_PERMISSION: &str = "steel:permission.group.*";
@@ -68,6 +67,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
         .subcommand_permission(["collection", "export"])
         .subcommand_permission(["collection", "add"])
         .subcommand_permission(["collection", "remove"])
+        .subcommand_permission(["reload"])
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -76,6 +76,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
         .then(group_command())
         .then(groups_command())
         .then(collection_command())
+        .then(literal("reload").executes_suspended(reload))
 }
 
 fn user_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -342,6 +343,7 @@ enum Operation {
         member: PermissionCollectionMember,
         add: bool,
     },
+    Reload,
 }
 
 impl Operation {
@@ -365,7 +367,8 @@ impl Operation {
             | Self::GroupMetadata { .. }
             | Self::DefaultGroup { .. }
             | Self::CollectionExport(_)
-            | Self::CollectionMember { .. } => CommandSuspensionOrder::Global,
+            | Self::CollectionMember { .. }
+            | Self::Reload => CommandSuspensionOrder::Global,
         }
     }
 }
@@ -615,6 +618,14 @@ fn groups_list(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<PermsCommandSuspension, CommandSyntaxError> {
     start(context, Operation::GroupsList)
+}
+
+fn reload(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<PermsCommandSuspension, CommandSyntaxError> {
+    let key = management_key(MANAGE_ALL_PERMISSION.to_owned())?;
+    require_pattern_permission(context.source(), &key)?;
+    start(context, Operation::Reload)
 }
 
 fn collection_info(
@@ -896,6 +907,7 @@ async fn run_operation(
             member,
             add,
         } => collection_member_operation(source, collection, member, add).await,
+        Operation::Reload => reload_operation(source).await,
     }
 }
 
@@ -1451,6 +1463,47 @@ fn collection_info_operation(
     })
 }
 
+async fn reload_operation(source: &CommandSource) -> Result<OperationResult, CommandSyntaxError> {
+    source
+        .server()
+        .reload_permissions()
+        .await
+        .map_err(dynamic_error)?;
+    Ok(OperationResult {
+        result: 1,
+        messages: vec![
+            TextComponent::plain("Reloaded permissions from groups.toml and collections.toml")
+                .color(Color::Green),
+        ],
+    })
+}
+
+fn is_configured_collection(config: &PermissionCollectionsConfig, id: &Identifier) -> bool {
+    config
+        .collections
+        .get(id.namespace.as_ref())
+        .is_some_and(|named| named.contains_key(id.path.as_ref()))
+}
+
+/// Short, coloured notices shown only when a write first makes a collection config-owned.
+fn config_precedence_notice(target: &str, newly_configured: usize) -> Vec<TextComponent> {
+    if newly_configured == 0 {
+        return Vec::new();
+    }
+    vec![
+        TextComponent::plain("! ").color(Color::Red).add_child(
+            TextComponent::plain(format!(
+                "Config wins over defaults for {target}. Auto-updates stopped."
+            ))
+            .color(Color::Gold),
+        ),
+        TextComponent::plain("Tip: ").color(Color::Gold).add_child(
+            TextComponent::plain("extend a collection or edit groups.toml instead.")
+                .color(Color::Gray),
+        ),
+    ]
+}
+
 async fn collection_export_operation(
     source: &CommandSource,
     collection: Option<Identifier>,
@@ -1491,6 +1544,10 @@ async fn collection_export_operation(
         .server()
         .permission_groups
         .collections_config_snapshot();
+    let newly_configured = ids
+        .iter()
+        .filter(|id| !is_configured_collection(&before, id))
+        .count();
     source
         .server()
         .update_permission_collections(move |config| {
@@ -1515,9 +1572,14 @@ async fn collection_export_operation(
         |id| format!("permission collection '{id}'"),
     );
     let mut result = change_result(changed, format!("Exported {target} to collections.toml"));
-    result.messages.push(TextComponent::plain(
-        "Exported collections are stored in collections.toml and are no longer updated automatically",
-    ));
+    let notice_target = if ids.len() == 1 {
+        format!("'{}'", ids[0])
+    } else {
+        format!("{} collections", newly_configured)
+    };
+    result
+        .messages
+        .extend(config_precedence_notice(&notice_target, newly_configured));
     Ok(result)
 }
 
@@ -1549,6 +1611,11 @@ async fn collection_member_operation(
         ));
     }
 
+    let before = source
+        .server()
+        .permission_groups
+        .collections_config_snapshot();
+    let newly_configured = usize::from(!is_configured_collection(&before, &collection));
     let stored_id = collection.clone();
     source
         .server()
@@ -1565,8 +1632,9 @@ async fn collection_member_operation(
             if add { "added" } else { "removed" }
         ),
     );
-    result.messages.push(TextComponent::plain(
-        "Edited collections are stored in collections.toml and are no longer updated automatically",
+    result.messages.extend(config_precedence_notice(
+        &format!("'{collection}'"),
+        newly_configured,
     ));
     Ok(result)
 }
@@ -1687,6 +1755,7 @@ mod tests {
 
     use super::{
         GROUP_ALL_PERMISSION, MANAGE_ALL_PERMISSION, METADATA_PERMISSION, PERMS_COLLECTION,
+        config_precedence_notice, is_configured_collection,
     };
     use crate::command::{
         CommandRegistry,
@@ -1694,8 +1763,11 @@ mod tests {
         builtins::{create_dispatcher, create_registered_dispatcher},
         execution::{CommandSource, SteelCommandRuntime},
     };
-    use crate::permission::{PermissionCollection, PermissionGroupRule, PermissionKey};
+    use crate::permission::{
+        PermissionCollection, PermissionCollectionsConfig, PermissionGroupRule, PermissionKey,
+    };
     use steel_utils::Identifier;
+    use text_components::format::Color;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -1753,6 +1825,7 @@ mod tests {
         for name in ["info", "add", "remove"] {
             child(&dispatcher, collection_name, name);
         }
+        child(&dispatcher, perms, "reload");
     }
 
     #[test]
@@ -1773,6 +1846,7 @@ mod tests {
             "steel:command.perms.user.metadata.set",
             "steel:command.perms.group.inherit.add",
             "steel:command.perms.collection.add",
+            "steel:command.perms.reload",
         ] {
             assert!(permissions.contains(&expected), "missing {expected}");
         }
@@ -1803,5 +1877,47 @@ mod tests {
             members
                 .is_some_and(|members| { members.contains(&command) && members.contains(&manage) })
         );
+    }
+
+    #[test]
+    fn config_precedence_notice_appears_only_for_newly_configured_collections() {
+        let target = "'minecraft:moderators'";
+        assert!(config_precedence_notice(target, 0).is_empty());
+
+        let notices = config_precedence_notice(target, 1);
+        assert_eq!(notices.len(), 2);
+        assert!(
+            notices[0]
+                .to_string()
+                .contains("Config wins over defaults for 'minecraft:moderators'")
+        );
+        assert_eq!(notices[0].format.color, Some(Color::Red));
+        assert_eq!(notices[0].children[0].format.color, Some(Color::Gold));
+        assert!(notices[1].to_string().contains("groups.toml"));
+        assert_eq!(notices[1].format.color, Some(Color::Gold));
+        assert_eq!(notices[1].children[0].format.color, Some(Color::Gray));
+    }
+
+    #[test]
+    fn configured_collection_lookup_uses_both_namespace_and_path() {
+        let mut config = PermissionCollectionsConfig::default();
+        config
+            .collections
+            .entry("myplugin".to_owned())
+            .or_default()
+            .insert("staff".to_owned(), vec!["myplugin:foo".to_owned()]);
+
+        assert!(is_configured_collection(
+            &config,
+            &Identifier::new("myplugin", "staff")
+        ));
+        assert!(!is_configured_collection(
+            &config,
+            &Identifier::new("myplugin", "other")
+        ));
+        assert!(!is_configured_collection(
+            &config,
+            &Identifier::new("other", "staff")
+        ));
     }
 }

@@ -93,6 +93,7 @@ where
     }
 
     /// Adds a permission to an explicit collection instead of this command's collection.
+    #[cfg(test)]
     pub(crate) fn collection_permission_in(
         mut self,
         collection: Identifier,
@@ -674,6 +675,8 @@ pub(crate) enum CommandRegistrationError {
     },
     #[error("declared permission collection '{collection}' is invalid")]
     InvalidDeclaredCollection { collection: Identifier },
+    #[error("grant_collection_to requires in_collection on the permission declaration")]
+    CollectionRequiredForGrant,
     #[error("command '{id}' cannot combine explicit and derived subcommand permissions")]
     SubcommandPermissionsRequireDerivedRoot { id: Identifier },
     #[error("command '{id}' has an empty subcommand permission path")]

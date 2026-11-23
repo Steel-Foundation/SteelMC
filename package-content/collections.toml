@@ -9,8 +9,12 @@
 #
 # The vanilla collections (`#minecraft:all`, `#minecraft:moderators`,
 # `#minecraft:gamemasters`, `#minecraft:admins`, `#minecraft:owners`) are provided by
-# the server and track the vanilla command permissions. A collection declared here
-# replaces the built-in collection with the same id and is never updated again.
+# the server and track the vanilla command permissions. This file takes precedence:
+# a collection declared here replaces the built-in or code-declared collection with
+# the same id and is never updated again. Prefer a collection that extends a built-in
+# one (for example `staff = ["#minecraft:moderators", "myplugin:foo"]` under
+# `[collections.myplugin]`) and add `#myplugin:staff` to a group in groups.toml, or
+# edit groups.toml directly.
 #
 # Example:
 #

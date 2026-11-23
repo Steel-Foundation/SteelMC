@@ -24,6 +24,16 @@ pub trait PermissionGroupStore: Send + Sync {
         &self,
         config: PermissionCollectionsConfig,
     ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>>;
+
+    /// Reads the current permission group configuration from storage.
+    fn load_groups(
+        &self,
+    ) -> BoxFuture<'static, Result<PermissionGroupsConfig, PermissionGroupStoreError>>;
+
+    /// Reads the current permission collection configuration from storage.
+    fn load_collections(
+        &self,
+    ) -> BoxFuture<'static, Result<PermissionCollectionsConfig, PermissionGroupStoreError>>;
 }
 
 /// Permission persistence failure.
@@ -154,7 +164,7 @@ impl PermissionManager {
     /// # Errors
     ///
     /// Returns an error when the rebuilt groups do not resolve.
-    pub fn set_declared_collections(
+    pub(crate) fn set_declared_collections(
         &self,
         declared_collections: PermissionCollections,
     ) -> Result<(), PermissionConfigError> {
@@ -229,6 +239,35 @@ impl PermissionManager {
     ) -> Result<(), PermissionGroupManagerError> {
         let _guard = self.updates.lock().await;
         self.replace_config_locked(config).await
+    }
+
+    /// Reloads both configs from storage without writing them back.
+    ///
+    /// Code-declared collections are preserved and re-resolved with the loaded overrides.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no store is configured, a read fails, or either config is invalid.
+    pub async fn reload_from_store(&self) -> Result<(), PermissionGroupManagerError> {
+        let Some(store) = &self.store else {
+            return Err(
+                PermissionGroupStoreError::new("permission group store is not configured").into(),
+            );
+        };
+        let _guard = self.updates.lock().await;
+        let group_config = store.load_groups().await?;
+        let collections_config = store.load_collections().await?;
+        let declared_collections = self.state.read().declared_collections.clone();
+        let collections = resolve_collections(&collections_config, &declared_collections)?;
+        let groups = PermissionGroups::from_config(group_config.clone(), &collections)?;
+        *self.state.write() = PermissionManagerState {
+            group_config,
+            collections_config,
+            declared_collections,
+            collections,
+            groups,
+        };
+        Ok(())
     }
 
     /// Updates the latest groups config under the manager update lock.
