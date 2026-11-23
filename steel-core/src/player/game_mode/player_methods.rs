@@ -76,7 +76,7 @@ impl Player {
 
     fn update_game_mode_invisibility(&self) {
         self.living_base.mark_effects_dirty();
-        self.update_dirty_mob_effect_entity_data();
+        self.update_data_before_sync();
         self.sync_entity_data();
     }
 
