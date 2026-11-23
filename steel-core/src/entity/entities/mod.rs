@@ -6,7 +6,7 @@ pub mod objects;
 pub use mobs::ambient::BatEntity;
 pub use mobs::hostile::EndermiteEntity;
 pub use mobs::passive::*;
-pub use objects::display_ui::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
+pub use objects::display_ui::{ItemFrameEntity, LeashFenceKnotEntity};
 pub use objects::effects::AreaEffectCloudEntity;
 pub use objects::explosives::{EndCrystalEntity, PrimedTntEntity};
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
@@ -15,5 +15,11 @@ pub use objects::projectiles::{
     LingeringPotionEntity, SnowballEntity, SpectralArrowEntity, SplashPotionEntity,
     ThrownEggEntity, WindChargeEntity,
 };
-pub use objects::technical::{InteractionEntity, MarkerEntity};
-pub use objects::vehicles::{ChestMinecartEntity, MinecartEntity, SpawnerMinecartEntity};
+pub use objects::technical::{
+    Alignment, BillboardConstraints, BlockDisplayEntity, BlockDisplayView, Brightness, Display,
+    DisplayView, InteractionEntity, ItemDisplayContext, ItemDisplayEntity, ItemDisplayView,
+    MarkerEntity, TextDisplayEntity, TextDisplayView, Transformation,
+};
+pub use objects::vehicles::{
+    ChestMinecartEntity, MinecartEntity, SpawnerMinecartEntity, TntMinecartEntity,
+};
