@@ -45,8 +45,6 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                     ),
             ),
     )
-    // TODO: Add the vanilla compound-NBT branch once Steel has an SNBT compound
-    // argument and recursive command entity loading.
 }
 
 fn summon_entity(
@@ -90,16 +88,12 @@ pub(super) fn create_entity(
 
         let Some(loaded) =
             load_entity_recursive_owned(world, &compound, EntitySpawnReason::Command, |entity| {
-                // Vanilla SummonCommand snaps every entity in the loaded tree to the target position.
                 entity.set_position_local(position);
                 entity.set_old_position_to_current();
             })
         else {
             return Err(command_failed(&translations::COMMANDS_SUMMON_FAILED));
         };
-
-        // Use this to keep to avoid dropping the passengers after this scope
-        // Without this, only the base entity spawn (without the passengers)
         let root = Arc::clone(&loaded.root);
         _loaded_tree = Some(loaded);
         root
