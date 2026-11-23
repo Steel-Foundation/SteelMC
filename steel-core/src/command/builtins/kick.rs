@@ -57,3 +57,65 @@ fn kick_players(ctx: &SteelCommandContext<CommandSource>) -> Result<i32, Command
 
     Ok(count)
 }
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::init_vanilla_registry;
+
+    use super::super::create_dispatcher;
+    use super::*;
+    use crate::command::brigadier::{CommandDispatcher, NodeId};
+
+    type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
+
+    fn child(dispatcher: &Dispatcher, parent: NodeId, name: &str) -> NodeId {
+        let Some(children) = dispatcher.children(parent) else {
+            panic!("parent node should exist");
+        };
+        let Some(child) = children.iter().copied().find(|child| {
+            dispatcher
+                .node(*child)
+                .is_some_and(|node| node.name() == name)
+        }) else {
+            panic!("child {name} should exist");
+        };
+        child
+    }
+
+    #[test]
+    fn clear_graph_matches_vanilla_argument_shape() {
+        init_vanilla_registry();
+        let Ok(dispatcher) = create_dispatcher() else {
+            panic!("built-in commands should register");
+        };
+        let kick = child(&dispatcher, dispatcher.root(), "kick");
+        let Some(clear_node) = dispatcher.node(kick) else {
+            panic!("kick node should exist");
+        };
+        assert!(clear_node.is_restricted());
+
+        let targets = child(&dispatcher, kick, "targets");
+        assert_eq!(
+            dispatcher
+                .node(targets)
+                .and_then(|node| node.argument_type()),
+            Some(&SteelArgumentType::players())
+        );
+        assert!(matches!(
+            dispatcher.node(targets),
+            Some(node) if node.is_executable()
+        ));
+
+        let reason = child(&dispatcher, targets, "reason");
+        assert_eq!(
+            dispatcher
+                .node(reason)
+                .and_then(|node| node.argument_type()),
+            Some(&SteelArgumentType::message())
+        );
+        assert!(matches!(
+            dispatcher.node(reason),
+            Some(node) if node.is_executable()
+        ));
+    }
+}
