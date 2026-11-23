@@ -431,7 +431,7 @@ impl Player {
     /// from (or `None` for the creative-mode arrow).
     ///
     /// Returns `None` when `held_weapon` is not a projectile weapon.
-    pub fn get_projectile(&self, held_weapon: &ItemStack) -> Option<(ItemStack, Option<usize>)> {
+    pub fn get_ammo(&self, held_weapon: &ItemStack) -> Option<(ItemStack, Option<usize>)> {
         let weapon = ITEM_BEHAVIORS
             .get_behavior(held_weapon.item())
             .as_projectile_weapon()?;
@@ -440,14 +440,14 @@ impl Player {
         let selected_slot = usize::from(inventory.get_selected_slot());
         for slot in [PlayerInventory::SLOT_OFFHAND, selected_slot] {
             let stack = inventory.get_item(slot);
-            if weapon.is_supported_held_projectile(stack) {
+            if weapon.is_supported_held_ammo(stack) {
                 return Some((stack.clone(), Some(slot)));
             }
         }
 
         for slot in 0..inventory.get_container_size() {
             let stack = inventory.get_item(slot);
-            if weapon.is_supported_projectile(stack) {
+            if weapon.is_supported_ammo(stack) {
                 return Some((stack.clone(), Some(slot)));
             }
         }

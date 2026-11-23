@@ -65,11 +65,11 @@ pub trait ArrowItemBehavior: Send + Sync {
 
 /// A weapon that draws ammo from the holder's inventory and fires projectiles.
 pub trait ProjectileWeaponItem: Send + Sync {
-    fn is_supported_held_projectile(&self, stack: &ItemStack) -> bool {
-        self.is_supported_projectile(stack)
+    fn is_supported_held_ammo(&self, stack: &ItemStack) -> bool {
+        self.is_supported_ammo(stack)
     }
 
-    fn is_supported_projectile(&self, stack: &ItemStack) -> bool {
+    fn is_supported_ammo(&self, stack: &ItemStack) -> bool {
         stack.item().has_tag(&ItemTag::ARROWS)
     }
 
@@ -153,10 +153,11 @@ pub trait ProjectileWeaponItem: Send + Sync {
             return;
         };
         let max_angle = enchantment_helper::process_projectile_spread(weapon, shooter, 0.0);
-        let angle_step = if projectiles.len() == 1 {
-            0.0
-        } else {
+        // Spread spans -max_angle..=+max_angle, hence 2.0.
+        let angle_step = if projectiles.len() > 1 {
             2.0 * max_angle / (projectiles.len() - 1) as f32
+        } else {
+            0.0
         };
         let angle_offset = ((projectiles.len() - 1) % 2) as f32 * angle_step / 2.0;
         let mut direction = 1.0_f32;

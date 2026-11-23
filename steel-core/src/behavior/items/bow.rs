@@ -44,8 +44,8 @@ pub struct BowItem;
 impl ItemBehavior for BowItem {
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
         let stack = context.inv.with_item(|item| item.clone());
-        let found_projectile = context.player.get_projectile(&stack).is_some();
-        if !context.player.has_infinite_materials() && !found_projectile {
+        let found_ammo = context.player.get_ammo(&stack).is_some();
+        if !context.player.has_infinite_materials() && !found_ammo {
             return InteractionResult::Fail;
         }
 
@@ -71,7 +71,7 @@ impl ItemBehavior for BowItem {
         let Some(player) = user.entity().as_player() else {
             return false;
         };
-        let Some((projectile, slot)) = player.get_projectile(stack) else {
+        let Some((projectile, slot)) = player.get_ammo(stack) else {
             return false;
         };
 
