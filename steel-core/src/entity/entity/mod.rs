@@ -411,9 +411,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether this entity obstructs block placement.
     ///
-    /// Base entities do not obstruct placement unless a concrete entity type opts in.
+    /// Vanilla `LivingEntity` sets `blocksBuilding`, so all living entities
+    /// obstruct placement; other entity types opt in.
     fn blocks_building(&self) -> bool {
-        false
+        self.as_living_entity().is_some()
     }
 
     /// Returns whether this entity can be targeted by picking and interaction raycasts.

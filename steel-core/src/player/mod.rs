@@ -1508,10 +1508,6 @@ impl Entity for Player {
         !self.is_removed() && self.get_health() > 0.0
     }
 
-    fn blocks_building(&self) -> bool {
-        true
-    }
-
     fn is_pickable(&self) -> bool {
         !self.is_spectator() && !self.is_removed()
     }
