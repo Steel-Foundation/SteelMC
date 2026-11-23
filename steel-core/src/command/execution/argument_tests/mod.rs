@@ -162,10 +162,6 @@ impl CommandArgumentSource for TestSource {
         self.allow_all_permissions
     }
 
-    fn can_manage_permission_metadata(&self) -> bool {
-        self.allow_all_permissions
-    }
-
     fn selector_player_names(&self) -> Vec<String> {
         vec!["Steve".to_owned()]
     }

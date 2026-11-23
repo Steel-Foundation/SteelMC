@@ -242,6 +242,20 @@ fn owned_permission_arguments_scope_unset_suggestions_to_prior_arguments() {
         ["steel.user_owned"]
     );
 
+    let restricted_user_parse = dispatcher.parse("user Steve ", TestSource::restricted());
+    let Ok(restricted_user_suggestions) = dispatcher.completion_suggestions(&restricted_user_parse)
+    else {
+        panic!("restricted user-owned suggestions should build");
+    };
+    assert_eq!(
+        restricted_user_suggestions
+            .list()
+            .iter()
+            .map(Suggestion::text)
+            .collect::<Vec<_>>(),
+        ["steel.user_owned"]
+    );
+
     let group_parse = dispatcher.parse("group builder ", TestSource::new());
     let Ok(group_suggestions) = dispatcher.completion_suggestions(&group_parse) else {
         panic!("group-owned suggestions should build");
@@ -257,7 +271,7 @@ fn owned_permission_arguments_scope_unset_suggestions_to_prior_arguments() {
 }
 
 #[test]
-fn permission_suggestions_are_filtered_by_management_authority() {
+fn permission_suggestions_list_known_keys_without_management_authority() {
     let mut dispatcher = TestDispatcher::new();
     for (name, argument_type) in [
         ("group", SteelArgumentType::permission_group(true)),
@@ -292,33 +306,43 @@ fn permission_suggestions_are_filtered_by_management_authority() {
             .is_ok()
     );
 
-    for input in [
-        "group ",
-        "collection ",
-        "permission ",
-        "metadata ",
-        "grouprule builder ",
-        "member minecraft:gamemasters ",
-    ] {
-        let allowed = dispatcher.parse(input, TestSource::new());
-        let allowed = match dispatcher.completion_suggestions(&allowed) {
-            Ok(suggestions) => suggestions,
+    let suggest = |input: &str, source: TestSource| {
+        let parse = dispatcher.parse(input, source);
+        match dispatcher.completion_suggestions(&parse) {
+            Ok(suggestions) => suggestions
+                .list()
+                .iter()
+                .map(Suggestion::text)
+                .map(str::to_owned)
+                .collect::<Vec<_>>(),
             Err(error) => panic!("{input} suggestions should build: {error}"),
-        };
-        assert!(
-            !allowed.list().is_empty(),
-            "{input} should suggest manageable values"
-        );
+        }
+    };
 
-        let restricted = dispatcher.parse(input, TestSource::restricted());
-        let restricted = match dispatcher.completion_suggestions(&restricted) {
-            Ok(suggestions) => suggestions,
-            Err(error) => panic!("{input} suggestions should build: {error}"),
-        };
+    // Group and collection names still require the matching management authority.
+    for input in ["group ", "collection "] {
+        assert!(!suggest(input, TestSource::new()).is_empty());
         assert!(
-            restricted.list().is_empty(),
+            suggest(input, TestSource::restricted()).is_empty(),
             "{input} should hide unmanageable values"
         );
+    }
+
+    // Permission and metadata keys are always discoverable; execution still checks authority.
+    for input in ["permission ", "metadata "] {
+        let allowed = suggest(input, TestSource::new());
+        assert!(!allowed.is_empty(), "{input} should suggest known values");
+        assert_eq!(suggest(input, TestSource::restricted()), allowed);
+    }
+
+    // Scoped rule arguments keep their known permission keys; only collection references
+    // remain authority-gated.
+    for input in ["grouprule builder ", "member minecraft:gamemasters "] {
+        let allowed = suggest(input, TestSource::new());
+        let restricted = suggest(input, TestSource::restricted());
+        assert!(allowed.iter().any(|value| value.starts_with('#')));
+        assert!(restricted.iter().any(|value| !value.starts_with('#')));
+        assert!(restricted.iter().all(|value| !value.starts_with('#')));
     }
 }
 

@@ -98,7 +98,7 @@ impl PermissionSuggestionScope {
         kind: PermissionSuggestionKind,
     ) -> Vec<String> {
         let source = context.source();
-        let values = match self {
+        match self {
             Self::All => match kind {
                 PermissionSuggestionKind::Rule => source.permission_rule_suggestions(),
                 PermissionSuggestionKind::Metadata => source.permission_metadata_suggestions(),
@@ -136,12 +136,6 @@ impl PermissionSuggestionScope {
                         source.group_permission_metadata_suggestions(group.as_str())
                     }
                 }
-            }
-        };
-        match kind {
-            PermissionSuggestionKind::Rule => source.filter_manageable_permission_rules(values),
-            PermissionSuggestionKind::Metadata => {
-                source.filter_manageable_permission_metadata(values)
             }
         }
     }

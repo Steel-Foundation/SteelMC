@@ -367,7 +367,8 @@ fn dispatcher_build_retains_declared_and_derived_permission_keys() {
         [
             "minecraft:command.tick",
             "minecraft:command.tick.freeze",
-            "minecraft:selector"
+            "minecraft:selector",
+            "steel:permission.manage.minecraft.command.tick"
         ]
     );
 }

@@ -144,11 +144,6 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
         false
     }
 
-    /// Returns whether this source may manage permission metadata.
-    fn can_manage_permission_metadata(&self) -> bool {
-        false
-    }
-
     /// Returns group names this source may manage, for completion only.
     fn manageable_permission_group_names(&self) -> Vec<String> {
         self.permission_group_names()
@@ -167,34 +162,18 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
             .collect()
     }
 
-    /// Filters permission rules down to those this source may manage.
-    fn filter_manageable_permission_rules(&self, values: Vec<String>) -> Vec<String> {
-        values
-            .into_iter()
-            .filter(|value| {
-                PermissionRuleExpression::parse(value)
-                    .is_ok_and(|expression| self.can_manage_permission_key(expression.key()))
-            })
-            .collect()
-    }
-
-    /// Filters metadata keys down to those this source may manage.
-    fn filter_manageable_permission_metadata(&self, values: Vec<String>) -> Vec<String> {
-        if self.can_manage_permission_metadata() {
-            values
-        } else {
-            Vec::new()
-        }
-    }
-
-    /// Returns permission rules this source may manage, for completion only.
+    /// Returns permission rules to suggest.
+    ///
+    /// Completion lists every known key; handlers still check management authority.
     fn manageable_permission_rule_suggestions(&self) -> Vec<String> {
-        self.filter_manageable_permission_rules(self.permission_rule_suggestions())
+        self.permission_rule_suggestions()
     }
 
-    /// Returns metadata keys this source may manage, for completion only.
+    /// Returns metadata keys to suggest.
+    ///
+    /// Completion lists every known key; handlers still check management authority.
     fn manageable_permission_metadata_suggestions(&self) -> Vec<String> {
-        self.filter_manageable_permission_metadata(self.permission_metadata_suggestions())
+        self.permission_metadata_suggestions()
     }
 
     fn non_operator_profile_names(&self) -> Vec<String> {
@@ -831,10 +810,6 @@ impl CommandArgumentSource for CommandSource {
 
     fn can_manage_permission_group(&self, group: &str) -> bool {
         can_manage_group(self, group)
-    }
-
-    fn can_manage_permission_metadata(&self) -> bool {
-        source_has_permission(self, "steel:permission.metadata")
     }
 
     fn non_operator_profile_names(&self) -> Vec<String> {

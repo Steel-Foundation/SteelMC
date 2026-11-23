@@ -414,6 +414,17 @@ where
             }
         }
 
+        for collection in declared_collections.ids() {
+            let Some(members) = declared_collections.get(collection) else {
+                continue;
+            };
+            for member in members.members() {
+                if let PermissionCollectionMember::Permission(permission) = member {
+                    permissions.insert(PermissionKey::from_identifier(permission));
+                }
+            }
+        }
+
         Ok(RegisteredCommandDispatcher {
             dispatcher,
             permissions: permissions.into_iter().collect(),
