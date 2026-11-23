@@ -18,7 +18,7 @@ use super::super::{
 };
 use crate::entity::load_entity_recursive_owned;
 use crate::{
-    entity::{AddEntityError, ENTITIES, EntitySpawnReason, SharedEntity},
+    entity::{AddEntityError, EntitySpawnReason, SharedEntity},
     world::World,
 };
 
@@ -80,38 +80,27 @@ pub(super) fn create_entity(
         ));
     }
 
-    let mut _loaded_tree = None;
-    let entity = if let Some(nbt) = nbt {
-        let mut compound = nbt.clone();
-        compound.remove("id");
-        compound.insert("id", entity_type.key.to_string());
+    let mut base_nbt = nbt.cloned().unwrap_or_default();
+    base_nbt.remove("id");
+    base_nbt.insert("id", entity_type.key.to_string());
 
-        let Some(loaded) =
-            load_entity_recursive_owned(world, &compound, EntitySpawnReason::Command, |entity| {
-                entity.set_position_local(position);
-                entity.set_old_position_to_current();
-            })
-        else {
-            return Err(command_failed(&translations::COMMANDS_SUMMON_FAILED));
-        };
-        let root = Arc::clone(&loaded.root);
-        _loaded_tree = Some(loaded);
-        root
-    } else {
-        let Some(entity) = ENTITIES.create(entity_type, position, Arc::downgrade(world)) else {
-            return Err(command_failed(&translations::COMMANDS_SUMMON_FAILED));
-        };
-
-        if let Some(mob) = entity.as_mob() {
-            let difficulty = world.get_current_difficulty_at(entity.block_position());
-            let _ = mob.finalize_spawn(world, difficulty, EntitySpawnReason::Command, None);
-        }
-
-        entity
+    let Some(loaded) =
+        load_entity_recursive_owned(world, &base_nbt, EntitySpawnReason::Command, |entity| {
+            entity.set_position_local(position);
+            entity.set_old_position_to_current();
+        })
+    else {
+        return Err(command_failed(&translations::COMMANDS_SUMMON_FAILED));
     };
+    if nbt.is_none()
+        && let Some(mob) = loaded.root.as_mob()
+    {
+        let difficulty = world.get_current_difficulty_at(loaded.root.block_position());
+        let _ = mob.finalize_spawn(world, difficulty, EntitySpawnReason::Command, None);
+    }
 
-    match world.try_add_fresh_entity_with_passengers(Arc::clone(&entity)) {
-        Ok(()) => Ok(entity),
+    match world.try_add_fresh_entity_with_passengers(Arc::clone(&loaded.root)) {
+        Ok(()) => Ok(loaded.root),
         Err(AddEntityError::DuplicateUuid { .. }) => {
             Err(command_failed(&translations::COMMANDS_SUMMON_FAILED_UUID))
         }
