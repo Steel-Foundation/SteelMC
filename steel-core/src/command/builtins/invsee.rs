@@ -30,7 +30,9 @@ const MODIFY_PERMISSION: Identifier = Identifier::new_static("steel", "command.i
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     let id = Identifier::from_steel("invsee");
     let (access_permission, modify_permission) = invsee_permissions();
-    CommandRegistration::new(id, move |_| command(modify_permission)).permission(access_permission)
+    CommandRegistration::new(id, move |_| command(modify_permission))
+        .permission(access_permission)
+        .collection_permission(MODIFY_PERMISSION)
 }
 
 fn invsee_permissions() -> (PermissionExpr, PermissionExpr) {

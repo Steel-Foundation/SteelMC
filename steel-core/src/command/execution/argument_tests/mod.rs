@@ -44,19 +44,31 @@ use super::argument::SteelArgumentParser;
 
 struct TestSource {
     callback: CommandResultCallback,
+    allow_all_permissions: bool,
 }
 
 impl TestSource {
     const fn new() -> Self {
         Self {
             callback: CommandResultCallback::empty(),
+            allow_all_permissions: true,
+        }
+    }
+
+    const fn restricted() -> Self {
+        Self {
+            callback: CommandResultCallback::empty(),
+            allow_all_permissions: false,
         }
     }
 }
 
 impl ExecutionCommandSource for TestSource {
     fn with_callback(&self, callback: CommandResultCallback) -> Self {
-        Self { callback }
+        Self {
+            callback,
+            allow_all_permissions: self.allow_all_permissions,
+        }
     }
 
     fn callback(&self) -> CommandResultCallback {
@@ -140,6 +152,18 @@ impl CommandArgumentSource for TestSource {
 
     fn permission_collection_names(&self) -> Vec<Identifier> {
         vec![Identifier::new("minecraft", "gamemasters")]
+    }
+
+    fn can_manage_permission_key(&self, _key: &PermissionKey) -> bool {
+        self.allow_all_permissions
+    }
+
+    fn can_manage_permission_group(&self, _group: &str) -> bool {
+        self.allow_all_permissions
+    }
+
+    fn can_manage_permission_metadata(&self) -> bool {
+        self.allow_all_permissions
     }
 
     fn selector_player_names(&self) -> Vec<String> {

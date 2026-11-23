@@ -67,6 +67,27 @@ impl CommandRegistration {
         self
     }
 
+    /// Adds a permission to this command's collection.
+    ///
+    /// Uses the collection from [`Self::permission_collection`], or
+    /// [`OWNERS_COLLECTION`](crate::permission::OWNERS_COLLECTION) by default.
+    #[must_use]
+    pub fn collection_permission(mut self, permission: Identifier) -> Self {
+        self.inner = self.inner.collection_permission(permission);
+        self
+    }
+
+    /// Adds a permission to an explicit collection instead of this command's collection.
+    #[must_use]
+    pub fn collection_permission_in(
+        mut self,
+        collection: Identifier,
+        permission: Identifier,
+    ) -> Self {
+        self.inner = self.inner.collection_permission_in(collection, permission);
+        self
+    }
+
     /// Replaces the permission expression derived from the command ID.
     #[must_use]
     pub fn permission(mut self, permission: PermissionExpr) -> Self {

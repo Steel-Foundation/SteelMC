@@ -15,9 +15,10 @@ use super::super::{
 };
 use crate::command::missing_argument;
 use crate::permission::{
-    PermissionCollectionMember, PermissionContext, PermissionEntry, PermissionGroupRule,
-    PermissionKey, PermissionMetadataEntry, PermissionMetadataExpression, PermissionMetadataValue,
-    PermissionResolutionSource, PermissionRuleExpression, PermissionState, PermissionSubjectState,
+    MODERATORS_COLLECTION, PermissionCollectionMember, PermissionContext, PermissionEntry,
+    PermissionGroupRule, PermissionKey, PermissionMetadataEntry, PermissionMetadataExpression,
+    PermissionMetadataValue, PermissionResolutionSource, PermissionRuleExpression, PermissionState,
+    PermissionSubjectState,
 };
 use steel_utils::Identifier;
 use text_components::TextComponent;
@@ -29,6 +30,7 @@ pub(super) const METADATA_PERMISSION: &str = "steel:permission.metadata";
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::from_steel("perms"), |_| command())
+        .permission_collection(MODERATORS_COLLECTION)
         .subcommand_permission(["user", "info"])
         .subcommand_permission(["user", "allow"])
         .subcommand_permission(["user", "deny"])
@@ -1682,7 +1684,8 @@ mod tests {
         builtins::{create_dispatcher, create_registered_dispatcher},
         execution::{CommandSource, SteelCommandRuntime},
     };
-    use crate::permission::PermissionKey;
+    use crate::permission::{PermissionCollection, PermissionCollectionMember, PermissionKey};
+    use steel_utils::Identifier;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -1765,5 +1768,21 @@ mod tests {
         ] {
             assert!(permissions.contains(&expected), "missing {expected}");
         }
+    }
+
+    #[test]
+    fn perms_command_is_declared_in_moderators_collection() {
+        init_vanilla_registry();
+        let registered = match create_registered_dispatcher(CommandRegistry::new()) {
+            Ok(registered) => registered,
+            Err(error) => panic!("built-in dispatcher should build: {error}"),
+        };
+        let declared = registered.declared_collections();
+        let members = declared
+            .get(&Identifier::new("minecraft", "moderators"))
+            .map(PermissionCollection::members);
+        let expected =
+            PermissionCollectionMember::Permission(Identifier::from_steel("command.perms"));
+        assert!(members.is_some_and(|members| members.contains(&expected)));
     }
 }

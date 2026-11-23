@@ -98,7 +98,7 @@ impl PermissionSuggestionScope {
         kind: PermissionSuggestionKind,
     ) -> Vec<String> {
         let source = context.source();
-        match self {
+        let values = match self {
             Self::All => match kind {
                 PermissionSuggestionKind::Rule => source.permission_rule_suggestions(),
                 PermissionSuggestionKind::Metadata => source.permission_metadata_suggestions(),
@@ -136,6 +136,12 @@ impl PermissionSuggestionScope {
                         source.group_permission_metadata_suggestions(group.as_str())
                     }
                 }
+            }
+        };
+        match kind {
+            PermissionSuggestionKind::Rule => source.filter_manageable_permission_rules(values),
+            PermissionSuggestionKind::Metadata => {
+                source.filter_manageable_permission_metadata(values)
             }
         }
     }
@@ -240,7 +246,7 @@ impl SteelArgumentParser for PermissionGroupRuleParser {
         expressions.extend(
             context
                 .source()
-                .permission_collection_names()
+                .manageable_permission_collection_names()
                 .into_iter()
                 .map(|collection| format!("#{collection}")),
         );
@@ -358,7 +364,7 @@ impl SteelArgumentParser for PermissionGroupParser {
         builder: &mut SuggestionsBuilder<'_>,
     ) {
         let prefix = builder.remaining_lowercase().to_owned();
-        for group in context.source().permission_group_names() {
+        for group in context.source().manageable_permission_group_names() {
             if group.to_lowercase().starts_with(&prefix) {
                 builder.suggest(group);
             }
@@ -402,7 +408,7 @@ impl SteelArgumentParser for PermissionCollectionParser {
         builder: &mut SuggestionsBuilder<'_>,
     ) {
         let prefix = builder.remaining_lowercase().to_owned();
-        for collection in context.source().permission_collection_names() {
+        for collection in context.source().manageable_permission_collection_names() {
             let text = collection.to_string();
             if text.to_lowercase().starts_with(&prefix) {
                 builder.suggest(text);
@@ -456,11 +462,11 @@ impl SteelArgumentParser for PermissionCollectionMemberParser {
         context: &dyn SteelArgumentSuggestionContext,
         builder: &mut SuggestionsBuilder<'_>,
     ) {
-        let mut expressions = context.source().permission_rule_suggestions();
+        let mut expressions = context.source().manageable_permission_rule_suggestions();
         expressions.extend(
             context
                 .source()
-                .permission_collection_names()
+                .manageable_permission_collection_names()
                 .into_iter()
                 .map(|collection| format!("#{collection}")),
         );
@@ -516,8 +522,8 @@ fn suggest_expression(
     let known_contexts = known_custom_contexts(
         expressions
             .iter()
-            .chain(source.permission_rule_suggestions().iter())
-            .chain(source.permission_metadata_suggestions().iter()),
+            .chain(source.manageable_permission_rule_suggestions().iter())
+            .chain(source.manageable_permission_metadata_suggestions().iter()),
     );
     suggest_context(builder, source, base, context_prefix, &known_contexts);
 }

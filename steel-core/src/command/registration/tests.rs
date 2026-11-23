@@ -11,7 +11,8 @@ use crate::command::{
     },
 };
 use crate::permission::{
-    PermissionEntry, PermissionExpr, PermissionKey, PermissionSet, PermissionState,
+    OWNERS_COLLECTION, PermissionCollectionMember, PermissionEntry, PermissionExpr, PermissionKey,
+    PermissionSet, PermissionState,
 };
 
 use super::{CommandDispatcherBuilder, CommandRegistration, CommandRegistrationError};
@@ -368,6 +369,50 @@ fn dispatcher_build_retains_declared_and_derived_permission_keys() {
             "minecraft:command.tick.freeze",
             "minecraft:selector"
         ]
+    );
+}
+
+#[test]
+fn command_collection_permissions_resolve_default_and_explicit_collections() {
+    let mut builder = CommandDispatcherBuilder::new();
+    let granted = Identifier::new("example", "extra");
+    let owner_only = Identifier::new("example", "owner_only");
+    let custom = Identifier::new("example", "custom");
+    assert!(
+        builder
+            .register(
+                command(Identifier::new_static("example", "inspect"), "child")
+                    .permission_collection(custom.clone())
+                    .collection_permission(granted.clone())
+                    .collection_permission_in(OWNERS_COLLECTION, owner_only.clone()),
+            )
+            .is_ok()
+    );
+    let Ok(registered) = builder.build_with_permissions() else {
+        panic!("valid command declarations should build");
+    };
+    let collections = registered.declared_collections();
+
+    let Some(custom_members) = collections.get(&custom) else {
+        panic!("command collection should be declared");
+    };
+    assert!(
+        custom_members
+            .members()
+            .contains(&PermissionCollectionMember::Permission(granted.clone()))
+    );
+    let Some(owners) = collections.get(&OWNERS_COLLECTION) else {
+        panic!("explicit member collection should be declared");
+    };
+    assert!(
+        owners
+            .members()
+            .contains(&PermissionCollectionMember::Permission(owner_only))
+    );
+    assert!(
+        registered
+            .permissions
+            .contains(&PermissionKey::from_identifier(&granted))
     );
 }
 

@@ -122,10 +122,8 @@ fn serialize_collections_config(
         output.push_str(&toml_key(namespace)?);
         output.push_str("]\n");
         for (name, members) in collections {
-            output.push_str(&toml_key(name)?);
-            output.push_str(" = ");
-            output.push_str(&toml_value(members)?);
-            output.push('\n');
+            let key = toml_key(name)?;
+            push_string_array_field(&mut output, &key, members)?;
         }
     }
 

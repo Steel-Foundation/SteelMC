@@ -257,6 +257,72 @@ fn owned_permission_arguments_scope_unset_suggestions_to_prior_arguments() {
 }
 
 #[test]
+fn permission_suggestions_are_filtered_by_management_authority() {
+    let mut dispatcher = TestDispatcher::new();
+    for (name, argument_type) in [
+        ("group", SteelArgumentType::permission_group(true)),
+        ("collection", SteelArgumentType::permission_collection()),
+        ("permission", SteelArgumentType::permission_rule()),
+        ("metadata", SteelArgumentType::permission_metadata()),
+    ] {
+        assert!(
+            dispatcher
+                .register(literal(name).then(argument("value", argument_type)))
+                .is_ok()
+        );
+    }
+    assert!(
+        dispatcher
+            .register(
+                literal("grouprule").then(
+                    argument("group", SteelArgumentType::permission_group(true))
+                        .then(argument("value", SteelArgumentType::group_rule()))
+                )
+            )
+            .is_ok()
+    );
+    assert!(
+        dispatcher
+            .register(literal("member").then(
+                argument("collection", SteelArgumentType::permission_collection()).then(argument(
+                    "value",
+                    SteelArgumentType::permission_collection_member()
+                ))
+            ))
+            .is_ok()
+    );
+
+    for input in [
+        "group ",
+        "collection ",
+        "permission ",
+        "metadata ",
+        "grouprule builder ",
+        "member minecraft:gamemasters ",
+    ] {
+        let allowed = dispatcher.parse(input, TestSource::new());
+        let allowed = match dispatcher.completion_suggestions(&allowed) {
+            Ok(suggestions) => suggestions,
+            Err(error) => panic!("{input} suggestions should build: {error}"),
+        };
+        assert!(
+            !allowed.list().is_empty(),
+            "{input} should suggest manageable values"
+        );
+
+        let restricted = dispatcher.parse(input, TestSource::restricted());
+        let restricted = match dispatcher.completion_suggestions(&restricted) {
+            Ok(suggestions) => suggestions,
+            Err(error) => panic!("{input} suggestions should build: {error}"),
+        };
+        assert!(
+            restricted.list().is_empty(),
+            "{input} should hide unmanageable values"
+        );
+    }
+}
+
+#[test]
 fn component_argument_preserves_list_siblings_and_following_nodes() {
     let mut dispatcher = TestDispatcher::new();
     let command = literal("component").then(

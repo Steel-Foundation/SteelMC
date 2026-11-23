@@ -45,6 +45,7 @@ where
     permission: Option<PermissionExpr>,
     subcommand_permissions: Vec<Vec<Box<str>>>,
     collection: Option<Identifier>,
+    collection_members: Vec<(Option<Identifier>, PermissionCollectionMember)>,
     factory: Box<CommandFactory<S>>,
 }
 
@@ -63,6 +64,7 @@ where
             permission: None,
             subcommand_permissions: Vec::new(),
             collection: None,
+            collection_members: Vec::new(),
             factory: Box::new(factory),
         }
     }
@@ -80,6 +82,26 @@ where
     #[must_use]
     pub(crate) fn permission_collection(mut self, collection: Identifier) -> Self {
         self.collection = Some(collection);
+        self
+    }
+
+    /// Adds a permission to this command's collection.
+    pub(crate) fn collection_permission(mut self, permission: Identifier) -> Self {
+        self.collection_members
+            .push((None, PermissionCollectionMember::Permission(permission)));
+        self
+    }
+
+    /// Adds a permission to an explicit collection instead of this command's collection.
+    pub(crate) fn collection_permission_in(
+        mut self,
+        collection: Identifier,
+        permission: Identifier,
+    ) -> Self {
+        self.collection_members.push((
+            Some(collection),
+            PermissionCollectionMember::Permission(permission),
+        ));
         self
     }
 
@@ -165,6 +187,15 @@ where
                 id: self.id.clone(),
                 collection: collection.clone(),
             });
+        }
+        for (collection, _) in &self.collection_members {
+            if let Some(collection) = collection
+                && !Identifier::validate(&collection.namespace, &collection.path)
+            {
+                return Err(CommandRegistrationError::InvalidDeclaredCollection {
+                    collection: collection.clone(),
+                });
+            }
         }
         Ok(())
     }
@@ -302,6 +333,7 @@ where
                 permission,
                 subcommand_permissions,
                 collection,
+                collection_members,
                 factory,
             } = registration;
             let derived_key = derived_command_permission_key(&id)?;
@@ -313,10 +345,20 @@ where
                     Some(derived_key.clone()),
                 )
             };
+            let collection = collection.unwrap_or(DEFAULT_COMMAND_COLLECTION);
             declared_collections.push(
-                collection.unwrap_or(DEFAULT_COMMAND_COLLECTION),
+                collection.clone(),
                 PermissionCollectionMember::Permission(derived_key),
             );
+            for (member_collection, member) in collection_members {
+                if let PermissionCollectionMember::Permission(permission) = &member {
+                    permissions.insert(PermissionKey::from_identifier(permission));
+                }
+                declared_collections.push(
+                    member_collection.unwrap_or_else(|| collection.clone()),
+                    member,
+                );
+            }
             collect_permission_keys(&root_permission, &mut permissions);
             let root = apply_registration_requirements(
                 factory(dispatcher_root),

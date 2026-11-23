@@ -1,11 +1,12 @@
 use steel_utils::Identifier;
 
 use super::super::{
-    PermissionCollectionMember, PermissionCollections, PermissionConfigError, PermissionEntry,
-    PermissionGroupConfig, PermissionGroups, PermissionGroupsConfig, PermissionKey,
-    PermissionMetadataEntry, PermissionMetadataRuleConfig, PermissionMetadataSet,
-    PermissionMetadataValue, PermissionRuleContext, PermissionRuleExpression,
-    PermissionRuleExpressionError, PermissionSet, PermissionState, parse_permission_metadata_key,
+    MODERATORS_COLLECTION, PermissionCollectionMember, PermissionCollections,
+    PermissionConfigError, PermissionEntry, PermissionGroupConfig, PermissionGroups,
+    PermissionGroupsConfig, PermissionKey, PermissionMetadataEntry, PermissionMetadataRuleConfig,
+    PermissionMetadataSet, PermissionMetadataValue, PermissionRuleContext,
+    PermissionRuleExpression, PermissionRuleExpressionError, PermissionSet, PermissionState,
+    parse_permission_metadata_key,
 };
 
 fn key(value: &str) -> PermissionKey {
@@ -336,4 +337,63 @@ fn runtime_declared_collections_reach_inheriting_groups() {
     };
     let custom = groups.effective_permissions(&["custom".to_owned()], &PermissionSet::new());
     assert!(!custom.allows_identifier(&Identifier::new("steel", "command.fly")));
+}
+
+#[test]
+fn vanilla_management_authorities_are_scoped_to_each_level() {
+    let groups = groups(PermissionGroupsConfig::default());
+
+    let all = groups.effective_permissions(&[], &PermissionSet::new());
+    let admins = groups.effective_permissions(&["admins".to_owned()], &PermissionSet::new());
+    let owners = groups.effective_permissions(&["owners".to_owned()], &PermissionSet::new());
+
+    let manage_give = Identifier::new("steel", "permission.manage.minecraft.command.give");
+    let manage_stop = Identifier::new("steel", "permission.manage.minecraft.command.stop");
+    let group_admins = Identifier::new("steel", "permission.group.admins");
+    let group_owners = Identifier::new("steel", "permission.group.owners");
+    let metadata = Identifier::new("steel", "permission.metadata");
+
+    // `all` is the only vanilla level without any administration surface.
+    assert!(!all.allows_identifier(&manage_give));
+    assert!(!all.allows_identifier(&group_admins));
+    assert!(!all.allows_identifier(&metadata));
+
+    // `moderators` has no vanilla commands, but still carries its management authorities.
+    let moderators =
+        groups.effective_permissions(&["moderators".to_owned()], &PermissionSet::new());
+    assert!(moderators.allows_identifier(&Identifier::new("steel", "permission.group.moderators")));
+
+    // `admins` inherits its own level and everything below it, but not owners.
+    assert!(admins.allows_identifier(&manage_give));
+    assert!(admins.allows_identifier(&group_admins));
+    assert!(admins.allows_identifier(&metadata));
+    assert!(!admins.allows_identifier(&manage_stop));
+    assert!(!admins.allows_identifier(&group_owners));
+
+    // `owners` can administer its own level too.
+    assert!(owners.allows_identifier(&manage_stop));
+    assert!(owners.allows_identifier(&group_owners));
+}
+
+#[test]
+fn vanilla_moderators_collection_grants_perms_command_to_ops() {
+    let mut declared = PermissionCollections::new();
+    declared.push(
+        MODERATORS_COLLECTION,
+        PermissionCollectionMember::Permission(Identifier::from_steel("command.perms")),
+    );
+    let collections = PermissionCollections::effective(&declared, &PermissionCollections::new());
+    let groups =
+        match PermissionGroups::from_config(PermissionGroupsConfig::default(), &collections) {
+            Ok(groups) => groups,
+            Err(error) => panic!("default group config should resolve: {error}"),
+        };
+
+    let command = Identifier::from_steel("command.perms");
+    let effective =
+        |assigned: &[String]| groups.effective_permissions(assigned, &PermissionSet::new());
+
+    assert!(!effective(&[]).allows_identifier(&command));
+    assert!(effective(&["moderators".to_owned()]).allows_identifier(&command));
+    assert!(effective(&["owners".to_owned()]).allows_identifier(&command));
 }

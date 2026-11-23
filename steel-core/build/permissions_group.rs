@@ -3,7 +3,7 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
-use std::{collections::BTreeMap, fs};
+use std::{collections::BTreeMap, fs, iter};
 
 #[derive(Deserialize, Default)]
 struct Group {
@@ -17,7 +17,8 @@ struct Group {
 /// The generated module exposes the vanilla group names, one collection identifier
 /// constant per level, one code-owned collection per level, and a helper that builds
 /// the default vanilla groups referencing those collections. Collections hold the
-/// level's own commands; cumulative behaviour comes from the group inheritance chain.
+/// level's own commands and management authorities; cumulative behaviour comes from
+/// the group inheritance chain.
 pub fn build() -> String {
     println!("cargo:rerun-if-changed=build/permissions_group.json");
     let json = fs::read_to_string("build/permissions_group.json")
@@ -46,7 +47,7 @@ pub fn build() -> String {
 
     let group_constants = group_name_constants(&group_names);
     let collection_constants = collection_identifier_constants(&group_names);
-    let collection_entries = collection_entries(&groups);
+    let collection_entries = collection_entries(&groups, &default);
     let default_group_entries = default_group_entries(&groups);
 
     let output = quote! {
@@ -73,8 +74,8 @@ pub fn build() -> String {
 
         /// Returns the code-owned vanilla collections, keyed by `minecraft:<level>`.
         ///
-        /// Each collection holds the commands declared for that level only. Levels
-        /// inherit cumulatively through the generated default groups.
+        /// Each collection holds the commands and management authorities declared for
+        /// that level only. Levels inherit cumulatively through the generated groups.
         pub fn collections() -> Vec<(Identifier, Vec<Identifier>)> {
             vec![
                 #collection_entries
@@ -120,32 +121,72 @@ fn collection_identifier_constants(group_names: &[String]) -> TokenStream {
 }
 
 /// Emits the `(Identifier, Vec<Identifier>)` entries for the code-owned collections.
-fn collection_entries(groups: &BTreeMap<String, Group>) -> TokenStream {
+///
+/// Every level above the default group also carries the management authorities for
+/// its own permissions, collection, group, and metadata. Higher levels inherit lower
+/// ones, which scopes administration to a level and everything below it.
+fn collection_entries(groups: &BTreeMap<String, Group>, default_group: &str) -> TokenStream {
     let mut tokens = TokenStream::new();
     for (name, group) in groups {
         let collection = collection_constant(name);
-        let permissions = group
-            .allow
-            .iter()
-            .map(|key| permission_identifier(key))
-            .collect::<Vec<_>>();
+        let permissions = group.allow.iter().map(|key| permission_identifier(key));
+        let management = (name != default_group)
+            .then(|| management_identifiers(name, group))
+            .into_iter()
+            .flatten();
+        let members = permissions.chain(management).collect::<Vec<_>>();
         tokens.extend(quote! {
             (
                 #collection,
-                vec![#(#permissions),*],
+                vec![#(#members),*],
             ),
         });
     }
     tokens
 }
 
+/// Returns the management authorities granted by one permission level.
+fn management_identifiers(level: &str, group: &Group) -> Vec<TokenStream> {
+    let mut authorities = group
+        .allow
+        .iter()
+        .map(|key| management_authority_identifier(key))
+        .collect::<Vec<_>>();
+    authorities.push(management_authority_identifier(&format!(
+        "minecraft:{level}"
+    )));
+    authorities.push(group_authority_identifier(level));
+    authorities.push(quote! {
+        Identifier::new_static("steel", "permission.metadata")
+    });
+    authorities
+}
+
+fn management_authority_identifier(name: &str) -> TokenStream {
+    let (namespace, path) = name.split_once(':').unwrap_or(("minecraft", name));
+    let value = format!("permission.manage.{namespace}.{path}");
+    quote! {
+        Identifier::new_static("steel", #value)
+    }
+}
+
+fn group_authority_identifier(level: &str) -> TokenStream {
+    let value = format!("permission.group.{level}");
+    quote! {
+        Identifier::new_static("steel", #value)
+    }
+}
+
 /// Emits the default vanilla group configs referencing the generated collections.
+///
+/// Every level references its own collection, including levels with no vanilla
+/// commands of their own: their collection still carries management authorities and
+/// code-declared permissions such as `/perms`.
 fn default_group_entries(groups: &BTreeMap<String, Group>) -> TokenStream {
     let mut tokens = TokenStream::new();
     for (name, group) in groups {
         let inherits = group.inherits.clone().into_iter();
-        let has_allow = !group.allow.is_empty();
-        let allow = has_allow.then(|| format!("#minecraft:{name}")).into_iter();
+        let allow = iter::once(format!("#minecraft:{name}"));
         tokens.extend(quote! {
             groups.insert(
                 #name.to_owned(),

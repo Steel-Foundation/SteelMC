@@ -24,7 +24,7 @@ metadata = []
 [groups.moderators]
 priority = 0
 inherits = ["all"]
-allow = []
+allow = ["#minecraft:moderators"]
 deny = []
 metadata = []
 

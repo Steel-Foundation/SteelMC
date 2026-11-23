@@ -133,7 +133,9 @@ mod tests {
         CommandRegistration as ExtensionCommandRegistration, CommandRegistry,
         literal as extension_literal,
     };
-    use crate::permission::PermissionKey;
+    use crate::permission::{
+        OWNERS_COLLECTION, PermissionCollectionMember, PermissionCollections, PermissionKey,
+    };
     use steel_registry::init_vanilla_registry;
     use steel_utils::Identifier;
 
@@ -300,6 +302,27 @@ mod tests {
                 .iter()
                 .any(|permission| permission.as_str() == "steel_test:command.stop")
         );
+    }
+
+    #[test]
+    fn invsee_modify_permission_is_declared_in_owners_collection() {
+        init_vanilla_registry();
+        let Ok(registered) = create_registered_dispatcher(CommandRegistry::new()) else {
+            panic!("built-in commands should register");
+        };
+        let modify = Identifier::new("steel", "command.invsee.modify");
+        let collections = registered.declared_collections();
+        let Some(owners) = collections.get(&OWNERS_COLLECTION) else {
+            panic!("owners collection should be declared");
+        };
+        assert!(
+            owners
+                .members()
+                .contains(&PermissionCollectionMember::Permission(modify.clone()))
+        );
+        let effective =
+            PermissionCollections::effective(&collections, &PermissionCollections::new());
+        assert!(effective.expand(&OWNERS_COLLECTION).contains(&modify));
     }
 
     #[test]

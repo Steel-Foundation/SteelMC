@@ -50,6 +50,7 @@ fn packaged_configs_parse() {
     assert!(!worlds.domains.is_empty());
     let groups: PermissionGroupsConfig =
         toml::from_str(DEFAULT_GROUPS).expect("default groups parse");
+    assert_eq!(groups, PermissionGroupsConfig::default());
     PermissionGroups::from_config(groups, &PermissionCollections::vanilla())
         .expect("default groups validate");
     assert!(DEFAULT_GROUPS.starts_with(GROUPS_CONFIG_HEADER));
@@ -226,6 +227,9 @@ async fn file_permission_group_store_round_trips_typed_config() {
         toml::from_str(&written_collections).expect("written collections should parse");
 
     assert!(written_collections.starts_with(COLLECTIONS_CONFIG_HEADER));
+    assert!(written_collections.contains(
+        "\"builders\" = [\n    \"minecraft:command.help\",\n    \"#minecraft:all\",\n]\n"
+    ));
     assert_eq!(parsed_collections, collections);
     PermissionCollections::from_config(&parsed_collections)
         .expect("written collections should validate");
