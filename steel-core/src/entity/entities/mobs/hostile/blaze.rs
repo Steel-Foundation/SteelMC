@@ -12,7 +12,6 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::BlazeEntityData;
 use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
-use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
 
 use crate::entity::ai::goal::{
@@ -129,7 +128,9 @@ impl BlazeEntity {
             );
             goal_selector.add_goal(8, LookAtPlayerGoal::new(LOOK_AT_PLAYER_RANGE));
             goal_selector.add_goal(8, RandomLookAroundGoal::new());
+        }
 
+        {
             let mut target_selector = mob_base.target_selector().lock();
             target_selector.add_goal(1, HurtByTargetGoal::new().set_alert_others(empty()));
             target_selector.add_goal(
@@ -165,19 +166,18 @@ impl BlazeEntity {
         });
     }
 
-    fn update_dirty_mob_effect_entity_data(&self) {
-        sync_dirty_mob_effects(&self.living_base, &self.entity_data);
-    }
-
     /// Rolls a new allowed height offset every vanilla interval.
     fn tick_height_offset(&self) {
-        let mut next_change = self.next_height_offset_change_tick.lock();
-        *next_change -= 1;
-        if *next_change > 0 {
-            return;
+        {
+            let mut next_change = self.next_height_offset_change_tick.lock();
+            *next_change -= 1;
+            if *next_change > 0 {
+                return;
+            }
+
+            *next_change = ALLOWED_HEIGHT_OFFSET_CHANGE_INTERVAL;
         }
 
-        *next_change = ALLOWED_HEIGHT_OFFSET_CHANGE_INTERVAL;
         *self.allowed_height_offset.lock() =
             triangle_random(ALLOWED_HEIGHT_OFFSET_MODE, ALLOWED_HEIGHT_OFFSET_DEVIATION) as f32;
     }
@@ -190,12 +190,12 @@ impl BlazeEntity {
         let Some(target_living) = target.as_living_entity() else {
             return;
         };
-        if target.get_eye_y() <= self.get_eye_y() + f64::from(*self.allowed_height_offset.lock())
+        let allowed_height_offset = *self.allowed_height_offset.lock();
+        if target.get_eye_y() <= self.get_eye_y() + f64::from(allowed_height_offset)
             || !Mob::can_attack(self, target_living)
         {
             return;
         }
-
         let velocity = self.velocity();
         let impulse = (RISE_IMPULSE_TARGET_Y - velocity.y) * RISE_IMPULSE_SCALE;
         self.set_velocity(velocity + DVec3::new(0.0, impulse, 0.0));
@@ -206,10 +206,6 @@ impl BlazeEntity {
 impl DefaultEntityPush for BlazeEntity {}
 
 impl Entity for BlazeEntity {
-    fn blocks_building(&self) -> bool {
-        true
-    }
-
     fn is_hard_collision_relevant(&self) -> bool {
         false
     }
@@ -244,7 +240,7 @@ impl Entity for BlazeEntity {
     }
 
     fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
+        sync_dirty_mob_effects(&self.living_base, &self.entity_data);
     }
 
     fn max_up_step(&self) -> f32 {
@@ -281,24 +277,10 @@ impl Entity for BlazeEntity {
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
-        self.save_persistent_living_data(nbt);
-        self.save_mob(nbt);
-    }
-
-    fn save_additional_for_data_compare(&self, nbt: &mut NbtCompound) {
-        self.save_persistent_living_data(nbt);
-        self.save_command_living_fields(nbt);
         self.save_mob(nbt);
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.living_base.load_damage_state(nbt, self.tick_count());
-        self.attributes().lock().load_vanilla_nbt(nbt);
-        self.living_base.load_mob_effects(nbt);
-        self.set_health(
-            nbt.float_value("Health")
-                .unwrap_or_else(|| self.get_max_health()),
-        );
         self.load_mob(nbt);
     }
 }

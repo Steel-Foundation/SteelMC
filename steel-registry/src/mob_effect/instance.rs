@@ -3,7 +3,6 @@
 use std::io::{Cursor, Error, Result, Write};
 use std::str::FromStr;
 
-use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::Identifier;
@@ -163,16 +162,7 @@ impl MobEffectInstance {
     }
 
     pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
-        Self::from_owned_compound(tag.compound()?)
-    }
-
-    /// decodes a mobeffect instance from its saved compound
-    #[must_use]
-    pub fn from_borrowed_compound(compound: &BorrowedNbtCompoundView<'_, '_>) -> Option<Self> {
-        Self::from_owned_compound(&compound.to_owned())
-    }
-
-    fn from_owned_compound(compound: &NbtCompound) -> Option<Self> {
+        let compound = tag.compound()?;
         let id = Identifier::from_str(&compound.get("id")?.string()?.to_string()).ok()?;
         let effect = REGISTRY.mob_effects.by_key(&id)?;
         let details = MobEffectInstanceDetails::from_owned_compound(compound, 0)?;
@@ -209,36 +199,6 @@ impl MobEffectInstanceDetails {
             show_icon,
             hidden_effect: hidden_effect.map(Box::new),
         }
-    }
-
-    #[must_use]
-    pub const fn duration(&self) -> i32 {
-        self.duration
-    }
-
-    #[must_use]
-    pub const fn amplifier(&self) -> i32 {
-        self.amplifier
-    }
-
-    #[must_use]
-    pub const fn ambient(&self) -> bool {
-        self.ambient
-    }
-
-    #[must_use]
-    pub const fn show_particles(&self) -> bool {
-        self.show_particles
-    }
-
-    #[must_use]
-    pub const fn show_icon(&self) -> bool {
-        self.show_icon
-    }
-
-    #[must_use]
-    pub fn hidden_effect(&self) -> Option<&Self> {
-        self.hidden_effect.as_deref()
     }
 
     fn to_nbt_compound(&self) -> NbtCompound {

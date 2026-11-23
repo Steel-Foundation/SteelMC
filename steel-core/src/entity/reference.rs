@@ -12,7 +12,7 @@ use super::{SharedEntity, WeakEntity};
 /// A UUID reference that re-resolves removed entities within the same domain.
 ///
 /// Its cache is weak to avoid entity ownership cycles.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct EntityReference {
     uuid: Uuid,
     // Clones share resolution while callers release their own state locks before lookup.
@@ -65,28 +65,21 @@ impl EntityReference {
     /// Resolves a live cache, then the UUID in any loaded world in this domain.
     #[must_use]
     pub fn get_entity(&self, world: &World) -> Option<SharedEntity> {
-        self.resolve(Some(world))
-    }
-
-    /// resolves the ref from its cache alone when no level is available
-    pub(crate) fn resolve(&self, world: Option<&World>) -> Option<SharedEntity> {
         {
             let mut cached = self.cached.lock();
             if let Some(entity) = cached.as_ref().and_then(Weak::upgrade)
                 && !entity.is_removed()
                 && entity.uuid() == self.uuid
-                && world.is_none_or(|world| {
-                    entity
-                        .level()
-                        .is_some_and(|level| level.domain() == world.domain())
-                })
+                && entity
+                    .level()
+                    .is_some_and(|level| level.domain() == world.domain())
             {
                 return Some(entity);
             }
             *cached = None;
         }
 
-        let entity = world?.get_entity_in_domain_by_uuid(&self.uuid)?;
+        let entity = world.get_entity_in_domain_by_uuid(&self.uuid)?;
         if entity.is_removed() || entity.uuid() != self.uuid {
             return None;
         }

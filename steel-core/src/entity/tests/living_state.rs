@@ -154,10 +154,10 @@ fn living_combat_memory_stores_and_expires_last_hurt_by_mob() {
     assert_eq!(stored_attacker.uuid(), attacker.uuid());
     assert_eq!(entity.last_hurt_by_mob_timestamp(), 1);
 
-    entity.living_base().tick_living_combat_memory(None, 101);
+    entity.living_base().tick_living_combat_memory(101);
     assert!(entity.last_hurt_by_mob().is_some());
 
-    entity.living_base().tick_living_combat_memory(None, 102);
+    entity.living_base().tick_living_combat_memory(102);
     assert!(entity.last_hurt_by_mob().is_none());
     assert_eq!(entity.last_hurt_by_mob_timestamp(), 102);
 }
@@ -175,7 +175,7 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
     assert_eq!(entity.last_hurt_mob_timestamp(), 0);
 
     target.set_health(0.0);
-    entity.living_base().tick_living_combat_memory(None, 1);
+    entity.living_base().tick_living_combat_memory(1);
 
     assert!(entity.last_hurt_mob().is_none());
     assert_eq!(entity.last_hurt_mob_timestamp(), 1);

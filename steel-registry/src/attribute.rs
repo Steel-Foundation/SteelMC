@@ -87,11 +87,7 @@ impl Attribute {
     /// Clamps a value to this attribute's valid range
     #[must_use]
     pub const fn sanitize_value(&self, value: f64) -> f64 {
-        if value.is_nan() {
-            self.min_value
-        } else {
-            value.clamp(self.min_value, self.max_value)
-        }
+        value.clamp(self.min_value, self.max_value)
     }
 }
 

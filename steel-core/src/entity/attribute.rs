@@ -2,7 +2,6 @@
 //!
 use core::iter;
 
-use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList};
 use steel_protocol::packets::game::{AttributeModifierData, AttributeSnapshot};
 pub use steel_registry::attribute::AttributeModifierOperation;
@@ -10,7 +9,6 @@ use steel_registry::attribute::AttributeRef;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::Identifier;
-use steel_utils::nbt::NbtValueInput as _;
 
 /// Growable bitmask for tracking dirty attribute IDs.
 pub struct DirtySet {
@@ -74,21 +72,10 @@ pub struct AttributeModifier {
     pub operation: AttributeModifierOperation,
 }
 
-impl AttributeModifier {
-    fn from_vanilla_nbt(nbt: BorrowedNbtCompoundView<'_, '_>) -> Option<Self> {
-        Some(Self {
-            id: nbt.string("id")?.to_str().parse().ok()?,
-            amount: nbt.double_value("amount")?,
-            operation: AttributeModifierOperation::by_name(&nbt.string("operation")?.to_str())?,
-        })
-    }
-}
-
 /// Runtime state for a single attribute on an entity
 pub struct AttributeInstance {
     attribute: AttributeRef,
     base_value: f64,
-    materialized: bool,
     modifiers: Vec<AttributeModifier>,
     /// Parallel to `modifiers` `true` means the modifier survives serialization
     persistent: Vec<bool>,
@@ -101,7 +88,6 @@ impl AttributeInstance {
         Self {
             attribute,
             base_value,
-            materialized: false,
             modifiers: Vec::new(),
             persistent: Vec::new(),
             cached_value: cached,
@@ -373,25 +359,13 @@ impl AttributeMap {
         self.instances.get(id)?.as_ref()
     }
 
-    /// serializes attributes for the command NBT view including runtime defaults
+    /// Serializes the vanilla `LivingEntity.attributes` list.
     #[must_use]
     pub(crate) fn to_vanilla_nbt(&self) -> NbtList {
-        Self::pack_nbt(self.instances.iter().flatten())
-    }
-
-    /// packs the entity materialized attributes for persistence
-    #[must_use]
-    pub(crate) fn to_persistent_nbt(&self) -> NbtList {
-        Self::pack_nbt(
-            self.instances
-                .iter()
-                .flatten()
-                .filter(|instance| instance.materialized),
-        )
-    }
-
-    fn pack_nbt<'a>(instances: impl Iterator<Item = &'a AttributeInstance>) -> NbtList {
-        let attributes = instances
+        let attributes = self
+            .instances
+            .iter()
+            .flatten()
             .map(|instance| {
                 let mut attribute = NbtCompound::new();
                 attribute.insert("id", instance.attribute().key.to_string());
@@ -417,46 +391,6 @@ impl AttributeMap {
         NbtList::Compound(attributes)
     }
 
-    pub(crate) fn load_vanilla_nbt(&mut self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        let Some(attributes) = nbt.list("attributes").and_then(|list| list.compounds()) else {
-            return;
-        };
-
-        for packed in attributes {
-            let Some(key) = packed.string("id").and_then(|id| id.to_str().parse().ok()) else {
-                continue;
-            };
-
-            let Some(id) = REGISTRY.attributes.id_from_key(&key) else {
-                continue;
-            };
-
-            let base = match packed.double_value("base") {
-                Some(value) => value,
-                None if packed.get("base").is_none() => 0.0,
-                None => continue,
-            };
-
-            let Some(instance) = self.materialize(id) else {
-                continue;
-            };
-
-            instance.set_base_value(base);
-
-            if let Some(modifiers) = packed.list("modifiers").and_then(|list| list.compounds()) {
-                for modifier in modifiers
-                    .into_iter()
-                    .filter_map(AttributeModifier::from_vanilla_nbt)
-                {
-                    instance.set_modifier(modifier, true);
-                }
-            }
-
-            let attribute = instance.attribute();
-            self.mark_dirty(id, attribute);
-        }
-    }
-
     /// Returns whether an attribute has a modifier with the given ID.
     #[must_use]
     pub fn has_modifier(&self, attribute: AttributeRef, modifier_id: &Identifier) -> bool {
@@ -467,20 +401,12 @@ impl AttributeMap {
     /// Sets the base value of an attribute
     pub fn set_base_value(&mut self, attribute: AttributeRef, value: f64) {
         let Some(id) = attribute.try_id() else { return };
-        let Some(instance) = self.materialize(id) else {
+        let Some(Some(instance)) = self.instances.get_mut(id) else {
             return;
         };
-
         if instance.set_base_value(value) {
             self.mark_dirty(id, attribute);
         }
-    }
-
-    fn materialize(&mut self, id: usize) -> Option<&mut AttributeInstance> {
-        let instance = self.instances.get_mut(id)?.as_mut()?;
-        instance.materialized = true;
-
-        Some(instance)
     }
 
     /// Assigns base values from attributes present in both maps.
@@ -498,11 +424,7 @@ impl AttributeMap {
             let Some(Some(instance)) = instances.get_mut(id) else {
                 continue;
             };
-
-            let changed = instance.set_base_value(other_instance.base_value());
-            instance.materialized |= other_instance.materialized || changed;
-
-            if changed {
+            if instance.set_base_value(other_instance.base_value()) {
                 to_update.mark(id as u16);
                 if instance.attribute.syncable {
                     to_sync.mark(id as u16);
@@ -532,8 +454,6 @@ impl AttributeMap {
                 continue;
             };
 
-            instance.materialized |= other_instance.materialized;
-
             for modifier in other_instance.permanent_modifiers() {
                 assert!(
                     instance.add_modifier(modifier.clone(), true),
@@ -559,10 +479,9 @@ impl AttributeMap {
         let Some(id) = attribute.try_id() else {
             return false;
         };
-        let Some(instance) = self.materialize(id) else {
+        let Some(Some(instance)) = self.instances.get_mut(id) else {
             return false;
         };
-
         if instance.add_modifier(modifier, persistent) {
             self.mark_dirty(id, attribute);
             true
@@ -579,10 +498,9 @@ impl AttributeMap {
         persistent: bool,
     ) {
         let Some(id) = attribute.try_id() else { return };
-        let Some(instance) = self.materialize(id) else {
+        let Some(Some(instance)) = self.instances.get_mut(id) else {
             return;
         };
-
         if instance.set_modifier(modifier, persistent) {
             self.mark_dirty(id, attribute);
         }
