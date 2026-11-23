@@ -30,11 +30,9 @@ fn kick_players(ctx: &SteelCommandContext<CommandSource>) -> Result<i32, Command
 
     let targets = ctx.players("targets")?;
     let message = match ctx.message("reason") {
-        // A reason argument is present
         Ok(message) => {
             let parsed = message.resolve_component(ctx.source())?;
 
-            // Try parsing the reason to a text component
             if let Content::Text { text } = &parsed.content {
                 TextComponent::from_snbt(text).unwrap_or(parsed)
             } else {
