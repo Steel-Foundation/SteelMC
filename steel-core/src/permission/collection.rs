@@ -230,6 +230,21 @@ impl PermissionCollections {
         self.collections.entry(id).or_default().push(member);
     }
 
+    /// Adds a permission and its management authority to the collection `id`.
+    ///
+    /// Every permission contributed by code can then be administered through
+    /// `/perms` without a separate authority declaration.
+    pub fn push_managed_permission(&mut self, id: Identifier, permission: Identifier) {
+        self.push(
+            id.clone(),
+            PermissionCollectionMember::Permission(permission.clone()),
+        );
+        self.push(
+            id,
+            PermissionCollectionMember::Permission(super::management_authority(&permission)),
+        );
+    }
+
     /// Additively merges the members of `other` into this set.
     pub fn extend(&mut self, other: &Self) {
         for (id, collection) in &other.collections {

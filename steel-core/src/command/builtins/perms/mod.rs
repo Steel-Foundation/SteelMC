@@ -28,9 +28,15 @@ pub(super) const MANAGE_ALL_PERMISSION: &str = "steel:permission.manage.*";
 pub(super) const GROUP_ALL_PERMISSION: &str = "steel:permission.group.*";
 pub(super) const METADATA_PERMISSION: &str = "steel:permission.metadata";
 
+/// Collection that receives `steel:command.perms` by default.
+///
+/// Change this to another vanilla collection, such as `ADMINS_COLLECTION`, to
+/// restrict `/perms` to a higher level without changing its tests.
+pub(super) const PERMS_COLLECTION: Identifier = MODERATORS_COLLECTION;
+
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::from_steel("perms"), |_| command())
-        .permission_collection(MODERATORS_COLLECTION)
+        .permission_collection(PERMS_COLLECTION)
         .subcommand_permission(["user", "info"])
         .subcommand_permission(["user", "allow"])
         .subcommand_permission(["user", "deny"])
@@ -1677,7 +1683,9 @@ impl CommandResultSuspension for PermsCommandSuspension {
 mod tests {
     use steel_registry::init_vanilla_registry;
 
-    use super::{GROUP_ALL_PERMISSION, MANAGE_ALL_PERMISSION, METADATA_PERMISSION};
+    use super::{
+        GROUP_ALL_PERMISSION, MANAGE_ALL_PERMISSION, METADATA_PERMISSION, PERMS_COLLECTION,
+    };
     use crate::command::{
         CommandRegistry,
         brigadier::{CommandDispatcher, NodeId},
@@ -1771,7 +1779,7 @@ mod tests {
     }
 
     #[test]
-    fn perms_command_is_declared_in_moderators_collection() {
+    fn perms_command_is_declared_in_its_default_collection() {
         init_vanilla_registry();
         let registered = match create_registered_dispatcher(CommandRegistry::new()) {
             Ok(registered) => registered,
@@ -1779,10 +1787,16 @@ mod tests {
         };
         let declared = registered.declared_collections();
         let members = declared
-            .get(&Identifier::new("minecraft", "moderators"))
+            .get(&PERMS_COLLECTION)
             .map(PermissionCollection::members);
-        let expected =
+        let command =
             PermissionCollectionMember::Permission(Identifier::from_steel("command.perms"));
-        assert!(members.is_some_and(|members| members.contains(&expected)));
+        let manage = PermissionCollectionMember::Permission(Identifier::from_steel(
+            "permission.manage.steel.command.perms",
+        ));
+        assert!(
+            members
+                .is_some_and(|members| { members.contains(&command) && members.contains(&manage) })
+        );
     }
 }

@@ -12,6 +12,11 @@ struct Group {
     inherits: Option<String>,
 }
 
+/// Vanilla level whose collection carries authority to manage the default group.
+///
+/// Change this to move that authority to a different level.
+const DEFAULT_GROUP_MANAGER_LEVEL: &str = "admins";
+
 /// Compiles the extracted vanilla permission levels into a Rust module.
 ///
 /// The generated module exposes the vanilla group names, one collection identifier
@@ -131,7 +136,7 @@ fn collection_entries(groups: &BTreeMap<String, Group>, default_group: &str) -> 
         let collection = collection_constant(name);
         let permissions = group.allow.iter().map(|key| permission_identifier(key));
         let management = (name != default_group)
-            .then(|| management_identifiers(name, group))
+            .then(|| management_identifiers(name, group, default_group))
             .into_iter()
             .flatten();
         let members = permissions.chain(management).collect::<Vec<_>>();
@@ -146,7 +151,7 @@ fn collection_entries(groups: &BTreeMap<String, Group>, default_group: &str) -> 
 }
 
 /// Returns the management authorities granted by one permission level.
-fn management_identifiers(level: &str, group: &Group) -> Vec<TokenStream> {
+fn management_identifiers(level: &str, group: &Group, default_group: &str) -> Vec<TokenStream> {
     let mut authorities = group
         .allow
         .iter()
@@ -156,6 +161,9 @@ fn management_identifiers(level: &str, group: &Group) -> Vec<TokenStream> {
         "minecraft:{level}"
     )));
     authorities.push(group_authority_identifier(level));
+    if level == DEFAULT_GROUP_MANAGER_LEVEL {
+        authorities.push(group_authority_identifier(default_group));
+    }
     authorities.push(quote! {
         Identifier::new_static("steel", "permission.metadata")
     });

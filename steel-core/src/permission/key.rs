@@ -2,6 +2,8 @@ use std::fmt;
 
 use steel_utils::Identifier;
 
+const MANAGEMENT_PERMISSION_PREFIX: &str = "permission.manage";
+
 /// One permission pattern: an optional namespace and a dot-separated path whose
 /// final segment may be a `*` wildcard.
 ///
@@ -113,9 +115,15 @@ impl PermissionKey {
     #[must_use]
     pub fn manage_authority(&self) -> Self {
         let mut segments = Vec::with_capacity(self.segments.len() + 3);
-        segments.push(KeySegment::Literal("permission".to_owned()));
-        segments.push(KeySegment::Literal("manage".to_owned()));
-        let mut value = String::from("steel:permission.manage");
+        segments.extend(
+            MANAGEMENT_PERMISSION_PREFIX
+                .split('.')
+                .map(|segment| KeySegment::Literal(segment.to_owned())),
+        );
+        let mut value = format!(
+            "{}:{MANAGEMENT_PERMISSION_PREFIX}",
+            Identifier::STEEL_NAMESPACE
+        );
         if let Some(namespace) = &self.namespace {
             value.push('.');
             value.push_str(namespace);
@@ -187,6 +195,21 @@ impl PermissionKey {
             .count();
         literals + usize::from(self.namespace.is_some())
     }
+}
+
+/// Returns the concrete authority that grants management of `permission`.
+///
+/// This is the identifier form of [`PermissionKey::manage_authority`] for a
+/// concrete permission, used when granting management through a collection.
+#[must_use]
+pub fn management_authority(permission: &Identifier) -> Identifier {
+    Identifier::new(
+        Identifier::STEEL_NAMESPACE.to_owned(),
+        format!(
+            "{MANAGEMENT_PERMISSION_PREFIX}.{}.{}",
+            permission.namespace, permission.path
+        ),
+    )
 }
 
 impl fmt::Display for PermissionKey {

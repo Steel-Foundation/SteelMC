@@ -36,7 +36,7 @@ pub use groups::{
     PermissionGroupRuleError, PermissionGroups, PermissionGroupsConfig,
     PermissionMetadataRuleConfig,
 };
-pub use key::{PermissionKey, PermissionKeyError, PermissionSegment};
+pub use key::{PermissionKey, PermissionKeyError, PermissionSegment, management_authority};
 pub use manager::{
     PermissionGroupManagerError, PermissionGroupStore, PermissionGroupStoreError,
     PermissionGroupUpdateError, PermissionManager,

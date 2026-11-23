@@ -273,7 +273,15 @@ where
         if !Identifier::validate(&collection.namespace, &collection.path) {
             return Err(CommandRegistrationError::InvalidDeclaredCollection { collection });
         }
-        self.declared_collections.push(collection, member);
+        match member {
+            PermissionCollectionMember::Permission(permission) => {
+                self.declared_collections
+                    .push_managed_permission(collection, permission);
+            }
+            member @ PermissionCollectionMember::Collection(_) => {
+                self.declared_collections.push(collection, member);
+            }
+        }
         Ok(())
     }
 
@@ -346,18 +354,18 @@ where
                 )
             };
             let collection = collection.unwrap_or(DEFAULT_COMMAND_COLLECTION);
-            declared_collections.push(
-                collection.clone(),
-                PermissionCollectionMember::Permission(derived_key),
-            );
+            declared_collections.push_managed_permission(collection.clone(), derived_key);
             for (member_collection, member) in collection_members {
-                if let PermissionCollectionMember::Permission(permission) = &member {
-                    permissions.insert(PermissionKey::from_identifier(permission));
+                let target = member_collection.unwrap_or_else(|| collection.clone());
+                match member {
+                    PermissionCollectionMember::Permission(permission) => {
+                        permissions.insert(PermissionKey::from_identifier(&permission));
+                        declared_collections.push_managed_permission(target, permission);
+                    }
+                    member @ PermissionCollectionMember::Collection(_) => {
+                        declared_collections.push(target, member);
+                    }
                 }
-                declared_collections.push(
-                    member_collection.unwrap_or_else(|| collection.clone()),
-                    member,
-                );
             }
             collect_permission_keys(&root_permission, &mut permissions);
             let root = apply_registration_requirements(

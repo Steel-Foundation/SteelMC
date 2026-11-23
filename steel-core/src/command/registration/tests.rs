@@ -417,6 +417,66 @@ fn command_collection_permissions_resolve_default_and_explicit_collections() {
 }
 
 #[test]
+fn declared_permissions_grant_their_management_authorities() {
+    let mut builder = CommandDispatcherBuilder::new();
+    let custom = Identifier::new("example", "custom");
+    let granted = Identifier::new("example", "extra");
+    let owner_only = Identifier::new("example", "owner_only");
+    let independent = Identifier::new("example", "independent");
+    assert!(
+        builder
+            .register(
+                command(Identifier::new_static("example", "inspect"), "child")
+                    .permission_collection(custom.clone())
+                    .collection_permission(granted.clone())
+                    .collection_permission_in(OWNERS_COLLECTION, owner_only.clone()),
+            )
+            .is_ok()
+    );
+    assert!(
+        builder
+            .declare_collection_member(
+                custom.clone(),
+                PermissionCollectionMember::Permission(independent.clone()),
+            )
+            .is_ok()
+    );
+    let Ok(registered) = builder.build_with_permissions() else {
+        panic!("valid command declarations should build");
+    };
+    let collections = registered.declared_collections();
+
+    let assert_managed = |members: &[PermissionCollectionMember], permission: &Identifier| {
+        let authority = Identifier::new(
+            "steel",
+            format!(
+                "permission.manage.{}.{}",
+                permission.namespace, permission.path
+            ),
+        );
+        for member in [permission.clone(), authority] {
+            assert!(
+                members.contains(&PermissionCollectionMember::Permission(member.clone())),
+                "missing {member}"
+            );
+        }
+    };
+    let Some(custom_members) = collections.get(&custom) else {
+        panic!("command collection should be declared");
+    };
+    assert_managed(
+        custom_members.members(),
+        &Identifier::new("example", "command.inspect"),
+    );
+    assert_managed(custom_members.members(), &granted);
+    assert_managed(custom_members.members(), &independent);
+    let Some(owners) = collections.get(&OWNERS_COLLECTION) else {
+        panic!("explicit member collection should be declared");
+    };
+    assert_managed(owners.members(), &owner_only);
+}
+
+#[test]
 fn explicit_permission_expressions_replace_id_derivation() {
     let dispatcher = build([
         command(Identifier::new_static("example", "inspect"), "child").permission(

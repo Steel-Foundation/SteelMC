@@ -311,15 +311,19 @@ mod tests {
             panic!("built-in commands should register");
         };
         let modify = Identifier::new("steel", "command.invsee.modify");
+        let manage_modify =
+            Identifier::new("steel", "permission.manage.steel.command.invsee.modify");
         let collections = registered.declared_collections();
         let Some(owners) = collections.get(&OWNERS_COLLECTION) else {
             panic!("owners collection should be declared");
         };
-        assert!(
-            owners
-                .members()
-                .contains(&PermissionCollectionMember::Permission(modify.clone()))
-        );
+        for member in [&modify, &manage_modify] {
+            assert!(
+                owners
+                    .members()
+                    .contains(&PermissionCollectionMember::Permission((*member).clone()))
+            );
+        }
         let effective =
             PermissionCollections::effective(&collections, &PermissionCollections::new());
         assert!(effective.expand(&OWNERS_COLLECTION).contains(&modify));

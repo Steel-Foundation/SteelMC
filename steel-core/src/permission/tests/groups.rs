@@ -349,12 +349,14 @@ fn vanilla_management_authorities_are_scoped_to_each_level() {
 
     let manage_give = Identifier::new("steel", "permission.manage.minecraft.command.give");
     let manage_stop = Identifier::new("steel", "permission.manage.minecraft.command.stop");
+    let group_all = Identifier::new("steel", "permission.group.all");
     let group_admins = Identifier::new("steel", "permission.group.admins");
     let group_owners = Identifier::new("steel", "permission.group.owners");
     let metadata = Identifier::new("steel", "permission.metadata");
 
     // `all` is the only vanilla level without any administration surface.
     assert!(!all.allows_identifier(&manage_give));
+    assert!(!all.allows_identifier(&group_all));
     assert!(!all.allows_identifier(&group_admins));
     assert!(!all.allows_identifier(&metadata));
 
@@ -362,9 +364,11 @@ fn vanilla_management_authorities_are_scoped_to_each_level() {
     let moderators =
         groups.effective_permissions(&["moderators".to_owned()], &PermissionSet::new());
     assert!(moderators.allows_identifier(&Identifier::new("steel", "permission.group.moderators")));
+    assert!(!moderators.allows_identifier(&group_all));
 
-    // `admins` inherits its own level and everything below it, but not owners.
+    // `admins` inherits its own level and everything below it, including `all`, but not owners.
     assert!(admins.allows_identifier(&manage_give));
+    assert!(admins.allows_identifier(&group_all));
     assert!(admins.allows_identifier(&group_admins));
     assert!(admins.allows_identifier(&metadata));
     assert!(!admins.allows_identifier(&manage_stop));
@@ -372,6 +376,7 @@ fn vanilla_management_authorities_are_scoped_to_each_level() {
 
     // `owners` can administer its own level too.
     assert!(owners.allows_identifier(&manage_stop));
+    assert!(owners.allows_identifier(&group_all));
     assert!(owners.allows_identifier(&group_owners));
 }
 
