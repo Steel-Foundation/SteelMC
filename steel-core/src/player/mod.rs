@@ -765,29 +765,6 @@ impl Player {
         }
     }
 
-    fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
-        }
-
-        let mut display = self.living_base.mob_effect_display_state();
-        if self.game_mode() == GameType::Spectator {
-            display.particles = ParticleList::default();
-            display.invisible = true;
-        }
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
-        self.entity_data
-            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
-    }
-
     /// Handles a custom payload packet.
     #[expect(clippy::unused_self, reason = "this is an api function")]
     pub fn handle_custom_payload(&self, _packet: SCustomPayload) {}
@@ -1634,7 +1611,26 @@ impl Entity for Player {
     }
 
     fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
+        if !self.living_base.take_effects_dirty() {
+            return;
+        }
+
+        let mut display = self.living_base.mob_effect_display_state();
+        if self.game_mode() == GameType::Spectator {
+            display.particles = ParticleList::default();
+            display.invisible = true;
+        }
+
+        {
+            let mut entity_data = self.entity_data.lock();
+            let living = entity_data.living_entity_mut();
+            living.effect_particles.set(display.particles);
+            living.effect_ambience.set(display.ambient);
+        }
+
+        self.entity_data.set_base_invisible_flag(display.invisible);
+        self.entity_data
+            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
     fn max_up_step(&self) -> f32 {
