@@ -411,9 +411,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether this entity obstructs block placement.
     ///
-    /// Base entities do not obstruct placement unless a concrete entity type opts in.
+    /// Vanilla `LivingEntity` sets `blocksBuilding`, so all living entities
+    /// obstruct placement; other entity types opt in.
     fn blocks_building(&self) -> bool {
-        false
+        self.as_living_entity().is_some()
     }
 
     /// Returns whether this entity can be targeted by picking and interaction raycasts.
@@ -1584,6 +1585,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns true for entities that implement vanilla living-entity behavior.
     fn is_living_entity(&self) -> bool {
         self.as_living_entity().is_some()
+    }
+
+    /// Whether clients replay this entity's movement as a path of timed steps.
+    fn uses_stepped_interpolation(&self) -> bool {
+        // TODO: move the shulker exception into an override once Shulker is implemented.
+        self.is_living_entity() && self.entity_type() != &vanilla_entities::SHULKER
     }
 
     /// Returns whether this entity belongs to vanilla's `AbstractArrow` hierarchy.
@@ -3618,8 +3625,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         delta: DVec3,
     ) -> Option<MoveResult> {
         let world = self.level()?;
+        // TODO: also predict self movement of entities simulated on both sides.
+        let predicted = mover_type != MoverType::SelfMovement && self.uses_stepped_interpolation();
+
         if self.no_physics() {
-            return self.move_without_physics(delta);
+            let result = self.move_without_physics(delta)?;
+            if predicted {
+                self.base()
+                    .record_predicted_movement(result.actual_movement);
+            }
+
+            return Some(result);
         }
 
         let mut movement = delta;
@@ -3662,7 +3678,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 self.remove_latest_movement_recording();
                 return None;
             }
+
+            if predicted {
+                self.base()
+                    .record_predicted_movement(result.actual_movement);
+            }
         }
+
         let vertical_state_update =
             EntityVerticalMovementStateUpdate::for_move(movement, self.is_server_driven_movement());
         let movement_flags = EntityMovementFlags::after_move_with_previous(
@@ -3742,6 +3764,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                             ),
                         );
                         self.game_event(&vanilla_game_events::BOUNCE);
+                        self.base().mark_position_for_interpolation();
                     }
 
                     res

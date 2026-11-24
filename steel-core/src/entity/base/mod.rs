@@ -17,6 +17,7 @@ pub use persistence::{EntityBaseLoad, EntityBaseSaveData};
 pub use relationships::PendingWorldChangeToken;
 use relationships::{EntityLifecycleState, EntityRelationshipState};
 
+use std::mem::take;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -242,6 +243,8 @@ pub struct EntityBaseState {
     fall_distance: f64,
     stuck_speed_multiplier: DVec3,
     no_physics: bool,
+    predicted_movement: DVec3,
+    sync_position: bool,
     needs_velocity_sync: bool,
     hurt_marked: bool,
     requires_precise_position: bool,
@@ -277,6 +280,8 @@ impl EntityBaseState {
             fall_distance: 0.0,
             stuck_speed_multiplier: DVec3::ZERO,
             no_physics: false,
+            predicted_movement: DVec3::ZERO,
+            sync_position: false,
             needs_velocity_sync: false,
             hurt_marked: false,
             requires_precise_position: false,
@@ -827,6 +832,22 @@ impl EntityBase {
     /// Sets whether tracker movement sync must send a full position packet.
     pub fn set_requires_precise_position(&self, requires_precise_position: bool) {
         self.state.lock().requires_precise_position = requires_precise_position;
+    }
+
+    pub(crate) fn record_predicted_movement(&self, movement: DVec3) {
+        self.state.lock().predicted_movement += movement;
+    }
+
+    pub(crate) fn mark_position_for_interpolation(&self) {
+        self.state.lock().sync_position = true;
+    }
+
+    pub(crate) fn take_movement_interpolation(&self) -> (DVec3, bool) {
+        let mut state = self.state.lock();
+        (
+            take(&mut state.predicted_movement),
+            take(&mut state.sync_position),
+        )
     }
 
     /// Gets the world this entity is in.
