@@ -1701,6 +1701,21 @@ pub trait LivingEntity: Entity {
         self.living_base().remove_mob_effect(effect)
     }
 
+    /// Removes all active vanilla mob-effect.
+    fn remove_all_mob_effect(&self) -> bool {
+        let active_effect = self.active_mob_effects();
+
+        if active_effect.is_empty() {
+            return false;
+        }
+
+        for effect in active_effect {
+            self.living_base().remove_mob_effect(effect.effect());
+        }
+
+        true
+    }
+
     /// Ticks vanilla server-side mob-effect behavior and durations.
     fn tick_mob_effects(&self) {
         let world = self.level();

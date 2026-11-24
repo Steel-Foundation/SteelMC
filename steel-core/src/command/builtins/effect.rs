@@ -5,8 +5,13 @@ use super::super::{
     execution::{CommandSource, SteelArgumentType, SteelCommandRuntime, literal},
     registration::CommandRegistration,
 };
-use crate::command::execution::argument;
-use steel_utils::Identifier;
+use crate::command::brigadier::CommandSyntaxError;
+use crate::command::execution::{SteelCommandContext, argument};
+use crate::entity::SharedEntity;
+use std::slice;
+use steel_registry::mob_effect::MobEffectRef;
+use steel_utils::{Identifier, translations};
+use text_components::TextComponent;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("effect"), |_| command())
@@ -15,9 +20,13 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("effect")
         .then(
-            literal("clear").then(
+            literal("clear").executes(clear_self).then(
                 argument("targets", SteelArgumentType::entities())
-                    .then(argument("effect", SteelArgumentType::mob_effect())),
+                    .executes(clear_multiple)
+                    .then(
+                        argument("effect", SteelArgumentType::mob_effect())
+                            .executes(clear_multiple_with_effect),
+                    ),
             ),
         )
         .then(
@@ -39,6 +48,76 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                 ),
             ),
         )
+}
+
+fn clear_self(ctx: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
+    let Some(entity) = ctx.source().entity() else {
+        return Err(CommandSyntaxError::dynamic(TextComponent::from(
+            &translations::PERMISSIONS_REQUIRES_ENTITY,
+        )));
+    };
+    clear(ctx, slice::from_ref(entity), None)
+}
+
+fn clear_multiple(ctx: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
+    let entities = ctx.entities("targets")?;
+    clear(ctx, entities.as_slice(), None)
+}
+
+fn clear_multiple_with_effect(
+    ctx: &SteelCommandContext<CommandSource>,
+) -> Result<i32, CommandSyntaxError> {
+    let entities = ctx.entities("targets")?;
+    let effect = ctx.mob_effect("effect")?;
+    clear(ctx, entities.as_slice(), Some(effect))
+}
+fn clear(
+    ctx: &SteelCommandContext<CommandSource>,
+    entities: &[SharedEntity],
+    effect: Option<MobEffectRef>,
+) -> Result<i32, CommandSyntaxError> {
+    let count = entities
+        .iter()
+        .filter_map(|entity| entity.as_living_entity())
+        .filter(|living| match effect {
+            Some(eff) => living.remove_mob_effect(eff),
+            None => living.remove_all_mob_effect(),
+        })
+        .count() as i32;
+
+    if count == 0 {
+        let msg = if effect.is_some() {
+            &translations::COMMANDS_EFFECT_CLEAR_SPECIFIC_FAILED
+        } else {
+            &translations::COMMANDS_EFFECT_CLEAR_EVERYTHING_FAILED
+        };
+        return Err(CommandSyntaxError::dynamic(TextComponent::from(msg)));
+    }
+
+    let message = match (entities, effect) {
+        ([single], Some(eff)) => translations::COMMANDS_EFFECT_CLEAR_SPECIFIC_SUCCESS_SINGLE
+            .message([
+                TextComponent::plain(eff.key.to_string()),
+                single.display_name(),
+            ])
+            .component(),
+        ([single], None) => translations::COMMANDS_EFFECT_CLEAR_EVERYTHING_SUCCESS_SINGLE
+            .message([single.display_name()])
+            .component(),
+        (_, Some(eff)) => translations::COMMANDS_EFFECT_CLEAR_SPECIFIC_SUCCESS_MULTIPLE
+            .message([
+                TextComponent::plain(eff.key.to_string()),
+                TextComponent::plain(count.to_string()),
+            ])
+            .component(),
+        (_, None) => translations::COMMANDS_EFFECT_CLEAR_EVERYTHING_SUCCESS_MULTIPLE
+            .message([TextComponent::plain(count.to_string())])
+            .component(),
+    };
+
+    ctx.source().send_success(&message, true);
+
+    Ok(count)
 }
 
 #[cfg(test)]
