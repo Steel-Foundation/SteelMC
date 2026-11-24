@@ -40,3 +40,56 @@ fn enum_dispatch() {
         .expect("should have written without any errors");
     assert_eq!(buffer, [0x02]);
 }
+
+/// `where` clauses, lifetime parameters and borrowed payloads must survive the
+/// derive. `split_for_impl()` returns the clause as a third element, and it was
+/// being discarded, so the generated impl only compiled when every bound was
+/// written inline on the generic parameter.
+#[test]
+fn generics_and_where_clause_are_preserved() {
+    #[derive(WriteTo)]
+    #[write(as = Dispatched)]
+    enum Packet<'a, T>
+    where
+        T: WriteTo,
+    {
+        Data(&'a T),
+        Text(#[write(as = Prefixed)] &'a str),
+        Empty,
+    }
+
+    #[derive(WriteTo)]
+    struct Holder<T>
+    where
+        T: WriteTo,
+    {
+        value: T,
+    }
+
+    let mut buffer = Vec::new();
+
+    let value = 7u8;
+    Packet::Data(&value)
+        .write(&mut buffer)
+        .expect("should have written without any errors");
+    assert_eq!(buffer, [0x00, 0x07]);
+    buffer.clear();
+
+    let text: Packet<'_, u8> = Packet::Text("hi");
+    text.write(&mut buffer)
+        .expect("should have written without any errors");
+    assert_eq!(buffer, [0x01, 0x02, b'h', b'i']);
+    buffer.clear();
+
+    let empty: Packet<'_, u8> = Packet::Empty;
+    empty
+        .write(&mut buffer)
+        .expect("should have written without any errors");
+    assert_eq!(buffer, [0x02]);
+    buffer.clear();
+
+    Holder { value: 9u8 }
+        .write(&mut buffer)
+        .expect("should have written without any errors");
+    assert_eq!(buffer, [0x09]);
+}
