@@ -349,7 +349,7 @@ impl SteelArgumentType {
         Self::new(DamageTypeParser)
     }
     pub(crate) fn mob_effect() -> Self {
-        Self::new(MobEffectValue)
+        Self::new(MobEffectParser)
     }
 
     pub(crate) fn item_stack() -> Self {
@@ -1188,7 +1188,7 @@ unit_argument_parser!(
 );
 unit_argument_parser!(
     MobEffectParser,
-    "steel:command/parser/effect",
+    "steel:command/parser/mob_effect",
     MobEffectValue,
     parse | reader,
     _source | {
