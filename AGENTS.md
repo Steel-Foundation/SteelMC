@@ -42,6 +42,7 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
 **Code standard**
  - No magic numbers. Name unexplained literals with a constant or typed value stating meaning and unit; reuse vanilla/extracted constants when they exist. Obvious literals (`0`/`1`, index math) need no constant unless the unit is unclear.
  - Use vanilla names unless they are misleading or a Rust design is explicitly approved. Document intentional differences on the relevant struct, method, or module.
+ - When vanilla routes a check through a helper (`canHarmPlayer`, `mayInteract`, `mayBuild`, `mayBreak`), call Steel's equivalent or port the helper; don't inline the raw game-rule or game-mode read.
  - Minimize duplication when it reduces maintenance risk, but a few local lines are usually fine.
  - Keep files focused and reasonably sized. Split a file once it contains distinct responsibilities or becomes difficult to navigate.
  - Plan module structure around expected growth. If an area will contain many implementations, start with a directory and separate modules instead of accumulating them in one large file.
@@ -63,6 +64,12 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
 - Don't write comments that only name the matching vanilla name, like ``/// Mirrors vanilla `CandleBlock.isLit`.`` on `CandleBlock::is_lit`.
 - Only reference vanilla when you document: a non obvious name, or you do something different an need to document where it comes from.
 
+**Java → Rust numeric parity**
+- Port the exact vanilla call: `Mth.sin`/`cos`/`atan2` → `steel_math::trig`; `Math.sin`/`cos`/`atan2` → std.
+- `Math.signum(±0.0)` returns that zero, `f64::signum` returns `±1.0`; `Mth.sign` is `0` for zero. Guard the zero case.
+- Keep float-literal precision: vanilla `0.4F` used as a double is `f64::from(0.4_f32)`, not `0.4`.
+- `Mth.floor` floors before casting; a bare `as` cast truncates toward zero.
+
 **Particle routing**
 - In Vanilla, `Level.addParticle` and `playLocalSound` calls from shared ticks are client-local, so Steel generally has no server-side work to perform for them. An explanatory comment can still be useful when an omission would otherwise look accidental.
 - Vanilla `ServerLevel.sendParticles` corresponds to `World::send_particles`; level and entity events continue to use their existing packets.
@@ -80,6 +87,7 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
 - `steel-registry/src/generated/` → modify `steel-registry/build/`
 - `steel-core/src/behavior/generated/` → modify `steel-core/build/`
 - `steel-core/src/entity/generated/` → modify `steel-core/build/`
+- `steel-core/src/loot/generated/` → modify `steel-core/build/loot_tables/`
 - `steel-worldgen/src/generated/` → modify `steel-worldgen/build/`
 - `steel-utils/src/generated/` → modify `steel-utils/build/`
 - Block/item behavior registration is generated from `#[block_behavior]` / `#[item_behavior]`; add annotated structs under `steel-core/src/behavior/`, not manual generated registration.

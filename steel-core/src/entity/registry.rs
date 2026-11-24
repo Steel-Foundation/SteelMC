@@ -110,6 +110,9 @@ impl EntityRegistry {
             living.set_y_body_rot(yaw);
         }
 
+        if let Some(living) = entity.as_living_entity() {
+            living.load_persistent_living_data(*nbt);
+        }
         entity.load_additional(*nbt);
         entity.set_old_position_to_current();
         entity.base().set_old_rotation_to_current();

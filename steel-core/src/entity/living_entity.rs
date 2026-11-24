@@ -1,6 +1,7 @@
 use std::f32::consts::PI;
 
 use crate::loot::{LOOT_TABLES, LootResult};
+use steel_math::vector::NORMALIZE_EPSILON as VEC3_NORMALIZE_EPSILON;
 use steel_math::{DEGREE_90, RAD_TO_DEG_F64, round_f32, trig};
 use steel_registry::data_components::vanilla_components::{
     BLOCKS_ATTACKS, DEATH_PROTECTION, USE_EFFECTS,
@@ -9,8 +10,10 @@ use steel_registry::entity_variant::MooshroomVariant;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 use steel_utils::TICKS_PER_SECOND;
+use steel_utils::nbt::NbtValueInput as _;
 use text_components::TextComponent;
 
+use super::entity::compute_modified_friction;
 use super::*;
 use crate::behavior::{
     BLOCK_BEHAVIORS, ITEM_BEHAVIORS, InventoryTickContext, MOB_EFFECT_BEHAVIORS,
@@ -21,6 +24,8 @@ use crate::entity::damage::{FallLocation, RecentDamageSource, death_message};
 use crate::entity::pushing::EntityPush;
 
 const BED_SLEEP_POSITION_OFFSET: f64 = 0.125;
+/// Vanilla `LivingEntity.aiStep` water damage for water-sensitive entities.
+const WATER_SENSITIVE_DAMAGE: f32 = 1.0;
 
 /// A trait for living entities that can take damage, heal, and die.
 ///
@@ -77,7 +82,7 @@ pub trait LivingEntity: Entity {
         self.living_base().decrement_hurt_time();
         self.living_base().tick_last_hurt_by_player_memory();
         self.living_base()
-            .tick_living_combat_memory(self.tick_count());
+            .tick_living_combat_memory(self.level().as_deref(), self.tick_count());
     }
 
     /// Returns vanilla arm-swing animation state.
@@ -230,30 +235,30 @@ pub trait LivingEntity: Entity {
         }
     }
 
-    /// Appends vanilla-shaped living state used by command NBT predicates.
-    fn save_command_nbt(&self, nbt: &mut NbtCompound) {
+    /// appends persisted health damage state attributes and effects
+    fn save_persistent_living_data(&self, nbt: &mut NbtCompound) {
+        self.save_living_state(nbt);
+        nbt.insert("attributes", self.attributes().lock().to_persistent_nbt());
+    }
+
+    /// appends the living fields shared by disk saves and command snapshots
+    fn save_living_state(&self, nbt: &mut NbtCompound) {
         nbt.insert("Health", self.get_health());
-        nbt.insert(
-            "HurtTime",
-            NbtTag::Short(self.living_base().hurt_time() as i16),
-        );
-        nbt.insert(
-            "DeathTime",
-            NbtTag::Short(self.living_base().death_time() as i16),
-        );
         nbt.insert("AbsorptionAmount", self.get_absorption_amount());
-        nbt.insert(
-            "current_impulse_context_reset_grace_time",
-            self.living_base()
-                .current_impulse_context_reset_grace_time(),
-        );
-        if let Some(impact) = self.living_base().current_impulse_impact_pos() {
+        self.living_base().save_damage_state(nbt, self.tick_count());
+        self.living_base().save_impulse_state(nbt);
+
+        nbt.insert("FallFlying", nbt_bool(self.is_fall_flying()));
+        if let Some(pos) = self.sleeping_pos() {
             nbt.insert(
-                "current_explosion_impact_pos",
-                NbtList::Double(vec![impact.x, impact.y, impact.z]),
+                "sleeping_pos",
+                NbtTag::IntArray(vec![pos.x(), pos.y(), pos.z()]),
             );
         }
-        nbt.insert("attributes", self.attributes().lock().to_vanilla_nbt());
+
+        if self.as_mob().is_none() {
+            self.save_equipment(nbt);
+        }
 
         let mut effects = self.living_base().active_mob_effects();
         effects.sort_by_key(|effect| effect.effect().try_id().unwrap_or(usize::MAX));
@@ -268,39 +273,35 @@ pub trait LivingEntity: Entity {
                 ),
             );
         }
+    }
 
-        nbt.insert("FallFlying", nbt_bool(self.is_fall_flying()));
-        if let Some(pos) = self.sleeping_pos() {
-            nbt.insert(
-                "sleeping_pos",
-                NbtTag::IntArray(vec![pos.x(), pos.y(), pos.z()]),
-            );
+    /// loads persisted living state written by [`Self::save_persistent_living_data`]
+    fn load_persistent_living_data(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        self.living_base().load_damage_state(nbt, self.tick_count());
+        self.attributes().lock().load_vanilla_nbt(nbt);
+        self.living_base().load_mob_effects(nbt);
+        self.set_health(
+            nbt.float_value("Health")
+                .unwrap_or_else(|| self.get_max_health()),
+        );
+        self.living_base().load_impulse_state(nbt);
+        self.set_fall_flying(nbt.byte_value("FallFlying").is_some_and(|value| value != 0));
+        match nbt.int_array("sleeping_pos").filter(|pos| pos.len() == 3) {
+            Some(pos) => {
+                self.set_sleeping_pos(BlockPos::new(pos[0], pos[1], pos[2]));
+                self.set_pose(EntityPose::Sleeping);
+            }
+            None => self.clear_sleeping_pos(),
         }
-        if let Some(uuid) = self.last_hurt_by_player_uuid() {
-            nbt.insert(
-                "last_hurt_by_player",
-                NbtTag::IntArray(uuid.to_int_array().to_vec()),
-            );
-            nbt.insert(
-                "last_hurt_by_player_memory_time",
-                self.last_hurt_by_player_memory_time(),
-            );
-        }
-        if let Some(entity) = self.last_hurt_by_mob() {
-            nbt.insert(
-                "last_hurt_by_mob",
-                NbtTag::IntArray(entity.uuid().to_int_array().to_vec()),
-            );
-            nbt.insert(
-                "ticks_since_last_hurt_by_mob",
-                self.tick_count()
-                    .wrapping_sub(self.last_hurt_by_mob_timestamp()),
-            );
-        }
-
         if self.as_mob().is_none() {
-            self.save_equipment(nbt);
+            self.load_equipment(nbt);
         }
+    }
+
+    /// appends mc shaped living state used by command NBT predicates
+    fn save_command_nbt(&self, nbt: &mut NbtCompound) {
+        self.save_living_state(nbt);
+        nbt.insert("attributes", self.attributes().lock().to_vanilla_nbt());
     }
 
     /// Gets the current health of the entity.
@@ -573,7 +574,7 @@ pub trait LivingEntity: Entity {
 
     /// Returns the mob that last hurt this entity, if still resolvable.
     fn last_hurt_by_mob(&self) -> Option<SharedEntity> {
-        self.living_base().last_hurt_by_mob()
+        self.living_base().last_hurt_by_mob(self.level().as_deref())
     }
 
     /// Returns the tick timestamp this entity was last hurt by a mob.
@@ -1883,6 +1884,11 @@ pub trait LivingEntity: Entity {
         self.tick_living_air_supply();
     }
 
+    /// Returns whether water or rain damages this entity each AI tick.
+    fn is_sensitive_to_water(&self) -> bool {
+        self.entity_type().flags.is_sensitive_to_water
+    }
+
     /// Returns whether this entity is affected by fluid physics; true by default.
     fn is_affected_by_fluids(&self) -> bool {
         true
@@ -2320,7 +2326,7 @@ pub trait LivingEntity: Entity {
         self.living_base().tick_post_impulse_grace_time();
         self.living_base().tick_last_hurt_by_player_memory();
         self.living_base()
-            .tick_living_combat_memory(self.tick_count());
+            .tick_living_combat_memory(self.level().as_deref(), self.tick_count());
         if self.tick_count() % TICKS_PER_SECOND == 0 {
             self.recheck_combat_status();
         }
@@ -2725,6 +2731,16 @@ pub trait LivingEntity: Entity {
         self.apply_effects_from_blocks();
         self.tick_freezing();
         self.push_entities();
+        if self.is_sensitive_to_water()
+            && self.is_in_water_or_rain()
+            && let Some(world) = self.level()
+        {
+            self.hurt(
+                &world,
+                &DamageSource::environment(&vanilla_damage_types::DROWN),
+                WATER_SENSITIVE_DAMAGE,
+            );
+        }
         result
     }
 
@@ -2834,7 +2850,7 @@ pub trait LivingEntity: Entity {
     /// Returns the vertical friction used by `travelInAir`.
     fn air_travel_vertical_friction(&self, _horizontal_friction: f32) -> f32 {
         // TODO: FlyingAnimal uses horizontal friction here once animal types exist.
-        0.98
+        self.get_air_drag() as f32
     }
 
     /// Clamps movement while on a climbable block: caps horizontal and
@@ -2903,11 +2919,16 @@ pub trait LivingEntity: Entity {
         let world = self.level()?;
         let pos_below = self.block_pos_below_that_affects_movement()?;
         let block_friction = if self.on_ground() {
-            world.get_block_state(pos_below).get_block().config.friction
+            let friction = world.get_block_state(pos_below).get_block().config.friction;
+            let modifier =
+                self.attributes()
+                    .lock()
+                    .required_value(vanilla_attributes::FRICTION_MODIFIER) as f32;
+
+            compute_modified_friction(friction, modifier)
         } else {
             1.0
         };
-        let horizontal_friction = block_friction * 0.91;
         let (movement, result) =
             self.handle_relative_friction_and_calculate_movement(entity, input, block_friction)?;
         let movement_y = if let Some(levitation_y) = self.levitation_travel_y_delta(movement.y) {
@@ -2919,7 +2940,14 @@ pub trait LivingEntity: Entity {
         if self.should_discard_friction() {
             self.set_velocity(DVec3::new(movement.x, movement_y, movement.z));
         } else {
+            let air_drag_modifier =
+                self.attributes()
+                    .lock()
+                    .required_value(vanilla_attributes::AIR_DRAG_MODIFIER) as f32;
+            let horizontal_friction =
+                block_friction * compute_modified_friction(0.91, air_drag_modifier);
             let vertical_friction = self.air_travel_vertical_friction(horizontal_friction);
+
             self.set_velocity(DVec3::new(
                 movement.x * f64::from(horizontal_friction),
                 movement_y * f64::from(vertical_friction),
@@ -3545,7 +3573,7 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
         .with_luck(luck)
         .with_origin(position)
         .with_game_time(world.game_time())
-        .with_killed_by_player(killed_by_player)
+        .with_killed_by_player(last_damage_player.is_some())
         .with_this_entity(this_entity)
         .with_damage_source(damage_source);
     if let Some(entity) = causing_entity {
