@@ -4,11 +4,8 @@
 )]
 #![expect(
     clippy::absolute_paths,
-    clippy::allow_attributes_without_reason,
-    clippy::collapsible_match,
     clippy::float_cmp,
     clippy::items_after_statements,
-    clippy::manual_let_else,
     clippy::many_single_char_names,
     clippy::match_same_arms,
     clippy::match_wild_err_arm,
@@ -25,6 +22,10 @@
 )]
 
 use std::{env, fs, path::Path};
+
+#[path = "../../build/codegen.rs"]
+mod codegen;
+use codegen::write_tokens_if_changed;
 
 /// Structure-processor codec types, shared by `structure::processors` and
 /// `features` (inline `TemplateFeature` processors). Deserialize derives
@@ -67,7 +68,6 @@ mod instruments;
 mod items;
 mod jukebox_songs;
 mod level_events;
-mod loot_tables;
 mod map_decoration_types;
 mod menu_types;
 mod mob_effects;
@@ -161,7 +161,6 @@ const POI_TYPES: &str = "poi_types";
 
 const ENCHANTMENT_TAGS: &str = "enchantment_tags";
 const ENCHANTMENTS: &str = "enchantments";
-const LOOT_TABLES: &str = "loot_tables";
 const BLOCK_ENTITY_TYPES: &str = "block_entity_types";
 const GAME_RULES: &str = "game_rules";
 const GAME_EVENTS: &str = "game_events";
@@ -184,6 +183,7 @@ const SUSPICIOUS_STEW_EFFECTS: &str = "suspicious_stew_effects";
 pub fn main() {
     // Rerun build script when any file in the build/ directory changes
     println!("cargo:rerun-if-changed=build/");
+    println!("cargo:rerun-if-changed=../build/codegen.rs");
 
     // Use CARGO_MANIFEST_DIR to get the absolute path to the crate directory
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -245,7 +245,6 @@ pub fn main() {
         (entity_data::build(), ENTITY_DATA),
         (fluids::build(), FLUIDS),
         (tags::fluid(), FLUID_TAGS),
-        (loot_tables::build(), LOOT_TABLES),
         (block_entity_types::build(), BLOCK_ENTITY_TYPES),
         (game_rules::build(), GAME_RULES),
         (game_events::build(), GAME_EVENTS),
@@ -284,23 +283,8 @@ pub fn main() {
 
     for (content, file_name) in vanilla_builds {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
-        let content = content.to_string();
-        #[cfg(feature = "fmt")]
-        let content = {
-            let syntax = syn::parse_file(&content).unwrap_or_else(|error| {
-                panic!("Failed to parse generated file {}: {error}", path.display())
-            });
-            prettyplease::unparse(&syntax)
-        };
-        generated_files.push(path.clone());
-
-        // Only write if content changed
-        if let Ok(existing) = fs::read_to_string(&path)
-            && existing == content
-        {
-            continue;
-        }
-        fs::write(&path, content).unwrap();
+        write_tokens_if_changed(&path, content);
+        generated_files.push(path);
     }
 
     // Remove any stale files not generated this run

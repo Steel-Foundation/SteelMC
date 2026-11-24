@@ -114,7 +114,7 @@ fn pig_path_target_feeds_move_control_forward_input() {
         navigation.next_move_target(NavigationTickContext {
             ground_mob_position: pig.position(),
             mob_position: pig.position(),
-            mob_bounding_box_width: pig.bounding_box().width(),
+            mob_bounding_box_width: pig.base().dimensions().width,
             mob_speed: pig.get_speed(),
             game_time: 0,
         })

@@ -1,27 +1,26 @@
 //! Vanilla Sheep entity with wool color, shearing, and breeding parity.
 use std::sync::{Arc, Weak};
+use steel_utils::random::legacy_random::LegacyRandom;
 
+use crate::loot::vanilla_loot_tables;
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
-use steel_registry::data_components::vanilla_components::{DYE, SHEEP_COLOR};
+use steel_registry::data_components::vanilla_components::SHEEP_COLOR;
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
 use steel_registry::item_stack::ItemStack;
-use steel_registry::recipe::{CraftingInput, vanilla_recipe_types};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::SheepEntityData;
 use steel_registry::vanilla_game_events;
 use steel_registry::vanilla_item_tags::ItemTag;
-use steel_registry::vanilla_loot_tables;
 use steel_registry::{DyeColor, REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
 use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::nbt::NbtValueInput as _;
-use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey};
 
@@ -31,17 +30,16 @@ use crate::entity::ai::goal::{
     RandomLookAroundGoal, TemptGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::damage::DamageSource;
-use crate::entity::living_entity::shearing_loot_items_with_rng;
+use crate::entity::living_entity::shearing_loot_items;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
     EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
     LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData, SpawnRule,
     sync_dirty_mob_effects,
 };
-use crate::inventory::recipe_manager;
 use crate::physics::MoveResult;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 
 use color_spawn_rules::TEMPERATE_SPAWN_CONFIGURATION;
 mod color_spawn_rules;
@@ -148,13 +146,6 @@ impl SheepEntity {
         }
     }
 
-    fn update_dirty_mob_effect_entity_data(&self) {
-        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
-            self.entity_data
-                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
-        }
-    }
-
     /// Returns whether the stack is vanilla sheep food.
     #[must_use]
     pub fn is_food(item_stack: &ItemStack) -> bool {
@@ -217,10 +208,7 @@ impl SheepEntity {
             None,
         );
 
-        let mut rng = rand::rng();
-        for drop in
-            shearing_loot_items_with_rng(self, &vanilla_loot_tables::SHEARING_SHEEP, tool, &mut rng)
-        {
+        for drop in shearing_loot_items(self, &vanilla_loot_tables::SHEARING_SHEEP, world, tool) {
             self.spawn_shearing_drop(&drop);
         }
 
@@ -241,65 +229,6 @@ impl SheepEntity {
             );
             item_entity.set_velocity(item_entity.velocity() + jitter);
         }
-    }
-
-    /// Returns the mixed offspring color for two parents, mirroring
-    /// `DyeColor.getMixedColor`: a 2x1 crafting lookup over all dye items of both
-    /// colors, falling back to a random parent when no mix recipe exists.
-    #[must_use]
-    pub fn get_mixed_color(color1: DyeColor, color2: DyeColor) -> DyeColor {
-        // TODO: add this function to DyeColor
-        Self::find_color_mix_in_recipes(color1, color2).unwrap_or_else(|| {
-            if rand::random::<bool>() {
-                color1
-            } else {
-                color2
-            }
-        })
-    }
-
-    fn find_color_mix_in_recipes(color1: DyeColor, color2: DyeColor) -> Option<DyeColor> {
-        // TODO: add this function to DyeColor
-        let dye1: Vec<_> = REGISTRY
-            .items
-            .iter()
-            .filter_map(|(_, item)| (item.components.get(DYE) == Some(color1)).then_some(item))
-            .collect();
-        if dye1.is_empty() {
-            return None;
-        }
-        let dye2: Vec<_> = REGISTRY
-            .items
-            .iter()
-            .filter_map(|(_, item)| (item.components.get(DYE) == Some(color2)).then_some(item))
-            .collect();
-        if dye2.is_empty() {
-            return None;
-        }
-
-        for dye1_item in &dye1 {
-            for dye2_item in &dye2 {
-                let input = CraftingInput::new(
-                    2,
-                    1,
-                    vec![ItemStack::new(dye1_item), ItemStack::new(dye2_item)],
-                );
-                let Some(recipe) = REGISTRY
-                    .recipes
-                    .find_match(&vanilla_recipe_types::CRAFTING, &input)
-                else {
-                    continue;
-                };
-                if let Some(color) = recipe_manager::assemble_recipe(recipe, &input)
-                    .get(DYE)
-                    .copied()
-                {
-                    return Some(color);
-                }
-            }
-        }
-
-        None
     }
 }
 
@@ -348,7 +277,10 @@ impl Entity for SheepEntity {
     }
 
     fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
+        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
+            self.entity_data
+                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
+        }
     }
 
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {
@@ -453,7 +385,7 @@ impl AgeableMob for SheepEntity {
         let parent2_color = partner
             .downcast_ref::<SheepEntity>()
             .map_or(parent1_color, SheepEntity::color);
-        let mixed_color = SheepEntity::get_mixed_color(parent1_color, parent2_color);
+        let mixed_color = DyeColor::get_mixed_color(parent1_color, parent2_color);
         if let Some(offspring) = offspring.downcast_ref::<SheepEntity>() {
             offspring.set_color(mixed_color);
         }
@@ -502,6 +434,7 @@ impl Mob for SheepEntity {
     fn finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -513,7 +446,7 @@ impl Mob for SheepEntity {
 
         self.set_color(color);
 
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(world, difficulty, spawn_reason, group_data)
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

@@ -43,9 +43,8 @@ pub use piece::{
 
 pub use generation::{ColumnBlock, GenerationContext, GenerationStub, StructureGenerationContext};
 pub use generator::{
-    FixedStructureBiomeProvider, StructureBiomeProvider, StructureGenerator,
-    StructureGeneratorAssets, StructureLocateCandidate, StructureLocatePlacement,
-    StructureLocatePlan, squared_distance,
+    StructureBiomeProvider, StructureGenerator, StructureGeneratorAssets, StructureLocateCandidate,
+    StructureLocatePlacement, StructureLocatePlan, squared_distance,
 };
 pub use start::{StructureReferenceMap, StructureReferenceSet, StructureStart, StructureStartMap};
 pub(crate) use utils::{make_oriented_piece_bounding_box, random_horizontal_direction};

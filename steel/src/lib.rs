@@ -92,6 +92,12 @@ impl SteelServer {
     ) -> Result<Self, SteelServerError> {
         log::info!("Starting Steel Server ({GIT_HASH_SHORT})");
 
+        if steel_config.server.simulation_distance < 4 {
+            tracing::warn!(
+                "Simulation distance is lesser than 4, this can result in incorrect or alternate behavior!"
+            );
+        }
+
         let permission_group_store = steel_config.permission_group_store();
         let server_port = steel_config.server.server_port;
         let worlds_config = steel_config.worlds;

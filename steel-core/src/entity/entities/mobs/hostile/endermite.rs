@@ -97,7 +97,9 @@ impl EndermiteEntity {
             goal_selector.add_goal(3, WaterAvoidingRandomStrollGoal::new(1.0));
             goal_selector.add_goal(7, LookAtPlayerGoal::new(8.0));
             goal_selector.add_goal(8, RandomLookAroundGoal::new());
+        }
 
+        {
             let mut target_selector = mob_base.target_selector().lock();
             target_selector.add_goal(1, HurtByTargetGoal::new().set_alert_others(empty()));
             target_selector.add_goal(
@@ -135,10 +137,6 @@ impl EndermiteEntity {
     /// Sets the endermite's lifetime in ticks.
     pub fn set_lifetime(&self, lifetime: i32) {
         *self.lifetime.lock() = lifetime;
-    }
-
-    fn update_dirty_mob_effect_entity_data(&self) {
-        sync_dirty_mob_effects(&self.living_base, &self.entity_data);
     }
 }
 
@@ -183,7 +181,7 @@ impl Entity for EndermiteEntity {
     }
 
     fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
+        sync_dirty_mob_effects(&self.living_base, &self.entity_data);
     }
 
     fn max_up_step(&self) -> f32 {

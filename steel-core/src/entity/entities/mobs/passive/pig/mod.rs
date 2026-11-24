@@ -42,7 +42,7 @@ use crate::entity::{
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 
 const PIG_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.5, 0.0)];
@@ -206,13 +206,6 @@ impl PigEntity {
         self.set_y_head_rot(yaw);
     }
 
-    fn update_dirty_mob_effect_entity_data(&self) {
-        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
-            self.entity_data
-                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
-        }
-    }
-
     /// Returns whether the stack is vanilla pig food.
     #[must_use]
     pub fn is_food(item_stack: &ItemStack) -> bool {
@@ -285,7 +278,10 @@ impl Entity for PigEntity {
     }
 
     fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
+        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
+            self.entity_data
+                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
+        }
     }
 
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {
@@ -489,6 +485,7 @@ impl Mob for PigEntity {
     fn finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -512,7 +509,7 @@ impl Mob for PigEntity {
             self.set_sound_variant(sound_variant);
         }
 
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(world, difficulty, spawn_reason, group_data)
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

@@ -24,12 +24,10 @@ use crate::{
     block_entity::SharedBlockEntity,
     entity::projectile::Projectile,
     player::Player,
-    world::{ClipHitResult, LevelReader, ScheduledTickAccess, World},
+    world::{ClipHitResult, LevelReader, ScheduledTickAccess, World, explosion::Explosion},
 };
 
 /// Behavior for Candle Cakes
-/// TODO:
-/// - [ ] onExplosion
 #[block_behavior]
 pub struct CandleCakeBlock {
     block: BlockRef,
@@ -135,6 +133,18 @@ impl BlockBehavior for CandleCakeBlock {
             return;
         };
         world.set_block(hit.block_pos, lit_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+    }
+
+    fn on_explosion_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &dyn Explosion,
+        on_hit: &mut dyn FnMut(ItemStack, BlockPos),
+    ) {
+        CandleBlock::extinguish_from_explosion(state, world, pos, explosion);
+        self.default_on_explosion_hit(state, world, pos, explosion, on_hit);
     }
 
     fn get_clone_item_stack(

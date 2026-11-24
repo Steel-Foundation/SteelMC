@@ -496,7 +496,8 @@
       "options_type": "mob_effect_color",
       "regular_alpha": 255,
       "ambient_alpha": 38
-    }
+    },
+    "sound_on_added": "minecraft:event.mob_effect.bad_omen"
   },
   {
     "id": 31,
@@ -533,7 +534,8 @@
     "particle": {
       "type": "minecraft:trial_omen",
       "options_type": "simple"
-    }
+    },
+    "sound_on_added": "minecraft:event.mob_effect.trial_omen"
   },
   {
     "id": 34,
@@ -544,7 +546,8 @@
     "particle": {
       "type": "minecraft:raid_omen",
       "options_type": "simple"
-    }
+    },
+    "sound_on_added": "minecraft:event.mob_effect.raid_omen"
   },
   {
     "id": 35,

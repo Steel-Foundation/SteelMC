@@ -32,7 +32,7 @@ pub struct NavigationTickContext {
     pub ground_mob_position: DVec3,
     /// The mob's true position, which the waypoint distance is measured from.
     pub mob_position: DVec3,
-    pub mob_bounding_box_width: f64,
+    pub mob_bounding_box_width: f32,
     pub mob_speed: f32,
     pub game_time: i64,
 }
@@ -548,7 +548,7 @@ impl PathNavigation {
             f64::midpoint(f64::from(target.z), mob_position.z),
         );
         let distance = (path.node_count() - path.next_node_index()) as f64;
-        block_center(pos).distance_squared(middle_pos) < distance * distance
+        pos.get_center().distance_squared(middle_pos) < distance * distance
     }
 
     fn next_path_move_target(&mut self, context: NavigationTickContext) -> Option<(DVec3, f64)> {
@@ -573,9 +573,10 @@ impl PathNavigation {
             let y_distance = (context.mob_position.y - f64::from(current_node_pos.y())).abs();
             let z_distance =
                 (context.mob_position.z - (f64::from(current_node_pos.z()) + 0.5)).abs();
-            let is_close_enough_to_current_node = x_distance < max_distance_to_waypoint
-                && z_distance < max_distance_to_waypoint
+            let is_close_enough_to_current_node = x_distance < f64::from(max_distance_to_waypoint)
+                && z_distance < f64::from(max_distance_to_waypoint)
                 && y_distance < 1.0;
+
             let should_cut_corner = path
                 .next_node()
                 .is_some_and(|node| can_cut_corner(node.path_type))
@@ -641,7 +642,7 @@ impl PathNavigation {
             self.timeout_timer += game_time - self.last_timeout_check;
         } else {
             self.timeout_cached_node = current_node_pos;
-            let dist_to_node = mob_position.distance(block_bottom_center(current_node_pos));
+            let dist_to_node = mob_position.distance(current_node_pos.get_bottom_center());
             self.timeout_limit = if mob_speed > 0.0 {
                 dist_to_node / f64::from(mob_speed) * 20.0
             } else {
@@ -678,7 +679,7 @@ fn should_target_next_node_in_direction(path: &Path, mob_position: DVec3) -> boo
     let Some(current_node_pos) = path.next_node_pos() else {
         return false;
     };
-    let current_node = block_bottom_center(current_node_pos);
+    let current_node = current_node_pos.get_bottom_center();
     if mob_position.distance_squared(current_node) >= 4.0 {
         return false;
     }
@@ -686,7 +687,7 @@ fn should_target_next_node_in_direction(path: &Path, mob_position: DVec3) -> boo
     let Some(next_node_pos) = path.node_pos(next_node_index + 1) else {
         return false;
     };
-    let next_node = block_bottom_center(next_node_pos);
+    let next_node = next_node_pos.get_bottom_center();
     let mob_to_current = current_node - mob_position;
     let mob_to_next = next_node - mob_position;
     let mob_to_current_sqr = mob_to_current.length_squared();
@@ -700,19 +701,10 @@ fn should_target_next_node_in_direction(path: &Path, mob_position: DVec3) -> boo
     mob_to_next.dot(mob_to_current) < 0.0
 }
 
-fn block_bottom_center(pos: BlockPos) -> DVec3 {
-    let (x, y, z) = pos.get_bottom_center();
-    DVec3::new(x, y, z)
-}
-
-fn block_center(pos: BlockPos) -> DVec3 {
-    let (x, y, z) = pos.get_center();
-    DVec3::new(x, y, z)
-}
-
-fn path_move_target(path: &Path, mob_bounding_box_width: f64) -> Option<DVec3> {
+fn path_move_target(path: &Path, mob_bounding_box_width: f32) -> Option<DVec3> {
     path.next_node().map(|node| {
-        let offset = f64::from(fast_floor(mob_bounding_box_width + 1.0)) * 0.5;
+        let offset = f64::from((mob_bounding_box_width + 1.0) as i32) * 0.5;
+
         DVec3::new(
             f64::from(node.x) + offset,
             f64::from(node.y),

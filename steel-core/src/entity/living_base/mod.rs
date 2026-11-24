@@ -9,7 +9,8 @@ use std::{array, mem, sync::Arc};
 
 use glam::DVec3;
 use rustc_hash::FxHashMap;
-use simdnbt::owned::{NbtCompound, NbtTag};
+use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::packets::game::{CRemoveMobEffect, CUpdateMobEffect, MobEffectPacketFlags};
 use steel_registry::RegistryEntry;
 use steel_registry::attribute::AttributeRef;
@@ -19,19 +20,23 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::mob_effect::MobEffectRef;
-use steel_registry::mob_effect_instance::INFINITE_EFFECT_DURATION;
+use steel_registry::mob_effect_instance::{
+    INFINITE_EFFECT_DURATION, MobEffectInstance as SavedMobEffect, MobEffectInstanceDetails,
+};
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
 use steel_registry::vanilla_mob_effects;
 use steel_utils::locks::{IntoShared, Shared, SyncMutex};
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, Identifier};
+use steel_utils::{BlockPos, Identifier, UuidExt as _};
 use uuid::Uuid;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
+use crate::entity::damage::{CombatEntry, CombatTracker, DamageSource, FallLocation};
 use crate::entity::synced_data::EntitySyncedData;
-use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
+use crate::entity::{EntityReference, LivingEntity, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
 use crate::world::World;
 
@@ -65,6 +70,34 @@ pub struct MobEffectInstance {
 pub type ActiveMobEffect = MobEffectInstance;
 
 impl MobEffectInstance {
+    fn from_saved(effect: &SavedMobEffect) -> Self {
+        Self {
+            effect: effect.effect(),
+            duration: effect.duration(),
+            amplifier: effect.amplifier(),
+            ambient: effect.ambient(),
+            visible: effect.show_particles(),
+            show_icon: effect.show_icon(),
+            hidden_effect: effect
+                .hidden_effect()
+                .map(|hidden| Box::new(Self::from_saved_details(effect.effect(), hidden))),
+        }
+    }
+
+    fn from_saved_details(effect: MobEffectRef, details: &MobEffectInstanceDetails) -> Self {
+        Self {
+            effect,
+            duration: details.duration(),
+            amplifier: details.amplifier(),
+            ambient: details.ambient(),
+            visible: details.show_particles(),
+            show_icon: details.show_icon(),
+            hidden_effect: details
+                .hidden_effect()
+                .map(|hidden| Box::new(Self::from_saved_details(effect, hidden))),
+        }
+    }
+
     /// Creates infinite active mob-effect state for internal physics tests and hooks.
     #[must_use]
     pub const fn new(effect: MobEffectRef, amplifier: i32) -> Self {
@@ -337,6 +370,29 @@ const fn clamp_effect_amplifier(amplifier: i32) -> i32 {
 enum MobEffectTickResult {
     Active { downgraded: bool },
     Expired,
+}
+
+/// How [`LivingEntityBase::add_mob_effect`] changed the active-effect map.
+///
+/// Steel-specific: vanilla `LivingEntity.addEffect` branches inline on insert vs
+/// `MobEffectInstance.update`. Steel splits the map update from behavior dispatch,
+/// so the branch taken is returned to drive `on_effect_added`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MobEffectAddResult {
+    /// The effect was not active and has been inserted.
+    Added,
+    /// An already active instance was upgraded or extended.
+    Updated,
+    /// An already active instance was kept as is.
+    Unchanged,
+}
+
+impl MobEffectAddResult {
+    /// Returns whether the active-effect map changed.
+    #[must_use]
+    pub const fn changed(self) -> bool {
+        !matches!(self, Self::Unchanged)
+    }
 }
 
 /// A queued mob-effect packet change produced by living effect state.
@@ -637,7 +693,7 @@ struct LivingEntityState {
     last_hurt_by_player: Option<Uuid>,
     last_hurt_by_player_entity: Option<WeakEntity>,
     last_hurt_by_player_memory_time: i32,
-    last_hurt_by_mob: Option<WeakEntity>,
+    last_hurt_by_mob: Option<EntityReference>,
     last_hurt_by_mob_timestamp: i32,
     last_hurt_mob: Option<WeakEntity>,
     last_hurt_mob_timestamp: i32,
@@ -660,6 +716,7 @@ struct LivingEntityState {
     active_item_use: Option<ActiveItemUseState>,
     no_jump_delay: i32,
     no_action_time: i32,
+    combat_tracker: CombatTracker,
 }
 
 impl LivingEntityState {
@@ -697,6 +754,7 @@ impl LivingEntityState {
             active_item_use: None,
             no_jump_delay: 0,
             no_action_time: 0,
+            combat_tracker: CombatTracker::new(),
         }
     }
 
@@ -983,6 +1041,92 @@ impl LivingEntityBase {
         self.state.lock().absorption_amount = amount.clamp(0.0, max_absorption);
     }
 
+    pub(crate) fn save_damage_state(&self, nbt: &mut NbtCompound, tick_count: i32) {
+        let (hurt_time, death_time, player, mob) = {
+            let state = self.state.lock();
+            (
+                state.hurt_time,
+                state.death_time,
+                state
+                    .last_hurt_by_player
+                    .map(|player| (player, state.last_hurt_by_player_memory_time)),
+                state.last_hurt_by_mob.as_ref().map(|mob| {
+                    (
+                        mob.uuid(),
+                        tick_count.wrapping_sub(state.last_hurt_by_mob_timestamp),
+                    )
+                }),
+            )
+        };
+
+        nbt.insert("HurtTime", hurt_time as i16);
+        nbt.insert("DeathTime", death_time as i16);
+
+        if let Some((player, memory_time)) = player {
+            nbt.insert(
+                "last_hurt_by_player",
+                NbtTag::IntArray(player.to_int_array().to_vec()),
+            );
+            nbt.insert("last_hurt_by_player_memory_time", memory_time);
+        }
+
+        if let Some((mob, ticks_since_hit)) = mob {
+            nbt.insert(
+                "last_hurt_by_mob",
+                NbtTag::IntArray(mob.to_int_array().to_vec()),
+            );
+            nbt.insert("ticks_since_last_hurt_by_mob", ticks_since_hit);
+        }
+    }
+
+    pub(crate) fn load_damage_state(&self, nbt: BorrowedNbtCompoundView<'_, '_>, tick_count: i32) {
+        let player = nbt
+            .int_array("last_hurt_by_player")
+            .and_then(|uuid| Uuid::from_int_array(&uuid));
+        let mob = EntityReference::read(&nbt, "last_hurt_by_mob");
+        let mut state = self.state.lock();
+
+        state.absorption_amount = nbt.float_value("AbsorptionAmount").unwrap_or(0.0);
+        state.hurt_time = i32::from(nbt.short_value("HurtTime").unwrap_or(0));
+        state.death_time = i32::from(nbt.short_value("DeathTime").unwrap_or(0));
+        state.last_hurt_by_player = player;
+        state.last_hurt_by_player_entity = None;
+        state.last_hurt_by_player_memory_time = nbt
+            .int_value("last_hurt_by_player_memory_time")
+            .unwrap_or(0);
+        state.last_hurt_by_mob = mob;
+        state.last_hurt_by_mob_timestamp =
+            tick_count.wrapping_sub(nbt.int_value("ticks_since_last_hurt_by_mob").unwrap_or(0));
+    }
+
+    pub(crate) fn save_impulse_state(&self, nbt: &mut NbtCompound) {
+        let state = self.state.lock();
+        nbt.insert(
+            "current_impulse_context_reset_grace_time",
+            state.current_impulse_context_reset_grace_time,
+        );
+        if let Some(impact) = state.current_impulse_impact_pos {
+            nbt.insert(
+                "current_explosion_impact_pos",
+                NbtList::Double(vec![impact.x, impact.y, impact.z]),
+            );
+        }
+    }
+
+    pub(crate) fn load_impulse_state(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        let impact = nbt
+            .list("current_explosion_impact_pos")
+            .and_then(|list| list.doubles())
+            .filter(|doubles| doubles.len() >= 3)
+            .map(|doubles| DVec3::new(doubles[0], doubles[1], doubles[2]));
+        let mut state = self.state.lock();
+
+        state.current_impulse_context_reset_grace_time = nbt
+            .int_value("current_impulse_context_reset_grace_time")
+            .unwrap_or(0);
+        state.current_impulse_impact_pos = impact;
+    }
+
     /// Marks this entity to skip dropping experience on death.
     pub fn skip_drop_experience(&self) {
         self.state.lock().skip_drop_experience = true;
@@ -1080,8 +1224,22 @@ impl LivingEntityBase {
         self.active_mob_effects.lock().values().cloned().collect()
     }
 
+    pub(crate) fn load_mob_effects(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        let effects = nbt
+            .list("active_effects")
+            .and_then(|list| list.compounds())
+            .into_iter()
+            .flatten()
+            .filter_map(|tag| SavedMobEffect::from_borrowed_compound(&tag))
+            .map(|effect| (effect.effect(), MobEffectInstance::from_saved(&effect)))
+            .collect();
+
+        *self.active_mob_effects.lock() = effects;
+        self.mark_effects_dirty();
+    }
+
     /// Adds or updates active vanilla mob-effect state.
-    pub fn add_mob_effect(&self, effect: MobEffectInstance) -> bool {
+    pub fn add_mob_effect(&self, effect: MobEffectInstance) -> MobEffectAddResult {
         let effect_key = effect.effect;
         let mut existing_effect = None;
         let mut changed_effect = None;
@@ -1104,7 +1262,7 @@ impl LivingEntityBase {
                 effect,
                 blend_for_self: true,
             });
-            return true;
+            return MobEffectAddResult::Added;
         }
 
         if let Some(effect) = changed_effect {
@@ -1114,10 +1272,10 @@ impl LivingEntityBase {
                 effect,
                 blend_for_self: false,
             });
-            return true;
+            return MobEffectAddResult::Updated;
         }
 
-        false
+        MobEffectAddResult::Unchanged
     }
 
     /// Sets active vanilla mob-effect state.
@@ -1234,7 +1392,7 @@ impl LivingEntityBase {
                     amount: modifier.amount * f64::from(effect.amplifier + 1),
                     operation: modifier.operation,
                 },
-                false,
+                true,
             );
         }
     }
@@ -1440,9 +1598,9 @@ impl LivingEntityBase {
         self.state.lock().last_climbable_pos
     }
 
-    /// Records the last climbable block position this living entity touched.
-    pub fn set_last_climbable_pos(&self, pos: BlockPos) {
-        self.state.lock().last_climbable_pos = Some(pos);
+    /// Records or clears the last climbable block position this living entity touched.
+    pub fn set_last_climbable_pos(&self, pos: Option<BlockPos>) {
+        self.state.lock().last_climbable_pos = pos;
     }
 
     /// Returns whether vanilla living travel should skip friction damping.
@@ -1633,8 +1791,8 @@ impl LivingEntityBase {
             return Some(player);
         }
         world
-            .get_entity_by_uuid(&uuid)
-            .filter(|entity| entity.as_player().is_some())
+            .get_entity_in_domain_by_uuid(&uuid)
+            .filter(|entity| !entity.is_removed() && entity.as_player().is_some())
     }
 
     /// Returns ticks remaining that this entity will remember the player who last hurt it.
@@ -1651,9 +1809,11 @@ impl LivingEntityBase {
 
     /// Returns vanilla `LivingEntity.lastHurtByMob`, if still resolvable.
     #[must_use]
-    pub fn last_hurt_by_mob(&self) -> Option<SharedEntity> {
-        let mut state = self.state.lock();
-        living_entity_from_weak(&mut state.last_hurt_by_mob)
+    pub fn last_hurt_by_mob(&self, world: Option<&World>) -> Option<SharedEntity> {
+        let reference = self.state.lock().last_hurt_by_mob.clone()?;
+        let entity = reference.resolve(world)?;
+
+        entity.is_living_entity().then_some(entity)
     }
 
     /// Returns the tick timestamp this entity was last hurt by a mob.
@@ -1665,7 +1825,9 @@ impl LivingEntityBase {
     /// Records the mob that last hurt this entity and the tick it happened.
     pub fn set_last_hurt_by_mob(&self, target: Option<&SharedEntity>, tick_count: i32) {
         let mut state = self.state.lock();
-        state.last_hurt_by_mob = weak_living_entity(target);
+        state.last_hurt_by_mob = target
+            .filter(|entity| entity.is_living_entity())
+            .map(EntityReference::from_entity);
         state.last_hurt_by_mob_timestamp = tick_count;
     }
 
@@ -1701,7 +1863,7 @@ impl LivingEntityBase {
     }
 
     /// Ticks vanilla living combat-memory cleanup.
-    pub fn tick_living_combat_memory(&self, tick_count: i32) {
+    pub fn tick_living_combat_memory(&self, world: Option<&World>, tick_count: i32) {
         if self
             .last_hurt_mob()
             .is_some_and(|target| living_is_dead(&target))
@@ -1709,12 +1871,63 @@ impl LivingEntityBase {
             self.set_last_hurt_mob(None, tick_count);
         }
 
-        let Some(hurt_by) = self.last_hurt_by_mob() else {
+        let Some(hurt_by) = self.last_hurt_by_mob(world) else {
             return;
         };
-        if living_is_dead(&hurt_by) || tick_count - self.last_hurt_by_mob_timestamp() > 100 {
+
+        if living_is_dead(&hurt_by)
+            || tick_count.wrapping_sub(self.last_hurt_by_mob_timestamp()) > 100
+        {
             self.set_last_hurt_by_mob(None, tick_count);
         }
+    }
+
+    /// Appends a hit to the combat tracker.
+    pub(crate) fn record_combat_damage(
+        &self,
+        source: &DamageSource,
+        damage: f32,
+        fall_location: Option<FallLocation>,
+        fall_distance: f32,
+        tick_count: i32,
+    ) {
+        self.state.lock().combat_tracker.record_damage(
+            source,
+            damage,
+            fall_location,
+            fall_distance,
+            tick_count,
+        );
+    }
+
+    /// Marks combat as started, returning whether it was not already active.
+    pub(crate) fn enter_combat(&self, tick_count: i32) -> bool {
+        self.state.lock().combat_tracker.enter_combat(tick_count)
+    }
+
+    /// Resets expired combat state.
+    ///
+    /// Returns whether combat ended.
+    pub(crate) fn recheck_combat_status(&self, tick_count: i32, alive: bool) -> bool {
+        self.state
+            .lock()
+            .combat_tracker
+            .recheck_status(tick_count, alive)
+    }
+
+    /// Returns the combat duration in ticks.
+    pub(crate) fn combat_duration(&self, tick_count: i32) -> i32 {
+        self.state.lock().combat_tracker.duration(tick_count)
+    }
+
+    /// Snapshot of recorded combat entries, oldest first.
+    pub(crate) fn combat_entries(&self) -> Vec<CombatEntry> {
+        self.state.lock().combat_tracker.entries().to_vec()
+    }
+
+    /// Drops recorded combat entries without changing combat status.
+    pub(crate) fn clear_combat_history(&self) {
+        self.state.lock().combat_tracker.clear_entries();
     }
 
     /// Returns whether death side effects have already run.

@@ -1,9 +1,10 @@
 //! Block behavior trait and registry.
 
 use std::sync::{Arc, Weak};
+use steel_utils::random::legacy_random::LegacyRandom;
 
+use crate::loot::{LootContext, LootTableRef};
 use glam::DVec3;
-use rand::rngs::ThreadRng;
 use smallvec::SmallVec;
 use steel_registry::DyeColor;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
@@ -18,13 +19,11 @@ use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entities;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_blocks};
 use steel_registry::{vanilla_damage_types, vanilla_items};
-use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
 use steel_utils::value_providers::IntProvider;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Identifier, WorldAabb, axis::Axis};
@@ -68,29 +67,44 @@ pub(crate) fn default_can_be_replaced(
 #[must_use]
 pub(crate) fn drop_from_block_interact_loot_table(
     key: LootTableRef,
+    world: &World,
+    pos: BlockPos,
     interacted_block_state: BlockStateId,
-    _interacted_block_entity: Option<SharedBlockEntity>,
     tool: Option<&ItemStack>,
     interacting_entity: Option<&dyn Entity>,
-    rng: &mut ThreadRng,
 ) -> Vec<ItemStack> {
-    let mut ctx = LootContext::new(rng).with_block_state(interacted_block_state);
+    world
+        .with_loot_random(Some(key), 0, |rng| {
+            let block_entity = world.get_block_entity(pos);
+            let mut ctx = LootContext::new(rng)
+                .with_world(world)
+                .with_origin(pos.get_center())
+                .with_block_state(interacted_block_state);
+            if let Some(block_entity) = block_entity.as_deref() {
+                ctx = ctx.with_block_entity(block_entity);
+            }
 
-    // TODO: Add the block entity to the context when it can be done.
+            let interacting_equipment = interacting_entity.and_then(loot_equipment);
+            if let Some(interacting_entity) = interacting_entity {
+                ctx = ctx.with_interacting_entity(entity_loot_ref(
+                    interacting_entity,
+                    interacting_equipment.as_ref(),
+                ));
+            }
 
-    let interacting_equipment = interacting_entity.and_then(loot_equipment);
-    if let Some(interacting_entity) = interacting_entity {
-        ctx = ctx.with_interacting_entity(entity_loot_ref(
-            interacting_entity,
-            interacting_equipment.as_ref(),
-        ));
-    }
+            if let Some(tool) = tool {
+                ctx = ctx.with_tool(tool);
+            }
 
-    if let Some(tool) = tool {
-        ctx = ctx.with_tool(tool);
-    }
-
-    key.get_random_items(&mut ctx)
+            key.get_random_items(&mut ctx)
+        })
+        .unwrap_or_else(|error| {
+            log::error!(
+                "Failed to generate block-interaction loot {}: {error}",
+                key.key
+            );
+            Vec::new()
+        })
 }
 
 /// Samples and applies enchantment effects to a block experience drop.
@@ -421,7 +435,7 @@ pub trait BlockBehavior: Send + Sync {
         explosion: &dyn Explosion,
         on_hit: &mut dyn FnMut(ItemStack, BlockPos),
     ) {
-        if state.is_air() {
+        if state.is_air() || explosion.block_interaction() == BlockInteraction::TriggerBlock {
             return;
         }
 
@@ -643,6 +657,11 @@ pub trait BlockBehavior: Send + Sync {
         _pos: BlockPos,
     ) -> bool {
         state.is_static_redstone_conductor()
+    }
+
+    /// Chest opener sounds, when this block has chest behavior.
+    fn chest_sounds(&self) -> Option<(SoundEventRef, SoundEventRef)> {
+        None
     }
 
     /// Handles a queued server block event.

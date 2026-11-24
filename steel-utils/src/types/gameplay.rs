@@ -116,6 +116,19 @@ pub enum Difficulty {
     Hard = 3,
 }
 
+impl Difficulty {
+    /// Returns the lowercase name Minecraft uses in `server.properties`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Difficulty::Peaceful => "peaceful",
+            Difficulty::Easy => "easy",
+            Difficulty::Normal => "normal",
+            Difficulty::Hard => "hard",
+        }
+    }
+}
+
 #[expect(clippy::match_same_arms, reason = "cause it looks better")]
 impl From<u8> for Difficulty {
     fn from(value: u8) -> Self {

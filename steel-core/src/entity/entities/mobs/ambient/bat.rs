@@ -1,6 +1,5 @@
 //! Vanilla Bat entity: rests on cave ceilings and flutters through the dark.
 
-use std::f32::consts::PI;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -8,7 +7,8 @@ use rand::{Rng, RngExt as _};
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
-use steel_math::wrap_degrees;
+use steel_math::trig;
+use steel_math::{RAD_TO_DEG_F64, wrap_degrees};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::sound_event::SoundEventRef;
@@ -25,7 +25,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     DefaultEntityPush, Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, LivingTravelInput, Mob,
-    MobBase, SharedEntity, SpawnRule,
+    MobBase, SharedEntity, SpawnRule, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
 use crate::world::{LevelReader, World, is_redstone_conductor};
@@ -149,23 +149,6 @@ impl BatEntity {
         data.id_flags.set(updated);
     }
 
-    fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
-        }
-
-        let display = self.living_base.mob_effect_display_state();
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
-    }
-
     /// Ticks the AI while the bat is resting.
     fn tick_resting_ai(&self, world: &World, pos: BlockPos, above: BlockPos) {
         let silent = self.is_silent();
@@ -231,7 +214,7 @@ impl BatEntity {
             );
         self.set_velocity(new_movement);
 
-        let y_rot_d = (new_movement.z.atan2(new_movement.x) * 180.0 / f64::from(PI)) as f32 - 90.0;
+        let y_rot_d = (trig::atan2(new_movement.z, new_movement.x) * RAD_TO_DEG_F64) as f32 - 90.0;
         let (yaw, pitch) = self.rotation();
         let rot_diff = wrap_degrees(y_rot_d - yaw);
 
@@ -338,7 +321,7 @@ impl Entity for BatEntity {
     }
 
     fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
+        sync_dirty_mob_effects(&self.living_base, &self.entity_data);
     }
 
     fn max_up_step(&self) -> f32 {

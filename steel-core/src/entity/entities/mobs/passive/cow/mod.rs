@@ -42,7 +42,7 @@ use crate::entity::{
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 
 const COW_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.75, 0.0)];
@@ -185,13 +185,6 @@ impl CowEntity {
         }
     }
 
-    fn update_dirty_mob_effect_entity_data(&self) {
-        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
-            self.entity_data
-                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
-        }
-    }
-
     /// Returns whether an item stack matches the vanilla cow food tag.
     #[must_use]
     pub fn is_food(item_stack: &ItemStack) -> bool {
@@ -281,7 +274,10 @@ impl Entity for CowEntity {
     }
 
     fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
+        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
+            self.entity_data
+                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
+        }
     }
 
     fn max_up_step(&self) -> f32 {
@@ -453,6 +449,7 @@ impl Mob for CowEntity {
     fn finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
@@ -476,7 +473,7 @@ impl Mob for CowEntity {
             self.set_sound_variant(sound_variant);
         }
 
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        self.finalize_spawn_ageable_mob(world, difficulty, spawn_reason, group_data)
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

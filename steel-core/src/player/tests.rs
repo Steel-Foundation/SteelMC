@@ -20,7 +20,7 @@ use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, SharedEntity,
     damage::DamageSource,
-    entities::{EndermiteEntity, ItemEntity},
+    entities::{EndermiteEntity, ItemEntity, PigEntity},
     next_entity_id,
 };
 use crate::inventory::{
@@ -32,8 +32,8 @@ use crate::inventory::{
 use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
 use crate::player::game_mode::PlayerGameModeState;
 use crate::test_support::{
-    TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, hard_damage_test_world,
-    insert_ready_full_chunk, test_world,
+    TestPlayerBuilder, TestWorld, fresh_test_world, fresh_test_world_in_domain,
+    hard_damage_test_world, insert_ready_full_chunk, test_world,
 };
 use crate::world::World;
 use glam::DVec3;
@@ -47,11 +47,12 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::data_component_predicate::DataComponentMatchers;
 use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
 use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
-use steel_registry::packets::play::C_REMOVE_ENTITIES;
+use steel_registry::packets::play::{C_ANIMATE, C_REMOVE_ENTITIES, C_SOUND};
+use steel_registry::sound_event::SoundEvent;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
-    vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
+    sound_events, vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
     vanilla_enchantments, vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
     vanilla_world_clocks,
 };
@@ -237,6 +238,20 @@ fn removed_entity_ids(packet: &EncodedPacket) -> Vec<i32> {
         entity_ids.push(entity_id.0);
     }
     entity_ids
+}
+
+fn sound_packet_ids(packets: &[EncodedPacket]) -> Vec<i32> {
+    packets
+        .iter()
+        .filter_map(|packet| {
+            let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+            VarInt::read(&mut cursor).ok()?;
+            if VarInt::read(&mut cursor).ok()?.0 != C_SOUND {
+                return None;
+            }
+            Some(VarInt::read(&mut cursor).ok()?.0)
+        })
+        .collect()
 }
 
 fn test_player(world: Arc<World>) -> Arc<Player> {
@@ -1497,12 +1512,12 @@ fn effect_visibility_refresh_preserves_spectator_invisibility() {
 
     player.restore_game_modes(GameType::Spectator, Some(GameType::Survival));
     player.living_base.mark_effects_dirty();
-    player.update_dirty_mob_effect_entity_data();
+    player.update_data_before_sync();
     assert!(player.entity_data.is_base_invisible_flag());
 
     player.restore_game_modes(GameType::Survival, Some(GameType::Spectator));
     player.living_base.mark_effects_dirty();
-    player.update_dirty_mob_effect_entity_data();
+    player.update_data_before_sync();
     assert!(!player.entity_data.is_base_invisible_flag());
 }
 
@@ -1924,5 +1939,272 @@ fn sword_does_not_destroy_blocks_in_creative() {
         world.get_block_state(pos),
         dirt,
         "swords should not destroy blocks when player is in creative mode."
+    );
+}
+
+#[test]
+fn player_melee_attack_plays_sound_packets() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world_fixture = fresh_test_world("player_melee_attack_sounds");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+
+    let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
+    let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+        sent_packets: Arc::clone(&sent_packets),
+        closed: AtomicBool::new(false),
+    })));
+    let attacker = TestPlayerBuilder::new(Arc::clone(world), "Attacker", next_entity_id())
+        .connection(connection)
+        .build();
+    attacker.set_client_loaded(true);
+    assert!(world.add_player(Arc::clone(&attacker), ResetReason::InitialJoin));
+
+    let pig = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(1.0, 64.0, 1.0),
+        Arc::downgrade(world),
+    ));
+    let pig_target: SharedEntity = Arc::<PigEntity>::clone(&pig);
+
+    // 1. Weak attack (freshly reset attack strength ticker, scale <= 0.9)
+    attacker.reset_attack_strength_ticker();
+    sent_packets.lock().clear();
+    assert!(attacker.attack(&pig_target));
+    assert_eq!(
+        sound_packet_ids(&sent_packets.lock()),
+        vec![sound_events::ENTITY_PLAYER_ATTACK_WEAK.packet_holder_id()]
+    );
+
+    // 2. Strong attack (fully charged ticker, scale > 0.9)
+    pig.set_invulnerable_time(0);
+    for _ in 0..40 {
+        attacker.tick_attack_strength();
+    }
+    sent_packets.lock().clear();
+    assert!(attacker.attack(&pig_target));
+    assert_eq!(
+        sound_packet_ids(&sent_packets.lock()),
+        vec![sound_events::ENTITY_PLAYER_ATTACK_STRONG.packet_holder_id()]
+    );
+
+    // 3. Sprinting strong attack (triggers knockback sound + strong sound)
+    pig.set_invulnerable_time(0);
+    for _ in 0..40 {
+        attacker.tick_attack_strength();
+    }
+    attacker.set_sprinting(true);
+    sent_packets.lock().clear();
+    assert!(attacker.attack(&pig_target));
+    assert_eq!(
+        sound_packet_ids(&sent_packets.lock()),
+        vec![
+            sound_events::ENTITY_PLAYER_ATTACK_KNOCKBACK.packet_holder_id(),
+            sound_events::ENTITY_PLAYER_ATTACK_STRONG.packet_holder_id(),
+        ]
+    );
+    attacker.set_sprinting(false);
+
+    // 4. Attack with no damage dealt / target cannot be hurt
+    let dead_pig = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(1.0, 64.0, 1.0),
+        Arc::downgrade(world),
+    ));
+    dead_pig.set_health(0.0);
+    let dead_target: SharedEntity = Arc::<PigEntity>::clone(&dead_pig);
+    sent_packets.lock().clear();
+    assert!(!attacker.attack(&dead_target));
+    assert_eq!(
+        sound_packet_ids(&sent_packets.lock()),
+        vec![sound_events::ENTITY_PLAYER_ATTACK_NODAMAGE.packet_holder_id()]
+    );
+
+    // 5. Sprinting with attack damage reduced to zero (for example by weakness)
+    // plays no knockback sound, matching vanilla's baseDamage/magicBoost gate.
+    attacker
+        .attributes()
+        .lock()
+        .set_base_value(vanilla_attributes::ATTACK_DAMAGE, 0.0);
+    pig.set_invulnerable_time(0);
+    for _ in 0..40 {
+        attacker.tick_attack_strength();
+    }
+    attacker.set_sprinting(true);
+    sent_packets.lock().clear();
+    assert!(!attacker.attack(&pig_target));
+    assert_eq!(sound_packet_ids(&sent_packets.lock()), Vec::<i32>::new());
+}
+
+fn player_attack_sound_ids(packets: &[EncodedPacket]) -> Vec<i32> {
+    let attack_sounds = [
+        &sound_events::ENTITY_PLAYER_ATTACK_CRIT,
+        &sound_events::ENTITY_PLAYER_ATTACK_KNOCKBACK,
+        &sound_events::ENTITY_PLAYER_ATTACK_NODAMAGE,
+        &sound_events::ENTITY_PLAYER_ATTACK_STRONG,
+        &sound_events::ENTITY_PLAYER_ATTACK_SWEEP,
+        &sound_events::ENTITY_PLAYER_ATTACK_WEAK,
+    ]
+    .map(SoundEvent::packet_holder_id);
+    sound_packet_ids(packets)
+        .into_iter()
+        .filter(|id| attack_sounds.contains(id))
+        .collect()
+}
+
+/// Returns `(entity_id, action)` for every recorded animate packet.
+fn animate_packets(packets: &[EncodedPacket]) -> Vec<(i32, u8)> {
+    packets
+        .iter()
+        .filter_map(|packet| {
+            let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+            VarInt::read(&mut cursor).ok()?;
+            if VarInt::read(&mut cursor).ok()?.0 != C_ANIMATE {
+                return None;
+            }
+            let entity_id = VarInt::read(&mut cursor).ok()?.0;
+            let action = u8::read(&mut cursor).ok()?;
+            Some((entity_id, action))
+        })
+        .collect()
+}
+
+struct MeleeFixture {
+    _world_fixture: TestWorld,
+    world: Arc<World>,
+    attacker: Arc<Player>,
+    sent_packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
+}
+
+impl MeleeFixture {
+    fn new(name: &'static str) -> Self {
+        init_vanilla_registry();
+        init_behaviors();
+
+        let world_fixture = fresh_test_world(name);
+        let world = Arc::clone(&world_fixture.world);
+        let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
+        let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+            sent_packets: Arc::clone(&sent_packets),
+            closed: AtomicBool::new(false),
+        })));
+        let attacker = TestPlayerBuilder::new(Arc::clone(&world), "Attacker", next_entity_id())
+            .connection(connection)
+            .build();
+        attacker.set_client_loaded(true);
+        insert_ready_full_chunk(&world, ChunkPos::from_entity_pos(attacker.position()));
+        assert!(world.add_player(Arc::clone(&attacker), ResetReason::InitialJoin));
+        Self {
+            _world_fixture: world_fixture,
+            world,
+            attacker,
+            sent_packets,
+        }
+    }
+
+    fn spawn_pig(&self, offset: DVec3) -> Arc<PigEntity> {
+        let pig = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            next_entity_id(),
+            self.attacker.position() + offset,
+            Arc::downgrade(&self.world),
+        ));
+        self.world
+            .try_add_entity(Arc::<PigEntity>::clone(&pig))
+            .expect("test pig should attach to the loaded chunk");
+        pig
+    }
+
+    fn charge_attack(&self) {
+        for _ in 0..40 {
+            self.attacker.tick_attack_strength();
+        }
+        self.sent_packets.lock().clear();
+    }
+}
+
+#[test]
+fn falling_full_strength_attack_is_critical_unless_sprinting() {
+    let fixture = MeleeFixture::new("player_critical_attack");
+    let attacker = &fixture.attacker;
+    attacker.set_on_ground(false);
+    attacker.set_fall_distance(1.0);
+
+    let pig = fixture.spawn_pig(DVec3::new(1.0, 0.0, 0.0));
+    let target: SharedEntity = Arc::<PigEntity>::clone(&pig);
+    fixture.charge_attack();
+    assert!(attacker.attack(&target));
+    assert!((pig.get_health() - 8.5).abs() < f32::EPSILON);
+    let packets = fixture.sent_packets.lock();
+    assert_eq!(
+        player_attack_sound_ids(&packets),
+        vec![sound_events::ENTITY_PLAYER_ATTACK_CRIT.packet_holder_id()]
+    );
+    assert_eq!(animate_packets(&packets), vec![(pig.id(), 1)]);
+    drop(packets);
+
+    // Sprinting disables crits even while falling.
+    let pig = fixture.spawn_pig(DVec3::new(1.0, 0.0, 0.0));
+    let target: SharedEntity = Arc::<PigEntity>::clone(&pig);
+    attacker.set_sprinting(true);
+    fixture.charge_attack();
+    assert!(attacker.attack(&target));
+    assert!((pig.get_health() - 9.0).abs() < f32::EPSILON);
+    let packets = fixture.sent_packets.lock();
+    assert_eq!(
+        player_attack_sound_ids(&packets),
+        vec![
+            sound_events::ENTITY_PLAYER_ATTACK_KNOCKBACK.packet_holder_id(),
+            sound_events::ENTITY_PLAYER_ATTACK_STRONG.packet_holder_id(),
+        ]
+    );
+    assert_eq!(animate_packets(&packets), Vec::<(i32, u8)>::new());
+}
+
+#[test]
+fn grounded_sword_attack_sweeps_nearby_entities_within_three_blocks() {
+    let fixture = MeleeFixture::new("player_sweep_attack");
+    let attacker = &fixture.attacker;
+    attacker.set_on_ground(true);
+    attacker
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_SWORD));
+
+    let target_pig = fixture.spawn_pig(DVec3::new(2.0, 0.0, 0.0));
+    // Inside the inflated target box and within 3 blocks of the attacker.
+    let swept_pig = fixture.spawn_pig(DVec3::new(2.0, 0.0, 1.2));
+    // Inside the inflated target box but more than 3 blocks from the attacker.
+    let distant_pig = fixture.spawn_pig(DVec3::new(3.4, 0.0, 0.0));
+    let target: SharedEntity = Arc::<PigEntity>::clone(&target_pig);
+    fixture.charge_attack();
+    assert!(attacker.attack(&target));
+
+    // Sweep damage is `1 + sweeping_damage_ratio * base_damage`; the ratio is 0 without
+    // Sweeping Edge.
+    assert!((swept_pig.get_health() - 9.0).abs() < f32::EPSILON);
+    assert!((distant_pig.get_health() - 10.0).abs() < f32::EPSILON);
+    assert_eq!(
+        player_attack_sound_ids(&fixture.sent_packets.lock()),
+        vec![sound_events::ENTITY_PLAYER_ATTACK_SWEEP.packet_holder_id()]
+    );
+
+    // Non-sword items never sweep.
+    attacker
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::empty());
+    swept_pig.set_invulnerable_time(0);
+    target_pig.set_invulnerable_time(0);
+    fixture.charge_attack();
+    assert!(attacker.attack(&target));
+    assert!((swept_pig.get_health() - 9.0).abs() < f32::EPSILON);
+    assert_eq!(
+        player_attack_sound_ids(&fixture.sent_packets.lock()),
+        vec![sound_events::ENTITY_PLAYER_ATTACK_STRONG.packet_holder_id()]
     );
 }

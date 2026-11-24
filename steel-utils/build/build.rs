@@ -1,6 +1,8 @@
 //! Build script for steel-utils that generates translation constants.
 
 use chrono::{DateTime, Utc};
+use proc_macro2::TokenStream;
+use quote::quote;
 use reqwest::blocking::{self, Response};
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
@@ -16,6 +18,10 @@ use std::{
 };
 
 use text_components::build::build_translations;
+
+#[path = "../../build/codegen.rs"]
+mod codegen;
+use codegen::write_tokens_if_changed;
 
 mod entity_events;
 mod translations;
@@ -403,7 +409,7 @@ fn download_and_extract_assets(manifest_dir: &str) {
 
 /// Generates the version constants from the `version.json` extracted from
 /// the target server jar, mirroring `DetectedVersion.tryDetectVersion`.
-fn build_version_constants(manifest_dir: &str) -> String {
+fn build_version_constants(manifest_dir: &str) -> TokenStream {
     println!("cargo:rerun-if-changed=build_assets/version.json");
     let target_version = get_target_mc_version();
     let version_json_path = Path::new(manifest_dir)
@@ -425,36 +431,41 @@ fn build_version_constants(manifest_dir: &str) -> String {
         .format("%a %b %d %H:%M:%S UTC %Y")
         .to_string();
 
-    format!(
-        "/// The targeted Minecraft version.\n\
-         pub const MINECRAFT_VERSION: &str = {target_version:?};\n\
-         /// Vanilla `WorldVersion.id`.\n\
-         pub const VERSION_ID: &str = {id:?};\n\
-         /// Vanilla `WorldVersion.name`.\n\
-         pub const VERSION_NAME: &str = {name:?};\n\
-         /// Vanilla `DataVersion.version`.\n\
-         pub const DATA_VERSION: i32 = {world_version};\n\
-         /// Vanilla `DataVersion.series`.\n\
-         pub const DATA_VERSION_SERIES: &str = {series_id:?};\n\
-         /// Vanilla `WorldVersion.buildTime`, formatted like Java's `Date.toString` in UTC.\n\
-         pub const BUILD_TIME: &str = {build_time:?};\n\
-         /// Vanilla `WorldVersion.packVersion(PackType.CLIENT_RESOURCES)`, formatted like `PackFormat::toString`.\n\
-         pub const RESOURCE_PACK_VERSION: &str = {resource_pack_version:?};\n\
-         /// Vanilla `WorldVersion.packVersion(PackType.SERVER_DATA)`, formatted like `PackFormat::toString`.\n\
-         pub const DATA_PACK_VERSION: &str = {data_pack_version:?};\n\
-         /// Vanilla `WorldVersion.stable`.\n\
-         pub const STABLE: bool = {stable};\n",
-        id = info.id,
-        name = info.name,
-        world_version = info.world_version,
-        series_id = info.series_id,
-        stable = info.stable,
-    )
+    let VersionInfo {
+        id,
+        name,
+        world_version,
+        series_id,
+        stable,
+        ..
+    } = info;
+
+    quote! {
+        /// The targeted Minecraft version.
+        pub const MINECRAFT_VERSION: &str = #target_version;
+        /// Vanilla `WorldVersion.id`.
+        pub const VERSION_ID: &str = #id;
+        /// Vanilla `WorldVersion.name`.
+        pub const VERSION_NAME: &str = #name;
+        /// Vanilla `DataVersion.version`.
+        pub const DATA_VERSION: i32 = #world_version;
+        /// Vanilla `DataVersion.series`.
+        pub const DATA_VERSION_SERIES: &str = #series_id;
+        /// Vanilla `WorldVersion.buildTime`, formatted like Java's `Date.toString` in UTC.
+        pub const BUILD_TIME: &str = #build_time;
+        /// Vanilla `WorldVersion.packVersion(PackType.CLIENT_RESOURCES)`, formatted like `PackFormat::toString`.
+        pub const RESOURCE_PACK_VERSION: &str = #resource_pack_version;
+        /// Vanilla `WorldVersion.packVersion(PackType.SERVER_DATA)`, formatted like `PackFormat::toString`.
+        pub const DATA_PACK_VERSION: &str = #data_pack_version;
+        /// Vanilla `WorldVersion.stable`.
+        pub const STABLE: bool = #stable;
+    }
 }
 
 /// Main build script entry point that generates translation constants.
 pub fn main() {
     println!("cargo:rerun-if-changed=build/");
+    println!("cargo:rerun-if-changed=../build/codegen.rs");
     println!("cargo:rerun-if-changed=build_assets/");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=../Cargo.toml");
@@ -478,36 +489,14 @@ pub fn main() {
         .expect("Translation output path is not valid UTF-8");
 
     let content = build_translations(processed_translations);
-    write_if_changed(format!("{OUT_DIR}/{IDS}.rs"), content.to_string());
+    write_tokens_if_changed(format!("{OUT_DIR}/{IDS}.rs"), content);
 
     let content = translations::build(processed_translations);
-    write_if_changed(format!("{OUT_DIR}/{REGISTRY}.rs"), content.to_string());
+    write_tokens_if_changed(format!("{OUT_DIR}/{REGISTRY}.rs"), content);
 
     let content = entity_events::build();
-    write_if_changed(format!("{OUT_DIR}/{ENTITY_EVENTS}.rs"), content.to_string());
+    write_tokens_if_changed(format!("{OUT_DIR}/{ENTITY_EVENTS}.rs"), content);
 
     let content = build_version_constants(&manifest_dir);
-    write_if_changed(format!("{OUT_DIR}/{VERSION}.rs"), content);
-}
-
-fn write_if_changed(path: impl AsRef<Path>, content: String) {
-    let path = path.as_ref();
-    #[cfg(feature = "fmt")]
-    let content = if path.extension().is_some_and(|extension| extension == "rs") {
-        let syntax = syn::parse_file(&content).unwrap_or_else(|error| {
-            panic!("Failed to parse generated file {}: {error}", path.display())
-        });
-        prettyplease::unparse(&syntax)
-    } else {
-        content
-    };
-    if let Ok(existing) = fs::read_to_string(path)
-        && existing == content
-    {
-        return;
-    }
-
-    if let Err(error) = fs::write(path, content) {
-        panic!("Failed to write {}: {error}", path.display());
-    }
+    write_tokens_if_changed(format!("{OUT_DIR}/{VERSION}.rs"), content);
 }

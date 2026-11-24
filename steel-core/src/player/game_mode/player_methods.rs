@@ -58,7 +58,7 @@ impl Player {
         if gamemode == GameType::Spectator {
             self.stop_riding();
             // TODO: Remove shoulder entities once player shoulder storage is implemented.
-            // TODO: Stop item use once living item-use state is implemented.
+            self.stop_using_item();
             // TODO: Stop location-based enchantment effects once those effects are implemented.
         } else if was_spectator {
             self.send_packet(CSetCamera {
@@ -76,7 +76,7 @@ impl Player {
 
     fn update_game_mode_invisibility(&self) {
         self.living_base.mark_effects_dirty();
-        self.update_dirty_mob_effect_entity_data();
+        self.update_data_before_sync();
         self.sync_entity_data();
     }
 

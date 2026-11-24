@@ -18,6 +18,7 @@ mod stronghold;
 mod swamp_hut;
 mod template_piece;
 mod template_processors;
+mod woodland_mansion;
 
 use std::sync::Weak;
 
@@ -36,7 +37,7 @@ use steel_utils::{
     types::UpdateFlags,
 };
 
-use crate::entity::{ENTITIES, SharedEntity, next_entity_id};
+use crate::entity::{ENTITIES, SharedEntity};
 use crate::world::World;
 use crate::worldgen::region::WorldGenRegion;
 use steel_worldgen::structure::{
@@ -63,7 +64,7 @@ impl StructurePiecePlacer {
         world: Weak<World>,
         persistence_required: bool,
     ) -> Option<SharedEntity> {
-        let Some(entity) = ENTITIES.create(entity_type, next_entity_id(), position, world) else {
+        let Some(entity) = ENTITIES.create(entity_type, position, world) else {
             log::warn!(
                 "Skipping unsupported structure entity spawn for {} at {position:?}",
                 entity_type.key
@@ -222,6 +223,10 @@ impl StructurePiecePlacer {
     ) {
         if structure.structure_type == Identifier::new_static("minecraft", "desert_pyramid") {
             Self::after_place_desert_pyramid(region, pieces, clip);
+        } else if structure.structure_type
+            == Identifier::new_static("minecraft", "woodland_mansion")
+        {
+            Self::after_place_woodland_mansion(region, pieces, clip);
         }
     }
 

@@ -15,14 +15,18 @@ pub(crate) mod gamemode;
 mod gamerule;
 mod give;
 mod invsee;
+mod kick;
 mod kill;
 mod list;
 mod locate;
 mod operator;
+mod perf;
 mod perms;
 mod playsound;
 mod position;
+mod reload;
 mod return_command;
+mod say;
 mod seed;
 mod setblock;
 mod setidletimeout;
@@ -87,13 +91,17 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(gamemode::registration()?)?;
     builder.register(gamerule::registration())?;
     builder.register(give::registration())?;
+    builder.register(kick::registration())?;
     builder.register(kill::registration())?;
     builder.register(list::registration())?;
     builder.register(locate::registration())?;
     builder.register(operator::op_registration())?;
+    builder.register(perf::registration())?;
     builder.register(perms::registration())?;
     builder.register(playsound::registration())?;
+    builder.register(reload::registration())?;
     builder.register(return_command::registration())?;
+    builder.register(say::registration())?;
     builder.register(seed::registration())?;
     builder.register(setblock::registration())?;
     builder.register(spawnpoint::registration())?;
@@ -173,13 +181,17 @@ mod tests {
                 "gamemode",
                 "gamerule",
                 "give",
+                "kick",
                 "kill",
                 "list",
                 "locate",
                 "op",
+                "perf",
                 "perms",
                 "playsound",
+                "reload",
                 "return",
+                "say",
                 "seed",
                 "setblock",
                 "spawnpoint",

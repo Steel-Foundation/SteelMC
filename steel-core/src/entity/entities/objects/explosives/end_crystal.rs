@@ -8,19 +8,29 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::vanilla_damage_type_tags::DamageTypeTag;
+use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, locks::SyncMutex};
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData};
+use crate::entity::damage::DamageSource;
+use crate::entity::{
+    Entity, EntityBase, EntityBaseLoad, EntityMovementEmission, EntitySyncedData, RemovalReason,
+};
 use crate::world::World;
+use crate::world::explosion::{
+    DefaultExplosionDamageCalculator, ExplosionInteraction, ExplosionOptions,
+};
+
+const EXPLOSION_RADIUS: f32 = 6.0;
 
 /// End Crystal entity state needed by worldgen and persistence.
 ///
 /// Steel currently implements the synchronized data and saved fields used by generated
-/// End spikes. Portal handling, dragon fight callbacks, and explosion behavior are still
-/// intentionally left to the broader entity/combat foundations.
+/// End spikes, plus the explosion when destroyed. Portal handling and dragon fight
+/// callbacks are still intentionally left to the broader entity/combat foundations.
 #[entity_behavior(class = "EndCrystal")]
 pub struct EndCrystalEntity {
     base: EntityBase,
@@ -95,7 +105,52 @@ impl Entity for EndCrystalEntity {
     }
 
     fn tick(self: Arc<Self>) {
-        // TODO: Implement portal handling, fire refresh, dragon fight callbacks, and explosion behavior.
+        // TODO: Implement portal handling and fire refresh.
+    }
+
+    /// Vanilla `EndCrystal.hurtServer`: any accepted hit destroys the crystal, so the
+    /// damage amount is irrelevant.
+    fn hurt(&self, _world: &World, source: &DamageSource, _amount: f32) -> bool {
+        if self.is_invulnerable_to_base(source) {
+            return false;
+        }
+
+        // Vanilla checks `instanceof EnderDragon`, which only the ender dragon type is.
+        let attacker = source.causing_entity();
+        if attacker.is_some_and(|entity| entity.entity_type() == &vanilla_entities::ENDER_DRAGON) {
+            return false;
+        }
+
+        if self.is_removed() {
+            return true;
+        }
+
+        let Some(world) = self.level() else {
+            return true;
+        };
+        // Resolved before removal so the explosion can still credit the crystal.
+        let crystal = world.get_entity_by_id(self.id());
+        self.set_removed(RemovalReason::Killed);
+
+        // A crystal destroyed by another explosion does not chain-detonate.
+        if !source.is(&DamageTypeTag::IS_EXPLOSION) {
+            let mut options = ExplosionOptions::new(
+                self.position(),
+                EXPLOSION_RADIUS,
+                ExplosionInteraction::Block,
+            );
+            options.damage_source = attacker.map(|attacker| {
+                DamageSource::explosion(crystal.clone(), Some(Arc::clone(attacker)))
+            });
+            options.source = crystal;
+            // The crystal keeps the default block-explosion hooks.
+            options.immutable_block_calculator = Some(&DefaultExplosionDamageCalculator);
+            world.explode(options);
+        }
+
+        // TODO: Notify the dragon fight (`EndCrystal.onDestroyedBy`) here and from `kill`
+        // once the End dragon fight exists.
+        true
     }
 
     fn is_pickable(&self) -> bool {
@@ -138,7 +193,67 @@ impl Entity for EndCrystalEntity {
 mod tests {
     use super::*;
 
-    use steel_registry::vanilla_entities;
+    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_damage_types};
+    use steel_utils::ChunkPos;
+    use steel_utils::types::UpdateFlags;
+
+    use crate::behavior::init_behaviors;
+    use crate::entity::next_entity_id;
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
+
+    const FLOOR: BlockPos = BlockPos::new(0, 63, 0);
+
+    /// A crystal standing on a stone block, like one placed on obsidian.
+    fn crystal_on_stone(key: &'static str) -> (TestWorld, Arc<EndCrystalEntity>) {
+        init_vanilla_registry();
+        init_behaviors();
+        let fixture = fresh_test_world(key);
+        let world = &fixture.world;
+        insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+        assert!(world.set_block(
+            FLOOR,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        let crystal = Arc::new(EndCrystalEntity::new(
+            &vanilla_entities::END_CRYSTAL,
+            next_entity_id(),
+            DVec3::new(0.5, 64.0, 0.5),
+            Arc::downgrade(world),
+        ));
+        let Ok(()) = world.try_add_entity(Arc::<EndCrystalEntity>::clone(&crystal)) else {
+            panic!("crystal must be added to its loaded chunk");
+        };
+        (fixture, crystal)
+    }
+
+    #[test]
+    fn struck_end_crystal_is_destroyed_and_explodes() {
+        let (fixture, crystal) = crystal_on_stone("end_crystal_struck");
+
+        assert!(crystal.hurt(
+            &fixture.world,
+            &DamageSource::environment(&vanilla_damage_types::GENERIC),
+            1.0,
+        ));
+
+        assert!(crystal.is_removed());
+        assert!(fixture.world.get_block_state(FLOOR).is_air());
+    }
+
+    #[test]
+    fn end_crystal_destroyed_by_an_explosion_does_not_chain() {
+        let (fixture, crystal) = crystal_on_stone("end_crystal_no_chain");
+
+        assert!(crystal.hurt(&fixture.world, &DamageSource::explosion(None, None), 1.0,));
+
+        assert!(crystal.is_removed());
+        assert_eq!(
+            fixture.world.get_block_state(FLOOR).get_block(),
+            &vanilla_blocks::STONE
+        );
+    }
 
     #[test]
     fn end_crystal_does_not_duplicate_shared_invulnerable_state() {

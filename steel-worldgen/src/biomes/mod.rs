@@ -5,7 +5,8 @@ mod nether_climate_sampler;
 use sha2::{Digest, Sha256};
 
 pub use biome_source::{
-    BiomeSourceKind, ChunkBiomeSampler, EndBiomeSource, NetherBiomeSource, OverworldBiomeSource,
+    BiomeSourceKind, ChunkBiomeSampler, EndBiomeSource, FixedBiomeSource, NetherBiomeSource,
+    OverworldBiomeSource,
 };
 pub use climate_sampler::OverworldClimateSampler;
 pub use nether_climate_sampler::NetherClimateSampler;
