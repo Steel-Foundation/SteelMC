@@ -39,11 +39,12 @@ use steel_protocol::packets::game::{
 };
 use steel_registry::advancement::Advancement;
 use steel_registry::damage_type::DamageTypeRef;
+use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::{
-    DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _,
-    TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY, enchantment::EnchantmentRef,
-    entity_type::EntityTypeRef, item_stack::ItemStack, timeline::TimelineRef,
-    world_clock::WorldClockRef,
+    DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, MOB_EFFECT_REGISTRY,
+    REGISTRY, RegistryExt as _, TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY,
+    enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
+    timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::{
     Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
@@ -347,6 +348,9 @@ impl SteelArgumentType {
     pub(crate) fn damage_type() -> Self {
         Self::new(DamageTypeParser)
     }
+    pub(crate) fn mob_effect() -> Self {
+        Self::new(MobEffectValue)
+    }
 
     pub(crate) fn item_stack() -> Self {
         Self::new(ItemStackParser)
@@ -570,6 +574,10 @@ argument_value_wrapper!(
 argument_value_wrapper!(
     DamageTypeValue(DamageTypeRef),
     "steel:command/value/damage_type"
+);
+argument_value_wrapper!(
+    MobEffectValue(MobEffectRef),
+    "steel:command/value/mob_effect"
 );
 argument_value_wrapper!(ItemStackValue(ItemStack), "steel:command/value/item_stack");
 argument_value_wrapper!(
@@ -1174,6 +1182,35 @@ unit_argument_parser!(
     protocol(
         ProtocolArgumentType::Resource {
             identifier: "minecraft:damage_type",
+        },
+        None,
+    )
+);
+unit_argument_parser!(
+    MobEffectParser,
+    "steel:command/parser/effect",
+    MobEffectValue,
+    parse | reader,
+    _source | {
+        let key = parse_identifier(reader)?;
+        REGISTRY.mob_effects.by_key(&key).map_or_else(
+            || Err(unknown_resource(reader, &key, &MOB_EFFECT_REGISTRY)),
+            |mob_effect| Ok(MobEffectValue(mob_effect)),
+        )
+    },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY
+                .mob_effects
+                .iter()
+                .map(|(_, mob_effect)| &mob_effect.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::Resource {
+            identifier: "minecraft:mob_effect",
         },
         None,
     )
