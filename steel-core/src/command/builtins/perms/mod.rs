@@ -1585,7 +1585,7 @@ fn is_configured_collection(config: &PermissionCollectionsConfig, id: &Identifie
         .is_some_and(|named| named.contains_key(id.path.as_ref()))
 }
 
-/// Short, coloured notices shown only when a write first makes a collection config-owned.
+/// Short, colored notices shown only when a write first makes a collection config-owned.
 fn config_precedence_notice(target: &str, newly_configured: usize) -> Vec<TextComponent> {
     if newly_configured == 0 {
         return Vec::new();
