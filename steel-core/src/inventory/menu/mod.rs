@@ -34,7 +34,7 @@ use steel_utils::{Downcast as _, types::GameType};
 
 use crate::inventory::container::CraftingContainer;
 use crate::inventory::menu::kinds::InventoryKind;
-use crate::loot::LootResult;
+use crate::loot::OperationResult;
 use crate::{
     entity::LivingEntity,
     inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef},
@@ -393,7 +393,7 @@ impl Menu {
         self.notify_armor_equipment_changes(player, armor_before);
     }
 
-    fn armor_items(&self) -> LootResult<Vec<(EquipmentSlot, ItemStack)>> {
+    fn armor_items(&self) -> OperationResult<Vec<(EquipmentSlot, ItemStack)>> {
         let guard = self.behavior().lock_all_containers()?;
         Ok(self
             .behavior()

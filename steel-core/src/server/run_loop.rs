@@ -91,7 +91,8 @@ impl Server {
     /// Panics if a player's menus cannot be removed, which means packets are still being
     /// processed. Callers must stop packet processing before calling this; the standalone
     /// server does so by closing its task tracker and awaiting the drain.
-    pub async fn save_and_shutdown(&self) {
+    pub async fn save_and_shutdown(self: &Arc<Self>) {
+        self.finish_pending_loot().await;
         if let Err(error) = self.flush_known_players().await {
             log::error!("Failed to flush known player cache during shutdown: {error}");
         }
@@ -138,6 +139,10 @@ impl Server {
         match command_data.random_sequences {
             Ok(saved) => log::info!("Saved {saved} domain random-sequence collections"),
             Err(error) => log::error!("Failed to save domain random sequences: {error}"),
+        }
+        match command_data.maps {
+            Ok(saved) => log::info!("Saved {saved} maps"),
+            Err(error) => log::error!("Failed to save maps: {error}"),
         }
         let mut total_saved = 0;
         for world in self.worlds.values() {
@@ -312,10 +317,12 @@ impl Server {
             }
         }
 
-        self.jobs.cancel_all();
         pending_command_executions.cancel_all();
         self.command_requests.clear();
+        self.packet_processor.close_for_tick().await;
         self.packet_processor.stop();
+        self.finish_pending_loot().await;
+        self.jobs.cancel_all();
         self.start_player_disconnect_saves(&mut player_disconnect_saves);
         self.pending_player_disconnects.clear();
         while let Some(result) = player_disconnect_saves.join_next().await {
@@ -326,6 +333,24 @@ impl Server {
         while let Some(result) = command_data_autosaves.join_next().await {
             if let Err(error) = result {
                 log::error!("Command data autosave task failed during shutdown: {error}");
+            }
+        }
+    }
+
+    /// Shutdown maintenance keeps chunk I/O and loot continuations progressing
+    /// before generation workers or affected data are saved and torn down.
+    async fn finish_pending_loot(self: &Arc<Self>) {
+        self.jobs.cancel_optional();
+        let interval = Duration::from_nanos(self.tick_rate_manager.read().nanoseconds_per_tick);
+        while self.jobs.has_required_shutdown_work() {
+            for world in self.worlds.values() {
+                world.chunk_map.advance_scheduling();
+            }
+            let tick_count = self.tick_rate_manager.read().tick_count;
+            self.tick_jobs(tick_count, false);
+            if self.jobs.has_required_shutdown_work() {
+                // This is outside the game tick; chunk workers remain live.
+                sleep(interval).await;
             }
         }
     }
@@ -356,6 +381,10 @@ impl Server {
         match results.random_sequences {
             Ok(saved) => tracing::debug!(saved, "Domain random-sequence autosave completed"),
             Err(error) => tracing::error!(%error, "Domain random-sequence autosave failed"),
+        }
+        match results.maps {
+            Ok(saved) => tracing::debug!(saved, "Domain map autosave completed"),
+            Err(error) => tracing::error!(%error, "Domain map autosave failed"),
         }
     }
 

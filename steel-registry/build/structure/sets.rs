@@ -1086,7 +1086,7 @@ pub(crate) fn build_structures() -> TokenStream {
         let config = generate_structure_config(&structure.config, &key);
 
         statics.push(quote! {
-            static #static_ident: LazyLock<StructureData> = LazyLock::new(|| StructureData {
+            pub static #static_ident: LazyLock<StructureData> = LazyLock::new(|| StructureData {
                 key: #key_token,
                 id: OnceLock::new(),
                 structure_type: #structure_type,

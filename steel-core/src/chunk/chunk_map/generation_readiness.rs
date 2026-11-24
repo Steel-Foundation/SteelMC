@@ -89,7 +89,7 @@ impl ChunkMap {
         }
     }
 
-    pub(super) fn max_running_generation_tasks(&self) -> usize {
+    pub(crate) fn max_running_generation_tasks(&self) -> usize {
         self.generation_pool.current_num_threads().max(1) * GENERATION_THREAD_MULTIPLE
     }
 

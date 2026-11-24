@@ -14,10 +14,12 @@ use steel_registry::{RegistryExt, block_entity_type::BlockEntityTypeRef};
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
 use crate::block_entity::{BlockEntityBase, ImplicitComponentGetter, RandomizableContainer};
-use crate::entity::{LivingEntity, entity_loot_ref, living_loot_equipment};
+use crate::entity::LivingEntity;
 use crate::inventory::container::{Container, load_all_items};
 use crate::inventory::lock::{ContainerRef, SharedContainer};
-use crate::loot::{GeneratedLoot, LOOT_TABLES, LootContext, LootError, LootResult};
+use crate::loot::{
+    LOOT_TABLES, LootCompletion, LootEntitySnapshot, LootParams, OperationError, OperationResult,
+};
 use crate::player::Player;
 use crate::world::World;
 
@@ -32,7 +34,7 @@ pub(crate) struct RandomizableContainerInventory {
     items: Vec<ItemStack>,
     loot_table: Option<SeededContainerLoot>,
     generation: u64,
-    unpacking: bool,
+    pending: Option<LootCompletion>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies the independently
@@ -56,7 +58,7 @@ impl RandomizableContainerStorage {
             items: vec![ItemStack::empty(); slots],
             loot_table: None,
             generation: 0,
-            unpacking: false,
+            pending: None,
         }));
         let shared_container: SharedContainer =
             Arc::<SyncMutex<RandomizableContainerInventory>>::clone(&container);
@@ -73,19 +75,39 @@ impl RandomizableContainerStorage {
     }
 
     pub(crate) fn pre_remove_side_effects(&self, pos: BlockPos) {
-        if let Err(error) = self.unpack_loot_table(None) {
-            log::error!("Could not unpack container loot at {pos:?} before removal: {error}");
-            return;
-        }
-        let items = {
-            let mut container = self.container.lock();
-            let slots = container.items.len();
-            mem::replace(&mut container.items, vec![ItemStack::empty(); slots])
-        };
         let Some(world) = self.base.level() else {
+            Self::take_items(&self.container);
             return;
         };
-        for item in items {
+        match self.unpack_loot_table(None) {
+            Ok(()) => Self::drop_items(&world, &self.container, pos),
+            Err(OperationError::Pending(completion)) => {
+                let storage = Arc::clone(&self.container);
+                let drop_world = Arc::clone(&world);
+                completion.on_complete(move |result| {
+                    if result.is_ok() {
+                        Self::drop_items(&drop_world, &storage, pos);
+                    }
+                });
+            }
+            Err(error) => {
+                log::error!("Could not unpack container loot at {pos:?} before removal: {error}");
+            }
+        }
+    }
+
+    fn take_items(storage: &SyncMutex<RandomizableContainerInventory>) -> Vec<ItemStack> {
+        let mut container = storage.lock();
+        let slots = container.items.len();
+        mem::replace(&mut container.items, vec![ItemStack::empty(); slots])
+    }
+
+    fn drop_items(
+        world: &Arc<World>,
+        storage: &SyncMutex<RandomizableContainerInventory>,
+        pos: BlockPos,
+    ) {
+        for item in Self::take_items(storage) {
             world.drop_item_stack(pos, item);
         }
     }
@@ -96,7 +118,7 @@ impl RandomizableContainerStorage {
         let mut container = self.container.lock();
         container.items.fill(ItemStack::empty());
         container.generation = container.generation.wrapping_add(1);
-        container.unpacking = false;
+        container.pending = None;
         container.loot_table = nbt_view
             .string("LootTable")
             .and_then(|key| match key.to_string().parse() {
@@ -168,7 +190,7 @@ impl RandomizableContainerStorage {
         if let Some(loot) = components.get(CONTAINER_LOOT) {
             container.loot_table = Some(loot);
             container.generation = container.generation.wrapping_add(1);
-            container.unpacking = false;
+            container.pending = None;
         }
     }
 }
@@ -182,73 +204,61 @@ impl RandomizableContainer for RandomizableContainerStorage {
         let mut container = self.container.lock();
         container.loot_table = loot;
         container.generation = container.generation.wrapping_add(1);
-        container.unpacking = false;
+        container.pending = None;
     }
 
-    fn unpack_loot_table(&self, player: Option<&Player>) -> LootResult<()> {
+    fn unpack_loot_table(&self, player: Option<&Player>) -> OperationResult<()> {
         Self::unpack(&self.base, &self.container, player)
     }
 }
 
 impl RandomizableContainerStorage {
     fn unpack(
-        base: &BlockEntityBase,
-        storage: &SyncMutex<RandomizableContainerInventory>,
+        base: &Arc<BlockEntityBase>,
+        storage: &Arc<SyncMutex<RandomizableContainerInventory>>,
         player: Option<&Player>,
-    ) -> LootResult<()> {
+    ) -> OperationResult<()> {
         let Some(world) = base.level() else {
             return Ok(());
         };
-        let (loot, generation) = {
+        let (loot, generation, completion) = {
             let mut container = storage.lock();
+            if let Some(pending) = &container.pending {
+                return pending.try_result();
+            }
             let Some(loot) = container.loot_table.clone() else {
                 return Ok(());
             };
-            if container.unpacking {
-                // TODO: Coordinate concurrent access with vanilla-compatible
-                // ordering. This error currently reaches comparator zero fallbacks.
-                return Err(LootError::ContainerChanged);
-            }
-            container.unpacking = true;
+            let completion = LootCompletion::default();
+            container.pending = Some(completion.clone());
             container.generation = container.generation.wrapping_add(1);
-            (loot, container.generation)
+            (loot, container.generation, completion)
         };
-        let result = {
-            let table = LOOT_TABLES.by_key(loot.loot_table());
-            let equipment = player.map(living_loot_equipment);
-            world.with_loot_random(table, loot.seed(), |random| {
-                let mut context = LootContext::new(random)
-                    .with_world(&world)
-                    .with_origin(base.pos().get_center());
-                if let Some(player) = player {
-                    // TODO: Trigger GENERATE_LOOT once advancement criteria exist.
-                    context = context
-                        .with_luck(player.get_luck())
-                        .with_this_entity(entity_loot_ref(player, equipment.as_ref()));
-                }
-                let generated = match table {
-                    Some(table) => table.generate_for_container(&mut context)?,
-                    None => GeneratedLoot::new(Vec::new(), context.rng),
-                };
+        let params = LootParams {
+            origin: Some(base.pos().get_center()),
+            luck: player.map_or(0.0, LivingEntity::get_luck),
+            this_entity: player.map(|player| LootEntitySnapshot::capture(player)),
+            ..LootParams::default()
+        };
+        // TODO: Trigger GENERATE_LOOT once advancement criteria exist.
+        let work = world.prepare_loot(LOOT_TABLES.by_key(loot.loot_table()), loot.seed(), params);
+        let storage = Arc::clone(storage);
+        let base = Arc::clone(base);
+        world.run_loot_with_completion(work, completion.clone(), move |result| {
+            let generated = result?;
+            {
                 let mut container = storage.lock();
                 if container.generation != generation {
-                    return Err(LootError::ContainerChanged);
+                    return Err(OperationError::ContainerChanged);
                 }
                 container.loot_table = None;
+                container.pending = None;
                 generated.fill(&mut *container);
-                Ok(())
-            })
-        };
-        {
-            let mut container = storage.lock();
-            if container.generation == generation {
-                container.unpacking = false;
             }
-        }
-        if result.is_ok() {
             base.set_changed();
-        }
-        result
+            Ok(())
+        })?;
+        completion.try_result()
     }
 }
 

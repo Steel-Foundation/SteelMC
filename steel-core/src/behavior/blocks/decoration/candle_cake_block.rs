@@ -1,3 +1,4 @@
+use crate::loot::OperationResult;
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -163,8 +164,8 @@ impl BlockBehavior for CandleCakeBlock {
         _world: &World,
         _pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
-        CakeBlock::analog_output_signal(0)
+    ) -> OperationResult<i32> {
+        Ok(CakeBlock::analog_output_signal(0))
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {

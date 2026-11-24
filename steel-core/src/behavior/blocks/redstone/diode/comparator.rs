@@ -20,6 +20,7 @@ use crate::behavior::{
 };
 use crate::block_entity::entities::ComparatorBlockEntity;
 use crate::entity::{Entity, ItemFrame};
+use crate::loot::{OperationError, OperationResult};
 use crate::player::Player;
 use crate::world::tick_scheduler::TickPriority;
 use crate::world::{
@@ -37,6 +38,13 @@ pub struct ComparatorBlock {
 const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 const MODE_COMPARATOR: &EnumProperty<ComparatorMode> = &BlockStateProperties::MODE_COMPARATOR;
 const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
+
+#[derive(Clone, Copy)]
+enum InputContinuation {
+    Neighbor,
+    Refresh,
+    Placed,
+}
 
 impl ComparatorBlock {
     /// Creates comparator behavior for `block`.
@@ -91,7 +99,11 @@ impl ComparatorBlock {
             .map(ItemFrame::analog_output)
     }
 
-    fn get_input_signal(world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> i32 {
+    fn get_input_signal(
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> OperationResult<i32> {
         let mut result = DiodeBlock::get_input_signal(world.as_ref(), pos, state);
         let direction = state.get_value(HORIZONTAL_FACING);
         let mut target_pos = pos.relative(direction);
@@ -109,7 +121,7 @@ impl ComparatorBlock {
         if result >= MAX_REDSTONE_SIGNAL
             || !is_redstone_conductor(world.as_ref(), target_state, target_pos)
         {
-            return result;
+            return Ok(result);
         }
 
         target_pos = target_pos.relative(direction);
@@ -125,7 +137,8 @@ impl ComparatorBlock {
                     target_pos,
                     direction.opposite(),
                 )
-            });
+            })
+            .transpose()?;
         if let Some(analog_signal) = match (frame_signal, block_signal) {
             (Some(frame), Some(block)) => Some(frame.max(block)),
             (Some(frame), None) => Some(frame),
@@ -134,7 +147,7 @@ impl ComparatorBlock {
         } {
             result = analog_signal;
         }
-        result
+        Ok(result)
     }
 
     const fn calculate_output_signal(input: i32, alternate: i32, mode: ComparatorMode) -> i32 {
@@ -147,31 +160,28 @@ impl ComparatorBlock {
         }
     }
 
-    fn calculate_output(world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> i32 {
-        let input = Self::get_input_signal(world, pos, state);
-        let alternate = DiodeBlock::get_alternate_signal(world.as_ref(), pos, state, false);
-        Self::calculate_output_signal(input, alternate, state.get_value(MODE_COMPARATOR))
-    }
-
     const fn should_turn_on_from_signals(input: i32, alternate: i32, mode: ComparatorMode) -> bool {
         input != MIN_REDSTONE_SIGNAL
             && (input > alternate
                 || (input == alternate && matches!(mode, ComparatorMode::Compare)))
     }
 
-    fn should_turn_on(world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> bool {
-        let input = Self::get_input_signal(world, pos, state);
-        let alternate = DiodeBlock::get_alternate_signal(world.as_ref(), pos, state, false);
-        Self::should_turn_on_from_signals(input, alternate, state.get_value(MODE_COMPARATOR))
-    }
-
     fn check_tick_on_neighbor(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
         if world.will_tick_block_this_tick(pos, self.diode.block) {
             return;
         }
-        let output = Self::calculate_output(world, pos, state);
+        let input = match Self::get_input_signal(world, pos, state) {
+            Ok(input) => input,
+            Err(error) => {
+                Self::defer_input(error, world, pos, state, InputContinuation::Neighbor);
+                return;
+            }
+        };
+        let alternate = DiodeBlock::get_alternate_signal(world.as_ref(), pos, state, false);
+        let mode = state.get_value(MODE_COMPARATOR);
+        let output = Self::calculate_output_signal(input, alternate, mode);
         if output == Self::output_signal(world.as_ref(), pos)
-            && state.get_value(POWERED) == Self::should_turn_on(world, pos, state)
+            && state.get_value(POWERED) == Self::should_turn_on_from_signals(input, alternate, mode)
         {
             return;
         }
@@ -184,13 +194,22 @@ impl ComparatorBlock {
     }
 
     fn refresh_output_state(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
-        let output = Self::calculate_output(world, pos, state);
+        let input = match Self::get_input_signal(world, pos, state) {
+            Ok(input) => input,
+            Err(error) => {
+                Self::defer_input(error, world, pos, state, InputContinuation::Refresh);
+                return;
+            }
+        };
+        let alternate = DiodeBlock::get_alternate_signal(world.as_ref(), pos, state, false);
+        let mode = state.get_value(MODE_COMPARATOR);
+        let output = Self::calculate_output_signal(input, alternate, mode);
         let old_output = Self::set_output_signal(world, pos, output);
         if old_output == output && state.get_value(MODE_COMPARATOR) != ComparatorMode::Compare {
             return;
         }
 
-        let should_turn_on = Self::should_turn_on(world, pos, state);
+        let should_turn_on = Self::should_turn_on_from_signals(input, alternate, mode);
         let powered = state.get_value(POWERED);
         if powered != should_turn_on {
             world.set_block(
@@ -200,6 +219,55 @@ impl ComparatorBlock {
             );
         }
         self.diode.update_neighbors_in_front(world, pos, state);
+    }
+
+    fn defer_input(
+        error: OperationError,
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        continuation: InputContinuation,
+    ) {
+        let OperationError::Pending(completion) = error else {
+            log::error!("Could not read comparator input at {pos:?}: {error}");
+            return;
+        };
+        let Some(owner) = world.get_block_entity(pos) else {
+            return;
+        };
+        let world = Arc::clone(world);
+        completion.on_complete(move |result| {
+            if result.is_err()
+                || world.get_block_state(pos) != state
+                || !world
+                    .get_block_entity(pos)
+                    .is_some_and(|current| Arc::ptr_eq(&current, &owner))
+            {
+                return;
+            }
+            let behavior = Self::new(state.get_block());
+            match continuation {
+                InputContinuation::Refresh => behavior.refresh_output_state(&world, pos, state),
+                InputContinuation::Neighbor => behavior.check_tick_on_neighbor(&world, pos, state),
+                InputContinuation::Placed => behavior.check_placed_input(&world, pos, state),
+            }
+        });
+    }
+
+    fn check_placed_input(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
+        let input = match Self::get_input_signal(world, pos, state) {
+            Ok(input) => input,
+            Err(error) => {
+                Self::defer_input(error, world, pos, state, InputContinuation::Placed);
+                return;
+            }
+        };
+        let alternate = DiodeBlock::get_alternate_signal(world.as_ref(), pos, state, false);
+        self.diode.set_placed_by(
+            world,
+            pos,
+            Self::should_turn_on_from_signals(input, alternate, state.get_value(MODE_COMPARATOR)),
+        );
     }
 }
 
@@ -293,8 +361,7 @@ impl BlockBehavior for ComparatorBlock {
         pos: BlockPos,
         _source: &PlacementSource<'_>,
     ) {
-        self.diode
-            .set_placed_by(world, pos, Self::should_turn_on(world, pos, state));
+        self.check_placed_input(world, pos, state);
     }
 
     fn on_place(
@@ -387,9 +454,11 @@ impl BlockBehavior for ComparatorBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::entity::HangingEntity;
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::init_vanilla_registry;
+    use steel_registry::item_stack::ItemStack;
     use steel_registry::{vanilla_blocks, vanilla_entities};
     use steel_utils::ChunkPos;
 
@@ -415,11 +484,19 @@ mod tests {
         }
     }
 
-    impl ItemFrame for TestItemFrame {
+    impl HangingEntity for TestItemFrame {
+        fn pop_box(&self) -> WorldAabb {
+            self.bounding_box()
+        }
         fn direction(&self) -> Direction {
             self.direction
         }
+    }
 
+    impl ItemFrame for TestItemFrame {
+        fn item(&self) -> ItemStack {
+            ItemStack::empty()
+        }
         fn analog_output(&self) -> i32 {
             self.analog_output
         }

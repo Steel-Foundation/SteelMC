@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use crate::loot::{LOOT_TABLES, LootResult};
+use crate::loot::{LOOT_TABLES, OperationResult};
 use steel_math::{DEGREE_90, RAD_TO_DEG_F64, round_f32, trig};
 use steel_registry::data_components::vanilla_components::{
     BLOCKS_ATTACKS, DEATH_PROTECTION, USE_EFFECTS,
@@ -3518,7 +3518,7 @@ fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(
     source: &DamageSource,
     killed_by_player: bool,
     rng: &mut RandomSource,
-) -> LootResult<Vec<ItemStack>> {
+) -> OperationResult<Vec<ItemStack>> {
     let causing_entity = source.causing_entity().map(AsRef::as_ref);
     let direct_entity = source.direct_entity().map(AsRef::as_ref);
     let last_damage_player = if killed_by_player {
@@ -3598,7 +3598,7 @@ pub(crate) fn shearing_loot_items_with_rng<E: LivingEntity + ?Sized>(
     loot_table: LootTableRef,
     tool: &ItemStack,
     rng: &mut RandomSource,
-) -> LootResult<Vec<ItemStack>> {
+) -> OperationResult<Vec<ItemStack>> {
     let position = entity.position();
     let equipment = living_loot_equipment(entity);
     let mut context = LootContext::new(rng)

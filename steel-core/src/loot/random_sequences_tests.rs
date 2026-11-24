@@ -1,5 +1,5 @@
 use super::*;
-use crate::loot::vanilla_loot_tables;
+use crate::loot::{OperationError, vanilla_loot_tables};
 use crate::world::World;
 use std::env::temp_dir;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -137,7 +137,7 @@ fn recursive_access_reports_an_error_without_waiting() {
         .with_random(&key, |_| {
             assert!(matches!(
                 sequences.with_random(&key, |_| Ok(())),
-                Err(LootError::RandomUnavailable(_))
+                Err(OperationError::RandomUnavailable(_))
             ));
             Ok(())
         })

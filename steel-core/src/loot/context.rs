@@ -1,11 +1,12 @@
-use super::{LootError, LootResult, LootTableBehaviorRegistry};
+use super::visitation::LootVisitation;
+use super::{LootTableBehaviorRegistry, OperationError, OperationResult};
 use crate::{block_entity::BlockEntity, entity::Entity, world::World};
 use glam::DVec3;
 use steel_registry::{
     DyeColor, REGISTRY, RegistryExt, entity_variant::MooshroomVariant, equipment::EquipmentSlot,
     item_stack::ItemStack,
 };
-use steel_utils::{BlockStateId, Identifier, random::RandomSource};
+use steel_utils::{BlockStateId, Identifier, random::Random};
 
 /// Entity target for loot context lookups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,8 +30,8 @@ pub struct LootContext<'a> {
     /// World access for compiled gameplay operations.
     pub world: Option<&'a World>,
     /// Random number generator.
-    pub rng: &'a mut RandomSource,
-    pub(super) visited: Vec<Identifier>,
+    pub rng: &'a mut (dyn Random + Send),
+    pub(super) visited: LootVisitation,
     /// Optional callable registry override, useful for custom compiled tables.
     pub tables: Option<&'a LootTableBehaviorRegistry>,
     /// Luck value (e.g., from Luck of the Sea enchantment).
@@ -170,11 +171,11 @@ pub struct DamageSourceInfo<'a> {
 
 impl<'a> LootContext<'a> {
     /// Create a new loot context with just an RNG.
-    pub const fn new(rng: &'a mut RandomSource) -> Self {
+    pub fn new(rng: &'a mut (dyn Random + Send)) -> Self {
         Self {
             world: None,
             rng,
-            visited: Vec::new(),
+            visited: LootVisitation::default(),
             tables: None,
             luck: 0.0,
             block_state: None,
@@ -330,9 +331,9 @@ impl<'a> LootContext<'a> {
 
 impl LootContext<'_> {
     /// Fails an unsupported operation with the currently evaluating table.
-    pub fn unsupported<T>(&self, operation: &'static str) -> LootResult<T> {
-        Err(LootError::Unsupported {
-            table: self.visited.last().cloned(),
+    pub fn unsupported<T>(&self, operation: &'static str) -> OperationResult<T> {
+        Err(OperationError::Unsupported {
+            table: self.visited.current(),
             operation,
         })
     }

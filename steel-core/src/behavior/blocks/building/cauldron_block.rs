@@ -4,6 +4,7 @@
 //! this module implements the complete vanilla analog-output contract shared by
 //! empty, water, and powder-snow cauldrons.
 
+use crate::loot::OperationResult;
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
@@ -54,8 +55,8 @@ impl BlockBehavior for CauldronBlock {
         _world: &World,
         _pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
-        0
+    ) -> OperationResult<i32> {
+        Ok(0)
     }
 
     fn is_pathfindable(
@@ -129,8 +130,8 @@ impl BlockBehavior for LayeredCauldronBlock {
         _world: &World,
         _pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
-        i32::from(state.get_value(LEVEL_CAULDRON))
+    ) -> OperationResult<i32> {
+        Ok(i32::from(state.get_value(LEVEL_CAULDRON)))
     }
 
     fn is_pathfindable(
@@ -188,12 +189,9 @@ mod tests {
         let empty_behavior = BLOCK_BEHAVIORS.get_behavior(empty.get_block());
         assert!(empty_behavior.has_analog_output_signal(empty));
         assert_eq!(
-            empty_behavior.get_analog_output_signal(
-                empty,
-                world.world.as_ref(),
-                pos,
-                Direction::North,
-            ),
+            empty_behavior
+                .get_analog_output_signal(empty, world.world.as_ref(), pos, Direction::North,)
+                .expect("analog output"),
             0,
         );
 
@@ -203,12 +201,9 @@ mod tests {
                 .set_value(LEVEL_CAULDRON, level_value);
             let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
             assert_eq!(
-                behavior.get_analog_output_signal(
-                    state,
-                    world.world.as_ref(),
-                    pos,
-                    Direction::North
-                ),
+                behavior
+                    .get_analog_output_signal(state, world.world.as_ref(), pos, Direction::North)
+                    .expect("analog output"),
                 i32::from(level_value),
             );
         }

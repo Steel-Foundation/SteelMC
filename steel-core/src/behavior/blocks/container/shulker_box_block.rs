@@ -1,3 +1,4 @@
+use crate::loot::OperationResult;
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
@@ -258,19 +259,17 @@ impl BlockBehavior for ShulkerBoxBlock {
         world: &World,
         pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
+    ) -> OperationResult<i32> {
         let Some(container_ref) = world
             .get_block_entity(pos)
             .and_then(ContainerRef::from_block_entity)
         else {
-            return 0;
+            return Ok(0);
         };
-        let Ok(guard) = ContainerLockGuard::lock_all(&[&container_ref]) else {
-            // TODO: Handle preparation failures without reporting an empty
-            // inventory if lazy access is added to shulker-box storage.
-            return 0;
-        };
-        calculate_redstone_signal_from_containers(guard.get(container_ref.container_id()))
+        let guard = ContainerLockGuard::lock_all(&[&container_ref])?;
+        Ok(calculate_redstone_signal_from_containers(
+            guard.get(container_ref.container_id()),
+        ))
     }
 
     fn fits_inside_container_items(&self) -> bool {

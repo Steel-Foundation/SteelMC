@@ -346,6 +346,14 @@ impl<N: VanillaPostNoiseStateType + NoiseSpawnTarget> ChunkGenerator for Vanilla
             .sample(quart_x, quart_y, quart_z)
     }
 
+    fn noise_biomes(&self, positions: &[IVec3]) -> Vec<BiomeRef> {
+        let mut sampler = self.biome_source.chunk_sampler();
+        positions
+            .iter()
+            .map(|pos| sampler.sample_without_biome_cache(pos.x, pos.y, pos.z))
+            .collect()
+    }
+
     fn initial_spawn_search_origin(&self) -> BlockPos {
         N::initial_spawn_search_origin(&self.biome_source, self.seed as u64)
     }
@@ -1142,6 +1150,12 @@ pub(crate) fn fuzzed_biome_at_block<F: FnMut(IVec3) -> u16>(
     pos: BlockPos,
     mut quart_biome: F,
 ) -> u16 {
+    quart_biome(fuzzed_biome_quart_position(biome_zoom_seed, pos))
+}
+
+/// Selects the quart cell before its biome is read, allowing callers to request
+/// the cell's chunk without substituting generator output for persisted biomes.
+pub(crate) fn fuzzed_biome_quart_position(biome_zoom_seed: i64, pos: BlockPos) -> IVec3 {
     let abs = pos.0 - IVec3::splat(2);
     let parent = IVec3::new(abs.x >> 2, abs.y >> 2, abs.z >> 2);
     let fract = DVec3::new(
@@ -1188,7 +1202,7 @@ pub(crate) fn fuzzed_biome_at_block<F: FnMut(IVec3) -> u16>(
         }
     }
 
-    let b = IVec3::new(
+    IVec3::new(
         if (min_i & 4) == 0 {
             parent.x
         } else {
@@ -1204,8 +1218,7 @@ pub(crate) fn fuzzed_biome_at_block<F: FnMut(IVec3) -> u16>(
         } else {
             parent.z + 1
         },
-    );
-    quart_biome(b)
+    )
 }
 
 #[cfg(test)]

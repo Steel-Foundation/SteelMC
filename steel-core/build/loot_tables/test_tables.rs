@@ -1,5 +1,5 @@
 //! Synthetic plugin tables used only to exercise the compiled-function contract.
-use super::{Compiler, TokenStream, identifier, quote};
+use super::{Compiler, TokenStream, identifier, model::LootTable, quote};
 use serde_json::json;
 
 fn inputs() -> impl IntoIterator<Item = (&'static str, serde_json::Value)> {
@@ -102,14 +102,42 @@ fn inputs() -> impl IntoIterator<Item = (&'static str, serde_json::Value)> {
     ]
 }
 
-pub(super) fn build() -> TokenStream {
+fn exploration_inputs() -> impl IntoIterator<Item = (&'static str, serde_json::Value)> {
+    [
+        (
+            "EXPLORATION_DIRECT_DESTINATION",
+            json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:map","modifier":{"type":"minecraft:exploration_map","destination":"minecraft:buried_treasure"}}]}]}),
+        ),
+        (
+            "EXPLORATION_DESTINATION_LIST",
+            json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:map","modifier":{"type":"minecraft:exploration_map","destination":["minecraft:buried_treasure","minecraft:monument"]}}]}]}),
+        ),
+        (
+            "EXPLORATION_EMPTY_DESTINATION_LIST",
+            json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:map","modifier":{"type":"minecraft:exploration_map","destination":[]}}]}]}),
+        ),
+    ]
+}
+
+pub(super) fn build(vanilla_tables: &[(String, LootTable)]) -> TokenStream {
     let mut compiler = Compiler::default();
+    let mut resumable = Compiler {
+        resumable: true,
+        ..Compiler::default()
+    };
     let mut declarations = Vec::new();
     let mut registrations = Vec::new();
-    for (name, table) in inputs() {
-        let function = compiler.table(
-            &serde_json::from_value(table).unwrap_or_else(|e| panic!("Fixture {name}: {e}")),
-        );
+    let mut async_registrations = Vec::new();
+    for (name, table) in inputs()
+        .into_iter()
+        .chain(exploration_inputs())
+        .chain(super::location_test_tables::inputs())
+        .chain(super::name_test_tables::inputs())
+    {
+        let table = serde_json::from_value(table).unwrap_or_else(|e| panic!("Fixture {name}: {e}"));
+        let function = (!super::requirements::requires_resumption(&table, vanilla_tables))
+            .then(|| compiler.table(&table));
+        let async_function = resumable.table(&table);
         let symbol = super::ident(name);
         let key = identifier(&format!("steel:test/{}", name.to_lowercase()));
         declarations.push(quote! {
@@ -119,16 +147,39 @@ pub(super) fn build() -> TokenStream {
                 random_sequence: None,
             };
         });
-        registrations.push(quote! { registry.register(&#symbol, #function); });
+        if let Some(function) = function {
+            registrations.push(quote! { registry.register_pair(&#symbol, #function, super::resumable::#async_function); });
+        } else {
+            async_registrations
+                .push(quote! { registry.register_async(&#symbol, #async_function); });
+        }
     }
     let definitions = compiler.definitions;
+    let async_definitions = resumable.definitions;
     quote! {
         #[cfg(test)]
         pub(super) mod fixtures {
-            use super::*;
+            use super::{LootContext, ItemStack, vanilla_items, REGISTRY, TaggedRegistryExt, LootContextEntity, vanilla_loot_tables, LootTableBehaviorRegistry};
             #(#declarations)*
-            #definitions
-            pub(crate) fn register(registry: &mut LootTableBehaviorRegistry) { #(#registrations)* }
+            mod direct {
+                use super::*;
+                use crate::loot::{LootCandidate, LootOutput, OperationResult, with_modifier};
+                const fn identity(_: &mut LootContext<'_>, _: &mut ItemStack) -> OperationResult<()> { Ok(()) }
+                #definitions
+                pub(super) fn register(registry: &mut LootTableBehaviorRegistry) { #(#registrations)* }
+            }
+            mod resumable {
+                use super::*;
+                use crate::loot::{AsyncLootCandidate as LootCandidate, LootAsyncModifier as LootModifier,
+                    LootAsyncOutput as LootOutput, ModifiedAsyncLootOutput as ModifiedLootOutput, LootFuture};
+                fn identity<'a>(_: &'a mut LootContext<'_>, _: &'a mut ItemStack) -> LootFuture<'a> { Box::pin(async { Ok(()) }) }
+                #async_definitions
+                pub(super) fn register(registry: &mut LootTableBehaviorRegistry) { #(#async_registrations)* }
+            }
+            pub(crate) fn register(registry: &mut LootTableBehaviorRegistry) {
+                direct::register(registry);
+                resumable::register(registry);
+            }
         }
     }
 }

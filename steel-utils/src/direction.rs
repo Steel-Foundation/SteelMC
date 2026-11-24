@@ -39,6 +39,18 @@ impl ReadFrom for Direction {
 }
 
 impl Direction {
+    /// Horizontal data index; vertical directions use vanilla's sentinel `-1`.
+    #[must_use]
+    pub const fn get_2d_data_value(self) -> i32 {
+        match self {
+            Self::Down | Self::Up => -1,
+            Self::North => 2,
+            Self::South => 0,
+            Self::West => 1,
+            Self::East => 3,
+        }
+    }
+
     /// Vanilla `Direction.get3DDataValue()` like Down=0,…,East=5.
     #[must_use]
     pub const fn get_3d_data_value(self) -> i32 {

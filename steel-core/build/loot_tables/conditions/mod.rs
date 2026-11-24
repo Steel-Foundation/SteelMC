@@ -4,11 +4,13 @@ use serde::Deserialize;
 mod block;
 mod composite;
 mod entity;
+mod location;
 mod random;
 
 pub use block::{MatchBlock, MatchTool, SurvivesExplosion};
 pub use composite::{AllOf, AnyOf, Inverted};
-pub use entity::{DamageSourceProperties, EntityProperties, KilledByPlayer, LocationCheck};
+pub use entity::{DamageSourceProperties, EntityProperties, KilledByPlayer};
+pub use location::LocationCheck;
 pub use random::{RandomChance, RandomChanceWithEnchantedBonus, TableBonus};
 impl Compiler {
     pub(super) fn condition(&mut self, condition: Option<&Holder<Condition>>) -> TokenStream {
@@ -60,8 +62,6 @@ pub enum Condition {
     EntityProperties(EntityProperties),
     #[serde(rename = "minecraft:damage_source_properties")]
     DamageSourceProperties(DamageSourceProperties),
-    // Location evaluation is explicitly unsupported; its predicate payload is
-    // consumed without claiming to validate or implement that separate codec.
     #[serde(rename = "minecraft:location_check")]
     LocationCheck(LocationCheck),
 }

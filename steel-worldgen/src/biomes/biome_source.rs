@@ -206,6 +206,23 @@ pub enum ChunkBiomeSampler<'a> {
 }
 
 impl ChunkBiomeSampler<'_> {
+    /// Reuses density caches while retaining standalone-query biome tie-breaking.
+    /// A search hint from an earlier position must not select an equidistant leaf.
+    #[inline]
+    pub fn sample_without_biome_cache(
+        &mut self,
+        quart_x: i32,
+        quart_y: i32,
+        quart_z: i32,
+    ) -> BiomeRef {
+        match self {
+            Self::Overworld(sampler) => sampler.biome_cache = None,
+            Self::Nether(sampler) => sampler.biome_cache = None,
+            Self::End(_) | Self::Fixed(_) => {}
+        }
+        self.sample(quart_x, quart_y, quart_z)
+    }
+
     /// Get the biome at the given quart position.
     #[inline]
     pub fn sample(&mut self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef {
@@ -503,6 +520,38 @@ impl EndChunkBiomeSampler<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn independent_queries_reuse_density_caches_without_changing_biome_selection() {
+        for source in [
+            BiomeSourceKind::overworld(13579),
+            BiomeSourceKind::nether(13579),
+            BiomeSourceKind::end(13579),
+            BiomeSourceKind::fixed(&vanilla_biomes::PLAINS),
+        ] {
+            let positions = (-16..16)
+                .flat_map(|x| {
+                    [-4096, -17, 0, 15, 31, 4096]
+                        .into_iter()
+                        .flat_map(move |z| [-16, 0, 16, 80].into_iter().map(move |y| (x, y, z)))
+                })
+                .collect::<Vec<_>>();
+            let mut reused = source.chunk_sampler();
+            for &(x, y, z) in positions.iter().chain(positions.iter().rev()) {
+                let expected = source.chunk_sampler().sample(x, y, z);
+                assert_eq!(
+                    reused.sample_without_biome_cache(x, y, z),
+                    expected,
+                    "quart={x},{y},{z}"
+                );
+                assert_eq!(
+                    reused.sample_without_biome_cache(x, y, z),
+                    expected,
+                    "repeated quart={x},{y},{z}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn fixed_source_search_draws_like_vanilla() {

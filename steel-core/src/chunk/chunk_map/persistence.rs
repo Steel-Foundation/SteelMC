@@ -3,15 +3,17 @@ use super::{
     ClearedBlockEntities, FinalizedBlockEntityUnload, FxHashSet, instrument, io, mem,
 };
 use crate::chunk_saver::PreparedChunkSave;
+use crate::world::World;
 use tokio::sync::oneshot;
 
 impl ChunkMap {
     async fn prepare_chunk_save_on_pool(
         self: &Arc<Self>,
         chunk_holder: &Arc<ChunkHolder>,
+        world: &Arc<World>,
     ) -> Option<PreparedChunkSave> {
         let (sender, receiver) = oneshot::channel();
-        let map = Arc::clone(self);
+        let world = Arc::clone(world);
         let holder = Arc::clone(chunk_holder);
         self.chunk_encoding_pool.spawn(move || {
             let chunk_pos = holder.get_pos();
@@ -33,7 +35,6 @@ impl ChunkMap {
                     return;
                 };
 
-                let world = map.world_gen_context.world();
                 let runtime_entities = world
                     .entity_manager()
                     .get_saveable_entities_for_chunk(chunk_pos);
@@ -78,21 +79,23 @@ impl ChunkMap {
     }
 
     /// Saves a chunk to disk. Does not remove from `unloading_chunks`.
-    #[instrument(level = "trace", skip(self, chunk_holder, _save_dependency), fields(chunk = ?chunk_holder.get_pos()))]
+    #[instrument(level = "trace", skip(self, chunk_holder, _save_dependency, world), fields(chunk = ?chunk_holder.get_pos()))]
     pub(super) async fn save_chunk(
         self: &Arc<Self>,
         chunk_holder: &Arc<ChunkHolder>,
         _save_dependency: ChunkSaveDependency,
+        world: Arc<World>,
     ) {
         let chunk_pos = chunk_holder.get_pos();
+        let lifecycle = Arc::clone(&world.loot_lifecycle.read());
+        let _barrier = lifecycle.save_barrier().await;
         self.flush_queued_light_changes_touching_chunk_for_save(chunk_pos)
             .await;
 
         // Save chunk data if dirty. Preparation runs on the shared chunk encoding
         // pool so snapshot locking and persistence conversion never block Tokio workers.
-        if let Some(mut prepared) = self.prepare_chunk_save_on_pool(chunk_holder).await {
+        if let Some(mut prepared) = self.prepare_chunk_save_on_pool(chunk_holder, &world).await {
             let handled_runtime_entity_ids = mem::take(&mut prepared.handled_runtime_entity_ids);
-            let world = self.world_gen_context.world();
             match self
                 .storage
                 .save_chunk_data(prepared, self.chunk_encoding_pool.as_ref())
@@ -124,7 +127,12 @@ impl ChunkMap {
     /// - If not dirty: release region handle and remove
     #[instrument(level = "trace", skip(self))]
     pub(super) fn process_unloads(self: &Arc<Self>) {
+        let world = self.world_gen_context.world();
         self.propagate_queued_light_changes();
+        let lifecycle = Arc::clone(&world.loot_lifecycle.read());
+        let Some(_barrier) = lifecycle.try_save_barrier() else {
+            return;
+        };
 
         let mut finalized = Vec::new();
         {
@@ -141,19 +149,19 @@ impl ChunkMap {
                 let is_dirty = holder
                     .try_chunk(ChunkStatus::StructureStarts)
                     .is_some_and(Chunk::is_dirty);
-                let has_save_pending_entities = self
-                    .world_gen_context
-                    .world()
-                    .entity_manager()
-                    .has_save_pending_for_chunk(*pos);
+                let has_save_pending_entities =
+                    world.entity_manager().has_save_pending_for_chunk(*pos);
 
                 if is_dirty || has_save_pending_entities {
                     let save_dependency = holder.add_save_dependency();
                     let holder_clone = Arc::clone(holder);
                     let map_clone = Arc::clone(self);
+                    let save_world = Arc::clone(&world);
                     self.task_tracker.spawn_on(
                         async move {
-                            map_clone.save_chunk(&holder_clone, save_dependency).await;
+                            map_clone
+                                .save_chunk(&holder_clone, save_dependency, save_world)
+                                .await;
                         },
                         self.chunk_runtime.handle(),
                     );
@@ -166,7 +174,6 @@ impl ChunkMap {
             });
         }
 
-        let world = self.world_gen_context.world();
         for (pos, holder, has_chunk) in finalized {
             let cleared = if has_chunk {
                 holder.try_chunk(ChunkStatus::Empty).map_or_else(
@@ -222,6 +229,9 @@ impl ChunkMap {
         reason = "shutdown persistence keeps chunk coverage and entity auditing in one pass"
     )]
     pub async fn save_all_chunks(self: &Arc<Self>) -> io::Result<usize> {
+        let world = self.world_gen_context.world();
+        let lifecycle = Arc::clone(&world.loot_lifecycle.read());
+        let _barrier = lifecycle.save_barrier().await;
         let mut saved_count = 0;
 
         self.flush_queued_light_changes_for_save().await;
@@ -256,7 +266,6 @@ impl ChunkMap {
                 let Some(status) = holder.published_status() else {
                     continue;
                 };
-                let world = self.world_gen_context.world();
                 let runtime_entities = world
                     .entity_manager()
                     .get_saveable_entities_for_chunk(chunk_pos);
@@ -280,7 +289,6 @@ impl ChunkMap {
 
             let mut prepared = prepared;
             let handled_runtime_entity_ids = mem::take(&mut prepared.handled_runtime_entity_ids);
-            let world = self.world_gen_context.world();
             let _save_dependency = holder.add_save_dependency();
             match self
                 .storage

@@ -1,3 +1,4 @@
+use crate::loot::OperationResult;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -371,8 +372,8 @@ impl BlockBehavior for RespawnAnchorBlock {
         _world: &World,
         _pos: BlockPos,
         _direction: Direction,
-    ) -> i32 {
-        Self::analog_output_signal(state.get_value(CHARGES))
+    ) -> OperationResult<i32> {
+        Ok(Self::analog_output_signal(state.get_value(CHARGES)))
     }
 }
 

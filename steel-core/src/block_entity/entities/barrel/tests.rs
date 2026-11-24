@@ -247,7 +247,13 @@ fn missing_loot_table_fills_as_empty_once_and_preserves_existing_items() {
             .container
             .lock()
             .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
-        *fixture.world.loot_random.lock() = RandomSource::Legacy(LegacyRandom::from_seed(42));
+        fixture
+            .world
+            .with_loot_random(None, 0, |random| {
+                *random = RandomSource::Legacy(LegacyRandom::from_seed(42));
+                Ok(())
+            })
+            .expect("reset world random");
         let mut expected_random = LegacyRandom::from_seed(42);
         if seed == 0 {
             // Vanilla fill shuffles empty slots even when the table has no pools.
@@ -273,7 +279,10 @@ fn missing_loot_table_fills_as_empty_once_and_preserves_existing_items() {
         assert!(saved.get("LootTable").is_none());
         assert!(saved.get("Items").is_some());
         assert_eq!(
-            fixture.world.loot_random.lock().next_i64(),
+            fixture
+                .world
+                .with_loot_random(None, 0, |random| Ok(random.next_i64()))
+                .expect("world random"),
             expected_random.next_i64()
         );
 
@@ -307,7 +316,8 @@ fn comparator_access_unpacks_pending_loot_without_recursive_locking() {
             world.as_ref(),
             pos,
             Direction::North,
-        );
+        )
+        .expect("analog output");
     assert!(signal > 0);
     assert!(loot.loot_table().is_none());
 }

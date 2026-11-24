@@ -15,15 +15,16 @@ mod components;
 mod control;
 mod count;
 mod deferred;
+mod exploration_map;
+mod set_name;
+pub use exploration_map::ExplorationMap;
+pub use set_name::SetName;
 
 pub use bonus::ApplyBonus;
 pub use components::{CopyComponents, SetDamage, SetEnchantments, SetInstrument, SetPotion};
 pub use control::{Discard, ExplosionDecay, Filtered, FurnaceSmelt, Sequence};
 pub use count::{EnchantedCountIncrease, LimitCount, SetCount, SetOminousBottleAmplifier};
-pub use deferred::{
-    CopyState, EnchantRandomly, EnchantWithLevels, ExplorationMap, SetComponents, SetName,
-    SetStewEffect,
-};
+pub use deferred::{CopyState, EnchantRandomly, EnchantWithLevels, SetComponents, SetStewEffect};
 
 impl Compiler {
     pub(super) fn modifier(&mut self, modifier: Option<&Modifier>) -> Ident {
@@ -32,13 +33,26 @@ impl Compiler {
         };
         let name = self.name("modifier");
         let body = self.modifier_body(modifier);
-        self.definitions.extend(quote! {
-            fn #name(ctx: &mut LootContext<'_>, item: &mut ItemStack) -> LootResult<()> {
-                let _ = (&ctx, &item);
-                #body
-                Ok(())
+        let definition = if self.resumable {
+            quote! {
+                fn #name<'a>(ctx: &'a mut LootContext<'_>, item: &'a mut ItemStack) -> LootFuture<'a> {
+                    Box::pin(async move {
+                        let _ = (&ctx, &item);
+                        #body
+                        Ok(())
+                    })
+                }
             }
-        });
+        } else {
+            quote! {
+                fn #name(ctx: &mut LootContext<'_>, item: &mut ItemStack) -> OperationResult<()> {
+                    let _ = (&ctx, &item);
+                    #body
+                    Ok(())
+                }
+            }
+        };
+        self.definitions.extend(definition);
         name
     }
 
@@ -47,9 +61,12 @@ impl Compiler {
             Modifier::Sequence(modifiers) => {
                 let functions = modifiers
                     .iter()
-                    .map(|modifier| self.modifier(Some(modifier)))
+                    .map(|modifier| {
+                        let function = self.modifier(Some(modifier));
+                        self.call(quote! { #function(ctx, item) })
+                    })
                     .collect::<Vec<_>>();
-                quote! { #(#functions(ctx, item)?;)* }
+                quote! { #(#functions?;)* }
             }
             Modifier::Reference(key) => {
                 self.with_reference("item_modifier", key, Self::modifier_body)

@@ -6,7 +6,7 @@ use std::{
     path::Path,
     sync::{
         Arc, LazyLock, Weak,
-        atomic::{AtomicBool, AtomicI8, Ordering},
+        atomic::{AtomicBool, AtomicI8, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -19,6 +19,7 @@ use crate::chunk::light::{
 };
 use crate::chunk::status::ChunkStatus;
 use crate::entity::damage::DamageHistory;
+use crate::maps::MapStorage;
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
 use crate::world::game_event::{
@@ -43,7 +44,8 @@ use steel_protocol::{
     packets::game::CSetTime,
 };
 
-use crate::loot::{LootContext, random_sequences::RandomSequences};
+use crate::loot::{LootContext, LootLifecycle, RandomStream, random_sequences::RandomSequences};
+use crate::server::jobs::ServerJobQueue;
 use rustc_hash::{FxHashMap, FxHashSet};
 use simdnbt::owned::NbtCompound;
 use steel_registry::biome::{BiomeRef, TemperatureModifier};
@@ -271,7 +273,10 @@ pub struct World {
     /// Per-world saved data storage.
     pub(crate) saved_data: SavedDataManager,
     pub(crate) random_sequences: SyncRwLock<Option<Arc<RandomSequences>>>,
-    pub(crate) loot_random: SyncMutex<RandomSource>,
+    pub(crate) loot_random: Arc<RandomStream>,
+    pub(crate) loot_lifecycle: SyncRwLock<Arc<LootLifecycle>>,
+    pub(crate) maps: SyncRwLock<Arc<MapStorage>>,
+    pub(crate) loot_jobs: SyncRwLock<Weak<ServerJobQueue>>,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
     /// Vanilla sleeping player counts for night-skip checks.
@@ -362,6 +367,10 @@ impl World {
         .await
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "world construction initializes its related state in one place"
+    )]
     pub(crate) async fn new_with_config_and_encoding_pool(
         chunk_runtime: Arc<Runtime>,
         key: Identifier,
@@ -451,9 +460,13 @@ impl World {
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
                 random_sequences: SyncRwLock::new(None),
-                loot_random: SyncMutex::new(RandomSource::Legacy(LegacyRandom::from_seed(
-                    rand::random(),
-                ))),
+                loot_random: Arc::new(RandomStream::new(
+                    RandomSource::Legacy(LegacyRandom::from_seed(rand::random())),
+                    Arc::new(AtomicU64::new(0)),
+                )),
+                loot_lifecycle: SyncRwLock::new(Arc::new(LootLifecycle::default())),
+                maps: SyncRwLock::new(Arc::new(MapStorage::default())),
+                loot_jobs: SyncRwLock::new(Weak::new()),
                 world_border: SyncMutex::new(world_border),
                 sleep_status: SyncMutex::new(sleep_status::SleepStatus::default()),
                 view_distance,

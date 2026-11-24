@@ -1654,6 +1654,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 .is_some_and(|parent| parent.id() == other.id())
     }
 
+    /// Returns the attachment-geometry capability used by frames and paintings.
+    fn as_hanging_entity(&self) -> Option<&dyn super::HangingEntity> {
+        try_as_dyn::<Self, dyn super::HangingEntity>(self)
+    }
+
     /// Returns this entity as a player when it is the concrete server player.
     fn as_player(&self) -> Option<&Player> {
         self.downcast_ref::<Player>()
