@@ -1956,12 +1956,12 @@ mod tests {
         for name in ["add", "remove"] {
             child(&dispatcher, default_group, name);
         }
-        let command_block_group = child(&dispatcher, groups, "command_block_group");
+        let command_block = child(&dispatcher, groups, "command_block");
         for name in ["add", "remove"] {
-            child(&dispatcher, command_block_group, name);
+            child(&dispatcher, command_block, name);
         }
-        let op_group = child(&dispatcher, groups, "op_group");
-        child(&dispatcher, op_group, "set");
+        let op = child(&dispatcher, groups, "op");
+        child(&dispatcher, op, "set");
 
         let collection = child(&dispatcher, perms, "collection");
         child(&dispatcher, collection, "export");
@@ -1990,8 +1990,8 @@ mod tests {
             "steel:command.perms.user.metadata.set",
             "steel:command.perms.group.inherit.add",
             "steel:command.perms.collection.add",
-            "steel:command.perms.groups.command_block_group.add",
-            "steel:command.perms.groups.op_group.set",
+            "steel:command.perms.groups.command_block.add",
+            "steel:command.perms.groups.op.set",
             "steel:command.perms.reload",
         ] {
             assert!(permissions.contains(&expected), "missing {expected}");
