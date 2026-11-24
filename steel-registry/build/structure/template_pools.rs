@@ -459,10 +459,6 @@ pub(crate) fn build() -> TokenStream {
         /// Returns all vanilla structure templates with their jigsaw data.
         ///
         /// Each entry is (template_key, template_data).
-        #[expect(
-            clippy::large_unopt_stack_frames,
-            reason = "generated data literal called once at startup; optimized builds don't keep it on the stack"
-        )]
         pub fn vanilla_templates() -> Vec<(Identifier, TemplateData)> {
             static TEMPLATES: &[(Identifier, [i32; 3], &[JigsawBlock])] = &[#template_tokens];
             TEMPLATES
