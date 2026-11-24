@@ -1,11 +1,25 @@
-//! Rotation helpers for `DVec3` using Steel trig lookup table.
+//! MC `Vec3` operations for `DVec3`.
 //!
-//! Port of `net.minecraft.world.phys.Vec3`'s axis rotations, with X and Z using
-//! a different rotation direction than `glam`'s builtin methods.
+//! Axis rotations use Steel trig lookup table X and Z rotate in the opposite direction from `glam`'s built-in methods.
 
 use glam::DVec3;
 
 use crate::trig;
+
+/// length below which mc normalization returns zero
+pub const NORMALIZE_EPSILON: f64 = 1.0e-5_f32 as f64;
+
+/// normalizes a vec with minecraft cutoff and componentwise division
+#[inline]
+#[must_use]
+pub fn normalize(vector: DVec3) -> DVec3 {
+    let length = vector.length();
+    if length < NORMALIZE_EPSILON {
+        DVec3::ZERO
+    } else {
+        vector / length
+    }
+}
 
 /// Returns the table-backed cosine and sine vanilla's rotations index.
 fn cos_sin(radians: f32) -> (f64, f64) {
