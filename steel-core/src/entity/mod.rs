@@ -875,6 +875,7 @@ pub use callback::{
     PlayerEntityCallback, RemovalReason,
 };
 pub use conversion::{AfterConversion, ConversionParams, ConversionType};
+pub use entities::mobs::hostile::zombie::Zombie;
 pub(crate) use entity::apply_entity_look_at;
 pub(crate) use entity::nbt_dvec3;
 pub(crate) use entity::position_rider_default;
@@ -927,8 +928,9 @@ pub(crate) use registry::SpawnRule;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
     AgeableMobGroupData, EntitySpawnError, EntitySpawnPlacement, EntitySpawnReason,
-    EntitySpawnRequest, SpawnGroupData, add_spawned_entity, apply_implicit_item_stack_components,
-    apply_item_stack_components, create_entity_instance, load_entity_recursive_owned, spawn_entity,
+    EntitySpawnRequest, SpawnGroupData, ZombieGroupData, add_spawned_entity,
+    apply_implicit_item_stack_components, apply_item_stack_components, create_entity_instance,
+    load_entity_recursive_owned, spawn_entity,
 };
 pub(crate) use spawn_placements::SpawnPlacements;
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};

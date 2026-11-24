@@ -13,6 +13,8 @@ pub type SyncMutex<T> = parking_lot::Mutex<T>;
 /// A synchronous read-write lock.
 pub type SyncRwLock<T> = parking_lot::RwLock<T>;
 
+pub use parking_lot::{MappedMutexGuard, MutexGuard};
+
 /// An asynchronous mutex.
 pub type AsyncMutex<T> = Mutex<T>;
 /// An asynchronous read-write lock.

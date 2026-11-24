@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
+use simdnbt::owned::NbtCompound;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_utils::types::Difficulty;
 
@@ -63,6 +65,135 @@ impl ConversionType {
         match self {
             Self::Single => convert_single(from, to_mob, to, params),
             Self::SplitOnDeath => convert_split_on_death(from, to_mob, params),
+        }
+    }
+}
+
+/// Progress reported by [`ConversionTracker::tick`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConversionStatus {
+    /// Not afflicted long enough to start converting.
+    Idle,
+    /// Currently counting down the conversion.
+    Converting,
+    /// The conversion timer elapsed; the caller must convert the mob this tick.
+    Converted,
+}
+
+/// Vanilla `ConversionTracker`: affliction and conversion timers for a mob that turns into
+/// another type after spending time in a fluid.
+///
+/// The "converting" flag is owned here and must be mirrored into the mob's synced entity data
+/// by the caller, matching vanilla where the flag is the synced value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConversionTracker {
+    total_affliction_time: i32,
+    total_conversion_time: i32,
+    affliction_time: i32,
+    conversion_time: i32,
+    converting: bool,
+}
+
+impl ConversionTracker {
+    #[must_use]
+    pub const fn new(total_affliction_time: i32, total_conversion_time: i32) -> Self {
+        Self {
+            total_affliction_time,
+            total_conversion_time,
+            affliction_time: 0,
+            conversion_time: 0,
+            converting: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_converting(&self) -> bool {
+        self.converting
+    }
+
+    #[must_use]
+    pub const fn affliction_time(&self) -> i32 {
+        self.affliction_time
+    }
+
+    #[must_use]
+    pub const fn conversion_time(&self) -> i32 {
+        self.conversion_time
+    }
+
+    pub const fn set_affliction_time(&mut self, affliction_time: i32) {
+        self.affliction_time = affliction_time;
+    }
+
+    pub const fn set_conversion_time(&mut self, conversion_time: i32) {
+        self.conversion_time = conversion_time;
+    }
+
+    /// Advances the timers by one tick.
+    ///
+    /// Vanilla also requires the mob to be alive, not no-AI, and on the server; those checks
+    /// belong to the caller because the tracker has no entity reference.
+    pub const fn tick(&mut self, afflicted: bool) -> ConversionStatus {
+        if !afflicted {
+            self.affliction_time = -1;
+            self.converting = false;
+            return ConversionStatus::Idle;
+        }
+
+        if !self.converting {
+            self.affliction_time += 1;
+            if self.affliction_time < self.total_affliction_time {
+                return ConversionStatus::Idle;
+            }
+            self.start_conversion(self.total_conversion_time);
+            return ConversionStatus::Converting;
+        }
+
+        self.conversion_time -= 1;
+        if self.conversion_time < 0 {
+            return ConversionStatus::Converted;
+        }
+        ConversionStatus::Converting
+    }
+
+    const fn start_conversion(&mut self, conversion_time: i32) {
+        self.conversion_time = conversion_time;
+        self.converting = true;
+    }
+
+    /// Writes the vanilla timer tags. An inactive timer is stored as `-1`.
+    pub fn save(
+        &self,
+        nbt: &mut NbtCompound,
+        afflicted: bool,
+        affliction_tag: &str,
+        conversion_tag: &str,
+    ) {
+        nbt.insert(
+            conversion_tag,
+            if self.converting {
+                self.conversion_time
+            } else {
+                -1
+            },
+        );
+        nbt.insert(
+            affliction_tag,
+            if afflicted { self.affliction_time } else { -1 },
+        );
+    }
+
+    /// Restores the vanilla timer tags.
+    pub fn load(
+        &mut self,
+        nbt: &BorrowedNbtCompoundView<'_, '_>,
+        affliction_tag: &str,
+        conversion_tag: &str,
+    ) {
+        self.affliction_time = nbt.int(affliction_tag).unwrap_or(0);
+        match nbt.int(conversion_tag).unwrap_or(-1) {
+            -1 => self.converting = false,
+            conversion_time => self.start_conversion(conversion_time),
         }
     }
 }
@@ -234,7 +365,11 @@ fn convert_common(from: &dyn Mob, to: &dyn Mob, params: ConversionParams) {
     to.set_custom_name(from.custom_name());
     to.set_custom_data(from.custom_data());
 
-    // Zombie door-breaking state belongs in the concrete conversion callback.
+    if let (Some(from_zombie), Some(to_zombie)) = (from.as_zombie(), to.as_zombie())
+        && from_zombie.can_break_doors()
+    {
+        to_zombie.set_can_break_doors(true);
+    }
 }
 
 fn copy_position(from: &dyn Entity, to: &dyn Entity) {
@@ -267,7 +402,7 @@ mod tests {
     use super::{ConversionParams, ConversionType};
     use crate::behavior::init_behaviors;
     use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::{PigEntity, ZombieEntity};
     use crate::entity::mob_effect::ABSORPTION_PER_LEVEL;
     use crate::entity::{
         AgeableMob, Mob, MobEffectInstance, SharedEntity, init_entities, next_entity_id,
@@ -738,5 +873,44 @@ mod tests {
             "the after-conversion callback runs on the new mob"
         );
         assert_eq!(cow.entity_type(), &vanilla_entities::COW);
+    }
+
+    #[test]
+    fn zombie_conversion_transfers_door_breaking() {
+        init_vanilla_registry();
+        init_entities();
+        let world_fixture = conversion_world();
+        let world = &world_fixture.world;
+
+        let zombie: SharedEntity = Arc::new(ZombieEntity::new(
+            &vanilla_entities::ZOMBIE,
+            next_entity_id(),
+            DVec3::new(1.0, 64.0, 1.0),
+            Arc::downgrade(world),
+        ));
+        world
+            .try_add_entity(Arc::clone(&zombie))
+            .expect("test zombie should attach to the loaded chunk");
+        zombie
+            .as_zombie()
+            .expect("zombie implements the Zombie capability")
+            .set_can_break_doors(true);
+
+        let husk = zombie
+            .downcast_ref::<ZombieEntity>()
+            .expect("zombie is concrete")
+            .convert_to(
+                &vanilla_entities::HUSK,
+                ConversionParams::single(true, true),
+                None,
+            )
+            .expect("zombie should convert to husk");
+
+        assert!(
+            husk.as_zombie()
+                .expect("husk implements the Zombie capability")
+                .can_break_doors(),
+            "conversion must carry the door-breaking flag to the new zombie"
+        );
     }
 }

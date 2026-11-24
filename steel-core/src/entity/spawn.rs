@@ -458,6 +458,37 @@ fn entity_y_offset(
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpawnGroupData {
     AgeableMob(AgeableMobGroupData),
+    Zombie(ZombieGroupData),
+}
+
+/// Vanilla `Zombie.ZombieGroupData`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ZombieGroupData {
+    is_baby: bool,
+    can_spawn_jockey: bool,
+}
+
+impl ZombieGroupData {
+    /// Creates zombie spawn group data.
+    #[must_use]
+    pub const fn new(is_baby: bool, can_spawn_jockey: bool) -> Self {
+        Self {
+            is_baby,
+            can_spawn_jockey,
+        }
+    }
+
+    /// Returns whether later zombies in this group spawn as babies.
+    #[must_use]
+    pub const fn is_baby(self) -> bool {
+        self.is_baby
+    }
+
+    /// Returns whether baby zombies may spawn riding a chicken.
+    #[must_use]
+    pub const fn can_spawn_jockey(self) -> bool {
+        self.can_spawn_jockey
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
