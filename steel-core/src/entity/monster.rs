@@ -1,6 +1,5 @@
 //! Shared hostile-mob markers, behavior, and spawn rules.
 
-use steel_math::fast_floor;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::dimension_type::MonsterSpawnLightLevel;
 use steel_registry::entity_type::EntityTypeRef;
@@ -69,15 +68,7 @@ pub trait Monster: PathfinderMob + Enemy {
 
     /// Adds two idle ticks in bright light to hasten despawning.
     fn update_no_action_time(&self) {
-        let Some(world) = self.level() else {
-            return;
-        };
-        let eye_pos = BlockPos::new(
-            fast_floor(self.position().x),
-            fast_floor(self.get_eye_y()),
-            fast_floor(self.position().z),
-        );
-        if world.light_level_dependent_magic_value(eye_pos) > LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE {
+        if self.get_light_level_dependent_magic_value() > LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE {
             self.set_no_action_time(self.no_action_time() + BRIGHT_LIGHT_NO_ACTION_TIME_INCREMENT);
         }
     }
