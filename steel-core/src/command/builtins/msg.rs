@@ -51,11 +51,68 @@ fn send_message(ctx: &SteelCommandContext<CommandSource>) -> Result<i32, Command
                 &translations::COMMANDS_MESSAGE_DISPLAY_OUTGOING
                     .message([player.display_name(), message.clone()])
                     .component(),
-            )
+            );
         }
 
         outgoing_message.send_to_player(player, &incoming_chat_type);
     }
 
     Ok(targets.len() as i32)
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::init_vanilla_registry;
+
+    use super::super::create_dispatcher;
+    use super::*;
+    use crate::command::brigadier::{CommandDispatcher, NodeId};
+
+    type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
+
+    fn child(dispatcher: &Dispatcher, parent: NodeId, name: &str) -> NodeId {
+        let Some(children) = dispatcher.children(parent) else {
+            panic!("parent node should exist");
+        };
+        let Some(child) = children.iter().copied().find(|child| {
+            dispatcher
+                .node(*child)
+                .is_some_and(|node| node.name() == name)
+        }) else {
+            panic!("child {name} should exist");
+        };
+        child
+    }
+
+    #[test]
+    fn msg_graph_matches_vanilla_argument_shape() {
+        init_vanilla_registry();
+        let Ok(dispatcher) = create_dispatcher() else {
+            panic!("built-in commands should register");
+        };
+
+        for root_name in ["msg", "tell", "w"] {
+            let root = child(&dispatcher, dispatcher.root(), root_name);
+
+            let targets = child(&dispatcher, root, "targets");
+            assert_eq!(
+                dispatcher
+                    .node(targets)
+                    .and_then(|node| node.argument_type()),
+                Some(&SteelArgumentType::players())
+            );
+
+            let message = child(&dispatcher, targets, "message");
+            assert_eq!(
+                dispatcher
+                    .node(message)
+                    .and_then(|node| node.argument_type()),
+                Some(&SteelArgumentType::message())
+            );
+            assert!(matches!(
+                dispatcher.node(message),
+                Some(node) if node.is_executable()
+            ));
+        }
+    }
 }
