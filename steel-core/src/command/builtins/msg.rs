@@ -16,6 +16,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("msg"), |_| command())
         .alias("tell")
         .alias("w")
+        .default_access()
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -31,15 +32,12 @@ fn send_message(ctx: &SteelCommandContext<CommandSource>) -> Result<i32, Command
     let targets = ctx.players("targets")?;
     let message = ctx.message("message")?.resolve_component(source)?;
 
-    // message to send to the target
     let incoming_chat_type =
         source.bind_chat_type(vanilla_chat_types::MSG_COMMAND_INCOMING.id() as i32);
 
     let outgoing_message = OutgoingChatMessage::from_command(source, "message", message.clone());
 
     for player in &targets {
-        // TODO: filter messages
-        // Message to send to the source
         let outgoing_chat_type = source
             .bind_chat_type(vanilla_chat_types::MSG_COMMAND_OUTGOING.id() as i32)
             .with_target_name(player.display_name());
@@ -56,7 +54,6 @@ fn send_message(ctx: &SteelCommandContext<CommandSource>) -> Result<i32, Command
             )
         }
 
-        // Send to target
         outgoing_message.send_to_player(player, &incoming_chat_type);
     }
 
