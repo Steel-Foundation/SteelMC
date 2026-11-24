@@ -7,11 +7,16 @@ use super::super::{
 };
 use crate::command::brigadier::CommandSyntaxError;
 use crate::command::execution::{SteelCommandContext, argument};
-use crate::entity::SharedEntity;
+use crate::entity::{MobEffectInstance, SharedEntity};
 use std::slice;
 use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::mob_effect_instance::INFINITE_EFFECT_DURATION;
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
+
+const BASE_DURATION: i32 = 600;
+const BASE_AMPLIFIER: i32 = 0;
+const BASE_HIDE_PARTICLES: bool = true;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("effect"), |_| command())
@@ -33,17 +38,74 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
             literal("give").then(
                 argument("targets", SteelArgumentType::entities()).then(
                     argument("effect", SteelArgumentType::mob_effect())
+                        .executes(|ctx| {
+                            give(ctx, BASE_DURATION, BASE_AMPLIFIER, BASE_HIDE_PARTICLES)
+                        })
                         .then(
-                            argument("seconds", ArgumentType::integer(1, 1000000)).then(
-                                argument("amplifier", ArgumentType::integer(0, 255))
-                                    .then(argument("hideParticles", ArgumentType::bool())),
-                            ),
+                            argument("seconds", ArgumentType::integer(1, 1_000_000))
+                                .executes(|ctx| {
+                                    give(
+                                        ctx,
+                                        ctx.integer("seconds")?,
+                                        BASE_AMPLIFIER,
+                                        BASE_HIDE_PARTICLES,
+                                    )
+                                })
+                                .then(
+                                    argument("amplifier", ArgumentType::integer(0, 255))
+                                        .executes(|ctx| {
+                                            give(
+                                                ctx,
+                                                ctx.integer("seconds")?,
+                                                ctx.integer("amplifier")?,
+                                                BASE_HIDE_PARTICLES,
+                                            )
+                                        })
+                                        .then(
+                                            argument("hideParticles", ArgumentType::bool())
+                                                .executes(|ctx| {
+                                                    give(
+                                                        ctx,
+                                                        ctx.integer("seconds")?,
+                                                        ctx.integer("amplifier")?,
+                                                        !ctx.boolean("hideParticles")?,
+                                                    )
+                                                }),
+                                        ),
+                                ),
                         )
                         .then(
-                            literal("infinite").then(
-                                argument("amplifier", ArgumentType::integer(0, 255))
-                                    .then(argument("hideParticles", ArgumentType::bool())),
-                            ),
+                            literal("infinite")
+                                .executes(|ctx| {
+                                    give(
+                                        ctx,
+                                        INFINITE_EFFECT_DURATION,
+                                        BASE_AMPLIFIER,
+                                        BASE_HIDE_PARTICLES,
+                                    )
+                                })
+                                .then(
+                                    argument("amplifier", ArgumentType::integer(0, 255))
+                                        .executes(|ctx| {
+                                            give(
+                                                ctx,
+                                                INFINITE_EFFECT_DURATION,
+                                                ctx.integer("amplifier")?,
+                                                BASE_HIDE_PARTICLES,
+                                            )
+                                        })
+                                        .then(
+                                            argument("hideParticles", ArgumentType::bool())
+                                                .executes(|ctx| {
+                                                    give(
+                                                        ctx,
+                                                        INFINITE_EFFECT_DURATION,
+                                                        ctx.integer("amplifier")?,
+                                                        !ctx.boolean("hideParticles")?,
+                                                    )
+                                                }),
+                                        ),
+                                ),
                         ),
                 ),
             ),
@@ -120,6 +182,61 @@ fn clear(
     Ok(count)
 }
 
+fn give(
+    ctx: &SteelCommandContext<CommandSource>,
+    duration_in_tick: i32,
+    amplifier: i32,
+    hide_particles: bool,
+) -> Result<i32, CommandSyntaxError> {
+    let entities = ctx.entities("targets")?;
+    let effect = ctx.mob_effect("effect")?;
+    let seconds = if duration_in_tick == -1 {
+        -1
+    } else {
+        duration_in_tick * 20
+    };
+
+    let count = entities
+        .iter()
+        .filter_map(|entity| entity.as_living_entity())
+        .filter(|living| {
+            living.add_mob_effect(
+                MobEffectInstance::with_duration(effect, seconds, amplifier)
+                    .with_visible(hide_particles),
+            )
+        })
+        .count() as i32;
+
+    if count == 0 {
+        return Err(CommandSyntaxError::dynamic(
+            translations::COMMANDS_EFFECT_GIVE_FAILED.msg().component(),
+        ));
+    }
+
+    let message = if count == 1 {
+        translations::COMMANDS_EFFECT_GIVE_SUCCESS_SINGLE
+            .message([
+                TextComponent::plain(effect.key.to_string()),
+                entities
+                    .first()
+                    .expect("entities should contain exactly one element")
+                    .display_name(),
+            ])
+            .component()
+    } else {
+        translations::COMMANDS_EFFECT_GIVE_SUCCESS_MULTIPLE
+            .message([
+                TextComponent::plain(effect.key.to_string()),
+                TextComponent::plain(entities.len().to_string()),
+            ])
+            .component()
+    };
+
+    ctx.source().send_success(&message, true);
+
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use steel_registry::init_vanilla_registry;
@@ -157,66 +274,33 @@ mod tests {
         assert!(give_node.is_restricted());
 
         effect_clear_node(&dispatcher, give);
-
-        let targets = child(&dispatcher, give, "targets");
-        assert_eq!(
-            dispatcher
-                .node(targets)
-                .and_then(|node| node.argument_type()),
-            Some(&SteelArgumentType::players())
-        );
-        assert!(matches!(
-            dispatcher.node(targets),
-            Some(node) if node.is_executable()
-        ));
-
-        let item = child(&dispatcher, targets, "item");
-        assert_eq!(
-            dispatcher.node(item).and_then(|node| node.argument_type()),
-            Some(&SteelArgumentType::item_predicate())
-        );
-        assert!(matches!(
-            dispatcher.node(item),
-            Some(node) if node.is_executable()
-        ));
-
-        let max_count = child(&dispatcher, item, "maxCount");
-        assert_eq!(
-            dispatcher
-                .node(max_count)
-                .and_then(|node| node.argument_type()),
-            Some(&SteelArgumentType::from(ArgumentType::integer(0, i32::MAX)))
-        );
-        assert!(matches!(
-            dispatcher.node(max_count),
-            Some(node) if node.is_executable()
-        ));
+        effect_give_node(&dispatcher, give);
     }
 
     fn effect_clear_node(
         dispatcher: &CommandDispatcher<CommandSource, SteelCommandRuntime>,
         give_node: NodeId,
     ) {
-        let clear = child(&dispatcher, give_node, "clear");
+        let clear = child(dispatcher, give_node, "clear");
 
-        let targets = child(&dispatcher, clear, "targets");
+        let targets = child(dispatcher, clear, "targets");
         assert_eq!(
             dispatcher
                 .node(targets)
                 .and_then(|node| node.argument_type()),
-            Some(&SteelArgumentType::from(SteelArgumentType::entities()))
+            Some(&SteelArgumentType::entities())
         );
         assert!(matches!(
             dispatcher.node(targets),
             Some(node) if node.is_executable()
         ));
 
-        let effect = child(&dispatcher, targets, "effect");
+        let effect = child(dispatcher, targets, "effect");
         assert_eq!(
             dispatcher
                 .node(effect)
                 .and_then(|node| node.argument_type()),
-            Some(&SteelArgumentType::from(SteelArgumentType::mob_effect()))
+            Some(&SteelArgumentType::mob_effect())
         );
         assert!(matches!(
             dispatcher.node(effect),
@@ -228,45 +312,36 @@ mod tests {
         dispatcher: &CommandDispatcher<CommandSource, SteelCommandRuntime>,
         give_node: NodeId,
     ) {
-        let give = child(&dispatcher, give_node, "give");
+        let give = child(dispatcher, give_node, "give");
+        let targets = child(dispatcher, give, "targets");
 
-        let targets = child(&dispatcher, give, "targets");
-        assert_eq!(
-            dispatcher
-                .node(targets)
-                .and_then(|node| node.argument_type()),
-            Some(&SteelArgumentType::from(SteelArgumentType::entities()))
-        );
-        assert!(matches!(
-            dispatcher.node(targets),
-            Some(node) if node.is_executable()
-        ));
-
-        let effect = child(&dispatcher, targets, "effect");
+        let effect = child(dispatcher, targets, "effect");
         assert_eq!(
             dispatcher
                 .node(effect)
                 .and_then(|node| node.argument_type()),
-            Some(&SteelArgumentType::from(SteelArgumentType::mob_effect()))
+            Some(&SteelArgumentType::mob_effect())
         );
         assert!(matches!(
             dispatcher.node(effect),
             Some(node) if node.is_executable()
         ));
 
-        let infinite = child(&dispatcher, effect, "infinite");
+        let infinite = child(dispatcher, effect, "infinite");
         assert!(matches!(
             dispatcher.node(infinite),
             Some(node) if node.is_executable()
         ));
         effect_give_infinite_or_second_node(dispatcher, infinite);
 
-        let seconds = child(&dispatcher, effect, "seconds");
+        let seconds = child(dispatcher, effect, "seconds");
         assert_eq!(
             dispatcher
                 .node(seconds)
                 .and_then(|node| node.argument_type()),
-            Some(&SteelArgumentType::from(ArgumentType::integer(1, 1000000)))
+            Some(&SteelArgumentType::from(ArgumentType::integer(
+                1, 1_000_000
+            )))
         );
         assert!(matches!(
             dispatcher.node(effect),
@@ -279,7 +354,7 @@ mod tests {
         dispatcher: &CommandDispatcher<CommandSource, SteelCommandRuntime>,
         parent_node: NodeId,
     ) {
-        let amplifier = child(&dispatcher, parent_node, "amplifier");
+        let amplifier = child(dispatcher, parent_node, "amplifier");
         assert_eq!(
             dispatcher
                 .node(amplifier)
@@ -291,7 +366,7 @@ mod tests {
             Some(node) if node.is_executable()
         ));
 
-        let hide_particles = child(&dispatcher, amplifier, "hideParticles");
+        let hide_particles = child(dispatcher, amplifier, "hideParticles");
         assert_eq!(
             dispatcher
                 .node(hide_particles)
