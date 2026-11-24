@@ -279,8 +279,12 @@ impl SteelArgumentType {
         Self::new(PermissionRuleParser::user_owned())
     }
 
-    pub(crate) fn group_rule() -> Self {
-        Self::new(PermissionGroupRuleParser::new())
+    pub(crate) fn add_group_rule() -> Self {
+        Self::new(PermissionGroupRuleParser::for_add())
+    }
+
+    pub(crate) fn remove_group_rule() -> Self {
+        Self::new(PermissionGroupRuleParser::for_remove())
     }
 
     pub(crate) fn permission_metadata() -> Self {
@@ -296,15 +300,39 @@ impl SteelArgumentType {
     }
 
     pub(crate) fn permission_group(require_existing: bool) -> Self {
-        Self::new(PermissionGroupParser { require_existing })
+        Self::new(PermissionGroupParser::new(require_existing))
+    }
+
+    pub(crate) fn default_group_add() -> Self {
+        Self::new(PermissionGroupParser::for_default_add())
+    }
+
+    pub(crate) fn default_group_remove() -> Self {
+        Self::new(PermissionGroupParser::for_default_remove())
+    }
+
+    pub(crate) fn command_block_group_add() -> Self {
+        Self::new(PermissionGroupParser::for_command_block_add())
+    }
+
+    pub(crate) fn command_block_group_remove() -> Self {
+        Self::new(PermissionGroupParser::for_command_block_remove())
+    }
+
+    pub(crate) fn op_group_set() -> Self {
+        Self::new(PermissionGroupParser::for_op())
     }
 
     pub(crate) fn permission_collection() -> Self {
         Self::new(PermissionCollectionParser)
     }
 
-    pub(crate) fn permission_collection_member() -> Self {
-        Self::new(PermissionCollectionMemberParser::new())
+    pub(crate) fn add_permission_collection_member() -> Self {
+        Self::new(PermissionCollectionMemberParser::for_add())
+    }
+
+    pub(crate) fn remove_permission_collection_member() -> Self {
+        Self::new(PermissionCollectionMemberParser::for_remove())
     }
 
     pub(crate) fn score_holders() -> Self {

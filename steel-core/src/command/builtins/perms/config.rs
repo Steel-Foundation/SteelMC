@@ -92,6 +92,48 @@ pub(super) fn set_default_group(
     Ok(true)
 }
 
+pub(super) fn set_command_block_group(
+    config: &mut PermissionGroupsConfig,
+    group: &str,
+    add: bool,
+) -> Result<bool, PermissionGroupEditError> {
+    if !config.groups.contains_key(group) {
+        return Err(PermissionGroupEditError::Missing(group.to_owned()));
+    }
+    let present = config
+        .command_block_groups
+        .iter()
+        .any(|command_block| command_block == group);
+    if add {
+        if present {
+            return Ok(false);
+        }
+        config.command_block_groups.push(group.to_owned());
+        return Ok(true);
+    }
+    if !present {
+        return Ok(false);
+    }
+    config
+        .command_block_groups
+        .retain(|command_block| command_block != group);
+    Ok(true)
+}
+
+pub(super) fn set_op_group(
+    config: &mut PermissionGroupsConfig,
+    group: &str,
+) -> Result<bool, PermissionGroupEditError> {
+    if !config.groups.contains_key(group) {
+        return Err(PermissionGroupEditError::Missing(group.to_owned()));
+    }
+    if config.op_group == group {
+        return Ok(false);
+    }
+    config.op_group = group.to_owned();
+    Ok(true)
+}
+
 pub(super) fn set_permission(
     config: &mut PermissionGroupsConfig,
     group: &str,
@@ -342,6 +384,43 @@ mod tests {
             config.groups["all"].deny,
             ["steel:build{domain=survival,plugin:region=spawn}"]
         );
+    }
+
+    #[test]
+    fn special_group_roles_are_idempotent_and_require_a_known_group() {
+        let mut config = PermissionGroupsConfig::default();
+        assert_eq!(set_op_group(&mut config, "moderators"), Ok(true));
+        assert_eq!(config.op_group, "moderators");
+        assert_eq!(set_op_group(&mut config, "moderators"), Ok(false));
+        assert!(matches!(
+            set_op_group(&mut config, "missing"),
+            Err(PermissionGroupEditError::Missing(_))
+        ));
+
+        assert_eq!(
+            set_command_block_group(&mut config, "moderators", true),
+            Ok(true)
+        );
+        assert_eq!(
+            set_command_block_group(&mut config, "moderators", true),
+            Ok(false)
+        );
+        assert_eq!(
+            config.command_block_groups,
+            [crate::permission::COMMAND_BLOCK_GROUPS[0], "moderators"]
+        );
+        assert_eq!(
+            set_command_block_group(&mut config, "moderators", false),
+            Ok(true)
+        );
+        assert_eq!(
+            config.command_block_groups,
+            crate::permission::COMMAND_BLOCK_GROUPS
+        );
+        assert!(matches!(
+            set_command_block_group(&mut config, "missing", true),
+            Err(PermissionGroupEditError::Missing(_))
+        ));
     }
 
     #[test]

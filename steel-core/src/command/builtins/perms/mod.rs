@@ -63,6 +63,9 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
         .subcommand_permission(["groups", "list"])
         .subcommand_permission(["groups", "default", "add"])
         .subcommand_permission(["groups", "default", "remove"])
+        .subcommand_permission(["groups", "command_block", "add"])
+        .subcommand_permission(["groups", "command_block", "remove"])
+        .subcommand_permission(["groups", "op", "set"])
         .subcommand_permission(["collection", "info"])
         .subcommand_permission(["collection", "export"])
         .subcommand_permission(["collection", "add"])
@@ -151,19 +154,19 @@ fn group_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
             .then(literal("delete").executes_suspended(group_delete))
             .then(
                 literal("allow").then(
-                    argument("permission", SteelArgumentType::group_rule())
+                    argument("permission", SteelArgumentType::add_group_rule())
                         .executes_suspended(group_allow),
                 ),
             )
             .then(
                 literal("deny").then(
-                    argument("permission", SteelArgumentType::group_rule())
+                    argument("permission", SteelArgumentType::add_group_rule())
                         .executes_suspended(group_deny),
                 ),
             )
             .then(
                 literal("unset").then(
-                    argument("permission", SteelArgumentType::group_rule())
+                    argument("permission", SteelArgumentType::remove_group_rule())
                         .executes_suspended(group_unset),
                 ),
             )
@@ -209,17 +212,35 @@ fn groups_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
             literal("default")
                 .then(
                     literal("add").then(
-                        argument("group", SteelArgumentType::permission_group(true))
+                        argument("group", SteelArgumentType::default_group_add())
                             .executes_suspended(default_group_add),
                     ),
                 )
                 .then(
                     literal("remove").then(
-                        argument("group", SteelArgumentType::permission_group(true))
+                        argument("group", SteelArgumentType::default_group_remove())
                             .executes_suspended(default_group_remove),
                     ),
                 ),
         )
+        .then(
+            literal("command_block")
+                .then(
+                    literal("add").then(
+                        argument("group", SteelArgumentType::command_block_group_add())
+                            .executes_suspended(command_block_group_add),
+                    ),
+                )
+                .then(
+                    literal("remove").then(
+                        argument("group", SteelArgumentType::command_block_group_remove())
+                            .executes_suspended(command_block_group_remove),
+                    ),
+                ),
+        )
+        .then(literal("op").then(literal("set").then(
+            argument("group", SteelArgumentType::op_group_set()).executes_suspended(op_group_set),
+        )))
 }
 
 fn collection_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -237,14 +258,20 @@ fn collection_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime
                 .then(literal("info").executes_suspended(collection_info))
                 .then(
                     literal("add").then(
-                        argument("member", SteelArgumentType::permission_collection_member())
-                            .executes_suspended(collection_add),
+                        argument(
+                            "member",
+                            SteelArgumentType::add_permission_collection_member(),
+                        )
+                        .executes_suspended(collection_add),
                     ),
                 )
                 .then(
                     literal("remove").then(
-                        argument("member", SteelArgumentType::permission_collection_member())
-                            .executes_suspended(collection_remove),
+                        argument(
+                            "member",
+                            SteelArgumentType::remove_permission_collection_member(),
+                        )
+                        .executes_suspended(collection_remove),
                     ),
                 ),
         )
@@ -336,6 +363,11 @@ enum Operation {
         group: String,
         add: bool,
     },
+    CommandBlockGroup {
+        group: String,
+        add: bool,
+    },
+    OpGroup(String),
     CollectionInfo(Identifier),
     CollectionExport(Option<Identifier>),
     CollectionMember {
@@ -366,6 +398,8 @@ impl Operation {
             | Self::GroupInheritance { .. }
             | Self::GroupMetadata { .. }
             | Self::DefaultGroup { .. }
+            | Self::CommandBlockGroup { .. }
+            | Self::OpGroup(_)
             | Self::CollectionExport(_)
             | Self::CollectionMember { .. }
             | Self::Reload => CommandSuspensionOrder::Global,
@@ -709,6 +743,35 @@ fn default_group(
     start(context, Operation::DefaultGroup { group, add })
 }
 
+fn command_block_group_add(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<PermsCommandSuspension, CommandSyntaxError> {
+    command_block_group(context, true)
+}
+
+fn command_block_group_remove(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<PermsCommandSuspension, CommandSyntaxError> {
+    command_block_group(context, false)
+}
+
+fn command_block_group(
+    context: &SteelCommandContext<CommandSource>,
+    add: bool,
+) -> Result<PermsCommandSuspension, CommandSyntaxError> {
+    let group = group_argument(context, "group")?;
+    require_group_management(context.source(), &group)?;
+    start(context, Operation::CommandBlockGroup { group, add })
+}
+
+fn op_group_set(
+    context: &SteelCommandContext<CommandSource>,
+) -> Result<PermsCommandSuspension, CommandSyntaxError> {
+    let group = group_argument(context, "group")?;
+    require_group_management(context.source(), &group)?;
+    start(context, Operation::OpGroup(group))
+}
+
 fn targets(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<GameProfileArgument, CommandSyntaxError> {
@@ -898,6 +961,10 @@ async fn run_operation(
         } => group_metadata_operation(source, group, expression, value).await,
         Operation::GroupsList => Ok(groups_list_operation(source)),
         Operation::DefaultGroup { group, add } => default_group_operation(source, group, add).await,
+        Operation::CommandBlockGroup { group, add } => {
+            command_block_group_operation(source, group, add).await
+        }
+        Operation::OpGroup(group) => op_group_operation(source, group).await,
         Operation::CollectionInfo(collection) => collection_info_operation(source, collection),
         Operation::CollectionExport(collection) => {
             collection_export_operation(source, collection).await
@@ -1259,11 +1326,30 @@ fn group_info_operation(
         .filter(|parent| can_manage_group(source, parent))
         .cloned()
         .collect::<Vec<_>>();
+    let mut roles = Vec::new();
+    if config
+        .default_groups
+        .iter()
+        .any(|default| default == &group)
+    {
+        roles.push("default");
+    }
+    if config.op_group == group {
+        roles.push("op");
+    }
+    if config
+        .command_block_groups
+        .iter()
+        .any(|command_block| command_block == &group)
+    {
+        roles.push("command_block");
+    }
     Ok(OperationResult {
         result: 1,
         messages: vec![TextComponent::plain(format!(
-            "Group '{group}': priority {}, inherits [{}], allow [{}], deny [{}], metadata [{}]",
+            "Group '{group}': priority {}, roles [{}], inherits [{}], allow [{}], deny [{}], metadata [{}]",
             group_config.priority,
+            roles.join(", "),
             inherits.join(", "),
             allow.join(", "),
             deny.join(", "),
@@ -1429,11 +1515,25 @@ fn groups_list_operation(source: &CommandSource) -> OperationResult {
         .filter(|group| can_manage_group(source, group))
         .cloned()
         .collect::<Vec<_>>();
+    let op = if can_manage_group(source, &config.op_group) {
+        format!("'{}'", config.op_group)
+    } else {
+        String::new()
+    };
+    let command_block = config
+        .command_block_groups
+        .iter()
+        .filter(|group| can_manage_group(source, group))
+        .map(|group| format!("'{group}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
     OperationResult {
         result: count(groups.len()),
         messages: vec![TextComponent::plain(format!(
-            "Permission groups: defaults [{}], groups [{}]",
+            "Permission groups: defaults [{}], op {}, command_block [{}], groups [{}]",
             defaults.join(", "),
+            op,
+            command_block,
             groups.join(", ")
         ))],
     }
@@ -1661,6 +1761,41 @@ async fn default_group_operation(
     ))
 }
 
+async fn command_block_group_operation(
+    source: &CommandSource,
+    group: String,
+    add: bool,
+) -> Result<OperationResult, CommandSyntaxError> {
+    let edit_group = group.clone();
+    let changed = source
+        .server()
+        .try_update_permission_groups(move |config| {
+            config::set_command_block_group(config, &edit_group, add)
+        })
+        .await
+        .map_err(dynamic_error)?;
+    Ok(change_result(
+        changed,
+        format!(
+            "Group '{group}': {} command block assignment",
+            if add { "added" } else { "removed" }
+        ),
+    ))
+}
+
+async fn op_group_operation(
+    source: &CommandSource,
+    group: String,
+) -> Result<OperationResult, CommandSyntaxError> {
+    let edit_group = group.clone();
+    let changed = source
+        .server()
+        .try_update_permission_groups(move |config| config::set_op_group(config, &edit_group))
+        .await
+        .map_err(dynamic_error)?;
+    Ok(change_result(changed, format!("Op group set to '{group}'")))
+}
+
 fn manageable_expression(source: &CommandSource, expression: &str) -> bool {
     source.can_manage_rule(expression)
 }
@@ -1817,7 +1952,16 @@ mod tests {
         }
         let groups = child(&dispatcher, perms, "groups");
         child(&dispatcher, groups, "list");
-        child(&dispatcher, groups, "default");
+        let default_group = child(&dispatcher, groups, "default");
+        for name in ["add", "remove"] {
+            child(&dispatcher, default_group, name);
+        }
+        let command_block_group = child(&dispatcher, groups, "command_block_group");
+        for name in ["add", "remove"] {
+            child(&dispatcher, command_block_group, name);
+        }
+        let op_group = child(&dispatcher, groups, "op_group");
+        child(&dispatcher, op_group, "set");
 
         let collection = child(&dispatcher, perms, "collection");
         child(&dispatcher, collection, "export");
@@ -1846,6 +1990,8 @@ mod tests {
             "steel:command.perms.user.metadata.set",
             "steel:command.perms.group.inherit.add",
             "steel:command.perms.collection.add",
+            "steel:command.perms.groups.command_block_group.add",
+            "steel:command.perms.groups.op_group.set",
             "steel:command.perms.reload",
         ] {
             assert!(permissions.contains(&expected), "missing {expected}");

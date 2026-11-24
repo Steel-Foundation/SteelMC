@@ -45,6 +45,7 @@ use super::argument::SteelArgumentParser;
 struct TestSource {
     callback: CommandResultCallback,
     allow_all_permissions: bool,
+    collection_members: Vec<String>,
 }
 
 impl TestSource {
@@ -52,6 +53,7 @@ impl TestSource {
         Self {
             callback: CommandResultCallback::empty(),
             allow_all_permissions: true,
+            collection_members: Vec::new(),
         }
     }
 
@@ -59,6 +61,14 @@ impl TestSource {
         Self {
             callback: CommandResultCallback::empty(),
             allow_all_permissions: false,
+            collection_members: Vec::new(),
+        }
+    }
+
+    fn with_collection_members(collection_members: Vec<String>) -> Self {
+        Self {
+            collection_members,
+            ..Self::new()
         }
     }
 }
@@ -68,6 +78,7 @@ impl ExecutionCommandSource for TestSource {
         Self {
             callback,
             allow_all_permissions: self.allow_all_permissions,
+            collection_members: self.collection_members.clone(),
         }
     }
 
@@ -150,8 +161,20 @@ impl CommandArgumentSource for TestSource {
         vec!["builder".to_owned(), "default".to_owned()]
     }
 
+    fn default_permission_group_suggestions(&self) -> Vec<String> {
+        vec!["default".to_owned()]
+    }
+
+    fn command_block_permission_group_suggestions(&self) -> Vec<String> {
+        vec!["builder".to_owned()]
+    }
+
     fn permission_collection_names(&self) -> Vec<Identifier> {
         vec![Identifier::new("minecraft", "gamemasters")]
+    }
+
+    fn permission_collection_member_suggestions(&self, _collection: &Identifier) -> Vec<String> {
+        self.collection_members.clone()
     }
 
     fn can_manage_permission_key(&self, _key: &PermissionKey) -> bool {

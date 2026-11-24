@@ -191,14 +191,31 @@ impl SteelArgumentParser for PermissionRuleParser {
     }
 }
 
+/// Which side of a group rule edit is being completed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PermissionGroupRuleSuggestionMode {
+    Add,
+    Remove,
+}
+
 /// Parser for one group `allow`/`deny`/`unset` rule: a permission rule
 /// expression or a `#namespace:name` collection reference.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct PermissionGroupRuleParser;
+pub(super) struct PermissionGroupRuleParser {
+    mode: PermissionGroupRuleSuggestionMode,
+}
 
 impl PermissionGroupRuleParser {
-    pub(super) const fn new() -> Self {
-        Self
+    pub(super) const fn for_add() -> Self {
+        Self {
+            mode: PermissionGroupRuleSuggestionMode::Add,
+        }
+    }
+
+    pub(super) const fn for_remove() -> Self {
+        Self {
+            mode: PermissionGroupRuleSuggestionMode::Remove,
+        }
     }
 }
 
@@ -229,15 +246,38 @@ impl SteelArgumentParser for PermissionGroupRuleParser {
         context: &dyn SteelArgumentSuggestionContext,
         builder: &mut SuggestionsBuilder<'_>,
     ) {
-        let mut expressions = PermissionSuggestionScope::GroupOwned
-            .expressions(context, PermissionSuggestionKind::Rule);
-        expressions.extend(
-            context
-                .source()
-                .manageable_permission_collection_names()
-                .into_iter()
-                .map(|collection| format!("#{collection}")),
-        );
+        let Some(group) = context
+            .argument("group")
+            .ok()
+            .and_then(|value| value.downcast_ref::<PermissionGroupName>())
+        else {
+            return;
+        };
+        let present = context
+            .source()
+            .group_permission_rule_suggestions(group.as_str())
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let expressions = match self.mode {
+            PermissionGroupRuleSuggestionMode::Add => {
+                let mut expressions = context
+                    .source()
+                    .manageable_permission_rule_suggestions()
+                    .into_iter()
+                    .filter(|expression| !present.contains(expression))
+                    .collect::<Vec<_>>();
+                expressions.extend(
+                    context
+                        .source()
+                        .manageable_permission_collection_names()
+                        .into_iter()
+                        .map(|collection| format!("#{collection}"))
+                        .filter(|reference| !present.contains(reference)),
+                );
+                expressions
+            }
+            PermissionGroupRuleSuggestionMode::Remove => present.into_iter().collect(),
+        };
         suggest_expression(builder, context.source(), expressions);
     }
 
@@ -310,8 +350,63 @@ impl SteelArgumentParser for PermissionMetadataParser {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PermissionGroupSuggestionFilter {
+    None,
+    DefaultAdd,
+    DefaultRemove,
+    CommandBlockAdd,
+    CommandBlockRemove,
+    Op,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct PermissionGroupParser {
     pub(super) require_existing: bool,
+    suggestion_filter: PermissionGroupSuggestionFilter,
+}
+
+impl PermissionGroupParser {
+    pub(super) const fn new(require_existing: bool) -> Self {
+        Self {
+            require_existing,
+            suggestion_filter: PermissionGroupSuggestionFilter::None,
+        }
+    }
+
+    pub(super) const fn for_default_add() -> Self {
+        Self {
+            require_existing: true,
+            suggestion_filter: PermissionGroupSuggestionFilter::DefaultAdd,
+        }
+    }
+
+    pub(super) const fn for_default_remove() -> Self {
+        Self {
+            require_existing: true,
+            suggestion_filter: PermissionGroupSuggestionFilter::DefaultRemove,
+        }
+    }
+
+    pub(super) const fn for_command_block_add() -> Self {
+        Self {
+            require_existing: true,
+            suggestion_filter: PermissionGroupSuggestionFilter::CommandBlockAdd,
+        }
+    }
+
+    pub(super) const fn for_command_block_remove() -> Self {
+        Self {
+            require_existing: true,
+            suggestion_filter: PermissionGroupSuggestionFilter::CommandBlockRemove,
+        }
+    }
+
+    pub(super) const fn for_op() -> Self {
+        Self {
+            require_existing: true,
+            suggestion_filter: PermissionGroupSuggestionFilter::Op,
+        }
+    }
 }
 
 // SAFETY: This Steel-owned key uniquely identifies the concrete parser.
@@ -353,7 +448,30 @@ impl SteelArgumentParser for PermissionGroupParser {
     ) {
         let prefix = builder.remaining_lowercase().to_owned();
         for group in context.source().manageable_permission_group_names() {
-            if group.to_lowercase().starts_with(&prefix) {
+            if !group.to_lowercase().starts_with(&prefix) {
+                continue;
+            }
+            let included = match self.suggestion_filter {
+                PermissionGroupSuggestionFilter::None => true,
+                PermissionGroupSuggestionFilter::DefaultAdd => !context
+                    .source()
+                    .default_permission_group_suggestions()
+                    .contains(&group),
+                PermissionGroupSuggestionFilter::DefaultRemove => context
+                    .source()
+                    .default_permission_group_suggestions()
+                    .contains(&group),
+                PermissionGroupSuggestionFilter::CommandBlockAdd => !context
+                    .source()
+                    .command_block_permission_group_suggestions()
+                    .contains(&group),
+                PermissionGroupSuggestionFilter::CommandBlockRemove => context
+                    .source()
+                    .command_block_permission_group_suggestions()
+                    .contains(&group),
+                PermissionGroupSuggestionFilter::Op => true,
+            };
+            if included {
                 builder.suggest(group);
             }
         }
@@ -412,14 +530,31 @@ impl SteelArgumentParser for PermissionCollectionParser {
     }
 }
 
+/// Which side of a collection membership edit is being completed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PermissionCollectionMemberSuggestionMode {
+    Add,
+    Remove,
+}
+
 /// Parser for one collection member: a concrete permission or a `#namespace:name`
 /// nested collection reference.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct PermissionCollectionMemberParser;
+pub(super) struct PermissionCollectionMemberParser {
+    mode: PermissionCollectionMemberSuggestionMode,
+}
 
 impl PermissionCollectionMemberParser {
-    pub(super) const fn new() -> Self {
-        Self
+    pub(super) const fn for_add() -> Self {
+        Self {
+            mode: PermissionCollectionMemberSuggestionMode::Add,
+        }
+    }
+
+    pub(super) const fn for_remove() -> Self {
+        Self {
+            mode: PermissionCollectionMemberSuggestionMode::Remove,
+        }
     }
 }
 
@@ -450,14 +585,38 @@ impl SteelArgumentParser for PermissionCollectionMemberParser {
         context: &dyn SteelArgumentSuggestionContext,
         builder: &mut SuggestionsBuilder<'_>,
     ) {
-        let mut expressions = context.source().manageable_permission_rule_suggestions();
-        expressions.extend(
-            context
-                .source()
-                .manageable_permission_collection_names()
-                .into_iter()
-                .map(|collection| format!("#{collection}")),
-        );
+        let Some(collection) = context
+            .argument("collection")
+            .ok()
+            .and_then(|value| value.downcast_ref::<PermissionCollectionName>())
+        else {
+            return;
+        };
+        let present = context
+            .source()
+            .permission_collection_member_suggestions(collection.as_identifier())
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let expressions = match self.mode {
+            PermissionCollectionMemberSuggestionMode::Add => {
+                let mut expressions = context
+                    .source()
+                    .manageable_permission_rule_suggestions()
+                    .into_iter()
+                    .filter(|expression| !present.contains(expression))
+                    .collect::<Vec<_>>();
+                expressions.extend(
+                    context
+                        .source()
+                        .manageable_permission_collection_names()
+                        .into_iter()
+                        .map(|collection| format!("#{collection}"))
+                        .filter(|reference| !present.contains(reference)),
+                );
+                expressions
+            }
+            PermissionCollectionMemberSuggestionMode::Remove => present.into_iter().collect(),
+        };
         suggest_expression(builder, context.source(), expressions);
     }
 

@@ -128,7 +128,20 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
         Vec::new()
     }
 
+    fn default_permission_group_suggestions(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn command_block_permission_group_suggestions(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     fn permission_collection_names(&self) -> Vec<steel_utils::Identifier> {
+        Vec::new()
+    }
+
+    /// Returns direct members of one collection, for membership-edit completion only.
+    fn permission_collection_member_suggestions(&self, _collection: &Identifier) -> Vec<String> {
         Vec::new()
     }
 
@@ -800,8 +813,32 @@ impl CommandArgumentSource for CommandSource {
         self.server.permission_groups.group_names()
     }
 
+    fn default_permission_group_suggestions(&self) -> Vec<String> {
+        self.server
+            .permission_groups
+            .group_config_snapshot()
+            .default_groups
+    }
+
+    fn command_block_permission_group_suggestions(&self) -> Vec<String> {
+        self.server
+            .permission_groups
+            .group_config_snapshot()
+            .command_block_groups
+    }
+
     fn permission_collection_names(&self) -> Vec<Identifier> {
         self.server.permission_groups.collection_names()
+    }
+
+    fn permission_collection_member_suggestions(&self, collection: &Identifier) -> Vec<String> {
+        self.server
+            .permission_groups
+            .collections_snapshot()
+            .get(collection)
+            .into_iter()
+            .flat_map(|collection| collection.members().iter().map(ToString::to_string))
+            .collect()
     }
 
     fn can_manage_permission_key(&self, key: &PermissionKey) -> bool {
