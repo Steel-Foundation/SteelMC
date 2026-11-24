@@ -144,6 +144,11 @@ mod tests {
             panic!("built-in commands should register");
         };
         let root = child(&dispatcher, dispatcher.root(), "summon");
+        let Some(summon_node) = dispatcher.node(root) else {
+            panic!("summon node should exist");
+        };
+        assert!(summon_node.is_restricted());
+
         let entity = child(&dispatcher, root, "entity");
         assert_eq!(
             dispatcher
