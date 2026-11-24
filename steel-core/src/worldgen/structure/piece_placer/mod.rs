@@ -18,6 +18,7 @@ mod stronghold;
 mod swamp_hut;
 mod template_piece;
 mod template_processors;
+mod woodland_mansion;
 
 use std::sync::Weak;
 
@@ -222,6 +223,10 @@ impl StructurePiecePlacer {
     ) {
         if structure.structure_type == Identifier::new_static("minecraft", "desert_pyramid") {
             Self::after_place_desert_pyramid(region, pieces, clip);
+        } else if structure.structure_type
+            == Identifier::new_static("minecraft", "woodland_mansion")
+        {
+            Self::after_place_woodland_mansion(region, pieces, clip);
         }
     }
 
