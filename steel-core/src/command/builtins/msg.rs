@@ -42,11 +42,9 @@ fn send_message(ctx: &SteelCommandContext<CommandSource>) -> Result<i32, Command
             .bind_chat_type(vanilla_chat_types::MSG_COMMAND_OUTGOING.id() as i32)
             .with_target_name(player.display_name());
 
-        // Send to source
         if let Some(source_player) = source.player() {
             outgoing_message.send_to_player(source_player, &outgoing_chat_type);
         } else {
-            // Console or RCON
             source.send_system_message(
                 &translations::COMMANDS_MESSAGE_DISPLAY_OUTGOING
                     .message([player.display_name(), message.clone()])
