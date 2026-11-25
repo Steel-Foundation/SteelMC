@@ -21,6 +21,7 @@ mod c_entity_event;
 mod c_entity_position_sync;
 mod c_explode;
 mod c_game_event;
+mod c_game_rule_values;
 mod c_hurt_animation;
 mod c_level_event;
 mod c_level_particles;
@@ -135,6 +136,7 @@ pub use c_explode::{
 };
 pub use c_game_event::CGameEvent;
 pub use c_game_event::GameEventType;
+pub use c_game_rule_values::CGameRuleValues;
 pub use c_hurt_animation::CHurtAnimation;
 pub use c_level_event::CLevelEvent;
 pub use c_level_particles::{CLevelParticles, RandomizationType};
