@@ -170,7 +170,6 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::PlayerLoaded
             | ScheduledPlayPacketKind::ChatCommand(_)
             | ScheduledPlayPacketKind::CommandSuggestion(_)
-            | ScheduledPlayPacketKind::ContainerClose(_)
             | ScheduledPlayPacketKind::SetCreativeModeSlot(_)
             | ScheduledPlayPacketKind::PlayerInput(_)
             | ScheduledPlayPacketKind::PlayerAbilities(_)
@@ -212,6 +211,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::MovePlayer(_)
             | ScheduledPlayPacketKind::MoveVehicle(_)
             | ScheduledPlayPacketKind::ContainerClick(_)
+            | ScheduledPlayPacketKind::ContainerClose(_)
             | ScheduledPlayPacketKind::RenameItem(_)
             | ScheduledPlayPacketKind::UseItemOn(_)
             | ScheduledPlayPacketKind::UseItem(_)
@@ -1174,7 +1174,7 @@ mod tests {
             execution(ScheduledPlayPacketKind::ContainerClose(SContainerClose {
                 container_id: 0,
             })),
-            ScheduledPacketExecution::PlayerLocal
+            ScheduledPacketExecution::Serialized
         );
         assert_eq!(
             execution(ScheduledPlayPacketKind::SetCreativeModeSlot(
