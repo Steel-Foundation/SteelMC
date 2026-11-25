@@ -72,10 +72,8 @@ impl KineticWeaponCondition {
         self.min_relative_speed
     }
 
-    /// Returns whether this action applies after `ticks_used` ticks of active use.
-    ///
-    /// Speeds are in blocks per second along the attacker's look direction, and
-    /// `entity_factor` scales both thresholds for the attacker kind.
+    /// Returns whether this action applies; speeds are in blocks per second and
+    /// `entity_factor` scales both speed thresholds.
     #[must_use]
     pub fn test(
         &self,

@@ -1164,7 +1164,7 @@ impl World {
     }
 
     /// Mirrors Minecraft  `AABB.getDirection` for one block-local shape box.
-    pub(super) fn intersects_aabb_with_t(
+    pub(crate) fn intersects_aabb_with_t(
         start: DVec3,
         end: DVec3,
         min: DVec3,

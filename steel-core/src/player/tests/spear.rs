@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use glam::DVec3;
-use steel_protocol::packets::game::{PlayerAction, SPlayerAction};
+use steel_protocol::packets::game::{PlayerAction, SPlayerAction, SSetCarriedItem};
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_items;
@@ -13,6 +13,7 @@ use steel_utils::types::InteractionHand;
 use super::MeleeFixture;
 use crate::entity::entities::PigEntity;
 use crate::entity::{Entity as _, LivingEntity as _, SharedEntity};
+use crate::inventory::container::Container as _;
 use crate::player::Player;
 
 /// Faces the attacker along +X with a level look, at a pig floating at eye height
@@ -21,6 +22,9 @@ fn spear_fixture(name: &'static str) -> (MeleeFixture, Arc<PigEntity>) {
     const FACE_POSITIVE_X_YAW: f32 = -90.0;
     let fixture = MeleeFixture::new(name);
     fixture.attacker.set_rotation((FACE_POSITIVE_X_YAW, 0.0));
+    // Piercing rays follow head yaw; charges read last tick's head yaw.
+    fixture.attacker.set_y_head_rot(FACE_POSITIVE_X_YAW);
+    fixture.attacker.advance_living_rotation_for_base_tick();
     fixture
         .attacker
         .inventory
@@ -85,4 +89,22 @@ fn spear_charge_damages_by_relative_speed_after_delay_and_respects_contact_coold
     attacker.tick_active_item_use(&attacker_entity);
     assert!((pig.get_health() - (start_health - CHARGE_DAMAGE)).abs() < f32::EPSILON);
     assert!(attacker.is_using_item());
+}
+
+#[test]
+fn switching_to_an_identical_spear_restarts_the_charge_windup() {
+    const OTHER_HOTBAR_SLOT: i16 = 1;
+
+    let (fixture, _pig) = spear_fixture("player_spear_slot_switch");
+    let attacker = &fixture.attacker;
+    attacker.inventory.lock().set_item(
+        OTHER_HOTBAR_SLOT as usize,
+        ItemStack::new(&vanilla_items::NETHERITE_SPEAR),
+    );
+
+    attacker.start_using_item(InteractionHand::MainHand);
+    attacker.handle_set_carried_item(SSetCarriedItem {
+        slot: OTHER_HOTBAR_SLOT,
+    });
+    assert!(!attacker.is_using_item());
 }

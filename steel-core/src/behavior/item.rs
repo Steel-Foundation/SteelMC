@@ -201,18 +201,15 @@ pub trait ItemBehavior: Send + Sync {
     }
 
     /// Called every tick while a living entity is actively using this item.
+    ///
+    /// Consumable sounds and kinetic-weapon charges are stack-level and run separately.
     fn on_use_tick(
         &self,
         _world: &Arc<World>,
-        user: LivingEntityRef<'_>,
-        stack: &mut ItemStack,
-        ticks_remaining: i32,
+        _user: LivingEntityRef<'_>,
+        _stack: &mut ItemStack,
+        _ticks_remaining: i32,
     ) {
-        if let Some(consumable) = stack.get(CONSUMABLE)
-            && should_emit_consume_particles_and_sounds(consumable, ticks_remaining)
-        {
-            emit_consume_particles_and_sounds(consumable, user.living());
-        }
     }
 
     /// Called when active use is released before completion.
@@ -317,6 +314,19 @@ pub trait ItemBehavior: Send + Sync {
     /// Returns the capability used by sign block interactions.
     fn as_sign_applicator(&self) -> Option<&dyn SignApplicator> {
         None
+    }
+}
+
+/// Emits the timed eating/drinking sounds of a stack's `CONSUMABLE` component during active use.
+pub(crate) fn tick_consumable_use(
+    stack: &ItemStack,
+    user: &dyn LivingEntity,
+    ticks_remaining: i32,
+) {
+    if let Some(consumable) = stack.get(CONSUMABLE)
+        && should_emit_consume_particles_and_sounds(consumable, ticks_remaining)
+    {
+        emit_consume_particles_and_sounds(consumable, user);
     }
 }
 

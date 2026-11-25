@@ -98,7 +98,7 @@ use text_components::{content::Resolvable, custom::CustomData};
 
 use crate::behavior::{
     BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult, InventoryTickContext,
-    ItemBehavior, apply_use_remainder,
+    ItemBehavior, apply_use_remainder, tick_consumable_use,
 };
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
@@ -458,13 +458,12 @@ impl Player {
             return;
         };
         let world = self.get_world();
+        tick_consumable_use(&item, self, active.remaining_ticks());
         let use_on_release = if let Some(kinetic_weapon) = item.get(KINETIC_WEAPON) {
             let ticks_used = behavior.get_use_duration(&item, self) - active.remaining_ticks();
             if let Some(player) = world.players.get_by_entity_id(self.id()) {
                 player.kinetic_damage_entities(kinetic_weapon, &item, hand, ticks_used);
             }
-            // Stab hits change the hand stack in place, as they do vanilla's use item, so
-            // the stale `item` copy is not written back.
             {
                 let mut inventory = self.inventory.lock();
                 if inventory.get_item_in_hand(hand).item() != active.item() {

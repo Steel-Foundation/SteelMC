@@ -61,7 +61,13 @@ impl Player {
         let game_time = world.game_time();
         let mut affected = false;
 
-        for hit in self.piercing_hit_entities(weapon, &world) {
+        // Vanilla charges before `aiStep` turns the head, so the ray uses last tick's head yaw.
+        let ray_look = self.calculate_view_vector(
+            self.rotation().1,
+            self.living_rotation_state().y_head_rot_o(),
+        );
+
+        for hit in self.piercing_hit_entities(weapon, &world, ray_look) {
             let parent = hit.as_part_entity().and_then(PartEntity::parent);
             let target = parent.unwrap_or(hit);
             if self.living_base.was_recently_stabbed(

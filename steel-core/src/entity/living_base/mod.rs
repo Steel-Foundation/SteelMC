@@ -714,8 +714,6 @@ struct LivingEntityState {
     rotation: LivingRotationState,
     swing: LivingSwingState,
     active_item_use: Option<ActiveItemUseState>,
-    /// Game time each entity was last stabbed, keyed by entity id; present only while
-    /// a kinetic weapon is in active use.
     recent_kinetic_enemies: Option<FxHashMap<i32, i64>>,
     no_jump_delay: i32,
     no_action_time: i32,

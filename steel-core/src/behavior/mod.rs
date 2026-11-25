@@ -77,8 +77,8 @@ pub use context::{
     PlacementOrientation, PlacementSource, UseItemContext, UseOnContext,
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
-pub(crate) use item::apply_use_remainder;
 pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation, SignApplicator};
+pub(crate) use item::{apply_use_remainder, tick_consumable_use};
 use item_behaviors::register_item_behaviors;
 pub use items::{
     BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem, HangingSignItem,
