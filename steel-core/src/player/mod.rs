@@ -459,7 +459,6 @@ impl Player {
         };
         let world = self.get_world();
         let use_on_release = if let Some(kinetic_weapon) = item.get(KINETIC_WEAPON) {
-            // Vanilla `ItemStack.onUseTick` runs the kinetic charge in place of `Item.onUseTick`.
             let ticks_used = behavior.get_use_duration(&item, self) - active.remaining_ticks();
             if let Some(player) = world.players.get_by_entity_id(self.id()) {
                 player.kinetic_damage_entities(kinetic_weapon, &item, hand, ticks_used);
