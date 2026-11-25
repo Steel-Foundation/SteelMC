@@ -24,8 +24,13 @@ pub fn build(items: &[ItemClass]) -> String {
     let mut imports = GeneratedImports::default();
     let mut registrations = Vec::new();
     let mut matched_classes = BTreeSet::new();
+    let mut plain_items = Vec::new();
 
     for item in items {
+        let item_field = Ident::new(&item.name.to_shouty_snake_case(), Span::call_site());
+        if item.class == "Item" {
+            plain_items.push(item_field.clone());
+        }
         let Some(info) = discovered.get(&item.class) else {
             continue;
         };
@@ -33,8 +38,6 @@ pub fn build(items: &[ItemClass]) -> String {
         matched_classes.insert(&item.class);
 
         let struct_ident = Ident::new(&info.struct_name, Span::call_site());
-        let item_field = Ident::new(&item.name.to_shouty_snake_case(), Span::call_site());
-
         imports.add_fields(&info.fields);
 
         // Need to divide here into two cases because blocks always have a block property while items don't have that.
@@ -86,6 +89,10 @@ pub fn build(items: &[ItemClass]) -> String {
         )]
         use crate::behavior::items::*;
         #(#enum_import_tokens)*
+
+        /// Vanilla items that use the base `Item` behavior.
+        #[cfg(feature = "test-framework")]
+        pub const PLAIN_ITEMS: &[&std::sync::LazyLock<steel_registry::items::Item>] = &[#(&vanilla_items::#plain_items),*];
 
         pub fn register_item_behaviors(registry: &mut ItemBehaviorRegistry) {
             #(#registrations)*

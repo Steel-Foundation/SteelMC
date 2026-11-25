@@ -18,6 +18,7 @@ use crate::convert::{
 };
 use crate::player::SteelTestPlayer;
 use crate::runtime;
+use anyhow::{Context, anyhow, bail, ensure};
 use flint_core::Block;
 use flint_core::test_spec::{EntityNbt, GameruleValue};
 use flint_core::traits::EntityState;
@@ -79,11 +80,7 @@ impl SteelTestWorld {
     /// The world uses the overworld dimension type and starts with seed 0.
     /// All chunks are created empty on-demand.
     ///
-    /// # Panic
-    /// shouldn't panic only something is completely broken and then it is ok
-    #[allow(clippy::missing_panics_doc)]
-    #[must_use]
-    pub fn new() -> Self {
+    pub fn new() -> anyhow::Result<Self> {
         let rt = runtime();
 
         let dim_id = Identifier::vanilla_static("overworld");
@@ -115,7 +112,7 @@ impl SteelTestWorld {
         let generation_pool = Arc::new(
             rayon::ThreadPoolBuilder::new()
                 .build()
-                .expect("Failed to create rayon thread pool"),
+                .context("Failed to create Flint generation pool")?,
         );
 
         let runtime_config = Arc::new(RuntimeConfig {
@@ -143,7 +140,7 @@ impl SteelTestWorld {
             let world =
                 World::new_with_config(rt.clone(), dim_id, &OVERWORLD, 0, config, generation_pool)
                     .await
-                    .expect("Failed to create test world");
+                    .context("Failed to create Flint world")?;
             let domain = ResolvedDomainConfig {
                 name: world.domain().to_owned(),
                 default_world: world.key.clone(),
@@ -157,36 +154,37 @@ impl SteelTestWorld {
                 runtime_config,
             )
             .await
-            .expect("Failed to create test server");
-            (world, server)
-        });
+            .map_err(|error| anyhow!("Failed to create Flint server: {error}"))?;
+            Ok::<_, anyhow::Error>((world, server))
+        })?;
 
-        Self {
+        Ok(Self {
             world,
             server,
             _damage_history: damage_history,
             tick: AtomicU64::new(0),
             chunk_requests: SyncMutex::new(FxHashMap::default()),
             entities: FxHashMap::default(),
-        }
+        })
     }
 
     /// Ensures the chunk containing `pos` is loaded, retaining its ticket handle.
-    fn ensure_chunk_at(&self, pos: &BlockPos) {
+    fn ensure_chunk_at(&self, pos: &BlockPos) -> anyhow::Result<()> {
         let chunk_pos = ChunkPos::new(pos.x() >> 4, pos.z() >> 4);
         if let Some(handle) = self.chunk_requests.lock().get(&chunk_pos)
             && handle.poll() == ChunkRequestState::Ready
         {
-            return;
+            return Ok(());
         }
 
-        let handle = self.drive_chunk_request(chunk_pos);
+        let handle = self.drive_chunk_request(chunk_pos)?;
         self.chunk_requests.lock().insert(chunk_pos, handle);
+        Ok(())
     }
 
     /// Requests the chunk at `chunk_pos` with a simulation ticket and blocks
     /// until it becomes tickable.
-    fn drive_chunk_request(&self, chunk_pos: ChunkPos) -> ChunkRequestHandle {
+    fn drive_chunk_request(&self, chunk_pos: ChunkPos) -> anyhow::Result<ChunkRequestHandle> {
         let chunk_map = &self.world.chunk_map;
 
         let handle =
@@ -201,14 +199,13 @@ impl SteelTestWorld {
             match handle.poll() {
                 ChunkRequestState::Ready => break,
                 ChunkRequestState::Cancelled => {
-                    panic!("chunk {chunk_pos:?} request was cancelled before reaching Full")
+                    bail!("Chunk {chunk_pos:?} request was cancelled before reaching Full")
                 }
                 ChunkRequestState::Pending { .. } => thread::sleep(Duration::from_millis(1)),
             }
         }
-        assert_eq!(
-            handle.poll(),
-            ChunkRequestState::Ready,
+        ensure!(
+            handle.poll() == ChunkRequestState::Ready,
             "chunk {chunk_pos:?} did not reach Full status within 30s"
         );
 
@@ -216,13 +213,13 @@ impl SteelTestWorld {
             if chunk_map.is_block_ticking_full_chunk_simulated(chunk_pos)
                 && chunk_map.is_entity_ticking_full_chunk_loaded(chunk_pos)
             {
-                return handle;
+                return Ok(handle);
             }
             chunk_map.flint_advance_scheduling();
             thread::sleep(Duration::from_millis(1));
         }
 
-        panic!("chunk {chunk_pos:?} did not enter tickable snapshot within 30s");
+        bail!("Chunk {chunk_pos:?} did not enter tickable snapshot within 30s");
     }
 
     fn entity_by_alias(&self, alias: &str) -> anyhow::Result<SharedEntity> {
@@ -272,12 +269,6 @@ impl Drop for SteelTestWorld {
     }
 }
 
-impl Default for SteelTestWorld {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl FlintWorld for SteelTestWorld {
     fn do_tick(&mut self) -> Result<(), anyhow::Error> {
         let tick_count = self.tick.fetch_add(1, Ordering::SeqCst);
@@ -306,7 +297,7 @@ impl FlintWorld for SteelTestWorld {
     ) -> Result<Block, anyhow::Error> {
         let steel_pos = flint_pos_to_steel(pos);
 
-        self.ensure_chunk_at(&steel_pos);
+        self.ensure_chunk_at(&steel_pos)?;
 
         let state = self.world.get_block_state(steel_pos);
         let mut block = state_id_to_block(state);
@@ -321,14 +312,16 @@ impl FlintWorld for SteelTestWorld {
     }
 
     fn set_block(&mut self, pos: FlintBlockPos, block: &Block) -> Result<(), anyhow::Error> {
-        let Some(state_id) = flint_block_to_state_id(block) else {
-            tracing::warn!("Unknown block: {} - skipping placement", block.id);
-            return Ok(());
-        };
+        let state_id = flint_block_to_state_id(block).with_context(|| {
+            format!(
+                "Invalid block {} with properties {:?} at {pos:?}",
+                block.id, block.properties
+            )
+        })?;
 
         let steel_pos = flint_pos_to_steel(pos);
 
-        self.ensure_chunk_at(&steel_pos);
+        self.ensure_chunk_at(&steel_pos)?;
         self.world.chunk_map.propagate_queued_light_changes();
 
         let mut state = self.world.update_from_neighbor_shapes(state_id, steel_pos);

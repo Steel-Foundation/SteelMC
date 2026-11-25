@@ -5,19 +5,24 @@
 //! World implementation.
 
 use crate::world::SteelTestWorld;
+use anyhow::Context;
 use dotenvy::dotenv;
 use flint_core::results::TestSummary;
 use flint_core::test_spec::MinimalTestSpec;
 use flint_core::{FlintAdapter, FlintWorld, ServerInfo, TestLoader};
 use rustc_hash::FxHashSet;
 use serde::Deserialize;
+use std::any::type_name;
 use std::env::var;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use steel_core::behavior::block_behaviors::PLAIN_BLOCKS;
-use steel_core::behavior::{BLOCK_BEHAVIORS, ITEM_BEHAVIORS};
+use steel_core::behavior::item_behaviors::PLAIN_ITEMS;
+use steel_core::behavior::{BLOCK_BEHAVIORS, DefaultItemBehavior, ITEM_BEHAVIORS};
 use steel_core::entity::ENTITIES;
+use steel_registry::blocks::BlockRef;
 use steel_registry::{REGISTRY, RegistryExt};
 use toml::from_str;
 
@@ -29,7 +34,7 @@ pub struct SteelAdapter;
 
 impl FlintAdapter for SteelAdapter {
     fn create_test_world(&self) -> Result<Box<dyn FlintWorld + 'static>, anyhow::Error> {
-        Ok(Box::new(SteelTestWorld::new()))
+        Ok(Box::new(SteelTestWorld::new()?))
     }
 
     fn server_info(&self) -> ServerInfo {
@@ -39,8 +44,7 @@ impl FlintAdapter for SteelAdapter {
     }
 }
 
-/// Returns IDs of blocks with a non-default behavior or a plain vanilla `Block` class.
-pub fn get_implemented_blocks() -> Vec<String> {
+fn implemented_blocks() -> impl Iterator<Item = BlockRef> {
     BLOCK_BEHAVIORS
         .get_behaviors()
         .iter()
@@ -48,21 +52,34 @@ pub fn get_implemented_blocks() -> Vec<String> {
         .filter(|(_, behavior)| !behavior.type_name().ends_with("DefaultBlockBehavior"))
         .filter_map(|(id, _)| REGISTRY.blocks.by_id(id))
         .chain(PLAIN_BLOCKS.iter().copied())
+}
+
+/// Returns IDs of blocks with a non-default behavior or a plain vanilla `Block` class.
+#[must_use]
+pub fn get_implemented_blocks() -> Vec<String> {
+    implemented_blocks()
         .map(|block| block.key.to_string())
         .collect()
 }
 
-/// Returns IDs of items with a non-default, non-block-item behavior.
+/// Returns IDs of items whose item behavior and any placed target block are implemented.
+#[must_use]
 pub fn get_implemented_items() -> Vec<String> {
+    let blocks: FxHashSet<_> = implemented_blocks().map(|block| &block.key).collect();
     ITEM_BEHAVIORS
         .get_behaviors()
         .iter()
         .enumerate()
-        .filter(|(_, behavior)| {
-            let name = behavior.type_name();
-            !name.ends_with("DefaultItemBehavior") && !name.ends_with("BlockItem")
+        .filter_map(|(id, behavior)| {
+            let item = REGISTRY.items.by_id(id)?;
+            if behavior.type_name() == type_name::<DefaultItemBehavior>() {
+                return None;
+            }
+            item.block
+                .is_none_or(|block| blocks.contains(&block.key))
+                .then_some(item)
         })
-        .filter_map(|(id, _)| REGISTRY.items.by_id(id))
+        .chain(PLAIN_ITEMS.iter().copied().map(LazyLock::force))
         .map(|item| item.key.to_string())
         .collect()
 }
@@ -107,24 +124,30 @@ struct FilterConfig {
     pattern: Option<String>,
 }
 
-/// Loads `flint.toml` from the working directory, falling back to defaults if it is missing or invalid.
-#[must_use]
-pub fn load_config() -> FlintConfig {
-    fs::read_to_string("flint.toml")
-        .ok()
-        .and_then(|s| from_str(&s).ok())
-        .unwrap_or_default()
+/// Loads `flint.toml` from the working directory, using defaults when the file is absent.
+pub fn load_config() -> anyhow::Result<FlintConfig> {
+    match fs::read_to_string("flint.toml") {
+        Ok(contents) => from_str(&contents).context("Invalid flint.toml"),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(FlintConfig::default()),
+        Err(error) => Err(error).context("Could not read flint.toml"),
+    }
 }
 
 /// Loads environment variables from `.env`, if present.
-pub fn init_env() {
-    dotenv().ok();
+pub fn init_env() -> anyhow::Result<()> {
+    match dotenv() {
+        Ok(_) => Ok(()),
+        Err(error) if error.not_found() => Ok(()),
+        Err(error) => Err(error).context("Could not load .env"),
+    }
 }
 
 /// Collects test file paths based on environment variables and `flint.toml`.
 /// Priority: `FLINT_TEST` > `FLINT_TAGS` > `implemented_only` (`FLINT_IMPLEMENTED_ONLY` env > toml) > `filter.tags` > `FLINT_PATTERN` > all
-#[must_use]
-pub fn collect_filtered_paths(loader: &TestLoader, cfg: &FlintConfig) -> Vec<PathBuf> {
+pub fn collect_filtered_paths(
+    loader: &TestLoader,
+    cfg: &FlintConfig,
+) -> anyhow::Result<Vec<PathBuf>> {
     let filter = cfg.filter.as_ref();
 
     // Single test by name: env > toml
@@ -133,16 +156,15 @@ pub fn collect_filtered_paths(loader: &TestLoader, cfg: &FlintConfig) -> Vec<Pat
         .or_else(|| filter.and_then(|f| f.test.clone()));
     if let Some(name) = test_name {
         println!("Running single test: {name}");
-        return loader
-            .collect_all_test_files()
-            .unwrap_or_default()
+        return Ok(loader
+            .collect_all_test_files()?
             .into_iter()
             .filter(|p| {
                 p.file_stem()
                     .and_then(|s| s.to_str())
                     .is_some_and(|n| n == name)
             })
-            .collect();
+            .collect());
     }
 
     // Tag filtering: env > implemented_only > toml tags
@@ -159,17 +181,18 @@ pub fn collect_filtered_paths(loader: &TestLoader, cfg: &FlintConfig) -> Vec<Pat
         let mut ids = get_implemented_items();
         ids.extend(get_implemented_blocks());
         ids.extend(get_implemented_entities());
-        let implemented: FxHashSet<String> = ids.iter().cloned().collect();
-        let paths: Vec<PathBuf> = loader
-            .collect_by_tags(&ids)
-            .into_iter()
-            .filter(|path| all_ids_implemented(path, &implemented))
-            .collect();
+        let implemented: FxHashSet<_> = ids.into_iter().collect();
+        let mut paths = Vec::new();
+        for path in loader.collect_all_test_files()? {
+            if all_ids_implemented(&path, &implemented)? {
+                paths.push(path);
+            }
+        }
         println!(
             "Running {} test(s) whose minecraftIds are all implemented",
             paths.len()
         );
-        return paths;
+        return Ok(paths);
     }
     let tags = env_tags.or_else(|| {
         filter.and_then(|f| {
@@ -183,7 +206,7 @@ pub fn collect_filtered_paths(loader: &TestLoader, cfg: &FlintConfig) -> Vec<Pat
     });
     if let Some(tags) = tags {
         println!("Running tests with tags: {}", tags.join(", "));
-        return loader.collect_by_tags(&tags);
+        return Ok(loader.collect_by_tags(&tags));
     }
 
     // Pattern matching: env > toml
@@ -192,33 +215,30 @@ pub fn collect_filtered_paths(loader: &TestLoader, cfg: &FlintConfig) -> Vec<Pat
         .or_else(|| filter.and_then(|f| f.pattern.clone()));
     if let Some(p) = pattern {
         println!("Running tests matching pattern: {p}");
-        return loader
-            .collect_all_test_files()
-            .unwrap_or_default()
+        return Ok(loader
+            .collect_all_test_files()?
             .into_iter()
             .filter(|path| {
                 path.file_stem()
                     .and_then(|s| s.to_str())
                     .is_some_and(|name| matches_pattern(name, &p))
             })
-            .collect();
+            .collect());
     }
 
     // Default: all tests
     println!("Running all flint tests");
-    loader.collect_all_test_files().unwrap_or_default()
+    loader.collect_all_test_files()
 }
 
 /// Whether every `minecraftIds` entry of the test at `path` is implemented.
-/// Unreadable specs are kept so `load_specs` reports the real error.
-fn all_ids_implemented(path: &Path, implemented: &FxHashSet<String>) -> bool {
-    let Some(spec) = fs::read_to_string(path)
-        .ok()
-        .and_then(|json| serde_json::from_str::<MinimalTestSpec>(&json).ok())
-    else {
-        return true;
-    };
-    !spec.minecraft_ids.is_empty() && spec.minecraft_ids.iter().all(|id| implemented.contains(id))
+fn all_ids_implemented(path: &Path, implemented: &FxHashSet<String>) -> anyhow::Result<bool> {
+    let json =
+        fs::read_to_string(path).with_context(|| format!("Could not read {}", path.display()))?;
+    let spec: MinimalTestSpec = serde_json::from_str(&json)
+        .with_context(|| format!("Invalid Flint test header in {}", path.display()))?;
+    Ok(!spec.minecraft_ids.is_empty()
+        && spec.minecraft_ids.iter().all(|id| implemented.contains(id)))
 }
 
 /// Simple glob pattern matching (supports * wildcard)
@@ -238,7 +258,23 @@ fn matches_pattern(name: &str, pattern: &str) -> bool {
 /// Writes the CI summary to `log/flint_summary.json`.
 pub fn save_summary(summary: &TestSummary) -> io::Result<()> {
     fs::create_dir_all("log")?;
-    fs::write("log/flint_summary.json", summary.create_ci_output(true))?;
+    let entries: Vec<_> = summary
+        .results
+        .iter()
+        .map(|result| {
+            serde_json::json!({
+                "name": result.test_name,
+                "ids": result.minecraft_ids,
+                "success": result.success && !result.skipped,
+                "skipped": result.skipped,
+                "error": result.failure_reason,
+            })
+        })
+        .collect();
+    fs::write(
+        "log/flint_summary.json",
+        serde_json::to_vec_pretty(&entries)?,
+    )?;
     println!("Summary saved to log/flint_summary.json");
     Ok(())
 }
@@ -265,7 +301,7 @@ pub fn print_failure_urls(
 
     let base = resolve_viz_base_url(cfg);
     let mut emitted = false;
-    // specs/paths/results run in lockstep — `run_tests` preserves order.
+    // Results follow spec order, including skips and any partial run that panicked.
     for ((load_result, path), result) in specs.iter().zip(paths.iter()).zip(summary.results.iter())
     {
         if result.success || result.skipped {
@@ -315,64 +351,117 @@ mod tests {
     use super::*;
     use crate::{TestLoader, TestRunner};
     use std::sync::Arc;
+    use steel_utils::locks::SyncMutex;
+
+    static SUMMARY_LOCK: SyncMutex<()> = SyncMutex::new(());
 
     #[test]
-    #[ignore = "needs FlintBenchmark tests (TEST_PATH); run with --ignored"]
-    fn test_run_flint_selected() {
+    fn implemented_items_include_base_items_and_block_item_aliases() {
         crate::init();
-        init_env();
-
-        let cfg = load_config();
-        let loader = TestLoader::new(&cfg.test_path(), true)
-            .unwrap_or_else(|e| panic!("error while loading test files: {e}"));
-        let paths = collect_filtered_paths(&loader, &cfg);
-        let specs = loader
-            .load_specs(&paths, false)
-            .unwrap_or_else(|e| panic!("error while loading test specs: {e}"));
-
-        let runner = TestRunner::new(Arc::new(SteelAdapter));
-        let summary = runner.run_tests(&specs);
-        summary.print_concise_summary();
-        save_summary(&summary).unwrap_or_else(|e| panic!("failed to save flint summary: {e}"));
-        print_failure_urls(&specs, &paths, &summary, &cfg);
-        assert_eq!(summary.failed_tests, 0, "Not all flint tests passed!");
+        let blocks: FxHashSet<_> = get_implemented_blocks().into_iter().collect();
+        let items: FxHashSet<_> = get_implemented_items().into_iter().collect();
+        for id in [
+            "minecraft:stick",
+            "minecraft:carrot",
+            "minecraft:cocoa_beans",
+            "minecraft:glow_berries",
+            "minecraft:oak_door",
+            "minecraft:torch",
+            "minecraft:lily_pad",
+            "minecraft:scaffolding",
+        ] {
+            assert!(items.contains(id), "Missing {id}");
+        }
+        for id in ["minecraft:glass", "minecraft:frogspawn"] {
+            assert_eq!(
+                items.contains(id),
+                blocks.contains(id),
+                "Block-item gating mismatch for {id}"
+            );
+        }
     }
 
     #[test]
     #[ignore = "needs FlintBenchmark tests (TEST_PATH); run with --ignored"]
-    fn test_run_all_flint_benchmarks() {
+    fn test_run_flint_selected() -> anyhow::Result<()> {
+        let _summary_guard = SUMMARY_LOCK.lock();
+        let cfg = load_suite_config()?;
+        let loader = TestLoader::new(&cfg.test_path(), true)?;
+        run_suite(&cfg, &loader, collect_filtered_paths(&loader, &cfg)?)
+    }
+
+    #[test]
+    #[ignore = "needs FlintBenchmark tests (TEST_PATH); run with --ignored"]
+    fn test_run_all_flint_benchmarks() -> anyhow::Result<()> {
+        let _summary_guard = SUMMARY_LOCK.lock();
+        let cfg = load_suite_config()?;
+        let loader = TestLoader::new(&cfg.test_path(), true)?;
+        run_suite(&cfg, &loader, loader.collect_all_test_files()?)
+    }
+
+    fn load_suite_config() -> anyhow::Result<FlintConfig> {
+        match fs::remove_file("log/flint_summary.json") {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error).context("Could not remove the previous Flint summary"),
+        }
         crate::init();
-        init_env();
+        init_env()?;
+        load_config()
+    }
 
-        let cfg = load_config();
-        let test_dir = cfg.test_path();
-        assert!(
-            test_dir.exists(),
-            "FlintBenchmark tests directory not found, skipping"
-        );
+    fn run_suite(
+        cfg: &FlintConfig,
+        loader: &TestLoader,
+        paths: Vec<PathBuf>,
+    ) -> anyhow::Result<()> {
+        use flint_core::TestSpecLoadResult;
+        use flint_core::results::TestResult;
+        use std::panic::{AssertUnwindSafe, catch_unwind};
 
-        let loader = TestLoader::new(&test_dir, true)
-            .unwrap_or_else(|e| panic!("error while loading test files: {e}"));
-        let paths = loader
-            .collect_all_test_files()
-            .unwrap_or_else(|e| panic!("error while loading test files: {e}"));
-        assert!(
+        anyhow::ensure!(
             !paths.is_empty(),
-            "No test files matched the filter criteria in {}",
-            test_dir.to_str().unwrap_or("NONE")
+            "No Flint tests selected in {}",
+            cfg.test_path().display()
         );
-
-        println!("Found {} test(s) to run", paths.len());
-
-        let specs = loader
-            .load_specs(&paths, false)
-            .unwrap_or_else(|e| panic!("error while loading test specs: {e}"));
-
+        let specs = loader.load_specs(&paths, false)?;
         let runner = TestRunner::new(Arc::new(SteelAdapter));
-        let summary = runner.run_tests(&specs);
+        let mut results = Vec::with_capacity(specs.len());
+        for spec in &specs {
+            match spec {
+                TestSpecLoadResult::Loaded(spec) => {
+                    let Ok(result) = catch_unwind(AssertUnwindSafe(|| runner.run_test(spec)))
+                    else {
+                        // The panic hook reports the cause. Stop using the engine after an unexpected panic.
+                        let mut result =
+                            TestResult::new(&spec.name).with_failure_reason("Flint test panicked");
+                        result.minecraft_ids.clone_from(&spec.minecraft_ids);
+                        results.push(result);
+                        break;
+                    };
+                    results.push(result);
+                }
+                TestSpecLoadResult::Skipped { spec, reason } => {
+                    results.push(TestResult::skipped(&spec.name, reason));
+                }
+            }
+        }
+        let summary = TestSummary::from_results(results);
         summary.print_concise_summary();
-        save_summary(&summary).unwrap_or_else(|e| panic!("failed to save flint summary: {e}"));
-        print_failure_urls(&specs, &paths, &summary, &cfg);
-        assert_eq!(summary.failed_tests, 0, "No tests were run");
+        save_summary(&summary)?;
+        print_failure_urls(&specs, &paths, &summary, cfg);
+        for result in &summary.results {
+            if !result.skipped
+                && let Some(reason) = &result.failure_reason
+            {
+                eprintln!("error: {}: {reason}", result.test_name);
+            }
+        }
+        anyhow::ensure!(
+            summary.total_tests > summary.skipped_tests,
+            "No Flint tests executed"
+        );
+        anyhow::ensure!(summary.failed_tests == 0, "Flint tests failed");
+        Ok(())
     }
 }

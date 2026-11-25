@@ -97,20 +97,16 @@ const fn player_slot_to_index(slot: PlayerSlot) -> usize {
 }
 
 /// Converts a Flint [`Item`] to a Steel [`ItemStack`].
-///
-/// Handles the `minecraft:` namespace prefix (strips it if present) and
-/// looks up the item in the registry. Returns an empty stack if the item
-/// is not found.
-fn flint_item_to_stack(item: &Item) -> ItemStack {
-    let item_id = item.id.strip_prefix("minecraft:").unwrap_or(&item.id);
-    let Some(item_ref) = REGISTRY
+fn flint_item_to_stack(item: &Item) -> anyhow::Result<ItemStack> {
+    let id = item
+        .id
+        .parse::<Identifier>()
+        .map_err(|error| anyhow::anyhow!("Invalid item ID {}: {error}", item.id))?;
+    let item_ref = REGISTRY
         .items
-        .by_key(&Identifier::vanilla(item_id.to_string()))
-    else {
-        tracing::warn!("Unknown item: {} - returning empty stack", item.id);
-        return ItemStack::empty();
-    };
-    ItemStack::with_count(item_ref, i32::from(item.count))
+        .by_key(&id)
+        .ok_or_else(|| anyhow::anyhow!("Unknown item {id}"))?;
+    Ok(ItemStack::with_count(item_ref, i32::from(item.count)))
 }
 
 /// Converts a Steel [`ItemStack`] to a Flint [`Item`].
@@ -152,7 +148,10 @@ impl FlintPlayer for SteelTestPlayer {
 
     fn set_slot(&mut self, slot: PlayerSlot, item: Option<&Item>) -> Result<(), anyhow::Error> {
         let index = player_slot_to_index(slot);
-        let stack = item.map_or_else(ItemStack::empty, flint_item_to_stack);
+        let stack = item
+            .map(flint_item_to_stack)
+            .transpose()?
+            .unwrap_or_else(ItemStack::empty);
 
         let mut inv = self.player.inventory.lock();
         inv.set_item(index, stack);
@@ -172,10 +171,11 @@ impl FlintPlayer for SteelTestPlayer {
     }
 
     fn select_hotbar(&mut self, slot: u8) -> Result<(), anyhow::Error> {
-        if (1..=9).contains(&slot) {
-            // Flint uses 1-9, Steel uses 0-8
-            self.player.inventory.lock().set_selected_slot(slot - 1);
-        }
+        anyhow::ensure!(
+            (1..=PlayerInventory::SELECTION_SIZE).contains(&slot),
+            "Invalid Flint hotbar slot {slot}"
+        );
+        self.player.inventory.lock().set_selected_slot(slot - 1);
         Ok(())
     }
 
