@@ -49,7 +49,7 @@ impl Player {
         if ticks_used < kinetic_weapon.delay_ticks() {
             return;
         }
-        let ticks_used = ticks_used - kinetic_weapon.delay_ticks();
+        let ticks_after_delay = ticks_used - kinetic_weapon.delay_ticks();
 
         let look = self.look_angle();
         let attacker_speed = look.dot(kinetic_motion(self.as_ref()));
