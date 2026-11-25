@@ -108,7 +108,7 @@ impl From<GameTypeInput> for GameType {
 
 #[derive(Deserialize)]
 struct EntityPredicateInput {
-    #[serde(default, alias = "minecraft:entity_type")]
+    #[serde(default, rename = "type", alias = "minecraft:entity_type")]
     entity_type: Option<String>,
     #[serde(default, alias = "minecraft:vehicle")]
     vehicle: Option<Map<String, Value>>,
@@ -344,8 +344,8 @@ fn parse_sound_list_json(value: SoundListInput) -> Vec<Identifier> {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
 enum EnchantmentLevelType {
+    #[serde(rename = "minecraft:enchantment_level")]
     EnchantmentLevel,
 }
 
