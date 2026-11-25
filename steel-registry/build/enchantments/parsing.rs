@@ -239,12 +239,9 @@ pub(super) fn parse_entity_predicate_json(value: &Value) -> Result<EntityPredica
                     .to_owned(),
             );
         }
-        (Some(value), None) => {
-            parse_type_specific_predicate_json(&Value::Object(value))?
-        },
+        (Some(value), None) => parse_type_specific_predicate_json(&Value::Object(value))?,
         (None, Some(value)) => {
-            let player: PlayerPredicateInput =
-                decode(&Value::Object(value), "player predicate")?;
+            let player: PlayerPredicateInput = decode(&Value::Object(value), "player predicate")?;
             EntityTypeSpecificPredicateJson::Player(player_predicate(
                 player.gamemode,
                 player.food,
