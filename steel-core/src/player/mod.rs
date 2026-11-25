@@ -468,9 +468,14 @@ impl Player {
             // the stale `item` copy is not written back.
             {
                 let mut inventory = self.inventory.lock();
-                if inventory.get_item_in_hand(hand).item() == active.item() {
-                    inventory.adopt_use_item(hand);
+                if inventory.get_item_in_hand(hand).item() != active.item() {
+                    drop(inventory);
+                    self.stop_using_item();
+
+                    return;
                 }
+
+                inventory.adopt_use_item(hand);
             }
             behavior.use_on_release(&item)
         } else {
