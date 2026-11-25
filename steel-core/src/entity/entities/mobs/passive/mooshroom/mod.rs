@@ -46,7 +46,7 @@ use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, DefaultEntityPush, Entity, EntityBase,
     EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
     LivingEntityBase, Mob, MobBase, PathfinderMob, RemovalReason, SharedEntity, SpawnGroupData,
-    SpawnRule, next_entity_id,
+    SpawnRule, next_entity_id, sync_dirty_mob_effects,
 };
 use crate::loot::vanilla_loot_tables;
 use crate::physics::MoveResult;
@@ -403,25 +403,6 @@ impl MushroomCowEntity {
 
         true
     }
-
-    fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
-        }
-
-        let display = self.living_base.mob_effect_display_state();
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
-        self.entity_data
-            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
-    }
 }
 
 impl DefaultEntityPush for MushroomCowEntity {}
@@ -469,7 +450,10 @@ impl Entity for MushroomCowEntity {
     }
 
     fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
+        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
+            self.entity_data
+                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
+        }
     }
 
     fn max_up_step(&self) -> f32 {

@@ -5,6 +5,7 @@
 //! delegate to. The block and entity raycasts follow `ProjectileUtil`.
 
 mod arrow;
+mod fireball;
 mod hurting;
 mod throwable;
 mod throwable_item;
@@ -50,6 +51,7 @@ use super::{
 };
 
 pub(crate) use arrow::{ARROW_GRAVITY, AbstractArrow, ArrowBase, ArrowPickup};
+pub use fireball::Fireball;
 pub use hurting::{AbstractHurtingProjectile, HurtingProjectileBase, INITIAL_ACCELERATION_POWER};
 pub use throwable::ThrowableProjectile;
 pub use throwable_item::ThrowableItemProjectile;
