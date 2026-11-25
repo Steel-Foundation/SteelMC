@@ -777,7 +777,6 @@ fn apply_mob_effect(
 
 /// Runs a `minecraft:explode` effect centered on `entity`.
 fn explode_at(effect: &EnchantmentExplodeEffect, level: i32, entity: &SharedEntity) {
-    // Vanilla passes the effect's server level, which is always the affected entity's level.
     let Some(world) = entity.level() else {
         return;
     };
@@ -919,7 +918,6 @@ fn post_attack_requirements_state(
             post_attack_requirements_state(term, context, level).map(|matched| !matched)
         }
         EnchantmentEffectRequirements::EntityProperties { entity, predicate } => {
-            // Vanilla `EntityPredicate.matches` rejects an absent entity.
             let Some(entity) = context.entity(*entity) else {
                 return Some(false);
             };
