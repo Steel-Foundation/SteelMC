@@ -59,6 +59,14 @@ fn decode<T: DeserializeOwned>(value: &Value, description: &str) -> Result<T, St
     serde_json::from_value(value.clone()).map_err(|error| format!("invalid {description}: {error}"))
 }
 
+fn deserialize_present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
 #[derive(Deserialize)]
 struct TaggedObject {
     #[serde(rename = "type")]
@@ -107,25 +115,42 @@ impl From<GameTypeInput> for GameType {
 
 #[derive(Deserialize)]
 struct EntityPredicateInput {
-    #[serde(default, rename = "type", alias = "minecraft:entity_type")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        rename = "type",
+        alias = "minecraft:entity_type"
+    )]
     entity_type: Option<String>,
-    #[serde(default, alias = "minecraft:vehicle")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        alias = "minecraft:vehicle"
+    )]
     vehicle: Option<Map<String, Value>>,
-    #[serde(default, alias = "minecraft:flags")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        alias = "minecraft:flags"
+    )]
     flags: Option<EntityFlagsInput>,
-    #[serde(default)]
-    type_specific: Option<Value>,
-    #[serde(default, rename = "minecraft:type_specific/player")]
-    player_type_specific: Option<Value>,
+    #[serde(default, deserialize_with = "deserialize_present")]
+    type_specific: Option<Map<String, Value>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        rename = "minecraft:type_specific/player"
+    )]
+    player_type_specific: Option<Map<String, Value>>,
     #[serde(flatten)]
     unsupported_fields: Map<String, Value>,
 }
 
 #[derive(Deserialize)]
 struct EntityFlagsInput {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_present")]
     is_fall_flying: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_present")]
     is_in_water: Option<bool>,
     #[serde(flatten)]
     unsupported_fields: Map<String, Value>,
@@ -135,7 +160,7 @@ struct EntityFlagsInput {
 struct PlayerPredicateInput {
     #[serde(default)]
     gamemode: Vec<GameTypeInput>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_present")]
     food: Option<PlayerFoodInput>,
     #[serde(flatten)]
     unsupported_fields: Map<String, Value>,
@@ -214,9 +239,12 @@ pub(super) fn parse_entity_predicate_json(value: &Value) -> Result<EntityPredica
                     .to_owned(),
             );
         }
-        (Some(value), None) => parse_type_specific_predicate_json(&value)?,
+        (Some(value), None) => {
+            parse_type_specific_predicate_json(&Value::Object(value))?
+        },
         (None, Some(value)) => {
-            let player: PlayerPredicateInput = decode(&value, "player predicate")?;
+            let player: PlayerPredicateInput =
+                decode(&Value::Object(value), "player predicate")?;
             EntityTypeSpecificPredicateJson::Player(player_predicate(
                 player.gamemode,
                 player.food,
@@ -263,6 +291,7 @@ fn parse_type_specific_predicate_json(
 struct DamageSourcePredicateInput {
     #[serde(default)]
     tags: Vec<DamageSourceTagPredicateInput>,
+    #[serde(default, deserialize_with = "deserialize_present")]
     is_direct: Option<bool>,
 }
 
@@ -302,7 +331,10 @@ enum ItemHolderSetInput {
 }
 
 pub(super) fn parse_item_holder_set_json(value: &Value) -> Result<ItemHolderSetJson, String> {
-    let input: ItemHolderSetInput = decode(value, "match_tool item set")?;
+    convert_item_holder_set(decode(value, "match_tool item set")?)
+}
+
+fn convert_item_holder_set(input: ItemHolderSetInput) -> Result<ItemHolderSetJson, String> {
     match input {
         ItemHolderSetInput::Single(raw) => {
             if let Some(tag) = raw.strip_prefix('#') {
@@ -573,7 +605,8 @@ struct MatchToolRequirementsInput {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MatchToolPredicateInput {
-    items: Option<Value>,
+    #[serde(default, deserialize_with = "deserialize_present")]
+    items: Option<ItemHolderSetInput>,
 }
 
 pub(super) fn parse_requirements_json(value: &Value) -> Result<RequirementsJson, String> {
@@ -617,8 +650,7 @@ pub(super) fn parse_requirements_json(value: &Value) -> Result<RequirementsJson,
             let items = input
                 .predicate
                 .items
-                .as_ref()
-                .map(parse_item_holder_set_json)
+                .map(convert_item_holder_set)
                 .transpose()?;
             Ok(RequirementsJson::MatchTool { items })
         }
