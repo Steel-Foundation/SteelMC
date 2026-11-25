@@ -11,6 +11,8 @@ use crate::entity::Entity;
 use crate::player::chat::OutgoingChatMessage;
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::{Identifier, translations};
+use text_components::Modifier;
+use text_components::format::Color;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("msg"), |_| command())
@@ -44,11 +46,13 @@ fn send_message(ctx: &SteelCommandContext<CommandSource>) -> Result<i32, Command
 
         if let Some(source_player) = source.player() {
             outgoing_message.send_to_player(source_player, &outgoing_chat_type);
-        } else if source.entity().is_none() {
+        } else {
             source.send_system_message(
                 &translations::COMMANDS_MESSAGE_DISPLAY_OUTGOING
                     .message([player.display_name(), message.clone()])
-                    .component(),
+                    .component()
+                    .color(Color::Gray)
+                    .italic(true),
             );
         }
 
