@@ -130,7 +130,8 @@ struct ConditionalEntityEffectJson {
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 struct ConditionalDamageImmunityEffectJson {
-    effect: EmptyEffectJson,
+    #[serde(rename = "effect")]
+    _effect: EmptyEffectJson,
     #[serde(default)]
     requirements: Option<RequirementsJson>,
 }
