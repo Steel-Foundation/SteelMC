@@ -411,9 +411,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether this entity obstructs block placement.
     ///
-    /// Base entities do not obstruct placement unless a concrete entity type opts in.
+    /// Vanilla `LivingEntity` sets `blocksBuilding`, so all living entities
+    /// obstruct placement; other entity types opt in.
     fn blocks_building(&self) -> bool {
-        false
+        self.as_living_entity().is_some()
     }
 
     /// Returns whether this entity can be targeted by picking and interaction raycasts.
@@ -1586,6 +1587,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.as_living_entity().is_some()
     }
 
+    /// Whether clients replay this entity's movement as a path of timed steps.
+    fn uses_stepped_interpolation(&self) -> bool {
+        // TODO: move the shulker exception into an override once Shulker is implemented.
+        self.is_living_entity() && self.entity_type() != &vanilla_entities::SHULKER
+    }
+
     /// Returns whether this entity belongs to vanilla's `AbstractArrow` hierarchy.
     fn is_abstract_arrow(&self) -> bool {
         self.entity_type().is_abstract_arrow
@@ -2226,6 +2233,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns whether the entity is on fire on the server.
     fn is_on_fire(&self) -> bool {
         self.base().is_on_fire(self.fire_immune())
+    }
+
+    /// Returns vanilla `Entity.getLightLevelDependentMagicValue`: the curved
+    /// brightness at this entity's eye, or `0.0` when its chunk is unavailable.
+    fn get_light_level_dependent_magic_value(&self) -> f32 {
+        let Some(world) = self.level() else {
+            return 0.0;
+        };
+
+        let position = self.position();
+        let block_pos = BlockPos::new(
+            position.x.floor() as i32,
+            self.get_eye_y().floor() as i32,
+            position.z.floor() as i32,
+        );
+        if !world.is_full_chunk_loaded_at(block_pos) {
+            return 0.0;
+        }
+
+        world.light_level_dependent_magic_value(block_pos)
     }
 
     /// Returns whether this entity currently renders as visually on fire.
@@ -3552,15 +3579,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// get the air drag value of the entity
     fn get_air_drag(&self) -> f64 {
         let Some(entity) = self.as_living_entity() else {
-            return DEFAULT_AIR_DRAG;
+            return f64::from(DEFAULT_AIR_DRAG as f32);
         };
-        compute_modified_friction(
-            DEFAULT_AIR_DRAG,
+
+        f64::from(compute_modified_friction(
+            DEFAULT_AIR_DRAG as f32,
             entity
                 .attributes()
                 .lock()
-                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER),
-        )
+                .required_value(vanilla_attributes::AIR_DRAG_MODIFIER) as f32,
+        ))
     }
 
     /// Applies gravity to the entity's velocity.
@@ -3617,8 +3645,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         delta: DVec3,
     ) -> Option<MoveResult> {
         let world = self.level()?;
+        // TODO: also predict self movement of entities simulated on both sides.
+        let predicted = mover_type != MoverType::SelfMovement && self.uses_stepped_interpolation();
+
         if self.no_physics() {
-            return self.move_without_physics(delta);
+            let result = self.move_without_physics(delta)?;
+            if predicted {
+                self.base()
+                    .record_predicted_movement(result.actual_movement);
+            }
+
+            return Some(result);
         }
 
         let mut movement = delta;
@@ -3661,7 +3698,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 self.remove_latest_movement_recording();
                 return None;
             }
+
+            if predicted {
+                self.base()
+                    .record_predicted_movement(result.actual_movement);
+            }
         }
+
         let vertical_state_update =
             EntityVerticalMovementStateUpdate::for_move(movement, self.is_server_driven_movement());
         let movement_flags = EntityMovementFlags::after_move_with_previous(
@@ -3694,11 +3737,20 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         if result.horizontal_collision {
             let vel = self.velocity();
             self.set_velocity(DVec3::new(
-                if result.x_collision { 0.0 } else { vel.x },
+                if result.x_collision {
+                    0.0_f64.copysign(-vel.x)
+                } else {
+                    vel.x
+                },
                 vel.y,
-                if result.z_collision { 0.0 } else { vel.z },
+                if result.z_collision {
+                    0.0_f64.copysign(-vel.z)
+                } else {
+                    vel.z
+                },
             ));
         }
+
         if result.vertical_collision && self.can_simulate_movement() {
             let velocity = self.velocity();
             let landing_context = EntityLandingContext::new(
@@ -3731,7 +3783,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                                 self.as_entity_event_source(),
                             ),
                         );
+                        self.game_event(&vanilla_game_events::BOUNCE);
+                        self.base().mark_position_for_interpolation();
                     }
+
                     res
                 } else {
                     landing_context.default_velocity_after_fall_on()
@@ -4179,7 +4234,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 }
 
-fn compute_modified_friction(friction: f64, modifier: f64) -> f64 {
+pub(super) fn compute_modified_friction(friction: f32, modifier: f32) -> f32 {
     (1.0 - (1.0 - friction) * modifier).clamp(0.0, 1.0)
 }
 

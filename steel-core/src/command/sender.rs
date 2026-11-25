@@ -1,5 +1,6 @@
 //! Module defining the sender of a command.
 use std::{fmt, sync::Arc};
+use steel_registry::vanilla_game_rules::SEND_COMMAND_FEEDBACK;
 use text_components::TextComponent;
 use uuid::Uuid;
 
@@ -116,6 +117,12 @@ impl CommandSender {
             Self::Console => CommandSenderKey::Console,
             Self::Rcon => CommandSenderKey::Rcon,
         }
+    }
+
+    /// Whether command-result feedback should reach this sender.
+    pub(crate) fn accepts_command_feedback(&self) -> bool {
+        self.get_player()
+            .is_none_or(|player| player.get_world().get_game_rule(&SEND_COMMAND_FEEDBACK))
     }
 
     /// Returns the player if the sender is a player.

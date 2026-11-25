@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::{
+    REGISTRY,
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt as _,
@@ -55,6 +56,26 @@ impl SlabBlock {
 }
 
 impl BlockBehavior for SlabBlock {
+    fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
+        let slab_type = state.get_value(SLAB_TYPE);
+        if slab_type == SlabType::Double
+            || !context.with_item(|item| item.item() == REGISTRY.items.by_block(self.block))
+        {
+            return false;
+        }
+        if !context.replaces_clicked_block() {
+            return true;
+        }
+
+        let face = context.clicked_face();
+        let above_half = context.click_location().y - f64::from(context.place_pos().y()) > 0.5;
+        if slab_type == SlabType::Top {
+            face == Direction::Down || (!above_half && face.is_horizontal())
+        } else {
+            face == Direction::Up || (above_half && face.is_horizontal())
+        }
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let existing_state = context.world.get_block_state(context.place_pos());
         if existing_state.get_block() == self.block {
@@ -123,6 +144,10 @@ impl WeatheringCopperSlabBlock {
 }
 
 impl BlockBehavior for WeatheringCopperSlabBlock {
+    fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
+        self.slab.can_be_replaced(state, context)
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         self.slab.get_state_for_placement(context)
     }

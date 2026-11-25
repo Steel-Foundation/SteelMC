@@ -1,6 +1,8 @@
 use super::*;
 use crate::entity::get_kill_credit;
 use crate::test_support::TestPlayerBuilder;
+use simdnbt::borrow::read_compound;
+use std::io::Cursor;
 use std::sync::{Arc, Weak};
 use steel_registry::data_components::vanilla_components::SwingAnimation;
 
@@ -154,10 +156,10 @@ fn living_combat_memory_stores_and_expires_last_hurt_by_mob() {
     assert_eq!(stored_attacker.uuid(), attacker.uuid());
     assert_eq!(entity.last_hurt_by_mob_timestamp(), 1);
 
-    entity.living_base().tick_living_combat_memory(101);
+    entity.living_base().tick_living_combat_memory(None, 101);
     assert!(entity.last_hurt_by_mob().is_some());
 
-    entity.living_base().tick_living_combat_memory(102);
+    entity.living_base().tick_living_combat_memory(None, 102);
     assert!(entity.last_hurt_by_mob().is_none());
     assert_eq!(entity.last_hurt_by_mob_timestamp(), 102);
 }
@@ -175,7 +177,7 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
     assert_eq!(entity.last_hurt_mob_timestamp(), 0);
 
     target.set_health(0.0);
-    entity.living_base().tick_living_combat_memory(1);
+    entity.living_base().tick_living_combat_memory(None, 1);
 
     assert!(entity.last_hurt_mob().is_none());
     assert_eq!(entity.last_hurt_mob_timestamp(), 1);
@@ -227,5 +229,82 @@ fn closest_open_space_direction_skips_full_collision_neighbors() {
             ],
         ),
         Direction::Up
+    );
+}
+
+#[test]
+fn persistent_living_state_roundtrips_through_nbt() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let source = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(12.5);
+    {
+        let mut attributes = source.attributes().lock();
+        attributes.set_base_value(vanilla_attributes::MAX_HEALTH, 30.0);
+        attributes.set_base_value(vanilla_attributes::MAX_ABSORPTION, 4.0);
+    }
+    source.set_absorption_amount(3.0);
+    source.living_base.increment_death_time();
+    source.living_base.increment_death_time();
+    source.living_base.apply_post_impulse_grace_time(7);
+    source
+        .living_base
+        .set_ignore_fall_damage_from_current_impulse(true, DVec3::new(1.0, 2.0, 3.0));
+    source.set_fall_flying(true);
+    source.set_sleeping_pos(BlockPos::new(4, 5, 6));
+    source.add_mob_effect(
+        ActiveMobEffect::with_duration(vanilla_mob_effects::HASTE, 200, 2)
+            .with_ambient(true)
+            .with_visible(false),
+    );
+    source.equip(
+        EquipmentSlot::Head,
+        ItemStack::new(&vanilla_items::DIAMOND_HELMET),
+    );
+    let player_uuid = Uuid::from_u128(0x1234);
+    source.set_last_hurt_by_player(player_uuid, 55);
+
+    let mut nbt = NbtCompound::new();
+    source.save_persistent_living_data(&mut nbt);
+    let mut bytes = Vec::new();
+    nbt.write(&mut bytes);
+    let borrowed = read_compound(&mut Cursor::new(bytes.as_slice()))
+        .expect("saved living state should be valid NBT");
+
+    let loaded = LivingFluidTestEntity::new(0.0, 0.0, true);
+    loaded.load_persistent_living_data((&borrowed).into());
+
+    assert_eq!(loaded.get_health(), 12.5);
+    assert_eq!(loaded.get_max_health(), 30.0);
+    assert_eq!(loaded.get_absorption_amount(), 3.0);
+    assert_eq!(loaded.living_base.death_time(), 2);
+    assert_eq!(
+        loaded
+            .living_base
+            .current_impulse_context_reset_grace_time(),
+        40
+    );
+    assert_eq!(
+        loaded.living_base.current_impulse_impact_pos(),
+        Some(DVec3::new(1.0, 2.0, 3.0))
+    );
+    assert!(loaded.is_fall_flying());
+    assert_eq!(loaded.sleeping_pos(), Some(BlockPos::new(4, 5, 6)));
+    assert_eq!(loaded.last_hurt_by_player_uuid(), Some(player_uuid));
+    assert_eq!(loaded.last_hurt_by_player_memory_time(), 55);
+
+    let effect = loaded
+        .living_base
+        .mob_effect(vanilla_mob_effects::HASTE)
+        .expect("haste effect should load");
+    assert_eq!(effect.duration(), 200);
+    assert_eq!(effect.amplifier(), 2);
+    assert!(effect.is_ambient());
+    assert!(!effect.is_visible());
+
+    let equipment = loaded.living_base().equipment().lock();
+    assert_eq!(
+        equipment.get_ref(EquipmentSlot::Head).item().key,
+        vanilla_items::DIAMOND_HELMET.key
     );
 }
