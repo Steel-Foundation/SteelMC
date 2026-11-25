@@ -327,34 +327,6 @@ enum ItemHolderSetInput {
     Direct(Vec<String>),
 }
 
-pub(super) fn parse_item_holder_set_json(value: &Value) -> Result<ItemHolderSetJson, String> {
-    convert_item_holder_set(decode(value, "match_tool item set")?)
-}
-
-fn convert_item_holder_set(input: ItemHolderSetInput) -> Result<ItemHolderSetJson, String> {
-    match input {
-        ItemHolderSetInput::Single(raw) => {
-            if let Some(tag) = raw.strip_prefix('#') {
-                Ok(ItemHolderSetJson::Tag(parse_identifier(tag)?))
-            } else {
-                Ok(ItemHolderSetJson::Direct(vec![parse_identifier(&raw)?]))
-            }
-        }
-        ItemHolderSetInput::Direct(items) => {
-            let items = items
-                .into_iter()
-                .map(|item| {
-                    if item.starts_with('#') {
-                        return Err("match_tool direct item lists cannot contain tags".to_owned());
-                    }
-                    parse_identifier(&item)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(ItemHolderSetJson::Direct(items))
-        }
-    }
-}
-
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum SoundListInput {
