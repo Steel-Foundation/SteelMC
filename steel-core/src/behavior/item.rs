@@ -126,9 +126,9 @@ pub trait ItemBehavior: Send + Sync {
                 context.player.start_using_item(context.hand);
                 return InteractionResult::Consume;
             }
-            if let Some(sound) = kinetic_sound {
+            if let Some(start_sound) = kinetic_sound {
                 context.player.start_using_item(context.hand);
-                if let Some(sound) = sound {
+                if let Some(sound) = start_sound {
                     let player = context.player.as_ref();
                     context.world.play_sound_holder_at(
                         &sound,
