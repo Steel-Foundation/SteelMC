@@ -44,7 +44,7 @@ fn send_message(ctx: &SteelCommandContext<CommandSource>) -> Result<i32, Command
 
         if let Some(source_player) = source.player() {
             outgoing_message.send_to_player(source_player, &outgoing_chat_type);
-        } else {
+        } else if source.entity().is_none() {
             source.send_system_message(
                 &translations::COMMANDS_MESSAGE_DISPLAY_OUTGOING
                     .message([player.display_name(), message.clone()])
