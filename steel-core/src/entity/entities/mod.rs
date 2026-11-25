@@ -4,7 +4,7 @@ pub mod mobs;
 pub mod objects;
 
 pub use mobs::ambient::BatEntity;
-pub use mobs::hostile::{BlazeEntity, EndermiteEntity};
+pub use mobs::hostile::{BlazeEntity, EndermanEntity, EndermiteEntity};
 pub use mobs::passive::*;
 pub use objects::display_ui::{ItemFrameEntity, LeashFenceKnotEntity};
 pub use objects::effects::AreaEffectCloudEntity;

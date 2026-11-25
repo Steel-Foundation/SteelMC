@@ -17,6 +17,7 @@ pub mod chunk_saver;
 pub mod command;
 pub mod config;
 pub(crate) mod enchantment_helper;
+pub(crate) mod enchantment_provider;
 pub mod entity;
 pub mod fluid;
 pub mod inventory;

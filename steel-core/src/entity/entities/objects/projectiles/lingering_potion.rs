@@ -20,7 +20,7 @@ use crate::entity::entities::AreaEffectCloudEntity;
 use crate::entity::{
     AbstractThrownPotion, Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity,
     Projectile, ProjectileBase, ProjectileHit, SharedEntity, ThrowableItemProjectile,
-    ThrowableProjectile, apply_implicit_item_stack_components, next_entity_id,
+    ThrowableProjectile, ThrownPotionItem, apply_implicit_item_stack_components, next_entity_id,
 };
 use crate::world::{ClipHitResult, World};
 
@@ -167,6 +167,12 @@ impl ThrowableItemProjectile for LingeringPotionEntity {
             .item_stack
             .get()
             .clone()
+    }
+}
+
+impl ThrownPotionItem for LingeringPotionEntity {
+    fn thrown_potion_item(&self) -> ItemStack {
+        ThrowableItemProjectile::get_item(self)
     }
 }
 

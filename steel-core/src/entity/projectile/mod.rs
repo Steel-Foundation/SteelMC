@@ -62,6 +62,7 @@ pub use throwable::ThrowableProjectile;
 pub use throwable_item::ThrowableItemProjectile;
 pub use thrown_potion::{
     AbstractThrownPotion, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH,
+    ThrownPotionItem,
 };
 pub use wind_charge::AbstractWindCharge;
 

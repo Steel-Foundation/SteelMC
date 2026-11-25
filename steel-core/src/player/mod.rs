@@ -75,14 +75,14 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
-    DROWNING_DAMAGE, FALL_DAMAGE, FIRE_DAMAGE, FREEZE_DAMAGE, IMMEDIATE_RESPAWN, KEEP_INVENTORY,
-    PVP, SHOW_DEATH_MESSAGES,
+    DROWNING_DAMAGE, FALL_DAMAGE, FIRE_DAMAGE, FORGIVE_DEAD_PLAYERS, FREEZE_DAMAGE,
+    IMMEDIATE_RESPAWN, KEEP_INVENTORY, PVP, SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags,
     vanilla_entities, vanilla_game_events,
 };
-use steel_utils::{entity_events::EntityStatus, locks::Shared, translations};
+use steel_utils::{WorldAabb, entity_events::EntityStatus, locks::Shared, translations};
 use tick_state::PlayerTickState;
 use uuid::Uuid;
 
@@ -153,6 +153,10 @@ use steel_utils::{
 use crate::inventory::container::Container;
 
 const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
+
+/// Search box used to notify nearby neutral mobs when a player dies.
+const NEUTRAL_MOB_FORGIVENESS_RADIUS_XZ: f64 = 32.0;
+const NEUTRAL_MOB_FORGIVENESS_RADIUS_Y: f64 = 10.0;
 
 const DROP_SPAM_THROTTLER_INCREMENT_STEP: i32 = 20;
 const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
@@ -945,6 +949,30 @@ impl Player {
                 content: death_message,
                 overlay: false,
             });
+        }
+
+        if world.get_game_rule(&FORGIVE_DEAD_PLAYERS) {
+            let pos = self.block_position();
+            let aabb = WorldAabb::new(
+                f64::from(pos.x()),
+                f64::from(pos.y()),
+                f64::from(pos.z()),
+                f64::from(pos.x()) + 1.0,
+                f64::from(pos.y()) + 1.0,
+                f64::from(pos.z()) + 1.0,
+            )
+            .inflate_xyz(
+                NEUTRAL_MOB_FORGIVENESS_RADIUS_XZ,
+                NEUTRAL_MOB_FORGIVENESS_RADIUS_Y,
+                NEUTRAL_MOB_FORGIVENESS_RADIUS_XZ,
+            );
+            for entity in world.get_entities_of_class_matching(&aabb, |entity| {
+                !entity.is_spectator() && entity.as_neutral_mob().is_some()
+            }) {
+                if let Some(neutral) = entity.as_neutral_mob() {
+                    neutral.player_died(world.as_ref(), self);
+                }
+            }
         }
 
         if !world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator {

@@ -23,7 +23,7 @@ use crate::entity::{
     AbstractThrownPotion, Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity,
     Projectile, ProjectileBase, ProjectileHit, SPLASH_HORIZONTAL_REACH, SPLASH_RANGE_SQ,
     SPLASH_VERTICAL_REACH, SharedEntity, ThrowableItemProjectile, ThrowableProjectile,
-    compute_margin,
+    ThrownPotionItem, compute_margin,
 };
 use crate::world::{ClipHitResult, World};
 
@@ -203,6 +203,12 @@ impl ThrowableItemProjectile for SplashPotionEntity {
             .item_stack
             .get()
             .clone()
+    }
+}
+
+impl ThrownPotionItem for SplashPotionEntity {
+    fn thrown_potion_item(&self) -> ItemStack {
+        ThrowableItemProjectile::get_item(self)
     }
 }
 

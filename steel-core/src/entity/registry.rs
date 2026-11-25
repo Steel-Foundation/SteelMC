@@ -4,7 +4,6 @@ use std::ops::Deref;
 use std::sync::{OnceLock, Weak};
 
 use glam::DVec3;
-use rand::Rng;
 use simdnbt::borrow::{
     BaseNbtCompound as BorrowedNbtCompound, NbtCompound as BorrowedNbtCompoundView,
 };
@@ -12,6 +11,7 @@ use steel_registry::RegistryExt;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{REGISTRY, RegistryEntry};
 use steel_utils::BlockPos;
+use steel_utils::random::RandomSource;
 use uuid::Uuid;
 
 use super::generated_entities::{register_entity_factories, register_spawn_rules};
@@ -19,7 +19,7 @@ use super::{
     EntityBaseLoad, EntityBaseSaveData, EntityFireFreezeState, EntityIdBlock, EntitySpawnReason,
     SharedEntity, reserve_entity_ids,
 };
-use crate::world::{LevelReader, World};
+use crate::world::World;
 
 /// Factory function type for creating entities.
 ///
@@ -35,7 +35,7 @@ pub type EntityLoadFactory = fn(EntityTypeRef, EntityBaseLoad) -> SharedEntity;
 
 /// Spawn placement predicate of an entity type.
 pub(crate) type SpawnRule =
-    fn(EntityTypeRef, &dyn LevelReader, EntitySpawnReason, BlockPos, &mut dyn Rng) -> bool;
+    fn(EntityTypeRef, &World, EntitySpawnReason, BlockPos, &mut RandomSource) -> bool;
 
 /// Entity load request before the registry assigns a runtime ID.
 pub struct EntityLoadRequest {

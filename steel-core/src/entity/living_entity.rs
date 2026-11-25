@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
 use crate::loot::{LOOT_TABLES, LootResult};
-use steel_math::vector::NORMALIZE_EPSILON as VEC3_NORMALIZE_EPSILON;
+use steel_math::vector::{NORMALIZE_EPSILON as VEC3_NORMALIZE_EPSILON, normalize};
 use steel_math::{DEGREE_90, RAD_TO_DEG_F64, round_f32, trig};
 use steel_registry::data_components::vanilla_components::{
     BLOCKS_ATTACKS, DEATH_PROTECTION, USE_EFFECTS,
@@ -677,6 +677,62 @@ pub trait LivingEntity: Entity {
         }
 
         world.clip(start, end, block_shape, fluid).is_miss()
+    }
+
+    /// Returns whether `target` is looking at this entity at any gaze height.
+    fn is_looking_at_me(
+        &self,
+        target: &dyn LivingEntity,
+        cone_size: f64,
+        adjust_for_distance: bool,
+        see_through_transparent_blocks: bool,
+        gaze_heights: &[f64],
+    ) -> bool {
+        let look = normalize(target.look_angle());
+        let self_position = self.position();
+        let target_position = target.position();
+        let target_eye_y = target.get_eye_y();
+
+        for &gaze_height in gaze_heights {
+            let mut direction = DVec3::new(
+                self_position.x - target_position.x,
+                gaze_height - target_eye_y,
+                self_position.z - target_position.z,
+            );
+            let distance = direction.length();
+            direction = normalize(direction);
+            let dot = look.dot(direction);
+            let cone = cone_size / if adjust_for_distance { distance } else { 1.0 };
+            if dot > 1.0 - cone
+                && target.has_line_of_sight_with(
+                    self.as_entity_event_source(),
+                    if see_through_transparent_blocks {
+                        ClipBlockShape::Visual
+                    } else {
+                        ClipBlockShape::Collider
+                    },
+                    ClipFluid::None,
+                    gaze_height,
+                )
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Returns whether a player is wearing a gaze-disguise helmet.
+    fn is_wearing_gaze_disguise(&self) -> bool {
+        if self.as_player().is_none() {
+            return false;
+        }
+
+        let mut wearing = false;
+        self.with_equipment_slot(EquipmentSlot::Head, &mut |stack| {
+            wearing = stack.item().has_tag(&ItemTag::GAZE_DISGUISE_EQUIPMENT);
+        });
+        wearing
     }
 
     /// Returns vanilla base living-entity invulnerability.
@@ -3474,59 +3530,111 @@ pub trait LivingEntity: Entity {
         }
     }
 
-    /// Returns `true` and commits the move on success, or
-    /// `false` and leaves the entity untouched on failure.
+    /// Teleports to `(x, y, z)` after validating the landing position.
     fn random_teleport(&self, world: &Arc<World>, x: f64, y: f64, z: f64, broadcast: bool) -> bool {
-        let Some(landing_y) = random_teleport_ground_y(world, x, y, z) else {
+        let never_invalid = |_| false;
+        self.random_teleport_with_predicate(world, x, y, z, broadcast, &never_invalid)
+    }
+
+    /// Teleports to `(x, y, z)`, rejecting blocks matching `is_invalid_position`.
+    fn random_teleport_with_predicate(
+        &self,
+        world: &Arc<World>,
+        x: f64,
+        y: f64,
+        z: f64,
+        broadcast: bool,
+        is_invalid_position: &dyn Fn(BlockStateId) -> bool,
+    ) -> bool {
+        let clamped = world
+            .world_border_snapshot()
+            .clamp_vec3_to_bound(DVec3::new(x, y, z));
+        let mut pos = BlockPos::containing(clamped.x, clamped.y, clamped.z);
+        if !world.has_full_chunk(ChunkPos::from_block_pos(pos)) {
             return false;
-        };
+        }
+
+        let mut landing_y = y;
+        while pos.y() > world.get_min_y() {
+            pos = pos.below();
+            let state = world.get_block_state(pos);
+            if state
+                .get_block()
+                .has_tag(&BlockTag::ENTITIES_CAN_TELEPORT_TO)
+            {
+                return self.check_position_and_teleport(
+                    world,
+                    clamped.x,
+                    landing_y,
+                    clamped.z,
+                    broadcast,
+                    is_invalid_position,
+                    state,
+                );
+            }
+            landing_y -= 1.0;
+        }
+        false
+    }
+
+    /// Validates and commits a teleport at `(x, y, z)`.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the predicate and broadcast flag are kept explicit for callers"
+    )]
+    fn check_position_and_teleport(
+        &self,
+        world: &Arc<World>,
+        x: f64,
+        y: f64,
+        z: f64,
+        broadcast: bool,
+        is_invalid_position: &dyn Fn(BlockStateId) -> bool,
+        state: BlockStateId,
+    ) -> bool {
+        if is_invalid_position(state) {
+            return false;
+        }
 
         let dimensions = self.base().dimensions();
         let aabb = WorldAabb::entity_box(
             x,
-            landing_y,
+            y,
             z,
             f64::from(dimensions.half_width()),
             f64::from(dimensions.height),
         );
-        let collision = WorldCollisionProvider::for_entity(world, self.as_entity_event_source());
-        if collision.has_entity_collision(&aabb)
-            || collision.has_block_collision_with_context(&aabb, BlockCollisionContext::empty())
+        let collision = WorldCollisionProvider::new(world);
+        if collision.has_collision_with_context(&aabb, BlockCollisionContext::empty())
             || aabb_contains_any_liquid(world, aabb)
         {
             return false;
         }
 
-        if self.teleport_to(DVec3::new(x, landing_y, z)).is_err() {
+        // The visitor returns false on an invalid block; the helper stops there.
+        let has_invalid_position = !super::block_effects::for_each_block_in_aabb(aabb, |pos| {
+            !is_invalid_position(world.get_block_state(pos))
+        });
+        if has_invalid_position || !self.can_randomly_teleport_to(x, y, z) {
             return false;
         }
 
-        if let Some(pathfinder) = self.as_pathfinder_mob() {
-            pathfinder.mob_base().navigation().lock().stop();
+        if self.teleport_to(DVec3::new(x, y, z)).is_err() {
+            return false;
         }
-
         if broadcast {
             self.broadcast_entity_event(EntityStatus::Teleport);
         }
+        if let Some(pathfinder) = self.as_pathfinder_mob() {
+            pathfinder.mob_base().navigation().lock().stop();
+        }
         true
     }
-}
 
-/// Walks down from `y` until standing on a block that blocks motion,
-/// mirroring the descent loop in vanilla `Entity.randomTeleport`. Returns
-/// `None` if the world's floor is reached without finding solid ground.
-fn random_teleport_ground_y(world: &Arc<World>, x: f64, y: f64, z: f64) -> Option<f64> {
-    let mut pos = BlockPos::containing(x, y, z);
-    let mut current_y = y;
-    while pos.y() > world.get_min_y() {
-        let below = pos.below();
-        if world.get_block_state(below).blocks_motion() {
-            return Some(current_y);
-        }
-        current_y -= 1.0;
-        pos = below;
+    /// Returns whether this entity accepts a teleport landing at `(x, y, z)`.
+    fn can_randomly_teleport_to(&self, _x: f64, _y: f64, _z: f64) -> bool {
+        true
     }
-    None
 }
 
 fn death_loot_items_with_rng<E: LivingEntity + ?Sized>(

@@ -247,18 +247,22 @@ impl MobBase {
         &self.sensing
     }
 
+    /// Returns the stored target without attack validation.
+    #[must_use]
+    pub fn target_unchecked(&self) -> Option<SharedEntity> {
+        let mut target = self.target.lock();
+        let upgraded = target.as_ref().and_then(WeakEntity::upgrade);
+        if upgraded.is_none() {
+            *target = None;
+        }
+        upgraded
+    }
+
     #[must_use]
     pub fn target(&self, is_valid: impl Fn(&dyn LivingEntity) -> bool) -> Option<SharedEntity> {
-        let mut target = self.target.lock();
-        let Some(upgraded) = target.as_ref().and_then(WeakEntity::upgrade) else {
-            *target = None;
-            return None;
-        };
-        let living_target = upgraded.as_living_entity()?;
-        if !is_valid(living_target) {
-            return None;
-        }
-        Some(upgraded)
+        let target = self.target_unchecked()?;
+        let living_target = target.as_living_entity()?;
+        is_valid(living_target).then_some(target)
     }
 
     pub fn set_target(
@@ -423,6 +427,11 @@ pub trait Mob: LivingEntity + Leashable {
     fn target(&self) -> Option<SharedEntity> {
         self.mob_base()
             .target(|target| self.is_valid_target(target))
+    }
+
+    /// Returns the raw target even when it is no longer a valid attack target.
+    fn target_unchecked(&self) -> Option<SharedEntity> {
+        self.mob_base().target_unchecked()
     }
 
     /// Sets vanilla `Mob.target`.

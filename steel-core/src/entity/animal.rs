@@ -3,7 +3,6 @@
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
-use rand::Rng;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -15,6 +14,7 @@ use steel_registry::{vanilla_blocks, vanilla_entities};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
+use steel_utils::random::RandomSource;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, UuidExt};
 use uuid::Uuid;
@@ -209,7 +209,7 @@ pub trait Animal: AgeableMob {
         level: &(impl LevelReader + ?Sized),
         spawn_reason: EntitySpawnReason,
         pos: BlockPos,
-        _random: &mut dyn Rng,
+        _random: &mut RandomSource,
     ) -> bool
     where
         Self: Sized,
@@ -382,6 +382,8 @@ pub trait Animal: AgeableMob {
 mod tests {
     use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
     use steel_utils::BlockStateId;
+    use steel_utils::random::RandomSource;
+    use steel_utils::random::legacy_random::LegacyRandom;
     use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use super::*;
@@ -437,7 +439,7 @@ mod tests {
             &level,
             EntitySpawnReason::Natural,
             BlockPos::new(0, 64, 0),
-            &mut rand::rng(),
+            &mut RandomSource::Legacy(LegacyRandom::from_seed(0)),
         ));
     }
 
@@ -451,7 +453,7 @@ mod tests {
             &level,
             EntitySpawnReason::Natural,
             BlockPos::new(0, 64, 0),
-            &mut rand::rng(),
+            &mut RandomSource::Legacy(LegacyRandom::from_seed(0)),
         ));
 
         let level = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 9);
@@ -461,7 +463,7 @@ mod tests {
             &level,
             EntitySpawnReason::Natural,
             BlockPos::new(0, 64, 0),
-            &mut rand::rng(),
+            &mut RandomSource::Legacy(LegacyRandom::from_seed(0)),
         ));
     }
 
@@ -475,7 +477,7 @@ mod tests {
             &level,
             EntitySpawnReason::TrialSpawner,
             BlockPos::new(0, 64, 0),
-            &mut rand::rng(),
+            &mut RandomSource::Legacy(LegacyRandom::from_seed(0)),
         ));
     }
 }
