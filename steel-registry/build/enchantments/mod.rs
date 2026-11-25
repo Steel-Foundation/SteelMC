@@ -4,7 +4,7 @@ use crate::generator_functions::generate_sound_event_ref;
 use heck::{ToShoutySnakeCase, ToSnakeCase};
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
-use serde::Deserialize;
+use serde::{Deserialize, de};
 use steel_utils::Identifier;
 use steel_utils::types::GameType;
 
