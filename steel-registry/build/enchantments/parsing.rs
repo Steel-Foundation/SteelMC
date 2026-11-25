@@ -56,8 +56,7 @@ pub(super) fn parse_required_tag(raw: &str) -> Result<Identifier, String> {
 }
 
 fn decode<T: DeserializeOwned>(value: &Value, description: &str) -> Result<T, String> {
-    serde_json::from_value(value.clone())
-        .map_err(|error| format!("invalid {description}: {error}"))
+    serde_json::from_value(value.clone()).map_err(|error| format!("invalid {description}: {error}"))
 }
 
 #[derive(Deserialize)]
@@ -178,9 +177,7 @@ fn player_predicate(
     }
 }
 
-pub(super) fn parse_entity_predicate_json(
-    value: &Value,
-) -> Result<EntityPredicateJson, String> {
+pub(super) fn parse_entity_predicate_json(value: &Value) -> Result<EntityPredicateJson, String> {
     let input: EntityPredicateInput = decode(value, "entity_properties predicate")?;
 
     let entity_type = input
@@ -190,21 +187,25 @@ pub(super) fn parse_entity_predicate_json(
         .transpose()?
         .unwrap_or(EntityTypePredicateJson::Any);
 
-    let vehicle = input.vehicle.map_or(EntityVehiclePredicateJson::Any, |vehicle| {
-        if vehicle.is_empty() {
-            EntityVehiclePredicateJson::Present
-        } else {
-            EntityVehiclePredicateJson::Unsupported
-        }
-    });
+    let vehicle = input
+        .vehicle
+        .map_or(EntityVehiclePredicateJson::Any, |vehicle| {
+            if vehicle.is_empty() {
+                EntityVehiclePredicateJson::Present
+            } else {
+                EntityVehiclePredicateJson::Unsupported
+            }
+        });
 
-    let flags = input.flags.map_or_else(EntityFlagsPredicateJson::any, |flags| {
-        EntityFlagsPredicateJson {
-            is_fall_flying: flags.is_fall_flying,
-            is_in_water: flags.is_in_water,
-            unsupported: !flags.unsupported_fields.is_empty(),
-        }
-    });
+    let flags = input
+        .flags
+        .map_or_else(EntityFlagsPredicateJson::any, |flags| {
+            EntityFlagsPredicateJson {
+                is_fall_flying: flags.is_fall_flying,
+                is_in_water: flags.is_in_water,
+                unsupported: !flags.unsupported_fields.is_empty(),
+            }
+        });
 
     let type_specific = match (input.type_specific, input.player_type_specific) {
         (Some(_), Some(_)) => {
@@ -300,9 +301,7 @@ enum ItemHolderSetInput {
     Direct(Vec<String>),
 }
 
-pub(super) fn parse_item_holder_set_json(
-    value: &Value,
-) -> Result<ItemHolderSetJson, String> {
+pub(super) fn parse_item_holder_set_json(value: &Value) -> Result<ItemHolderSetJson, String> {
     let input: ItemHolderSetInput = decode(value, "match_tool item set")?;
     match input {
         ItemHolderSetInput::Single(raw) => {
@@ -317,9 +316,7 @@ pub(super) fn parse_item_holder_set_json(
                 .into_iter()
                 .map(|item| {
                     if item.starts_with('#') {
-                        return Err(
-                            "match_tool direct item lists cannot contain tags".to_owned(),
-                        );
+                        return Err("match_tool direct item lists cannot contain tags".to_owned());
                     }
                     parse_identifier(&item)
                 })
@@ -447,14 +444,14 @@ struct ApplyMobEffectInput {
 
 fn parse_mob_effect_selection(raw: &str) -> Result<MobEffectSelectionJson, String> {
     if let Some(tag) = raw.strip_prefix('#') {
-        return Ok(MobEffectSelectionJson::UnsupportedTag(parse_identifier(tag)?));
+        return Ok(MobEffectSelectionJson::UnsupportedTag(parse_identifier(
+            tag,
+        )?));
     }
     Ok(MobEffectSelectionJson::Single(parse_identifier(raw)?))
 }
 
-pub(super) fn parse_entity_effect_json(
-    value: &Value,
-) -> Result<super::EntityEffectJson, String> {
+pub(super) fn parse_entity_effect_json(value: &Value) -> Result<super::EntityEffectJson, String> {
     use super::EntityEffectJson;
 
     let tagged: TaggedObject = decode(value, "enchantment entity effect")?;
@@ -610,8 +607,7 @@ pub(super) fn parse_requirements_json(value: &Value) -> Result<RequirementsJson,
             ))
         }
         "minecraft:random_chance" => {
-            let input: RandomChanceRequirementsInput =
-                decode(value, "random_chance requirement")?;
+            let input: RandomChanceRequirementsInput = decode(value, "random_chance requirement")?;
             Ok(RequirementsJson::RandomChance {
                 chance: parse_random_chance_value(&input.chance)?,
             })
