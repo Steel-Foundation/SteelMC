@@ -84,7 +84,7 @@ impl Player {
             let applies = |condition: Option<&KineticWeaponCondition>| {
                 condition.is_some_and(|condition| {
                     condition.test(
-                        ticks_used,
+                        ticks_after_delay,
                         attacker_speed,
                         relative_speed,
                         PLAYER_ACTION_FACTOR,
