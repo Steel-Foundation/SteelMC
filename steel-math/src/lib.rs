@@ -9,7 +9,7 @@ mod noise_math;
 mod rounding;
 pub mod transformation;
 pub mod trig;
-/// Vanilla `Vec3` axis rotations.
+/// Minecraft `Vec3` operations
 pub mod vector;
 
 pub use crate::angle::{

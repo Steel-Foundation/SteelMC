@@ -262,3 +262,21 @@ pub struct TemplatePoolData {
     /// Weighted elements. Each entry is (element, weight).
     pub elements: Vec<(PoolElement, i32)>,
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::vanilla_template_pools::{TEMPLATE_COUNT, vanilla_templates};
+
+    /// Loading the templates must not need a large stack, even in an unoptimized build. An
+    /// overflow aborts the whole test run rather than failing this test.
+    #[test]
+    fn vanilla_templates_fit_a_small_stack() {
+        let count = std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(|| vanilla_templates().len())
+            .expect("spawn")
+            .join()
+            .expect("join");
+        assert_eq!(count, TEMPLATE_COUNT);
+    }
+}

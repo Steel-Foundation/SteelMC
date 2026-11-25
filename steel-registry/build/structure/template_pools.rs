@@ -231,12 +231,13 @@ fn extract_template(path: &str) -> Result<ExtractedTemplate, String> {
 
 // ── Code generation helpers ──
 
+/// A constant expression, so that it can be used in a `static`.
 fn gen_identifier(id: &str) -> TokenStream {
     assert!(!id.is_empty(), "Cannot generate an empty identifier");
     if let Some((namespace, path)) = id.split_once(':') {
-        quote! { Identifier::new(#namespace, #path) }
+        quote! { Identifier::new_static(#namespace, #path) }
     } else {
-        quote! { Identifier::vanilla(#id.to_string()) }
+        quote! { Identifier::vanilla_static(#id) }
     }
 }
 
@@ -429,10 +430,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         template_tokens.extend(quote! {
-            (#key, TemplateData {
-                size: [#sx, #sy, #sz],
-                jigsaws: vec![#(#jigsaw_tokens),*],
-            }),
+            (#key, [#sx, #sy, #sz], &[#(#jigsaw_tokens),*]),
         });
         template_nbt_match_arms.extend(quote! {
             #name => Some(include_bytes!(#include_path)),
@@ -461,12 +459,14 @@ pub(crate) fn build() -> TokenStream {
         /// Returns all vanilla structure templates with their jigsaw data.
         ///
         /// Each entry is (template_key, template_data).
-        #[expect(
-            clippy::large_unopt_stack_frames,
-            reason = "generated data literal called once at startup; optimized builds don't keep it on the stack"
-        )]
         pub fn vanilla_templates() -> Vec<(Identifier, TemplateData)> {
-            vec![#template_tokens]
+            static TEMPLATES: &[(Identifier, [i32; 3], &[JigsawBlock])] = &[#template_tokens];
+            TEMPLATES
+                .iter()
+                .map(|(key, size, jigsaws)| {
+                    (key.clone(), TemplateData { size: *size, jigsaws: jigsaws.to_vec() })
+                })
+                .collect()
         }
 
         /// Returns the compressed NBT bytes for a vanilla structure template.
