@@ -298,7 +298,7 @@ impl Player {
         item_stack: &ItemStack,
         world: &World,
     ) -> Vec<SharedEntity> {
-        let look = self.look_angle();
+        let look = self.head_look_angle();
         if look.length_squared() <= f64::EPSILON {
             return Vec::new();
         }
