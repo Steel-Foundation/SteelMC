@@ -173,7 +173,7 @@ impl ChunkMap {
         // this chunk can detect the status is disallowed and exit.
         chunk_holder.wake_all_watchers();
 
-        // Persist dirty POIs; columns stay resident (vanilla behavior).
+        // Save dirty POIs, but leave the columns loaded (as vanilla does).
         let world = self.world_gen_context.world();
         world.on_entity_chunk_unload_start(pos);
         world.flush_poi_column(pos);

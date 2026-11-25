@@ -1,10 +1,9 @@
-//! World-level POI storage, organized by chunk column and section for spatial
-//! queries and per-column persistence.
+//! World POIs, grouped by chunk column and section so queries and saves stay cheap.
 
 use std::mem;
 
 use rustc_hash::{FxHashMap, FxHashSet};
-use steel_registry::{REGISTRY, RegistryExt};
+use steel_registry::{REGISTRY, RegistryExt, poi::PoiTypeRef};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, PackedSectionBlockPos, SectionPos};
 
 use super::persistence::{PersistentPoiColumn, PersistentPoiRecord};
@@ -12,44 +11,40 @@ use super::poi_instance::PointOfInterest;
 use super::poi_set::PointOfInterestSet;
 use crate::chunk::section::ChunkSection;
 
-/// Filter for POI queries based on ticket availability.
+/// Which ticket states a query accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OccupationStatus {
-    /// Only POIs with at least one free ticket.
+    /// POIs with a claim slot left.
     Free,
-    /// Only POIs with zero free tickets.
+    /// POIs whose claim slots are all taken.
     Occupied,
-    /// All POIs regardless of ticket status.
+    /// Every POI, claimed or not.
     Any,
 }
 
 impl OccupationStatus {
-    /// Returns `true` if the given POI matches this status filter.
-    ///
-    /// `max_tickets` is only evaluated for [`Self::Occupied`].
+    /// Whether `poi` passes this ticket filter.
     #[must_use]
-    pub fn matches(self, poi: &PointOfInterest, max_tickets: impl FnOnce() -> u32) -> bool {
+    pub const fn matches(self, poi: &PointOfInterest) -> bool {
         match self {
             Self::Any => true,
             Self::Free => poi.has_space(),
-            Self::Occupied => poi.is_occupied(max_tickets()),
+            Self::Occupied => poi.is_occupied(),
         }
     }
 }
 
-/// Column of POI sets indexed by section Y coordinate.
+/// POI sets for one chunk column, keyed by section Y.
 type PoiColumn = FxHashMap<i32, PointOfInterestSet>;
 
-/// World-level storage for all points of interest.
-///
-/// Organized as `ChunkPos -> section_y -> PointOfInterestSet`.
+/// All world POIs, laid out as `ChunkPos -> section_y -> PointOfInterestSet`.
 pub struct PointOfInterestStorage {
     columns: FxHashMap<ChunkPos, PoiColumn>,
-    /// Columns whose authoritative state is held in memory, even when empty.
+    /// Columns whose POIs are loaded, including empty ones.
     loaded: FxHashSet<ChunkPos>,
-    /// Loaded columns with changes that have not been persisted yet.
+    /// Loaded columns waiting to be written back.
     dirty: FxHashSet<ChunkPos>,
-    /// Columns checked on disk that had no persisted data.
+    /// Columns known to have no data on disk.
     store_missing: FxHashSet<ChunkPos>,
 }
 
@@ -67,13 +62,6 @@ const fn resolve_pos(pos: BlockPos) -> (ChunkPos, i32, PackedSectionBlockPos) {
     (chunk_pos, section_pos.y(), packed)
 }
 
-fn max_tickets_for(type_id: usize) -> u32 {
-    REGISTRY
-        .poi_types
-        .by_id(type_id)
-        .map_or(0, |t| t.ticket_count)
-}
-
 pub(crate) fn distance_sq(a: BlockPos, b: BlockPos) -> i64 {
     let dx = i64::from(a.0.x) - i64::from(b.0.x);
     let dy = i64::from(a.0.y) - i64::from(b.0.y);
@@ -82,7 +70,7 @@ pub(crate) fn distance_sq(a: BlockPos, b: BlockPos) -> i64 {
 }
 
 impl PointOfInterestStorage {
-    /// Creates an empty POI storage.
+    /// Creates empty storage.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -93,34 +81,33 @@ impl PointOfInterestStorage {
         }
     }
 
-    /// Returns `true` if this column's authoritative POI state is in memory.
+    /// Whether this column's POIs are loaded.
     #[must_use]
     pub fn is_column_loaded(&self, chunk_pos: ChunkPos) -> bool {
         self.loaded.contains(&chunk_pos)
     }
 
-    /// Returns `true` if this column was read from disk and had no persisted data.
+    /// Whether disk was checked and had nothing for this column.
     #[must_use]
     pub fn is_store_missing(&self, chunk_pos: ChunkPos) -> bool {
         self.store_missing.contains(&chunk_pos)
     }
 
-    /// Records that a column has no persisted data.
+    /// Marks a column as having nothing on disk.
     pub fn mark_store_missing(&mut self, chunk_pos: ChunkPos) {
         self.store_missing.insert(chunk_pos);
     }
 
-    /// Marks a loaded column as modified since its last save.
+    /// Flags a loaded column as needing a save.
     pub fn mark_column_dirty(&mut self, chunk_pos: ChunkPos) {
         self.loaded.insert(chunk_pos);
         self.dirty.insert(chunk_pos);
         self.store_missing.remove(&chunk_pos);
     }
 
-    /// Replaces a column with its persisted representation.
+    /// Loads a saved column into memory.
     ///
-    /// `dirty` keeps the column queued for a rewrite, for example after a
-    /// failed unload save.
+    /// `dirty` leaves the column queued for a rewrite, e.g. after a failed unload save.
     pub fn insert_loaded_column(
         &mut self,
         chunk_pos: ChunkPos,
@@ -129,7 +116,7 @@ impl PointOfInterestStorage {
     ) {
         self.columns.remove(&chunk_pos);
         for record in &column.records {
-            let Some(type_id) = REGISTRY.poi_types.id_from_key(&record.poi_type) else {
+            let Some(poi_type) = REGISTRY.poi_types.by_key(&record.poi_type) else {
                 tracing::warn!(
                     poi_type = %record.poi_type,
                     chunk = ?chunk_pos,
@@ -152,7 +139,7 @@ impl PointOfInterestStorage {
                     packed,
                     PointOfInterest {
                         pos,
-                        poi_type_id: type_id,
+                        poi_type,
                         free_tickets: record.free_tickets,
                     },
                 );
@@ -167,7 +154,7 @@ impl PointOfInterestStorage {
         }
     }
 
-    /// Starts a new authoritative column, discarding any previous in-memory state.
+    /// Starts a fresh column, replacing any in-memory state.
     pub fn start_column(&mut self, chunk_pos: ChunkPos) {
         self.columns.remove(&chunk_pos);
         self.loaded.insert(chunk_pos);
@@ -175,21 +162,18 @@ impl PointOfInterestStorage {
         self.store_missing.remove(&chunk_pos);
     }
 
-    /// Returns the persisted representation of a column.
+    /// Builds the on-disk form of a column.
     #[must_use]
     pub fn collect_column(&self, chunk_pos: ChunkPos) -> PersistentPoiColumn {
         let mut records = Vec::new();
         if let Some(column) = self.columns.get(&chunk_pos) {
             for set in column.values() {
                 for (_, poi) in set.iter() {
-                    let Some(poi_type) = REGISTRY.poi_types.by_id(poi.poi_type_id) else {
-                        continue;
-                    };
                     records.push(PersistentPoiRecord {
                         x: (poi.pos.0.x - chunk_pos.0.x * 16) as u8,
                         y: poi.pos.0.y as i16,
                         z: (poi.pos.0.z - chunk_pos.0.y * 16) as u8,
-                        poi_type: poi_type.key.clone(),
+                        poi_type: poi.poi_type.key.clone(),
                         free_tickets: poi.free_tickets,
                     });
                 }
@@ -198,7 +182,7 @@ impl PointOfInterestStorage {
         PersistentPoiColumn { records }
     }
 
-    /// Returns a snapshot of a dirty column and clears its dirty flag.
+    /// Takes a dirty column's save snapshot and marks it clean.
     #[must_use]
     pub fn dirty_column_snapshot(&mut self, chunk_pos: ChunkPos) -> Option<PersistentPoiColumn> {
         if !self.dirty.remove(&chunk_pos) {
@@ -207,7 +191,7 @@ impl PointOfInterestStorage {
         Some(self.collect_column(chunk_pos))
     }
 
-    /// Drains every dirty column snapshot, keeping columns resident.
+    /// Takes save snapshots of all dirty columns without unloading them.
     #[must_use]
     pub fn take_dirty_snapshots(&mut self) -> Vec<(ChunkPos, PersistentPoiColumn)> {
         let dirty = mem::take(&mut self.dirty);
@@ -229,17 +213,17 @@ impl PointOfInterestStorage {
             .or_default()
     }
 
-    /// Adds a POI at the given block position.
-    pub fn add(&mut self, pos: BlockPos, poi_type_id: usize, max_tickets: u32) {
+    /// Adds a POI at `pos`.
+    pub fn add(&mut self, pos: BlockPos, poi_type: PoiTypeRef) {
         let (chunk_pos, section_y, packed) = resolve_pos(pos);
         {
             let set = self.get_or_create_set(chunk_pos, section_y);
-            set.add(packed, PointOfInterest::new(pos, poi_type_id, max_tickets));
+            set.add(packed, PointOfInterest::new(pos, poi_type));
         }
         self.mark_column_dirty(chunk_pos);
     }
 
-    /// Removes the POI at the given block position.
+    /// Removes the POI at `pos`, if present.
     pub fn remove(&mut self, pos: BlockPos) {
         let (chunk_pos, section_y, packed) = resolve_pos(pos);
         let Some(column) = self.columns.get_mut(&chunk_pos) else {
@@ -261,18 +245,18 @@ impl PointOfInterestStorage {
         self.mark_column_dirty(chunk_pos);
     }
 
-    /// Returns the POI type ID at the given position, if any.
+    /// The POI type at `pos`, if present.
     #[must_use]
-    pub fn get_type(&self, pos: BlockPos) -> Option<usize> {
+    pub fn get_type(&self, pos: BlockPos) -> Option<PoiTypeRef> {
         let (chunk_pos, section_y, packed) = resolve_pos(pos);
         self.columns
             .get(&chunk_pos)?
             .get(&section_y)?
             .get(packed)
-            .map(|poi| poi.poi_type_id)
+            .map(|poi| poi.poi_type)
     }
 
-    /// Returns `true` if the POI at the given position has all tickets reserved.
+    /// Whether the POI at `pos` has no tickets left.
     #[must_use]
     pub fn is_occupied(&self, pos: BlockPos) -> bool {
         let (chunk_pos, section_y, packed) = resolve_pos(pos);
@@ -285,10 +269,10 @@ impl PointOfInterestStorage {
         let Some(poi) = set.get(packed) else {
             return false;
         };
-        poi.is_occupied(max_tickets_for(poi.poi_type_id))
+        poi.is_occupied()
     }
 
-    /// Reserves a ticket at the given position. Returns `true` if successful.
+    /// Claims a ticket at `pos`; reports whether one was available.
     #[must_use]
     pub fn reserve_ticket(&mut self, pos: BlockPos) -> bool {
         let (chunk_pos, section_y, packed) = resolve_pos(pos);
@@ -307,7 +291,7 @@ impl PointOfInterestStorage {
         true
     }
 
-    /// Releases a ticket at the given position. Returns `true` if successful.
+    /// Returns a claimed ticket at `pos`; reports whether there was room.
     #[must_use]
     pub fn release_ticket(&mut self, pos: BlockPos) -> bool {
         let (chunk_pos, section_y, packed) = resolve_pos(pos);
@@ -319,22 +303,22 @@ impl PointOfInterestStorage {
         else {
             return false;
         };
-        if !poi.release_ticket(max_tickets_for(poi.poi_type_id)) {
+        if !poi.release_ticket() {
             return false;
         }
         self.mark_column_dirty(chunk_pos);
         true
     }
 
-    /// Returns all matching POIs in a specific chunk column.
+    /// Matching POIs in one chunk column.
     #[must_use]
     pub fn get_in_chunk(
         &self,
-        type_predicate: &impl Fn(usize) -> bool,
+        type_predicate: &impl Fn(PoiTypeRef) -> bool,
         chunk_x: i32,
         chunk_z: i32,
         status: OccupationStatus,
-    ) -> Vec<(BlockPos, usize)> {
+    ) -> Vec<(BlockPos, PoiTypeRef)> {
         let chunk_pos = ChunkPos::new(chunk_x, chunk_z);
         let Some(column) = self.columns.get(&chunk_pos) else {
             return Vec::new();
@@ -343,25 +327,23 @@ impl PointOfInterestStorage {
         let mut results = Vec::new();
         for set in column.values() {
             for (_, poi) in set.iter() {
-                if type_predicate(poi.poi_type_id)
-                    && status.matches(poi, || max_tickets_for(poi.poi_type_id))
-                {
-                    results.push((poi.pos, poi.poi_type_id));
+                if type_predicate(poi.poi_type) && status.matches(poi) {
+                    results.push((poi.pos, poi.poi_type));
                 }
             }
         }
         results
     }
 
-    /// Returns all matching POIs within a cubic region centered on `center`.
+    /// Matching POIs in a cube around `center`.
     #[must_use]
     pub fn get_in_square(
         &self,
-        type_predicate: &impl Fn(usize) -> bool,
+        type_predicate: &impl Fn(PoiTypeRef) -> bool,
         center: BlockPos,
         radius: i32,
         status: OccupationStatus,
-    ) -> Vec<(BlockPos, usize)> {
+    ) -> Vec<(BlockPos, PoiTypeRef)> {
         let min_section = SectionPos::from_block_pos(BlockPos::new(
             center.0.x - radius,
             center.0.y - radius,
@@ -387,13 +369,13 @@ impl PointOfInterestStorage {
                         continue;
                     };
 
-                    for poi in set.get_matching(type_predicate, status, &max_tickets_for) {
+                    for poi in set.get_matching(type_predicate, status) {
                         let dx = (poi.pos.0.x - center.0.x).abs();
                         let dy = (poi.pos.0.y - center.0.y).abs();
                         let dz = (poi.pos.0.z - center.0.z).abs();
 
                         if dx <= radius && dy <= radius && dz <= radius {
-                            results.push((poi.pos, poi.poi_type_id));
+                            results.push((poi.pos, poi.poi_type));
                         }
                     }
                 }
@@ -403,17 +385,15 @@ impl PointOfInterestStorage {
         results
     }
 
-    /// Returns all matching POIs within a vanilla horizontal square centered on `center`.
-    ///
-    /// Mirrors `PoiManager.getInSquare`: X/Z are constrained by `radius`, while Y is not.
+    /// Matching POIs in vanilla's X/Z square around `center`; Y is unrestricted.
     #[must_use]
     pub fn get_in_horizontal_square(
         &self,
-        type_predicate: &impl Fn(usize) -> bool,
+        type_predicate: &impl Fn(PoiTypeRef) -> bool,
         center: BlockPos,
         radius: i32,
         status: OccupationStatus,
-    ) -> Vec<(BlockPos, usize)> {
+    ) -> Vec<(BlockPos, PoiTypeRef)> {
         let center_chunk = ChunkPos::from_block_pos(center);
         let chunk_radius = radius.div_euclid(16) + 1;
         let mut results = Vec::new();
@@ -426,11 +406,11 @@ impl PointOfInterestStorage {
                 };
 
                 for set in column.values() {
-                    for poi in set.get_matching(type_predicate, status, &max_tickets_for) {
+                    for poi in set.get_matching(type_predicate, status) {
                         let dx = (poi.pos.0.x - center.0.x).abs();
                         let dz = (poi.pos.0.z - center.0.z).abs();
                         if dx <= radius && dz <= radius {
-                            results.push((poi.pos, poi.poi_type_id));
+                            results.push((poi.pos, poi.poi_type));
                         }
                     }
                 }
@@ -440,11 +420,11 @@ impl PointOfInterestStorage {
         results
     }
 
-    /// Counts matching POIs within a spherical region.
+    /// Counts matching POIs inside a sphere.
     #[must_use]
     pub fn count(
         &self,
-        type_predicate: &impl Fn(usize) -> bool,
+        type_predicate: &impl Fn(PoiTypeRef) -> bool,
         pos: BlockPos,
         radius: i32,
         status: OccupationStatus,
@@ -455,10 +435,10 @@ impl PointOfInterestStorage {
         })
     }
 
-    /// Counts matching POIs within a cubic region, filtered by an additional predicate.
+    /// Counts POIs in a cube that also pass `filter`.
     fn count_in_square(
         &self,
-        type_predicate: &impl Fn(usize) -> bool,
+        type_predicate: &impl Fn(PoiTypeRef) -> bool,
         center: BlockPos,
         radius: i32,
         status: OccupationStatus,
@@ -489,7 +469,7 @@ impl PointOfInterestStorage {
                         continue;
                     };
 
-                    for poi in set.get_matching(type_predicate, status, &max_tickets_for) {
+                    for poi in set.get_matching(type_predicate, status) {
                         let dx = (poi.pos.0.x - center.0.x).abs();
                         let dy = (poi.pos.0.y - center.0.y).abs();
                         let dz = (poi.pos.0.z - center.0.z).abs();
@@ -505,10 +485,7 @@ impl PointOfInterestStorage {
         count
     }
 
-    /// Scans a chunk section for POI block states and populates the storage.
-    ///
-    /// # Panics
-    /// Panics if the POI type registry contains an inconsistent state-to-type mapping.
+    /// Populates storage from the POI blocks in a section.
     pub fn scan_and_populate(&mut self, section: &ChunkSection, section_pos: SectionPos) {
         let registry = &REGISTRY.poi_types;
         let chunk_pos = ChunkPos::new(section_pos.x(), section_pos.z());
@@ -520,22 +497,16 @@ impl PointOfInterestStorage {
                     for x in 0..16u8 {
                         let state_id = section.states().get(x as usize, y as usize, z as usize);
 
-                        let Some(poi_type_id) = registry.type_id_for_state(state_id) else {
+                        let Some(poi_type) = registry.type_for_state(state_id) else {
                             continue;
                         };
-                        let poi_type = registry
-                            .by_id(poi_type_id)
-                            .expect("POI type ID from state lookup must be valid");
                         let block_pos = BlockPos::new(
                             (section_pos.x() << 4) + i32::from(x),
                             (section_pos.y() << 4) + i32::from(y),
                             (section_pos.z() << 4) + i32::from(z),
                         );
                         let packed = PackedSectionBlockPos::from_block_pos(block_pos);
-                        set.add(
-                            packed,
-                            PointOfInterest::new(block_pos, poi_type_id, poi_type.ticket_count),
-                        );
+                        set.add(packed, PointOfInterest::new(block_pos, poi_type));
                     }
                 }
             }
@@ -543,10 +514,7 @@ impl PointOfInterestStorage {
         self.mark_column_dirty(chunk_pos);
     }
 
-    /// Updates POI storage when a block state changes.
-    ///
-    /// # Panics
-    /// Panics if the POI type registry contains an inconsistent state-to-type mapping.
+    /// Syncs storage after a block state changes.
     pub fn on_block_state_change(
         &mut self,
         pos: BlockPos,
@@ -554,8 +522,8 @@ impl PointOfInterestStorage {
         new_state: BlockStateId,
     ) {
         let registry = &REGISTRY.poi_types;
-        let old_poi = registry.type_id_for_state(old_state);
-        let new_poi = registry.type_id_for_state(new_state);
+        let old_poi = registry.type_for_state(old_state);
+        let new_poi = registry.type_for_state(new_state);
 
         if old_poi == new_poi {
             return;
@@ -565,11 +533,8 @@ impl PointOfInterestStorage {
             self.remove(pos);
         }
 
-        if let Some(type_id) = new_poi {
-            let poi_type = registry
-                .by_id(type_id)
-                .expect("POI type ID from state lookup must be valid");
-            self.add(pos, type_id, poi_type.ticket_count);
+        if let Some(poi_type) = new_poi {
+            self.add(pos, poi_type);
         }
     }
 }
@@ -577,10 +542,10 @@ impl PointOfInterestStorage {
 #[cfg(test)]
 mod tests {
     use super::{OccupationStatus, PointOfInterestStorage};
-    use steel_registry::{REGISTRY, RegistryExt, init_vanilla_registry, vanilla_poi_types};
+    use steel_registry::{init_vanilla_registry, poi::PoiTypeRef, vanilla_poi_types};
     use steel_utils::{BlockPos, ChunkPos};
 
-    fn sorted_positions(mut positions: Vec<(BlockPos, usize)>) -> Vec<BlockPos> {
+    fn sorted_positions(mut positions: Vec<(BlockPos, PoiTypeRef)>) -> Vec<BlockPos> {
         positions.sort_by_key(|(pos, _)| (pos.x(), pos.y(), pos.z()));
         positions.into_iter().map(|(pos, _)| pos).collect()
     }
@@ -591,13 +556,9 @@ mod tests {
         let chunk_pos = ChunkPos::new(-2, 3);
         let pos = BlockPos::new(-2 * 16 + 5, 64, 3 * 16 + 9);
         let poi_type = &vanilla_poi_types::HOME;
-        let type_id = REGISTRY
-            .poi_types
-            .id_from_key(&poi_type.key)
-            .expect("home POI type should be registered");
 
         let mut storage = PointOfInterestStorage::new();
-        storage.add(pos, type_id, poi_type.ticket_count);
+        storage.add(pos, poi_type);
         assert!(storage.reserve_ticket(pos));
         let column = storage
             .dirty_column_snapshot(chunk_pos)
@@ -621,14 +582,15 @@ mod tests {
     #[test]
     fn horizontal_square_query_matches_y_unbounded_vanilla_search() {
         init_vanilla_registry();
+        let poi_type = &vanilla_poi_types::HOME;
         let mut storage = PointOfInterestStorage::new();
-        storage.add(BlockPos::new(0, -64, 0), 7, 0);
-        storage.add(BlockPos::new(0, 320, 0), 7, 0);
-        storage.add(BlockPos::new(2, 64, 0), 7, 0);
-        storage.add(BlockPos::new(0, 64, 2), 7, 0);
+        storage.add(BlockPos::new(0, -64, 0), poi_type);
+        storage.add(BlockPos::new(0, 320, 0), poi_type);
+        storage.add(BlockPos::new(2, 64, 0), poi_type);
+        storage.add(BlockPos::new(0, 64, 2), poi_type);
 
         let positions = sorted_positions(storage.get_in_horizontal_square(
-            &|type_id| type_id == 7,
+            &|candidate| candidate == poi_type,
             BlockPos::new(0, 64, 0),
             1,
             OccupationStatus::Any,

@@ -4,7 +4,6 @@ use std::borrow::Cow;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::{
-    RegistryEntry as _,
     blocks::block_state_ext::BlockStateExt,
     data_components::{
         components::{GlobalPos, LodestoneTracker},
@@ -105,9 +104,8 @@ impl ItemBehavior for CompassItem {
             if !world.is_full_chunk_loaded_at(pos) {
                 return;
             }
-            let lodestone_exists = vanilla_poi_types::LODESTONE
-                .try_id()
-                .is_some_and(|id| world.poi_storage.lock().get_type(pos) == Some(id));
+            let lodestone_exists =
+                world.poi_storage.lock().get_type(pos) == Some(&vanilla_poi_types::LODESTONE);
             if lodestone_exists {
                 return;
             }

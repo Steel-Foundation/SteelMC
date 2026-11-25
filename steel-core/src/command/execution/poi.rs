@@ -11,7 +11,7 @@ use crate::command::brigadier::{
     CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
 };
 
-/// A registered POI type or POI type tag retained by a command argument.
+/// A POI type or tag resolved from a command argument.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum PoiOrTag {
     Poi(PoiTypeRef),

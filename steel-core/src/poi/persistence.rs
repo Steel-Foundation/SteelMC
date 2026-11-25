@@ -1,7 +1,6 @@
-//! Persistent POI columns, stored separately from chunks so searches can read
-//! them without loading full chunks.
+//! POI columns live in their own region files so searches don't load chunks.
 //!
-//! Columns use the same sector-based region layout as chunk storage.
+//! The region layout matches chunk storage: fixed sectors, indexed by a header.
 
 use std::{io, path::PathBuf};
 
@@ -24,51 +23,51 @@ const POI_REGION_MAGIC: [u8; 4] = *b"STLP";
 /// POI region format version, independent from the chunk format.
 const POI_FORMAT_VERSION: u16 = 1;
 
-// Header entry layout: [sector_offset: u32][size_bytes: u32].
+// Each header entry is a sector offset followed by a size, both u32.
 const POI_ENTRY_SIZE: usize = 8;
 
 const POI_TABLE_SIZE: usize = CHUNKS_PER_REGION * POI_ENTRY_SIZE;
 
 const ZERO_PADDING: [u8; SECTOR_SIZE] = [0; SECTOR_SIZE];
 
-/// All persisted POIs in one chunk column.
+/// Every POI saved for one chunk column.
 #[derive(Debug, Clone, SchemaWrite, SchemaRead)]
 pub struct PersistentPoiColumn {
-    /// POIs in this column.
+    /// Saved POIs in the column.
     pub records: Vec<PersistentPoiRecord>,
 }
 
-/// One persisted POI.
+/// A POI as written to disk.
 #[derive(Debug, Clone, SchemaWrite, SchemaRead)]
 pub struct PersistentPoiRecord {
-    /// Relative X within the chunk (0-15).
+    /// X within the chunk, 0-15.
     pub x: u8,
-    /// Absolute block Y.
+    /// World-space Y.
     pub y: i16,
-    /// Relative Z within the chunk (0-15).
+    /// Z within the chunk, 0-15.
     pub z: u8,
-    /// POI type registry key.
+    /// Registry key of the POI type.
     pub poi_type: Identifier,
-    /// Tickets still available.
+    /// Tickets left when saved.
     pub free_tickets: u32,
 }
 
-/// Persistent POI backend.
+/// Where POI columns are stored.
 pub enum PoiStorage {
-    /// Disk-backed POI region files.
+    /// Region files on disk.
     Disk(PoiRegionManager),
-    /// In-memory storage for RAM-only worlds.
+    /// RAM-only storage.
     RamOnly(RamOnlyPoiStorage),
 }
 
 impl PoiStorage {
-    /// Creates a disk-backed POI store.
+    /// Opens a store backed by region files.
     #[must_use]
     pub fn disk(base_path: impl Into<PathBuf>) -> Self {
         Self::Disk(PoiRegionManager::new(base_path))
     }
 
-    /// Creates an in-memory POI store.
+    /// Creates a store that keeps columns only in memory.
     #[must_use]
     pub fn ram_only() -> Self {
         Self::RamOnly(RamOnlyPoiStorage::new())
@@ -82,7 +81,7 @@ impl PoiStorage {
         }
     }
 
-    /// Saves a POI column.
+    /// Writes a POI column.
     pub async fn save_column(&self, pos: ChunkPos, column: &PersistentPoiColumn) -> io::Result<()> {
         match self {
             Self::Disk(manager) => manager.save_column(pos, column).await,
@@ -99,13 +98,13 @@ impl PoiStorage {
     }
 }
 
-/// In-memory POI storage for RAM-only worlds.
+/// RAM-only POI storage.
 pub struct RamOnlyPoiStorage {
     columns: AsyncRwLock<FxHashMap<ChunkPos, PersistentPoiColumn>>,
 }
 
 impl RamOnlyPoiStorage {
-    /// Creates an empty in-memory POI store.
+    /// Creates an empty store.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -129,7 +128,7 @@ impl Default for RamOnlyPoiStorage {
     }
 }
 
-/// Disk-backed POI region storage.
+/// POI storage in region files.
 pub struct PoiRegionManager {
     base_path: PathBuf,
     regions: AsyncRwLock<FxHashMap<RegionPos, PoiRegionHandle>>,

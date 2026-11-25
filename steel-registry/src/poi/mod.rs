@@ -11,6 +11,8 @@
     )
 )]
 
+use std::hash::{Hash, Hasher};
+
 use rustc_hash::FxHashMap;
 use steel_utils::{BlockStateId, Identifier};
 
@@ -38,6 +40,14 @@ pub struct PointOfInterestType {
     pub blocks: &'static [PoiBlockMatcher],
     pub ticket_count: u32,
     pub search_distance: u32,
+}
+
+// Registry identity comes from `impl_registry!`; hash by that same key so POI
+// type refs work as map keys.
+impl Hash for PointOfInterestType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.key.hash(state);
+    }
 }
 
 /// Static reference to a POI type definition.

@@ -111,8 +111,8 @@ fn start_poi_search(
     let task_query = query.clone();
     let task_world = Arc::clone(source.world());
     let (sender, receiver) = oneshot::channel();
-    // POI columns may need disk reads, so search off the tick thread and report
-    // back through the command suspension queue.
+    // POI columns can require disk reads, so search off-thread and report back
+    // through the suspension queue.
     let task = tokio::spawn(async move {
         let result = task_world
             .find_closest_poi(

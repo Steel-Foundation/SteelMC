@@ -827,12 +827,6 @@ impl World {
         let center_chunk = ChunkPos::from_block_pos(center);
         let chunk_radius = radius.div_euclid(16) + 1;
         let radius_sq = i64::from(radius) * i64::from(radius);
-        let type_id_predicate = |type_id: usize| {
-            REGISTRY
-                .poi_types
-                .by_id(type_id)
-                .is_some_and(&type_predicate)
-        };
         let mut best = None;
 
         for cx in center_chunk.0.x - chunk_radius..=center_chunk.0.x + chunk_radius {
@@ -842,11 +836,8 @@ impl World {
                 let pois = self
                     .poi_storage
                     .lock()
-                    .get_in_chunk(&type_id_predicate, cx, cz, status);
-                for (pos, type_id) in pois {
-                    let Some(poi_type) = REGISTRY.poi_types.by_id(type_id) else {
-                        continue;
-                    };
+                    .get_in_chunk(&type_predicate, cx, cz, status);
+                for (pos, poi_type) in pois {
                     Self::update_closest_poi(&mut best, center, radius, radius_sq, pos, poi_type);
                 }
             }

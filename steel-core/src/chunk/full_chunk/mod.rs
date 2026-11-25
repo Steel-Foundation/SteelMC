@@ -977,8 +977,7 @@ impl FullChunkRef<'_> {
             return;
         };
 
-        // Collect sections with POI blocks before taking the POI lock; most
-        // worldgen chunks have none.
+        // Find POI-bearing sections before locking storage; most chunks have none.
         let mut poi_sections: Vec<(usize, SectionPos)> = Vec::new();
         for (i, section) in sections.sections.iter().enumerate() {
             if section.read().contains_poi() {

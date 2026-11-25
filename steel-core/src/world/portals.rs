@@ -66,10 +66,6 @@ impl World {
     /// Finds the closest existing Nether portal POI using vanilla `PortalForcer` ordering.
     ///
     /// `to_nether` selects vanilla's 16-block Nether search radius; non-Nether targets use 128.
-    ///
-    /// # Panics
-    ///
-    /// Panics if vanilla POI registries were not initialized before portal lookup.
     #[must_use]
     pub fn find_closest_nether_portal_position(
         &self,
@@ -77,11 +73,9 @@ impl World {
         to_nether: bool,
     ) -> Option<BlockPos> {
         let radius = if to_nether { 16 } else { 128 };
-        let nether_portal_type = vanilla_poi_types::NETHER_PORTAL
-            .try_id()
-            .expect("vanilla nether portal POI type should be registered");
+        let nether_portal_type = &vanilla_poi_types::NETHER_PORTAL;
         let candidates = self.poi_storage.lock().get_in_horizontal_square(
-            &|type_id| type_id == nether_portal_type,
+            &|poi_type| poi_type == nether_portal_type,
             approximate_exit_pos,
             radius,
             OccupationStatus::Any,
