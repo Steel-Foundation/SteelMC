@@ -651,4 +651,3 @@ pub(super) fn parse_requirements_json(value: &Value) -> Result<RequirementsJson,
         }),
     }
 }
-
