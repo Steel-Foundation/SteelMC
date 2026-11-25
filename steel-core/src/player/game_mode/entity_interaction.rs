@@ -386,8 +386,6 @@ impl Player {
     }
 
     /// Stabs `target` with the item in `hand`, as a jab or a kinetic-weapon charge.
-    ///
-    /// Returns whether the target was damaged, knocked back, or dismounted.
     pub(super) fn stab_attack(
         self: &Arc<Self>,
         hand: InteractionHand,
