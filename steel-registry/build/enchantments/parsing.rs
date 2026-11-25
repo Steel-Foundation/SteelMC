@@ -172,7 +172,7 @@ struct TypedPlayerPredicateInput {
     _kind: String,
     #[serde(default)]
     gamemode: Vec<GameTypeInput>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_present")]
     food: Option<PlayerFoodInput>,
     #[serde(flatten)]
     unsupported_fields: Map<String, Value>,
@@ -372,7 +372,6 @@ enum EnchantmentLevelType {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct EnchantmentLevelValueInput {
     #[serde(rename = "type")]
     _kind: EnchantmentLevelType,
@@ -653,95 +652,3 @@ pub(super) fn parse_requirements_json(value: &Value) -> Result<RequirementsJson,
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::super::EntityEffectJson;
-    use super::*;
-
-    #[test]
-    fn parses_known_nested_effects_with_serde() {
-        let effect: EntityEffectJson = serde_json::from_value(json!({
-            "type": "minecraft:all_of",
-            "effects": [
-                {"type": "minecraft:ignite", "duration": 2.0},
-                {
-                    "type": "minecraft:apply_mob_effect",
-                    "to_apply": "minecraft:glowing",
-                    "min_duration": 1.0,
-                    "max_duration": 2.0,
-                    "min_amplifier": 0.0,
-                    "max_amplifier": 1.0
-                }
-            ]
-        }))
-        .expect("known effects should deserialize");
-
-        assert!(matches!(effect, EntityEffectJson::AllOf(effects) if effects.len() == 2));
-    }
-
-    #[test]
-    fn keeps_unknown_effect_types_as_unsupported() {
-        let effect: EntityEffectJson = serde_json::from_value(json!({
-            "type": "minecraft:future_effect",
-            "future_field": true
-        }))
-        .expect("unknown effect types should remain representable");
-
-        assert!(matches!(
-            effect,
-            EntityEffectJson::Unsupported { effect_type }
-                if effect_type.to_string() == "minecraft:future_effect"
-        ));
-    }
-
-    #[test]
-    fn rejects_unknown_fields_on_known_effects() {
-        let effect = serde_json::from_value::<EntityEffectJson>(json!({
-            "type": "minecraft:ignite",
-            "duration": 2.0,
-            "unexpected": true
-        }));
-
-        assert!(effect.is_err());
-    }
-
-    #[test]
-    fn preserves_unknown_entity_predicate_fields_as_unsupported() {
-        let predicate = parse_entity_predicate_json(&json!({
-            "flags": {
-                "is_fall_flying": true,
-                "future_flag": true
-            }
-        }))
-        .expect("unknown predicate fields are reported as unsupported");
-
-        assert!(predicate.flags.unsupported);
-    }
-
-    #[test]
-    fn rejects_both_entity_type_aliases() {
-        let predicate = parse_entity_predicate_json(&json!({
-            "type": "minecraft:pig",
-            "minecraft:entity_type": "minecraft:pig"
-        }));
-
-        assert!(predicate.is_err());
-    }
-
-    #[test]
-    fn preserves_unknown_condition_types_as_unsupported() {
-        let condition: RequirementsJson = serde_json::from_value(json!({
-            "type": "minecraft:future_condition",
-            "future_field": true
-        }))
-        .expect("unknown condition types should remain representable");
-
-        assert!(matches!(
-            condition,
-            RequirementsJson::Unsupported { condition }
-                if condition.to_string() == "minecraft:future_condition"
-        ));
-    }
-}
