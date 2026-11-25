@@ -74,29 +74,41 @@ pub(super) fn parse_poi_or_tag(
 }
 
 pub(super) fn suggest_pois(builder: &mut SuggestionsBuilder<'_>) {
-    let remaining = builder.remaining_lowercase();
-    let suggestions = if let Some(tag_prefix) = remaining.strip_prefix('#') {
-        REGISTRY
-            .poi_types
-            .tag_keys()
-            .filter(|tag| identifier_matches(tag_prefix, tag))
-            .map(|tag| format!("#{tag}"))
-            .collect::<Vec<_>>()
+    // Own the suffix so lazy suggestion iterators don't keep `builder` borrowed.
+    let remaining = builder.remaining_lowercase().to_owned();
+
+    if let Some(tag_prefix) = remaining.strip_prefix('#') {
+        add_suggestions(
+            builder,
+            REGISTRY
+                .poi_types
+                .tag_keys()
+                .filter(|tag| identifier_matches(tag_prefix, tag))
+                .map(|tag| format!("#{tag}")),
+        );
     } else {
-        REGISTRY
-            .poi_types
-            .iter()
-            .filter(|(_, poi_type)| identifier_matches(remaining, &poi_type.key))
-            .map(|(_, poi_type)| poi_type.key.to_string())
-            .chain(
-                REGISTRY
-                    .poi_types
-                    .tag_keys()
-                    .filter(|tag| identifier_matches(remaining, tag))
-                    .map(|tag| format!("#{tag}")),
-            )
-            .collect()
-    };
+        add_suggestions(
+            builder,
+            REGISTRY
+                .poi_types
+                .iter()
+                .filter(|(_, poi_type)| identifier_matches(&remaining, &poi_type.key))
+                .map(|(_, poi_type)| poi_type.key.to_string())
+                .chain(
+                    REGISTRY
+                        .poi_types
+                        .tag_keys()
+                        .filter(|tag| identifier_matches(&remaining, tag))
+                        .map(|tag| format!("#{tag}")),
+                ),
+        );
+    }
+}
+
+fn add_suggestions(
+    builder: &mut SuggestionsBuilder<'_>,
+    suggestions: impl Iterator<Item = String>,
+) {
     for suggestion in suggestions {
         builder.suggest(suggestion);
     }

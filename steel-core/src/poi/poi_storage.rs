@@ -216,10 +216,8 @@ impl PointOfInterestStorage {
     /// Adds a POI at `pos`.
     pub fn add(&mut self, pos: BlockPos, poi_type: PoiTypeRef) {
         let (chunk_pos, section_y, packed) = resolve_pos(pos);
-        {
-            let set = self.get_or_create_set(chunk_pos, section_y);
-            set.add(packed, PointOfInterest::new(pos, poi_type));
-        }
+        let set = self.get_or_create_set(chunk_pos, section_y);
+        set.add(packed, PointOfInterest::new(pos, poi_type));
         self.mark_column_dirty(chunk_pos);
     }
 
@@ -489,25 +487,23 @@ impl PointOfInterestStorage {
     pub fn scan_and_populate(&mut self, section: &ChunkSection, section_pos: SectionPos) {
         let registry = &REGISTRY.poi_types;
         let chunk_pos = ChunkPos::new(section_pos.x(), section_pos.z());
-        {
-            let set = self.get_or_create_set(chunk_pos, section_pos.y());
+        let set = self.get_or_create_set(chunk_pos, section_pos.y());
 
-            for y in 0..16u8 {
-                for z in 0..16u8 {
-                    for x in 0..16u8 {
-                        let state_id = section.states().get(x as usize, y as usize, z as usize);
+        for y in 0..16u8 {
+            for z in 0..16u8 {
+                for x in 0..16u8 {
+                    let state_id = section.states().get(x as usize, y as usize, z as usize);
 
-                        let Some(poi_type) = registry.type_for_state(state_id) else {
-                            continue;
-                        };
-                        let block_pos = BlockPos::new(
-                            (section_pos.x() << 4) + i32::from(x),
-                            (section_pos.y() << 4) + i32::from(y),
-                            (section_pos.z() << 4) + i32::from(z),
-                        );
-                        let packed = PackedSectionBlockPos::from_block_pos(block_pos);
-                        set.add(packed, PointOfInterest::new(block_pos, poi_type));
-                    }
+                    let Some(poi_type) = registry.type_for_state(state_id) else {
+                        continue;
+                    };
+                    let block_pos = BlockPos::new(
+                        (section_pos.x() << 4) + i32::from(x),
+                        (section_pos.y() << 4) + i32::from(y),
+                        (section_pos.z() << 4) + i32::from(z),
+                    );
+                    let packed = PackedSectionBlockPos::from_block_pos(block_pos);
+                    set.add(packed, PointOfInterest::new(block_pos, poi_type));
                 }
             }
         }
