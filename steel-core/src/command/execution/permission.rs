@@ -452,7 +452,6 @@ impl SteelArgumentParser for PermissionGroupParser {
                 continue;
             }
             let included = match self.suggestion_filter {
-                PermissionGroupSuggestionFilter::None => true,
                 PermissionGroupSuggestionFilter::DefaultAdd => !context
                     .source()
                     .default_permission_group_suggestions()
@@ -469,7 +468,7 @@ impl SteelArgumentParser for PermissionGroupParser {
                     .source()
                     .command_block_permission_group_suggestions()
                     .contains(&group),
-                PermissionGroupSuggestionFilter::Op => true,
+                PermissionGroupSuggestionFilter::Op | PermissionGroupSuggestionFilter::None => true,
             };
             if included {
                 builder.suggest(group);

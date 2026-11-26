@@ -202,6 +202,7 @@ pub async fn test_server_with_worlds_and_config(
     player_permission_states: PermissionSubjectIndex,
     config: Arc<RuntimeConfig>,
 ) -> Result<Arc<Server>, String> {
+    use crate::permission::PermissionCollectionsConfig;
     let mut worlds = WorldMap::new(default_domain, domains, &[]);
     for world in loaded_worlds {
         worlds.insert(world.key.clone(), Arc::clone(world));
@@ -221,7 +222,7 @@ pub async fn test_server_with_worlds_and_config(
         .map_err(|error| format!("test commands should register: {error}"))?;
     let permission_groups = PermissionManager::transient(
         PermissionGroupsConfig::default(),
-        crate::permission::PermissionCollectionsConfig::default(),
+        PermissionCollectionsConfig::default(),
     )
     .map_err(|error| format!("test permission groups should resolve: {error}"))?;
     permission_groups

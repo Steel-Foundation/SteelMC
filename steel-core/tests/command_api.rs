@@ -97,7 +97,7 @@ fn downstream_commands_can_register_primitive_keyed_and_suspended_nodes() {
         registry
             .declare_permission(
                 PermissionDeclaration::new("steel_test:extra")
-                    .unwrap()
+                    .expect("Could not declare permission key")
                     .in_collection(Identifier::new("minecraft", "gamemasters"))
             )
             .is_ok()

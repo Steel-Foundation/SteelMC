@@ -1001,24 +1001,27 @@ mod tests {
     #[test]
     fn declared_permission_becomes_discoverable_and_managed_member() {
         let collection = Identifier::new("steel_test", "commands");
-        let key = PermissionKey::parse("steel_test:build").unwrap();
+        let key = PermissionKey::parse("steel_test:build").expect("Could not parse permission key");
 
         let mut registry = CommandRegistry::new();
         registry
             .declare_permission(
                 PermissionDeclaration::new("steel_test:build")
-                    .unwrap()
+                    .expect("Could not declare permission")
                     .in_collection(collection.clone()),
             )
-            .unwrap();
+            .expect("Could not declare permission");
 
-        let registered = registry.into_inner().build_with_permissions().unwrap();
+        let registered = registry
+            .into_inner()
+            .build_with_permissions()
+            .expect("Could not build command registry");
         assert!(registered.permissions.contains(&key));
 
         let members = registered
             .declared_collections()
             .get(&collection)
-            .unwrap()
+            .expect("Could not find permissions for collection")
             .members()
             .to_vec();
         let authority = key.manage_authority();
@@ -1039,18 +1042,21 @@ mod tests {
         registry
             .declare_permission(
                 PermissionDeclaration::new("steel_test:build")
-                    .unwrap()
+                    .expect("Could not declare permission")
                     .in_collection(collection.clone())
                     .grant_collection_to(target.clone()),
             )
-            .unwrap();
+            .expect("Could not declare permission");
 
-        let registered = registry.into_inner().build_with_permissions().unwrap();
+        let registered = registry
+            .into_inner()
+            .build_with_permissions()
+            .expect("Could not build command registry");
         let declared = registered.declared_collections();
         assert!(
             declared
                 .get(&target)
-                .unwrap()
+                .expect("Could not find permissions for target")
                 .members()
                 .contains(&PermissionGroupRule::Collection(collection))
         );
@@ -1059,23 +1065,26 @@ mod tests {
     #[test]
     fn grant_permission_to_adds_the_permission_directly() {
         let target = Identifier::new("minecraft", "gamemasters");
-        let key = PermissionKey::parse("steel_test:fly").unwrap();
+        let key = PermissionKey::parse("steel_test:fly").expect("Could not parse permission key");
 
         let mut registry = CommandRegistry::new();
         registry
             .declare_permission(
                 PermissionDeclaration::new("steel_test:fly")
-                    .unwrap()
+                    .expect("Could not declare permission")
                     .grant_permission_to(target.clone()),
             )
-            .unwrap();
+            .expect("Could not declare permission");
 
-        let registered = registry.into_inner().build_with_permissions().unwrap();
+        let registered = registry
+            .into_inner()
+            .build_with_permissions()
+            .expect("Could not build command registry");
         let declared = registered.declared_collections();
         assert!(
             declared
                 .get(&target)
-                .unwrap()
+                .expect("Could not find permissions for target")
                 .members()
                 .iter()
                 .any(|member| match member {
@@ -1090,12 +1099,11 @@ mod tests {
         let mut registry = CommandRegistry::new();
         let result = registry.declare_permission(
             PermissionDeclaration::new("steel_test:fly")
-                .unwrap()
+                .expect("Could not declare permission")
                 .grant_collection_to(Identifier::new("minecraft", "moderators")),
         );
-        let error = match result {
-            Ok(_) => panic!("collection grant without in_collection should be rejected"),
-            Err(error) => error,
+        let Err(error) = result else {
+            panic!("collection grant without in_collection should be rejected")
         };
         assert!(error.to_string().contains("requires in_collection"));
     }
@@ -1106,10 +1114,10 @@ mod tests {
         registry
             .declare_permission(
                 PermissionDeclaration::new("steel_test:fly")
-                    .unwrap()
+                    .expect("Could not declare permission")
                     .grant_permission_to(Identifier::new("minecraft", "moderators")),
             )
-            .unwrap();
+            .expect("Could not declare permission");
         registry
             .register(
                 CommandRegistration::new(Identifier::new("steel_test", "dash"), || {
@@ -1117,26 +1125,34 @@ mod tests {
                 })
                 .permission_collection(Identifier::new("minecraft", "moderators")),
             )
-            .unwrap();
+            .expect("Could not register command");
 
-        let registered = registry.into_inner().build_with_permissions().unwrap();
+        let registered = registry
+            .into_inner()
+            .build_with_permissions()
+            .expect("Could not build command registry");
         let manager = PermissionManager::transient(
             PermissionGroupsConfig::default(),
             PermissionCollectionsConfig::default(),
         )
-        .unwrap();
+        .expect("Could not create manager");
         manager
             .set_declared_collections(registered.declared_collections())
-            .unwrap();
+            .expect("Could not set declared collections");
 
         let effective =
             manager.effective_permissions(&["moderators".to_owned()], &PermissionSet::new());
         assert!(
-            effective.allows_key(&PermissionKey::parse("steel_test:fly").unwrap()),
+            effective.allows_key(
+                &PermissionKey::parse("steel_test:fly").expect("Could not parse permission key")
+            ),
             "standalone declaration should be granted to moderators"
         );
         assert!(
-            effective.allows_key(&PermissionKey::parse("steel_test:command.dash").unwrap()),
+            effective.allows_key(
+                &PermissionKey::parse("steel_test:command.dash")
+                    .expect("Could not parse permission key")
+            ),
             "command-derived permission should be granted to moderators"
         );
     }

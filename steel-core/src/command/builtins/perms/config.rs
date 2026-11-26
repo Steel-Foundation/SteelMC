@@ -130,7 +130,7 @@ pub(super) fn set_op_group(
     if config.op_group == group {
         return Ok(false);
     }
-    config.op_group = group.to_owned();
+    group.clone_into(&mut config.op_group);
     Ok(true)
 }
 
@@ -388,6 +388,7 @@ mod tests {
 
     #[test]
     fn special_group_roles_are_idempotent_and_require_a_known_group() {
+        use crate::permission::COMMAND_BLOCK_GROUPS;
         let mut config = PermissionGroupsConfig::default();
         assert_eq!(set_op_group(&mut config, "moderators"), Ok(true));
         assert_eq!(config.op_group, "moderators");
@@ -407,16 +408,13 @@ mod tests {
         );
         assert_eq!(
             config.command_block_groups,
-            [crate::permission::COMMAND_BLOCK_GROUPS[0], "moderators"]
+            [COMMAND_BLOCK_GROUPS[0], "moderators"]
         );
         assert_eq!(
             set_command_block_group(&mut config, "moderators", false),
             Ok(true)
         );
-        assert_eq!(
-            config.command_block_groups,
-            crate::permission::COMMAND_BLOCK_GROUPS
-        );
+        assert_eq!(config.command_block_groups, COMMAND_BLOCK_GROUPS);
         assert!(matches!(
             set_command_block_group(&mut config, "missing", true),
             Err(PermissionGroupEditError::Missing(_))

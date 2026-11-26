@@ -1675,7 +1675,7 @@ async fn collection_export_operation(
     let notice_target = if ids.len() == 1 {
         format!("'{}'", ids[0])
     } else {
-        format!("{} collections", newly_configured)
+        format!("{newly_configured} collections")
     };
     result
         .messages
