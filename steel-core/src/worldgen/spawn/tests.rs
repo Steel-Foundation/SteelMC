@@ -39,13 +39,14 @@ use crate::{
 };
 
 use super::{
-    SpawnMode, biome_at, creature_spawn_probability,
+    SpawnMode, SpawnSite, biome_at, creature_spawn_probability,
     finalize::{
         SpawnContext, SpawnData, SpawnInitError, SpawnInitializer, SpawnOverrides, SpawnState,
         WorldgenSpawnGroup, typed_initializer,
     },
     generate, noise_biome_at,
     placement::Placement,
+    rules::{WorldgenSpawnPredicate, WorldgenSpawnRule},
 };
 
 type Position = (i32, i32);
@@ -549,6 +550,42 @@ fn worldgen_spawn_lists_have_registered_rules_and_groups() {
 }
 
 #[test]
+fn custom_spawn_predicate_advances_region_rng_on_rejection() {
+    const SEED: u64 = 42;
+    const POS: BlockPos = BlockPos::new(1, 64, 1);
+
+    init_globals();
+    let setup = SpawnTestWorld::new("minecraft:overworld", SEED, (0, 0), 1);
+    let mut region = WorldGenRegion::new(
+        &setup.world.chunk_map.world_gen_context,
+        GENERATION_PYRAMID.get_step_to(ChunkStatus::Spawn),
+        &setup.cache,
+        ChunkPos::new(0, 0),
+        RandomSource::Legacy(LegacyRandom::from_seed(SEED)),
+    );
+    let rule = WorldgenSpawnRule::new(WorldgenSpawnPredicate::Custom(|context| {
+        assert_eq!(context.site.pos, POS);
+        let _ = context.random_mut().next_f32();
+        false
+    }));
+
+    assert!(!rule.check(
+        &mut region,
+        0,
+        SpawnSite {
+            entity_type: &vanilla_entities::SHEEP,
+            pos: POS,
+        },
+    ));
+    let mut expected = LegacyRandom::from_seed(SEED);
+    let _ = expected.next_f32();
+    assert_eq!(
+        RandomState::from_random(region.random_mut()),
+        RandomState::from_legacy_seed(expected.get_seed()),
+    );
+}
+
+#[test]
 fn registered_group_initializes_entities_without_changing_spawn_rng() {
     struct CustomSheepGroup {
         remaining_red: i32,
@@ -569,7 +606,7 @@ fn registered_group_initializes_entities_without_changing_spawn_rng() {
             };
             SpawnState {
                 data: SpawnData::new(
-                    context.entity_type,
+                    context.site.entity_type,
                     MobSpawnState::sample(context.random),
                     SpawnOverrides::default(),
                     Some(initialize),
@@ -593,7 +630,10 @@ fn registered_group_initializes_entities_without_changing_spawn_rng() {
         with_group(&mut |group| {
             for color in [DyeColor::Red, DyeColor::Blue] {
                 let spawn = group.finalize(SpawnContext {
-                    entity_type: sheep_type,
+                    site: SpawnSite {
+                        entity_type: sheep_type,
+                        pos: BlockPos::ZERO,
+                    },
                     biome: &vanilla_biomes::PLAINS,
                     world: &world,
                     random: &mut random,
@@ -617,7 +657,10 @@ fn registered_group_initializes_entities_without_changing_spawn_rng() {
     with_group(&mut |group| {
         let mut random = RandomSource::Legacy(LegacyRandom::from_seed(0));
         let spawn = group.finalize(SpawnContext {
-            entity_type: sheep_type,
+            site: SpawnSite {
+                entity_type: sheep_type,
+                pos: BlockPos::ZERO,
+            },
             biome: &vanilla_biomes::PLAINS,
             world: &world,
             random: &mut random,

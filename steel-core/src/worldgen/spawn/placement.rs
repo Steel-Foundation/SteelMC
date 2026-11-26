@@ -24,6 +24,7 @@ use crate::{
 
 use SpawnPlacementKind::{InLava, InWater, NoRestrictions, OnGround};
 
+use super::SpawnSite;
 use super::rules::WorldgenSpawnRule;
 
 pub(super) enum Attempt {
@@ -59,7 +60,7 @@ impl Placement {
 
     pub(super) fn try_position(
         &self,
-        region: &WorldGenRegion<'_>,
+        region: &mut WorldGenRegion<'_>,
         world: &World,
         biome_zoom_seed: i64,
         x: i32,
@@ -90,15 +91,18 @@ impl Placement {
             position.z + half_width,
         );
 
-        let block_pos = BlockPos::from(position);
+        let site = SpawnSite {
+            entity_type: self.entity_type,
+            pos: BlockPos::from(position),
+        };
         if has_spawn_block_collision(region, box_at_spawn)
             || (!self.entity_type.allowed_in_peaceful && world.difficulty() == Difficulty::Peaceful)
-            || !self.rule.check(region, biome_zoom_seed, block_pos)
+            || !self.rule.check(region, biome_zoom_seed, site)
         {
             return Attempt::RetryAtSamePosition;
         }
 
-        let can_finalize = self.check_walk_target_value(region, block_pos)
+        let can_finalize = self.check_walk_target_value(region, site.pos)
             && (self.rule.allows_liquid || !region.contains_any_liquid(box_at_spawn));
 
         Attempt::Candidate {

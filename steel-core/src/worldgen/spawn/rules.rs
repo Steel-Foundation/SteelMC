@@ -9,12 +9,14 @@ use steel_utils::{BlockPos, Identifier};
 
 use crate::{entity::EntityRegistry, world::LevelReader as _, worldgen::WorldGenRegion};
 
+use super::{SpawnSite, SpawnSiteContext};
+
 const ANIMAL_SPAWN_MIN_BRIGHTNESS: u8 = 9;
 const TURTLE_SPAWN_HEIGHT_ABOVE_SEA: i32 = 4;
 
 pub(crate) enum WorldgenSpawnPredicate {
     GroundTag(Identifier),
-    Custom(fn(&WorldGenRegion<'_>, i64, BlockPos) -> bool),
+    Custom(fn(&mut SpawnSiteContext<'_, '_>) -> bool),
 }
 
 pub(crate) struct WorldgenSpawnRule {
@@ -36,13 +38,17 @@ impl WorldgenSpawnRule {
 
     pub(super) fn check(
         &self,
-        region: &WorldGenRegion<'_>,
+        region: &mut WorldGenRegion<'_>,
         biome_zoom_seed: i64,
-        pos: BlockPos,
+        site: SpawnSite,
     ) -> bool {
         match &self.predicate {
-            WorldgenSpawnPredicate::GroundTag(tag) => check_ground_tag(region, pos, tag),
-            WorldgenSpawnPredicate::Custom(check) => check(region, biome_zoom_seed, pos),
+            WorldgenSpawnPredicate::GroundTag(tag) => check_ground_tag(region, site.pos, tag),
+            WorldgenSpawnPredicate::Custom(check) => check(&mut SpawnSiteContext {
+                region,
+                biome_zoom_seed,
+                site,
+            }),
         }
     }
 }
@@ -137,8 +143,10 @@ fn check_ground_tag(region: &WorldGenRegion<'_>, pos: BlockPos, tag: &Identifier
         && region.raw_brightness(pos, 0) >= ANIMAL_SPAWN_MIN_BRIGHTNESS
 }
 
-fn check_polar_bear(region: &WorldGenRegion<'_>, biome_zoom_seed: i64, pos: BlockPos) -> bool {
-    let biome = super::biome_at(region, biome_zoom_seed, pos);
+fn check_polar_bear(context: &mut SpawnSiteContext<'_, '_>) -> bool {
+    let region = context.region();
+    let pos = context.site.pos;
+    let biome = context.biome();
     let tag = if biome.has_tag(&BiomeTag::POLAR_BEARS_SPAWN_ON_ALTERNATE_BLOCKS) {
         &tags::POLAR_BEARS_SPAWNABLE_ON_ALTERNATE
     } else {
@@ -148,13 +156,16 @@ fn check_polar_bear(region: &WorldGenRegion<'_>, biome_zoom_seed: i64, pos: Bloc
     check_ground_tag(region, pos, tag)
 }
 
-fn check_turtle(region: &WorldGenRegion<'_>, _biome_zoom_seed: i64, pos: BlockPos) -> bool {
+fn check_turtle(context: &mut SpawnSiteContext<'_, '_>) -> bool {
+    let region = context.region();
+    let pos = context.site.pos;
     pos.y() < region.sea_level() + TURTLE_SPAWN_HEIGHT_ABOVE_SEA
         && check_ground_tag(region, pos, &tags::SAND)
 }
 
-fn check_strider(region: &WorldGenRegion<'_>, _biome_zoom_seed: i64, pos: BlockPos) -> bool {
-    let mut above = pos.above();
+fn check_strider(context: &mut SpawnSiteContext<'_, '_>) -> bool {
+    let region = context.region();
+    let mut above = context.site.pos.above();
     while region.block_state(above).get_fluid_state().is_lava() {
         above = above.above();
     }

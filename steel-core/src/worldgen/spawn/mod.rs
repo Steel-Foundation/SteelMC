@@ -11,8 +11,9 @@ mod tests;
 use glam::{DVec3, IVec3};
 use steel_math::DEGREE_360;
 use steel_registry::biome::{BiomeRef, WorldgenCreatureSpawn};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{REGISTRY, RegistryExt};
-use steel_utils::random::{Random, legacy_random::LegacyRandom};
+use steel_utils::random::{Random, RandomSource, legacy_random::LegacyRandom};
 use steel_utils::{BlockPos, SectionPos};
 
 use crate::entity::{ENTITIES, Entity, EntityBase, SharedEntity};
@@ -27,6 +28,33 @@ const DEFAULT_CREATURE_WORLD_GEN_SPAWN_PROBABILITY: f32 = 0.1;
 const CREATURE_WORLD_GEN_PROBABILITY_MAX: f32 = 0.999_999_9;
 const ATTEMPTS_PER_MOB: usize = 4;
 const RANDOM_WALK_BOUND: i32 = 5;
+
+#[derive(Clone, Copy)]
+pub(crate) struct SpawnSite {
+    pub entity_type: EntityTypeRef,
+    pub pos: BlockPos,
+}
+
+pub(crate) struct SpawnSiteContext<'a, 'region> {
+    region: &'a mut WorldGenRegion<'region>,
+    biome_zoom_seed: i64,
+    pub site: SpawnSite,
+}
+
+impl<'region> SpawnSiteContext<'_, 'region> {
+    pub(crate) const fn region(&self) -> &WorldGenRegion<'region> {
+        self.region
+    }
+
+    pub(crate) fn biome(&self) -> BiomeRef {
+        biome_at(self.region(), self.biome_zoom_seed, self.site.pos)
+    }
+
+    /// Draws from the region stream shared with spawn finalization
+    pub(crate) const fn random_mut(&mut self) -> &mut RandomSource {
+        self.region.random_mut()
+    }
+}
 
 #[derive(Clone, Copy)]
 enum SpawnMode {
@@ -110,12 +138,12 @@ fn generate_group(
     on_spawn: &mut impl FnMut(DVec3, f32, &SpawnState<'_>),
 ) {
     let center = region.center();
-    let size = SectionPos::section_to_block_coord(1, 0);
-    let origin_x = center.0.x * size;
-    let origin_z = center.0.y * size;
+    let chunk_width = SectionPos::section_to_block_coord(1, 0);
+    let origin_x = center.0.x * chunk_width;
+    let origin_z = center.0.y * chunk_width;
     let count = entry.count.sample(random);
-    let mut x = origin_x + random.next_i32_bounded(size);
-    let mut z = origin_z + random.next_i32_bounded(size);
+    let mut x = origin_x + random.next_i32_bounded(chunk_width);
+    let mut z = origin_z + random.next_i32_bounded(chunk_width);
     let (start_x, start_z) = (x, z);
     let entity_type = entry.entity_type;
     let Some(placement) = Placement::for_entity(entity_type) else {
@@ -147,14 +175,24 @@ fn generate_group(
                     } => {
                         let yaw = spawn_yaw(random);
                         if can_finalize {
-                            let pos = BlockPos::from(position);
-                            let biome = biome_at(region, biome_zoom_seed, pos);
-                            let state = group.finalize(SpawnContext {
+                            let site = SpawnSite {
                                 entity_type,
-                                biome,
+                                pos: BlockPos::from(position),
+                            };
+
+                            let mut context = SpawnSiteContext {
+                                region,
+                                biome_zoom_seed,
+                                site,
+                            };
+
+                            let state = group.finalize(SpawnContext {
+                                site,
+                                biome: context.biome(),
                                 world,
-                                random: region.random_mut(),
+                                random: context.random_mut(),
                             });
+
                             on_spawn(position, yaw, &state);
 
                             if let Some(factory) = &factory {
@@ -171,9 +209,9 @@ fn generate_group(
                 z += random_walk(random);
 
                 while x - origin_x < 0
-                    || x - origin_x >= size
+                    || x - origin_x >= chunk_width
                     || z - origin_z < 0
-                    || z - origin_z >= size
+                    || z - origin_z >= chunk_width
                 {
                     x = start_x + random_walk(random);
                     z = start_z + random_walk(random);

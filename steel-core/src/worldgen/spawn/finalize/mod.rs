@@ -17,6 +17,7 @@ use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
 
 use self::equine::EquineAttributes;
+use super::SpawnSite;
 pub(crate) use groups::register_worldgen_spawn_groups;
 
 /// Owns the group state and lends it to the spawn loop for one call.
@@ -24,7 +25,7 @@ pub(crate) type SpawnGroupFactory = fn(&mut RunSpawnGroup<'_>);
 pub(crate) type RunSpawnGroup<'a> = dyn FnMut(&mut dyn WorldgenSpawnGroup) + 'a;
 
 pub(crate) struct SpawnContext<'a> {
-    pub entity_type: EntityTypeRef,
+    pub site: SpawnSite,
     pub biome: BiomeRef,
     pub world: &'a World,
     pub random: &'a mut RandomSource,
@@ -161,7 +162,7 @@ where
 
         SpawnState {
             data: SpawnData::new(
-                context.entity_type,
+                context.site.entity_type,
                 MobSpawnState::sample(context.random),
                 overrides,
                 self.pending
