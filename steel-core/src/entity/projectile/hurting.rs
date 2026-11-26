@@ -3,11 +3,9 @@
 
 use std::sync::Arc;
 
-use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_math::trig;
-use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64};
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360, RAD_TO_DEG_F64, trig, vector};
 use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
@@ -22,8 +20,6 @@ const DEFAULT_INERTIA: f32 = 0.95;
 const DEFAULT_LIQUID_INERTIA: f32 = 0.8;
 const ROTATION_SPEED: f32 = 0.2;
 const BURN_TICKS: i32 = 20;
-/// Movement shorter than this normalizes to zero.
-const NORMALIZE_EPSILON: f64 = 1.0e-5_f32 as f64;
 
 /// Runtime fields shared by hurting projectiles.
 pub struct HurtingProjectileBase {
@@ -149,12 +145,8 @@ pub trait AbstractHurtingProjectile: Projectile {
         } else {
             self.get_inertia()
         };
-        let length = movement.length();
-        let heading = if length < NORMALIZE_EPSILON {
-            DVec3::ZERO
-        } else {
-            movement / length
-        };
+
+        let heading = vector::normalize(movement);
         self.set_velocity((movement + heading * self.acceleration_power()) * f64::from(inertia));
     }
 
