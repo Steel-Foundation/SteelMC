@@ -33,6 +33,7 @@ use steel_utils::{BlockPos, Identifier, UuidExt as _};
 use uuid::Uuid;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
+use crate::enchantment_helper;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::{CombatEntry, CombatTracker, DamageSource, FallLocation};
 use crate::entity::synced_data::EntitySyncedData;
@@ -1154,7 +1155,7 @@ impl LivingEntityBase {
         self.state.lock().no_action_time += 1;
     }
 
-    /// Refreshes transient item attribute modifiers for an equipment slot.
+    /// Refreshes transient item and enchantment attribute modifiers for an equipment slot.
     pub fn refresh_equipment_attribute_modifiers(
         &self,
         slot: EquipmentSlot,
@@ -1176,34 +1177,35 @@ impl LivingEntityBase {
             return;
         }
 
-        let Some(modifiers) = item_stack.get_attribute_modifiers() else {
-            return;
-        };
-
-        for entry in modifiers.for_slot(slot) {
+        let mut install = |attribute: AttributeRef, modifier: AttributeModifier| {
             for (index, keys) in installed_modifiers.iter_mut().enumerate() {
                 if index == slot_index {
                     continue;
                 }
-                keys.retain(|key| key.attribute.key != entry.attribute.key || key.id != entry.id);
+                keys.retain(|key| key.attribute.key != attribute.key || key.id != modifier.id);
             }
 
-            attributes.remove_modifier(entry.attribute, &entry.id);
-            if attributes.add_modifier(
-                entry.attribute,
-                AttributeModifier {
-                    id: entry.id.clone(),
-                    amount: entry.amount,
-                    operation: entry.operation,
-                },
-                false,
-            ) {
-                installed_modifiers[slot_index].push(EquipmentAttributeModifierKey {
-                    attribute: entry.attribute,
-                    id: entry.id.clone(),
-                });
+            attributes.remove_modifier(attribute, &modifier.id);
+            let id = modifier.id.clone();
+            if attributes.add_modifier(attribute, modifier, false) {
+                installed_modifiers[slot_index]
+                    .push(EquipmentAttributeModifierKey { attribute, id });
+            }
+        };
+
+        if let Some(modifiers) = item_stack.get_attribute_modifiers() {
+            for entry in modifiers.for_slot(slot) {
+                install(
+                    entry.attribute,
+                    AttributeModifier {
+                        id: entry.id.clone(),
+                        amount: entry.amount,
+                        operation: entry.operation,
+                    },
+                );
             }
         }
+        enchantment_helper::for_each_modifier(item_stack, slot, &mut install);
     }
 
     /// Returns whether this living entity has an active vanilla mob effect.

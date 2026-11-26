@@ -2127,7 +2127,7 @@ pub trait LivingEntity: Entity {
         InteractionResult::Success
     }
 
-    /// Refreshes transient item attribute modifiers for one equipment slot.
+    /// Refreshes transient item and enchantment attribute modifiers for one equipment slot.
     fn refresh_equipment_attribute_modifiers(&self, slot: EquipmentSlot) {
         self.with_equipment_slot(slot, &mut |item_stack| {
             self.living_base()

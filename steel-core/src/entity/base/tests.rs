@@ -478,6 +478,25 @@ fn base_state_caches_fluid_contact() {
     assert!(base.was_eye_in_water());
 }
 
+/// Applies an inside-block effect with default freeze settings and unscaled ignite ticks.
+fn apply_inside_block_effect(
+    base: &EntityBase,
+    effect_type: InsideBlockEffectType,
+    fire_immune: bool,
+    fire_ignite_extra_ticks: i32,
+    remaining_fire_ticks_cap: Option<i32>,
+) {
+    base.apply_inside_block_effect(
+        effect_type,
+        true,
+        fire_immune,
+        effect_type.ignite_ticks().unwrap_or(0),
+        fire_ignite_extra_ticks,
+        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
+        remaining_fire_ticks_cap,
+    );
+}
+
 #[test]
 fn fire_freeze_state_applies_inside_block_effects() {
     let base = EntityBase::new(
@@ -487,46 +506,18 @@ fn fire_freeze_state_applies_inside_block_effects() {
         Weak::<World>::new(),
     );
 
-    base.apply_inside_block_effect(
-        InsideBlockEffectType::Freeze,
-        true,
-        false,
-        0,
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
-        None,
-    );
+    apply_inside_block_effect(&base, InsideBlockEffectType::Freeze, false, 0, None);
     assert!(base.is_in_powder_snow());
     assert_eq!(base.ticks_frozen(), 1);
 
-    base.apply_inside_block_effect(
-        InsideBlockEffectType::LavaIgnite,
-        true,
-        false,
-        0,
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
-        None,
-    );
+    apply_inside_block_effect(&base, InsideBlockEffectType::LavaIgnite, false, 0, None);
     assert_eq!(base.remaining_fire_ticks(), 300);
     assert_eq!(base.ticks_frozen(), 0);
 
-    base.apply_inside_block_effect(
-        InsideBlockEffectType::Extinguish,
-        true,
-        false,
-        0,
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
-        None,
-    );
+    apply_inside_block_effect(&base, InsideBlockEffectType::Extinguish, false, 0, None);
     assert_eq!(base.remaining_fire_ticks(), 0);
 
-    base.apply_inside_block_effect(
-        InsideBlockEffectType::ClearFreeze,
-        true,
-        false,
-        0,
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
-        None,
-    );
+    apply_inside_block_effect(&base, InsideBlockEffectType::ClearFreeze, false, 0, None);
     assert_eq!(base.ticks_frozen(), 0);
 }
 
@@ -539,36 +530,15 @@ fn fire_ignite_respects_remaining_fire_tick_cap() {
         Weak::<World>::new(),
     );
 
-    base.apply_inside_block_effect(
-        InsideBlockEffectType::LavaIgnite,
-        true,
-        false,
-        0,
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
-        Some(1),
-    );
+    apply_inside_block_effect(&base, InsideBlockEffectType::LavaIgnite, false, 0, Some(1));
     assert_eq!(base.remaining_fire_ticks(), 1);
 
     base.set_remaining_fire_ticks(10);
-    base.apply_inside_block_effect(
-        InsideBlockEffectType::LavaIgnite,
-        true,
-        false,
-        0,
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
-        Some(1),
-    );
+    apply_inside_block_effect(&base, InsideBlockEffectType::LavaIgnite, false, 0, Some(1));
     assert_eq!(base.remaining_fire_ticks(), 1);
 
     base.set_remaining_fire_ticks(0);
-    base.apply_inside_block_effect(
-        InsideBlockEffectType::FireIgnite,
-        true,
-        false,
-        2,
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
-        Some(1),
-    );
+    apply_inside_block_effect(&base, InsideBlockEffectType::FireIgnite, false, 2, Some(1));
     assert_eq!(base.remaining_fire_ticks(), 1);
 }
 
@@ -582,46 +552,18 @@ fn fire_ignite_respects_vanilla_cooldown_shape() {
     );
 
     base.set_remaining_fire_ticks(-2);
-    base.apply_inside_block_effect(
-        InsideBlockEffectType::FireIgnite,
-        true,
-        false,
-        0,
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
-        None,
-    );
+    apply_inside_block_effect(&base, InsideBlockEffectType::FireIgnite, false, 0, None);
     assert_eq!(base.remaining_fire_ticks(), -1);
 
-    base.apply_inside_block_effect(
-        InsideBlockEffectType::FireIgnite,
-        true,
-        false,
-        0,
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
-        None,
-    );
+    apply_inside_block_effect(&base, InsideBlockEffectType::FireIgnite, false, 0, None);
     assert_eq!(base.remaining_fire_ticks(), 160);
 
     base.set_remaining_fire_ticks(4);
-    base.apply_inside_block_effect(
-        InsideBlockEffectType::FireIgnite,
-        true,
-        false,
-        2,
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
-        None,
-    );
+    apply_inside_block_effect(&base, InsideBlockEffectType::FireIgnite, false, 2, None);
     assert_eq!(base.remaining_fire_ticks(), 160);
 
     base.set_remaining_fire_ticks(0);
-    base.apply_inside_block_effect(
-        InsideBlockEffectType::FireIgnite,
-        true,
-        true,
-        0,
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
-        None,
-    );
+    apply_inside_block_effect(&base, InsideBlockEffectType::FireIgnite, true, 0, None);
     assert_eq!(base.remaining_fire_ticks(), 0);
 }
 
@@ -634,14 +576,7 @@ fn base_tick_advances_powder_snow_and_fire_state() {
         Weak::<World>::new(),
     );
 
-    base.apply_inside_block_effect(
-        InsideBlockEffectType::Freeze,
-        true,
-        false,
-        0,
-        DEFAULT_TICKS_REQUIRED_TO_FREEZE,
-        None,
-    );
+    apply_inside_block_effect(&base, InsideBlockEffectType::Freeze, false, 0, None);
     base.advance_powder_snow_contact_for_base_tick();
     assert!(!base.is_in_powder_snow());
     assert!(base.was_in_powder_snow());

@@ -355,3 +355,19 @@ fn update_fall_flying_stops_when_glider_gate_fails() {
 
     assert!(!entity.is_fall_flying());
 }
+
+#[test]
+fn fire_protection_shortens_lava_ignite_duration() {
+    init_vanilla_registry();
+    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let mut boots = ItemStack::new(&vanilla_items::DIAMOND_BOOTS);
+    boots.set_enchantments(&[(Identifier::vanilla_static("fire_protection"), 2)], false);
+    entity.equip(EquipmentSlot::Feet, boots);
+    LivingEntity::refresh_equipment_attribute_modifiers(&entity, EquipmentSlot::Feet);
+
+    entity.apply_inside_block_effect(InsideBlockEffectType::LavaIgnite);
+
+    // Vanilla: ceil(15s lava ignite * BURNING_TIME), with Fire Protection II's
+    // -0.3F `add_multiplied_base` widened from float.
+    assert_eq!(entity.remaining_fire_ticks(), 210);
+}
