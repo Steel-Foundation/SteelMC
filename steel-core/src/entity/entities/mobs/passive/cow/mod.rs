@@ -185,13 +185,6 @@ impl CowEntity {
         }
     }
 
-    fn update_dirty_mob_effect_entity_data(&self) {
-        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
-            self.entity_data
-                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
-        }
-    }
-
     /// Returns whether an item stack matches the vanilla cow food tag.
     #[must_use]
     pub fn is_food(item_stack: &ItemStack) -> bool {
@@ -297,7 +290,10 @@ impl Entity for CowEntity {
     }
 
     fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
+        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
+            self.entity_data
+                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
+        }
     }
 
     fn max_up_step(&self) -> f32 {

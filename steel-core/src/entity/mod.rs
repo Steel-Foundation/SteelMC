@@ -155,8 +155,6 @@ const BUBBLE_COLUMN_INSIDE_UP_ACCELERATION: f64 = 0.06;
 const BUBBLE_COLUMN_ABOVE_UP_ACCELERATION: f64 = 0.1;
 const DAMAGE_KNOCKBACK_POWER: f64 = 0.4_f32 as f64;
 const KNOCKBACK_DIRECTION_EPSILON_SQ: f64 = 1.0e-5_f32 as f64;
-/// Below this length vanilla `Vec3.normalize` returns zero.
-const VEC3_NORMALIZE_EPSILON: f64 = 1.0e-5_f32 as f64;
 /// Damage stats are recorded in tenths of a health point.
 const DAMAGE_STAT_SCALE: f32 = 10.0;
 /// Damage stats are only awarded below vanilla's `3.4028235E37F` bound.
@@ -906,7 +904,7 @@ pub use movement_sync::{
 pub use part::{PartEntity, PartEntityBase};
 pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
-    AbstractHurtingProjectile, AbstractThrownPotion, AbstractWindCharge, EntityHitResult,
+    AbstractHurtingProjectile, AbstractThrownPotion, AbstractWindCharge, EntityHitResult, Fireball,
     HurtingProjectileBase, INITIAL_ACCELERATION_POWER, Projectile, ProjectileBase,
     ProjectileDeflection, ProjectileEventSource, ProjectileHit, SPLASH_HORIZONTAL_REACH,
     SPLASH_RANGE_SQ, SPLASH_VERTICAL_REACH, ThrowableItemProjectile, ThrowableProjectile,

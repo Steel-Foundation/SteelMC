@@ -146,13 +146,6 @@ impl SheepEntity {
         }
     }
 
-    fn update_dirty_mob_effect_entity_data(&self) {
-        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
-            self.entity_data
-                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
-        }
-    }
-
     /// Returns whether the stack is vanilla sheep food.
     #[must_use]
     pub fn is_food(item_stack: &ItemStack) -> bool {
@@ -292,7 +285,10 @@ impl Entity for SheepEntity {
     }
 
     fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
+        if let Some(display) = sync_dirty_mob_effects(&self.living_base, &self.entity_data) {
+            self.entity_data
+                .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
+        }
     }
 
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {
