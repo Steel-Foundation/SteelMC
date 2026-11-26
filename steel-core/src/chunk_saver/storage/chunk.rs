@@ -1,5 +1,3 @@
-use small_map::FxSmallMap;
-
 use super::{
     BlockPos, BlockStateId, BlockTickList, Chunk, ChunkBuilder, ChunkHeightmaps, ChunkPos,
     ChunkSection, ChunkStatus, ChunkStorage, DATA_LAYER_SIZE, FluidTickList, FullChunkRef,
@@ -8,7 +6,6 @@ use super::{
     PersistentPoi, PersistentSection, REGISTRY, RegistryExt, SectionHolder, Sections, Weak, World,
     bits_for_palette_len, io, pack_indices_from_iter, unpack_indices,
 };
-const PALETTE_INLINE_CAPACITY: usize = 8;
 
 impl ChunkStorage {
     fn invalid_chunk_data(message: impl Into<String>) -> io::Error {
@@ -285,18 +282,14 @@ impl ChunkStorage {
                 // inverting the palette once instead of scanning it per block.
                 let bits = bits_for_palette_len(palette.len())
                     .expect("Heterogeneous section should have palette length >= 2");
-                let palette_indices: FxSmallMap<PALETTE_INLINE_CAPACITY, BlockStateId, u32> = data
-                    .palette()
-                    .iter()
-                    .enumerate()
-                    .map(|(index, (block_id, _))| (*block_id, index as u32))
-                    .collect();
+                let palette_len = palette.len();
                 let block_data = pack_indices_from_iter(
-                    data.values().iter().map(|block_id| {
-                        let Some(&index) = palette_indices.get(block_id) else {
-                            panic!("section block state {block_id:?} is missing from its palette");
-                        };
-                        index
+                    data.indices_iter().map(|index| {
+                        assert!(
+                            index < palette_len,
+                            "section block state is missing from its palette"
+                        );
+                        index as u32
                     }),
                     bits,
                 );
@@ -338,18 +331,14 @@ impl ChunkStorage {
 
                 let bits = bits_for_palette_len(palette.len())
                     .expect("Heterogeneous biome data should have palette length >= 2");
-                let palette_indices: FxSmallMap<PALETTE_INLINE_CAPACITY, u16, u32> = data
-                    .palette()
-                    .iter()
-                    .enumerate()
-                    .map(|(index, (biome_id, _))| (*biome_id, index as u32))
-                    .collect();
+                let palette_len = palette.len();
                 let biome_data = pack_indices_from_iter(
-                    data.values().iter().map(|biome_id| {
-                        let Some(&index) = palette_indices.get(biome_id) else {
-                            panic!("section biome {biome_id:?} is missing from its palette");
-                        };
-                        index
+                    data.indices_iter().map(|index| {
+                        assert!(
+                            index < palette_len,
+                            "section biome is missing from its palette"
+                        );
+                        index as u32
                     }),
                     bits,
                 );

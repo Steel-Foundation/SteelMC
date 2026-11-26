@@ -326,7 +326,7 @@ impl StableAirOccupancy {
         let mut rows = Box::new([0; STABLE_AIR_OCCUPANCY_ROW_COUNT]);
         // Palette cubes iterate in Y, Z, X order, so each run of 16 values is one row.
         for (index, state) in data.iter_values().enumerate() {
-            if !air_states.contains(state) {
+            if !air_states.contains(&state) {
                 rows[index / BlockPalette::SIZE] |= 1_u16 << (index % BlockPalette::SIZE);
             }
         }
