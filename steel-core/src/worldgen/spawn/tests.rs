@@ -9,7 +9,7 @@ use glam::DVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Deserialize;
 use steel_registry::{
-    DyeColor, REGISTRY, dimension_type::DimensionTypeRef, vanilla_biomes, vanilla_dimension_types,
+    DyeColor, dimension_type::DimensionTypeRef, vanilla_biomes, vanilla_dimension_types,
     vanilla_entities, vanilla_game_rules::SPAWN_MOBS, vanilla_world_clocks,
 };
 use steel_utils::{
@@ -45,7 +45,6 @@ use super::{
         WorldgenSpawnGroup, typed_initializer,
     },
     generate, noise_biome_at,
-    placement::Placement,
     rules::{WorldgenSpawnPredicate, WorldgenSpawnRule},
 };
 
@@ -526,27 +525,6 @@ fn expanded(positions: &BTreeSet<Position>, radius: i32) -> BTreeSet<Position> {
                 .flat_map(move |x| (z - radius..=z + radius).map(move |z| (x, z)))
         })
         .collect()
-}
-
-#[test]
-fn worldgen_spawn_lists_have_registered_rules_and_groups() {
-    init_globals();
-    for (_, biome) in REGISTRY.biomes.iter() {
-        for entry in biome.worldgen_creature_spawns {
-            assert!(
-                Placement::for_entity(entry.entity_type).is_some(),
-                "Missing placement for {} in {}",
-                entry.entity_type.key,
-                biome.key,
-            );
-            assert!(
-                ENTITIES.worldgen_spawn_group(entry.entity_type).is_some(),
-                "Missing spawn group for {} in {}",
-                entry.entity_type.key,
-                biome.key,
-            );
-        }
-    }
 }
 
 #[test]

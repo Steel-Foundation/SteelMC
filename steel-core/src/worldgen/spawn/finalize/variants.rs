@@ -1,5 +1,5 @@
 use steel_registry::biome::BiomeRef;
-use steel_registry::entity_variant::{FoxVariant, RabbitVariant};
+use steel_registry::entity_variant::RabbitVariant;
 use steel_registry::items::ItemRef;
 use steel_registry::shared_structs::pick_spawn_conditioned_entry;
 use steel_registry::wolf_variant::WolfVariantRef;
@@ -59,14 +59,6 @@ pub(super) fn sample_wolf(
     let sound_registry = &REGISTRY.wolf_sound_variants;
     let sound_id = random.next_i32_bounded(sound_registry.len() as i32) as usize;
     let _sound_variant = required_variant(sound_registry.by_id(sound_id));
-}
-
-pub(super) fn fox_variant(biome: BiomeRef) -> FoxVariant {
-    if biome.has_tag(&BiomeTag::SPAWNS_SNOW_FOXES) {
-        FoxVariant::Snow
-    } else {
-        FoxVariant::Red
-    }
 }
 
 pub(super) fn fox_mouth_item(random: &mut RandomSource) -> Option<ItemRef> {

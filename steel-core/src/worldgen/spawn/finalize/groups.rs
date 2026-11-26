@@ -112,8 +112,7 @@ fn donkey_group(run: &mut RunSpawnGroup<'_>) {
 }
 
 fn fox_group(run: &mut RunSpawnGroup<'_>) {
-    with_ageable_group(run, ADULT_ONLY, None, |variant, ageable, context| {
-        variant.get_or_insert_with(|| variants::fox_variant(context.biome));
+    with_ageable_group(run, ADULT_ONLY, (), |(), ageable, context| {
         Sample::shadow_only(SpawnOverrides {
             is_baby: ageable.group_size() >= FOX_ADULT_GROUP_MEMBERS,
             main_hand_item: variants::fox_mouth_item(context.random),
@@ -196,9 +195,8 @@ fn pig_group(run: &mut RunSpawnGroup<'_>) {
 }
 
 fn rabbit_group(run: &mut RunSpawnGroup<'_>) {
-    with_ageable_group(run, BABY_AFTER_FIRST, None, |variant, _, context| {
-        let rolled = variants::rabbit_variant(context.biome, context.random);
-        variant.get_or_insert(rolled);
+    with_ageable_group(run, BABY_AFTER_FIRST, (), |(), _, context| {
+        let _variant = variants::rabbit_variant(context.biome, context.random);
         Sample::shadow_only(SpawnOverrides::default())
     });
 }
