@@ -9,10 +9,13 @@ use glam::DVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Deserialize;
 use steel_registry::{
-    dimension_type::DimensionTypeRef, vanilla_dimension_types, vanilla_game_rules::SPAWN_MOBS,
-    vanilla_world_clocks,
+    DyeColor, REGISTRY, dimension_type::DimensionTypeRef, vanilla_biomes, vanilla_dimension_types,
+    vanilla_entities, vanilla_game_rules::SPAWN_MOBS, vanilla_world_clocks,
 };
-use steel_utils::{BlockPos, ChunkPos, SectionPos, random::RandomSource};
+use steel_utils::{
+    BlockPos, ChunkPos, Downcast as _, SectionPos,
+    random::{Random, RandomSource, legacy_random::LegacyRandom},
+};
 use steel_worldgen::biomes::BiomeSourceKind;
 use tokio::runtime::Runtime;
 
@@ -24,7 +27,10 @@ use crate::{
         status::ChunkStatus,
     },
     chunk_saver::ChunkStorage,
-    entity::{ENTITIES, SharedEntity, damage::DamageHistory},
+    entity::{
+        ENTITIES, EntityRegistry, MobSpawnState, SharedEntity, damage::DamageHistory,
+        entities::mobs::passive::SheepEntity,
+    },
     world::World,
     worldgen::{
         ChunkGenerator, ChunkGeneratorType, NetherGenerator, OverworldGenerator, WorldGenRegion,
@@ -32,7 +38,15 @@ use crate::{
     },
 };
 
-use super::{SpawnMode, biome_at, creature_spawn_probability, generate, noise_biome_at};
+use super::{
+    SpawnMode, biome_at, creature_spawn_probability,
+    finalize::{
+        SpawnContext, SpawnData, SpawnInitError, SpawnInitializer, SpawnOverrides, SpawnState,
+        WorldgenSpawnGroup, typed_initializer,
+    },
+    generate, noise_biome_at,
+    placement::Placement,
+};
 
 type Position = (i32, i32);
 
@@ -511,6 +525,108 @@ fn expanded(positions: &BTreeSet<Position>, radius: i32) -> BTreeSet<Position> {
                 .flat_map(move |x| (z - radius..=z + radius).map(move |z| (x, z)))
         })
         .collect()
+}
+
+#[test]
+fn worldgen_spawn_lists_have_registered_rules_and_groups() {
+    init_globals();
+    for (_, biome) in REGISTRY.biomes.iter() {
+        for entry in biome.worldgen_creature_spawns {
+            assert!(
+                Placement::for_entity(entry.entity_type).is_some(),
+                "Missing placement for {} in {}",
+                entry.entity_type.key,
+                biome.key,
+            );
+            assert!(
+                ENTITIES.worldgen_spawn_group(entry.entity_type).is_some(),
+                "Missing spawn group for {} in {}",
+                entry.entity_type.key,
+                biome.key,
+            );
+        }
+    }
+}
+
+#[test]
+fn registered_group_initializes_entities_without_changing_spawn_rng() {
+    struct CustomSheepGroup {
+        remaining_red: i32,
+    }
+
+    impl WorldgenSpawnGroup for CustomSheepGroup {
+        fn finalize(&mut self, context: SpawnContext<'_>) -> SpawnState<'_> {
+            let initialize: &SpawnInitializer<'_> = if self.remaining_red > 0 {
+                self.remaining_red -= 1;
+                &|entity| {
+                    typed_initializer(|sheep: &SheepEntity| sheep.set_color(DyeColor::Red))(entity)
+                }
+            } else {
+                let _ = context.random.next_f32();
+                &|entity| {
+                    typed_initializer(|sheep: &SheepEntity| sheep.set_color(DyeColor::Blue))(entity)
+                }
+            };
+            SpawnState {
+                data: SpawnData::new(
+                    context.entity_type,
+                    MobSpawnState::sample(context.random),
+                    SpawnOverrides::default(),
+                    Some(initialize),
+                ),
+                passenger: None,
+            }
+        }
+    }
+
+    init_globals();
+    let world = SpawnTestWorld::new("minecraft:overworld", 0, (0, 0), 1).world;
+    let mut registry = EntityRegistry::new();
+    let sheep_type = &vanilla_entities::SHEEP;
+    registry.register_worldgen_spawn_group(sheep_type, |run| {
+        run(&mut CustomSheepGroup { remaining_red: 1 });
+    });
+    let with_group = registry.worldgen_spawn_group(sheep_type).unwrap();
+
+    let run = |materialize| {
+        let mut random = RandomSource::Legacy(LegacyRandom::from_seed(0));
+        with_group(&mut |group| {
+            for color in [DyeColor::Red, DyeColor::Blue] {
+                let spawn = group.finalize(SpawnContext {
+                    entity_type: sheep_type,
+                    biome: &vanilla_biomes::PLAINS,
+                    world: &world,
+                    random: &mut random,
+                });
+                if materialize {
+                    let sheep = ENTITIES
+                        .create(sheep_type, DVec3::ZERO, Arc::downgrade(&world))
+                        .unwrap();
+                    spawn.data.apply(sheep.as_ref()).unwrap();
+                    assert_eq!(sheep.downcast_ref::<SheepEntity>().unwrap().color(), color);
+                }
+            }
+        });
+        RandomState::from_random(&random)
+    };
+
+    assert_eq!(run(false), run(true));
+    let cow = ENTITIES
+        .create(&vanilla_entities::COW, DVec3::ZERO, Arc::downgrade(&world))
+        .unwrap();
+    with_group(&mut |group| {
+        let mut random = RandomSource::Legacy(LegacyRandom::from_seed(0));
+        let spawn = group.finalize(SpawnContext {
+            entity_type: sheep_type,
+            biome: &vanilla_biomes::PLAINS,
+            world: &world,
+            random: &mut random,
+        });
+        assert!(matches!(
+            spawn.data.apply(cow.as_ref()),
+            Err(SpawnInitError::WrongEntityType)
+        ));
+    });
 }
 
 #[test]

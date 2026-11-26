@@ -6,26 +6,25 @@ use steel_registry::{
         properties::BlockStateProperties,
         shapes::{OffsetVoxelShape, is_offset_shape_full_block},
     },
-    entity_type::EntityTypeRef,
+    entity_type::{EntityTypeRef, SpawnPlacementHeightmap, SpawnPlacementKind},
     fluid::FluidStateExt as _,
-    vanilla_biome_tags::BiomeTag,
     vanilla_block_tags::BlockTag as tags,
-    vanilla_blocks, vanilla_entities,
+    vanilla_blocks,
 };
 use steel_utils::{BlockPos, SectionPos, WorldAabb, types::Difficulty};
 
 use crate::{
     behavior::{BLOCK_BEHAVIORS, BlockCollisionContext},
     chunk::heightmap::HeightmapType::{self, MotionBlocking, MotionBlockingNoLeaves},
+    entity::ENTITIES,
     physics::collision::has_spawn_block_collision,
-    world::{LevelReader as _, World},
+    world::{LevelReader as _, World, is_redstone_conductor},
     worldgen::region::WorldGenRegion,
 };
 
-use self::PlacementKind::{InLava, NoRestrictions, OnGround};
+use SpawnPlacementKind::{InLava, InWater, NoRestrictions, OnGround};
 
-const ANIMAL_SPAWN_MIN_BRIGHTNESS: u8 = 9;
-const TURTLE_SPAWN_HEIGHT_ABOVE_SEA: i32 = 4;
+use super::rules::WorldgenSpawnRule;
 
 pub(super) enum Attempt {
     WalkWithoutCandidate,
@@ -33,77 +32,26 @@ pub(super) enum Attempt {
     Candidate { position: DVec3, can_finalize: bool },
 }
 
-#[derive(Clone, Copy)]
-enum PlacementKind {
-    OnGround,
-    InLava,
-    NoRestrictions,
-}
-
-#[derive(Clone, Copy)]
-enum SpawnRule {
-    Animal,
-    Armadillo,
-    Camel,
-    Fox,
-    Frog,
-    Goat,
-    Mooshroom,
-    Parrot,
-    PolarBear,
-    Rabbit,
-    Turtle,
-    Strider,
-    Wolf,
-}
-
-const GROUND_SPAWN_RULES: &[(EntityTypeRef, SpawnRule)] = &[
-    (&vanilla_entities::ARMADILLO, SpawnRule::Armadillo),
-    (&vanilla_entities::CAMEL, SpawnRule::Camel),
-    (&vanilla_entities::CHICKEN, SpawnRule::Animal),
-    (&vanilla_entities::COW, SpawnRule::Animal),
-    (&vanilla_entities::DONKEY, SpawnRule::Animal),
-    (&vanilla_entities::FROG, SpawnRule::Frog),
-    (&vanilla_entities::GOAT, SpawnRule::Goat),
-    (&vanilla_entities::HORSE, SpawnRule::Animal),
-    (&vanilla_entities::LLAMA, SpawnRule::Animal),
-    (&vanilla_entities::MOOSHROOM, SpawnRule::Mooshroom),
-    (&vanilla_entities::PIG, SpawnRule::Animal),
-    (&vanilla_entities::POLAR_BEAR, SpawnRule::PolarBear),
-    (&vanilla_entities::RABBIT, SpawnRule::Rabbit),
-    (&vanilla_entities::SHEEP, SpawnRule::Animal),
-    (&vanilla_entities::TURTLE, SpawnRule::Turtle),
-    (&vanilla_entities::WOLF, SpawnRule::Wolf),
-];
-
 pub(super) struct Placement {
     entity_type: EntityTypeRef,
-    kind: PlacementKind,
+    kind: SpawnPlacementKind,
     heightmap: HeightmapType,
-    rule: SpawnRule,
+    rule: &'static WorldgenSpawnRule,
 }
 
 impl Placement {
     pub(super) fn for_entity(entity_type: EntityTypeRef) -> Option<Self> {
-        let (kind, heightmap, rule) = if entity_type == &vanilla_entities::FOX {
-            (NoRestrictions, MotionBlockingNoLeaves, SpawnRule::Fox)
-        } else if entity_type == &vanilla_entities::PANDA {
-            (NoRestrictions, MotionBlockingNoLeaves, SpawnRule::Animal)
-        } else if entity_type == &vanilla_entities::STRIDER {
-            (InLava, MotionBlockingNoLeaves, SpawnRule::Strider)
-        } else if entity_type == &vanilla_entities::PARROT {
-            (OnGround, MotionBlocking, SpawnRule::Parrot)
-        } else {
-            let &(_, rule) = GROUND_SPAWN_RULES
-                .iter()
-                .find(|(entity, _)| *entity == entity_type)?;
-
-            (OnGround, MotionBlockingNoLeaves, rule)
+        let placement = entity_type.spawn_placement?;
+        let heightmap = match placement.heightmap {
+            SpawnPlacementHeightmap::MotionBlocking => MotionBlocking,
+            SpawnPlacementHeightmap::MotionBlockingNoLeaves => MotionBlockingNoLeaves,
         };
+
+        let rule = ENTITIES.worldgen_spawn_rule(entity_type)?;
 
         Some(Self {
             entity_type,
-            kind,
+            kind: placement.kind,
             heightmap,
             rule,
         })
@@ -145,14 +93,13 @@ impl Placement {
         let block_pos = BlockPos::from(position);
         if has_spawn_block_collision(region, box_at_spawn)
             || (!self.entity_type.allowed_in_peaceful && world.difficulty() == Difficulty::Peaceful)
-            || !self.check_spawn_rules(region, biome_zoom_seed, block_pos)
+            || !self.rule.check(region, biome_zoom_seed, block_pos)
         {
             return Attempt::RetryAtSamePosition;
         }
 
         let can_finalize = self.check_walk_target_value(region, block_pos)
-            && (matches!(self.rule, SpawnRule::Strider)
-                || !region.contains_any_liquid(box_at_spawn));
+            && (self.rule.allows_liquid || !region.contains_any_liquid(box_at_spawn));
 
         Attempt::Candidate {
             position,
@@ -203,6 +150,11 @@ impl Placement {
             NoRestrictions => true,
             _ if !world.is_block_within_world_border(pos) => false,
             InLava => region.block_state(pos).get_fluid_state().is_lava(),
+            InWater => {
+                let above = pos.above();
+                region.block_state(pos).get_fluid_state().is_water()
+                    && !is_redstone_conductor(region, region.block_state(above), above)
+            }
             OnGround => {
                 let below = pos.below();
                 let below_state = region.block_state(below);
@@ -241,13 +193,12 @@ impl Placement {
             return false;
         }
 
-        let immunity = match self.rule {
-            SpawnRule::PolarBear => block.has_tag(&tags::POLAR_BEAR_IMMUNE_TO),
-            SpawnRule::Fox => block.has_tag(&tags::FOX_IMMUNE_TO),
-            _ => false,
-        };
-
-        if immunity {
+        if self
+            .rule
+            .immune_to
+            .as_ref()
+            .is_some_and(|tag| block.has_tag(tag))
+        {
             return true;
         }
 
@@ -266,66 +217,11 @@ impl Placement {
             && block != &vanilla_blocks::POWDER_SNOW
     }
 
-    fn check_spawn_rules(
-        &self,
-        region: &WorldGenRegion<'_>,
-        biome_zoom_seed: i64,
-        pos: BlockPos,
-    ) -> bool {
-        let tag = match self.rule {
-            SpawnRule::Animal => tags::ANIMALS_SPAWNABLE_ON,
-            SpawnRule::Armadillo => tags::ARMADILLO_SPAWNABLE_ON,
-            SpawnRule::Camel => tags::CAMELS_SPAWNABLE_ON,
-            SpawnRule::Fox => tags::FOXES_SPAWNABLE_ON,
-            SpawnRule::Frog => tags::FROGS_SPAWNABLE_ON,
-            SpawnRule::Goat => tags::GOATS_SPAWNABLE_ON,
-            SpawnRule::Mooshroom => tags::MOOSHROOMS_SPAWNABLE_ON,
-            SpawnRule::Parrot => tags::PARROTS_SPAWNABLE_ON,
-            SpawnRule::PolarBear => {
-                let biome = super::biome_at(region, biome_zoom_seed, pos);
-                if biome.has_tag(&BiomeTag::POLAR_BEARS_SPAWN_ON_ALTERNATE_BLOCKS) {
-                    tags::POLAR_BEARS_SPAWNABLE_ON_ALTERNATE
-                } else {
-                    tags::ANIMALS_SPAWNABLE_ON
-                }
-            }
-            SpawnRule::Rabbit => tags::RABBITS_SPAWNABLE_ON,
-            SpawnRule::Turtle => {
-                if pos.y() >= region.sea_level() + TURTLE_SPAWN_HEIGHT_ABOVE_SEA {
-                    return false;
-                }
-
-                tags::SAND
-            }
-            SpawnRule::Strider => {
-                let mut above = pos.above();
-                while region.block_state(above).get_fluid_state().is_lava() {
-                    above = above.above();
-                }
-
-                return region.block_state(above).is_air();
-            }
-            SpawnRule::Wolf => tags::WOLVES_SPAWNABLE_ON,
-        };
-
-        region.block_state(pos.below()).get_block().has_tag(&tag)
-            && region.raw_brightness(pos, 0) >= ANIMAL_SPAWN_MIN_BRIGHTNESS
-    }
-
     fn check_walk_target_value(&self, region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
-        match self.rule {
-            SpawnRule::Strider | SpawnRule::Turtle => true,
-            _ => {
-                let preferred_ground = if matches!(self.rule, SpawnRule::Mooshroom) {
-                    &vanilla_blocks::MYCELIUM
-                } else {
-                    &vanilla_blocks::GRASS_BLOCK
-                };
-
-                region.block_state(pos.below()).get_block() == preferred_ground
-                    || region.pathfinding_cost_from_light_levels(pos) >= 0.0
-            }
-        }
+        self.rule.preferred_ground.is_none_or(|ground| {
+            region.block_state(pos.below()).get_block() == ground
+                || region.pathfinding_cost_from_light_levels(pos) >= 0.0
+        })
     }
 }
 

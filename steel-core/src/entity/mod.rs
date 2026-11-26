@@ -845,7 +845,6 @@ mod storage;
 mod synced_data;
 mod ticking;
 mod tracker;
-mod worldgen_spawn;
 
 use crate::portal::{
     PortalKind, PortalProcessResult, PortalProcessor, PortalTicketTarget, TeleportPostAction,
@@ -921,11 +920,11 @@ pub(crate) use spawn::{
     apply_item_stack_components, create_entity_instance, load_entity_recursive_owned, spawn_entity,
 };
 pub(crate) use spawn_placements::SpawnPlacements;
+pub use steel_registry::entity_variant::{HorseMarkings, PandaGene};
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
 pub(crate) use ticking::{snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_if};
 pub use tracker::{EntityChangeSenders, EntityTracker};
-pub use worldgen_spawn::{HorseMarkings, PandaGene, WorldgenSpawnProperties};
 
 #[cfg(test)]
 macro_rules! impl_test_downcast_type {

@@ -20,6 +20,8 @@ use super::{
     SharedEntity, reserve_entity_ids,
 };
 use crate::world::{LevelReader, World};
+use crate::worldgen::spawn::finalize::{SpawnGroupFactory, register_worldgen_spawn_groups};
+use crate::worldgen::spawn::rules::{WorldgenSpawnRule, register_worldgen_spawn_rules};
 
 /// Factory function type for creating entities.
 ///
@@ -92,6 +94,8 @@ struct EntityEntry {
     part_count: u32,
     /// Vanilla `SpawnPlacements` predicate, absent when vanilla registers none.
     spawn_rule: Option<SpawnRule>,
+    worldgen_spawn_rule: Option<Box<WorldgenSpawnRule>>,
+    worldgen_spawn_group: Option<SpawnGroupFactory>,
 }
 
 /// Registry for entity factories and spawn rules.
@@ -129,6 +133,8 @@ impl EntityRegistry {
                 load_factory: None,
                 part_count: 0,
                 spawn_rule: None,
+                worldgen_spawn_rule: None,
+                worldgen_spawn_group: None,
             })
             .collect();
 
@@ -201,6 +207,53 @@ impl EntityRegistry {
     #[must_use]
     pub(super) fn spawn_rule(&self, entity_type: EntityTypeRef) -> Option<SpawnRule> {
         self.entries.get(entity_type.id())?.spawn_rule
+    }
+
+    pub(crate) fn register_worldgen_spawn_rule(
+        &mut self,
+        entity_type: EntityTypeRef,
+        rule: WorldgenSpawnRule,
+    ) {
+        let entry = &mut self.entries[entity_type.id()];
+        assert!(
+            entry.worldgen_spawn_rule.is_none(),
+            "worldgen spawn rule for {} is already registered",
+            entity_type.key
+        );
+
+        entry.worldgen_spawn_rule = Some(Box::new(rule));
+    }
+
+    pub(crate) fn worldgen_spawn_rule(
+        &self,
+        entity_type: EntityTypeRef,
+    ) -> Option<&WorldgenSpawnRule> {
+        self.entries
+            .get(entity_type.id())?
+            .worldgen_spawn_rule
+            .as_deref()
+    }
+
+    pub(crate) fn register_worldgen_spawn_group(
+        &mut self,
+        entity_type: EntityTypeRef,
+        group: SpawnGroupFactory,
+    ) {
+        let entry = &mut self.entries[entity_type.id()];
+        assert!(
+            entry.worldgen_spawn_group.is_none(),
+            "worldgen spawn group for {} is already registered",
+            entity_type.key
+        );
+
+        entry.worldgen_spawn_group = Some(group);
+    }
+
+    pub(crate) fn worldgen_spawn_group(
+        &self,
+        entity_type: EntityTypeRef,
+    ) -> Option<SpawnGroupFactory> {
+        self.entries.get(entity_type.id())?.worldgen_spawn_group
     }
 
     /// Creates a new entity instance, reserving its ID block (see [`Self::reserve_id`]).
@@ -341,12 +394,30 @@ impl EntityRegistryLock {
 /// Access via deref: `ENTITIES.create(type, pos, world)`
 pub static ENTITIES: EntityRegistryLock = EntityRegistryLock(OnceLock::new());
 
-/// Initializes the global entity registry, once the main registry is frozen.
+/// Initializes the global entity registry after the main registry freezes.
+///
+/// # Panics
+/// Panics if a biome lists a creature with incomplete worldgen spawn registration.
 pub fn init_entities() {
     ENTITIES.get_or_init(|| {
         let mut registry = EntityRegistry::new();
         register_entity_factories(&mut registry);
         register_spawn_rules(&mut registry);
+        register_worldgen_spawn_rules(&mut registry);
+        register_worldgen_spawn_groups(&mut registry);
+        for (_, biome) in REGISTRY.biomes.iter() {
+            for entry in biome.worldgen_creature_spawns {
+                let entity = entry.entity_type;
+                assert!(
+                    entity.spawn_placement.is_some()
+                        && registry.worldgen_spawn_rule(entity).is_some()
+                        && registry.worldgen_spawn_group(entity).is_some(),
+                    "Incomplete worldgen spawn registration for {} in {}",
+                    entity.key,
+                    biome.key
+                );
+            }
+        }
         registry
     });
 }

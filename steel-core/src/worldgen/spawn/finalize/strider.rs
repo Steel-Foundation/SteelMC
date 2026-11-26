@@ -1,18 +1,23 @@
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt, vanilla_enchantment_tags::EnchantmentTag, vanilla_entities,
+    REGISTRY, TaggedRegistryExt,
+    vanilla_enchantment_tags::EnchantmentTag,
+    vanilla_entities,
+    vanilla_game_rules::{SPAWN_MOBS, SPAWN_MONSTERS},
     vanilla_items,
 };
 use steel_utils::random::{Random, RandomSource};
 use steel_utils::types::Difficulty;
 
 use crate::enchantment_helper::select_enchantment;
-use crate::entity::{AgeableMobGroupData, MobSpawnState, WorldgenSpawnProperties};
+use crate::entity::{AgeableMobGroupData, MobSpawnState};
 use crate::special_dates::is_halloween;
 use crate::world::DifficultyInstance;
 
-use super::{SpawnData, SpawnOverrides};
+use super::{
+    RunSpawnGroup, Sample, SpawnData, SpawnOverrides, unavailable_initializer, with_ageable_group,
+};
 
 const PIGLIN_JOCKEY_ODDS: i32 = 30;
 const STRIDER_JOCKEY_ODDS: i32 = 10;
@@ -27,12 +32,37 @@ const SPAWN_EQUIPMENT_ENCHANT_COST_SPAN: f32 = 17.0;
 const HALLOWEEN_PUMPKIN_CHANCE: f32 = 0.25;
 const HALLOWEEN_JACK_O_LANTERN_CHANCE: f32 = 0.1;
 
-pub(super) fn sample_passenger(
+pub(super) fn spawn_group(run: &mut RunSpawnGroup<'_>) {
+    with_ageable_group(
+        run,
+        AgeableMobGroupData::with_should_spawn_baby(true),
+        (),
+        |(), ageable, context| {
+            let difficulty = context.world.worldgen_difficulty();
+            let spawning_monsters = context.world.get_game_rule(&SPAWN_MOBS)
+                && context.world.get_game_rule(&SPAWN_MONSTERS);
+            let (updated_group, passenger, saddled) =
+                sample_passenger(*ageable, difficulty, spawning_monsters, context.random);
+
+            *ageable = updated_group;
+
+            Sample {
+                passenger,
+                ..Sample::common(SpawnOverrides {
+                    saddled,
+                    ..SpawnOverrides::default()
+                })
+            }
+        },
+    );
+}
+
+fn sample_passenger(
     ageable: AgeableMobGroupData,
     difficulty: DifficultyInstance,
     spawning_monsters: bool,
     random: &mut RandomSource,
-) -> (AgeableMobGroupData, Option<SpawnData>, bool) {
+) -> (AgeableMobGroupData, Option<SpawnData<'static>>, bool) {
     let no_group_babies = AgeableMobGroupData::with_baby_spawn_chance(0.0);
     if random.next_i32_bounded(PIGLIN_JOCKEY_ODDS) == 0 && spawning_monsters {
         if vanilla_entities::ZOMBIFIED_PIGLIN.allowed_in_peaceful
@@ -50,6 +80,7 @@ pub(super) fn sample_passenger(
         let passenger = SpawnData {
             entity_type: &vanilla_entities::STRIDER,
             mob: MobSpawnState::sample(random),
+            initialize: None,
             overrides: SpawnOverrides {
                 is_baby: true,
                 ..SpawnOverrides::default()
@@ -67,12 +98,12 @@ pub(super) fn sample_passenger(
 }
 
 // TODO: Share these rolls with the zombified piglin's spawn initialization once implemented.
-fn sample_piglin(difficulty: DifficultyInstance, random: &mut RandomSource) -> SpawnData {
+fn sample_piglin(difficulty: DifficultyInstance, random: &mut RandomSource) -> SpawnData<'static> {
     let is_baby = random.next_f32() < ZOMBIE_BABY_CHANCE;
     let mob = MobSpawnState::sample(random);
     let difficulty_multiplier = difficulty.special_multiplier();
     let can_pick_up_loot = random.next_f32() < ZOMBIE_PICKUP_SCALE * difficulty_multiplier;
-    let can_break_doors = random.next_f32() < ZOMBIE_DOOR_BREAK_SCALE * difficulty_multiplier;
+    let _can_break_doors = random.next_f32() < ZOMBIE_DOOR_BREAK_SCALE * difficulty_multiplier;
 
     let weapon = if random.next_i32_bounded(PIGLIN_SPEAR_ODDS) == 0 {
         &vanilla_items::GOLDEN_SPEAR
@@ -112,12 +143,9 @@ fn sample_piglin(difficulty: DifficultyInstance, random: &mut RandomSource) -> S
     SpawnData {
         entity_type: &vanilla_entities::ZOMBIFIED_PIGLIN,
         mob,
+        initialize: Some(&unavailable_initializer),
         overrides: SpawnOverrides {
             is_baby,
-            properties: WorldgenSpawnProperties::ZombifiedPiglin {
-                can_break_doors,
-                difficulty_multiplier,
-            },
             main_hand_item: Some(&vanilla_items::WARPED_FUNGUS_ON_A_STICK),
             head_item,
             can_pick_up_loot: Some(can_pick_up_loot),

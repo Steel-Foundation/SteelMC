@@ -1,0 +1,420 @@
+{
+  "minecraft_version": "26.3",
+  "placements": [
+    {
+      "entity_type": "minecraft:armadillo",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:axolotl",
+      "placement_type": "in_water",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:bat",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:blaze",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:bogged",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:breeze",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:camel",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:camel_husk",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:cat",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:cave_spider",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:chicken",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:cod",
+      "placement_type": "in_water",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:cow",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:creaking",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:creeper",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:dolphin",
+      "placement_type": "in_water",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:donkey",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:drowned",
+      "placement_type": "in_water",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:elder_guardian",
+      "placement_type": "in_water",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:ender_dragon",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:enderman",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:endermite",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:evoker",
+      "placement_type": "no_restrictions",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:fox",
+      "placement_type": "no_restrictions",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:frog",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:ghast",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:giant",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:glow_squid",
+      "placement_type": "in_water",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:goat",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:guardian",
+      "placement_type": "in_water",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:happy_ghast",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:hoglin",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:horse",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:husk",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:illusioner",
+      "placement_type": "no_restrictions",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:iron_golem",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:llama",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:magma_cube",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:mooshroom",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:mule",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:nautilus",
+      "placement_type": "in_water",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:ocelot",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking"
+    },
+    {
+      "entity_type": "minecraft:panda",
+      "placement_type": "no_restrictions",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:parched",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:parrot",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking"
+    },
+    {
+      "entity_type": "minecraft:phantom",
+      "placement_type": "no_restrictions",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:pig",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:piglin",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:pillager",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:polar_bear",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:pufferfish",
+      "placement_type": "in_water",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:rabbit",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:ravager",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:salmon",
+      "placement_type": "in_water",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:sheep",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:shulker",
+      "placement_type": "no_restrictions",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:silverfish",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:skeleton",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:skeleton_horse",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:slime",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:snow_golem",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:spider",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:squid",
+      "placement_type": "in_water",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:stray",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:strider",
+      "placement_type": "in_lava",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:sulfur_cube",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:trader_llama",
+      "placement_type": "no_restrictions",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:tropical_fish",
+      "placement_type": "in_water",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:turtle",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:vex",
+      "placement_type": "no_restrictions",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:villager",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:vindicator",
+      "placement_type": "no_restrictions",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:wandering_trader",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:warden",
+      "placement_type": "no_restrictions",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:witch",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:wither",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:wither_skeleton",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:wolf",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:zoglin",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:zombie",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:zombie_horse",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:zombie_villager",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    },
+    {
+      "entity_type": "minecraft:zombified_piglin",
+      "placement_type": "on_ground",
+      "heightmap": "motion_blocking_no_leaves"
+    }
+  ]
+}

@@ -7,7 +7,7 @@ use steel_registry::{REGISTRY, RegistryExt, vanilla_biome_tags::BiomeTag, vanill
 use steel_utils::random::{Random, RandomSource};
 use steel_utils::value_providers::UniformIntProvider;
 
-use crate::entity::{AgeableMobGroupData, WorldgenSpawnProperties};
+use crate::entity::AgeableMobGroupData;
 
 use super::required_variant;
 
@@ -26,27 +26,23 @@ const FROG_LONG_JUMP_COOLDOWN_TICKS: UniformIntProvider = UniformIntProvider {
     max_inclusive: 140,
 };
 
-pub(super) fn frog_properties(
-    biome: BiomeRef,
-    random: &mut RandomSource,
-) -> WorldgenSpawnProperties {
-    WorldgenSpawnProperties::Frog {
-        variant: pick_spawn_conditioned_entry(
-            REGISTRY.frog_variants.iter().map(|(_, variant)| variant),
-            |variant| variant.spawn_conditions,
-            biome,
-            random,
-        ),
-        long_jump_cooldown_ticks: FROG_LONG_JUMP_COOLDOWN_TICKS.sample(random),
-    }
+pub(super) fn sample_frog(biome: BiomeRef, random: &mut RandomSource) {
+    let _variant = pick_spawn_conditioned_entry(
+        REGISTRY.frog_variants.iter().map(|(_, variant)| variant),
+        |variant| variant.spawn_conditions,
+        biome,
+        random,
+    );
+
+    let _cooldown = FROG_LONG_JUMP_COOLDOWN_TICKS.sample(random);
 }
 
-pub(super) fn wolf_properties(
+pub(super) fn sample_wolf(
     group_variant: &mut Option<WolfVariantRef>,
     group: &mut AgeableMobGroupData,
     biome: BiomeRef,
     random: &mut RandomSource,
-) -> WorldgenSpawnProperties {
+) {
     if group_variant.is_none() {
         *group_variant = pick_spawn_conditioned_entry(
             REGISTRY.wolf_variants.iter().map(|(_, variant)| variant),
@@ -62,11 +58,7 @@ pub(super) fn wolf_properties(
 
     let sound_registry = &REGISTRY.wolf_sound_variants;
     let sound_id = random.next_i32_bounded(sound_registry.len() as i32) as usize;
-
-    WorldgenSpawnProperties::Wolf {
-        variant: *group_variant,
-        sound_variant: required_variant(sound_registry.by_id(sound_id)),
-    }
+    let _sound_variant = required_variant(sound_registry.by_id(sound_id));
 }
 
 pub(super) fn fox_variant(biome: BiomeRef) -> FoxVariant {

@@ -55,6 +55,7 @@ mod dialogs;
 mod dimension_types;
 mod entities;
 mod entity_data;
+mod entity_spawn_placements;
 mod entity_variant_enums;
 mod features;
 mod fluids;

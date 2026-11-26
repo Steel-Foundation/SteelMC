@@ -10,7 +10,7 @@ mod chunk_stage_hashes;
 pub(crate) mod feature;
 pub mod generator;
 pub mod region;
-mod spawn;
+pub(crate) mod spawn;
 pub(crate) mod stages;
 pub(crate) mod structure;
 pub mod surface;

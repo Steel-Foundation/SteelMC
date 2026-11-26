@@ -1,9 +1,10 @@
 //! original mob spawning during the chunk Spawn stage.
 
-mod finalize;
+pub(crate) mod finalize;
 #[cfg(feature = "benchmark-support")]
 pub mod fixture;
 mod placement;
+pub(crate) mod rules;
 #[cfg(test)]
 mod tests;
 
@@ -19,7 +20,7 @@ use crate::world::World;
 use crate::worldgen::generator::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::region::WorldGenRegion;
 
-use self::finalize::{SpawnData, SpawnGroup, SpawnState};
+use self::finalize::{SpawnContext, SpawnData, SpawnState};
 use self::placement::{Attempt, Placement};
 
 const DEFAULT_CREATURE_WORLD_GEN_SPAWN_PROBABILITY: f32 = 0.1;
@@ -58,7 +59,7 @@ fn generate(
     world_seed: i64,
     biome_zoom_seed: i64,
     mode: SpawnMode,
-    mut on_spawn: impl FnMut(DVec3, f32, &SpawnState),
+    mut on_spawn: impl FnMut(DVec3, f32, &SpawnState<'_>),
 ) -> i64 {
     let center = region.center();
     let size = SectionPos::section_to_block_coord(1, 0);
@@ -83,28 +84,58 @@ fn generate(
             continue;
         };
 
-        let count = entry.count.sample(&mut random);
-        let mut x = origin_x + random.next_i32_bounded(size);
-        let mut z = origin_z + random.next_i32_bounded(size);
-        let (start_x, start_z) = (x, z);
-        let entity_type = entry.entity_type;
-        let Some(placement) = Placement::for_entity(entity_type) else {
-            panic!("Missing worldgen spawn placement for {}", entity_type.key);
-        };
+        generate_group(
+            region,
+            world,
+            biome_zoom_seed,
+            mode,
+            entry,
+            &mut random,
+            &mut on_spawn,
+        );
+    }
 
-        let Some(mut group) = SpawnGroup::new(entity_type) else {
-            panic!(
-                "Missing worldgen spawn finalization for {}",
-                entity_type.key
-            );
-        };
+    random.get_seed()
+}
 
-        let factory = match mode {
-            SpawnMode::Materialize => ENTITIES.factory_for(entity_type),
-            #[cfg(test)]
-            SpawnMode::Trace { .. } => None,
-        };
+// Keep group setup off chunks that never select one.
+#[inline(never)]
+fn generate_group(
+    region: &mut WorldGenRegion<'_>,
+    world: &World,
+    biome_zoom_seed: i64,
+    mode: SpawnMode,
+    entry: &WorldgenCreatureSpawn,
+    random: &mut LegacyRandom,
+    on_spawn: &mut impl FnMut(DVec3, f32, &SpawnState<'_>),
+) {
+    let center = region.center();
+    let size = SectionPos::section_to_block_coord(1, 0);
+    let origin_x = center.0.x * size;
+    let origin_z = center.0.y * size;
+    let count = entry.count.sample(random);
+    let mut x = origin_x + random.next_i32_bounded(size);
+    let mut z = origin_z + random.next_i32_bounded(size);
+    let (start_x, start_z) = (x, z);
+    let entity_type = entry.entity_type;
+    let Some(placement) = Placement::for_entity(entity_type) else {
+        panic!("Missing worldgen spawn placement for {}", entity_type.key);
+    };
 
+    let Some(with_group) = ENTITIES.worldgen_spawn_group(entity_type) else {
+        panic!(
+            "Missing worldgen spawn finalization for {}",
+            entity_type.key
+        );
+    };
+
+    let factory = match mode {
+        SpawnMode::Materialize => ENTITIES.factory_for(entity_type),
+        #[cfg(test)]
+        SpawnMode::Trace { .. } => None,
+    };
+
+    with_group(&mut |group| {
         for _ in 0..count {
             for _ in 0..ATTEMPTS_PER_MOB {
                 let success = match placement.try_position(region, world, biome_zoom_seed, x, z) {
@@ -114,11 +145,16 @@ fn generate(
                         position,
                         can_finalize,
                     } => {
-                        let yaw = spawn_yaw(&mut random);
+                        let yaw = spawn_yaw(random);
                         if can_finalize {
                             let pos = BlockPos::from(position);
                             let biome = biome_at(region, biome_zoom_seed, pos);
-                            let state = group.finalize(biome, pos, world, region.random_mut());
+                            let state = group.finalize(SpawnContext {
+                                entity_type,
+                                biome,
+                                world,
+                                random: region.random_mut(),
+                            });
                             on_spawn(position, yaw, &state);
 
                             if let Some(factory) = &factory {
@@ -131,16 +167,16 @@ fn generate(
                     }
                 };
 
-                x += random_walk(&mut random);
-                z += random_walk(&mut random);
+                x += random_walk(random);
+                z += random_walk(random);
 
                 while x - origin_x < 0
                     || x - origin_x >= size
                     || z - origin_z < 0
                     || z - origin_z >= size
                 {
-                    x = start_x + random_walk(&mut random);
-                    z = start_z + random_walk(&mut random);
+                    x = start_x + random_walk(random);
+                    z = start_z + random_walk(random);
                 }
 
                 if success {
@@ -148,23 +184,26 @@ fn generate(
                 }
             }
         }
-    }
-
-    random.get_seed()
+    });
 }
 
 fn add_spawn(
     region: &WorldGenRegion<'_>,
-    state: &SpawnState,
+    state: &SpawnState<'_>,
     entity: SharedEntity,
     position: DVec3,
     yaw: f32,
 ) {
-    initialize_spawn(entity.as_ref(), &state.data, position, yaw);
+    if !initialize_spawn(entity.as_ref(), &state.data, position, yaw) {
+        return;
+    }
 
     let passenger = state.passenger.as_ref().and_then(|data| {
         let rider = ENTITIES.create(data.entity_type, position, region.weak_world())?;
-        initialize_spawn(rider.as_ref(), data, position, yaw);
+        if !initialize_spawn(rider.as_ref(), data, position, yaw) {
+            return None;
+        }
+
         EntityBase::restore_passenger_relationship(&entity, &rider);
 
         Some(rider)
@@ -176,10 +215,18 @@ fn add_spawn(
     }
 }
 
-fn initialize_spawn(entity: &dyn Entity, data: &SpawnData, position: DVec3, yaw: f32) {
+fn initialize_spawn(entity: &dyn Entity, data: &SpawnData<'_>, position: DVec3, yaw: f32) -> bool {
     entity.snap_to(position, yaw, 0.0);
     entity.base().set_old_rotation_to_current();
-    data.apply(entity);
+    if let Err(error) = data.apply(entity) {
+        log::warn!(
+            "Skipping worldgen spawn of {} at {position:?}: {error}",
+            data.entity_type.key
+        );
+        return false;
+    }
+
+    true
 }
 
 fn random_walk(random: &mut LegacyRandom) -> i32 {
