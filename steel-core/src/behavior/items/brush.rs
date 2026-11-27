@@ -5,7 +5,6 @@ use std::sync::Arc;
 use steel_macros::item_behavior;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_events;
-use steel_registry::vanilla_attributes;
 use steel_utils::Downcast as _;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Direction};
@@ -14,7 +13,7 @@ use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior, ItemUseAnimation};
 use crate::block_entity::entities::BrushableBlockEntity;
 use crate::entity::projectile::{ViewVectorHitResult, get_hit_result_on_view_vector};
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::{Entity, LivingEntity, LivingEntityRef};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
 use crate::world::World;
@@ -46,7 +45,7 @@ impl ItemBehavior for BrushItem {
     fn on_use_tick(
         &self,
         world: &Arc<World>,
-        user: &dyn LivingEntity,
+        user: LivingEntityRef<'_>,
         stack: &mut ItemStack,
         ticks_remaining: i32,
     ) {
@@ -55,11 +54,11 @@ impl ItemBehavior for BrushItem {
             return;
         }
 
-        let Some(player) = user.as_player() else {
+        let Some(player) = user.living().as_player() else {
             return;
         };
         let Some((pos, direction)) = calculate_block_hit(world, player) else {
-            player.release_using_item();
+            player.release_using_item(user.entity());
             return;
         };
 
@@ -97,11 +96,7 @@ impl ItemBehavior for BrushItem {
 }
 
 fn calculate_block_hit(world: &World, player: &Player) -> Option<(BlockPos, Direction)> {
-    let distance = player
-        .attributes()
-        .lock()
-        .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-        .unwrap_or(4.5);
+    let distance = player.block_interaction_range();
     match get_hit_result_on_view_vector(world, player, distance, Entity::is_pickable) {
         ViewVectorHitResult::Block(hit) => Some((hit.block_pos, hit.direction)),
         ViewVectorHitResult::Miss | ViewVectorHitResult::Entity(_) => None,
@@ -115,8 +110,8 @@ fn equipped_brush_slot(player: &Player, _stack: &ItemStack) -> EquipmentSlot {
     }
 }
 
-fn release_player_use(user: &dyn LivingEntity) {
-    if let Some(player) = user.as_player() {
-        player.release_using_item();
+fn release_player_use(user: LivingEntityRef<'_>) {
+    if let Some(player) = user.living().as_player() {
+        player.release_using_item(user.entity());
     }
 }

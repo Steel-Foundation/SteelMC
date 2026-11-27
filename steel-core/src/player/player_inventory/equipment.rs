@@ -210,10 +210,9 @@ impl PlayerInventory {
             return EquipmentSwapResult::Success(ItemStack::empty());
         }
 
-        let to_equip = in_hand.copy_with_count(1);
-        if !has_infinite_materials {
-            self.get_item_in_hand_mut(hand).shrink(1);
-        }
+        let to_equip = self
+            .get_item_in_hand_mut(hand)
+            .consume_and_return(1, has_infinite_materials);
         let mut overflow = EntityEquipment::set(self, slot, to_equip);
         if !overflow.is_empty() && self.add(&mut overflow) {
             overflow = ItemStack::empty();
@@ -340,6 +339,7 @@ impl EntityEquipment for PlayerInventory {
     fn set(&mut self, slot: EquipmentSlot, stack: ItemStack) -> ItemStack {
         let inventory_index = self.equipment_slot_index(slot);
         let old = mem::replace(&mut self.items[inventory_index], stack);
+        self.mark_hand_written(inventory_index);
         Container::set_changed(self);
         old
     }

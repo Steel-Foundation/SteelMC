@@ -10,7 +10,6 @@ const VANILLA_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
     Direction::West,
 ];
 
-/// Matches vanilla's `Direction.Plane.HORIZONTAL.getRandomDirection`.
 pub(crate) fn random_horizontal_direction(rng: &mut LegacyRandom) -> Direction {
     VANILLA_HORIZONTAL_DIRECTIONS[rng.next_i32_bounded(4) as usize]
 }

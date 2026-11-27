@@ -1,8 +1,9 @@
 use super::{
-    ATTRIBUTE_MODIFIERS, BREAK_SOUND, Component, ComponentData, DataComponentType, Debug,
-    DowncastType, ENCHANTMENTS, FxHashMap, Identifier, ItemAttributeModifiers, ItemEnchantments,
-    ItemLore, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST, Rarity, SWING_ANIMATION, SoundEventHolder,
-    SwingAnimation, TOOLTIP_DISPLAY, TooltipDisplay, USE_EFFECTS, UseEffects, sound_events,
+    ATTACK_ANIMATION, ATTRIBUTE_MODIFIERS, BREAK_SOUND, Component, ComponentData,
+    DataComponentType, Debug, DowncastType, ENCHANTMENTS, FxHashMap, INTERACT_ANIMATION,
+    Identifier, ItemAttributeModifiers, ItemEnchantments, ItemLore, LORE, MAX_STACK_SIZE, RARITY,
+    REPAIR_COST, Rarity, SoundEventHolder, SwingAnimation, TOOLTIP_DISPLAY, TooltipDisplay,
+    USE_EFFECTS, UseEffects, sound_events,
 };
 
 /// Storage for component values.
@@ -31,32 +32,33 @@ impl DataComponentMap {
     #[must_use]
     pub fn common_item_components() -> Self {
         let mut map = FxHashMap::default();
-        map.insert(MAX_STACK_SIZE.key.clone(), ComponentData::new(64_i32));
-        map.insert(LORE.key.clone(), ComponentData::new(ItemLore::empty()));
+        map.insert(MAX_STACK_SIZE.key, ComponentData::new(64_i32));
+        map.insert(LORE.key, ComponentData::new(ItemLore::empty()));
         map.insert(
-            ENCHANTMENTS.key.clone(),
+            ENCHANTMENTS.key,
             ComponentData::new(ItemEnchantments::empty()),
         );
-        map.insert(REPAIR_COST.key.clone(), ComponentData::new(0_i32));
+        map.insert(REPAIR_COST.key, ComponentData::new(0_i32));
+        map.insert(USE_EFFECTS.key, ComponentData::new(UseEffects::DEFAULT));
         map.insert(
-            USE_EFFECTS.key.clone(),
-            ComponentData::new(UseEffects::DEFAULT),
-        );
-        map.insert(
-            ATTRIBUTE_MODIFIERS.key.clone(),
+            ATTRIBUTE_MODIFIERS.key,
             ComponentData::new(ItemAttributeModifiers::empty()),
         );
-        map.insert(RARITY.key.clone(), ComponentData::new(Rarity::Common));
+        map.insert(RARITY.key, ComponentData::new(Rarity::Common));
         map.insert(
-            BREAK_SOUND.key.clone(),
+            BREAK_SOUND.key,
             ComponentData::new(SoundEventHolder::registry(&sound_events::ENTITY_ITEM_BREAK)),
         );
         map.insert(
-            TOOLTIP_DISPLAY.key.clone(),
+            TOOLTIP_DISPLAY.key,
             ComponentData::new(TooltipDisplay::DEFAULT),
         );
         map.insert(
-            SWING_ANIMATION.key.clone(),
+            ATTACK_ANIMATION.key,
+            ComponentData::new(SwingAnimation::DEFAULT),
+        );
+        map.insert(
+            INTERACT_ANIMATION.key,
             ComponentData::new(SwingAnimation::DEFAULT),
         );
         Self { map }
@@ -80,8 +82,7 @@ impl DataComponentMap {
         value: Option<T>,
     ) {
         if let Some(v) = value {
-            self.map
-                .insert(component.key.clone(), ComponentData::new(v));
+            self.map.insert(component.key, ComponentData::new(v));
         } else {
             self.map.remove(&component.key);
         }

@@ -3,6 +3,7 @@
 
 use glam::IVec3;
 use rayon::prelude::*;
+use steel_math::round_f64;
 use steel_utils::BlockPos;
 use steel_utils::ChunkPos;
 use steel_utils::Identifier;
@@ -25,7 +26,6 @@ impl SpreadType {
     pub fn evaluate(self, rng: &mut LegacyRandom, limit: i32) -> i32 {
         match self {
             Self::Linear => rng.next_i32_bounded(limit),
-            // Vanilla: `(nextInt(limit) + nextInt(limit)) / 2`.
             #[expect(
                 clippy::manual_midpoint,
                 reason = "midpoint would change overflow vs vanilla"
@@ -101,12 +101,6 @@ pub struct ExclusionZone {
     pub chunk_count: i32,
 }
 
-/// Java's `Math.round(double)` — half-up toward +∞. Rust's `f64::round()` rounds
-/// -0.5 → -1; Java rounds -0.5 → 0.
-fn java_round(v: f64) -> i32 {
-    (v + 0.5).floor() as i32
-}
-
 /// Vanilla's `ChunkGeneratorStructureState.generateRingPositions`. Positions in
 /// chunk coords. If `snap_biome` is provided it gets `(block_x, block_z, &mut rng)`
 /// and returns `Some((snapped_block_x, snapped_block_z))` to snap, or `None` to keep raw.
@@ -164,8 +158,8 @@ where
     for i in 0..count {
         let dist = (4.0 + 6.0 * f64::from(circle)) * distance_f
             + (rng.next_f64() - 0.5) * distance_f * 2.5;
-        let initial_x = java_round(angle.cos() * dist);
-        let initial_z = java_round(angle.sin() * dist);
+        let initial_x = round_f64(angle.cos() * dist) as i32;
+        let initial_z = round_f64(angle.sin() * dist) as i32;
 
         // Vanilla forks the RNG for async biome search; preserve the exact fork order,
         // then parallelize only the snap work over those precomputed forked states.
@@ -577,7 +571,7 @@ mod tests {
     #[test]
     fn test_load_vanilla_structure_sets() {
         let sets = load_vanilla_structure_sets();
-        assert_eq!(sets.len(), 20);
+        assert_eq!(sets.len(), 21);
 
         // Verify villages loaded correctly from datapack
         let (key, villages) = sets
@@ -705,15 +699,5 @@ mod tests {
             fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
         >(0, 32, 3, 0, None, &thread_pool);
         assert_eq!(positions.len(), 0);
-    }
-
-    #[test]
-    fn test_java_round() {
-        assert_eq!(java_round(0.5), 1);
-        assert_eq!(java_round(-0.5), 0);
-        assert_eq!(java_round(1.5), 2);
-        assert_eq!(java_round(-1.5), -1);
-        assert_eq!(java_round(2.3), 2);
-        assert_eq!(java_round(-2.3), -2);
     }
 }

@@ -21,9 +21,16 @@ const fn chunk_max_block_z(pos: ChunkPos) -> i32 {
 
 impl World {
     /// Initializes this world's default spawn using vanilla's first-world spawn search.
+    /// Domain random sequences must be bound before initializing a new world.
     pub async fn initialize_spawn_if_needed(self: &Arc<Self>) -> Result<(), String> {
         if self.level_data.read().data().initialized {
             return Ok(());
+        }
+
+        if self.random_sequences.read().is_none() {
+            return Err(
+                "domain random sequences must be loaded before spawn initialization".to_owned(),
+            );
         }
 
         if self.dimension_type.key != vanilla_dimension_types::OVERWORLD.key {
@@ -187,7 +194,9 @@ impl World {
             .map(|first_available| first_available - 1)
     }
 
-    pub(super) fn heightmap_pos(&self, heightmap_type: HeightmapType, pos: BlockPos) -> BlockPos {
+    /// Returns a position at the heightmap height keeping the given X and Z
+    #[must_use]
+    pub(crate) fn heightmap_pos(&self, heightmap_type: HeightmapType, pos: BlockPos) -> BlockPos {
         BlockPos::new(
             pos.x(),
             self.level_height_at(heightmap_type, pos.x(), pos.z()),
@@ -201,12 +210,37 @@ impl World {
         self.heightmap_pos(HeightmapType::MotionBlockingNoLeaves, spawn_suggestion)
     }
 
-    pub(super) fn level_height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+    pub(crate) fn level_height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
         if !Self::is_in_world_bounds_horizontal(BlockPos::new(x, 0, z)) {
             return self.sea_level + 1;
         }
 
         self.height_at(heightmap_type, x, z)
             .unwrap_or_else(|| self.get_min_y())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test_support::fresh_test_world;
+    use tokio::runtime::Builder;
+
+    #[test]
+    fn spawn_rejects_unbound_random_sequences_before_requesting_chunks() {
+        let fixture = fresh_test_world("spawn_unbound_sequences");
+        let world = &fixture.world;
+        *world.random_sequences.write() = None;
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+
+        runtime
+            .block_on(world.initialize_spawn_if_needed())
+            .expect_err("spawn generation requires bound domain sequences");
+
+        assert!(!world.level_data.read().data().initialized);
+        assert!(world.chunk_map.chunks.is_empty());
+        world.chunk_map.stop_generation_refill_loop();
     }
 }

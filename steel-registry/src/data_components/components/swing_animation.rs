@@ -44,7 +44,9 @@ impl SwingAnimationType {
         }
     }
 
-    const fn from_serialized_name(name: &str) -> Option<Self> {
+    /// resolves the case sensitive vanilla animation name
+    #[must_use]
+    pub const fn from_serialized_name(name: &str) -> Option<Self> {
         match name {
             "none" => Some(Self::None),
             "whack" => Some(Self::Whack),

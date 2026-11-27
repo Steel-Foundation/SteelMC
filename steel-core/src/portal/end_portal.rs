@@ -13,7 +13,6 @@ use crate::{
     world::World,
 };
 
-/// Vanilla `ServerLevel.END_SPAWN_POINT`.
 pub(crate) const END_SPAWN_POINT: BlockPos = BlockPos::new(100, 50, 0);
 
 const END_PLATFORM_PREWARM_CHUNK_RADIUS: u8 = 1;
@@ -51,7 +50,7 @@ pub(crate) fn calculate_entry_transition(
     }
 
     Some(TeleportTransition {
-        target_world: target_world.clone(),
+        target_world: Arc::clone(target_world),
         position: end_entry_position(entity.as_player().is_some()),
         rotation: (Direction::West.to_yaw(), 0.0),
         velocity: DVec3::ZERO,
@@ -71,8 +70,8 @@ pub(crate) fn calculate_entity_return_transition(
 ) -> TeleportTransition {
     let spawn_pos = target_world.adjust_spawn_location(respawn_data.pos());
     TeleportTransition {
-        target_world: target_world.clone(),
-        position: block_bottom_center(spawn_pos),
+        target_world: Arc::clone(target_world),
+        position: spawn_pos.get_bottom_center(),
         rotation: (respawn_data.yaw, respawn_data.pitch),
         velocity: DVec3::ZERO,
         relatives: RelativeMovement::DELTA.union(RelativeMovement::ROTATION),
@@ -96,7 +95,7 @@ pub(crate) fn calculate_player_return_transition(
     rotation: (f32, f32),
 ) -> TeleportTransition {
     TeleportTransition {
-        target_world: target_world.clone(),
+        target_world: Arc::clone(target_world),
         position,
         rotation,
         velocity: DVec3::ZERO,
@@ -116,7 +115,7 @@ const fn end_platform_origin() -> BlockPos {
 }
 
 fn end_entry_position(is_player: bool) -> DVec3 {
-    let mut position = block_bottom_center(END_SPAWN_POINT);
+    let mut position = END_SPAWN_POINT.get_bottom_center();
     if is_player {
         position.y -= 1.0;
     }
@@ -129,16 +128,11 @@ fn portal_sound_then_destination_ticket() -> TeleportPostTransition {
     ))
 }
 
-fn block_bottom_center(pos: BlockPos) -> DVec3 {
-    let (x, y, z) = pos.get_bottom_center();
-    DVec3::new(x, y, z)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        END_SPAWN_POINT, block_bottom_center, end_entry_position, end_platform_origin,
-        end_platform_prewarm_center, end_platform_prewarm_chunk_radius,
+        END_SPAWN_POINT, end_entry_position, end_platform_origin, end_platform_prewarm_center,
+        end_platform_prewarm_chunk_radius,
     };
     use glam::DVec3;
     use steel_utils::{BlockPos, ChunkPos};
@@ -153,7 +147,7 @@ mod tests {
     fn end_entry_player_position_is_one_block_below_spawn_center() {
         assert_eq!(
             end_entry_position(false),
-            block_bottom_center(BlockPos::new(100, 50, 0))
+            BlockPos::new(100, 50, 0).get_bottom_center()
         );
         assert_eq!(end_entry_position(true), DVec3::new(100.5, 49.0, 0.5));
     }

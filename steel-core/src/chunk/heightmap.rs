@@ -591,7 +591,7 @@ impl ChunkHeightmaps {
         'sections: for section_idx in (0..sections.len()).rev() {
             let guard = sections[section_idx].read();
             if matches!(
-                &guard.states,
+                guard.states(),
                 super::paletted_container::BlockPalette::Homogeneous(state) if state.is_air()
             ) {
                 continue;
@@ -607,7 +607,7 @@ impl ChunkHeightmaps {
                         continue;
                     }
 
-                    let state = guard.states.get_at_index(layer_start + column_index);
+                    let state = guard.states().get_at_index(layer_start + column_index);
                     let matched_mask = heightmap_opacity_mask(state, *pending_mask);
                     if matched_mask == 0 {
                         continue;
@@ -648,6 +648,7 @@ mod tests {
         blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
         init_vanilla_registry, vanilla_blocks,
     };
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use crate::behavior::init_behaviors;
     use crate::chunk::section::{ChunkSection, Sections};
@@ -664,7 +665,10 @@ mod tests {
     #[test]
     fn test_bits_per_value() {
         // Standard overworld height (384 blocks: -64 to 319)
-        assert_eq!(Heightmap::calculate_bits_per_value(384), 9);
+        assert_eq!(
+            Heightmap::calculate_bits_per_value(OverworldNoiseSettings::HEIGHT),
+            9
+        );
         // Nether height (256 blocks)
         assert_eq!(Heightmap::calculate_bits_per_value(256), 9);
         // Small height

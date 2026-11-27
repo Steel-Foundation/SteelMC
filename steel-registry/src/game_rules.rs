@@ -406,7 +406,7 @@ impl GameRuleValues {
     #[must_use]
     pub fn get_erased(
         &self,
-        rule: &dyn ErasedGameRule,
+        rule: &(impl ErasedGameRule + ?Sized),
         registry: &GameRuleRegistry,
     ) -> &GameRuleValue {
         let id = Self::rule_id(rule, registry);
@@ -419,7 +419,7 @@ impl GameRuleValues {
     /// Sets a type-erased value for a dynamically selected rule.
     pub fn set_erased(
         &mut self,
-        rule: &dyn ErasedGameRule,
+        rule: &(impl ErasedGameRule + ?Sized),
         value: GameRuleValue,
         registry: &GameRuleRegistry,
     ) -> bool {
@@ -450,7 +450,7 @@ impl GameRuleValues {
         self.set_erased(rule, value, registry)
     }
 
-    fn rule_id(rule: &dyn ErasedGameRule, registry: &GameRuleRegistry) -> usize {
+    fn rule_id(rule: &(impl ErasedGameRule + ?Sized), registry: &GameRuleRegistry) -> usize {
         let Some(id) = registry.id_from_key(rule.key()) else {
             panic!("game rule {} is not registered", rule.key());
         };

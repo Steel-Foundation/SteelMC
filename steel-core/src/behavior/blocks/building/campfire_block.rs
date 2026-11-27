@@ -1,18 +1,32 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
+use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty,
 };
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
 use steel_registry::fluid::FluidState;
+use steel_registry::recipe::{SingleItemRecipeInput, vanilla_recipe_types};
 use steel_registry::vanilla_damage_types;
-use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids, vanilla_game_events};
-use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
+use steel_registry::{
+    REGISTRY, sound_events, vanilla_block_entity_types, vanilla_block_tags::BlockTag,
+    vanilla_blocks, vanilla_custom_stats, vanilla_fluids, vanilla_game_events,
+};
+use steel_utils::{
+    BlockPos, BlockStateId, Downcast as _,
+    types::{InteractionHand, UpdateFlags},
+};
 
 use crate::behavior::block::schedule_water_tick_if_waterlogged;
+use crate::player::Player;
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, block::schedule_placed_liquid_tick},
+    behavior::{
+        BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
+        block::{BlockEntityCreation, schedule_placed_liquid_tick},
+        context::BlockHitResult,
+    },
+    block_entity::{BLOCK_ENTITIES, BlockEntityTicker, entities::CampfireBlockEntity},
     entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, projectile::Projectile},
     world::{
         ClipHitResult, LevelAccessor, ScheduledTickAccess, World, game_event::GameEventContext,
@@ -21,7 +35,7 @@ use crate::{
 
 /// Behavior for campfires and soul campfires.
 ///
-/// TODO: Add campfire cooking, smoke particles, and dowse item ejection.
+/// Client-local smoke particles remain client work; cooking is server-owned here.
 #[block_behavior]
 pub struct CampfireBlock {
     block: BlockRef,
@@ -85,6 +99,22 @@ impl CampfireBlock {
             && !state.get_value(WATERLOGGED))
         .then(|| state.set_value(LIT, true))
     }
+
+    /// Whether `state` is a lit campfire or soul campfire.
+    #[must_use]
+    pub fn is_lit_campfire(state: BlockStateId) -> bool {
+        state.get_block().has_tag(&BlockTag::CAMPFIRES) && state.try_get_value(LIT) == Some(true)
+    }
+
+    /// The shared part of putting out a campfire (shovels, water potions,
+    /// water flowing in).
+    pub fn douse(source: Option<&dyn Entity>, level: &dyn LevelAccessor, pos: BlockPos) {
+        level.game_event(
+            &vanilla_game_events::BLOCK_CHANGE,
+            pos,
+            &GameEventContext::new(source, None),
+        );
+    }
 }
 
 impl BlockBehavior for CampfireBlock {
@@ -92,6 +122,46 @@ impl BlockBehavior for CampfireBlock {
         let waterlogged = context.is_water_source();
         let below_state = context.world.get_block_state(context.place_pos().below());
         Some(self.placement_state(waterlogged, below_state, context.horizontal_direction()))
+    }
+
+    fn use_item_on(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let accepted = inv.with_item(|stack| {
+            REGISTRY
+                .recipes
+                .find_match(
+                    &vanilla_recipe_types::CAMPFIRE_COOKING,
+                    &SingleItemRecipeInput::new(stack.clone()),
+                )
+                .is_some()
+        });
+        if !accepted {
+            return InteractionResult::TryEmptyHandInteraction;
+        }
+
+        let Some(block_entity) = world.get_block_entity(pos) else {
+            return InteractionResult::TryEmptyHandInteraction;
+        };
+        let Some(campfire) = block_entity.downcast_ref::<CampfireBlockEntity>() else {
+            return InteractionResult::TryEmptyHandInteraction;
+        };
+        let item = inv.with_item(|stack| stack.copy_with_count(1));
+        if !campfire.place_food(player, item) {
+            return InteractionResult::Consume;
+        }
+        if !player.has_infinite_materials() {
+            inv.with_item(|stack| stack.shrink(1));
+        }
+        player.award_custom_stat(&vanilla_custom_stats::INTERACT_WITH_CAMPFIRE);
+        InteractionResult::SuccessServer
     }
 
     fn update_shape(
@@ -170,11 +240,7 @@ impl BlockBehavior for CampfireBlock {
                 1.0,
                 None,
             );
-            level.game_event(
-                &vanilla_game_events::BLOCK_CHANGE,
-                pos,
-                &GameEventContext::new(None, Some(state.set_value(LIT, false))),
-            );
+            Self::douse(None, level, pos);
         }
 
         level.set_block_state(
@@ -184,6 +250,32 @@ impl BlockBehavior for CampfireBlock {
         );
         schedule_placed_liquid_tick(level, pos, fluid_state);
         true
+    }
+
+    fn new_block_entity(
+        &self,
+        level: Weak<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> BlockEntityCreation {
+        BlockEntityCreation::from_registered_factory(BLOCK_ENTITIES.create(
+            &vanilla_block_entity_types::CAMPFIRE,
+            level,
+            pos,
+            state,
+        ))
+    }
+
+    fn get_block_entity_ticker(
+        &self,
+        _world: &Arc<World>,
+        _state: BlockStateId,
+        block_entity_type: BlockEntityTypeRef,
+    ) -> Option<BlockEntityTicker> {
+        BlockEntityTicker::for_matching_entity_tick(
+            block_entity_type,
+            &vanilla_block_entity_types::CAMPFIRE,
+        )
     }
 }
 
@@ -347,5 +439,44 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![&vanilla_game_events::BLOCK_CHANGE]
         );
+        assert_eq!(level.game_events.borrow()[0].affected_state, None);
+    }
+
+    #[test]
+    fn is_lit_campfire_accepts_only_lit_campfires() {
+        init_vanilla_registry();
+
+        let campfire = vanilla_blocks::CAMPFIRE.default_state();
+        let soul_campfire = vanilla_blocks::SOUL_CAMPFIRE.default_state();
+
+        assert!(CampfireBlock::is_lit_campfire(
+            campfire.set_value(LIT, true)
+        ));
+        assert!(!CampfireBlock::is_lit_campfire(
+            campfire.set_value(LIT, false)
+        ));
+        assert!(CampfireBlock::is_lit_campfire(
+            soul_campfire.set_value(LIT, true)
+        ));
+        assert!(!CampfireBlock::is_lit_campfire(
+            vanilla_blocks::CANDLE.default_state().set_value(LIT, true)
+        ));
+    }
+
+    #[test]
+    fn douse_emits_block_change_without_touching_the_block() {
+        init_vanilla_registry();
+        let level = TestLevel::default();
+        let pos = BlockPos::new(1, 2, 3);
+
+        CampfireBlock::douse(None, &level, pos);
+
+        assert!(level.last_placed_state().is_none());
+        let events = level.game_events.borrow();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event, &vanilla_game_events::BLOCK_CHANGE);
+        assert_eq!(events[0].pos, pos);
+        assert_eq!(events[0].source_entity_id, None);
+        assert_eq!(events[0].affected_state, None);
     }
 }

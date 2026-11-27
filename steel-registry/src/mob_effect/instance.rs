@@ -3,6 +3,7 @@
 use std::io::{Cursor, Error, Result, Write};
 use std::str::FromStr;
 
+use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::Identifier;
@@ -15,6 +16,9 @@ use crate::mob_effect::MobEffectRef;
 use crate::{REGISTRY, RegistryEntry, RegistryExt};
 
 const MAX_EFFECT_DEPTH: usize = 512;
+
+/// Duration sentinel for effects that never expire
+pub const INFINITE_EFFECT_DURATION: i32 = -1;
 
 /// One status-effect instance, including Vanilla's hidden fallback chain.
 #[derive(Debug, Clone)]
@@ -81,6 +85,34 @@ impl MobEffectInstance {
         self.amplifier
     }
 
+    /// Whether this effect never expires.
+    #[must_use]
+    pub const fn is_infinite_duration(&self) -> bool {
+        self.duration == INFINITE_EFFECT_DURATION
+    }
+
+    /// Applies `mapper` to this effect's duration, leaving the infinite and zero sentinels alone.
+    #[must_use]
+    pub fn map_duration(&self, mapper: impl FnOnce(i32) -> i32) -> i32 {
+        if self.is_infinite_duration() || self.duration == 0 {
+            self.duration
+        } else {
+            mapper(self.duration)
+        }
+    }
+
+    /// Returns a copy of this effect with its duration scaled by `scale`,
+    /// never rounding a finite duration below 1 tick. The infinite and zero
+    /// sentinels are left alone.
+    #[must_use]
+    pub fn with_scaled_duration(&self, scale: f32) -> Self {
+        Self {
+            duration: self
+                .map_duration(|duration| ((duration as f32 * scale).floor() as i32).max(1)),
+            ..self.clone()
+        }
+    }
+
     #[must_use]
     pub const fn ambient(&self) -> bool {
         self.ambient
@@ -131,7 +163,16 @@ impl MobEffectInstance {
     }
 
     pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
-        let compound = tag.compound()?;
+        Self::from_owned_compound(tag.compound()?)
+    }
+
+    /// decodes a mobeffect instance from its saved compound
+    #[must_use]
+    pub fn from_borrowed_compound(compound: &BorrowedNbtCompoundView<'_, '_>) -> Option<Self> {
+        Self::from_owned_compound(&compound.to_owned())
+    }
+
+    fn from_owned_compound(compound: &NbtCompound) -> Option<Self> {
         let id = Identifier::from_str(&compound.get("id")?.string()?.to_string()).ok()?;
         let effect = REGISTRY.mob_effects.by_key(&id)?;
         let details = MobEffectInstanceDetails::from_owned_compound(compound, 0)?;
@@ -168,6 +209,36 @@ impl MobEffectInstanceDetails {
             show_icon,
             hidden_effect: hidden_effect.map(Box::new),
         }
+    }
+
+    #[must_use]
+    pub const fn duration(&self) -> i32 {
+        self.duration
+    }
+
+    #[must_use]
+    pub const fn amplifier(&self) -> i32 {
+        self.amplifier
+    }
+
+    #[must_use]
+    pub const fn ambient(&self) -> bool {
+        self.ambient
+    }
+
+    #[must_use]
+    pub const fn show_particles(&self) -> bool {
+        self.show_particles
+    }
+
+    #[must_use]
+    pub const fn show_icon(&self) -> bool {
+        self.show_icon
+    }
+
+    #[must_use]
+    pub fn hidden_effect(&self) -> Option<&Self> {
+        self.hidden_effect.as_deref()
     }
 
     fn to_nbt_compound(&self) -> NbtCompound {
@@ -390,8 +461,56 @@ mod tests {
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
     use super::{MobEffectInstance, MobEffectInstanceDetails};
-    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
+    use crate::{init_vanilla_registry, vanilla_mob_effects};
+
+    /// The infinite-duration sentinel (`-1`) and a zero duration bypass the mapper entirely.
+    #[test]
+    fn map_duration_leaves_infinite_and_zero_sentinels_untouched() {
+        init_vanilla_registry();
+        let speed = REGISTRY
+            .mob_effects
+            .by_key(&steel_utils::Identifier::vanilla_static("speed"))
+            .expect("speed should be registered");
+        let lasting = |duration| MobEffectInstance::simple(speed, duration, 0);
+
+        assert_eq!(lasting(-1).map_duration(|duration| duration * 2), -1);
+        assert_eq!(lasting(0).map_duration(|duration| duration * 2), 0);
+        assert_eq!(lasting(10).map_duration(|duration| duration * 2), 20);
+
+        assert!(lasting(-1).is_infinite_duration());
+        assert!(!lasting(0).is_infinite_duration());
+    }
+
+    #[test]
+    fn with_scaled_duration_leaves_infinite_and_zero_durations_untouched() {
+        init_vanilla_registry();
+        let lasting = |duration| MobEffectInstance::simple(vanilla_mob_effects::LUCK, duration, 0);
+        let scaled = |duration, scale| lasting(duration).with_scaled_duration(scale).duration();
+
+        assert_eq!(scaled(-1, 0.5), -1);
+        assert_eq!(scaled(0, 0.5), 0);
+        // Even an extreme scale must not touch these sentinels.
+        assert_eq!(scaled(-1, 100.0), -1);
+        assert_eq!(scaled(0, 0.0), 0);
+    }
+
+    /// Vanilla computes `Math.max(Mth.floor(duration * scale), 1)`: a finite
+    /// duration is floor-scaled and never rounds below 1 tick, even when the
+    /// scale would floor it to 0.
+    #[test]
+    fn with_scaled_duration_floors_and_clamps_finite_durations() {
+        init_vanilla_registry();
+        let lasting = |duration| MobEffectInstance::simple(vanilla_mob_effects::LUCK, duration, 0);
+        let scaled = |duration, scale| lasting(duration).with_scaled_duration(scale).duration();
+
+        assert_eq!(scaled(100, 0.5), 50);
+        // floor(9 * 0.34) == floor(3.06) == 3, not a naive round to 3.
+        assert_eq!(scaled(9, 0.34), 3);
+        // A scale that would floor to 0 is clamped up to the 1-tick floor.
+        assert_eq!(scaled(1, 0.1), 1);
+        assert_eq!(scaled(100, 1.0), 100);
+    }
 
     #[test]
     fn effect_instances_round_trip_recursive_details_and_clamp_amplifier() {

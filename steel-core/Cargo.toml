@@ -10,8 +10,10 @@ build = "build/build.rs"
 #default = ["stand-alone"]
 stand-alone = []
 slow_chunk_gen = []
-flint = []
+test-framework = []
 benchmark-support = []
+# `ChunkMap::generate_region` for external tools; the server never calls it.
+region-generation = []
 
 [dependencies]
 # Internal crates
@@ -24,7 +26,7 @@ steel-worldgen.workspace = true
 steel-math.workspace = true
 
 # Async runtime
-tokio.workspace = true
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "io-std", "fs", "signal"] }
 tokio-util.workspace = true
 futures.workspace = true
 
@@ -79,6 +81,10 @@ simdnbt.workspace = true
 tracing.workspace = true
 
 [build-dependencies]
+# Extract vanilla datapacks before compiling loot tables.
+steel-utils.workspace = true
+
+enum_dispatch.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 proc-macro2.workspace = true
@@ -94,6 +100,16 @@ steel-registry.workspace = true
 
 [[bench]]
 name = "worldgen"
+harness = false
+required-features = ["benchmark-support"]
+
+[[bench]]
+name = "chunk_sender"
+harness = false
+required-features = ["benchmark-support"]
+
+[[bench]]
+name = "entity_tick"
 harness = false
 required-features = ["benchmark-support"]
 

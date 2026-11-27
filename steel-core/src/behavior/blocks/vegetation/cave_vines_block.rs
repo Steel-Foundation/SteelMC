@@ -1,3 +1,5 @@
+use crate::loot::LootContext;
+use crate::loot::vanilla_loot_tables;
 use rand::{Rng, RngExt};
 use std::sync::Arc;
 use steel_macros::block_behavior;
@@ -6,19 +8,19 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
-use steel_registry::loot_table::LootContext;
-use steel_registry::{
-    sound_events, vanilla_blocks, vanilla_game_events, vanilla_items, vanilla_loot_tables,
-};
+use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::blocks::vegetation::bonemealable::BonemealAction;
-use crate::behavior::blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock;
+use crate::behavior::blocks::vegetation::growing_plant_head_block::{
+    GrowingPlantHeadBehavior, GrowingPlantHeadBlock,
+};
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{InteractionResult, InventoryAccess};
 use crate::behavior::{block::BlockBehavior, blocks::vegetation::bonemealable::Bonemealable};
-use crate::entity::{Entity, entity_loot_ref};
+use crate::block_entity::SharedBlockEntity;
+use crate::entity::{Entity, entity_loot_ref, loot_equipment};
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
@@ -79,16 +81,27 @@ impl CaveVinesBlock {
         if !state.get_value(BERRIES) {
             return InteractionResult::Pass;
         }
-        let mut rng = rand::rng();
-        let mut ctx = LootContext::new(&mut rng)
-            .with_block_state(state)
-            .with_interacting_entity(entity_loot_ref(source_entity));
-
-        let items = vanilla_loot_tables::HARVEST_CAVE_VINE.get_random_items(&mut ctx);
+        let equipment = loot_equipment(source_entity);
+        let table = &vanilla_loot_tables::HARVEST_CAVE_VINE;
+        let items = world.with_loot_random(Some(table), 0, |rng| {
+            let mut ctx = LootContext::new(rng)
+                .with_world(world)
+                .with_origin(pos.get_center())
+                .with_block_state(state)
+                .with_interacting_entity(entity_loot_ref(source_entity, equipment.as_ref()));
+            table.get_random_items(&mut ctx)
+        });
+        let items = match items {
+            Ok(items) => items,
+            Err(error) => {
+                log::error!("Failed to generate cave-vine loot: {error}");
+                return InteractionResult::Fail;
+            }
+        };
         for item in items {
             world.pop_resource(pos, item);
         }
-        let pitch = rng.random_range(0.8..1.2);
+        let pitch = rand::rng().random_range(0.8..1.2);
         world.play_sound(
             &sound_events::BLOCK_CAVE_VINES_PICK_BERRIES,
             SoundSource::Blocks,
@@ -152,6 +165,7 @@ impl BlockBehavior for CaveVinesBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::GLOW_BERRIES))
@@ -159,6 +173,10 @@ impl BlockBehavior for CaveVinesBlock {
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
+    }
+
+    fn as_growing_plant_head(&self) -> Option<&dyn GrowingPlantHeadBehavior> {
+        Some(&self.base)
     }
 }
 impl Bonemealable for CaveVinesBlock {
@@ -244,6 +262,7 @@ mod tests {
             .get_clone_item_stack(
                 &vanilla_blocks::CAVE_VINES,
                 vanilla_blocks::CAVE_VINES.default_state(),
+                None,
                 false,
             )
             .expect("cave vines have a vanilla clone item");

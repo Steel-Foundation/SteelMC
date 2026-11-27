@@ -117,6 +117,24 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
             .map(|structure| structure.key.path.as_ref())
             .collect::<Vec<_>>(),
         [
+            "abandoned_camp_bamboo_jungle",
+            "abandoned_camp_birch_forest",
+            "abandoned_camp_cherry_grove",
+            "abandoned_camp_dappled_forest",
+            "abandoned_camp_flower_forest",
+            "abandoned_camp_forest",
+            "abandoned_camp_meadow",
+            "abandoned_camp_old_growth_birch_forest",
+            "abandoned_camp_old_growth_pine_taiga",
+            "abandoned_camp_old_growth_spruce_taiga",
+            "abandoned_camp_pale_garden",
+            "abandoned_camp_savanna",
+            "abandoned_camp_snowy_taiga",
+            "abandoned_camp_sparse_jungle",
+            "abandoned_camp_swamp",
+            "abandoned_camp_taiga",
+            "abandoned_camp_windswept_forest",
+            "abandoned_camp_wooded_badlands",
             "bastion_remnant",
             "desert_pyramid",
             "end_city",
@@ -344,15 +362,6 @@ fn spring_source_fluid_state_creates_vanilla_legacy_source_block() {
             .get_property(block_state, &BlockStateProperties::LEVEL),
         0
     );
-}
-
-#[test]
-fn scattered_ore_offset_rounding_matches_java_math_round() {
-    assert_eq!(FeatureDecorationRunner::java_round_f32(-1.5), -1);
-    assert_eq!(FeatureDecorationRunner::java_round_f32(-0.5), 0);
-    assert_eq!(FeatureDecorationRunner::java_round_f32(0.49), 0);
-    assert_eq!(FeatureDecorationRunner::java_round_f32(0.5), 1);
-    assert_eq!(FeatureDecorationRunner::java_round_f32(1.5), 2);
 }
 
 #[test]

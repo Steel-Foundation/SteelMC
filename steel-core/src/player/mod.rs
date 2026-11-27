@@ -1,5 +1,6 @@
 //! This module contains all things player-related.
 mod abilities;
+pub mod advancement;
 pub mod chat;
 pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
@@ -20,18 +21,22 @@ pub mod player_data;
 pub mod player_data_storage;
 pub mod player_inventory;
 mod profile;
+mod session;
 mod sleep;
 mod sleep_state;
+mod spam_throttler;
 pub mod stats_counter;
 mod tick_state;
+mod title;
 
+use crate::player::player_inventory::Prediction;
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
 use chat::ChatState;
 pub use chat::{LastSeen, LastSeenMessagesValidator, MessageCache};
 use connection::NetworkConnection as _;
 pub use connection::{ClientInformation, PlayerConnection};
 use container_counter::ContainerCounter;
-use food_data::FoodData;
+use food_data::{FoodData, food_constants};
 use game_mode::{BlockBreakingManager, PlayerGameModeState};
 use glam::DVec3;
 use health_sync::HealthSyncState;
@@ -44,21 +49,25 @@ use movement::{MovementState, TeleportState};
 use permissions::PlayerPermissionState;
 pub(crate) use profile::{GAME_PROFILE_CACHE_LIMIT, KnownPlayerNameLookup, lookup_online_profile};
 pub use profile::{
-    GameProfile, GameProfileAction, KnownPlayer, KnownPlayers, ProfileLookupError,
-    is_valid_player_name, offline_uuid,
+    GameProfile, KnownPlayer, KnownPlayers, ProfileLookupError, is_valid_player_name, offline_uuid,
 };
+pub use session::PlayerSession;
+pub(crate) use session::PlayerSessionId;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
-use std::mem::replace;
+use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
+use steel_math::{RAD_TO_DEG_F64, round_f32, round_f64, trig};
 use steel_protocol::packets::game::{
-    CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn, CSetDefaultSpawnPosition, CSetHealth,
-    CSetHeldSlot, CSetPassengers, ClientCommandAction, LookAtAnchor, RelativeMovement, SoundSource,
+    CEntityEvent, CHurtAnimation, CPlayerCombatEnd, CPlayerCombatEnter, CPlayerCombatKill,
+    CPlayerLookAt, CRespawn, CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers,
+    ClientCommandAction, LookAtAnchor, RelativeMovement, SoundSource,
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::vanilla_components::BLOCKS_ATTACKS;
 use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::game_rules::GameRuleRef;
@@ -67,7 +76,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{
     DROWNING_DAMAGE, FALL_DAMAGE, FIRE_DAMAGE, FREEZE_DAMAGE, IMMEDIATE_RESPAWN, KEEP_INVENTORY,
-    SHOW_DEATH_MESSAGES,
+    PVP, SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags,
@@ -81,24 +90,28 @@ use arc_swap::ArcSwap;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::resolving::TextResolutor;
-use text_components::translation::TranslatedMessage;
 use text_components::{
     Modifier as _, TextComponent,
     interactivity::{ClickEvent, HoverEvent},
 };
 use text_components::{content::Resolvable, custom::CustomData};
 
-use crate::behavior::{BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult};
+use crate::behavior::{
+    BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult, InventoryTickContext,
+    ItemBehavior, apply_use_remainder,
+};
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
+use crate::entity::LivingEntityRef;
+use crate::entity::blocks_attacks;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
-    EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange,
-    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, get_kill_credit,
-    start_riding_entities,
+    ActiveItemUseState, DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource,
+    EntityMoveError, EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
+    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, RiderMove,
+    SharedEntity, apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -117,10 +130,12 @@ use crate::player::player_inventory::{
     MenuItemDisposition, MenuRemovalStatus, PlayerInventory, PlayerInventorySyncState,
 };
 use crate::server::{
-    Server,
+    PlayerPacketTransition, Server,
     jobs::{JobPoll, ServerJob, ServerJobContext},
 };
-use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
+use crate::world::player_spawn_finder::{
+    POLL_TIME_BUDGET, PlayerSpawnSearch, PlayerSpawnSearchPoll,
+};
 use steel_registry::vanilla_damage_types;
 
 use steel_protocol::packets::{
@@ -137,10 +152,15 @@ use steel_utils::{
 
 use crate::inventory::container::Container;
 
-const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
+const DROP_SPAM_THROTTLER_INCREMENT_STEP: i32 = 20;
+const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
+
 use crate::chunk::player_chunk_view::PlayerChunkView;
+use crate::entity::entities::objects::projectiles::FishingHookEntity;
+use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
+use crate::player::advancement::PlayerAdvancement;
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::stats_counter::StatsCounter;
 use crate::portal::{
@@ -154,6 +174,8 @@ pub struct Player {
     pub gameprofile: GameProfile,
     /// The player's connection (abstracted for testing).
     pub connection: Arc<PlayerConnection>,
+    /// Stable connection session shared by every incarnation of this player.
+    pub(crate) session: Arc<PlayerSession>,
 
     /// The world the player is in.
     pub world: ArcSwap<World>,
@@ -179,15 +201,9 @@ pub struct Player {
     pub last_chunk_pos: SyncMutex<ChunkPos>,
     /// The last chunk tracking view of the player.
     pub last_tracking_view: SyncMutex<Option<PlayerChunkView>>,
-    /// The chunk sender for the player.
-    pub chunk_sender: SyncMutex<ChunkSender>,
-
     /// The client's settings/information (language, view distance, chat visibility, etc.).
     /// Updated when the client sends `SClientInformation` during config or play phase.
     client_information: SyncMutex<ClientInformation>,
-
-    /// Chat state: message counters, signature cache, validator, session, chain.
-    pub chat: SyncMutex<ChatState>,
 
     /// Current and previous game mode.
     game_modes: SyncMutex<PlayerGameModeState>,
@@ -197,6 +213,9 @@ pub struct Player {
 
     /// Logical inventory slots that must be resent directly to this player's client.
     inventory_sync: SyncMutex<PlayerInventorySyncState>,
+
+    /// The player's ender chest inventory.
+    pub ender_chest_inventory: SyncPlayerEnderChest,
 
     /// Last main-hand stack used for vanilla attack-strength reset checks.
     last_item_in_main_hand: SyncMutex<ItemStack>,
@@ -261,11 +280,17 @@ pub struct Player {
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
     ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
 
+    /// Active fishing hook, kept weakly because the world owns live entities.
+    pub(crate) fishing: SyncMutex<Option<Weak<FishingHookEntity>>>,
+
     /// The counter keeping track of this player's statistics.
     stats: SyncMutex<StatsCounter>,
 
     /// The last action time of this player.
     last_action_time: SyncMutex<Instant>,
+
+    /// Manage the advancements of the player
+    pub advancements: SyncMutex<PlayerAdvancement>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -283,6 +308,7 @@ struct PendingRootVehicleRestore {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct DomainResidenceToken(u64);
 
+#[derive(Clone)]
 struct PlayerResidenceState {
     token: DomainResidenceToken,
     pending_root_vehicle: Option<PendingRootVehicleRestore>,
@@ -313,6 +339,16 @@ impl Player {
     const USING_ITEM_FLAG: i8 = 1;
     const OFF_HAND_ACTIVE_ITEM_FLAG: i8 = 1 << 1;
 
+    /// Returns the chunk sender owned by this player's connection session.
+    pub(crate) fn chunk_sender(&self) -> &SyncMutex<ChunkSender> {
+        &self.session.chunk_sender
+    }
+
+    /// Returns chat protocol state owned by this connection session.
+    pub(crate) fn chat(&self) -> &SyncMutex<ChatState> {
+        &self.session.chat
+    }
+
     /// Returns the hand currently driving active item use.
     #[must_use]
     pub fn active_item_use_hand(&self) -> Option<InteractionHand> {
@@ -326,12 +362,13 @@ impl Player {
         let item = {
             let inventory = self.inventory.lock();
             let item = inventory.get_item_in_hand(hand);
-            item.copy_with_count(item.count())
+            item.clone()
         };
         let duration = ITEM_BEHAVIORS
             .get_behavior(item.item())
             .get_use_duration(&item, self);
         if self.living_base.start_using_item(hand, &item, duration) {
+            self.inventory.lock().adopt_use_item(hand);
             let mut entity_data = self.entity_data.lock();
             let flags = entity_data.living_entity().living_entity_flags.get();
             let mut flags = *flags | Self::USING_ITEM_FLAG;
@@ -347,83 +384,119 @@ impl Player {
         }
     }
 
-    fn stop_using_item(&self) {
-        self.living_base.stop_using_item();
-        let mut entity_data = self.entity_data.lock();
-        let flags = *entity_data.living_entity().living_entity_flags.get();
-        entity_data
-            .living_entity_mut()
-            .living_entity_flags
-            .set(flags & !Self::USING_ITEM_FLAG);
-    }
-
     /// Releases the currently used item and invokes its release hook.
-    pub fn release_using_item(&self) {
+    pub fn release_using_item(&self, entity: &SharedEntity) {
         let Some(active) = self.living_base.active_item_use() else {
             return;
         };
+        let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
+        self.release_using_item_with_behavior(entity, behavior, active);
+    }
+
+    fn release_using_item_with_behavior(
+        &self,
+        entity: &SharedEntity,
+        behavior: &dyn ItemBehavior,
+        active: ActiveItemUseState,
+    ) {
         let hand = active.hand();
-        let item_matches = {
-            let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item()
-        };
-        if !item_matches {
+        let Some(mut item) = self.adopt_use_item(hand, active) else {
             self.stop_using_item();
             return;
-        }
-        let mut item = {
-            let mut inventory = self.inventory.lock();
-            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
         };
+        let stack_before_using = item.clone();
         let world = self.get_world();
-        let use_on_release = ITEM_BEHAVIORS.get_behavior(item.item()).release_using(
-            &mut item,
-            &world,
-            self,
-            active.remaining_ticks(),
-        );
-        self.inventory.lock().set_item_in_hand(hand, item);
-        if use_on_release {
-            self.tick_active_item_use();
+        let apply_side_effects =
+            behavior.release_using(&mut item, &world, self, active.remaining_ticks());
+        let use_on_release = behavior.use_on_release(&item);
+        let result = if apply_side_effects {
+            self.apply_item_use_cooldown(&stack_before_using);
+            apply_use_remainder(&stack_before_using, item.clone(), self)
+        } else {
+            item.clone()
+        };
+        self.inventory.lock().write_use_result(hand, item, result);
+        // we re-read active here since behavior.release_using might have already ended the use
+        if use_on_release && let Some(active) = self.living_base.active_item_use() {
+            self.tick_active_item_use_with_behavior(entity, behavior, active);
         }
         self.stop_using_item();
     }
 
-    fn tick_active_item_use(&self) {
+    /// Vanilla `isSameItem(getItemInHand(hand), useItem)` followed by `useItem = getItemInHand(hand)`.
+    fn adopt_use_item(
+        &self,
+        hand: InteractionHand,
+        active: ActiveItemUseState,
+    ) -> Option<ItemStack> {
+        let mut inventory = self.inventory.lock();
+        let item = inventory.get_item_in_hand(hand).clone();
+        if item.item() != active.item() {
+            return None;
+        }
+        inventory.adopt_use_item(hand);
+        Some(item)
+    }
+
+    fn tick_active_item_use(&self, entity: &SharedEntity) {
         let Some(active) = self.living_base.active_item_use() else {
             return;
         };
+        let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
+        self.tick_active_item_use_with_behavior(entity, behavior, active);
+    }
+
+    fn tick_active_item_use_with_behavior(
+        &self,
+        entity: &SharedEntity,
+        behavior: &dyn ItemBehavior,
+        active: ActiveItemUseState,
+    ) {
         let hand = active.hand();
-        let item_matches = {
-            let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item()
-        };
-        if !item_matches {
+        let Some(mut item) = self.adopt_use_item(hand, active) else {
             self.stop_using_item();
             return;
-        }
-        let mut item = {
-            let mut inventory = self.inventory.lock();
-            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
         };
         let world = self.get_world();
-        let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
-        behavior.on_use_tick(&world, self, &mut item, active.remaining_ticks());
+        let Some(user) = LivingEntityRef::new(entity) else {
+            panic!("active item use requires a living entity");
+        };
+        behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
+        let use_on_release = behavior.use_on_release(&item);
+        self.inventory.lock().write_use_item(hand, item);
 
-        if self.active_item_use_hand() != Some(hand) {
-            self.inventory.lock().set_item_in_hand(hand, item);
-            return;
-        }
-        let Some(active) = self.living_base.decrement_active_item_use() else {
-            self.inventory.lock().set_item_in_hand(hand, item);
+        let Some(current) = self.living_base.decrement_active_item_use() else {
             return;
         };
-        if active.remaining_ticks() <= 0 {
-            item = behavior.finish_using(&mut item, &world, self);
-            self.stop_using_item();
+        if current.remaining_ticks() != 0 || use_on_release {
+            return;
         }
-
-        self.inventory.lock().set_item_in_hand(hand, item);
+        let behavior = if current.item() == active.item() {
+            behavior
+        } else {
+            ITEM_BEHAVIORS.get_behavior(current.item())
+        };
+        let hand = active.hand();
+        let mut item = {
+            let inventory = self.inventory.lock();
+            if !inventory.holds_use_item(hand) {
+                drop(inventory);
+                self.release_using_item(entity);
+                return;
+            }
+            inventory.get_item_in_hand(hand).clone()
+        };
+        if item.is_empty() {
+            return;
+        }
+        let Some(user) = LivingEntityRef::new(entity) else {
+            panic!("active item use requires a living entity");
+        };
+        let stack_before_finish = item.clone();
+        let result = behavior.finish_using(&mut item, &self.get_world(), user);
+        self.apply_item_use_cooldown(&stack_before_finish);
+        self.inventory.lock().write_use_result(hand, item, result);
+        self.stop_using_item();
     }
 
     /// Returns the player's configured main arm.
@@ -458,11 +531,7 @@ impl Player {
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
         let start_pos = DVec3::new(pos.x, self.get_eye_y(), pos.z);
-        let block_interaction_range = self
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(4.5);
+        let block_interaction_range = self.block_interaction_range();
         let direction = self.look_angle() * block_interaction_range;
 
         let end_pos = start_pos + direction;
@@ -492,9 +561,14 @@ impl Player {
     }
 
     /// Creates a new player.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "player construction requires explicit connection, session, world, and identity owners"
+    )]
     pub fn new(
         gameprofile: GameProfile,
         connection: Arc<PlayerConnection>,
+        session: Arc<PlayerSession>,
         world: Arc<World>,
         server: Weak<Server>,
         config: Arc<RuntimeConfig>,
@@ -503,19 +577,18 @@ impl Player {
     ) -> Self {
         // Create a single shared inventory container used by both the player and inventory menu
         let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
+        let ender_chest_inventory = Arc::new(SyncMutex::new(PlayerEnderChestContainer::new()));
 
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
-        let equipment = inventory.clone();
+        let equipment = Arc::clone(&inventory);
         let living_base = LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment);
-        let player_uuid = gameprofile.id;
+        let player_uuid = gameprofile.id();
         let world_ref = Arc::downgrade(&world);
-        let chat_spam_threshold_seconds = config.chat_spam_threshold_seconds;
-        let command_spam_threshold_seconds = config.command_spam_threshold_seconds;
-
         Self {
             gameprofile,
             connection,
+            session,
 
             world: ArcSwap::new(world),
             server,
@@ -537,15 +610,11 @@ impl Player {
             }),
             last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
             last_tracking_view: SyncMutex::new(None),
-            chunk_sender: SyncMutex::new(ChunkSender::default()),
             client_information: SyncMutex::new(client_information),
-            chat: SyncMutex::new(ChatState::new(
-                chat_spam_threshold_seconds,
-                command_spam_threshold_seconds,
-            )),
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
-            inventory: inventory.clone(),
+            inventory: Arc::clone(&inventory),
             inventory_sync: SyncMutex::new(PlayerInventorySyncState::new()),
+            ender_chest_inventory,
             last_item_in_main_hand: SyncMutex::new(ItemStack::empty()),
             inventory_menu: SyncMutex::new(inventory_menu(inventory)),
             open_menu: SyncMutex::new(player_inventory::OpenMenuState::new()),
@@ -567,133 +636,38 @@ impl Player {
             chunk_send_epoch: SyncMutex::new(0),
             residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
+            fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
+            advancements: SyncMutex::new(PlayerAdvancement::default()), // TODO save the advancement
         }
     }
 
-    /// Ticks the player.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the player position cannot be restored after `ai_step`. Vanilla treats the
-    /// pre-tick position as authoritative here, so a rejection indicates corrupted entity state.
-    pub fn tick(&self) {
-        self.advance_tick();
-        self.tick_item_cooldowns();
-        self.tick_attack_strength();
-        self.tick_spam_throttlers();
-        self.check_idle_timeout();
-        self.tick_client_load_timeout();
-        self.tick_sleep_counter();
-        if self.is_sleeping() {
-            let world = self.get_world();
-            if !self.bed_rule_value_allows(world.dimension_type.bed_rule.can_sleep) {
-                self.stop_sleep_in_bed(false, true);
-            } else if !self.can_interact_with_level()
-                || self
-                    .sleeping_pos()
-                    .is_none_or(|pos| !world.get_block_state(pos).is_bed())
-            {
-                self.stop_sleep_in_bed(true, true);
-            }
+    /// Returns the active fishing hook, clearing a stale reference after removal.
+    pub fn fishing_hook(&self) -> Option<Arc<FishingHookEntity>> {
+        let mut fishing = self.fishing.lock();
+        let hook = fishing.as_ref().and_then(Weak::upgrade);
+        if hook.is_none() {
+            *fishing = None;
         }
+        hook
+    }
 
-        self.set_no_physics(self.is_spectator());
-        if self.is_spectator() || self.is_passenger() {
-            self.set_on_ground(false);
-        }
+    /// Records the hook currently owned by this player.
+    pub fn set_fishing_hook(&self, hook: &Arc<FishingHookEntity>) {
+        *self.fishing.lock() = Some(Arc::downgrade(hook));
+    }
 
-        let tick_position = self.position();
-
-        // Vanilla: ServerGamePacketListenerImpl.resetPosition().
-        self.movement.lock().reset_for_tick(tick_position);
-        self.set_old_position_to_current();
-        self.reset_vehicle_movement_for_tick();
-
-        self.default_tick();
-        self.detect_equipment_updates();
-        self.ai_step();
-
-        // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
-        if let Err(error) = self.try_set_position(tick_position) {
-            panic!(
-                "failed to restore player {} tick position after ai_step: {error}",
-                self.id()
-            );
-        }
-        self.refresh_fluid_contact();
-
-        self.tick_ack_block_changes();
-
-        if !self.has_client_loaded() {
-            //return;
-        }
-
-        self.living_base.decrement_invulnerable_time();
-        self.tick_mob_effects();
-        self.tick_active_item_use();
-        // TODO: Tick stats even when the player has been dead for more than 20 ticks.
-        self.tick_stats();
-
-        if self.get_health() <= 0.0 {
-            self.tick_death();
-        } else {
-            let world = self.get_world();
-            self.touch_nearby_items();
-            self.block_breaking.lock().tick(self, &world);
-
-            // TODO: Implement remaining player ticking logic here
-            // - Managing game mode specific logic
-            // - Updating advancements
-            // - Handling falling
-
-            self.update_player_attributes();
-            self.living_base.refresh_speed_from_attributes();
-            self.tick_regeneration();
-
-            if self.is_sprinting() && !self.food_data.lock().has_enough_food() {
-                self.set_sprinting(false);
-            }
-        }
-
-        if self.disconnect_if_floating_too_long() {
-            return;
-        }
-        if self.disconnect_if_vehicle_floating_too_long() {
-            return;
-        }
-
-        self.tick_living_state();
-
-        self.tick_open_menu();
-        self.flush_inventory_resync();
-        self.broadcast_inventory_changes();
-        self.update_pose();
-
+    /// Clears `hook` if it is still this player's active fishing hook.
+    pub fn clear_fishing_hook(&self, hook: &FishingHookEntity) {
+        let mut fishing = self.fishing.lock();
+        if fishing
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .is_some_and(|active| ptr::eq(active.as_ref(), hook))
         {
-            let health = self.get_health();
-            let (food, saturation) = {
-                let food_data = self.food_data.lock();
-                (food_data.food_level, food_data.saturation_level)
-            };
-
-            let saturation_zero = saturation == 0.0;
-
-            let mut sync = self.health_sync.lock();
-            if sync.needs_update(health, food, saturation_zero) {
-                self.send_packet(CSetHealth {
-                    health,
-                    food,
-                    food_saturation: saturation,
-                });
-                sync.record_sent(health, food, saturation_zero);
-            }
+            *fishing = None;
         }
-
-        self.send_experience_packet_if_dirty();
-
-        self.connection.tick();
     }
 
     fn send_experience_packet_if_dirty(&self) {
@@ -782,35 +756,13 @@ impl Player {
 
     /// Immediately flushes dirty player entity data to tracking players and self.
     fn sync_entity_data(&self) {
-        if let Some(dirty_values) = self.entity_data.lock().pack_dirty() {
+        let dirty_values = self.entity_data.lock().pack_dirty();
+        if let Some(dirty_values) = dirty_values {
             let packet = CSetEntityData::new(self.id(), dirty_values);
             self.get_world()
                 .broadcast_to_entity_trackers(self.id(), packet.clone(), None);
             self.send_packet(packet);
         }
-    }
-
-    fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
-        }
-
-        let mut display = self.living_base.mob_effect_display_state();
-        if self.game_mode() == GameType::Spectator {
-            display.particles = ParticleList::default();
-            display.invisible = true;
-        }
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
-        self.entity_data
-            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
     /// Handles a custom payload packet.
@@ -822,12 +774,28 @@ impl Player {
         self.movement.lock().finish_client_tick();
     }
 
+    /// Returns whether this player and `target` may damage each other.
+    #[must_use]
+    pub fn can_harm_player(&self, _target: &Player) -> bool {
+        // TODO: Check scoreboard team friendly fire once teams exist.
+        self.get_world().get_game_rule(&PVP)
+    }
+
     /// Main entry point for dealing damage. Returns `true` if damage was applied.
     ///
     /// `world` is vanilla's explicit `ServerLevel` argument and controls
     /// difficulty scaling and damage gamerules.
     pub fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         if LivingEntity::is_invulnerable_to(self, world, source) {
+            return false;
+        }
+
+        // TODO: Also reject arrows owned by players that cannot harm this player.
+        if let Some(attacker) = source
+            .causing_entity()
+            .and_then(|entity| entity.as_player())
+            && !self.can_harm_player(attacker)
+        {
             return false;
         }
 
@@ -845,10 +813,7 @@ impl Player {
 
         // Difficulty scaling (vanilla: Player.hurtServer)
         let mut amount = amount;
-        let causing_entity = source
-            .causing_entity_id
-            .and_then(|entity_id| world.get_entity_by_id(entity_id));
-        if source.scales_with_difficulty(causing_entity.as_deref()) {
+        if source.scales_with_difficulty() {
             let difficulty = world.level_data.read().data().difficulty;
             match difficulty {
                 Difficulty::Peaceful => {
@@ -901,22 +866,34 @@ impl Player {
         if (0.0..f32::MAX).contains(&absorbed_damage) {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_ABSORBED,
-                (absorbed_damage * 10.0).round() as i32,
+                round_f32(absorbed_damage * 10.0),
             );
         }
 
-        // TODO: combat tracker (getCombatTracker().recordDamage)
         if damage != 0.0 {
             self.cause_food_exhaustion(source.damage_type.exhaustion);
+            self.record_combat_damage(source, damage);
             self.set_health(self.get_health() - damage);
             if damage < f32::MAX {
                 self.award_custom_stat_with_count(
                     &vanilla_custom_stats::DAMAGE_TAKEN,
-                    (damage * 10.0).round() as i32,
+                    round_f32(damage * 10.0),
                 );
             }
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
         }
+    }
+
+    /// Sends vanilla `ClientboundPlayerCombatEnterPacket`.
+    fn on_enter_combat(&self) {
+        self.send_packet(CPlayerCombatEnter);
+    }
+
+    /// Sends vanilla `ClientboundPlayerCombatEndPacket`.
+    fn on_leave_combat(&self) {
+        self.send_packet(CPlayerCombatEnd {
+            duration: self.combat_duration(),
+        });
     }
 
     /// Vanilla: `ServerPlayer.die()` (does NOT call `super.die()`).
@@ -951,16 +928,7 @@ impl Player {
 
         let show_death_messages = world.get_game_rule(&SHOW_DEATH_MESSAGES);
 
-        // TODO: use CombatTracker for multi-arg messages (killer name, item, etc.)
-        let death_key = format!("death.attack.{}", source.damage_type.message_id);
-        let death_message = TranslatedMessage {
-            key: death_key.into(),
-            fallback: None,
-            args: Some(Box::new([TextComponent::plain(
-                self.gameprofile.name.clone(),
-            )])),
-        }
-        .component();
+        let death_message = self.get_death_message();
 
         self.send_packet(CPlayerCombatKill {
             player_id: self.id(),
@@ -982,7 +950,7 @@ impl Player {
         if !world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator {
             let drops = self.inventory.lock().take_death_drops();
             for item in drops {
-                let _ = self.drop_item(item, true, false);
+                let _ = self.spawn_dropped_item(item, true, false);
             }
 
             let reward = self.experience.lock().death_xp_reward();
@@ -1004,6 +972,7 @@ impl Player {
 
         self.clear_fire();
         self.set_ticks_frozen(0);
+        self.recheck_combat_status();
 
         if world.get_game_rule(&IMMEDIATE_RESPAWN) {
             self.respawn();
@@ -1068,10 +1037,6 @@ impl Player {
             });
         residence.pending_ender_pearls = ender_pearls;
         true
-    }
-
-    pub(crate) fn clear_pending_root_vehicle(&self) {
-        self.residence.lock().pending_root_vehicle = None;
     }
 
     pub(crate) fn pending_root_vehicle_for_current_world(&self) -> Option<PersistentRootVehicle> {
@@ -1187,6 +1152,17 @@ impl Player {
         pearls.iter().filter_map(Weak::upgrade).collect()
     }
 
+    /// Rebinds live pearls to a fresh respawn incarnation with the same player UUID.
+    pub(crate) fn rebind_ender_pearls_to(&self, replacement: &Arc<Self>) {
+        debug_assert_eq!(self.gameprofile.id(), replacement.gameprofile.id());
+        let replacement_entity: SharedEntity = Arc::<Player>::clone(replacement);
+        for pearl in self.ender_pearls() {
+            if pearl.projectile_owner_uuid() == Some(self.gameprofile.id()) {
+                pearl.restore_owner_reference(&replacement_entity);
+            }
+        }
+    }
+
     /// Appends vanilla-shaped player state used by command NBT predicates.
     pub(crate) fn save_command_nbt(&self, nbt: &mut NbtCompound) {
         {
@@ -1200,6 +1176,7 @@ impl Player {
             nbt.insert("XpP", experience.progress());
             nbt.insert("XpLevel", experience.level());
             nbt.insert("XpTotal", experience.total_points());
+            nbt.insert("XpSeed", experience.enchantment_seed());
         }
         nbt.insert("Score", self.score());
 
@@ -1286,13 +1263,11 @@ impl Player {
         self.tick_state.lock().tick_count()
     }
 
-    /// Returns vanilla `Player.takeXpDelay`.
     #[must_use]
     pub(crate) fn take_xp_delay(&self) -> i32 {
         self.tick_state.lock().take_xp_delay()
     }
 
-    /// Sets vanilla `Player.takeXpDelay`.
     pub(crate) fn set_take_xp_delay(&self, delay: i32) {
         self.tick_state.lock().set_take_xp_delay(delay);
     }
@@ -1331,6 +1306,10 @@ impl Player {
 }
 
 impl Entity for Player {
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -1343,30 +1322,53 @@ impl Entity for Player {
         LivingEntity::base_tick_living_entity(self);
     }
 
+    fn do_water_splash_effect(&self) {
+        if !self.is_spectator() {
+            self.default_do_water_splash_effect();
+        }
+    }
+
+    fn swim_splash_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_PLAYER_SPLASH
+    }
+
+    fn swim_high_speed_splash_sound(&self) -> SoundEventRef {
+        &sound_events::ENTITY_PLAYER_SPLASH_HIGH_SPEED
+    }
+
+    /// Wind charge bursts spare fall damage down to the height the player was launched from.
+    // TODO: Track `currentExplosionImpactPos`/`currentExplosionCause` for the
+    // `fall_after_explosion` advancement trigger.
+    fn on_explosion_hit(&self, explosion_source: Option<&dyn Entity>) {
+        let caused_by_wind_charge = explosion_source
+            .is_some_and(|source| source.entity_type() == &vanilla_entities::WIND_CHARGE);
+        self.set_ignore_fall_damage_from_current_impulse(caused_by_wind_charge, self.position());
+    }
+
     fn scoreboard_name(&self) -> String {
-        self.gameprofile.name.clone()
+        self.gameprofile.name().to_owned()
     }
 
     fn name(&self) -> TextComponent {
-        TextComponent::plain(self.gameprofile.name.clone())
+        TextComponent::plain(self.gameprofile.name().to_owned())
     }
 
     fn display_name(&self) -> TextComponent {
         self.name()
             .click_event(ClickEvent::suggest_command(format!(
                 "/tell {} ",
-                self.gameprofile.name
+                self.gameprofile.name()
             )))
             .hover_event(HoverEvent::show_entity(
                 "minecraft:player",
                 self.uuid(),
                 Some(self.name()),
             ))
-            .insertion(self.gameprofile.name.clone())
+            .insertion(self.gameprofile.name().to_owned())
     }
 
     fn plain_text_name(&self) -> String {
-        self.gameprofile.name.clone()
+        self.gameprofile.name().to_owned()
     }
 
     fn look_at(&self, from_anchor: EntityAnchor, target: DVec3) {
@@ -1405,12 +1407,12 @@ impl Entity for Player {
         }
     }
 
-    fn ride_tick(&self) {
+    fn ride_tick(self: Arc<Self>) {
         let pre = self.position();
         if self.wants_to_stop_riding() && self.is_passenger() {
             self.stop_riding();
         } else {
-            self.default_ride_tick();
+            Arc::clone(&self).default_ride_tick();
             self.reset_fall_distance();
         }
         self.check_riding_statistics(self.position() - pre);
@@ -1419,6 +1421,7 @@ impl Entity for Player {
     fn stop_riding(&self) {
         let old_vehicle = self.vehicle();
         self.base().stop_riding();
+        self.base.set_boarding_cooldown(0);
         let Some(old_vehicle) = old_vehicle else {
             return;
         };
@@ -1428,6 +1431,11 @@ impl Entity for Player {
             old_vehicle.id(),
             Self::passenger_ids_for_packet(old_vehicle.as_ref()),
         ));
+    }
+
+    fn teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        let (yaw, pitch) = self.rotation();
+        self.teleport(pos, yaw, pitch)
     }
 
     fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
@@ -1441,7 +1449,7 @@ impl Entity for Player {
             return false;
         }
 
-        entity_to_ride.position_rider(self.as_entity_event_source());
+        entity_to_ride.position_rider(self.as_entity_event_source(), RiderMove::SetPosition);
         let position = self.position();
         let (yaw, pitch) = self.rotation();
         if let Err(error) = self.teleport(position, yaw, pitch) {
@@ -1475,14 +1483,6 @@ impl Entity for Player {
 
     fn is_alive(&self) -> bool {
         !self.is_removed() && self.get_health() > 0.0
-    }
-
-    fn forces_fall_flying_velocity_sync(&self) -> bool {
-        self.is_fall_flying()
-    }
-
-    fn blocks_building(&self) -> bool {
-        true
     }
 
     fn is_pickable(&self) -> bool {
@@ -1582,7 +1582,7 @@ impl Entity for Player {
     }
 
     fn cause_fall_damage(
-        &self,
+        self: Arc<Self>,
         fall_distance: f64,
         damage_modifier: f32,
         source: &DamageSource,
@@ -1594,11 +1594,16 @@ impl Entity for Player {
         if fall_distance >= 2.0 {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::FALL_ONE_CM,
-                (fall_distance * 100.0).round() as i32,
+                round_f64(fall_distance * 100.0) as i32,
             );
         }
 
-        LivingEntity::cause_living_fall_damage(self, fall_distance, damage_modifier, source)
+        LivingEntity::cause_living_fall_damage(
+            self.as_ref(),
+            fall_distance,
+            damage_modifier,
+            source,
+        )
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
@@ -1606,7 +1611,26 @@ impl Entity for Player {
     }
 
     fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
+        if !self.living_base.take_effects_dirty() {
+            return;
+        }
+
+        let mut display = self.living_base.mob_effect_display_state();
+        if self.game_mode() == GameType::Spectator {
+            display.particles = ParticleList::default();
+            display.invisible = true;
+        }
+
+        {
+            let mut entity_data = self.entity_data.lock();
+            let living = entity_data.living_entity_mut();
+            living.effect_particles.set(display.particles);
+            living.effect_ambience.set(display.ambient);
+        }
+
+        self.entity_data.set_base_invisible_flag(display.invisible);
+        self.entity_data
+            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
     fn max_up_step(&self) -> f32 {
@@ -1750,8 +1774,125 @@ impl LivingEntity for Player {
         Some(&self.entity_data)
     }
 
-    fn tick_living_entity(&self) {
-        Player::tick(self);
+    fn indicate_damage(&self, xd: f64, zd: f64) {
+        let (y_rot, _) = self.rotation();
+        let hurt_dir = trig::atan2(zd, xd) * RAD_TO_DEG_F64 - f64::from(y_rot);
+        self.send_packet(CHurtAnimation {
+            entity_id: self.id(),
+            yaw: hurt_dir as f32,
+        });
+    }
+
+    fn tick_living_entity(&self, entity: &SharedEntity) {
+        self.advance_tick();
+        self.tick_item_cooldowns();
+        self.tick_attack_strength();
+        self.tick_throttlers();
+        self.check_idle_timeout();
+        self.tick_client_load_timeout();
+        self.tick_sleep_counter();
+        if self.is_sleeping() {
+            let world = self.get_world();
+            let state = self.sleeping_pos().map(|pos| world.get_block_state(pos));
+            if state.is_some_and(|state| {
+                !self.bed_rule_value_allows(Self::bed_rule_for(&world, state).can_sleep)
+            }) {
+                self.stop_sleep_in_bed(false, true);
+            } else if !self.can_interact_with_level()
+                || self
+                    .sleeping_pos()
+                    .is_none_or(|pos| !world.get_block_state(pos).is_bed())
+            {
+                self.stop_sleep_in_bed(true, true);
+            }
+        }
+
+        self.set_no_physics(self.is_spectator());
+        if self.is_spectator() || self.is_passenger() {
+            self.set_on_ground(false);
+        }
+
+        let tick_position = self.position();
+
+        self.movement.lock().reset_for_tick(tick_position);
+        self.set_old_position_to_current();
+        self.reset_vehicle_movement_for_tick();
+
+        self.default_tick();
+        self.detect_equipment_updates();
+        if !self.is_removed() {
+            self.ai_step(entity);
+        }
+
+        // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
+        if let Err(error) = self.try_set_position(tick_position) {
+            panic!(
+                "failed to restore player {} tick position after ai_step: {error}",
+                self.id()
+            );
+        }
+        self.refresh_fluid_contact();
+
+        self.tick_ack_block_changes();
+
+        self.living_base.decrement_invulnerable_time();
+        self.tick_mob_effects();
+        self.tick_active_item_use(entity);
+        self.tick_stats();
+
+        if self.get_health() <= 0.0 {
+            self.tick_death();
+        } else {
+            let world = self.get_world();
+            self.block_breaking.lock().tick(self, &world);
+
+            self.update_player_attributes();
+            self.advancements.lock().flush_dirty(self, true);
+            self.living_base.refresh_speed_from_attributes();
+            self.tick_food_data();
+
+            if self.is_sprinting() && !self.food_data.lock().has_enough_food() {
+                self.set_sprinting(false);
+            }
+        }
+
+        if self.disconnect_if_floating_too_long() {
+            return;
+        }
+        if self.disconnect_if_vehicle_floating_too_long() {
+            return;
+        }
+
+        self.tick_living_state();
+
+        self.tick_open_menu();
+        self.flush_inventory_resync();
+        self.broadcast_inventory_changes();
+        self.update_pose();
+
+        {
+            let health = self.get_health();
+            let (food, saturation) = {
+                let food_data = self.food_data.lock();
+                (food_data.food_level, food_data.saturation_level)
+            };
+
+            let saturation_zero = saturation == 0.0;
+
+            let mut sync = self.health_sync.lock();
+            if sync.needs_update(health, food, saturation_zero) {
+                self.send_packet(CSetHealth {
+                    health,
+                    food,
+                    food_saturation: saturation,
+                });
+                sync.record_sent(health, food, saturation_zero);
+            }
+        }
+
+        self.send_experience_packet_if_dirty();
+
+        self.connection.tick();
     }
 
     fn get_health(&self) -> f32 {
@@ -1776,6 +1917,43 @@ impl LivingEntity for Player {
         self.living_base.is_using_item()
     }
 
+    fn stop_using_item(&self) {
+        self.living_base.stop_using_item();
+        let mut entity_data = self.entity_data.lock();
+        let flags = *entity_data.living_entity().living_entity_flags.get();
+        entity_data
+            .living_entity_mut()
+            .living_entity_flags
+            .set(flags & !Self::USING_ITEM_FLAG);
+    }
+
+    fn block_using_item(
+        &self,
+        world: &World,
+        attacker: &dyn LivingEntity,
+        source: &DamageSource,
+        damage: f32,
+        fully_blocked: bool,
+    ) {
+        attacker.blocked_by_item(self, source, damage, fully_blocked);
+        let Some((_, blocking_with)) = self.get_item_blocking_with() else {
+            return;
+        };
+        let Some(blocks_attacks) = blocking_with.get(BLOCKS_ATTACKS) else {
+            return;
+        };
+        let seconds_to_disable_blocking = attacker.get_seconds_to_disable_blocking();
+        if seconds_to_disable_blocking > 0.0 {
+            blocks_attacks::disable(
+                blocks_attacks,
+                world,
+                self,
+                seconds_to_disable_blocking,
+                &blocking_with,
+            );
+        }
+    }
+
     fn get_luck(&self) -> f32 {
         self.attributes()
             .lock()
@@ -1790,7 +1968,7 @@ impl LivingEntity for Player {
 
     fn is_invulnerable_to(&self, world: &World, source: &DamageSource) -> bool {
         if self.default_is_invulnerable_to(source)
-            || enchantment_helper::is_immune_to_damage(world, self, source)
+            || enchantment_helper::is_immune_to_damage(self, source)
         {
             return true;
         }
@@ -1819,12 +1997,31 @@ impl LivingEntity for Player {
         Player::actually_hurt(self, world, source, amount);
     }
 
+    fn on_enter_combat(&self) {
+        Player::on_enter_combat(self);
+    }
+
+    fn on_leave_combat(&self) {
+        Player::on_leave_combat(self);
+    }
+
     fn hurt_broadcast_chunk(&self) -> ChunkPos {
         *self.last_chunk_pos.lock()
     }
 
     fn die(&self, source: &DamageSource) {
         Player::die(self, source);
+    }
+
+    fn tick_equipment(&self) {
+        // skip main hand because its already being ticked through player inventory
+        InventoryTickContext::tick_equipment(
+            &self.get_world(),
+            self,
+            EquipmentSlot::ALL
+                .into_iter()
+                .filter(|slot| *slot != EquipmentSlot::MainHand),
+        );
     }
 
     fn with_equipment_slot(&self, slot: EquipmentSlot, visitor: &mut dyn FnMut(&ItemStack)) {
@@ -1849,7 +2046,7 @@ impl LivingEntity for Player {
         let item_stack = {
             let inventory = player.inventory.lock();
             let item_stack = inventory.get_item_in_hand(hand);
-            item_stack.copy_with_count(item_stack.count())
+            item_stack.clone()
         };
         let Some(equippable) = item_stack.get_equippable() else {
             return InteractionResult::Pass;
@@ -1870,11 +2067,11 @@ impl LivingEntity for Player {
             return InteractionResult::Pass;
         }
 
-        let source_ref = ContainerRef::from(player.inventory.clone());
-        let target_ref = ContainerRef::from(self.inventory.clone());
+        let source_ref = ContainerRef::from(Arc::clone(&player.inventory));
+        let target_ref = ContainerRef::from(Arc::clone(&self.inventory));
         let source_id = source_ref.container_id();
         let target_id = target_ref.container_id();
-        let mut guard = ContainerLockGuard::lock_all(&[source_ref, target_ref]);
+        let mut guard = ContainerLockGuard::lock_storage(&[source_ref, target_ref]);
         let source_slot = match hand {
             InteractionHand::MainHand => EquipmentSlot::MainHand,
             InteractionHand::OffHand => EquipmentSlot::OffHand,
@@ -1922,15 +2119,20 @@ impl LivingEntity for Player {
             self.inventory.lock().set_changed();
         }
 
-        if let Some(sound) = self.equip_sound(slot, &equipped) {
-            self.play_sound(sound, 1.0, 1.0);
-        }
+        self.on_equip_item(slot, &ItemStack::empty(), &equipped);
         // TODO: Emit EQUIP game event once game-event dispatch is implemented.
         InteractionResult::Success
     }
 
     fn has_infinite_materials(&self) -> bool {
         Player::has_infinite_materials(self)
+    }
+
+    fn handle_extra_items_created_on_use(&self, extra: ItemStack) {
+        let leftover = self.inventory.lock().add_or_return(extra);
+        if !leftover.is_empty() {
+            let _ = self.drop_item(leftover, false, Prediction::Predicted);
+        }
     }
 
     fn get_absorption_amount(&self) -> f32 {
@@ -1969,25 +2171,32 @@ impl LivingEntity for Player {
         self.default_jump_from_ground();
         self.award_custom_stat(&vanilla_custom_stats::JUMP);
         if self.is_sprinting() {
-            self.cause_food_exhaustion(0.2);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_SPRINT_JUMP);
         } else {
-            self.cause_food_exhaustion(0.05);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_JUMP);
         }
     }
 
-    fn ai_step(&self) -> Option<MoveResult> {
+    fn ai_step(&self, entity: &SharedEntity) -> Option<MoveResult> {
+        self.tick_regeneration();
+        InventoryTickContext::tick_player_inventory(&self.get_world(), self);
         if self.is_flying() && !self.is_passenger() {
             self.reset_fall_distance();
         }
 
-        let result = self.default_ai_step();
+        let result = self.default_ai_step(entity);
         self.set_y_head_rot(self.rotation().0);
+        // Pickup uses the simulated position; `tick_living_entity` restores the
+        // authoritative tick position after this returns.
+        if self.get_health() > 0.0 {
+            self.touch_nearby_items();
+        }
         result
     }
 
-    fn travel(&self, input: DVec3) -> Option<MoveResult> {
+    fn travel(&self, entity: &SharedEntity, input: DVec3) -> Option<MoveResult> {
         if self.is_passenger() {
-            return self.default_travel(input);
+            return self.default_travel(entity, input);
         }
 
         if self.is_swimming() {
@@ -2008,7 +2217,7 @@ impl LivingEntity for Player {
 
         if self.is_flying() {
             let original_movement_y = self.velocity().y;
-            let result = self.default_travel(input);
+            let result = self.default_travel(entity, input);
             let velocity = self.velocity();
             self.set_velocity(DVec3::new(
                 velocity.x,
@@ -2017,7 +2226,7 @@ impl LivingEntity for Player {
             ));
             result
         } else {
-            self.default_travel(input)
+            self.default_travel(entity, input)
         }
     }
 

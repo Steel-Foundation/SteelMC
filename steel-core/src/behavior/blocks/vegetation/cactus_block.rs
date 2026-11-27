@@ -99,11 +99,7 @@ impl BlockBehavior for CactusBlock {
         // Block above must not be liquid
         let above = world.get_block_state(pos.above());
 
-        if above.has_fluid() {
-            return false;
-        }
-
-        true
+        !above.has_fluid()
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

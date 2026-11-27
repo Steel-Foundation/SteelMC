@@ -1,5 +1,6 @@
 use crate::SERVER;
 use crate::logger::history::History;
+use crate::logger::search::ReverseSearch;
 use crate::logger::{CommandLogger, LogState, Move, terminal_width};
 use crossterm::{
     clipboard::CopyToClipboard,
@@ -11,7 +12,8 @@ use crossterm::{
 use std::time::Duration;
 use std::{
     fmt::Write as _,
-    io::{Result, Write},
+    io::{Result, Write, stdin},
+    mem,
     sync::Arc,
 };
 use steel_core::command::sender::CommandSender;
@@ -29,13 +31,35 @@ enum ExtendedKey {
 impl CommandLogger {
     /// Main entry of the input process
     pub async fn input_main(self: Arc<Self>) -> Result<()> {
+        if !self.interactive {
+            return self.plain_input_main().await;
+        }
+
         let (tx, rx) = mpsc::unbounded_channel();
         enable_raw_mode()?;
-        self.clone().input_receiver(tx);
+        Arc::clone(&self).input_receiver(tx);
         let stopped = self.stopped.clone();
         let result = self.input_key(rx).await;
         stopped.cancel();
         result
+    }
+
+    async fn plain_input_main(self: Arc<Self>) -> Result<()> {
+        let cancel_token = self.cancel_token.clone();
+        spawn_blocking(move || {
+            for line in stdin().lines().map_while(Result::ok) {
+                if cancel_token.is_cancelled() {
+                    break;
+                }
+                let line = line.trim_end_matches('\r');
+                if !line.trim().is_empty() {
+                    dispatch_command(line.to_owned());
+                }
+            }
+        });
+        self.cancel_token.cancelled().await;
+        self.stopped.cancel();
+        Ok(())
     }
 
     fn input_receiver(self: Arc<Self>, tx: UnboundedSender<ExtendedKey>) {
@@ -48,6 +72,12 @@ impl CommandLogger {
 
                 if let Ok(true) = poll(Duration::from_millis(50)) {
                     let event = read().expect("Event bug; Cannot read event.");
+                    // Flush typed chars before any non-char key so Enter sees them.
+                    let typed_char = matches!(event, Event::Key(KeyEvent { code: KeyCode::Char(_), modifiers, .. })
+                        if !modifiers.contains(KeyModifiers::CONTROL));
+                    if !typed_char && !string.is_empty() {
+                        tx.send(ExtendedKey::String(mem::take(&mut string))).ok();
+                    }
                     // On Windows, crossterm sends both Press and Release events.
                     // Only handle Press events to avoid duplicate input.
                     match event {
@@ -72,8 +102,7 @@ impl CommandLogger {
                     }
                 }
                 if !string.is_empty() {
-                    tx.send(ExtendedKey::String(string.clone())).ok();
-                    string = String::new();
+                    tx.send(ExtendedKey::String(mem::take(&mut string))).ok();
                 }
             }
         });
@@ -90,6 +119,9 @@ impl CommandLogger {
                 Some(key) = rx.recv() => {
                     let mut lock = self.input.write().await;
                     let state = &mut lock as &mut LogState;
+                    let Some(key) = search_key(state, key)? else {
+                        continue;
+                    };
                     match key {
                         ExtendedKey::Generic(key) => match key.code {
                             KeyCode::Enter => {
@@ -273,6 +305,11 @@ impl CommandLogger {
                                         copy_to_clipboard(state);
                                         continue;
                                     }
+                                    // Cancels the pending input first, and the server once there is none
+                                    if !state.out.is_empty() {
+                                        state.reset()?;
+                                        continue;
+                                    }
                                     state.cancel_token.cancel();
                                 }
                                 'q' => {
@@ -302,6 +339,10 @@ impl CommandLogger {
                                 }
                                 'n' => {
                                     next(state)?;
+                                    continue;
+                                }
+                                'r' => {
+                                    ReverseSearch::start(state)?;
                                     continue;
                                 }
                                 'j' => {
@@ -371,10 +412,15 @@ fn send_state(mut lock: RwLockWriteGuard<'_, LogState>) {
     lock.history.push(message.clone());
     lock.reset().ok();
     drop(lock);
+    dispatch_command(message);
+}
+
+fn dispatch_command(message: String) {
     steel_utils::console!("{}", message);
     if let Some(server) = SERVER.get()
         && server
-            .submit_command(CommandSender::Console, message)
+            // None because console can't be reported to Microsoft (no signed messages)
+            .submit_command(CommandSender::Console, message, None)
             .is_err()
     {
         log::warn!("Command queue is full");
@@ -395,6 +441,36 @@ fn copy_to_clipboard(input: &mut LogState) -> Option<()> {
         return None;
     }
     Some(())
+}
+
+/// Handles a key while a reverse search is active. Keys the search does not own are
+/// returned for normal input handling, after accepting the current match.
+fn search_key(state: &mut LogState, key: ExtendedKey) -> Result<Option<ExtendedKey>> {
+    if state.search.is_none() {
+        return Ok(Some(key));
+    }
+    match key {
+        ExtendedKey::Ctrl('r') => ReverseSearch::advance(state)?,
+        ExtendedKey::Ctrl('c' | 'g') => ReverseSearch::abort(state)?,
+        ExtendedKey::String(text) if !text.contains('\n') => ReverseSearch::push(state, &text)?,
+        ExtendedKey::Generic(event) => match event.code {
+            KeyCode::Esc => ReverseSearch::abort(state)?,
+            KeyCode::Backspace => ReverseSearch::pop(state)?,
+            // Leaving the search is enough; completions come on the next press
+            KeyCode::Tab => ReverseSearch::accept(state)?,
+            _ => {
+                ReverseSearch::accept(state)?;
+                return Ok(Some(ExtendedKey::Generic(event)));
+            }
+        },
+        // Resizing only redraws, so the search survives it
+        ExtendedKey::Resize => return Ok(Some(ExtendedKey::Resize)),
+        key => {
+            ReverseSearch::accept(state)?;
+            return Ok(Some(key));
+        }
+    }
+    Ok(None)
 }
 
 fn previous(state: &mut LogState) -> Result<()> {

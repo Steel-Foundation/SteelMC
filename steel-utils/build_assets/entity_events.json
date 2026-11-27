@@ -250,5 +250,13 @@
   {
     "name": "tnt_prime",
     "value": 70
+  },
+  {
+    "name": "boat_sink",
+    "value": 71
+  },
+  {
+    "name": "boat_launch",
+    "value": 72
   }
 ]

@@ -349,7 +349,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestWorld, fresh_test_world, insert_ready_full_chunk};
 
     const RAIL_SHAPE: &EnumProperty<RailShape> = &BlockStateProperties::RAIL_SHAPE;
 
@@ -357,12 +357,13 @@ mod tests {
         UpdateFlags::UPDATE_NONE | UpdateFlags::UPDATE_SKIP_ON_PLACE
     }
 
-    fn topology_world(key: &'static str) -> (Arc<World>, BlockPos) {
+    fn topology_world(key: &'static str) -> (TestWorld, BlockPos) {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world(key);
+        let world_fixture = fresh_test_world(key);
+        let world = &world_fixture.world;
         let center = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(center));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(center));
         for offset in [
             BlockPos::ZERO,
             BlockPos::new(0, 0, -1),
@@ -376,7 +377,7 @@ mod tests {
                 raw_flags(),
             );
         }
-        (world, center)
+        (world_fixture, center)
     }
 
     fn set_raw_rail(world: &Arc<World>, pos: BlockPos, shape: RailShape) -> BlockStateId {
@@ -397,16 +398,18 @@ mod tests {
 
     #[test]
     fn four_way_curve_tie_uses_vanilla_sequential_overwrite_order() {
-        let (unpowered_world, center) = topology_world("rail_unpowered_curve_tie");
-        let state = set_four_way_junction(&unpowered_world, center);
-        let mut rail = RailState::new(&unpowered_world, center, state)
+        let (unpowered_world_fixture, center) = topology_world("rail_unpowered_curve_tie");
+        let unpowered_world = &unpowered_world_fixture.world;
+        let state = set_four_way_junction(unpowered_world, center);
+        let mut rail = RailState::new(unpowered_world, center, state)
             .expect("ordinary rail should expose rail capability");
         let unpowered = rail.place(false, true, RailShape::NorthSouth);
         assert_eq!(unpowered.get_value(RAIL_SHAPE), RailShape::SouthEast);
 
-        let (powered_world, center) = topology_world("rail_powered_curve_tie");
-        let state = set_four_way_junction(&powered_world, center);
-        let mut rail = RailState::new(&powered_world, center, state)
+        let (powered_world_fixture, center) = topology_world("rail_powered_curve_tie");
+        let powered_world = &powered_world_fixture.world;
+        let state = set_four_way_junction(powered_world, center);
+        let mut rail = RailState::new(powered_world, center, state)
             .expect("ordinary rail should expose rail capability");
         let powered = rail.place(true, true, RailShape::NorthSouth);
         assert_eq!(powered.get_value(RAIL_SHAPE), RailShape::NorthWest);
@@ -414,15 +417,16 @@ mod tests {
 
     #[test]
     fn east_upper_neighbor_creates_slope_with_ordered_connections() {
-        let (world, center) = topology_world("rail_ascending_east");
+        let (world_fixture, center) = topology_world("rail_ascending_east");
+        let world = &world_fixture.world;
         world.set_block(
             center.east(),
             vanilla_blocks::STONE.default_state(),
             raw_flags(),
         );
-        set_raw_rail(&world, center.east().above(), RailShape::EastWest);
-        let state = set_raw_rail(&world, center, RailShape::EastWest);
-        let mut rail = RailState::new(&world, center, state)
+        set_raw_rail(world, center.east().above(), RailShape::EastWest);
+        let state = set_raw_rail(world, center, RailShape::EastWest);
+        let mut rail = RailState::new(world, center, state)
             .expect("ordinary rail should expose rail capability");
         let placed = rail.place(false, true, RailShape::EastWest);
 

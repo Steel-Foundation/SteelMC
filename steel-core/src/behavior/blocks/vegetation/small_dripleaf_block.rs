@@ -14,7 +14,7 @@ use crate::behavior::blocks::BigDripleafBlock;
 use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockPlaceContext, PlacementSource};
-use crate::fluid::{FluidStateExt, get_fluid_state_from_block};
+use crate::fluid::{FluidStateExt, fluid_state_to_block, get_fluid_state_from_block};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::{BlockRef, DoublePlantBlock};
@@ -131,10 +131,7 @@ impl Bonemealable for SmallDripleafBlock {
             let above = pos.above();
             world.set_block(
                 above,
-                world
-                    .get_block_state(above)
-                    .get_fluid_state()
-                    .create_legacy_block(),
+                fluid_state_to_block(world.get_block_state(above).get_fluid_state()),
                 UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_KNOWN_SHAPE,
             );
             BigDripleafBlock::place_with_random_height(world, rng, pos, state.get_value(FACING));

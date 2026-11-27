@@ -1,6 +1,6 @@
 //! Default world spawn command.
 
-use steel_utils::{BlockPos, Identifier, translations};
+use steel_utils::{BlockPos, Identifier, java::float_to_string, translations};
 use text_components::TextComponent;
 
 use super::super::{
@@ -42,7 +42,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
         )
 }
 
-fn spawnable_position(
+pub(super) fn spawnable_position(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<BlockPos, CommandSyntaxError> {
     let coordinates = context.coordinates("pos")?;
@@ -69,13 +69,13 @@ fn set_spawn(
         .set_respawn_data(respawn_data)
         .map_err(CommandSyntaxError::dynamic)?;
 
-    let message = translations::COMMANDS_SETWORLDSPAWN_SUCCESS_NEW
+    let message = translations::COMMANDS_SETWORLDSPAWN_SUCCESS
         .message([
             position.x().to_string(),
             position.y().to_string(),
             position.z().to_string(),
-            yaw.to_string(),
-            pitch.to_string(),
+            float_to_string(yaw),
+            float_to_string(pitch),
             source.world().key.to_string(),
         ])
         .component();

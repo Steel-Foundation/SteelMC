@@ -27,7 +27,7 @@ const ALL_ROTATIONS: [Rotation; 4] = [
 ];
 
 impl Rotation {
-    /// Matches vanilla's `Rotation.getRandom(random)`.
+    /// Returns a uniformly random rotation.
     #[must_use]
     pub fn get_random(rng: &mut impl Random) -> Self {
         ALL_ROTATIONS[rng.next_i32_bounded(4) as usize]

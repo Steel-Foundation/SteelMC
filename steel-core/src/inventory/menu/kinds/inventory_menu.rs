@@ -8,6 +8,9 @@
 //! - Slots 36-44: Hotbar (9)
 //! - Slot 45: Offhand
 
+use crate::player::player_inventory::Prediction;
+use std::sync::Arc;
+
 use steel_registry::item_stack::ItemStack;
 use steel_utils::locks::{IntoShared, Shared};
 
@@ -31,11 +34,15 @@ pub fn inventory_menu(inventory: Shared<PlayerInventory>) -> Menu {
     let crafting_container = CraftingContainer::new(2, 2).into_shared();
     let result_container = ResultContainer::new().into_shared();
 
-    let handler = CraftingHandler::new(crafting_container.clone(), result_container.clone(), 2);
+    let handler = CraftingHandler::new(
+        Arc::clone(&crafting_container),
+        Arc::clone(&result_container),
+        2,
+    );
 
     let mut builder = MenuBuilder::new(None, INVENTORY_MENU_CONTAINER_ID);
 
-    let result = builder.result_slot(handler.clone());
+    let result = builder.crafting_result_slot(handler.clone());
     let grid = builder.section_all(crafting_container);
     let armor = builder.section_at(
         &inventory,
@@ -288,15 +295,19 @@ impl MenuKind for InventoryKind {
             return Some(ItemStack::empty());
         }
 
-        if let Some(remainder) = behavior.slots()[slot_index].on_take(guard, &stack_mut, player) {
+        let taken = clicked.copy_with_count(clicked.count - stack_mut.count);
+        let slot = &behavior.slots()[slot_index];
+        slot.on_quick_craft(&taken, player);
+        if let Some(remainder) = slot.on_take(guard, &stack_mut, player) {
             // Crafting remainders like empty buckets go back to the inventory.
-            player.add_item_or_drop_with_guard(guard, remainder);
+            player.add_item_or_drop_with_guard(guard, remainder, Prediction::Predicted);
         }
 
         if self.result.contains(slot_index) {
             // Drop result output that didn't fit.
             if !stack_mut.is_empty() {
-                let _ = guard.run_unlocked(|| player.drop_item(stack_mut, false, false));
+                let _ = guard
+                    .run_unlocked(|| player.drop_item(stack_mut, false, Prediction::Predicted));
             }
         }
 

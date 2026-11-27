@@ -3,7 +3,8 @@
 use steel_registry::{REGISTRY, RegistryExt as _, TaggedRegistryExt as _, structure::StructureRef};
 use steel_utils::Identifier;
 
-use super::argument::{identifier_matches, parse_identifier};
+use super::argument::parse_identifier;
+use super::suggestions::identifier_matches;
 use crate::command::brigadier::{CommandSyntaxError, StringReader, SuggestionsBuilder};
 
 /// A structure resource key or tag key retained until command execution.

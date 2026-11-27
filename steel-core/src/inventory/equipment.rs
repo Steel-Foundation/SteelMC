@@ -23,6 +23,11 @@ pub trait EntityEquipment: Send {
     /// Clears all equipment slots.
     fn clear(&mut self);
 
+    /// Clones the item in every equipment slot, indexed by [`EquipmentSlot::index`].
+    fn snapshot(&self) -> [ItemStack; EquipmentSlot::ALL.len()] {
+        EquipmentSlot::ALL.map(|slot| self.get_ref(slot).clone())
+    }
+
     /// Returns non-empty equipment slots for initial spawn synchronization.
     fn non_empty_items(&self) -> Vec<(EquipmentSlot, ItemStack)> {
         EquipmentSlot::ALL

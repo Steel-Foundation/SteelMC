@@ -5,7 +5,10 @@
 
 mod java;
 
-pub use java::{BundleBuilder, JavaConnection, JavaNetworkWriter, OutboundPacket};
+pub use java::{
+    BundleBuilder, JavaConnection, JavaNetworkReader, JavaNetworkWriter, JavaTransportRead,
+    JavaTransportWrite, OutboundPacket,
+};
 pub(crate) use java::{ScheduledPacketExecution, ScheduledPlayPacket};
 
 use std::time::Duration;
@@ -43,8 +46,8 @@ pub const OUTBOUND_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 /// written, in which case the connection should close afterwards.
 ///
 /// The encoder is taken out of the shared writer slot and only restored on success:
-/// a batch that fails or stalls partway leaves the CFB8 cipher state mid-packet, so
-/// the encoder is dropped instead of being reused for later packets. The write is
+/// a batch that fails, stalls, or is cancelled partway can leave the stream mid-packet,
+/// so the encoder is dropped instead of being reused for later packets. The write is
 /// bounded by [`OUTBOUND_WRITE_TIMEOUT`] so a client that stops reading cannot wedge
 /// the sender task.
 pub async fn write_outbound_batch<W: AsyncWrite + Unpin>(
@@ -285,6 +288,7 @@ impl Player {
         let old_view_distance = self.view_distance();
         let was_hat_shown = self.shows_hat();
 
+        // TODO: Centralize the minimum with config validation when zero view distance is supported.
         let info = ClientInformation {
             language: packet.language,
             view_distance: packet
@@ -305,7 +309,10 @@ impl Player {
         let show_hat = self.shows_hat();
         if show_hat != was_hat_shown {
             self.server()
-                .broadcast_to_online(CPlayerInfoUpdate::update_hat(self.gameprofile.id, show_hat));
+                .broadcast_to_online(CPlayerInfoUpdate::update_hat(
+                    self.gameprofile.id(),
+                    show_hat,
+                ));
         }
 
         // Vanilla does not echo CSetChunkCacheRadius here; it is only broadcast

@@ -5,6 +5,7 @@ use std::sync::Weak;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtList};
 use steel_registry::{vanilla_block_entity_types, vanilla_entities};
+use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
@@ -36,9 +37,13 @@ impl BeeOccupant {
             .map_or_else(default_bee_entity_data, |entity_data| {
                 entity_data.to_owned()
             });
-        let ticks_in_hive = nbt.int("ticks_in_hive").unwrap_or(0);
+        let ticks_in_hive = nbt
+            .get("ticks_in_hive")
+            .and_then(|tag| tag.codec_i32())
+            .unwrap_or(0);
         let min_ticks_in_hive = nbt
-            .int("min_ticks_in_hive")
+            .get("min_ticks_in_hive")
+            .and_then(|tag| tag.codec_i32())
             .unwrap_or(BEEHIVE_MIN_OCCUPATION_TICKS_NECTARLESS);
 
         Self {

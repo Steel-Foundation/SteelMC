@@ -7,7 +7,7 @@ pub use crate::inventory::{
     menu::{
         ContainerSlots, DataSlot, FakeResultRemainderPolicy, FillDirection, GridPlacer, Menu,
         MenuBehavior, MenuBuilder, MenuKind, PlayerInventorySections, Rect, Region, Section,
-        SectionKind, SectionSource, SlotFactory,
+        SectionKind, SectionSource, SlotFactory, still_valid_block,
     },
     slots::{NormalSlot, RestrictedSlot, ResultHandler, Slot},
 };

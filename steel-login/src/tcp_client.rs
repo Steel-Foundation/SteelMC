@@ -16,7 +16,10 @@ use std::{
 use crossbeam::atomic::AtomicCell;
 use steel_core::player::{
     ClientInformation, PlayerConnection,
-    connection::{JavaNetworkWriter, OUTBOUND_BATCH_SIZE, OutboundPacket, write_outbound_batch},
+    connection::{
+        JavaNetworkReader, JavaNetworkWriter, JavaTransportRead, JavaTransportWrite,
+        OUTBOUND_BATCH_SIZE, OutboundPacket, write_outbound_batch,
+    },
 };
 use steel_core::server::Server;
 use steel_protocol::{
@@ -44,7 +47,7 @@ use text_components::{
 };
 use tokio::{
     io::{BufReader, BufWriter},
-    net::{TcpStream, tcp::OwnedReadHalf},
+    net::TcpStream,
     select,
     sync::{
         Notify,
@@ -59,7 +62,7 @@ use uuid::Uuid;
 use crate::pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState};
 
 const MAX_TICKS_BEFORE_LOGIN: u64 = 600;
-const SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
+const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct LoginDeadline {
@@ -232,7 +235,7 @@ pub struct JavaTcpClient {
 }
 
 impl JavaTcpClient {
-    /// Creates a new `JavaTcpClient`.
+    /// Creates a new `JavaTcpClient` over a TCP socket.
     #[must_use]
     pub fn new(
         tcp_stream: TcpStream,
@@ -242,12 +245,41 @@ impl JavaTcpClient {
         server: Arc<Server>,
         connection_session: Arc<ServerConnectionSession>,
         task_tracker: TaskTracker,
-    ) -> (
-        Self,
-        UnboundedReceiver<OutboundPacket>,
-        TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
-    ) {
+    ) -> (Self, UnboundedReceiver<OutboundPacket>, JavaNetworkReader) {
         let (read, write) = tcp_stream.into_split();
+        Self::from_transport(
+            Box::new(read),
+            Box::new(write),
+            address,
+            id,
+            cancel_token,
+            server,
+            connection_session,
+            task_tracker,
+        )
+    }
+
+    /// Creates a new `JavaTcpClient` over an already-established transport.
+    ///
+    /// `read` and `write` are the two halves of a byte stream that speaks the Java Edition
+    /// protocol from the handshake onward. [`Self::new`] uses this with a split `TcpStream`;
+    /// an embedder running the server in-process can pass the halves of an in-memory pipe.
+    /// `address` is what the server logs and reports as the client's address.
+    #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "same parameters as `new` with the stream split into its two halves"
+    )]
+    pub fn from_transport(
+        read: JavaTransportRead,
+        write: JavaTransportWrite,
+        address: SocketAddr,
+        id: u64,
+        cancel_token: CancellationToken,
+        server: Arc<Server>,
+        connection_session: Arc<ServerConnectionSession>,
+        task_tracker: TaskTracker,
+    ) -> (Self, UnboundedReceiver<OutboundPacket>, JavaNetworkReader) {
         let (outgoing_queue, recv) = mpsc::unbounded_channel();
         let (connection_updates, _) = broadcast::channel(128);
 
@@ -351,10 +383,10 @@ impl JavaTcpClient {
         mut sender_recv: UnboundedReceiver<OutboundPacket>,
     ) {
         let cancel_token = self.cancel_token.clone();
-        let network_writer = self.network_writer.clone();
+        let network_writer = Arc::clone(&self.network_writer);
         let id = self.id;
         let mut connection_updates_recv = self.connection_updates.subscribe();
-        let connection_updated = self.connection_updated.clone();
+        let connection_updated = Arc::clone(&self.connection_updated);
 
         self.task_tracker.spawn(async move {
             let mut connection = None;
@@ -363,7 +395,7 @@ impl JavaTcpClient {
                 select! {
                     biased;
                     () = cancel_token.cancelled() => {
-                        Self::write_queued_disconnect(&network_writer, &mut sender_recv, id).await;
+                        Self::write_queued_disconnect(&network_writer, &mut batch, &mut sender_recv, id).await;
                         break;
                     }
                     received = sender_recv.recv_many(&mut batch, OUTBOUND_BATCH_SIZE) => {
@@ -378,7 +410,15 @@ impl JavaTcpClient {
                         // Bundles stay contiguous, and everything up to (and including)
                         // a disconnect is written under a single writer lock, in order. The
                         // batch is drained by value, so it is empty once written.
-                        match write_outbound_batch(&network_writer, &mut batch).await {
+                        let result = select! {
+                            biased;
+                            () = cancel_token.cancelled() => {
+                                Self::write_queued_disconnect(&network_writer, &mut batch, &mut sender_recv, id).await;
+                                break;
+                            }
+                            result = write_outbound_batch(&network_writer, &mut batch) => result,
+                        };
+                        match result {
                             Ok(close_after_write) => {
                                 if close_after_write {
                                     cancel_token.cancel();
@@ -447,10 +487,16 @@ impl JavaTcpClient {
 
     async fn write_queued_disconnect(
         network_writer: &JavaNetworkWriter,
+        batch: &mut Vec<OutboundPacket>,
         sender_recv: &mut UnboundedReceiver<OutboundPacket>,
         id: u64,
     ) {
         let mut disconnect_packet = None;
+        for outbound in batch.drain(..) {
+            if let OutboundPacket::Disconnect(packet) = outbound {
+                disconnect_packet = Some(packet);
+            }
+        }
         loop {
             match sender_recv.try_recv() {
                 Ok(OutboundPacket::Packet(_) | OutboundPacket::Bundle(_)) => {}
@@ -469,15 +515,12 @@ impl JavaTcpClient {
 
     /// Starts a task that will receive packets from the client.
     /// This task will run until the client is closed or the cancellation token is cancelled.
-    pub fn start_incoming_packet_task(
-        self: &Arc<Self>,
-        mut reader: TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
-    ) {
+    pub fn start_incoming_packet_task(self: &Arc<Self>, mut reader: JavaNetworkReader) {
         let cancel_token = self.cancel_token.clone();
         let id = self.id;
         let mut connection_updates_recv = self.connection_updates.subscribe();
 
-        let self_clone = self.clone();
+        let self_clone = Arc::clone(self);
 
         self.task_tracker.spawn(async move {
             let mut connection = None;
@@ -522,7 +565,8 @@ impl JavaTcpClient {
                                 }
                             }
                             LoginOperationResult::Completed(Err(err)) => {
-                                log::warn!("Failed to get packet from client {id}: {err}");
+                                self_clone.reject_packet_decode_error(&err).await;
+                                break;
                             }
                             LoginOperationResult::Cancelled => break,
                             LoginOperationResult::TimedOut => {
@@ -566,7 +610,7 @@ impl JavaTcpClient {
             drop(connection_updates_recv);
 
             if let Some(connection) = connection {
-                let server = self_clone.server.clone();
+                let server = Arc::clone(&self_clone.server);
                 drop(self_clone);
 
                 match &*connection {
@@ -611,19 +655,26 @@ impl JavaTcpClient {
         .await
     }
 
-    pub(crate) async fn disconnect_slow_login(&self) {
-        let reason =
-            TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_SLOW_LOGIN.msg());
-        if timeout(SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT, self.kick(reason))
+    /// Kicks with `reason`, falling back to closing the socket if the write stalls.
+    async fn kick_with_flush_timeout(&self, reason: TextComponent, context: &str) {
+        if timeout(DISCONNECT_FLUSH_TIMEOUT, self.kick(reason))
             .await
             .is_err()
         {
             log::debug!(
-                "Best-effort slow-login disconnect write for client {} timed out",
+                "Best-effort {context} disconnect write for client {} timed out",
                 self.id
             );
             self.close();
         }
+    }
+
+    pub(crate) async fn disconnect_slow_login(&self) {
+        self.kick_with_flush_timeout(
+            TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_SLOW_LOGIN.msg()),
+            "slow-login",
+        )
+        .await;
     }
 
     async fn process_packet(&self, packet: RawPacket) -> Result<ConnectionAction, PacketError> {
@@ -793,6 +844,20 @@ impl JavaTcpClient {
         ))
         .await;
         ConnectionAction::none()
+    }
+
+    /// Kick + close when `process_packet` returns `PacketError` (bad decode / unexpected id).
+    /// Matches vanilla `Connection.exceptionCaught` (`disconnect.genericReason`).
+    pub(crate) async fn reject_packet_decode_error(&self, error: &PacketError) {
+        log::warn!("Failed to get packet from client {}: {error}", self.id);
+        self.kick_with_flush_timeout(
+            TextComponent::translated(
+                translations::DISCONNECT_GENERIC_REASON
+                    .message([format!("Internal Exception: {error}")]),
+            ),
+            "packet-decode",
+        )
+        .await;
     }
 
     /// Kicks the client with a given reason.

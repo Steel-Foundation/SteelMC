@@ -2,9 +2,14 @@
 
 use std::sync::Arc;
 
+use smallvec::SmallVec;
 use text_components::TextComponent;
 
-use crate::{inventory::menu::Menu, player::Player, world::World};
+use crate::{
+    inventory::{lock::ContainerId, menu::Menu},
+    player::Player,
+    world::World,
+};
 
 mod container;
 mod core;
@@ -24,6 +29,15 @@ pub struct MenuOpenContext<'a> {
     pub player: &'a Player,
     /// Player's world at factory execution time.
     pub world: &'a Arc<World>,
+}
+
+/// Whether the client already predicted a side effect such as the drop swing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Prediction {
+    /// The client predicted it; only tracking players need the update.
+    Predicted,
+    /// Only the server knows; the acting player needs the update too.
+    ServerOnly,
 }
 
 /// Whether a terminal menu removal completed synchronously.
@@ -99,6 +113,7 @@ impl PlayerInventorySyncState {
 struct OpenMenuDispatch {
     container_id: u8,
     overrides_player_slots: bool,
+    opened_containers: SmallVec<[ContainerId; 2]>,
     actions: Vec<DeferredMenuAction>,
 }
 

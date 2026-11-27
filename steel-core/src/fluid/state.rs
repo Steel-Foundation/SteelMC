@@ -7,18 +7,21 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::REGISTRY;
+use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::fluid::{FluidRef, FluidState, is_lava_fluid, is_water_fluid};
+use steel_registry::fluid::{FluidRef, FluidState};
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::FLUID_BEHAVIORS;
-use crate::world::World;
+use crate::world::{LevelReader, World};
 use steel_registry::vanilla_fluids;
 
 const FLOW_BELOW_HEIGHT_OFFSET: f32 = 0.888_888_9;
 const FALLING_FLOW_DOWNWARD: f64 = -6.0;
+const MIN_NORMALIZABLE_CURRENT_LENGTH: f32 = 1.0e-5;
 
 /// Gets the fluid state at a given position.
 ///
@@ -39,7 +42,7 @@ pub fn get_fluid_state_from_block(state: BlockStateId) -> FluidState {
 ///
 /// If `existing_state` is a waterloggable block, this sets or clears its WATERLOGGED
 /// property rather than replacing the block entirely. Otherwise it falls back to the
-/// raw fluid block (WATER/LAVA) or AIR for empty fluid.
+/// fluid's own liquid block, or AIR for empty fluid.
 #[must_use]
 pub fn fluid_state_to_block_with_existing(
     fluid_state: FluidState,
@@ -58,54 +61,32 @@ pub fn fluid_state_to_block_with_existing(
         return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
     }
 
-    if is_water_fluid(fluid_id) {
-        if fluid_id == &vanilla_fluids::WATER
-            && fluid_state.is_source()
-            && existing_state
-                .try_get_value(&BlockStateProperties::WATERLOGGED)
-                .is_some()
-        {
-            // Vanilla SimpleWaterloggedBlock only accepts source WATER, not FLOWING_WATER.
-            return existing_state.set_value(&BlockStateProperties::WATERLOGGED, true);
-        }
-
-        // If not waterloggable, fall back to pure water block
-        let base = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
-        let level = fluid_state.to_block_level();
-        return base.set_value(&BlockStateProperties::LEVEL, level);
+    if fluid_id == &vanilla_fluids::WATER
+        && existing_state
+            .try_get_value(&BlockStateProperties::WATERLOGGED)
+            .is_some()
+    {
+        // Waterlogging only accepts source water, not flowing water.
+        return existing_state.set_value(&BlockStateProperties::WATERLOGGED, true);
     }
 
-    if is_lava_fluid(fluid_id) {
-        let base = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::LAVA);
-        let level = fluid_state.to_block_level();
-        return base.set_value(&BlockStateProperties::LEVEL, level);
-    }
+    fluid_state_to_block(fluid_state)
+}
 
-    // Unknown fluid type - default to air
-    REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
+/// The `block` liquid state at `fluid_state`'s level, for fluids that have their own liquid block.
+#[must_use]
+pub fn liquid_block_state(block: BlockRef, fluid_state: FluidState) -> BlockStateId {
+    block
+        .default_state()
+        .set_value(&BlockStateProperties::LEVEL, fluid_state.to_block_level())
 }
 
 /// Converts a `FluidState` into a `BlockStateId` directly without preserving any block.
-///
-/// Handles LEVEL property mapping.
 #[must_use]
 pub fn fluid_state_to_block(fluid_state: FluidState) -> BlockStateId {
-    let fluid_id = fluid_state.fluid_id;
-    if fluid_id.is_empty {
-        REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
-    } else if is_water_fluid(fluid_id) {
-        let base = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
-        // Use FluidState's to_block_level method for proper conversion
-        let level = fluid_state.to_block_level();
-        base.set_value(&BlockStateProperties::LEVEL, level)
-    } else if is_lava_fluid(fluid_id) {
-        let base = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::LAVA);
-        let level = fluid_state.to_block_level();
-        base.set_value(&BlockStateProperties::LEVEL, level)
-    } else {
-        // Unknown fluid type - default to air
-        REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
-    }
+    FLUID_BEHAVIORS
+        .get_behavior(fluid_state.fluid_id)
+        .create_legacy_block(fluid_state)
 }
 
 /// Gets the water source fluid ref from the registry.
@@ -160,7 +141,8 @@ where
     }
 }
 
-/// Returns vanilla `FlowingFluid.getFlow` for this fluid state.
+/// Computes the horizontal flow direction of a fluid, weighted by the height
+/// difference to same-fluid neighbors.
 #[must_use]
 pub fn get_flow(world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> DVec3 {
     if fluid_state.is_empty() {
@@ -174,6 +156,7 @@ pub fn get_flow(world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> D
         |candidate| behavior.is_same(candidate.fluid_id),
         |fluid_pos| get_fluid_state(world, fluid_pos),
         |block_pos| world.get_block_state(block_pos),
+        |state, pos, face| world.is_face_sturdy(state, pos, face),
     )
 }
 
@@ -183,6 +166,7 @@ fn get_flow_with<S, F, B>(
     same_fluid: S,
     mut fluid_at: F,
     mut block_at: B,
+    mut face_sturdy_at: impl FnMut(BlockStateId, BlockPos, Direction) -> bool,
 ) -> DVec3
 where
     S: Fn(FluidState) -> bool,
@@ -205,7 +189,10 @@ where
         let mut neighbor_height = get_own_height(neighbor_fluid);
         let mut distance = 0.0;
         if neighbor_height == 0.0 {
-            if !block_at(neighbor_pos).blocks_motion() {
+            if !block_at(neighbor_pos)
+                .get_block()
+                .has_tag(&BlockTag::BLOCKS_FLUID_FLOW)
+            {
                 let below_fluid = fluid_at(neighbor_pos.below());
                 if affects_flow_with(below_fluid, &same_fluid) {
                     neighbor_height = get_own_height(below_fluid);
@@ -234,20 +221,32 @@ where
                 &same_fluid,
                 &mut fluid_at,
                 &mut block_at,
+                &mut face_sturdy_at,
             ) || is_solid_face_with(
                 neighbor_pos.above(),
                 direction,
                 &same_fluid,
                 &mut fluid_at,
                 &mut block_at,
+                &mut face_sturdy_at,
             ) {
-                flow = flow.normalize_or_zero() + DVec3::new(0.0, FALLING_FLOW_DOWNWARD, 0.0);
+                flow = normalize_current(flow) + DVec3::new(0.0, FALLING_FLOW_DOWNWARD, 0.0);
                 break;
             }
         }
     }
 
-    flow.normalize_or_zero()
+    normalize_current(flow)
+}
+
+pub(crate) fn normalize_current(current: DVec3) -> DVec3 {
+    let length = current.length();
+
+    if length < f64::from(MIN_NORMALIZABLE_CURRENT_LENGTH) {
+        DVec3::ZERO
+    } else {
+        current / length
+    }
 }
 
 fn affects_flow_with<S>(neighbor_fluid: FluidState, same_fluid: &S) -> bool
@@ -263,6 +262,7 @@ fn is_solid_face_with<S, F, B>(
     same_fluid: &S,
     fluid_at: &mut F,
     block_at: &mut B,
+    face_sturdy_at: &mut impl FnMut(BlockStateId, BlockPos, Direction) -> bool,
 ) -> bool
 where
     S: Fn(FluidState) -> bool,
@@ -277,11 +277,16 @@ where
     if direction == Direction::Up {
         return true;
     }
-    state.get_block() != &vanilla_blocks::ICE && state.is_face_sturdy_at(pos, direction)
+
+    let block = state.get_block();
+    block != &vanilla_blocks::ICE
+        && block != &vanilla_blocks::FROSTED_ICE
+        && face_sturdy_at(state, pos, direction)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::behavior::init_behaviors;
     use steel_registry::fluid::FluidStateExt as _;
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_fluids};
 
@@ -289,6 +294,53 @@ mod tests {
 
     fn same_water(candidate: FluidState) -> bool {
         candidate.is_water()
+    }
+
+    #[test]
+    fn vanilla_fluid_states_resolve_to_their_liquid_block_at_every_level() {
+        init_vanilla_registry();
+        init_behaviors();
+
+        let cases = [
+            (
+                &vanilla_fluids::WATER,
+                &vanilla_fluids::FLOWING_WATER,
+                &vanilla_blocks::WATER,
+            ),
+            (
+                &vanilla_fluids::LAVA,
+                &vanilla_fluids::FLOWING_LAVA,
+                &vanilla_blocks::LAVA,
+            ),
+        ];
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        for (source, flowing, block) in cases {
+            let base = REGISTRY.blocks.get_default_state_id(block);
+            let mut states = vec![
+                (FluidState::source(source), 0),
+                (FluidState::flowing(flowing, 8, true), 8),
+            ];
+            states.extend(
+                (1..=7).map(|amount| (FluidState::flowing(flowing, amount, false), 8 - amount)),
+            );
+            for (fluid_state, level) in states {
+                let expected = base.set_value(&BlockStateProperties::LEVEL, level);
+                assert_eq!(
+                    fluid_state_to_block(fluid_state),
+                    expected,
+                    "{fluid_state:?}"
+                );
+                assert_eq!(
+                    fluid_state_to_block_with_existing(fluid_state, stone),
+                    expected,
+                    "{fluid_state:?}"
+                );
+            }
+        }
+        assert_eq!(
+            fluid_state_to_block(FluidState::EMPTY),
+            REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
+        );
     }
 
     #[test]
@@ -346,6 +398,7 @@ mod tests {
                 }
             },
             |_block_pos| vanilla_blocks::AIR.default_state(),
+            |state, pos, face| state.is_face_sturdy_at(pos, face),
         );
 
         assert!((flow.x - 1.0).abs() < f64::EPSILON);
@@ -369,6 +422,7 @@ mod tests {
                     vanilla_blocks::AIR.default_state()
                 }
             },
+            |state, pos, face| state.is_face_sturdy_at(pos, face),
         );
 
         assert!(flow.x.abs() < f64::EPSILON);

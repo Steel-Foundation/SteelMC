@@ -127,12 +127,12 @@ fn extract_template(path: &str) -> Result<ExtractedTemplate, String> {
     let palette_len = palette.len();
     let mut jigsaw_indices: Vec<(usize, String)> = Vec::new();
     for (i, entry) in palette.into_iter().enumerate() {
-        let Some(name) = entry.string("Name") else {
+        let Some(name) = entry.string("id") else {
             continue;
         };
         if name.to_str() == "minecraft:jigsaw" {
             let Some(orientation) = entry
-                .compound("Properties")
+                .compound("properties")
                 .and_then(|p| p.string("orientation"))
                 .map(|s| s.to_str().to_string())
             else {
@@ -231,12 +231,13 @@ fn extract_template(path: &str) -> Result<ExtractedTemplate, String> {
 
 // ── Code generation helpers ──
 
+/// A constant expression, so that it can be used in a `static`.
 fn gen_identifier(id: &str) -> TokenStream {
     assert!(!id.is_empty(), "Cannot generate an empty identifier");
     if let Some((namespace, path)) = id.split_once(':') {
-        quote! { Identifier::new(#namespace, #path) }
+        quote! { Identifier::new_static(#namespace, #path) }
     } else {
-        quote! { Identifier::vanilla(#id.to_string()) }
+        quote! { Identifier::vanilla_static(#id) }
     }
 }
 
@@ -429,10 +430,7 @@ pub(crate) fn build() -> TokenStream {
             .collect();
 
         template_tokens.extend(quote! {
-            (#key, TemplateData {
-                size: [#sx, #sy, #sz],
-                jigsaws: vec![#(#jigsaw_tokens),*],
-            }),
+            (#key, [#sx, #sy, #sz], &[#(#jigsaw_tokens),*]),
         });
         template_nbt_match_arms.extend(quote! {
             #name => Some(include_bytes!(#include_path)),
@@ -450,6 +448,10 @@ pub(crate) fn build() -> TokenStream {
         use steel_utils::Identifier;
 
         /// Returns all vanilla template pools parsed from the datapack.
+        #[expect(
+            clippy::large_unopt_stack_frames,
+            reason = "generated data literal called once at startup; optimized builds don't keep it on the stack"
+        )]
         pub fn vanilla_template_pools() -> Vec<TemplatePoolData> {
             vec![#pool_tokens]
         }
@@ -458,7 +460,13 @@ pub(crate) fn build() -> TokenStream {
         ///
         /// Each entry is (template_key, template_data).
         pub fn vanilla_templates() -> Vec<(Identifier, TemplateData)> {
-            vec![#template_tokens]
+            static TEMPLATES: &[(Identifier, [i32; 3], &[JigsawBlock])] = &[#template_tokens];
+            TEMPLATES
+                .iter()
+                .map(|(key, size, jigsaws)| {
+                    (key.clone(), TemplateData { size: *size, jigsaws: jigsaws.to_vec() })
+                })
+                .collect()
         }
 
         /// Returns the compressed NBT bytes for a vanilla structure template.

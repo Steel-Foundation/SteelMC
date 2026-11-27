@@ -363,4 +363,10 @@ impl fmt::Display for CommandSyntaxError {
     }
 }
 
+impl From<TextComponent> for CommandSyntaxError {
+    fn from(value: TextComponent) -> Self {
+        CommandSyntaxError::dynamic(value)
+    }
+}
+
 impl Error for CommandSyntaxError {}

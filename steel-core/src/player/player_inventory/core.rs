@@ -2,7 +2,7 @@ use std::{array, ops::Range};
 
 use simdnbt::owned::{NbtList, NbtTag};
 use steel_registry::{enchantment_effect::EnchantmentEffectComponent, item_stack::ItemStack};
-use steel_utils::{DowncastType, DowncastTypeKey};
+use steel_utils::{DowncastType, DowncastTypeKey, types::InteractionHand};
 
 use crate::inventory::{
     container::Container,
@@ -22,6 +22,10 @@ pub struct PlayerInventory {
     pub(super) selected: u8,
     /// Counter incremented on every change.
     pub(super) times_changed: u32,
+    /// Per-hand counters bumped when a hand slot is replaced, indexed by `InteractionHand`.
+    pub(super) hand_write_generation: [u32; 2],
+    /// Hand generations adopted as vanilla `LivingEntity.useItem`, which is compared by identity.
+    use_item_generation: [u32; 2],
 }
 
 impl Default for PlayerInventory {
@@ -72,6 +76,23 @@ impl PlayerInventory {
             items: array::from_fn(|_| ItemStack::empty()),
             selected: 0,
             times_changed: 0,
+            hand_write_generation: [0; 2],
+            use_item_generation: [0; 2],
+        }
+    }
+
+    /// Copies this inventory into a fresh player inventory for player replacement.
+    #[must_use]
+    pub(crate) fn replacement_copy(&self) -> Self {
+        Self {
+            items: array::from_fn(|slot| {
+                let item = &self.items[slot];
+                item.copy_with_count(item.count())
+            }),
+            selected: self.selected,
+            times_changed: 0,
+            hand_write_generation: [0; 2],
+            use_item_generation: [0; 2],
         }
     }
 
@@ -116,6 +137,8 @@ impl PlayerInventory {
         if Self::is_hotbar_slot(slot) {
             if self.selected != slot {
                 self.selected = slot;
+                // A different hotbar stack is now in the main hand.
+                self.mark_hand_written(slot as usize);
             }
         } else {
             panic!("Invalid hotbar slot: {slot}");
@@ -178,6 +201,53 @@ impl PlayerInventory {
         let _ = EntityEquipment::set(self, EquipmentSlot::OffHand, item);
     }
 
+    /// Adopts the stack in `hand` as the used item, like vanilla `useItem = getItemInHand(hand)`.
+    pub(in crate::player) const fn adopt_use_item(&mut self, hand: InteractionHand) {
+        self.use_item_generation[hand as usize] = self.hand_write_generation[hand as usize];
+    }
+
+    /// Returns whether `hand` still holds the adopted used item.
+    #[must_use]
+    pub(in crate::player) const fn holds_use_item(&self, hand: InteractionHand) -> bool {
+        self.use_item_generation[hand as usize] == self.hand_write_generation[hand as usize]
+    }
+
+    /// Writes back in-place changes to the used item, which vanilla makes directly
+    /// on the hand stack; they are lost if the hand stack was replaced meanwhile.
+    pub(in crate::player) fn write_use_item(&mut self, hand: InteractionHand, item: ItemStack) {
+        if self.holds_use_item(hand) {
+            self.mutate_item_in_hand(hand, |current| *current = item);
+            self.adopt_use_item(hand);
+        }
+    }
+
+    /// Vanilla `if (result != useItem) setItemInHand(hand, result)`.
+    pub(in crate::player) fn write_use_result(
+        &mut self,
+        hand: InteractionHand,
+        used: ItemStack,
+        result: ItemStack,
+    ) {
+        if result == used {
+            self.write_use_item(hand, used);
+        } else {
+            self.set_item_in_hand(hand, result);
+        }
+    }
+
+    /// Bumps the hand generation if `index` is the main-hand or off-hand slot.
+    pub(super) const fn mark_hand_written(&mut self, index: usize) {
+        let hand = if index == self.selected as usize {
+            InteractionHand::MainHand
+        } else if index == Self::SLOT_OFFHAND {
+            InteractionHand::OffHand
+        } else {
+            return;
+        };
+        let generation = &mut self.hand_write_generation[hand as usize];
+        *generation = generation.wrapping_add(1);
+    }
+
     /// Executes a function with a mutable reference to the currently selected item.
     pub fn with_selected_item_mut<R>(&mut self, f: impl FnOnce(&mut ItemStack) -> R) -> R {
         self.with_equipment_item_mut(EquipmentSlot::MainHand, f)
@@ -188,10 +258,18 @@ impl PlayerInventory {
         slot: EquipmentSlot,
         f: impl FnOnce(&mut ItemStack) -> R,
     ) -> R {
-        let inventory_index = self.equipment_slot_index(slot);
-        let previous = self.items[inventory_index].clone();
-        let result = f(&mut self.items[inventory_index]);
-        if !ItemStack::matches(&self.items[inventory_index], &previous) {
+        self.with_item_mut(self.equipment_slot_index(slot), f)
+    }
+
+    pub(crate) fn with_item_mut<R>(
+        &mut self,
+        index: usize,
+        f: impl FnOnce(&mut ItemStack) -> R,
+    ) -> R {
+        let previous = self.items[index].clone();
+        let result = f(&mut self.items[index]);
+        if !ItemStack::matches(&self.items[index], &previous) {
+            self.mark_hand_written(index);
             Container::set_changed(self);
         }
         result

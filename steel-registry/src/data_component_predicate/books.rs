@@ -1,8 +1,11 @@
+use crate::data_components::DataComponentGetterExt as _;
+
 use super::{
-    CollectionPredicate, ComponentHasher, DataComponentPredicateCodec, Debug, DowncastType,
-    DowncastTypeKey, HashComponent, IntBounds, NbtCompound, NbtNumeric, NbtTag, TextComponent,
-    collection_field_nbt, decode_optional, hash_entries, hash_optional_collection_field,
-    owned_string, push_hash_entry,
+    CollectionPredicate, ComponentHasher, DataComponentGetter, DataComponentPredicate,
+    DataComponentPredicateCodec, Debug, DowncastType, DowncastTypeKey, HashComponent, IntBounds,
+    NbtCompound, NbtNumeric, NbtTag, TextComponent, collection_field_nbt, decode_optional,
+    hash_entries, hash_optional_collection_field, owned_string, push_hash_entry,
+    vanilla_components,
 };
 
 /// Predicate for one writable-book page.
@@ -36,7 +39,7 @@ impl HashComponent for WritableBookPagePredicate {
 }
 
 /// Predicate over writable-book pages.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WritableBookPredicate(Option<CollectionPredicate<WritableBookPagePredicate>>);
 
 impl WritableBookPredicate {
@@ -48,6 +51,20 @@ impl WritableBookPredicate {
     #[must_use]
     pub const fn pages(&self) -> Option<&CollectionPredicate<WritableBookPagePredicate>> {
         self.0.as_ref()
+    }
+}
+
+impl DataComponentPredicate for WritableBookPredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::WRITABLE_BOOK_CONTENT)
+            .is_some_and(|book| {
+                self.pages().is_none_or(|pages| {
+                    pages.matches(book.pages().iter(), |predicate, page| {
+                        predicate.contents() == page.raw()
+                    })
+                })
+            })
     }
 }
 
@@ -86,7 +103,7 @@ impl_predicate_downcast_type!(
 );
 
 /// Predicate for one written-book page.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrittenBookPagePredicate(TextComponent);
 
 impl WrittenBookPagePredicate {
@@ -116,7 +133,7 @@ impl HashComponent for WrittenBookPagePredicate {
 }
 
 /// Predicate over written-book metadata and pages.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrittenBookPredicate {
     pages: Option<CollectionPredicate<WrittenBookPagePredicate>>,
     author: Option<String>,
@@ -166,6 +183,26 @@ impl WrittenBookPredicate {
     #[must_use]
     pub const fn resolved(&self) -> Option<bool> {
         self.resolved
+    }
+}
+
+impl DataComponentPredicate for WrittenBookPredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::WRITTEN_BOOK_CONTENT)
+            .is_some_and(|book| {
+                self.author().is_none_or(|author| author == book.author())
+                    && self.title().is_none_or(|title| title == book.title().raw())
+                    && self.generation().matches(book.generation())
+                    && self
+                        .resolved()
+                        .is_none_or(|resolved| resolved == book.resolved())
+                    && self.pages().is_none_or(|pages| {
+                        pages.matches(book.pages().iter(), |predicate, page| {
+                            predicate.contents() == page.raw()
+                        })
+                    })
+            })
     }
 }
 

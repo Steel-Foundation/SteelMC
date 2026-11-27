@@ -5,12 +5,14 @@ mod nether_climate_sampler;
 use sha2::{Digest, Sha256};
 
 pub use biome_source::{
-    BiomeSourceKind, ChunkBiomeSampler, EndBiomeSource, NetherBiomeSource, OverworldBiomeSource,
+    BiomeSourceKind, ChunkBiomeSampler, EndBiomeSource, FixedBiomeSource, NetherBiomeSource,
+    OverworldBiomeSource,
 };
 pub use climate_sampler::OverworldClimateSampler;
 pub use nether_climate_sampler::NetherClimateSampler;
 
-/// Matches vanilla `BiomeManager.obfuscateSeed(long)`.
+/// Hashes the world seed into the value biome sampling actually uses, so
+/// nearby seeds don't produce visibly correlated biome layouts.
 #[must_use]
 pub fn obfuscate_biome_seed(seed: i64) -> i64 {
     let mut hasher = Sha256::new();

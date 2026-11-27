@@ -1,19 +1,26 @@
+use std::sync::{Arc, Weak};
+
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, block::schedule_water_tick_if_waterlogged},
+    behavior::{
+        BlockBehavior, BlockPlaceContext,
+        block::{BlockEntityCreation, schedule_water_tick_if_waterlogged},
+    },
+    block_entity::{BLOCK_ENTITIES, BlockEntityTicker},
     entity::ai::path::PathComputationType,
     fluid::{FluidStateExt as _, get_fluid_state},
-    world::ScheduledTickAccess,
+    world::{ScheduledTickAccess, World},
 };
 use steel_macros::block_behavior;
+use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::{
     BlockRef,
     block_state_ext::BlockStateExt,
     properties::{BlockStateProperties, BoolProperty},
 };
+use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 /// Behavior for vanilla conduit blocks.
-// TODO: implement Block entity
 #[block_behavior]
 pub struct ConduitBlock {
     block: BlockRef,
@@ -50,6 +57,32 @@ impl BlockBehavior for ConduitBlock {
             WATERLOGGED,
             replaced_fluid_state.is_water() && replaced_fluid_state.is_full(),
         ))
+    }
+
+    fn new_block_entity(
+        &self,
+        level: Weak<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> BlockEntityCreation {
+        BlockEntityCreation::from_registered_factory(BLOCK_ENTITIES.create(
+            &vanilla_block_entity_types::CONDUIT,
+            level,
+            pos,
+            state,
+        ))
+    }
+
+    fn get_block_entity_ticker(
+        &self,
+        _world: &Arc<World>,
+        _state: BlockStateId,
+        block_entity_type: BlockEntityTypeRef,
+    ) -> Option<BlockEntityTicker> {
+        BlockEntityTicker::for_matching_entity_tick(
+            block_entity_type,
+            &vanilla_block_entity_types::CONDUIT,
+        )
     }
 
     fn is_pathfindable(

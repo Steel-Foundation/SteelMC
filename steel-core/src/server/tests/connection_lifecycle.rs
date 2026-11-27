@@ -12,18 +12,18 @@ use steel_utils::{
     translations,
 };
 use text_components::TextComponent;
-use tokio::{fs, runtime::Builder, sync::mpsc};
+use tokio::{runtime::Builder, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
     player::connection::{JavaConnection, JavaNetworkWriter, NetworkConnection, OutboundPacket},
-    player::{ClientInformation, GameProfile, Player, PlayerConnection},
+    player::{ClientInformation, GameProfile, Player, PlayerConnection, PlayerSession},
     server::DuplicatePlayerWaitError,
     world::World,
 };
 
-use super::{PlayerAdmissionState, Server, fresh_test_world, test_server, test_storage_root};
+use super::{PlayerAdmissionState, Server, fresh_test_world, test_server};
 
 fn java_test_player(
     server: &Arc<Server>,
@@ -37,54 +37,45 @@ fn java_test_player(
     let (outgoing_packets, receiver) = mpsc::unbounded_channel();
     let cancel_token = CancellationToken::new();
     let network_writer = Arc::new(AsyncMutex::new(None));
-    let player = Arc::new_cyclic(|player_weak| {
-        let connection = Arc::new(PlayerConnection::Java(JavaConnection::new(
-            outgoing_packets,
-            cancel_token,
-            None,
-            Arc::clone(&network_writer),
-            1,
-            player_weak.clone(),
-        )));
-        Player::new(
-            GameProfile {
-                id: uuid,
-                name: "TestPlayer".to_owned(),
-                properties: Vec::new(),
-                profile_actions: None,
-            },
-            connection,
-            world,
-            Arc::downgrade(server),
-            Arc::clone(&server.config),
-            1,
-            ClientInformation::default(),
-        )
-    });
+    let session = Arc::new(PlayerSession::new(10, 10));
+    let connection = Arc::new(PlayerConnection::Java(JavaConnection::new(
+        outgoing_packets,
+        cancel_token,
+        None,
+        Arc::clone(&network_writer),
+        1,
+        Arc::clone(&session),
+    )));
+    let player = Arc::new(Player::new(
+        GameProfile::new(uuid, "TestPlayer".to_owned(), Vec::new()).expect("valid test profile"),
+        connection,
+        Arc::clone(&session),
+        world,
+        Arc::downgrade(server),
+        Arc::clone(&server.config),
+        1,
+        ClientInformation::default(),
+    ));
+    assert!(session.bind_initial_player(&player));
     (player, receiver, network_writer)
 }
 
 #[test]
 fn blocked_disconnect_write_does_not_delay_player_removal() {
-    let world = fresh_test_world("blocked_disconnect_write");
+    let world_fixture = fresh_test_world("blocked_disconnect_write");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("blocked-disconnect-write");
-        let server = test_server(
-            Arc::clone(&world),
-            super::PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(world), super::PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
         let (player, receiver, network_writer) =
-            java_test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+            java_test_player(&server, Arc::clone(world), Uuid::from_u128(1));
 
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
@@ -107,10 +98,15 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
             assert!(
                 server
                     .online_players
-                    .get_by_uuid(&player.gameprofile.id)
+                    .get_by_uuid(&player.gameprofile.id())
                     .is_none()
             );
-            assert!(world.players.get_by_uuid(&player.gameprofile.id).is_none());
+            assert!(
+                world
+                    .players
+                    .get_by_uuid(&player.gameprofile.id())
+                    .is_none()
+            );
             assert!(matches!(futures::poll!(&mut sender), Poll::Pending));
 
             drop(pending);
@@ -121,9 +117,6 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
         drop(player);
         drop(network_writer);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
@@ -163,20 +156,15 @@ impl NetworkConnection for DisconnectRecordingConnection {
 
 #[test]
 fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_release() {
-    let world = fresh_test_world("duplicate_relocation_wait");
+    let world_fixture = fresh_test_world("duplicate_relocation_wait");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("duplicate-relocation-wait");
-        let server = test_server(
-            Arc::clone(&world),
-            super::PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(world), super::PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -188,20 +176,19 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
                 closed: AtomicBool::new(false),
             },
         )));
+        let session = Arc::new(PlayerSession::new(10, 10));
         let player = Arc::new(Player::new(
-            GameProfile {
-                id: uuid,
-                name: "TestPlayer".to_owned(),
-                properties: Vec::new(),
-                profile_actions: None,
-            },
+            GameProfile::new(uuid, "TestPlayer".to_owned(), Vec::new())
+                .expect("valid test profile"),
             connection,
-            Arc::clone(&world),
+            Arc::clone(&session),
+            Arc::clone(world),
             Arc::downgrade(&server),
             Arc::clone(&server.config),
             1,
             ClientInformation::default(),
         ));
+        assert!(session.bind_initial_player(&player));
 
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
@@ -259,28 +246,20 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
         drop(pending);
         drop(player);
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }
 
 #[test]
 fn duplicate_login_wait_matches_vanillas_deadline_ordering() {
-    let world = fresh_test_world("duplicate_login_deadline");
+    let world_fixture = fresh_test_world("duplicate_login_deadline");
+    let world = &world_fixture.world;
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
     };
 
     runtime.block_on(async {
-        let storage_root = test_storage_root("duplicate-login-deadline");
-        let server = test_server(
-            Arc::clone(&world),
-            super::PermissionSubjectIndex::new(),
-            &storage_root,
-        )
-        .await;
+        let server = test_server(Arc::clone(world), super::PermissionSubjectIndex::new()).await;
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
@@ -342,8 +321,5 @@ fn duplicate_login_wait_matches_vanillas_deadline_ordering() {
         }
 
         drop(server);
-        if let Err(error) = fs::remove_dir_all(&storage_root).await {
-            panic!("test storage should be removed: {error}");
-        }
     });
 }

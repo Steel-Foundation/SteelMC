@@ -1,4 +1,6 @@
 use super::*;
+use std::sync::Arc;
+use steel_utils::types::UpdateFlags;
 
 #[test]
 fn fall_damage_sound_selects_vanilla_small_and_big_sounds() {
@@ -18,10 +20,12 @@ fn fall_damage_sound_selects_vanilla_small_and_big_sounds() {
 #[test]
 fn living_fall_damage_uses_shared_damage_path_from_entity_dispatch() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world())
-        .with_entity_type(&vanilla_entities::PIG);
+    let entity = Arc::new(
+        LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world())
+            .with_entity_type(&vanilla_entities::PIG),
+    );
 
-    assert!(entity.cause_fall_damage(
+    assert!(Arc::clone(&entity).cause_fall_damage(
         8.0,
         1.0,
         &DamageSource::environment(&vanilla_damage_types::FALL),
@@ -33,11 +37,16 @@ fn living_fall_damage_uses_shared_damage_path_from_entity_dispatch() {
 #[test]
 fn living_fall_damage_caps_distance_from_current_impulse() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
+    let entity = Arc::new(LivingFluidTestEntity::new_in_world(
+        0.0,
+        0.0,
+        true,
+        test_world(),
+    ));
 
     entity.set_ignore_fall_damage_from_current_impulse(true, DVec3::new(0.0, 4.0, 0.0));
 
-    assert!(entity.cause_fall_damage(
+    assert!(Arc::clone(&entity).cause_fall_damage(
         8.0,
         1.0,
         &DamageSource::environment(&vanilla_damage_types::FALL),
@@ -50,11 +59,11 @@ fn living_fall_damage_caps_distance_from_current_impulse() {
 #[test]
 fn living_fall_damage_resets_current_impulse_when_landing_above_impact() {
     init_vanilla_registry();
-    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
 
     entity.set_ignore_fall_damage_from_current_impulse(true, DVec3::new(0.0, -1.0, 0.0));
 
-    assert!(!entity.cause_fall_damage(
+    assert!(!Arc::clone(&entity).cause_fall_damage(
         8.0,
         1.0,
         &DamageSource::environment(&vanilla_damage_types::FALL),
@@ -73,6 +82,37 @@ fn stop_fall_flying_toggles_shared_state_back_to_false() {
     entity.stop_fall_flying();
 
     assert!(!entity.is_fall_flying());
+}
+
+#[test]
+fn lava_contact_is_ignored_until_after_first_tick() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world_fixture = fresh_test_world("first_tick_lava_contact");
+    let world = &world_fixture.world;
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+
+    let block_pos = BlockPos::new(8, 80, 8);
+    assert!(world.set_block(
+        block_pos,
+        vanilla_blocks::LAVA.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+
+    let entity = Arc::new(LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world));
+    entity.base().set_position_local(DVec3::new(8.5, 80.0, 8.5));
+
+    let contact = entity.refresh_fluid_contact();
+
+    assert!(contact.lava_height() > 0.0);
+    assert!(entity.is_first_tick());
+    assert!(!entity.is_in_lava());
+
+    Arc::clone(&entity).tick();
+
+    assert!(!entity.is_first_tick());
+    assert!(entity.is_in_lava());
 }
 
 #[test]
@@ -189,6 +229,7 @@ fn flying_players_ignore_bubble_column_entity_hooks() {
 #[test]
 fn dolphins_grace_water_travel_hook_uses_active_mob_effect_state() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.5, 0.0, true);
 
     assert!(!entity.has_dolphins_grace());
@@ -223,6 +264,7 @@ fn living_air_supply_drowning_damage_resets_air() {
 #[test]
 fn water_breathing_refills_air_underwater() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.5, 0.0, true).with_eye_in_water();
 
     entity.set_air_supply(entity.max_air_supply() - 8);
@@ -235,6 +277,7 @@ fn water_breathing_refills_air_underwater() {
 #[test]
 fn breath_of_the_nautilus_prevents_drowning_without_refilling_air() {
     init_vanilla_registry();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new(0.5, 0.0, true).with_eye_in_water();
 
     entity.set_air_supply(entity.max_air_supply() - 8);

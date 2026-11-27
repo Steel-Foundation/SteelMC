@@ -106,7 +106,7 @@ pub enum FortressPieceData {
     BridgeCrossing,
     /// Dead-end bridge filler piece.
     BridgeEndFiller {
-        /// Vanilla `BridgeEndFiller.selfSeed`.
+        /// Seed for this piece's own RNG, used to vary the filler pattern.
         self_seed: i32,
     },
     /// Straight bridge segment.
@@ -121,21 +121,21 @@ pub enum FortressPieceData {
     CastleSmallCorridorCrossing,
     /// Small castle corridor left turn.
     CastleSmallCorridorLeftTurn {
-        /// Vanilla `isNeedingChest`.
+        /// Whether this corridor still needs a loot chest placed.
         is_needing_chest: bool,
     },
     /// Small straight castle corridor.
     CastleSmallCorridor,
     /// Small castle corridor right turn.
     CastleSmallCorridorRightTurn {
-        /// Vanilla `isNeedingChest`.
+        /// Whether this corridor still needs a loot chest placed.
         is_needing_chest: bool,
     },
     /// Nether-wart stair room.
     CastleStalkRoom,
     /// Blaze-spawner throne room.
     MonsterThrone {
-        /// Vanilla `hasPlacedSpawner`.
+        /// Whether the throne room's blaze spawner has already been placed.
         has_placed_spawner: bool,
     },
     /// Bridge room crossing.

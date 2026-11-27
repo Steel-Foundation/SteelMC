@@ -1,13 +1,18 @@
 //! Vanilla-compatible NBT helpers.
 
 mod codec;
+mod glam;
 mod path;
 mod snbt;
+mod value_input;
 
 use rustc_hash::FxHashSet;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 
 pub use codec::NbtNumeric;
+pub use glam::{
+    mat4_from_nbt_tag, quat_from_nbt_tag, quat_to_nbt_tag, vec3_from_nbt_tag, vec3_to_nbt_tag,
+};
 pub use path::{
     NbtPath, NbtPathError, NbtPathErrorKind, NbtPathMutationError, parse_nbt_path,
     parse_nbt_path_argument,
@@ -16,8 +21,9 @@ pub use snbt::{
     SnbtError, SnbtErrorKind, SnbtNumberType, parse_snbt, parse_snbt_argument, parse_snbt_compound,
     parse_snbt_compound_argument, to_canonical_snbt,
 };
+pub use value_input::{NbtValueInput, NumericTag};
 
-/// Mirrors vanilla `NbtUtils.compareNbt`.
+/// Compares two NBT tags for equality, optionally allowing partial list matches.
 #[must_use]
 pub fn compare_nbt(
     expected: Option<&NbtTag>,
@@ -251,7 +257,7 @@ fn compare_lists_partially(expected: &NbtList, actual: &NbtList) -> bool {
 
 /// Returns the semantic values of a Vanilla list.
 ///
-/// Vanilla 26.2 permits heterogeneous lists and wraps non-compound elements
+/// Vanilla permits heterogeneous lists and wraps non-compound elements
 /// when serializing them through the homogeneous binary NBT format.
 #[must_use]
 pub fn nbt_list_values(list: &NbtList) -> Vec<NbtTag> {

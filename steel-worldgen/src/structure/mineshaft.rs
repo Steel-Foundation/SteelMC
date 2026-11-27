@@ -105,7 +105,7 @@ pub struct MineshaftPieceData {
 
 /// Placement payload shared by mineshaft start generation, persistence, and
 /// feature-stage procedural placement.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MineshaftPiecePayload {
     /// Normal oak or mesa dark-oak mineshaft.
     pub mineshaft_type: MineshaftType,
@@ -122,7 +122,7 @@ impl MineshaftPiecePayload {
 }
 
 /// Piece-specific mineshaft placement state.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MineshaftPieceKind {
     /// Start room with the child entrance openings stored by vanilla.
     Room {
@@ -180,7 +180,7 @@ pub fn find_generation_point(
     mtype: MineshaftType,
     sea_level: i32,
     min_y: i32,
-    get_surface_height: &mut dyn FnMut(i32, i32) -> i32,
+    get_surface_height: &mut (impl FnMut(i32, i32) -> i32 + ?Sized),
 ) -> MineshaftResult {
     rng.next_f64();
 

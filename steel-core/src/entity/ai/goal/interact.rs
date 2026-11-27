@@ -1,6 +1,7 @@
 use super::look_at_player::LookAtPlayerGoal;
 use super::selector::{Goal, GoalControls};
 use crate::entity::PathfinderMob;
+use crate::entity::SharedEntity;
 
 pub struct InteractGoal {
     look_at: LookAtPlayerGoal,
@@ -41,8 +42,8 @@ impl Goal for InteractGoal {
         self.look_at.stop(mob);
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
-        self.look_at.tick(mob);
+    fn tick(&mut self, mob: &dyn PathfinderMob, entity: &SharedEntity) {
+        self.look_at.tick(mob, entity);
     }
 }
 

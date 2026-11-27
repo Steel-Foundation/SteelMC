@@ -30,7 +30,7 @@ const PERSISTENT: &BoolProperty = &BlockStateProperties::PERSISTENT;
 const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 /// Shared behavior for vanilla leaves blocks.
-pub struct LeavesBlock {
+pub(crate) struct LeavesBlock {
     block: BlockRef,
 }
 

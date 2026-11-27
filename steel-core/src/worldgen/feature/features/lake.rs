@@ -21,8 +21,13 @@ impl FeatureDecorationRunner {
             Self::carve_lake_ellipsoid(random, &mut grid);
         }
 
-        let fluid =
-            Self::sample_block_state_provider(region, registry, random, &config.fluid, origin);
+        let fluid = BlockStateProviderEvaluator::sample_block_state_provider(
+            region,
+            registry,
+            random,
+            &config.fluid,
+            origin,
+        );
         if !Self::lake_boundary_valid(region, registry, config, &grid, origin, fluid) {
             return false;
         }
@@ -82,7 +87,7 @@ impl FeatureDecorationRunner {
                         return false;
                     }
 
-                    if !Self::test_block_predicate(
+                    if !BlockStateProviderEvaluator::test_block_predicate(
                         region,
                         registry,
                         &config.can_place_feature,
@@ -114,7 +119,7 @@ impl FeatureDecorationRunner {
                     }
 
                     let pos = origin.offset(x, y, z);
-                    if !Self::test_block_predicate(
+                    if !BlockStateProviderEvaluator::test_block_predicate(
                         region,
                         registry,
                         &config.can_replace_with_air_or_fluid,
@@ -143,8 +148,13 @@ impl FeatureDecorationRunner {
         grid: &[bool],
         origin: BlockPos,
     ) {
-        let barrier =
-            Self::sample_block_state_provider(region, registry, random, &config.barrier, origin);
+        let barrier = BlockStateProviderEvaluator::sample_block_state_provider(
+            region,
+            registry,
+            random,
+            &config.barrier,
+            origin,
+        );
         if barrier.is_air() {
             return;
         }
@@ -161,7 +171,7 @@ impl FeatureDecorationRunner {
                     let pos = origin.offset(x, y, z);
                     let state = region.block_state(pos);
                     if state.is_solid()
-                        && Self::test_block_predicate(
+                        && BlockStateProviderEvaluator::test_block_predicate(
                             region,
                             registry,
                             &config.can_replace_with_barrier,
@@ -188,7 +198,7 @@ impl FeatureDecorationRunner {
             for z in 0..16 {
                 let pos = origin.offset(x, 4, z);
                 if Self::should_freeze(region, registry, biome_zoom_seed, pos, false)
-                    && Self::test_block_predicate(
+                    && BlockStateProviderEvaluator::test_block_predicate(
                         region,
                         registry,
                         &config.can_replace_with_air_or_fluid,

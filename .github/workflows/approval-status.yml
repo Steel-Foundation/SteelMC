@@ -1,0 +1,106 @@
+name: Approval status
+
+# Posts the `approvals` commit status that the master ruleset requires.
+# A PR needs REQUIRED_APPROVALS approvals from write collaborators on its
+# current head commit; a PR authored by a write collaborator counts the
+# author as one of them. Combined with the ruleset's native 1-review
+# requirement, maintainer PRs need one other maintainer and everyone else
+# needs two.
+#
+# This must be a commit status rather than a job result: check runs from
+# workflow_run attach to the default branch commit, not the PR head.
+
+on:
+  workflow_run:
+    workflows: ["PR review capture"]
+    types: [completed]
+
+permissions:
+  actions: read
+  pull-requests: read
+  statuses: write
+
+# Serialize per PR head so an older run can't overwrite a newer status.
+concurrency:
+  group: approval-status-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  status:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download PR number
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          name: pr_number
+
+      - name: Post approvals status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const pull_number = parseInt(fs.readFileSync("pr_number.txt", "utf8").trim(), 10);
+            const REQUIRED_APPROVALS = 2;
+
+            const { owner, repo } = context.repo;
+
+            // The artifact comes from a workflow a fork can edit, so only the
+            // PR number is taken from it; everything else is re-read here.
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number });
+            if (pr.state !== "open") {
+              core.info(`PR #${pull_number} is ${pr.state}, skipping`);
+              return;
+            }
+            const headSha = pr.head.sha;
+            const author = pr.user.login;
+
+            const WRITE_LEVELS = new Set(["admin", "write"]);
+            const isWriteCollaborator = async login => {
+              try {
+                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner, repo, username: login,
+                });
+                return WRITE_LEVELS.has(data.permission);
+              } catch (e) {
+                if (e.status === 404) return false;
+                throw e;
+              }
+            };
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner, repo, pull_number,
+            });
+
+            // A later COMMENTED review doesn't withdraw an approval, so only
+            // state-changing reviews decide each reviewer's current verdict.
+            const VERDICT_STATES = new Set(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"]);
+            const latestByUser = new Map();
+            for (const r of reviews.sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at))) {
+              if (r.user && VERDICT_STATES.has(r.state)) latestByUser.set(r.user.login, r);
+            }
+
+            const approvers = [];
+            for (const [login, r] of latestByUser) {
+              if (r.state !== "APPROVED" || r.commit_id !== headSha || login === author) continue;
+              if (await isWriteCollaborator(login)) approvers.push(login);
+            }
+
+            const authorCounts = await isWriteCollaborator(author);
+            const count = approvers.length + (authorCounts ? 1 : 0);
+            const state = count >= REQUIRED_APPROVALS ? "success" : "pending";
+            const description = `${count}/${REQUIRED_APPROVALS} approvals` +
+              (authorCounts ? " (incl. maintainer author)" : "");
+
+            core.info(`PR #${pull_number} @ ${headSha}: ${description}; approvers: ${approvers.join(", ") || "none"}`);
+
+            await github.rest.repos.createCommitStatus({
+              owner, repo,
+              sha: headSha,
+              state,
+              context: "approvals",
+              description,
+              target_url: `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+            });
