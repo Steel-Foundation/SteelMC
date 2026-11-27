@@ -12,7 +12,7 @@ use crate::behavior::block::schedule_water_tick_if_waterlogged;
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::world::{ScheduledTickAccess, World};
 
-/// Vanilla `WaterloggedTransparentBlock` behavior.
+/// Waterlogged transparent block behavior.
 #[block_behavior]
 pub struct WaterloggedTransparentBlock {
     block: BlockRef,
@@ -52,7 +52,7 @@ impl BlockBehavior for WaterloggedTransparentBlock {
     }
 }
 
-/// Vanilla `WeatheringCopperGrateBlock` behavior.
+/// Weathering copper grate block behavior.
 #[block_behavior]
 pub struct WeatheringCopperGrateBlock {
     transparent: WaterloggedTransparentBlock,

@@ -3,8 +3,8 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use crate::RegistryTags;
 use crate::mob_effect::MobEffectRef;
+use crate::{REGISTRY, RegistryTags, TaggedRegistryExt};
 
 /// One base effect supplied by a registered potion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +31,12 @@ impl Potion {
         effects: &'static [PotionEffect],
     ) -> Self {
         Self { key, name, effects }
+    }
+
+    /// Returns `true` if this potion is tagged with the given tag.
+    #[must_use]
+    pub fn has_tag(&'static self, tag: &Identifier) -> bool {
+        REGISTRY.potions.is_in_tag(self, tag)
     }
 }
 

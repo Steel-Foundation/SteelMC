@@ -13,6 +13,8 @@ pub mod gaussian;
 pub mod legacy_random;
 /// Precomputed name hashes for positional random seeding.
 pub mod name_hash;
+/// Weighted random selection helpers.
+pub mod weighted_random;
 /// This module contains vanilla's feature-decoration `WorldgenRandom` wrapper.
 pub mod worldgen_random;
 /// This module contains the xoroshiro random number generator.
@@ -60,6 +62,17 @@ pub trait Random {
     fn consume_count(&mut self, count: i32) {
         for _ in 0..count {
             self.next_i32();
+        }
+    }
+
+    /// Vanilla `Util.shuffle`: one descending bounded draw per swapped position.
+    fn shuffle<T>(&mut self, items: &mut [T]) {
+        let Ok(size) = i32::try_from(items.len()) else {
+            panic!("shuffle length {} exceeds Java's int range", items.len());
+        };
+        for remaining in (2..=size).rev() {
+            let swap_to = self.next_i32_bounded(remaining) as usize;
+            items.swap(remaining as usize - 1, swap_to);
         }
     }
 }

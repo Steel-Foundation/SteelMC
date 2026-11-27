@@ -15,7 +15,8 @@ use crate::entity::projectile::ThrowableProjectile;
 
 /// Vanilla-shaped behavior shared by entities that extend `ThrowableItemProjectile`.
 pub trait ThrowableItemProjectile: ThrowableProjectile {
-    /// Vanilla `ThrowableItemProjectile.getDefaultItem`.
+    /// Returns the item stack used when no persisted item can be loaded
+    /// (e.g. a plain ender pearl, snowball, or egg).
     fn get_default_item(&self) -> ItemRef;
 
     /// Sets the rendered item stack (vanilla `setItem`, count clamped to 1).
@@ -26,12 +27,12 @@ pub trait ThrowableItemProjectile: ThrowableProjectile {
     /// Returns the rendered item stack (vanilla `getItem`).
     fn get_item(&self) -> ItemStack;
 
-    /// Vanilla `ThrowableItemProjectile.setItem` count-clamping helper.
+    /// Sets the rendered item stack, clamping its count to 1.
     fn set_item_clamped(&self, item: ItemStack) {
         self.set_item(item.copy_with_count(1));
     }
 
-    /// Saves the item stack (vanilla `addAdditionalSaveData`).
+    /// Saves the item stack to NBT, omitting the tag entirely when the stack is empty.
     fn save_throwable_item(&self, nbt: &mut NbtCompound) {
         let item = self.get_item();
         if !item.is_empty() {

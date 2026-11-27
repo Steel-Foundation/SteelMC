@@ -7,7 +7,8 @@ use steel_utils::{BlockPos, WorldAabb};
 
 use crate::level_data::WorldBorderData;
 
-const MAX_CENTER_COORDINATE: f64 = 2.999_998_4E7;
+pub(crate) const MAX_SIZE: f64 = 5.999_997E7_f32 as f64;
+pub(crate) const MAX_CENTER_COORDINATE: f64 = 2.999_998_4E7;
 const DEFAULT_ABSOLUTE_MAX_SIZE: i32 = 29_999_984;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

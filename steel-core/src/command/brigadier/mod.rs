@@ -84,7 +84,7 @@ pub(crate) use string_range::StringRange;
     )
 )]
 pub(crate) use suggestion::Suggestion;
-pub(crate) use suggestion::{SuggestionError, Suggestions, SuggestionsBuilder};
+pub(crate) use suggestion::{SuggestionError, SuggestionProvider, Suggestions, SuggestionsBuilder};
 
 #[cfg(test)]
 mod tests;

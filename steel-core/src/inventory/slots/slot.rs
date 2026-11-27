@@ -1,5 +1,6 @@
 //! Slot abstraction for inventory access.
 
+use crate::player::player_inventory::Prediction;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::ErasedType;
 
@@ -177,6 +178,12 @@ pub trait Slot: ErasedType + Send + Sync {
         None
     }
 
+    /// Called when a hotbar swap takes items from this slot.
+    fn on_swap_craft(&self, _count: i32) {}
+
+    /// Called after a shift-click moves items out of this slot.
+    fn on_quick_craft(&self, _stack: &ItemStack, _player: &Player) {}
+
     /// Takes items with all checks and callbacks. Returns the items taken.
     fn safe_take(
         &self,
@@ -187,7 +194,7 @@ pub trait Slot: ErasedType + Send + Sync {
     ) -> ItemStack {
         if let Some(taken) = self.try_remove(guard, amount, max_amount, player) {
             if let Some(remainder) = self.on_take(guard, &taken, player) {
-                player.add_item_or_drop_with_guard(guard, remainder);
+                player.add_item_or_drop_with_guard(guard, remainder, Prediction::Predicted);
             }
             taken
         } else {
@@ -319,7 +326,8 @@ mod tests {
             called: Arc::clone(&called),
         });
         assert!(slot.downcast_ref::<SafeInsertOverrideSlot>().is_some());
-        let mut guard = ContainerLockGuard::lock_all(&[container_ref]);
+        let mut guard = ContainerLockGuard::lock_all(&[container_ref])
+            .expect("container access should succeed");
 
         let remaining = slot.safe_insert(&mut guard, ItemStack::new(&vanilla_items::STONE), 1);
 

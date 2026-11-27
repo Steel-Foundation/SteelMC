@@ -1,9 +1,12 @@
 //! Steel-owned built-in command declarations.
 
+pub mod advancement;
 mod clear;
 mod damage;
+mod defaultgamemode;
 mod difficulty;
 mod domain;
+mod emote;
 mod enchant;
 mod execute;
 mod experience;
@@ -13,23 +16,37 @@ pub(crate) mod gamemode;
 mod gamerule;
 mod give;
 mod invsee;
+mod kick;
 mod kill;
 mod list;
 mod locate;
 mod operator;
+mod perf;
 mod perms;
+mod playsound;
+mod position;
+mod reload;
 mod return_command;
+mod say;
 mod seed;
 mod setblock;
 mod setidletimeout;
 mod setworldspawn;
+mod spawnpoint;
 mod stop;
+mod stopsound;
 mod summon;
+mod swing;
+mod tag;
 mod teleport;
 mod tellraw;
 mod tick;
 mod time;
+mod title;
+mod transfer;
+mod version;
 mod weather;
+mod worldborder;
 
 pub(crate) use difficulty::player_can_change_difficulty;
 
@@ -60,11 +77,14 @@ pub(crate) fn create_registered_dispatcher(
     builder.declare_permission(perms::MANAGE_ALL_PERMISSION)?;
     builder.declare_permission(perms::GROUP_ALL_PERMISSION)?;
     builder.declare_permission(perms::METADATA_PERMISSION)?;
+    builder.register(advancement::registration())?;
     builder.register(clear::registration())?;
     builder.register(operator::deop_registration())?;
     builder.register(damage::registration())?;
+    builder.register(defaultgamemode::registration())?;
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;
+    builder.register(emote::registration())?;
     builder.register(enchant::registration())?;
     builder.register(execute::registration())?;
     builder.register(experience::registration())?;
@@ -73,24 +93,37 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(gamemode::registration()?)?;
     builder.register(gamerule::registration())?;
     builder.register(give::registration())?;
+    builder.register(kick::registration())?;
     builder.register(kill::registration())?;
     builder.register(list::registration())?;
     builder.register(locate::registration())?;
     builder.register(operator::op_registration())?;
+    builder.register(perf::registration())?;
     builder.register(perms::registration())?;
+    builder.register(playsound::registration())?;
+    builder.register(reload::registration())?;
     builder.register(return_command::registration())?;
+    builder.register(say::registration())?;
     builder.register(seed::registration())?;
     builder.register(setblock::registration())?;
+    builder.register(spawnpoint::registration())?;
     builder.register(setidletimeout::registration())?;
     builder.register(setworldspawn::registration())?;
     builder.register(stop::registration())?;
+    builder.register(stopsound::registration())?;
     builder.register(summon::registration())?;
+    builder.register(swing::registration())?;
+    builder.register(tag::registration())?;
     builder.register(teleport::registration())?;
     builder.register(tellraw::registration())?;
     builder.register(tick::registration())?;
     builder.register(time::registration())?;
+    builder.register(title::registration())?;
+    builder.register(version::registration())?;
     builder.register(weather::registration())?;
+    builder.register(worldborder::registration())?;
     builder.register(invsee::registration()?)?;
+    builder.register(transfer::registration())?;
     builder.extend(extension_commands.into_inner())?;
     builder.build_with_permissions()
 }
@@ -134,11 +167,14 @@ mod tests {
         assert_eq!(
             names,
             [
+                "advancement",
                 "clear",
                 "deop",
                 "damage",
+                "defaultgamemode",
                 "difficulty",
                 "domain",
+                "me",
                 "enchant",
                 "execute",
                 "experience",
@@ -148,25 +184,38 @@ mod tests {
                 "gamemode",
                 "gamerule",
                 "give",
+                "kick",
                 "kill",
                 "list",
                 "locate",
                 "op",
+                "perf",
                 "perms",
+                "playsound",
+                "reload",
                 "return",
+                "say",
                 "seed",
                 "setblock",
+                "spawnpoint",
                 "setidletimeout",
                 "setworldspawn",
                 "stop",
+                "stopsound",
                 "summon",
+                "swing",
+                "tag",
                 "teleport",
                 "tp",
                 "tellraw",
                 "tick",
                 "time",
+                "title",
+                "version",
                 "weather",
-                "invsee"
+                "worldborder",
+                "invsee",
+                "transfer"
             ]
         );
 

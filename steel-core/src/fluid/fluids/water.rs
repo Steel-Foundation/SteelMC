@@ -1,19 +1,23 @@
 //! Water fluid callbacks.
 //!
-//! Based on vanilla's `WaterFluid.java`.
 //! Implements `FluidBehavior` and `FlowingFluid` for sharing base spread logic.
 
 use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::items::ItemRef;
+use steel_registry::sound_event::SoundEventRef;
+use steel_registry::sound_events;
+use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::WATER_SOURCE_CONVERSION;
+use steel_registry::vanilla_items;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
 use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
 use crate::fluid::{FlowingFluid, FluidBehavior, get_flow as flowing_fluid_flow};
-use crate::fluid::{FluidRef, FluidState, is_water_fluid, water_id};
+use crate::fluid::{FluidRef, FluidState, is_water_fluid, liquid_block_state, water_id};
 use crate::world::World;
 
 /// Water fluid implementation.
@@ -23,6 +27,14 @@ use crate::world::World;
 pub struct WaterFluid;
 
 impl FluidBehavior for WaterFluid {
+    fn create_legacy_block(&self, fluid_state: FluidState) -> BlockStateId {
+        liquid_block_state(&vanilla_blocks::WATER, fluid_state)
+    }
+
+    fn bucket(&self) -> ItemRef {
+        &vanilla_items::WATER_BUCKET
+    }
+
     fn fluid_type(&self) -> FluidRef {
         water_id()
     }
@@ -41,6 +53,10 @@ impl FluidBehavior for WaterFluid {
 
     fn slope_find_distance(&self, _world: &Arc<World>) -> u8 {
         4
+    }
+
+    fn pickup_sound(&self) -> Option<SoundEventRef> {
+        Some(&sound_events::ITEM_BUCKET_FILL)
     }
 
     fn explosion_resistance(&self) -> f32 {
@@ -72,7 +88,7 @@ impl FluidBehavior for WaterFluid {
         world.drop_resources(state, pos);
     }
 
-    /// Vanilla parity: `WaterFluid.entityInside()` extinguishes fire.
+    /// Extinguishes fire.
     fn entity_inside(
         &self,
         _world: &Arc<World>,

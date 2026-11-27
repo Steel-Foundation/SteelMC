@@ -19,11 +19,11 @@ fn bench_packet_reader_framing(c: &mut Criterion) {
     let mut wire = Vec::new();
     for i in 0i32..256 {
         let mut packet = Vec::new();
-        VarInt::from(i)
+        VarInt(i)
             .write(&mut packet)
             .expect("packet id should encode");
         packet.extend_from_slice(&[0xABu8; 32]);
-        VarInt::from(packet.len() as i32)
+        VarInt::from(packet.len())
             .write(&mut wire)
             .expect("packet length should encode");
         wire.extend_from_slice(&packet);

@@ -721,7 +721,7 @@ fn start_assembly(
     pools: &FxHashMap<Identifier, TemplatePoolData>,
     templates: &FxHashMap<Identifier, TemplateData>,
     alias_map: &FxHashMap<Identifier, Identifier>,
-    get_height: &mut dyn FnMut(i32, i32) -> i32,
+    get_height: &mut (impl FnMut(i32, i32) -> i32 + ?Sized),
     min_y: i32,
     max_y: i32,
 ) -> Option<StartedAssembly> {
@@ -811,7 +811,7 @@ fn finish_assembly<'a>(
     pools: &'a FxHashMap<Identifier, TemplatePoolData>,
     templates: &'a FxHashMap<Identifier, TemplateData>,
     alias_map: &FxHashMap<Identifier, Identifier>,
-    get_height: &mut dyn FnMut(i32, i32) -> i32,
+    get_height: &mut (impl FnMut(i32, i32) -> i32 + ?Sized),
     min_y: i32,
     max_y: i32,
 ) -> AssemblyResult {
@@ -918,7 +918,7 @@ pub fn assemble(
     pools: &FxHashMap<Identifier, TemplatePoolData>,
     templates: &FxHashMap<Identifier, TemplateData>,
     alias_map: &FxHashMap<Identifier, Identifier>,
-    get_height: &mut dyn FnMut(i32, i32) -> i32,
+    get_height: &mut (impl FnMut(i32, i32) -> i32 + ?Sized),
     min_y: i32,
     max_y: i32,
 ) -> Option<AssemblyResult> {
@@ -1056,7 +1056,7 @@ fn try_placing_children<'a>(
     free_spaces: &mut Vec<FreeSpace>,
     queue: &mut PieceQueue,
     rng: &mut LegacyRandom,
-    get_height: &mut dyn FnMut(i32, i32) -> i32,
+    get_height: &mut (impl FnMut(i32, i32) -> i32 + ?Sized),
 ) {
     let source_piece = &pieces[source_idx];
     let source_location = element_location(&source_piece.element).cloned();

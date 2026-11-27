@@ -12,13 +12,12 @@ impl FeatureDecorationRunner {
     ) -> bool {
         let chunk_x = SectionPos::block_to_section_coord(origin.x());
         let chunk_z = SectionPos::block_to_section_coord(origin.z());
-        let mut x_positions =
-            Self::shuffled_inclusive_range(chunk_x << 4, (chunk_x << 4) + 15, random);
+        let x_positions = Self::shuffled_inclusive_range(chunk_x << 4, (chunk_x << 4) + 15, random);
         let z_positions = Self::shuffled_inclusive_range(chunk_z << 4, (chunk_z << 4) + 15, random);
         let chest = vanilla_blocks::CHEST.default_state();
         let torch = vanilla_blocks::TORCH.default_state();
 
-        for x in x_positions.drain(..) {
+        for x in x_positions {
             for &z in &z_positions {
                 let y = region.height_at(HeightmapType::MotionBlockingNoLeaves, x, z);
                 let chest_pos = BlockPos::new(x, y, z);

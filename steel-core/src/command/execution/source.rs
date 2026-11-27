@@ -1,20 +1,11 @@
 use std::{collections::BTreeSet, ptr, sync::Arc};
 
-use glam::DVec3;
-use steel_registry::{
-    vanilla_game_rules::{
-        LOG_ADMIN_COMMANDS, MAX_COMMAND_FORKS, MAX_COMMAND_SEQUENCE_LENGTH, SEND_COMMAND_FEEDBACK,
-    },
-    world_clock::WorldClockRef,
-};
-use steel_utils::translations;
-use text_components::{Modifier, TextComponent, format::Color};
-
 use crate::{
     command::{
         brigadier::CommandSyntaxError,
         registration::{entity_selector_advanced_permission_expr, entity_selector_permission_expr},
         sender::CommandSender,
+        signing_context::CommandSigningContext,
     },
     entity::{Entity, EntityAnchor, SharedEntity},
     permission::{
@@ -26,8 +17,19 @@ use crate::{
     server::Server,
     world::World,
 };
+use glam::DVec3;
+use steel_math::{DEGREE_90, RAD_TO_DEG_F64, trig, wrap_degrees};
+use steel_protocol::packets::game::ChatTypeBound;
+use steel_registry::{
+    vanilla_game_rules::{
+        LOG_ADMIN_COMMANDS, MAX_COMMAND_FORKS, MAX_COMMAND_SEQUENCE_LENGTH, SEND_COMMAND_FEEDBACK,
+    },
+    world_clock::WorldClockRef,
+};
+use steel_utils::translations;
+use text_components::{Modifier, TextComponent, format::Color};
 
-use super::{CommandExecutionContext, GameProfileArgument};
+use super::{CommandExecutionContext, GameProfileArgument, selector::EntitySelector};
 
 type CommandResultCallbackFn = dyn Fn(bool, i32) + Send + Sync;
 
@@ -115,6 +117,10 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
     }
 
     fn group_permission_metadata_suggestions(&self, _group: &str) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn entity_tag_suggestions(&self, _targets: &EntitySelector) -> Vec<String> {
         Vec::new()
     }
 
@@ -254,11 +260,12 @@ pub(crate) struct CommandSource {
     effective_player_residence: Option<DomainResidenceToken>,
     callback: CommandResultCallback,
     silent: bool,
+    signing_context: Option<Arc<CommandSigningContext>>,
 }
 
 impl CommandSource {
     pub(crate) fn new(sender: CommandSender, server: Arc<Server>) -> Self {
-        let player = sender.get_player().map(Arc::clone);
+        let player = sender.get_player().cloned();
         let world = player.as_ref().map_or_else(
             || Arc::clone(server.overworld()),
             |player| player.get_world(),
@@ -287,7 +294,7 @@ impl CommandSource {
         let authorization = match &sender {
             CommandSender::Player(player) => CommandAuthorizationContext::for_player(
                 world.key.clone(),
-                server.command_permission_snapshot(player.gameprofile.id),
+                server.command_permission_snapshot(player.gameprofile.id()),
             ),
             CommandSender::Console | CommandSender::Rcon => {
                 CommandAuthorizationContext::unrestricted(world.key.clone())
@@ -308,13 +315,10 @@ impl CommandSource {
             effective_player_residence,
             callback: CommandResultCallback::empty(),
             silent: false,
+            signing_context: None,
         }
     }
 
-    #[expect(
-        dead_code,
-        reason = "source-aware runtime extensions need access to the original sender"
-    )]
     pub(crate) const fn sender(&self) -> &CommandSender {
         &self.sender
     }
@@ -406,8 +410,8 @@ impl CommandSource {
     pub(crate) fn facing_position(&self, target: DVec3) -> Self {
         let delta = target - self.anchor_position();
         let horizontal = delta.x.hypot(delta.z);
-        let pitch = -delta.y.atan2(horizontal).to_degrees() as f32;
-        let yaw = delta.z.atan2(delta.x).to_degrees() as f32 - 90.0;
+        let pitch = (-trig::atan2(delta.y, horizontal) * RAD_TO_DEG_F64) as f32;
+        let yaw = (trig::atan2(delta.z, delta.x) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
         self.with_rotation((yaw, pitch))
     }
 
@@ -442,15 +446,33 @@ impl CommandSource {
         self.silent
     }
 
+    pub(crate) fn with_signing_context(mut self, context: Option<CommandSigningContext>) -> Self {
+        self.signing_context = context.map(Arc::new);
+        self
+    }
+
+    #[must_use]
+    pub fn signing_context(&self) -> Option<&CommandSigningContext> {
+        self.signing_context.as_deref()
+    }
+
+    /// Sends informational command output straight to the sender.
+    ///
+    /// Unlike [`Self::send_success`], this ignores the `sendCommandFeedback`
+    /// game rule and never broadcasts to admins - it's for output the sender
+    /// explicitly asked for (e.g. `/version`), not command-result feedback.
+    pub(crate) fn send_system_message(&self, message: &TextComponent) {
+        if !self.silent {
+            self.sender.send_message(message);
+        }
+    }
+
     pub(crate) fn send_success(&self, message: &TextComponent, broadcast_to_admins: bool) {
         if self.silent {
             return;
         }
 
-        let accepts_success = self
-            .sender
-            .get_player()
-            .is_none_or(|player| player.get_world().get_game_rule(&SEND_COMMAND_FEEDBACK));
+        let accepts_success = self.sender.accepts_command_feedback();
         if accepts_success {
             self.sender.send_message(message);
         }
@@ -484,10 +506,13 @@ impl CommandSource {
             .italic(true);
 
         if self.world.get_game_rule(&SEND_COMMAND_FEEDBACK) {
-            let sender_uuid = self.sender.get_player().map(|player| player.gameprofile.id);
+            let sender_uuid = self
+                .sender
+                .get_player()
+                .map(|player| player.gameprofile.id());
             for player in self.server.get_players() {
-                if Some(player.gameprofile.id) != sender_uuid
-                    && self.server.is_operator(player.gameprofile.id)
+                if Some(player.gameprofile.id()) != sender_uuid
+                    && self.server.is_operator(player.gameprofile.id())
                 {
                     player.send_message(&broadcast);
                 }
@@ -499,6 +524,15 @@ impl CommandSource {
         {
             CommandSender::Console.send_message(&broadcast);
         }
+    }
+
+    pub fn bind_chat_type(&self, registry_id: i32) -> ChatTypeBound {
+        let sender_name = self.entity().map_or_else(
+            || TextComponent::plain(self.sender.to_string()),
+            |entity| entity.display_name(),
+        );
+
+        ChatTypeBound::new(registry_id, sender_name)
     }
 }
 
@@ -547,6 +581,17 @@ impl ExecutionCommandSource for CommandSource {
 }
 
 impl CommandArgumentSource for CommandSource {
+    fn entity_tag_suggestions(&self, targets: &EntitySelector) -> Vec<String> {
+        targets
+            .find_entities(self)
+            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|entity| entity.tags())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     fn default_world_clock(&self) -> Option<WorldClockRef> {
         self.world.dimension_type.default_clock
     }
@@ -560,13 +605,9 @@ impl CommandArgumentSource for CommandSource {
     }
 
     fn command_world_names(&self) -> Vec<String> {
-        let domain = self.world.domain();
         let mut names = Vec::new();
         for key in self.server.worlds.keys() {
             names.push(key.to_string());
-            if key.namespace.as_ref() == domain {
-                names.push(key.path.to_string());
-            }
         }
         names
     }
@@ -698,7 +739,7 @@ impl CommandArgumentSource for CommandSource {
                     .command_world_for_player(player)
                     .is_some_and(|world| world.domain() == domain)
             })
-            .map(|player| player.gameprofile.name.clone())
+            .map(|player| player.gameprofile.name().to_owned())
             .collect()
     }
 
@@ -744,7 +785,7 @@ fn profile_argument_uuids(
                 |players| {
                     players
                         .into_iter()
-                        .map(|player| player.gameprofile.id)
+                        .map(|player| player.gameprofile.id())
                         .collect()
                 },
             )
@@ -759,8 +800,8 @@ fn profile_argument_uuids(
                         .server
                         .get_players()
                         .into_iter()
-                        .find(|player| player.gameprofile.name.eq_ignore_ascii_case(value))
-                        .map(|player| player.gameprofile.id)
+                        .find(|player| player.gameprofile.name().eq_ignore_ascii_case(value))
+                        .map(|player| player.gameprofile.id())
                 });
             uuid.into_iter().collect()
         }
@@ -787,8 +828,8 @@ fn profile_names(server: &Server, operator: bool, include_known: bool) -> Vec<St
     let players = server.get_players();
     let mut names = Vec::new();
     for player in &players {
-        if operator == server.is_operator(player.gameprofile.id) {
-            names.push(player.gameprofile.name.clone());
+        if operator == server.is_operator(player.gameprofile.id()) {
+            names.push(player.gameprofile.name().to_owned());
         }
     }
 
@@ -803,7 +844,7 @@ fn profile_names(server: &Server, operator: bool, include_known: bool) -> Vec<St
             || players.iter().any(|player| {
                 player
                     .gameprofile
-                    .name
+                    .name()
                     .eq_ignore_ascii_case(known.last_known_name())
             })
         {
@@ -821,7 +862,7 @@ fn all_profile_names(server: &Server) -> Vec<String> {
     let players = server.get_players();
     let mut names = players
         .iter()
-        .map(|player| player.gameprofile.name.clone())
+        .map(|player| player.gameprofile.name().to_owned())
         .collect::<Vec<_>>();
     for known in server.known_players().entries() {
         if names
@@ -857,16 +898,8 @@ fn admin_broadcast_source_name(
     )
 }
 
-fn normalize_rotation((mut yaw, mut pitch): (f32, f32)) -> (f32, f32) {
-    yaw = yaw.rem_euclid(360.0);
-    if yaw >= 180.0 {
-        yaw -= 360.0;
-    }
-    pitch = pitch.rem_euclid(360.0);
-    if pitch >= 180.0 {
-        pitch -= 360.0;
-    }
-    (yaw, pitch)
+fn normalize_rotation((yaw, pitch): (f32, f32)) -> (f32, f32) {
+    (wrap_degrees(yaw), wrap_degrees(pitch))
 }
 
 #[cfg(test)]

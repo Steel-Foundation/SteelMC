@@ -88,6 +88,8 @@ struct DimensionAttributes {
     nether_portal_spawns_piglin: Option<bool>,
     #[serde(rename = "minecraft:gameplay/bed_rule")]
     bed_rule: Option<BedRuleJson>,
+    #[serde(rename = "minecraft:gameplay/straw_bed_rule")]
+    straw_bed_rule: Option<BedRuleJson>,
 
     // Audio attributes
     #[serde(rename = "minecraft:audio/ambient_sounds")]
@@ -101,7 +103,9 @@ struct BedRuleJson {
     can_set_spawn: String,
     can_sleep: String,
     #[serde(default)]
-    explodes: bool,
+    destroy_on_use: bool,
+    #[serde(default)]
+    destroy_on_leave: bool,
     error_message: Option<ErrorMessageJson>,
 }
 
@@ -197,7 +201,8 @@ fn generate_monster_spawn_light_level(level: &MonsterSpawnLightLevelJson) -> Tok
 fn generate_bed_rule(bed_rule: &BedRuleJson) -> TokenStream {
     let can_set_spawn = generate_bed_rule_value(&bed_rule.can_set_spawn);
     let can_sleep = generate_bed_rule_value(&bed_rule.can_sleep);
-    let explodes = bed_rule.explodes;
+    let destroy_on_use = bed_rule.destroy_on_use;
+    let destroy_on_leave = bed_rule.destroy_on_leave;
     let error_message_key = generate_option(
         &bed_rule.error_message.as_ref().map(|m| m.translate.clone()),
         |s| {
@@ -205,12 +210,21 @@ fn generate_bed_rule(bed_rule: &BedRuleJson) -> TokenStream {
             quote! { #s }
         },
     );
+    let error_message = generate_option(
+        &bed_rule.error_message.as_ref().map(|m| m.translate.clone()),
+        |key| {
+            let ident = Ident::new(&key.to_shouty_snake_case(), Span::call_site());
+            quote! { || steel_utils::translations::#ident.msg().component() }
+        },
+    );
     quote! {
         BedRule {
             can_set_spawn: #can_set_spawn,
             can_sleep: #can_sleep,
-            explodes: #explodes,
+            destroy_on_use: #destroy_on_use,
+            destroy_on_leave: #destroy_on_leave,
             error_message_key: #error_message_key,
+            error_message: #error_message,
         }
     }
 }
@@ -462,6 +476,13 @@ pub(crate) fn build() -> TokenStream {
                 .as_ref()
                 .unwrap_or_else(|| panic!("Missing bed_rule in {dimension_type_name}")),
         );
+        let straw_bed_rule = generate_bed_rule(
+            dimension_type
+                .attributes
+                .straw_bed_rule
+                .as_ref()
+                .unwrap_or_else(|| panic!("Missing straw_bed_rule in {dimension_type_name}")),
+        );
 
         // Audio attributes
         let mood_sound = generate_option(&dimension_type.attributes.ambient_sounds, |s| {
@@ -520,6 +541,7 @@ pub(crate) fn build() -> TokenStream {
                 water_evaporates: #water_evaporates,
                 nether_portal_spawns_piglin: #nether_portal_spawns_piglin,
                 bed_rule: #bed_rule,
+                straw_bed_rule: #straw_bed_rule,
                 mood_sound: #mood_sound,
                 background_music: #background_music,
             };

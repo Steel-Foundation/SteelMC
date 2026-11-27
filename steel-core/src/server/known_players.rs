@@ -110,9 +110,9 @@ impl Server {
         let mut known = self.known_players.lock();
         let previous = known
             .players
-            .by_uuid(profile.id)
+            .by_uuid(profile.id())
             .map(|entry| entry.last_known_name().to_owned());
-        let start_worker = known.record(profile.id, profile.name.clone());
+        let start_worker = known.record(profile.id(), profile.name().to_owned());
         drop(known);
         if start_worker {
             self.start_known_player_save_worker();
@@ -178,12 +178,12 @@ impl Server {
     fn cached_player_profile(self: &Arc<Self>, name: &str) -> Option<KnownPlayer> {
         let uuid = Uuid::parse_str(name).ok();
         if let Some(player) = self.get_players().into_iter().find(|player| {
-            player.gameprofile.name.eq_ignore_ascii_case(name)
-                || uuid.is_some_and(|uuid| player.gameprofile.id == uuid)
+            player.gameprofile.name().eq_ignore_ascii_case(name)
+                || uuid.is_some_and(|uuid| player.gameprofile.id() == uuid)
         }) {
             return Some(KnownPlayer::new(
-                player.gameprofile.id,
-                player.gameprofile.name.clone(),
+                player.gameprofile.id(),
+                player.gameprofile.name().to_owned(),
             ));
         }
 

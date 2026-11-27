@@ -4,8 +4,8 @@ use steel_utils::BlockPos;
 
 use super::selector::{Goal, GoalControls};
 use crate::behavior::BLOCK_BEHAVIORS;
-use crate::entity::PathfinderMob;
 use crate::entity::ai::path::Path;
+use crate::entity::{PathfinderMob, SharedEntity};
 
 const DOOR_REACH_DISTANCE_SQR: f64 = 2.25;
 const PATH_NODE_SCAN_AHEAD: usize = 2;
@@ -176,7 +176,7 @@ impl Goal for DoorInteractGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         Self::tick(self, mob);
     }
 }

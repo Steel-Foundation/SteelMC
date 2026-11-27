@@ -2,16 +2,28 @@ use reqwest::Url;
 use serde::Deserialize;
 use steel_core::{
     chunk::chunk_ticket_manager::MAX_SUPPORTED_VIEW_DISTANCE,
-    config::{CompressionInfo, RuntimeConfig, ServerLinks, validate_login_security},
+    config::{
+        CompressionInfo, DEFAULT_MAX_CHAINED_NEIGHBOR_UPDATES, DEFAULT_SPAM_THRESHOLD_SECONDS,
+        RuntimeConfig, ServerLinks, validate_login_security,
+    },
 };
 
 const fn default_spam_threshold_seconds() -> i32 {
-    10
+    DEFAULT_SPAM_THRESHOLD_SECONDS
 }
 
 const fn default_max_chained_neighbor_updates() -> i32 {
-    1_000_000
+    DEFAULT_MAX_CHAINED_NEIGHBOR_UPDATES
 }
+
+/// Steel config minimum for packet compression threshold, in bytes.
+/// Independent of vanilla's default (`CompressionInfo::DEFAULT_THRESHOLD`).
+const MIN_COMPRESSION_THRESHOLD: u32 = 256;
+/// Steel config minimum for zlib compression level.
+/// Independent of zlib's minimum (0); flate2 accepts 0.
+const MIN_COMPRESSION_LEVEL: i32 = 1;
+/// Steel config maximum for zlib compression level.
+const MAX_COMPRESSION_LEVEL: i32 = 9;
 
 /// The full server configuration as deserialized from TOML.
 ///
@@ -164,10 +176,10 @@ pub(super) fn validate(config: &ServerConfig) -> Result<(), &'static str> {
         return Err("Simulation distance must be less than or equal to view distance");
     }
     if let Some(compression) = config.compression {
-        if compression.threshold.get() < 256 {
+        if compression.threshold.get() < MIN_COMPRESSION_THRESHOLD {
             return Err("Compression threshold must be greater than or equal to 256");
         }
-        if !(1..=9).contains(&compression.level) {
+        if !(MIN_COMPRESSION_LEVEL..=MAX_COMPRESSION_LEVEL).contains(&compression.level) {
             return Err("Compression level must be between 1 and 9");
         }
     }

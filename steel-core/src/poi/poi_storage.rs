@@ -371,7 +371,7 @@ impl PointOfInterestStorage {
         for y in 0..16u8 {
             for z in 0..16u8 {
                 for x in 0..16u8 {
-                    let state_id = section.states.get(x as usize, y as usize, z as usize);
+                    let state_id = section.states().get(x as usize, y as usize, z as usize);
 
                     let Some(poi_type_id) = registry.type_id_for_state(state_id) else {
                         continue;

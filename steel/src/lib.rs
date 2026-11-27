@@ -92,6 +92,12 @@ impl SteelServer {
     ) -> Result<Self, SteelServerError> {
         log::info!("Starting Steel Server ({GIT_HASH_SHORT})");
 
+        if steel_config.server.simulation_distance < 4 {
+            tracing::warn!(
+                "Simulation distance is lesser than 4, this can result in incorrect or alternate behavior!"
+            );
+        }
+
         let permission_group_store = steel_config.permission_group_store();
         let server_port = steel_config.server.server_port;
         let worlds_config = steel_config.worlds;
@@ -139,7 +145,7 @@ impl SteelServer {
     pub async fn start(&mut self, task_tracker: TaskTracker) {
         log::info!("Started Steel Server");
 
-        let server = self.server.clone();
+        let server = Arc::clone(&self.server);
         let token = self.cancel_token.clone();
         let server_handle = tokio::spawn(async move {
             server.run(token).await;
@@ -162,8 +168,8 @@ impl SteelServer {
                         address,
                         self.client_id,
                         self.cancel_token.child_token(),
-                        self.server.clone(),
-                        self.connection_session.clone(),
+                        Arc::clone(&self.server),
+                        Arc::clone(&self.connection_session),
                         task_tracker.clone(),
                     );
                     self.client_id = self.client_id.wrapping_add(1);

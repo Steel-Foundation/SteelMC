@@ -15,17 +15,15 @@ use crate::{
     },
     server::{
         DomainPlayerData, DomainPlayerState, PlayerAdmissionState, PreparedSpawn, Server,
-        UnpreparedDomainPlayerData, UnpreparedDomainPlayerState,
+        UnpreparedDomainPlayerData, UnpreparedDomainPlayerState, WorldEntry,
     },
     world::{
         World,
-        player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll},
+        player_spawn_finder::{POLL_TIME_BUDGET, PlayerSpawnSearch, PlayerSpawnSearchPoll},
     },
 };
 
 use super::{JobPoll, ServerJob, ServerJobContext};
-
-const DOMAIN_SPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 
 pub(in crate::server) struct DomainSwitchJob {
     server: Weak<Server>,
@@ -33,6 +31,7 @@ pub(in crate::server) struct DomainSwitchJob {
     source_domain: String,
     source_data: Option<Arc<PersistentPlayerData>>,
     target_domain: String,
+    entry: WorldEntry,
     pending_token: PendingWorldChangeToken,
     residence_token: DomainResidenceToken,
     phase: DomainSwitchJobPhase,
@@ -71,6 +70,7 @@ impl DomainSwitchJob {
         source_data: PersistentPlayerData,
         target_domain: String,
         target_world: Option<Arc<World>>,
+        entry: WorldEntry,
         pending_token: PendingWorldChangeToken,
         residence_token: DomainResidenceToken,
     ) -> Self {
@@ -87,7 +87,7 @@ impl DomainSwitchJob {
                     .player_data_storage
                     .save_domain_data(
                         &task_source_domain,
-                        task_player.gameprofile.id,
+                        task_player.gameprofile.id(),
                         task_source_data.as_ref(),
                     )
                     .await
@@ -110,6 +110,7 @@ impl DomainSwitchJob {
             source_domain,
             source_data: Some(source_data),
             target_domain,
+            entry,
             pending_token,
             residence_token,
             phase: DomainSwitchJobPhase::WaitingForStorage { receiver, task },
@@ -131,7 +132,7 @@ impl DomainSwitchJob {
         if let Some(error) = error {
             log::error!(
                 "Failed to switch {} domain: {error}",
-                self.player.gameprofile.name
+                self.player.gameprofile.name()
             );
             if !self.player.connection.closed() {
                 self.player.disconnect("Failed to switch domain");
@@ -161,6 +162,7 @@ impl DomainSwitchJob {
     fn phase_after_storage(
         server: &Server,
         target_domain: &str,
+        entry: WorldEntry,
         state: UnpreparedDomainPlayerState,
     ) -> Result<DomainSwitchJobPhase, String> {
         let UnpreparedDomainPlayerState {
@@ -168,7 +170,17 @@ impl DomainSwitchJob {
             explicit_target,
             data,
         } = state;
-        if let UnpreparedDomainPlayerData::SavedRestored { data } = data {
+        let rotation_override = match entry {
+            WorldEntry::Exact(destination) => {
+                return Self::phase_at_destination(world, data, destination);
+            }
+            WorldEntry::Rotation(rotation) => Some(rotation),
+            WorldEntry::Usual => None,
+        };
+        if let UnpreparedDomainPlayerData::SavedRestored { mut data } = data {
+            if let Some((yaw, pitch)) = rotation_override {
+                data.rotation = [yaw, pitch];
+            }
             let spawn_position = DVec3::new(data.pos[0], data.pos[1], data.pos[2]);
             let request = world.request_player_spawn_chunks(spawn_position);
             return Ok(DomainSwitchJobPhase::LoadingSpawn {
@@ -197,13 +209,44 @@ impl DomainSwitchJob {
                 (respawn_data.yaw, respawn_data.pitch),
             )
         };
-        let search = PlayerSpawnSearch::new(&world, spawn_suggestion, world.default_gamemode)?;
+        let rotation = rotation_override.unwrap_or(rotation);
+        let search = PlayerSpawnSearch::new(&world, spawn_suggestion, world.default_gamemode())?
+            .with_safe_fallback()
+            .with_prefetch(PlayerSpawnSearch::prefetch_spawn_area(
+                &world,
+                spawn_suggestion,
+                world.default_gamemode(),
+            ));
         Ok(DomainSwitchJobPhase::SearchingSpawn {
             world,
             data,
             rotation,
             search,
         })
+    }
+
+    /// Enters exactly at `destination`, with no spawn search. A saved location is replaced; its
+    /// vehicle is restored at its old position without the player.
+    fn phase_at_destination(
+        world: Arc<World>,
+        data: UnpreparedDomainPlayerData,
+        destination: PreparedSpawn,
+    ) -> Result<DomainSwitchJobPhase, String> {
+        let state = match data {
+            UnpreparedDomainPlayerData::SavedRestored { mut data } => {
+                data.pos = destination.position.to_array();
+                data.rotation = [destination.rotation.0, destination.rotation.1];
+                data.motion = [0.0; 3];
+                let request = world.request_player_spawn_chunks(destination.position);
+                DomainPlayerState {
+                    world,
+                    data: DomainPlayerData::SavedRestored { data },
+                    spawn_chunk_request: request,
+                }
+            }
+            data => Self::state_after_spawn_search(world, data, destination)?,
+        };
+        Ok(DomainSwitchJobPhase::LoadingSpawn { state })
     }
 
     fn state_after_spawn_search(
@@ -246,11 +289,20 @@ impl DomainSwitchJob {
             ));
         }
 
-        let restores = server.prepare_domain_restores(&self.player, &state);
+        let mount_player = !matches!(self.entry, WorldEntry::Exact(_));
+        let restores = server.prepare_domain_restores(&self.player, &state, mount_player);
         let restore_player = Arc::clone(&self.player);
+        let fall_flying = self.player.is_fall_flying();
         self.player
             .reset_after_detached_domain_restore(Arc::clone(&state.world), || {
                 Server::apply_domain_player_state(&restore_player, &state);
+                if matches!(self.entry, WorldEntry::Exact(_)) {
+                    // Like `/teleport`, the gliding state carries over. A glider stays airborne,
+                    // so it must not keep a saved `on_ground`.
+                    restore_player.set_fall_flying(fall_flying);
+                    restore_player.set_on_ground(false);
+                    restore_player.land_after_teleport();
+                }
             });
         if !Server::install_domain_restores(&self.player, self.residence_token, &restores) {
             return self.finish_source_disconnect(Some(
@@ -273,13 +325,13 @@ impl DomainSwitchJob {
         self.source_data = None;
         if !self.player.finish_pending_world_change(self.pending_token) {
             tracing::error!(
-                player = %self.player.gameprofile.name,
+                player = %self.player.gameprofile.name(),
                 "Domain switch lost its relocation lease during target admission"
             );
             self.player.finish_domain_switch(self.pending_token);
             self.player.connection.close();
             server.release_player_admission(
-                self.player.gameprofile.id,
+                self.player.gameprofile.id(),
                 PlayerAdmissionState::Relocating,
             );
             server.queue_player_disconnect(Arc::clone(&self.player));
@@ -287,26 +339,28 @@ impl DomainSwitchJob {
         }
         if !self.player.mark_domain_switch_live(self.pending_token) {
             tracing::error!(
-                player = %self.player.gameprofile.name,
+                player = %self.player.gameprofile.name(),
                 "Domain switch lost ownership after target insertion"
             );
             self.player.finish_domain_switch(self.pending_token);
             self.player.connection.close();
             server.release_player_admission(
-                self.player.gameprofile.id,
+                self.player.gameprofile.id(),
                 PlayerAdmissionState::Relocating,
             );
             server.queue_player_disconnect(Arc::clone(&self.player));
             return JobPoll::Finished;
         }
-        server
-            .release_player_admission(self.player.gameprofile.id, PlayerAdmissionState::Relocating);
+        server.release_player_admission(
+            self.player.gameprofile.id(),
+            PlayerAdmissionState::Relocating,
+        );
         server.schedule_domain_restores(&self.player, self.residence_token, restores);
 
         let (sender, receiver) = mpsc::channel();
         let task_server = Arc::clone(server);
         let task_target_domain = self.target_domain.clone();
-        let uuid = self.player.gameprofile.id;
+        let uuid = self.player.gameprofile.id();
         let task = tokio::spawn(async move {
             let result = task_server
                 .player_data_storage
@@ -372,21 +426,22 @@ impl ServerJob for DomainSwitchJob {
                         Ok(state) => state,
                         Err(error) => return self.finish_source_disconnect(Some(&error)),
                     };
-                    self.phase =
-                        match Self::phase_after_storage(&server, &self.target_domain, state) {
-                            Ok(phase) => phase,
-                            Err(error) => return self.finish_source_disconnect(Some(&error)),
-                        };
+                    self.phase = match Self::phase_after_storage(
+                        &server,
+                        &self.target_domain,
+                        self.entry,
+                        state,
+                    ) {
+                        Ok(phase) => phase,
+                        Err(error) => return self.finish_source_disconnect(Some(&error)),
+                    };
                 }
                 DomainSwitchJobPhase::SearchingSpawn {
                     world,
                     data,
                     rotation,
                     mut search,
-                } => match search.poll_with_ready_candidate_budget(
-                    &world,
-                    DOMAIN_SPAWN_SEARCH_READY_CANDIDATE_BUDGET,
-                ) {
+                } => match search.poll_with_time_budget(&world, POLL_TIME_BUDGET) {
                     PlayerSpawnSearchPoll::Pending => {
                         self.phase = DomainSwitchJobPhase::SearchingSpawn {
                             world,
@@ -443,7 +498,7 @@ impl ServerJob for DomainSwitchJob {
                         Err(mpsc::TryRecvError::Disconnected) => {
                             log::error!(
                                 "Active-domain save task for {} ended without a result",
-                                self.player.gameprofile.name
+                                self.player.gameprofile.name()
                             );
                             self.player.finish_domain_switch(self.pending_token);
                             return JobPoll::Finished;
@@ -453,7 +508,7 @@ impl ServerJob for DomainSwitchJob {
                     if let Err(error) = result {
                         log::error!(
                             "Failed to save global player data for {} after domain switch: {error}",
-                            self.player.gameprofile.name
+                            self.player.gameprofile.name()
                         );
                     }
                     self.player.finish_domain_switch(self.pending_token);
@@ -480,7 +535,7 @@ impl ServerJob for DomainSwitchJob {
             self.player.finish_pending_world_change(self.pending_token);
             if let Some(server) = self.server.upgrade() {
                 server.release_player_admission(
-                    self.player.gameprofile.id,
+                    self.player.gameprofile.id(),
                     PlayerAdmissionState::Relocating,
                 );
             }

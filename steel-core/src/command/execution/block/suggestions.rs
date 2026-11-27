@@ -6,8 +6,9 @@ use steel_registry::{
 };
 use steel_utils::Identifier;
 
-use super::super::argument::{matches_substring, parse_identifier};
+use super::super::argument::parse_identifier;
 use crate::command::brigadier::{StringReader, SuggestionsBuilder};
+use crate::command::execution::suggestions::identifier_matches;
 
 pub(in crate::command::execution) fn suggest_blocks(builder: &mut SuggestionsBuilder<'_>) {
     suggest_blocks_and_tags(builder, true);
@@ -294,13 +295,4 @@ fn find_unquoted(input: &str, needle: char) -> Option<usize> {
         }
     }
     None
-}
-
-fn identifier_matches(pattern: &str, identifier: &Identifier) -> bool {
-    if pattern.contains(':') {
-        matches_substring(pattern, &identifier.to_string())
-    } else {
-        matches_substring(pattern, identifier.namespace.as_ref())
-            || matches_substring(pattern, identifier.path.as_ref())
-    }
 }

@@ -8,6 +8,7 @@ const GOLDEN_RATIO_64: u64 = 0x9E37_79B9_7F4A_7C15;
 const SILVER_RATIO_64: u64 = 0x6A09_E667_F3BC_C909;
 
 /// A Xoroshiro128++ random number generator.
+#[derive(Clone)]
 pub struct Xoroshiro {
     seed_lo: u64,
     seed_hi: u64,
@@ -22,6 +23,25 @@ pub struct XoroshiroSplitter {
 }
 
 impl Xoroshiro {
+    /// Creates a named sequence by applying XOR to the unmixed seed and an MD5 name hash.
+    #[must_use]
+    pub const fn from_seed_with_hash(seed: u64, hash: [u64; 2]) -> Self {
+        let (lo, hi) = Self::upgrade_seed_to_128_bit(seed);
+        Self::new(mix_stafford_13(lo ^ hash[0]), mix_stafford_13(hi ^ hash[1]))
+    }
+
+    /// Restores the two generator words. Vanilla does not persist its Gaussian cache.
+    #[must_use]
+    pub const fn from_state(state: [u64; 2]) -> Self {
+        Self::new(state[0], state[1])
+    }
+
+    /// Generator words for saved random sequences, excluding the Gaussian cache.
+    #[must_use]
+    pub const fn state(&self) -> [u64; 2] {
+        [self.seed_lo, self.seed_hi]
+    }
+
     /// Creates a new `Xoroshiro` from a seed.
     #[must_use]
     pub const fn from_seed(seed: u64) -> Self {

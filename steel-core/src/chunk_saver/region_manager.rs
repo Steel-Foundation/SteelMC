@@ -810,6 +810,7 @@ mod tests {
         let pos = ChunkPos::new(0, 0);
         let persistent = PersistentChunk {
             last_modified: 0,
+            inhabited_time: 0,
             block_states: Vec::new(),
             biomes: Vec::new(),
             sections: Vec::new(),
@@ -819,7 +820,6 @@ mod tests {
             fluid_ticks: Vec::new(),
             heightmaps: Vec::new(),
             light: PersistentLightData::default(),
-            carving_mask: None,
             postprocessing: Vec::new(),
             structure_starts: Vec::new(),
             structure_references: Vec::new(),

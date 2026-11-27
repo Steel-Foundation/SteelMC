@@ -39,13 +39,13 @@ fn list_players(
             if show_uuids {
                 COMMANDS_LIST_NAME_AND_ID
                     .message([
-                        player.gameprofile.name.clone(),
-                        player.gameprofile.id.to_string(),
+                        player.gameprofile.name().to_owned(),
+                        player.gameprofile.id().to_string(),
                     ])
                     .component()
                     .to_string()
             } else {
-                player.gameprofile.name.clone()
+                player.gameprofile.name().to_owned()
             }
         })
         .collect::<Vec<_>>()

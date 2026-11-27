@@ -1,8 +1,7 @@
 //! This module contains the `JavaConnection` struct, which is used to represent a connection to a Java client.
 use std::io::Cursor;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
 use steel_protocol::packet_reader::TCPNetworkDecoder;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket, ServerPacket};
 use steel_protocol::packet_writer::TCPNetworkEncoder;
@@ -13,36 +12,42 @@ use steel_protocol::packets::common::{
 use steel_protocol::packets::game::{
     CBundleDelimiter, CCommandSuggestions, ClientCommandAction, PlayerAction, PlayerCommandAction,
     SAcceptTeleportation, SAttack, SChangeDifficulty, SChangeGameMode, SChat, SChatAck,
-    SChatCommand, SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd,
-    SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
+    SChatCommand, SChatCommandSigned, SChatSessionUpdate, SChunkBatchReceived, SClientCommand,
+    SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
     SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
-    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem, SUseItemOn,
+    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SPunch, SRenameItem,
+    SSeenAdvancement, SSetBeacon, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate,
+    SSpectatorAction, SUseItem, SUseItemOn,
 };
 
+use crate::command::handle_client_request;
+use crate::player::connection::NetworkConnection;
+use crate::player::{Player, PlayerSession};
+use crate::server::Server;
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
 use steel_utils::translations;
+use text_components::TextComponent;
 use text_components::content::Resolvable;
 use text_components::custom::CustomData;
 use text_components::resolving::TextResolutor;
-use text_components::{Modifier, TextComponent, format::Color};
-use tokio::io::{BufReader, BufWriter};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::io::{AsyncRead, AsyncWrite, BufReader, BufWriter};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
-use crate::command::{handle_client_request, sender::CommandSender};
-use crate::player::Player;
-use crate::player::connection::NetworkConnection;
-use crate::server::Server;
-
+/// Boxed read half of a Java client transport (a TCP socket or an in-memory pipe).
+pub type JavaTransportRead = Box<dyn AsyncRead + Send + Unpin>;
+/// Boxed write half of a Java client transport.
+pub type JavaTransportWrite = Box<dyn AsyncWrite + Send + Unpin>;
+/// Packet decoder over the read half of a Java client transport.
+pub type JavaNetworkReader = TCPNetworkDecoder<BufReader<JavaTransportRead>>;
 /// Shared Java socket writer.
-pub type JavaNetworkWriter = Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>>;
+pub type JavaNetworkWriter =
+    Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<JavaTransportWrite>>>>>;
 
 const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -86,6 +91,7 @@ enum ScheduledPlayPacketKind {
     MoveVehicle(SMoveVehicle),
     PlayerLoaded,
     ChatCommand(SChatCommand),
+    ChatCommandSigned(SChatCommandSigned),
     CommandSuggestion(SCommandSuggestion),
     ContainerButtonClick(SContainerButtonClick),
     ContainerClick(SContainerClick),
@@ -98,8 +104,9 @@ enum ScheduledPlayPacketKind {
     RenameItem(SRenameItem),
     UseItemOn(SUseItemOn),
     UseItem(SUseItem),
+    SetBeacon(SSetBeacon),
     SetCarriedItem(SSetCarriedItem),
-    Swing(SSwing),
+    Punch(SPunch),
     PlayerAction(SPlayerAction),
     PickItemFromBlock(SPickItemFromBlock),
     SignUpdate(SSignUpdate),
@@ -107,6 +114,7 @@ enum ScheduledPlayPacketKind {
     ClientCommand(SClientCommand),
     ChangeGameMode(SChangeGameMode),
     ChangeDifficulty(SChangeDifficulty),
+    UpdateSelectedTab(SSeenAdvancement),
 }
 
 enum ImmediatePlayPacket {
@@ -160,13 +168,14 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::ClientTickEnd
             | ScheduledPlayPacketKind::PlayerLoaded
             | ScheduledPlayPacketKind::ChatCommand(_)
+            | ScheduledPlayPacketKind::ChatCommandSigned(_)
             | ScheduledPlayPacketKind::CommandSuggestion(_)
             | ScheduledPlayPacketKind::ContainerClose(_)
             | ScheduledPlayPacketKind::SetCreativeModeSlot(_)
             | ScheduledPlayPacketKind::PlayerInput(_)
             | ScheduledPlayPacketKind::PlayerAbilities(_)
             | ScheduledPlayPacketKind::SetCarriedItem(_)
-            | ScheduledPlayPacketKind::Swing(_)
+            | ScheduledPlayPacketKind::Punch(_)
             | ScheduledPlayPacketKind::PickItemFromBlock(_)
             | ScheduledPlayPacketKind::ClientCommand(_) => ScheduledPacketExecution::PlayerLocal,
             ScheduledPlayPacketKind::PlayerCommand(packet) => match packet.action {
@@ -185,6 +194,7 @@ impl ScheduledPlayPacket {
                     ScheduledPacketExecution::PlayerLocal
                 }
                 PlayerAction::StartDestroyBlock
+                | PlayerAction::ChangeDestroyDirection
                 | PlayerAction::StopDestroyBlock
                 | PlayerAction::DropAllItems
                 | PlayerAction::DropItem => ScheduledPacketExecution::Serialized,
@@ -208,13 +218,15 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::SignUpdate(_)
             | ScheduledPlayPacketKind::SpectatorAction(_)
             | ScheduledPlayPacketKind::ChangeGameMode(_)
-            | ScheduledPlayPacketKind::ChangeDifficulty(_) => ScheduledPacketExecution::Serialized,
+            | ScheduledPlayPacketKind::ChangeDifficulty(_)
+            | ScheduledPlayPacketKind::UpdateSelectedTab(_) => ScheduledPacketExecution::Serialized,
             // Combat spans source and target state, custom payloads have no constrained resource
             // contract, and the unimplemented menu handlers have no auditable transaction yet.
             ScheduledPlayPacketKind::Attack(_)
             | ScheduledPlayPacketKind::Interact(_)
             | ScheduledPlayPacketKind::CustomPayload(_)
             | ScheduledPlayPacketKind::ContainerButtonClick(_)
+            | ScheduledPlayPacketKind::SetBeacon(_)
             | ScheduledPlayPacketKind::ContainerSlotStateChanged(_) => {
                 ScheduledPacketExecution::Exclusive
             }
@@ -249,7 +261,7 @@ impl ScheduledPlayPacket {
                 player.handle_custom_payload(packet);
             }
             ScheduledPlayPacketKind::Chat(packet) => {
-                player.handle_chat(*packet, Arc::clone(&player));
+                player.handle_chat(*packet);
             }
             ScheduledPlayPacketKind::ChatAck(packet) => player.handle_chat_ack(packet),
             ScheduledPlayPacketKind::ChatSessionUpdate(packet) => {
@@ -267,16 +279,10 @@ impl ScheduledPlayPacket {
                 }
             }
             ScheduledPlayPacketKind::ChatCommand(packet) => {
-                player.reset_last_action_time();
-                if server
-                    .submit_command(CommandSender::Player(Arc::clone(&player)), packet.command)
-                    .is_err()
-                {
-                    player.send_message(
-                        &TextComponent::const_plain("Command queue is full").color(Color::Red),
-                    );
-                }
-                player.detect_command_rate_spam();
+                player.handle_command(packet, server);
+            }
+            ScheduledPlayPacketKind::ChatCommandSigned(packet) => {
+                player.handle_signed_command(packet, server);
             }
             ScheduledPlayPacketKind::CommandSuggestion(packet) => {
                 if server
@@ -288,6 +294,9 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::ContainerButtonClick(packet) => {
                 player.handle_container_button_click(packet);
+            }
+            ScheduledPlayPacketKind::SetBeacon(packet) => {
+                player.handle_set_beacon_packet(packet);
             }
             ScheduledPlayPacketKind::ContainerClick(packet) => {
                 player.handle_container_click(packet);
@@ -314,7 +323,7 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::SetCarriedItem(packet) => {
                 player.handle_set_carried_item(packet);
             }
-            ScheduledPlayPacketKind::Swing(packet) => player.handle_animate(packet),
+            ScheduledPlayPacketKind::Punch(packet) => player.handle_punch(&packet),
             ScheduledPlayPacketKind::PlayerAction(packet) => {
                 player.handle_player_action(packet);
             }
@@ -333,6 +342,9 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::ChangeDifficulty(packet) => {
                 player.handle_change_difficulty(packet.difficulty);
+            }
+            ScheduledPlayPacketKind::UpdateSelectedTab(packet) => {
+                player.handle_seen_advancement(packet);
             }
         }
     }
@@ -391,7 +403,7 @@ pub struct JavaConnection {
     network_writer: JavaNetworkWriter,
     id: u64,
 
-    player: Weak<Player>,
+    session: Arc<PlayerSession>,
     keep_alive_tracker: SyncMutex<KeepAliveTracker>,
     latency: SyncMutex<u32>,
 }
@@ -404,7 +416,7 @@ impl JavaConnection {
         compression: Option<CompressionInfo>,
         network_writer: JavaNetworkWriter,
         id: u64,
-        player: Weak<Player>,
+        session: Arc<PlayerSession>,
     ) -> Self {
         Self {
             outgoing_packets,
@@ -412,7 +424,7 @@ impl JavaConnection {
             compression,
             network_writer,
             id,
-            player,
+            session,
             keep_alive_tracker: SyncMutex::new(KeepAliveTracker {
                 alive_time: 0,
                 alive_pending: false,
@@ -627,7 +639,7 @@ impl JavaConnection {
                 server.schedule_play_packet(player, packet, payload_bytes);
             }
             DecodedPlayPacket::Immediate(packet) => {
-                self.handle_immediate_packet(packet, &player);
+                self.handle_immediate_packet(packet);
             }
         }
         Ok(())
@@ -725,6 +737,9 @@ impl JavaConnection {
             play::S_CHAT_COMMAND => scheduled(ScheduledPlayPacketKind::ChatCommand(
                 SChatCommand::read_packet(data)?,
             )),
+            play::S_CHAT_COMMAND_SIGNED => scheduled(ScheduledPlayPacketKind::ChatCommandSigned(
+                SChatCommandSigned::read_packet(data)?,
+            )),
             play::S_COMMAND_SUGGESTION => scheduled(ScheduledPlayPacketKind::CommandSuggestion(
                 SCommandSuggestion::read_packet(data)?,
             )),
@@ -749,6 +764,9 @@ impl JavaConnection {
                     SSetCreativeModeSlot::read_packet(data)?,
                 ))
             }
+            play::S_SET_BEACON => scheduled(ScheduledPlayPacketKind::SetBeacon(
+                SSetBeacon::read_packet(data)?,
+            )),
             play::S_PLAYER_INPUT => scheduled(ScheduledPlayPacketKind::PlayerInput(
                 SPlayerInput::read_packet(data)?,
             )),
@@ -770,7 +788,7 @@ impl JavaConnection {
             play::S_SET_CARRIED_ITEM => scheduled(ScheduledPlayPacketKind::SetCarriedItem(
                 SSetCarriedItem::read_packet(data)?,
             )),
-            play::S_SWING => scheduled(ScheduledPlayPacketKind::Swing(SSwing::read_packet(data)?)),
+            play::S_PUNCH => scheduled(ScheduledPlayPacketKind::Punch(SPunch::read_packet(data)?)),
             play::S_PLAYER_ACTION => scheduled(ScheduledPlayPacketKind::PlayerAction(
                 SPlayerAction::read_packet(data)?,
             )),
@@ -795,19 +813,22 @@ impl JavaConnection {
             play::S_CHANGE_DIFFICULTY => scheduled(ScheduledPlayPacketKind::ChangeDifficulty(
                 SChangeDifficulty::read_packet(data)?,
             )),
+            play::S_SEEN_ADVANCEMENTS => scheduled(ScheduledPlayPacketKind::UpdateSelectedTab(
+                SSeenAdvancement::read_packet(data)?,
+            )),
             id => DecodedPlayPacket::Immediate(ImmediatePlayPacket::Unknown(id)),
         })
     }
 
-    fn handle_immediate_packet(&self, packet: ImmediatePlayPacket, player: &Player) {
+    fn handle_immediate_packet(&self, packet: ImmediatePlayPacket) {
         match packet {
             ImmediatePlayPacket::KeepAlive(packet) => self.handle_keep_alive(packet),
             ImmediatePlayPacket::PingRequest(packet) => {
-                player.send_packet(CPongResponse::new(packet.time));
+                self.send_packet(CPongResponse::new(packet.time));
             }
             ImmediatePlayPacket::ChunkBatchReceived(packet) => {
-                player
-                    .chunk_sender
+                self.session
+                    .chunk_sender()
                     .lock()
                     .on_chunk_batch_received_by_client(packet.desired_chunks_per_tick);
             }
@@ -816,11 +837,7 @@ impl JavaConnection {
     }
 
     /// Listens for packets from the client.
-    pub async fn listener(
-        &self,
-        mut reader: TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
-        server: Arc<Server>,
-    ) {
+    pub async fn listener(&self, mut reader: JavaNetworkReader, server: Arc<Server>) {
         loop {
             select! {
                 () = self.wait_for_close() => {
@@ -829,16 +846,15 @@ impl JavaConnection {
                 packet = reader.get_raw_packet() => {
                     match packet {
                         Ok(packet) => {
-                            if let Some(player) = self.player.upgrade()
+                            if let Some(player) = self.session.current_player()
                                 && let Err(err) = self.process_packet(packet, player, &server)
                             {
-                                // A packet failed to decode or dispatch. The stream framing
-                                // is still intact, so the vanilla invalid-packet disconnect
-                                // reaches the client before the connection closes.
                                 log::warn!("Failed to process packet from client {}: {err}", self.id);
-                                self.disconnect(
-                                    translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg(),
-                                );
+                                self.disconnect(TextComponent::translated(
+                                    translations::DISCONNECT_GENERIC_REASON
+                                        .message([format!("Internal Exception: {err}")]),
+                                ));
+                                break;
                             }
                         }
                         Err(err) => {
@@ -978,9 +994,16 @@ mod tests {
     };
     use rustc_hash::FxHashMap;
     use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
-    use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};
+    use steel_protocol::packets::game::{
+        ClickType, ClientCommandAction, HashedStack, LastSeenMessagesUpdate,
+    };
     use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
-    use steel_utils::{BlockPos, codec::VarInt, types::InteractionHand};
+    use steel_utils::{BlockPos, codec::VarInt, types::SignTextSlot};
+    use tokio::{
+        io::{AsyncReadExt as _, duplex},
+        sync::mpsc,
+        task,
+    };
     use uuid::Uuid;
 
     use super::*;
@@ -1008,8 +1031,9 @@ mod tests {
 
     #[test]
     fn queued_domain_switch_records_only_perform_respawn_at_connection_gate() {
-        let world = fresh_test_world("queued_domain_switch_respawn_packet");
-        let player = TestPlayerBuilder::new(world, "RespawnTester", 1).build();
+        let world_fixture = fresh_test_world("queued_domain_switch_respawn_packet");
+        let world = &world_fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "RespawnTester", 1).build();
         let Some(token) = player.begin_pending_world_change() else {
             panic!("test player should acquire a world-change token");
         };
@@ -1084,7 +1108,10 @@ mod tests {
 
     #[test]
     fn scheduled_domain_handshake_classification_is_narrow() {
-        let accept = decode(RawPacket::new(play::S_ACCEPT_TELEPORTATION, vec![0]));
+        // Teleport id, then the acknowledged position and rotation.
+        let mut accept_payload = vec![0];
+        accept_payload.extend_from_slice(&[0; size_of::<f64>() * 3 + size_of::<f32>() * 2]);
+        let accept = decode(RawPacket::new(play::S_ACCEPT_TELEPORTATION, accept_payload));
         let DecodedPlayPacket::Scheduled(accept) = accept else {
             panic!("teleport acknowledgement should be scheduled");
         };
@@ -1223,9 +1250,11 @@ mod tests {
                 timestamp: 0,
                 salt: 0,
                 signature: None,
-                offset: 0,
-                acknowledged: [0; 3],
-                checksum: 0,
+                last_seen: LastSeenMessagesUpdate {
+                    offset: VarInt(0),
+                    acknowledged: [0; LastSeenMessagesUpdate::ACKNOWLEDGED_BYTES],
+                    checksum: 0,
+                },
             }))),
             ScheduledPacketExecution::Serialized
         );
@@ -1267,7 +1296,14 @@ mod tests {
     fn audited_handlers_use_the_narrowest_safe_execution_class() {
         assert_eq!(
             execution(ScheduledPlayPacketKind::AcceptTeleportation(
-                SAcceptTeleportation { teleport_id: 1 },
+                SAcceptTeleportation {
+                    teleport_id: 1,
+                    x: 0.0,
+                    y: 64.0,
+                    z: 0.0,
+                    y_rot: 0.0,
+                    x_rot: 0.0,
+                },
             )),
             ScheduledPacketExecution::Serialized
         );
@@ -1322,15 +1358,13 @@ mod tests {
         assert_eq!(
             execution(ScheduledPlayPacketKind::SignUpdate(SSignUpdate {
                 pos: BlockPos::new(0, 64, 0),
-                is_front_text: true,
                 lines: array::from_fn(|_| String::new()),
+                slot: SignTextSlot::Front,
             })),
             ScheduledPacketExecution::Serialized
         );
         assert_eq!(
-            execution(ScheduledPlayPacketKind::Swing(SSwing {
-                hand: InteractionHand::MainHand,
-            })),
+            execution(ScheduledPlayPacketKind::Punch(SPunch {})),
             ScheduledPacketExecution::PlayerLocal
         );
         assert_eq!(
@@ -1369,5 +1403,47 @@ mod tests {
                 }
             ))
         ));
+    }
+
+    #[tokio::test]
+    async fn sender_writes_packets_through_a_boxed_transport() {
+        let (server_end, mut client_end) = duplex(1024);
+        let transport: JavaTransportWrite = Box::new(server_end);
+        let network_writer: JavaNetworkWriter = Arc::new(AsyncMutex::new(Some(
+            TCPNetworkEncoder::new(BufWriter::new(transport)),
+        )));
+        let (outgoing_packets, outgoing_receiver) = mpsc::unbounded_channel();
+        let cancel_token = CancellationToken::new();
+        let connection = Arc::new(JavaConnection::new(
+            outgoing_packets,
+            cancel_token.clone(),
+            None,
+            network_writer,
+            1,
+            Arc::new(PlayerSession::new(10, 10)),
+        ));
+        let sender = task::spawn({
+            let connection = Arc::clone(&connection);
+            async move { connection.sender(outgoing_receiver).await }
+        });
+
+        let Ok(packet) =
+            EncodedPacket::from_bare(CKeepAlive { id: 7 }, None, ConnectionProtocol::Play)
+        else {
+            panic!("keep alive should encode");
+        };
+        let expected = packet.encoded_data.as_slice().to_vec();
+        connection.send_encoded(packet);
+
+        let mut received = vec![0; expected.len()];
+        let Ok(_) = client_end.read_exact(&mut received).await else {
+            panic!("client end should receive the framed packet");
+        };
+        assert_eq!(received, expected);
+
+        cancel_token.cancel();
+        let Ok(()) = sender.await else {
+            panic!("sender task should finish after cancellation");
+        };
     }
 }

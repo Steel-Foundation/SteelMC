@@ -62,7 +62,7 @@ impl StringRange {
 
     pub(super) fn byte_range(self, input: &str) -> Option<Range<usize>> {
         let start = Self::byte_index(input, self.start)?;
-        let end = Self::byte_index(input, self.end)?;
+        let end = start + Self::byte_index(&input[start..], self.len())?;
         Some(start..end)
     }
 

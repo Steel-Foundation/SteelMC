@@ -11,6 +11,7 @@ use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionRes
 use crate::entity::Entity;
 use crate::entity::ai::path::PathComputationType;
 use crate::player::Player;
+use crate::world::explosion::Explosion;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ScheduledTickAccess, SignalGetter as _, World};
 use std::sync::Arc;
@@ -20,6 +21,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty,
 };
+use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events;
@@ -63,8 +65,6 @@ impl FenceGateBlock {
         }
     }
 
-    /// Vanilla `FenceGateBlock.connectsToDirection`.
-    ///
     /// A gate connects perpendicular to its facing, i.e. to a wall/fence whose
     /// connecting axis matches the gate's clockwise-rotated facing axis.
     #[must_use]
@@ -72,7 +72,6 @@ impl FenceGateBlock {
         state.get_value(FACING).axis() == direction.rotate_y_clockwise().axis()
     }
 
-    /// Vanilla `FenceGateBlock.isWall`.
     fn is_wall(state: BlockStateId) -> bool {
         state.get_block().has_tag(&BlockTag::WALLS)
     }
@@ -162,7 +161,7 @@ impl BlockBehavior for FenceGateBlock {
         } else {
             self.sound_close
         };
-        let pitch = rand::random::<f32>() * 0.1 + 0.9;
+        let pitch = rand::random_range(0.9..1.0);
         world.play_block_sound(sound, pos, 1.0, pitch, Some(player.id()));
         let event = if opens {
             &vanilla_game_events::BLOCK_OPEN
@@ -171,6 +170,35 @@ impl BlockBehavior for FenceGateBlock {
         };
         world.game_event(event, pos, &GameEventContext::new(Some(player), None));
         InteractionResult::Success
+    }
+
+    fn on_explosion_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &dyn Explosion,
+        on_hit: &mut dyn FnMut(ItemStack, BlockPos),
+    ) {
+        if explosion.can_trigger_blocks() && !state.get_value(POWERED) {
+            let open = state.get_value(OPEN);
+            world.set_block(pos, state.set_value(OPEN, !open), UpdateFlags::UPDATE_ALL);
+            let sound = if open {
+                self.sound_close
+            } else {
+                self.sound_open
+            };
+            let pitch = rand::random_range(0.9..1.0);
+            world.play_block_sound(sound, pos, 1.0, pitch, None);
+            let event = if open {
+                &vanilla_game_events::BLOCK_CLOSE
+            } else {
+                &vanilla_game_events::BLOCK_OPEN
+            };
+            world.game_event(event, pos, &GameEventContext::new(None, Some(state)));
+        }
+
+        self.default_on_explosion_hit(state, world, pos, explosion, on_hit);
     }
 
     fn handle_neighbor_changed(
@@ -202,7 +230,7 @@ impl BlockBehavior for FenceGateBlock {
         } else {
             self.sound_close
         };
-        let pitch = rand::random::<f32>() * 0.1 + 0.9;
+        let pitch = rand::random_range(0.9..1.0);
         world.play_block_sound(sound, pos, 1.0, pitch, None);
         let event = if has_power {
             &vanilla_game_events::BLOCK_OPEN
@@ -235,10 +263,11 @@ mod tests {
     fn redstone_power_opens_and_closes_fence_gate() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("fence_gate_redstone");
+        let world_fixture = fresh_test_world("fence_gate_redstone");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
         let power_pos = pos.west();
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
         assert!(world.set_block(
             pos,
             vanilla_blocks::OAK_FENCE_GATE.default_state(),

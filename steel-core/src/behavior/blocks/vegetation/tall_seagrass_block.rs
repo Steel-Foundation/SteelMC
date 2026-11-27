@@ -13,6 +13,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
+use crate::block_entity::SharedBlockEntity;
 use crate::fluid::get_fluid_state_from_block;
 use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess};
 
@@ -111,6 +112,7 @@ impl BlockBehavior for TallSeagrassBlock {
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::SEAGRASS))

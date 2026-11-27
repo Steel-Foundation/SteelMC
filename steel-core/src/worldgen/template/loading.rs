@@ -1,11 +1,34 @@
+use std::sync::{Arc, LazyLock};
+
+use rustc_hash::FxHashMap;
+use steel_utils::locks::SyncRwLock;
+use steel_utils::nbt::NbtValueInput as _;
+
 use super::*;
 
+/// Process-wide cache of parsed vanilla structure templates.
+///
+/// Bundled template NBT is immutable, so each template is decompressed and
+/// parsed at most once; every placement afterwards shares the parsed result.
+static VANILLA_TEMPLATE_CACHE: LazyLock<SyncRwLock<FxHashMap<Identifier, Arc<StructureTemplate>>>> =
+    LazyLock::new(|| SyncRwLock::new(FxHashMap::default()));
+
 impl StructureTemplate {
-    pub(crate) fn load_vanilla(registry: &Registry, key: &Identifier) -> Result<Self, String> {
-        let Some(bytes) = vanilla_template_pools::vanilla_template_nbt_bytes(key) else {
-            return Err(format!("vanilla structure template {key} is not bundled"));
-        };
-        Self::load_gzip_nbt(registry, bytes, &key.to_string())
+    pub(crate) fn load_vanilla(registry: &Registry, key: &Identifier) -> Result<Arc<Self>, String> {
+        if let Some(template) = VANILLA_TEMPLATE_CACHE.read().get(key) {
+            return Ok(Arc::clone(template));
+        }
+
+        let mut cache = VANILLA_TEMPLATE_CACHE.write();
+        if let Some(template) = cache.get(key) {
+            return Ok(Arc::clone(template));
+        }
+
+        let bytes = vanilla_template_pools::vanilla_template_nbt_bytes(key)
+            .ok_or_else(|| format!("vanilla structure template {key} is not bundled"))?;
+        let template = Arc::new(Self::load_gzip_nbt(registry, bytes, &key.to_string())?);
+        cache.insert(key.clone(), Arc::clone(&template));
+        Ok(template)
     }
 
     pub(super) fn load_gzip_nbt(
@@ -122,16 +145,16 @@ impl StructureTemplate {
     ) -> Result<Vec<BlockStateId>, String> {
         let mut states = Vec::with_capacity(entries.len());
         for entry in entries.clone() {
-            let Some(name) = entry.string("Name") else {
+            let Some(name) = entry.string("id") else {
                 return Err(format!(
-                    "structure template {context} has palette entry without Name"
+                    "structure template {context} has palette entry without id"
                 ));
             };
             let name = Identifier::from_str(name.to_str().as_ref()).map_err(|err| {
                 format!("structure template {context} has invalid block identifier: {err}")
             })?;
             let mut properties = BTreeMap::new();
-            if let Some(props) = entry.compound("Properties") {
+            if let Some(props) = entry.compound("properties") {
                 for (key, value) in props.iter() {
                     let Some(value) = value.string() else {
                         return Err(format!(
@@ -164,7 +187,7 @@ impl StructureTemplate {
         for block in blocks.clone() {
             let pos = Self::read_vec3(block.list("pos"), context, "block pos")?;
             let state_index = block
-                .int("state")
+                .int_value("state")
                 .ok_or_else(|| format!("structure template {context} block is missing state"))?;
             if state_index < 0 {
                 return Err(format!(
@@ -232,32 +255,40 @@ impl StructureTemplate {
             })?;
             let rotation = Self::read_entity_rotation(&entity_nbt);
             let velocity = Self::read_optional_vec3d(&entity_nbt, "Motion");
-            let fall_distance = entity_nbt.double("fall_distance").unwrap_or(0.0);
+            let fall_distance = entity_nbt.double_value("fall_distance").unwrap_or(0.0);
             let fire_freeze = EntityFireFreezeState::from_parts(
-                Self::read_optional_int(&entity_nbt, "Fire").unwrap_or(0),
-                Self::read_optional_int(&entity_nbt, "TicksFrozen").unwrap_or(0),
+                entity_nbt.short_value("Fire").map_or(0, i32::from),
+                entity_nbt.int_value("TicksFrozen").unwrap_or(0),
                 false,
                 false,
                 entity_nbt
-                    .byte("HasVisualFire")
+                    .byte_value("HasVisualFire")
                     .is_some_and(|value| value != 0),
             );
-            let on_ground = entity_nbt.byte("OnGround").is_some_and(|value| value != 0);
+            let on_ground = entity_nbt
+                .byte_value("OnGround")
+                .is_some_and(|value| value != 0);
             let save_data = EntityBaseSaveData {
-                air_supply: Self::read_optional_int(&entity_nbt, "Air")
+                air_supply: entity_nbt
+                    .int_value("Air")
                     .unwrap_or(DEFAULT_MAX_AIR_SUPPLY),
-                portal_cooldown: Self::read_optional_int(&entity_nbt, "PortalCooldown")
-                    .unwrap_or(0),
-                no_gravity: entity_nbt.byte("NoGravity").is_some_and(|value| value != 0),
+                portal_cooldown: entity_nbt.int_value("PortalCooldown").unwrap_or(0),
+                no_gravity: entity_nbt
+                    .byte_value("NoGravity")
+                    .is_some_and(|value| value != 0),
                 invulnerable: entity_nbt
-                    .byte("Invulnerable")
+                    .byte_value("Invulnerable")
                     .is_some_and(|value| value != 0),
                 custom_name: Self::read_custom_name(&entity_nbt),
                 custom_name_visible: entity_nbt
-                    .byte("CustomNameVisible")
+                    .byte_value("CustomNameVisible")
                     .is_some_and(|value| value != 0),
-                silent: entity_nbt.byte("Silent").is_some_and(|value| value != 0),
-                glowing: entity_nbt.byte("Glowing").is_some_and(|value| value != 0),
+                silent: entity_nbt
+                    .byte_value("Silent")
+                    .is_some_and(|value| value != 0),
+                glowing: entity_nbt
+                    .byte_value("Glowing")
+                    .is_some_and(|value| value != 0),
                 tags: Self::read_entity_tags(&entity_nbt),
                 custom_data: entity_nbt
                     .compound("data")
@@ -303,12 +334,6 @@ impl StructureTemplate {
         DVec3::new(values[0], values[1], values[2])
     }
 
-    pub(super) fn read_optional_int(nbt: &BorrowedNbtCompound<'_, '_>, field: &str) -> Option<i32> {
-        nbt.int(field)
-            .or_else(|| nbt.short(field).map(i32::from))
-            .or_else(|| nbt.byte(field).map(i32::from))
-    }
-
     pub(super) fn read_custom_name(nbt: &BorrowedNbtCompound<'_, '_>) -> Option<TextComponent> {
         let tag = nbt.get("CustomName")?;
         TextComponent::from_nbt(&tag.to_owned())
@@ -317,13 +342,12 @@ impl StructureTemplate {
     pub(super) fn read_entity_tags(nbt: &BorrowedNbtCompound<'_, '_>) -> BTreeSet<String> {
         nbt.list("Tags")
             .and_then(|list| list.strings())
-            .map(|tags| {
+            .map_or_default(|tags| {
                 tags.iter()
                     .take(MAX_ENTITY_TAGS)
                     .map(|tag| tag.to_str().into_owned())
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     pub(super) fn strip_entity_base_fields(nbt: &mut NbtCompound) {

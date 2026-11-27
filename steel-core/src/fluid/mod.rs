@@ -4,8 +4,6 @@
 //! Based on vanilla Minecraft's `FlowingFluid` system.
 //!
 //! ### TODOs
-//! - TODO: Remaining entity fluid side effects: drowning, splash particles/sounds.
-//! - TODO: Block item drops when water destroys blocks (cactus infrastructure merged, needs implementation).
 //! - TODO: Lava random tick fire spread.
 pub mod collision;
 pub mod conversion;
@@ -32,5 +30,5 @@ pub use collision::{
 pub use conversion::{get_new_liquid, get_spread, is_hole};
 pub use state::{
     fluid_state_to_block, fluid_state_to_block_with_existing, get_flow, get_fluid_state,
-    get_fluid_state_from_block, get_height, get_own_height, lava_id, water_id,
+    get_fluid_state_from_block, get_height, get_own_height, lava_id, liquid_block_state, water_id,
 };

@@ -42,8 +42,6 @@ impl RemovalReason {
 }
 
 /// Callback interface for entity lifecycle events.
-///
-/// Mirrors vanilla's `EntityInLevelCallback`.
 pub trait EntityLevelCallback: Send + Sync {
     /// Returns whether direct local position writes may bypass lifecycle callbacks.
     fn allows_local_position_update(&self) -> bool {
@@ -172,7 +170,7 @@ impl EntityLevelCallback for PlayerEntityCallback {
             if let Some(player) = world.players.get_by_entity_id(self.entity_id)
                 && let Some(view) = *player.last_tracking_view.lock()
             {
-                let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
+                let sent_chunks = player.chunk_sender().lock().sent_chunks_snapshot();
                 world
                     .entity_tracker()
                     .update_player(&player, &view, |chunk| sent_chunks.contains(&chunk));
@@ -196,8 +194,6 @@ impl EntityLevelCallback for PlayerEntityCallback {
 }
 
 /// Callback attached to each entity for tracking chunk/section movement.
-///
-/// Mirrors vanilla's `PersistentEntitySectionManager.Callback`.
 pub struct EntityChunkCallback {
     entity_id: i32,
     world: Weak<World>,
@@ -283,7 +279,11 @@ impl EntityLevelCallback for EntityChunkCallback {
         let entity = world
             .entity_manager()
             .remove_live_entity(self.entity_id, reason);
-        if let Some(entity) = entity {
+        if let Some(entity) = &entity {
+            if let Some(living) = entity.as_living_entity() {
+                living.recheck_combat_status();
+                living.clear_combat_history();
+            }
             world.mark_chunk_dirty(ChunkPos::from_entity_pos(entity.position()));
         }
 

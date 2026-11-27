@@ -242,7 +242,7 @@ impl PrefixedRead for String {
             .map_err(|_| Error::other("Invalid Prefix"))?;
 
         if len > bound {
-            Err(Error::other("To long"))?;
+            return Err(Error::other("To long"));
         }
 
         let mut buf = vec![0; len];
@@ -261,7 +261,7 @@ impl<T: ReadFrom> PrefixedRead for Vec<T> {
             .map_err(|_| Error::other("Invalid Prefix"))?;
 
         if len > bound {
-            Err(Error::other("To long"))?;
+            return Err(Error::other("To long"));
         }
         let mut items = Vec::with_capacity(len);
         for _ in 0..len {

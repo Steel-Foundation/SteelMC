@@ -8,6 +8,7 @@ use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
 use crate::world::World;
 
 const DEFAULT_PROBABILITY: f32 = 0.02;
+const UNBOUNDED_PLAYER_SEARCH_DISTANCE: f64 = -1.0;
 
 type LookAtEntitySelector = Box<dyn Fn(&dyn LivingEntity, &World) -> bool + Send + Sync>;
 
@@ -125,7 +126,7 @@ impl Goal for LookAtPlayerGoal {
         let origin = DVec3::new(position.x, mob.get_eye_y(), position.z);
         self.look_at = match &self.look_at_type {
             LookAtTargetType::Player => world
-                .nearest_player(origin, self.look_distance, |player| {
+                .nearest_player(origin, UNBOUNDED_PLAYER_SEARCH_DISTANCE, |player| {
                     !mob.has_indirect_passenger(player)
                         && self.look_at_context.test(world.as_ref(), Some(mob), player)
                 })
@@ -170,7 +171,7 @@ impl Goal for LookAtPlayerGoal {
         self.look_at = None;
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         let Some(look_at) = &self.look_at else {
             return;
         };

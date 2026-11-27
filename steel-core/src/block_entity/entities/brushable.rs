@@ -3,17 +3,18 @@
 use std::str::FromStr as _;
 use std::sync::{Arc, Weak};
 
+use crate::loot::{LOOT_TABLES, LootContext, LootError, LootResult};
 use glam::DVec3;
-use rand::{SeedableRng as _, rngs::StdRng};
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::{
-    REGISTRY, RegistryExt as _, vanilla_block_entity_types, vanilla_blocks, vanilla_entities,
+    RegistryExt as _, vanilla_block_entity_types, vanilla_blocks, vanilla_entities,
 };
+use steel_utils::nbt::NbtNumeric as _;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{
     BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey, Identifier, locks::SyncMutex,
@@ -21,7 +22,7 @@ use steel_utils::{
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::block_entity::{BlockEntity, BlockEntityBase};
-use crate::entity::{LivingEntity as _, entity_loot_ref};
+use crate::entity::{LivingEntity as _, entity_loot_ref, living_loot_equipment};
 use crate::player::Player;
 use crate::world::World;
 
@@ -134,7 +135,13 @@ impl BrushableBlockEntity {
         }
 
         state.cool_down_ends_at_tick = game_time + BRUSH_COOLDOWN_TICKS;
-        self.unpack_loot_table(&mut state, player, brush);
+        if let Err(error) = self.unpack_loot_table(&mut state, world, player, brush) {
+            log::error!("Failed to generate archaeology loot: {error}");
+            return BrushOutcome {
+                durability_damage: false,
+                mutation: BrushableWorldMutation::default(),
+            };
+        }
 
         let previous_completion_state = state.completion_state();
         state.brush_count += 1;
@@ -197,54 +204,39 @@ impl BrushableBlockEntity {
         mutation
     }
 
-    fn unpack_loot_table(&self, state: &mut BrushableState, player: &Player, brush: &ItemStack) {
-        let Some(loot_table_key) = state.loot_table.take() else {
-            return;
-        };
-        let loot_table = REGISTRY.loot_tables.by_key(&loot_table_key);
-
-        if state.loot_table_seed == 0 {
-            let mut rng = rand::rng();
-            self.unpack_loot_items(state, loot_table, &loot_table_key, &mut rng, player, brush);
-        } else {
-            let mut rng = StdRng::seed_from_u64(state.loot_table_seed as u64);
-            self.unpack_loot_items(state, loot_table, &loot_table_key, &mut rng, player, brush);
-        }
-        self.set_changed();
-    }
-
-    fn unpack_loot_items<R: rand::Rng>(
+    fn unpack_loot_table(
         &self,
         state: &mut BrushableState,
-        loot_table: Option<LootTableRef>,
-        loot_table_key: &Identifier,
-        rng: &mut R,
+        world: &World,
         player: &Player,
         brush: &ItemStack,
-    ) {
-        let loot = match loot_table {
-            Some(table) => {
-                let mut ctx = LootContext::new(rng)
-                    .with_luck(player.get_luck())
-                    .with_tool(brush)
-                    .with_origin(
-                        f64::from(self.get_block_pos().x()) + 0.5,
-                        f64::from(self.get_block_pos().y()) + 0.5,
-                        f64::from(self.get_block_pos().z()) + 0.5,
-                    )
-                    .with_this_entity(entity_loot_ref(player));
-                table.get_random_items(&mut ctx)
-            }
-            None => Vec::new(),
+    ) -> LootResult<()> {
+        let Some(key) = state.loot_table.as_ref() else {
+            return Ok(());
         };
-        state.item = match loot.len() {
-            0 => ItemStack::empty(),
-            1 => loot.into_iter().next().unwrap_or_else(ItemStack::empty),
-            n => {
-                log::warn!("Expected max 1 loot from loot table {loot_table_key}, but got {n}");
-                loot.into_iter().next().unwrap_or_else(ItemStack::empty)
-            }
-        };
+        let table = LOOT_TABLES
+            .by_key(key)
+            .ok_or_else(|| LootError::MissingTable(key.clone()))?;
+        let equipment = living_loot_equipment(player);
+        let items = world.with_loot_random(Some(table), state.loot_table_seed, |rng| {
+            let mut ctx = LootContext::new(rng)
+                .with_world(world)
+                .with_luck(player.get_luck())
+                .with_tool(brush)
+                .with_origin(self.get_block_pos().get_center())
+                .with_this_entity(entity_loot_ref(player, Some(&equipment)));
+            table.get_random_items(&mut ctx)
+        })?;
+        if items.len() > 1 {
+            log::warn!(
+                "Expected max 1 loot from loot table {key}, but got {}",
+                items.len()
+            );
+        }
+        state.item = items.into_iter().next().unwrap_or_else(ItemStack::empty);
+        state.loot_table = None;
+        self.set_changed();
+        Ok(())
     }
 
     fn brushing_completed_mutation(&self, state: &mut BrushableState) -> BrushableWorldMutation {
@@ -325,7 +317,7 @@ impl BlockEntity for BrushableBlockEntity {
         state.loot_table = nbt_view
             .string("LootTable")
             .and_then(|value| Identifier::from_str(&value.to_str()).ok());
-        state.loot_table_seed = nbt_view.long("LootTableSeed").unwrap_or(0);
+        state.loot_table_seed = nbt_view.long_value("LootTableSeed").unwrap_or(0);
 
         // Vanilla: LootTable and item are mutually exclusive on load.
         if state.loot_table.is_some() {
@@ -339,7 +331,8 @@ impl BlockEntity for BrushableBlockEntity {
 
         // Vanilla Direction.LEGACY_ID_CODEC: byte 3D data value.
         state.hit_direction = nbt_view
-            .byte("hit_direction")
+            .get("hit_direction")
+            .and_then(|tag| tag.codec_i8())
             .map(|value| Direction::from_3d_data_value(i32::from(value)));
     }
 
@@ -392,6 +385,65 @@ mod tests {
             BlockPos::new(1, 64, 2),
             vanilla_blocks::SUSPICIOUS_SAND.default_state(),
         )
+    }
+
+    #[test]
+    fn archaeology_uses_named_sequences_and_preserves_explicit_seed_precedence() {
+        use crate::loot::{random_sequences::RandomSequences, vanilla_loot_tables};
+        use crate::test_support::{TestPlayerBuilder, fresh_test_world};
+        use steel_utils::random::{Random, RandomSource, legacy_random::LegacyRandom};
+
+        let fixture = fresh_test_world("archaeology_sequences");
+        let world = &fixture.world;
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Archaeologist", 1).build();
+        let brush = ItemStack::new(&vanilla_items::BRUSH);
+        let expected = RandomSequences::new_for_test(world.level_data.read().seed());
+        let table = &vanilla_loot_tables::ARCHAEOLOGY_DESERT_PYRAMID;
+        let sequence = table.random_sequence.as_ref().expect("named sequence");
+        let entity = BrushableBlockEntity::new(
+            Arc::downgrade(world),
+            BlockPos::new(1, 64, 2),
+            vanilla_blocks::SUSPICIOUS_SAND.default_state(),
+        );
+        for seed in [0, 42, 0, -17, 0] {
+            let equipment = living_loot_equipment(player.as_ref());
+            let generate = |random: &mut RandomSource| {
+                let mut context = LootContext::new(random)
+                    .with_world(world)
+                    .with_origin(entity.get_block_pos().get_center())
+                    .with_luck(player.get_luck())
+                    .with_tool(&brush)
+                    .with_this_entity(entity_loot_ref(player.as_ref(), Some(&equipment)));
+                table.get_random_items(&mut context)
+            };
+            let items = if seed == 0 {
+                expected.with_random(sequence, generate)
+            } else {
+                generate(&mut RandomSource::Legacy(LegacyRandom::from_seed(
+                    seed as u64,
+                )))
+            }
+            .expect("expected archaeology loot");
+            let mut state = entity.state.lock();
+            state.loot_table = Some(table.key.clone());
+            state.loot_table_seed = seed;
+            entity
+                .unpack_loot_table(&mut state, world, &player, &brush)
+                .expect("unpack loot");
+            assert!(state.loot_table.is_none());
+            assert_eq!(
+                state.item,
+                items.into_iter().next().unwrap_or_else(ItemStack::empty)
+            );
+            drop(state);
+            let actual = world
+                .with_loot_random(Some(table), 0, |random| Ok(random.next_i64()))
+                .expect("actual draw");
+            let expected = expected
+                .with_random(sequence, |random| Ok(random.next_i64()))
+                .expect("expected draw");
+            assert_eq!(actual, expected, "seed {seed}");
+        }
     }
 
     #[test]

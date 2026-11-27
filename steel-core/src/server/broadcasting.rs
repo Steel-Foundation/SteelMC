@@ -4,10 +4,13 @@ use super::{
     TabListTickStats, TextComponent, Uuid, client_permission_event, command_tree_packet,
     translations,
 };
+use crate::player::chat::OutgoingChatMessage;
+use steel_protocol::packets::game::ChatTypeBound;
+use steel_registry::{RegistryEntry, vanilla_chat_types};
 
 impl Server {
     /// Logs and broadcasts a system chat message to online players.
-    fn broadcast_system_chat(&self, message: &TextComponent, excluded_player: Option<Uuid>) {
+    pub fn broadcast_system_chat(&self, message: &TextComponent, excluded_player: Option<Uuid>) {
         log::info!("{}", message.to_plain(&DisplayResolutor));
         self.online_players.iter_players(|uuid, player| {
             if Some(*uuid) != excluded_player {
@@ -15,6 +18,42 @@ impl Server {
             }
             true
         });
+    }
+
+    /// Logs and broadcasts a player or disguised chat message across all worlds.
+    pub fn broadcast_chat(&self, outgoing: &OutgoingChatMessage, chat_type: &ChatTypeBound) {
+        // Log console
+        Self::log_chat_message(outgoing, chat_type);
+
+        self.online_players.iter_players(|_, player| {
+            outgoing.send_to_player(player, chat_type);
+            true
+        });
+    }
+
+    fn log_chat_message(outgoing: &OutgoingChatMessage, chat_type: &ChatTypeBound) {
+        let tag = if outgoing.is_signed() {
+            ""
+        } else {
+            "[Not Secure] "
+        };
+        let sender_name = chat_type.sender_name.to_plain(&DisplayResolutor);
+        let content = outgoing.plain_content();
+
+        let formatted = match chat_type.registry_id {
+            id if id == vanilla_chat_types::SAY_COMMAND.id() as i32 => {
+                format!("[{sender_name}] {content}")
+            }
+            id if id == vanilla_chat_types::EMOTE_COMMAND.id() as i32 => {
+                format!("* {sender_name} {content}")
+            }
+            // Standard chat and fallback
+            _ => {
+                return steel_utils::chat!(sender_name, "{tag}{}", content);
+            }
+        };
+
+        steel_utils::console!("{tag}{formatted}");
     }
 
     /// Builds the tab list header/footer with recent and five-second tick statistics.
@@ -88,8 +127,8 @@ impl Server {
     ) {
         let display_name = player.display_name();
         // Fallback to the current name when the cache has no prior entry.
-        let old_name = previous_name.unwrap_or(player.gameprofile.name.as_str());
-        let message: TextComponent = if player.gameprofile.name.eq_ignore_ascii_case(old_name) {
+        let old_name = previous_name.unwrap_or(player.gameprofile.name());
+        let message: TextComponent = if player.gameprofile.name().eq_ignore_ascii_case(old_name) {
             translations::MULTIPLAYER_PLAYER_JOINED
                 .message([display_name])
                 .into()
@@ -99,7 +138,7 @@ impl Server {
                 .into()
         };
         let message = message.color(Color::Yellow);
-        self.broadcast_system_chat(&message, Some(player.gameprofile.id));
+        self.broadcast_system_chat(&message, Some(player.gameprofile.id()));
     }
 
     pub(super) fn broadcast_player_leave_message(&self, player: &Player) {
@@ -163,21 +202,21 @@ impl Server {
         let server = player.server();
         if !Arc::ptr_eq(&server, self) {
             tracing::error!(
-                player = %player.gameprofile.name,
+                player = %player.gameprofile.name(),
                 "cannot project commands from a different server"
             );
             return;
         }
-        let Some(shared_player) = self.online_players.get_by_uuid(&player.gameprofile.id) else {
+        let Some(shared_player) = self.online_players.get_by_uuid(&player.gameprofile.id()) else {
             tracing::error!(
-                player = %player.gameprofile.name,
+                player = %player.gameprofile.name(),
                 "cannot project commands for a player outside the online player map"
             );
             return;
         };
         if !Arc::ptr_eq(&shared_player, player) {
             tracing::error!(
-                player = %player.gameprofile.name,
+                player = %player.gameprofile.name(),
                 "cannot project commands for a stale player handle"
             );
             return;
@@ -190,7 +229,7 @@ impl Server {
         match commands {
             Ok(commands) => player.send_packet(commands),
             Err(error) => tracing::error!(
-                player = %player.gameprofile.name,
+                player = %player.gameprofile.name(),
                 %error,
                 "failed to project the player's command tree"
             ),

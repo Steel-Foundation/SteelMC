@@ -1,5 +1,6 @@
 //! Global registry and behavior initialization.
 
+use std::sync::Once;
 use std::time::Instant;
 
 use steel_registry::init_vanilla_registry;
@@ -15,30 +16,16 @@ fn fill_behavior_registries() {
     log::info!("Behavior registries initialized");
 }
 
-/// # Errors
-/// Returns an error if the global registry has already been initialized.
-pub(crate) fn init_globals() -> Result<(), String> {
-    let start = Instant::now();
-    let published = init_vanilla_registry();
-    log::info!("Vanilla registry loaded in {:?}", start.elapsed());
-
-    if !published {
-        return Err("global registry has already been initialized".to_owned());
-    }
-
-    fill_behavior_registries();
-    Ok(())
-}
-
-/// Idempotent [`init_globals`] for tests and benchmarks, which bootstrap
-/// repeatedly in one process.
-#[cfg(any(test, feature = "benchmark-support"))]
-pub fn init_globals_once() {
-    use std::sync::Once;
-
+/// Initializes the vanilla registry and the behavior registries.
+///
+/// Idempotent, so an embedder loading several worlds in one process bootstraps once.
+pub fn init_globals() {
     static INIT: Once = Once::new();
+
     INIT.call_once(|| {
+        let start = Instant::now();
         init_vanilla_registry();
+        log::info!("Vanilla registry loaded in {:?}", start.elapsed());
         fill_behavior_registries();
     });
 }

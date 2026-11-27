@@ -16,11 +16,11 @@ use super::turn_to_dirt;
 
 /// Behavior for dirt path blocks.
 #[block_behavior]
-pub struct DirtPathBlock {
+pub struct PathBlock {
     block: BlockRef,
 }
 
-impl DirtPathBlock {
+impl PathBlock {
     /// Creates a new dirt path block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
@@ -28,7 +28,7 @@ impl DirtPathBlock {
     }
 }
 
-impl BlockBehavior for DirtPathBlock {
+impl BlockBehavior for PathBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let path_state = self.block.default_state();
         let pos = context.place_pos();

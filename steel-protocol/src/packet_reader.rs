@@ -102,20 +102,20 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
     /// # Errors
     /// - If the packet length is invalid.
     /// - If the packet is too long.
-    /// - If the packet is not compressed when it should be.
+    /// - If the declared size of a compressed packet is below the compression threshold.
     /// - If the packet fails to decompress.
     #[expect(clippy::cast_sign_loss)]
     pub async fn get_raw_packet(&mut self) -> Result<RawPacket, PacketError> {
-        // Decode the packet length VarInt manually, capping it at 3 bytes like vanilla
-        // `Varint21FrameDecoder`, so oversized lengths fail fast instead of consuming
-        // unbounded input.
+        // Like vanilla's `Varint21FrameDecoder`, a three-byte length prefix limits
+        // the decoded frame length to 2^21 - 1.
+        const MAX_VARINT21_BYTES: usize = 3;
         let mut packet_len: usize = 0;
         let mut length_bytes = 0;
         loop {
-            if length_bytes == 3 {
-                Err(PacketError::MalformedLength(
-                    "packet length varint exceeds 3 bytes".to_string(),
-                ))?;
+            if length_bytes == MAX_VARINT21_BYTES {
+                return Err(PacketError::MalformedLength(format!(
+                    "packet length varint exceeds {MAX_VARINT21_BYTES} bytes"
+                )));
             }
 
             let mut byte = [0u8; 1];
@@ -129,9 +129,9 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
         }
 
         if packet_len == 0 {
-            Err(PacketError::MalformedLength(
+            return Err(PacketError::MalformedLength(
                 "packet length cannot be zero".to_string(),
-            ))?;
+            ));
         }
 
         // Read the entire packet data into a buffer
@@ -145,15 +145,13 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
 
         let (packet_buffer, packet_data_start) = if let Some(threshold) = self.compression {
             let decompressed_len = VarInt::read(&mut cursor)?.0 as usize;
-            let raw_packet_len = packet_len - VarInt::written_size(decompressed_len as i32);
-
             if decompressed_len > MAX_PACKET_DATA_SIZE {
-                Err(PacketError::TooLong(decompressed_len))?;
+                return Err(PacketError::TooLong(decompressed_len));
             }
 
             if decompressed_len > 0 {
                 if decompressed_len < threshold.get() as usize {
-                    Err(PacketError::BelowThreshold(decompressed_len))?;
+                    return Err(PacketError::BelowThreshold(decompressed_len));
                 }
 
                 let mut decompressed = vec![0; decompressed_len];
@@ -168,17 +166,12 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
                     .map_err(|e| PacketError::DecompressionFailed(e.to_string()))?
                     != 0
                 {
-                    Err(PacketError::DecompressionFailed(format!(
+                    return Err(PacketError::DecompressionFailed(format!(
                         "decompressed packet exceeds declared length of {decompressed_len}"
-                    )))?;
+                    )));
                 }
                 (decompressed, 0)
             } else {
-                // Validate that we are not less than the compression threshold
-                if raw_packet_len > threshold.get() as _ {
-                    Err(PacketError::NotCompressed)?;
-                }
-
                 // The rest of the packet data is uncompressed.
                 let packet_data_start = cursor.position() as usize;
                 (packet_data, packet_data_start)
@@ -250,7 +243,7 @@ mod payload_tests {
     }
 
     #[tokio::test]
-    async fn uncompressed_payload_slice_skips_compression_length() {
+    async fn accepts_uncompressed_payload_above_compression_threshold() {
         let packet_id = 300;
         let payload = b"payload bytes";
         let packet_data = packet_data(packet_id, payload);
@@ -259,7 +252,7 @@ mod payload_tests {
         compression_data.extend_from_slice(&packet_data);
         let frame = frame(&compression_data);
         let mut decoder = TCPNetworkDecoder::new(frame.as_slice());
-        decoder.set_compression(NonZeroU32::new(256).expect("nonzero threshold"));
+        decoder.set_compression(NonZeroU32::MIN);
 
         let packet = decoder
             .get_raw_packet()

@@ -69,7 +69,7 @@ impl WalkPathEvaluator {
     }
 
     #[must_use]
-    pub fn path_type_from_state(level: &dyn LevelReader, pos: BlockPos) -> PathType {
+    pub fn path_type_from_state(level: &(impl LevelReader + ?Sized), pos: BlockPos) -> PathType {
         let block_state = level.get_block_state(pos);
         let block = block_state.get_block();
         if block_state.is_air() {

@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 #[test]
 fn pig_initializes_vanilla_living_attributes_and_health() {
@@ -132,14 +133,15 @@ fn pig_item_steerable_boost_updates_synced_total_once() {
 fn pig_ridden_speed_uses_item_steering_boost_factor() {
     init_vanilla_registry();
 
-    let world = fresh_test_world("pig_ridden_speed");
+    let world_fixture = fresh_test_world("pig_ridden_speed");
+    let world = &world_fixture.world;
     let pig = PigEntity::new(
         &vanilla_entities::PIG,
         1,
         DVec3::ZERO,
-        Arc::downgrade(&world),
+        Arc::downgrade(world),
     );
-    let controller = TestPlayerBuilder::new(world, "Controller", 2).build();
+    let controller = TestPlayerBuilder::new(Arc::clone(world), "Controller", 2).build();
     let base_ridden_speed = 0.25_f32 * 0.225;
 
     assert_eq!(

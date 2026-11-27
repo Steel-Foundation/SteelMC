@@ -133,7 +133,8 @@ pub use propagation::{
 pub use queue::{
     LightAxisDirection, LightDirectionSet, LightDirectionSetIter, LightPropagationQueue,
     LightPropagationQueues, LightQueueEntry, LightQueueFlags, PackedLightPropagationQueue,
-    PackedLightPropagationQueues, PackedLightQueueEntry, QueuedLightUpdate,
+    PackedLightPropagationQueues, PackedLightQueueEntry, PooledPackedLightQueues,
+    QueuedLightUpdate,
 };
 pub use section_storage::{LightSectionRange, LightSectionRangeError};
 pub use sky_propagation::{
@@ -162,6 +163,7 @@ mod tests {
     };
     use steel_utils::BlockStateId;
     use steel_utils::{BlockPos, ChunkPos, SectionPos};
+    use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use crate::{
         behavior::init_behaviors,
@@ -233,8 +235,11 @@ mod tests {
 
     #[test]
     fn light_section_range_matches_vanilla_padded_section_range() {
-        let range = LightSectionRange::from_world_height(-64, 384)
-            .expect("vanilla overworld height should produce a light range");
+        let range = LightSectionRange::from_world_height(
+            OverworldNoiseSettings::MIN_Y,
+            OverworldNoiseSettings::HEIGHT,
+        )
+        .expect("vanilla overworld height should produce a light range");
 
         assert_eq!(range.min_section_y(), -5);
         assert_eq!(range.max_section_y_exclusive(), 21);

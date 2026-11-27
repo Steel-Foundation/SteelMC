@@ -26,11 +26,8 @@ impl LeadItem {
         world: &Arc<World>,
         pos: BlockPos,
     ) -> InteractionResult {
-        let entities_to_leash = leashables_leashed_to_holder_in_area_near_position(
-            world,
-            pos.get_center().into(),
-            player,
-        );
+        let entities_to_leash =
+            leashables_leashed_to_holder_in_area_near_position(world, pos.get_center(), player);
         if entities_to_leash.is_empty() {
             return InteractionResult::Pass;
         }

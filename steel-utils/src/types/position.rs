@@ -79,6 +79,18 @@ impl ChunkPos {
         Self::from_block_pos(BlockPos::from(pos))
     }
 
+    /// Block X coordinate of this chunk's middle column.
+    #[must_use]
+    pub const fn middle_block_x(self) -> i32 {
+        SectionPos::section_to_block_coord(self.0.x, SectionPos::SECTION_SIZE / 2)
+    }
+
+    /// Block Z coordinate of this chunk's middle column.
+    #[must_use]
+    pub const fn middle_block_z(self) -> i32 {
+        SectionPos::section_to_block_coord(self.0.y, SectionPos::SECTION_SIZE / 2)
+    }
+
     /// Checks if the given chunk coordinates are within valid bounds.
     /// Uses `Mth.absMax(x, z) <= MAX_COORDINATE_VALUE`.
     #[must_use]
@@ -233,6 +245,15 @@ impl BlockPos {
         self.0.z
     }
 
+    /// Returns vanilla `Vec3i.hashCode`, which orders Java `HashSet<BlockPos>` iteration.
+    #[must_use]
+    pub const fn java_hash_code(&self) -> i32 {
+        self.y()
+            .wrapping_add(self.z().wrapping_mul(31))
+            .wrapping_mul(31)
+            .wrapping_add(self.x())
+    }
+
     /// Returns the position one block above (Y + 1).
     #[must_use]
     pub const fn above(&self) -> Self {
@@ -342,7 +363,8 @@ impl BlockPos {
         }
     }
 
-    /// Returns vanilla `BlockPos.spiralAround`.
+    /// Returns an iterator over positions in an outward square spiral around
+    /// `center`, alternating between `first_direction` and `second_direction`.
     ///
     /// # Panics
     ///
@@ -411,8 +433,8 @@ impl BlockPos {
 
     /// Returns the center of this block as a floating-point position.
     #[must_use]
-    pub fn get_center(&self) -> (f64, f64, f64) {
-        (
+    pub fn get_center(&self) -> DVec3 {
+        DVec3::new(
             f64::from(self.0.x) + 0.5,
             f64::from(self.0.y) + 0.5,
             f64::from(self.0.z) + 0.5,
@@ -421,12 +443,27 @@ impl BlockPos {
 
     /// Returns the bottom center of this block (center of the bottom face).
     #[must_use]
-    pub fn get_bottom_center(&self) -> (f64, f64, f64) {
-        (
+    pub fn get_bottom_center(&self) -> DVec3 {
+        DVec3::new(
             f64::from(self.0.x) + 0.5,
             f64::from(self.0.y),
             f64::from(self.0.z) + 0.5,
         )
+    }
+
+    /// Returns whether this block's center is closer than `distance` to `position`.
+    #[must_use]
+    pub fn closer_to_center_than(&self, position: DVec3, distance: f64) -> bool {
+        self.get_center().distance_squared(position) < distance * distance
+    }
+
+    /// Returns whether the squared integer distance to `other` is below `distance` squared.
+    #[must_use]
+    pub fn closer_than(&self, other: BlockPos, distance: f64) -> bool {
+        let dx = f64::from(self.0.x - other.0.x);
+        let dy = f64::from(self.0.y - other.0.y);
+        let dz = f64::from(self.0.z - other.0.z);
+        dx * dx + dy * dy + dz * dz < distance * distance
     }
 
     /// Creates a `BlockPos` containing the given floating-point coordinates.
@@ -513,7 +550,8 @@ impl BlockPos {
         }
     }
 
-    /// Returns vanilla `BlockPos.findClosestMatch`.
+    /// Returns the closest position within the given search radii for which
+    /// `predicate` returns true, or `None` if no position matches.
     #[must_use]
     pub fn find_closest_match(
         self,
@@ -655,6 +693,13 @@ impl SectionPos {
         block_coord >> Self::SECTION_BITS
     }
 
+    /// Converts a section coordinate plus a block offset within it to a block coordinate.
+    #[must_use]
+    #[inline]
+    pub const fn section_to_block_coord(section_coord: i32, offset: i32) -> i32 {
+        (section_coord << Self::SECTION_BITS) + offset
+    }
+
     /// Creates a `SectionPos` from a `BlockPos`.
     #[must_use]
     pub const fn from_block_pos(pos: BlockPos) -> Self {
@@ -735,5 +780,27 @@ impl ReadFrom for SectionPos {
 impl WriteTo for SectionPos {
     fn write(&self, writer: &mut impl Write) -> io::Result<()> {
         PackedSectionPos::from(*self).write(writer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+
+    use super::BlockPos;
+
+    #[test]
+    fn closer_to_center_than_uses_block_center() {
+        let pos = BlockPos::new(0, 0, 0);
+        assert!(pos.closer_to_center_than(DVec3::new(0.5, 0.5, 0.5), 1.0));
+        assert!(!pos.closer_to_center_than(DVec3::new(1.5, 0.5, 0.5), 1.0));
+    }
+
+    #[test]
+    fn closer_than_compares_integer_offsets_strictly() {
+        let pos = BlockPos::new(0, 64, 0);
+        assert!(pos.closer_than(BlockPos::new(3, 64, 3), 5.0));
+        assert!(!pos.closer_than(BlockPos::new(3, 64, 4), 5.0));
+        assert!(pos.closer_than(BlockPos::new(-3, 60, 0), 5.1));
     }
 }

@@ -1,75 +1,15 @@
 use super::{
-    Arc, CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket,
-    Entity, EntityMovementSyncPacket, LastSeen, NetworkConnection, Player, PlayerChunkView, World,
+    CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket, Entity,
+    EntityMovementSyncPacket, NetworkConnection, Player, PlayerChunkView, World,
 };
+use crate::player::chat::OutgoingChatMessage;
+use steel_protocol::packets::game::ChatTypeBound;
 
 impl World {
-    /// Broadcasts a signed chat message to all players in the world.
-    ///
-    /// # Panics
-    /// Panics if `message_signature` is `None` after checking `is_some()` (should never happen).
-    pub fn broadcast_chat(
-        &self,
-        mut packet: CPlayerChat,
-        _sender: Arc<Player>,
-        sender_last_seen: LastSeen,
-        message_signature: Option<&[u8; 256]>,
-    ) {
-        log::debug!(
-            "broadcast_chat: sender_last_seen has {} signatures, message_signature present: {}",
-            sender_last_seen.len(),
-            message_signature.is_some()
-        );
-
+    /// Broadcasts a chat message (signed or not) to all players
+    pub fn broadcast_chat(&self, outgoing: &OutgoingChatMessage, chat_type: &ChatTypeBound) {
         self.players.iter_players(|_, recipient| {
-            let messages_received = recipient.get_and_increment_messages_received();
-            packet.global_index = messages_received;
-
-            log::debug!(
-                "Broadcasting to player {} (UUID: {}), global_index={}",
-                recipient.gameprofile.name,
-                recipient.gameprofile.id,
-                messages_received
-            );
-
-            // IMPORTANT: Index previous messages BEFORE updating the cache
-            // This matches vanilla's order: pack() then push()
-            let previous_messages = {
-                let chat = recipient.chat.lock();
-                chat.signature_cache
-                    .index_previous_messages(&sender_last_seen)
-            };
-
-            log::debug!(
-                "  Indexed {} previous messages for recipient",
-                previous_messages.len()
-            );
-
-            packet.previous_messages.clone_from(&previous_messages);
-
-            // Send the packet
-            recipient.send_packet(packet.clone());
-
-            // AFTER sending, update the recipient's cache using vanilla's push algorithm
-            // This adds all lastSeen signatures + current signature to the cache
-            {
-                let mut chat = recipient.chat.lock();
-                if let Some(signature) = message_signature {
-                    chat.signature_cache
-                        .push(&sender_last_seen, Some(signature));
-
-                    log::debug!("  Added signature to recipient's cache and pending list");
-
-                    // Add to pending messages for acknowledgment tracking
-                    chat.message_validator
-                        .add_pending(Some(Box::new(*signature) as Box<[u8]>));
-                } else {
-                    // Even unsigned messages update the pending tracker
-                    chat.message_validator.add_pending(None);
-                    log::debug!("  Added unsigned message to pending list");
-                }
-            }
-
+            outgoing.send_to_player(recipient, chat_type);
             true
         });
     }
@@ -135,12 +75,15 @@ impl World {
     }
 
     /// Broadcasts an unsigned player chat message to all players.
-    pub fn broadcast_unsigned_chat(&self, mut packet: CPlayerChat) {
+    pub fn broadcast_unsigned_chat(&self, packet: CPlayerChat) {
         self.players.iter_players(|_, recipient| {
             let messages_received = recipient.get_and_increment_messages_received();
-            packet.global_index = messages_received;
+            recipient.send_packet(packet.for_recipient(
+                messages_received,
+                &packet.previous_messages,
+                &packet.chat_type,
+            ));
 
-            recipient.send_packet(packet.clone());
             true
         });
     }
@@ -191,7 +134,7 @@ impl World {
             .filter(|entity_id| {
                 self.players
                     .get_by_entity_id(*entity_id)
-                    .is_some_and(|player| player.chunk_sender.lock().is_chunk_sent(chunk))
+                    .is_some_and(|player| player.chunk_sender().lock().is_chunk_sent(chunk))
             })
             .collect()
     }
@@ -208,7 +151,7 @@ impl World {
                 let Some(view) = *player.last_tracking_view.lock() else {
                     return false;
                 };
-                let chunk_sender = player.chunk_sender.lock();
+                let chunk_sender = player.chunk_sender().lock();
                 let is_chunk_sent = |pos| chunk_sender.is_chunk_sent(pos);
                 Self::chunk_is_on_packet_tracked_border(view, chunk, &is_chunk_sent)
             })
@@ -296,7 +239,14 @@ impl World {
         let Some(encoded) = self.encode_movement_sync_packet(packet) else {
             return;
         };
-        self.broadcast_to_entity_trackers_encoded(entity_id, encoded, exclude);
+        for player_id in self.entity_tracker.tracking_player_ids(entity_id) {
+            if Some(player_id) == exclude {
+                continue;
+            }
+            if let Some(player) = self.players.get_by_entity_id(player_id) {
+                encoded.send_to(&player);
+            }
+        }
     }
 
     /// Broadcasts an already-encoded packet to players currently tracking an entity.
@@ -319,27 +269,40 @@ impl World {
     pub(super) fn encode_movement_sync_packet(
         &self,
         packet: EntityMovementSyncPacket,
-    ) -> Option<EncodedPacket> {
+    ) -> Option<EncodedMovementSync> {
         let encoded = match packet {
-            EntityMovementSyncPacket::Position(packet) => {
-                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
-            }
-            EntityMovementSyncPacket::PositionRotation(packet) => {
-                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
-            }
-            EntityMovementSyncPacket::Rotation(packet) => {
-                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
-            }
-            EntityMovementSyncPacket::HeadRotation(packet) => {
-                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
-            }
-            EntityMovementSyncPacket::PositionSync(packet) => {
-                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
-            }
-            EntityMovementSyncPacket::Velocity(packet) => {
-                EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            EntityMovementSyncPacket::Position(packet) => self.encode_play(packet),
+            EntityMovementSyncPacket::PositionRotation(packet) => self.encode_play(packet),
+            EntityMovementSyncPacket::Rotation(packet) => self.encode_play(packet),
+            EntityMovementSyncPacket::HeadRotation(packet) => self.encode_play(packet),
+            EntityMovementSyncPacket::PositionSync(packet) => self.encode_play(packet),
+            EntityMovementSyncPacket::Velocity(packet) => self.encode_play(packet),
+            EntityMovementSyncPacket::ProjectileVelocity(motion, power) => {
+                return Some(EncodedMovementSync::Bundle(vec![
+                    self.encode_play(motion)?,
+                    self.encode_play(power)?,
+                ]));
             }
         };
-        encoded.ok()
+        encoded.map(EncodedMovementSync::Single)
+    }
+
+    fn encode_play<P: ClientPacket>(&self, packet: P) -> Option<EncodedPacket> {
+        EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play).ok()
+    }
+}
+
+/// An encoded movement sync, sent alone or as a client bundle.
+pub(super) enum EncodedMovementSync {
+    Single(EncodedPacket),
+    Bundle(Vec<EncodedPacket>),
+}
+
+impl EncodedMovementSync {
+    pub(super) fn send_to(&self, player: &Player) {
+        match self {
+            Self::Single(packet) => player.connection.send_encoded(packet.clone()),
+            Self::Bundle(packets) => player.connection.send_encoded_bundle(packets.clone()),
+        }
     }
 }

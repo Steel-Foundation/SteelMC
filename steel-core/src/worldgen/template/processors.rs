@@ -682,21 +682,32 @@ impl StructureTemplate {
         reference_pos: BlockPos,
         random: &mut LegacyRandom,
     ) -> bool {
-        Self::rule_test_matches(registry, &rule.input_predicate, input_state, random)
-            && Self::rule_test_matches(registry, &rule.location_predicate, location_state, random)
-            && Self::pos_rule_test_matches(
-                &rule.position_predicate,
-                template_pos,
-                world_pos,
-                reference_pos,
-                random,
-            )
+        Self::rule_test_matches(
+            registry,
+            &rule.input_predicate,
+            input_state,
+            template_pos,
+            random,
+        ) && Self::rule_test_matches(
+            registry,
+            &rule.location_predicate,
+            location_state,
+            world_pos,
+            random,
+        ) && Self::pos_rule_test_matches(
+            &rule.position_predicate,
+            template_pos,
+            world_pos,
+            reference_pos,
+            random,
+        )
     }
 
     pub(super) fn rule_test_matches(
         registry: &Registry,
         test: &StructureRuleTestData,
         state: BlockStateId,
+        pos: BlockPos,
         random: &mut LegacyRandom,
     ) -> bool {
         match test {
@@ -723,6 +734,31 @@ impl StructureTemplate {
                         "structure processor block-state predicate",
                     )
             }
+            StructureRuleTestData::RandomBlockStateMatch {
+                block_state,
+                probability,
+            } => {
+                state
+                    == WorldgenStateResolver::block_state_from_data(
+                        registry,
+                        block_state,
+                        "structure processor block-state predicate",
+                    )
+                    && random.next_f32() < *probability
+            }
+            StructureRuleTestData::AllOf { rules } => rules
+                .iter()
+                .all(|rule| Self::rule_test_matches(registry, rule, state, pos, random)),
+            StructureRuleTestData::AnyOf { rules } => rules
+                .iter()
+                .any(|rule| Self::rule_test_matches(registry, rule, state, pos, random)),
+            StructureRuleTestData::Not { rule } => {
+                !Self::rule_test_matches(registry, rule, state, pos, random)
+            }
+            StructureRuleTestData::HeightMatch {
+                min_inclusive,
+                max_inclusive,
+            } => (*min_inclusive..=*max_inclusive).contains(&pos.y()),
         }
     }
 

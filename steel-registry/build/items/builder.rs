@@ -1,16 +1,19 @@
 use super::{
     FromStr, Ident, Identifier, Item, Span, ToShoutySnakeCase, TokenStream, Value,
-    banner_pattern_ref_token, block_state_component_token, blocks_attacks_component_token,
-    component_i32, consumable_component_token, damage_type_ref_token,
-    death_protection_component_token, dye_color_token, entity_type_ref_token,
-    fireworks_component_token, food_component_token, generate_allowed_entities,
-    generate_attack_range_component, generate_attribute_modifiers_component,
-    generate_piercing_weapon_component, generate_tool_component, generate_weapon_component,
-    get_component_ident, holder_set_component_field, holder_set_token, identifier_token,
-    instrument_ref_token, item_name_component_token, item_ref_token, jukebox_song_ref_token,
-    kinetic_weapon_component_token, optional_identifier_token, quote, rarity_component_token,
+    banner_pattern_ref_token, block_state_component_token, block_transformer_ref_token,
+    blocks_attacks_component_token, brewing_fuel_component_token, component_i32,
+    compostable_component_token, consumable_component_token, cooking_fuel_component_token,
+    damage_type_ref_token, death_protection_component_token, dye_color_token,
+    entity_type_ref_token, fireworks_component_token, food_component_token,
+    generate_allowed_entities, generate_attack_range_component,
+    generate_attribute_modifiers_component, generate_piercing_weapon_component,
+    generate_tool_component, generate_weapon_component, get_component_ident,
+    holder_set_component_field, holder_set_token, identifier_token, instrument_ref_token,
+    item_name_component_token, item_ref_token, jukebox_song_ref_token,
+    kinetic_weapon_component_token, mob_visibility_component_token, optional_identifier_token,
+    pottery_pattern_component_token, quote, rarity_component_token, sign_text_component_token,
     sound_event_holder_token, sound_event_value_token, swing_animation_component_token,
-    trim_material_ref_token, use_effects_component_token,
+    trim_material_ref_token, use_effects_component_token, villager_food_component_token,
 };
 
 /// Returns the crafting remainder item key for a given item, if any.
@@ -43,6 +46,21 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
         let component_ident = get_component_ident(key);
 
         match key.as_str() {
+            "minecraft:block_transformer" => {
+                let transformer = block_transformer_ref_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(vanilla_components::BLOCK_TRANSFORMER, Some(#transformer))
+                });
+            }
+            "minecraft:provides_pottery_pattern" => {
+                let pottery_pattern = pottery_pattern_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::PROVIDES_POTTERY_PATTERN,
+                        Some(#pottery_pattern),
+                    )
+                });
+            }
             "minecraft:item_name" => {
                 item_name_component_token(value);
             }
@@ -55,7 +73,7 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                 assert_eq!(
                     model,
                     Identifier::vanilla(item.name.clone()),
-                    "vanilla 26.2 item model must default to its item key"
+                    "vanilla item model must default to its item key"
                 );
             }
             "minecraft:bucket_entity_data" => {
@@ -304,15 +322,6 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     .builder_set(vanilla_components::DYE, Some(#color))
                 });
             }
-            "minecraft:map_color" => {
-                let rgb = component_i32(value, "map_color");
-                builder_calls.push(quote! {
-                    .builder_set(
-                        vanilla_components::MAP_COLOR,
-                        Some(vanilla_components::MapItemColor::new(#rgb)),
-                    )
-                });
-            }
             "minecraft:ominous_bottle_amplifier" => {
                 let amplifier = component_i32(value, "ominous_bottle_amplifier");
                 assert!(
@@ -394,20 +403,39 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                 });
             }
             "minecraft:pot_decorations" => {
-                let decorations = value
-                    .as_array()
-                    .unwrap_or_else(|| panic!("pot_decorations must be an item list, got {value}"));
+                let object = value
+                    .as_object()
+                    .unwrap_or_else(|| panic!("pot_decorations must be an object, got {value}"));
                 assert!(
-                    decorations.len() == 4
-                        && decorations
-                            .iter()
-                            .all(|decoration| decoration.as_str() == Some("minecraft:brick")),
-                    "extracted decorated pot must use four brick placeholders"
+                    object
+                        .keys()
+                        .all(|key| matches!(key.as_str(), "back" | "left" | "right" | "front")),
+                    "pot_decorations contains an unknown field: {value}"
                 );
+                let side = |name: &str| -> Option<TokenStream> {
+                    let side = object.get(name)?;
+                    let side = side.as_object().unwrap_or_else(|| {
+                        panic!("pot_decorations.{name} must be an item template, got {side}")
+                    });
+                    assert_eq!(
+                        side.len(),
+                        1,
+                        "extracted pot decorations currently require an item-only template"
+                    );
+                    let item = side.get("id").and_then(Value::as_str).unwrap_or_else(|| {
+                        panic!("pot_decorations.{name}.id must be an item identifier")
+                    });
+                    let item = item_ref_token(item, "pot_decorations");
+                    Some(quote! { Some(vanilla_components::ItemStackTemplate::new(#item)) })
+                };
+                let back = side("back").unwrap_or_else(|| quote! { None });
+                let left = side("left").unwrap_or_else(|| quote! { None });
+                let right = side("right").unwrap_or_else(|| quote! { None });
+                let front = side("front").unwrap_or_else(|| quote! { None });
                 builder_calls.push(quote! {
                     .builder_set(
                         vanilla_components::POT_DECORATIONS,
-                        Some(vanilla_components::PotDecorations::EMPTY),
+                        Some(vanilla_components::PotDecorations::new(#back, #left, #right, #front)),
                     )
                 });
             }
@@ -550,15 +578,49 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     "vanilla item prototypes currently require the default tooltip display, got {value}"
                 );
             }
-            "minecraft:swing_animation" => {
+            "minecraft:attack_animation" => {
                 if let Some(swing_animation) = swing_animation_component_token(value) {
                     builder_calls.push(quote! {
                         .builder_set(
-                            vanilla_components::SWING_ANIMATION,
+                            vanilla_components::ATTACK_ANIMATION,
                             Some(#swing_animation),
                         )
                     });
                 }
+            }
+            "minecraft:interact_animation" => {
+                if let Some(swing_animation) = swing_animation_component_token(value) {
+                    builder_calls.push(quote! {
+                        .builder_set(
+                            vanilla_components::INTERACT_ANIMATION,
+                            Some(#swing_animation),
+                        )
+                    });
+                }
+            }
+            "minecraft:compostable" => {
+                let compostable = compostable_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(vanilla_components::COMPOSTABLE, Some(#compostable))
+                });
+            }
+            "minecraft:cooking_fuel" => {
+                let cooking_fuel = cooking_fuel_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(vanilla_components::COOKING_FUEL, Some(#cooking_fuel))
+                });
+            }
+            "minecraft:brewing_fuel" => {
+                let brewing_fuel = brewing_fuel_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(vanilla_components::BREWING_FUEL, Some(#brewing_fuel))
+                });
+            }
+            "minecraft:mob_visibility" => {
+                let mob_visibility = mob_visibility_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(vanilla_components::MOB_VISIBILITY, Some(#mob_visibility))
+                });
             }
             "minecraft:break_sound" => {
                 if value.as_str() != Some("minecraft:entity.item.break") {
@@ -724,6 +786,30 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                 builder_calls.push(
                     quote! { .builder_set(vanilla_components::PIERCING_WEAPON, Some(#piercing_weapon)) },
                 );
+            }
+            "minecraft:villager_food" => {
+                let villager_food = villager_food_component_token(value);
+                builder_calls.push(
+                    quote! { .builder_set(vanilla_components::VILLAGER_FOOD, Some(#villager_food)) },
+                );
+            }
+            "minecraft:sign_text_front" => {
+                let sign_text = sign_text_component_token(value);
+                builder_calls.push(
+                    quote! { .builder_set(vanilla_components::SIGN_TEXT_FRONT, Some(#sign_text)) },
+                );
+            }
+            "minecraft:sign_text_back" => {
+                let sign_text = sign_text_component_token(value);
+                builder_calls.push(
+                    quote! { .builder_set(vanilla_components::SIGN_TEXT_BACK, Some(#sign_text)) },
+                );
+            }
+            "minecraft:cushion/color" => {
+                let color = dye_color_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(vanilla_components::CUSHION_COLOR, Some(#color))
+                });
             }
             _ => panic!(
                 "unsupported extracted component {key} on item {}",

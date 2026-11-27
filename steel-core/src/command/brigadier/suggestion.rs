@@ -1,11 +1,9 @@
 //! Command completion suggestions and UTF-16 replacement ranges.
 
+use super::{ArgumentSuggestionContext, CommandArgumentParser, StringRange};
 use std::{cmp::Ordering, ops::Range};
-
 use text_components::TextComponent;
 use thiserror::Error;
-
-use super::StringRange;
 
 /// A suggestion range could not be mapped to valid UTF-8 boundaries.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -229,7 +227,7 @@ impl Suggestions {
 }
 
 /// Accumulates suggestions for one input suffix.
-pub(crate) struct SuggestionsBuilder<'input> {
+pub struct SuggestionsBuilder<'input> {
     input: &'input str,
     start: usize,
     byte_start: usize,
@@ -318,5 +316,36 @@ impl<'input> SuggestionsBuilder<'input> {
 
     fn range(&self) -> StringRange {
         StringRange::between(self.start, self.input.encode_utf16().count())
+    }
+}
+
+/// A provider to add suggestions to a builder.
+///
+/// Functions that have the same function signature as that of
+/// [`SuggestionProvider::list_suggestions`] also implement this trait.
+pub(crate) trait SuggestionProvider<S, A: CommandArgumentParser<S>>: Send + Sync {
+    /// Adds suggestions, according to this provider, to the given builder.
+    fn list_suggestions(
+        &self,
+        context: &ArgumentSuggestionContext<'_, S, A::Value>,
+        builder: &mut SuggestionsBuilder<'_>,
+    );
+}
+
+// Blanket implementation for functions having a specific trait signature
+// to implement SuggestionProvider.
+impl<S, A, F> SuggestionProvider<S, A> for F
+where
+    A: CommandArgumentParser<S>,
+    F: for<'a, 'b> Fn(&ArgumentSuggestionContext<'a, S, A::Value>, &mut SuggestionsBuilder<'b>)
+        + Send
+        + Sync,
+{
+    fn list_suggestions(
+        &self,
+        context: &ArgumentSuggestionContext<'_, S, A::Value>,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        self(context, builder);
     }
 }

@@ -8,7 +8,7 @@ use steel_registry::sound_events;
 use steel_registry::stat::vanilla_stat_types;
 
 use crate::behavior::{InteractionResult, ItemBehavior, ItemUseAnimation, UseItemContext};
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::{Entity, LivingEntity, LivingEntityRef};
 use crate::world::World;
 
 const USE_DURATION: i32 = 1200;
@@ -49,9 +49,9 @@ impl ItemBehavior for SpyglassItem {
         &self,
         stack: &mut ItemStack,
         _world: &Arc<World>,
-        user: &dyn LivingEntity,
+        user: LivingEntityRef<'_>,
     ) -> ItemStack {
-        Self::stop_using(user);
+        Self::stop_using(user.living());
         stack.copy_with_count(stack.count())
     }
 

@@ -5,7 +5,7 @@ use std::env;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use steel_utils::{ChunkPos, SectionPos};
+use steel_utils::{ChunkPos, Identifier, SectionPos};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
@@ -23,6 +23,7 @@ use crate::chunk::chunk_holder::SLOW_CHUNK_GEN;
 use std::sync::atomic::Ordering;
 
 const PREGEN_SIZE_ENV: &str = "PREGEN_SIZE";
+const WORLD_IDENTIFIER_ENV: &str = "WORLD_IDENTIFIER";
 const PREGEN_WINDOW_SIZE_ENV: &str = "PREGEN_WINDOW_SIZE";
 const VANILLA_PLAYER_SPAWN_SIZE_CHUNKS: i32 = 7;
 const DEFAULT_PREGEN_WINDOW_SIZE: i32 = 32;
@@ -172,10 +173,24 @@ impl Server {
     /// Generates the startup spawn area for the server default world.
     ///
     /// Set `PREGEN_SIZE` to an odd chunk side length, or `0` to skip custom pregen.
+    /// Set `WORLD_IDENTIFIER` to pregenerate a specific world instead of the server default world.
     /// Set `PREGEN_WINDOW_SIZE` to override the default 32-chunk window side length.
     /// The configured size must fit the active-window unload-backpressure budget.
     pub async fn prepare_spawn_area(&self) -> bool {
-        let overworld = self.overworld();
+        let overworld = match get_world_identifier() {
+            Ok(None) => self.overworld(),
+            Ok(Some(identifier)) => {
+                let Some(world) = self.worlds.get(&identifier) else {
+                    log::error!("{WORLD_IDENTIFIER_ENV} references unknown world {identifier}");
+                    return false;
+                };
+                world
+            }
+            Err(error) => {
+                log::error!("{error}");
+                return false;
+            }
+        };
         let pregen_size = match get_pregen_size() {
             Ok(Some(size)) => size,
             Ok(None) => {
@@ -227,6 +242,19 @@ fn get_pregen_size() -> Result<Option<PregenSize>, String> {
     };
 
     PregenSize::from_side_length(side_length)
+}
+
+fn get_world_identifier() -> Result<Option<Identifier>, String> {
+    match env::var(WORLD_IDENTIFIER_ENV) {
+        Ok(value) => value
+            .parse::<Identifier>()
+            .map(Some)
+            .map_err(|e| format!("{WORLD_IDENTIFIER_ENV} must be a valid identifier: {e}")),
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(env::VarError::NotUnicode(_)) => {
+            Err(format!("{WORLD_IDENTIFIER_ENV} must be valid unicode"))
+        }
+    }
 }
 
 fn get_pregen_window_size() -> Result<i32, String> {

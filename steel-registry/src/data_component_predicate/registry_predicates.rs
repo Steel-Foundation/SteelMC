@@ -1,7 +1,7 @@
 use super::*;
 
 /// Predicate over armor trim material and pattern holders.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrimPredicate {
     material: Option<RegistryHolderSet<TrimMaterial>>,
     pattern: Option<RegistryHolderSet<TrimPattern>>,
@@ -24,6 +24,24 @@ impl TrimPredicate {
     #[must_use]
     pub const fn pattern(&self) -> Option<&RegistryHolderSet<TrimPattern>> {
         self.pattern.as_ref()
+    }
+}
+
+impl DataComponentPredicate for TrimPredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::TRIM)
+            .is_some_and(|trim| {
+                self.material().is_none_or(|materials| {
+                    trim.material()
+                        .as_reference()
+                        .is_some_and(|material| materials.contains(material))
+                }) && self.pattern().is_none_or(|patterns| {
+                    trim.pattern()
+                        .as_reference()
+                        .is_some_and(|pattern| patterns.contains(pattern))
+                })
+            })
     }
 }
 
@@ -64,7 +82,7 @@ impl HashComponent for TrimPredicate {
 impl_predicate_downcast_type!(TrimPredicate, "steel:data_component_predicate/trim");
 
 /// Predicate over a jukebox-playable song holder.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JukeboxPlayablePredicate(Option<RegistryHolderSet<JukeboxSong>>);
 
 impl JukeboxPlayablePredicate {
@@ -76,6 +94,21 @@ impl JukeboxPlayablePredicate {
     #[must_use]
     pub const fn song(&self) -> Option<&RegistryHolderSet<JukeboxSong>> {
         self.0.as_ref()
+    }
+}
+
+impl DataComponentPredicate for JukeboxPlayablePredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::JUKEBOX_PLAYABLE)
+            .is_some_and(|playable| {
+                self.song().is_none_or(|songs| {
+                    playable
+                        .song()
+                        .as_reference()
+                        .is_some_and(|song| songs.contains(song))
+                })
+            })
     }
 }
 
@@ -110,7 +143,7 @@ impl_predicate_downcast_type!(
 );
 
 /// Predicate over registered villager variants.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VillagerTypePredicate(RegistryHolderSet<VillagerType>);
 
 impl VillagerTypePredicate {
@@ -122,6 +155,14 @@ impl VillagerTypePredicate {
     #[must_use]
     pub const fn villager_types(&self) -> &RegistryHolderSet<VillagerType> {
         &self.0
+    }
+}
+
+impl DataComponentPredicate for VillagerTypePredicate {
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .component(vanilla_components::VILLAGER_VARIANT)
+            .is_some_and(|villager_type| self.villager_types().contains(villager_type.value()))
     }
 }
 

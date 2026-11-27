@@ -169,12 +169,13 @@ mod tests {
     fn both_ore_variants_light_from_steps_and_extinguish_on_random_ticks() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("redstone_ore_steps");
+        let world_fixture = fresh_test_world("redstone_ore_steps");
+        let world = &world_fixture.world;
         let first_pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(first_pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(first_pos));
 
-        let careful_entity = StepEntity::new(7_003, &world, true);
-        let ordinary_entity = StepEntity::new(7_004, &world, false);
+        let careful_entity = StepEntity::new(7_003, world, true);
+        let ordinary_entity = StepEntity::new(7_004, world, false);
 
         for (offset, block) in [
             &vanilla_blocks::REDSTONE_ORE,
@@ -189,15 +190,15 @@ mod tests {
             assert!(world.set_block(pos, unlit, UpdateFlags::UPDATE_NONE));
 
             let behavior = BLOCK_BEHAVIORS.get_behavior(block);
-            behavior.step_on(unlit, &world, pos, &careful_entity);
+            behavior.step_on(unlit, world, pos, &careful_entity);
             assert!(!world.get_block_state(pos).get_value(LIT));
 
-            behavior.step_on(unlit, &world, pos, &ordinary_entity);
+            behavior.step_on(unlit, world, pos, &ordinary_entity);
             let lit = world.get_block_state(pos);
             assert!(lit.get_value(LIT));
             assert!(lit.is_randomly_ticking());
 
-            behavior.random_tick(lit, &world, pos);
+            behavior.random_tick(lit, world, pos);
             assert!(!world.get_block_state(pos).get_value(LIT));
         }
     }
@@ -206,9 +207,10 @@ mod tests {
     fn world_drop_resources_dispatches_redstone_ore_experience() {
         init_vanilla_registry();
         init_behaviors();
-        let world = fresh_test_world("redstone_ore_post_break");
+        let world_fixture = fresh_test_world("redstone_ore_post_break");
+        let world = &world_fixture.world;
         let pos = BlockPos::new(8, 64, 8);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
 
         world.drop_resources(vanilla_blocks::REDSTONE_ORE.default_state(), pos);
 

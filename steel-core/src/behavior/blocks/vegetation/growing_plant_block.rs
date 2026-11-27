@@ -3,8 +3,6 @@ use steel_utils::{BlockPos, Direction};
 
 use crate::world::LevelReader;
 
-/// Vanilla `GrowingPlantBlock.canSurvive`.
-///
 /// The block opposite the growth direction must be the head, the body, or
 /// face-sturdy on the face pointing toward us (i.e. `growth_direction`).
 pub(crate) fn can_survive(

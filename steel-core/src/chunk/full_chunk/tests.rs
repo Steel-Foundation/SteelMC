@@ -13,7 +13,7 @@ use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, locks:
 use super::*;
 use crate::behavior::init_behaviors;
 use crate::block_entity::entities::ComparatorBlockEntity;
-use crate::block_entity::{BlockEntityBase, SharedBlockEntity, entities::RawBlockEntity};
+use crate::block_entity::{BlockEntityBase, SharedBlockEntity, entities::UnimplementedBlockEntity};
 use crate::chunk::{
     Chunk,
     chunk_ticket_manager::ChunkTicketLevel,
@@ -69,6 +69,7 @@ fn full_disk_construction_returns_initialized_runtime() {
         Weak::new(),
         BlockTickList::new(),
         FluidTickList::new(),
+        0,
         ChunkHeightmaps::with_types(HeightmapType::final_types(), 0, 16),
         Vec::new(),
         StructureStartMap::default(),
@@ -103,6 +104,52 @@ fn block_random_positions_match_vanilla_lcg_layout() {
     assert_eq!(positions.next_local(), (4, 8, 6));
     assert_eq!(positions.next_local(), (6, 5, 1));
     assert_eq!(positions.next_local(), (9, 12, 1));
+}
+
+#[test]
+fn random_tick_sampling_observes_tracked_and_bulk_changes() {
+    fn check_samples(section: &ChunkSection) {
+        for y in 0..16 {
+            for z in 0..16 {
+                for x in 0..16 {
+                    let expected = section.states().get(x, y, z);
+                    let sampled = section.random_tick_sample(x, y, z);
+                    assert_eq!(
+                        sampled.filter(|state| random_tick_kinds(*state).is_some()),
+                        random_tick_kinds(expected).map(|_| expected),
+                    );
+                }
+            }
+        }
+    }
+
+    init_vanilla_registry();
+    let sections = Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice());
+    let holder = &sections.sections[0];
+    check_samples(&holder.read());
+
+    sections.write_block_batch(&[
+        (2, 3, 4, vanilla_blocks::GRASS_BLOCK.default_state()),
+        (7, 11, 12, vanilla_blocks::LAVA.default_state()),
+        (5, 6, 7, vanilla_blocks::CAVE_AIR.default_state()),
+        (9, 10, 11, vanilla_blocks::WATER.default_state()),
+    ]);
+    check_samples(&holder.read());
+    holder.write().recalculate_counts();
+    check_samples(&holder.read());
+
+    holder
+        .write()
+        .set_block_state(7, 11, 12, vanilla_blocks::AIR.default_state());
+    holder
+        .write()
+        .set_block_state(5, 6, 7, vanilla_blocks::OAK_LEAVES.default_state());
+    check_samples(&holder.read());
+
+    sections.write_column_blocks(5, 7, &[(6, vanilla_blocks::VOID_AIR.default_state())]);
+    check_samples(&holder.read());
+    holder.write().recalculate_counts();
+    check_samples(&holder.read());
 }
 
 struct ActivationRecordingBlockEntity {
@@ -154,7 +201,7 @@ fn inactive_chunk_stages_lifecycle_callbacks_until_activation() {
         events: SyncMutex::new(Vec::new()),
     });
     concrete.set_removed();
-    let entity: SharedBlockEntity = concrete.clone();
+    let entity: SharedBlockEntity = Arc::<ActivationRecordingBlockEntity>::clone(&concrete);
     assert!(full.add_and_register_block_entity(entity));
     assert!(concrete.events.lock().is_empty());
 
@@ -355,7 +402,7 @@ fn concurrent_consumers_cannot_both_claim_the_same_block_state() {
 }
 
 #[test]
-fn block_change_replaces_a_structurally_valid_raw_entity_with_the_new_factory() {
+fn block_change_replaces_a_structurally_valid_unimplemented_entity_with_the_new_factory() {
     init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
@@ -368,7 +415,7 @@ fn block_change_replaces_a_structurally_valid_raw_entity_with_the_new_factory() 
             .set_block_state(pos, chest, UpdateFlags::UPDATE_NONE)
             .is_some()
     );
-    let old: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+    let old: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
         &vanilla_block_entity_types::CHEST,
         Weak::new(),
         pos,
@@ -392,7 +439,7 @@ fn block_change_replaces_a_structurally_valid_raw_entity_with_the_new_factory() 
 }
 
 #[test]
-fn breaking_an_unimplemented_entity_block_removes_its_raw_entity() {
+fn breaking_an_unimplemented_entity_block_removes_its_unimplemented_entity() {
     init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
@@ -404,7 +451,7 @@ fn breaking_an_unimplemented_entity_block_removes_its_raw_entity() {
             .set_block_state(pos, chest, UpdateFlags::UPDATE_NONE)
             .is_some()
     );
-    let old: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+    let old: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
         &vanilla_block_entity_types::CHEST,
         Weak::new(),
         pos,
@@ -440,13 +487,16 @@ fn copper_chest_transformation_preserves_entity_identity() {
     );
     let mut data = NbtCompound::new();
     data.insert("test_marker", 37_i32);
-    let original: SharedBlockEntity = Arc::new(RawBlockEntity::with_data(
-        &vanilla_block_entity_types::CHEST,
-        Weak::new(),
-        pos,
-        copper,
-        data,
-    ));
+    let original: SharedBlockEntity = Arc::new(
+        UnimplementedBlockEntity::with_data(
+            &vanilla_block_entity_types::CHEST,
+            Weak::new(),
+            pos,
+            copper,
+            data,
+        )
+        .expect("fallback block entity should load owned NBT"),
+    );
     assert!(chunk.add_and_register_block_entity(Arc::clone(&original)));
 
     assert_eq!(
@@ -512,7 +562,7 @@ fn shared_entity_type_does_not_imply_cross_block_preservation() {
             .set_block_state(pos, chest, UpdateFlags::UPDATE_NONE)
             .is_some()
     );
-    let original: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+    let original: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
         &vanilla_block_entity_types::CHEST,
         Weak::new(),
         pos,
@@ -546,7 +596,10 @@ fn insertion_rejects_an_entity_owned_by_another_chunk() {
             .set_block_state(local_pos, chest, UpdateFlags::UPDATE_NONE)
             .is_some()
     );
-    let foreign: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+    let original = chunk
+        .get_block_entity(local_pos)
+        .expect("chest placement should create its entity");
+    let foreign: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
         &vanilla_block_entity_types::CHEST,
         Weak::new(),
         foreign_pos,
@@ -554,7 +607,10 @@ fn insertion_rejects_an_entity_owned_by_another_chunk() {
     ));
 
     assert!(!chunk.add_and_register_block_entity(foreign));
-    assert!(chunk.get_block_entity(local_pos).is_none());
+    let retained = chunk
+        .get_block_entity(local_pos)
+        .expect("foreign insertion should preserve the local entity");
+    assert!(Arc::ptr_eq(&original, &retained));
     assert!(chunk.get_block_entity(foreign_pos).is_none());
 }
 
@@ -572,7 +628,7 @@ fn insertion_below_world_does_not_alias_the_bottom_section() {
             .set_block_state(bottom_section_pos, chest, UpdateFlags::UPDATE_NONE)
             .is_some()
     );
-    let below_world: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+    let below_world: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
         &vanilla_block_entity_types::CHEST,
         Weak::new(),
         below_world_pos,
@@ -598,7 +654,7 @@ fn stale_no_entity_promotion_cannot_consume_a_replacement_marker() {
     );
     chunk.set_pending_block_entity(pos);
 
-    let chest = vanilla_blocks::CHEST.default_state();
+    let chest = vanilla_blocks::COPPER_CHEST.default_state();
     assert_eq!(
         chunk.set_block_state(pos, chest, UpdateFlags::UPDATE_NONE),
         Some(moving_piston)

@@ -45,6 +45,29 @@ pub(crate) fn parse_entity_selector_text(raw: &str) -> Result<EntitySelector, Co
         .map_err(|error| selector_syntax_error(&mut reader, start, raw, error))
 }
 
+/// in a message an unknown selector type leaves the '@' as literal text
+pub(crate) fn parse_message_selector(
+    reader: &mut StringReader<'_>,
+    allow_advanced: bool,
+) -> Result<Option<EntitySelector>, CommandSyntaxError> {
+    let raw = reader.remaining();
+    let mut selector_reader = SelectorReader::new(raw);
+    if selector_reader.read() != Some('@') {
+        return Ok(None);
+    }
+
+    let Some(kind) = selector_reader.read().and_then(selector_type) else {
+        return Ok(None);
+    };
+
+    let start = reader.checkpoint();
+    let selector = parse_selector_options(&mut selector_reader, kind, allow_advanced)
+        .map_err(|error| selector_syntax_error(reader, start, raw, error))?;
+    assert!(reader.advance_bytes(selector_reader.cursor()));
+
+    Ok(Some(selector))
+}
+
 fn selector_syntax_error(
     reader: &mut StringReader<'_>,
     start: ReaderCursor,
@@ -147,7 +170,16 @@ pub(super) fn parse_selector_plan_with_permissions(
             return Err(SelectorParseError::not_allowed(reader.cursor()));
         }
         reader.read();
-        parse_selector_type(&mut reader, allow_advanced_selectors)
+
+        let selector = parse_selector_type(&mut reader, allow_advanced_selectors)?;
+        if reader.can_read() {
+            return Err(SelectorParseError::invalid_at(
+                "unexpected trailing selector data",
+                reader.cursor(),
+            ));
+        }
+
+        Ok(selector)
     } else {
         parse_name_or_uuid(&mut reader)
     }
@@ -190,39 +222,43 @@ fn parse_selector_type(
     allow_advanced_selectors: bool,
 ) -> Result<EntitySelector, SelectorParseError> {
     let selector_start = reader.cursor();
-    let Some(selector_type) = reader.read() else {
+    let Some(symbol) = reader.read() else {
         return Err(SelectorParseError::invalid_at(
             "missing selector type",
             selector_start,
         ));
     };
 
-    let selector_type = match selector_type {
-        'a' => SelectorType::AllPlayers,
-        'e' => SelectorType::AllEntities,
-        'n' => SelectorType::NearestEntity,
-        'p' => SelectorType::NearestPlayer,
-        'r' => SelectorType::RandomPlayer,
-        's' => SelectorType::SelfEntity,
-        other => {
-            return Err(SelectorParseError::invalid_at(
-                format!("unknown selector type '@{other}'"),
-                selector_start,
-            ));
-        }
-    };
-    let mut selector = EntitySelector::for_selector_type(selector_type);
+    let kind = selector_type(symbol).ok_or_else(|| {
+        SelectorParseError::invalid_at(format!("unknown selector type '@{symbol}'"), selector_start)
+    })?;
 
+    parse_selector_options(reader, kind, allow_advanced_selectors)
+}
+
+const fn selector_type(ch: char) -> Option<SelectorType> {
+    match ch {
+        'a' => Some(SelectorType::AllPlayers),
+        'e' => Some(SelectorType::AllEntities),
+        'n' => Some(SelectorType::NearestEntity),
+        'p' => Some(SelectorType::NearestPlayer),
+        'r' => Some(SelectorType::RandomPlayer),
+        's' => Some(SelectorType::SelfEntity),
+        _ => None,
+    }
+}
+
+fn parse_selector_options(
+    reader: &mut SelectorReader<'_>,
+    kind: SelectorType,
+    allow_advanced_selectors: bool,
+) -> Result<EntitySelector, SelectorParseError> {
+    let mut selector = EntitySelector::for_selector_type(kind);
     if reader.peek() == Some('[') {
         reader.read();
         parse_options(reader, &mut selector, allow_advanced_selectors)?;
     }
-    if reader.can_read() {
-        return Err(SelectorParseError::invalid_at(
-            "unexpected trailing selector data",
-            reader.cursor(),
-        ));
-    }
+
     Ok(selector)
 }
 
@@ -701,17 +737,6 @@ fn parse_range<T: Copy, E>(
             })?)
         };
     Ok((min, max))
-}
-
-pub(super) fn wrap_degrees(value: f32) -> f32 {
-    let mut value = value % 360.0;
-    if value >= 180.0 {
-        value -= 360.0;
-    }
-    if value < -180.0 {
-        value += 360.0;
-    }
-    value
 }
 
 #[derive(Clone)]

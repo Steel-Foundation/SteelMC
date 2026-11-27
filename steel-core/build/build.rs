@@ -8,6 +8,7 @@ use heck::ToShoutySnakeCase;
 use proc_macro2::Span;
 use serde::Deserialize;
 use std::{env, fs, path::Path, process::Command};
+use steel_utils as _;
 use syn::Ident;
 
 mod blocks;
@@ -15,7 +16,8 @@ mod candle_cakes;
 mod common;
 mod entities;
 mod items;
-mod strippables;
+mod loot_tables;
+mod skull_type;
 mod waxables;
 mod weathering;
 
@@ -31,6 +33,13 @@ pub fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let behavior_out_dir = format!("{manifest_dir}/src/behavior/generated");
     let entity_out_dir = format!("{manifest_dir}/src/entity/generated");
+
+    let loot_dir = format!("{manifest_dir}/src/loot/generated");
+    fs::create_dir_all(&loot_dir).unwrap_or_else(|e| panic!("{loot_dir}: {e}"));
+    write_if_changed(
+        format!("{loot_dir}/tables.rs"),
+        loot_tables::build().to_string(),
+    );
 
     let classes_json = fs::read_to_string(format!("{manifest_dir}/build/classes.json"))
         .expect("Failed to read classes.json");
@@ -58,12 +67,12 @@ pub fn main() {
         weathering::build(),
     );
     write_if_changed(
-        format!("{behavior_out_dir}/strippables.rs"),
-        strippables::build(),
-    );
-    write_if_changed(
         format!("{entity_out_dir}/entities.rs"),
         entities::build(&classes.entities),
+    );
+    write_if_changed(
+        format!("{behavior_out_dir}/skull_types.rs"),
+        skull_type::build(),
     );
 
     println!("cargo:rerun-if-changed={manifest_dir}/build/classes.json");
@@ -75,8 +84,19 @@ pub fn main() {
     let git_hash_short = git_output(["rev-parse", "--short=7", "HEAD"]);
     println!("cargo:rustc-env=GIT_HASH={git_hash}");
     println!("cargo:rustc-env=GIT_HASH_SHORT={git_hash_short}");
-    println!("cargo:rerun-if-changed={manifest_dir}/../.git/HEAD");
-    println!("cargo:rerun-if-changed={manifest_dir}/../.git/refs/heads");
+    // Git resolves metadata correctly for normal checkouts, submodules, and worktrees.
+    // Watch refs as a directory to catch loose refs created from previously packed refs.
+    for git_path in ["HEAD", "refs", "packed-refs"] {
+        let resolved = git_output([
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            git_path,
+        ]);
+        if Path::new(&resolved).exists() {
+            println!("cargo:rerun-if-changed={resolved}");
+        }
+    }
 }
 
 fn git_output<const N: usize>(args: [&str; N]) -> String {

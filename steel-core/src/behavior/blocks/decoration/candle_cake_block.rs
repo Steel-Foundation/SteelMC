@@ -9,7 +9,7 @@ use steel_registry::{
     },
     item_stack::ItemStack,
     items::item::BlockHitResult,
-    sound_events, vanilla_blocks, vanilla_items,
+    vanilla_blocks, vanilla_items,
 };
 use steel_utils::{
     BlockPos, BlockStateId, Direction,
@@ -21,15 +21,13 @@ use crate::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
         blocks::{CakeBlock, CandleBlock},
     },
-    entity::{Entity, projectile::Projectile},
+    block_entity::SharedBlockEntity,
+    entity::projectile::Projectile,
     player::Player,
-    world::{ClipHitResult, LevelReader, ScheduledTickAccess, World},
+    world::{ClipHitResult, LevelReader, ScheduledTickAccess, World, explosion::Explosion},
 };
 
 /// Behavior for Candle Cakes
-/// TODO:
-/// - [ ] animation ticks
-/// - [ ] onExplosion
 #[block_behavior]
 pub struct CandleCakeBlock {
     block: BlockRef,
@@ -81,15 +79,7 @@ impl BlockBehavior for CandleCakeBlock {
             && is_empty
             && state.get_value(LIT)
         {
-            world.set_block(pos, state.set_value(LIT, false), UpdateFlags::UPDATE_ALL);
-            // TODO: particles!
-            world.play_block_sound(
-                &sound_events::BLOCK_CANDLE_EXTINGUISH,
-                pos,
-                1.0,
-                1.0,
-                Some(player.id()),
-            );
+            CandleBlock::extinguish(Some(player), state, world, pos);
             return InteractionResult::Success;
         }
         InteractionResult::TryEmptyHandInteraction
@@ -145,10 +135,23 @@ impl BlockBehavior for CandleCakeBlock {
         world.set_block(hit.block_pos, lit_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
     }
 
+    fn on_explosion_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        explosion: &dyn Explosion,
+        on_hit: &mut dyn FnMut(ItemStack, BlockPos),
+    ) {
+        CandleBlock::extinguish_from_explosion(state, world, pos, explosion);
+        self.default_on_explosion_hit(state, world, pos, explosion, on_hit);
+    }
+
     fn get_clone_item_stack(
         &self,
         _block: BlockRef,
         _state: BlockStateId,
+        _block_entity: Option<SharedBlockEntity>,
         _include_data: bool,
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::CAKE))
@@ -157,7 +160,7 @@ impl BlockBehavior for CandleCakeBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        _world: &dyn LevelReader,
+        _world: &World,
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {

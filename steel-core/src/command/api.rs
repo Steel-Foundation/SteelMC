@@ -11,8 +11,9 @@ use text_components::TextComponent;
 
 use super::{
     brigadier::{
-        ArgumentType, CommandNodeBuilder, CommandRequirement, CommandSyntaxError,
-        CommandSyntaxErrorKind, ReaderCursor, StringReader, SuggestionsBuilder,
+        ArgumentType, CommandArgumentParser as InternalCommandArgumentParser, CommandNodeBuilder,
+        CommandRequirement, CommandSyntaxError, CommandSyntaxErrorKind, ReaderCursor, StringReader,
+        SuggestionProvider as InternalSuggestionProvider, SuggestionsBuilder,
     },
     execution::{
         CommandArgumentSource, CommandPermissionSource, CommandResultSuspension,
@@ -26,6 +27,8 @@ use super::{
         CommandRegistrationError as InternalCommandRegistrationError,
     },
 };
+use crate::command::brigadier::ArgumentSuggestionContext;
+use crate::command::signing_context::CommandSigningContext;
 use crate::{
     entity::SharedEntity,
     permission::{PermissionExpr, PermissionState},
@@ -228,6 +231,14 @@ impl CommandNode {
             }));
         self
     }
+
+    /// Add a custom [`SuggestionProvider`] to the corresponding argument
+    /// does nothing if the node isn't an argument
+    #[must_use]
+    pub fn suggests(mut self, suggestion: &'static (impl SuggestionProvider + 'static)) -> Self {
+        self.inner = self.inner.suggests(SuggestionProviderWrapper(suggestion));
+        self
+    }
 }
 
 /// Creates a literal command node.
@@ -240,6 +251,57 @@ pub fn literal(name: impl Into<Box<str>>) -> CommandNode {
 #[must_use]
 pub fn argument(name: impl Into<Box<str>>, argument: CommandArgument) -> CommandNode {
     CommandNode::argument(name, argument)
+}
+
+/// A provider to add suggestions to a builder. This is useful to override the suggestions
+/// of a specific argument in a command to follow this provider.
+///
+/// Functions that have the same function signature as that of
+/// [`SuggestionProvider::list_suggestions`] also implement this trait.
+pub trait SuggestionProvider: Send + Sync {
+    /// Adds suggestions, according to this provider, to the given builder.
+    fn list_suggestions(
+        &self,
+        context: &CommandSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    );
+}
+
+// Blanket implementation for functions having a specific trait signature
+// to implement SuggestionProvider.
+impl<F> SuggestionProvider for F
+where
+    F: for<'a> Fn(&CommandSuggestionContext, &mut SuggestionsBuilder<'a>) + Send + Sync,
+{
+    fn list_suggestions(
+        &self,
+        context: &CommandSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        self(context, builder);
+    }
+}
+
+struct SuggestionProviderWrapper(&'static (dyn SuggestionProvider + 'static));
+
+impl InternalSuggestionProvider<InternalCommandSource, SteelArgumentType>
+    for SuggestionProviderWrapper
+{
+    fn list_suggestions(
+        &self,
+        context: &ArgumentSuggestionContext<
+            '_,
+            InternalCommandSource,
+            <SteelArgumentType as InternalCommandArgumentParser<InternalCommandSource>>::Value,
+        >,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        SuggestionProvider::list_suggestions(
+            self.0,
+            &CommandSuggestionContext { inner: context },
+            builder,
+        );
+    }
 }
 
 /// A parsed command invocation exposed to an extension executor.
@@ -387,6 +449,12 @@ impl<'source> CommandSource<'source> {
     /// Sends red failure feedback to the original sender.
     pub fn send_failure(self, message: TextComponent) {
         self.inner.send_failure(message);
+    }
+
+    /// Return the signing context (salt, timestamp, ...) of this command source (if it exists)
+    #[must_use]
+    pub fn signing_context(self) -> Option<&'source CommandSigningContext> {
+        self.inner.signing_context()
     }
 }
 
@@ -590,6 +658,11 @@ pub trait CommandArgumentParser:
 
     /// Returns the vanilla command-tree parser and optional server suggestion provider.
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool {
+        false
+    }
 }
 
 impl<P> SteelArgumentParser for P
@@ -625,6 +698,10 @@ where
 
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
         CommandArgumentParser::protocol_argument(self)
+    }
+
+    fn is_signed(&self) -> bool {
+        CommandArgumentParser::is_signed(self)
     }
 }
 
@@ -730,24 +807,6 @@ impl<'input> CommandReader<'_, 'input> {
             self.inner
                 .error(CommandSyntaxErrorKind::Dynamic(Box::new(message.into()))),
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::CommandReader;
-    use crate::command::brigadier::StringReader;
-
-    #[test]
-    fn command_reader_cursor_is_a_utf8_byte_offset() {
-        let mut inner = StringReader::new("é🦀");
-        let mut reader = CommandReader { inner: &mut inner };
-
-        assert_eq!(reader.read(), Some('é'));
-        assert_eq!(reader.cursor(), 2);
-        assert_eq!(reader.read(), Some('🦀'));
-        assert_eq!(reader.cursor(), 6);
-        assert_eq!(&reader.input()[..reader.cursor()], "é🦀");
     }
 }
 
@@ -879,5 +938,23 @@ where
 
     fn cancel(&mut self) {
         self.0.cancel();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CommandReader;
+    use crate::command::brigadier::StringReader;
+
+    #[test]
+    fn command_reader_cursor_is_a_utf8_byte_offset() {
+        let mut inner = StringReader::new("é🦀");
+        let mut reader = CommandReader { inner: &mut inner };
+
+        assert_eq!(reader.read(), Some('é'));
+        assert_eq!(reader.cursor(), 2);
+        assert_eq!(reader.read(), Some('🦀'));
+        assert_eq!(reader.cursor(), 6);
+        assert_eq!(&reader.input()[..reader.cursor()], "é🦀");
     }
 }

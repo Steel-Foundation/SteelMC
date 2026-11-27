@@ -1,5 +1,5 @@
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
-use crate::entity::{MobBase, PathfinderMob};
+use crate::entity::{MobBase, PathfinderMob, SharedEntity};
 
 const FLOAT_JUMP_CHANCE: f32 = 0.8;
 
@@ -27,7 +27,7 @@ impl Goal for FloatGoal {
         true
     }
 
-    fn tick(&mut self, mob: &dyn PathfinderMob) {
+    fn tick(&mut self, mob: &dyn PathfinderMob, _entity: &SharedEntity) {
         if rand::random::<f32>() < FLOAT_JUMP_CHANCE {
             mob.mob_base().controls().lock().jump_control.jump();
         }
@@ -139,6 +139,7 @@ mod tests {
         let shallow_water_mob = TestPathfinderMob::new(0.3, 0.0);
         let deep_water_mob = TestPathfinderMob::new(0.5, 0.0);
         let lava_mob = TestPathfinderMob::new(0.0, 0.1);
+        lava_mob.set_first_tick(false);
         let mut goal = FloatGoal;
 
         assert!(!goal.can_use(&shallow_water_mob));

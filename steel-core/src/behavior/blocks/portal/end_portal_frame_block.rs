@@ -11,7 +11,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::LevelReader;
+use crate::world::World;
 
 /// Behavior for end portal frame blocks.
 #[block_behavior]
@@ -54,7 +54,7 @@ impl BlockBehavior for EndPortalFrameBlock {
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
-        _world: &dyn LevelReader,
+        _world: &World,
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {

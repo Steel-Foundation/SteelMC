@@ -10,7 +10,7 @@ use crate::{
         menu::Menu,
     },
     player::Player,
-    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
+    test_support::{TestPlayerBuilder, TestWorld, fresh_test_world, insert_ready_full_chunk},
     world::World,
 };
 use glam::DVec3;
@@ -22,6 +22,8 @@ use steel_registry::{
     },
     init_vanilla_registry,
     item_stack::ItemStack,
+    items::Item,
+    stat::vanilla_stat_types,
     vanilla_blocks, vanilla_enchantments, vanilla_entities, vanilla_items,
 };
 use steel_utils::Downcast as _;
@@ -34,26 +36,37 @@ fn test_player(world: Arc<World>) -> Arc<Player> {
     TestPlayerBuilder::new(world, "AnvilTester", 1).build()
 }
 
-fn test_anvil(key: &'static str) -> (Arc<World>, Arc<Player>, BlockPos, Menu) {
+fn crafted_count(player: &Player, item: &'static Item) -> i32 {
+    let crafted = vanilla_stat_types::ITEM_CRAFTED.get(item);
+    player
+        .stats()
+        .into_iter()
+        .find_map(|(stat, count)| (stat == crafted).then_some(count))
+        .unwrap_or(0)
+}
+
+fn test_anvil(key: &'static str) -> (TestWorld, Arc<Player>, BlockPos, Menu) {
     init_vanilla_registry();
     init_behaviors();
-    let world = fresh_test_world(key);
+    let world_fixture = fresh_test_world(key);
+    let world = &world_fixture.world;
     let pos = BlockPos::new(0, 64, 0);
-    insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
     assert!(world.set_block(
         pos,
         vanilla_blocks::ANVIL.default_state(),
         UpdateFlags::UPDATE_ALL,
     ));
-    let player = test_player(Arc::clone(&world));
+    let player = test_player(Arc::clone(world));
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
-    let menu = anvil(Arc::clone(&player.inventory), 1, pos, &world);
-    (world, player, pos, menu)
+    let menu = anvil(Arc::clone(&player.inventory), 1, pos, world);
+    (world_fixture, player, pos, menu)
 }
 
 #[test]
 fn validity_requires_anvil_tag_and_interaction_range() {
-    let (world, player, pos, menu) = test_anvil("anvil_menu_validity");
+    let (world_fixture, player, pos, menu) = test_anvil("anvil_menu_validity");
+    let world = &world_fixture.world;
     assert!(menu.still_valid(&player));
 
     assert!(world.set_block(
@@ -63,9 +76,10 @@ fn validity_requires_anvil_tag_and_interaction_range() {
     ));
     assert!(menu.still_valid(&player));
 
-    let current_world = fresh_test_world("anvil_menu_validity_current_world");
-    insert_ready_full_chunk(&current_world, ChunkPos::from_block_pos(pos));
-    player.set_world(Arc::clone(&current_world));
+    let current_world_fixture = fresh_test_world("anvil_menu_validity_current_world");
+    let current_world = &current_world_fixture.world;
+    insert_ready_full_chunk(current_world, ChunkPos::from_block_pos(pos));
+    player.set_world(Arc::clone(current_world));
     assert!(menu.still_valid(&player));
 
     assert!(world.set_block(
@@ -159,6 +173,29 @@ fn rename_only_result_preserves_unused_second_input() {
     assert!(input.get_item(0).is_empty());
     assert!(input.get_item(1).is(&vanilla_items::DIAMOND_SWORD));
     assert!(menu.behavior().carried().is(&vanilla_items::DIAMOND_SWORD));
+}
+
+#[test]
+fn anvil_result_does_not_award_item_crafted() {
+    let (_world, player, _pos, mut menu) = test_anvil("anvil_menu_item_crafted");
+    player.restore_game_modes(GameType::Creative, None);
+    let Some(kind) = menu.kind().downcast_ref::<AnvilKind>() else {
+        panic!("anvil builder should create an anvil menu");
+    };
+    Arc::clone(&kind.input_container)
+        .lock()
+        .set_item(0, ItemStack::new(&vanilla_items::DIAMOND_SWORD));
+
+    menu.set_item_name("Renamed", &player);
+    menu.clicked(
+        Click::Pickup {
+            slot: 2,
+            button: MouseButton::Left,
+        },
+        &player,
+    );
+
+    assert_eq!(crafted_count(&player, &vanilla_items::DIAMOND_SWORD), 0);
 }
 
 #[test]
@@ -292,7 +329,8 @@ fn client_level_cost_uses_protocol_short_wrapping() {
 
 #[test]
 fn partial_result_overflow_is_discarded() {
-    let (world, player, _pos, mut menu) = test_anvil("anvil_menu_partial_result_overflow");
+    let (world_fixture, player, _pos, mut menu) = test_anvil("anvil_menu_partial_result_overflow");
+    let world = &world_fixture.world;
     player.restore_game_modes(GameType::Creative, None);
     let Some(kind) = menu.kind().downcast_ref::<AnvilKind>() else {
         panic!("anvil builder should create an anvil menu");
@@ -308,7 +346,7 @@ fn partial_result_overflow_is_discarded() {
 
     let result = result_container.lock().get_item(0).clone();
     assert_eq!(result.count(), 64);
-    let mut matching = result.clone();
+    let mut matching = result;
     matching.set_count(63);
     {
         let mut inventory = player.inventory.lock();

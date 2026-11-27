@@ -1,11 +1,16 @@
+use std::io::{self, Write};
+
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::{C_DISGUISED_CHAT, C_PLAYER_CHAT};
+use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::{
     codec::{BitSet, VarInt},
-    serial::PrefixedWrite,
+    serial::{PrefixedWrite, WriteTo},
 };
 use text_components::{TextComponent, resolving::TextResolutor};
 use uuid::Uuid;
+
+use crate::packet_traits::ClientPacket;
 
 /// Represents Minecraft's ChatType.Bound structure
 /// Contains a registry holder + sender name + optional target name
@@ -20,13 +25,40 @@ pub struct ChatTypeBound {
     pub target_name: Option<TextComponent>,
 }
 
+impl ChatTypeBound {
+    /// binds a chat type with a sender and no target
+    #[must_use]
+    pub const fn new(registry_id: i32, sender_name: TextComponent) -> Self {
+        Self {
+            registry_id,
+            sender_name,
+            target_name: None,
+        }
+    }
+}
+
+impl Default for ChatTypeBound {
+    fn default() -> Self {
+        Self::new(vanilla_chat_types::CHAT.id() as i32, TextComponent::new())
+    }
+}
+
+/// A fixed width RSA signature for player msg
+#[derive(WriteTo, Clone, Debug)]
+pub struct MessageSignature(pub [u8; MessageSignature::BYTES]);
+
+impl MessageSignature {
+    /// the signature width in the chat protocol
+    pub const BYTES: usize = 256;
+}
+
 #[derive(ClientPacket, Clone, Debug)]
 #[packet_id(Play = C_PLAYER_CHAT)]
 pub struct CPlayerChat {
     pub global_index: i32,
     pub sender: Uuid,
     pub index: i32,
-    pub message_signature: Option<Box<[u8]>>,
+    pub message_signature: Option<MessageSignature>,
     pub message: String,
     pub timestamp: i64,
     pub salt: i64,
@@ -37,23 +69,21 @@ pub struct CPlayerChat {
 }
 
 impl CPlayerChat {
-    #[expect(clippy::too_many_arguments)]
     #[must_use]
+    #[expect(clippy::too_many_arguments)]
     pub const fn new(
-        global_index: i32,
         sender: Uuid,
         index: i32,
-        message_signature: Option<Box<[u8]>>,
+        message_signature: Option<MessageSignature>,
         message: String,
         timestamp: i64,
         salt: i64,
         previous_messages: Box<[PreviousMessage]>,
         unsigned_content: Option<TextComponent>,
-        filter_type: FilterType,
         chat_type: ChatTypeBound,
     ) -> Self {
         Self {
-            global_index,
+            global_index: 0, // Assigned when sending the message
             sender,
             index,
             message_signature,
@@ -62,68 +92,99 @@ impl CPlayerChat {
             salt,
             previous_messages,
             unsigned_content,
-            filter_type,
+            filter_type: FilterType::PassThrough, // Change only on Realms
             chat_type,
         }
     }
-}
+    /// uses recipientspecific fields while borrowing the shared msg
+    #[must_use]
+    pub fn for_recipient<'a>(
+        &'a self,
+        global_index: i32,
+        previous_messages: &'a [PreviousMessage],
+        chat_type: &'a ChatTypeBound,
+    ) -> impl ClientPacket + 'a {
+        RecipientChat {
+            packet: self,
+            global_index,
+            previous_messages,
+            chat_type,
+        }
+    }
 
-impl steel_utils::serial::WriteTo for CPlayerChat {
-    fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
-        VarInt(self.global_index).write(writer)?;
+    fn write_with(
+        &self,
+        writer: &mut impl Write,
+        global_index: i32,
+        previous_messages: &[PreviousMessage],
+        chat_type: &ChatTypeBound,
+    ) -> io::Result<()> {
+        VarInt(global_index).write(writer)?;
         self.sender.write(writer)?;
         VarInt(self.index).write(writer)?;
 
-        match &self.message_signature {
-            Some(sig) => {
-                true.write(writer)?;
-                writer.write_all(sig)?;
-            }
-            None => false.write(writer)?,
-        }
-
+        self.message_signature.write(writer)?;
         self.message.write_prefixed::<VarInt>(writer)?;
         self.timestamp.write(writer)?;
         self.salt.write(writer)?;
 
-        VarInt(self.previous_messages.len() as i32).write(writer)?;
-        for msg in &self.previous_messages {
-            // Write ID. In Minecraft's packed format:
-            // - If id is 0: write 0 (VarInt(0)), then write full signature (256 bytes)
-            // - If id is N > 0: write N (VarInt(N)), no signature bytes
-            // Our id field already contains the correct value (0 for full, cache_index+1 for referenced)
+        VarInt(previous_messages.len() as i32).write(writer)?;
+        for msg in previous_messages {
             VarInt(msg.id).write(writer)?;
-            // Only write signature if id is 0 (full signature)
-            if msg.id == 0 {
-                if let Some(sig) = &msg.signature {
-                    writer.write_all(sig)?;
-                } else {
-                    // This should never happen - id=0 means full signature must be present
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "PreviousMessage with id=0 must have signature",
+            if msg.id == PreviousMessage::FULL_SIGNATURE_ID {
+                let Some(signature) = &msg.signature else {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Missing full previous message signature",
                     ));
-                }
+                };
+
+                writer.write_all(signature)?;
             }
         }
 
-        match &self.unsigned_content {
-            Some(content) => {
-                true.write(writer)?;
-                content.write(writer)?;
+        self.unsigned_content.write(writer)?;
+        match &self.filter_type {
+            FilterType::PassThrough => VarInt(0).write(writer)?,
+            FilterType::FullyFiltered => VarInt(1).write(writer)?,
+            FilterType::PartiallyFiltered(mask) => {
+                VarInt(2).write(writer)?;
+                mask.write(writer)?;
             }
-            None => false.write(writer)?,
         }
 
-        VarInt(match self.filter_type {
-            FilterType::PassThrough => 0,
-            FilterType::FullyFiltered => 1,
-            FilterType::PartiallyFiltered(_) => 2,
-        })
-        .write(writer)?;
+        chat_type.write(writer)
+    }
+}
 
-        self.chat_type.write(writer)?;
-        Ok(())
+impl WriteTo for CPlayerChat {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        self.write_with(
+            writer,
+            self.global_index,
+            &self.previous_messages,
+            &self.chat_type,
+        )
+    }
+}
+
+#[derive(ClientPacket)]
+#[packet_id(Play = C_PLAYER_CHAT)]
+struct RecipientChat<'a> {
+    packet: &'a CPlayerChat,
+    global_index: i32,
+    previous_messages: &'a [PreviousMessage],
+    chat_type: &'a ChatTypeBound,
+}
+
+impl WriteTo for RecipientChat<'_> {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        self.packet.write_with(
+            writer,
+            self.global_index,
+            self.previous_messages,
+            self.chat_type,
+        )
     }
 }
 
@@ -131,6 +192,11 @@ impl steel_utils::serial::WriteTo for CPlayerChat {
 pub struct PreviousMessage {
     pub id: i32,
     pub signature: Option<Box<[u8]>>,
+}
+
+impl PreviousMessage {
+    /// the wire ID followed by a full signature instead of a cache ref
+    pub const FULL_SIGNATURE_ID: i32 = 0;
 }
 
 #[derive(Clone, Debug)]

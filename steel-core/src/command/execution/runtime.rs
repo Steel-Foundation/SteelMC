@@ -8,31 +8,25 @@
 
 use std::sync::Arc;
 
-use crate::command::brigadier::{
-    CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
-    ContextChain,
-};
-use steel_registry::damage_type::DamageTypeRef;
-use steel_registry::{
-    enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
-    timeline::TimelineRef, world_clock::WorldClockRef,
-};
-use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::GameType};
-use text_components::TextComponent;
-
 use super::{
     BiomeOrTag, BlockInput, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
     Coordinates, ExecutionCommandSource, ExecutionControl, GameProfileArgument, IntRange,
     ItemPredicate, PermissionGroupName, ScoreHolderArgument, ScoreHolderWildcard,
     SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
-        ComponentValue, CoordinateAxes, DomainValue, EnchantmentValue, EntityTypeValue,
-        GameModeValue, IdentifierValue, ItemStackValue, NbtPathValue, ObjectiveValue,
-        SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
+        AdvancementValue, ComponentValue, CoordinateAxes, DamageTypeValue, DomainValue,
+        EnchantmentValue, EntityTypeValue, GameModeValue, IdentifierValue, ItemStackValue,
+        MessageValue, NbtPathValue, ObjectiveValue, SteelArgumentValue, TimeValue, TimelineValue,
+        WorldClockValue,
     },
+    message::Message,
     selector::EntitySelector,
 };
-use crate::command::execution::argument::DamageTypeValue;
+
+use crate::command::brigadier::{
+    ArgumentSuggestionContext, CommandContext, CommandNodeBuilder, CommandRedirectTarget,
+    CommandRuntime, CommandSyntaxError, ContextChain,
+};
 use crate::command::incorrectly_typed_argument;
 use crate::{
     chunk::heightmap::HeightmapType,
@@ -41,12 +35,22 @@ use crate::{
     player::Player,
     scoreboard::ScoreHolder,
 };
+use steel_registry::damage_type::DamageTypeRef;
+use steel_registry::data_components::vanilla_components::SwingAnimationType;
+use steel_registry::{
+    enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
+    timeline::TimelineRef, world_clock::WorldClockRef,
+};
+use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::GameType};
+use text_components::TextComponent;
 
 /// Runtime model interpreted by Steel's tick-owned command scheduler.
 pub(crate) struct SteelCommandRuntime;
 
 pub(crate) type SteelCommandContext<S> = CommandContext<S, SteelCommandRuntime>;
 pub(crate) type SteelContextChain<S> = ContextChain<S, SteelCommandRuntime>;
+pub(crate) type SteelSuggestionContext<'context, S> =
+    ArgumentSuggestionContext<'context, S, SteelArgumentValue>;
 
 type StandardExecutor<S> =
     dyn Fn(&SteelCommandContext<S>) -> Result<i32, CommandSyntaxError> + Send + Sync;
@@ -238,6 +242,14 @@ where
         self.typed_argument::<TimeValue>(name).map(|value| value.0)
     }
 
+    pub(crate) fn swing_animation(
+        &self,
+        name: &str,
+    ) -> Result<SwingAnimationType, CommandSyntaxError> {
+        self.typed_argument::<super::swing_animation::SwingAnimationValue>(name)
+            .map(|value| value.0)
+    }
+
     /// Returns a parsed coordinate expression without resolving it early.
     pub(crate) fn coordinates(&self, name: &str) -> Result<Coordinates, CommandSyntaxError> {
         self.typed_argument::<Coordinates>(name).copied()
@@ -359,6 +371,11 @@ where
             .map(|value| value.0)
     }
 
+    pub(crate) fn advancement(&self, name: &str) -> Result<Identifier, CommandSyntaxError> {
+        self.typed_argument::<AdvancementValue>(name)
+            .map(|value| value.0.clone())
+    }
+
     pub(crate) fn entity_selector(
         &self,
         name: &str,
@@ -392,6 +409,24 @@ where
         name: &str,
     ) -> Result<&PermissionGroupName, CommandSyntaxError> {
         self.typed_argument(name)
+    }
+
+    pub(crate) fn message(&self, name: &str) -> Result<&Message, CommandSyntaxError> {
+        Ok(&self.typed_argument::<MessageValue>(name)?.0)
+    }
+}
+
+impl<S> SteelSuggestionContext<'_, S> {
+    fn typed_argument<T: DowncastType>(&self, name: &str) -> Result<&T, CommandSyntaxError> {
+        self.argument(name)?
+            .downcast_ref::<T>()
+            .ok_or_else(|| incorrectly_typed_argument(name))
+    }
+
+    /// Returns a parsed advancement argument.
+    pub(crate) fn advancement(&self, name: &str) -> Result<Identifier, CommandSyntaxError> {
+        self.typed_argument::<AdvancementValue>(name)
+            .map(|value| value.0.clone())
     }
 }
 
