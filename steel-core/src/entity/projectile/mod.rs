@@ -550,10 +550,15 @@ pub trait Projectile: Entity + ProjectileEventSource {
         let search_box = self.bounding_box().expand_towards(delta).inflate(1.0);
         let margin = compute_margin(self.tick_count());
         let self_id = self.id();
-        let entity_hit =
-            get_entity_hit_result(world.as_ref(), from, entity_end, search_box, margin, |e| {
-                e.id() != self_id && self.can_hit_entity(e)
-            });
+        let entity_hit = get_entity_hit_result(
+            world.as_ref(),
+            from,
+            entity_end,
+            search_box,
+            margin,
+            InsideHitPolicy::Ignore,
+            |e| e.id() != self_id && self.can_hit_entity(e),
+        );
 
         if let Some(hit) = entity_hit {
             return Some(ProjectileHit::Entity(hit));
@@ -858,9 +863,15 @@ pub fn get_hit_result_on_view_vector(
 
     let search_box = source.bounding_box().expand_towards(delta).inflate(1.0);
     let source_id = source.id();
-    let entity_hit = get_entity_hit_result(world, from, entity_end, search_box, 0.0, |entity| {
-        entity.id() != source_id && matching(entity)
-    });
+    let entity_hit = get_entity_hit_result(
+        world,
+        from,
+        entity_end,
+        search_box,
+        0.0,
+        InsideHitPolicy::Allow,
+        |entity| entity.id() != source_id && matching(entity),
+    );
 
     if let Some(hit) = entity_hit {
         return ViewVectorHitResult::Entity(hit);
@@ -871,6 +882,15 @@ pub fn get_hit_result_on_view_vector(
     ViewVectorHitResult::Miss
 }
 
+/// Whether a ray starting inside a box counts as a hit.
+///
+/// Vanilla projectiles miss in that case; picking rays still hit at the origin.
+#[derive(Clone, Copy, PartialEq)]
+enum InsideHitPolicy {
+    Ignore,
+    Allow,
+}
+
 /// Vanilla `ProjectileUtil.getEntityHitResult` (entity-margin overload): returns
 /// the nearest entity whose inflated box the segment `from -> to` enters.
 fn get_entity_hit_result(
@@ -879,6 +899,7 @@ fn get_entity_hit_result(
     to: DVec3,
     search_box: WorldAabb,
     margin: f64,
+    inside_hits: InsideHitPolicy,
     predicate: impl Fn(&dyn Entity) -> bool,
 ) -> Option<EntityHitResult> {
     let mut nearest: Option<EntityHitResult> = None;
@@ -889,7 +910,7 @@ fn get_entity_hit_result(
             continue;
         }
         let target_box = entity.bounding_box().inflate(margin);
-        let Some(location) = clip_segment(target_box, from, to) else {
+        let Some(location) = clip_segment(target_box, from, to, inside_hits) else {
             continue;
         };
         let dist_sq = from.distance_squared(location);
@@ -902,12 +923,18 @@ fn get_entity_hit_result(
     nearest
 }
 
-/// Clips the segment `from -> to` against `aabb`, returning the entry point.
-///
-/// Returns `from` when the segment starts inside the box and `None` when it never
-/// intersects. Mirrors vanilla `AABB.clip` using the slab method.
-fn clip_segment(aabb: WorldAabb, from: DVec3, to: DVec3) -> Option<DVec3> {
+/// Returns the point where `from -> to` enters `aabb`, if it does.
+fn clip_segment(
+    aabb: WorldAabb,
+    from: DVec3,
+    to: DVec3,
+    inside_hits: InsideHitPolicy,
+) -> Option<DVec3> {
     const EPSILON: f64 = 1.0e-7;
+
+    if inside_hits == InsideHitPolicy::Ignore && aabb.contains(from) {
+        return None;
+    }
 
     let direction = to - from;
     let mut t_min = 0.0_f64;
@@ -968,15 +995,21 @@ mod tests {
     use steel_registry::{
         blocks::properties::{BlockStateProperties, Tilt},
         entity_type::EntityTypeRef,
-        init_vanilla_registry, vanilla_blocks, vanilla_entities,
+        init_vanilla_registry, vanilla_blocks, vanilla_dimension_types, vanilla_entities,
     };
-    use steel_utils::{BlockPos, ChunkPos, Direction, types::UpdateFlags};
+    use steel_utils::{
+        BlockPos, ChunkPos, Direction, Identifier, types::Difficulty, types::UpdateFlags,
+    };
 
     use crate::{
         behavior::init_behaviors,
         block_entity::init_block_entities,
         entity::{EntityBase, entities::FireworkRocketEntity},
-        test_support::{TestPlayerBuilder, test_world, world_border_projectile_test_world},
+        level_data::GameTimeSource,
+        test_support::{
+            TestPlayerBuilder, create_test_world_with_time_source, insert_ready_full_chunk,
+            test_world, world_border_projectile_test_world,
+        },
     };
 
     struct OwnerCollisionProjectile {
@@ -986,12 +1019,16 @@ mod tests {
 
     impl OwnerCollisionProjectile {
         fn new(id: i32, position: DVec3) -> Self {
+            Self::new_in_world(id, position, test_world())
+        }
+
+        fn new_in_world(id: i32, position: DVec3, world: &Arc<World>) -> Self {
             Self {
                 base: EntityBase::new(
                     id,
                     position,
                     vanilla_entities::ENDER_PEARL.dimensions,
-                    Arc::downgrade(test_world()),
+                    Arc::downgrade(world),
                 ),
                 projectile_base: ProjectileBase::new(),
             }
@@ -1079,17 +1116,89 @@ mod tests {
     #[test]
     fn clip_segment_hits_box_in_path() {
         let aabb = WorldAabb::new(4.0, -0.5, -0.5, 5.0, 0.5, 0.5);
-        let hit = clip_segment(aabb, DVec3::ZERO, DVec3::new(10.0, 0.0, 0.0))
-            .expect("ray along +x should enter the box");
+        let hit = clip_segment(
+            aabb,
+            DVec3::ZERO,
+            DVec3::new(10.0, 0.0, 0.0),
+            InsideHitPolicy::Ignore,
+        )
+        .expect("ray along +x should enter the box");
         assert!((hit.x - 4.0).abs() < 1.0e-6);
     }
 
     #[test]
-    fn clip_segment_returns_start_when_inside() {
+    fn projectile_clip_misses_when_starting_inside_box() {
         let aabb = WorldAabb::new(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
-        let hit = clip_segment(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0))
-            .expect("a ray starting inside the box hits at its origin");
-        assert_eq!(hit, DVec3::ZERO);
+        assert_eq!(
+            clip_segment(
+                aabb,
+                DVec3::ZERO,
+                DVec3::new(0.0, 5.0, 0.0),
+                InsideHitPolicy::Ignore,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn picking_clip_hits_at_origin_when_starting_inside_box() {
+        let aabb = WorldAabb::new(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
+        assert_eq!(
+            clip_segment(
+                aabb,
+                DVec3::ZERO,
+                DVec3::new(0.0, 5.0, 0.0),
+                InsideHitPolicy::Allow,
+            ),
+            Some(DVec3::ZERO)
+        );
+    }
+
+    #[test]
+    fn projectile_starting_inside_entity_box_registers_no_hit() {
+        init_vanilla_registry();
+        init_behaviors();
+
+        let fixture = create_test_world_with_time_source(
+            Identifier::new_static("projectile_inside_hitbox", "overworld"),
+            Difficulty::Normal,
+            &vanilla_dimension_types::OVERWORLD,
+            GameTimeSource::Primary,
+        );
+        let world = Arc::clone(&fixture.world);
+
+        // Crystal hitbox: x/z ±1, y..y+2.
+        let crystal_pos = DVec3::new(8.0, 64.0, 8.0);
+        insert_ready_full_chunk(&world, ChunkPos::from_entity_pos(crystal_pos));
+        let crystal = OwnerCollisionTestEntity::shared_with_type(
+            5_001,
+            crystal_pos,
+            true,
+            &vanilla_entities::END_CRYSTAL,
+        );
+        world
+            .try_add_entity(Arc::clone(&crystal))
+            .expect("crystal should spawn");
+
+        let projectile = OwnerCollisionProjectile::new_in_world(
+            5_002,
+            crystal_pos + DVec3::new(0.0, 1.0, 0.0),
+            &world,
+        );
+        projectile.set_velocity(DVec3::Y);
+
+        assert!(projectile.get_hit_result_on_move_vector().is_none());
+
+        let outside = OwnerCollisionProjectile::new_in_world(
+            5_003,
+            crystal_pos + DVec3::new(0.0, 3.0, 0.0),
+            &world,
+        );
+        outside.set_velocity(-DVec3::Y);
+        assert!(matches!(
+            outside.get_hit_result_on_move_vector(),
+            Some(ProjectileHit::Entity(hit)) if Arc::ptr_eq(&hit.entity, &crystal)
+        ));
     }
 
     #[test]
