@@ -1104,7 +1104,7 @@ mod tests {
         let keep_alive =
             EncodedPacket::from_bare(CKeepAlive::new(42), None, ConnectionProtocol::Play)
                 .expect("keep alive should encode");
-        let keep_alive_bytes = keep_alive.encoded_data.clone();
+        let keep_alive_bytes = Arc::clone(&keep_alive.encoded_data);
 
         connection.send_encoded_bundle(vec![keep_alive]);
         let Ok(OutboundPacket::Bundle(bundle)) = receiver.try_recv() else {
