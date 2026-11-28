@@ -236,9 +236,9 @@ impl BlockBehavior for TntBlock {
 
         let owner = projectile.get_owner();
         let living_owner = owner.as_deref().filter(|owner| owner.is_living_entity());
-        // TODO: Check an arrow's pickup stack once arrows exist. Other projectiles use an empty
-        // stack, which never permits Adventure-mode breaking.
-        if Self::prime_with_source(world, hit.block_pos, living_owner, || false) {
+        if Self::prime_with_source(world, hit.block_pos, living_owner, || {
+            projectile.can_break_block(world, hit.block_pos)
+        }) {
             world.remove_block(hit.block_pos, false);
         }
     }

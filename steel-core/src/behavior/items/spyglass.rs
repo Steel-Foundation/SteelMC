@@ -59,10 +59,10 @@ impl ItemBehavior for SpyglassItem {
         &self,
         _stack: &mut ItemStack,
         _world: &Arc<World>,
-        user: &dyn LivingEntity,
+        user: LivingEntityRef<'_>,
         _time_left: i32,
     ) -> bool {
-        Self::stop_using(user);
+        Self::stop_using(user.living());
         true
     }
 }

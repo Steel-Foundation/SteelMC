@@ -10,6 +10,7 @@ use flint_core::test_spec::{GameMode, PlayerSlot};
 use flint_core::{FlintPlayer, Item};
 use glam::DVec3;
 use rustc_hash::FxHashMap;
+use steel_core::behavior::BlockCollisionContext;
 use steel_core::entity::{Entity, LivingEntity};
 use steel_core::inventory::container::Container;
 use steel_core::player::game_mode;
@@ -194,7 +195,13 @@ impl FlintPlayer for SteelTestPlayer {
     fn interact(&mut self) -> Result<(), anyhow::Error> {
         let world = self.player.get_world();
         let (start, end) = self.player.get_ray_endpoints();
-        let clip = world.clip(start, end, ClipBlockShape::Outline, ClipFluid::None);
+        let clip = world.clip(
+            start,
+            end,
+            ClipBlockShape::Outline,
+            ClipFluid::None,
+            BlockCollisionContext::entity(self.player.position().y, self.player.is_descending()),
+        );
 
         let hand = InteractionHand::MainHand;
         let animation = self.player.interact_animation(hand);

@@ -25,7 +25,7 @@ use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, types::UpdateFlags};
 
 use crate::behavior::blocks::{AnvilBlock, FallingBlock};
-use crate::behavior::{BLOCK_BEHAVIORS, BlockPlaceContext, Fallable};
+use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, BlockPlaceContext, Fallable};
 use crate::block_entity::block_state_nbt;
 use crate::entity::DEFAULT_AIR_DRAG;
 use crate::entity::damage::DamageSource;
@@ -218,6 +218,8 @@ impl FallingBlockEntity {
             self.position(),
             ClipBlockShape::Collider,
             ClipFluid::SourceOnly,
+            BlockCollisionContext::entity(self.position().y, self.is_descending())
+                .with_falling_block(true),
         );
         if hit.is_miss()
             || !world

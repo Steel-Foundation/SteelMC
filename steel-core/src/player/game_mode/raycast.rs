@@ -1,4 +1,4 @@
-use super::{ClipBlockShape, ClipFluid, DVec3, World, WorldAabb, swap};
+use super::{BlockCollisionContext, ClipBlockShape, ClipFluid, DVec3, World, WorldAabb, swap};
 
 pub(super) fn piercing_ray_hit_t(
     world: &World,
@@ -6,6 +6,7 @@ pub(super) fn piercing_ray_hit_t(
     from: DVec3,
     to: DVec3,
     entity_margin: f64,
+    collision_context: BlockCollisionContext,
 ) -> Option<f64> {
     if let Some(hit_t) = ray_aabb_hit_t(bounding_box, from, to) {
         return Some(hit_t);
@@ -26,6 +27,7 @@ pub(super) fn piercing_ray_hit_t(
         towards_target,
         ClipBlockShape::Collider,
         ClipFluid::None,
+        collision_context,
     );
     if !block_hit.is_miss() {
         towards_target = block_hit.location;

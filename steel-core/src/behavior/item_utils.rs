@@ -4,7 +4,8 @@ use crate::player::player_inventory::Prediction;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
 
-use crate::behavior::UseItemContext;
+use crate::behavior::{BlockCollisionContext, UseItemContext};
+use crate::entity::Entity as _;
 use crate::inventory::lock::ContainerId;
 use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
@@ -17,7 +18,13 @@ pub(crate) fn get_player_pov_hit_result(
     fluid: ClipFluid,
 ) -> BlockHitResult {
     let (from, to) = player.get_ray_endpoints();
-    let hit = world.clip(from, to, ClipBlockShape::Outline, fluid);
+    let hit = world.clip(
+        from,
+        to,
+        ClipBlockShape::Outline,
+        fluid,
+        BlockCollisionContext::entity(player.position().y, player.is_descending()),
+    );
     BlockHitResult {
         location: hit.location,
         direction: hit.direction,

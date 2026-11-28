@@ -11,9 +11,9 @@ pub use objects::effects::AreaEffectCloudEntity;
 pub use objects::explosives::{EndCrystalEntity, PrimedTntEntity};
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
 pub use objects::projectiles::{
-    EnderPearlEntity, EyeOfEnderEntity, FireworkRocketEntity, FishingHookEntity,
-    LingeringPotionEntity, SmallFireballEntity, SnowballEntity, SplashPotionEntity,
-    ThrownEggEntity, WindChargeEntity,
+    ArrowEntity, EnderPearlEntity, EyeOfEnderEntity, FireworkRocketEntity, FishingHookEntity,
+    LingeringPotionEntity, SmallFireballEntity, SnowballEntity, SpectralArrowEntity,
+    SplashPotionEntity, ThrownEggEntity, WindChargeEntity,
 };
 pub use objects::technical::{
     Alignment, BillboardConstraints, BlockDisplayEntity, BlockDisplayView, Brightness, Display,

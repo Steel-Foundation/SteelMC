@@ -719,6 +719,7 @@ impl World {
         end_pos: DVec3,
         block_shape: ClipBlockShape,
         fluid: ClipFluid,
+        collision_context: BlockCollisionContext,
     ) -> ClipHitResult {
         if start_pos == end_pos {
             return Self::clip_miss(start_pos, end_pos);
@@ -734,8 +735,14 @@ impl World {
             from.z.floor() as i32,
         );
 
-        if let Some(hit) = self.clip_block_and_fluid(block, start_pos, end_pos, block_shape, fluid)
-        {
+        if let Some(hit) = self.clip_block_and_fluid(
+            block,
+            start_pos,
+            end_pos,
+            block_shape,
+            fluid,
+            collision_context,
+        ) {
             return hit;
         }
 
@@ -794,9 +801,14 @@ impl World {
                 next.z += delta.z;
             }
 
-            if let Some(hit) =
-                self.clip_block_and_fluid(block, start_pos, end_pos, block_shape, fluid)
-            {
+            if let Some(hit) = self.clip_block_and_fluid(
+                block,
+                start_pos,
+                end_pos,
+                block_shape,
+                fluid,
+                collision_context,
+            ) {
                 return hit;
             }
         }
@@ -833,8 +845,9 @@ impl World {
         end_pos: DVec3,
         block_shape: ClipBlockShape,
         fluid: ClipFluid,
+        collision_context: BlockCollisionContext,
     ) -> ClipHitResult {
-        let hit = self.clip(start_pos, end_pos, block_shape, fluid);
+        let hit = self.clip(start_pos, end_pos, block_shape, fluid, collision_context);
         let border = self.world_border_snapshot();
         if border.is_within_bounds_with_margin(start_pos.x, start_pos.z, 0.0)
             && !border.is_within_bounds_with_margin(hit.location.x, hit.location.z, 0.0)
@@ -860,15 +873,12 @@ impl World {
         to: DVec3,
         block_shape: ClipBlockShape,
         fluid: ClipFluid,
+        collision_context: BlockCollisionContext,
     ) -> Option<ClipHitResult> {
         let state = self.get_block_state(pos);
-        let block_result = Self::clip_shape(
-            pos,
-            from,
-            to,
-            self.clip_block_shape(state, pos, block_shape),
-        )
-        .map(|hit| Self::clip_with_interaction_override(pos, from, to, state, hit));
+        let block_result = self
+            .clip_block_shape(pos, from, to, state, block_shape, collision_context)
+            .map(|hit| Self::clip_with_interaction_override(pos, from, to, state, hit));
         let fluid_result = self.clip_fluid_shape(pos, from, to, state, fluid);
 
         match (block_result, fluid_result) {
@@ -912,19 +922,40 @@ impl World {
 
     pub(super) fn clip_block_shape(
         &self,
-        state: BlockStateId,
         pos: BlockPos,
+        from: DVec3,
+        to: DVec3,
+        state: BlockStateId,
         shape: ClipBlockShape,
-    ) -> OffsetVoxelShape {
+        collision_context: BlockCollisionContext,
+    ) -> Option<ClipHitResult> {
         match shape {
-            ClipBlockShape::Collider => state.get_collision_shape_at(pos),
-            ClipBlockShape::Outline => state.get_outline_shape_at(pos),
-            ClipBlockShape::Visual => state.get_visual_shape_at(pos),
-            ClipBlockShape::FallDamageResetting { entity_is_player } => {
+            ClipBlockShape::Collider => {
+                let boxes = BLOCK_BEHAVIORS
+                    .get_behavior(state.get_block())
+                    .get_collision_boxes(state, self, pos, collision_context);
+                boxes
+                    .into_iter()
+                    .filter_map(|aabb| Self::clip_local_aabb(pos, from, to, aabb))
+                    .min_by(|a, b| {
+                        from.distance_squared(a.location)
+                            .total_cmp(&from.distance_squared(b.location))
+                    })
+            }
+            ClipBlockShape::Outline => {
+                Self::clip_shape(pos, from, to, state.get_outline_shape_at(pos))
+            }
+            ClipBlockShape::Visual => {
+                Self::clip_shape(pos, from, to, state.get_visual_shape_at(pos))
+            }
+            ClipBlockShape::FallDamageResetting { entity_is_player } => Self::clip_shape(
+                pos,
+                from,
+                to,
                 OffsetVoxelShape::without_offset(
                     self.fall_damage_resetting_shape(state, entity_is_player),
-                )
-            }
+                ),
+            ),
         }
     }
 

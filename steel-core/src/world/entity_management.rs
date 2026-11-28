@@ -276,6 +276,30 @@ impl World {
         Ok(())
     }
 
+    /// Adds a runtime entity, deferring it when its chunk is not loaded yet.
+    ///
+    /// Matches vanilla `Level.addFreshEntity`, which registers the entity in
+    /// section storage even before its chunk is ready; the entity becomes live
+    /// when the chunk loads.
+    pub fn try_add_entity_or_defer(
+        self: &Arc<Self>,
+        entity: SharedEntity,
+    ) -> Result<(), AddEntityError> {
+        let chunk_pos = ChunkPos::from_entity_pos(entity.position());
+        if self.has_full_chunk(chunk_pos) {
+            return self.try_add_entity(entity);
+        }
+        // Runtime entity ownership starts at Empty status, so a retained chunk
+        // can already be live for entities without being a full chunk.
+        if self.entity_manager.is_chunk_loaded(chunk_pos) {
+            self.register_loaded_entity(entity)?;
+            self.mark_chunk_dirty(chunk_pos);
+            return Ok(());
+        }
+        self.entity_manager
+            .add_deferred_entity(entity, EntityOwnership::ManagerOwned)
+    }
+
     /// Adds a fresh vehicle/passenger tree only after every member has passed
     /// chunk and identity validation.
     pub(crate) fn try_add_fresh_entity_with_passengers(

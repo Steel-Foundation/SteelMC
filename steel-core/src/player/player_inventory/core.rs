@@ -147,12 +147,13 @@ impl PlayerInventory {
 
     /// Sets the selected hotbar slot from the signed protocol field.
     ///
-    /// Returns an error when the packet value is outside the vanilla hotbar
-    /// range instead of wrapping or panicking.
+    /// Returns whether the selected slot changed. Returns an error when the
+    /// packet value is outside the vanilla hotbar range instead of wrapping or
+    /// panicking.
     pub fn try_set_selected_slot_from_packet(
         &mut self,
         slot: i16,
-    ) -> Result<(), InvalidHotbarSlot> {
+    ) -> Result<bool, InvalidHotbarSlot> {
         let Ok(slot) = u8::try_from(slot) else {
             return Err(InvalidHotbarSlot);
         };
@@ -160,8 +161,9 @@ impl PlayerInventory {
             return Err(InvalidHotbarSlot);
         }
 
+        let changed = self.selected != slot;
         self.set_selected_slot(slot);
-        Ok(())
+        Ok(changed)
     }
 
     /// Executes a function with a reference to the currently selected item.

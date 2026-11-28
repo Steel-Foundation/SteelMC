@@ -22,7 +22,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityEventSource, EntitySyncedData,
@@ -285,6 +285,7 @@ impl FireworkRocketEntity {
                         to,
                         ClipBlockShape::Collider,
                         ClipFluid::None,
+                        BlockCollisionContext::entity(self.position().y, self.is_descending()),
                     )
                     .is_miss()
             });

@@ -48,7 +48,7 @@ use crate::player::player_inventory::PlayerInventory;
 use crate::world::{ClipBlockShape, ClipFluid, World};
 use steel_utils::axis::Axis;
 
-mod adventure_mode;
+pub(crate) mod adventure_mode;
 pub mod block_breaking;
 mod block_interaction;
 mod entity_interaction;

@@ -180,11 +180,12 @@ impl Projectile for WindChargeEntity {
         deflecting_entity: Option<&dyn Entity>,
         new_owner: Option<EntityReference>,
         by_attack: bool,
+        power: DVec3,
     ) -> bool {
         if *self.no_deflect_ticks.lock() > 0 {
             return false;
         }
-        self.base_deflect(deflection, deflecting_entity, new_owner, by_attack)
+        self.base_deflect(deflection, deflecting_entity, new_owner, by_attack, power)
     }
 
     fn on_deflection(&self, by_attack: bool) {
@@ -280,13 +281,13 @@ mod tests {
         );
         charge.set_velocity(DVec3::X);
 
-        assert!(!charge.deflect(ProjectileDeflection::Reverse, None, None, false));
+        assert!(!charge.deflect(ProjectileDeflection::Reverse, None, None, false, DVec3::ONE));
         assert_eq!(charge.velocity(), DVec3::X);
 
         *charge.no_deflect_ticks.lock() = 0;
-        assert!(charge.deflect(ProjectileDeflection::None, None, None, true));
+        assert!(charge.deflect(ProjectileDeflection::None, None, None, true, DVec3::ONE));
         assert_eq!(charge.acceleration_power(), INITIAL_ACCELERATION_POWER);
-        assert!(charge.deflect(ProjectileDeflection::None, None, None, false));
+        assert!(charge.deflect(ProjectileDeflection::None, None, None, false, DVec3::ONE));
         assert_eq!(
             charge.acceleration_power(),
             INITIAL_ACCELERATION_POWER * 0.5
