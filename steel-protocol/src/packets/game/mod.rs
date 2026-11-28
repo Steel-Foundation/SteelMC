@@ -58,6 +58,7 @@ mod c_set_health;
 mod c_set_held_slot;
 mod c_set_passengers;
 mod c_set_player_inventory;
+mod c_set_player_team;
 mod c_set_subtitle_text;
 mod c_set_time;
 mod c_set_title_text;
@@ -180,6 +181,10 @@ pub use c_set_health::CSetHealth;
 pub use c_set_held_slot::CSetHeldSlot;
 pub use c_set_passengers::CSetPassengers;
 pub use c_set_player_inventory::CSetPlayerInventory;
+pub use c_set_player_team::{
+    CSetPlayerTeam, PlayerTeamMethod, PlayerTeamOptions, PlayerTeamParameters, TeamCollisionRule,
+    TeamColor, TeamVisibility,
+};
 pub use c_set_subtitle_text::CSetSubtitleText;
 pub use c_set_time::CSetTime;
 pub use c_set_title_text::CSetTitleText;

@@ -293,6 +293,7 @@ impl Server {
         }
         let pos = player.position();
         let rotation = player.rotation();
+        self.send_domain_teams(&player, state.world.domain());
         // The client drops a player entity spawn when it does not already know that
         // player's profile. Vanilla publishes player info before adding the player to
         // the level, which can immediately start entity tracking for existing players.
