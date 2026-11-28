@@ -167,6 +167,80 @@ fn permission_group_argument_can_require_a_configured_group() {
 }
 
 #[test]
+fn permission_group_suggestions_filter_special_group_roles() {
+    let suggest = |parser: SteelArgumentType| {
+        let dispatcher = resource_dispatcher(parser);
+        let parse = dispatcher.parse("resource ", TestSource::new());
+        match dispatcher.completion_suggestions(&parse) {
+            Ok(suggestions) => suggestions
+                .list()
+                .iter()
+                .map(Suggestion::text)
+                .map(str::to_owned)
+                .collect::<Vec<_>>(),
+            Err(error) => panic!("group suggestions should build: {error}"),
+        }
+    };
+
+    assert_eq!(suggest(SteelArgumentType::default_group_add()), ["builder"]);
+    assert_eq!(
+        suggest(SteelArgumentType::default_group_remove()),
+        ["default"]
+    );
+    assert_eq!(
+        suggest(SteelArgumentType::command_block_group_add()),
+        ["default"]
+    );
+    assert_eq!(
+        suggest(SteelArgumentType::command_block_group_remove()),
+        ["builder"]
+    );
+    assert_eq!(
+        suggest(SteelArgumentType::op_group_set()),
+        ["builder", "default"]
+    );
+}
+
+#[test]
+fn permission_collection_argument_reads_namespaced_identifiers() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::permission_collection());
+    let parse = dispatcher.parse("resource minecraft:gamemasters", TestSource::new());
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("namespaced collection identifier should parse");
+    };
+    assert!(chain.top_context().argument("value").is_ok());
+}
+
+#[test]
+fn permission_collection_member_argument_reads_permissions_and_references() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::add_permission_collection_member());
+
+    for (input, expected) in [
+        (
+            "resource steel:build",
+            PermissionGroupRule::permission(Identifier::new("steel", "build")),
+        ),
+        (
+            "resource #minecraft:gamemasters",
+            PermissionCollectionMember::Collection(Identifier::new("minecraft", "gamemasters")),
+        ),
+    ] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("collection member {input} should parse");
+        };
+        let value = chain.top_context().argument("value");
+        let Ok(value) = value else {
+            panic!("collection member {input} value should be retained");
+        };
+        assert_eq!(
+            value.downcast_ref::<PermissionCollectionMember>(),
+            Some(&expected)
+        );
+    }
+}
+
+#[test]
 fn owned_permission_arguments_scope_unset_suggestions_to_prior_arguments() {
     let mut dispatcher = TestDispatcher::new();
     assert!(
@@ -184,7 +258,7 @@ fn owned_permission_arguments_scope_unset_suggestions_to_prior_arguments() {
             .register(literal("group").then(
                 argument("group", SteelArgumentType::permission_group(true)).then(argument(
                     "permission",
-                    SteelArgumentType::group_permission_rule(),
+                    SteelArgumentType::remove_group_rule(),
                 )),
             ))
             .is_ok()
@@ -196,6 +270,20 @@ fn owned_permission_arguments_scope_unset_suggestions_to_prior_arguments() {
     };
     assert_eq!(
         user_suggestions
+            .list()
+            .iter()
+            .map(Suggestion::text)
+            .collect::<Vec<_>>(),
+        ["steel.user_owned"]
+    );
+
+    let restricted_user_parse = dispatcher.parse("user Steve ", TestSource::restricted());
+    let Ok(restricted_user_suggestions) = dispatcher.completion_suggestions(&restricted_user_parse)
+    else {
+        panic!("restricted user-owned suggestions should build");
+    };
+    assert_eq!(
+        restricted_user_suggestions
             .list()
             .iter()
             .map(Suggestion::text)
@@ -215,6 +303,176 @@ fn owned_permission_arguments_scope_unset_suggestions_to_prior_arguments() {
             .collect::<Vec<_>>(),
         ["steel.group_owned"]
     );
+}
+
+#[test]
+fn collection_member_suggestions_filter_direct_members_for_add_and_remove() {
+    let mut dispatcher = TestDispatcher::new();
+    for (name, parser) in [
+        ("add", SteelArgumentType::add_permission_collection_member()),
+        (
+            "remove",
+            SteelArgumentType::remove_permission_collection_member(),
+        ),
+    ] {
+        assert!(
+            dispatcher
+                .register(
+                    literal(name).then(
+                        argument("collection", SteelArgumentType::permission_collection())
+                            .then(argument("member", parser))
+                    )
+                )
+                .is_ok()
+        );
+    }
+
+    let source = || {
+        TestSource::with_collection_members(vec![
+            "steel.build{plugin:region=spawn}".to_owned(),
+            "#minecraft:gamemasters".to_owned(),
+        ])
+    };
+    let suggest = |input: &str| {
+        let parse = dispatcher.parse(input, source());
+        match dispatcher.completion_suggestions(&parse) {
+            Ok(suggestions) => suggestions
+                .list()
+                .iter()
+                .map(Suggestion::text)
+                .map(str::to_owned)
+                .collect::<Vec<_>>(),
+            Err(error) => panic!("{input} suggestions should build: {error}"),
+        }
+    };
+
+    let add = suggest("add minecraft:gamemasters ");
+    assert!(add.contains(&"minecraft.command.gamemode".to_owned()));
+    assert!(!add.contains(&"steel.build{plugin:region=spawn}".to_owned()));
+    assert!(!add.contains(&"#minecraft:gamemasters".to_owned()));
+
+    let remove = suggest("remove minecraft:gamemasters ");
+    assert_eq!(
+        remove,
+        ["#minecraft:gamemasters", "steel.build{plugin:region=spawn}"]
+    );
+}
+
+#[test]
+fn group_rule_suggestions_filter_existing_rules_for_add_and_unset() {
+    let mut dispatcher = TestDispatcher::new();
+    for (name, parser) in [
+        ("allow", SteelArgumentType::add_group_rule()),
+        ("unset", SteelArgumentType::remove_group_rule()),
+    ] {
+        assert!(
+            dispatcher
+                .register(
+                    literal(name).then(
+                        argument("group", SteelArgumentType::permission_group(true))
+                            .then(argument("permission", parser))
+                    )
+                )
+                .is_ok()
+        );
+    }
+
+    let suggest = |input: &str| {
+        let parse = dispatcher.parse(input, TestSource::new());
+        match dispatcher.completion_suggestions(&parse) {
+            Ok(suggestions) => suggestions
+                .list()
+                .iter()
+                .map(Suggestion::text)
+                .map(str::to_owned)
+                .collect::<Vec<_>>(),
+            Err(error) => panic!("{input} suggestions should build: {error}"),
+        }
+    };
+
+    let add = suggest("allow builder ");
+    assert!(add.contains(&"minecraft.command.gamemode".to_owned()));
+    assert!(add.contains(&"steel.build{plugin:region=spawn}".to_owned()));
+    assert!(add.contains(&"#minecraft:gamemasters".to_owned()));
+    assert!(!add.contains(&"steel.group_owned".to_owned()));
+
+    assert_eq!(suggest("unset builder "), ["steel.group_owned"]);
+}
+
+#[test]
+fn permission_suggestions_list_known_keys_without_management_authority() {
+    let mut dispatcher = TestDispatcher::new();
+    for (name, argument_type) in [
+        ("group", SteelArgumentType::permission_group(true)),
+        ("collection", SteelArgumentType::permission_collection()),
+        ("permission", SteelArgumentType::permission_rule()),
+        ("metadata", SteelArgumentType::permission_metadata()),
+    ] {
+        assert!(
+            dispatcher
+                .register(literal(name).then(argument("value", argument_type)))
+                .is_ok()
+        );
+    }
+    assert!(
+        dispatcher
+            .register(
+                literal("grouprule").then(
+                    argument("group", SteelArgumentType::permission_group(true))
+                        .then(argument("value", SteelArgumentType::add_group_rule()))
+                )
+            )
+            .is_ok()
+    );
+    assert!(
+        dispatcher
+            .register(literal("member").then(
+                argument("collection", SteelArgumentType::permission_collection()).then(argument(
+                    "value",
+                    SteelArgumentType::add_permission_collection_member()
+                ))
+            ))
+            .is_ok()
+    );
+
+    let suggest = |input: &str, source: TestSource| {
+        let parse = dispatcher.parse(input, source);
+        match dispatcher.completion_suggestions(&parse) {
+            Ok(suggestions) => suggestions
+                .list()
+                .iter()
+                .map(Suggestion::text)
+                .map(str::to_owned)
+                .collect::<Vec<_>>(),
+            Err(error) => panic!("{input} suggestions should build: {error}"),
+        }
+    };
+
+    // Group and collection names still require the matching management authority.
+    for input in ["group ", "collection "] {
+        assert!(!suggest(input, TestSource::new()).is_empty());
+        assert!(
+            suggest(input, TestSource::restricted()).is_empty(),
+            "{input} should hide unmanageable values"
+        );
+    }
+
+    // Permission and metadata keys are always discoverable; execution still checks authority.
+    for input in ["permission ", "metadata "] {
+        let allowed = suggest(input, TestSource::new());
+        assert!(!allowed.is_empty(), "{input} should suggest known values");
+        assert_eq!(suggest(input, TestSource::restricted()), allowed);
+    }
+
+    // Scoped rule arguments keep their known permission keys; only collection references
+    // remain authority-gated.
+    for input in ["grouprule builder ", "member minecraft:gamemasters "] {
+        let allowed = suggest(input, TestSource::new());
+        let restricted = suggest(input, TestSource::restricted());
+        assert!(allowed.iter().any(|value| value.starts_with('#')));
+        assert!(restricted.iter().any(|value| !value.starts_with('#')));
+        assert!(restricted.iter().all(|value| !value.starts_with('#')));
+    }
 }
 
 #[test]

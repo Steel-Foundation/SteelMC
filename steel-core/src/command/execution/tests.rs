@@ -11,7 +11,7 @@ use crate::command::brigadier::{
     ArgumentType, CommandDispatcher, CommandNodeBuilder, CommandSyntaxError, NodeId,
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender, CommandSenderKey};
-use crate::permission::{PermissionExpr, PermissionState};
+use crate::permission::{PermissionExpr, PermissionKey, PermissionState};
 
 use super::{
     ChainModifiers, CommandArgumentSource, CommandExecutionContext, CommandPermissionSource,
@@ -88,6 +88,10 @@ impl CommandArgumentSource for TestSource {}
 
 impl CommandPermissionSource for TestSource {
     fn permission_state(&self, _permission: &PermissionExpr) -> Option<PermissionState> {
+        Some(PermissionState::Allow)
+    }
+
+    fn permission_pattern_state(&self, _key: &PermissionKey) -> Option<PermissionState> {
         Some(PermissionState::Allow)
     }
 }

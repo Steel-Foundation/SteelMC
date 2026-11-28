@@ -12,7 +12,10 @@ use super::{
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     message::Message,
     nbt::parse_nbt_path,
-    permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
+    permission::{
+        PermissionCollectionMemberParser, PermissionCollectionParser, PermissionGroupParser,
+        PermissionGroupRuleParser, PermissionMetadataParser, PermissionRuleParser,
+    },
     profile::{GameProfileParser, GameProfileSuggestionMode},
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
@@ -276,8 +279,12 @@ impl SteelArgumentType {
         Self::new(PermissionRuleParser::user_owned())
     }
 
-    pub(crate) fn group_permission_rule() -> Self {
-        Self::new(PermissionRuleParser::group_owned())
+    pub(crate) fn add_group_rule() -> Self {
+        Self::new(PermissionGroupRuleParser::for_add())
+    }
+
+    pub(crate) fn remove_group_rule() -> Self {
+        Self::new(PermissionGroupRuleParser::for_remove())
     }
 
     pub(crate) fn permission_metadata() -> Self {
@@ -293,7 +300,39 @@ impl SteelArgumentType {
     }
 
     pub(crate) fn permission_group(require_existing: bool) -> Self {
-        Self::new(PermissionGroupParser { require_existing })
+        Self::new(PermissionGroupParser::new(require_existing))
+    }
+
+    pub(crate) fn default_group_add() -> Self {
+        Self::new(PermissionGroupParser::for_default_add())
+    }
+
+    pub(crate) fn default_group_remove() -> Self {
+        Self::new(PermissionGroupParser::for_default_remove())
+    }
+
+    pub(crate) fn command_block_group_add() -> Self {
+        Self::new(PermissionGroupParser::for_command_block_add())
+    }
+
+    pub(crate) fn command_block_group_remove() -> Self {
+        Self::new(PermissionGroupParser::for_command_block_remove())
+    }
+
+    pub(crate) fn op_group_set() -> Self {
+        Self::new(PermissionGroupParser::for_op())
+    }
+
+    pub(crate) fn permission_collection() -> Self {
+        Self::new(PermissionCollectionParser)
+    }
+
+    pub(crate) fn add_permission_collection_member() -> Self {
+        Self::new(PermissionCollectionMemberParser::for_add())
+    }
+
+    pub(crate) fn remove_permission_collection_member() -> Self {
+        Self::new(PermissionCollectionMemberParser::for_remove())
     }
 
     pub(crate) fn score_holders() -> Self {

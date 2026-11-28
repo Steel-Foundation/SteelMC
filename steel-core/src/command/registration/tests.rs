@@ -11,7 +11,8 @@ use crate::command::{
     },
 };
 use crate::permission::{
-    PermissionEntry, PermissionExpr, PermissionKey, PermissionSet, PermissionState,
+    OWNERS_COLLECTION, PermissionCollectionMember, PermissionEntry, PermissionExpr,
+    PermissionGroupRule, PermissionKey, PermissionSet, PermissionState,
 };
 
 use super::{CommandDispatcherBuilder, CommandRegistration, CommandRegistrationError};
@@ -53,7 +54,14 @@ impl CommandPermissionSource for TestSource {
             let PermissionExpr::Key(permission) = permission else {
                 panic!("test command should use one derived permission key");
             };
-            assert_eq!(permission.as_str(), expected);
+            assert_eq!(permission.to_string(), expected);
+        }
+        self.permission
+    }
+
+    fn permission_pattern_state(&self, key: &PermissionKey) -> Option<PermissionState> {
+        if let Some(permission_set) = &self.permission_set {
+            return permission_set.resolve_key(key);
         }
         self.permission
     }
@@ -321,14 +329,14 @@ fn required_root_permissions_are_derived_from_stable_command_ids() {
         panic!("seed root should exist");
     };
 
-    assert!(!seed.allows(&source(None, "minecraft.command.seed")));
+    assert!(!seed.allows(&source(None, "minecraft:command.seed")));
     assert!(seed.allows(&source(
         Some(PermissionState::Allow),
-        "minecraft.command.seed"
+        "minecraft:command.seed"
     )));
     assert!(!seed.allows(&source(
         Some(PermissionState::Deny),
-        "minecraft.command.seed"
+        "minecraft:command.seed"
     )));
     assert!(seed.is_restricted());
 }
@@ -336,7 +344,7 @@ fn required_root_permissions_are_derived_from_stable_command_ids() {
 #[test]
 fn dispatcher_build_retains_declared_and_derived_permission_keys() {
     let mut builder = CommandDispatcherBuilder::new();
-    assert!(builder.declare_permission("minecraft.selector").is_ok());
+    assert!(builder.declare_permission("minecraft:selector").is_ok());
     assert!(
         builder
             .register(
@@ -357,39 +365,123 @@ fn dispatcher_build_retains_declared_and_derived_permission_keys() {
     assert_eq!(
         permissions,
         [
-            "minecraft.command.tick",
-            "minecraft.command.tick.freeze",
-            "minecraft.selector"
+            "minecraft:command.tick",
+            "minecraft:command.tick.freeze",
+            "minecraft:selector"
         ]
     );
 }
 
 #[test]
-fn default_access_allows_unset_but_not_explicitly_denied_permissions() {
-    let dispatcher =
-        build([command(Identifier::new_static("minecraft", "list"), "child").default_access()]);
-    let list = child(&dispatcher, dispatcher.root(), "list");
-    let Some(list) = dispatcher.node(list) else {
-        panic!("list root should exist");
+fn command_collection_permissions_resolve_default_and_explicit_collections() {
+    let mut builder = CommandDispatcherBuilder::new();
+    let granted = Identifier::new("example", "extra");
+    let owner_only = Identifier::new("example", "owner_only");
+    let custom = Identifier::new("example", "custom");
+    assert!(
+        builder
+            .register(
+                command(Identifier::new_static("example", "inspect"), "child")
+                    .permission_collection(custom.clone())
+                    .collection_permission(granted.clone())
+                    .collection_permission_in(OWNERS_COLLECTION, owner_only.clone()),
+            )
+            .is_ok()
+    );
+    let Ok(registered) = builder.build_with_permissions() else {
+        panic!("valid command declarations should build");
     };
+    let collections = registered.declared_collections();
 
-    assert!(list.allows(&source(None, "minecraft.command.list")));
-    assert!(!list.allows(&source(
-        Some(PermissionState::Deny),
-        "minecraft.command.list"
-    )));
-    assert!(!list.is_restricted());
+    let Some(custom_members) = collections.get(&custom) else {
+        panic!("command collection should be declared");
+    };
+    assert!(
+        custom_members
+            .members()
+            .contains(&PermissionGroupRule::permission(granted.clone()))
+    );
+    let Some(owners) = collections.get(&OWNERS_COLLECTION) else {
+        panic!("explicit member collection should be declared");
+    };
+    assert!(
+        owners
+            .members()
+            .contains(&PermissionGroupRule::permission(owner_only))
+    );
+    assert!(
+        registered
+            .permissions
+            .contains(&PermissionKey::from_identifier(&granted))
+    );
+}
+
+#[test]
+fn declared_permissions_grant_their_management_authorities() {
+    let mut builder = CommandDispatcherBuilder::new();
+    let custom = Identifier::new("example", "custom");
+    let granted = Identifier::new("example", "extra");
+    let owner_only = Identifier::new("example", "owner_only");
+    let independent = Identifier::new("example", "independent");
+    assert!(
+        builder
+            .register(
+                command(Identifier::new_static("example", "inspect"), "child")
+                    .permission_collection(custom.clone())
+                    .collection_permission(granted.clone())
+                    .collection_permission_in(OWNERS_COLLECTION, owner_only.clone()),
+            )
+            .is_ok()
+    );
+    assert!(
+        builder
+            .declare_collection_member(
+                custom.clone(),
+                PermissionGroupRule::permission(independent.clone()),
+            )
+            .is_ok()
+    );
+    let Ok(registered) = builder.build_with_permissions() else {
+        panic!("valid command declarations should build");
+    };
+    let collections = registered.declared_collections();
+
+    let assert_managed = |members: &[PermissionCollectionMember], permission: &Identifier| {
+        let authority = Identifier::new(
+            "steel",
+            format!(
+                "permission.manage.{}.{}",
+                permission.namespace, permission.path
+            ),
+        );
+        for member in [permission.clone(), authority] {
+            assert!(
+                members.contains(&PermissionGroupRule::permission(member.clone())),
+                "missing {member}"
+            );
+        }
+    };
+    let Some(custom_members) = collections.get(&custom) else {
+        panic!("command collection should be declared");
+    };
+    assert_managed(
+        custom_members.members(),
+        &Identifier::new("example", "command.inspect"),
+    );
+    assert_managed(custom_members.members(), &granted);
+    assert_managed(custom_members.members(), &independent);
+    let Some(owners) = collections.get(&OWNERS_COLLECTION) else {
+        panic!("explicit member collection should be declared");
+    };
+    assert_managed(owners.members(), &owner_only);
 }
 
 #[test]
 fn explicit_permission_expressions_replace_id_derivation() {
-    let permission = PermissionKey::parse("steel.command.inspect");
-    let Ok(permission) = permission else {
-        panic!("test permission should be valid");
-    };
     let dispatcher = build([
-        command(Identifier::new_static("example", "inspect"), "child")
-            .permission(PermissionExpr::key(permission)),
+        command(Identifier::new_static("example", "inspect"), "child").permission(
+            PermissionExpr::key(Identifier::new_static("steel", "command.inspect")),
+        ),
     ]);
     let inspect = child(&dispatcher, dispatcher.root(), "inspect");
     let Some(inspect) = dispatcher.node(inspect) else {
@@ -398,7 +490,7 @@ fn explicit_permission_expressions_replace_id_derivation() {
 
     assert!(inspect.allows(&source(
         Some(PermissionState::Allow),
-        "steel.command.inspect"
+        "steel:command.inspect"
     )));
 }
 
@@ -419,7 +511,7 @@ fn registration_composes_authorization_with_existing_context_requirements() {
     let Some(inspect) = dispatcher.node(inspect) else {
         panic!("inspect root should exist");
     };
-    let mut allowed = source(Some(PermissionState::Allow), "example.command.inspect");
+    let mut allowed = source(Some(PermissionState::Allow), "example:command.inspect");
 
     allowed.context_allowed = false;
     assert!(!inspect.allows(&allowed));
@@ -446,7 +538,7 @@ fn derived_subcommand_permissions_only_allow_their_routes() {
     let freeze = child(&dispatcher, tick, "freeze");
 
     let rate_only = permission_source([permission_entry(
-        "minecraft.command.tick.rate",
+        "minecraft:command.tick.rate",
         PermissionState::Allow,
     )]);
     assert!(
@@ -471,7 +563,7 @@ fn derived_subcommand_permissions_only_allow_their_routes() {
     let query = dispatcher.parse(
         "tick query",
         permission_source([permission_entry(
-            "minecraft.command.tick.rate",
+            "minecraft:command.tick.rate",
             PermissionState::Allow,
         )]),
     );
@@ -481,7 +573,7 @@ fn derived_subcommand_permissions_only_allow_their_routes() {
     let rate_command = dispatcher.parse(
         "tick rate",
         permission_source([permission_entry(
-            "minecraft.command.tick.rate",
+            "minecraft:command.tick.rate",
             PermissionState::Allow,
         )]),
     );
@@ -489,7 +581,7 @@ fn derived_subcommand_permissions_only_allow_their_routes() {
     assert!(rate_command.context().is_executable());
 
     let root = permission_source([permission_entry(
-        "minecraft.command.tick",
+        "minecraft:command.tick",
         PermissionState::Allow,
     )]);
     assert!(dispatcher.node(rate).is_some_and(|node| node.allows(&root)));
@@ -500,8 +592,8 @@ fn derived_subcommand_permissions_only_allow_their_routes() {
     );
 
     let root_with_freeze_deny = permission_source([
-        permission_entry("minecraft.command.tick", PermissionState::Allow),
-        permission_entry("minecraft.command.tick.freeze", PermissionState::Deny),
+        permission_entry("minecraft:command.tick", PermissionState::Allow),
+        permission_entry("minecraft:command.tick.freeze", PermissionState::Deny),
     ]);
     assert!(
         dispatcher
@@ -537,7 +629,7 @@ fn derived_subcommand_permissions_follow_literals_through_arguments() {
     let info = child(&dispatcher, targets, "info");
     let verbose = child(&dispatcher, info, "verbose");
     let info_only = permission_source([permission_entry(
-        "steel.command.perms.user.info",
+        "steel:command.perms.user.info",
         PermissionState::Allow,
     )]);
 
@@ -553,7 +645,7 @@ fn derived_subcommand_permissions_follow_literals_through_arguments() {
     );
 
     let verbose_only = permission_source([permission_entry(
-        "steel.command.perms.user.info.verbose",
+        "steel:command.perms.user.info.verbose",
         PermissionState::Allow,
     )]);
     assert!(
@@ -570,7 +662,7 @@ fn derived_subcommand_permissions_follow_literals_through_arguments() {
     let parent = dispatcher.parse(
         "perms user target info",
         permission_source([permission_entry(
-            "steel.command.perms.user.info.verbose",
+            "steel:command.perms.user.info.verbose",
             PermissionState::Allow,
         )]),
     );
@@ -580,69 +672,12 @@ fn derived_subcommand_permissions_follow_literals_through_arguments() {
     let child = dispatcher.parse(
         "perms user target info verbose",
         permission_source([permission_entry(
-            "steel.command.perms.user.info.verbose",
+            "steel:command.perms.user.info.verbose",
             PermissionState::Allow,
         )]),
     );
     assert!(!child.reader().can_read());
     assert!(child.context().is_executable());
-}
-
-#[test]
-fn default_access_still_honors_specific_subcommand_denies() {
-    let registration =
-        CommandRegistration::new(Identifier::new_static("minecraft", "inspect"), |_| {
-            literal("inspect")
-                .then(literal("query").executes(|_| Ok(1)))
-                .then(literal("write").executes(|_| Ok(1)))
-        })
-        .default_access()
-        .subcommand_permission(["write"]);
-    let dispatcher = build([registration]);
-    let inspect = child(&dispatcher, dispatcher.root(), "inspect");
-    let write = child(&dispatcher, inspect, "write");
-
-    let unset = permission_source([]);
-    assert!(
-        dispatcher
-            .node(inspect)
-            .is_some_and(|node| node.allows(&unset))
-    );
-    assert!(
-        dispatcher
-            .node(write)
-            .is_some_and(|node| !node.allows(&unset))
-    );
-
-    let denied_root_with_write = permission_source([
-        permission_entry("minecraft.command.inspect", PermissionState::Deny),
-        permission_entry("minecraft.command.inspect.write", PermissionState::Allow),
-    ]);
-    assert!(
-        dispatcher
-            .node(inspect)
-            .is_some_and(|node| node.allows(&denied_root_with_write))
-    );
-    assert!(
-        dispatcher
-            .node(write)
-            .is_some_and(|node| node.allows(&denied_root_with_write))
-    );
-
-    let denied_write = permission_source([permission_entry(
-        "minecraft.command.inspect.write",
-        PermissionState::Deny,
-    )]);
-    assert!(
-        dispatcher
-            .node(inspect)
-            .is_some_and(|node| node.allows(&denied_write))
-    );
-    assert!(
-        dispatcher
-            .node(write)
-            .is_some_and(|node| !node.allows(&denied_write))
-    );
 }
 
 #[test]
@@ -661,11 +696,11 @@ fn missing_subcommand_permission_paths_fail_the_build() {
 
 #[test]
 fn explicit_root_permissions_cannot_mix_with_derived_subcommands() {
-    let Ok(permission) = PermissionKey::parse("steel.command.tick") else {
-        panic!("test permission should parse");
-    };
     let registration = command(Identifier::new_static("minecraft", "tick"), "freeze")
-        .permission(PermissionExpr::key(permission))
+        .permission(PermissionExpr::key(Identifier::new_static(
+            "steel",
+            "command.tick",
+        )))
         .subcommand_permission(["freeze"]);
     let mut builder = CommandDispatcherBuilder::new();
 

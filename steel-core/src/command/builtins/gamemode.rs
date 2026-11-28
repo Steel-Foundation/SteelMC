@@ -12,13 +12,11 @@ use super::super::{
         CommandPermissionSource, CommandSource, SteelArgumentType, SteelCommandContext,
         SteelCommandRuntime, argument, literal,
     },
-    registration::{CommandRegistration, CommandRegistrationError},
+    registration::CommandRegistration,
 };
 use crate::command::sender::CommandSender;
 use crate::entity::Entity;
-use crate::permission::{
-    PermissionContext, PermissionExpr, PermissionKey, PermissionKeyError, PermissionSegment,
-};
+use crate::permission::{PermissionContext, PermissionExpr};
 use crate::player::Player;
 use crate::server::Server;
 use crate::world::World;
@@ -30,18 +28,9 @@ const GAME_MODES: [GameType; 4] = [
     GameType::Spectator,
 ];
 
-pub(super) fn registration() -> Result<CommandRegistration<CommandSource>, CommandRegistrationError>
-{
-    let permission = visible_permission().map_err(|source| {
-        CommandRegistrationError::InvalidExplicitPermission {
-            id: Identifier::vanilla_static("gamemode"),
-            source,
-        }
-    })?;
-    Ok(
-        CommandRegistration::new(Identifier::vanilla_static("gamemode"), |_| command())
-            .permission(permission),
-    )
+pub(super) fn registration() -> CommandRegistration<CommandSource> {
+    CommandRegistration::new(Identifier::vanilla_static("gamemode"), |_| command())
+        .permission(visible_permission())
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -174,47 +163,25 @@ fn any_game_mode_allowed(mut allows_game_mode: impl FnMut(GameType) -> bool) -> 
 }
 
 fn source_can_change_game_mode(source: &CommandSource, game_mode: GameType) -> bool {
-    let permission = match game_mode_permission(game_mode) {
-        Ok(permission) => permission,
-        Err(error) => {
-            log::error!(
-                "invalid built-in gamemode permission key for {}: {error}",
-                game_mode.name()
-            );
-            return false;
-        }
-    };
-    source.has_permission(&permission)
+    source.has_permission(&game_mode_permission(game_mode))
 }
 
 fn player_can_change_game_mode(player: &Player, world: &World, game_mode: GameType) -> bool {
-    let permission = match game_mode_permission(game_mode) {
-        Ok(permission) => permission,
-        Err(error) => {
-            log::error!(
-                "invalid built-in gamemode permission key for {}: {error}",
-                game_mode.name()
-            );
-            return false;
-        }
-    };
     let context = PermissionContext::for_world(world.key.clone());
-    player.has_permission_in(&permission, &context)
+    player.has_permission_in(&game_mode_permission(game_mode), &context)
 }
 
-fn visible_permission() -> Result<PermissionExpr, PermissionKeyError> {
-    GAME_MODES
-        .into_iter()
-        .map(game_mode_permission)
-        .collect::<Result<Vec<_>, _>>()
-        .map(PermissionExpr::Any)
+fn visible_permission() -> PermissionExpr {
+    PermissionExpr::Any(GAME_MODES.into_iter().map(game_mode_permission).collect())
 }
 
-fn game_mode_permission(game_mode: GameType) -> Result<PermissionExpr, PermissionKeyError> {
-    let root = PermissionKey::parse("minecraft.command.gamemode")?;
-    let segment = PermissionSegment::parse(game_mode.name())?;
-    let mode = root.child(&segment)?;
-    Ok(PermissionExpr::scoped_key(root, mode))
+fn game_mode_permission(game_mode: GameType) -> PermissionExpr {
+    let root = Identifier::vanilla_static("command.gamemode");
+    let mode = Identifier::new(
+        Identifier::VANILLA_NAMESPACE,
+        format!("command.gamemode.{}", game_mode.name()),
+    );
+    PermissionExpr::scoped_key(root, mode)
 }
 
 pub(super) const fn game_mode_translation(game_mode: GameType) -> &'static Translation<0> {
@@ -232,7 +199,7 @@ mod tests {
 
     use super::super::create_dispatcher;
     use super::*;
-    use crate::permission::{PermissionEntry, PermissionSet};
+    use crate::permission::{PermissionEntry, PermissionKey, PermissionSet};
 
     fn permission_key(value: &str) -> PermissionKey {
         PermissionKey::parse(value).expect("test permission key should parse")
@@ -251,41 +218,41 @@ mod tests {
     }
 
     fn allows_mode(permissions: &PermissionSet, game_mode: GameType) -> bool {
-        permissions.allows(&game_mode_permission(game_mode).expect("permission should build"))
+        permissions.allows(&game_mode_permission(game_mode))
     }
 
     #[test]
     fn scoped_game_mode_permissions_preserve_root_and_child_rules() {
-        let root = permissions([allow("minecraft.command.gamemode")]);
+        let root = permissions([allow("minecraft:command.gamemode")]);
         assert!(GAME_MODES.into_iter().all(|mode| allows_mode(&root, mode)));
 
-        let creative_only = permissions([allow("minecraft.command.gamemode.creative")]);
+        let creative_only = permissions([allow("minecraft:command.gamemode.creative")]);
         assert!(allows_mode(&creative_only, GameType::Creative));
         assert!(!allows_mode(&creative_only, GameType::Survival));
 
         let creative_denied = permissions([
-            allow("minecraft.command.gamemode"),
-            deny("minecraft.command.gamemode.creative"),
+            allow("minecraft:command.gamemode"),
+            deny("minecraft:command.gamemode.creative"),
         ]);
         assert!(!allows_mode(&creative_denied, GameType::Creative));
         assert!(allows_mode(&creative_denied, GameType::Survival));
 
-        let visible = visible_permission().expect("visibility permission should build");
+        let visible = visible_permission();
         assert!(creative_only.allows(&visible));
 
         let all_denied = permissions([
-            allow("minecraft.command.gamemode"),
-            deny("minecraft.command.gamemode.survival"),
-            deny("minecraft.command.gamemode.creative"),
-            deny("minecraft.command.gamemode.adventure"),
-            deny("minecraft.command.gamemode.spectator"),
+            allow("minecraft:command.gamemode"),
+            deny("minecraft:command.gamemode.survival"),
+            deny("minecraft:command.gamemode.creative"),
+            deny("minecraft:command.gamemode.adventure"),
+            deny("minecraft:command.gamemode.spectator"),
         ]);
         assert!(!all_denied.allows(&visible));
     }
 
     #[test]
     fn client_switcher_requires_at_least_one_allowed_mode() {
-        let creative_only = permissions([allow("minecraft.command.gamemode.creative")]);
+        let creative_only = permissions([allow("minecraft:command.gamemode.creative")]);
         assert!(any_game_mode_allowed(|mode| allows_mode(
             &creative_only,
             mode
@@ -295,11 +262,11 @@ mod tests {
         assert!(!any_game_mode_allowed(|mode| allows_mode(&none, mode)));
 
         let all_denied = permissions([
-            allow("minecraft.command.gamemode"),
-            deny("minecraft.command.gamemode.survival"),
-            deny("minecraft.command.gamemode.creative"),
-            deny("minecraft.command.gamemode.adventure"),
-            deny("minecraft.command.gamemode.spectator"),
+            allow("minecraft:command.gamemode"),
+            deny("minecraft:command.gamemode.survival"),
+            deny("minecraft:command.gamemode.creative"),
+            deny("minecraft:command.gamemode.adventure"),
+            deny("minecraft:command.gamemode.spectator"),
         ]);
         assert!(!any_game_mode_allowed(|mode| allows_mode(
             &all_denied,

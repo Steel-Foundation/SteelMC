@@ -74,8 +74,7 @@ pub(crate) fn create_registered_dispatcher(
     let mut builder = CommandDispatcherBuilder::new();
     builder.declare_permission(ENTITY_SELECTOR_PERMISSION_KEY)?;
     builder.declare_permission(ENTITY_SELECTOR_ADVANCED_PERMISSION_KEY)?;
-    builder.declare_permission(perms::MANAGE_ALL_PERMISSION)?;
-    builder.declare_permission(perms::GROUP_ALL_PERMISSION)?;
+    // Administrative wildcards stay valid at runtime but are not autocomplete candidates.
     builder.declare_permission(perms::METADATA_PERMISSION)?;
     builder.register(advancement::registration())?;
     builder.register(clear::registration())?;
@@ -90,7 +89,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(experience::registration())?;
     builder.register(fill::registration())?;
     builder.register(fly::registration())?;
-    builder.register(gamemode::registration()?)?;
+    builder.register(gamemode::registration())?;
     builder.register(gamerule::registration())?;
     builder.register(give::registration())?;
     builder.register(kick::registration())?;
@@ -122,7 +121,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(version::registration())?;
     builder.register(weather::registration())?;
     builder.register(worldborder::registration())?;
-    builder.register(invsee::registration()?)?;
+    builder.register(invsee::registration())?;
     builder.register(transfer::registration())?;
     builder.extend(extension_commands.into_inner())?;
     builder.build_with_permissions()
@@ -137,7 +136,9 @@ mod tests {
         CommandRegistration as ExtensionCommandRegistration, CommandRegistry,
         literal as extension_literal,
     };
-    use crate::permission::PermissionKey;
+    use crate::permission::{
+        OWNERS_COLLECTION, PermissionCollections, PermissionGroupRule, PermissionKey,
+    };
     use steel_registry::init_vanilla_registry;
     use steel_utils::Identifier;
 
@@ -304,7 +305,37 @@ mod tests {
             registered
                 .permissions
                 .iter()
-                .any(|permission| permission.as_str() == "steel_test.command.stop")
+                .any(|permission| permission.as_str() == "steel_test:command.stop")
+        );
+    }
+
+    #[test]
+    fn invsee_modify_permission_is_declared_in_owners_collection() {
+        init_vanilla_registry();
+        let Ok(registered) = create_registered_dispatcher(CommandRegistry::new()) else {
+            panic!("built-in commands should register");
+        };
+        let modify = Identifier::new("steel", "command.invsee.modify");
+        let manage_modify =
+            Identifier::new("steel", "permission.manage.steel.command.invsee.modify");
+        let collections = registered.declared_collections();
+        let Some(owners) = collections.get(&OWNERS_COLLECTION) else {
+            panic!("owners collection should be declared");
+        };
+        for member in [&modify, &manage_modify] {
+            assert!(
+                owners
+                    .members()
+                    .contains(&PermissionGroupRule::permission((*member).clone()))
+            );
+        }
+        let effective =
+            PermissionCollections::effective(&collections, &PermissionCollections::new());
+        assert!(
+            effective
+                .expand(&OWNERS_COLLECTION)
+                .iter()
+                .any(|expression| expression.key().as_identifier().as_ref() == Some(&modify))
         );
     }
 
@@ -320,9 +351,9 @@ mod tests {
             .map(PermissionKey::as_str)
             .collect::<Vec<_>>();
 
-        assert!(permissions.contains(&"steel.command.invsee"));
-        assert!(permissions.contains(&"steel.command.invsee.modify"));
-        assert!(!permissions.contains(&"minecraft.command.invsee"));
+        assert!(permissions.contains(&"steel:command.invsee"));
+        assert!(permissions.contains(&"steel:command.invsee.modify"));
+        assert!(!permissions.contains(&"minecraft:command.invsee"));
     }
 
     #[test]

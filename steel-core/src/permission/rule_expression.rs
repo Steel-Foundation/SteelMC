@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, error::Error, fmt};
+use std::{collections::BTreeSet, fmt};
 
 use steel_utils::Identifier;
 
@@ -246,9 +246,10 @@ pub(super) enum PermissionExpressionContextError {
 }
 
 /// Invalid permission rule expression syntax.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PermissionRuleExpressionError {
     /// The permission key is invalid.
+    #[error("invalid permission key '{value}': {source}")]
     InvalidPermissionKey {
         /// Invalid permission key text.
         value: String,
@@ -256,12 +257,16 @@ pub enum PermissionRuleExpressionError {
         source: PermissionKeyError,
     },
     /// A context selector starts with `{` but does not end with `}`.
+    #[error("permission context selector is not closed")]
     UnclosedContext,
     /// The context selector contains no entries.
+    #[error("permission context selector is empty")]
     EmptyContext,
     /// A context entry is not `key=value`.
+    #[error("invalid permission context entry '{0}'")]
     InvalidContextEntry(String),
     /// A context entry contains an unsupported value.
+    #[error("invalid permission context value '{value}' for '{key}'")]
     InvalidContextValue {
         /// Context key.
         key: String,
@@ -269,12 +274,16 @@ pub enum PermissionRuleExpressionError {
         value: String,
     },
     /// The same context key appears more than once.
+    #[error("permission context key '{0}' appears more than once")]
     DuplicateContextKey(String),
     /// The built-in domain value is invalid.
+    #[error("invalid domain context '{0}'")]
     InvalidDomain(String),
     /// The built-in loaded-world value is invalid.
+    #[error("invalid world context '{0}'")]
     InvalidWorld(String),
     /// A custom context key is invalid.
+    #[error("invalid permission context key '{key}': {source}")]
     InvalidContextKey {
         /// Invalid context key text.
         key: String,
@@ -282,6 +291,7 @@ pub enum PermissionRuleExpressionError {
         source: PermissionContextKeyError,
     },
     /// The combined rule-side context is invalid.
+    #[error(transparent)]
     InvalidRuleContext(PermissionRuleContextError),
 }
 
@@ -309,43 +319,3 @@ impl PermissionRuleExpressionError {
         }
     }
 }
-
-impl fmt::Display for PermissionRuleExpressionError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidPermissionKey { value, source } => {
-                write!(formatter, "invalid permission key '{value}': {source}")
-            }
-            Self::UnclosedContext => {
-                formatter.write_str("permission context selector is not closed")
-            }
-            Self::EmptyContext => formatter.write_str("permission context selector is empty"),
-            Self::InvalidContextEntry(entry) => {
-                write!(formatter, "invalid permission context entry '{entry}'")
-            }
-            Self::InvalidContextValue { key, value } => write!(
-                formatter,
-                "invalid permission context value '{value}' for '{key}'"
-            ),
-            Self::DuplicateContextKey(key) => {
-                write!(
-                    formatter,
-                    "permission context key '{key}' appears more than once"
-                )
-            }
-            Self::InvalidDomain(domain) => {
-                write!(formatter, "invalid domain context '{domain}'")
-            }
-            Self::InvalidWorld(world) => write!(formatter, "invalid world context '{world}'"),
-            Self::InvalidContextKey { key, source } => {
-                write!(
-                    formatter,
-                    "invalid permission context key '{key}': {source}"
-                )
-            }
-            Self::InvalidRuleContext(source) => source.fmt(formatter),
-        }
-    }
-}
-
-impl Error for PermissionRuleExpressionError {}

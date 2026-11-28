@@ -1,0 +1,26 @@
+#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/package-content/collections.schema.json
+# Documentation: https://steelmc.dev/configuration/permissions/
+
+# Permission collections group related permission rules under a reusable
+# `#namespace:name` reference. Members use the same syntax as group rules: concrete
+# permissions, wildcard patterns such as `steel:permission.manage.*`, rules with a
+# context selector, and nested collection references. A group lists a collection in
+# its `allow` or `deny` rules to apply every rule it contains.
+#
+# The vanilla collections (`#minecraft:all`, `#minecraft:moderators`,
+# `#minecraft:gamemasters`, `#minecraft:admins`, `#minecraft:owners`) are provided by
+# the server and track the vanilla command permissions. This file takes precedence:
+# a collection declared here replaces the built-in or code-declared collection with
+# the same id and is never updated again. Prefer a collection that extends a built-in
+# one (for example `staff = ["#minecraft:moderators", "myplugin:foo"]` under
+# `[collections.myplugin]`) and add `#myplugin:staff` to a group in groups.toml, or
+# edit groups.toml directly.
+#
+# Example:
+#
+# [collections.minecraft]
+# all = ["minecraft:command.help", "minecraft:command.list"]
+# owners = ["#minecraft:admins", "minecraft:command.op"]
+#
+# [collections.myplugin]
+# build = ["myplugin:build.place"]

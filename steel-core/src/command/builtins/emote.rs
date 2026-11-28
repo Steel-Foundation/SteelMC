@@ -5,12 +5,14 @@ use super::super::{
     execution::{CommandSource, SteelArgumentType, SteelCommandRuntime, argument, literal},
     registration::CommandRegistration,
 };
+use crate::permission::ALL_COLLECTION;
 use crate::player::chat::OutgoingChatMessage;
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::Identifier;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
-    CommandRegistration::new(Identifier::vanilla_static("me"), |_| command()).default_access()
+    CommandRegistration::new(Identifier::vanilla_static("me"), |_| command())
+        .permission_collection(ALL_COLLECTION)
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {

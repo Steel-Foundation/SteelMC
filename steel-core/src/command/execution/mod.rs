@@ -27,7 +27,7 @@ pub(crate) use biome::BiomeOrTag;
 pub(crate) use block::{BlockInput, BlockPredicate, placement_flags};
 pub(crate) use coordinates::Coordinates;
 pub(crate) use item_predicate::ItemPredicate;
-pub(crate) use permission::PermissionGroupName;
+pub(crate) use permission::{PermissionCollectionName, PermissionGroupName};
 pub(crate) use profile::GameProfileArgument;
 pub use queue::CommandSuspensionOrder;
 pub(crate) use queue::{

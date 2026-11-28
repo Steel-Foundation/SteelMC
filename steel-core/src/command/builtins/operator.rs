@@ -1,4 +1,4 @@
-//! Vanilla operator commands backed by Steel's built-in `op` permission group.
+//! Vanilla operator commands backed by Steel's configured operator group.
 
 use std::{convert::Infallible, sync::Arc};
 
@@ -15,10 +15,7 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::{
-    permission::{OP_GROUP, PermissionSubjectState},
-    server::Server,
-};
+use crate::{permission::PermissionSubjectState, server::Server};
 
 pub(super) fn op_registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("op"), |_| op_command())
@@ -122,10 +119,11 @@ async fn update_operator_group(
     uuid: uuid::Uuid,
     action: OperatorAction,
 ) -> Result<bool, CommandSyntaxError> {
+    let op_group = server.permission_groups.op_group();
     let result = server
         .try_update_player_permissions(uuid, move |state| {
             let (mut groups, overrides, metadata) = state.into_parts();
-            let changed = update_groups(&mut groups, action);
+            let changed = update_groups(&mut groups, action, &op_group);
             Ok::<_, Infallible>((
                 PermissionSubjectState::new_with_metadata(groups, overrides, metadata),
                 changed,
@@ -136,19 +134,19 @@ async fn update_operator_group(
     Ok(result.1)
 }
 
-fn update_groups(groups: &mut Vec<String>, action: OperatorAction) -> bool {
+fn update_groups(groups: &mut Vec<String>, action: OperatorAction, op_group: &str) -> bool {
     match action {
         OperatorAction::Grant => {
-            if groups.iter().any(|group| group == OP_GROUP) {
+            if groups.iter().any(|group| group == op_group) {
                 false
             } else {
-                groups.push(OP_GROUP.to_owned());
+                groups.push(op_group.to_owned());
                 true
             }
         }
         OperatorAction::Revoke => {
             let old_len = groups.len();
-            groups.retain(|group| group != OP_GROUP);
+            groups.retain(|group| group != op_group);
             groups.len() != old_len
         }
     }
@@ -210,12 +208,12 @@ mod tests {
     #[test]
     fn operator_group_updates_are_idempotent_and_preserve_other_groups() {
         let mut groups = vec!["builder".to_owned()];
-        assert!(update_groups(&mut groups, OperatorAction::Grant));
+        assert!(update_groups(&mut groups, OperatorAction::Grant, "op"));
         assert_eq!(groups, ["builder", "op"]);
-        assert!(!update_groups(&mut groups, OperatorAction::Grant));
-        assert!(update_groups(&mut groups, OperatorAction::Revoke));
+        assert!(!update_groups(&mut groups, OperatorAction::Grant, "op"));
+        assert!(update_groups(&mut groups, OperatorAction::Revoke, "op"));
         assert_eq!(groups, ["builder"]);
-        assert!(!update_groups(&mut groups, OperatorAction::Revoke));
+        assert!(!update_groups(&mut groups, OperatorAction::Revoke, "op"));
     }
 
     #[test]

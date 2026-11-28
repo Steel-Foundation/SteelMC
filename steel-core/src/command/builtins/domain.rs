@@ -9,14 +9,6 @@ use steel_registry::{
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
-use crate::{
-    entity::Entity as _,
-    inventory::prelude::*,
-    portal::{PreparedSpawn, WorldEntry},
-    server::Server,
-    world::World,
-};
-
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
@@ -26,9 +18,18 @@ use super::super::{
     registration::CommandRegistration,
 };
 use super::position::{ensure_spawnable_position, finite_rotation, wrap_rotation};
+use crate::{
+    entity::Entity as _,
+    inventory::prelude::*,
+    permission::GAMEMASTERS_COLLECTION,
+    portal::{PreparedSpawn, WorldEntry},
+    server::Server,
+    world::World,
+};
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::from_steel("domain"), |_| command())
+        .permission_collection(GAMEMASTERS_COLLECTION)
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {

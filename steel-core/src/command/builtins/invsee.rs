@@ -14,38 +14,31 @@ use super::super::{
         CommandPermissionSource, CommandSource, SteelArgumentType, SteelCommandRuntime, argument,
         literal,
     },
-    registration::{CommandRegistration, CommandRegistrationError},
+    registration::CommandRegistration,
 };
 use crate::entity::Entity;
 use crate::inventory::menu::Menu;
 use crate::inventory::prelude::*;
 use crate::inventory::slots::CraftingHandler;
-use crate::permission::{PermissionExpr, PermissionKey, PermissionKeyError};
+use crate::permission::PermissionExpr;
 use crate::player::player_inventory::{PlayerInventory, armor_equipment};
 use crate::player::{Player, connection::NetworkConnection};
 
-const INVSEE_PERMISSION: &str = "steel.command.invsee";
-const MODIFY_PERMISSION: &str = "steel.command.invsee.modify";
+const INVSEE_PERMISSION: Identifier = Identifier::new_static("steel", "command.invsee");
+const MODIFY_PERMISSION: Identifier = Identifier::new_static("steel", "command.invsee.modify");
 
-pub(super) fn registration() -> Result<CommandRegistration<CommandSource>, CommandRegistrationError>
-{
+pub(super) fn registration() -> CommandRegistration<CommandSource> {
     let id = Identifier::from_steel("invsee");
-    let (access_permission, modify_permission) = invsee_permissions().map_err(|source| {
-        CommandRegistrationError::InvalidExplicitPermission {
-            id: id.clone(),
-            source,
-        }
-    })?;
-    Ok(
-        CommandRegistration::new(id, move |_| command(modify_permission))
-            .permission(access_permission),
-    )
+    let (access_permission, modify_permission) = invsee_permissions();
+    CommandRegistration::new(id, move |_| command(modify_permission))
+        .permission(access_permission)
+        .collection_permission(MODIFY_PERMISSION)
 }
 
-fn invsee_permissions() -> Result<(PermissionExpr, PermissionExpr), PermissionKeyError> {
-    let access = PermissionExpr::key(PermissionKey::parse(INVSEE_PERMISSION)?);
-    let modify = PermissionExpr::key(PermissionKey::parse(MODIFY_PERMISSION)?);
-    Ok((PermissionExpr::Any(vec![access, modify.clone()]), modify))
+fn invsee_permissions() -> (PermissionExpr, PermissionExpr) {
+    let access = PermissionExpr::key(INVSEE_PERMISSION);
+    let modify = PermissionExpr::key(MODIFY_PERMISSION);
+    (PermissionExpr::Any(vec![access, modify.clone()]), modify)
 }
 
 fn command(

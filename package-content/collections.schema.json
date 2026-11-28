@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SteelPermissionCollectionsConfig",
+  "description": "Permission collection configuration schema for Steel",
+  "type": "object",
+  "properties": {
+    "collections": {
+      "type": "object",
+      "description": "Permission collections keyed by namespace and then by collection name",
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": {
+          "pattern": "^[a-z0-9_./-]+$"
+        },
+        "additionalProperties": {
+          "type": "array",
+          "description": "Collection members: permission rule expressions or #namespace:name collection references",
+          "items": {
+            "$ref": "#/definitions/collection_member"
+          },
+          "uniqueItems": true
+        }
+      },
+      "propertyNames": {
+        "pattern": "^[a-z0-9_.-]+$"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "permission_rule_expression": {
+      "type": "string",
+      "description": "Permission key with an optional namespace and an optional context selector, such as minecraft:command.give or steel:permission.manage.*.",
+      "pattern": "^(\\*|([a-z0-9_.-]+:)?(\\*|[a-z0-9_-]+(\\.[a-z0-9_-]+)*(\\.\\*)?))(\\{([a-z0-9_-]+|[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*)=[^\\s{},=]+(,([a-z0-9_-]+|[a-z0-9_-]+(\\.[a-z0-9_-]+)*:[a-z0-9_-]+([./][a-z0-9_-]+)*)=[^\\s{},=]+)*\\})?$"
+    },
+    "collection_reference": {
+      "type": "string",
+      "description": "Reference to a nested permission collection, such as #minecraft:owners.",
+      "pattern": "^#([a-z0-9_.-]+:)?[a-z0-9_./-]+$"
+    },
+    "collection_member": {
+      "description": "A permission rule expression or a #namespace:name nested collection reference",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/permission_rule_expression"
+        },
+        {
+          "$ref": "#/definitions/collection_reference"
+        }
+      ]
+    }
+  }
+}

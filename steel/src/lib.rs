@@ -11,7 +11,7 @@ use std::{
 };
 
 use steel_core::{
-    GIT_HASH_SHORT, command::CommandRegistry, permission::PermissionGroupManager, server::Server,
+    GIT_HASH_SHORT, command::CommandRegistry, permission::PermissionManager, server::Server,
 };
 use steel_login::{JavaTcpClient, ServerConnectionSession};
 use tokio::{net::TcpListener, runtime::Runtime, select};
@@ -101,12 +101,14 @@ impl SteelServer {
         let permission_group_store = steel_config.permission_group_store();
         let server_port = steel_config.server.server_port;
         let worlds_config = steel_config.worlds;
-        let permission_groups =
-            PermissionGroupManager::new(steel_config.groups, permission_group_store).map_err(
-                |error| {
-                    SteelServerError::Core(format!("failed to validate groups config: {error}"))
-                },
-            )?;
+        let permission_groups = PermissionManager::new(
+            steel_config.groups,
+            steel_config.collections,
+            permission_group_store,
+        )
+        .map_err(|error| {
+            SteelServerError::Core(format!("failed to validate groups config: {error}"))
+        })?;
         let player_idle_timeout = steel_config.server.player_idle_timeout;
         let runtime_config = steel_config.server.into_runtime_config();
 

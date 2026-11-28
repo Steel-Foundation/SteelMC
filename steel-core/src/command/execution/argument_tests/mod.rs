@@ -36,25 +36,50 @@ use text_components::{TextComponent, content::Content};
 
 use crate::bootstrap::init_globals;
 use crate::entity::EntityAnchor;
-use crate::permission::{PermissionExpr, PermissionState};
+use crate::permission::{
+    PermissionCollectionMember, PermissionExpr, PermissionGroupRule, PermissionKey, PermissionState,
+};
 
 use super::argument::SteelArgumentParser;
 
 struct TestSource {
     callback: CommandResultCallback,
+    allow_all_permissions: bool,
+    collection_members: Vec<String>,
 }
 
 impl TestSource {
     const fn new() -> Self {
         Self {
             callback: CommandResultCallback::empty(),
+            allow_all_permissions: true,
+            collection_members: Vec::new(),
+        }
+    }
+
+    const fn restricted() -> Self {
+        Self {
+            callback: CommandResultCallback::empty(),
+            allow_all_permissions: false,
+            collection_members: Vec::new(),
+        }
+    }
+
+    fn with_collection_members(collection_members: Vec<String>) -> Self {
+        Self {
+            collection_members,
+            ..Self::new()
         }
     }
 }
 
 impl ExecutionCommandSource for TestSource {
     fn with_callback(&self, callback: CommandResultCallback) -> Self {
-        Self { callback }
+        Self {
+            callback,
+            allow_all_permissions: self.allow_all_permissions,
+            collection_members: self.collection_members.clone(),
+        }
     }
 
     fn callback(&self) -> CommandResultCallback {
@@ -136,6 +161,30 @@ impl CommandArgumentSource for TestSource {
         vec!["builder".to_owned(), "default".to_owned()]
     }
 
+    fn default_permission_group_suggestions(&self) -> Vec<String> {
+        vec!["default".to_owned()]
+    }
+
+    fn command_block_permission_group_suggestions(&self) -> Vec<String> {
+        vec!["builder".to_owned()]
+    }
+
+    fn permission_collection_names(&self) -> Vec<Identifier> {
+        vec![Identifier::new("minecraft", "gamemasters")]
+    }
+
+    fn permission_collection_member_suggestions(&self, _collection: &Identifier) -> Vec<String> {
+        self.collection_members.clone()
+    }
+
+    fn can_manage_permission_key(&self, _key: &PermissionKey) -> bool {
+        self.allow_all_permissions
+    }
+
+    fn can_manage_permission_group(&self, _group: &str) -> bool {
+        self.allow_all_permissions
+    }
+
     fn selector_player_names(&self) -> Vec<String> {
         vec!["Steve".to_owned()]
     }
@@ -155,6 +204,10 @@ impl CommandArgumentSource for TestSource {
 
 impl CommandPermissionSource for TestSource {
     fn permission_state(&self, _permission: &PermissionExpr) -> Option<PermissionState> {
+        Some(PermissionState::Allow)
+    }
+
+    fn permission_pattern_state(&self, _key: &PermissionKey) -> Option<PermissionState> {
         Some(PermissionState::Allow)
     }
 }

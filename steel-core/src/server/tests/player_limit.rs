@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::entity::Entity;
 use crate::permission::{
-    OP_GROUP, PermissionGroupConfig, PermissionGroupsConfig, PermissionMetadataEntry,
+    PermissionGroupConfig, PermissionGroupsConfig, PermissionMetadataEntry,
     PermissionMetadataRuleConfig, PermissionMetadataSet, PermissionMetadataValue, PermissionSet,
     PermissionSubjectIndex, PermissionSubjectState,
 };
@@ -182,7 +182,10 @@ fn max_players_bypass_requires_explicit_boolean_metadata() -> Result<(), String>
         let mut subjects = PermissionSubjectIndex::new();
         subjects.set(
             Uuid::from_u128(1),
-            PermissionSubjectState::new(vec![OP_GROUP.to_owned()], PermissionSet::new()),
+            PermissionSubjectState::new(
+                vec![PermissionGroupsConfig::default().op_group],
+                PermissionSet::new(),
+            ),
         );
         let mut candidates = vec![(1, false)];
         for (id, value, bypasses) in [

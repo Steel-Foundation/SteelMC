@@ -1,5 +1,3 @@
-use std::ptr;
-
 use super::*;
 use crate::entity::PendingWorldChangeToken;
 use crate::player::connection::NetworkConnection as _;
@@ -12,7 +10,7 @@ use crate::{
         chunk_request::{ChunkRequest, ChunkTicketKind},
         status::ChunkStatus,
     },
-    permission::{PermissionExpr, PermissionKey},
+    permission::PermissionExpr,
     player::Player,
 };
 use steel_math::trig;
@@ -708,13 +706,7 @@ impl Player {
 
     /// Sends the current game rule values to a player with gamerule permission.
     fn send_game_rule_values(self: &Arc<Self>) {
-        let permission = match PermissionKey::parse("minecraft.command.gamerule") {
-            Ok(key) => PermissionExpr::key(key),
-            Err(error) => {
-                log::error!("invalid built-in gamerule permission key: {error}");
-                return;
-            }
-        };
+        let permission = PermissionExpr::key(Identifier::vanilla_static("command.gamerule"));
         if !self.has_permission(&permission) {
             log::warn!(
                 "Player {} tried to request game rule values without permission",

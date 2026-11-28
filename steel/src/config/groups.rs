@@ -6,30 +6,42 @@ use std::{
 use futures::future::BoxFuture;
 use serde::Serialize;
 use steel_core::permission::{
-    PermissionGroupConfig, PermissionGroupStore, PermissionGroupStoreError, PermissionGroups,
-    PermissionGroupsConfig, PermissionMetadataRuleConfig, PermissionMetadataValue,
+    PermissionCollections, PermissionCollectionsConfig, PermissionGroupConfig,
+    PermissionGroupStore, PermissionGroupStoreError, PermissionGroups, PermissionGroupsConfig,
+    PermissionMetadataRuleConfig, PermissionMetadataValue,
 };
 use tokio::fs as async_fs;
 use toml::ser::Error as TomlSerializeError;
 
 pub(super) const DEFAULT_GROUPS: &str = include_str!("../../../package-content/groups.toml");
+pub(super) const DEFAULT_COLLECTIONS: &str =
+    include_str!("../../../package-content/collections.toml");
 pub(super) const GROUPS_CONFIG_HEADER: &str = concat!(
     "#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/",
     "package-content/groups.schema.json\n",
     "# Documentation: https://steelmc.dev/configuration/permissions/\n\n",
 );
+pub(super) const COLLECTIONS_CONFIG_HEADER: &str = concat!(
+    "#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/",
+    "package-content/collections.schema.json\n",
+    "# Documentation: https://steelmc.dev/configuration/permissions/\n\n",
+);
 
-/// TOML-backed permission group store.
+/// TOML-backed permission group and collection store.
 #[derive(Clone, Debug)]
 pub struct FilePermissionGroupStore {
-    path: PathBuf,
+    groups_path: PathBuf,
+    collections_path: PathBuf,
 }
 
 impl FilePermissionGroupStore {
-    /// Creates a file-backed group store.
+    /// Creates a file-backed permission store.
     #[must_use]
-    pub const fn new(path: PathBuf) -> Self {
-        Self { path }
+    pub const fn new(groups_path: PathBuf, collections_path: PathBuf) -> Self {
+        Self {
+            groups_path,
+            collections_path,
+        }
     }
 }
 
@@ -38,7 +50,7 @@ impl PermissionGroupStore for FilePermissionGroupStore {
         &self,
         config: PermissionGroupsConfig,
     ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>> {
-        let path = self.path.clone();
+        let path = self.groups_path.clone();
         Box::pin(async move {
             let serialized = serialize_groups_config(&config).map_err(|error| {
                 PermissionGroupStoreError::new(format!(
@@ -55,11 +67,79 @@ impl PermissionGroupStore for FilePermissionGroupStore {
                 })
         })
     }
+
+    fn save_collections(
+        &self,
+        config: PermissionCollectionsConfig,
+    ) -> BoxFuture<'static, Result<(), PermissionGroupStoreError>> {
+        let path = self.collections_path.clone();
+        Box::pin(async move {
+            let serialized = serialize_collections_config(&config).map_err(|error| {
+                PermissionGroupStoreError::new(format!(
+                    "failed to serialize collections config: {error}"
+                ))
+            })?;
+            write_atomic_config(&path, serialized)
+                .await
+                .map_err(|error| {
+                    PermissionGroupStoreError::new(format!(
+                        "failed to write collections config {}: {error}",
+                        path.display()
+                    ))
+                })
+        })
+    }
+
+    fn load_groups(
+        &self,
+    ) -> BoxFuture<'static, Result<PermissionGroupsConfig, PermissionGroupStoreError>> {
+        let path = self.groups_path.clone();
+        Box::pin(async move {
+            let contents = async_fs::read_to_string(&path).await.map_err(|error| {
+                PermissionGroupStoreError::new(format!(
+                    "failed to read groups config {}: {error}",
+                    path.display()
+                ))
+            })?;
+            toml::from_str(&contents).map_err(|error| {
+                PermissionGroupStoreError::new(format!(
+                    "failed to parse groups config {}: {error}",
+                    path.display()
+                ))
+            })
+        })
+    }
+
+    fn load_collections(
+        &self,
+    ) -> BoxFuture<'static, Result<PermissionCollectionsConfig, PermissionGroupStoreError>> {
+        let path = self.collections_path.clone();
+        Box::pin(async move {
+            let contents = async_fs::read_to_string(&path).await.map_err(|error| {
+                PermissionGroupStoreError::new(format!(
+                    "failed to read collections config {}: {error}",
+                    path.display()
+                ))
+            })?;
+            toml::from_str(&contents).map_err(|error| {
+                PermissionGroupStoreError::new(format!(
+                    "failed to parse collections config {}: {error}",
+                    path.display()
+                ))
+            })
+        })
+    }
 }
 
 fn serialize_groups_config(config: &PermissionGroupsConfig) -> Result<String, TomlSerializeError> {
     let mut output = String::from(GROUPS_CONFIG_HEADER);
     push_toml_field(&mut output, "default_groups", &config.default_groups)?;
+    push_toml_field(&mut output, "op_group", &config.op_group)?;
+    push_toml_field(
+        &mut output,
+        "command_block_groups",
+        &config.command_block_groups,
+    )?;
 
     for (name, group) in &config.groups {
         output.push('\n');
@@ -67,6 +147,24 @@ fn serialize_groups_config(config: &PermissionGroupsConfig) -> Result<String, To
         output.push_str(name);
         output.push_str("]\n");
         push_group_config(&mut output, group)?;
+    }
+
+    Ok(output)
+}
+
+fn serialize_collections_config(
+    config: &PermissionCollectionsConfig,
+) -> Result<String, TomlSerializeError> {
+    let mut output = String::from(COLLECTIONS_CONFIG_HEADER);
+    for (namespace, collections) in &config.collections {
+        output.push('\n');
+        output.push_str("[collections.");
+        output.push_str(&toml_key(namespace)?);
+        output.push_str("]\n");
+        for (name, members) in collections {
+            let key = toml_key(name)?;
+            push_string_array_field(&mut output, &key, members)?;
+        }
     }
 
     Ok(output)
@@ -152,6 +250,10 @@ fn toml_value<T: Serialize + ?Sized>(value: &T) -> Result<String, TomlSerializeE
         .to_owned())
 }
 
+fn toml_key(key: &str) -> Result<String, TomlSerializeError> {
+    toml_value(key)
+}
+
 fn permission_metadata_value_toml(
     value: &PermissionMetadataValue,
 ) -> Result<String, TomlSerializeError> {
@@ -175,24 +277,69 @@ async fn write_atomic_config(path: &Path, contents: String) -> io::Result<()> {
     async_fs::rename(temp_path, path).await
 }
 
-pub(super) fn load_or_create_groups(path: &Path) -> Result<PermissionGroupsConfig, String> {
+pub(super) fn load_or_create_groups(
+    path: &Path,
+    collections: &PermissionCollections,
+) -> Result<PermissionGroupsConfig, String> {
     let config: PermissionGroupsConfig = if path.exists() {
         let contents = fs::read_to_string(path)
             .map_err(|error| format!("failed to read groups config {}: {error}", path.display()))?;
         toml::from_str(&contents)
             .map_err(|error| format!("failed to parse groups config {}: {error}", path.display()))?
     } else {
+        create_parent_dir(path)?;
         fs::write(path, DEFAULT_GROUPS).map_err(|error| {
             format!("failed to write groups config {}: {error}", path.display())
         })?;
         toml::from_str(DEFAULT_GROUPS)
             .map_err(|error| format!("failed to parse default groups config: {error}"))?
     };
-    PermissionGroups::from_config(config.clone()).map_err(|error| {
+    PermissionGroups::from_config(config.clone(), collections).map_err(|error| {
         format!(
             "failed to validate groups config {}: {error}",
             path.display()
         )
     })?;
     Ok(config)
+}
+
+pub(super) fn load_or_create_collections(
+    path: &Path,
+) -> Result<PermissionCollectionsConfig, String> {
+    if path.exists() {
+        let contents = fs::read_to_string(path).map_err(|error| {
+            format!(
+                "failed to read collections config {}: {error}",
+                path.display()
+            )
+        })?;
+        toml::from_str(&contents).map_err(|error| {
+            format!(
+                "failed to parse collections config {}: {error}",
+                path.display()
+            )
+        })
+    } else {
+        create_parent_dir(path)?;
+        fs::write(path, DEFAULT_COLLECTIONS).map_err(|error| {
+            format!(
+                "failed to write collections config {}: {error}",
+                path.display()
+            )
+        })?;
+        toml::from_str(DEFAULT_COLLECTIONS)
+            .map_err(|error| format!("failed to parse default collections config: {error}"))
+    }
+}
+
+fn create_parent_dir(path: &Path) -> Result<(), String> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    fs::create_dir_all(parent).map_err(|error| {
+        format!(
+            "failed to create config directory {}: {error}",
+            parent.display()
+        )
+    })
 }

@@ -11,8 +11,8 @@ use std::sync::Arc;
 use super::{
     BiomeOrTag, BlockInput, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
     Coordinates, ExecutionCommandSource, ExecutionControl, GameProfileArgument, IntRange,
-    ItemPredicate, PermissionGroupName, ScoreHolderArgument, ScoreHolderWildcard,
-    SteelArgumentType, StructureOrTagKey, WorldArgument,
+    ItemPredicate, PermissionCollectionName, PermissionGroupName, ScoreHolderArgument,
+    ScoreHolderWildcard, SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
         AdvancementValue, ComponentValue, CoordinateAxes, DamageTypeValue, DomainValue,
         EnchantmentValue, EntityTypeValue, GameModeValue, IdentifierValue, ItemStackValue,
@@ -31,7 +31,10 @@ use crate::command::incorrectly_typed_argument;
 use crate::{
     chunk::heightmap::HeightmapType,
     entity::{EntityAnchor, SharedEntity},
-    permission::{PermissionMetadataExpression, PermissionRuleExpression},
+    permission::{
+        PermissionCollectionMember, PermissionGroupRule, PermissionMetadataExpression,
+        PermissionRuleExpression,
+    },
     player::Player,
     scoreboard::ScoreHolder,
 };
@@ -408,6 +411,27 @@ where
         &self,
         name: &str,
     ) -> Result<&PermissionGroupName, CommandSyntaxError> {
+        self.typed_argument(name)
+    }
+
+    pub(crate) fn permission_group_rule(
+        &self,
+        name: &str,
+    ) -> Result<&PermissionGroupRule, CommandSyntaxError> {
+        self.typed_argument(name)
+    }
+
+    pub(crate) fn permission_collection(
+        &self,
+        name: &str,
+    ) -> Result<&PermissionCollectionName, CommandSyntaxError> {
+        self.typed_argument(name)
+    }
+
+    pub(crate) fn permission_collection_member(
+        &self,
+        name: &str,
+    ) -> Result<&PermissionCollectionMember, CommandSyntaxError> {
         self.typed_argument(name)
     }
 
