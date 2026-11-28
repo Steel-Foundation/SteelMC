@@ -746,14 +746,13 @@ impl EntityTickList {
         self.active.contains_key(&entity_id)
     }
 
-    fn snapshot(&self) -> Vec<SharedEntity> {
-        let mut snapshot = Vec::with_capacity(self.order.len());
-        for entity_id in self.order.iter() {
-            if let Some(entity) = self.active.get(entity_id) {
-                snapshot.push(Arc::clone(entity));
-            }
-        }
-        snapshot
+    /// Snapshots tick order as IDs instead of `Arc`s.
+    ///
+    /// The entity handles are resolved immediately before each tick so the
+    /// pending-world-change check observes mutations made by earlier ticks in
+    /// the same pass, matching vanilla's in-order iteration.
+    fn snapshot_ids(&self) -> Vec<i32> {
+        self.order.iter().copied().collect()
     }
 }
 
@@ -1832,9 +1831,9 @@ impl WorldEntityManager {
     /// Ticks live entities currently in the ticking visibility set.
     pub fn tick_entities(&self, _tick_count: i32, runs_normally: bool) -> FxHashSet<ChunkPos> {
         let mut dirty_chunks = FxHashSet::default();
-        let tick_candidates = self.ticking_entities_snapshot();
-        for entity in tick_candidates {
-            let Some(tick_context) = self.tick_context(entity.id()) else {
+        let tick_candidates = self.ticking_entity_ids();
+        for entity_id in tick_candidates {
+            let Some((entity, tick_context)) = self.entity_tick_context(entity_id) else {
                 continue;
             };
 
@@ -1866,8 +1865,8 @@ impl WorldEntityManager {
         dirty_chunks
     }
 
-    fn ticking_entities_snapshot(&self) -> Vec<SharedEntity> {
-        self.state.read().tick_list.snapshot()
+    fn ticking_entity_ids(&self) -> Vec<i32> {
+        self.state.read().tick_list.snapshot_ids()
     }
 
     fn live_manager_owned_entity_chunk(&self, entity_id: i32) -> Option<ChunkPos> {
@@ -2089,7 +2088,22 @@ impl WorldEntityManager {
     fn tick_context(&self, entity_id: i32) -> Option<TickContext> {
         let state = self.state.read();
         let entry = state.live_by_id.get(entity_id)?;
+        Self::tick_context_from_state(&state, entity_id, entry)
+    }
 
+    /// Resolves the entity handle and its pre-tick state under one lock.
+    fn entity_tick_context(&self, entity_id: i32) -> Option<(SharedEntity, TickContext)> {
+        let state = self.state.read();
+        let entry = state.live_by_id.get(entity_id)?;
+        let context = Self::tick_context_from_state(&state, entity_id, entry)?;
+        Some((Arc::clone(&entry.entity), context))
+    }
+
+    fn tick_context_from_state(
+        state: &ManagerState,
+        entity_id: i32,
+        entry: &EntityEntry,
+    ) -> Option<TickContext> {
         if Self::has_pending_world_change_in_vehicle_chain(&entry.entity) {
             return None;
         }
