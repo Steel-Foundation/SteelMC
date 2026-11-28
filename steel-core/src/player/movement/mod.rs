@@ -402,8 +402,12 @@ impl Player {
             self.position().y,
             self.is_descending(),
         );
-        let new_collision =
-            is_colliding_with_new_shapes(&collision_world, old_aabb, new_aabb, self.is_crouching());
+        let new_collision = is_colliding_with_new_shapes(
+            &collision_world,
+            old_aabb,
+            new_aabb,
+            self.is_descending(),
+        );
 
         if (MovementCollisionValidation {
             no_physics: self.no_physics(),
