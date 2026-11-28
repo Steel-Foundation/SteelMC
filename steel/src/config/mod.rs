@@ -6,10 +6,12 @@
 
 mod groups;
 mod logging;
+mod proxy;
 mod server;
 
 pub use groups::FilePermissionGroupStore;
 pub use logging::{LogConfig, LogLevel, LogTimeFormat, RotationTimeFormat};
+pub use proxy::{PlayerInfoForwardingMode, ProxySettings};
 pub use server::{ServerConfig, ThreadConfig};
 
 use std::{

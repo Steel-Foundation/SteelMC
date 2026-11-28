@@ -108,7 +108,11 @@ impl SteelServer {
                 },
             )?;
         let player_idle_timeout = steel_config.server.player_idle_timeout;
-        let runtime_config = steel_config.server.into_runtime_config();
+        let runtime_config = steel_config
+            .server
+            .into_runtime_config()
+            .map_err(|error| SteelServerError::Core(format!("invalid config: {error}")))?;
+        runtime_config.proxy.log_startup();
 
         let server = Server::new_with_commands(
             chunk_runtime,
@@ -136,8 +140,8 @@ impl SteelServer {
             tcp_listener,
             cancel_token,
             client_id: 0,
+            connection_session: Arc::new(ServerConnectionSession::new(&server.config.proxy)),
             server: Arc::new(server),
-            connection_session: Arc::new(ServerConnectionSession::default()),
         })
     }
 

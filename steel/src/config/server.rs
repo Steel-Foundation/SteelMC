@@ -8,6 +8,8 @@ use steel_core::{
     },
 };
 
+use super::proxy::ProxySettings;
+
 const fn default_spam_threshold_seconds() -> i32 {
     DEFAULT_SPAM_THRESHOLD_SECONDS
 }
@@ -84,13 +86,18 @@ pub struct ServerConfig {
     /// If this is equal to 0, no kicking will happen.
     #[serde(default)]
     pub player_idle_timeout: i32,
+    /// Proxy player info forwarding (`[server.proxy]`).
+    #[serde(default)]
+    pub proxy: ProxySettings,
 }
 
 impl ServerConfig {
     /// Extracts the `RuntimeConfig` from this full config.
-    #[must_use]
-    pub fn into_runtime_config(self) -> RuntimeConfig {
-        RuntimeConfig {
+    ///
+    /// # Errors
+    /// Returns an error if the proxy settings are invalid or their secret file cannot be read.
+    pub fn into_runtime_config(self) -> Result<RuntimeConfig, String> {
+        Ok(RuntimeConfig {
             max_players: self.max_players,
             view_distance: self.view_distance,
             simulation_distance: self.simulation_distance,
@@ -112,7 +119,8 @@ impl ServerConfig {
             packet_workers: self.threads.packet_workers,
             chunk_generation_threads: self.threads.chunk_generation,
             chunk_encoding_threads: self.threads.chunk_encoding,
-        }
+            proxy: self.proxy.into_runtime()?,
+        })
     }
 }
 
@@ -139,7 +147,12 @@ pub struct ThreadConfig {
 /// # Errors
 /// This function will return an error if the configuration is invalid.
 pub(super) fn validate(config: &ServerConfig) -> Result<(), &'static str> {
-    validate_login_security(config.online_mode, config.encryption)?;
+    validate_login_security(
+        config.online_mode,
+        config.encryption,
+        config.proxy.is_forwarding(),
+    )?;
+    config.proxy.validate()?;
     if !config.allow_extended_view_distance && !(1..=32).contains(&config.view_distance) {
         return Err("View distance must in range 1..32");
     }
@@ -183,13 +196,21 @@ pub(super) fn validate(config: &ServerConfig) -> Result<(), &'static str> {
             return Err("Compression level must be between 1 and 9");
         }
     }
-    if config.enforce_secure_chat {
-        if !config.online_mode {
-            return Err("online_mode must be true when enforce_secure_chat is enabled");
-        }
-        if !config.encryption {
-            return Err("encryption must be true when enforce_secure_chat is enabled");
-        }
+    if !config.enforce_secure_chat {
+        return Ok(());
+    }
+    if config.proxy.is_forwarding() {
+        return if config.proxy.online_mode {
+            Ok(())
+        } else {
+            Err("proxy.online_mode must be true when enforce_secure_chat is enabled")
+        };
+    }
+    if !config.online_mode {
+        return Err("online_mode must be true when enforce_secure_chat is enabled");
+    }
+    if !config.encryption {
+        return Err("encryption must be true when enforce_secure_chat is enabled");
     }
     Ok(())
 }

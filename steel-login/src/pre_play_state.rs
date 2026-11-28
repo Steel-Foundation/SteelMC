@@ -8,11 +8,14 @@ use std::{
 use steel_core::player::GameProfile;
 use steel_protocol::utils::ConnectionProtocol;
 
+use crate::forwarding::ForwardedPlayer;
+
 /// Exact state within the broad login protocol.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LoginPhase {
     Hello,
     Key,
+    Forwarding,
     Authenticating,
     ProtocolSwitching,
 }
@@ -40,6 +43,7 @@ impl Display for PrePlayPhase {
             Self::Status => formatter.write_str("status"),
             Self::Login(LoginPhase::Hello) => formatter.write_str("login hello"),
             Self::Login(LoginPhase::Key) => formatter.write_str("login key"),
+            Self::Login(LoginPhase::Forwarding) => formatter.write_str("login proxy forwarding"),
             Self::Login(LoginPhase::Authenticating) => formatter.write_str("login authentication"),
             Self::Login(LoginPhase::ProtocolSwitching) => {
                 formatter.write_str("login protocol switching")
@@ -60,6 +64,7 @@ pub(crate) enum PrePlayPacket {
     ClientIntention,
     Hello,
     Key,
+    CustomQueryAnswer,
     LoginAcknowledged,
     SelectKnownPacks,
     FinishConfiguration,
@@ -71,6 +76,7 @@ impl Display for PrePlayPacket {
             Self::ClientIntention => formatter.write_str("client intention"),
             Self::Hello => formatter.write_str("hello packet"),
             Self::Key => formatter.write_str("key packet"),
+            Self::CustomQueryAnswer => formatter.write_str("custom query answer"),
             Self::LoginAcknowledged => formatter.write_str("login acknowledgement"),
             Self::SelectKnownPacks => formatter.write_str("known-pack selection"),
             Self::FinishConfiguration => formatter.write_str("configuration acknowledgement"),
@@ -92,10 +98,21 @@ impl Display for PacketSequenceError {
 
 #[derive(Debug)]
 enum LoginState {
-    Hello,
-    Key { requested_username: String },
+    Hello {
+        /// Player data a proxy forwarded in the handshake, handed to the forwarder at hello.
+        handshake_forwarding: Option<ForwardedPlayer>,
+    },
+    Key {
+        requested_username: String,
+    },
+    Forwarding {
+        transaction_id: i32,
+        requested_username: String,
+    },
     Authenticating,
-    ProtocolSwitching { authenticated_profile: GameProfile },
+    ProtocolSwitching {
+        authenticated_profile: GameProfile,
+    },
 }
 
 #[derive(Debug)]
@@ -131,8 +148,11 @@ impl PrePlayState {
         match &self.state {
             State::Handshake => PrePlayPhase::Handshake,
             State::Status => PrePlayPhase::Status,
-            State::Login(LoginState::Hello) => PrePlayPhase::Login(LoginPhase::Hello),
+            State::Login(LoginState::Hello { .. }) => PrePlayPhase::Login(LoginPhase::Hello),
             State::Login(LoginState::Key { .. }) => PrePlayPhase::Login(LoginPhase::Key),
+            State::Login(LoginState::Forwarding { .. }) => {
+                PrePlayPhase::Login(LoginPhase::Forwarding)
+            }
             State::Login(LoginState::Authenticating) => {
                 PrePlayPhase::Login(LoginPhase::Authenticating)
             }
@@ -154,7 +174,9 @@ impl PrePlayState {
 
         self.state = match protocol {
             ConnectionProtocol::Status => State::Status,
-            ConnectionProtocol::Login => State::Login(LoginState::Hello),
+            ConnectionProtocol::Login => State::Login(LoginState::Hello {
+                handshake_forwarding: None,
+            }),
             _ => return Err(self.unexpected(PrePlayPacket::ClientIntention)),
         };
         Ok(())
@@ -163,8 +185,12 @@ impl PrePlayState {
     pub(crate) const fn expect(&self, packet: PrePlayPacket) -> Result<(), PacketSequenceError> {
         let expected = matches!(
             (&self.state, packet),
-            (State::Login(LoginState::Hello), PrePlayPacket::Hello)
+            (State::Login(LoginState::Hello { .. }), PrePlayPacket::Hello)
                 | (State::Login(LoginState::Key { .. }), PrePlayPacket::Key)
+                | (
+                    State::Login(LoginState::Forwarding { .. }),
+                    PrePlayPacket::CustomQueryAnswer
+                )
                 | (
                     State::Login(LoginState::ProtocolSwitching { .. }),
                     PrePlayPacket::LoginAcknowledged
@@ -191,6 +217,34 @@ impl PrePlayState {
         }
     }
 
+    /// Stores player data a proxy forwarded in the login handshake.
+    pub(crate) fn set_handshake_forwarding(
+        &mut self,
+        player: ForwardedPlayer,
+    ) -> Result<(), PacketSequenceError> {
+        let State::Login(LoginState::Hello {
+            handshake_forwarding,
+        }) = &mut self.state
+        else {
+            return Err(self.unexpected(PrePlayPacket::ClientIntention));
+        };
+        *handshake_forwarding = Some(player);
+        Ok(())
+    }
+
+    /// Takes the handshake-forwarded player data when hello arrives.
+    pub(crate) const fn take_handshake_forwarding(
+        &mut self,
+    ) -> Result<Option<ForwardedPlayer>, PacketSequenceError> {
+        let State::Login(LoginState::Hello {
+            handshake_forwarding,
+        }) = &mut self.state
+        else {
+            return Err(self.unexpected(PrePlayPacket::Hello));
+        };
+        Ok(handshake_forwarding.take())
+    }
+
     pub(crate) fn wait_for_key(
         &mut self,
         requested_username: String,
@@ -210,13 +264,48 @@ impl PrePlayState {
         Ok(requested_username)
     }
 
+    /// Waits for the proxy's answer to the forwarding query sent with `transaction_id`.
+    pub(crate) fn wait_for_forwarding(
+        &mut self,
+        transaction_id: i32,
+        requested_username: String,
+    ) -> Result<(), PacketSequenceError> {
+        self.expect(PrePlayPacket::Hello)?;
+        self.state = State::Login(LoginState::Forwarding {
+            transaction_id,
+            requested_username,
+        });
+        Ok(())
+    }
+
+    /// Accepts the forwarding answer only for the outstanding query's transaction id, returning
+    /// the username from hello.
+    pub(crate) fn begin_forwarded_authentication(
+        &mut self,
+        transaction_id: i32,
+    ) -> Result<String, PacketSequenceError> {
+        let State::Login(LoginState::Forwarding {
+            transaction_id: expected,
+            requested_username,
+        }) = &mut self.state
+        else {
+            return Err(self.unexpected(PrePlayPacket::CustomQueryAnswer));
+        };
+        if *expected != transaction_id {
+            return Err(self.unexpected(PrePlayPacket::CustomQueryAnswer));
+        }
+        let requested_username = mem::take(requested_username);
+        self.state = State::Login(LoginState::Authenticating);
+        Ok(requested_username)
+    }
+
     pub(crate) fn complete_login(
         &mut self,
         authenticated_profile: GameProfile,
     ) -> Result<(), PacketSequenceError> {
         if !matches!(
             &self.state,
-            State::Login(LoginState::Hello | LoginState::Authenticating)
+            State::Login(LoginState::Hello { .. } | LoginState::Authenticating)
         ) {
             return Err(self.unexpected(PrePlayPacket::LoginAcknowledged));
         }
@@ -349,6 +438,35 @@ mod tests {
 
         assert_eq!(accepted.id(), offline_id);
         assert_eq!(state.phase(), PrePlayPhase::Play);
+    }
+
+    #[test]
+    fn forwarding_flow_requires_the_matching_query_answer() {
+        let mut state = login_state();
+        state
+            .wait_for_forwarding(7, "Steve".to_owned())
+            .expect("hello should start forwarding");
+
+        assert!(state.acknowledge_login().is_err());
+        assert!(
+            state
+                .complete_login(profile(Uuid::from_u128(1), "Steve"))
+                .is_err()
+        );
+        assert!(state.begin_forwarded_authentication(8).is_err());
+        assert_eq!(state.phase(), PrePlayPhase::Login(LoginPhase::Forwarding));
+
+        state
+            .begin_forwarded_authentication(7)
+            .expect("matching answer should start authentication");
+        assert!(state.begin_forwarded_authentication(7).is_err());
+        state
+            .complete_login(profile(Uuid::from_u128(1), "Steve"))
+            .expect("forwarded profile should complete login");
+        assert_eq!(
+            state.phase(),
+            PrePlayPhase::Login(LoginPhase::ProtocolSwitching)
+        );
     }
 
     #[test]
