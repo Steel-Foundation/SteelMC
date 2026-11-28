@@ -72,6 +72,21 @@ impl KineticWeaponCondition {
         self.min_relative_speed
     }
 
+    /// Returns whether this action applies; speeds are in blocks per second and
+    /// `entity_factor` scales both speed thresholds.
+    #[must_use]
+    pub fn test(
+        &self,
+        ticks_used: i32,
+        attacker_speed: f64,
+        relative_speed: f64,
+        entity_factor: f64,
+    ) -> bool {
+        ticks_used <= self.max_duration_ticks
+            && attacker_speed >= f64::from(self.min_speed) * entity_factor
+            && relative_speed >= f64::from(self.min_relative_speed) * entity_factor
+    }
+
     fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         compound.insert("max_duration_ticks", self.max_duration_ticks);

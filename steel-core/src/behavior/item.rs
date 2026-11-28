@@ -86,8 +86,6 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Called when this item is used (e.g. right click in air).
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
-        // TODO: Mirror Item.use for KINETIC_WEAPON so specialized behaviors
-        // inherit the complete Vanilla base path.
         let (consume_ticks, can_eat) = context.inv.with_item(|item| {
             let can_eat = item
                 .get(FOOD)
@@ -113,17 +111,34 @@ pub trait ItemBehavior: Send + Sync {
             return InteractionResult::Consume;
         }
 
-        let (equippable, blocks_attacks) = context.inv.with_item(|item| {
+        let (equippable, blocks_attacks, kinetic_sound) = context.inv.with_item(|item| {
             (
                 item.get_equippable()
                     .filter(|equippable| equippable.swappable)
                     .cloned(),
                 item.has(BLOCKS_ATTACKS),
+                item.get(KINETIC_WEAPON)
+                    .map(|kinetic| kinetic.sound().cloned()),
             )
         });
         let Some(equippable) = equippable else {
             if blocks_attacks {
                 context.player.start_using_item(context.hand);
+                return InteractionResult::Consume;
+            }
+            if let Some(start_sound) = kinetic_sound {
+                context.player.start_using_item(context.hand);
+                if let Some(sound) = start_sound {
+                    let player = context.player.as_ref();
+                    context.world.play_sound_holder_at(
+                        &sound,
+                        player.sound_source(),
+                        player.position(),
+                        1.0,
+                        1.0,
+                        Some(player.id()),
+                    );
+                }
                 return InteractionResult::Consume;
             }
             return InteractionResult::Pass;
@@ -186,18 +201,15 @@ pub trait ItemBehavior: Send + Sync {
     }
 
     /// Called every tick while a living entity is actively using this item.
+    ///
+    /// Consumable sounds and kinetic-weapon charges are stack-level and run separately.
     fn on_use_tick(
         &self,
         _world: &Arc<World>,
-        user: LivingEntityRef<'_>,
-        stack: &mut ItemStack,
-        ticks_remaining: i32,
+        _user: LivingEntityRef<'_>,
+        _stack: &mut ItemStack,
+        _ticks_remaining: i32,
     ) {
-        if let Some(consumable) = stack.get(CONSUMABLE)
-            && should_emit_consume_particles_and_sounds(consumable, ticks_remaining)
-        {
-            emit_consume_particles_and_sounds(consumable, user.living());
-        }
     }
 
     /// Called when active use is released before completion.
@@ -302,6 +314,19 @@ pub trait ItemBehavior: Send + Sync {
     /// Returns the capability used by sign block interactions.
     fn as_sign_applicator(&self) -> Option<&dyn SignApplicator> {
         None
+    }
+}
+
+/// Emits the timed eating/drinking sounds of a stack's `CONSUMABLE` component during active use.
+pub(crate) fn tick_consumable_use(
+    stack: &ItemStack,
+    user: &dyn LivingEntity,
+    ticks_remaining: i32,
+) {
+    if let Some(consumable) = stack.get(CONSUMABLE)
+        && should_emit_consume_particles_and_sounds(consumable, ticks_remaining)
+    {
+        emit_consume_particles_and_sounds(consumable, user);
     }
 }
 

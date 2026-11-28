@@ -2208,3 +2208,5 @@ fn grounded_sword_attack_sweeps_nearby_entities_within_three_blocks() {
         vec![sound_events::ENTITY_PLAYER_ATTACK_STRONG.packet_holder_id()]
     );
 }
+
+mod spear;

@@ -8,7 +8,7 @@ use super::{
     EnchantmentPostAttackContext, Entity, EntityTypeRef, GameType, ITEM_BEHAVIORS, InteractionHand,
     InteractionResult, InventoryAccess, ItemStack, LivingEntity, PiercingWeapon, Player, SAttack,
     SInteract, SharedEntity, SoundEventHolder, SoundEventRef, TextComponent, TranslatedMessage,
-    World, WorldAabb, enchantment_helper, piercing_ray_hit_t, sound_events, vanilla_attributes,
+    World, WorldAabb, enchantment_helper, piercing_ray_hits, sound_events, vanilla_attributes,
     vanilla_damage_types, vanilla_entities,
 };
 
@@ -36,6 +36,7 @@ const SWEEP_AREA_INFLATE_Y: f64 = 0.25;
 const SWEEP_MAX_DISTANCE_SQ: f64 = 9.0;
 /// Vanilla passes `0.4F` to a `double` parameter, widening the `f32` approximation.
 const SWEEP_KNOCKBACK: f64 = 0.4_f32 as f64;
+/// Fixed knockback applied before the attribute knockback of a stab, widened like [`SWEEP_KNOCKBACK`].
 const STAB_KNOCKBACK: f64 = 0.4_f32 as f64;
 
 /// The kind of melee hit, which selects its attack sound.
@@ -88,8 +89,13 @@ impl Player {
 
     /// Returns a copy of the current main-hand item.
     fn weapon_item(&self) -> ItemStack {
+        self.item_in_hand(InteractionHand::MainHand)
+    }
+
+    /// Returns a copy of the item currently held in `hand`.
+    fn item_in_hand(&self, hand: InteractionHand) -> ItemStack {
         let inventory = self.inventory.lock();
-        let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
+        let stack = inventory.get_item_in_hand(hand);
         stack.copy_with_count(stack.count())
     }
 
@@ -179,7 +185,7 @@ impl Player {
             enchantment_context,
             attack_knockback as f32,
         );
-        f64::from(modified) / 2.0
+        f64::from(modified / 2.0)
     }
 
     fn cause_extra_knockback(
@@ -287,8 +293,13 @@ impl Player {
         )
     }
 
-    fn piercing_hit_entities(&self, item_stack: &ItemStack, world: &World) -> Vec<SharedEntity> {
-        let look = self.look_angle();
+    /// Returns the entities a piercing ray along `look` hits, in world query order.
+    pub(super) fn piercing_hit_entities(
+        &self,
+        item_stack: &ItemStack,
+        world: &World,
+        look: DVec3,
+    ) -> Vec<SharedEntity> {
         if look.length_squared() <= f64::EPSILON {
             return Vec::new();
         }
@@ -299,7 +310,12 @@ impl Player {
         let movement_extension = self.known_movement().dot(look).max(0.0);
         let mut to = eye_position + look * (max_reach + movement_extension);
 
-        let block_hit = world.clip(eye_position, to, ClipBlockShape::Collider, ClipFluid::None);
+        let block_hit = world.clip_including_border(
+            eye_position,
+            to,
+            ClipBlockShape::Collider,
+            ClipFluid::None,
+        );
         if !block_hit.is_miss() {
             to = block_hit.location;
             if eye_position.distance_squared(to) < eye_position.distance_squared(from) {
@@ -307,32 +323,29 @@ impl Player {
             }
         }
 
-        let search_area = WorldAabb::new(from.x, from.y, from.z, from.x, from.y, from.z)
-            .inflate_xyz(hitbox_margin, hitbox_margin, hitbox_margin)
+        let search_area = WorldAabb::of_size(from, hitbox_margin, hitbox_margin, hitbox_margin)
             .expand_towards(to - from)
             .inflate(1.0);
-        let mut hits = world
+        world
             .get_entities_in_aabb_matching(&search_area, |entity| {
                 self.can_piercing_hit_entity(entity)
             })
             .into_iter()
-            .filter_map(|entity| {
-                piercing_ray_hit_t(world, entity.bounding_box(), from, to, hitbox_margin)
-                    .map(|hit_t| (hit_t, entity))
+            .filter(|entity| {
+                piercing_ray_hits(world, entity.bounding_box(), from, to, hitbox_margin)
             })
-            .collect::<Vec<_>>();
-        hits.sort_by(|(left, _), (right, _)| left.total_cmp(right));
-        hits.into_iter().map(|(_, entity)| entity).collect()
+            .collect()
     }
 
+    /// Vanilla `PiercingWeapon.canHitEntity`, shared by jabs and kinetic charges.
     fn can_piercing_hit_entity(&self, target: &dyn Entity) -> bool {
-        target.id() != self.id()
-            && !target.is_invulnerable()
-            && target
-                .as_living_entity()
-                .is_some_and(|living| living.invulnerable_time() > 0)
-            && target.is_alive()
-            && target.can_be_hit_by_projectile()
+        if target.id() == self.id() || target.is_invulnerable() || !target.is_alive() {
+            return false;
+        }
+        if target.entity_type() == &vanilla_entities::INTERACTION {
+            return true;
+        }
+        target.can_be_hit_by_projectile()
             && target
                 .as_player()
                 .is_none_or(|target_player| self.can_harm_player(target_player))
@@ -350,8 +363,9 @@ impl Player {
             .lock()
             .required_value(vanilla_attributes::ATTACK_DAMAGE) as f32;
         let mut hit_something = false;
-        for target in self.piercing_hit_entities(item_stack, &world) {
+        for target in self.piercing_hit_entities(item_stack, &world, self.head_look_angle()) {
             hit_something |= self.stab_attack(
+                InteractionHand::MainHand,
                 &target,
                 base_damage,
                 true,
@@ -373,10 +387,12 @@ impl Player {
         );
     }
 
-    fn stab_attack(
+    /// Stabs `target` with the item in `hand`, as a jab or a kinetic-weapon charge.
+    pub(super) fn stab_attack(
         self: &Arc<Self>,
+        hand: InteractionHand,
         target: &SharedEntity,
-        base_damage: f32,
+        mut base_damage: f32,
         deals_damage: bool,
         deals_knockback: bool,
         dismounts: bool,
@@ -386,50 +402,68 @@ impl Player {
             return false;
         }
 
-        let attacking_item = self.weapon_item();
+        let attacking_item = self.item_in_hand(hand);
         let damage_source = self.attack_damage_source(&attacking_item);
+        // Enchantment damage and knockback always read the main-hand weapon.
+        let weapon = self.weapon_item();
         let enchantment_context = EnchantmentDamageContext::new(
             entity.entity_type(),
             Some(self.entity_type()),
             Some(self.entity_type()),
             &damage_source,
         );
-        let enchanted_damage =
-            enchantment_helper::modify_damage(&attacking_item, &enchantment_context, base_damage);
-        let attack_strength_scale = self.attack_strength_scale(0.5);
-        let magic_boost = attack_strength_scale * (enchanted_damage - base_damage);
-        let base_damage = base_damage * Self::base_damage_scale_factor(attack_strength_scale);
+        let mut magic_boost =
+            enchantment_helper::modify_damage(&weapon, &enchantment_context, base_damage)
+                - base_damage;
+        // A charge with the actively used item is not scaled by attack strength.
+        if self.active_item_use_hand() != Some(hand) {
+            let attack_strength_scale = self.attack_strength_scale(0.5);
+            magic_boost *= attack_strength_scale;
+            base_damage *= Self::base_damage_scale_factor(attack_strength_scale);
+        }
         if deals_knockback && self.deflect_projectile(entity) {
             return true;
         }
-        let damage = base_damage + magic_boost;
+
+        let old_entity_living_health = entity
+            .as_living_entity()
+            .map_or(0.0, LivingEntity::get_health);
         let old_movement = entity.velocity();
-        let mut affected = deals_knockback;
-        let damage_dealt = deals_damage
-            && entity
-                .level()
-                .is_some_and(|world| entity.hurt(&world, &damage_source, damage));
-        affected |= damage_dealt;
+        let was_hurt = deals_damage
+            && entity.level().is_some_and(|world| {
+                entity.hurt(&world, &damage_source, base_damage + magic_boost)
+            });
         if deals_knockback {
+            let attack_knockback = self
+                .attributes()
+                .lock()
+                .required_value(vanilla_attributes::ATTACK_KNOCKBACK);
             self.cause_extra_knockback(entity, STAB_KNOCKBACK, old_movement);
             self.cause_extra_knockback(
                 entity,
-                Self::get_knockback(0.0, &attacking_item, &enchantment_context),
+                Self::get_knockback(attack_knockback, &weapon, &enchantment_context),
                 old_movement,
             );
         }
-        if dismounts && entity.is_passenger() {
-            affected = true;
+
+        let dismounted = dismounts
+            && entity.is_passenger()
+            && !REGISTRY.entity_types.is_in_tag(
+                entity.entity_type(),
+                &EntityTypeTag::CANNOT_BE_DISMOUNTED_BY_ITEM_USAGE,
+            );
+        if dismounted {
             entity.stop_riding();
         }
 
-        if !affected {
+        if !was_hurt && !deals_knockback && !dismounted {
             return false;
         }
 
         self.attack_visual_effects(entity, AttackVisualKind::Stab, magic_boost);
-        self.item_attack_interaction(target, attacking_item, &damage_source, damage_dealt);
         self.set_last_hurt_mob(Some(target));
+        self.item_attack_interaction(hand, target, attacking_item, &damage_source, was_hurt);
+        self.damage_stats_and_hearts(entity, old_entity_living_health);
         self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         true
     }
@@ -566,7 +600,13 @@ impl Player {
                 AttackVisualKind::melee(critical_attack, sweep_attack, full_strength_attack);
             self.attack_visual_effects(entity, visual_kind, magic_boost);
             self.set_last_hurt_mob(Some(target));
-            self.item_attack_interaction(target, attacking_item, &damage_source, true);
+            self.item_attack_interaction(
+                InteractionHand::MainHand,
+                target,
+                attacking_item,
+                &damage_source,
+                true,
+            );
             self.damage_stats_and_hearts(entity, old_entity_living_health);
             self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         } else {
@@ -724,6 +764,7 @@ impl Player {
 
     fn item_attack_interaction(
         &self,
+        hand: InteractionHand,
         target: &SharedEntity,
         attacking_item: ItemStack,
         damage_source: &DamageSource,
@@ -736,7 +777,7 @@ impl Player {
         let post_attack_context = EnchantmentPostAttackContext::new(target, damage_source);
         let item_hurt_enemy = {
             let mut inventory = self.inventory.lock();
-            inventory.mutate_item_in_hand(InteractionHand::MainHand, |stack| {
+            inventory.mutate_item_in_hand(hand, |stack| {
                 if stack.is_empty() {
                     return false;
                 }
@@ -767,7 +808,7 @@ impl Player {
         };
         let has_infinite_materials = self.has_infinite_materials();
         let mut inventory = self.inventory.lock();
-        inventory.mutate_item_in_hand(InteractionHand::MainHand, |stack| {
+        inventory.mutate_item_in_hand(hand, |stack| {
             if stack.is_empty() {
                 return;
             }
@@ -954,6 +995,10 @@ impl Player {
     /// Awards stats and sends particles when an entity gets attacked by this player.
     pub fn damage_stats_and_hearts(&self, entity: &dyn Entity, old_entity_living_health: f32) {
         const PARTICLES_PER_HEALTH: f32 = 0.5;
+        /// Vanilla sends no damage indicators for hits of this much damage or less.
+        const MIN_DAMAGE_FOR_INDICATORS: f32 = 2.0;
+        /// Indicator particles per point of damage dealt, truncated to a whole count.
+        const INDICATORS_PER_DAMAGE: f64 = 0.5;
         const PARTICLE_SPREAD_XZ: f64 = 0.1;
         const PARTICLE_SPEED: f64 = 0.2;
 
@@ -964,7 +1009,10 @@ impl Player {
                 round_f32(actual_damage * 10.0),
             );
 
-            let count = (actual_damage * 0.5).round() as i32;
+            if actual_damage <= MIN_DAMAGE_FOR_INDICATORS {
+                return;
+            }
+            let count = (f64::from(actual_damage) * INDICATORS_PER_DAMAGE) as i32;
             let offset = DVec3::new(
                 0.0,
                 f64::from(entity.base().dimensions().height * PARTICLES_PER_HEALTH),

@@ -67,7 +67,7 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::data_components::vanilla_components::BLOCKS_ATTACKS;
+use steel_registry::data_components::vanilla_components::{BLOCKS_ATTACKS, KINETIC_WEAPON};
 use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::game_rules::GameRuleRef;
@@ -98,7 +98,7 @@ use text_components::{content::Resolvable, custom::CustomData};
 
 use crate::behavior::{
     BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult, InventoryTickContext,
-    ItemBehavior, apply_use_remainder,
+    ItemBehavior, apply_use_remainder, tick_consumable_use,
 };
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
@@ -458,12 +458,33 @@ impl Player {
             return;
         };
         let world = self.get_world();
-        let Some(user) = LivingEntityRef::new(entity) else {
-            panic!("active item use requires a living entity");
+        tick_consumable_use(&item, self, active.remaining_ticks());
+        let use_on_release = if let Some(kinetic_weapon) = item.get(KINETIC_WEAPON) {
+            let ticks_used = behavior.get_use_duration(&item, self) - active.remaining_ticks();
+            if let Some(player) = world.players.get_by_entity_id(self.id()) {
+                player.kinetic_damage_entities(kinetic_weapon, &item, hand, ticks_used);
+            }
+            {
+                let mut inventory = self.inventory.lock();
+                if inventory.get_item_in_hand(hand).item() != active.item() {
+                    drop(inventory);
+                    self.stop_using_item();
+
+                    return;
+                }
+
+                inventory.adopt_use_item(hand);
+            }
+            behavior.use_on_release(&item)
+        } else {
+            let Some(user) = LivingEntityRef::new(entity) else {
+                panic!("active item use requires a living entity");
+            };
+            behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
+            let use_on_release = behavior.use_on_release(&item);
+            self.inventory.lock().write_use_item(hand, item);
+            use_on_release
         };
-        behavior.on_use_tick(&world, user, &mut item, active.remaining_ticks());
-        let use_on_release = behavior.use_on_release(&item);
-        self.inventory.lock().write_use_item(hand, item);
 
         let Some(current) = self.living_base.decrement_active_item_use() else {
             return;

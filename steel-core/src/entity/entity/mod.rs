@@ -2041,6 +2041,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.calculate_view_vector(pitch, yaw)
     }
 
+    /// Returns the unit look-direction vector from this entity's pitch and head yaw.
+    fn head_look_angle(&self) -> DVec3 {
+        self.calculate_view_vector(self.rotation().1, self.head_yaw())
+    }
+
     /// Returns the vanilla offset for the hand holding `item`.
     ///
     /// Only players have a hand offset. If both hands contain the item, vanilla
