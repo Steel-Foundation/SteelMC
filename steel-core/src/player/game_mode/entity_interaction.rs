@@ -360,7 +360,7 @@ impl Player {
         }
 
         self.reset_attack_strength_ticker();
-        enchantment_helper::do_post_piercing_attack_effects(&world, self.as_ref());
+        enchantment_helper::do_post_piercing_attack_effects(self.as_ref());
         if hit_something {
             self.play_sound_holder(piercing_weapon.hit_sound.as_ref());
         }
@@ -515,8 +515,7 @@ impl Player {
 
         if base_damage <= 0.0 && magic_boost <= 0.0 {
             // Vanilla still runs post-piercing attack effects when no damage is dealt.
-            let world = self.get_world();
-            enchantment_helper::do_post_piercing_attack_effects(&world, self.as_ref());
+            enchantment_helper::do_post_piercing_attack_effects(self.as_ref());
             return false;
         }
 
@@ -571,8 +570,7 @@ impl Player {
             self.play_attack_sound(&sound_events::ENTITY_PLAYER_ATTACK_NODAMAGE);
         }
 
-        let world = self.get_world();
-        enchantment_helper::do_post_piercing_attack_effects(&world, self.as_ref());
+        enchantment_helper::do_post_piercing_attack_effects(self.as_ref());
         was_hurt
     }
 

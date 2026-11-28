@@ -68,12 +68,7 @@ impl ItemBehavior for FireworkRocketItem {
         rocket.set_owner_entity(Some(&owner));
         let rocket = Self::add_rocket(context.world, rocket);
         context.inv.with_item(|item| {
-            enchantment_helper::on_projectile_spawned(
-                context.world,
-                item,
-                rocket.as_ref(),
-                Some(&owner),
-            );
+            enchantment_helper::on_projectile_spawned(context.world, item, &rocket, Some(&owner));
             item.shrink_one();
         });
 
@@ -115,7 +110,7 @@ impl ItemBehavior for FireworkRocketItem {
             enchantment_helper::on_projectile_spawned(
                 context.world,
                 itemstack,
-                rocket.as_ref(),
+                &rocket,
                 Some(&owner),
             );
             itemstack.consume_one(has_infinite_materials);

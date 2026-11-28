@@ -1,13 +1,18 @@
+use std::sync::OnceLock;
+
+use crate::particle_types::{self, ParticleOptionsType};
+
 use super::{
     AttributeEffectJson, ConditionalDamageImmunityEffectJson, ConditionalEntityEffectJson,
     ConditionalValueEffectJson, CrossbowChargingSoundsJson, DamageSourcePredicateJson,
-    EnchantmentTargetJson, EntityEffectJson, EntityFlagsPredicateJson, EntityPredicateJson,
-    EntityTargetJson, EntityTypePredicateJson, EntityTypeSpecificPredicateJson,
-    EntityVehiclePredicateJson, GameType, Ident, Identifier, ItemHolderSetJson,
-    LevelBasedValueJson, LevelBasedValueTypedJson, MobEffectSelectionJson, RequirementsJson, Span,
-    TargetedConditionalEntityEffectJson, TargetedConditionalValueEffectJson, ToShoutySnakeCase,
-    TokenStream, ValueEffectJson, damage_type_ref_token, generate_sound_event_ref,
-    identifier_token, quote,
+    DoubleBoundsJson, EnchantmentTargetJson, EntityEffectJson, EntityFlagsPredicateJson,
+    EntityPredicateJson, EntityTargetJson, EntityTypePredicateJson,
+    EntityTypeSpecificPredicateJson, EntityVehiclePredicateJson, ExplodeEffectJson,
+    ExplosionInteractionJson, GameType, Ident, Identifier, ItemHolderSetJson, LevelBasedValueJson,
+    LevelBasedValueTypedJson, MobEffectSelectionJson, MovementPredicateJson, RequirementsJson,
+    Span, TargetedConditionalEntityEffectJson, TargetedConditionalValueEffectJson,
+    ToShoutySnakeCase, TokenStream, ValueEffectJson, damage_type_ref_token,
+    generate_sound_event_ref, identifier_token, quote,
 };
 
 pub(super) fn attribute_ref_token(attribute: &Identifier) -> TokenStream {
@@ -179,26 +184,72 @@ pub(super) fn entity_vehicle_predicate_token(
     }
 }
 
+fn option_bool_token(value: Option<bool>) -> TokenStream {
+    if let Some(value) = value {
+        quote! { Some(#value) }
+    } else {
+        quote! { None }
+    }
+}
+
 pub(super) fn entity_flags_predicate_token(predicate: &EntityFlagsPredicateJson) -> TokenStream {
-    let is_fall_flying = if let Some(value) = predicate.is_fall_flying {
-        quote! { Some(#value) }
-    } else {
-        quote! { None }
-    };
-    let is_in_water = if let Some(value) = predicate.is_in_water {
-        quote! { Some(#value) }
-    } else {
-        quote! { None }
-    };
+    let is_flying = option_bool_token(predicate.is_flying);
+    let is_fall_flying = option_bool_token(predicate.is_fall_flying);
+    let is_in_water = option_bool_token(predicate.is_in_water);
     let unsupported = predicate.unsupported;
 
     quote! {
         EntityFlagsPredicate {
+            is_flying: #is_flying,
             is_fall_flying: #is_fall_flying,
             is_in_water: #is_in_water,
             unsupported: #unsupported,
         }
     }
+}
+
+fn double_bounds_token(bounds: DoubleBoundsJson) -> TokenStream {
+    match (bounds.min, bounds.max) {
+        (None, None) => quote! { DoubleBounds::ANY },
+        (Some(min), None) => quote! { DoubleBounds::at_least(#min) },
+        (None, Some(max)) => quote! { DoubleBounds::at_most(#max) },
+        (Some(min), Some(max)) => quote! { DoubleBounds::between(#min, #max) },
+    }
+}
+
+fn movement_predicate_ref_token(
+    prefix: &str,
+    movement: Option<&MovementPredicateJson>,
+    statics: &mut TokenStream,
+    counter: &mut usize,
+) -> TokenStream {
+    let Some(movement) = movement else {
+        return quote! { None };
+    };
+    let ident = Ident::new(
+        &format!("{prefix}_MOVEMENT_PREDICATE_{}", *counter),
+        Span::call_site(),
+    );
+    *counter += 1;
+    let x = double_bounds_token(movement.x);
+    let y = double_bounds_token(movement.y);
+    let z = double_bounds_token(movement.z);
+    let speed = double_bounds_token(movement.speed);
+    let horizontal_speed = double_bounds_token(movement.horizontal_speed);
+    let vertical_speed = double_bounds_token(movement.vertical_speed);
+    let fall_distance = double_bounds_token(movement.fall_distance);
+    statics.extend(quote! {
+        static #ident: MovementPredicate = MovementPredicate {
+            x: #x,
+            y: #y,
+            z: #z,
+            speed: #speed,
+            horizontal_speed: #horizontal_speed,
+            vertical_speed: #vertical_speed,
+            fall_distance: #fall_distance,
+        };
+    });
+    quote! { Some(&#ident) }
 }
 
 pub(super) fn entity_type_specific_predicate_token(
@@ -228,10 +279,17 @@ pub(super) fn entity_type_specific_predicate_token(
     }
 }
 
-pub(super) fn entity_predicate_token(predicate: &EntityPredicateJson) -> TokenStream {
+pub(super) fn entity_predicate_token(
+    prefix: &str,
+    predicate: &EntityPredicateJson,
+    statics: &mut TokenStream,
+    counter: &mut usize,
+) -> TokenStream {
     let entity_type = entity_type_predicate_token(&predicate.entity_type);
     let vehicle = entity_vehicle_predicate_token(&predicate.vehicle);
     let flags = entity_flags_predicate_token(&predicate.flags);
+    let movement =
+        movement_predicate_ref_token(prefix, predicate.movement.as_deref(), statics, counter);
     let type_specific = entity_type_specific_predicate_token(&predicate.type_specific);
     let unsupported = predicate.unsupported;
     quote! {
@@ -239,6 +297,7 @@ pub(super) fn entity_predicate_token(predicate: &EntityPredicateJson) -> TokenSt
             entity_type: #entity_type,
             vehicle: #vehicle,
             flags: #flags,
+            movement: #movement,
             type_specific: #type_specific,
             unsupported: #unsupported,
         }
@@ -403,11 +462,95 @@ pub(super) fn generate_entity_effect(
                 }
             }
         }
+        EntityEffectJson::Explode(explode) => {
+            let explode = generate_explode_effect(prefix, explode, statics, counter);
+            quote! { EnchantmentEntityEffect::Explode(#explode) }
+        }
         EntityEffectJson::Unsupported { effect_type } => {
             let effect_type = identifier_token(effect_type);
             quote! { EnchantmentEntityEffect::Unsupported { effect_type: #effect_type } }
         }
     }
+}
+
+fn generate_explode_effect(
+    prefix: &str,
+    explode: &ExplodeEffectJson,
+    statics: &mut TokenStream,
+    counter: &mut usize,
+) -> TokenStream {
+    let attribute_to_user = explode.attribute_to_user;
+    let damage_type = if let Some(damage_type) = &explode.damage_type {
+        let damage_type = damage_type_ref_token(damage_type);
+        quote! { Some(#damage_type) }
+    } else {
+        quote! { None }
+    };
+    let knockback_multiplier = if let Some(multiplier) = &explode.knockback_multiplier {
+        let multiplier = generate_level_based_value_ref(prefix, multiplier, statics, counter);
+        quote! { Some(#multiplier) }
+    } else {
+        quote! { None }
+    };
+    let immune_blocks = if let Some(tag) = &explode.immune_blocks_tag {
+        let tag = identifier_token(tag);
+        quote! { Some(#tag) }
+    } else {
+        quote! { None }
+    };
+    let [offset_x, offset_y, offset_z] = explode.offset;
+    let radius = generate_level_based_value_ref(prefix, &explode.radius, statics, counter);
+    let create_fire = explode.create_fire;
+    let block_interaction = match explode.block_interaction {
+        ExplosionInteractionJson::None => quote! { ExplosionInteraction::None },
+        ExplosionInteractionJson::Block => quote! { ExplosionInteraction::Block },
+        ExplosionInteractionJson::Mob => quote! { ExplosionInteraction::Mob },
+        ExplosionInteractionJson::Tnt => quote! { ExplosionInteraction::Tnt },
+        ExplosionInteractionJson::Trigger => quote! { ExplosionInteraction::Trigger },
+    };
+    let small_particle = simple_particle_type_ref_token(&explode.small_particle);
+    let large_particle = simple_particle_type_ref_token(&explode.large_particle);
+    let sound = generate_sound_event_ref(&explode.sound);
+
+    quote! {
+        EnchantmentExplodeEffect {
+            attribute_to_user: #attribute_to_user,
+            damage_type: #damage_type,
+            knockback_multiplier: #knockback_multiplier,
+            immune_blocks: #immune_blocks,
+            offset: DVec3::new(#offset_x, #offset_y, #offset_z),
+            radius: #radius,
+            create_fire: #create_fire,
+            block_interaction: #block_interaction,
+            small_particle: #small_particle,
+            large_particle: #large_particle,
+            sound: #sound,
+        }
+    }
+}
+
+/// Resolves a particle type that must not carry options, checked against the
+/// extracted particle registry so runtime `ParticleData::simple` cannot panic.
+fn simple_particle_type_ref_token(particle: &Identifier) -> TokenStream {
+    static SIMPLE_PARTICLES: OnceLock<Vec<Identifier>> = OnceLock::new();
+    let simple_particles = SIMPLE_PARTICLES.get_or_init(|| {
+        particle_types::read_particle_types()
+            .into_iter()
+            .filter(|entry| matches!(entry.options_type, ParticleOptionsType::Simple))
+            .map(|entry| entry.key)
+            .collect()
+    });
+    assert!(
+        simple_particles.contains(particle),
+        "enchantment effect particle {particle} must be an option-less (simple) particle type"
+    );
+    assert_eq!(
+        particle.namespace.as_ref(),
+        "minecraft",
+        "vanilla enchantment particle references must use the minecraft namespace: {particle}"
+    );
+    let ident = Ident::new(&particle.path.to_shouty_snake_case(), Span::call_site());
+    quote! { &crate::vanilla_particle_types::#ident }
 }
 
 pub(super) fn generate_requirements_ref(
@@ -455,7 +598,7 @@ pub(super) fn generate_requirements_value(
         }
         RequirementsJson::EntityProperties { entity, predicate } => {
             let entity = entity_target_token(entity);
-            let predicate = entity_predicate_token(predicate);
+            let predicate = entity_predicate_token(prefix, predicate, statics, counter);
             quote! {
                 EnchantmentEffectRequirements::EntityProperties {
                     entity: #entity,

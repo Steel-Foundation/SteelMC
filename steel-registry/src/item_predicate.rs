@@ -141,11 +141,55 @@ impl DoubleBounds {
         Some(Self { min, max })
     }
 
+    /// Matches `value_sqr` against these bounds squared, as vanilla does for
+    /// speed checks that avoid a square root.
+    #[must_use]
+    pub fn matches_sqr(&self, value_sqr: f64) -> bool {
+        Self {
+            min: self.min.map(|min| min * min),
+            max: self.max.map(|max| max * max),
+        }
+        .matches(value_sqr)
+    }
+
     #[must_use]
     pub const fn exactly(value: f64) -> Self {
         Self {
             min: Some(value),
             max: Some(value),
+        }
+    }
+
+    #[must_use]
+    pub const fn at_least(min: f64) -> Self {
+        Self {
+            min: Some(min),
+            max: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn at_most(max: f64) -> Self {
+        Self {
+            min: None,
+            max: Some(max),
+        }
+    }
+
+    /// Creates `min..=max` bounds for generated statics.
+    ///
+    /// # Panics
+    /// Panics (at compile time in const contexts) if `min > max` under Java
+    /// `Double.compare` ordering, matching [`Self::new`].
+    #[must_use]
+    pub const fn between(min: f64, max: f64) -> Self {
+        assert!(
+            !java_double_compare(min, max).is_gt(),
+            "double bounds min must not exceed max"
+        );
+        Self {
+            min: Some(min),
+            max: Some(max),
         }
     }
 
@@ -229,14 +273,21 @@ const fn java_double_equals(left: f64, right: f64) -> bool {
     java_double_bits(left) == java_double_bits(right)
 }
 
-fn java_double_compare(left: f64, right: f64) -> std::cmp::Ordering {
+const fn java_double_compare(left: f64, right: f64) -> std::cmp::Ordering {
     if left < right {
         return std::cmp::Ordering::Less;
     }
     if left > right {
         return std::cmp::Ordering::Greater;
     }
-    java_double_bits(left).cmp(&java_double_bits(right))
+    let (left, right) = (java_double_bits(left), java_double_bits(right));
+    if left < right {
+        std::cmp::Ordering::Less
+    } else if left > right {
+        std::cmp::Ordering::Greater
+    } else {
+        std::cmp::Ordering::Equal
+    }
 }
 
 const fn java_double_bits(value: f64) -> i64 {

@@ -8,6 +8,21 @@ use crate::{
     serial::{ReadFrom, WriteTo},
 };
 
+/// High-level source category used to resolve Vanilla explosion gamerules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExplosionInteraction {
+    /// Damage entities without changing blocks.
+    None,
+    /// A block-created explosion governed by `block_explosion_drop_decay`.
+    Block,
+    /// A mob-created explosion governed by mob griefing and mob drop decay.
+    Mob,
+    /// A TNT explosion governed by `tnt_explosion_drop_decay`.
+    Tnt,
+    /// Lets blocks react without being destroyed, as wind charges do.
+    Trigger,
+}
+
 /// The game type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[expect(missing_docs, reason = "variant names are self-explanatory")]

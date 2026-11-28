@@ -246,9 +246,34 @@ enum EntityEffectJson {
         min_amplifier: LevelBasedValueJson,
         max_amplifier: LevelBasedValueJson,
     },
+    Explode(Box<ExplodeEffectJson>),
     Unsupported {
         effect_type: Identifier,
     },
+}
+
+#[derive(Debug)]
+struct ExplodeEffectJson {
+    attribute_to_user: bool,
+    damage_type: Option<Identifier>,
+    knockback_multiplier: Option<LevelBasedValueJson>,
+    immune_blocks_tag: Option<Identifier>,
+    offset: [f64; 3],
+    radius: LevelBasedValueJson,
+    create_fire: bool,
+    block_interaction: ExplosionInteractionJson,
+    small_particle: Identifier,
+    large_particle: Identifier,
+    sound: Identifier,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ExplosionInteractionJson {
+    None,
+    Block,
+    Mob,
+    Tnt,
+    Trigger,
 }
 
 impl<'de> Deserialize<'de> for EntityEffectJson {
@@ -316,6 +341,7 @@ struct EntityPredicateJson {
     entity_type: EntityTypePredicateJson,
     vehicle: EntityVehiclePredicateJson,
     flags: EntityFlagsPredicateJson,
+    movement: Option<Box<MovementPredicateJson>>,
     type_specific: EntityTypeSpecificPredicateJson,
     unsupported: bool,
 }
@@ -334,8 +360,27 @@ enum EntityVehiclePredicateJson {
     Unsupported,
 }
 
+/// One vanilla `MinMaxBounds.Doubles`; `None` sides are unbounded.
+#[derive(Debug, Clone, Copy, Default)]
+struct DoubleBoundsJson {
+    min: Option<f64>,
+    max: Option<f64>,
+}
+
+#[derive(Debug, Default)]
+struct MovementPredicateJson {
+    x: DoubleBoundsJson,
+    y: DoubleBoundsJson,
+    z: DoubleBoundsJson,
+    speed: DoubleBoundsJson,
+    horizontal_speed: DoubleBoundsJson,
+    vertical_speed: DoubleBoundsJson,
+    fall_distance: DoubleBoundsJson,
+}
+
 #[derive(Debug)]
 struct EntityFlagsPredicateJson {
+    is_flying: Option<bool>,
     is_fall_flying: Option<bool>,
     is_in_water: Option<bool>,
     unsupported: bool,
@@ -344,6 +389,7 @@ struct EntityFlagsPredicateJson {
 impl EntityFlagsPredicateJson {
     const fn any() -> Self {
         Self {
+            is_flying: None,
             is_fall_flying: None,
             is_in_water: None,
             unsupported: false,
@@ -490,11 +536,13 @@ pub(crate) fn build() -> TokenStream {
             CrossbowChargingSounds, DamageSourcePredicate, DamageSourceTagPredicate,
             EnchantmentAttributeEffect, EnchantmentEffectRequirements, EnchantmentEffects,
             EnchantmentEntityEffect, EnchantmentEntityTarget, EnchantmentItemSet, EnchantmentTarget,
-            EnchantmentValueEffect, EntityFlagsPredicate, EntityPredicate,
-            EntityTypePredicate, EntityTypeSpecificPredicate, EntityVehiclePredicate,
-            LevelBasedValue, MobEffectSelection, PlayerPredicate,
-            TargetedConditionalEnchantmentEffect,
+            EnchantmentExplodeEffect, EnchantmentValueEffect, EntityFlagsPredicate,
+            EntityPredicate, EntityTypePredicate, EntityTypeSpecificPredicate,
+            EntityVehiclePredicate, LevelBasedValue, MobEffectSelection, MovementPredicate,
+            PlayerPredicate, TargetedConditionalEnchantmentEffect,
         };
+        use crate::item_predicate::DoubleBounds;
+        use steel_utils::types::ExplosionInteraction;
         use crate::enchantment::{Enchantment, EnchantmentCost, EnchantmentRegistry};
         use crate::equipment::EquipmentSlotGroup;
         use crate::vanilla_attributes;

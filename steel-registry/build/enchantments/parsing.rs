@@ -1,9 +1,10 @@
 use super::{
-    DamageSourcePredicateJson, DamageSourceTagPredicateJson, EnchantmentTargetJson,
-    EntityEffectJson, EntityFlagsPredicateJson, EntityPredicateJson, EntityTargetJson,
-    EntityTypePredicateJson, EntityTypeSpecificPredicateJson, EntityVehiclePredicateJson, GameType,
-    Ident, Identifier, ItemHolderSetJson, LevelBasedValueJson, MobEffectSelectionJson,
-    PlayerPredicateJson, RequirementsJson, Span, TokenStream, quote,
+    DamageSourcePredicateJson, DamageSourceTagPredicateJson, DoubleBoundsJson,
+    EnchantmentTargetJson, EntityEffectJson, EntityFlagsPredicateJson, EntityPredicateJson,
+    EntityTargetJson, EntityTypePredicateJson, EntityTypeSpecificPredicateJson,
+    EntityVehiclePredicateJson, ExplodeEffectJson, ExplosionInteractionJson, GameType, Ident,
+    Identifier, ItemHolderSetJson, LevelBasedValueJson, MobEffectSelectionJson,
+    MovementPredicateJson, PlayerPredicateJson, RequirementsJson, Span, TokenStream, quote,
 };
 
 pub(super) fn slot_to_tokens(slot: &str) -> TokenStream {
@@ -246,10 +247,113 @@ pub(super) fn parse_entity_effect_json(
                 )?)?,
             })
         }
+        "minecraft:explode" => Ok(EntityEffectJson::Explode(Box::new(
+            parse_explode_effect_json(object)?,
+        ))),
         _ => Ok(EntityEffectJson::Unsupported {
             effect_type: parse_identifier(&effect_type)?,
         }),
     }
+}
+
+fn parse_explode_effect_json(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Result<ExplodeEffectJson, String> {
+    for key in object.keys() {
+        if !matches!(
+            key.as_str(),
+            "type"
+                | "attribute_to_user"
+                | "damage_type"
+                | "knockback_multiplier"
+                | "immune_blocks"
+                | "offset"
+                | "radius"
+                | "create_fire"
+                | "block_interaction"
+                | "small_particle"
+                | "large_particle"
+                | "sound"
+        ) {
+            // Includes `block_particles`: Steel only supports vanilla's empty default.
+            return Err(format!("unsupported explode effect field `{key}`"));
+        }
+    }
+
+    let immune_blocks_tag = match object.get("immune_blocks") {
+        Some(serde_json::Value::String(raw)) => Some(parse_required_tag(raw).map_err(|error| {
+            format!("explode `immune_blocks` must be a block tag (direct block lists are unsupported): {error}")
+        })?),
+        Some(_) => {
+            return Err(
+                "explode `immune_blocks` must be a block tag (direct block lists are unsupported)"
+                    .to_owned(),
+            );
+        }
+        None => None,
+    };
+
+    Ok(ExplodeEffectJson {
+        attribute_to_user: optional_bool_field(object, "attribute_to_user")?.unwrap_or(false),
+        damage_type: object
+            .get("damage_type")
+            .map(|value| {
+                value
+                    .as_str()
+                    .ok_or_else(|| "explode `damage_type` must be a string".to_owned())
+                    .and_then(parse_identifier)
+            })
+            .transpose()?,
+        knockback_multiplier: object
+            .get("knockback_multiplier")
+            .map(parse_level_based_value_json)
+            .transpose()?,
+        immune_blocks_tag,
+        offset: object
+            .get("offset")
+            .map(parse_vec3_json)
+            .transpose()?
+            .unwrap_or([0.0; 3]),
+        radius: parse_level_based_value_json(object_field(object, "radius")?)?,
+        create_fire: optional_bool_field(object, "create_fire")?.unwrap_or(false),
+        block_interaction: parse_explosion_interaction(&string_field(
+            object,
+            "block_interaction",
+        )?)?,
+        small_particle: parse_simple_particle_json(object_field(object, "small_particle")?)?,
+        large_particle: parse_simple_particle_json(object_field(object, "large_particle")?)?,
+        sound: object_field(object, "sound")?
+            .as_str()
+            .ok_or_else(|| {
+                "explode `sound` must be a sound event id (inline sound events are unsupported)"
+                    .to_owned()
+            })
+            .and_then(parse_identifier)?,
+    })
+}
+
+fn parse_explosion_interaction(raw: &str) -> Result<ExplosionInteractionJson, String> {
+    match raw {
+        "none" => Ok(ExplosionInteractionJson::None),
+        "block" => Ok(ExplosionInteractionJson::Block),
+        "mob" => Ok(ExplosionInteractionJson::Mob),
+        "tnt" => Ok(ExplosionInteractionJson::Tnt),
+        "trigger" => Ok(ExplosionInteractionJson::Trigger),
+        other => Err(format!("unknown explosion block_interaction `{other}`")),
+    }
+}
+
+/// Parses a particle that carries no options beyond its type.
+fn parse_simple_particle_json(value: &serde_json::Value) -> Result<Identifier, String> {
+    let Some(object) = value.as_object() else {
+        return Err("particle must be an object".to_owned());
+    };
+    if let Some(key) = object.keys().find(|key| *key != "type") {
+        return Err(format!(
+            "particle options are unsupported in enchantment effects (field `{key}`)"
+        ));
+    }
+    parse_identifier(&string_field(object, "type")?)
 }
 
 pub(super) fn parse_vec3_json(value: &serde_json::Value) -> Result<[f64; 3], String> {
@@ -320,6 +424,8 @@ pub(super) fn parse_entity_predicate_json(
                 | "minecraft:vehicle"
                 | "flags"
                 | "minecraft:flags"
+                | "movement"
+                | "minecraft:movement"
                 | "type_specific"
                 | "minecraft:type_specific/player"
         )
@@ -341,6 +447,10 @@ pub(super) fn parse_entity_predicate_json(
         .map(parse_entity_flags_predicate_json)
         .transpose()?
         .unwrap_or_else(EntityFlagsPredicateJson::any);
+    let movement = aliased_object_field(object, &["movement", "minecraft:movement"])?
+        .map(parse_movement_predicate_json)
+        .transpose()?
+        .map(Box::new);
     let type_specific =
         match aliased_object_field(object, &["type_specific", "minecraft:type_specific/player"])? {
             Some(value) if object.contains_key("minecraft:type_specific/player") => {
@@ -354,9 +464,70 @@ pub(super) fn parse_entity_predicate_json(
         entity_type,
         vehicle,
         flags,
+        movement,
         type_specific,
         unsupported,
     })
+}
+
+fn parse_movement_predicate_json(
+    value: &serde_json::Value,
+) -> Result<MovementPredicateJson, String> {
+    let Some(object) = value.as_object() else {
+        return Err("movement predicate must be an object".to_owned());
+    };
+    let mut movement = MovementPredicateJson::default();
+    for (key, value) in object {
+        let bounds = match key.as_str() {
+            "x" => &mut movement.x,
+            "y" => &mut movement.y,
+            "z" => &mut movement.z,
+            "speed" => &mut movement.speed,
+            "horizontal_speed" => &mut movement.horizontal_speed,
+            "vertical_speed" => &mut movement.vertical_speed,
+            "fall_distance" => &mut movement.fall_distance,
+            other => return Err(format!("unknown movement predicate field `{other}`")),
+        };
+        *bounds = parse_double_bounds_json(value)
+            .map_err(|error| format!("movement predicate `{key}`: {error}"))?;
+    }
+    Ok(movement)
+}
+
+/// Parses vanilla `MinMaxBounds.Doubles`: a number for an exact value, or `{min, max}`.
+fn parse_double_bounds_json(value: &serde_json::Value) -> Result<DoubleBoundsJson, String> {
+    if let Some(exact) = value.as_f64() {
+        return Ok(DoubleBoundsJson {
+            min: Some(exact),
+            max: Some(exact),
+        });
+    }
+    let Some(object) = value.as_object() else {
+        return Err("bounds must be a number or an object".to_owned());
+    };
+    let bound = |field: &str| -> Result<Option<f64>, String> {
+        object
+            .get(field)
+            .map(|value| {
+                value
+                    .as_f64()
+                    .ok_or_else(|| format!("bounds `{field}` must be a number"))
+            })
+            .transpose()
+    };
+    if let Some(key) = object.keys().find(|key| *key != "min" && *key != "max") {
+        return Err(format!("unknown bounds field `{key}`"));
+    }
+    let bounds = DoubleBoundsJson {
+        min: bound("min")?,
+        max: bound("max")?,
+    };
+    if let (Some(min), Some(max)) = (bounds.min, bounds.max)
+        && min > max
+    {
+        return Err("bounds min must not exceed max".to_owned());
+    }
+    Ok(bounds)
 }
 
 pub(super) fn aliased_object_field<'a>(
@@ -387,11 +558,13 @@ pub(super) fn parse_entity_flags_predicate_json(
     };
     let unsupported = object
         .keys()
-        .any(|key| key != "is_fall_flying" && key != "is_in_water");
+        .any(|key| !matches!(key.as_str(), "is_flying" | "is_fall_flying" | "is_in_water"));
+    let is_flying = optional_bool_field(object, "is_flying")?;
     let is_fall_flying = optional_bool_field(object, "is_fall_flying")?;
     let is_in_water = optional_bool_field(object, "is_in_water")?;
 
     Ok(EntityFlagsPredicateJson {
+        is_flying,
         is_fall_flying,
         is_in_water,
         unsupported,

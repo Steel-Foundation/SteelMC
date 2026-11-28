@@ -1,13 +1,15 @@
 use crate::attribute::{AttributeModifierOperation, AttributeRef};
 use crate::damage_type::DamageTypeRef;
+use crate::item_predicate::DoubleBounds;
 use crate::items::ItemRef;
 use crate::mob_effect::MobEffectRef;
+use crate::particle_type::ParticleTypeRef;
 use crate::sound_event::SoundEventRef;
 use glam::DVec3;
 use steel_math::round_f64;
 use steel_utils::Identifier;
 use steel_utils::random::Random;
-use steel_utils::types::GameType;
+use steel_utils::types::{ExplosionInteraction, GameType};
 
 /// Vanilla enchantment effect component keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -227,13 +229,44 @@ pub enum EntityTypePredicate {
     Unsupported,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct EntityPredicate {
     pub entity_type: EntityTypePredicate,
     pub vehicle: EntityVehiclePredicate,
     pub flags: EntityFlagsPredicate,
+    pub movement: Option<&'static MovementPredicate>,
     pub type_specific: EntityTypeSpecificPredicate,
     pub unsupported: bool,
+}
+
+/// Velocity bounds are in blocks per second; vanilla scales the per-tick known
+/// movement by the tick rate before matching.
+#[derive(Debug, PartialEq)]
+pub struct MovementPredicate {
+    pub x: DoubleBounds,
+    pub y: DoubleBounds,
+    pub z: DoubleBounds,
+    pub speed: DoubleBounds,
+    pub horizontal_speed: DoubleBounds,
+    pub vertical_speed: DoubleBounds,
+    pub fall_distance: DoubleBounds,
+}
+
+impl MovementPredicate {
+    #[must_use]
+    pub fn matches(&self, velocity: DVec3, fall_distance: f64) -> bool {
+        self.x.matches(velocity.x)
+            && self.y.matches(velocity.y)
+            && self.z.matches(velocity.z)
+            && self.speed.matches_sqr(
+                velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z,
+            )
+            && self
+                .horizontal_speed
+                .matches_sqr(velocity.x * velocity.x + velocity.z * velocity.z)
+            && self.vertical_speed.matches(velocity.y.abs())
+            && self.fall_distance.matches(fall_distance)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,6 +278,8 @@ pub enum EntityVehiclePredicate {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct EntityFlagsPredicate {
+    /// Elytra gliding or player ability flight.
+    pub is_flying: Option<bool>,
     pub is_fall_flying: Option<bool>,
     pub is_in_water: Option<bool>,
     pub unsupported: bool,
@@ -254,6 +289,7 @@ impl EntityFlagsPredicate {
     #[must_use]
     pub const fn any() -> Self {
         Self {
+            is_flying: None,
             is_fall_flying: None,
             is_in_water: None,
             unsupported: false,
@@ -262,7 +298,10 @@ impl EntityFlagsPredicate {
 
     #[must_use]
     pub const fn has_constraints(&self) -> bool {
-        self.is_fall_flying.is_some() || self.is_in_water.is_some() || self.unsupported
+        self.is_flying.is_some()
+            || self.is_fall_flying.is_some()
+            || self.is_in_water.is_some()
+            || self.unsupported
     }
 }
 
@@ -443,9 +482,31 @@ pub enum EnchantmentEntityEffect {
         min_amplifier: &'static LevelBasedValue,
         max_amplifier: &'static LevelBasedValue,
     },
+    Explode(EnchantmentExplodeEffect),
     Unsupported {
         effect_type: Identifier,
     },
+}
+
+/// `minecraft:explode` entity effect.
+///
+/// Steel narrows three vanilla codec fields, and the build script rejects data
+/// outside them: `immune_blocks` must be a block tag (the shared explosion
+/// calculator only takes tags), particles must be option-less particle types,
+/// and `block_particles` must be absent (vanilla's default empty list).
+#[derive(Debug)]
+pub struct EnchantmentExplodeEffect {
+    pub attribute_to_user: bool,
+    pub damage_type: Option<DamageTypeRef>,
+    pub knockback_multiplier: Option<&'static LevelBasedValue>,
+    pub immune_blocks: Option<Identifier>,
+    pub offset: DVec3,
+    pub radius: &'static LevelBasedValue,
+    pub create_fire: bool,
+    pub block_interaction: ExplosionInteraction,
+    pub small_particle: ParticleTypeRef,
+    pub large_particle: ParticleTypeRef,
+    pub sound: SoundEventRef,
 }
 
 #[derive(Debug)]
