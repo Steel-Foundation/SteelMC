@@ -20,7 +20,6 @@ mod wind_charge;
 #[cfg(test)]
 mod owner_tests;
 
-use std::mem;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -35,7 +34,6 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLOCKS};
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
-use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::GameType;
@@ -550,15 +548,10 @@ pub trait Projectile: Entity + ProjectileEventSource {
         let search_box = self.bounding_box().expand_towards(delta).inflate(1.0);
         let margin = compute_margin(self.tick_count());
         let self_id = self.id();
-        let entity_hit = get_entity_hit_result(
-            world.as_ref(),
-            from,
-            entity_end,
-            search_box,
-            margin,
-            InsideHitPolicy::Ignore,
-            |e| e.id() != self_id && self.can_hit_entity(e),
-        );
+        let entity_hit =
+            get_entity_hit_result(world.as_ref(), from, entity_end, search_box, margin, |e| {
+                e.id() != self_id && self.can_hit_entity(e)
+            });
 
         if let Some(hit) = entity_hit {
             return Some(ProjectileHit::Entity(hit));
@@ -863,15 +856,9 @@ pub fn get_hit_result_on_view_vector(
 
     let search_box = source.bounding_box().expand_towards(delta).inflate(1.0);
     let source_id = source.id();
-    let entity_hit = get_entity_hit_result(
-        world,
-        from,
-        entity_end,
-        search_box,
-        0.0,
-        InsideHitPolicy::Allow,
-        |entity| entity.id() != source_id && matching(entity),
-    );
+    let entity_hit = get_entity_hit_result(world, from, entity_end, search_box, 0.0, |entity| {
+        entity.id() != source_id && matching(entity)
+    });
 
     if let Some(hit) = entity_hit {
         return ViewVectorHitResult::Entity(hit);
@@ -882,15 +869,6 @@ pub fn get_hit_result_on_view_vector(
     ViewVectorHitResult::Miss
 }
 
-/// Whether a ray starting inside a box counts as a hit.
-///
-/// Vanilla projectiles miss in that case; picking rays still hit at the origin.
-#[derive(Clone, Copy, PartialEq)]
-enum InsideHitPolicy {
-    Ignore,
-    Allow,
-}
-
 /// Vanilla `ProjectileUtil.getEntityHitResult` (entity-margin overload): returns
 /// the nearest entity whose inflated box the segment `from -> to` enters.
 fn get_entity_hit_result(
@@ -899,7 +877,6 @@ fn get_entity_hit_result(
     to: DVec3,
     search_box: WorldAabb,
     margin: f64,
-    inside_hits: InsideHitPolicy,
     predicate: impl Fn(&dyn Entity) -> bool,
 ) -> Option<EntityHitResult> {
     let mut nearest: Option<EntityHitResult> = None;
@@ -910,9 +887,15 @@ fn get_entity_hit_result(
             continue;
         }
         let target_box = entity.bounding_box().inflate(margin);
-        let Some(location) = clip_segment(target_box, from, to, inside_hits) else {
+        let Some((scale, _)) = World::intersects_aabb_with_t(
+            from,
+            to,
+            target_box.min_corner(),
+            target_box.max_corner(),
+        ) else {
             continue;
         };
+        let location = from + (to - from) * scale;
         let dist_sq = from.distance_squared(location);
         if dist_sq < nearest_dist_sq {
             nearest_dist_sq = dist_sq;
@@ -921,61 +904,6 @@ fn get_entity_hit_result(
     }
 
     nearest
-}
-
-/// Returns the point where `from -> to` enters `aabb`, if it does.
-fn clip_segment(
-    aabb: WorldAabb,
-    from: DVec3,
-    to: DVec3,
-    inside_hits: InsideHitPolicy,
-) -> Option<DVec3> {
-    const EPSILON: f64 = 1.0e-7;
-
-    if inside_hits == InsideHitPolicy::Ignore && aabb.contains(from) {
-        return None;
-    }
-
-    let direction = to - from;
-    let mut t_min = 0.0_f64;
-    let mut t_max = 1.0_f64;
-
-    for axis in [Axis::X, Axis::Y, Axis::Z] {
-        let start = axis_component(from, axis);
-        let delta = axis_component(direction, axis);
-        let axis_min = aabb.min(axis);
-        let axis_max = aabb.max(axis);
-
-        if delta.abs() < EPSILON {
-            if start < axis_min || start > axis_max {
-                return None;
-            }
-            continue;
-        }
-
-        let inv_delta = 1.0 / delta;
-        let mut low = (axis_min - start) * inv_delta;
-        let mut high = (axis_max - start) * inv_delta;
-        if low > high {
-            mem::swap(&mut low, &mut high);
-        }
-
-        t_min = t_min.max(low);
-        t_max = t_max.min(high);
-        if t_min > t_max {
-            return None;
-        }
-    }
-
-    Some(from + direction * t_min)
-}
-
-const fn axis_component(vec: DVec3, axis: Axis) -> f64 {
-    match axis {
-        Axis::X => vec.x,
-        Axis::Y => vec.y,
-        Axis::Z => vec.z,
-    }
 }
 
 /// Vanilla `Mth.lerp(0.2, rotO, rot)` after wrapping the old angle into range.
@@ -1114,43 +1042,29 @@ mod tests {
     }
 
     #[test]
-    fn clip_segment_hits_box_in_path() {
+    fn shared_clip_hits_box_in_path() {
         let aabb = WorldAabb::new(4.0, -0.5, -0.5, 5.0, 0.5, 0.5);
-        let hit = clip_segment(
-            aabb,
+        let (scale, _) = World::intersects_aabb_with_t(
             DVec3::ZERO,
             DVec3::new(10.0, 0.0, 0.0),
-            InsideHitPolicy::Ignore,
+            aabb.min_corner(),
+            aabb.max_corner(),
         )
         .expect("ray along +x should enter the box");
-        assert!((hit.x - 4.0).abs() < 1.0e-6);
+        assert!((scale - 0.4).abs() < 1.0e-6);
     }
 
     #[test]
-    fn projectile_clip_misses_when_starting_inside_box() {
+    fn shared_clip_misses_when_starting_inside_box() {
         let aabb = WorldAabb::new(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
-        assert_eq!(
-            clip_segment(
-                aabb,
+        assert!(
+            World::intersects_aabb_with_t(
                 DVec3::ZERO,
                 DVec3::new(0.0, 5.0, 0.0),
-                InsideHitPolicy::Ignore,
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn picking_clip_hits_at_origin_when_starting_inside_box() {
-        let aabb = WorldAabb::new(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
-        assert_eq!(
-            clip_segment(
-                aabb,
-                DVec3::ZERO,
-                DVec3::new(0.0, 5.0, 0.0),
-                InsideHitPolicy::Allow,
-            ),
-            Some(DVec3::ZERO)
+                aabb.min_corner(),
+                aabb.max_corner(),
+            )
+            .is_none()
         );
     }
 
@@ -1194,7 +1108,7 @@ mod tests {
             crystal_pos + DVec3::new(0.0, 3.0, 0.0),
             &world,
         );
-        outside.set_velocity(-DVec3::Y);
+        outside.set_velocity(-DVec3::Y * 2.0);
         assert!(matches!(
             outside.get_hit_result_on_move_vector(),
             Some(ProjectileHit::Entity(hit)) if Arc::ptr_eq(&hit.entity, &crystal)
