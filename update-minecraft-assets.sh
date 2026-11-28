@@ -9,8 +9,8 @@
 # ahead of time. This script derives both from [workspace.package].version so the
 # pin cannot drift from the version Cargo actually builds against.
 #
-# Run this after bumping the "+mc" suffix in Cargo.toml. CI verifies the result is
-# up to date.
+# Run this after bumping the version in Cargo.toml. The "Nix pins" workflow
+# (.github/workflows/nix-pins.yml) fails PRs where the committed pin is stale.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,6 +24,11 @@ for tool in curl jq nix; do
         exit 1
     fi
 done
+
+# Retries ride out brief Mojang/network hiccups before the script gives up.
+fetch() {
+    curl -fsSL --retry 3 --retry-all-errors --connect-timeout 10 "$1"
+}
 
 # [workspace.package].version, e.g. "0.15.2+mc26.2". Parsed rather than read with
 # a TOML library because Nix's builtins.fromTOML cannot handle this file, and the
@@ -50,7 +55,7 @@ minecraft_version="${cargo_version##*+mc}"
 echo "Targeting Minecraft $minecraft_version (from $cargo_version)"
 
 version_url="$(
-    curl -fsSL "$MANIFEST_URL" \
+    fetch "$MANIFEST_URL" \
         | jq -r --arg id "$minecraft_version" '.versions[] | select(.id == $id) | .url'
 )"
 
@@ -59,7 +64,7 @@ if [[ -z "$version_url" ]]; then
     exit 1
 fi
 
-server_url="$(curl -fsSL "$version_url" | jq -r '.downloads.server.url')"
+server_url="$(fetch "$version_url" | jq -r '.downloads.server.url')"
 
 if [[ -z "$server_url" || "$server_url" == "null" ]]; then
     echo "error: no server download listed for Minecraft $minecraft_version" >&2
