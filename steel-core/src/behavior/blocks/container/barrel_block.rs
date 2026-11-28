@@ -2,6 +2,7 @@
 //!
 //! Opens a 27-slot container menu when right-clicked.
 
+use smallvec::smallvec;
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
@@ -15,11 +16,14 @@ use steel_utils::{BlockPos, BlockStateId, Downcast as _, translations};
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
-use crate::block_entity::{BLOCK_ENTITIES, entities::BarrelBlockEntity};
+use crate::block_entity::{
+    BLOCK_ENTITIES,
+    entities::{BARREL_SLOTS, BarrelBlockEntity},
+};
 use crate::entity::Entity as _;
 use crate::inventory::container::calculate_redstone_signal_from_containers;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
-use crate::inventory::menu::kinds::generic_9x_menu;
+use crate::inventory::menu::kinds::block_chest;
 use crate::nameable::Nameable as _;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
@@ -100,13 +104,16 @@ impl BlockBehavior for BarrelBlock {
 
         let inventory = Arc::clone(&player.inventory);
         player.open_menu(title, move |context| {
-            generic_9x_menu(inventory, context.container_id, container_ref, 3)
+            block_chest(
+                inventory,
+                context.container_id,
+                smallvec![block_entity],
+                smallvec![container_ref],
+                BARREL_SLOTS,
+            )
         });
 
         // TODO: Anger nearby piglins (PiglinAi.angerNearbyPiglins)
-        // TODO: Implement ContainerOpenersCounter to track open state, play sounds,
-        //       and update OPEN block property. Requires scheduled block ticks (scheduleTick)
-        //       for recheck functionality. See vanilla BarrelBlockEntity and ContainerOpenersCounter.
 
         InteractionResult::Success
     }
@@ -150,5 +157,13 @@ impl BlockBehavior for BarrelBlock {
             return 0;
         };
         calculate_redstone_signal_from_containers(guard.get(container_ref.container_id()))
+    }
+
+    fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        if let Some(entity) = world.get_block_entity(pos)
+            && let Some(barrel) = entity.downcast_ref::<BarrelBlockEntity>()
+        {
+            barrel.recheck_open();
+        }
     }
 }

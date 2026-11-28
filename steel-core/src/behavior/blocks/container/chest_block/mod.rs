@@ -21,7 +21,10 @@ use crate::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
         block::{BlockEntityCreation, schedule_water_tick_if_waterlogged},
     },
-    block_entity::{BLOCK_ENTITIES, SharedBlockEntity, entities::ChestBlockEntity},
+    block_entity::{
+        BLOCK_ENTITIES, SharedBlockEntity,
+        entities::{CHEST_SLOTS, ChestBlockEntity},
+    },
     entity::{Entity as _, ai::path::PathComputationType},
     inventory::{
         container::calculate_redstone_signal_from_containers,
@@ -291,6 +294,7 @@ impl BlockBehavior for ChestBlock {
                 context.container_id,
                 chest.owners,
                 chest.containers,
+                CHEST_SLOTS,
             )
         });
         InteractionResult::Success
