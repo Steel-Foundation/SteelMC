@@ -5,12 +5,13 @@ use steel_registry::feature::{
     RuleBasedStateProviderRule, WeightedBlockState,
 };
 use steel_registry::{
-    REGISTRY, init_vanilla_registry, vanilla_block_state_providers, vanilla_blocks,
+    REGISTRY, Tag, blocks::Block, init_vanilla_registry, vanilla_block_state_providers,
+    vanilla_blocks,
 };
 use steel_utils::random::{
     Random as _, legacy_random::LegacyRandom, worldgen_random::WorldgenRandom,
 };
-use steel_utils::{BlockPos, Direction, Identifier};
+use steel_utils::{BlockPos, Direction};
 
 use crate::test_support::TestLevel;
 
@@ -18,6 +19,8 @@ use super::BlockStateProviderEvaluator;
 
 #[test]
 fn empty_random_block_providers_preserve_the_block_without_consuming_randomness() {
+    static UNREGISTERED_TAG: Tag<Block> = Tag::vanilla_static("test/empty_provider");
+
     init_vanilla_registry();
     let state = vanilla_blocks::DIRT.default_state();
     let level = TestLevel::default().with_block(BlockPos::ZERO, state);
@@ -25,7 +28,7 @@ fn empty_random_block_providers_preserve_the_block_without_consuming_randomness(
     let mut untouched = WorldgenRandom::from_seed(42);
     for blocks in [
         BlockHolderSet::Entries(Vec::new()),
-        BlockHolderSet::Tag(Identifier::vanilla_static("test/empty_provider")),
+        BlockHolderSet::Tag(&UNREGISTERED_TAG),
     ] {
         let provider = BlockStateProviderKind::RandomBlock { blocks };
         assert!(

@@ -86,7 +86,7 @@ pub fn generate_biome_condition(condition: &BiomeCondition) -> TokenStream {
 fn generate_biome_condition_target(target: &BiomeConditionTarget) -> TokenStream {
     match target {
         BiomeConditionTarget::Tag(tag) => {
-            let tag = generate_identifier(tag);
+            let tag = crate::tags::const_path("biome", tag);
             quote! { crate::shared_structs::BiomeConditionTarget::Tag(#tag) }
         }
         BiomeConditionTarget::Direct(biome) => {

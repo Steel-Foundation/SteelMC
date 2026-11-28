@@ -2,11 +2,11 @@ use super::{
     ConfiguredFeatureKind, Ident, Span, TokenStream, VegetationPatchConfiguration,
     generate_block_column_layer, generate_block_holder_set, generate_block_predicate,
     generate_block_ref, generate_block_state_data, generate_block_state_provider,
-    generate_direction, generate_end_spike, generate_feature_size, generate_float_provider,
-    generate_fluid_state_data, generate_foliage_placer, generate_geode_block_settings,
-    generate_geode_crack_settings, generate_geode_layer_settings, generate_huge_mushroom_kind,
-    generate_identifier, generate_int_provider, generate_offset, generate_option,
-    generate_ore_target, generate_placed_feature_ref, generate_root_placer,
+    generate_block_tag, generate_direction, generate_end_spike, generate_feature_size,
+    generate_float_provider, generate_fluid_state_data, generate_foliage_placer,
+    generate_geode_block_settings, generate_geode_crack_settings, generate_geode_layer_settings,
+    generate_huge_mushroom_kind, generate_identifier, generate_int_provider, generate_offset,
+    generate_option, generate_ore_target, generate_placed_feature_ref, generate_root_placer,
     generate_tree_decorator, generate_trunk_placer, generate_vec, generate_vertical_surface,
     generate_weighted_placed_feature, generate_weighted_random_placed_feature,
     generate_weighted_template_entry, quote,
@@ -756,7 +756,7 @@ pub(super) fn generate_vegetation_patch_kind(
     config: &VegetationPatchConfiguration,
 ) -> TokenStream {
     let variant = Ident::new(variant_name, Span::call_site());
-    let replaceable = generate_identifier(&config.replaceable);
+    let replaceable = generate_block_tag(&config.replaceable);
     let ground_state = generate_block_state_provider(&config.ground_state);
     let vegetation_feature = generate_placed_feature_ref(&config.vegetation_feature);
     let surface = generate_vertical_surface(config.surface);

@@ -110,10 +110,15 @@ pub(super) fn generate_block_ref_list(list: &IdentifierList) -> TokenStream {
     quote! { BlockRefList(#values) }
 }
 
+/// References the generated `BlockTag` constant for a block tag key.
+pub(super) fn generate_block_tag(tag: &Identifier) -> TokenStream {
+    crate::tags::const_path("block", tag)
+}
+
 pub(super) fn generate_block_holder_set(set: &BlockHolderSet) -> TokenStream {
     match set {
         BlockHolderSet::Tag(tag) => {
-            let tag = generate_identifier(tag);
+            let tag = generate_block_tag(tag);
             quote! { BlockHolderSet::Tag(#tag) }
         }
         BlockHolderSet::Entries(entries) => {

@@ -6,8 +6,8 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::Identifier;
 use steel_utils::random::Random;
 
-use crate::biome::BiomeRef;
-use crate::{REGISTRY, TaggedRegistryExt};
+use crate::biome::{Biome, BiomeRef};
+use crate::{REGISTRY, TagRef, TaggedRegistryExt};
 
 /// Block state data as encoded by vanilla registry JSON.
 #[derive(Debug, Clone, Deserialize)]
@@ -102,7 +102,7 @@ impl BiomeCondition {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BiomeConditionTarget {
     /// A biome tag target encoded as `#namespace:path` in registry data.
-    Tag(Identifier),
+    Tag(TagRef<Biome>),
     /// A direct biome target encoded as `namespace:path` in registry data.
     Direct(Identifier),
 }
@@ -118,7 +118,7 @@ impl BiomeConditionTarget {
 
     fn to_vanilla_string(&self) -> String {
         match self {
-            Self::Tag(tag) => format!("#{tag}"),
+            Self::Tag(tag) => format!("#{}", tag.key()),
             Self::Direct(key) => key.to_string(),
         }
     }

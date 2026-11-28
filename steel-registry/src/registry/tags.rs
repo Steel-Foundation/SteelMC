@@ -41,6 +41,15 @@ impl<T> Tag<T> {
     }
 }
 
+/// Tags are equal when their keys are, wherever they are declared.
+impl<T> PartialEq for Tag<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl<T> Eq for Tag<T> {}
+
 impl<T> Debug for Tag<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_tuple("Tag").field(&self.key).finish()

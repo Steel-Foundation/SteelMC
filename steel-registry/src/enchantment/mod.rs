@@ -2,8 +2,8 @@ pub mod effect;
 
 use crate::equipment::EquipmentSlot;
 pub use crate::equipment::EquipmentSlotGroup;
-use crate::items::ItemRef;
-use crate::{REGISTRY, RegistryEntry, RegistryExt, RegistryTags, TaggedRegistryExt};
+use crate::items::{Item, ItemRef};
+use crate::{REGISTRY, RegistryEntry, RegistryExt, RegistryTags, TagRef, TaggedRegistryExt};
 use effect::EnchantmentEffects;
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
@@ -35,11 +35,11 @@ pub struct Enchantment {
     pub weight: u32,
     pub slots: &'static [EquipmentSlotGroup],
     /// Item tag the enchantment applies to (`#tag` in the definition JSON).
-    pub supported_items: Identifier,
+    pub supported_items: TagRef<Item>,
     /// Narrower item tag for primary offers, when set.
-    pub primary_items: Option<Identifier>,
+    pub primary_items: Option<TagRef<Item>>,
     /// Enchantment tag this enchantment is incompatible with, when set.
-    pub exclusive_set: Option<Identifier>,
+    pub exclusive_set: Option<TagRef<Self>>,
     pub effects_nbt: fn() -> NbtCompound,
     pub effects: EnchantmentEffects,
 }
@@ -69,9 +69,9 @@ impl ToNbtTag for &Enchantment {
         compound.insert("description", NbtTag::Compound(desc));
 
         // Definition fields (inlined, not nested)
-        compound.insert("supported_items", tag_ref(&self.supported_items));
-        if let Some(primary) = &self.primary_items {
-            compound.insert("primary_items", tag_ref(primary));
+        compound.insert("supported_items", tag_ref(self.supported_items.key()));
+        if let Some(primary) = self.primary_items {
+            compound.insert("primary_items", tag_ref(primary.key()));
         }
         compound.insert("weight", self.weight as i32);
         compound.insert("max_level", self.max_level as i32);
@@ -91,8 +91,8 @@ impl ToNbtTag for &Enchantment {
         let slots: Vec<String> = self.slots.iter().map(|s| s.as_str().to_owned()).collect();
         compound.insert("slots", NbtTag::List(NbtList::from(slots)));
 
-        if let Some(exclusive) = &self.exclusive_set {
-            compound.insert("exclusive_set", tag_ref(exclusive));
+        if let Some(exclusive) = self.exclusive_set {
+            compound.insert("exclusive_set", tag_ref(exclusive.key()));
         }
 
         let effects = (self.effects_nbt)();
@@ -233,10 +233,10 @@ mod tests {
     };
     use crate::equipment::EquipmentSlot;
     use crate::item_stack::ItemStack;
+    use crate::vanilla_damage_type_tags::DamageTypeTag;
     use crate::{init_vanilla_registry, vanilla_enchantments, vanilla_items};
     use simdnbt::ToNbtTag;
     use simdnbt::owned::{NbtList, NbtTag};
-    use steel_utils::Identifier;
 
     #[test]
     fn sharpness_is_primary_for_swords_but_only_supported_for_axes() {
@@ -453,12 +453,14 @@ mod tests {
         };
 
         assert_eq!(*is_direct, None);
-        assert!(tags.iter().any(|tag| {
-            tag.tag == Identifier::vanilla_static("burn_from_stepping") && tag.expected
-        }));
-        assert!(tags.iter().any(|tag| {
-            tag.tag == Identifier::vanilla_static("bypasses_invulnerability") && !tag.expected
-        }));
+        assert!(
+            tags.iter()
+                .any(|tag| { tag.tag == DamageTypeTag::BURN_FROM_STEPPING && tag.expected })
+        );
+        assert!(
+            tags.iter()
+                .any(|tag| { tag.tag == DamageTypeTag::BYPASSES_INVULNERABILITY && !tag.expected })
+        );
     }
 
     #[test]

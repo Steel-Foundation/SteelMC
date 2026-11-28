@@ -4,6 +4,7 @@ use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde_json::{Map, Value};
+use steel_utils::Identifier;
 
 pub(super) fn book_properties(category: TokenStream, value: &Value) -> TokenStream {
     let group = if let Some(group) = value
@@ -138,8 +139,11 @@ pub(super) fn ingredient_tokens(value: &Value) -> TokenStream {
     match value {
         Value::String(value) => {
             if let Some(tag) = value.strip_prefix('#') {
-                let identifier = identifier_tokens(tag);
-                quote! { Ingredient::Tag(#identifier) }
+                let tag = tag
+                    .parse::<Identifier>()
+                    .unwrap_or_else(|_| panic!("invalid ingredient tag {tag}"));
+                let tag = crate::tags::const_path("item", &tag);
+                quote! { Ingredient::Tag(#tag) }
             } else {
                 let item = vanilla_ident(value);
                 quote! { Ingredient::Item(&vanilla_items::#item) }
@@ -161,14 +165,6 @@ pub(super) fn ingredient_tokens(value: &Value) -> TokenStream {
             }
         }
         other => panic!("Unsupported extracted ingredient {other}"),
-    }
-}
-
-fn identifier_tokens(identifier: &str) -> TokenStream {
-    match identifier.split_once(':') {
-        Some(("minecraft", path)) => quote! { Identifier::vanilla_static(#path) },
-        Some((namespace, path)) => quote! { Identifier::new_static(#namespace, #path) },
-        None => quote! { Identifier::vanilla_static(#identifier) },
     }
 }
 

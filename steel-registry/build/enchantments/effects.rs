@@ -154,7 +154,7 @@ pub(super) fn entity_type_predicate_token(predicate: &EntityTypePredicateJson) -
             quote! { EntityTypePredicate::Type(#entity_type) }
         }
         EntityTypePredicateJson::Tag(tag) => {
-            let tag = identifier_token(tag);
+            let tag = crate::tags::const_path("entity_type", tag);
             quote! { EntityTypePredicate::Tag(#tag) }
         }
     }
@@ -247,7 +247,7 @@ pub(super) fn entity_predicate_token(predicate: &EntityPredicateJson) -> TokenSt
 
 pub(super) fn damage_source_predicate_token(predicate: &DamageSourcePredicateJson) -> TokenStream {
     let tags = predicate.tags.iter().map(|tag| {
-        let tag_id = identifier_token(&tag.tag);
+        let tag_id = crate::tags::const_path("damage_type", &tag.tag);
         let expected = tag.expected;
         quote! {
             DamageSourceTagPredicate {
@@ -475,7 +475,7 @@ pub(super) fn generate_requirements_value(
             let items = if let Some(items) = items {
                 let items = match items {
                     ItemHolderSetJson::Tag(tag) => {
-                        let tag = identifier_token(tag);
+                        let tag = crate::tags::const_path("item", tag);
                         quote! { EnchantmentItemSet::Tag(#tag) }
                     }
                     ItemHolderSetJson::Direct(items) => {

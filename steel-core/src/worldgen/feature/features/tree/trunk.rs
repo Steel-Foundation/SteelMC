@@ -516,7 +516,7 @@ impl FeatureDecorationRunner {
                 registry,
                 random,
                 log_pos,
-                &placer.can_grow_through,
+                placer.can_grow_through,
                 config,
                 placement,
             ) && height_pos < tree_height - 1
@@ -589,7 +589,7 @@ impl FeatureDecorationRunner {
                     registry,
                     random,
                     branch_log_pos,
-                    &placer.can_grow_through,
+                    placer.can_grow_through,
                     config,
                     placement,
                 ) {
@@ -1255,7 +1255,7 @@ impl FeatureDecorationRunner {
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
-        can_grow_through: &Identifier,
+        can_grow_through: &Tag<Block>,
         config: &TreeConfiguration,
         placement: &mut TreePlacement,
     ) -> bool {

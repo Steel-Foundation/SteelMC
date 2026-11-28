@@ -1,8 +1,10 @@
 //! Ingredient matching for recipes.
 
-use steel_utils::Identifier;
-
-use crate::{REGISTRY, TaggedRegistryExt, item_stack::ItemStack, items::ItemRef};
+use crate::{
+    REGISTRY, TagRef, TaggedRegistryExt,
+    item_stack::ItemStack,
+    items::{Item, ItemRef},
+};
 
 /// Represents what items can satisfy a recipe slot.
 /// Matches Java's `Ingredient` class.
@@ -13,7 +15,7 @@ pub enum Ingredient {
     /// Matches a single specific item.
     Item(ItemRef),
     /// Matches any item in a tag.
-    Tag(Identifier),
+    Tag(TagRef<Item>),
     /// Matches any of the listed items (OR).
     Choice(&'static [ItemRef]),
 }

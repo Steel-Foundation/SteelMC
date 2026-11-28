@@ -1,6 +1,8 @@
+use crate::TagRef;
 use crate::attribute::{AttributeModifierOperation, AttributeRef};
-use crate::damage_type::DamageTypeRef;
-use crate::items::ItemRef;
+use crate::damage_type::{DamageType, DamageTypeRef};
+use crate::entity_type::EntityType;
+use crate::items::{Item, ItemRef};
 use crate::mob_effect::MobEffectRef;
 use crate::sound_event::SoundEventRef;
 use glam::DVec3;
@@ -223,7 +225,7 @@ pub enum EnchantmentEntityTarget {
 pub enum EntityTypePredicate {
     Any,
     Type(Identifier),
-    Tag(Identifier),
+    Tag(TagRef<EntityType>),
     Unsupported,
 }
 
@@ -282,7 +284,7 @@ pub struct PlayerPredicate {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DamageSourceTagPredicate {
-    pub tag: Identifier,
+    pub tag: TagRef<DamageType>,
     pub expected: bool,
 }
 
@@ -295,7 +297,7 @@ pub struct DamageSourcePredicate {
 /// Static holder set used by generated `match_tool` requirements.
 #[derive(Debug, PartialEq, Eq)]
 pub enum EnchantmentItemSet {
-    Tag(Identifier),
+    Tag(TagRef<Item>),
     Direct(&'static [Identifier]),
 }
 

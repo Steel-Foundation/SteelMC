@@ -5,9 +5,9 @@ use super::{
     TemplateEntry, TokenStream, TreeDecorator, TrunkPlacer, TrunkPlacerBase, VerticalSurface,
     WeightedPlacedFeature, WeightedRandomPlacedFeature, WeightedTemplateEntry,
     generate_block_predicate, generate_block_state_data, generate_block_state_provider,
-    generate_direction, generate_identifier, generate_int_provider, generate_option,
-    generate_placed_feature_ref, generate_rotation, generate_uniform_int_provider, generate_vec,
-    quote,
+    generate_block_tag, generate_direction, generate_identifier, generate_int_provider,
+    generate_option, generate_placed_feature_ref, generate_rotation, generate_uniform_int_provider,
+    generate_vec, quote,
 };
 
 pub(super) fn generate_block_column_layer(layer: &BlockColumnLayer) -> TokenStream {
@@ -41,8 +41,8 @@ pub(super) fn generate_geode_block_settings(settings: &GeodeBlockSettings) -> To
     let middle_layer_provider = generate_block_state_provider(&settings.middle_layer_provider);
     let outer_layer_provider = generate_block_state_provider(&settings.outer_layer_provider);
     let inner_placements = generate_vec(&settings.inner_placements, generate_block_state_data);
-    let cannot_replace = generate_identifier(&settings.cannot_replace);
-    let invalid_blocks = generate_identifier(&settings.invalid_blocks);
+    let cannot_replace = generate_block_tag(&settings.cannot_replace);
+    let invalid_blocks = generate_block_tag(&settings.invalid_blocks);
     quote! {
         GeodeBlockSettings {
             filling_provider: #filling_provider,
@@ -179,7 +179,7 @@ pub(super) fn generate_trunk_placer(placer: &TrunkPlacer) -> TokenStream {
             let extra_branch_steps = generate_int_provider(&placer.extra_branch_steps);
             let extra_branch_length = generate_int_provider(&placer.extra_branch_length);
             let place_branch_per_log_probability = placer.place_branch_per_log_probability;
-            let can_grow_through = generate_identifier(&placer.can_grow_through);
+            let can_grow_through = generate_block_tag(&placer.can_grow_through);
             quote! {
                 TrunkPlacer::UpwardsBranching(UpwardsBranchingTrunkPlacer {
                     base_height: #base_height,
@@ -411,7 +411,7 @@ pub(super) fn generate_above_root_placement(placement: &AboveRootPlacement) -> T
 }
 
 pub(super) fn generate_mangrove_root_placement(placement: &MangroveRootPlacement) -> TokenStream {
-    let can_grow_through = generate_identifier(&placement.can_grow_through);
+    let can_grow_through = generate_block_tag(&placement.can_grow_through);
     let muddy_roots_in = generate_vec(&placement.muddy_roots_in, generate_identifier);
     let muddy_roots_provider = generate_block_state_provider(&placement.muddy_roots_provider);
     let max_root_width = placement.max_root_width;

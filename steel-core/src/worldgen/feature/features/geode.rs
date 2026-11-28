@@ -82,7 +82,7 @@ impl FeatureDecorationRunner {
                         registry,
                         pos,
                         vanilla_blocks::AIR.default_state(),
-                        &blocks.cannot_replace,
+                        blocks.cannot_replace,
                     );
                     Self::schedule_geode_adjacent_fluid_ticks(region, pos);
                 } else if dist_sum_shell >= inner_air {
@@ -93,13 +93,7 @@ impl FeatureDecorationRunner {
                         &blocks.filling_provider,
                         pos,
                     );
-                    Self::safe_set_geode_block(
-                        region,
-                        registry,
-                        pos,
-                        state,
-                        &blocks.cannot_replace,
-                    );
+                    Self::safe_set_geode_block(region, registry, pos, state, blocks.cannot_replace);
                 } else if dist_sum_shell >= innermost_block_layer {
                     let use_alternate_layer =
                         random.next_f32() < config.use_alternate_layer0_chance as f32;
@@ -111,13 +105,7 @@ impl FeatureDecorationRunner {
                     let state = BlockStateProviderEvaluator::sample_block_state_provider(
                         region, registry, random, provider, pos,
                     );
-                    Self::safe_set_geode_block(
-                        region,
-                        registry,
-                        pos,
-                        state,
-                        &blocks.cannot_replace,
-                    );
+                    Self::safe_set_geode_block(region, registry, pos, state, blocks.cannot_replace);
 
                     if (!config.placements_require_layer0_alternate || use_alternate_layer)
                         && random.next_f32() < config.use_potential_placements_chance as f32
@@ -132,13 +120,7 @@ impl FeatureDecorationRunner {
                         &blocks.middle_layer_provider,
                         pos,
                     );
-                    Self::safe_set_geode_block(
-                        region,
-                        registry,
-                        pos,
-                        state,
-                        &blocks.cannot_replace,
-                    );
+                    Self::safe_set_geode_block(region, registry, pos, state, blocks.cannot_replace);
                 } else if dist_sum_shell >= outer_crust {
                     let state = BlockStateProviderEvaluator::sample_block_state_provider(
                         region,
@@ -147,13 +129,7 @@ impl FeatureDecorationRunner {
                         &blocks.outer_layer_provider,
                         pos,
                     );
-                    Self::safe_set_geode_block(
-                        region,
-                        registry,
-                        pos,
-                        state,
-                        &blocks.cannot_replace,
-                    );
+                    Self::safe_set_geode_block(region, registry, pos, state, blocks.cannot_replace);
                 }
             }
         });
@@ -278,7 +254,7 @@ impl FeatureDecorationRunner {
         registry: &Registry,
         pos: BlockPos,
         state: BlockStateId,
-        cannot_replace: &Identifier,
+        cannot_replace: &Tag<Block>,
     ) {
         let current = region.block_state(pos);
         if !registry
@@ -344,7 +320,7 @@ impl FeatureDecorationRunner {
                         registry,
                         place_pos,
                         state,
-                        &blocks.cannot_replace,
+                        blocks.cannot_replace,
                     );
                     break;
                 }

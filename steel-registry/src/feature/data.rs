@@ -6,7 +6,8 @@
 //! known at build time.
 
 use super::{ConfiguredFeatureEntryRef, PlacedFeatureEntryRef};
-use crate::blocks::BlockRef;
+use crate::TagRef;
+use crate::blocks::{Block, BlockRef};
 use crate::fluid::FluidRef;
 use glam::IVec3;
 use steel_utils::{
@@ -141,7 +142,7 @@ pub struct FluidRefList(pub Vec<FluidRef>);
 /// Block holder set decoded from vanilla's holder-set codec shape at build time.
 #[derive(Debug, Clone)]
 pub enum BlockHolderSet {
-    Tag(Identifier),
+    Tag(TagRef<Block>),
     Entries(Vec<BlockRef>),
 }
 
@@ -180,7 +181,7 @@ pub enum BlockPredicate {
         predicate: Box<BlockPredicate>,
     },
     MatchingBlockTag {
-        tag: Identifier,
+        tag: TagRef<Block>,
         offset: Offset,
     },
     MatchingBlocks {
@@ -622,8 +623,8 @@ pub struct GeodeBlockSettings {
     pub middle_layer_provider: BlockStateProviderKind,
     pub outer_layer_provider: BlockStateProviderKind,
     pub inner_placements: Vec<BlockStateData>,
-    pub cannot_replace: Identifier,
-    pub invalid_blocks: Identifier,
+    pub cannot_replace: TagRef<Block>,
+    pub invalid_blocks: TagRef<Block>,
 }
 
 #[derive(Debug, Clone)]
@@ -910,7 +911,7 @@ pub struct UpwardsBranchingTrunkPlacer {
     pub extra_branch_steps: IntProvider,
     pub extra_branch_length: IntProvider,
     pub place_branch_per_log_probability: f32,
-    pub can_grow_through: Identifier,
+    pub can_grow_through: TagRef<Block>,
 }
 
 #[derive(Debug, Clone)]
@@ -1046,7 +1047,7 @@ pub struct AboveRootPlacement {
 
 #[derive(Debug, Clone)]
 pub struct MangroveRootPlacement {
-    pub can_grow_through: Identifier,
+    pub can_grow_through: TagRef<Block>,
     pub muddy_roots_in: Vec<Identifier>,
     pub muddy_roots_provider: BlockStateProviderKind,
     pub max_root_width: i32,
@@ -1126,7 +1127,7 @@ pub struct UnderwaterMagmaConfiguration {
 
 #[derive(Debug, Clone)]
 pub struct VegetationPatchConfiguration {
-    pub replaceable: Identifier,
+    pub replaceable: TagRef<Block>,
     pub ground_state: BlockStateProviderKind,
     pub vegetation_feature: PlacedFeatureRef,
     pub surface: VerticalSurface,

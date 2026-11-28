@@ -4,7 +4,7 @@ pub(super) use rustc_hash::FxHashSet;
 pub(super) use steel_math::{fast_floor, lerp};
 pub(super) use steel_registry::biome::{BiomeRef, TemperatureModifier};
 pub(super) use steel_registry::blocks::{
-    BlockRef, block_state_ext::BlockStateExt as _, properties::BambooLeaves,
+    Block, BlockRef, block_state_ext::BlockStateExt as _, properties::BambooLeaves,
     properties::BlockStateProperties, properties::CreakingHeartState, properties::DoubleBlockHalf,
     properties::SpeleothemThickness, properties::WallSide, shapes,
 };
@@ -33,7 +33,7 @@ pub(super) use steel_registry::feature::{
 pub(super) use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 pub(super) use steel_registry::structure_processor::StructureRuleTestData;
 pub(super) use steel_registry::{
-    REGISTRY, Registry, RegistryEntry as _, RegistryExt as _, TaggedRegistryExt as _,
+    REGISTRY, Registry, RegistryEntry as _, RegistryExt as _, Tag, TagRef, TaggedRegistryExt as _,
     vanilla_blocks, vanilla_fluids,
 };
 pub(super) use steel_utils::axis::Axis;

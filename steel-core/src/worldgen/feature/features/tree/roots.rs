@@ -172,7 +172,7 @@ impl FeatureDecorationRunner {
         pos: BlockPos,
         placement: &MangroveRootPlacement,
     ) -> bool {
-        Self::tree_valid_pos_or_tag(region, pos, &placement.can_grow_through)
+        Self::tree_valid_pos_or_tag(region, pos, placement.can_grow_through)
     }
 
     fn place_mangrove_tree_root(

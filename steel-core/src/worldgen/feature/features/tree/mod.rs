@@ -227,7 +227,7 @@ impl FeatureDecorationRunner {
     ) -> bool {
         match trunk_placer {
             TrunkPlacer::UpwardsBranching(placer) => {
-                Self::tree_valid_pos_or_tag(region, pos, &placer.can_grow_through)
+                Self::tree_valid_pos_or_tag(region, pos, placer.can_grow_through)
             }
             TrunkPlacer::Straight(_)
             | TrunkPlacer::Forking(_)
@@ -241,7 +241,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn tree_valid_pos_or_tag(region: &impl LevelReader, pos: BlockPos, tag: &Identifier) -> bool {
+    fn tree_valid_pos_or_tag(region: &impl LevelReader, pos: BlockPos, tag: &Tag<Block>) -> bool {
         let state = region.get_block_state(pos);
         let block = state.get_block();
         state.is_air() || block.has_tag(&BlockTag::REPLACEABLE_BY_TREES) || block.has_tag(tag)

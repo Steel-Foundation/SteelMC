@@ -7,8 +7,6 @@ use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use crate::behavior::blocks::multiface_face_property;
 use core::mem;
-use steel_registry::TagRef;
-use steel_registry::blocks::Block;
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::vanilla_block_tags::BlockTag;
 

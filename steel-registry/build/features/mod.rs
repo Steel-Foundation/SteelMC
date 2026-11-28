@@ -21,11 +21,11 @@ mod structures;
 
 use common::{
     generate_block_holder_set, generate_block_ref, generate_block_ref_list,
-    generate_block_state_data, generate_block_state_provider_entry_ref, generate_box,
-    generate_configured_feature_entry_ref, generate_direction, generate_fluid_ref_list,
-    generate_fluid_state_data, generate_identifier, generate_offset, generate_option,
-    generate_placed_feature_entry_ref, generate_rotation, generate_vec, generate_vertical_anchor,
-    resource_name, sorted_json_files,
+    generate_block_state_data, generate_block_state_provider_entry_ref, generate_block_tag,
+    generate_box, generate_configured_feature_entry_ref, generate_direction,
+    generate_fluid_ref_list, generate_fluid_state_data, generate_identifier, generate_offset,
+    generate_option, generate_placed_feature_entry_ref, generate_rotation, generate_vec,
+    generate_vertical_anchor, resource_name, sorted_json_files,
 };
 use configured::generate_configured_feature_kind;
 pub(crate) use data::BlockStateProviderKind;

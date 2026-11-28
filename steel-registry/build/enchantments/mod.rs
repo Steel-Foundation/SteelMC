@@ -23,7 +23,7 @@ use generation::generate_enchantment_effects;
 use nbt::{NbtValueHint, generate_nbt_compound};
 use parsing::{
     damage_type_ref_token, identifier_token, parse_enchantment_target, parse_entity_effect_json,
-    parse_requirements_json, slot_to_tokens,
+    parse_required_tag, parse_requirements_json, slot_to_tokens,
 };
 
 #[derive(Deserialize, Debug)]
@@ -525,11 +525,20 @@ pub(crate) fn build() -> TokenStream {
 
         let slots: Vec<TokenStream> = ench.slots.iter().map(|s| slot_to_tokens(s)).collect();
 
-        let supported_items = tag_ref_to_tokens(name, "supported_items", &ench.supported_items);
-        let primary_items =
-            optional_tag_ref_to_tokens(name, "primary_items", ench.primary_items.as_deref());
-        let exclusive_set =
-            optional_tag_ref_to_tokens(name, "exclusive_set", ench.exclusive_set.as_deref());
+        let supported_items =
+            tag_ref_to_tokens(name, "supported_items", &ench.supported_items, "item");
+        let primary_items = optional_tag_ref_to_tokens(
+            name,
+            "primary_items",
+            ench.primary_items.as_deref(),
+            "item",
+        );
+        let exclusive_set = optional_tag_ref_to_tokens(
+            name,
+            "exclusive_set",
+            ench.exclusive_set.as_deref(),
+            "enchantment",
+        );
         let effects = generate_enchantment_effects(
             name,
             &ench.effects,
@@ -575,29 +584,31 @@ pub(crate) fn build() -> TokenStream {
     stream
 }
 
-/// Turns a `#namespace:path` tag reference into a static `Identifier` expression.
+/// Turns a `#namespace:path` tag reference into the generated constant of that tag in
+/// `registry_module`'s tag module.
 ///
 /// Extracted enchantment item sets use tags; direct entry lists are rejected.
-fn tag_ref_to_tokens(enchantment: &str, field: &str, tag_ref: &str) -> TokenStream {
-    let Some(tag) = tag_ref.strip_prefix('#') else {
-        panic!("enchantment {enchantment}: {field} {tag_ref:?} is not a tag reference");
-    };
-    match tag.split_once(':') {
-        Some(("minecraft", path)) => quote! { Identifier::vanilla_static(#path) },
-        Some((namespace, path)) => quote! { Identifier::new_static(#namespace, #path) },
-        None => quote! { Identifier::vanilla_static(#tag) },
-    }
+fn tag_ref_to_tokens(
+    enchantment: &str,
+    field: &str,
+    tag_ref: &str,
+    registry_module: &str,
+) -> TokenStream {
+    let tag = parse_required_tag(tag_ref)
+        .unwrap_or_else(|error| panic!("enchantment {enchantment}: {field}: {error}"));
+    crate::tags::const_path(registry_module, &tag)
 }
 
 fn optional_tag_ref_to_tokens(
     enchantment: &str,
     field: &str,
     tag_ref: Option<&str>,
+    registry_module: &str,
 ) -> TokenStream {
     tag_ref.map_or_else(
         || quote! { None },
         |tag_ref| {
-            let tag = tag_ref_to_tokens(enchantment, field, tag_ref);
+            let tag = tag_ref_to_tokens(enchantment, field, tag_ref, registry_module);
             quote! { Some(#tag) }
         },
     )

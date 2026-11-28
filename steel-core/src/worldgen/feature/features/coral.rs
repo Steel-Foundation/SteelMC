@@ -1,5 +1,3 @@
-use steel_registry::Tag;
-use steel_registry::blocks::Block;
 use steel_registry::vanilla_block_tags::BlockTag;
 
 use super::super::prelude::*;

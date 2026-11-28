@@ -1,10 +1,10 @@
 use super::{
     BlockPredicate, ConfiguredFeatureRef, FeatureHeightmap, PlacedFeatureData, PlacedFeatureRef,
     PlacementModifier, TokenStream, generate_block_ref_list, generate_block_state_data,
-    generate_box, generate_configured_feature_entry_ref, generate_configured_feature_kind,
-    generate_direction, generate_fluid_ref_list, generate_height_provider, generate_identifier,
-    generate_int_provider, generate_offset, generate_option, generate_placed_feature_entry_ref,
-    generate_vec, generate_vertical_anchor, quote,
+    generate_block_tag, generate_box, generate_configured_feature_entry_ref,
+    generate_configured_feature_kind, generate_direction, generate_fluid_ref_list,
+    generate_height_provider, generate_int_provider, generate_offset, generate_option,
+    generate_placed_feature_entry_ref, generate_vec, generate_vertical_anchor, quote,
 };
 
 pub(super) fn generate_block_predicate(predicate: &BlockPredicate) -> TokenStream {
@@ -23,7 +23,7 @@ pub(super) fn generate_block_predicate(predicate: &BlockPredicate) -> TokenStrea
             quote! { BlockPredicate::Not { predicate: #predicate } }
         }
         BlockPredicate::MatchingBlockTag { tag, offset } => {
-            let tag = generate_identifier(tag);
+            let tag = generate_block_tag(tag);
             let offset = generate_offset(offset);
             quote! { BlockPredicate::MatchingBlockTag { tag: #tag, offset: #offset } }
         }
