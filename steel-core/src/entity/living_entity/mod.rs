@@ -670,30 +670,43 @@ impl<'a> Living<'a> {
         self.living_base().drain_dirty_mob_effects()
     }
 
-    /// Saves equipment slots to NBT.
+    /// Saves the equipment slots this entity's storage saves.
     pub fn save_equipment(&self, nbt: &mut NbtCompound) {
-        let mut equipment = NbtCompound::new();
+        let equipment = self.living_base().equipment().lock();
+        let mut saved = NbtCompound::new();
+        let mut holds_item = false;
         for slot in EquipmentSlot::ALL {
-            self.with_equipment_slot(slot, &mut |item| {
-                if !item.is_empty() {
-                    equipment.insert(slot.name(), item.to_nbt_tag_ref());
-                }
-            });
+            let item = equipment.get_ref(slot);
+            if item.is_empty() {
+                continue;
+            }
+            holds_item = true;
+            if equipment.saves_slot(slot) {
+                saved.insert(slot.name(), item.to_nbt_tag_ref());
+            }
         }
-        if !equipment.is_empty() {
-            nbt.insert("equipment", NbtTag::Compound(equipment));
+        // Vanilla writes the map whenever any slot holds an item, so a player
+        // holding only a main-hand item saves an empty map.
+        if holds_item {
+            nbt.insert("equipment", NbtTag::Compound(saved));
         }
     }
 
-    /// Loads equipment slots from NBT.
+    /// Loads the equipment slots this entity's storage saves; one the NBT
+    /// lacks becomes empty.
     pub fn load_equipment(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        if let Some(equipment_tag) = nbt.compound("equipment") {
+        let saved = nbt.compound("equipment");
+        {
             let mut equipment = self.living_base().equipment().lock();
             for slot in EquipmentSlot::ALL {
-                let item = equipment_tag
-                    .get(slot.name())
+                if !equipment.saves_slot(slot) {
+                    continue;
+                }
+                let item = saved
+                    .as_ref()
+                    .and_then(|saved| saved.get(slot.name()))
                     .and_then(|tag| tag.compound())
-                    .and_then(|comp| ItemStack::from_borrowed_compound(&comp))
+                    .and_then(|compound| ItemStack::from_borrowed_compound(&compound))
                     .unwrap_or_else(ItemStack::empty);
                 equipment.set(slot, item);
             }
@@ -742,7 +755,11 @@ impl<'a> Living<'a> {
     /// Reads the state written by [`Self::save_living`].
     pub(crate) fn load_living(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.living_base().load_damage_state(nbt, self.tick_count());
-        self.attributes().lock().load_vanilla_nbt(nbt);
+        {
+            let mut attributes = self.attributes().lock();
+            attributes.reset_to_defaults(self.entity_type());
+            attributes.load_vanilla_nbt(nbt);
+        }
         self.living_base().load_mob_effects(nbt);
         self.set_health(
             nbt.float_value("Health")

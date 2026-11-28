@@ -368,4 +368,8 @@ impl EntityEquipment for PlayerInventory {
             Container::set_changed(self);
         }
     }
+
+    fn saves_slot(&self, slot: EquipmentSlot) -> bool {
+        slot != EquipmentSlot::MainHand
+    }
 }

@@ -49,7 +49,9 @@ pub trait Component: ErasedType + Send + Sync {
     /// Writes this component's persistent fields.
     fn save(&self, owner: &dyn Entity, nbt: &mut NbtCompound);
 
-    /// Reads this component's persistent fields.
+    /// Reads this component's persistent fields, replacing what it holds: a
+    /// field `nbt` lacks returns to its default. A live entity can be loaded
+    /// more than once, as a player is when it enters another domain.
     fn load(&self, owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>);
 }
 

@@ -19,7 +19,7 @@ use super::{
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
-    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, SharedEntity,
+    ActiveMobEffect, DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, SharedEntity,
     damage::DamageSource,
     entities::{EndermiteEntity, ItemEntity, PigEntity},
     next_entity_id,
@@ -38,6 +38,7 @@ use crate::test_support::{
 };
 use crate::world::World;
 use glam::DVec3;
+use simdnbt::owned::NbtTag;
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
     ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
@@ -55,7 +56,7 @@ use steel_registry::{
     RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
     sound_events, vanilla_attributes, vanilla_blocks, vanilla_custom_stats, vanilla_damage_types,
     vanilla_enchantments, vanilla_entities, vanilla_game_rules, vanilla_items, vanilla_menu_types,
-    vanilla_world_clocks,
+    vanilla_mob_effects, vanilla_world_clocks,
 };
 use steel_utils::codec::VarInt;
 use steel_utils::locks::{IntoShared as _, SyncMutex};
@@ -1496,6 +1497,79 @@ fn saved_enchantment_seed_round_trips_through_player_data() {
     assert_eq!(
         PersistentPlayerData::from_player(&player).enchantment_seed,
         4242
+    );
+}
+
+#[test]
+fn player_data_carries_entity_state_and_a_first_visit_clears_it() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world_fixture = fresh_test_world("player_data_entity_state");
+    let player = TestPlayerBuilder::new(Arc::clone(&world_fixture.world), "Carrier", 1).build();
+    let has_haste = |player: &Player| {
+        player
+            .living_base
+            .mob_effect(vanilla_mob_effects::HASTE)
+            .is_some()
+    };
+
+    player
+        .living()
+        .attributes()
+        .lock()
+        .set_base_value(vanilla_attributes::MAX_HEALTH, 30.0);
+    player.living().set_health(25.0);
+    player
+        .living()
+        .add_mob_effect(ActiveMobEffect::with_duration(
+            vanilla_mob_effects::HASTE,
+            200,
+            1,
+        ));
+    assert!(player.base().add_tag("marked".to_owned()));
+    let saved = PersistentPlayerData::from_player(&player);
+
+    player.reset_domain_data_for_first_visit();
+    assert!(!has_haste(&player));
+    assert_eq!(player.living().max_health(), 20.0);
+    assert_eq!(player.living().health(), 20.0);
+    assert!(player.base().tags().is_empty());
+
+    saved.apply_to_player_without_location(&player);
+    assert!(has_haste(&player));
+    assert_eq!(player.living().max_health(), 30.0);
+    assert_eq!(player.living().health(), 25.0);
+    assert_eq!(player.base().tags(), ["marked".to_owned()]);
+}
+
+#[test]
+fn player_equipment_nbt_leaves_the_main_hand_to_the_inventory() {
+    init_vanilla_registry();
+    let player = test_player(Arc::clone(test_world()));
+    let equipment_nbt = |player: &Player| match player.nbt_for_data_compare().remove("equipment") {
+        Some(NbtTag::Compound(equipment)) => equipment,
+        other => panic!("a held item should save the equipment map, found {other:?}"),
+    };
+
+    player.inventory.lock().set(
+        EquipmentSlot::MainHand,
+        ItemStack::new(&vanilla_items::STICK),
+    );
+    assert!(equipment_nbt(&player).is_empty());
+
+    player.inventory.lock().set(
+        EquipmentSlot::Head,
+        ItemStack::new(&vanilla_items::DIAMOND_HELMET),
+    );
+    let equipment = equipment_nbt(&player);
+    assert!(equipment.contains("head"));
+    assert!(!equipment.contains("mainhand"));
+    assert!(
+        PersistentPlayerData::from_player(&player)
+            .inventory
+            .iter()
+            .all(|slot| slot.slot == 0),
+        "only the held stick belongs to the main inventory"
     );
 }
 

@@ -1,5 +1,7 @@
 use crate::entity::prelude::*;
+use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
 use std::sync::Arc;
+use steel_registry::entity_type::EntityTypeRef;
 
 use super::*;
 use crate::entity::clamp_loaded_entity_position;
@@ -145,10 +147,6 @@ impl ChunkStorage {
         } else {
             pos
         };
-        let vel = entity.velocity();
-        let (yaw, pitch) = entity.rotation();
-        let fire_freeze = entity.fire_freeze_state();
-        let save_data = entity.base().save_data();
 
         if !stored_pos.x.is_finite() || !stored_pos.y.is_finite() || !stored_pos.z.is_finite() {
             tracing::warn!(
@@ -159,11 +157,6 @@ impl ChunkStorage {
             return None;
         }
 
-        let mut nbt = NbtCompound::new();
-        entity.save_additional(&mut nbt);
-        let mut nbt_bytes = Vec::new();
-        nbt.write(&mut nbt_bytes);
-
         let passengers = entity
             .passengers()
             .iter()
@@ -171,18 +164,82 @@ impl ChunkStorage {
             .collect();
 
         Some(PersistentEntity {
-            entity_type: entity.entity_type().key.clone(),
-            uuid: *entity.uuid().as_bytes(),
-            pos: [stored_pos.x, stored_pos.y, stored_pos.z],
-            motion: [vel.x, vel.y, vel.z],
+            passengers,
+            ..Self::entity_alone_to_persistent(entity.as_ref(), stored_pos)
+        })
+    }
+
+    /// Captures `entity` at `stored_pos` without its passengers, whether or
+    /// not its type is saved with chunks.
+    pub(crate) fn entity_alone_to_persistent(
+        entity: &dyn Entity,
+        stored_pos: DVec3,
+    ) -> PersistentEntity {
+        let mut nbt = NbtCompound::new();
+        entity.save_additional(&mut nbt);
+        let mut nbt_data = Vec::new();
+        nbt.write(&mut nbt_data);
+
+        Self::persistent_entity_from_parts(
+            entity.entity_type(),
+            entity.uuid(),
+            stored_pos,
+            entity.velocity(),
+            entity.rotation(),
+            entity.fall_distance(),
+            entity.fire_freeze_state(),
+            entity.on_ground(),
+            &entity.base().save_data(),
+            nbt_data,
+        )
+    }
+
+    /// The saved form of a newly created entity of `entity_type` that has not
+    /// been placed anywhere.
+    pub(crate) fn new_persistent_entity(entity_type: EntityTypeRef) -> PersistentEntity {
+        Self::persistent_entity_from_parts(
+            entity_type,
+            uuid::Uuid::nil(),
+            DVec3::ZERO,
+            DVec3::ZERO,
+            (0.0, 0.0),
+            0.0,
+            EntityFireFreezeState::new(),
+            false,
+            &EntityBaseSaveData::new(),
+            Vec::new(),
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one argument per group of saved base fields"
+    )]
+    fn persistent_entity_from_parts(
+        entity_type: EntityTypeRef,
+        uuid: uuid::Uuid,
+        pos: DVec3,
+        velocity: DVec3,
+        (yaw, pitch): (f32, f32),
+        fall_distance: f64,
+        fire_freeze: EntityFireFreezeState,
+        on_ground: bool,
+        save_data: &EntityBaseSaveData,
+        nbt_data: Vec<u8>,
+    ) -> PersistentEntity {
+        PersistentEntity {
+            entity_type: entity_type.key.clone(),
+            uuid: *uuid.as_bytes(),
+            pos: [pos.x, pos.y, pos.z],
+            motion: [velocity.x, velocity.y, velocity.z],
             rotation: [yaw, pitch],
-            fall_distance: entity.fall_distance(),
+            fall_distance,
             remaining_fire_ticks: fire_freeze.remaining_fire_ticks(),
             ticks_frozen: fire_freeze.ticks_frozen(),
             is_in_powder_snow: fire_freeze.is_in_powder_snow(),
             was_in_powder_snow: fire_freeze.was_in_powder_snow(),
             has_visual_fire: fire_freeze.has_visual_fire(),
-            on_ground: entity.on_ground(),
+            on_ground,
             no_gravity: save_data.no_gravity,
             invulnerable: save_data.invulnerable,
             air_supply: save_data.air_supply,
@@ -193,9 +250,9 @@ impl ChunkStorage {
             glowing: save_data.glowing,
             tags: save_data.tags.iter().cloned().collect(),
             custom_data_nbt: Self::compound_to_persistent(&save_data.custom_data),
-            nbt_data: nbt_bytes,
-            passengers,
-        })
+            nbt_data,
+            passengers: Vec::new(),
+        }
     }
 
     pub(super) fn entity_should_save(entity: &dyn Entity) -> bool {
@@ -333,9 +390,77 @@ impl ChunkStorage {
         chunk_pos: ChunkPos,
         level: &Weak<World>,
     ) -> Option<SharedEntity> {
+        let request = Self::entity_load_request(persistent, level)?;
+        let uuid = request.uuid;
+
+        // Validate position is within expected chunk (sanity check)
+        let expected_chunk = ChunkPos::from_entity_pos(request.position);
+        if chunk_pos != expected_chunk {
+            tracing::warn!(
+                ?uuid,
+                "Entity position {:?} doesn't match chunk {:?}, loading anyway",
+                request.position,
+                chunk_pos
+            );
+        }
+
+        Self::with_entity_nbt(persistent, uuid, |nbt| {
+            ENTITIES.create_and_load(request, nbt)
+        })?
+    }
+
+    /// Replaces the saved state of the live `entity` with `persistent`: its
+    /// base fields and everything [`Entity::load_additional`] reads. With
+    /// `restore_location` the entity also returns to where it was saved.
+    ///
+    /// Returns `false`, leaving `entity` untouched, when `persistent` cannot
+    /// be read.
+    pub(crate) fn restore_entity(
+        entity: &dyn Entity,
+        persistent: &PersistentEntity,
+        restore_location: bool,
+    ) -> bool {
+        let Some(request) = Self::entity_load_request(persistent, &Weak::new()) else {
+            return false;
+        };
+        Self::with_entity_nbt(persistent, entity.uuid(), |nbt| {
+            // The live entity keeps its own type, identity and world.
+            let EntityLoadRequest {
+                entity_type: _,
+                position,
+                uuid: _,
+                velocity,
+                rotation,
+                fall_distance,
+                fire_freeze,
+                on_ground,
+                save_data,
+                world: _,
+            } = request;
+
+            if restore_location {
+                entity.base().set_position_local(position);
+                entity.set_rotation(rotation);
+                entity.set_velocity(velocity);
+                entity.set_on_ground(on_ground);
+            }
+            entity.set_fall_distance(if restore_location { fall_distance } else { 0.0 });
+            entity.base().set_fire_freeze_state(fire_freeze);
+            entity.sync_base_fire_freeze_entity_data();
+            entity.base().replace_save_data(save_data);
+            entity.load_additional(nbt.into());
+            entity.sync_base_entity_data();
+        })
+        .is_some()
+    }
+
+    /// Validates the base fields of a saved entity.
+    fn entity_load_request(
+        persistent: &PersistentEntity,
+        level: &Weak<World>,
+    ) -> Option<EntityLoadRequest> {
         use uuid::Uuid;
 
-        // Reconstruct base fields
         let stored_pos = DVec3::new(persistent.pos[0], persistent.pos[1], persistent.pos[2]);
         let mut velocity = DVec3::new(
             persistent.motion[0],
@@ -345,7 +470,6 @@ impl ChunkStorage {
         let rotation = (persistent.rotation[0], persistent.rotation[1]);
         let uuid = Uuid::from_bytes(persistent.uuid);
 
-        // Validate position is finite
         if !stored_pos.x.is_finite() || !stored_pos.y.is_finite() || !stored_pos.z.is_finite() {
             tracing::warn!(
                 ?uuid,
@@ -363,19 +487,6 @@ impl ChunkStorage {
             return None;
         }
 
-        let pos = clamp_loaded_entity_position(stored_pos);
-
-        // Validate position is within expected chunk (sanity check)
-        let expected_chunk = ChunkPos::from_entity_pos(pos);
-        if chunk_pos != expected_chunk {
-            tracing::warn!(
-                ?uuid,
-                "Entity position {:?} doesn't match chunk {:?}, loading anyway",
-                pos,
-                chunk_pos
-            );
-        }
-
         // Clamp motion values > 10.0 to 0 (vanilla behavior to prevent corruption)
         if velocity.x.abs() > 10.0 {
             velocity.x = 0.0;
@@ -387,11 +498,33 @@ impl ChunkStorage {
             velocity.z = 0.0;
         }
 
-        // Look up entity type
-        let entity_type = REGISTRY.entity_types.by_key(&persistent.entity_type)?;
-        let save_data = Self::save_data_from_persistent(persistent, uuid);
+        Some(EntityLoadRequest {
+            entity_type: REGISTRY.entity_types.by_key(&persistent.entity_type)?,
+            position: clamp_loaded_entity_position(stored_pos),
+            uuid,
+            velocity,
+            rotation,
+            fall_distance: persistent.fall_distance,
+            fire_freeze: EntityFireFreezeState::from_parts(
+                persistent.remaining_fire_ticks,
+                persistent.ticks_frozen,
+                persistent.is_in_powder_snow,
+                persistent.was_in_powder_snow,
+                persistent.has_visual_fire,
+            ),
+            on_ground: persistent.on_ground,
+            save_data: Self::save_data_from_persistent(persistent, uuid),
+            world: Weak::clone(level),
+        })
+    }
 
-        // Parse NBT from bytes (or use empty compound data)
+    /// Runs `f` with the saved type-specific NBT of `persistent`, or returns
+    /// `None` when it cannot be parsed.
+    fn with_entity_nbt<R>(
+        persistent: &PersistentEntity,
+        uuid: uuid::Uuid,
+        f: impl FnOnce(&BorrowedNbtCompound<'_>) -> R,
+    ) -> Option<R> {
         let nbt_bytes = if persistent.nbt_data.is_empty() {
             // Empty compound body for `simdnbt::borrow::read_compound`.
             &[0x00][..]
@@ -403,27 +536,6 @@ impl ChunkStorage {
             tracing::warn!(?uuid, "Failed to parse entity NBT, skipping");
             return None;
         };
-
-        ENTITIES.create_and_load(
-            EntityLoadRequest {
-                entity_type,
-                position: pos,
-                uuid,
-                velocity,
-                rotation,
-                fall_distance: persistent.fall_distance,
-                fire_freeze: EntityFireFreezeState::from_parts(
-                    persistent.remaining_fire_ticks,
-                    persistent.ticks_frozen,
-                    persistent.is_in_powder_snow,
-                    persistent.was_in_powder_snow,
-                    persistent.has_visual_fire,
-                ),
-                on_ground: persistent.on_ground,
-                save_data,
-                world: Weak::clone(level),
-            },
-            &nbt,
-        )
+        Some(f(&nbt))
     }
 }

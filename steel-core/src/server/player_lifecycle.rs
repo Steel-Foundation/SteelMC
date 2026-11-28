@@ -138,7 +138,7 @@ impl Server {
         } = state;
         let (data, spawn_position) = match data {
             UnpreparedDomainPlayerData::SavedRestored { data } => {
-                let spawn_position = DVec3::new(data.pos[0], data.pos[1], data.pos[2]);
+                let spawn_position = DVec3::from_array(data.entity.pos);
                 (DomainPlayerData::SavedRestored { data }, spawn_position)
             }
             UnpreparedDomainPlayerData::SavedWithoutLocation { data } => {

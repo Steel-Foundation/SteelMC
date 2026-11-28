@@ -1,5 +1,7 @@
 use crate::entity::prelude::*;
 use glam::DVec3;
+use simdnbt::ToNbtTag;
+use simdnbt::borrow::{NbtCompound as BorrowedNbtCompoundView, read_compound};
 use simdnbt::owned::{NbtCompound, NbtTag};
 use std::ptr;
 use std::thread;
@@ -58,8 +60,10 @@ use crate::config::{ResolvedDomainConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::{EnderPearlEntity, SnowballEntity};
 use crate::entity::{
-    DEFAULT_MAX_AIR_SUPPLY, Entity, RemovalReason, SharedEntity, init_entities, next_entity_id,
+    ActiveMobEffect, DEFAULT_MAX_AIR_SUPPLY, Entity, RemovalReason, SharedEntity, init_entities,
+    next_entity_id,
 };
+use crate::level_data::RespawnData;
 use crate::permission::{
     OP_GROUP, PermissionEntry, PermissionExpr, PermissionGroupConfig, PermissionGroupManager,
     PermissionGroupsConfig, PermissionKey, PermissionMetadataSet, PermissionSet,
@@ -67,7 +71,7 @@ use crate::permission::{
 };
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::PersistentSlot;
-use crate::player::{Player, PlayerConnection, ResetReason};
+use crate::player::{Player, PlayerConnection, PlayerRespawnConfig, ResetReason};
 use crate::portal::{WorldChangeRequest, WorldSelection};
 use crate::test_support::{
     TestPlayerBuilder, fresh_loaded_test_world, fresh_test_derived_world, fresh_test_world,
@@ -76,6 +80,7 @@ use crate::test_support::{
 use crate::world::World;
 use steel_registry::vanilla_damage_types;
 use steel_registry::{stat::vanilla_stat_types, vanilla_custom_stats};
+use steel_registry::{vanilla_attributes, vanilla_mob_effects};
 
 use super::DEBUG_STACK_SIZE;
 use super::known_players::{
@@ -313,7 +318,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
         } = mismatch_plan;
         let mismatch_data = match mismatch_data {
             UnpreparedDomainPlayerData::SavedWithoutLocation { data } => {
-                assert_eq!(data.health.to_bits(), 7.0_f32.to_bits());
+                assert_eq!(saved_health(&data).to_bits(), 7.0_f32.to_bits());
                 data
             }
             _ => panic!("explicit mismatch must use selected-world spawn"),
@@ -500,7 +505,7 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
         let target_position = DVec3::new(8.5, 70.0, 8.5);
         let mut target_data = PersistentPlayerData::from_player(&player);
         target_data.world = target_world.key.to_string();
-        target_data.pos = target_position.to_array();
+        target_data.entity.pos = target_position.to_array();
         let saved = server
             .player_data_storage
             .save_domain_data("target", player.gameprofile.id(), &target_data)
@@ -980,9 +985,9 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
         let Ok(Some(saved)) = saved else {
             panic!("the source-domain snapshot should be the active save");
         };
-        assert_eq!(saved.health.to_bits(), 7.0_f32.to_bits());
+        assert_eq!(saved_health(&saved).to_bits(), 7.0_f32.to_bits());
         assert_eq!(
-            saved.pos.map(f64::to_bits),
+            saved.entity.pos.map(f64::to_bits),
             [12.5_f64.to_bits(), 70.0_f64.to_bits(), (-3.5_f64).to_bits()]
         );
 
@@ -1040,7 +1045,7 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
         let foreign_pearl_uuid = [10; 16];
         let mut target_data = PersistentPlayerData::from_player(&player);
         target_data.world = target_world.key.to_string();
-        target_data.pos = [8.5, 70.0, 8.5];
+        target_data.entity.pos = [8.5, 70.0, 8.5];
         target_data.root_vehicle = Some(PersistentRootVehicle {
             attach: [11; 16],
             entity: test_persistent_entity(&vanilla_entities::MINECART, target_root_uuid),
@@ -1246,13 +1251,14 @@ fn portal_job_validity_rechecks_vanilla_portal_eligibility() {
 }
 
 fn apply_non_default_domain_data(player: &Player) {
+    init_behaviors();
     let mut source_data = PersistentPlayerData::from_player(player);
-    source_data.remaining_fire_ticks = 40;
-    source_data.ticks_frozen = 20;
-    source_data.is_in_powder_snow = true;
-    source_data.was_in_powder_snow = true;
-    source_data.has_visual_fire = true;
-    source_data.health = 7.0;
+    source_data.entity.remaining_fire_ticks = 40;
+    source_data.entity.ticks_frozen = 20;
+    source_data.entity.is_in_powder_snow = true;
+    source_data.entity.was_in_powder_snow = true;
+    source_data.entity.has_visual_fire = true;
+    set_saved_health(&mut source_data, 7.0);
     source_data.abilities.flying_speed = 0.2;
     source_data.abilities.walking_speed = 0.3;
     source_data.inventory = vec![PersistentSlot {
@@ -1274,18 +1280,45 @@ fn apply_non_default_domain_data(player: &Player) {
         slot: 3,
         item: ItemStack::new(&vanilla_items::STICK),
     }];
+    source_data.respawn_config = Some(PlayerRespawnConfig::new(
+        RespawnData::of(
+            player.get_world().key.clone(),
+            BlockPos::new(4, 70, 6),
+            90.0,
+            0.0,
+        ),
+        false,
+    ));
     source_data.apply_to_player_without_location(player);
+
+    player
+        .living()
+        .attributes()
+        .lock()
+        .set_base_value(vanilla_attributes::MAX_HEALTH, 30.0);
+    player
+        .living()
+        .add_mob_effect(ActiveMobEffect::with_duration(
+            vanilla_mob_effects::HASTE,
+            200,
+            1,
+        ));
+    assert!(player.base().add_tag("source".to_owned()));
 }
 
 fn assert_default_domain_data(player: &Player) {
+    assert_eq!(player.living().max_health(), 20.0);
+    assert!(player.living().active_mob_effects().is_empty());
+    assert!(player.base().tags().is_empty());
     let target_data = PersistentPlayerData::from_player(player);
-    assert_eq!(target_data.remaining_fire_ticks, 0);
-    assert_eq!(target_data.ticks_frozen, 0);
-    assert!(!target_data.is_in_powder_snow);
-    assert!(!target_data.was_in_powder_snow);
-    assert!(!target_data.has_visual_fire);
+    assert!(target_data.respawn_config.is_none());
+    assert_eq!(target_data.entity.remaining_fire_ticks, 0);
+    assert_eq!(target_data.entity.ticks_frozen, 0);
+    assert!(!target_data.entity.is_in_powder_snow);
+    assert!(!target_data.entity.was_in_powder_snow);
+    assert!(!target_data.entity.has_visual_fire);
     assert_eq!(
-        target_data.health.to_bits(),
+        saved_health(&target_data).to_bits(),
         player.living().max_health().to_bits()
     );
     assert_eq!(
@@ -2341,7 +2374,7 @@ impl TwoDomains<'_> {
     fn saved_in_target(&self, player: &Player) -> PersistentPlayerData {
         let mut saved = PersistentPlayerData::from_player(player);
         saved.world = self.target.key.to_string();
-        saved.pos = SAVED_POS;
+        saved.entity.pos = SAVED_POS;
         saved
     }
 
@@ -2431,9 +2464,9 @@ fn cross_domain_world_selection_overrides_the_destination_or_only_the_rotation()
                 }
                 // The saved glide state is the opposite, so only the player's own state can win, and
                 // a saved ground state must not hold a glider down.
-                saved.fall_flying = !gliding;
-                saved.on_ground = true;
-                saved.motion = [0.4, 0.3, -0.2];
+                set_saved_fall_flying(&mut saved, !gliding);
+                saved.entity.on_ground = true;
+                saved.entity.motion = [0.4, 0.3, -0.2];
                 saved.root_vehicle = Some(PersistentRootVehicle {
                     attach: vehicle_uuid,
                     entity: test_persistent_entity(&vanilla_entities::CHICKEN, vehicle_uuid),
@@ -2557,7 +2590,7 @@ fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
             (
                 "no health left",
                 WorldEntry::Exact(DESTINATION),
-                Box::new(|saved| saved.health = 0.0),
+                Box::new(|saved| set_saved_health(saved, 0.0)),
                 // As at login, the saved health carries over: the player arrives dead.
                 Box::new(|player, _| assert!(player.living().health() <= 0.0)),
             ),
@@ -2565,8 +2598,8 @@ fn awkward_saved_data_does_not_break_an_exact_or_rotation_entry() {
                 "a saved ground and glide state that differ from the player",
                 WorldEntry::Exact(DESTINATION),
                 Box::new(|saved| {
-                    saved.on_ground = true;
-                    saved.fall_flying = true;
+                    saved.entity.on_ground = true;
+                    set_saved_fall_flying(saved, true);
                 }),
                 Box::new(|player, _| {
                     assert!(!player.is_fall_flying());
@@ -2753,7 +2786,7 @@ fn disconnect_before_the_vehicle_restore_keeps_the_vehicle() {
             Some(vehicle_uuid),
             "the vehicle must not be lost"
         );
-        assert_eq!(loaded.pos, DESTINATION.position.to_array());
+        assert_eq!(loaded.entity.pos, DESTINATION.position.to_array());
 
         // The next login restores the vehicle, and with it the player.
         let (rejoined, _) = test_player_with_uuid_and_packets(
@@ -2886,6 +2919,35 @@ fn current_respawn_replacement(
     assert!(!old_player.is_world_change_pending());
 
     replacement
+}
+
+fn saved_entity_nbt(data: &PersistentPlayerData) -> NbtCompound {
+    let borrowed = read_compound(&mut Cursor::new(&data.entity.nbt_data[..]))
+        .expect("saved player entity NBT should parse");
+    BorrowedNbtCompoundView::from(&borrowed).to_owned()
+}
+
+fn set_saved_entity_tag(data: &mut PersistentPlayerData, name: &str, tag: impl ToNbtTag) {
+    let mut nbt = saved_entity_nbt(data);
+    nbt.remove(name);
+    nbt.insert(name, tag);
+    let mut bytes = Vec::new();
+    nbt.write(&mut bytes);
+    data.entity.nbt_data = bytes;
+}
+
+fn saved_health(data: &PersistentPlayerData) -> f32 {
+    saved_entity_nbt(data)
+        .float("Health")
+        .expect("saved player entity should hold its health")
+}
+
+fn set_saved_health(data: &mut PersistentPlayerData, health: f32) {
+    set_saved_entity_tag(data, "Health", health);
+}
+
+fn set_saved_fall_flying(data: &mut PersistentPlayerData, fall_flying: bool) {
+    set_saved_entity_tag(data, "FallFlying", i8::from(fall_flying));
 }
 
 fn test_persistent_entity(entity_type: EntityTypeRef, uuid: [u8; 16]) -> PersistentEntity {
@@ -3344,7 +3406,7 @@ fn initial_admission_installs_restores_before_scheduling_jobs() {
             world: world.key.to_string(),
             entity: test_persistent_entity(&vanilla_entities::ENDER_PEARL, pearl_uuid),
         }];
-        let spawn_position = DVec3::new(data.pos[0], data.pos[1], data.pos[2]);
+        let spawn_position = DVec3::new(data.entity.pos[0], data.entity.pos[1], data.entity.pos[2]);
         let state = DomainPlayerState {
             world: Arc::clone(world),
             data: DomainPlayerData::SavedRestored {

@@ -663,6 +663,31 @@ impl AttributeMap {
         snapshots
     }
 
+    /// Returns every attribute to the default base value of `entity_type` with
+    /// no modifiers, as on a newly created entity.
+    pub(crate) fn reset_to_defaults(&mut self, entity_type: EntityTypeRef) {
+        let Self {
+            instances,
+            to_update,
+            to_sync,
+        } = self;
+        let defaults = Self::new_for_entity(entity_type).instances;
+        for (id, (slot, default)) in instances.iter_mut().zip(defaults).enumerate() {
+            let (Some(instance), Some(default)) = (slot.as_mut(), default) else {
+                continue;
+            };
+            let changed = instance.base_value.to_bits() != default.base_value.to_bits()
+                || !instance.modifiers.is_empty();
+            *instance = default;
+            if changed {
+                to_update.mark(id as u16);
+                if instance.attribute.syncable {
+                    to_sync.mark(id as u16);
+                }
+            }
+        }
+    }
+
     /// Removes all transient modifiers (e.g. on respawn)
     pub fn remove_all_transient(&mut self) {
         let Self {

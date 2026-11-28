@@ -34,17 +34,7 @@ fn temp_storage_root(name: &str) -> PathBuf {
 fn sample_player_file(data_version: i32) -> PlayerDataFile {
     PlayerDataFile {
         data_version,
-        pos: [1.0, 2.0, 3.0],
-        motion: [0.0, 0.0, 0.0],
-        rotation: [90.0, 10.0],
-        on_ground: true,
-        fall_flying: false,
-        remaining_fire_ticks: 0,
-        ticks_frozen: 0,
-        is_in_powder_snow: false,
-        was_in_powder_snow: false,
-        has_visual_fire: false,
-        health: 20.0,
+        entity: sample_persistent_entity(),
         game_mode: 2,
         prev_game_mode: Some(0),
         abilities: AbilitiesFile {
@@ -74,6 +64,15 @@ fn sample_player_file(data_version: i32) -> PlayerDataFile {
         respawn_config: None,
         ender_pearls: Vec::new(),
         ender_items: Vec::new(),
+    }
+}
+
+fn decode_current_player_file(bytes: &[u8]) -> PlayerDataFile {
+    match decode_player_file(bytes).expect("player file should decode") {
+        StoredPlayerFile::Current(file) => *file,
+        StoredPlayerFile::UnsupportedVersion(version) => {
+            panic!("player file should be in the current format, found {version}")
+        }
     }
 }
 
@@ -443,7 +442,7 @@ fn player_file_roundtrip_preserves_domain_world_data() {
     let file = sample_player_file(PLAYER_DATA_VERSION);
 
     let encoded = encode_player_file(&file).expect("player file should encode");
-    let decoded = decode_player_file(&encoded).expect("player file should decode");
+    let decoded = decode_current_player_file(&encoded);
 
     assert_eq!(
         u16::from_le_bytes([encoded[4], encoded[5]]),
@@ -466,7 +465,7 @@ fn player_file_roundtrip_preserves_absent_previous_game_mode() {
     file.prev_game_mode = None;
 
     let encoded = encode_player_file(&file).expect("player file should encode");
-    let decoded = decode_player_file(&encoded).expect("player file should decode");
+    let decoded = decode_current_player_file(&encoded);
     let persistent = decoded
         .into_persistent()
         .expect("player file should convert");
@@ -564,7 +563,7 @@ fn player_file_roundtrip_preserves_root_vehicle() {
     });
 
     let encoded = encode_player_file(&file).expect("player file should encode");
-    let decoded = decode_player_file(&encoded).expect("player file should decode");
+    let decoded = decode_current_player_file(&encoded);
     let persistent = decoded
         .into_persistent()
         .expect("player file should convert");
@@ -606,7 +605,7 @@ fn player_file_roundtrip_preserves_respawn_config() {
     ];
 
     let encoded = encode_player_file(&file).expect("player file should encode");
-    let decoded = decode_player_file(&encoded).expect("player file should decode");
+    let decoded = decode_current_player_file(&encoded);
     let persistent = decoded
         .into_persistent()
         .expect("player file should convert");
@@ -723,7 +722,7 @@ async fn in_memory_player_data_round_trips_per_domain() {
         .await
         .expect("player data should load")
         .expect("player data should be present");
-    assert_eq!(loaded.pos, data.pos);
+    assert_eq!(loaded.entity.pos, data.entity.pos);
     assert_eq!(loaded.game_mode, data.game_mode);
 
     assert!(
@@ -807,6 +806,62 @@ async fn disk_player_data_advancements_round_trip() {
     let (advancement_id, progress) = &loaded.advancements[0];
     assert_eq!(advancement_id, advancement.key());
     assert!(progress.has_progress());
+
+    fs::remove_dir_all(root)
+        .await
+        .expect("temporary storage should be removable");
+}
+
+#[tokio::test]
+async fn player_data_of_an_unsupported_version_is_set_aside_for_a_fresh_start() {
+    let root = temp_storage_root("unsupported-player-version");
+    let storage = FilePlayerDataStorage::new(root.clone())
+        .await
+        .expect("test storage should initialize");
+    let uuid = Uuid::from_u128(11);
+    let data_path =
+        FilePlayerDataStorage::player_data_file(&storage.domain_players_dir("lobby"), uuid);
+    let data_dir = data_path
+        .parent()
+        .expect("player file should have a parent");
+    let old_data = encode_file(
+        PLAYER_MAGIC,
+        PLAYER_STORAGE_VERSION - 1,
+        Ok(b"older layout".to_vec()),
+    )
+    .expect("old player file should encode");
+    fs::create_dir_all(data_dir)
+        .await
+        .expect("player directory should be creatable");
+    fs::write(&data_path, &old_data)
+        .await
+        .expect("old player file should be writable");
+
+    let loaded = storage
+        .load_domain("lobby", uuid)
+        .await
+        .expect("an unsupported version should not fail the load");
+    assert!(loaded.is_none(), "the player should start fresh");
+    assert!(
+        !data_path.exists(),
+        "the old file should no longer be loaded"
+    );
+
+    let mut entries = fs::read_dir(data_dir)
+        .await
+        .expect("player directory should be listable");
+    let set_aside = entries
+        .next_entry()
+        .await
+        .expect("player directory entries should be readable")
+        .expect("the old file should be kept")
+        .path();
+    assert_eq!(
+        fs::read(&set_aside)
+            .await
+            .expect("set-aside file should be readable"),
+        old_data
+    );
 
     fs::remove_dir_all(root)
         .await

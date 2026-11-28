@@ -38,7 +38,7 @@ use steel_utils::{BlockPos, Identifier};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 10;
+const PLAYER_STORAGE_VERSION: u16 = 11;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -62,17 +62,7 @@ enum PlayerDataStorageBackend {
 #[derive(SchemaWrite, SchemaRead)]
 struct PlayerDataFile {
     data_version: i32,
-    pos: [f64; 3],
-    motion: [f64; 3],
-    rotation: [f32; 2],
-    on_ground: bool,
-    fall_flying: bool,
-    remaining_fire_ticks: i32,
-    ticks_frozen: i32,
-    is_in_powder_snow: bool,
-    was_in_powder_snow: bool,
-    has_visual_fire: bool,
-    health: f32,
+    entity: PersistentEntity,
     game_mode: i32,
     prev_game_mode: Option<i32>,
     abilities: AbilitiesFile,
@@ -310,17 +300,7 @@ impl PlayerDataFile {
 
         Ok(Self {
             data_version: data.data_version,
-            pos: data.pos,
-            motion: data.motion,
-            rotation: data.rotation,
-            on_ground: data.on_ground,
-            fall_flying: data.fall_flying,
-            remaining_fire_ticks: data.remaining_fire_ticks,
-            ticks_frozen: data.ticks_frozen,
-            is_in_powder_snow: data.is_in_powder_snow,
-            was_in_powder_snow: data.was_in_powder_snow,
-            has_visual_fire: data.has_visual_fire,
-            health: data.health,
+            entity: data.entity.clone(),
             game_mode: data.game_mode,
             prev_game_mode: data.prev_game_mode,
             abilities: AbilitiesFile {
@@ -396,17 +376,7 @@ impl PlayerDataFile {
         }
 
         Ok(PersistentPlayerData {
-            pos: self.pos,
-            motion: self.motion,
-            rotation: self.rotation,
-            on_ground: self.on_ground,
-            fall_flying: self.fall_flying,
-            remaining_fire_ticks: self.remaining_fire_ticks,
-            ticks_frozen: self.ticks_frozen,
-            is_in_powder_snow: self.is_in_powder_snow,
-            was_in_powder_snow: self.was_in_powder_snow,
-            has_visual_fire: self.has_visual_fire,
-            health: self.health,
+            entity: self.entity,
             game_mode: self.game_mode,
             prev_game_mode: self.prev_game_mode,
             abilities: PersistentAbilities {
@@ -527,10 +497,31 @@ fn encode_player_file(file: &PlayerDataFile) -> io::Result<Vec<u8>> {
     )
 }
 
-fn decode_player_file(bytes: &[u8]) -> io::Result<PlayerDataFile> {
+/// A player data file as found on disk.
+enum StoredPlayerFile {
+    /// Written in the current format.
+    Current(Box<PlayerDataFile>),
+    /// Written in a format this server no longer reads, named for the log.
+    UnsupportedVersion(String),
+}
+
+fn decode_player_file(bytes: &[u8]) -> io::Result<StoredPlayerFile> {
+    let version = stored_file_version(PLAYER_MAGIC, bytes)?;
+    if version != PLAYER_STORAGE_VERSION {
+        return Ok(StoredPlayerFile::UnsupportedVersion(format!(
+            "storage version {version}"
+        )));
+    }
     let payload = decode_file(PLAYER_MAGIC, PLAYER_STORAGE_VERSION, bytes)?;
-    wincode::deserialize(&payload)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
+    let file: PlayerDataFile = wincode::deserialize(&payload)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+    if file.data_version != PLAYER_DATA_VERSION {
+        return Ok(StoredPlayerFile::UnsupportedVersion(format!(
+            "payload version {}",
+            file.data_version
+        )));
+    }
+    Ok(StoredPlayerFile::Current(Box::new(file)))
 }
 
 fn encode_global_file(file: &GlobalPlayerDataFile) -> io::Result<Vec<u8>> {
@@ -562,11 +553,8 @@ fn encode_file(
     Ok(bytes)
 }
 
-fn decode_file(
-    expected_magic: [u8; 4],
-    expected_version: u16,
-    bytes: &[u8],
-) -> io::Result<Vec<u8>> {
+/// Reads the storage version from a file's header.
+fn stored_file_version(expected_magic: [u8; 4], bytes: &[u8]) -> io::Result<u16> {
     if bytes.len() < 6 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -579,7 +567,15 @@ fn decode_file(
             "invalid player data magic",
         ));
     }
-    let version = u16::from_le_bytes([bytes[4], bytes[5]]);
+    Ok(u16::from_le_bytes([bytes[4], bytes[5]]))
+}
+
+fn decode_file(
+    expected_magic: [u8; 4],
+    expected_version: u16,
+    bytes: &[u8],
+) -> io::Result<Vec<u8>> {
+    let version = stored_file_version(expected_magic, bytes)?;
     if version != expected_version {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,

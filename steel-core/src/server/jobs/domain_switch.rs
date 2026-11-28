@@ -180,9 +180,9 @@ impl DomainSwitchJob {
         };
         if let UnpreparedDomainPlayerData::SavedRestored { mut data } = data {
             if let Some((yaw, pitch)) = rotation_override {
-                data.rotation = [yaw, pitch];
+                data.entity.rotation = [yaw, pitch];
             }
-            let spawn_position = DVec3::new(data.pos[0], data.pos[1], data.pos[2]);
+            let spawn_position = DVec3::from_array(data.entity.pos);
             let request = world.request_player_spawn_chunks(spawn_position);
             return Ok(DomainSwitchJobPhase::LoadingSpawn {
                 state: DomainPlayerState {
@@ -235,9 +235,9 @@ impl DomainSwitchJob {
     ) -> Result<DomainSwitchJobPhase, String> {
         let state = match data {
             UnpreparedDomainPlayerData::SavedRestored { mut data } => {
-                data.pos = destination.position.to_array();
-                data.rotation = [destination.rotation.0, destination.rotation.1];
-                data.motion = [0.0; 3];
+                data.entity.pos = destination.position.to_array();
+                data.entity.rotation = [destination.rotation.0, destination.rotation.1];
+                data.entity.motion = [0.0; 3];
                 let request = world.request_player_spawn_chunks(destination.position);
                 DomainPlayerState {
                     world,

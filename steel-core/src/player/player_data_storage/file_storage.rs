@@ -5,7 +5,8 @@ use super::permissions::{PlayerPermissionsFile, serialize_player_permissions_fil
 use super::stats::{PlayerStatsFile, serialize_player_stats_file};
 use super::{
     GLOBAL_PLAYER_DATA_VERSION, GlobalPlayerData, GlobalPlayerDataFile, PlayerDataFile,
-    decode_global_file, decode_player_file, encode_global_file, encode_player_file,
+    StoredPlayerFile, decode_global_file, decode_player_file, encode_global_file,
+    encode_player_file,
 };
 use crate::permission::PermissionSubjectIndex;
 use crate::player::advancement::PersistedAdvancements;
@@ -16,6 +17,7 @@ use crate::player::{KnownPlayers, Player};
 use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use steel_utils::Identifier;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
 use tokio::io::AsyncWriteExt;
@@ -154,11 +156,33 @@ impl FilePlayerDataStorage {
             return Ok(None);
         }
         let bytes = fs::read(&path).await?;
-        let file = decode_player_file(&bytes)?;
+        let file = match decode_player_file(&bytes)? {
+            StoredPlayerFile::Current(file) => file,
+            StoredPlayerFile::UnsupportedVersion(version) => {
+                let set_aside = Self::set_aside_path(&path);
+                fs::rename(&path, &set_aside).await?;
+                log::warn!(
+                    "Player data for {uuid} in domain {domain} has unsupported {version}; kept it as {} and starting the player fresh",
+                    set_aside.display()
+                );
+                return Ok(None);
+            }
+        };
         let data = file.into_persistent()?;
         log::debug!("Loaded player data for {uuid} in domain {domain}");
 
         Ok(Some(data))
+    }
+
+    /// Where a data file this server cannot read is kept, so it is not loaded
+    /// again.
+    fn set_aside_path(path: &Path) -> PathBuf {
+        let seconds = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs());
+        let mut name = path.as_os_str().to_os_string();
+        name.push(format!(".unsupported-{seconds}"));
+        PathBuf::from(name)
     }
 
     pub(crate) async fn load_domain_player_stats(

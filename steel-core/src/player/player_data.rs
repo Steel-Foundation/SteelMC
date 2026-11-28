@@ -18,7 +18,7 @@ use super::{
 use crate::player::stats_counter::StatState;
 use crate::{
     chunk_saver::{ChunkStorage, PersistentEntity},
-    entity::{Entity, EntityFireFreezeState},
+    entity::Entity,
     inventory::{
         container::Container,
         ender_chest::{ENDER_CHEST_SLOTS, PlayerEnderChestContainer},
@@ -27,7 +27,7 @@ use crate::{
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
-pub const PLAYER_DATA_VERSION: i32 = 8;
+pub const PLAYER_DATA_VERSION: i32 = 9;
 
 /// Persistent player data saved by Steel's storage backend.
 ///
@@ -35,38 +35,10 @@ pub const PLAYER_DATA_VERSION: i32 = 8;
 /// server runtime storage so compatibility logic does not constrain the native format.
 #[derive(Debug, Clone)]
 pub struct PersistentPlayerData {
-    /// Position (x, y, z) in absolute world coordinates.
-    pub pos: [f64; 3],
-
-    /// Velocity (x, y, z) in blocks per tick.
-    pub motion: [f64; 3],
-
-    /// Rotation (yaw, pitch) in degrees.
-    pub rotation: [f32; 2],
-
-    /// Whether the player is on the ground.
-    pub on_ground: bool,
-
-    /// Whether the player is elytra gliding.
-    pub fall_flying: bool,
-
-    /// Remaining fire duration, in ticks.
-    pub remaining_fire_ticks: i32,
-
-    /// Synchronized vanilla `TicksFrozen`.
-    pub ticks_frozen: i32,
-
-    /// Whether the player is currently standing in powder snow.
-    pub is_in_powder_snow: bool,
-
-    /// Whether the player was standing in powder snow last tick.
-    pub was_in_powder_snow: bool,
-
-    /// Whether the player renders as on fire regardless of actual fire ticks.
-    pub has_visual_fire: bool,
-
-    /// Current health points.
-    pub health: f32,
+    /// What the player saves as an entity: the base entity fields and its
+    /// components, in the form chunk entities are saved in. It holds no
+    /// passengers; a vehicle is kept in [`Self::root_vehicle`].
+    pub entity: PersistentEntity,
 
     /// Current game mode (0=survival, 1=creative, 2=adventure, 3=spectator).
     pub game_mode: i32,
@@ -77,7 +49,8 @@ pub struct PersistentPlayerData {
     /// Player abilities (flight, invulnerability, etc.).
     pub abilities: PersistentAbilities,
 
-    /// Inventory items with slot indices.
+    /// Main inventory items with slot indices; equipment is saved with
+    /// [`Self::entity`].
     pub inventory: Vec<PersistentSlot>,
 
     /// Currently selected hotbar slot (0-8).
@@ -203,20 +176,16 @@ impl PersistentPlayerData {
     /// Extracts persistent data from a live player.
     #[must_use]
     pub fn from_player(player: &Player) -> Self {
-        let pos = player.position();
-        let (yaw, pitch) = player.rotation();
-        let delta = player.velocity();
-        let on_ground = player.on_ground();
-        let fall_flying = player.is_fall_flying();
-        let fire_freeze = player.fire_freeze_state();
+        // Saving the entity reads the inventory as equipment, so it comes
+        // before the inventory lock below.
+        let entity = ChunkStorage::entity_alone_to_persistent(player, player.position());
         let abilities = player.abilities.lock();
         let inventory = player.inventory.lock();
         let food_data = player.food_data.lock();
 
-        // Collect non-empty inventory slots
+        // Equipment slots are saved with the entity.
         let mut slots = Vec::new();
-        // Main inventory (0-35) and equipment (36-42)
-        for slot in 0..PlayerInventory::CONTAINER_SIZE {
+        for slot in 0..PlayerInventory::INVENTORY_SIZE {
             let item = inventory.get_item(slot);
             if !item.is_empty() {
                 slots.push(PersistentSlot {
@@ -255,17 +224,7 @@ impl PersistentPlayerData {
         let advancements = player.session.advancements.lock().persisted_progress();
 
         Self {
-            pos: [pos.x, pos.y, pos.z],
-            motion: [delta.x, delta.y, delta.z],
-            rotation: [yaw, pitch],
-            on_ground,
-            fall_flying,
-            remaining_fire_ticks: fire_freeze.remaining_fire_ticks(),
-            ticks_frozen: fire_freeze.ticks_frozen(),
-            is_in_powder_snow: fire_freeze.is_in_powder_snow(),
-            was_in_powder_snow: fire_freeze.was_in_powder_snow(),
-            has_visual_fire: fire_freeze.has_visual_fire(),
-            health: player.living().health(),
+            entity,
             game_mode: player.game_mode() as i32,
             prev_game_mode: player
                 .previous_game_mode()
@@ -357,13 +316,18 @@ impl Player {
 
         self.set_velocity(DVec3::ZERO);
         self.set_on_ground(false);
-        self.set_fall_flying(false);
-        self.base()
-            .set_fire_freeze_state(EntityFireFreezeState::new());
-        self.sync_base_fire_freeze_entity_data();
-        self.living().set_health(self.living().max_health());
         *self.abilities.lock() = Abilities::default();
         *self.inventory.lock() = PlayerInventory::new();
+        if !ChunkStorage::restore_entity(
+            self,
+            &ChunkStorage::new_persistent_entity(self.entity_type()),
+            false,
+        ) {
+            log::error!(
+                "Could not reset the entity state of player {}",
+                self.gameprofile.name()
+            );
+        }
         *self.ender_chest_inventory.lock() = PlayerEnderChestContainer::new();
         *self.food_data.lock() = FoodData::new();
         self.session.stats.lock().reset();
@@ -376,6 +340,7 @@ impl Player {
         self.set_score(0);
         self.set_seen_credits(false);
         self.set_spawn_extra_particles_on_fall(false);
+        self.set_respawn_position(None, false);
     }
 }
 
@@ -438,66 +403,71 @@ impl PersistentPlayerData {
     }
 
     fn apply_to_player_inner(&self, player: &Player, restore_location: bool) {
-        use glam::DVec3;
+        let Self {
+            entity,
+            game_mode,
+            prev_game_mode,
+            abilities,
+            inventory,
+            selected_slot,
+            // The caller resolves the world before applying.
+            world: _,
+            food_level,
+            food_saturation_level,
+            food_exhaustion_level,
+            food_tick_timer,
+            data_version: _,
+            experience_level,
+            experience_progress,
+            experience_total,
+            enchantment_seed,
+            score,
+            seen_credits,
+            spawn_extra_particles_on_fall,
+            // The vehicle and pearls are restored once the player is in the world.
+            root_vehicle: _,
+            respawn_config,
+            ender_pearls: _,
+            ender_items,
+            stats,
+            advancements,
+        } = self;
 
-        if restore_location {
-            // Position
-            player
-                .base()
-                .set_position_local(DVec3::new(self.pos[0], self.pos[1], self.pos[2]));
-
-            // Rotation
-            player.set_rotation((self.rotation[0], self.rotation[1]));
-
-            // Motion/velocity
-            player.set_velocity(DVec3::new(self.motion[0], self.motion[1], self.motion[2]));
-
-            // Ground state
-            player.set_fall_flying(self.fall_flying);
-            player.set_on_ground(self.on_ground);
+        if !ChunkStorage::restore_entity(player, entity, restore_location) {
+            log::error!(
+                "Could not restore the saved entity state of player {}",
+                player.gameprofile.name()
+            );
         }
-
-        player
-            .base()
-            .set_fire_freeze_state(EntityFireFreezeState::from_parts(
-                self.remaining_fire_ticks,
-                self.ticks_frozen,
-                self.is_in_powder_snow,
-                self.was_in_powder_snow,
-                self.has_visual_fire,
-            ));
-        player.sync_base_fire_freeze_entity_data();
-        player.set_respawn_position(self.respawn_config.clone(), false);
-
-        // Health
-        player.living().set_health(self.health);
+        if !restore_location {
+            // Gliding and sleeping belong to the place the player was saved at.
+            player.set_fall_flying(false);
+            player.living().clear_sleeping_pos();
+        }
+        player.set_respawn_position(respawn_config.clone(), false);
 
         // Game mode
-        player.restore_game_modes(
-            self.game_mode.into(),
-            self.prev_game_mode.map(GameType::from),
-        );
+        player.restore_game_modes((*game_mode).into(), prev_game_mode.map(GameType::from));
 
         // Abilities
-        *player.abilities.lock() = self.abilities.clone().into();
+        *player.abilities.lock() = abilities.clone().into();
 
         // Inventory
         {
-            let mut inventory = player.inventory.lock();
-            // Clear existing inventory first
-            for slot in 0..PlayerInventory::CONTAINER_SIZE {
-                inventory.set_item(slot, ItemStack::empty());
+            let mut player_inventory = player.inventory.lock();
+            // The equipment slots were restored with the entity.
+            for slot in 0..PlayerInventory::INVENTORY_SIZE {
+                player_inventory.set_item(slot, ItemStack::empty());
             }
-            // Restore saved items
-            for slot_data in &self.inventory {
+            for slot_data in inventory {
                 let slot_index = slot_data.slot as usize;
-                if slot_index < PlayerInventory::CONTAINER_SIZE {
-                    inventory.set_item(slot_index, slot_data.item.clone());
+                if slot_index < PlayerInventory::INVENTORY_SIZE {
+                    player_inventory.set_item(slot_index, slot_data.item.clone());
                 }
             }
             // Restore selected slot
-            let selected = self.selected_slot.clamp(0, 8) as u8;
-            inventory.set_selected_slot(selected);
+            let selected = (*selected_slot).clamp(0, 8) as u8;
+            player_inventory.set_selected_slot(selected);
         }
 
         {
@@ -505,7 +475,7 @@ impl PersistentPlayerData {
             for slot in 0..ENDER_CHEST_SLOTS {
                 ender_chest_inventory.set_item(slot, ItemStack::empty());
             }
-            for slot_data in &self.ender_items {
+            for slot_data in ender_items {
                 let slot_index = slot_data.slot as usize;
                 if slot_index < ENDER_CHEST_SLOTS {
                     ender_chest_inventory.set_item(slot_index, slot_data.item.clone());
@@ -516,37 +486,34 @@ impl PersistentPlayerData {
         // Food data
         {
             let mut food = player.food_data.lock();
-            food.food_level = self.food_level;
-            food.saturation_level = self.food_saturation_level;
-            food.exhaustion_level = self.food_exhaustion_level;
-            food.tick_timer = self.food_tick_timer;
+            food.food_level = *food_level;
+            food.saturation_level = *food_saturation_level;
+            food.exhaustion_level = *food_exhaustion_level;
+            food.tick_timer = *food_tick_timer;
         }
 
         {
             let mut experience = player.experience.lock();
-            *experience = Experience::from_parts(
-                self.experience_level,
-                self.experience_progress,
-                self.experience_total,
-            )
-            .with_loaded_enchantment_seed(self.enchantment_seed, rand::random);
+            *experience =
+                Experience::from_parts(*experience_level, *experience_progress, *experience_total)
+                    .with_loaded_enchantment_seed(*enchantment_seed, rand::random);
         }
-        player.set_score(self.score);
-        player.set_seen_credits(self.seen_credits);
-        player.set_spawn_extra_particles_on_fall(self.spawn_extra_particles_on_fall);
+        player.set_score(*score);
+        player.set_seen_credits(*seen_credits);
+        player.set_spawn_extra_particles_on_fall(*spawn_extra_particles_on_fall);
 
         // Statistics
         {
-            let mut stats = player.session.stats.lock();
+            let mut counters = player.session.stats.lock();
 
             // This resets all counters to zero, but also marks them as non-persistent. However, they still need
             // to be sent to the client the next time they are queried.
             // This is important so that stale data from the previous domain doesn't stay in the client's cache.
             // We then populate the counter with all the serialized stat counters from the new domain.
-            stats.reset();
+            counters.reset();
 
-            for PersistentStat { stat, count } in &self.stats {
-                stats.stats.insert(*stat, (*count, StatState::Dirty));
+            for PersistentStat { stat, count } in stats {
+                counters.stats.insert(*stat, (*count, StatState::Dirty));
             }
         }
 
@@ -554,6 +521,6 @@ impl PersistentPlayerData {
             .session
             .advancements
             .lock()
-            .apply_persisted_progress(self.advancements.iter().cloned());
+            .apply_persisted_progress(advancements.iter().cloned());
     }
 }

@@ -23,6 +23,10 @@ pub trait EntityEquipment: Send {
     /// Clears all equipment slots.
     fn clear(&mut self);
 
+    /// Whether `slot` is saved as equipment. A player's main hand is its
+    /// selected hotbar slot, which is saved with the inventory instead.
+    fn saves_slot(&self, slot: EquipmentSlot) -> bool;
+
     /// Clones the item in every equipment slot, indexed by [`EquipmentSlot::index`].
     fn snapshot(&self) -> [ItemStack; EquipmentSlot::ALL.len()] {
         EquipmentSlot::ALL.map(|slot| self.get_ref(slot).clone())
@@ -91,5 +95,9 @@ impl EntityEquipment for OwnedEntityEquipment {
         for slot in EquipmentSlot::ALL {
             self.slots[slot.index()] = ItemStack::empty();
         }
+    }
+
+    fn saves_slot(&self, _slot: EquipmentSlot) -> bool {
+        true
     }
 }
