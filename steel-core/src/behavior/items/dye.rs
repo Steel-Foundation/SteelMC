@@ -31,7 +31,7 @@ impl ItemBehavior for DyeItem {
     fn interact_living_entity(
         &self,
         stack: &mut ItemStack,
-        _player: &Player,
+        player: &Player,
         target: &dyn LivingEntity,
         _hand: InteractionHand,
     ) -> InteractionResult {
@@ -46,7 +46,16 @@ impl ItemBehavior for DyeItem {
             return InteractionResult::Pass;
         }
 
-        sheep.play_sound(&ITEM_DYE_USE, 1.0, 1.0);
+        if let Some(world) = sheep.level() {
+            world.play_sound_at(
+                &ITEM_DYE_USE,
+                SoundSource::Players,
+                sheep.position(),
+                1.0,
+                1.0,
+                Some(player.id()),
+            );
+        }
         sheep.set_color(dye_color);
         stack.shrink_one();
 
