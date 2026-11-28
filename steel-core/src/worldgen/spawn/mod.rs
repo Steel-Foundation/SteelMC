@@ -21,7 +21,7 @@ use crate::world::World;
 use crate::worldgen::generator::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::region::WorldGenRegion;
 
-use self::finalize::{SpawnContext, SpawnData, SpawnState};
+use self::finalize::{SpawnContext, SpawnData, SpawnState, WorldgenSpawnGroup};
 use self::placement::{Attempt, Placement};
 
 const DEFAULT_CREATURE_WORLD_GEN_SPAWN_PROBABILITY: f32 = 0.1;
@@ -56,54 +56,22 @@ impl<'region> SpawnSiteContext<'_, 'region> {
     }
 }
 
-#[derive(Clone, Copy)]
-enum SpawnMode {
-    Materialize,
-    #[cfg(test)]
-    Trace {
-        spawn_mobs: bool,
-    },
-}
-
 pub(super) fn spawn_original_mobs(
     region: &mut WorldGenRegion<'_>,
     world: &World,
     world_seed: i64,
     biome_zoom_seed: i64,
 ) {
-    let _ = generate(
-        region,
-        world,
-        world_seed,
-        biome_zoom_seed,
-        SpawnMode::Materialize,
-        |_, _, _| {},
-    );
-}
-
-fn generate(
-    region: &mut WorldGenRegion<'_>,
-    world: &World,
-    world_seed: i64,
-    biome_zoom_seed: i64,
-    mode: SpawnMode,
-    mut on_spawn: impl FnMut(DVec3, f32, &SpawnState<'_>),
-) -> i64 {
     let center = region.center();
     let size = SectionPos::section_to_block_coord(1, 0);
     let origin_x = center.0.x * size;
     let origin_z = center.0.y * size;
     let mut random = LegacyRandom::for_chunk_generation(world_seed, origin_x, origin_z);
 
-    #[cfg(test)]
-    if matches!(mode, SpawnMode::Trace { spawn_mobs: false }) {
-        return random.get_seed();
-    }
-
     let source = BlockPos::new(origin_x, region.max_y_exclusive() - 1, origin_z);
     let list = biome_at(region, biome_zoom_seed, source).worldgen_creature_spawns;
     if list.last().is_none_or(|entry| entry.cumulative_weight == 0) {
-        return random.get_seed();
+        return;
     }
 
     let probability = creature_spawn_probability(noise_biome_at(region, source));
@@ -112,18 +80,8 @@ fn generate(
             continue;
         };
 
-        generate_group(
-            region,
-            world,
-            biome_zoom_seed,
-            mode,
-            entry,
-            &mut random,
-            &mut on_spawn,
-        );
+        generate_group(region, world, biome_zoom_seed, entry, &mut random);
     }
-
-    random.get_seed()
 }
 
 // Keep group setup off chunks that never select one.
@@ -132,11 +90,11 @@ fn generate_group(
     region: &mut WorldGenRegion<'_>,
     world: &World,
     biome_zoom_seed: i64,
-    mode: SpawnMode,
     entry: &WorldgenCreatureSpawn,
     random: &mut LegacyRandom,
-    on_spawn: &mut impl FnMut(DVec3, f32, &SpawnState<'_>),
 ) {
+    let entity_type = entry.entity_type;
+    let factory = ENTITIES.factory_for(entity_type);
     let center = region.center();
     let chunk_width = SectionPos::section_to_block_coord(1, 0);
     let origin_x = center.0.x * chunk_width;
@@ -145,25 +103,11 @@ fn generate_group(
     let mut x = origin_x + random.next_i32_bounded(chunk_width);
     let mut z = origin_z + random.next_i32_bounded(chunk_width);
     let (start_x, start_z) = (x, z);
-    let entity_type = entry.entity_type;
     let Some(placement) = Placement::for_entity(entity_type) else {
         panic!("Missing worldgen spawn placement for {}", entity_type.key);
     };
 
-    let Some(with_group) = ENTITIES.worldgen_spawn_group(entity_type) else {
-        panic!(
-            "Missing worldgen spawn finalization for {}",
-            entity_type.key
-        );
-    };
-
-    let factory = match mode {
-        SpawnMode::Materialize => ENTITIES.factory_for(entity_type),
-        #[cfg(test)]
-        SpawnMode::Trace { .. } => None,
-    };
-
-    with_group(&mut |group| {
+    let mut run = |mut group: Option<&mut dyn WorldgenSpawnGroup>| {
         for _ in 0..count {
             for _ in 0..ATTEMPTS_PER_MOB {
                 let success = match placement.try_position(region, world, biome_zoom_seed, x, z) {
@@ -174,7 +118,10 @@ fn generate_group(
                         can_finalize,
                     } => {
                         let yaw = spawn_yaw(random);
-                        if can_finalize {
+                        if can_finalize
+                            && let Some((factory, group)) =
+                                factory.as_ref().zip(group.as_deref_mut())
+                        {
                             let site = SpawnSite {
                                 entity_type,
                                 pos: BlockPos::from(position),
@@ -189,16 +136,11 @@ fn generate_group(
                             let state = group.finalize(SpawnContext {
                                 site,
                                 biome: context.biome(),
-                                world,
                                 random: context.random_mut(),
                             });
 
-                            on_spawn(position, yaw, &state);
-
-                            if let Some(factory) = &factory {
-                                let entity = factory(position, region.weak_world());
-                                add_spawn(region, &state, entity, position, yaw);
-                            }
+                            let entity = factory(position, region.weak_world());
+                            add_spawn(region, &state, entity, position, yaw);
                         }
 
                         can_finalize
@@ -222,7 +164,20 @@ fn generate_group(
                 }
             }
         }
-    });
+    };
+
+    if factory.is_some() {
+        let Some(with_group) = ENTITIES.worldgen_spawn_group(entity_type) else {
+            panic!(
+                "Missing worldgen spawn finalization for {}",
+                entity_type.key
+            );
+        };
+        with_group(&mut |group| run(Some(group)));
+    } else {
+        // Run placement and the selection walk, skipping finalization rolls until the mob exists.
+        run(None);
+    }
 }
 
 fn add_spawn(

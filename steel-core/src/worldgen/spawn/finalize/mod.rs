@@ -1,9 +1,6 @@
 //! sample group and mob state before constructing entities
 
-mod equine;
 mod groups;
-mod strider;
-mod variants;
 
 use steel_registry::biome::BiomeRef;
 use steel_registry::entity_type::EntityTypeRef;
@@ -14,9 +11,7 @@ use steel_utils::{Downcast as _, DowncastType};
 
 use crate::entity::{AgeableMobGroupData, Entity, MobSpawnState};
 use crate::inventory::equipment::EquipmentSlot;
-use crate::world::World;
 
-use self::equine::EquineAttributes;
 use super::SpawnSite;
 pub(crate) use groups::register_worldgen_spawn_groups;
 
@@ -27,7 +22,6 @@ pub(crate) type RunSpawnGroup<'a> = dyn FnMut(&mut dyn WorldgenSpawnGroup) + 'a;
 pub(crate) struct SpawnContext<'a> {
     pub site: SpawnSite,
     pub biome: BiomeRef,
-    pub world: &'a World,
     pub random: &'a mut RandomSource,
 }
 
@@ -56,14 +50,11 @@ pub(crate) enum SpawnInitError {
     ExpectedMob,
     #[error("factory created a different entity implementation")]
     WrongEntityType,
-    #[error("worldgen initialization is unavailable for this entity implementation")]
-    MissingInitializer,
 }
 
 #[derive(Default)]
 pub(crate) struct SpawnOverrides {
     pub is_baby: bool,
-    equine_attributes: Option<EquineAttributes>,
     pub main_hand_item: Option<ItemRef>,
     pub head_item: Option<ItemRef>,
     pub saddled: bool,
@@ -99,10 +90,6 @@ pub(crate) fn typed_initializer<T: Entity + DowncastType>(
     }
 }
 
-fn unavailable_initializer(_entity: &dyn Entity) -> Result<(), SpawnInitError> {
-    Err(SpawnInitError::MissingInitializer)
-}
-
 struct Sample<P> {
     overrides: SpawnOverrides,
     initialize: Option<P>,
@@ -125,13 +112,6 @@ impl Sample<SpawnInitFn> {
             overrides,
             initialize: None,
             passenger: None,
-        }
-    }
-
-    fn shadow_only(overrides: SpawnOverrides) -> Self {
-        Self {
-            initialize: Some(unavailable_initializer),
-            ..Self::common(overrides)
         }
     }
 }
@@ -191,10 +171,6 @@ fn with_ageable_group<S, F, P>(
     });
 }
 
-fn choose<T: Copy>(values: &[T], random: &mut RandomSource) -> T {
-    values[random.next_i32_bounded(values.len() as i32) as usize]
-}
-
 fn required_variant<T>(variant: Option<T>) -> T {
     match variant {
         Some(variant) => variant,
@@ -209,9 +185,6 @@ impl SpawnData<'_> {
         };
 
         let overrides = &self.overrides;
-        if let Some(attributes) = overrides.equine_attributes {
-            attributes.apply(mob);
-        }
 
         if overrides.is_baby {
             if let Some(ageable) = entity.as_ageable_mob() {

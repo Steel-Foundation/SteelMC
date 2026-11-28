@@ -6,10 +6,7 @@ use simdnbt::owned::NbtTag;
 use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent};
-use steel_utils::random::Random;
 use steel_utils::serial::{ReadFrom, WriteTo};
-
-const PANDA_GENE_ROLL_BOUND: i32 = 16;
 
 macro_rules! impl_variant_codecs {
     ($type:ty) => {
@@ -46,21 +43,6 @@ macro_rules! impl_variant_codecs {
 }
 
 include!("generated/vanilla_entity_variant_enums.rs");
-
-impl PandaGene {
-    /// samples one gene with the mc spawn distribution
-    pub fn sample(random: &mut impl Random) -> Self {
-        match random.next_i32_bounded(PANDA_GENE_ROLL_BOUND) {
-            0 => Self::Lazy,
-            1 => Self::Worried,
-            2 => Self::Playful,
-            4 => Self::Aggressive,
-            3 | 5..=8 => Self::Weak,
-            9..=10 => Self::Brown,
-            _ => Self::Normal,
-        }
-    }
-}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FoxVariant {

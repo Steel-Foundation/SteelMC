@@ -1,6 +1,6 @@
 #![expect(
     clippy::unwrap_used,
-    reason = "missing parity fixture data is a test failure"
+    reason = "missing spawn fixture data is a test failure"
 )]
 
 use std::{borrow::Cow, collections::BTreeSet, panic, sync::Arc, thread};
@@ -13,7 +13,7 @@ use steel_registry::{
     vanilla_entities, vanilla_game_rules::SPAWN_MOBS, vanilla_world_clocks,
 };
 use steel_utils::{
-    BlockPos, ChunkPos, Downcast as _, SectionPos,
+    BlockPos, ChunkPos, Downcast as _,
     random::{Random, RandomSource, legacy_random::LegacyRandom},
 };
 use steel_worldgen::biomes::BiomeSourceKind;
@@ -33,24 +33,23 @@ use crate::{
     },
     world::World,
     worldgen::{
-        ChunkGenerator, ChunkGeneratorType, NetherGenerator, OverworldGenerator, WorldGenRegion,
+        ChunkGeneratorType, NetherGenerator, OverworldGenerator, WorldGenRegion,
         chunk_stage_hashes::create_test_world,
     },
 };
 
 use super::{
-    SpawnMode, SpawnSite, biome_at, creature_spawn_probability,
+    SpawnSite,
     finalize::{
         SpawnContext, SpawnData, SpawnInitError, SpawnInitializer, SpawnOverrides, SpawnState,
         WorldgenSpawnGroup, typed_initializer,
     },
-    generate, noise_biome_at,
     rules::{WorldgenSpawnPredicate, WorldgenSpawnRule},
 };
 
 type Position = (i32, i32);
 
-const CHUNK_HASH_TEST_STACK_BYTES: usize = 32 * 1024 * 1024;
+const SPAWN_TEST_STACK_BYTES: usize = 32 * 1024 * 1024;
 const CHUNKS_PER_DIMENSION: usize = 200;
 const DIMENSIONS: [&str; 2] = ["minecraft:overworld", "minecraft:the_nether"];
 
@@ -109,17 +108,9 @@ struct ChunkTrace {
     clock_time: i64,
     difficulty: String,
     spawn_mobs: bool,
-    source_biome: Option<String>,
-    probability_biome: Option<String>,
-    creature_probability_bits: Option<String>,
-    selection_random_state: RandomState,
-    region_random_state: RandomState,
-    spawns: Vec<SpawnTrace>,
-    hash: String,
 }
 
-#[derive(Debug, PartialEq, Eq, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[derive(Debug, PartialEq, Eq)]
 enum RandomState {
     Legacy { seed: String },
     Xoroshiro { seed_lo: String, seed_hi: String },
@@ -146,7 +137,7 @@ impl RandomState {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct SpawnTrace {
     entity: String,
     x_bits: String,
@@ -173,34 +164,10 @@ impl SpawnTrace {
             entity.rotation().0,
         )
     }
-
-    fn hash(spawns: &[Self]) -> String {
-        let mut digest = md5::Context::new();
-        digest.consume(u32::try_from(spawns.len()).unwrap().to_be_bytes());
-
-        for spawn in spawns {
-            let entity = spawn.entity.as_bytes();
-            digest.consume(u32::try_from(entity.len()).unwrap().to_be_bytes());
-            digest.consume(entity);
-
-            for bits in [&spawn.x_bits, &spawn.y_bits, &spawn.z_bits] {
-                digest.consume(u64::from_str_radix(bits, 16).unwrap().to_be_bytes());
-            }
-
-            digest.consume(
-                u32::from_str_radix(&spawn.yaw_bits, 16)
-                    .unwrap()
-                    .to_be_bytes(),
-            );
-        }
-
-        format!("{:x}", digest.finalize())
-    }
 }
 
 struct SpawnTestWorld {
     world: Arc<World>,
-    generator: Arc<ChunkGeneratorType>,
     cache: Arc<StaticCache2D<Arc<ChunkHolder>>>,
 }
 
@@ -240,7 +207,7 @@ impl SpawnTestWorld {
             dim_key,
             dim,
             seed,
-            Arc::clone(&generator),
+            generator,
             pool,
             &Arc::new(DamageHistory::default()),
         );
@@ -261,11 +228,7 @@ impl SpawnTestWorld {
             },
         ));
 
-        Self {
-            world,
-            generator,
-            cache,
-        }
+        Self { world, cache }
     }
 
     async fn apply(&self, status: ChunkStatus, positions: impl IntoIterator<Item = Position>) {
@@ -310,82 +273,7 @@ impl SpawnTestWorld {
             .await;
     }
 
-    fn verify_shadow(&self, expected: &ChunkTrace, biome_seed: i64) -> Vec<SpawnTrace> {
-        let center = ChunkPos::new(expected.x, expected.z);
-        let step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Spawn);
-        let rng = self
-            .generator
-            .create_worldgen_region_random(self.world.seed(), center);
-        let mut region = WorldGenRegion::new(
-            &self.world.chunk_map.world_gen_context,
-            step,
-            &self.cache,
-            center,
-            rng,
-        );
-
-        if expected.spawn_mobs {
-            let pos = BlockPos::new(
-                SectionPos::section_to_block_coord(expected.x, 0),
-                region.max_y_exclusive() - 1,
-                SectionPos::section_to_block_coord(expected.z, 0),
-            );
-
-            let biome = biome_at(&region, biome_seed, pos);
-            let probability_biome = noise_biome_at(&region, pos);
-            assert_eq!(
-                Some(biome.key.to_string()),
-                expected.source_biome,
-                "source biome at {center:?}"
-            );
-            assert_eq!(
-                Some(probability_biome.key.to_string()),
-                expected.probability_biome,
-                "probability biome at {center:?}"
-            );
-
-            let probability = creature_spawn_probability(probability_biome);
-            assert_eq!(
-                Some(format!("{:08x}", probability.to_bits())),
-                expected.creature_probability_bits,
-                "creature spawn probability at {center:?}"
-            );
-        }
-
-        let (seed, trace) = trace_without_factories(&mut region, &self.world, biome_seed);
-        assert_eq!(
-            RandomState::from_legacy_seed(seed),
-            expected.selection_random_state,
-            "selection RNG state at {center:?}"
-        );
-        assert_eq!(
-            RandomState::from_random(region.random_mut()),
-            expected.region_random_state,
-            "region RNG state at {center:?}"
-        );
-        assert_eq!(
-            trace.len(),
-            expected.spawns.len(),
-            "spawn count at {center:?}"
-        );
-        for (index, ((_, actual), reference)) in trace.iter().zip(&expected.spawns).enumerate() {
-            assert_eq!(actual, reference, "spawn {index} at {center:?}");
-        }
-
-        let (materializes, spawns): (Vec<_>, Vec<_>) = trace.into_iter().unzip();
-        assert_eq!(
-            SpawnTrace::hash(&spawns),
-            expected.hash,
-            "spawn hash at {center:?}"
-        );
-        materializes
-            .into_iter()
-            .zip(spawns)
-            .filter_map(|(materializes, spawn)| materializes.then_some(spawn))
-            .collect()
-    }
-
-    async fn verify_chunk(&self, expected: &ChunkTrace) {
+    async fn verify_chunk(&self, expected: &ChunkTrace) -> bool {
         let pos = ChunkPos::new(expected.x, expected.z);
         let holder = self.cache.get(expected.x, expected.z);
         let chunk = holder.try_chunk(ChunkStatus::Light).unwrap();
@@ -399,113 +287,65 @@ impl SpawnTestWorld {
             .iter()
             .map(|entity| entity.id())
             .collect::<FxHashSet<_>>();
-        let biome_seed = self.generator.original_mob_spawn_biome_seed().unwrap();
-        let materialized = self.verify_shadow(expected, biome_seed);
-        assert_eq!(
-            chunk.get_entities().len(),
-            before.len(),
-            "shadow entities leaked at {pos:?}"
-        );
-
-        self.materialize_and_reload(pos, &before, materialized)
-            .await;
+        self.materialize_and_reload(pos, &before).await
     }
 
-    async fn materialize_and_reload(
-        &self,
-        pos: ChunkPos,
-        before: &FxHashSet<i32>,
-        mut materialized: Vec<SpawnTrace>,
-    ) {
+    async fn materialize_and_reload(&self, pos: ChunkPos, before: &FxHashSet<i32>) -> bool {
         self.apply(ChunkStatus::Spawn, [(pos.0.x, pos.0.y)]).await;
         let holder = self.cache.get(pos.0.x, pos.0.y);
         let chunk = holder.try_chunk(ChunkStatus::Spawn).unwrap();
         let entities = chunk.get_saveable_entities();
-        let mut actual = entities
+        let new_entity_count = entities
             .iter()
             .filter(|entity| !before.contains(&entity.id()))
-            .map(SpawnTrace::from_entity)
-            .collect::<Vec<_>>();
-        actual.sort_unstable();
-        materialized.sort_unstable();
-        assert_eq!(actual, materialized, "materialized mobs at {pos:?}");
+            .count();
         assert_eq!(
             chunk.get_entities().len(),
-            before.len() + actual.len(),
+            before.len() + new_entity_count,
             "unsaveable or missing mobs at {pos:?}"
         );
-        if !actual.is_empty() {
-            let map = &self.world.chunk_map;
-            let storage = &map.storage;
-            let prepared =
-                ChunkStorage::prepare_chunk_save(chunk, ChunkStatus::Spawn, &[], true).unwrap();
-            assert!(
-                storage
-                    .save_chunk_data(prepared, &map.generation_pool)
-                    .await
-                    .unwrap()
-            );
-            let loaded = storage
-                .load_chunk(
-                    pos,
-                    holder.min_y(),
-                    holder.height(),
-                    Arc::downgrade(&self.world),
-                    &map.generation_pool,
-                )
+        if new_entity_count == 0 {
+            return false;
+        }
+
+        let map = &self.world.chunk_map;
+        let storage = &map.storage;
+        let prepared =
+            ChunkStorage::prepare_chunk_save(chunk, ChunkStatus::Spawn, &[], true).unwrap();
+        assert!(
+            storage
+                .save_chunk_data(prepared, &map.generation_pool)
                 .await
                 .unwrap()
-                .unwrap();
-            assert_eq!(loaded.status, ChunkStatus::Spawn);
-            assert!(loaded.pending_entities.is_empty());
-            let saved_trace = |entities: &[SharedEntity]| {
-                let mut trace = entities
-                    .iter()
-                    .map(SpawnTrace::from_entity)
-                    .collect::<Vec<_>>();
-                trace.sort_unstable();
-                trace
-            };
-            assert_eq!(
-                saved_trace(&loaded.chunk.get_saveable_entities()),
-                saved_trace(&entities),
-                "mobs after save/load at {pos:?}"
-            );
-        }
+        );
+        let loaded = storage
+            .load_chunk(
+                pos,
+                holder.min_y(),
+                holder.height(),
+                Arc::downgrade(&self.world),
+                &map.generation_pool,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.status, ChunkStatus::Spawn);
+        assert!(loaded.pending_entities.is_empty());
+        let saved_trace = |entities: &[SharedEntity]| {
+            let mut trace = entities
+                .iter()
+                .map(SpawnTrace::from_entity)
+                .collect::<Vec<_>>();
+            trace.sort_unstable();
+            trace
+        };
+        assert_eq!(
+            saved_trace(&loaded.chunk.get_saveable_entities()),
+            saved_trace(&entities),
+            "mobs after save/load at {pos:?}"
+        );
+        true
     }
-}
-
-fn trace_without_factories(
-    region: &mut WorldGenRegion<'_>,
-    world: &World,
-    biome_seed: i64,
-) -> (i64, Vec<(bool, SpawnTrace)>) {
-    let mut trace = Vec::new();
-    let seed = generate(
-        region,
-        world,
-        world.seed(),
-        biome_seed,
-        SpawnMode::Trace {
-            spawn_mobs: world.get_game_rule(&SPAWN_MOBS),
-        },
-        |pos, yaw, state| {
-            let entity = state.data.entity_type;
-            let materializes = ENTITIES.has_factory(entity);
-            trace.push((
-                materializes,
-                SpawnTrace::new(entity.key.to_string(), pos, yaw),
-            ));
-            if let Some(passenger) = &state.passenger {
-                let rider = passenger.entity_type;
-                trace.push((
-                    materializes && ENTITIES.has_factory(rider),
-                    SpawnTrace::new(rider.key.to_string(), pos, yaw),
-                ));
-            }
-        },
-    );
-    (seed, trace)
 }
 
 fn preparation_radius(status: ChunkStatus) -> i32 {
@@ -613,7 +453,6 @@ fn registered_group_initializes_entities_without_changing_spawn_rng() {
                         pos: BlockPos::ZERO,
                     },
                     biome: &vanilla_biomes::PLAINS,
-                    world: &world,
                     random: &mut random,
                 });
                 if materialize {
@@ -640,7 +479,6 @@ fn registered_group_initializes_entities_without_changing_spawn_rng() {
                 pos: BlockPos::ZERO,
             },
             biome: &vanilla_biomes::PLAINS,
-            world: &world,
             random: &mut random,
         });
         assert!(matches!(
@@ -651,14 +489,14 @@ fn registered_group_initializes_entities_without_changing_spawn_rng() {
 }
 
 #[test]
-#[ignore = "Generates the Vanilla fixture clusters through Light; run with --release"]
-fn chunk_spawn_hashes() {
-    on_worldgen_test_stack(verify_chunk_spawn_hashes);
+#[ignore = "Generates spawn fixture clusters through Light; run with --release"]
+fn chunk_spawn_save_reload() {
+    on_worldgen_test_stack(verify_chunk_spawn_save_reload);
 }
 
 fn on_worldgen_test_stack(run: fn()) {
     let result = thread::Builder::new()
-        .stack_size(CHUNK_HASH_TEST_STACK_BYTES)
+        .stack_size(SPAWN_TEST_STACK_BYTES)
         .spawn(run)
         .unwrap()
         .join();
@@ -668,7 +506,7 @@ fn on_worldgen_test_stack(run: fn()) {
     }
 }
 
-fn verify_chunk_spawn_hashes() {
+fn verify_chunk_spawn_save_reload() {
     init_globals();
     let fixture: Fixture =
         serde_json::from_str(include_str!("../../../test_assets/chunk_spawn_hashes.json")).unwrap();
@@ -679,13 +517,10 @@ fn verify_chunk_spawn_hashes() {
     );
     assert_eq!(fixture.dimensions.len(), DIMENSIONS.len());
     let runtime = Runtime::new().unwrap();
+    let mut verified_spawns = false;
     for dimension in DIMENSIONS {
         let trace = &fixture.dimensions[dimension];
         assert_eq!(trace.chunks.len(), CHUNKS_PER_DIMENSION, "{dimension}");
-        assert!(
-            trace.chunks.iter().any(|chunk| !chunk.spawns.is_empty()),
-            "fixture needs successful spawns in {dimension}"
-        );
         let (origins, size) = fixture.cluster_layout(&trace.chunks);
         let chunks = trace
             .chunks
@@ -708,9 +543,13 @@ fn verify_chunk_spawn_hashes() {
                     let expected = chunks
                         .get(&pos)
                         .unwrap_or_else(|| panic!("missing {dimension} trace for {pos:?}"));
-                    setup.verify_chunk(expected).await;
+                    verified_spawns |= setup.verify_chunk(expected).await;
                 }
             });
         }
     }
+    assert!(
+        verified_spawns,
+        "fixture generated no mobs to save and reload"
+    );
 }

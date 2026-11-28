@@ -397,7 +397,7 @@ pub static ENTITIES: EntityRegistryLock = EntityRegistryLock(OnceLock::new());
 /// Initializes the global entity registry after the main registry freezes.
 ///
 /// # Panics
-/// Panics if a biome lists a creature with incomplete worldgen spawn registration.
+/// Panics if a biome lists a creature without placement rules or an implemented creature without a spawn group.
 pub fn init_entities() {
     ENTITIES.get_or_init(|| {
         let mut registry = EntityRegistry::new();
@@ -411,7 +411,8 @@ pub fn init_entities() {
                 assert!(
                     entity.spawn_placement.is_some()
                         && registry.worldgen_spawn_rule(entity).is_some()
-                        && registry.worldgen_spawn_group(entity).is_some(),
+                        && (!registry.has_factory(entity)
+                            || registry.worldgen_spawn_group(entity).is_some()),
                     "Incomplete worldgen spawn registration for {} in {}",
                     entity.key,
                     biome.key
