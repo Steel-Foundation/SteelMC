@@ -324,8 +324,8 @@ impl World {
             );
         }
 
-        if REGISTRY.poi_types.type_id_for_state(old_state)
-            != REGISTRY.poi_types.type_id_for_state(new_state)
+        if REGISTRY.poi_types.type_for_state(old_state)
+            != REGISTRY.poi_types.type_for_state(new_state)
         {
             self.poi_storage
                 .lock()

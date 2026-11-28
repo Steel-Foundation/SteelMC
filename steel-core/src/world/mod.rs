@@ -19,7 +19,7 @@ use crate::chunk::light::{
 };
 use crate::chunk::status::ChunkStatus;
 use crate::entity::damage::DamageHistory;
-use crate::poi::OccupationStatus;
+use crate::poi::{OccupationStatus, poi_storage::distance_sq};
 use crate::portal::WorldChangeRequest;
 use crate::world::game_event::{
     GameEventContext, GameEventDispatcher, GameEventListenerCount, GameEventListenerStorage,
@@ -63,7 +63,9 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::{
     BLOCK_DROPS, GLOBAL_SOUND_EVENTS, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY, RANDOM_TICK_SPEED,
 };
-use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, dimension_type::DimensionTypeRef};
+use steel_registry::{
+    REGISTRY, RegistryEntry, RegistryExt, dimension_type::DimensionTypeRef, poi::PoiTypeRef,
+};
 use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_types};
 use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
@@ -72,7 +74,7 @@ use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_game_events, vani
 use steel_utils::block_util::FoundRectangle;
 use steel_utils::{
     Downcast as _,
-    locks::{SyncMutex, SyncRwLock},
+    locks::{AsyncMutex, SyncMutex, SyncRwLock},
     random::{Random as _, RandomSource, legacy_random::LegacyRandom},
 };
 use steel_worldgen::{biomes::obfuscate_biome_seed, noise::PerlinSimplexNoise};
@@ -103,7 +105,7 @@ use crate::{
         GameTime, GameTimeSource, LevelDataManager, RespawnData, WorldGenerationSettings,
     },
     player::{Player, connection::NetworkConnection},
-    poi::PointOfInterestStorage,
+    poi::{PoiStorage, PointOfInterestStorage},
 };
 
 mod block_entity_ticker;
@@ -321,11 +323,39 @@ pub struct World {
         SyncMutex<Option<Arc<tick_scheduler::ScheduledTickRunBatch<FluidRef>>>>,
     /// Point of interest storage for efficient spatial queries of special blocks.
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
+    /// Persistent POI columns, stored independently from chunks.
+    pub poi_store: PoiStorage,
+    /// Serializes POI column writes so the newest snapshot always wins.
+    poi_save_lock: AsyncMutex<()>,
     /// World-change requests queued by world-local ticks for server safe-point processing.
     pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
     /// Live multipart sub-entities by session ID (vanilla `ServerLevel.dragonParts`), kept
     /// out of the entity manager.
     entity_parts: SyncMutex<FxHashMap<i32, Arc<dyn PartEntity>>>,
+}
+
+fn create_world_storage(config: &WorldConfig) -> io::Result<(Arc<ChunkStorage>, PoiStorage)> {
+    let storage = match &config.storage {
+        WorldStorageConfig::Disk { path } => {
+            Arc::new(ChunkStorage::Disk(RegionManager::new(path.clone())))
+        }
+        WorldStorageConfig::RamOnly => {
+            Arc::new(ChunkStorage::RamOnly(RamOnlyStorage::empty_world()))
+        }
+    };
+    let poi_store = match &config.storage {
+        WorldStorageConfig::Disk { .. } => {
+            let Some(level_data_path) = config.level_data_path.as_deref() else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "disk-backed worlds require a level data directory for POI storage",
+                ));
+            };
+            PoiStorage::disk(Path::new(level_data_path).join("poi"))
+        }
+        WorldStorageConfig::RamOnly => PoiStorage::ram_only(),
+    };
+    Ok((storage, poi_store))
 }
 
 impl World {
@@ -378,14 +408,7 @@ impl World {
         let sea_level = config.sea_level;
         let default_gamemode = config.default_gamemode;
         // Create storage backend based on config
-        let storage: Arc<ChunkStorage> = match &config.storage {
-            WorldStorageConfig::Disk { path } => {
-                Arc::new(ChunkStorage::Disk(RegionManager::new(path.clone())))
-            }
-            WorldStorageConfig::RamOnly => {
-                Arc::new(ChunkStorage::RamOnly(RamOnlyStorage::empty_world()))
-            }
-        };
+        let (storage, poi_store) = create_world_storage(&config)?;
 
         // Create or skip level data based on config
 
@@ -479,6 +502,8 @@ impl World {
                 scheduled_block_ticks_this_tick: SyncMutex::new(None),
                 scheduled_fluid_ticks_this_tick: SyncMutex::new(None),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
+                poi_store,
+                poi_save_lock: AsyncMutex::new(()),
                 pending_world_changes: SyncMutex::new(Vec::new()),
                 entity_parts: SyncMutex::new(FxHashMap::default()),
             }
@@ -510,6 +535,14 @@ impl World {
         match self.save_all_chunks().await {
             Ok(count) => *total_saved += count,
             Err(e) => log::error!("Failed to save world chunks: {e}"),
+        }
+
+        match self.save_all_poi_columns().await {
+            Ok(count) => log::info!("World {} saved {count} POI columns", self.key),
+            Err(e) => log::error!("Failed to save world POI columns: {e}"),
+        }
+        if let Err(e) = self.poi_store.close_all().await {
+            log::error!("Failed to close world POI storage: {e}");
         }
     }
 
@@ -715,6 +748,130 @@ impl World {
     /// Returns the number of chunks saved.
     pub async fn save_all_chunks(&self) -> io::Result<usize> {
         self.chunk_map.save_all_chunks().await
+    }
+
+    /// Loads a POI column unless it is resident or known to be absent on disk.
+    pub async fn load_poi_column(&self, pos: ChunkPos) -> io::Result<()> {
+        {
+            let storage = self.poi_storage.lock();
+            if storage.is_column_loaded(pos) || storage.is_store_missing(pos) {
+                return Ok(());
+            }
+        }
+
+        let column = self.poi_store.load_column(pos).await?;
+        let mut storage = self.poi_storage.lock();
+        if storage.is_column_loaded(pos) {
+            return Ok(());
+        }
+        match column {
+            Some(column) => storage.insert_loaded_column(pos, &column, false),
+            None => storage.mark_store_missing(pos),
+        }
+        Ok(())
+    }
+
+    /// Persists a dirty POI column when its chunk unloads.
+    ///
+    /// The column stays resident so a quick reload cannot observe stale disk
+    /// data before this save finishes.
+    pub(crate) fn flush_poi_column(self: &Arc<Self>, pos: ChunkPos) {
+        let world = Arc::clone(self);
+        self.chunk_map.task_tracker.spawn_on(
+            async move {
+                let _guard = world.poi_save_lock.lock().await;
+                let Some(column) = world.poi_storage.lock().dirty_column_snapshot(pos) else {
+                    return;
+                };
+                if let Err(error) = world.poi_store.save_column(pos, &column).await {
+                    tracing::error!(
+                        chunk = ?pos,
+                        "Failed to save POI column on unload: {error}"
+                    );
+                    world.poi_storage.lock().mark_column_dirty(pos);
+                }
+            },
+            self.chunk_map.chunk_runtime.handle(),
+        );
+    }
+
+    /// Persists every dirty POI column. Returns the number of columns saved.
+    pub async fn save_all_poi_columns(&self) -> io::Result<usize> {
+        let _guard = self.poi_save_lock.lock().await;
+        let snapshots = self.poi_storage.lock().take_dirty_snapshots();
+        let mut saved = 0;
+        for (pos, column) in snapshots {
+            match self.poi_store.save_column(pos, &column).await {
+                Ok(()) => saved += 1,
+                Err(error) => {
+                    tracing::error!(chunk = ?pos, "Failed to save POI column: {error}");
+                    self.poi_storage.lock().mark_column_dirty(pos);
+                }
+            }
+        }
+        Ok(saved)
+    }
+
+    /// Finds the closest matching POI within `radius` blocks of `center`.
+    ///
+    /// Columns are loaded from disk without loading their chunks and stay
+    /// resident afterwards, matching vanilla's `getOrLoad` behavior.
+    pub async fn find_closest_poi(
+        &self,
+        type_predicate: impl Fn(PoiTypeRef) -> bool + Send + Sync,
+        center: BlockPos,
+        radius: i32,
+        status: OccupationStatus,
+    ) -> io::Result<Option<(BlockPos, PoiTypeRef)>> {
+        let center_chunk = ChunkPos::from_block_pos(center);
+        let chunk_radius = radius.div_euclid(16) + 1;
+        let radius_sq = i64::from(radius) * i64::from(radius);
+        let mut best = None;
+
+        for cx in center_chunk.0.x - chunk_radius..=center_chunk.0.x + chunk_radius {
+            for cz in center_chunk.0.y - chunk_radius..=center_chunk.0.y + chunk_radius {
+                let chunk_pos = ChunkPos::new(cx, cz);
+                self.load_poi_column(chunk_pos).await?;
+                let pois = self
+                    .poi_storage
+                    .lock()
+                    .get_in_chunk(&type_predicate, cx, cz, status);
+                for (pos, poi_type) in pois {
+                    Self::update_closest_poi(&mut best, center, radius, radius_sq, pos, poi_type);
+                }
+            }
+        }
+
+        Ok(best.map(|(pos, poi_type, _)| (pos, poi_type)))
+    }
+
+    fn update_closest_poi(
+        best: &mut Option<(BlockPos, PoiTypeRef, i64)>,
+        center: BlockPos,
+        radius: i32,
+        radius_sq: i64,
+        pos: BlockPos,
+        poi_type: PoiTypeRef,
+    ) {
+        if pos.0.x.abs_diff(center.0.x) > radius.unsigned_abs()
+            || pos.0.z.abs_diff(center.0.z) > radius.unsigned_abs()
+        {
+            return;
+        }
+        let distance = distance_sq(pos, center);
+        if distance > radius_sq {
+            return;
+        }
+        // Vanilla keeps the first equal-distance record, but hash-map order
+        // differs from Java, so prefer the lowest position for stable results.
+        let candidate = (distance, pos.0.x, pos.0.y, pos.0.z);
+        let replace = best.as_ref().is_none_or(|(best_pos, _, best_distance)| {
+            let best_candidate = (*best_distance, best_pos.0.x, best_pos.0.y, best_pos.0.z);
+            candidate < best_candidate
+        });
+        if replace {
+            *best = Some((pos, poi_type, distance));
+        }
     }
 }
 

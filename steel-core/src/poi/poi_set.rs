@@ -1,18 +1,18 @@
-//! POI set for a single chunk section.
+//! POIs inside one 16×16×16 chunk section.
 
 use rustc_hash::{FxHashMap, FxHashSet};
+use steel_registry::poi::PoiTypeRef;
 use steel_utils::PackedSectionBlockPos;
 
 use super::poi_instance::PointOfInterest;
 use super::poi_storage::OccupationStatus;
 
-/// Stores all POIs within a single chunk section (16x16x16).
+/// POIs in a section, indexed by position and by type.
 ///
-/// Uses a section-relative packed block position as the key, with a secondary
-/// index by POI type for type-filtered queries.
+/// Keeping a type index lets filtered queries skip sections with no matching type.
 pub struct PointOfInterestSet {
     pois_by_pos: FxHashMap<PackedSectionBlockPos, PointOfInterest>,
-    pois_by_type: FxHashMap<usize, FxHashSet<PackedSectionBlockPos>>,
+    pois_by_type: FxHashMap<PoiTypeRef, FxHashSet<PackedSectionBlockPos>>,
     dirty: bool,
 }
 
@@ -23,7 +23,7 @@ impl Default for PointOfInterestSet {
 }
 
 impl PointOfInterestSet {
-    /// Creates an empty POI set.
+    /// Creates an empty section.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -33,7 +33,7 @@ impl PointOfInterestSet {
         }
     }
 
-    /// Returns a reference to the inserted POI, or `None` if one already exists at that position.
+    /// Inserts a POI. Returns the stored entry, or `None` if the slot was taken.
     pub fn add(
         &mut self,
         packed_pos: PackedSectionBlockPos,
@@ -43,10 +43,10 @@ impl PointOfInterestSet {
             return None;
         }
 
-        let type_id = poi.poi_type_id;
+        let poi_type = poi.poi_type;
         self.pois_by_pos.insert(packed_pos, poi);
         self.pois_by_type
-            .entry(type_id)
+            .entry(poi_type)
             .or_default()
             .insert(packed_pos);
         self.dirty = true;
@@ -54,89 +54,84 @@ impl PointOfInterestSet {
         self.pois_by_pos.get(&packed_pos)
     }
 
-    /// Removes and returns the POI at the given packed position, if present.
+    /// Removes the POI at `packed_pos`, if there is one.
     pub fn remove(&mut self, packed_pos: PackedSectionBlockPos) -> Option<PointOfInterest> {
         let poi = self.pois_by_pos.remove(&packed_pos)?;
-        if let Some(positions) = self.pois_by_type.get_mut(&poi.poi_type_id) {
+        if let Some(positions) = self.pois_by_type.get_mut(&poi.poi_type) {
             positions.remove(&packed_pos);
             if positions.is_empty() {
-                self.pois_by_type.remove(&poi.poi_type_id);
+                self.pois_by_type.remove(&poi.poi_type);
             }
         }
         self.dirty = true;
         Some(poi)
     }
 
-    /// Returns a reference to the POI at the given packed position.
+    /// The POI at `packed_pos`, if present.
     #[must_use]
     pub fn get(&self, packed_pos: PackedSectionBlockPos) -> Option<&PointOfInterest> {
         self.pois_by_pos.get(&packed_pos)
     }
 
-    /// Returns a mutable reference to the POI at the given packed position.
+    /// Mutable access to the POI at `packed_pos`, if present.
     pub fn get_mut(&mut self, packed_pos: PackedSectionBlockPos) -> Option<&mut PointOfInterest> {
         self.pois_by_pos.get_mut(&packed_pos)
     }
 
-    /// Returns all POIs of the given type matching the occupation status.
+    /// POIs of `poi_type` whose ticket state matches `status`.
     #[must_use]
     pub fn get_by_type(
         &self,
-        type_id: usize,
+        poi_type: PoiTypeRef,
         status: OccupationStatus,
-        max_tickets: u32,
     ) -> Vec<&PointOfInterest> {
-        let Some(positions) = self.pois_by_type.get(&type_id) else {
+        let Some(positions) = self.pois_by_type.get(&poi_type) else {
             return Vec::new();
         };
 
         positions
             .iter()
             .filter_map(|pos| self.pois_by_pos.get(pos))
-            .filter(|poi| status.matches(poi, max_tickets))
+            .filter(|poi| status.matches(poi))
             .collect()
     }
 
-    /// Returns all POIs matching the type predicate and occupation status.
+    /// POIs passing both the type predicate and the ticket filter.
     pub fn get_matching(
         &self,
-        type_predicate: &impl Fn(usize) -> bool,
+        type_predicate: &impl Fn(PoiTypeRef) -> bool,
         status: OccupationStatus,
-        max_tickets_fn: &impl Fn(usize) -> u32,
     ) -> Vec<&PointOfInterest> {
         self.pois_by_pos
             .values()
-            .filter(|poi| {
-                type_predicate(poi.poi_type_id)
-                    && status.matches(poi, max_tickets_fn(poi.poi_type_id))
-            })
+            .filter(|poi| type_predicate(poi.poi_type) && status.matches(poi))
             .collect()
     }
 
-    /// Returns `true` if any POIs have been added or removed since last cleared.
+    /// Whether this section has had POIs added or removed since the flag was cleared.
     #[must_use]
     pub const fn is_dirty(&self) -> bool {
         self.dirty
     }
 
-    /// Clears the dirty flag.
+    /// Marks this section as clean.
     pub const fn clear_dirty(&mut self) {
         self.dirty = false;
     }
 
-    /// Returns `true` if this set contains no POIs.
+    /// Whether the section holds no POIs.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.pois_by_pos.is_empty()
     }
 
-    /// Returns the number of POIs in this set.
+    /// Number of POIs in the section.
     #[must_use]
     pub fn len(&self) -> usize {
         self.pois_by_pos.len()
     }
 
-    /// Iterates over all POIs in this set as `(packed_pos, poi)` pairs.
+    /// Walks the section as `(packed position, POI)` pairs.
     pub fn iter(&self) -> impl Iterator<Item = (PackedSectionBlockPos, &PointOfInterest)> {
         self.pois_by_pos.iter().map(|(&pos, poi)| (pos, poi))
     }
@@ -145,6 +140,7 @@ impl PointOfInterestSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use steel_registry::{init_vanilla_registry, vanilla_poi_types};
     use steel_utils::BlockPos;
 
     fn packed(x: u8, y: u8, z: u8) -> PackedSectionBlockPos {
@@ -168,9 +164,10 @@ mod tests {
 
     #[test]
     fn test_add_remove_poi() {
+        init_vanilla_registry();
         let mut set = PointOfInterestSet::new();
         let packed = packed(5, 10, 3);
-        let poi = PointOfInterest::new(BlockPos::new(5, 10, 3), 0, 1);
+        let poi = PointOfInterest::new(BlockPos::new(5, 10, 3), &vanilla_poi_types::HOME);
 
         assert!(set.add(packed, poi.clone()).is_some());
         assert!(set.add(packed, poi).is_none());
@@ -185,23 +182,26 @@ mod tests {
 
     #[test]
     fn test_get_by_type_and_occupation() {
+        init_vanilla_registry();
+        let home = &vanilla_poi_types::HOME;
+        let meeting = &vanilla_poi_types::MEETING;
         let mut set = PointOfInterestSet::new();
 
         let p1 = packed(0, 0, 0);
-        set.add(p1, PointOfInterest::new(BlockPos::new(0, 0, 0), 0, 1));
+        set.add(p1, PointOfInterest::new(BlockPos::new(0, 0, 0), home));
 
         let p2 = packed(1, 0, 0);
-        set.add(p2, PointOfInterest::new(BlockPos::new(1, 0, 0), 0, 1));
+        set.add(p2, PointOfInterest::new(BlockPos::new(1, 0, 0), home));
 
         let p3 = packed(2, 0, 0);
-        set.add(p3, PointOfInterest::new(BlockPos::new(2, 0, 0), 1, 1));
+        set.add(p3, PointOfInterest::new(BlockPos::new(2, 0, 0), meeting));
 
-        assert_eq!(set.get_by_type(0, OccupationStatus::Any, 1).len(), 2);
-        assert_eq!(set.get_by_type(1, OccupationStatus::Any, 1).len(), 1);
-        assert_eq!(set.get_by_type(0, OccupationStatus::Free, 1).len(), 2);
+        assert_eq!(set.get_by_type(home, OccupationStatus::Any).len(), 2);
+        assert_eq!(set.get_by_type(meeting, OccupationStatus::Any).len(), 1);
+        assert_eq!(set.get_by_type(home, OccupationStatus::Free).len(), 2);
 
         set.get_mut(p1).expect("p1 was just added").reserve_ticket();
-        assert_eq!(set.get_by_type(0, OccupationStatus::Free, 1).len(), 1);
-        assert_eq!(set.get_by_type(0, OccupationStatus::Occupied, 1).len(), 1);
+        assert_eq!(set.get_by_type(home, OccupationStatus::Free).len(), 1);
+        assert_eq!(set.get_by_type(home, OccupationStatus::Occupied).len(), 1);
     }
 }

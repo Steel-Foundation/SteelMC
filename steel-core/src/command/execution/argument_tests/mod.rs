@@ -5,7 +5,7 @@ use crate::command::{
     },
     execution::{
         BiomeOrTag, BlockPredicate, CommandArgumentSource, CommandPermissionSource,
-        CommandResultCallback, Coordinates, ExecutionCommandSource, GameProfileArgument,
+        CommandResultCallback, Coordinates, ExecutionCommandSource, GameProfileArgument, PoiOrTag,
         ScoreHolderArgument, SteelArgumentType, SteelCommandRuntime, StructureOrTagKey,
         WorldArgument, argument,
         coordinates::{LocalCoordinates, WorldCoordinate, WorldCoordinates},
@@ -26,7 +26,7 @@ use steel_registry::{
     init_vanilla_registry,
     item_stack::ItemStack,
     vanilla_attributes, vanilla_biomes, vanilla_blocks, vanilla_damage_types, vanilla_enchantments,
-    vanilla_entities, vanilla_items, vanilla_world_clocks,
+    vanilla_entities, vanilla_items, vanilla_poi_types, vanilla_world_clocks,
     world_clock::WorldClockRef,
 };
 use steel_utils::codec::VarInt;

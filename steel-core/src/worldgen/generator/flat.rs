@@ -5,7 +5,8 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_registry::{REGISTRY, RegistryExt, vanilla_biomes};
 use steel_utils::random::RandomSource;
-use steel_utils::{BlockStateId, ChunkPos, Identifier};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
+use steel_worldgen::biomes::BiomeSourceKind;
 
 use crate::chunk::Chunk;
 use crate::worldgen::generator::{
@@ -221,6 +222,25 @@ impl ChunkGenerator for FlatChunkGenerator {
 
     fn noise_biome(&self, _quart_x: i32, _quart_y: i32, _quart_z: i32) -> BiomeRef {
         &vanilla_biomes::PLAINS
+    }
+
+    fn find_closest_biome_3d(
+        &self,
+        origin: BlockPos,
+        search_radius: i32,
+        sample_resolution_horizontal: i32,
+        sample_resolution_vertical: i32,
+        allowed: &dyn Fn(BiomeRef) -> bool,
+    ) -> Option<(BlockPos, BiomeRef)> {
+        BiomeSourceKind::fixed(&vanilla_biomes::PLAINS).find_closest_biome_3d(
+            origin,
+            search_radius,
+            sample_resolution_horizontal,
+            sample_resolution_vertical,
+            Self::MIN_Y,
+            Self::MIN_Y + Self::HEIGHT - 1,
+            allowed,
+        )
     }
 
     fn spawn_height(&self, min_y: i32, height: i32) -> i32 {

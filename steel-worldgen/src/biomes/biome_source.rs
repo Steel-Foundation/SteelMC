@@ -20,9 +20,10 @@
 use rustc_hash::FxHashSet;
 use steel_registry::biome::BiomeRef;
 use steel_registry::vanilla_biomes;
-use steel_utils::Identifier;
+use steel_utils::mth::out_from_origin;
 use steel_utils::random::Random as _;
 use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::{BlockPos, Direction, Identifier};
 use steel_worldgen::density_functions::nether::NetherColumnCache;
 use steel_worldgen::density_functions::overworld::OverworldColumnCache;
 use steel_worldgen::multi_noise::{
@@ -170,6 +171,64 @@ impl BiomeSourceKind {
             }
         }
         result
+    }
+
+    /// Scans outward in a horizontal square spiral, sampling vertically from the
+    /// origin, and returns the first matching sample. Y bounds are inclusive.
+    #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors vanilla's findClosestBiome3d parameter list"
+    )]
+    pub fn find_closest_biome_3d(
+        &self,
+        origin: BlockPos,
+        search_radius: i32,
+        sample_resolution_horizontal: i32,
+        sample_resolution_vertical: i32,
+        level_min_y: i32,
+        level_max_y: i32,
+        allowed: &(impl Fn(BiomeRef) -> bool + ?Sized),
+    ) -> Option<(BlockPos, BiomeRef)> {
+        let candidate_biomes: FxHashSet<Identifier> = self
+            .possible_biome_refs()
+            .into_iter()
+            .filter(|biome| allowed(biome))
+            .map(|biome| biome.key.clone())
+            .collect();
+        if candidate_biomes.is_empty() {
+            return None;
+        }
+
+        let sample_radius = search_radius.div_euclid(sample_resolution_horizontal);
+        let sample_ys = out_from_origin(
+            origin.y(),
+            level_min_y + 1,
+            level_max_y + 1,
+            sample_resolution_vertical,
+        );
+        let mut sampler = self.chunk_sampler();
+
+        for sample_column in BlockPos::spiral_around(
+            BlockPos::ZERO,
+            sample_radius,
+            Direction::East,
+            Direction::South,
+        ) {
+            let block_x = origin.x() + sample_column.x() * sample_resolution_horizontal;
+            let block_z = origin.z() + sample_column.z() * sample_resolution_horizontal;
+            let noise_x = block_x >> 2;
+            let noise_z = block_z >> 2;
+
+            for &block_y in &sample_ys {
+                let biome = sampler.sample(noise_x, block_y >> 2, noise_z);
+                if candidate_biomes.contains(&biome.key) {
+                    return Some((BlockPos::new(block_x, block_y, block_z), biome));
+                }
+            }
+        }
+
+        None
     }
 }
 

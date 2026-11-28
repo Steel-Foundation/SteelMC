@@ -5,8 +5,9 @@ use crate::worldgen::generator::{
 use crate::worldgen::region::WorldGenRegion;
 use glam::IVec3;
 use steel_registry::{biome::BiomeRef, vanilla_biomes};
-use steel_utils::ChunkPos;
 use steel_utils::random::RandomSource;
+use steel_utils::{BlockPos, ChunkPos};
+use steel_worldgen::biomes::BiomeSourceKind;
 use steel_worldgen::noise::Beardifier;
 
 /// A chunk generator that generates an empty world.
@@ -35,6 +36,25 @@ impl ChunkGenerator for EmptyChunkGenerator {
 
     fn noise_biome(&self, _quart_x: i32, _quart_y: i32, _quart_z: i32) -> BiomeRef {
         &vanilla_biomes::PLAINS
+    }
+
+    fn find_closest_biome_3d(
+        &self,
+        origin: BlockPos,
+        search_radius: i32,
+        sample_resolution_horizontal: i32,
+        sample_resolution_vertical: i32,
+        allowed: &dyn Fn(BiomeRef) -> bool,
+    ) -> Option<(BlockPos, BiomeRef)> {
+        BiomeSourceKind::fixed(&vanilla_biomes::PLAINS).find_closest_biome_3d(
+            origin,
+            search_radius,
+            sample_resolution_horizontal,
+            sample_resolution_vertical,
+            Self::MIN_Y,
+            Self::MIN_Y + Self::HEIGHT - 1,
+            allowed,
+        )
     }
 
     fn create_structures(&self, _chunk: &Chunk) {}

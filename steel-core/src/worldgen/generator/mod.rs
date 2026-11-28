@@ -44,6 +44,16 @@ pub trait ChunkGenerator: Send + Sync {
     /// Returns the generator biome at one quart position without requiring a loaded chunk.
     fn noise_biome(&self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef;
 
+    /// Returns the closest matching biome using vanilla's 3D outward sample search.
+    fn find_closest_biome_3d(
+        &self,
+        origin: BlockPos,
+        search_radius: i32,
+        sample_resolution_horizontal: i32,
+        sample_resolution_vertical: i32,
+        allowed: &dyn Fn(BiomeRef) -> bool,
+    ) -> Option<(BlockPos, BiomeRef)>;
+
     /// Returns the climate-selected origin used by vanilla before searching for a safe spawn chunk.
     fn initial_spawn_search_origin(&self) -> BlockPos {
         BlockPos::new(0, 0, 0)

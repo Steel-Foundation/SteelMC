@@ -9,6 +9,7 @@ mod item_predicate;
 mod message;
 mod nbt;
 mod permission;
+mod poi;
 mod profile;
 mod queue;
 mod runtime;
@@ -28,6 +29,7 @@ pub(crate) use block::{BlockInput, BlockPredicate, placement_flags};
 pub(crate) use coordinates::Coordinates;
 pub(crate) use item_predicate::ItemPredicate;
 pub(crate) use permission::PermissionGroupName;
+pub(crate) use poi::PoiOrTag;
 pub(crate) use profile::GameProfileArgument;
 pub use queue::CommandSuspensionOrder;
 pub(crate) use queue::{

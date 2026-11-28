@@ -369,11 +369,11 @@ use super::{
     PersistentLightData, PersistentLightSection, PersistentMineshaftPieceData,
     PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
     PersistentOceanMonumentChildPiece, PersistentOceanMonumentChildPieceKind,
-    PersistentOceanMonumentPieceData, PersistentOceanMonumentRoomData, PersistentPoi,
-    PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
-    PersistentSection, PersistentStrongholdPieceData, PersistentStrongholdSmallDoorType,
-    PersistentStructurePiece, PersistentStructurePiecePayload, PersistentStructureReference,
-    PersistentStructureStart, PersistentSwampHutPieceData, PersistentTemplatePieceData,
+    PersistentOceanMonumentPieceData, PersistentOceanMonumentRoomData, PersistentPoolElement,
+    PersistentProceduralPieceData, PersistentProcessorList, PersistentSection,
+    PersistentStrongholdPieceData, PersistentStrongholdSmallDoorType, PersistentStructurePiece,
+    PersistentStructurePiecePayload, PersistentStructureReference, PersistentStructureStart,
+    PersistentSwampHutPieceData, PersistentTemplatePieceData,
     PersistentTemplatePlacementAdjustment, PersistentTemplateProcessorList, PersistentTick,
     PreparedChunkSave,
 };
@@ -549,10 +549,6 @@ impl ChunkStorage {
     /// Panics if `status` is Full but the chunk has no Full runtime state.
     #[must_use]
     #[expect(
-        clippy::similar_names,
-        reason = "`pois` vs `pos` are semantically distinct"
-    )]
-    #[expect(
         clippy::too_many_lines,
         reason = "chunk save preparation keeps related serialization setup in one pass"
     )]
@@ -668,9 +664,6 @@ impl ChunkStorage {
         let structure_references =
             Self::structure_references_to_persistent(&chunk.structure_references());
 
-        // Collect POI occupancy data from world storage
-        let pois = full.map_or_default(|full| Self::pois_to_persistent(full, pos));
-
         let postprocessing = if let Some(full) = full {
             full.postprocessing_for_serialization()
         } else {
@@ -690,7 +683,6 @@ impl ChunkStorage {
             postprocessing,
             structure_starts,
             structure_references,
-            pois,
             pos,
         );
 
@@ -730,8 +722,7 @@ impl ChunkStorage {
     /// Converts chunk data to persistent format.
     #[expect(
         clippy::too_many_arguments,
-        clippy::similar_names,
-        reason = "chunk serialization requires all fields; `block_ticks`/`fluid_ticks` are distinct"
+        reason = "chunk serialization requires all fields"
     )]
     fn to_persistent(
         sections: &Sections,
@@ -746,7 +737,6 @@ impl ChunkStorage {
         postprocessing: Vec<Vec<u16>>,
         structure_starts: Vec<PersistentStructureStart>,
         structure_references: Vec<PersistentStructureReference>,
-        pois: Vec<PersistentPoi>,
         chunk_pos: ChunkPos,
     ) -> PersistentChunk<'static> {
         let mut builder = ChunkBuilder::new(&REGISTRY);
@@ -808,7 +798,6 @@ impl ChunkStorage {
             postprocessing,
             structure_starts,
             structure_references,
-            pois,
         }
     }
 }
