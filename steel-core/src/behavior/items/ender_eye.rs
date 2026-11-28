@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::entity::Entity;
 use crate::worldgen::generator::ChunkGenerator;
 use steel_macros::item_behavior;
+use steel_math::lerp;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
@@ -167,7 +168,7 @@ impl ItemBehavior for EnderEyeItem {
             &GameEventContext::new(Some(context.player.as_ref()), None),
         );
 
-        let pitch = 0.4 / rand::random_range(0.8..1.2);
+        let pitch = lerp(rand::random::<f32>(), 0.33, 0.5);
         world.play_sound_at(
             &sound_events::ENTITY_ENDER_EYE_LAUNCH,
             SoundSource::Neutral,
