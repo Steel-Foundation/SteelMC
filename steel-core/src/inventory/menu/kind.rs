@@ -58,6 +58,10 @@ pub trait MenuKind: ErasedType + Send + Sync {
         false
     }
 
+    /// Starts the backing container's opener lifecycle before the screen packet is sent.
+    /// Called without inventory locks after the menu is accepted.
+    fn start_open(&mut self, _player: &Player) {}
+
     /// Runs after initial contents are built but before they're sent, so
     /// anything populated here appears in the first render.
     fn on_open(

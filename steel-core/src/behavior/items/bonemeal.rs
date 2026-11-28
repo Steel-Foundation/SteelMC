@@ -124,7 +124,7 @@ impl ItemBehavior for BoneMealItem {
                 15,
                 None,
             );
-            return InteractionResult::Success;
+            return InteractionResult::SuccessServer;
         }
         let state = context.world.get_block_state(context.hit_result.block_pos);
         let is_clicked_face_sturdy = context.world.is_face_sturdy(
