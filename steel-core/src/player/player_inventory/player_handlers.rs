@@ -649,6 +649,8 @@ impl Player {
             break;
         }
 
+        menu.kind_mut().start_open(self);
+
         self.send_packet(COpenScreen {
             container_id: i32::from(menu.container_id()),
             menu_type: menu
