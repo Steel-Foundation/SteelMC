@@ -3492,7 +3492,7 @@ pub trait LivingEntity: Entity {
         let collision = WorldCollisionProvider::for_entity(world, self.as_entity_event_source());
         if collision.has_entity_collision(&aabb)
             || collision.has_block_collision_with_context(&aabb, BlockCollisionContext::empty())
-            || aabb_contains_any_liquid(world, aabb)
+            || world.contains_any_liquid(aabb)
         {
             return false;
         }

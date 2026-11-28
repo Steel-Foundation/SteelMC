@@ -4,8 +4,10 @@ use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
+use steel_utils::random::Random;
 
 use crate::TaggedRegistryExt;
+use crate::entity_type::EntityTypeRef;
 use crate::sound_event::SoundEventRef;
 use crate::{REGISTRY, RegistryTags};
 
@@ -18,12 +20,51 @@ pub struct Biome {
     pub temperature_modifier: TemperatureModifier,
     pub effects: BiomeEffects,
     pub creature_spawn_probability: f32,
+    pub creature_world_gen_spawn_probability: Option<f32>,
+    pub worldgen_creature_spawns: &'static [WorldgenCreatureSpawn],
     pub spawners: FxHashMap<String, Vec<SpawnerData>>,
     pub spawn_costs: FxHashMap<Identifier, SpawnCost>,
     pub carvers: Vec<Identifier>,
     pub features: Vec<Vec<Identifier>>,
     /// Cached registry ID, set during registration for O(1) lookup on hot paths.
     pub id: OnceLock<usize>,
+}
+
+/// One entry of the biome ordered `CREATURE` spawn list
+#[derive(Debug)]
+pub struct WorldgenCreatureSpawn {
+    pub entity_type: EntityTypeRef,
+    pub count: SpawnCount,
+    pub cumulative_weight: i32,
+}
+
+impl WorldgenCreatureSpawn {
+    pub fn select<'a>(list: &'a [Self], random: &mut impl Random) -> Option<&'a Self> {
+        let total_weight = list.last()?.cumulative_weight;
+        if total_weight == 0 {
+            return None;
+        }
+
+        let selection = random.next_i32_bounded(total_weight);
+        list.iter()
+            .find(|entry| selection < entry.cumulative_weight)
+    }
+}
+
+/// biome creature spawn counts use const or uniform integer provider
+#[derive(Debug)]
+pub enum SpawnCount {
+    Constant(i32),
+    Uniform { min: i32, max: i32 },
+}
+
+impl SpawnCount {
+    pub fn sample(&self, random: &mut impl Random) -> i32 {
+        match *self {
+            Self::Constant(count) => count,
+            Self::Uniform { min, max } => random.next_i32_between(min, max),
+        }
+    }
 }
 
 impl Biome {

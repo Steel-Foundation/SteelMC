@@ -3,10 +3,14 @@
 #![recursion_limit = "256"]
 #![expect(missing_docs, clippy::similar_names, reason = "benchmarks")]
 
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use criterion::measurement::WallTime;
+use criterion::{BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main};
 use futures::future::join_all;
 use glam::IVec3;
+use serde::Deserialize;
+use std::cell::OnceCell;
 use std::cmp::Reverse;
+use std::collections::BTreeMap;
 use std::env;
 use std::hint::black_box;
 use std::io::Cursor;
@@ -26,16 +30,18 @@ use steel_core::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use steel_core::chunk::paletted_container::BlockPalette;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::chunk::status::ChunkStatus;
+use steel_core::entity::ENTITIES;
 use steel_core::entity::damage::DamageHistory;
 use steel_core::level_data::{GameTimeSource, WorldGenerationSettings};
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::generator::generation_benchmark_support;
+use steel_core::worldgen::spawn_benchmark_support::{PLAINS_SPAWN_SEED, prepare_plains_spawn};
 use steel_core::worldgen::{
     ChunkGenerator, ChunkGeneratorType, EndGenerator, GeneratorOutput, NetherGenerator,
     OverworldGenerator, WorldGenContext, WorldGeneratorRegistry,
 };
 use steel_registry::dimension_type::DimensionType;
-use steel_registry::vanilla_dimension_types;
+use steel_registry::{REGISTRY, RegistryExt, vanilla_dimension_types};
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{BlockStateId, ChunkPos, Identifier};
@@ -661,7 +667,7 @@ struct ConcurrentLightFixture {
     light_stage: FullPipelineStage,
     generation_pool: Arc<rayon::ThreadPool>,
     targets: Vec<Arc<ChunkHolder>>,
-    _world: Arc<World>,
+    world: Arc<World>,
     _damage_history: Arc<DamageHistory>,
 }
 
@@ -752,15 +758,52 @@ fn concurrent_feature_cache_radius(centers: &[ChunkPos]) -> i32 {
         .unwrap_or(8)
 }
 
-fn concurrent_pipeline_cache_radius(centers: &[ChunkPos], target_status: ChunkStatus) -> i32 {
+fn concurrent_pipeline_cache_radius(
+    centers: &[ChunkPos],
+    cache_center: ChunkPos,
+    target_status: ChunkStatus,
+) -> i32 {
     let target_step = GENERATION_PYRAMID.get_step_to(target_status);
     let dependency_radius = target_step.get_accumulated_radius_of(ChunkStatus::Empty) as i32;
 
     centers
         .iter()
-        .map(|center| center.0.x.abs().max(center.0.y.abs()) + dependency_radius)
+        .map(|center| {
+            let offset = (center.0 - cache_center.0).abs();
+            offset.x.max(offset.y) + dependency_radius
+        })
         .max()
         .unwrap_or(dependency_radius)
+}
+
+fn build_pipeline_cache(
+    chunk_map: &Arc<ChunkMap>,
+    dim: &'static DimensionType,
+    centers: &[ChunkPos],
+    cache_center: ChunkPos,
+    target_status: ChunkStatus,
+) -> Arc<StaticCache2D<Arc<ChunkHolder>>> {
+    let cache_radius = concurrent_pipeline_cache_radius(centers, cache_center, target_status);
+    let chunk_map = Arc::clone(chunk_map);
+
+    Arc::new(StaticCache2D::create(
+        cache_center.0.x,
+        cache_center.0.y,
+        cache_radius,
+        move |x, z| {
+            let pos = ChunkPos::new(x, z);
+            let holder = Arc::new(ChunkHolder::new(
+                pos,
+                BENCH_HOLDER_LOAD_LEVEL,
+                None,
+                dim.min_y,
+                dim.height,
+            ));
+
+            chunk_map.insert_benchmark_chunk_holder(pos, Arc::clone(&holder));
+            holder
+        },
+    ))
 }
 
 fn pipeline_positions_for_status(
@@ -974,20 +1017,13 @@ fn build_concurrent_full_pipeline_fixture(
         .expect("full-pipeline benchmark world should build");
     let chunk_map = Arc::clone(&world.chunk_map);
 
-    let cache_radius = concurrent_pipeline_cache_radius(&centers, ChunkStatus::Full);
-    let chunk_map_for_factory = Arc::clone(&chunk_map);
-    let cache = Arc::new(StaticCache2D::create(0, 0, cache_radius, move |x, z| {
-        let pos = ChunkPos::new(x, z);
-        let holder = Arc::new(ChunkHolder::new(
-            pos,
-            BENCH_HOLDER_LOAD_LEVEL,
-            None,
-            dim.min_y,
-            dim.height,
-        ));
-        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, Arc::clone(&holder));
-        holder
-    }));
+    let cache = build_pipeline_cache(
+        &chunk_map,
+        dim,
+        &centers,
+        ChunkPos::new(0, 0),
+        ChunkStatus::Full,
+    );
     let stages = full_pipeline_stages(&cache, &centers);
     let targets = centers
         .iter()
@@ -1011,6 +1047,7 @@ fn build_concurrent_light_fixture(
     seed: i64,
     centers: Vec<ChunkPos>,
     thread_count: usize,
+    cache_center: ChunkPos,
 ) -> ConcurrentLightFixture {
     let output = create_benchmark_generator(
         &generator_key,
@@ -1069,20 +1106,7 @@ fn build_concurrent_light_fixture(
         .expect("light benchmark world should build");
     let chunk_map = Arc::clone(&world.chunk_map);
 
-    let cache_radius = concurrent_pipeline_cache_radius(&centers, ChunkStatus::Light);
-    let chunk_map_for_factory = Arc::clone(&chunk_map);
-    let cache = Arc::new(StaticCache2D::create(0, 0, cache_radius, move |x, z| {
-        let pos = ChunkPos::new(x, z);
-        let holder = Arc::new(ChunkHolder::new(
-            pos,
-            BENCH_HOLDER_LOAD_LEVEL,
-            None,
-            dim.min_y,
-            dim.height,
-        ));
-        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, Arc::clone(&holder));
-        holder
-    }));
+    let cache = build_pipeline_cache(&chunk_map, dim, &centers, cache_center, ChunkStatus::Light);
     let setup_stages =
         pipeline_stages_for_statuses(&cache, &centers, ChunkStatus::Light, &LIGHT_SETUP_STATUSES);
     let target_step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Light);
@@ -1098,7 +1122,7 @@ fn build_concurrent_light_fixture(
         .map(|center| Arc::clone(cache.get(center.0.x, center.0.y)))
         .collect();
 
-    let fixture = ConcurrentLightFixture {
+    ConcurrentLightFixture {
         chunk_runtime,
         chunk_map,
         cache,
@@ -1106,11 +1130,9 @@ fn build_concurrent_light_fixture(
         light_stage,
         generation_pool,
         targets,
-        _world: world,
+        world,
         _damage_history: damage_history,
-    };
-    run_concurrent_light_setup(&fixture);
-    fixture
+    }
 }
 
 fn bench_overworld_features_concurrent_overlap(c: &mut Criterion) {
@@ -1224,12 +1246,16 @@ fn bench_overworld_light(c: &mut Criterion) {
     c.bench_function("overworld_light", |b| {
         b.iter_batched(
             || {
-                build_concurrent_light_fixture(
+                let fixture = build_concurrent_light_fixture(
                     Identifier::vanilla_static("overworld"),
                     CONCURRENT_OVERWORLD_SEED,
                     vec![ChunkPos::new(0, 0)],
                     1,
-                )
+                    ChunkPos::new(0, 0),
+                );
+
+                run_concurrent_light_setup(&fixture);
+                fixture
             },
             run_concurrent_light_batch,
             criterion::BatchSize::SmallInput,
@@ -1246,17 +1272,189 @@ fn bench_overworld_light_concurrent(c: &mut Criterion) {
     group.bench_function(format!("x{chunk_count}"), |b| {
         b.iter_batched(
             || {
-                build_concurrent_light_fixture(
+                let fixture = build_concurrent_light_fixture(
                     Identifier::vanilla_static("overworld"),
                     CONCURRENT_OVERWORLD_SEED,
                     concurrent_feature_centers(),
                     LIGHT_THREAD_COUNT,
-                )
+                    ChunkPos::new(0, 0),
+                );
+
+                run_concurrent_light_setup(&fixture);
+                fixture
             },
             run_concurrent_light_batch,
             criterion::BatchSize::SmallInput,
         );
     });
+    group.finish();
+}
+
+fn prepare_spawn_stage(
+    seed: i64,
+    center: ChunkPos,
+    expected_materialized_count: Option<usize>,
+) -> ConcurrentLightFixture {
+    let fixture = build_concurrent_light_fixture(
+        Identifier::vanilla_static("overworld"),
+        seed,
+        vec![center],
+        1,
+        center,
+    );
+
+    if expected_materialized_count.is_some() {
+        run_concurrent_light_setup(&fixture);
+        run_light_fixture_stage(&fixture, &fixture.light_stage);
+    } else {
+        prepare_plains_spawn(&fixture.cache, &fixture.world);
+    }
+
+    let chunk = fixture.targets[0]
+        .try_chunk(ChunkStatus::Light)
+        .expect("spawn benchmark requires a prepared chunk");
+    chunk.clear_staged_entities_for_benchmark();
+    run_spawn_stage(&fixture);
+
+    let materialized_count = chunk.get_entities().len();
+    if let Some(expected) = expected_materialized_count {
+        assert_eq!(materialized_count, expected);
+    } else {
+        assert!(
+            materialized_count > 0,
+            "spawn benchmark requires a materialized mob"
+        );
+    }
+
+    chunk.clear_staged_entities_for_benchmark();
+    fixture
+}
+
+fn run_spawn_stage(fixture: &ConcurrentLightFixture) {
+    ChunkStatusTasks::generate_spawn(
+        Arc::clone(&fixture.chunk_map.world_gen_context),
+        GENERATION_PYRAMID.get_step_to(ChunkStatus::Spawn),
+        &fixture.cache,
+        Arc::clone(&fixture.targets[0]),
+    );
+}
+
+fn bench_spawn_case(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    name: &str,
+    seed: i64,
+    center: ChunkPos,
+    expected_materialized_count: Option<usize>,
+) {
+    let prepared = OnceCell::new();
+    group.bench_function(name, |bencher| {
+        let fixture =
+            prepared.get_or_init(|| prepare_spawn_stage(seed, center, expected_materialized_count));
+        if expected_materialized_count == Some(0) {
+            bencher.iter(|| run_spawn_stage(fixture));
+            return;
+        }
+
+        let chunk = fixture.targets[0]
+            .try_chunk(ChunkStatus::Light)
+            .expect("spawn benchmark requires a prepared chunk");
+
+        bencher.iter_custom(|iterations| {
+            let mut elapsed = Duration::ZERO;
+            for _ in 0..iterations {
+                let start = Instant::now();
+                run_spawn_stage(fixture);
+                elapsed += start.elapsed();
+                chunk.clear_staged_entities_for_benchmark();
+            }
+
+            elapsed
+        });
+    });
+}
+
+#[derive(Deserialize)]
+struct SpawnBenchmarkFixture {
+    seed: i64,
+    dimensions: BTreeMap<Identifier, SpawnBenchmarkDimension>,
+}
+
+#[derive(Deserialize)]
+struct SpawnBenchmarkDimension {
+    chunks: Vec<SpawnBenchmarkChunk>,
+}
+
+#[derive(Deserialize)]
+struct SpawnBenchmarkChunk {
+    x: i32,
+    z: i32,
+    spawn_mobs: bool,
+    spawns: Vec<SpawnBenchmarkEntity>,
+}
+
+#[derive(Deserialize)]
+struct SpawnBenchmarkEntity {
+    entity: Identifier,
+}
+
+impl SpawnBenchmarkChunk {
+    fn materialized_count(&self) -> usize {
+        self.spawns
+            .iter()
+            .map(|spawn| {
+                REGISTRY
+                    .entity_types
+                    .by_key(&spawn.entity)
+                    .expect("unexpected entity type in the spawn trace")
+            })
+            .filter(|entity| ENTITIES.has_factory(entity))
+            .count()
+    }
+}
+
+fn bench_overworld_spawn(c: &mut Criterion) {
+    init_globals();
+    let fixture: SpawnBenchmarkFixture =
+        serde_json::from_str(include_str!("../test_assets/chunk_spawn_hashes.json"))
+            .expect("valid worldgen spawn traces");
+    let chunks = &fixture.dimensions[&Identifier::vanilla_static("overworld")].chunks;
+    let empty = chunks
+        .iter()
+        .find(|chunk| chunk.spawn_mobs && chunk.spawns.is_empty());
+    let shadowed = chunks
+        .iter()
+        .find(|chunk| !chunk.spawns.is_empty() && chunk.materialized_count() == 0);
+    let materialized = chunks.iter().find(|chunk| chunk.materialized_count() > 0);
+
+    let mut group = c.benchmark_group("overworld_spawn");
+    group.throughput(Throughput::Elements(1));
+
+    for (name, chunk) in [
+        ("empty", empty),
+        ("shadowed", shadowed),
+        ("materialized", materialized),
+    ] {
+        if let Some(chunk) = chunk {
+            bench_spawn_case(
+                &mut group,
+                name,
+                fixture.seed,
+                ChunkPos::new(chunk.x, chunk.z),
+                Some(chunk.materialized_count()),
+            );
+        }
+    }
+
+    if materialized.is_none() {
+        bench_spawn_case(
+            &mut group,
+            "materialized",
+            PLAINS_SPAWN_SEED,
+            ChunkPos::new(0, 0),
+            None,
+        );
+    }
+
     group.finish();
 }
 
@@ -2063,6 +2261,16 @@ criterion_group! {
         .measurement_time(Duration::from_secs(5));
     targets = bench_noise_kernel
 }
+
+criterion_group! {
+    name = spawn_benches;
+    config = Criterion::default()
+        .sample_size(20)
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(5));
+    targets = bench_overworld_spawn
+}
+
 criterion_group! {
     name = section_encoding_benches;
     config = Criterion::default()
@@ -2078,5 +2286,6 @@ criterion_main!(
     full_pipeline_benches,
     full_chunk_benches,
     light_benches,
+    spawn_benches,
     noise_kernel_benches,
 );

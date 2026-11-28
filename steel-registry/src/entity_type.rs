@@ -269,6 +269,37 @@ pub struct EntityFlags {
     pub piston_push_reaction: PushReaction,
 }
 
+/// where an entity type can be placed when spawning
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpawnPlacementKind {
+    /// requires a valid supporting block and open space
+    OnGround,
+    /// requires water
+    InWater,
+    /// requires lava
+    InLava,
+    /// skips the placement check
+    NoRestrictions,
+}
+
+/// heightmap used to find a spawn candidate in a column
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpawnPlacementHeightmap {
+    /// uses all motion blocking blocks
+    MotionBlocking,
+    /// excludes leaves from the motionblocking heightmap
+    MotionBlockingNoLeaves,
+}
+
+/// metadata from an explicit spawn placement registration
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpawnPlacement {
+    /// spatial rule for a candidate position
+    pub kind: SpawnPlacementKind,
+    /// heightmap for locating a candidate
+    pub heightmap: SpawnPlacementHeightmap,
+}
+
 #[derive(Debug)]
 pub struct EntityType {
     pub key: Identifier,
@@ -284,6 +315,8 @@ pub struct EntityType {
 
     /// Mob category for spawn classification.
     pub mob_category: MobCategory,
+    /// spawn placement metadata, if explicitly registered for this type
+    pub spawn_placement: Option<SpawnPlacement>,
     /// Whether this entity is immune to fire damage.
     pub fire_immune: bool,
     /// Whether this entity can be summoned via commands.

@@ -10,6 +10,7 @@ mod chunk_stage_hashes;
 pub(crate) mod feature;
 pub mod generator;
 pub mod region;
+pub(crate) mod spawn;
 pub(crate) mod stages;
 pub(crate) mod structure;
 pub mod surface;
@@ -21,6 +22,8 @@ pub use generator::context::{
 pub use generator::registry::{GeneratorOutput, WorldGeneratorRegistry};
 pub use generator::{ChunkGenerator, EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator};
 pub use region::WorldGenRegion;
+#[cfg(feature = "benchmark-support")]
+pub use spawn::fixture as spawn_benchmark_support;
 pub use steel_worldgen::density_functions::overworld::OverworldColumnCache;
 pub use steel_worldgen::noise::EndIslands;
 

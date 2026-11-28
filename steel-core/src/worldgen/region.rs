@@ -35,6 +35,7 @@ use crate::chunk::{
     chunk_pyramid::ChunkStep,
     full_chunk::FullChunkRef,
     heightmap::{Heightmap, HeightmapType},
+    light::{ChunkLightData, LightLayer, MAX_LIGHT_LEVEL},
     section::{SectionHolder, SectionWriteGuard, Sections},
     status::ChunkStatus,
 };
@@ -230,9 +231,14 @@ impl<'a> WorldGenRegion<'a> {
         let chunk_cache_len =
             usize::try_from(chunk_cache_size.saturating_mul(chunk_cache_size)).unwrap_or(0);
         let chunks = (0..chunk_cache_len).map(|_| None).collect();
-        let worldgen_heightmaps = (0..chunk_cache_len)
-            .map(|_| CachedWorldgenHeightmaps::default())
-            .collect();
+
+        let worldgen_heightmaps = if step.target_status == ChunkStatus::Spawn {
+            Box::default()
+        } else {
+            (0..chunk_cache_len)
+                .map(|_| CachedWorldgenHeightmaps::default())
+                .collect()
+        };
 
         Self {
             context,
@@ -311,6 +317,14 @@ impl<'a> WorldGenRegion<'a> {
     )]
     pub const fn block_light_at(&self, _pos: BlockPos) -> u8 {
         0
+    }
+
+    fn with_generated_light<R>(&self, pos: BlockPos, read: impl FnOnce(&ChunkLightData) -> R) -> R {
+        let chunk_x = SectionPos::block_to_section_coord(pos.x());
+        let chunk_z = SectionPos::block_to_section_coord(pos.z());
+        self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
+            read(&chunk.chunk.light())
+        })
     }
 
     /// Returns the exclusive maximum build height.
@@ -820,7 +834,9 @@ impl<'a> WorldGenRegion<'a> {
         chunk_z: i32,
         column_index: usize,
     ) -> i32 {
-        if !CachedWorldgenHeightmaps::supports(heightmap_type) {
+        if !CachedWorldgenHeightmaps::supports(heightmap_type)
+            || self.step.target_status == ChunkStatus::Spawn
+        {
             return proto.generation_height_at(
                 heightmap_type,
                 column_index % 16,
@@ -1505,18 +1521,36 @@ impl LevelReader for WorldGenRegion<'_> {
     }
 
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
-        let sky_light = if self.context.world().dimension_type.has_skylight {
-            15_u8.saturating_sub(sky_darkening)
+        let has_skylight = self.context.world().dimension_type.has_skylight;
+        if self.step.target_status > ChunkStatus::Light {
+            return self.with_generated_light(pos, |light| {
+                let sky_light = if has_skylight {
+                    light.get_light_value(LightLayer::Sky, pos)
+                } else {
+                    0
+                };
+
+                let block_light = light.get_light_value(LightLayer::Block, pos);
+                sky_light.saturating_sub(sky_darkening).max(block_light)
+            });
+        }
+
+        if has_skylight {
+            MAX_LIGHT_LEVEL.saturating_sub(sky_darkening)
         } else {
             0
-        };
-
-        sky_light.max(self.block_light_at(pos))
+        }
     }
 
     fn can_see_sky(&self, pos: BlockPos) -> bool {
         if !self.context.world().dimension_type.has_skylight {
             return false;
+        }
+
+        if self.step.target_status > ChunkStatus::Light {
+            return self.with_generated_light(pos, |light| {
+                light.get_light_value(LightLayer::Sky, pos) >= MAX_LIGHT_LEVEL
+            });
         }
 
         self.height_at(HeightmapType::MotionBlocking, pos.x(), pos.z()) <= pos.y()

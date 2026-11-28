@@ -819,6 +819,8 @@ mod tests {
                 particle: None,
             },
             creature_spawn_probability: 0.0,
+            creature_world_gen_spawn_probability: None,
+            worldgen_creature_spawns: &[],
             spawners: FxHashMap::default(),
             spawn_costs: FxHashMap::default(),
             carvers,

@@ -406,7 +406,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return false;
         }
 
-        !aabb_contains_any_liquid(&world, target_box)
+        !world.contains_any_liquid(target_box)
     }
 
     /// Returns whether this entity obstructs block placement.

@@ -11,7 +11,7 @@ use steel_registry::blocks::shapes::SupportType;
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_event::SoundEventRef;
-use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, WorldAabb, types::UpdateFlags};
 
 use crate::block_entity::SharedBlockEntity;
 use crate::chunk::heightmap::HeightmapType;
@@ -121,6 +121,13 @@ pub trait LevelReader {
     fn pathfinding_cost_from_light_levels(&self, pos: BlockPos) -> f32 {
         self.light_level_dependent_magic_value(pos) - 0.5
     }
+
+    /// Checks for fluid in all blocks between the box corners, inclusive.
+    fn contains_any_liquid(&self, aabb: WorldAabb) -> bool {
+        let min = BlockPos::from(aabb.min_corner());
+        let max = BlockPos::from(aabb.max_corner());
+        BlockPos::between_closed(min, max).any(|pos| self.get_block_state(pos).has_fluid())
+    }
 }
 
 /// Level access needed by vanilla block `updateShape` logic.
@@ -209,19 +216,28 @@ pub trait LevelAccessor: ScheduledTickAccess {
 
 #[cfg(test)]
 mod tests {
+    use glam::DVec3;
+    use steel_registry::vanilla_blocks;
     use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
     use super::*;
+    use crate::bootstrap::init_globals;
 
+    #[derive(Default)]
     struct TestLevel {
         raw_brightness: u8,
         ambient_light: f32,
         sky_darkening: u8,
+        water_at: Option<BlockPos>,
     }
 
     impl LevelReader for TestLevel {
-        fn get_block_state(&self, _pos: BlockPos) -> BlockStateId {
-            BlockStateId(0)
+        fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+            if self.water_at == Some(pos) {
+                vanilla_blocks::WATER.default_state()
+            } else {
+                vanilla_blocks::AIR.default_state()
+            }
         }
 
         fn raw_brightness(&self, _pos: BlockPos, sky_darkening: u8) -> u8 {
@@ -249,6 +265,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn contains_any_liquid_includes_exact_upper_block_boundary() {
+        init_globals();
+        let level = TestLevel {
+            water_at: Some(BlockPos::new(16, 0, 0)),
+            ..TestLevel::default()
+        };
+        let min = DVec3::new(15.0, 0.0, 0.0);
+        let before_boundary = WorldAabb::from_min_max(min, DVec3::new(15.5, 0.5, 0.5));
+        let at_boundary = WorldAabb::from_min_max(min, DVec3::new(16.0, 0.5, 0.5));
+
+        assert!(!level.contains_any_liquid(before_boundary));
+        assert!(level.contains_any_liquid(at_boundary));
+    }
+
     fn assert_f32_close(left: f32, right: f32) {
         assert!(
             (left - right).abs() < 0.000_001,
@@ -260,8 +291,7 @@ mod tests {
     fn pathfinding_cost_uses_vanilla_curved_light_value() {
         let level = TestLevel {
             raw_brightness: 6,
-            ambient_light: 0.0,
-            sky_darkening: 0,
+            ..TestLevel::default()
         };
 
         assert_f32_close(
@@ -275,7 +305,7 @@ mod tests {
         let level = TestLevel {
             raw_brightness: 6,
             ambient_light: 0.2,
-            sky_darkening: 0,
+            ..TestLevel::default()
         };
 
         assert_f32_close(
@@ -286,11 +316,7 @@ mod tests {
 
     #[test]
     fn max_local_raw_brightness_matches_vanilla_horizontal_limit() {
-        let level = TestLevel {
-            raw_brightness: 0,
-            ambient_light: 0.0,
-            sky_darkening: 0,
-        };
+        let level = TestLevel::default();
 
         assert_eq!(
             level.max_local_raw_brightness(BlockPos::new(29_999_999, 64, 0), 0),
@@ -306,8 +332,8 @@ mod tests {
     fn light_level_dependent_magic_value_applies_current_sky_darkening() {
         let level = TestLevel {
             raw_brightness: 15,
-            ambient_light: 0.0,
             sky_darkening: 11,
+            ..TestLevel::default()
         };
 
         // Brightness is max(block, sky - darkening); raw 15 with darkening 11
@@ -323,16 +349,14 @@ mod tests {
         assert!(
             TestLevel {
                 raw_brightness: 15,
-                ambient_light: 0.0,
-                sky_darkening: 0,
+                ..TestLevel::default()
             }
             .can_see_sky(BlockPos::ZERO)
         );
         assert!(
             !TestLevel {
                 raw_brightness: 14,
-                ambient_light: 0.0,
-                sky_darkening: 0,
+                ..TestLevel::default()
             }
             .can_see_sky(BlockPos::ZERO)
         );

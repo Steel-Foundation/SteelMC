@@ -1,6 +1,6 @@
 use crate::random::{
     PositionalRandom, Random, RandomSource, RandomSplitter, gaussian::MarsagliaPolarGaussian,
-    get_seed, name_hash::NameHash,
+    get_seed, name_hash::NameHash, worldgen_random::decoration_seed,
 };
 
 /// LCG multiplier (matches `java.util.Random`).
@@ -45,6 +45,15 @@ impl LegacyRandom {
     pub const fn set_seed(&mut self, seed: i64) {
         self.seed = (seed ^ 0x0005_DEEC_E66D) & 0xFFFF_FFFF_FFFF;
         self.next_gaussian = f64::NAN;
+    }
+
+    /// creates the legacy random stream for the original mobs of a chunk
+    #[must_use]
+    pub fn for_chunk_generation(seed: i64, min_block_x: i32, min_block_z: i32) -> Self {
+        let mut random = Self::from_seed(seed as u64);
+        let seed = decoration_seed(&mut random, seed, min_block_x, min_block_z);
+
+        Self::from_seed(seed as u64)
     }
 
     /// Re-seeds this generator for a large feature at a chunk position,

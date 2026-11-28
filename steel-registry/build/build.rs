@@ -41,6 +41,7 @@ mod attributes;
 mod banner_patterns;
 mod biomes;
 mod block_entity_types;
+mod block_spawn_rules;
 mod block_transformers;
 mod blocks;
 mod carvers;
@@ -54,6 +55,8 @@ mod dialogs;
 mod dimension_types;
 mod entities;
 mod entity_data;
+mod entity_spawn_placements;
+mod entity_variant_enums;
 mod features;
 mod fluids;
 
@@ -155,6 +158,7 @@ const ZOMBIE_NAUTILUS_VARIANTS: &str = "zombie_nautilus_variants";
 const RECIPES: &str = "recipes";
 const VANILLA_ENTITIES: &str = "entities";
 const ENTITY_DATA: &str = "entity_data";
+const ENTITY_VARIANT_ENUMS: &str = "entity_variant_enums";
 const FLUIDS: &str = "fluids";
 const FLUID_TAGS: &str = "fluid_tags";
 const POI_TYPES: &str = "poi_types";
@@ -243,6 +247,7 @@ pub fn main() {
         (recipes::build(), RECIPES),
         (entities::build(), VANILLA_ENTITIES),
         (entity_data::build(), ENTITY_DATA),
+        (entity_variant_enums::build(), ENTITY_VARIANT_ENUMS),
         (fluids::build(), FLUIDS),
         (tags::fluid(), FLUID_TAGS),
         (block_entity_types::build(), BLOCK_ENTITY_TYPES),

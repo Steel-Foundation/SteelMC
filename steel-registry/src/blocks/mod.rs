@@ -19,6 +19,7 @@ use rustc_hash::FxHashMap;
 use crate::blocks::behavior::BlockConfig;
 use crate::blocks::properties::Property;
 use crate::blocks::shapes::ShapeChannel;
+use crate::entity_type::EntityTypeRef;
 use crate::fluid::{FluidRef, FluidState};
 use crate::{RegistryExt, RegistryTags, TaggedRegistryExt};
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
@@ -191,6 +192,17 @@ impl BlockStateTickingMetadata {
     }
 }
 
+/// the extracted typedependent part of the block spawn predicate
+#[derive(Debug, Clone, Copy)]
+pub enum BlockSpawnRule {
+    /// evaluate the default predicate for the block state and lvl
+    Default,
+    /// the block always accepts the spawn surface check
+    Always,
+    /// only these entity types can use the block as a spawn surface
+    Allowed(&'static [EntityTypeRef]),
+}
+
 pub struct Block {
     pub key: Identifier,
     pub config: BlockConfig,
@@ -220,6 +232,12 @@ pub struct Block {
     pub visual_shape: ShapeFn,
     /// Shape channels whose extracted boxes are normalized and need positional offset.
     pub shape_offsets: shapes::ShapeOffsetFlags,
+    /// entitytype restrictions for this block spawn surface.
+    pub spawn_rule: BlockSpawnRule,
+    /// whether this block advertises a redstone signal during chunk gen
+    pub spawn_signal_source: bool,
+    /// land pathfindability overrides for the spawn height adjustment
+    pub spawn_land_pathfinding: Option<StateBooleanData>,
     /// Cached registry ID, set during registration for O(1) lookup on hot paths.
     pub id: OnceLock<usize>,
 }
@@ -273,8 +291,24 @@ impl Block {
             interaction_shape: empty_shape,
             visual_shape: full_block_shape,
             shape_offsets: shapes::ShapeOffsetFlags::NONE,
+            spawn_rule: BlockSpawnRule::Default,
+            spawn_signal_source: false,
+            spawn_land_pathfinding: None,
             id: OnceLock::new(),
         }
+    }
+
+    /// sets the extracted predicates needed during mob placement
+    pub const fn with_spawn_data(
+        mut self,
+        rule: BlockSpawnRule,
+        signal_source: bool,
+        land_pathfinding: Option<StateBooleanData>,
+    ) -> Self {
+        self.spawn_rule = rule;
+        self.spawn_signal_source = signal_source;
+        self.spawn_land_pathfinding = land_pathfinding;
+        self
     }
 
     /// Sets the shape functions for this block.
@@ -951,6 +985,27 @@ impl BlockRegistry {
         let base_state = self.block_to_base_state.get(block_id).copied().unwrap_or(0);
         let offset = state_id.0.saturating_sub(base_state);
         Some((block, offset))
+    }
+
+    /// whether worldgen on ground spawn placement should move down into this state
+    #[must_use]
+    pub fn is_land_pathfindable_for_spawn(&self, state_id: BlockStateId) -> bool {
+        let Some((block, offset)) = self.block_and_state_offset(state_id) else {
+            return false;
+        };
+
+        if let Some(data) = block.spawn_land_pathfinding {
+            return data.value(offset);
+        }
+
+        let translation = if block.shape_offsets.uses_offset(ShapeChannel::Collision) {
+            block.offset_at(BlockPos::ZERO)
+        } else {
+            DVec3::ZERO
+        };
+
+        let shape = shapes::OffsetVoxelShape::new(block.get_collision_shape(offset), translation);
+        !shapes::is_offset_shape_full_block(shape)
     }
 
     fn static_shape_for_state(

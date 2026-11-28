@@ -168,6 +168,53 @@ pub struct SpawnCost {
     charge: f64,
 }
 
+#[derive(Deserialize)]
+#[serde(tag = "modifier", content = "argument", rename_all = "snake_case")]
+enum NaturalMobSpawns {
+    Overlay(NaturalMobSpawnSettings),
+}
+
+#[derive(Deserialize)]
+struct NaturalMobSpawnSettings {
+    spawns_by_category: CreatureCategory,
+}
+
+#[derive(Deserialize)]
+struct CreatureCategory {
+    #[serde(default)]
+    creature: Vec<CreatureSpawn>,
+}
+
+#[derive(Deserialize)]
+struct CreatureSpawn {
+    #[serde(rename = "type")]
+    entity_type: Identifier,
+    #[serde(default = "default_spawn_weight")]
+    weight: i32,
+    count: CreatureSpawnCount,
+}
+
+const fn default_spawn_weight() -> i32 {
+    1
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CreatureSpawnCount {
+    Constant(i32),
+    Provider(SpawnCountProvider),
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type")]
+enum SpawnCountProvider {
+    #[serde(rename = "minecraft:uniform")]
+    Uniform {
+        min_inclusive: i32,
+        max_inclusive: i32,
+    },
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TemperatureModifier {
@@ -503,6 +550,52 @@ fn generate_biome_effects(effects: &BiomeEffects) -> TokenStream {
     }
 }
 
+fn generate_worldgen_creature_spawns(biome_name: &str, biome: &BiomeJson) -> TokenStream {
+    let Some(attribute) = biome
+        .attributes
+        .get("minecraft:gameplay/natural_mob_spawns")
+    else {
+        return quote! { &[] };
+    };
+
+    let NaturalMobSpawns::Overlay(settings) = NaturalMobSpawns::deserialize(attribute)
+        .unwrap_or_else(|e| panic!("Invalid natural mob spawns in {biome_name}: {e}"));
+    let mut cumulative_weight = 0_i32;
+    let entries = settings.spawns_by_category.creature.iter().map(|entry| {
+        assert_eq!(entry.entity_type.namespace, Identifier::VANILLA_NAMESPACE);
+        let entity = Ident::new(
+            &entry.entity_type.path.to_shouty_snake_case(),
+            Span::call_site(),
+        );
+
+        assert!(entry.weight >= 0, "Negative spawn weight in {biome_name}");
+        cumulative_weight = cumulative_weight
+            .checked_add(entry.weight)
+            .unwrap_or_else(|| panic!("Spawn weight overflow in {biome_name}"));
+
+        let count = match entry.count {
+            CreatureSpawnCount::Constant(count) => quote! { SpawnCount::Constant(#count) },
+            CreatureSpawnCount::Provider(SpawnCountProvider::Uniform {
+                min_inclusive: min,
+                max_inclusive: max,
+            }) => quote! { SpawnCount::Uniform { min: #min, max: #max } },
+        };
+
+        quote! {
+            WorldgenCreatureSpawn {
+                entity_type: &crate::vanilla_entities::#entity,
+                cumulative_weight: #cumulative_weight,
+                count: #count,
+            }
+        }
+    });
+
+    quote! {{
+        static SPAWNS: &[WorldgenCreatureSpawn] = &[#(#entries),*];
+        SPAWNS
+    }}
+}
+
 pub(crate) fn build() -> TokenStream {
     let biome_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/biome";
     println!("cargo:rerun-if-changed={biome_dir}");
@@ -531,8 +624,8 @@ pub(crate) fn build() -> TokenStream {
     stream.extend(quote! {
         use crate::biome::{
             Biome, BiomeEffects, BiomeRegistry, TemperatureModifier, GrassColorModifier,
-            SpawnerData, SpawnCost, WeightedMusic, Music, AdditionsSound, MoodSound,
-            Particle, ParticleOptions,
+            SpawnerData, SpawnCost, SpawnCount, WorldgenCreatureSpawn, WeightedMusic,
+            Music, AdditionsSound, MoodSound, Particle, ParticleOptions,
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
@@ -553,6 +646,21 @@ pub(crate) fn build() -> TokenStream {
         let temperature_modifier = generate_temperature_modifier(&biome.temperature_modifier);
         let effects = generate_biome_effects(&biome.effects);
         let creature_spawn_probability = biome.creature_spawn_probability;
+        let creature_world_gen_spawn_probability = biome
+            .attributes
+            .get("minecraft:gameplay/creature_world_gen_spawn_probability")
+            .map(|value| {
+                f32::deserialize(value).unwrap_or_else(|e| {
+                    panic!("Invalid creature worldgen probability in {biome_name}: {e}")
+                })
+            });
+
+        let creature_world_gen_spawn_probability = generate_option(
+            &creature_world_gen_spawn_probability,
+            |probability| quote! { #probability },
+        );
+
+        let worldgen_creature_spawns = generate_worldgen_creature_spawns(biome_name, biome);
         let spawners =
             generate_hashmap_string(&biome.spawners, |v| generate_vec(v, generate_spawner_data));
         let spawn_costs = generate_hashmap_resource(&biome.spawn_costs, generate_spawn_cost);
@@ -570,6 +678,8 @@ pub(crate) fn build() -> TokenStream {
                 temperature_modifier: #temperature_modifier,
                 effects: #effects,
                 creature_spawn_probability: #creature_spawn_probability,
+                creature_world_gen_spawn_probability: #creature_world_gen_spawn_probability,
+                worldgen_creature_spawns: #worldgen_creature_spawns,
                 spawners: #spawners,
                 spawn_costs: #spawn_costs,
                 carvers: #carvers,

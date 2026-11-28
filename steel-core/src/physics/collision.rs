@@ -13,7 +13,7 @@ use crate::behavior::{
 use crate::entity::{Entity, EntityCollisionCandidates};
 use crate::physics::shapes::join_is_not_empty;
 use crate::physics::{COLLISION_EPSILON, block_state_may_expand_collision_cursor};
-use crate::world::{BlockRegionBounds, World};
+use crate::world::{BlockRegionBounds, LevelReader, World};
 
 const BLOCK_COLLISION_EPSILON: f64 = 1.0e-7;
 const ENTITY_COLLISION_EPSILON: f64 = 1.0e-7;
@@ -284,6 +284,71 @@ fn translate_collision_shape(shape: &BlockLocalAabb, block_pos: BlockPos) -> Wor
     shape.at_block(block_pos)
 }
 
+fn level_collision_shape(
+    level: &dyn LevelReader,
+    block_state: BlockStateId,
+    block_pos: BlockPos,
+    context: BlockCollisionContext,
+) -> CollisionShape {
+    let behavior = BLOCK_BEHAVIORS.get_behavior(block_state.get_block());
+    let boxes = behavior.get_collision_boxes(block_state, level, block_pos, context);
+
+    CollisionShape { boxes }
+}
+
+/// Checks the block portion of a spawn collision query with an empty collision context.
+pub(crate) fn has_spawn_block_collision(level: &dyn LevelReader, aabb: WorldAabb) -> bool {
+    let mut last_face_state = None;
+    BlockCollisionSearchBounds::from_aabb(&aabb)
+        .try_for_each_candidate(|pos, cursor_type| {
+            let state = level.get_block_state(pos);
+            if state.is_air() {
+                return ControlFlow::Continue(());
+            }
+
+            let resolve = if cursor_type == CollisionCursorType::Face {
+                if let Some((cached_state, resolve)) = last_face_state
+                    && cached_state == state
+                {
+                    resolve
+                } else {
+                    let resolve = block_state_may_expand_collision_cursor(state);
+                    last_face_state = Some((state, resolve));
+
+                    resolve
+                }
+            } else {
+                should_resolve_collision_shape(state, cursor_type)
+            };
+
+            if !resolve {
+                return ControlFlow::Continue(());
+            }
+
+            let shape = level_collision_shape(level, state, pos, BlockCollisionContext::empty());
+            let full_block = shape.boxes.as_slice() == [BlockLocalAabb::FULL_BLOCK];
+
+            if shape.boxes.iter().any(|part| {
+                let bounds = translate_collision_shape(part, pos);
+                if full_block {
+                    return aabb.intersects(bounds);
+                }
+
+                aabb.max_x().min(bounds.max_x()) - aabb.min_x().max(bounds.min_x())
+                    > BLOCK_COLLISION_EPSILON
+                    && aabb.max_y().min(bounds.max_y()) - aabb.min_y().max(bounds.min_y())
+                        > BLOCK_COLLISION_EPSILON
+                    && aabb.max_z().min(bounds.max_z()) - aabb.min_z().max(bounds.min_z())
+                        > BLOCK_COLLISION_EPSILON
+            }) {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        })
+        .is_break()
+}
+
 impl<'a> WorldCollisionProvider<'a> {
     /// Creates a new collision provider for the given world.
     pub const fn new(world: &'a Arc<World>) -> Self {
@@ -371,19 +436,6 @@ impl<'a> WorldCollisionProvider<'a> {
         })
     }
 
-    fn get_collision_shape(
-        &self,
-        block_state: BlockStateId,
-        block_pos: BlockPos,
-        context: BlockCollisionContext,
-    ) -> CollisionShape {
-        let behavior = BLOCK_BEHAVIORS.get_behavior(block_state.get_block());
-        let boxes =
-            behavior.get_collision_boxes(block_state, self.world.as_ref(), block_pos, context);
-
-        CollisionShape { boxes }
-    }
-
     fn visit_block_collision_shapes<R>(
         &self,
         bounds: BlockCollisionSearchBounds,
@@ -399,7 +451,10 @@ impl<'a> WorldCollisionProvider<'a> {
             if !should_resolve_collision_shape(block_state, cursor_type) {
                 return ControlFlow::Continue(());
             }
-            let collision_shape = self.get_collision_shape(block_state, block_pos, context);
+
+            let collision_shape =
+                level_collision_shape(self.world.as_ref(), block_state, block_pos, context);
+
             visit(block_pos, block_state, cursor_type, &collision_shape)
         })
     }

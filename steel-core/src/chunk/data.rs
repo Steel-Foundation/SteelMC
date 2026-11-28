@@ -852,6 +852,12 @@ impl Chunk {
         self.entities.get_all()
     }
 
+    /// Resets a prepared proto chunk's entity storage between benchmark samples.
+    #[cfg(feature = "benchmark-support")]
+    pub fn clear_staged_entities_for_benchmark(&self) {
+        self.entities.clear_for_benchmark();
+    }
+
     /// Returns entities that should be persisted from this proto chunk.
     #[must_use]
     pub(crate) fn get_saveable_entities(&self) -> Vec<SharedEntity> {

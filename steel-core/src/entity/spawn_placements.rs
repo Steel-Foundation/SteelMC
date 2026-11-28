@@ -7,10 +7,9 @@ use steel_utils::{BlockPos, types::Difficulty};
 use crate::entity::{ENTITIES, EntitySpawnReason};
 use crate::world::World;
 
-/// Vanilla `SpawnPlacements`.
+/// Vanilla `SpawnPlacements` predicates for spawners.
 ///
 /// Predicates are each entity's `SPAWN_RULE`, registered by `#[entity_behavior(spawn_rule)]`.
-/// Placement type and heightmap are not modeled yet because only the spawner path consumes this.
 pub(crate) struct SpawnPlacements;
 
 impl SpawnPlacements {

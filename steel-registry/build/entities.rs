@@ -11,6 +11,8 @@ use quote::quote;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
 
+use super::entity_spawn_placements;
+
 #[derive(Deserialize)]
 struct EntityTypeEntry {
     name: String,
@@ -143,13 +145,15 @@ pub(crate) fn build() -> TokenStream {
     let content = fs::read_to_string(entities_file).unwrap();
     let entity_types: Vec<EntityTypeEntry> = serde_json::from_str(&content)
         .unwrap_or_else(|e| panic!("Failed to parse entities.json: {e}"));
+    let mut spawn_placements = entity_spawn_placements::read();
 
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
         use crate::entity_type::{
             EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityFlags, EntityType,
-            EntityTypeRegistry, MobCategory,
+            EntityTypeRegistry, MobCategory, SpawnPlacement, SpawnPlacementHeightmap,
+            SpawnPlacementKind,
         };
         use crate::blocks::behavior::PushReaction;
         use steel_utils::Identifier;
@@ -176,6 +180,10 @@ pub(crate) fn build() -> TokenStream {
 
         // Classification
         let mob_category = mob_category_variant(&entity_type.mob_category);
+        let spawn_placement = spawn_placements
+            .remove(&format!("minecraft:{entity_type_key}"))
+            .map_or_else(|| quote! { None }, |placement| quote! { Some(#placement) });
+
         let fire_immune = entity_type.fire_immune;
         let summonable = entity_type.summonable;
         let allowed_in_peaceful = entity_type.allowed_in_peaceful;
@@ -258,6 +266,7 @@ pub(crate) fn build() -> TokenStream {
                 ),
                 fixed: #fixed,
                 mob_category: #mob_category,
+                spawn_placement: #spawn_placement,
                 fire_immune: #fire_immune,
                 summonable: #summonable,
                 allowed_in_peaceful: #allowed_in_peaceful,
@@ -290,6 +299,12 @@ pub(crate) fn build() -> TokenStream {
             registry.register(&#entity_type_ident);
         });
     }
+
+    assert!(
+        spawn_placements.is_empty(),
+        "Unknown entity types in entity spawn placements: {:?}",
+        spawn_placements.keys()
+    );
 
     stream.extend(quote! {
         pub fn register_entity_types(registry: &mut EntityTypeRegistry) {
