@@ -13,7 +13,8 @@ use crate::behavior::init_behaviors;
 use crate::inventory::equipment::EquipmentSlot;
 
 use super::{
-    ActiveMobEffect, LivingEntityBase, LivingTravelInput, MobEffectInstance, MobEffectSyncChange,
+    ActiveMobEffect, LivingEntityBase, LivingTravelInput, MobEffectAddResult, MobEffectInstance,
+    MobEffectSyncChange,
 };
 
 /// An infinite-duration effect never "ends within" anything, and the bound is inclusive.
@@ -432,6 +433,28 @@ fn active_mob_effect_amplifier_is_living_entity_state() {
 }
 
 #[test]
+fn refreshing_active_mob_effect_is_not_reported_as_added() {
+    // Only `Added` fires `on_effect_added`; refreshes (e.g. beacons) must not replay `sound_on_added`.
+    init_vanilla_registry();
+    let base = LivingEntityBase::without_synced_data(&vanilla_entities::PLAYER);
+    let bad_omen =
+        |duration| MobEffectInstance::with_duration(vanilla_mob_effects::BAD_OMEN, duration, 0);
+
+    assert_eq!(
+        base.add_mob_effect(bad_omen(100)),
+        MobEffectAddResult::Added
+    );
+    assert_eq!(
+        base.add_mob_effect(bad_omen(200)),
+        MobEffectAddResult::Updated
+    );
+    assert_eq!(
+        base.add_mob_effect(bad_omen(50)),
+        MobEffectAddResult::Unchanged
+    );
+}
+
+#[test]
 fn mob_effect_attribute_modifiers_use_extracted_vanilla_data() {
     init_vanilla_registry();
     let base = LivingEntityBase::without_synced_data(&vanilla_entities::PLAYER);
@@ -444,11 +467,14 @@ fn mob_effect_attribute_modifiers_use_extracted_vanilla_data() {
     let speed_modifier = &vanilla_mob_effects::SPEED.attribute_modifiers[0];
 
     assert_eq!(speed_modifier.attribute.key, movement_speed.key);
-    assert!(base.add_mob_effect(MobEffectInstance::with_duration(
-        vanilla_mob_effects::SPEED,
-        200,
-        1
-    )));
+    assert!(
+        base.add_mob_effect(MobEffectInstance::with_duration(
+            vanilla_mob_effects::SPEED,
+            200,
+            1
+        ))
+        .changed()
+    );
 
     let boosted_speed = base
         .attributes()
@@ -551,8 +577,10 @@ fn last_climbable_pos_is_living_entity_state() {
     let climbable_pos = BlockPos::new(-5, 72, 3);
 
     assert_eq!(base.last_climbable_pos(), None);
-    base.set_last_climbable_pos(climbable_pos);
+    base.set_last_climbable_pos(Some(climbable_pos));
     assert_eq!(base.last_climbable_pos(), Some(climbable_pos));
+    base.set_last_climbable_pos(None);
+    assert_eq!(base.last_climbable_pos(), None);
 }
 
 #[test]

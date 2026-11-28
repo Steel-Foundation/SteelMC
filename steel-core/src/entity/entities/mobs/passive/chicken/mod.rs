@@ -4,15 +4,16 @@
 use crate::entity::Arc;
 use crate::entity::EntitySpawnReason;
 use crate::entity::LivingTable;
-use crate::entity::MobTable;
 use crate::entity::SpawnGroupData;
 use crate::entity::ageable;
 use crate::entity::entity;
 use crate::entity::prelude::*;
+use crate::entity::{MobTable, RiderMove};
 use crate::physics::MoveResult;
-use crate::world::World;
+use crate::world::{DifficultyInstance, World};
 use steel_utils::nbt::NbtValueInput as _;
 
+use crate::loot::vanilla_loot_tables;
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
@@ -26,7 +27,6 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ChickenEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
-use steel_registry::vanilla_loot_tables;
 use steel_registry::{
     REGISTRY, RegistryReference, TaggedRegistryExt, sound_events, vanilla_game_events,
 };
@@ -277,11 +277,12 @@ impl ChickenEntity {
     fn mob_finalize_spawn(
         &self,
         world: &Arc<World>,
+        difficulty: DifficultyInstance,
         reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
         variant::pick_spawn_variants(self, world);
-        ageable::finalize_spawn(self, world, reason, group_data)
+        ageable::finalize_spawn(self, world, difficulty, reason, group_data)
     }
 }
 
@@ -364,8 +365,8 @@ impl EntityTable for ChickenEntity {
 
 impl ChickenEntity {
     /// `Chicken.positionRider` after `super`: the rider faces the chicken's way.
-    fn entity_position_rider(&self, passenger: &dyn Entity) {
-        entity::position_rider(self, passenger);
+    fn entity_position_rider(&self, passenger: &dyn Entity, move_behavior: RiderMove) {
+        entity::position_rider(self, passenger, move_behavior);
         if let Some(living) = passenger.as_living_entity() {
             living.set_y_body_rot(self.living().y_body_rot());
         }

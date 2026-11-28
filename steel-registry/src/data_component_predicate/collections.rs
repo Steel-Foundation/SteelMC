@@ -13,6 +13,30 @@ pub struct CollectionPredicate<P> {
 
 impl<P> CollectionPredicate<P> {
     #[must_use]
+    pub fn matches<'a, T: 'a>(
+        &self,
+        values: impl IntoIterator<Item = &'a T>,
+        matches: impl Fn(&P, &T) -> bool + Copy,
+    ) -> bool {
+        let values = values.into_iter().collect::<Vec<_>>();
+        self.contains().is_none_or(|predicates| {
+            predicates
+                .iter()
+                .all(|predicate| values.iter().any(|value| matches(predicate, value)))
+        }) && self.counts().is_none_or(|predicates| {
+            predicates.iter().all(|predicate| {
+                let count = values
+                    .iter()
+                    .filter(|value| matches(predicate.test(), value))
+                    .count();
+                i32::try_from(count).is_ok_and(|count| predicate.count().matches(count))
+            })
+        }) && self
+            .size()
+            .is_none_or(|size| i32::try_from(values.len()).is_ok_and(|length| size.matches(length)))
+    }
+
+    #[must_use]
     pub const fn new(
         contains: Option<Vec<P>>,
         counts: Option<Vec<CollectionCountPredicate<P>>>,

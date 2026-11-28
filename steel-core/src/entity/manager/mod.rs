@@ -995,6 +995,9 @@ impl WorldEntityManager {
                 .entity
                 .set_level_callback(Arc::new(NullEntityCallback));
             entry.entity.set_removed(RemovalReason::UnloadedToChunk);
+            if let Some(living) = entry.entity.as_living_entity() {
+                living.clear_combat_history();
+            }
         }
     }
 

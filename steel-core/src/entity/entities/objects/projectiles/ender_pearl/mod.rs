@@ -26,13 +26,11 @@ use steel_utils::types::Difficulty;
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
 use crate::entity::EntityTable;
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::EndermiteEntity;
 use crate::entity::prelude::*;
 use crate::entity::projectile::throwable_item::ThrownItem;
 use crate::entity::projectile::{ProjectileBase, ProjectileProps, throwable};
 use crate::entity::{
-    Entity, EntityBase, EntityProps, RemovalReason, SharedEntity, change_entity_world,
-    next_entity_id,
+    ENTITIES, Entity, EntityBase, EntityProps, RemovalReason, SharedEntity, change_entity_world,
 };
 use crate::player::Player;
 use crate::portal::{TeleportPostTransition, TeleportTransition};
@@ -209,13 +207,12 @@ impl EnderPearlEntity {
             && world.get_game_rule(&SPAWN_MOBS)
             && world.get_game_rule(&SPAWN_MONSTERS)
             && world.difficulty() != Difficulty::Peaceful
-        {
-            let endermite = EndermiteEntity::new(
+            && let Some(endermite) = ENTITIES.create(
                 &vanilla_entities::ENDERMITE,
-                next_entity_id(),
                 owner.position(),
                 Arc::downgrade(world),
-            );
+            )
+        {
             endermite.set_rotation(owner.rotation());
             if let Err(error) = world.try_add_entity(endermite) {
                 log::debug!("failed to add ender pearl endermite: {error}");

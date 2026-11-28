@@ -79,7 +79,7 @@ fn validity_requires_anvil_tag_and_interaction_range() {
     let current_world_fixture = fresh_test_world("anvil_menu_validity_current_world");
     let current_world = &current_world_fixture.world;
     insert_ready_full_chunk(current_world, ChunkPos::from_block_pos(pos));
-    let player = player.moved_to_world(Arc::clone(current_world));
+    player.set_world(Arc::clone(current_world));
     assert!(menu.still_valid(&player));
 
     assert!(world.set_block(

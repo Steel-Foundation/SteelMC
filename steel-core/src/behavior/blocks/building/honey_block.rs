@@ -13,7 +13,8 @@ use crate::{
         BlockBehavior, BlockCollisionContext, BlockPlaceContext, EntityFallDamage,
         EntityFallOnContext,
     },
-    entity::{Entity, InsideBlockEffectCollector, damage::DamageSource},
+    entity::{DEFAULT_AIR_DRAG, Entity, InsideBlockEffectCollector, damage::DamageSource},
+    player::movement::DEFAULT_GRAVITY,
     world::{LevelReader, World},
 };
 
@@ -43,12 +44,12 @@ impl HoneyBlock {
 
     #[must_use]
     fn old_delta_y(delta_y: f64) -> f64 {
-        delta_y / f64::from(0.98_f32) + 0.08
+        delta_y / f64::from(DEFAULT_AIR_DRAG) + DEFAULT_GRAVITY
     }
 
     #[must_use]
     fn new_delta_y(delta_y: f64) -> f64 {
-        (delta_y - 0.08) * f64::from(0.98_f32)
+        (delta_y - DEFAULT_GRAVITY) * f64::from(DEFAULT_AIR_DRAG)
     }
 
     #[must_use]

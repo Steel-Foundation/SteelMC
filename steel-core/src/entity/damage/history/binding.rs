@@ -1,5 +1,5 @@
 use std::{
-    mem, ptr,
+    ptr,
     sync::{Arc, Weak},
 };
 
@@ -29,15 +29,6 @@ pub(super) struct DamageHistoryVictim {
 }
 
 impl DamageHistoryBinding {
-    /// Moves the binding into the base of the entity's replacement, leaving
-    /// this one unbound. The replacement keeps the entity's generation, which
-    /// the bound records are keyed by.
-    pub(crate) fn take(&self) -> Self {
-        Self {
-            state: SyncMutex::new(mem::take(&mut *self.state.lock())),
-        }
-    }
-
     /// The marker must live in a gameplay owner, never in the entity itself.
     pub(crate) fn retain_owner(&self) -> Arc<()> {
         let mut state = self.state.lock();

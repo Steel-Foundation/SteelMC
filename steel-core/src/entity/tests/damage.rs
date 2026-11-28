@@ -1,4 +1,8 @@
 use super::*;
+use steel_registry::data_components::vanilla_components::CUSTOM_NAME;
+use text_components::content::Content;
+
+use crate::test_support::TestPlayerBuilder;
 
 #[test]
 fn generic_living_hurt_applies_health_damage() {
@@ -427,4 +431,45 @@ fn worn_helmet_cuts_helmet_damaging_hurts_by_a_quarter() {
         });
     assert!(helmeted.hurt(test_world(), &source, 4.0));
     assert_f32_close(helmeted.living().health(), 17.0);
+}
+
+#[test]
+fn localized_death_message_matches_vanilla_argument_shapes() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = test_world();
+    let attacker = TestPlayerBuilder::new(Arc::clone(world), "Attacker", 1).build();
+    let victim = Arc::new(LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world));
+    let attacker_ref: SharedEntity = Arc::<Player>::clone(&attacker);
+
+    victim.living().set_last_hurt_by_mob(Some(&attacker_ref));
+    let message = DamageSource::environment(&vanilla_damage_types::GENERIC)
+        .get_localized_death_message(&victim.living());
+    assert_translated_death_message(&message, "death.attack.generic.player", 2);
+
+    let source = DamageSource::direct(&vanilla_damage_types::MOB_ATTACK, Arc::clone(&attacker_ref));
+    let message = source.get_localized_death_message(&victim.living());
+    assert_translated_death_message(&message, "death.attack.mob", 2);
+
+    let mut named_weapon = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+    named_weapon.set(CUSTOM_NAME, TextComponent::plain("Doom".to_owned()));
+    attacker.inventory.lock().set_selected_item(named_weapon);
+
+    let message = source.get_localized_death_message(&victim.living());
+    assert_translated_death_message(&message, "death.attack.mob.item", 3);
+}
+
+fn assert_translated_death_message(
+    message: &TextComponent,
+    expected_key: &str,
+    expected_args: usize,
+) {
+    let Content::Translate(translated) = &message.content else {
+        panic!("expected a translated death message");
+    };
+    assert_eq!(translated.key.as_ref(), expected_key);
+    assert_eq!(
+        translated.args.as_ref().map_or(0, |args| args.len()),
+        expected_args
+    );
 }

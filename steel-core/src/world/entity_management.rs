@@ -1,10 +1,11 @@
 use super::{
-    AddEntityError, Arc, BLOCK_DROPS, BlockPos, ChunkPos, ChunkStatus, DVec3, Direction, Entity,
-    EntityChunkCallback, EntityLifecycleChanges, EntityOwnership, EntityTracker, EntityVisibility,
-    ExperienceOrbEntity, FxHashSet, GameEventContext, GameEventDispatcher, GameEventListenerCount,
-    GameEventListenerStorage, GameEventRef, InactiveEntityCallback, ItemEntity, ItemStack, Player,
-    RemovalReason, SectionPos, SharedEntity, SharedGameEventListener, SyncMutex, World, WorldAabb,
-    WorldChangeRequest, block_entity_ticker, mem, vanilla_entities,
+    AddEntityError, Arc, BLOCK_DROPS, BlockPos, ChunkPos, ChunkStatus, ControlFlow, DVec3,
+    Direction, Entity, EntityChunkCallback, EntityLifecycleChanges, EntityOwnership, EntityTracker,
+    EntityVisibility, ExperienceOrbEntity, FxHashSet, GameEventContext, GameEventDispatcher,
+    GameEventListenerCount, GameEventListenerStorage, GameEventRef, InactiveEntityCallback,
+    ItemEntity, ItemStack, PartEntity, Player, RemovalReason, SectionPos, SharedEntity,
+    SharedGameEventListener, SyncMutex, World, WorldAabb, WorldChangeRequest, block_entity_ticker,
+    mem, vanilla_entities,
 };
 use crate::entity::prelude::*;
 
@@ -71,20 +72,31 @@ impl World {
         self.entity_manager.commit_bounding_box_change(entity.id());
     }
 
+    /// Starts tracking `entity`, as in vanilla `ServerLevel.EntityCallbacks.onTrackingStart`.
     pub(crate) fn add_entity_to_tracker(self: &Arc<Self>, entity: &SharedEntity) {
+        self.register_entity_parts(entity);
         self.entity_tracker.add(
             entity,
             |chunk| self.get_packet_tracking_players(chunk),
             |id| self.players.get_by_entity_id(id),
         );
-        self.track_navigating_mob(entity);
+        self.navigating_mobs.track(entity);
     }
 
-    pub(crate) fn remove_entity_from_tracker(&self, entity_id: i32) {
+    /// Stops tracking an entity, as in vanilla `ServerLevel.EntityCallbacks.onTrackingEnd`.
+    pub(crate) fn remove_entity_from_tracker(&self, entity: &dyn Entity) {
+        let entity_id = entity.id();
+        let parts = entity.parts();
+        if !parts.is_empty() {
+            let mut entity_parts = self.entity_parts.lock();
+            for part in parts {
+                entity_parts.remove(&part.id());
+            }
+        }
         self.entity_tracker.remove(entity_id, |player_id| {
             self.players.get_by_entity_id(player_id)
         });
-        self.untrack_navigating_mob(entity_id);
+        self.navigating_mobs.untrack(entity_id);
     }
 
     pub(crate) fn apply_entity_lifecycle_changes(
@@ -92,19 +104,25 @@ impl World {
         changes: EntityLifecycleChanges,
     ) {
         for entity in changes.tracking_stopped {
-            self.remove_entity_from_tracker(entity.id());
+            self.remove_entity_from_tracker(entity.as_ref());
         }
         for entity in changes.tracking_started {
             self.add_entity_to_tracker(&entity);
         }
     }
 
-    pub(super) fn track_navigating_mob(&self, entity: &SharedEntity) {
-        self.navigating_mobs.track(entity);
-    }
+    /// Publishes `entity`'s parts and binds them to it.
+    fn register_entity_parts(&self, entity: &SharedEntity) {
+        let parts = entity.parts();
+        if parts.is_empty() {
+            return;
+        }
 
-    pub(super) fn untrack_navigating_mob(&self, entity_id: i32) {
-        self.navigating_mobs.untrack(entity_id);
+        let mut entity_parts = self.entity_parts.lock();
+        for part in parts {
+            part.part_base().bind_parent(entity);
+            entity_parts.insert(part.id(), Arc::clone(part));
+        }
     }
 
     pub(crate) fn register_loaded_entity(
@@ -551,12 +569,25 @@ impl World {
         self.entity_manager.get_by_uuid(uuid)
     }
 
+    /// Gets an entity, falling back to a multipart part (vanilla `ServerLevel.getEntityOrPart`).
+    /// Use this for client-supplied IDs, since clients target the parts they synthesize.
+    #[must_use]
+    pub fn get_accessible_entity_or_part_by_id(&self, id: i32) -> Option<SharedEntity> {
+        if let Some(entity) = self.entity_manager.get_accessible_by_id(id) {
+            return Some(entity);
+        }
+        self.entity_parts
+            .lock()
+            .get(&id)
+            .map(|part| Arc::clone(part) as SharedEntity)
+    }
+
     /// Gets all entities intersecting the given bounding box.
     ///
     /// Only returns entities in loaded chunks.
     #[must_use]
     pub fn get_entities_in_aabb(&self, aabb: &WorldAabb) -> Vec<SharedEntity> {
-        self.entity_manager.get_entities_in_aabb(aabb)
+        self.get_entities_in_aabb_matching(aabb, |_| true)
     }
 
     /// Gets entities intersecting the given bounding box and matching `predicate`.
@@ -566,10 +597,109 @@ impl World {
     pub fn get_entities_in_aabb_matching(
         &self,
         aabb: &WorldAabb,
-        predicate: impl FnMut(&dyn Entity) -> bool,
+        mut predicate: impl FnMut(&dyn Entity) -> bool,
     ) -> Vec<SharedEntity> {
-        self.entity_manager
-            .get_entities_in_aabb_matching(aabb, predicate)
+        let mut entities = self
+            .entity_manager
+            .get_entities_in_aabb_matching(aabb, &mut predicate);
+        self.append_parts_in_aabb(aabb, None, &mut predicate, &mut entities);
+        entities
+    }
+
+    /// Gets entities intersecting `aabb` and matching `predicate`, reaching parts only
+    /// through a parent in `aabb` without testing their own boxes (vanilla
+    /// `Level.getEntitiesOfClass` and its `EntityTypeTest` overload).
+    ///
+    /// Only returns entities in loaded chunks.
+    #[must_use]
+    pub fn get_entities_of_class_matching(
+        &self,
+        aabb: &WorldAabb,
+        mut predicate: impl FnMut(&dyn Entity) -> bool,
+    ) -> Vec<SharedEntity> {
+        let mut output = Vec::new();
+        for entity in self.entity_manager.get_entities_in_aabb(aabb) {
+            if predicate(entity.as_ref()) {
+                output.push(Arc::clone(&entity));
+            }
+            for part in entity.parts() {
+                if predicate(part.as_ref()) {
+                    output.push(Arc::clone(part) as SharedEntity);
+                }
+            }
+        }
+        output
+    }
+
+    /// Gets entities in `aabb` matching `predicate`, excluding `except` and its parts
+    /// (vanilla `Level.getEntities(Entity, AABB, Predicate)`).
+    #[must_use]
+    pub fn get_entities_in_aabb_excluding(
+        &self,
+        aabb: &WorldAabb,
+        except: &dyn Entity,
+        mut predicate: impl FnMut(&dyn Entity) -> bool,
+    ) -> Vec<SharedEntity> {
+        let except_id = except.id();
+        let mut entities = self
+            .entity_manager
+            .get_entities_in_aabb_matching(aabb, |entity| {
+                entity.id() != except_id && predicate(entity)
+            });
+        self.append_parts_in_aabb(aabb, Some(except_id), &mut predicate, &mut entities);
+        entities
+    }
+
+    /// Visits the parts intersecting `aabb` and matching `predicate`, skipping `except_id`
+    /// and its parts. Each part's own box is tested, as in vanilla's predicate overload.
+    fn visit_parts_in_aabb(
+        &self,
+        aabb: &WorldAabb,
+        except_id: Option<i32>,
+        predicate: &mut impl FnMut(&dyn Entity) -> bool,
+        mut visit: impl FnMut(&Arc<dyn PartEntity>) -> ControlFlow<()>,
+    ) {
+        // Snapshot first: `predicate` and `visit` may query the world again, and the
+        // lock is not reentrant.
+        let parts = {
+            let entity_parts = self.entity_parts.lock();
+            if entity_parts.is_empty() {
+                return;
+            }
+            entity_parts.values().cloned().collect::<Vec<_>>()
+        };
+
+        for part in &parts {
+            if let Some(except_id) = except_id
+                && (part.id() == except_id
+                    || part.parent().is_some_and(|parent| parent.id() == except_id))
+            {
+                continue;
+            }
+            if part.is_removed()
+                || !aabb.intersects(part.bounding_box())
+                || !predicate(part.as_ref())
+            {
+                continue;
+            }
+            if visit(part).is_break() {
+                return;
+            }
+        }
+    }
+
+    /// Appends the multipart sub-entities intersecting `aabb` to `output`.
+    fn append_parts_in_aabb(
+        &self,
+        aabb: &WorldAabb,
+        except_id: Option<i32>,
+        predicate: &mut impl FnMut(&dyn Entity) -> bool,
+        output: &mut Vec<SharedEntity>,
+    ) {
+        self.visit_parts_in_aabb(aabb, except_id, predicate, |part| {
+            output.push(Arc::clone(part) as SharedEntity);
+            ControlFlow::Continue(())
+        });
     }
 
     /// Returns whether any entity intersects the given bounding box and matches `predicate`.
@@ -579,10 +709,21 @@ impl World {
     pub fn has_entity_in_aabb_matching(
         &self,
         aabb: &WorldAabb,
-        predicate: impl FnMut(&dyn Entity) -> bool,
+        mut predicate: impl FnMut(&dyn Entity) -> bool,
     ) -> bool {
-        self.entity_manager
-            .has_entity_in_aabb_matching(aabb, predicate)
+        if self
+            .entity_manager
+            .has_entity_in_aabb_matching(aabb, &mut predicate)
+        {
+            return true;
+        }
+
+        let mut found = false;
+        self.visit_parts_in_aabb(aabb, None, &mut predicate, |_| {
+            found = true;
+            ControlFlow::Break(())
+        });
+        found
     }
 
     /// Gets matching entity bounding boxes intersecting the given bounding box.
@@ -592,10 +733,17 @@ impl World {
     pub fn get_entity_bounding_boxes_in_aabb_matching(
         &self,
         aabb: &WorldAabb,
-        predicate: impl FnMut(&dyn Entity) -> bool,
+        mut predicate: impl FnMut(&dyn Entity) -> bool,
     ) -> Vec<WorldAabb> {
-        self.entity_manager
-            .get_entity_bounding_boxes_in_aabb_matching(aabb, predicate)
+        let mut boxes = self
+            .entity_manager
+            .get_entity_bounding_boxes_in_aabb_matching(aabb, &mut predicate);
+
+        self.visit_parts_in_aabb(aabb, None, &mut predicate, |part| {
+            boxes.push(part.bounding_box());
+            ControlFlow::Continue(())
+        });
+        boxes
     }
 
     /// Gets entity shapes for movement collision through the selected conservative broad phase.
@@ -630,10 +778,24 @@ impl World {
         &self,
         aabb: &WorldAabb,
         origin: DVec3,
-        predicate: impl FnMut(&dyn Entity) -> bool,
+        mut predicate: impl FnMut(&dyn Entity) -> bool,
     ) -> Option<SharedEntity> {
-        self.entity_manager
-            .nearest_entity_in_aabb_matching(aabb, origin, predicate)
+        let nearest =
+            self.entity_manager
+                .nearest_entity_in_aabb_matching(aabb, origin, &mut predicate);
+        let mut best = nearest.map(|entity| {
+            let distance = entity.position().distance_squared(origin);
+            (entity, distance)
+        });
+
+        self.visit_parts_in_aabb(aabb, None, &mut predicate, |part| {
+            let distance = part.position().distance_squared(origin);
+            if best.as_ref().is_none_or(|(_, current)| distance < *current) {
+                best = Some((Arc::clone(part) as SharedEntity, distance));
+            }
+            ControlFlow::Continue(())
+        });
+        best.map(|(entity, _)| entity)
     }
 
     /// Gets the nearest player to `position` within `max_distance`.
@@ -689,7 +851,7 @@ impl World {
         pusher: &dyn Entity,
         aabb: &WorldAabb,
     ) -> Vec<SharedEntity> {
-        Self::filter_pushable_entities(pusher, self.get_entities_in_aabb(aabb))
+        self.get_entities_in_aabb_excluding(aabb, pusher, EntitySelector::pushable_by(pusher))
     }
 
     pub(crate) fn filter_pushable_entities(

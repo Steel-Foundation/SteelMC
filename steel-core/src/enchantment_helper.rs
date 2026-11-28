@@ -4,6 +4,8 @@ use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use item_in_use::EnchantedItemInUse;
+use steel_math::round_f32;
+use steel_utils::TICKS_PER_SECOND;
 
 use steel_registry::enchantment_effect::{
     DamageSourcePredicate, EnchantmentEffectComponent, EnchantmentEffectRequirements,
@@ -208,10 +210,48 @@ pub(crate) fn do_post_attack_effects_from_item(
     );
 }
 
+/// Runs post-attack enchantment effects, crediting the living attacker's weapon;
+/// without a living attacker only the victim's equipment reacts.
+pub(crate) fn do_post_attack_effects(
+    world: &World,
+    victim: &(impl Entity + ?Sized),
+    context: &EnchantmentPostAttackContext<'_>,
+) {
+    let mut weapon = None;
+    if let Some(attacker) = context
+        .attacker
+        .filter(|attacker| attacker.as_living_entity().is_some())
+    {
+        attacker.with_weapon_item(&mut |item| {
+            weapon = item.map(|stack| stack.copy_with_count(stack.count()));
+        });
+    }
+    match weapon {
+        Some(weapon) => do_post_attack_effects_with_item_source(world, victim, weapon, context),
+        None => do_post_attack_victim_effects(world, victim, context),
+    }
+}
+
 pub(crate) fn do_post_attack_effects_with_item_source(
     world: &World,
     victim: &(impl Entity + ?Sized),
-    source: &ItemStack,
+    mut source: ItemStack,
+    context: &EnchantmentPostAttackContext<'_>,
+) {
+    do_post_attack_victim_effects(world, victim, context);
+
+    let _ = apply_post_attack_effects(
+        world,
+        &mut EnchantedItemInUse::Stack(&mut source),
+        Some(EquipmentSlot::MainHand),
+        EnchantmentTarget::Attacker,
+        context,
+    );
+}
+
+fn do_post_attack_victim_effects(
+    world: &World,
+    victim: &(impl Entity + ?Sized),
     context: &EnchantmentPostAttackContext<'_>,
 ) {
     if let Some(living_victim) = victim.as_living_entity() {
@@ -234,15 +274,6 @@ pub(crate) fn do_post_attack_effects_with_item_source(
             }
         }
     }
-
-    let mut source = source.copy_with_count(source.count());
-    let _ = apply_post_attack_effects(
-        world,
-        &mut EnchantedItemInUse::Stack(&mut source),
-        Some(EquipmentSlot::MainHand),
-        EnchantmentTarget::Attacker,
-        context,
-    );
 }
 
 fn apply_value_effects(
@@ -557,7 +588,7 @@ fn apply_supported_entity_effect(
             false
         }
         EnchantmentEntityEffect::Ignite { duration } => {
-            let ticks = (duration.calculate(level) * 20.0).floor() as i32;
+            let ticks = (duration.calculate(level) * TICKS_PER_SECOND as f32).floor() as i32;
             entity.ignite_for_ticks(ticks);
             false
         }
@@ -577,8 +608,8 @@ fn apply_supported_entity_effect(
             let max_amplifier = max_amplifier.calculate(level);
             let duration_seconds = random_between(min_duration, max_duration);
             let amplifier = random_between(min_amplifier, max_amplifier);
-            let duration_ticks = java_round(duration_seconds * 20.0);
-            let amplifier = java_round(amplifier).max(0);
+            let duration_ticks = round_f32(duration_seconds * TICKS_PER_SECOND as f32);
+            let amplifier = round_f32(amplifier).max(0);
             living.add_mob_effect(MobEffectInstance::with_duration(
                 effect,
                 duration_ticks,
@@ -696,10 +727,6 @@ fn apply_supported_post_piercing_entity_effect(
 
 fn random_between(min: f32, max: f32) -> f32 {
     min + rand::random::<f32>() * (max - min)
-}
-
-fn java_round(value: f32) -> i32 {
-    (value + 0.5).floor() as i32
 }
 
 fn requirements_match(
@@ -1460,7 +1487,7 @@ mod tests {
         let context = EnchantmentPostAttackContext::new(&victim_entity, &damage_source);
         let source = ItemStack::empty();
 
-        do_post_attack_effects_with_item_source(test_world(), victim.as_ref(), &source, &context);
+        do_post_attack_effects_with_item_source(test_world(), victim.as_ref(), source, &context);
 
         let mut chestplate_broke = false;
         victim

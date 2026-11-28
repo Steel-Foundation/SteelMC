@@ -4,7 +4,7 @@ use glam::DVec3;
 use super::reduced_tick_delay;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
 use crate::entity::ai::goal::selector::{Goal, GoalControls};
-use crate::entity::ai::targeting::TargetingConditions;
+use crate::entity::ai::targeting::{TargetingConditions, UNBOUNDED_PLAYER_SEARCH_DISTANCE};
 use crate::entity::{Living, Mob, SharedEntity};
 use crate::world::World;
 
@@ -126,7 +126,7 @@ impl Goal for LookAtPlayerGoal {
         let origin = DVec3::new(position.x, mob.eye_y(), position.z);
         self.look_at = match &self.look_at_type {
             LookAtTargetType::Player => world
-                .nearest_player(origin, self.look_distance, |player| {
+                .nearest_player(origin, UNBOUNDED_PLAYER_SEARCH_DISTANCE, |player| {
                     !mob.has_indirect_passenger(player)
                         && self.look_at_context.test(
                             world.as_ref(),
@@ -243,10 +243,10 @@ mod tests {
     #[test]
     fn look_at_player_goal_uses_vanilla_adjusted_look_time() {
         init_vanilla_registry();
-        let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+        let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
         let mut goal = LookAtPlayerGoal::new(6.0);
 
-        goal.start(&pig.mob());
+        goal.start(&chicken.mob());
 
         assert!(
             (reduced_tick_delay(40)..=reduced_tick_delay(79)).contains(&goal.look_time),

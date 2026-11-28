@@ -138,29 +138,29 @@ mod tests {
     #[test]
     fn panic_goal_uses_vanilla_panic_damage_tag() {
         init_vanilla_registry();
-        let pig = ChickenEntity::new(
+        let chicken = ChickenEntity::new(
             &vanilla_entities::CHICKEN,
             1,
             DVec3::ZERO,
             Arc::downgrade(test_world()),
         );
 
-        assert!(!PanicGoal::should_panic(&pig.mob()));
+        assert!(!PanicGoal::should_panic(&chicken.mob()));
 
         assert!(living_entity::hurt(
-            &*pig,
+            &*chicken,
             test_world(),
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
             1.0
         ));
-        assert!(!PanicGoal::should_panic(&pig.mob()));
+        assert!(!PanicGoal::should_panic(&chicken.mob()));
 
         assert!(living_entity::hurt(
-            &*pig,
+            &*chicken,
             test_world(),
             &DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK),
             2.0
         ));
-        assert!(PanicGoal::should_panic(&pig.mob()));
+        assert!(PanicGoal::should_panic(&chicken.mob()));
     }
 }

@@ -16,7 +16,7 @@ use super::super::{
     registration::CommandRegistration,
 };
 use crate::{
-    entity::{AddEntityError, ENTITIES, EntitySpawnReason, SharedEntity, next_entity_id},
+    entity::{AddEntityError, ENTITIES, EntitySpawnReason, SharedEntity},
     world::World,
 };
 
@@ -70,17 +70,13 @@ pub(super) fn create_entity(
         ));
     }
 
-    let Some(entity) = ENTITIES.create(
-        entity_type,
-        next_entity_id(),
-        position,
-        Arc::downgrade(world),
-    ) else {
+    let Some(entity) = ENTITIES.create(entity_type, position, Arc::downgrade(world)) else {
         return Err(command_failed(&translations::COMMANDS_SUMMON_FAILED));
     };
 
     if let Some(mob) = entity.as_mob() {
-        let _ = mob.finalize_spawn(world, EntitySpawnReason::Command, None);
+        let difficulty = world.get_current_difficulty_at(entity.block_position());
+        let _ = mob.finalize_spawn(world, difficulty, EntitySpawnReason::Command, None);
     }
 
     match world.try_add_entity(Arc::clone(&entity)) {

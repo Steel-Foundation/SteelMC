@@ -5,6 +5,13 @@ use super::reduced_tick_delay;
 use super::selector::{Goal, GoalControls};
 use crate::entity::{Mob, SharedEntity};
 
+const MIN_LEAP_DISTANCE_SQR: f64 = 4.0;
+const MAX_LEAP_DISTANCE_SQR: f64 = 16.0;
+const HORIZONTAL_TARGET_EPSILON_SQR: f64 = 1.0e-7;
+const HORIZONTAL_LEAP_SCALE: f64 = 0.4;
+const EXISTING_MOMENTUM_SCALE: f64 = 0.2;
+const LEAP_CHANCE_TICKS: i32 = 5;
+
 pub struct LeapAtTargetGoal {
     target: Option<SharedEntity>,
     yd: f32,
@@ -32,7 +39,7 @@ impl Goal for LeapAtTargetGoal {
         };
 
         let distance_sqr = mob.position().distance_squared(target.position());
-        if !(4.0..=16.0).contains(&distance_sqr) {
+        if !(MIN_LEAP_DISTANCE_SQR..=MAX_LEAP_DISTANCE_SQR).contains(&distance_sqr) {
             return false;
         }
 
@@ -40,7 +47,7 @@ impl Goal for LeapAtTargetGoal {
             return false;
         }
 
-        if rand::random_range(0..reduced_tick_delay(5)) != 0 {
+        if rand::random_range(0..reduced_tick_delay(LEAP_CHANCE_TICKS)) != 0 {
             return false;
         }
 
@@ -60,8 +67,8 @@ impl Goal for LeapAtTargetGoal {
         let movement = mob.velocity();
         let mut delta = target.position() - mob.position();
         delta.y = 0.0;
-        if delta.length_squared() > 1.0e-7 {
-            delta = delta.normalize() * 0.4 + movement * 0.2;
+        if delta.length_squared() > HORIZONTAL_TARGET_EPSILON_SQR {
+            delta = delta.normalize() * HORIZONTAL_LEAP_SCALE + movement * EXISTING_MOMENTUM_SCALE;
         }
 
         mob.set_velocity(DVec3::new(delta.x, f64::from(self.yd), delta.z));

@@ -8,11 +8,12 @@ use crate::entity::living_entity;
 use crate::physics::MoveResult;
 use crate::world::World;
 use std::f32::consts::{PI, TAU};
+use std::f64::consts::TAU as TAU_F64;
 use std::sync::Arc;
 
 use glam::DVec3;
 use steel_macros::entity_behavior;
-use steel_math::{DEGREE_90, vector};
+use steel_math::{DEGREE_90, RAD_TO_DEG, trig, vector};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::ParticleData;
 use steel_registry::entity_type::EntityTypeRef;
@@ -33,7 +34,7 @@ use crate::entity::mob::{self};
 use crate::entity::prelude::*;
 use crate::entity::{
     DefaultEntityPush, EntityBase, EntityMovementEmission, EntityProps, LivingEntityBase,
-    LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, next_entity_id,
+    LivingProps, MobBase, MobProps, SharedEntity, SpawnRule, horizontal_distance, next_entity_id,
 };
 use crate::physics::MoverType;
 use goals::{SquidFleeGoal, SquidRandomMovementGoal};
@@ -157,7 +158,7 @@ impl SquidEntity {
 
     /// Whether the squid is set to move somewhere.
     fn has_movement_vector(&self) -> bool {
-        self.swimming.lock().movement_vector.length_squared() > 1.0e-5
+        self.swimming.lock().movement_vector.length_squared() > f64::from(1.0e-5_f32)
     }
 
     fn set_movement_vector(&self, movement_vector: DVec3) {
@@ -183,7 +184,6 @@ impl SquidEntity {
         }
     }
 
-    /// `Squid.hurtServer`: a squid hurt by a mob squirts ink.
     /// `Squid.rotateVector`: from squid-local space into world space.
     fn rotate_vector(&self, local: DVec3) -> DVec3 {
         let x_rot = self.swimming.lock().x_body_rot_o.to_radians();
@@ -208,10 +208,11 @@ impl SquidEntity {
         let position_scale = if self.living().is_baby() { 0.1 } else { 0.3 };
         for _ in 0..30 {
             let direction = self.rotate_vector(DVec3::new(
-                rand::random_range(-0.3..0.3),
+                f64::from(rand::random::<f32>()) * 0.6 - 0.3,
                 -1.0,
-                rand::random_range(-0.3..0.3),
+                f64::from(rand::random::<f32>()) * 0.6 - 0.3,
             ));
+
             let speed = direction * f64::from(position_scale + rand::random::<f32>() * 2.0);
             world.send_particles(particle.clone(), particle_position, 0, speed, 0.1);
         }
@@ -225,19 +226,22 @@ impl SquidEntity {
             let mut swimming = self.swimming.lock();
             swimming.x_body_rot_o = swimming.x_body_rot;
             swimming.tentacle_movement += swimming.tentacle_speed;
-            let stroke_ended = swimming.tentacle_movement > TAU;
+
+            let stroke_ended = f64::from(swimming.tentacle_movement) > TAU_F64;
             if stroke_ended {
                 swimming.tentacle_movement -= TAU;
                 if rand::random_range(0..10) == 0 {
                     swimming.tentacle_speed = 1.0 / (rand::random::<f32>() + 1.0) * 0.2;
                 }
             }
+
             (
                 swimming.tentacle_movement,
                 swimming.movement_vector,
                 stroke_ended,
             )
         };
+
         if stroke_ended {
             self.broadcast_entity_event(EntityStatus::SquidAnimSynch);
         }
@@ -256,13 +260,16 @@ impl SquidEntity {
             let living = self.living();
             let y_body_rot = living.y_body_rot();
             let y_body_rot = y_body_rot
-                + (-(movement.x.atan2(movement.z) as f32).to_degrees() - y_body_rot) * 0.1;
+                + (-(trig::atan2(movement.x, movement.z) as f32) * RAD_TO_DEG - y_body_rot) * 0.1;
             living.set_y_body_rot(y_body_rot);
-            self.set_rotation((y_body_rot, self.rotation().1));
-            let horizontal = movement.x.hypot(movement.z);
+            self.base().set_y_rot(y_body_rot);
+
+            let horizontal = horizontal_distance(movement);
             let mut swimming = self.swimming.lock();
-            swimming.x_body_rot +=
-                (-(horizontal.atan2(movement.y) as f32).to_degrees() - swimming.x_body_rot) * 0.1;
+
+            swimming.x_body_rot += (-(trig::atan2(horizontal, movement.y) as f32) * RAD_TO_DEG
+                - swimming.x_body_rot)
+                * 0.1;
         } else {
             let y = match self.living().mob_effect(LEVITATION) {
                 Some(levitation) => 0.05 * f64::from(levitation.amplifier() + 1),

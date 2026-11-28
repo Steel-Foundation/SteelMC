@@ -647,7 +647,8 @@ impl Resolver<'_> {
                 if operator.kind() == "!" {
                     Some(ArgType::primitive("boolean"))
                 } else {
-                    self.infer(node.child_by_field_name("operand")?, decl, owner)
+                    let operand = self.infer(node.child_by_field_name("operand")?, decl, owner)?;
+                    unary_numeric_type(&operand.erased).map(ArgType::primitive)
                 }
             }
             "binary_expression" => {
@@ -659,6 +660,9 @@ impl Resolver<'_> {
                     return Some(ArgType::primitive("boolean"));
                 }
                 let left = self.infer(node.child_by_field_name("left")?, decl, owner)?;
+                if matches!(operator, "<<" | ">>" | ">>>") {
+                    return unary_numeric_type(&left.erased).map(ArgType::primitive);
+                }
                 let right = self.infer(node.child_by_field_name("right")?, decl, owner)?;
                 if operator == "+" && (left.erased == "String" || right.erased == "String") {
                     return Some(ArgType::primitive("String"));
@@ -1057,6 +1061,10 @@ fn unboxed(reference: &str) -> Option<&'static str> {
         "Double" => "double",
         _ => return None,
     })
+}
+
+fn unary_numeric_type(ty: &str) -> Option<&'static str> {
+    promote(unboxed(ty).unwrap_or(ty), "int")
 }
 
 fn promote(a: &str, b: &str) -> Option<&'static str> {

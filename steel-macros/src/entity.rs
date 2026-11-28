@@ -325,12 +325,12 @@ fn role_fields(input: &DeriveInput) -> syn::Result<Vec<RoleField>> {
 
     let mut fields = Vec::new();
     for field in &named.named {
+        let mut role = None;
         for attr in field
             .attrs
             .iter()
             .filter(|attr| attr.path().is_ident("entity"))
         {
-            let mut role = None;
             attr.parse_nested_meta(|meta| {
                 let parsed = if meta.path.is_ident("base") {
                     FieldRole::Base
@@ -350,14 +350,37 @@ fn role_fields(input: &DeriveInput) -> syn::Result<Vec<RoleField>> {
                 }
                 Ok(())
             })?;
-            if let (Some(role), Some(ident)) = (role, field.ident.clone()) {
-                fields.push(RoleField {
-                    role,
-                    ident,
-                    ty: field.ty.clone(),
-                });
-            }
+        }
+        if let (Some(role), Some(ident)) = (role, &field.ident) {
+            fields.push(RoleField {
+                role,
+                ident: ident.clone(),
+                ty: field.ty.clone(),
+            });
         }
     }
     Ok(fields)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn separate_attributes_cannot_assign_two_roles_to_a_field() {
+        let result = expand(quote! {
+            #[entity(entity_type = MY_TYPE)]
+            struct MyEntity {
+                #[entity(base)]
+                #[entity(component)]
+                base: EntityBase,
+            }
+        });
+        assert_eq!(
+            result
+                .expect_err("conflicting roles should fail")
+                .to_string(),
+            "a field has one entity role"
+        );
+    }
 }

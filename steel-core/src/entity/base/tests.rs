@@ -389,7 +389,7 @@ fn killed_player_can_reserve_respawn_transition() {
     base.set_removed(RemovalReason::Killed);
 
     assert_eq!(base.begin_pending_world_change(), None);
-    let Some(pending_token) = base.begin_pending_player_respawn() else {
+    let Some(pending_token) = base.reserve_world_change(Some(RemovalReason::Killed)) else {
         panic!("a killed player should be able to reserve respawn preparation");
     };
     assert!(base.is_world_change_token_pending(pending_token));
@@ -870,7 +870,7 @@ fn set_velocity_ignores_non_finite_updates_like_vanilla() {
 }
 
 #[test]
-fn set_rotation_wraps_yaw_and_clamps_pitch_like_vanilla_snap() {
+fn set_rotation_wraps_angles_before_clamping_pitch() {
     let base = EntityBase::new(
         1,
         DVec3::ZERO,
@@ -884,10 +884,10 @@ fn set_rotation_wraps_yaw_and_clamps_pitch_like_vanilla_snap() {
     assert_f32_close(rotation.0, 90.0);
     assert_f32_close(rotation.1, 90.0);
 
-    base.set_rotation((-450.0, -120.0));
+    base.set_rotation((-450.0, -390.0));
     let rotation = base.rotation();
     assert_f32_close(rotation.0, -90.0);
-    assert_f32_close(rotation.1, -90.0);
+    assert_f32_close(rotation.1, -30.0);
 }
 
 #[test]
@@ -923,7 +923,7 @@ fn old_rotation_is_base_tick_snapshot_state() {
     assert_eq!(base.old_rotation(), (60.0, 40.0));
 
     base.set_old_rotation((450.0, 120.0));
-    assert_eq!(base.old_rotation(), (90.0, 90.0));
+    assert_eq!(base.old_rotation(), (450.0, 120.0));
 }
 
 #[test]

@@ -274,33 +274,32 @@ impl Hierarchy {
         }
         if let Some(class_impl) = visible
             .iter()
-            .find(|decl| self.class_index(&decl.owner).is_some() && decl.is_concrete())
+            .find(|decl| self.class_index(&decl.owner).is_some())
         {
-            return Implementation::Concrete(class_impl);
+            return if class_impl.is_concrete() {
+                Implementation::Concrete(class_impl)
+            } else {
+                Implementation::Abstract(class_impl)
+            };
         }
         // Java picks the most specific default among interfaces.
-        let defaults: Vec<&'static MethodDecl> = visible
-            .iter()
-            .filter(|decl| self.class_index(&decl.owner).is_none() && decl.is_concrete())
-            .copied()
-            .collect();
-        let most_specific: Vec<&'static MethodDecl> = defaults
-            .iter()
-            .filter(|candidate| {
-                !defaults.iter().any(|other| {
-                    other.owner != candidate.owner
-                        && self.interface_supers[other.owner.as_str()]
-                            .contains(candidate.owner.as_str())
-                })
+        let mut most_specific = visible.iter().copied().filter(|candidate| {
+            !visible.iter().any(|other| {
+                other.owner != candidate.owner
+                    && self.interface_supers[other.owner.as_str()]
+                        .contains(candidate.owner.as_str())
             })
-            .copied()
+        });
+        let defaults: Vec<_> = most_specific
+            .clone()
+            .filter(|decl| decl.is_concrete())
             .collect();
-        match most_specific.as_slice() {
+        match defaults.as_slice() {
             [single] => Implementation::Concrete(single),
-            [] => visible.first().map_or(Implementation::Missing, |decl| {
-                Implementation::Abstract(decl)
-            }),
-            conflicting => Implementation::Conflict(conflicting.to_vec()),
+            [] => most_specific
+                .next()
+                .map_or(Implementation::Missing, Implementation::Abstract),
+            _ => Implementation::Conflict(defaults),
         }
     }
 }

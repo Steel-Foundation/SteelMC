@@ -6,6 +6,8 @@ use super::selector::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::{Animal, Mob, SharedEntity};
 
+const BREED_DISTANCE_SQR: f64 = 9.0;
+
 const PARTNER_SEARCH_RANGE: f64 = 8.0;
 const BREED_TIME: i32 = 60;
 
@@ -114,7 +116,7 @@ impl Goal for BreedGoal {
 
         self.love_time += 1;
         if self.love_time < reduced_tick_delay(BREED_TIME)
-            || mob.position().distance_squared(partner_position) >= 9.0
+            || mob.position().distance_squared(partner_position) >= BREED_DISTANCE_SQR
         {
             return;
         }
@@ -146,9 +148,9 @@ mod tests {
     #[test]
     fn breed_goal_requires_love_mode() {
         init_vanilla_registry();
-        let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+        let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
         let mut goal = BreedGoal::new(1.0);
 
-        assert!(!goal.can_use(&pig.mob()));
+        assert!(!goal.can_use(&chicken.mob()));
     }
 }

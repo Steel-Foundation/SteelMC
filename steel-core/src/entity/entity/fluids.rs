@@ -2,6 +2,13 @@
 
 use super::*;
 
+const SPLASH_HORIZONTAL_SPEED_WEIGHT: f64 = 0.2_f32 as f64;
+const SPLASH_VOLUME_SCALE: f32 = 0.2;
+const RIDDEN_SPLASH_VOLUME_SCALE: f32 = 0.9;
+const HIGH_SPEED_SPLASH_THRESHOLD: f32 = 0.25;
+const SPLASH_PITCH_VARIATION: f32 = 0.4;
+const FLUID_JUMP_THRESHOLD: f64 = 0.4;
+
 /// Water, lava, rain, bubble columns, swimming and air supply.
 ///
 /// Implemented for every [`Entity`]; entity types change behavior through
@@ -14,10 +21,13 @@ pub trait EntityFluids: Entity {
         }
     }
 
-    /// Returns the fluid-surface height threshold used for fluid-jump
-    /// physics: 0.0 for entities with eye height under 0.4, otherwise 0.4.
+    /// Fluid depth above which the entity swims upward to jump.
     fn fluid_jump_threshold(&self) -> f64 {
-        if self.eye_height() < 0.4 { 0.0 } else { 0.4 }
+        if self.eye_height() < FLUID_JUMP_THRESHOLD {
+            0.0
+        } else {
+            FLUID_JUMP_THRESHOLD
+        }
     }
 
     /// Returns true if this entity is currently touching water.
@@ -244,23 +254,25 @@ pub fn is_swimming<E: Entity + ?Sized>(entity: &E) -> bool {
 /// `Entity`'s [`EntityProps::do_water_splash_effect`].
 pub fn do_water_splash_effect<E: Entity + ?Sized>(entity: &E) {
     let (movement, volume_modifier) = if let Some(passenger) = entity.controlling_passenger() {
-        (passenger.velocity(), 0.9)
+        (passenger.velocity(), RIDDEN_SPLASH_VOLUME_SCALE)
     } else {
-        (entity.velocity(), 0.2)
+        (entity.velocity(), SPLASH_VOLUME_SCALE)
     };
-    let speed =
-        ((movement.x * movement.x * 0.2 + movement.y * movement.y + movement.z * movement.z * 0.2)
-            .sqrt() as f32
-            * volume_modifier)
-            .min(1.0);
-    let pitch = 1.0 + (rng().random::<f32>() - rng().random::<f32>()) * 0.4;
-    if speed < 0.25 {
-        entity.play_sound(entity.swim_splash_sound(), speed, pitch);
-    } else {
-        entity.play_sound(entity.swim_high_speed_splash_sound(), speed, pitch);
-    }
 
-    // VANILLA CLIENT-LOCAL: the bubble/splash particle loop uses `Level.addParticle`.
+    let speed = ((movement.x * movement.x * SPLASH_HORIZONTAL_SPEED_WEIGHT
+        + movement.y * movement.y
+        + movement.z * movement.z * SPLASH_HORIZONTAL_SPEED_WEIGHT)
+        .sqrt() as f32
+        * volume_modifier)
+        .min(1.0);
+
+    let pitch = 1.0 + (rand::random::<f32>() - rand::random::<f32>()) * SPLASH_PITCH_VARIATION;
+    let sound = if speed < HIGH_SPEED_SPLASH_THRESHOLD {
+        entity.swim_splash_sound()
+    } else {
+        entity.swim_high_speed_splash_sound()
+    };
+    entity.play_sound(sound, speed, pitch);
 
     entity.game_event(&vanilla_game_events::SPLASH);
 }

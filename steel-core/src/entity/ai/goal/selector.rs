@@ -116,7 +116,18 @@ pub trait Goal: Send {
     fn tick(&mut self, _mob: &Mob<'_>) {}
 }
 
+/// Identifies a goal registered in a [`GoalSelector`] so it can be removed later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GoalId(u64);
+
+impl GoalId {
+    const fn next(self) -> Self {
+        Self(self.0.wrapping_add(1))
+    }
+}
+
 struct WrappedGoal {
+    id: GoalId,
     priority: i32,
     running: bool,
     /// Vanilla's `instanceof PanicGoal`, readable while the goal is checked out.
@@ -126,17 +137,14 @@ struct WrappedGoal {
 }
 
 impl WrappedGoal {
-    fn new(priority: i32, goal: Box<dyn Goal>) -> Self {
+    fn new(id: GoalId, priority: i32, goal: Box<dyn Goal>) -> Self {
         Self {
+            id,
             priority,
             running: false,
             panic_goal: goal.is_panic_goal(),
             goal: Some(goal),
         }
-    }
-
-    const fn is_running(&self) -> bool {
-        self.running
     }
 
     /// Panics while the goal is checked out: like vanilla's goal set, the
@@ -147,14 +155,11 @@ impl WrappedGoal {
         };
         goal.as_ref()
     }
-
-    const fn is_panic_goal(&self) -> bool {
-        self.panic_goal
-    }
 }
 
 /// A goal a tick has taken out of slot `index`, with the slot's priority and running state.
 struct CheckedOutGoal {
+    id: GoalId,
     index: usize,
     priority: i32,
     running: bool,
@@ -168,6 +173,7 @@ impl CheckedOutGoal {
 }
 
 struct GoalSet {
+    next_goal_id: GoalId,
     goals: Vec<WrappedGoal>,
     /// Storage for the checked-out goals, kept between ticks so a tick does not allocate.
     checked_out: Vec<CheckedOutGoal>,
@@ -180,8 +186,7 @@ struct GoalSet {
 /// read its own mob's selector, change the disabled controls (the rest of the
 /// tick sees the change) and add goals (they take part from the next tick).
 /// Removing goals or ticking the selector from a callback panics, as vanilla's
-/// goal set would. A running state changes in the selector as soon as the goal
-/// has started or stopped.
+/// goal set would. Start and stop callbacks see the new running state.
 pub struct GoalSelector {
     set: CheckedMutex<GoalSet>,
     /// The disabled [`GoalControls`] bits, outside the lock so a tick reads
@@ -197,6 +202,7 @@ impl GoalSelector {
     pub const fn new() -> Self {
         Self {
             set: CheckedMutex::new(GoalSet {
+                next_goal_id: GoalId(0),
                 goals: Vec::new(),
                 checked_out: Vec::new(),
             }),
@@ -205,32 +211,51 @@ impl GoalSelector {
         }
     }
 
-    pub fn add_goal<G>(&self, priority: i32, goal: G)
+    /// Adds a goal and returns its removal handle.
+    pub fn add_goal<G>(&self, priority: i32, goal: G) -> GoalId
     where
         G: Goal + 'static,
     {
         let mut set = self.set.lock();
-        set.goals.push(WrappedGoal::new(priority, Box::new(goal)));
+        let id = set.next_goal_id;
+        set.next_goal_id = id.next();
+        set.goals
+            .push(WrappedGoal::new(id, priority, Box::new(goal)));
         self.has_goals.store(true, Ordering::Release);
+        id
+    }
+
+    /// Stops and removes the goal registered with this handle.
+    pub fn remove_goal(&self, mob: &Mob<'_>, id: GoalId) {
+        self.remove_matching_goals(mob, |candidate, _| candidate == id);
     }
 
     /// Stops and removes matching goals. `mob` supplies the stop-hook context.
     pub fn remove_all_goals(&self, mob: &Mob<'_>, mut predicate: impl FnMut(&dyn Goal) -> bool) {
+        self.remove_matching_goals(mob, |_, goal| predicate(goal));
+    }
+
+    fn remove_matching_goals(
+        &self,
+        mob: &Mob<'_>,
+        mut predicate: impl FnMut(GoalId, &dyn Goal) -> bool,
+    ) {
         if !self.has_goals() {
             return;
         }
         let mut goals = self.check_out(|_| true);
         for goal in &mut goals {
-            if !goal.running || !predicate(goal.goal.as_ref()) {
+            if !goal.running || !predicate(goal.id, goal.goal.as_ref()) {
                 continue;
             }
-            goal.goal.stop(mob);
             self.set_running(goal, false);
+            goal.goal.stop(mob);
         }
         self.check_in(goals);
 
         let mut set = self.set.lock();
-        set.goals.retain(|wrapped| !predicate(wrapped.goal()));
+        set.goals
+            .retain(|wrapped| !predicate(wrapped.id, wrapped.goal()));
         self.has_goals
             .store(!set.goals.is_empty(), Ordering::Release);
     }
@@ -243,18 +268,17 @@ impl GoalSelector {
         }
         let mut goals = self.check_out(|_| true);
 
-        let disabled_controls = self.disabled_controls();
         for goal in &mut goals {
             if !goal.running {
                 continue;
             }
-            if !goal.goal.controls().intersects(disabled_controls)
+            if !goal.goal.controls().intersects(self.disabled_controls())
                 && goal.goal.can_continue_to_use(mob)
             {
                 continue;
             }
-            goal.goal.stop(mob);
             self.set_running(goal, false);
+            goal.goal.stop(mob);
         }
 
         for index in 0..goals.len() {
@@ -272,12 +296,12 @@ impl GoalSelector {
                     continue;
                 };
                 let current = &mut goals[current_index];
-                current.goal.stop(mob);
                 self.set_running(current, false);
+                current.goal.stop(mob);
             }
             let candidate = &mut goals[index];
-            candidate.goal.start(mob);
             self.set_running(candidate, true);
+            candidate.goal.start(mob);
         }
 
         for goal in &mut goals {
@@ -293,7 +317,7 @@ impl GoalSelector {
             return;
         }
         let mut goals = self.check_out(|wrapped| {
-            wrapped.is_running()
+            wrapped.running
                 && (force_tick_all_running_goals || wrapped.goal().requires_update_every_tick())
         });
         if goals.is_empty() {
@@ -319,6 +343,7 @@ impl GoalSelector {
                 panic!("goal selector used from inside one of its goals");
             };
             checked_out.push(CheckedOutGoal {
+                id: wrapped.id,
                 index,
                 priority: wrapped.priority,
                 running: wrapped.running,
@@ -382,7 +407,7 @@ impl GoalSelector {
             .lock()
             .goals
             .iter()
-            .filter(|goal| goal.is_running())
+            .filter(|goal| goal.running)
             .count()
     }
 
@@ -397,7 +422,7 @@ impl GoalSelector {
             .lock()
             .goals
             .iter()
-            .any(|goal| goal.is_running() && goal.is_panic_goal())
+            .any(|goal| goal.running && goal.panic_goal)
     }
 
     #[cfg(test)]
@@ -454,7 +479,7 @@ impl GoalSelector {
             .lock()
             .goals
             .iter()
-            .any(|goal| goal.priority == priority && goal.is_running())
+            .any(|goal| goal.priority == priority && goal.running)
     }
 }
 
@@ -841,8 +866,6 @@ mod tests {
         }
     }
 
-    /// A goal is running from the end of its `start` to the end of its `stop`,
-    /// as each callback sees it.
     #[test]
     fn callbacks_see_running_state_change_as_goals_start_and_stop() {
         let mob = Arc::new(TestPathfinderMob::new());
@@ -874,8 +897,8 @@ mod tests {
             [
                 ("low", "can_continue_to_use", 1),
                 ("high", "can_use", 1),
-                ("low", "stop", 1),
-                ("high", "start", 0),
+                ("low", "stop", 0),
+                ("high", "start", 1),
                 ("high", "tick", 1),
             ]
         );
@@ -998,6 +1021,25 @@ mod tests {
                 "the removed goal must be gone entirely"
             );
         }
+
+        selector.tick(&mob.mob());
+        assert_eq!(selector.running_goal_count(), 1);
+        assert!(selector.is_priority_running(7));
+    }
+
+    #[test]
+    fn remove_goal_stops_and_removes_only_the_matching_handle() {
+        let mob = Arc::new(TestPathfinderMob::new());
+        let selector = GoalSelector::new();
+        let first = selector.add_goal(3, StaticGoal::new(GoalControls::MOVE));
+        selector.add_goal(7, StaticGoal::new(GoalControls::MOVE));
+        selector.tick(&mob.mob());
+        assert!(selector.is_priority_running(3));
+
+        selector.remove_goal(&mob.mob(), first);
+
+        assert_eq!(selector.available_goal_count(), 1);
+        assert!(!selector.is_priority_running(3));
 
         selector.tick(&mob.mob());
         assert_eq!(selector.running_goal_count(), 1);

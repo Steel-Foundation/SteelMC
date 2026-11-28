@@ -574,8 +574,3 @@ fn monster_walk_target_value_prefers_darkness() {
         "dark positions should be preferred"
     );
 }
-
-
-
-
-

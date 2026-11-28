@@ -805,7 +805,8 @@ impl World {
     }
 
     /// Returns whether a collider-only, fluid-free clip misses every block.
-    #[cfg(test)]
+    ///
+    /// Uses live collision boxes, so dynamic shapes like moving pistons count.
     pub(crate) fn is_block_collision_path_clear(
         &self,
         start_pos: DVec3,
@@ -1162,7 +1163,14 @@ impl World {
         result
     }
 
-    /// Mirrors Minecraft  `AABB.getDirection` for one block-local shape box.
+    /// Entry point on the box, if the segment crosses a face.
+    pub(crate) fn clip_entity_box(aabb: WorldAabb, from: DVec3, to: DVec3) -> Option<DVec3> {
+        let (scale, _) =
+            Self::intersects_aabb_with_t(from, to, aabb.min_corner(), aabb.max_corner())?;
+        Some(from + (to - from) * scale)
+    }
+
+    /// Entry fraction and face.
     pub(super) fn intersects_aabb_with_t(
         start: DVec3,
         end: DVec3,

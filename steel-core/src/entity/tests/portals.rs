@@ -7,7 +7,7 @@ fn default_tick_runs_vanilla_entity_base_tick() {
     entity.base().set_boarding_cooldown(2);
     entity.base().set_portal_cooldown(2);
 
-    Arc::clone(&entity).tick();
+    entity.tick();
 
     assert_eq!(entity.base().boarding_cooldown(), 1);
     assert_eq!(entity.base().portal_cooldown(), 1);
@@ -150,27 +150,28 @@ fn dimension_transition_persistence_keeps_non_chunk_serializable_entities() {
 fn remove_after_changing_dimensions_clears_old_mob_leash_and_equipment() {
     init_vanilla_registry();
 
-    let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+    let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
     let holder: SharedEntity = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         2,
         DVec3::new(1.0, 0.0, 0.0),
         Weak::new(),
     );
-    let Some(mob) = pig.as_mob() else {
-        panic!("pig should expose mob behavior");
+    let Some(mob) = chicken.as_mob() else {
+        panic!("chicken should expose mob behavior");
     };
     assert!(mob.leashable().set_leashed_to(&holder));
-    pig.living().living_base().equipment().lock().set(
+    chicken.living().living_base().equipment().lock().set(
         EquipmentSlot::Saddle,
         ItemStack::new(&vanilla_items::SADDLE),
     );
 
-    remove_after_changing_dimensions(&*pig);
+    remove_after_changing_dimensions(&*chicken);
 
     assert!(!mob.leashable().is_leashed());
     assert!(
-        pig.living()
+        chicken
+            .living()
             .living_base()
             .equipment()
             .lock()

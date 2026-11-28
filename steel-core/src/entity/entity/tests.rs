@@ -5,22 +5,17 @@ use steel_utils::BlockPos;
 
 #[test]
 fn look_at_rotation_matches_vanilla_axes() {
-    assert_eq!(
-        look_at_rotation(DVec3::ZERO, DVec3::new(0.0, 0.0, 1.0)),
-        (0.0, 0.0)
-    );
-    assert_eq!(
-        look_at_rotation(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0)),
-        (-90.0, 0.0)
-    );
-    assert_eq!(
-        look_at_rotation(DVec3::ZERO, DVec3::new(0.0, 1.0, 1.0)),
-        (0.0, -45.0)
-    );
-    assert_eq!(
-        look_at_rotation(DVec3::ZERO, DVec3::new(-1.0, 0.0, -1.0)),
-        (135.0, 0.0)
-    );
+    let south_yaw = -7.629_394_5e-6_f32;
+    for (target, expected_yaw, expected_pitch) in [
+        (DVec3::Z, south_yaw, -0.0_f32),
+        (DVec3::X, -90.0, -0.0),
+        (DVec3::new(0.0, 1.0, 1.0), south_yaw, -44.999_996),
+        (DVec3::new(-1.0, 0.0, -1.0), 135.0, -0.0),
+    ] {
+        let (yaw, pitch) = look_at_rotation(DVec3::ZERO, target);
+        assert_eq!(yaw.to_bits(), expected_yaw.to_bits());
+        assert_eq!(pitch.to_bits(), expected_pitch.to_bits());
+    }
 }
 
 #[test]

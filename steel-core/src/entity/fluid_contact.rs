@@ -3,12 +3,15 @@
 use std::sync::Arc;
 
 use glam::DVec3;
+use steel_math::vector;
 use steel_registry::fluid::{FluidState, FluidStateExt as _};
-use steel_utils::{BlockPos, ChunkPos, SectionPos, WorldAabb, axis::Axis};
+use steel_utils::{BlockPos, ChunkPos, Direction, SectionPos, WorldAabb, axis::Axis};
 
 use crate::fluid::{get_flow, get_fluid_state, get_height};
-use crate::world::World;
+use crate::world::{LevelReader, World};
 
+const FLUID_INTERACTION_MARGIN: f64 = 0.001;
+const MIN_CURRENT_LENGTH_SQUARED: f32 = 1.0e-5;
 const STILL_CURRENT_VELOCITY_THRESHOLD: f64 = 0.003;
 const MIN_STILL_CURRENT_IMPULSE: f64 = 0.004_500_000_000_000_000_5;
 const SHALLOW_CURRENT_HEIGHT: f64 = 0.4;
@@ -26,22 +29,25 @@ impl EntityFluidCurrent {
     }
 
     fn impulse(self, is_player: bool, old_velocity: DVec3, scale: f64) -> DVec3 {
-        if self.count == 0 || self.accumulated.length_squared() < 1.0e-5 {
+        if self.count == 0
+            || self.accumulated.length_squared() < f64::from(MIN_CURRENT_LENGTH_SQUARED)
+        {
             return DVec3::ZERO;
         }
 
         let mut impulse = if is_player {
-            self.accumulated / f64::from(self.count)
+            self.accumulated * f64::from(self.count).recip()
         } else {
-            self.accumulated.normalize_or_zero()
+            vector::normalize(self.accumulated)
         };
+
         impulse *= scale;
 
         if old_velocity.x.abs() < STILL_CURRENT_VELOCITY_THRESHOLD
             && old_velocity.z.abs() < STILL_CURRENT_VELOCITY_THRESHOLD
             && impulse.length() < MIN_STILL_CURRENT_IMPULSE
         {
-            impulse = impulse.normalize_or_zero() * MIN_STILL_CURRENT_IMPULSE;
+            impulse = vector::normalize(impulse) * MIN_STILL_CURRENT_IMPULSE;
         }
 
         impulse
@@ -60,11 +66,7 @@ struct FluidScanBounds {
     z1: i32,
 }
 
-/// Fluid heights intersecting an entity's current bounding box.
-///
-/// Mirrors the body-height and eye-fluid tracking part of vanilla's
-/// `EntityFluidInteraction`. Current pushing should build on this scan rather
-/// than storing separate water/lava flags on individual entity types.
+/// Water and lava contact, including eye submersion and currents.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct EntityFluidContact {
     water_height: f64,
@@ -97,22 +99,7 @@ impl EntityFluidContact {
     /// Scans the world for water/lava touching `bounding_box`.
     #[must_use]
     pub fn scan(world: &Arc<World>, position: DVec3, eye_y: f64, bounding_box: WorldAabb) -> Self {
-        let Some(bounds) = Self::scan_bounds(bounding_box) else {
-            return Self::default();
-        };
-        if !has_fluid_and_loaded(world, bounds) {
-            return Self::default();
-        }
-
-        Self::scan_with_bounds(
-            bounds,
-            position,
-            eye_y,
-            false,
-            |pos| get_fluid_state(world, pos),
-            |pos, fluid_state| get_height(world, pos, fluid_state),
-            |_pos, _fluid_state| DVec3::ZERO,
-        )
+        Self::scan_with_currents(world, position, eye_y, bounding_box, false)
     }
 
     /// Scans fluid contact and optionally accumulates vanilla fluid currents.
@@ -133,12 +120,15 @@ impl EntityFluidContact {
 
         Self::scan_with_bounds(
             bounds,
-            position,
-            eye_y,
+            DVec3::new(position.x, eye_y, position.z),
             include_current,
             |pos| get_fluid_state(world, pos),
             |pos, fluid_state| get_height(world, pos, fluid_state),
             |pos, fluid_state| get_flow(world, pos, fluid_state),
+            |pos| {
+                let above = pos.above();
+                world.is_face_sturdy(world.get_block_state(above), above, Direction::Down)
+            },
         )
     }
 
@@ -219,17 +209,17 @@ impl EntityFluidContact {
 
         Self::scan_with_bounds(
             bounds,
-            position,
-            eye_y,
+            DVec3::new(position.x, eye_y, position.z),
             include_current,
             fluid_at,
             height_at,
             flow_at,
+            |_| false,
         )
     }
 
     fn scan_bounds(bounding_box: WorldAabb) -> Option<FluidScanBounds> {
-        let interaction_box = bounding_box.deflate(0.001);
+        let interaction_box = bounding_box.deflate(FLUID_INTERACTION_MARGIN);
         if interaction_box.is_empty() {
             return None;
         }
@@ -258,16 +248,16 @@ impl EntityFluidContact {
 
     fn scan_with_bounds(
         bounds: FluidScanBounds,
-        position: DVec3,
-        eye_y: f64,
+        eye_pos: DVec3,
         include_current: bool,
         mut fluid_at: impl FnMut(BlockPos) -> FluidState,
         mut height_at: impl FnMut(BlockPos, FluidState) -> f32,
         mut flow_at: impl FnMut(BlockPos, FluidState) -> DVec3,
+        mut has_sturdy_ceiling: impl FnMut(BlockPos) -> bool,
     ) -> Self {
         let mut contact = Self::default();
-        let eye_block_x = position.x.floor() as i32;
-        let eye_block_z = position.z.floor() as i32;
+        let eye_block_x = eye_pos.x.floor() as i32;
+        let eye_block_z = eye_pos.z.floor() as i32;
 
         for x in bounds.x0..=bounds.x1 {
             for y in bounds.y0..=bounds.y1 {
@@ -286,8 +276,12 @@ impl EntityFluidContact {
 
                     let eye_inside = x == eye_block_x
                         && z == eye_block_z
-                        && eye_y >= fluid_bottom
-                        && eye_y <= fluid_top;
+                        && eye_pos.y >= fluid_bottom
+                        && (eye_pos.y <= fluid_top
+                            || eye_pos.y <= fluid_bottom + 1.0
+                                && fluid_state.is_source()
+                                && has_sturdy_ceiling(pos));
+
                     let height = fluid_top - bounds.entity_y;
                     if fluid_state.is_water() {
                         contact.water_height = contact.water_height.max(height);

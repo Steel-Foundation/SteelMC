@@ -1,6 +1,20 @@
 //! Sleeping in beds.
 
+use steel_math::{DEGREE_180, DEGREE_360, RAD_TO_DEG, vector};
+
 use super::*;
+
+pub(crate) fn yaw_towards_spawn_block(position: DVec3, block: BlockPos) -> f32 {
+    let direction = vector::normalize(block.get_bottom_center() - position);
+    let yaw = trig::atan2(direction.z, direction.x) * f64::from(RAD_TO_DEG) - f64::from(DEGREE_90);
+
+    // After subtracting 90°, only the lower bound needs wrapping.
+    if yaw < -f64::from(DEGREE_180) {
+        (yaw + f64::from(DEGREE_360)) as f32
+    } else {
+        yaw as f32
+    }
+}
 
 impl Living<'_> {
     /// Returns the bed position that makes this living entity sleeping.
@@ -100,16 +114,7 @@ pub fn stop_sleeping<E: Parts>(entity: &E) {
                             f64::from(above.z()) + 0.5,
                         )
                     });
-            let bed_center = DVec3::new(
-                f64::from(bed_position.x()) + 0.5,
-                f64::from(bed_position.y()),
-                f64::from(bed_position.z()) + 0.5,
-            );
-            let look_direction = (bed_center - stand_up).normalize_or_zero();
-            let yaw = wrap_degrees(
-                (look_direction.z.atan2(look_direction.x).to_degrees() - f64::from(DEGREE_90))
-                    as f32,
-            );
+            let yaw = yaw_towards_spawn_block(stand_up, bed_position);
             if let Err(error) = living.try_set_position(stand_up) {
                 log::warn!(
                     "failed to move entity {} to bed stand-up position: {error}",

@@ -6,6 +6,8 @@ use crate::entity::Living;
 use crate::world::World;
 
 const MIN_VISIBILITY_DISTANCE_FOR_INVISIBLE_TARGET: f64 = 2.0;
+/// targeting checks range from the mob feet
+pub(crate) const UNBOUNDED_PLAYER_SEARCH_DISTANCE: f64 = -1.0;
 
 pub(crate) type TargetingSelector = Arc<dyn Fn(&Living<'_>, &World) -> bool + Send + Sync>;
 
@@ -32,7 +34,7 @@ impl TargetingConditions {
     const fn new(is_combat: bool) -> Self {
         Self {
             is_combat,
-            range: -1.0,
+            range: UNBOUNDED_PLAYER_SEARCH_DISTANCE,
             check_line_of_sight: true,
             test_invisible: true,
             selector: None,

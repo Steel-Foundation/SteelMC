@@ -1,7 +1,8 @@
 use super::*;
 use crate::entity::get_kill_credit;
 use crate::entity::prelude::*;
-use crate::test_support::TestPlayerBuilder;
+use crate::player::{Player, ResetReason};
+use crate::test_support::{TestPlayerBuilder, test_domain};
 use std::sync::{Arc, Weak};
 use steel_registry::data_components::vanilla_components::SwingAnimation;
 
@@ -12,7 +13,7 @@ fn default_entity_tick_dispatches_living_tick() {
     let entity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0));
     let entity_ref: SharedEntity = Arc::<LivingFluidTestEntity>::clone(&entity);
 
-    Arc::clone(&entity_ref).tick();
+    entity_ref.tick();
 
     assert_eq!(entity.living().living_base().death_time(), 1);
 }
@@ -46,30 +47,39 @@ fn living_base_tick_decrements_last_hurt_by_player_memory() {
 }
 
 #[test]
-fn kill_credit_keeps_a_player_in_another_world_until_memory_expires() {
-    let world_fixture = fresh_test_world("kill_credit_victim");
-    let world = &world_fixture.world;
-    let player_world_fixture = fresh_test_world("kill_credit_player");
-    let player_world = &player_world_fixture.world;
-    let player: SharedEntity =
-        TestPlayerBuilder::new(Arc::clone(player_world), "Attacker", 2).build();
+fn kill_credit_follows_the_player_across_worlds_until_memory_expires() {
+    let domain = test_domain("kill_credit", &["source", "target"]);
+    let world = domain.default_world("kill_credit").expect("source world");
+    let target = domain
+        .get(&Identifier::new_static("kill_credit", "target"))
+        .expect("target world");
+    let player = TestPlayerBuilder::new(Arc::clone(world), "Attacker", 2).build();
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     let victim = ChickenEntity::new(
         &vanilla_entities::CHICKEN,
         1,
         DVec3::ZERO,
         Arc::downgrade(world),
     );
-    let source = DamageSource::direct(&vanilla_damage_types::PLAYER_ATTACK, Arc::clone(&player));
-
     victim
         .living()
-        .resolve_player_responsible_for_damage(&source);
-    drop(source);
+        .resolve_player_responsible_for_damage(&DamageSource::direct(
+            &vanilla_damage_types::PLAYER_ATTACK,
+            Arc::<Player>::clone(&player),
+        ));
 
-    assert!(world.get_entity_by_uuid(&player.uuid()).is_none());
+    world.remove_player_for_world_change(&player);
+    player.set_world(Arc::clone(target));
+    assert!(target.add_player(Arc::clone(&player), ResetReason::WorldChange));
+    let player_entity: SharedEntity = Arc::<Player>::clone(&player);
     assert!(Arc::ptr_eq(
-        &get_kill_credit(&victim.living(), world).expect("cached player credit"),
-        &player,
+        &get_kill_credit(&victim.living(), world).expect("kill credit after changing worlds"),
+        &player_entity,
+    ));
+    victim.living().set_last_hurt_by_player(player.uuid(), 100);
+    assert!(Arc::ptr_eq(
+        &get_kill_credit(&victim.living(), world).expect("kill credit from the saved UUID"),
+        &player_entity,
     ));
     victim
         .living()
@@ -80,7 +90,7 @@ fn kill_credit_keeps_a_player_in_another_world_until_memory_expires() {
         .living()
         .resolve_player_responsible_for_damage(&DamageSource::direct(
             &vanilla_damage_types::PLAYER_ATTACK,
-            Arc::clone(&player),
+            player_entity,
         ));
     for _ in 0..=100 {
         victim
@@ -89,6 +99,7 @@ fn kill_credit_keeps_a_player_in_another_world_until_memory_expires() {
             .tick_last_hurt_by_player_memory();
     }
     assert!(get_kill_credit(&victim.living(), world).is_none());
+    target.remove_player_for_world_change(&player);
 }
 
 #[test]
@@ -218,26 +229,28 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
 fn living_death_loot_table_uses_default_and_custom_mob_tables() {
     init_vanilla_registry();
 
-    let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    let Some(default_table) = pig.living().death_loot_table() else {
-        panic!("pig should resolve its default entity loot table");
+    let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+    let Some(default_table) = chicken.living().death_loot_table() else {
+        panic!("chicken should resolve its default entity loot table");
     };
     assert_eq!(
         &default_table.key,
         &vanilla_loot_tables::ENTITIES_CHICKEN.key
     );
 
-    pig.mob()
+    chicken
+        .mob()
         .set_death_loot_table(Some(Identifier::vanilla_static("entities/cow")));
-    let Some(custom_table) = pig.living().death_loot_table() else {
+    let Some(custom_table) = chicken.living().death_loot_table() else {
         panic!("custom cow loot table should resolve");
     };
     assert_eq!(&custom_table.key, &vanilla_loot_tables::ENTITIES_COW.key);
-    assert_eq!(pig.living().death_loot_table_seed(), 0);
+    assert_eq!(chicken.living().death_loot_table_seed(), 0);
 
-    pig.mob()
+    chicken
+        .mob()
         .set_death_loot_table(Some(Identifier::vanilla_static("entities/not_real")));
-    assert!(pig.living().death_loot_table().is_none());
+    assert!(chicken.living().death_loot_table().is_none());
 }
 
 #[test]

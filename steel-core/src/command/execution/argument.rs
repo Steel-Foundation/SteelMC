@@ -10,6 +10,7 @@ use super::{
     },
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
+    message::Message,
     nbt::parse_nbt_path,
     permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
@@ -31,11 +32,12 @@ use crate::command::incorrectly_typed_argument;
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
+use steel_math::round_f32;
 use steel_protocol::packets::game::{
     ArgumentStringTypeBehavior, ArgumentType as ProtocolArgumentType,
     SuggestionType as ProtocolSuggestionType,
 };
-use steel_registry::advancement::registry::AdvancementRef;
+use steel_registry::advancement::Advancement;
 use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
     DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _,
@@ -43,7 +45,6 @@ use steel_registry::{
     entity_type::EntityTypeRef, item_stack::ItemStack, timeline::TimelineRef,
     world_clock::WorldClockRef,
 };
-use steel_utils::translations::ADVANCEMENT_ADVANCEMENT_NOT_FOUND;
 use steel_utils::{
     Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
     nbt::{NbtPath, parse_snbt_argument},
@@ -111,6 +112,10 @@ pub(crate) trait SteelArgumentParser:
 
     /// Returns the vanilla command-tree parser representation.
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
+
+    fn is_signed(&self) -> bool {
+        false
+    }
 }
 
 trait ErasedSteelArgumentParser: ErasedType + fmt::Debug + Send + Sync {
@@ -129,6 +134,9 @@ trait ErasedSteelArgumentParser: ErasedType + fmt::Debug + Send + Sync {
     fn protocol_argument_erased(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>);
 
     fn equals_erased(&self, other: &dyn ErasedSteelArgumentParser) -> bool;
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool;
 }
 
 impl<P> ErasedSteelArgumentParser for P
@@ -157,6 +165,10 @@ where
 
     fn equals_erased(&self, other: &dyn ErasedSteelArgumentParser) -> bool {
         other.downcast_ref::<P>() == Some(self)
+    }
+
+    fn is_signed(&self) -> bool {
+        SteelArgumentParser::is_signed(self)
     }
 }
 
@@ -368,6 +380,11 @@ impl SteelArgumentType {
         Self::new(WorldClockParser)
     }
 
+    /// Creates a greedy `minecraft:message` argument parser
+    pub(crate) fn message() -> Self {
+        Self::new(MessageParser)
+    }
+
     pub(crate) fn timeline(clock_argument: Option<&'static str>) -> Self {
         Self::new(TimelineParser { clock_argument })
     }
@@ -491,6 +508,11 @@ where
     ) {
         self.0.list_suggestions_erased(context, builder);
     }
+
+    /// Returns whether this argument type requires cryptographic signatures.
+    fn is_signed(&self) -> bool {
+        self.0.is_signed()
+    }
 }
 
 macro_rules! impl_downcast_type {
@@ -542,7 +564,7 @@ argument_value_wrapper!(
     "steel:command/value/enchantment"
 );
 argument_value_wrapper!(
-    AdvancementValue(AdvancementRef),
+    AdvancementValue(Identifier),
     "steel:command/value/advancement"
 );
 argument_value_wrapper!(
@@ -564,15 +586,38 @@ argument_value_wrapper!(
     "steel:command/value/world_clock"
 );
 argument_value_wrapper!(TimelineValue(TimelineRef), "steel:command/value/timeline");
+argument_value_wrapper!(MessageValue(Message), "steel:command/value/message");
 
 macro_rules! unit_argument_parser {
+    // Pattern without 'is_signed': forwards with default value 'false'
     (
         $parser:ident,
         $key:literal,
         $value:ty,
         parse |$reader:ident, $source:ident| $parse:block,
         suggest |$context:ident, $builder:ident| $suggest:block,
-        protocol $protocol:expr
+        protocol $protocol:expr $(,)?
+    ) => {
+        unit_argument_parser!(
+            $parser,
+            $key,
+            $value,
+            parse |$reader, $source| $parse,
+            suggest |$context, $builder| $suggest,
+            protocol $protocol,
+            is_signed false
+        );
+    };
+
+    // Full pattern: contains the actual implementation
+    (
+        $parser:ident,
+        $key:literal,
+        $value:ty,
+        parse |$reader:ident, $source:ident| $parse:block,
+        suggest |$context:ident, $builder:ident| $suggest:block,
+        protocol $protocol:expr,
+        is_signed $is_signed:expr $(,)?
     ) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         struct $parser;
@@ -599,10 +644,13 @@ macro_rules! unit_argument_parser {
             ) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
                 $protocol
             }
+
+            fn is_signed(&self) -> bool {
+                $is_signed
+            }
         }
     };
 }
-
 #[derive(Clone, Debug, PartialEq)]
 struct PrimitiveParser(ArgumentType);
 
@@ -1138,14 +1186,8 @@ unit_argument_parser!(
     _source | { Ok(AdvancementValue(parse_advancement(reader)?)) },
     suggest | _context,
     builder | {
-        suggest_resources(
-            REGISTRY
-                .advancements
-                .advancements()
-                .iter()
-                .map(|adv| adv.key()),
-            builder,
-        );
+        let snap = REGISTRY.advancements.snapshot();
+        suggest_resources(snap.advancements().map(Advancement::key), builder);
     },
     protocol(
         ProtocolArgumentType::ResourceLocation,
@@ -1260,6 +1302,18 @@ unit_argument_parser!(
         },
         None,
     )
+);
+
+unit_argument_parser!(
+    MessageParser,
+    "steel:command/parser/message",
+    MessageValue,
+    parse | reader,
+    source | { Message::parse(reader, source).map(MessageValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Message, None,),
+    is_signed true
 );
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1537,17 +1591,8 @@ fn parse_summonable_entity(
     Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))))
 }
 
-fn parse_advancement(reader: &mut StringReader<'_>) -> Result<AdvancementRef, CommandSyntaxError> {
-    parse_identifier(reader).and_then(|key| {
-        REGISTRY.advancements.by_key(&key).map_or(
-            Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
-                TextComponent::translated(
-                    ADVANCEMENT_ADVANCEMENT_NOT_FOUND.message([key.to_string()]),
-                ),
-            )))),
-            |val| Ok(val.value()),
-        )
-    })
+fn parse_advancement(reader: &mut StringReader<'_>) -> Result<Identifier, CommandSyntaxError> {
+    parse_identifier(reader)
 }
 
 fn can_summon(entity_type: EntityTypeRef) -> bool {
@@ -1646,7 +1691,7 @@ fn parse_time(reader: &mut StringReader<'_>, minimum: i32) -> Result<i32, Comman
             ))));
         }
     };
-    let ticks = java_round(value * factor);
+    let ticks = round_f32(value * factor);
     if ticks < minimum {
         let message = translations::ARGUMENT_TIME_TICK_COUNT_TOO_LOW
             .message([minimum.to_string(), ticks.to_string()])
@@ -1668,8 +1713,4 @@ fn suggest_time_units(builder: &mut SuggestionsBuilder<'_>) {
             builder.suggest(format!("{number}{candidate}"));
         }
     }
-}
-
-fn java_round(value: f32) -> i32 {
-    (value + 0.5).floor() as i32
 }

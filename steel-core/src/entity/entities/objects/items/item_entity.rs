@@ -904,7 +904,7 @@ mod tests {
         );
         item.set_velocity(DVec3::new(0.0, -0.2, 0.0));
 
-        Arc::clone(&item).tick();
+        item.tick();
 
         assert!(item.fluid_contact().water_height() > 0.0);
         assert!(item.needs_velocity_sync());

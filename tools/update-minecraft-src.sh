@@ -46,9 +46,8 @@ done
 MINECRAFT_SRC_DIR="$REPO_ROOT/minecraft-src"
 
 # Temp directory on the same filesystem to avoid cross-device link errors.
-TEMP_DIR="$REPO_ROOT/.gitcraft-tmp"
-rm -rf "$TEMP_DIR"
-mkdir -p "$TEMP_DIR"
+mkdir -p "$REPO_ROOT/.gitcraft-tmp"
+TEMP_DIR="$(mktemp -d "$REPO_ROOT/.gitcraft-tmp/run.XXXXXXXX")"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
 echo "Decompiling Minecraft $min_version..$max_version into $MINECRAFT_SRC_DIR"

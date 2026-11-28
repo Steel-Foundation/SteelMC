@@ -246,7 +246,7 @@ fn resolve_tag(
 
     // Cycle detection
     assert!(
-        !stack.contains(&tag_name.to_string()),
+        !stack.iter().any(|i| i == tag_name),
         "Circular biome tag reference: {stack:?} -> {tag_name}"
     );
     stack.push(tag_name.to_string());

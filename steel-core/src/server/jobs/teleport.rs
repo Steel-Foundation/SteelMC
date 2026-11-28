@@ -8,6 +8,7 @@ use super::super::{
     vanilla_entities,
 };
 use super::{JobPoll, ServerJob, ServerJobContext};
+use crate::entity::RiderMove;
 use crate::entity::prelude::*;
 use crate::world::player_spawn_finder::POLL_TIME_BUDGET;
 
@@ -109,25 +110,6 @@ pub(in crate::server) fn clear_pending_world_change(
     {
         player.retry_deferred_death_respawn();
     }
-}
-
-fn finish_pending_world_change_after_transition(
-    entity: &SharedEntity,
-    pending_token: PendingWorldChangeToken,
-    changed_entity: Option<SharedEntity>,
-) {
-    // A rebuilt player carries the pending change with it. A rebuilt
-    // non-player entity starts without one, so clearing it does nothing.
-    clear_pending_world_change(changed_entity.as_ref().unwrap_or(entity), pending_token);
-}
-
-fn finish_portal_world_change(
-    entity: &SharedEntity,
-    pending_token: PendingWorldChangeToken,
-    changed_entity: Option<SharedEntity>,
-) -> JobPoll {
-    finish_pending_world_change_after_transition(entity, pending_token, changed_entity);
-    JobPoll::Finished
 }
 
 pub(in crate::server) fn portal_entity_still_valid(
@@ -323,11 +305,8 @@ impl ServerJob for WorldSpawnTeleportJob {
                         {
                             entity.land_after_teleport();
                         }
-                        return finish_portal_world_change(
-                            &self.entity,
-                            self.pending_token,
-                            changed_entity,
-                        );
+                        self.finish_pending();
+                        return JobPoll::Finished;
                     }
                 },
             }
@@ -388,14 +367,6 @@ impl NetherPortalTeleportJob {
     fn clear_pending(&self) {
         clear_pending_world_change(&self.entity, self.pending_token);
     }
-
-    fn finish_transition(&self, changed_entity: Option<SharedEntity>) {
-        finish_pending_world_change_after_transition(
-            &self.entity,
-            self.pending_token,
-            changed_entity,
-        );
-    }
 }
 
 impl ServerJob for NetherPortalTeleportJob {
@@ -436,8 +407,8 @@ impl ServerJob for NetherPortalTeleportJob {
             self.clear_pending();
             return JobPoll::Finished;
         };
-        let changed_entity = change_entity_world(Arc::clone(&self.entity), &transition);
-        self.finish_transition(changed_entity);
+        change_entity_world(Arc::clone(&self.entity), &transition);
+        self.clear_pending();
         JobPoll::Finished
     }
 
@@ -588,8 +559,9 @@ impl ServerJob for EndPortalTeleportJob {
                         clear_pending_world_change(&entity, pending_token);
                         return JobPoll::Finished;
                     };
-                    let changed_entity = change_entity_world(Arc::clone(&entity), &transition);
-                    return finish_portal_world_change(&entity, pending_token, changed_entity);
+                    change_entity_world(Arc::clone(&entity), &transition);
+                    clear_pending_world_change(&entity, pending_token);
+                    return JobPoll::Finished;
                 }
                 EndPortalTeleportPhase::ReturningEntity {
                     target_world,
@@ -606,8 +578,9 @@ impl ServerJob for EndPortalTeleportJob {
                         entity.as_ref(),
                         respawn_data,
                     );
-                    let changed_entity = change_entity_world(Arc::clone(&entity), &transition);
-                    return finish_portal_world_change(&entity, pending_token, changed_entity);
+                    change_entity_world(Arc::clone(&entity), &transition);
+                    clear_pending_world_change(&entity, pending_token);
+                    return JobPoll::Finished;
                 }
                 EndPortalTeleportPhase::SearchingPlayerRespawn {
                     target_world,
@@ -648,8 +621,9 @@ impl ServerJob for EndPortalTeleportJob {
                         spawn.position,
                         spawn.rotation,
                     );
-                    let changed_entity = change_entity_world(Arc::clone(&entity), &transition);
-                    return finish_portal_world_change(&entity, pending_token, changed_entity);
+                    change_entity_world(Arc::clone(&entity), &transition);
+                    clear_pending_world_change(&entity, pending_token);
+                    return JobPoll::Finished;
                 }
             }
         }
@@ -753,12 +727,8 @@ impl ServerJob for EndGatewayTeleportJob {
                             clear_pending_world_change(&entity, pending_token);
                             return JobPoll::Finished;
                         };
-                        let changed_entity = change_entity_world(Arc::clone(&entity), &transition);
-                        finish_pending_world_change_after_transition(
-                            &entity,
-                            pending_token,
-                            changed_entity,
-                        );
+                        change_entity_world(Arc::clone(&entity), &transition);
+                        clear_pending_world_change(&entity, pending_token);
                         return JobPoll::Finished;
                     }
                 },
@@ -867,7 +837,7 @@ fn restore_root_vehicle_for_player(
     if mount_player {
         let player_entity: SharedEntity = Arc::<Player>::clone(player);
         EntityBase::restore_passenger_relationship(&attach_entity, &player_entity);
-        attach_entity.position_rider(player.as_ref());
+        attach_entity.position_rider(player.as_ref(), RiderMove::SetPosition);
         player.send_restored_vehicle_mount_sync(attach_entity.as_ref());
     }
 

@@ -4,10 +4,14 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, damage_type::DamageScaling, damage_type::DamageType,
-    vanilla_damage_type_tags, vanilla_damage_types,
+    data_components::vanilla_components::CUSTOM_NAME, vanilla_damage_type_tags,
+    vanilla_damage_types,
 };
+use text_components::{TextComponent, translation::TranslatedMessage};
 
-use crate::entity::SharedEntity;
+use crate::behavior::ITEM_BEHAVIORS;
+use crate::entity::{Living, SharedEntity, get_kill_credit};
+use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
 
 /// Describes damage while retaining the exact direct and causing entity allocations.
@@ -154,6 +158,49 @@ impl DamageSource {
         false
     }
 
+    /// Returns the death message shown for `victim`.
+    #[must_use]
+    pub fn get_localized_death_message(&self, victim: &Living<'_>) -> TextComponent {
+        let death_message = format!("death.attack.{}", self.damage_type.message_id);
+
+        let Some(name_entity) = self.causing_entity().or_else(|| self.direct_entity()) else {
+            let victim_name = victim.display_name();
+            let Some(kill_credit) = victim
+                .level()
+                .and_then(|world| get_kill_credit(victim, world.as_ref()))
+            else {
+                return translated_message(death_message, vec![victim_name]);
+            };
+            return translated_message(
+                format!("{death_message}.player"),
+                vec![victim_name, kill_credit.display_name()],
+            );
+        };
+
+        let name = name_entity.display_name();
+
+        let mut weapon_name = None;
+        if let Some(living) = self
+            .causing_entity()
+            .and_then(|entity| entity.as_living_entity())
+        {
+            living.with_equipment_slot(EquipmentSlot::MainHand, &mut |item| {
+                if !item.is_empty() && item.has(CUSTOM_NAME) {
+                    weapon_name = Some(ITEM_BEHAVIORS.display_name(item));
+                }
+            });
+        }
+
+        let victim_name = victim.display_name();
+        match weapon_name {
+            Some(weapon_name) => translated_message(
+                format!("{death_message}.item"),
+                vec![victim_name, name, weapon_name],
+            ),
+            _ => translated_message(death_message, vec![victim_name, name]),
+        }
+    }
+
     /// Whether this damage scales with difficulty for the retained causing entity.
     #[must_use]
     pub fn scales_with_difficulty(&self) -> bool {
@@ -166,6 +213,14 @@ impl DamageSource {
             DamageScaling::Always => true,
         }
     }
+}
+
+pub(crate) fn translated_message(key: String, args: Vec<TextComponent>) -> TextComponent {
+    TextComponent::translated(TranslatedMessage {
+        key: key.into(),
+        fallback: None,
+        args: Some(args.into_boxed_slice()),
+    })
 }
 
 impl fmt::Debug for DamageSource {

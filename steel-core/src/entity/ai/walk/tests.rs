@@ -66,14 +66,15 @@ impl LevelReader for GridLevel {
 #[test]
 fn mob_path_settings_reads_can_open_doors_from_navigation() {
     init_vanilla_registry();
-    let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    pig.mob()
+    let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+    chicken
+        .mob()
         .mob_base()
         .navigation()
         .lock()
         .set_can_open_doors(true);
 
-    let settings = MobPathSettings::from_mob(&pig.mob());
+    let settings = MobPathSettings::from_mob(&chicken.mob());
 
     assert!(settings.can_open_doors());
 }
@@ -81,14 +82,15 @@ fn mob_path_settings_reads_can_open_doors_from_navigation() {
 #[test]
 fn mob_path_settings_reads_can_walk_over_fences_from_navigation() {
     init_vanilla_registry();
-    let pig = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
-    pig.mob()
+    let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+    chicken
+        .mob()
         .mob_base()
         .navigation()
         .lock()
         .set_can_walk_over_fences(true);
 
-    let settings = MobPathSettings::from_mob(&pig.mob());
+    let settings = MobPathSettings::from_mob(&chicken.mob());
 
     assert!(settings.can_walk_over_fences());
 }

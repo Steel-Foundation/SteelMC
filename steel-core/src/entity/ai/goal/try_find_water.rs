@@ -8,6 +8,8 @@ use super::selector::{Goal, GoalControls};
 use crate::entity::Mob;
 use crate::fluid::FluidStateExt as _;
 
+const WATER_SEARCH_VERTICAL_BELOW: f64 = 2.0;
+
 const WATER_SEARCH_HORIZONTAL_RADIUS: f64 = 2.0;
 
 pub struct TryFindWaterGoal;
@@ -69,7 +71,7 @@ fn water_search_bounds(position: DVec3) -> (BlockPos, BlockPos) {
     (
         BlockPos::new(
             fast_floor(position.x - WATER_SEARCH_HORIZONTAL_RADIUS),
-            fast_floor(position.y - 2.0),
+            fast_floor(position.y - WATER_SEARCH_VERTICAL_BELOW),
             fast_floor(position.z - WATER_SEARCH_HORIZONTAL_RADIUS),
         ),
         BlockPos::new(

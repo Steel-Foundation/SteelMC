@@ -1,5 +1,5 @@
-#![expect(missing_docs, reason = "benchmarks")]
-
+//! Measures the entity manager and base tick for nonriding entities in one chunk,
+//! without a live world or mob AI
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 use steel_core::entity::entity_manager_benchmark_support::manager_with_entities;

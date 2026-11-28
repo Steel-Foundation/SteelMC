@@ -262,10 +262,11 @@ impl Server {
             }
         };
 
-        let Some(player) = player.in_join_world(&state.world) else {
+        if !player.session.is_current_player(&player) {
             self.release_player_admission(uuid, PlayerAdmissionState::Joining);
             return;
-        };
+        }
+        player.set_world(Arc::clone(&state.world));
 
         if let Err(error) = self.admit_reserved_player(Arc::clone(&player)) {
             let reason = match error {
@@ -454,22 +455,10 @@ impl Server {
         removed
     }
 
-    /// Returns whether [`Self::replace_online_player`] would accept a replacement
-    /// for `player`.
-    pub(crate) fn can_replace_online_player(&self, player: &Arc<Player>) -> bool {
-        self.can_replace_player_under(player, None)
-    }
-
-    /// Returns whether [`Self::replace_relocating_player`] would accept a
-    /// replacement for `player`.
-    pub(crate) fn can_replace_relocating_player(&self, player: &Arc<Player>) -> bool {
-        self.can_replace_player_under(player, Some(PlayerAdmissionState::Relocating))
-    }
-
-    fn can_replace_player_under(
+    pub(crate) fn owns_player_for_world_change(
         &self,
         player: &Arc<Player>,
-        admission: Option<PlayerAdmissionState>,
+        relocating: bool,
     ) -> bool {
         player.session.is_current_player(player)
             && self.owns_online_player(player)
@@ -478,29 +467,7 @@ impl Server {
                 .lock()
                 .get(&player.gameprofile.id())
                 .copied()
-                == admission
-    }
-
-    /// Replaces the exact online incarnation of a player whose relocation the
-    /// caller owns, keeping the relocation reserved.
-    pub(crate) fn replace_relocating_player(
-        &self,
-        expected: &Arc<Player>,
-        replacement: Arc<Player>,
-    ) -> bool {
-        if !Arc::ptr_eq(&expected.session, &replacement.session)
-            || !Arc::ptr_eq(&expected.connection, &replacement.connection)
-            || !expected.session.is_current_player(expected)
-        {
-            return false;
-        }
-
-        let admissions = self.player_admissions.lock();
-        if admissions.get(&expected.gameprofile.id()) != Some(&PlayerAdmissionState::Relocating) {
-            return false;
-        }
-
-        self.online_players.replace_player(expected, replacement)
+                == relocating.then_some(PlayerAdmissionState::Relocating)
     }
 
     /// Replaces the exact online player incarnation without changing UUID availability.

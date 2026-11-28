@@ -174,12 +174,17 @@ pub const fn is_using_item<E: Parts>(_entity: &E) -> bool {
     false
 }
 
+/// Clears the active item-use state shared by living entities.
+pub fn stop_using_item<E: Parts>(entity: &E) {
+    entity.living().living_base().stop_using_item();
+}
+
 /// `LivingEntity`'s [`LivingProps::is_blocking`].
 ///
 /// Checks if the entity is blocking with a shield or similar item.
 #[must_use]
-pub const fn is_blocking<E: Parts>(_entity: &E) -> bool {
-    false
+pub fn is_blocking<E: Parts>(entity: &E) -> bool {
+    entity.living().item_blocking_with().is_some()
 }
 
 /// `LivingEntity`'s [`LivingProps::with_equipment_slot`].

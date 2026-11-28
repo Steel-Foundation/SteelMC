@@ -161,8 +161,7 @@ pub trait EntityPersistence: Entity {
         if let Some(position) = read_nbt_dvec3(&nbt, "Pos")
             && position.is_finite()
         {
-            self.base()
-                .set_position_local(super::clamp_loaded_entity_position(position));
+            self.set_position_local(super::clamp_loaded_entity_position(position));
         }
 
         if let Some(motion) = read_nbt_dvec3(&nbt, "Motion") {

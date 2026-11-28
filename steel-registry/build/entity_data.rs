@@ -753,7 +753,7 @@ fn parent_field_ident(simple_name: &str) -> Ident {
     Ident::new(&field_name, Span::call_site())
 }
 
-/// Simple names of `root_layer` and every ancestor layer, most derived first.
+/// Layers from the most derived layer to its root.
 fn layer_chain<'a>(
     root_layer: &'a LayerDefinition,
     layer_indices: &FxHashMap<&str, usize>,
@@ -838,18 +838,12 @@ fn optional_layer_accessor_overrides(
 }
 
 fn layer_accessor_methods(
-    root_layer: &LayerDefinition,
-    layer_indices: &FxHashMap<&str, usize>,
-    layers: &[LayerDefinition],
-    root_expr: TokenStream,
+    chain: &[&LayerDefinition],
+    mut path: TokenStream,
     root_is_self: bool,
 ) -> Vec<TokenStream> {
     let mut methods = Vec::new();
-    let mut current_layer = root_layer;
-    let mut path = root_expr;
-    let mut is_self_path = root_is_self;
-
-    loop {
+    for (depth, current_layer) in chain.iter().enumerate() {
         let accessor_ident = parent_field_ident(&current_layer.simple_name);
         let accessor_mut_ident = Ident::new(&format!("{accessor_ident}_mut"), Span::call_site());
         let struct_ident = data_struct_ident(&current_layer.simple_name);
@@ -861,17 +855,19 @@ fn layer_accessor_methods(
             "Returns the mutable `{}` layer.",
             data_struct_name(&current_layer.simple_name)
         );
-        let ref_path = path.clone();
-        let mut_path = path.clone();
+        if depth > 0 {
+            path = quote! { #path.#accessor_ident };
+        }
+        let is_self_path = depth == 0 && root_is_self;
         let ref_body = if is_self_path {
             quote! { self }
         } else {
-            quote! { &#ref_path }
+            quote! { &#path }
         };
         let mut_body = if is_self_path {
             quote! { self }
         } else {
-            quote! { &mut #mut_path }
+            quote! { &mut #path }
         };
 
         methods.push(quote! {
@@ -885,18 +881,6 @@ fn layer_accessor_methods(
                 #mut_body
             }
         });
-
-        let Some(parent_java_class) = current_layer.parent_java_class.as_ref() else {
-            break;
-        };
-        let parent_index = layer_indices
-            .get(parent_java_class.as_str())
-            .unwrap_or_else(|| panic!("Missing parent entity data layer: {parent_java_class}"));
-        let parent_layer = &layers[*parent_index];
-        let parent_field_ident = parent_field_ident(&parent_layer.simple_name);
-        path = quote! { #path.#parent_field_ident };
-        is_self_path = false;
-        current_layer = parent_layer;
     }
 
     methods
@@ -1007,33 +991,10 @@ fn concrete_default_overrides(
     overrides
 }
 
-fn layer_has_living_entity_data(
-    layer: &LayerDefinition,
-    layer_indices: &FxHashMap<&str, usize>,
-    layers: &[LayerDefinition],
-) -> bool {
-    let mut current_layer = layer;
-    loop {
-        if current_layer.simple_name == "LivingEntity" {
-            return true;
-        }
-
-        let Some(parent_java_class) = current_layer.parent_java_class.as_ref() else {
-            return false;
-        };
-        let Some(parent_index) = layer_indices.get(parent_java_class.as_str()) else {
-            return false;
-        };
-        current_layer = &layers[*parent_index];
-    }
-}
-
-fn entity_has_living_entity_data(entity: &EntityEntry) -> bool {
-    entity
-        .synched_data
-        .layers
+fn has_living_entity_layer(chain: &[&LayerDefinition]) -> bool {
+    chain
         .iter()
-        .any(|layer| !layer.fields.is_empty() && layer.simple_name == "LivingEntity")
+        .any(|layer| layer.simple_name == "LivingEntity")
 }
 
 fn validate_serializer_ids(layers: &[LayerDefinition]) {
@@ -1271,28 +1232,24 @@ pub(crate) fn build() -> TokenStream {
                 data
             }
         };
-        let layer_accessors =
-            layer_accessor_methods(layer, &layer_indices, &layers, quote! { self }, true);
-        let optional_layer_overrides = optional_layer_accessor_overrides(
-            &layer_chain(layer, &layer_indices, &layers),
-            &struct_ident,
-        );
-        let living_entity_data_impl =
-            if layer_has_living_entity_data(layer, &layer_indices, &layers) {
-                quote! {
-                    impl VanillaLivingEntityData for #struct_ident {
-                        fn living_entity(&self) -> &LivingEntityData {
-                            #struct_ident::living_entity(self)
-                        }
+        let chain = layer_chain(layer, &layer_indices, &layers);
+        let layer_accessors = layer_accessor_methods(&chain, quote! { self }, true);
+        let optional_layer_overrides = optional_layer_accessor_overrides(&chain, &struct_ident);
+        let living_entity_data_impl = if has_living_entity_layer(&chain) {
+            quote! {
+                impl VanillaLivingEntityData for #struct_ident {
+                    fn living_entity(&self) -> &LivingEntityData {
+                        #struct_ident::living_entity(self)
+                    }
 
-                        fn living_entity_mut(&mut self) -> &mut LivingEntityData {
-                            #struct_ident::living_entity_mut(self)
-                        }
+                    fn living_entity_mut(&mut self) -> &mut LivingEntityData {
+                        #struct_ident::living_entity_mut(self)
                     }
                 }
-            } else {
-                quote! {}
-            };
+            }
+        } else {
+            quote! {}
+        };
 
         let constructor = if has_runtime_initializer {
             quote! {
@@ -1421,28 +1378,13 @@ pub(crate) fn build() -> TokenStream {
         );
         let root_field_ident = parent_field_ident(&last_layer.simple_name);
         let overrides = concrete_default_overrides(entity, &layer_indices, &layers);
-        let layer_accessors = {
-            let root_expr = quote! { self.#root_field_ident };
-            layer_accessor_methods(
-                &layers[*layer_indices
-                    .get(last_layer.java_class.as_str())
-                    .unwrap_or_else(|| panic!("Missing layer {}", last_layer.java_class))],
-                &layer_indices,
-                &layers,
-                root_expr,
-                false,
-            )
-        };
-        let optional_layer_overrides = optional_layer_accessor_overrides(
-            &layer_chain(
-                &layers[*layer_indices
-                    .get(last_layer.java_class.as_str())
-                    .unwrap_or_else(|| panic!("Missing layer {}", last_layer.java_class))],
-                &layer_indices,
-                &layers,
-            ),
-            &concrete_ident,
-        );
+        let root_layer = &layers[*layer_indices
+            .get(last_layer.java_class.as_str())
+            .unwrap_or_else(|| panic!("Missing layer {}", last_layer.java_class))];
+        let chain = layer_chain(root_layer, &layer_indices, &layers);
+        let layer_accessors =
+            layer_accessor_methods(&chain, quote! { self.#root_field_ident }, false);
+        let optional_layer_overrides = optional_layer_accessor_overrides(&chain, &concrete_ident);
         let doc = format!(
             "Concrete synchronized entity data for vanilla entity `{}`.",
             entity.name
@@ -1462,7 +1404,7 @@ pub(crate) fn build() -> TokenStream {
                 }
             }
         };
-        let living_entity_data_impl = if entity_has_living_entity_data(entity) {
+        let living_entity_data_impl = if has_living_entity_layer(&chain) {
             quote! {
                 impl VanillaLivingEntityData for #concrete_ident {
                     fn living_entity(&self) -> &LivingEntityData {

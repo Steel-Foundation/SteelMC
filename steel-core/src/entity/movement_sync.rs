@@ -2,8 +2,9 @@
 
 use glam::DVec3;
 use steel_protocol::packets::game::{
-    CEntityPositionSync, CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, CRotateHead,
-    CSetEntityMotion, PackedEntityDelta, PositionPath, VecDelta, calc_delta, to_angle_byte,
+    CEntityPositionSync, CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, CProjectilePower,
+    CRotateHead, CSetEntityMotion, PackedEntityDelta, PositionPath, VecDelta, calc_delta,
+    to_angle_byte,
 };
 use steel_registry::{entity_type::EntityTypeRef, vanilla_entities};
 
@@ -147,6 +148,8 @@ pub enum EntityMovementSyncPacket {
     PositionSync(CEntityPositionSync),
     /// Velocity sync.
     Velocity(CSetEntityMotion),
+    /// Velocity sync bundled with a hurting projectile's acceleration power.
+    ProjectileVelocity(CSetEntityMotion, CProjectilePower),
 }
 
 impl From<EntityPositionSyncPacket> for EntityMovementSyncPacket {
@@ -490,6 +493,8 @@ pub struct ServerEntityMovementSyncUpdate {
     pub horizontal_collision: bool,
     /// Whether the entity requested a full-precision position sync.
     pub requires_precise_position: bool,
+    /// Advance to the next tracking interval.
+    pub sync_position: bool,
     /// Entity network id.
     pub entity_id: i32,
     /// Whether the entity is currently riding another entity.
@@ -510,6 +515,8 @@ pub struct ServerEntityMovementSyncUpdate {
     pub has_dirty_entity_data: bool,
     /// Vanilla living fall-flying velocity sync exception.
     pub force_velocity_sync: bool,
+    /// Hurting-projectile acceleration power, sent alongside every velocity sync.
+    pub projectile_acceleration_power: Option<f64>,
 }
 
 impl ServerEntityMovementSyncUpdate {
@@ -567,7 +574,11 @@ impl ServerEntityMovementSyncState {
             position: EntityPositionSyncState::new(position, on_ground),
             rotation: EntityRotationSyncState::new(body_rotation, head_yaw),
             velocity: EntityVelocitySyncState::new(velocity),
-            update_interval,
+            update_interval: if update_interval == i32::MAX {
+                0
+            } else {
+                update_interval
+            },
             track_delta,
             tick_count: 0,
             teleport_delay: 0,
@@ -582,6 +593,14 @@ impl ServerEntityMovementSyncState {
         &mut self,
         update: ServerEntityMovementSyncUpdate,
     ) -> ServerEntityMovementSyncResult {
+        if update.sync_position {
+            self.tick_count = if self.update_interval > 0 {
+                (self.tick_count / self.update_interval * self.update_interval)
+                    .wrapping_add(self.update_interval)
+            } else {
+                0
+            };
+        }
         let mut result = ServerEntityMovementSyncResult::default();
         let should_process =
             self.should_process(update.needs_velocity_sync, update.has_dirty_entity_data);
@@ -667,7 +686,17 @@ impl ServerEntityMovementSyncState {
                 .velocity
                 .record_velocity_sync(update.entity_id, update.velocity)
         {
-            result.packets.push(EntityMovementSyncPacket::from(packet));
+            let packet = match update.projectile_acceleration_power {
+                Some(acceleration_power) => EntityMovementSyncPacket::ProjectileVelocity(
+                    packet,
+                    CProjectilePower {
+                        entity_id: update.entity_id,
+                        acceleration_power,
+                    },
+                ),
+                None => EntityMovementSyncPacket::from(packet),
+            };
+            result.packets.push(packet);
         }
 
         if force_full || full_precision_required {
@@ -1093,6 +1122,7 @@ mod tests {
             vertical_collision: false,
             horizontal_collision: false,
             requires_precise_position: false,
+            sync_position: false,
             entity_id: 12,
             is_passenger: false,
             position,
@@ -1103,6 +1133,7 @@ mod tests {
             needs_velocity_sync: false,
             has_dirty_entity_data: false,
             force_velocity_sync: false,
+            projectile_acceleration_power: None,
         }
     }
 
@@ -1125,6 +1156,30 @@ mod tests {
         assert_eq!(packets.len(), 2);
         assert!(matches!(packets[0], EntityMovementSyncPacket::Velocity(_)));
         assert!(matches!(packets[1], EntityMovementSyncPacket::Position(_)));
+    }
+
+    #[test]
+    fn hurting_projectile_velocity_sync_carries_acceleration_power() {
+        let mut state = ServerEntityMovementSyncState::new(
+            DVec3::ZERO,
+            DVec3::ZERO,
+            false,
+            (0.0, 0.0),
+            0.0,
+            20,
+            true,
+        );
+        let mut update = server_update(DVec3::ZERO, DVec3::new(0.5, 0.0, 0.0));
+        update.projectile_acceleration_power = Some(0.1);
+        let packets = collect_server_packets(&mut state, update);
+
+        let Some(EntityMovementSyncPacket::ProjectileVelocity(motion, power)) = packets.first()
+        else {
+            panic!("expected a bundled projectile velocity sync, got {packets:?}");
+        };
+        assert_eq!(motion.vel, DVec3::new(0.5, 0.0, 0.0));
+        assert_eq!(power.entity_id, 12);
+        assert_eq!(power.acceleration_power, 0.1);
     }
 
     #[test]
@@ -1169,6 +1224,29 @@ mod tests {
         assert_eq!(packets.len(), 2);
         assert!(matches!(packets[0], EntityMovementSyncPacket::Velocity(_)));
         assert!(matches!(packets[1], EntityMovementSyncPacket::Position(_)));
+    }
+
+    #[test]
+    fn bounce_starts_a_new_tracking_interval() {
+        let mut state = ServerEntityMovementSyncState::new(
+            DVec3::ZERO,
+            DVec3::ZERO,
+            false,
+            (0.0, 0.0),
+            0.0,
+            3,
+            false,
+        );
+        let mut update = server_update(DVec3::ZERO, DVec3::ZERO);
+        let _ = state.record_send_changes(update);
+        update.sync_position = true;
+        update.position.x = 1.0;
+        assert_eq!(collect_server_packets(&mut state, update).len(), 1);
+        update.sync_position = false;
+        update.position.x = 2.0;
+        assert!(collect_server_packets(&mut state, update).is_empty());
+        assert!(collect_server_packets(&mut state, update).is_empty());
+        assert_eq!(collect_server_packets(&mut state, update).len(), 1);
     }
 
     #[test]

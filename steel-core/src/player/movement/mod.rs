@@ -14,7 +14,7 @@ pub(super) use teleport::TeleportState;
 
 use glam::{DVec3, Vec3Swizzles};
 use std::sync::Arc;
-use steel_math::wrap_degrees;
+use steel_math::{round_f32, round_f64, wrap_degrees};
 use steel_protocol::packets::game::{
     CMoveVehicle, CPlayerPosition, PlayerCommandAction, RelativeMovement, SAcceptTeleportation,
     SMovePlayer, SMoveVehicle, SPlayerCommand, SPlayerInput,
@@ -28,7 +28,7 @@ use steel_utils::{TICKS_PER_SECOND, translations};
 
 use crate::entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityMoveError,
-    get_input_vector,
+    apply_teleport_motion, get_input_vector,
 };
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
@@ -859,7 +859,7 @@ impl Player {
         if world.entity_manager().get_by_id(self.id()).is_some() {
             world.chunk_map.update_player_status(self);
         }
-        self.set_velocity(velocity);
+        apply_teleport_motion(self, rotation, velocity);
 
         let new_id = {
             let mut tp = self.teleport_state.lock();
@@ -869,8 +869,6 @@ impl Player {
             id
         };
 
-        self.set_rotation(rotation);
-        self.set_old_position_to_current();
         {
             let mut movement = self.movement.lock();
             movement.reset_last_known_client_movement();
@@ -1038,7 +1036,7 @@ impl Player {
         } else if self.on_climbable() && delta_movement.y > 0.0 {
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::CLIMB_ONE_CM,
-                (delta_movement.y * 100.0).round() as i32,
+                round_f64(delta_movement.y * 100.0) as i32,
             );
         } else if self.on_ground() {
             if self.living().is_sprinting() {
@@ -1085,7 +1083,7 @@ impl Player {
         };
 
         if let Some(stat) = custom_stat_from_riding_vehicle(vehicle.entity_type()) {
-            let distance = (delta_movement.length() as f32 * 100.0).round() as i32;
+            let distance = round_f32(delta_movement.length() as f32 * 100.0);
             self.award_custom_stat_with_count(stat, distance);
         }
     }
@@ -1096,7 +1094,7 @@ impl Player {
         delta_movement: DVec3,
         exhaust_multiplier: f32,
     ) {
-        let distance = (delta_movement.length() as f32 * 100.0).round() as i32;
+        let distance = round_f32(delta_movement.length() as f32 * 100.0);
         if distance > 0 {
             self.award_custom_stat_with_count(stat, distance);
             self.cause_food_exhaustion(exhaust_multiplier * distance as f32 * 0.01);
@@ -1124,7 +1122,7 @@ impl Player {
         exhaust_multiplier: f32,
         lower_bound: i32,
     ) {
-        let horizontal_distance = (delta_movement.xz().length() as f32 * 100.0).round() as i32;
+        let horizontal_distance = round_f32(delta_movement.xz().length() as f32 * 100.0);
         if horizontal_distance > lower_bound {
             self.award_custom_stat_with_count(stat, horizontal_distance);
             if exhaust_multiplier != 0.0 {

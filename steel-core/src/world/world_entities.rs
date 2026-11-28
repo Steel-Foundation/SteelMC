@@ -136,7 +136,11 @@ impl World {
 
     pub(crate) fn unregister_player_entity(&self, player: &Player) {
         let entity_id = player.id();
-        self.remove_entity_from_tracker(entity_id);
+        // Combat entries hold strong references to the entities involved; release
+        // them before this player leaves the world so disconnecting players
+        // cannot keep each other alive.
+        player.living().clear_combat_history();
+        self.remove_entity_from_tracker(player);
 
         self.entity_manager()
             .remove_live_entity(entity_id, RemovalReason::ChangedWorld);
@@ -219,6 +223,7 @@ impl World {
         let Some(player) = self.take_player_for_removal(&player) else {
             // End credits and failed target admission deliberately have no live
             // world membership but still need one authoritative disconnect save.
+            player.living().clear_combat_history();
             let domain = self.domain().to_owned();
             let player_data = PersistentPlayerData::from_player(&player);
             player.store_ender_pearls_with_player();
@@ -249,7 +254,6 @@ impl World {
         let Some(player) = self.take_player_for_removal(player) else {
             return;
         };
-        player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
         self.unride_player_for_removal(&player, false);
         self.unregister_player_entity(&player);
         self.entity_tracker().on_player_leave(&player);

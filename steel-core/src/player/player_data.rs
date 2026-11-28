@@ -375,6 +375,7 @@ impl Player {
 
         self.set_score(0);
         self.set_seen_credits(false);
+        self.set_spawn_extra_particles_on_fall(false);
     }
 }
 

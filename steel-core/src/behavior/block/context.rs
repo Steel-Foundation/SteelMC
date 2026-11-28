@@ -10,6 +10,8 @@ use super::{
 use crate::entity::SharedEntity;
 use crate::entity::entities::FallingBlockEntity;
 
+const NON_LIVING_BLOCK_RESTITUTION_MULTIPLIER: f32 = 0.8;
+
 pub struct PickupResult {
     pub filled_bucket: ItemStack,
     pub sound: Option<SoundEventRef>,
@@ -343,7 +345,7 @@ impl BlockCollisionContext {
     }
 }
 
-/// Entity facts needed by `Block.updateEntityMovementAfterFallOn`.
+/// Entity state on vertical impact
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EntityLandingContext {
     /// Entity velocity before the block landing hook adjusts it (`currentMovement` in vanilla).
@@ -352,6 +354,10 @@ pub struct EntityLandingContext {
     pub achieved_movement_y: f64,
     /// Whether the entity uses vanilla living-entity bounce behavior.
     pub is_living_entity: bool,
+    /// true for floor impacts
+    pub vertical_collision_below: bool,
+    /// entity restitution zero while suppressing bounce
+    pub entity_restitution: f64,
     /// Whether vanilla bounce behavior should be suppressed.
     pub suppresses_bounce: bool,
     /// The gravity applied to the entity.
@@ -500,47 +506,42 @@ impl EntityFallDamage {
 }
 
 impl EntityLandingContext {
-    /// Creates a landing context for a vertical movement collision.
-    #[must_use]
-    pub const fn new(
-        velocity: DVec3,
-        achieved_movement_y: f64,
-        is_living_entity: bool,
-        suppresses_bounce: bool,
-        gravity: f64,
-        air_drag: f64,
-    ) -> Self {
-        Self {
-            velocity,
-            achieved_movement_y,
-            is_living_entity,
-            suppresses_bounce,
-            gravity,
-            air_drag,
-        }
-    }
-
     /// Vanilla default `Block.updateEntityMovementAfterFallOn` result.
     #[must_use]
     pub const fn default_velocity_after_fall_on(self) -> DVec3 {
-        DVec3::new(self.velocity.x, 0.0, self.velocity.z)
+        DVec3::new(
+            self.velocity.x,
+            (0.0 - self.velocity.y) * 0.0,
+            self.velocity.z,
+        )
     }
 
-    /// Computes the Y velocity after bouncing on a block.
-    /// doesn't test if the bounce is valid
+    /// effective restitution for this impact
     #[must_use]
-    pub fn velocity_after_bounce(&self, restitution: f32) -> DVec3 {
-        let portion_with_movement = if self.velocity.y == 0.0 {
-            1.0
+    pub fn restitution(self, block_restitution: f32, suppresses_bounce: bool) -> f64 {
+        if !self.vertical_collision_below {
+            return self.entity_restitution;
+        }
+
+        if self.suppresses_bounce || suppresses_bounce || -self.velocity.y <= self.gravity {
+            return 0.0;
+        }
+
+        let block_restitution = if self.is_living_entity {
+            block_restitution
         } else {
-            self.achieved_movement_y / self.velocity.y
+            block_restitution * NON_LIVING_BLOCK_RESTITUTION_MULTIPLIER
         };
 
+        self.entity_restitution.max(f64::from(block_restitution))
+    }
+
+    /// bounce velocity after preimpact gravity and drag
+    #[must_use]
+    pub fn velocity_after_bounce(self, restitution: f64) -> DVec3 {
+        let portion_with_movement = self.achieved_movement_y / self.velocity.y;
         let gravity_compensation = portion_with_movement * self.gravity;
         let effective_drag = lerp(portion_with_movement, 1.0, self.air_drag);
-
-        let entity_factor: f32 = if self.is_living_entity { 1.0 } else { 0.8 };
-        let restitution = f64::from(restitution * entity_factor);
 
         DVec3::new(
             self.velocity.x,
@@ -555,14 +556,16 @@ mod tests {
     use super::{DVec3, EntityLandingContext};
 
     fn landing(velocity_y: f64, achieved_movement_y: f64) -> EntityLandingContext {
-        EntityLandingContext::new(
-            DVec3::new(0.25, velocity_y, -0.5),
+        EntityLandingContext {
+            velocity: DVec3::new(0.25, velocity_y, -0.5),
             achieved_movement_y,
-            true,
-            false,
-            0.08,
-            0.98,
-        )
+            is_living_entity: true,
+            vertical_collision_below: true,
+            entity_restitution: 0.0,
+            suppresses_bounce: false,
+            gravity: 0.08,
+            air_drag: 0.98,
+        }
     }
 
     #[test]
@@ -578,16 +581,13 @@ mod tests {
 
     #[test]
     fn non_living_entities_bounce_lower() {
-        let living = landing(-1.5, -0.75).velocity_after_bounce(1.0);
-        let non_living = EntityLandingContext::new(
-            DVec3::new(0.25, -1.5, -0.5),
-            -0.75,
-            false,
-            false,
-            0.08,
-            0.98,
-        )
-        .velocity_after_bounce(1.0);
+        let living = landing(-1.5, -0.75);
+        let non_living = EntityLandingContext {
+            is_living_entity: false,
+            ..living
+        };
+        let living = living.velocity_after_bounce(living.restitution(1.0, false));
+        let non_living = non_living.velocity_after_bounce(non_living.restitution(1.0, false));
 
         assert!(
             (non_living.y - living.y * 0.8).abs() < 1.0e-6,
