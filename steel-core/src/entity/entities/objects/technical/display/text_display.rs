@@ -7,7 +7,7 @@ use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entity_data::TextDisplayEntityData;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 use text_components::TextComponent;
 
@@ -40,7 +40,7 @@ pub struct TextDisplayEntity {
     #[entity(component)]
     display: DisplayBase,
     #[entity(synced)]
-    entity_data: CheckedMutex<TextDisplayEntityData>,
+    entity_data: SyncMutex<TextDisplayEntityData>,
 }
 
 impl EntityTable for TextDisplayEntity {
@@ -54,7 +54,7 @@ impl TextDisplayEntity {
             base,
             entity_type,
             display: DisplayBase,
-            entity_data: CheckedMutex::new(TextDisplayEntityData::new()),
+            entity_data: SyncMutex::new(TextDisplayEntityData::new()),
         }
     }
 

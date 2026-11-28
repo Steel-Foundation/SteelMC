@@ -15,7 +15,7 @@ use steel_registry::particle_type::{ColorParticleOption, ParticleData};
 use steel_registry::vanilla_entity_data::AreaEffectCloudEntityData;
 use steel_registry::vanilla_particle_types;
 use steel_utils::RgbColor;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
@@ -85,9 +85,9 @@ pub struct AreaEffectCloudEntity {
     base: EntityBase,
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
-    state: CheckedMutex<AreaEffectCloudState>,
+    state: SyncMutex<AreaEffectCloudState>,
     #[entity(synced)]
-    entity_data: CheckedMutex<AreaEffectCloudEntityData>,
+    entity_data: SyncMutex<AreaEffectCloudEntityData>,
 }
 
 impl EntityTable for AreaEffectCloudEntity {
@@ -135,8 +135,8 @@ impl AreaEffectCloudEntity {
         Self {
             base,
             entity_type,
-            state: CheckedMutex::new(AreaEffectCloudState::new()),
-            entity_data: CheckedMutex::new(AreaEffectCloudEntityData::new()),
+            state: SyncMutex::new(AreaEffectCloudState::new()),
+            entity_data: SyncMutex::new(AreaEffectCloudEntityData::new()),
         }
     }
 

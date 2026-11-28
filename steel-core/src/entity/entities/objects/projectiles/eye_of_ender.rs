@@ -17,7 +17,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::EyeOfEnderEntityData;
 use steel_registry::{level_events, sound_events, vanilla_entities, vanilla_items};
 use steel_utils::BlockPos;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use crate::entity::EntityTable;
 use crate::entity::entities::ItemEntity;
@@ -46,9 +46,9 @@ pub struct EyeOfEnderEntity {
     base: EntityBase,
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
-    flight: CheckedMutex<Flight>,
+    flight: SyncMutex<Flight>,
     #[entity(synced)]
-    entity_data: CheckedMutex<EyeOfEnderEntityData>,
+    entity_data: SyncMutex<EyeOfEnderEntityData>,
 }
 
 impl EntityTable for EyeOfEnderEntity {
@@ -66,8 +66,8 @@ impl EyeOfEnderEntity {
         Self {
             base,
             entity_type,
-            flight: CheckedMutex::new(Flight::default()),
-            entity_data: CheckedMutex::new(entity_data),
+            flight: SyncMutex::new(Flight::default()),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 

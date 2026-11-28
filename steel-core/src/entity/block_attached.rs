@@ -14,7 +14,7 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_game_events;
 use steel_registry::vanilla_game_rules::MOB_GRIEFING;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
 
 use crate::entity::component::{Component, Has};
@@ -33,7 +33,7 @@ struct AttachmentState {
 
 /// The block a vanilla `BlockAttachedEntity` hangs on.
 pub struct BlockAttachment {
-    state: CheckedMutex<AttachmentState>,
+    state: SyncMutex<AttachmentState>,
 }
 
 impl BlockAttachment {
@@ -41,7 +41,7 @@ impl BlockAttachment {
     #[must_use]
     pub const fn new(pos: BlockPos) -> Self {
         Self {
-            state: CheckedMutex::new(AttachmentState {
+            state: SyncMutex::new(AttachmentState {
                 ticks_since_last_check: 0,
                 pos,
             }),

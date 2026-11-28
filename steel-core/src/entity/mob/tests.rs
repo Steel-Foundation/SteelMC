@@ -18,7 +18,7 @@ use steel_registry::{
     REGISTRY, init_vanilla_registry, vanilla_attributes, vanilla_blocks, vanilla_damage_types,
     vanilla_world_clocks,
 };
-use steel_utils::locks::{CheckedMutex, SyncMutex};
+use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Downcast as _, Identifier};
 use steel_worldgen::density_functions::overworld::OverworldNoiseSettings;
 
@@ -184,7 +184,7 @@ struct DespawnTestMob {
     entity_type: EntityTypeRef,
     living_base: LivingEntityBase,
     mob_base: MobBase,
-    entity_data: CheckedMutex<MobEntityData>,
+    entity_data: SyncMutex<MobEntityData>,
     nearest_player_distance_sqr: Option<f64>,
     remove_when_far_away: bool,
     controlling_passenger: SyncMutex<Option<SharedEntity>>,
@@ -249,7 +249,7 @@ impl DespawnTestMob {
             entity_type,
             living_base: LivingEntityBase::without_synced_data(entity_type),
             mob_base: MobBase::new(|_| {}),
-            entity_data: CheckedMutex::new(synced_with_health(
+            entity_data: SyncMutex::new(synced_with_health(
                 MobEntityData::new(),
                 INITIAL_TEST_HEALTH,
             )),
@@ -280,7 +280,7 @@ impl DespawnTestMob {
             entity_type,
             living_base: LivingEntityBase::without_synced_data(entity_type),
             mob_base: MobBase::new(|_| {}),
-            entity_data: CheckedMutex::new(MobEntityData::new()),
+            entity_data: SyncMutex::new(MobEntityData::new()),
             can_be_leashed: SyncMutex::new(true),
             nearest_player_distance_sqr: None,
             remove_when_far_away: false,
@@ -353,7 +353,7 @@ impl Has<LivingEntityBase> for DespawnTestMob {
 struct HiddenTarget {
     base: EntityBase,
     living_base: LivingEntityBase,
-    entity_data: CheckedMutex<LivingEntityData>,
+    entity_data: SyncMutex<LivingEntityData>,
 }
 
 impl HiddenTarget {
@@ -367,7 +367,7 @@ impl HiddenTarget {
                 WeakSelf::detached(),
             ),
             living_base: LivingEntityBase::without_synced_data(&vanilla_entities::PIG),
-            entity_data: CheckedMutex::new(synced_with_health(
+            entity_data: SyncMutex::new(synced_with_health(
                 LivingEntityData::new(),
                 INITIAL_TEST_HEALTH,
             )),

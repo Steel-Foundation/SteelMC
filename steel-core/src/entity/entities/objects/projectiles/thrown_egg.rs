@@ -13,7 +13,7 @@ use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::vanilla_entity_data::EggEntityData;
 use steel_registry::{vanilla_entities, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use crate::entity::EntityTable;
 use crate::entity::ageable::BABY_START_AGE;
@@ -43,7 +43,7 @@ pub struct ThrownEggEntity {
     #[entity(component)]
     thrown_item: ThrownItem,
     #[entity(synced)]
-    entity_data: CheckedMutex<EggEntityData>,
+    entity_data: SyncMutex<EggEntityData>,
 }
 
 impl EntityTable for ThrownEggEntity {
@@ -59,7 +59,7 @@ impl ThrownEggEntity {
             entity_type,
             projectile: ProjectileBase::new(),
             thrown_item,
-            entity_data: CheckedMutex::new(entity_data),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 

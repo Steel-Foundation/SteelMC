@@ -7,7 +7,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entity_data::BlockDisplayEntityData;
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use super::DisplayBase;
 use crate::block_entity::block_state_nbt;
@@ -28,7 +28,7 @@ pub struct BlockDisplayEntity {
     #[entity(component)]
     display: DisplayBase,
     #[entity(synced)]
-    entity_data: CheckedMutex<BlockDisplayEntityData>,
+    entity_data: SyncMutex<BlockDisplayEntityData>,
 }
 
 impl EntityTable for BlockDisplayEntity {
@@ -42,7 +42,7 @@ impl BlockDisplayEntity {
             base,
             entity_type,
             display: DisplayBase,
-            entity_data: CheckedMutex::new(BlockDisplayEntityData::new()),
+            entity_data: SyncMutex::new(BlockDisplayEntityData::new()),
         }
     }
 

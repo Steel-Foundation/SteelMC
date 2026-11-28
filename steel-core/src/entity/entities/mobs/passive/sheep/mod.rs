@@ -30,7 +30,7 @@ use steel_registry::vanilla_entity_data::SheepEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{DyeColor, REGISTRY, TaggedRegistryExt, sound_events, vanilla_items};
 use steel_utils::Downcast as _;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
 
 use crate::behavior::InteractionResult;
@@ -72,7 +72,7 @@ pub struct SheepEntity {
     #[entity(component)]
     breeding: Breeding,
     #[entity(synced)]
-    entity_data: CheckedMutex<SheepEntityData>,
+    entity_data: SyncMutex<SheepEntityData>,
 }
 
 impl AgeableTable for SheepEntity {
@@ -110,7 +110,7 @@ impl SheepEntity {
             mob_base: MobBase::new(Self::construct),
             age: Age::new(),
             breeding: Breeding::new(),
-            entity_data: CheckedMutex::new(entity_data),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 

@@ -5,7 +5,7 @@ use steel_registry::entity_variant::MooshroomVariant;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 use steel_utils::TICKS_PER_SECOND;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
 use std::ops::Deref;
@@ -660,7 +660,7 @@ impl<'a> Living<'a> {
 
     /// Returns a reference to this entity's attribute map.
     #[must_use]
-    pub const fn attributes(&self) -> &'a CheckedMutex<AttributeMap> {
+    pub const fn attributes(&self) -> &'a SyncMutex<AttributeMap> {
         self.living_base().attributes()
     }
 

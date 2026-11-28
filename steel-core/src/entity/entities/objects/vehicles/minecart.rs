@@ -7,7 +7,7 @@ use steel_registry::items::ItemRef;
 use steel_registry::vanilla_entity_data::MinecartEntityData;
 use steel_registry::vanilla_items;
 use steel_utils::BlockPos;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use super::abstract_minecart::{self, AbstractMinecartBase, AbstractMinecartProps};
 use super::vehicle_entity::{self, HURT_DURATION, Parts as _};
@@ -33,7 +33,7 @@ pub struct MinecartEntity {
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
     #[entity(synced)]
-    entity_data: CheckedMutex<MinecartEntityData>,
+    entity_data: SyncMutex<MinecartEntityData>,
     #[entity(component)]
     minecart: AbstractMinecartBase,
 }
@@ -57,7 +57,7 @@ impl MinecartEntity {
         Self {
             base,
             entity_type,
-            entity_data: CheckedMutex::new(MinecartEntityData::new()),
+            entity_data: SyncMutex::new(MinecartEntityData::new()),
             minecart: AbstractMinecartBase::new(),
         }
     }

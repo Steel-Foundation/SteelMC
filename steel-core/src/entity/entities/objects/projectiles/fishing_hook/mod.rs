@@ -24,7 +24,7 @@ use steel_registry::{
     sound_events, vanilla_blocks, vanilla_custom_stats, vanilla_entities, vanilla_items,
 };
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
@@ -61,10 +61,10 @@ pub struct FishingHookEntity {
     entity_type: EntityTypeRef,
     #[entity(component)]
     projectile: ProjectileBase,
-    hook_state: CheckedMutex<FishingHookState>,
-    synchronized_random: CheckedMutex<LegacyRandom>,
+    hook_state: SyncMutex<FishingHookState>,
+    synchronized_random: SyncMutex<LegacyRandom>,
     #[entity(synced)]
-    entity_data: CheckedMutex<FishingBobberEntityData>,
+    entity_data: SyncMutex<FishingBobberEntityData>,
 }
 
 /// The fishing state of one hook.
@@ -138,9 +138,9 @@ impl FishingHookEntity {
             base,
             entity_type,
             projectile: ProjectileBase::new(),
-            hook_state: CheckedMutex::new(FishingHookState::new(0, 0)),
-            synchronized_random: CheckedMutex::new(LegacyRandom::from_seed(0)),
-            entity_data: CheckedMutex::new(FishingBobberEntityData::new()),
+            hook_state: SyncMutex::new(FishingHookState::new(0, 0)),
+            synchronized_random: SyncMutex::new(LegacyRandom::from_seed(0)),
+            entity_data: SyncMutex::new(FishingBobberEntityData::new()),
         }
     }
 

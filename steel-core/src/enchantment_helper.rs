@@ -1055,7 +1055,7 @@ mod tests {
         vanilla_items, vanilla_mob_effects,
     };
     use steel_utils::Identifier;
-    use steel_utils::locks::{CheckedMutex, SyncMutex};
+    use steel_utils::locks::SyncMutex;
 
     use super::*;
 
@@ -1067,7 +1067,7 @@ mod tests {
     struct TestLivingEntity {
         base: EntityBase,
         living_base: LivingEntityBase,
-        entity_data: CheckedMutex<LivingEntityData>,
+        entity_data: SyncMutex<LivingEntityData>,
         broken_slots: SyncMutex<Vec<EquipmentSlot>>,
         entity_type: EntityTypeRef,
     }
@@ -1083,7 +1083,7 @@ mod tests {
                     WeakSelf::detached(),
                 ),
                 living_base: LivingEntityBase::without_synced_data(entity_type),
-                entity_data: CheckedMutex::new(synced_with_health(LivingEntityData::new(), 20.0)),
+                entity_data: SyncMutex::new(synced_with_health(LivingEntityData::new(), 20.0)),
                 broken_slots: SyncMutex::new(Vec::new()),
                 entity_type,
             }

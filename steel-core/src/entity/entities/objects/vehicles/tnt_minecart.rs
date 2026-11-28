@@ -16,7 +16,7 @@ use steel_registry::vanilla_entity_data::TntMinecartEntityData;
 use steel_registry::vanilla_game_rules::TNT_EXPLODES;
 use steel_registry::{sound_events, vanilla_blocks, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -93,10 +93,10 @@ pub struct TntMinecartEntity {
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
     #[entity(synced)]
-    entity_data: CheckedMutex<TntMinecartEntityData>,
+    entity_data: SyncMutex<TntMinecartEntityData>,
     #[entity(component)]
     minecart: AbstractMinecartBase,
-    state: CheckedMutex<TntMinecartState>,
+    state: SyncMutex<TntMinecartState>,
 }
 
 impl vehicle_entity::Parts for TntMinecartEntity {
@@ -156,9 +156,9 @@ impl TntMinecartEntity {
         Self {
             base,
             entity_type,
-            entity_data: CheckedMutex::new(TntMinecartEntityData::new()),
+            entity_data: SyncMutex::new(TntMinecartEntityData::new()),
             minecart: AbstractMinecartBase::new(),
-            state: CheckedMutex::new(TntMinecartState::new()),
+            state: SyncMutex::new(TntMinecartState::new()),
         }
     }
 

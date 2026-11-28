@@ -17,7 +17,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidStateExt as _;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::ExperienceOrbEntityData;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
 
 use crate::entity::EntityProps;
@@ -69,8 +69,8 @@ pub struct ExperienceOrbEntity {
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
     #[entity(synced)]
-    entity_data: CheckedMutex<ExperienceOrbEntityData>,
-    state: CheckedMutex<ExperienceOrbState>,
+    entity_data: SyncMutex<ExperienceOrbEntityData>,
+    state: SyncMutex<ExperienceOrbState>,
 }
 
 impl ExperienceOrbEntity {
@@ -123,8 +123,8 @@ impl ExperienceOrbEntity {
         Self {
             base,
             entity_type,
-            entity_data: CheckedMutex::new(ExperienceOrbEntityData::new()),
-            state: CheckedMutex::new(ExperienceOrbState::new()),
+            entity_data: SyncMutex::new(ExperienceOrbEntityData::new()),
+            state: SyncMutex::new(ExperienceOrbState::new()),
         }
     }
 

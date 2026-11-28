@@ -9,7 +9,7 @@ use steel_registry::sound_event::SoundEventHolder;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::WindChargeEntityData;
 use steel_registry::{sound_events, vanilla_particle_types};
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use crate::entity::prelude::*;
 use crate::entity::projectile::{self, ProjectileTable, hurting, wind_charge};
@@ -46,8 +46,8 @@ pub struct WindChargeEntity {
     #[entity(component)]
     hurting_projectile: HurtingProjectileBase,
     #[entity(synced)]
-    entity_data: CheckedMutex<WindChargeEntityData>,
-    no_deflect_ticks: CheckedMutex<i32>,
+    entity_data: SyncMutex<WindChargeEntityData>,
+    no_deflect_ticks: SyncMutex<i32>,
 }
 
 impl WindChargeEntity {
@@ -57,8 +57,8 @@ impl WindChargeEntity {
             entity_type,
             projectile: ProjectileBase::new(),
             hurting_projectile: HurtingProjectileBase::new(0.0),
-            entity_data: CheckedMutex::new(WindChargeEntityData::new()),
-            no_deflect_ticks: CheckedMutex::new(NO_DEFLECT_TICKS),
+            entity_data: SyncMutex::new(WindChargeEntityData::new()),
+            no_deflect_ticks: SyncMutex::new(NO_DEFLECT_TICKS),
         };
         entity
             .base

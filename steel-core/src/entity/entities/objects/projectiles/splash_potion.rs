@@ -11,7 +11,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::SplashPotionEntityData;
 use steel_registry::vanilla_items;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::EntityTable;
@@ -38,7 +38,7 @@ pub struct SplashPotionEntity {
     #[entity(component)]
     thrown_item: ThrownItem,
     #[entity(synced)]
-    entity_data: CheckedMutex<SplashPotionEntityData>,
+    entity_data: SyncMutex<SplashPotionEntityData>,
 }
 
 impl EntityTable for SplashPotionEntity {
@@ -54,7 +54,7 @@ impl SplashPotionEntity {
             entity_type,
             projectile: ProjectileBase::new(),
             thrown_item,
-            entity_data: CheckedMutex::new(entity_data),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 

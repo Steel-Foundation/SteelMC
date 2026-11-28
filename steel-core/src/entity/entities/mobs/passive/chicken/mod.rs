@@ -30,7 +30,7 @@ use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, RegistryReference, TaggedRegistryExt, sound_events, vanilla_game_events,
 };
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::entity::EntityProps;
@@ -94,9 +94,9 @@ pub struct ChickenEntity {
     age: Age,
     #[entity(component)]
     breeding: Breeding,
-    state: CheckedMutex<ChickenState>,
+    state: SyncMutex<ChickenState>,
     #[entity(synced)]
-    entity_data: CheckedMutex<ChickenEntityData>,
+    entity_data: SyncMutex<ChickenEntityData>,
 }
 
 impl AgeableTable for ChickenEntity {
@@ -144,8 +144,8 @@ impl ChickenEntity {
             mob_base,
             age: Age::new(),
             breeding: Breeding::new(),
-            state: CheckedMutex::new(state),
-            entity_data: CheckedMutex::new(entity_data),
+            state: SyncMutex::new(state),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 

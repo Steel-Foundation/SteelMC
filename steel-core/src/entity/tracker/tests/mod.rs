@@ -10,7 +10,7 @@ use std::{
     sync::{Arc, Weak},
 };
 use steel_registry::vanilla_entity_data::LivingEntityData;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem};
 use steel_registry::item_stack::ItemStack;
@@ -31,7 +31,7 @@ struct PairingTestEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     living_base: LivingEntityBase,
-    entity_data: CheckedMutex<LivingEntityData>,
+    entity_data: SyncMutex<LivingEntityData>,
     attributes: Vec<AttributeSnapshot>,
     dirty_attributes: SyncMutex<Vec<AttributeSnapshot>>,
     equipment: SyncMutex<Vec<EquipmentSlotItem>>,
@@ -58,7 +58,7 @@ impl PairingTestEntity {
             ),
             entity_type,
             living_base: LivingEntityBase::without_synced_data(&vanilla_entities::PIG),
-            entity_data: CheckedMutex::new(LivingEntityData::new()),
+            entity_data: SyncMutex::new(LivingEntityData::new()),
             attributes,
             dirty_attributes: SyncMutex::new(Vec::new()),
             equipment: SyncMutex::new(Vec::new()),

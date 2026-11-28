@@ -43,7 +43,7 @@ use steel_registry::{
     vanilla_entities, vanilla_entity_type_tags::EntityTypeTag, vanilla_game_events,
     vanilla_game_rules, vanilla_items,
 };
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{
     BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, Identifier, TICKS_PER_SECOND,
@@ -176,12 +176,12 @@ impl DropChances {
 pub struct MobBase {
     goal_selector: GoalSelector,
     target_selector: GoalSelector,
-    target: CheckedMutex<Option<WeakEntity>>,
-    sensing: CheckedMutex<Sensing>,
-    controls: CheckedMutex<MobControls>,
-    navigation: CheckedMutex<PathNavigation>,
-    pathfinding_malus: CheckedMutex<PathfindingMalus>,
-    state: CheckedMutex<MobState>,
+    target: SyncMutex<Option<WeakEntity>>,
+    sensing: SyncMutex<Sensing>,
+    controls: SyncMutex<MobControls>,
+    navigation: SyncMutex<PathNavigation>,
+    pathfinding_malus: SyncMutex<PathfindingMalus>,
+    state: SyncMutex<MobState>,
     leash_data: LeashSlot,
 }
 
@@ -220,12 +220,12 @@ impl MobBase {
         let mob_base = Self {
             goal_selector: GoalSelector::new(),
             target_selector: GoalSelector::new(),
-            target: CheckedMutex::new(None),
-            sensing: CheckedMutex::new(Sensing::new()),
-            controls: CheckedMutex::new(MobControls::new()),
-            navigation: CheckedMutex::new(PathNavigation::new()),
-            pathfinding_malus: CheckedMutex::new(PathfindingMalus::new()),
-            state: CheckedMutex::new(MobState {
+            target: SyncMutex::new(None),
+            sensing: SyncMutex::new(Sensing::new()),
+            controls: SyncMutex::new(MobControls::new()),
+            navigation: SyncMutex::new(PathNavigation::new()),
+            pathfinding_malus: SyncMutex::new(PathfindingMalus::new()),
+            state: SyncMutex::new(MobState {
                 persistence_required: false,
                 can_pick_up_loot: false,
                 drop_chances: DropChances::DEFAULT,
@@ -252,7 +252,7 @@ impl MobBase {
     }
 
     #[must_use]
-    pub(crate) const fn sensing(&self) -> &CheckedMutex<Sensing> {
+    pub(crate) const fn sensing(&self) -> &SyncMutex<Sensing> {
         &self.sensing
     }
 
@@ -295,17 +295,17 @@ impl MobBase {
     }
 
     #[must_use]
-    pub const fn controls(&self) -> &CheckedMutex<MobControls> {
+    pub const fn controls(&self) -> &SyncMutex<MobControls> {
         &self.controls
     }
 
     #[must_use]
-    pub const fn navigation(&self) -> &CheckedMutex<PathNavigation> {
+    pub const fn navigation(&self) -> &SyncMutex<PathNavigation> {
         &self.navigation
     }
 
     #[must_use]
-    pub const fn pathfinding_malus(&self) -> &CheckedMutex<PathfindingMalus> {
+    pub const fn pathfinding_malus(&self) -> &SyncMutex<PathfindingMalus> {
         &self.pathfinding_malus
     }
 

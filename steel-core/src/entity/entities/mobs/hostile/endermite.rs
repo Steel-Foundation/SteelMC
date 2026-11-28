@@ -13,7 +13,7 @@ use steel_registry::sound_events;
 use steel_registry::vanilla_entity_data::EndermiteEntityData;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
 use crate::entity::EntityTable;
@@ -46,9 +46,9 @@ pub struct EndermiteEntity {
     living_base: LivingEntityBase,
     #[entity(component)]
     mob_base: MobBase,
-    life: CheckedMutex<i32>,
+    life: SyncMutex<i32>,
     #[entity(synced)]
-    entity_data: CheckedMutex<EndermiteEntityData>,
+    entity_data: SyncMutex<EndermiteEntityData>,
 }
 
 impl Enemy for EndermiteEntity {}
@@ -108,8 +108,8 @@ impl EndermiteEntity {
             entity_type,
             living_base,
             mob_base: MobBase::new(Self::construct),
-            life: CheckedMutex::new(0),
-            entity_data: CheckedMutex::new(entity_data),
+            life: SyncMutex::new(0),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 

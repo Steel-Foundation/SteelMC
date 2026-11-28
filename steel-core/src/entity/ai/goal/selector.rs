@@ -3,7 +3,7 @@ use std::mem;
 use std::ops::BitOr;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use super::reduced_tick_delay;
 use crate::entity::Mob;
@@ -188,7 +188,7 @@ struct GoalSet {
 /// Removing goals or ticking the selector from a callback panics, as vanilla's
 /// goal set would. Start and stop callbacks see the new running state.
 pub struct GoalSelector {
-    set: CheckedMutex<GoalSet>,
+    set: SyncMutex<GoalSet>,
     /// The disabled [`GoalControls`] bits, outside the lock so a tick reads
     /// them per goal without locking.
     disabled_controls: AtomicU8,
@@ -201,7 +201,7 @@ impl GoalSelector {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            set: CheckedMutex::new(GoalSet {
+            set: SyncMutex::new(GoalSet {
                 next_goal_id: GoalId(0),
                 goals: Vec::new(),
                 checked_out: Vec::new(),
@@ -515,7 +515,7 @@ mod tests {
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
-    use steel_utils::locks::{CheckedMutex, SyncMutex};
+    use steel_utils::locks::SyncMutex;
 
     use super::*;
 
@@ -531,7 +531,7 @@ mod tests {
         base: EntityBase,
         living_base: LivingEntityBase,
         mob_base: MobBase,
-        entity_data: CheckedMutex<MobEntityData>,
+        entity_data: SyncMutex<MobEntityData>,
     }
 
     impl TestPathfinderMob {
@@ -547,7 +547,7 @@ mod tests {
                 ),
                 living_base: LivingEntityBase::without_synced_data(&vanilla_entities::PIG),
                 mob_base: MobBase::new(|_| {}),
-                entity_data: CheckedMutex::new(synced_with_health(MobEntityData::new(), 10.0)),
+                entity_data: SyncMutex::new(synced_with_health(MobEntityData::new(), 10.0)),
             }
         }
     }

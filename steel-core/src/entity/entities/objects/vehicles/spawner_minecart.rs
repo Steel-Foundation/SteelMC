@@ -9,7 +9,7 @@ use steel_registry::items::ItemRef;
 use steel_registry::vanilla_entity_data::SpawnerMinecartEntityData;
 use steel_registry::{vanilla_blocks, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use super::abstract_minecart::{self, AbstractMinecartBase, AbstractMinecartProps};
 use super::vehicle_entity;
@@ -30,7 +30,7 @@ pub struct SpawnerMinecartEntity {
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
     #[entity(synced)]
-    entity_data: CheckedMutex<SpawnerMinecartEntityData>,
+    entity_data: SyncMutex<SpawnerMinecartEntityData>,
     #[entity(component)]
     minecart: AbstractMinecartBase,
     spawner: BaseSpawner,
@@ -61,7 +61,7 @@ impl SpawnerMinecartEntity {
         Self {
             base,
             entity_type,
-            entity_data: CheckedMutex::new(SpawnerMinecartEntityData::new()),
+            entity_data: SyncMutex::new(SpawnerMinecartEntityData::new()),
             minecart: AbstractMinecartBase::new(),
             spawner: BaseSpawner::new(),
         }

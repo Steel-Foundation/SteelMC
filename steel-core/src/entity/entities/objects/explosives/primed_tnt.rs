@@ -14,7 +14,7 @@ use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_data::PrimedTntEntityData;
 use steel_registry::vanilla_game_rules::TNT_EXPLODES;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::block_entity::block_state_nbt;
@@ -133,8 +133,8 @@ pub struct PrimedTntEntity {
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
     #[entity(synced)]
-    entity_data: CheckedMutex<PrimedTntEntityData>,
-    state: CheckedMutex<PrimedTntState>,
+    entity_data: SyncMutex<PrimedTntEntityData>,
+    state: SyncMutex<PrimedTntState>,
 }
 
 impl PrimedTntEntity {
@@ -170,8 +170,8 @@ impl PrimedTntEntity {
         Self {
             base,
             entity_type,
-            entity_data: CheckedMutex::new(PrimedTntEntityData::new()),
-            state: CheckedMutex::new(PrimedTntState::new()),
+            entity_data: SyncMutex::new(PrimedTntEntityData::new()),
+            state: SyncMutex::new(PrimedTntState::new()),
         }
     }
 

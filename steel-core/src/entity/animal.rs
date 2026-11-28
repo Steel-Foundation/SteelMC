@@ -25,7 +25,7 @@ use steel_registry::vanilla_game_rules::MOB_DROPS;
 use steel_registry::{vanilla_blocks, vanilla_entities};
 use steel_utils::axis::Axis;
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, UuidExt};
 use uuid::Uuid;
 
@@ -192,7 +192,7 @@ struct LoveState {
 
 /// Love state of a vanilla `Animal`.
 pub struct Breeding {
-    state: CheckedMutex<LoveState>,
+    state: SyncMutex<LoveState>,
 }
 
 impl Breeding {
@@ -200,7 +200,7 @@ impl Breeding {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            state: CheckedMutex::new(LoveState {
+            state: SyncMutex::new(LoveState {
                 in_love: 0,
                 love_cause: None,
             }),

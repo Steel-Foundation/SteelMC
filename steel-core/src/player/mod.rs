@@ -91,7 +91,7 @@ use steel_utils::{entity_events::EntityStatus, locks::Shared, translations};
 use tick_state::PlayerTickState;
 use uuid::Uuid;
 
-use steel_utils::locks::{CheckedMutex, SyncMutex};
+use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::resolving::TextResolutor;
 use text_components::{
@@ -192,62 +192,62 @@ pub struct Player {
     base: EntityBase,
 
     /// Client lifecycle flags.
-    lifecycle: CheckedMutex<PlayerLifecycleState>,
+    lifecycle: SyncMutex<PlayerLifecycleState>,
 
     /// Movement tracking state
-    pub(crate) movement: CheckedMutex<MovementState>,
+    pub(crate) movement: SyncMutex<MovementState>,
 
     /// Synchronized entity data (health, pose, flags, etc.) for network sync.
     #[entity(synced)]
-    entity_data: CheckedMutex<PlayerEntityData>,
+    entity_data: SyncMutex<PlayerEntityData>,
 
     /// The last chunk position of the player.
-    pub last_chunk_pos: CheckedMutex<ChunkPos>,
+    pub last_chunk_pos: SyncMutex<ChunkPos>,
     /// The last chunk tracking view of the player.
-    pub last_tracking_view: CheckedMutex<Option<PlayerChunkView>>,
+    pub last_tracking_view: SyncMutex<Option<PlayerChunkView>>,
 
     /// Current and previous game mode.
-    game_modes: CheckedMutex<PlayerGameModeState>,
+    game_modes: SyncMutex<PlayerGameModeState>,
 
     /// The player's inventory container (shared with `inventory_menu`).
     pub inventory: Shared<PlayerInventory>,
 
     /// Logical inventory slots that must be resent directly to this player's client.
-    inventory_sync: CheckedMutex<PlayerInventorySyncState>,
+    inventory_sync: SyncMutex<PlayerInventorySyncState>,
 
     /// The player's ender chest inventory.
     pub ender_chest_inventory: SyncPlayerEnderChest,
 
     /// Last main-hand stack used for vanilla attack-strength reset checks.
-    last_item_in_main_hand: CheckedMutex<ItemStack>,
+    last_item_in_main_hand: SyncMutex<ItemStack>,
 
     /// The player's inventory menu (always open, even when `container_id` is 0).
-    inventory_menu: CheckedMutex<Menu>,
+    inventory_menu: SyncMutex<Menu>,
 
     /// The currently open menu (None if player inventory is open).
     /// This is separate from `inventory_menu` which is always present.
-    open_menu: CheckedMutex<player_inventory::OpenMenuState>,
+    open_menu: SyncMutex<player_inventory::OpenMenuState>,
 
     /// Counter for generating container IDs (1-100, wraps around).
-    container_counter: CheckedMutex<ContainerCounter>,
+    container_counter: SyncMutex<ContainerCounter>,
 
     /// Pending server-initiated teleport state (ID, position, timeout).
-    teleport_state: CheckedMutex<TeleportState>,
+    teleport_state: SyncMutex<TeleportState>,
     /// Vanilla item use cooldown groups.
-    item_cooldowns: CheckedMutex<ItemCooldowns>,
+    item_cooldowns: SyncMutex<ItemCooldowns>,
 
     /// Local tick and once-per-tick packet state.
-    tick_state: CheckedMutex<PlayerTickState>,
+    tick_state: SyncMutex<PlayerTickState>,
     /// Vanilla sleep/wake animation counter.
-    sleep_state: CheckedMutex<PlayerSleepState>,
+    sleep_state: SyncMutex<PlayerSleepState>,
     /// Persisted personal bed or respawn-anchor target.
-    respawn_config: CheckedMutex<Option<PlayerRespawnConfig>>,
+    respawn_config: SyncMutex<Option<PlayerRespawnConfig>>,
 
     /// Player abilities (flight, invulnerability, build permissions, speeds, etc.)
-    pub abilities: CheckedMutex<Abilities>,
+    pub abilities: SyncMutex<Abilities>,
 
     /// Block breaking state machine.
-    pub block_breaking: CheckedMutex<BlockBreakingManager>,
+    pub block_breaking: SyncMutex<BlockBreakingManager>,
 
     /// Shared living-entity runtime fields (attributes, speed, damage/death state).
     /// Vanilla: `LivingEntity` (L230-232) + `Entity.invulnerableTime` (L256).
@@ -255,13 +255,13 @@ pub struct Player {
     living_base: LivingEntityBase,
 
     /// Player food/hunger state (food level, saturation, exhaustion).
-    pub food_data: CheckedMutex<FoodData>,
+    pub food_data: SyncMutex<FoodData>,
 
     /// Delta-tracking state for `CSetHealth` deduplication.
-    health_sync: CheckedMutex<HealthSyncState>,
+    health_sync: SyncMutex<HealthSyncState>,
 
     /// The Player's Experience
-    pub experience: CheckedMutex<Experience>,
+    pub experience: SyncMutex<Experience>,
 
     /// Whether the player has completed the vanilla End credits flow.
     seen_credits: AtomicBool,
@@ -273,19 +273,19 @@ pub struct Player {
 
     /// Monotonic counter bumped on world teleport/reset. The chunk sending tick
     /// snapshots this before encoding and compares after to detect stale batches.
-    pub chunk_send_epoch: CheckedMutex<u32>,
+    pub chunk_send_epoch: SyncMutex<u32>,
 
     /// Domain-residence identity and persisted entities awaiting restoration.
-    residence: CheckedMutex<PlayerResidenceState>,
+    residence: SyncMutex<PlayerResidenceState>,
     /// In-flight ender pearls thrown by this player, kept weakly so they persist
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
-    ender_pearls: CheckedMutex<Vec<Weak<dyn Entity>>>,
+    ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
 
     /// Active fishing hook, kept weakly because the world owns live entities.
-    fishing: CheckedMutex<Option<Weak<FishingHookEntity>>>,
+    fishing: SyncMutex<Option<Weak<FishingHookEntity>>>,
 
     /// The last action time of this player.
-    last_action_time: CheckedMutex<Instant>,
+    last_action_time: SyncMutex<Instant>,
 }
 
 #[derive(Clone)]
@@ -640,38 +640,38 @@ impl Player {
                 world,
                 this,
             ),
-            lifecycle: CheckedMutex::new(PlayerLifecycleState::default()),
-            movement: CheckedMutex::new(MovementState::new()),
-            entity_data: CheckedMutex::new(entity_data),
-            last_chunk_pos: CheckedMutex::new(ChunkPos::new(0, 0)),
-            last_tracking_view: CheckedMutex::new(None),
-            game_modes: CheckedMutex::new(PlayerGameModeState::new(GameType::Survival)),
+            lifecycle: SyncMutex::new(PlayerLifecycleState::default()),
+            movement: SyncMutex::new(MovementState::new()),
+            entity_data: SyncMutex::new(entity_data),
+            last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
+            last_tracking_view: SyncMutex::new(None),
+            game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: Arc::clone(&inventory),
-            inventory_sync: CheckedMutex::new(PlayerInventorySyncState::new()),
+            inventory_sync: SyncMutex::new(PlayerInventorySyncState::new()),
             ender_chest_inventory,
-            last_item_in_main_hand: CheckedMutex::new(ItemStack::empty()),
-            inventory_menu: CheckedMutex::new(inventory_menu(inventory)),
-            open_menu: CheckedMutex::new(player_inventory::OpenMenuState::new()),
-            container_counter: CheckedMutex::new(ContainerCounter::new()),
-            teleport_state: CheckedMutex::new(TeleportState::new()),
-            item_cooldowns: CheckedMutex::new(ItemCooldowns::default()),
-            tick_state: CheckedMutex::new(PlayerTickState::new()),
-            sleep_state: CheckedMutex::new(PlayerSleepState::new()),
-            respawn_config: CheckedMutex::new(None),
-            abilities: CheckedMutex::new(Abilities::default()),
-            block_breaking: CheckedMutex::new(BlockBreakingManager::new()),
+            last_item_in_main_hand: SyncMutex::new(ItemStack::empty()),
+            inventory_menu: SyncMutex::new(inventory_menu(inventory)),
+            open_menu: SyncMutex::new(player_inventory::OpenMenuState::new()),
+            container_counter: SyncMutex::new(ContainerCounter::new()),
+            teleport_state: SyncMutex::new(TeleportState::new()),
+            item_cooldowns: SyncMutex::new(ItemCooldowns::default()),
+            tick_state: SyncMutex::new(PlayerTickState::new()),
+            sleep_state: SyncMutex::new(PlayerSleepState::new()),
+            respawn_config: SyncMutex::new(None),
+            abilities: SyncMutex::new(Abilities::default()),
+            block_breaking: SyncMutex::new(BlockBreakingManager::new()),
             living_base,
-            food_data: CheckedMutex::new(FoodData::new()),
-            health_sync: CheckedMutex::new(HealthSyncState::new()),
-            experience: CheckedMutex::new(Experience::default()),
+            food_data: SyncMutex::new(FoodData::new()),
+            health_sync: SyncMutex::new(HealthSyncState::new()),
+            experience: SyncMutex::new(Experience::default()),
             seen_credits: AtomicBool::new(false),
             spawn_extra_particles_on_fall: AtomicBool::new(false),
             won_game: AtomicBool::new(false),
-            chunk_send_epoch: CheckedMutex::new(0),
-            residence: CheckedMutex::new(PlayerResidenceState::new()),
-            ender_pearls: CheckedMutex::new(Vec::new()),
-            fishing: CheckedMutex::new(None),
-            last_action_time: CheckedMutex::new(Instant::now()),
+            chunk_send_epoch: SyncMutex::new(0),
+            residence: SyncMutex::new(PlayerResidenceState::new()),
+            ender_pearls: SyncMutex::new(Vec::new()),
+            fishing: SyncMutex::new(None),
+            last_action_time: SyncMutex::new(Instant::now()),
         })
     }
 

@@ -4,7 +4,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_math::{DEGREE_90, DEGREE_180, DEGREE_360};
 use steel_math::{trig, vector};
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{DowncastType, DowncastTypeKey, TICKS_PER_SECOND};
 
@@ -24,7 +24,7 @@ const ROTATION_SPEED: f32 = 0.2;
 
 /// Runtime state of an accelerating projectile.
 pub struct HurtingProjectileBase {
-    acceleration_power: CheckedMutex<f64>,
+    acceleration_power: SyncMutex<f64>,
 }
 
 impl HurtingProjectileBase {
@@ -32,7 +32,7 @@ impl HurtingProjectileBase {
     #[must_use]
     pub const fn new(acceleration_power: f64) -> Self {
         Self {
-            acceleration_power: CheckedMutex::new(acceleration_power),
+            acceleration_power: SyncMutex::new(acceleration_power),
         }
     }
 

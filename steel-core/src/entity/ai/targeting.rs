@@ -143,7 +143,7 @@ mod tests {
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities};
-    use steel_utils::locks::CheckedMutex;
+    use steel_utils::locks::SyncMutex;
     use steel_utils::types::UpdateFlags;
     use steel_utils::{BlockPos, ChunkPos};
 
@@ -165,7 +165,7 @@ mod tests {
         base: EntityBase,
         living_base: LivingEntityBase,
         mob_base: MobBase,
-        entity_data: CheckedMutex<MobEntityData>,
+        entity_data: SyncMutex<MobEntityData>,
     }
 
     impl HoveringTestMob {
@@ -181,7 +181,7 @@ mod tests {
                 ),
                 living_base: LivingEntityBase::without_synced_data(&vanilla_entities::PIG),
                 mob_base: MobBase::new(|_| {}),
-                entity_data: CheckedMutex::new(synced_with_health(MobEntityData::new(), 10.0)),
+                entity_data: SyncMutex::new(synced_with_health(MobEntityData::new(), 10.0)),
             }
         }
     }

@@ -38,10 +38,10 @@ use crate::entity::Entity;
 /// State for one concern of an entity, found by its downcast key.
 ///
 /// Components lock their own state (typically through
-/// [`steel_utils::locks::CheckedMutex`]), so a component reference can be held
+/// [`steel_utils::locks::SyncMutex`]), so a component reference can be held
 /// while calling other entities. Never hold a component's guard across such a
 /// call: vanilla logic re-enters entities constantly, and a held guard turns
-/// that into a panic.
+/// that into a deadlock.
 ///
 /// Saving and loading have no default: a component with nothing to persist
 /// says so with an empty body.

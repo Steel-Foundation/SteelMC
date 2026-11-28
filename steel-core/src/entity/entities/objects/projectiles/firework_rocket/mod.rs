@@ -21,7 +21,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::FireworkRocketEntityData;
 use steel_registry::{sound_events, vanilla_damage_types, vanilla_game_events, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::EntityTable;
@@ -58,9 +58,9 @@ pub struct FireworkRocketEntity {
     entity_type: EntityTypeRef,
     #[entity(component)]
     projectile: ProjectileBase,
-    flight: CheckedMutex<Flight>,
+    flight: SyncMutex<Flight>,
     #[entity(synced)]
-    entity_data: CheckedMutex<FireworkRocketEntityData>,
+    entity_data: SyncMutex<FireworkRocketEntityData>,
 }
 
 impl EntityTable for FireworkRocketEntity {
@@ -81,8 +81,8 @@ impl FireworkRocketEntity {
             base,
             entity_type,
             projectile: ProjectileBase::new(),
-            flight: CheckedMutex::new(Flight::default()),
-            entity_data: CheckedMutex::new(entity_data),
+            flight: SyncMutex::new(Flight::default()),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 

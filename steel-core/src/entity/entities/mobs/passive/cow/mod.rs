@@ -19,7 +19,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::CowEntityData;
 use steel_registry::{REGISTRY, RegistryReference};
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::entity::EntityTable;
@@ -50,7 +50,7 @@ pub struct CowEntity {
     #[entity(component)]
     breeding: Breeding,
     #[entity(synced)]
-    entity_data: CheckedMutex<CowEntityData>,
+    entity_data: SyncMutex<CowEntityData>,
 }
 
 impl AgeableTable for CowEntity {
@@ -82,7 +82,7 @@ impl CowEntity {
             mob_base: MobBase::new(abstract_cow::construct),
             age: Age::new(),
             breeding: Breeding::new(),
-            entity_data: CheckedMutex::new(entity_data),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 }

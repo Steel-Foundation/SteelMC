@@ -13,7 +13,7 @@ use steel_registry::vanilla_damage_type_tags::DamageTypeTag;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::EndCrystalEntityData;
 use steel_utils::BlockPos;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use crate::entity::EntityTable;
 use crate::entity::damage::DamageSource;
@@ -36,7 +36,7 @@ pub struct EndCrystalEntity {
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
     #[entity(synced)]
-    entity_data: CheckedMutex<EndCrystalEntityData>,
+    entity_data: SyncMutex<EndCrystalEntityData>,
 }
 
 impl EntityTable for EndCrystalEntity {
@@ -63,7 +63,7 @@ impl EndCrystalEntity {
         Self {
             base,
             entity_type,
-            entity_data: CheckedMutex::new(EndCrystalEntityData::new()),
+            entity_data: SyncMutex::new(EndCrystalEntityData::new()),
         }
     }
 

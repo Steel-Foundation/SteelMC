@@ -6,6 +6,7 @@ use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
+use parking_lot::MutexGuard;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
@@ -14,7 +15,7 @@ use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::vanilla_entity_data::InteractionEntityData;
 use steel_utils::UuidExt;
-use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
+use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
 use crate::behavior::InteractionResult;
@@ -40,9 +41,9 @@ pub struct InteractionEntity {
     base: EntityBase,
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
-    actions: CheckedMutex<RecordedActions>,
+    actions: SyncMutex<RecordedActions>,
     #[entity(synced)]
-    entity_data: CheckedMutex<InteractionEntityData>,
+    entity_data: SyncMutex<InteractionEntityData>,
 }
 
 #[derive(Default)]
@@ -106,8 +107,8 @@ impl InteractionEntity {
         Self {
             base,
             entity_type,
-            actions: CheckedMutex::new(RecordedActions::default()),
-            entity_data: CheckedMutex::new(InteractionEntityData::new()),
+            actions: SyncMutex::new(RecordedActions::default()),
+            entity_data: SyncMutex::new(InteractionEntityData::new()),
         }
     }
 
@@ -245,7 +246,7 @@ impl ToNbtTag for &PlayerAction {
 
 /// Exclusive access to an interaction's box size and `response` flag.
 pub struct InteractionEntityDataView<'a> {
-    guard: CheckedMutexGuard<'a, InteractionEntityData>,
+    guard: MutexGuard<'a, InteractionEntityData>,
     dimensions_changed: bool,
 }
 

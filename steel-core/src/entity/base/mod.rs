@@ -29,7 +29,7 @@ use steel_math::{DEGREE_90, DEGREE_360};
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::vanilla_entities;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 use text_components::TextComponent;
 use uuid::Uuid;
@@ -388,26 +388,26 @@ pub struct EntityBase {
     uuid: Uuid,
     world: EntityWorld,
     /// Current vanilla movement state.
-    state: CheckedMutex<EntityBaseState>,
+    state: SyncMutex<EntityBaseState>,
     /// Shared vanilla save data outside the movement snapshot.
-    save_data: CheckedMutex<EntityBaseSaveData>,
+    save_data: SyncMutex<EntityBaseSaveData>,
     /// Per-tick movement segments used by vanilla block-contact effects.
-    movement_trace: CheckedMutex<EntityMovementTrace>,
+    movement_trace: SyncMutex<EntityMovementTrace>,
     /// Removal and tick bookkeeping.
-    lifecycle: CheckedMutex<EntityLifecycleState>,
+    lifecycle: SyncMutex<EntityLifecycleState>,
     /// Whether `lifecycle` holds a removal reason. Written only while the
     /// `lifecycle` lock is held, so [`Self::is_removed`] can skip the lock.
     removed: AtomicBool,
     /// Passenger, vehicle, and boarding-cooldown state.
-    relationships: CheckedMutex<EntityRelationshipState>,
+    relationships: SyncMutex<EntityRelationshipState>,
     /// Whether `relationships` holds a vehicle or passengers, as `Self::HAS_*`
     /// bits. Written only while the `relationships` lock is held, so an entity
     /// that rides nothing and carries nothing skips the lock.
     riding_links: AtomicU8,
     /// Active vanilla portal timing state.
-    portal_process: CheckedMutex<Option<PortalProcessor>>,
+    portal_process: SyncMutex<Option<PortalProcessor>>,
     /// Callback for entity lifecycle events.
-    level_callback: CheckedMutex<Arc<dyn EntityLevelCallback>>,
+    level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
     /// This entity's handle to its own allocation.
     this: WeakSelf,
 }
@@ -509,7 +509,7 @@ impl EntityBase {
         Self::with_world(
             id,
             uuid,
-            CheckedMutex::new(state),
+            SyncMutex::new(state),
             EntityWorld::Fixed(world),
             this,
         )
@@ -525,7 +525,7 @@ impl EntityBase {
         Self::with_world(
             id,
             uuid,
-            CheckedMutex::new(EntityBaseState::new(DVec3::ZERO, dimensions)),
+            SyncMutex::new(EntityBaseState::new(DVec3::ZERO, dimensions)),
             EntityWorld::Player(world),
             this,
         )
@@ -534,7 +534,7 @@ impl EntityBase {
     fn with_world(
         id: i32,
         uuid: Uuid,
-        state: CheckedMutex<EntityBaseState>,
+        state: SyncMutex<EntityBaseState>,
         world: EntityWorld,
         this: WeakSelf,
     ) -> Self {
@@ -545,14 +545,14 @@ impl EntityBase {
             uuid,
             world,
             state,
-            save_data: CheckedMutex::new(EntityBaseSaveData::new()),
-            movement_trace: CheckedMutex::new(EntityMovementTrace::default()),
-            lifecycle: CheckedMutex::new(EntityLifecycleState::new()),
+            save_data: SyncMutex::new(EntityBaseSaveData::new()),
+            movement_trace: SyncMutex::new(EntityMovementTrace::default()),
+            lifecycle: SyncMutex::new(EntityLifecycleState::new()),
             removed: AtomicBool::new(false),
-            relationships: CheckedMutex::new(EntityRelationshipState::default()),
+            relationships: SyncMutex::new(EntityRelationshipState::default()),
             riding_links: AtomicU8::new(0),
-            portal_process: CheckedMutex::new(None),
-            level_callback: CheckedMutex::new(Arc::new(NullEntityCallback)),
+            portal_process: SyncMutex::new(None),
+            level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
             this,
         }
     }

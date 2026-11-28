@@ -5,7 +5,7 @@ use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::sound_events;
 use steel_registry::vanilla_entity_data::BlazeEntityData;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use crate::entity::ai::goal::{
     BlazeAttackGoal, HurtByTargetGoal, LookAtPlayerGoal, MoveTowardsRestrictionGoal,
@@ -63,9 +63,9 @@ pub struct BlazeEntity {
     living_base: LivingEntityBase,
     #[entity(component)]
     mob_base: MobBase,
-    height_offset: CheckedMutex<HeightOffset>,
+    height_offset: SyncMutex<HeightOffset>,
     #[entity(synced)]
-    entity_data: CheckedMutex<BlazeEntityData>,
+    entity_data: SyncMutex<BlazeEntityData>,
 }
 
 impl Enemy for BlazeEntity {}
@@ -109,11 +109,11 @@ impl BlazeEntity {
             entity_type,
             living_base,
             mob_base: MobBase::new(Self::construct),
-            height_offset: CheckedMutex::new(HeightOffset {
+            height_offset: SyncMutex::new(HeightOffset {
                 allowed: ALLOWED_HEIGHT_OFFSET_INITIAL,
                 next_change_tick: 0,
             }),
-            entity_data: CheckedMutex::new(entity_data),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 

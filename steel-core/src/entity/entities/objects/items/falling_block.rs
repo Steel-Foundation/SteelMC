@@ -22,7 +22,7 @@ use steel_registry::vanilla_game_rules::ENTITY_DROPS;
 use steel_registry::{
     REGISTRY, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_fluids,
 };
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::blocks::{AnvilBlock, FallingBlock};
@@ -83,8 +83,8 @@ pub struct FallingBlockEntity {
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
     #[entity(synced)]
-    entity_data: CheckedMutex<FallingBlockEntityData>,
-    state: CheckedMutex<FallingBlockState>,
+    entity_data: SyncMutex<FallingBlockEntityData>,
+    state: SyncMutex<FallingBlockState>,
 }
 
 impl FallingBlockEntity {
@@ -114,8 +114,8 @@ impl FallingBlockEntity {
         Self {
             base,
             entity_type,
-            entity_data: CheckedMutex::new(FallingBlockEntityData::new()),
-            state: CheckedMutex::new(FallingBlockState::new(vanilla_blocks::SAND.default_state())),
+            entity_data: SyncMutex::new(FallingBlockEntityData::new()),
+            state: SyncMutex::new(FallingBlockState::new(vanilla_blocks::SAND.default_state())),
         }
     }
 

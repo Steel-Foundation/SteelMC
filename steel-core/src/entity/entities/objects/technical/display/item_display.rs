@@ -7,7 +7,7 @@ use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ItemDisplayEntityData;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use super::DisplayBase;
 use crate::entity::{Entity, EntityBase, EntityProps, EntityTable};
@@ -28,7 +28,7 @@ pub struct ItemDisplayEntity {
     #[entity(component)]
     display: DisplayBase,
     #[entity(synced)]
-    entity_data: CheckedMutex<ItemDisplayEntityData>,
+    entity_data: SyncMutex<ItemDisplayEntityData>,
 }
 
 impl EntityTable for ItemDisplayEntity {
@@ -42,7 +42,7 @@ impl ItemDisplayEntity {
             base,
             entity_type,
             display: DisplayBase,
-            entity_data: CheckedMutex::new(ItemDisplayEntityData::new()),
+            entity_data: SyncMutex::new(ItemDisplayEntityData::new()),
         }
     }
 

@@ -23,6 +23,7 @@ use std::sync::{Arc, Weak};
 use steel_utils::nbt::NbtValueInput as _;
 
 use glam::DVec3;
+use parking_lot::MutexGuard;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use simdnbt::{FromNbtTag as _, ToNbtTag as _};
@@ -34,7 +35,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLOCKS};
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_damage_types, vanilla_game_events};
-use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
+use steel_utils::locks::SyncMutex;
 use steel_utils::types::GameType;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, WorldAabb};
 use uuid::Uuid;
@@ -172,7 +173,7 @@ struct ProjectileState {
 /// State of a vanilla `Projectile`: its owner and whether it has been shot
 /// and has left its owner.
 pub struct ProjectileBase {
-    state: CheckedMutex<ProjectileState>,
+    state: SyncMutex<ProjectileState>,
 }
 
 impl ProjectileBase {
@@ -180,7 +181,7 @@ impl ProjectileBase {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            state: CheckedMutex::new(ProjectileState {
+            state: SyncMutex::new(ProjectileState {
                 owner: None,
                 left_owner: false,
                 left_owner_checked: false,
@@ -427,7 +428,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
 }
 
 impl<'a> Projectile<'a> {
-    fn state(&self) -> CheckedMutexGuard<'a, ProjectileState> {
+    fn state(&self) -> MutexGuard<'a, ProjectileState> {
         self.base.state.lock()
     }
 

@@ -12,7 +12,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
@@ -47,7 +47,7 @@ pub struct ItemFrameEntity {
     #[entity(component)]
     attachment: BlockAttachment,
     #[entity(synced)]
-    entity_data: CheckedMutex<ItemFrameEntityData>,
+    entity_data: SyncMutex<ItemFrameEntityData>,
 }
 
 impl EntityTable for ItemFrameEntity {
@@ -100,7 +100,7 @@ impl ItemFrameEntity {
             ),
             entity_type,
             attachment: BlockAttachment::new(block_pos),
-            entity_data: CheckedMutex::new(entity_data),
+            entity_data: SyncMutex::new(entity_data),
         })
     }
 
@@ -114,7 +114,7 @@ impl ItemFrameEntity {
             attachment: BlockAttachment::new(BlockPos::containing(
                 position.x, position.y, position.z,
             )),
-            entity_data: CheckedMutex::new(ItemFrameEntityData::new()),
+            entity_data: SyncMutex::new(ItemFrameEntityData::new()),
         })
     }
 

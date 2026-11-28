@@ -27,7 +27,7 @@ use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, RegistryReference, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_items,
 };
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::InteractionResult;
@@ -66,9 +66,9 @@ pub struct PigEntity {
     age: Age,
     #[entity(component)]
     breeding: Breeding,
-    steering: CheckedMutex<ItemBasedSteering>,
+    steering: SyncMutex<ItemBasedSteering>,
     #[entity(synced)]
-    entity_data: CheckedMutex<PigEntityData>,
+    entity_data: SyncMutex<PigEntityData>,
 }
 
 impl AgeableTable for PigEntity {
@@ -106,8 +106,8 @@ impl PigEntity {
             mob_base: MobBase::new(Self::construct),
             age: Age::new(),
             breeding: Breeding::new(),
-            steering: CheckedMutex::new(ItemBasedSteering::new()),
-            entity_data: CheckedMutex::new(entity_data),
+            steering: SyncMutex::new(ItemBasedSteering::new()),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 
@@ -313,7 +313,7 @@ impl Variants for PigEntity {
 }
 
 impl ItemSteerable for PigEntity {
-    fn item_based_steering(&self) -> &CheckedMutex<ItemBasedSteering> {
+    fn item_based_steering(&self) -> &SyncMutex<ItemBasedSteering> {
         &self.steering
     }
 

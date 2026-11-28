@@ -23,7 +23,7 @@ use steel_registry::vanilla_entity_data::AbstractMinecartEntityData;
 use steel_registry::{vanilla_blocks, vanilla_entities};
 use steel_utils::axis::Axis;
 use steel_utils::block_util::FoundRectangle;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, WorldAabb};
 
@@ -68,7 +68,7 @@ struct MinecartState {
 /// The vanilla `AbstractMinecart` fields without synced data: whether it is
 /// on rails and whether its movement-facing rotation is flipped.
 pub struct AbstractMinecartBase {
-    state: CheckedMutex<MinecartState>,
+    state: SyncMutex<MinecartState>,
 }
 
 impl AbstractMinecartBase {
@@ -76,7 +76,7 @@ impl AbstractMinecartBase {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            state: CheckedMutex::new(MinecartState {
+            state: SyncMutex::new(MinecartState {
                 on_rails: false,
                 flipped: false,
             }),

@@ -9,7 +9,7 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_utils::Identifier;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 
 use super::{abstract_minecart, vehicle_entity};
@@ -31,7 +31,7 @@ pub struct ChestMinecartEntity {
     base: EntityBase,
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
-    state: CheckedMutex<ChestMinecartState>,
+    state: SyncMutex<ChestMinecartState>,
 }
 
 struct ChestMinecartState {
@@ -87,7 +87,7 @@ impl ChestMinecartEntity {
         Self {
             base,
             entity_type,
-            state: CheckedMutex::new(ChestMinecartState {
+            state: SyncMutex::new(ChestMinecartState {
                 first_tick,
                 loot_table: None,
                 loot_table_seed: 0,

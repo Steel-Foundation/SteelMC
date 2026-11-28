@@ -32,7 +32,7 @@ use steel_registry::mob_effect_instance::{
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
 use steel_registry::vanilla_mob_effects;
-use steel_utils::locks::{CheckedMutex, IntoShared, Shared};
+use steel_utils::locks::{IntoShared, Shared, SyncMutex};
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, Identifier, UuidExt as _};
@@ -779,11 +779,11 @@ impl LivingEntityState {
 /// death side effects. Health remains the source of truth for dead-or-dying
 /// checks such as client respawn requests.
 pub struct LivingEntityBase {
-    state: CheckedMutex<LivingEntityState>,
-    attributes: CheckedMutex<AttributeMap>,
-    effects: CheckedMutex<ActiveEffects>,
+    state: SyncMutex<LivingEntityState>,
+    attributes: SyncMutex<AttributeMap>,
+    effects: SyncMutex<ActiveEffects>,
     equipment: Shared<dyn EntityEquipment>,
-    equipment_tracking: CheckedMutex<EquipmentTracking>,
+    equipment_tracking: SyncMutex<EquipmentTracking>,
     /// Which per-tick sync drains have work, as `Self::*_PENDING` bits. The
     /// tracker reads this one byte for an entity with nothing to send instead
     /// of taking each lock. A bit that mirrors locked data only changes while
@@ -892,18 +892,18 @@ impl LivingEntityBase {
         let speed = attributes.required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
 
         Self {
-            state: CheckedMutex::new(LivingEntityState::new(speed)),
-            attributes: CheckedMutex::new(attributes),
-            effects: CheckedMutex::new(ActiveEffects::default()),
+            state: SyncMutex::new(LivingEntityState::new(speed)),
+            attributes: SyncMutex::new(attributes),
+            effects: SyncMutex::new(ActiveEffects::default()),
             equipment,
-            equipment_tracking: CheckedMutex::new(EquipmentTracking::new()),
+            equipment_tracking: SyncMutex::new(EquipmentTracking::new()),
             sync_pending: AtomicU8::new(0),
         }
     }
 
     /// Returns this entity's attribute map.
     #[inline]
-    pub const fn attributes(&self) -> &CheckedMutex<AttributeMap> {
+    pub const fn attributes(&self) -> &SyncMutex<AttributeMap> {
         &self.attributes
     }
 

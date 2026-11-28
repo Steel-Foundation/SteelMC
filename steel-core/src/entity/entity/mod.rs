@@ -233,7 +233,7 @@ pub enum RiderMove {
 ///     #[entity(component)]
 ///     living_base: LivingEntityBase,
 ///     #[entity(synced)]
-///     entity_data: CheckedMutex<MyEntityData>,
+///     entity_data: SyncMutex<MyEntityData>,
 /// }
 ///
 /// impl EntityTable for MyEntity {

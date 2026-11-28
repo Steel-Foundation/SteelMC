@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use steel_utils::locks::{CheckedMutex, SyncMutex, SyncRwLock};
+use steel_utils::locks::{SyncMutex, SyncRwLock};
 
 use super::{
     ClientInformation, DROP_SPAM_THROTTLER_INCREMENT_STEP, DROP_SPAM_THROTTLER_THRESHOLD, Player,
@@ -27,15 +27,15 @@ pub struct PlayerSession {
     pub(super) drop_spam_throttler: SyncMutex<TickThrottler>,
     /// The client's settings (language, view distance, chat visibility, etc.).
     /// Written through `Player::set_client_information`, which also syncs entity data.
-    pub(super) client_information: CheckedMutex<ClientInformation>,
+    pub(super) client_information: SyncMutex<ClientInformation>,
     /// Assigned groups, direct overrides, and the effective permission set.
-    pub(super) permissions: CheckedMutex<PlayerPermissionState>,
+    pub(super) permissions: SyncMutex<PlayerPermissionState>,
     /// The counter keeping track of this player's statistics. Vanilla keeps it
     /// on `PlayerList`, outside the player entity.
-    pub(crate) stats: CheckedMutex<StatsCounter>,
+    pub(crate) stats: SyncMutex<StatsCounter>,
     /// This player's advancement progress, kept outside the entity as vanilla's
     /// `PlayerList` does.
-    pub(crate) advancements: CheckedMutex<PlayerAdvancement>,
+    pub(crate) advancements: SyncMutex<PlayerAdvancement>,
 }
 
 enum CurrentPlayerSlot {
@@ -76,10 +76,10 @@ impl PlayerSession {
                 DROP_SPAM_THROTTLER_INCREMENT_STEP,
                 DROP_SPAM_THROTTLER_THRESHOLD,
             )),
-            client_information: CheckedMutex::new(client_information),
-            permissions: CheckedMutex::new(PlayerPermissionState::default()),
-            stats: CheckedMutex::new(StatsCounter::new()),
-            advancements: CheckedMutex::new(PlayerAdvancement::default()),
+            client_information: SyncMutex::new(client_information),
+            permissions: SyncMutex::new(PlayerPermissionState::default()),
+            stats: SyncMutex::new(StatsCounter::new()),
+            advancements: SyncMutex::new(PlayerAdvancement::default()),
         }
     }
 

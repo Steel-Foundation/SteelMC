@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::entity::entities::LeashFenceKnotEntity;
 use crate::entity::{Entity, SharedEntity, WeakEntity};
 use glam::DVec3;
+use parking_lot::MutexGuard;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_math::{DEG_TO_RAD, vector::y_rot};
@@ -14,7 +15,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_game_rules::ENTITY_DROPS;
 use steel_registry::{sound_events, vanilla_items};
-use steel_utils::locks::{CheckedMutex, CheckedMutexGuard};
+use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Downcast as _, UuidExt as _};
 use uuid::Uuid;
 
@@ -34,7 +35,7 @@ pub const LEASH_LIQUID_ANGULAR_FRICTION: f64 = 0.8;
 /// A leashable's leash data, with a flag for whether any exists so that an
 /// unleashed entity is answered without locking.
 pub struct LeashSlot {
-    data: CheckedMutex<Option<LeashData>>,
+    data: SyncMutex<Option<LeashData>>,
     /// Whether `data` holds leash data. Written only while `data` is locked.
     present: AtomicBool,
 }
@@ -43,7 +44,7 @@ impl LeashSlot {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            data: CheckedMutex::new(None),
+            data: SyncMutex::new(None),
             present: AtomicBool::new(false),
         }
     }
@@ -73,7 +74,7 @@ impl Default for LeashSlot {
 /// Guard of a [`LeashSlot`].
 pub struct LeashSlotGuard<'a> {
     present: &'a AtomicBool,
-    data: CheckedMutexGuard<'a, Option<LeashData>>,
+    data: MutexGuard<'a, Option<LeashData>>,
 }
 
 impl Deref for LeashSlotGuard<'_> {

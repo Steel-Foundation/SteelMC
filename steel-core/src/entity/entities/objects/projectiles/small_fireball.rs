@@ -11,7 +11,7 @@ use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_entity_data::SmallFireballEntityData;
 use steel_registry::vanilla_game_rules::MOB_GRIEFING;
 use steel_utils::TICKS_PER_SECOND;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::types::UpdateFlags;
 
 use crate::behavior::blocks::FireBlock;
@@ -45,7 +45,7 @@ pub struct SmallFireballEntity {
     #[entity(component)]
     fireball_item: FireballItem,
     #[entity(synced)]
-    entity_data: CheckedMutex<SmallFireballEntityData>,
+    entity_data: SyncMutex<SmallFireballEntityData>,
 }
 
 impl SmallFireballEntity {
@@ -56,7 +56,7 @@ impl SmallFireballEntity {
             projectile: ProjectileBase::new(),
             hurting_projectile: HurtingProjectileBase::default(),
             fireball_item: FireballItem,
-            entity_data: CheckedMutex::new(SmallFireballEntityData::new()),
+            entity_data: SyncMutex::new(SmallFireballEntityData::new()),
         }
     }
 

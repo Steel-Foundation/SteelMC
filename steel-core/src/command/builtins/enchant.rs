@@ -223,7 +223,7 @@ mod tests {
         entity_type::EntityTypeRef, equipment::EquipmentSlot, init_vanilla_registry,
         item_stack::ItemStack, vanilla_enchantments, vanilla_entities, vanilla_items,
     };
-    use steel_utils::locks::CheckedMutex;
+    use steel_utils::locks::SyncMutex;
 
     use super::super::create_dispatcher;
     use super::{EnchantTargetResult, enchant_main_hand};
@@ -307,7 +307,7 @@ mod tests {
     struct TestLivingEntity {
         base: EntityBase,
         living_base: LivingEntityBase,
-        entity_data: CheckedMutex<LivingEntityData>,
+        entity_data: SyncMutex<LivingEntityData>,
         entity_type: EntityTypeRef,
     }
 
@@ -322,7 +322,7 @@ mod tests {
                     WeakSelf::detached(),
                 ),
                 living_base: LivingEntityBase::without_synced_data(entity_type),
-                entity_data: CheckedMutex::new(synced_with_health(LivingEntityData::new(), 20.0)),
+                entity_data: SyncMutex::new(synced_with_health(LivingEntityData::new(), 20.0)),
                 entity_type,
             }
         }

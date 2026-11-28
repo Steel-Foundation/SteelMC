@@ -9,7 +9,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::LingeringPotionEntityData;
 use steel_registry::{vanilla_entities, vanilla_items};
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use crate::entity::EntityTable;
 use crate::entity::entities::AreaEffectCloudEntity;
@@ -35,7 +35,7 @@ pub struct LingeringPotionEntity {
     #[entity(component)]
     thrown_item: ThrownItem,
     #[entity(synced)]
-    entity_data: CheckedMutex<LingeringPotionEntityData>,
+    entity_data: SyncMutex<LingeringPotionEntityData>,
 }
 
 impl EntityTable for LingeringPotionEntity {
@@ -51,7 +51,7 @@ impl LingeringPotionEntity {
             entity_type,
             projectile: ProjectileBase::new(),
             thrown_item,
-            entity_data: CheckedMutex::new(entity_data),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 }

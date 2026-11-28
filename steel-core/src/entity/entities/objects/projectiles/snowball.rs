@@ -10,7 +10,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entity_data::SnowballEntityData;
 use steel_registry::{vanilla_entities, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use crate::entity::EntityTable;
 use crate::entity::prelude::*;
@@ -33,7 +33,7 @@ pub struct SnowballEntity {
     #[entity(component)]
     thrown_item: ThrownItem,
     #[entity(synced)]
-    entity_data: CheckedMutex<SnowballEntityData>,
+    entity_data: SyncMutex<SnowballEntityData>,
 }
 
 impl EntityTable for SnowballEntity {
@@ -49,7 +49,7 @@ impl SnowballEntity {
             entity_type,
             projectile: ProjectileBase::new(),
             thrown_item,
-            entity_data: CheckedMutex::new(entity_data),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 

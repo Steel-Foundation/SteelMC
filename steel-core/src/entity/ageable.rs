@@ -27,7 +27,7 @@ use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_items, vanilla_particle_types,
 };
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::behavior::InteractionResult;
@@ -92,7 +92,7 @@ impl<E: AgeableTable> Parts for E {
 /// Age state of a vanilla `AgeableMob`. The baby and age-locked flags are
 /// synchronized data and live in the entity's generated synced data.
 pub struct Age {
-    state: CheckedMutex<AgeState>,
+    state: SyncMutex<AgeState>,
 }
 
 impl Age {
@@ -100,7 +100,7 @@ impl Age {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            state: CheckedMutex::new(AgeState {
+            state: SyncMutex::new(AgeState {
                 age: 0,
                 forced_age: 0,
                 forced_age_timer: 0,

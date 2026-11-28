@@ -24,7 +24,7 @@ use steel_registry::{
     sound_events, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_particle_types,
 };
 use steel_utils::entity_events::EntityStatus;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use crate::entity::EntityTable;
 use crate::entity::ageable::{self, Age, AgeableProps, AgeableTable};
@@ -65,9 +65,9 @@ pub struct SquidEntity {
     mob_base: MobBase,
     #[entity(component)]
     age: Age,
-    swimming: CheckedMutex<Swimming>,
+    swimming: SyncMutex<Swimming>,
     #[entity(synced)]
-    entity_data: CheckedMutex<SquidEntityData>,
+    entity_data: SyncMutex<SquidEntityData>,
 }
 
 impl EntityTable for SquidEntity {
@@ -139,14 +139,14 @@ impl SquidEntity {
             living_base,
             mob_base: MobBase::new(Self::construct),
             age: Age::new(),
-            swimming: CheckedMutex::new(Swimming {
+            swimming: SyncMutex::new(Swimming {
                 x_body_rot: 0.0,
                 x_body_rot_o: 0.0,
                 movement_vector: DVec3::ZERO,
                 tentacle_speed: 1.0 / (rand::random::<f32>() + 1.0) * 0.2,
                 tentacle_movement: 0.0,
             }),
-            entity_data: CheckedMutex::new(entity_data),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 

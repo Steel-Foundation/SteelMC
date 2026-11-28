@@ -32,7 +32,7 @@ use steel_registry::{
     vanilla_suspicious_stew_effects,
 };
 use steel_utils::color::RgbColor;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Downcast as _};
 
 use crate::behavior::InteractionResult;
@@ -72,9 +72,9 @@ pub struct MushroomCowEntity {
     #[entity(component)]
     breeding: Breeding,
     /// Effects of the last flower a brown mooshroom ate, for its next stew.
-    stew_effects: CheckedMutex<Option<SuspiciousStewEffects>>,
+    stew_effects: SyncMutex<Option<SuspiciousStewEffects>>,
     #[entity(synced)]
-    entity_data: CheckedMutex<MooshroomEntityData>,
+    entity_data: SyncMutex<MooshroomEntityData>,
 }
 
 impl AgeableTable for MushroomCowEntity {
@@ -112,8 +112,8 @@ impl MushroomCowEntity {
             mob_base: MobBase::new(abstract_cow::construct),
             age: Age::new(),
             breeding: Breeding::new(),
-            stew_effects: CheckedMutex::new(None),
-            entity_data: CheckedMutex::new(entity_data),
+            stew_effects: SyncMutex::new(None),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 

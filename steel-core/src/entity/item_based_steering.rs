@@ -3,7 +3,7 @@
 use std::f32::consts::PI;
 
 use steel_math::trig;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use crate::entity::Entity;
 
@@ -87,7 +87,7 @@ impl ItemBasedSteering {
 /// item, such as a saddled pig steered with a carrot on a stick.
 pub trait ItemSteerable: Entity {
     /// Returns the shared runtime steering state.
-    fn item_based_steering(&self) -> &CheckedMutex<ItemBasedSteering>;
+    fn item_based_steering(&self) -> &SyncMutex<ItemBasedSteering>;
 
     /// Returns the synced total boost duration in ticks for the currently active boost.
     fn boost_time_total(&self) -> i32;

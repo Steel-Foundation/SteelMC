@@ -23,7 +23,7 @@ use steel_registry::{
     vanilla_damage_types, vanilla_entities, vanilla_fluids, vanilla_game_events, vanilla_items,
     vanilla_mob_effects,
 };
-use steel_utils::locks::{CheckedMutex, SyncMutex};
+use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Identifier, SectionPos, WorldAabb, axis::Axis,
@@ -761,7 +761,7 @@ impl Entity for KnownMovementTestEntity {
 struct LivingFluidTestEntity {
     base: EntityBase,
     living_base: LivingEntityBase,
-    entity_data: CheckedMutex<SyncedLivingEntityData>,
+    entity_data: SyncMutex<SyncedLivingEntityData>,
     damage_types: SyncMutex<Vec<Identifier>>,
     damage_world_keys: SyncMutex<Vec<String>>,
     entity_type: EntityTypeRef,
@@ -799,7 +799,7 @@ impl LivingFluidTestEntity {
         Self {
             base,
             living_base: LivingEntityBase::without_synced_data(&vanilla_entities::PLAYER),
-            entity_data: CheckedMutex::new(synced_with_health(SyncedLivingEntityData::new(), 20.0)),
+            entity_data: SyncMutex::new(synced_with_health(SyncedLivingEntityData::new(), 20.0)),
             damage_types: SyncMutex::new(Vec::new()),
             damage_world_keys: SyncMutex::new(Vec::new()),
             entity_type: &vanilla_entities::PLAYER,

@@ -20,7 +20,7 @@ use steel_registry::vanilla_game_rules::{
 };
 use steel_registry::{sound_events, vanilla_damage_types, vanilla_entities, vanilla_items};
 use steel_utils::ChunkPos;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 use steel_utils::types::Difficulty;
 
 use crate::chunk::chunk_map::ENDER_PEARL_TICKET_TIMEOUT;
@@ -50,9 +50,9 @@ pub struct EnderPearlEntity {
     #[entity(component)]
     thrown_item: ThrownItem,
     /// Ticks until the chunk ticket is renewed (vanilla `ticketTimer`).
-    ticket_timer: CheckedMutex<i64>,
+    ticket_timer: SyncMutex<i64>,
     #[entity(synced)]
-    entity_data: CheckedMutex<EnderPearlEntityData>,
+    entity_data: SyncMutex<EnderPearlEntityData>,
 }
 
 impl EntityTable for EnderPearlEntity {
@@ -93,8 +93,8 @@ impl EnderPearlEntity {
             entity_type,
             projectile: ProjectileBase::new(),
             thrown_item,
-            ticket_timer: CheckedMutex::new(0),
-            entity_data: CheckedMutex::new(entity_data),
+            ticket_timer: SyncMutex::new(0),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 

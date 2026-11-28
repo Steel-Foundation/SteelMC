@@ -20,7 +20,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::BatEntityData;
 use steel_registry::{level_events, sound_events};
 use steel_utils::BlockPos;
-use steel_utils::locks::CheckedMutex;
+use steel_utils::locks::SyncMutex;
 
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::EntityTable;
@@ -50,9 +50,9 @@ pub struct BatEntity {
     living_base: LivingEntityBase,
     #[entity(component)]
     mob_base: MobBase,
-    target_position: CheckedMutex<Option<BlockPos>>,
+    target_position: SyncMutex<Option<BlockPos>>,
     #[entity(synced)]
-    entity_data: CheckedMutex<BatEntityData>,
+    entity_data: SyncMutex<BatEntityData>,
 }
 
 impl DefaultEntityPush for BatEntity {}
@@ -118,8 +118,8 @@ impl BatEntity {
             entity_type,
             living_base,
             mob_base: MobBase::new(|_| {}),
-            target_position: CheckedMutex::new(None),
-            entity_data: CheckedMutex::new(entity_data),
+            target_position: SyncMutex::new(None),
+            entity_data: SyncMutex::new(entity_data),
         }
     }
 
