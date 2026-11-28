@@ -17,7 +17,8 @@ use crossbeam::atomic::AtomicCell;
 use steel_core::player::{
     ClientInformation, PlayerConnection,
     connection::{
-        JavaNetworkReader, JavaNetworkWriter, JavaTransportRead, JavaTransportWrite, OutboundPacket,
+        JavaNetworkReader, JavaNetworkWriter, JavaTransportRead, JavaTransportWrite,
+        OUTBOUND_BATCH_SIZE, OutboundPacket, write_outbound_batch,
     },
 };
 use steel_core::server::Server;
@@ -389,44 +390,51 @@ impl JavaTcpClient {
 
         self.task_tracker.spawn(async move {
             let mut connection = None;
+            let mut batch = Vec::with_capacity(OUTBOUND_BATCH_SIZE);
             loop {
                 select! {
                     biased;
                     () = cancel_token.cancelled() => {
-                        Self::write_queued_disconnect(&network_writer, &mut sender_recv, id).await;
+                        Self::write_queued_disconnect(&network_writer, &mut batch, &mut sender_recv, id).await;
                         break;
                     }
-                    outbound = sender_recv.recv() => {
-                        if let Some(outbound) = outbound {
-                            let (packet, close_after_write) = match outbound {
-                                OutboundPacket::Packet(packet) => (packet, false),
-                                OutboundPacket::Disconnect(packet) => (packet, true),
-                            };
+                    received = sender_recv.recv_many(&mut batch, OUTBOUND_BATCH_SIZE) => {
+                        if received == 0 {
+                            cancel_token.cancel();
+                            continue;
+                        }
 
-                            if close_after_write {
-                                if let Err(err) = Self::write_network_packet(&network_writer, &packet).await {
-                                    log::warn!("Failed to send disconnect packet to client {id}: {err}");
-                                }
-                                cancel_token.cancel();
+                        let has_disconnect = batch
+                            .iter()
+                            .any(|outbound| matches!(outbound, OutboundPacket::Disconnect(_)));
+                        // Bundles stay contiguous, and everything up to (and including)
+                        // a disconnect is written under a single writer lock, in order. The
+                        // batch is drained by value, so it is empty once written.
+                        let result = select! {
+                            biased;
+                            () = cancel_token.cancelled() => {
+                                Self::write_queued_disconnect(&network_writer, &mut batch, &mut sender_recv, id).await;
                                 break;
                             }
-
-                            let write_result = Self::write_network_packet(&network_writer, &packet);
-                            select! {
-                                biased;
-                                () = cancel_token.cancelled() => {
-                                    Self::write_queued_disconnect(&network_writer, &mut sender_recv, id).await;
+                            result = write_outbound_batch(&network_writer, &mut batch) => result,
+                        };
+                        match result {
+                            Ok(close_after_write) => {
+                                if close_after_write {
+                                    cancel_token.cancel();
                                     break;
-                                },
-                                result = write_result => {
-                                    if let Err(err) = result {
-                                        log::warn!("Failed to send packet to client {id}: {err}");
-                                        cancel_token.cancel();
-                                    }
                                 }
                             }
-                        } else {
-                            cancel_token.cancel();
+                            Err(err) => {
+                                if has_disconnect {
+                                    log::warn!(
+                                        "Failed to send disconnect packet to client {id}: {err}"
+                                    );
+                                } else {
+                                    log::warn!("Failed to send packet to client {id}: {err}");
+                                }
+                                cancel_token.cancel();
+                            }
                         }
                     }
                     connection_update = connection_updates_recv.recv() => {
@@ -479,13 +487,19 @@ impl JavaTcpClient {
 
     async fn write_queued_disconnect(
         network_writer: &JavaNetworkWriter,
+        batch: &mut Vec<OutboundPacket>,
         sender_recv: &mut UnboundedReceiver<OutboundPacket>,
         id: u64,
     ) {
         let mut disconnect_packet = None;
+        for outbound in batch.drain(..) {
+            if let OutboundPacket::Disconnect(packet) = outbound {
+                disconnect_packet = Some(packet);
+            }
+        }
         loop {
             match sender_recv.try_recv() {
-                Ok(OutboundPacket::Packet(_)) => {}
+                Ok(OutboundPacket::Packet(_) | OutboundPacket::Bundle(_)) => {}
                 Ok(OutboundPacket::Disconnect(packet)) => disconnect_packet = Some(packet),
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             }
