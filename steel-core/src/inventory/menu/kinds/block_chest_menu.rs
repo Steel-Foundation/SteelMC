@@ -1,6 +1,6 @@
 use super::generic_9x_menu::menu_type_for_rows;
 use crate::{
-    block_entity::{SharedBlockEntity, entities::CHEST_SLOTS},
+    block_entity::SharedBlockEntity,
     inventory::{menu::GRID_WIDTH, prelude::*},
     player::player_inventory::PlayerInventory,
 };
@@ -13,14 +13,15 @@ pub(crate) fn block_chest(
     container_id: u8,
     owners: SmallVec<[SharedBlockEntity; 2]>,
     containers: SmallVec<[ContainerRef; 2]>,
+    slots_per_container: usize,
 ) -> Menu {
     let mut builder = MenuBuilder::new(
-        menu_type_for_rows(containers.len() * CHEST_SLOTS / GRID_WIDTH),
+        menu_type_for_rows(containers.len() * slots_per_container / GRID_WIDTH),
         container_id,
     );
     let mut sections = containers
         .iter()
-        .map(|container| builder.section(container, CHEST_SLOTS));
+        .map(|container| builder.section(container, slots_per_container));
     let Some(first) = sections.next() else {
         unreachable!("chest row count was already validated");
     };
@@ -53,24 +54,20 @@ impl MenuKind for BlockChestKind {
             .map(ContainerRef::container_id)
             .collect()
     }
+
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
         self.containers
             .iter()
             .all(|container| container.still_valid(player))
     }
-    fn on_open(
-        &mut self,
-        _behavior: &mut MenuBehavior,
-        guard: &mut ContainerLockGuard,
-        player: &Player,
-    ) {
+
+    fn start_open(&mut self, player: &Player) {
         self.opened = true;
-        guard.run_unlocked(|| {
-            for owner in &self.owners {
-                owner.start_open(player);
-            }
-        });
+        for owner in &self.owners {
+            owner.start_open(player);
+        }
     }
+
     fn removed(&mut self, _behavior: &mut MenuBehavior, player: &Player) {
         if !self.opened {
             return;
