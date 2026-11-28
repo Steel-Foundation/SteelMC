@@ -204,7 +204,7 @@ pub(super) fn summon_operation() -> Builder {
             |context| {
                 let entity_type = context.entity_type("entity")?;
                 let entity =
-                    summon::create_entity(context, entity_type, context.source().position())?;
+                    summon::create_entity(context, entity_type, context.source().position(), None)?;
                 Ok(context.source().with_entity(entity))
             },
         ),

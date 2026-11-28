@@ -3,6 +3,7 @@
 mod argument;
 mod biome;
 mod block;
+mod compound_tag;
 mod coordinates;
 mod item;
 mod item_predicate;
